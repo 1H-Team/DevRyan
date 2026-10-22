@@ -9,8 +9,7 @@
 // A version is used up only once it is published: a failed attempt re-runs, or the
 // tag moves to a fixed commit and locked `stage` reuses the unpublished draft. Published
 // bytes are recorded in the devryan-release/vX.Y.Z ledger tag and never replaced.
-// RELEASE_DRY_RUN=true makes no canonical writes; RELEASE_MODE=stage targets the
-// staging repository (STAGING_RELEASE_REPOSITORY) with its own token.
+// RELEASE_DRY_RUN=true makes no GitHub writes (stage checks local files only).
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,7 +18,7 @@ import { verifyDownloadedUpdate } from '../packages/electron/desktop-updater.mjs
 import { describeDirectoryAssets, verifyReleaseAssets } from './verify-release-assets.mjs';
 import { createRunRoot, scratchParent } from './qa/run-root.mjs';
 import { githubClient } from './release-github.mjs';
-import { CANONICAL_RELEASE_REPOSITORY, STAGING_RELEASE_REPOSITORY } from './release-artifacts.mjs';
+import { CANONICAL_RELEASE_REPOSITORY } from './release-artifacts.mjs';
 import { readReleaseManifest } from './release-candidate.mjs';
 import { assertShippedDiscovery, formatReleaseMarker, ledgerTagName, parseReleaseMarker, projectForDiscovery, releaseBody, releaseState } from './release-state.mjs';
 
@@ -116,21 +115,11 @@ export function compareVersions(left, right) {
   return 0;
 }
 
-/**
- * Where release writes go. A tag push targets this (canonical) repository with
- * GITHUB_TOKEN; a `mode=stage` dry run targets only the staging repository
- * with RELEASE_STAGING_TOKEN. Nothing else is a release target.
- */
+/** Releases are written only to the canonical repository, with its GITHUB_TOKEN. */
 export function releaseTarget(environment = process.env) {
-  if (environment.RELEASE_MODE === 'stage') {
-    if (environment.RELEASE_DRY_RUN !== 'true' || environment.RELEASE_TARGET_REPOSITORY !== STAGING_RELEASE_REPOSITORY) {
-      throw new Error(`A staging dry run must target ${STAGING_RELEASE_REPOSITORY}`);
-    }
-    return { repository: STAGING_RELEASE_REPOSITORY, staging: true, token: environment.RELEASE_STAGING_TOKEN };
-  }
   const repository = environment.GITHUB_REPOSITORY || RELEASE_REPOSITORY;
   if (repository !== CANONICAL_RELEASE_REPOSITORY) throw new Error(`Releases are published only from ${CANONICAL_RELEASE_REPOSITORY}`);
-  return { repository, staging: false, token: environment.GITHUB_TOKEN };
+  return { repository, token: environment.GITHUB_TOKEN };
 }
 
 const targetClient = (environment, target, options) => githubClient({ ...options, token: target.token, repository: target.repository, environment });
@@ -262,14 +251,6 @@ async function verifyRemoteInstaller(client, release, version, asset, digests) {
   return remote;
 }
 
-/** Remove every release and tag from the staging repository so each staging run starts empty. */
-async function resetStaging(client, log) {
-  if (client.repository !== STAGING_RELEASE_REPOSITORY) throw new Error('Only the staging repository is ever reset');
-  for (const release of await client.paginate('/releases')) await client.request('DELETE', `/releases/${release.id}`);
-  for (const ref of await client.request('GET', '/git/matching-refs/tags') ?? []) await client.request('DELETE', `/git/${ref.ref}`);
-  log(`[release] reset ${STAGING_RELEASE_REPOSITORY}: no releases or tags remain.`);
-}
-
 async function stagedEnvironmentFile(environment, staged) {
   if (environment.RELEASE_STAGED_PATH) await fs.writeFile(environment.RELEASE_STAGED_PATH, `${JSON.stringify(staged, null, 2)}\n`);
   if (environment.GITHUB_STEP_SUMMARY) {
@@ -291,24 +272,22 @@ export async function stage({ repositoryRoot = root, environment = process.env, 
   if (!environment.RELEASE_MANIFEST_PATH) throw new Error('RELEASE_MANIFEST_PATH is required');
   const manifest = await readReleaseManifest(path.resolve(environment.RELEASE_MANIFEST_PATH), { version, sourceSha: source });
   if (asset.name !== manifest.name || asset.size !== manifest.size || asset.digest !== `sha256:${manifest.sha256}`) throw new Error('The DMG does not match its release manifest');
-  if (environment.RELEASE_DRY_RUN === 'true' && !target.staging) {
+  if (environment.RELEASE_DRY_RUN === 'true') {
     log(`Dry run: ${asset.name} (${asset.size} bytes, ${asset.digest}) is the only public asset.`);
     return { published: false, releaseId: '' };
   }
   requirePublicationLock(environment);
   const client = targetClient(environment, target, { fetchImpl, log, ...(wait ? { wait } : {}), ...(now ? { now } : {}) });
-  if (target.staging) await resetStaging(client, log);
-  else await assertTagAtSource(client, tag, source);
-  const targetCommitish = target.staging ? (await client.request('GET', '')).default_branch : source;
+  await assertTagAtSource(client, tag, source);
   const ledger = await readLedger(client, version);
-  const state = releaseState({ version, releases: await findReleases(client, tag), ledger, source, targetCommitish, sha256: manifest.sha256 });
+  const state = releaseState({ version, releases: await findReleases(client, tag), ledger, source, sha256: manifest.sha256 });
   if (state.action === 'refuse') throw new Error(state.message);
   const marker = formatReleaseMarker({ version, sha256: manifest.sha256, size: manifest.size, source, runId: environment.GITHUB_RUN_ID, runAttempt: environment.GITHUB_RUN_ATTEMPT });
   if (state.action === 'verify-published') {
     // Publish then only records a missing ledger entry and verifies; the release is never changed.
     const assets = await client.paginate(`/releases/${state.release.id}/assets`);
     const recorded = parseReleaseMarker(state.release.body);
-    const staged = { schema: 1, repository: target.repository, version, tag, source, targetCommitish, marker: recorded ? formatReleaseMarker(recorded) : marker,
+    const staged = { schema: 1, repository: target.repository, version, tag, source, targetCommitish: source, marker: recorded ? formatReleaseMarker(recorded) : marker,
       releaseId: String(state.release.id), releaseUpdatedAt: state.release.updated_at, assetId: String(assets[0]?.id), assetUpdatedAt: assets[0]?.updated_at,
       name: asset.name, size: asset.size, digest: `sha256:${manifest.sha256}` };
     await stagedEnvironmentFile(environment, staged);
@@ -317,9 +296,9 @@ export async function stage({ repositoryRoot = root, environment = process.env, 
   }
   const latest = await latestVersion(client);
   if (latest && compareVersions(latest, version) > 0) throw new Error(`Refusing to stage ${tag}: v${latest} is already latest; production deployment must not run`);
-  if (!target.staging) await assertTagAtSource(client, tag, source);
+  await assertTagAtSource(client, tag, source);
   const notes = releaseNotes(await fs.readFile(path.join(repositoryRoot, 'CHANGELOG.md'), 'utf8'), version);
-  const fields = { tag_name: tag, target_commitish: targetCommitish, name: `DevRyan ${tag}`, body: releaseBody(notes, marker), draft: true, prerelease: false };
+  const fields = { tag_name: tag, target_commitish: source, name: `DevRyan ${tag}`, body: releaseBody(notes, marker), draft: true, prerelease: false };
   let release;
   if (state.action === 'create') release = await client.request('POST', '/releases', { body: fields });
   else {
@@ -341,10 +320,10 @@ export async function stage({ repositoryRoot = root, environment = process.env, 
   const failures = verifyReleaseAssets(assets, { version, scope: SCOPE, digests: new Map([[asset.name, manifest.sha256]]) });
   if (failures.length) throw new Error(`Draft ${tag} assets failed verification after upload:\n${failures.join('\n')}`);
   const draft = await client.request('GET', `/releases/${release.id}`);
-  if (!draft.draft || draft.tag_name !== tag || draft.target_commitish !== targetCommitish) throw new Error(`Draft ${tag} changed while it was staged`);
+  if (!draft.draft || draft.tag_name !== tag || draft.target_commitish !== source) throw new Error(`Draft ${tag} changed while it was staged`);
   const expected = { version, name: asset.name, sha256: manifest.sha256, size: asset.size };
-  await assertShippedDiscovery(projectForDiscovery({ ...draft, assets }, { repository: target.repository, version, asPublished: true }), expected);
-  const staged = { schema: 1, repository: target.repository, version, tag, source, targetCommitish, marker,
+  await assertShippedDiscovery(projectForDiscovery({ ...draft, assets }, { version }), expected);
+  const staged = { schema: 1, repository: target.repository, version, tag, source, targetCommitish: source, marker,
     releaseId: String(draft.id), releaseUpdatedAt: draft.updated_at, assetId: String(assets[0].id), assetUpdatedAt: assets[0].updated_at,
     name: asset.name, size: asset.size, digest: `sha256:${manifest.sha256}` };
   await stagedEnvironmentFile(environment, staged);
@@ -397,7 +376,7 @@ async function verifyPublicRelease({ client, target, version, expected, fetchImp
   for (let attempt = 1; attempt <= attempts && now() < discoveryDeadline; attempt++) {
     try {
       const payload = await client.request('GET', '/releases/latest', { attempts: 1, signal: AbortSignal.timeout(Math.max(1, discoveryDeadline - now())) });
-      const [{ update }] = await assertShippedDiscovery(projectForDiscovery(payload, { repository: target.repository, version }), expected);
+      const [{ update }] = await assertShippedDiscovery(payload, expected);
       if (now() >= discoveryDeadline) throw new Error('Updater discovery deadline expired (60 seconds)');
       await verifyPublicInstaller({ ...update, url: publicUrl }, { fetchImpl, timeoutMs: discoveryDeadline - now() });
       if (now() >= discoveryDeadline) throw new Error('Public verification deadline expired (60 seconds)');
@@ -447,7 +426,7 @@ export async function publish({ repositoryRoot = root, environment = process.env
   const { asset } = await localInstaller(path.resolve(environment.RELEASE_ASSET_DIRECTORY ?? ''), version);
   if (asset.digest !== staged.digest || asset.size !== staged.size) throw new Error('The downloaded DMG is not the staged candidate');
   const client = targetClient(environment, target, { fetchImpl, log, wait, now });
-  if (!target.staging) await assertTagAtSource(client, tag, source);
+  await assertTagAtSource(client, tag, source);
   const release = await client.request('GET', `/releases/${staged.releaseId}`);
   const assets = await client.paginate(`/releases/${staged.releaseId}/assets`);
   const promoted = release.draft;
@@ -457,19 +436,12 @@ export async function publish({ repositoryRoot = root, environment = process.env
     const latest = await latestVersion(client);
     if (latest && compareVersions(latest, version) > 0) throw new Error(`Refusing to promote ${tag}: v${latest} is already latest`);
     requirePublicationLock(environment);
-    if (!target.staging) await assertTagAtSource(client, tag, source);
+    await assertTagAtSource(client, tag, source);
     await client.request('PATCH', `/releases/${staged.releaseId}`, { body: { draft: false, make_latest: 'true' } });
   } else if (release.tag_name !== tag || assets.length !== 1 || assets[0].digest !== staged.digest || assets[0].size !== staged.size) {
     throw new Error(`Published ${tag} does not carry the staged bytes; never replace published bytes`);
   }
-  // GitHub creates a staging release's tag on promotion; its ledger entry points at that commit.
-  let commit = target.staging ? await tagCommit(client, tag) : source;
-  for (const deadline = now() + 30_000; !commit && now() < deadline;) {
-    await wait(2_000);
-    commit = await tagCommit(client, tag);
-  }
-  if (!commit) throw new Error(`Published ${tag} but its tag did not appear; rerun publish to record the ledger and verify`);
-  await recordLedger(client, { version, marker: staged.marker, commit, log });
+  await recordLedger(client, { version, marker: staged.marker, commit: source, log });
   await verifyPublicRelease({ client, target, version, fetchImpl, log, wait, attempts, now, promoted,
     expected: { version, name: releaseAssetName('macos-arm64', version), sha256: staged.digest.slice('sha256:'.length), size: staged.size } });
 }
@@ -486,11 +458,10 @@ export async function verifyPublished({ repositoryRoot = root, environment = pro
   const tag = `v${version}`, source = environment.GITHUB_SHA;
   const { asset, digests } = await localInstaller(path.resolve(environment.RELEASE_ASSET_DIRECTORY ?? ''), version);
   const client = targetClient(environment, target, { fetchImpl, log, wait, now });
-  if (!target.staging) await assertTagAtSource(client, tag, source);
+  await assertTagAtSource(client, tag, source);
   const ledger = await readLedger(client, version);
   const releases = await findReleases(client, tag);
-  const targetCommitish = target.staging ? (await client.request('GET', '')).default_branch : source;
-  const state = releaseState({ version, releases, ledger, source, targetCommitish, sha256: asset.digest.slice('sha256:'.length) });
+  const state = releaseState({ version, releases, ledger, source, sha256: asset.digest.slice('sha256:'.length) });
   if (state.action === 'refuse') throw new Error(state.message);
   if (state.action !== 'verify-published') throw new Error('Published verification refuses an unpublished release');
   await verifyRemoteInstaller(client, state.release, version, asset, digests);

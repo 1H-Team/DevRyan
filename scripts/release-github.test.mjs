@@ -97,12 +97,12 @@ test('every write names its repository and a dry run cannot write to the canonic
   assert.throws(() => repositoryOfUrl('https://github.com/1H-Team/DevRyan/releases'), /repository URL/);
   let calls = 0;
   const fetchImpl = async () => { calls++; return json(200, {}); };
-  const dry = githubClient({ token: 't', fetchImpl, repository, environment: { RELEASE_DRY_RUN: 'true', RELEASE_MODE: 'stage' } });
+  const dry = githubClient({ token: 't', fetchImpl, repository, environment: { RELEASE_DRY_RUN: 'true' } });
   await dry.request('GET', '/releases');
   for (const method of ['POST', 'PATCH', 'DELETE']) await assert.rejects(dry.request(method, '/releases/1', { body: {} }), { code: 'release_dry_run_write_forbidden' });
   await assert.rejects(dry.request('POST', 'https://uploads.github.com/repos/1H-Team/DevRyan/releases/1/assets?name=x', { body: Buffer.from('x') }), { code: 'release_dry_run_write_forbidden' });
-  const staging = githubClient({ token: 't', fetchImpl, repository: '1H-Team/DevRyan-release-staging', environment: { RELEASE_DRY_RUN: 'true', RELEASE_MODE: 'stage' } });
-  await staging.request('PATCH', '/releases/1', { body: {} });
+  await assert.rejects(githubClient({ token: 't', fetchImpl, repository: 'fork/DevRyan', environment: {} }).request('PATCH', '/releases/1', { body: {} }), { code: 'release_dry_run_write_forbidden' });
+  await githubClient({ token: 't', fetchImpl, repository, environment: {} }).request('PATCH', '/releases/1', { body: {} });
   assert.equal(calls, 2);
 });
 

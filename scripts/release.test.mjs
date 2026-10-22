@@ -11,7 +11,6 @@ import { formatReleaseMarker } from './release-state.mjs';
 const version = '9.8.7';
 const source = 'a'.repeat(40);
 const repository = '1H-Team/DevRyan';
-const staging = '1H-Team/DevRyan-release-staging';
 const name = `DevRyan-${version}-arm64.dmg`;
 const bytesSha = text => crypto.createHash('sha256').update(text).digest('hex');
 const quiet = () => {};
@@ -41,7 +40,7 @@ function fakeGitHub({ releases = [], tagSha = source, expired = false } = {}) {
   let nextId = 100, tick = 0;
   const stamp = () => `2026-10-22T00:00:${String(tick++).padStart(2, '0')}Z`;
   const repo = () => ({ releases: [], refs: new Map(), tags: new Map() });
-  const repos = { [repository]: repo(), [staging]: repo() };
+  const repos = { [repository]: repo() };
   repos[repository].releases = releases.map((release) => ({ assets: [], updated_at: stamp(), ...release }));
   const state = { repos, calls: [], downloads: new Map(), tagSha, get releases() { return repos[repository].releases; } };
   const json = (status, body) => new Response(body === undefined ? null : JSON.stringify(body), { status });
@@ -84,7 +83,6 @@ function fakeGitHub({ releases = [], tagSha = source, expired = false } = {}) {
       if (method === 'PATCH') {
         const fields = JSON.parse(body);
         Object.assign(row, fields, { updated_at: stamp() });
-        if (fields.draft === false && repoName === staging) data.refs.set(`tags/${row.tag_name}`, { type: 'commit', sha: 'e'.repeat(40) });
         return json(200, releaseView(repoName, row));
       }
       if (method === 'DELETE') { data.releases.splice(data.releases.indexOf(row), 1); return json(204); }
@@ -157,12 +155,8 @@ test('trusted CI requires this repository workflow, main push and exact SHA', as
   await assert.rejects(check([good, { ...good, id: 8, conclusion: 'failure' }]), /Trusted CI/);
 });
 
-test('release targets: a tag push writes here, a stage dry run only to the staging repository', () => {
+test('releases are written only to the canonical repository', () => {
   assert.equal(releaseTarget(environment()).repository, repository);
-  assert.deepEqual(releaseTarget({ RELEASE_MODE: 'stage', RELEASE_DRY_RUN: 'true', RELEASE_TARGET_REPOSITORY: staging, RELEASE_STAGING_TOKEN: 's' }), { repository: staging, staging: true, token: 's' });
-  for (const env of [{ RELEASE_MODE: 'stage', RELEASE_DRY_RUN: 'true', RELEASE_TARGET_REPOSITORY: repository }, { RELEASE_MODE: 'stage', RELEASE_DRY_RUN: 'false', RELEASE_TARGET_REPOSITORY: staging }]) {
-    assert.throws(() => releaseTarget(env), /must target/);
-  }
   assert.throws(() => releaseTarget({ GITHUB_REPOSITORY: 'fork/DevRyan' }), /only from/);
 });
 
@@ -402,30 +396,10 @@ test('admission paused on a draft cannot demote or delete a concurrently publish
   assert.equal(github.state.releases[0].assets.length, 1);
 });
 
-test('a staging dry run stages, publishes and verifies only in the staging repository', async t => {
-  const context = await fixture(t);
-  const github = fakeGitHub();
-  github.state.repos[staging].releases.push({ id: 5, tag_name: 'v9.9.9', draft: false, assets: [], updated_at: 'old' });
-  github.state.repos[staging].refs.set('tags/v9.9.9', { type: 'commit', sha: 'e'.repeat(40) });
-  const env = releaseEnvironment(context, { GITHUB_REF: 'refs/heads/release-branch', GITHUB_TOKEN: '', RELEASE_DRY_RUN: 'true', RELEASE_MODE: 'stage',
-    RELEASE_TARGET_REPOSITORY: staging, RELEASE_STAGING_TOKEN: 'staging-token' });
-  const lines = [];
-  await stageAndPublish(context.root, env, github, { log: line => lines.push(line) });
-  assert.ok(writes(github.state.calls).every(call => call.includes(`/repos/${staging}/`)), 'no canonical write');
-  assert.deepEqual(github.state.repos[repository].releases, []);
-  const [published] = github.state.repos[staging].releases;
-  assert.deepEqual([github.state.repos[staging].releases.length, published.draft, published.target_commitish], [1, false, 'main']);
-  assert.ok(github.state.repos[staging].refs.has(`tags/devryan-release/v${version}`));
-  assert.ok(github.state.calls.includes(`GET /${staging}/releases/download/v${version}/${name}`), 'the staging public download was hashed');
-  assert.ok(lines.some(line => /in-app updater discovers/.test(line)));
-});
-
 test('dry runs cannot reach canonical writes whatever token they hold', async t => {
   const context = await fixture(t);
   const github = fakeGitHub();
-  const canonicalTarget = releaseEnvironment(context, { RELEASE_DRY_RUN: 'true', RELEASE_MODE: 'stage', RELEASE_TARGET_REPOSITORY: repository, RELEASE_STAGING_TOKEN: 'x' });
-  await assert.rejects(stage({ repositoryRoot: context.root, environment: canonicalTarget, fetchImpl: github.fetchImpl, log: quiet }), /must target/);
-  const build = releaseEnvironment(context, { RELEASE_DRY_RUN: 'true', RELEASE_MODE: 'build', RELEASE_TARGET_REPOSITORY: staging });
+  const build = releaseEnvironment(context, { RELEASE_DRY_RUN: 'true' });
   assert.deepEqual(await stage({ repositoryRoot: context.root, environment: build, fetchImpl: github.fetchImpl, log: quiet }), { published: false, releaseId: '' });
   assert.deepEqual(writes(github.state.calls), []);
   // Even holding a real canonical draft's staged.json and the repository token, a dry run cannot promote it.

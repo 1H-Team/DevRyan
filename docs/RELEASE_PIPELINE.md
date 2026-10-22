@@ -1,6 +1,6 @@
 # Release pipeline
 
-A release is one tag push. `.github/workflows/release.yml` checks the commit, builds `DevRyan-<version>-arm64.dmg` (or reuses the DMG already built at that SHA), qualifies it, stages it on a draft GitHub Release, deploys the backend and then publishes the draft with a single write. A manual run of the same workflow is a dry run that never writes to this repository: `mode=build` packages and qualifies; `mode=stage` also stages, publishes and verifies the DMG in the staging repository `1H-Team/DevRyan-release-staging`.
+A release is one tag push. `.github/workflows/release.yml` checks the commit, builds `DevRyan-<version>-arm64.dmg` (or reuses the DMG already built at that SHA), qualifies it, stages it on a draft GitHub Release, deploys the backend and then publishes the draft with a single write. A manual run of the same workflow is a dry run: it packages and qualifies on its ref and writes nothing.
 
 The public release carries exactly one asset, `DevRyan-<version>-arm64.dmg` (Apple silicon, ad-hoc signed, not notarized). The allowlist is `RELEASE_SCOPES` in `packages/electron/release-assets.mjs`, enforced by `scripts/verify-release-assets.mjs`. Intel and Windows builds are not released. `@devryan/web` on npm belongs to upstream; DevRyan never publishes to npm.
 
@@ -11,7 +11,7 @@ The public release carries exactly one asset, `DevRyan-<version>-arm64.dmg` (App
 1. `node scripts/bump-version.mjs X.Y.Z` updates every package manifest, the legacy Tauri files and the workspace versions in `bun.lock`.
 2. Add a `## [X.Y.Z]` section to `CHANGELOG.md`; it becomes the release notes.
 3. Run `bun run validate` and `bun run release:preflight`, then commit with explicit paths. Do not run `supabase-migrate.yml`: `deploy-backend` deploys migrations and verifies migration history and authentication configuration.
-4. If `.github/workflows/release.yml`, `scripts/release*.mjs` or `scripts/qa/release-*.mjs` changed since the previous published release, push the commit to a branch and run a staging dry run of it: `gh workflow run release.yml --ref <branch> -f mode=stage`. Preflight refuses the tag until a staging run of exactly that pipeline code has passed. The DMG it built is reused by the tag run.
+4. Optional: run a dry run of the commit (`gh workflow run release.yml --ref <branch>`). The tag run reuses the DMG it built.
 5. Create the release tag and push the commit and tag together: `git tag vX.Y.Z && git push --atomic origin main vX.Y.Z`. Main CI and release preparation then start concurrently.
 
 Only tags matching `vX.Y.Z` trigger a release.
@@ -31,10 +31,10 @@ tag push ── preflight ──┬─ trusted-ci (waits for main CI and its re-
 
 | Job | What it does |
 | --- | --- |
-| `preflight` | `scripts/release-preflight.mjs` (also `bun run release:preflight` locally; `--local-only` skips the GitHub checks). Version files and `bun.lock`, the CHANGELOG section, `bun install --frozen-lockfile --dry-run`, the vendored shipped-updater copies against their tags, the same-version state and ledger (`admit` in `scripts/release.mjs`), latest ordering, the pipeline-change gate, and build reuse. A published version routes to `verify-published`. A dry run reports what a tag push would decide without failing on it. |
+| `preflight` | `scripts/release-preflight.mjs` (also `bun run release:preflight` locally; `--local-only` skips the GitHub checks). Version files and `bun.lock`, the CHANGELOG section, `bun install --frozen-lockfile --dry-run`, the vendored shipped-updater copies against their tags, the same-version state and ledger (`admit` in `scripts/release.mjs`), latest ordering and build reuse. A published version routes to `verify-published`. A dry run reports what a tag push would decide without failing on it. |
 | `trusted-ci` | Polls the canonical repository's main-push `ci.yml` run at the exact SHA for up to 25 minutes. A red result does not end the wait: the log names the run to re-run (`gh run rerun <id> --failed`) and the job keeps polling while the run is re-run or a newer run for the SHA appears. A newer main push cannot substitute for this commit. |
 | `web` | Builds release web assets once on Ubuntu with `VITE_ENABLE_REACT_SCAN=false`, checks bundle budgets and describes every file digest. Skipped when the DMG is reused. |
-| `electron-package` | On macOS: installs dependencies, builds and verifies the native runtime, prepares helpers, bundles main, rebuilds native bindings, stages this run's web artifact and packages. Checks Cursor binaries, orchestration config, retired Bot resources and Info.plist descriptions. `scripts/release-candidate.mjs` writes `candidate.json` (bytes bound to source, run and attempt) and `release-manifest.json`. **Build reuse:** when preflight finds a retained DMG built at the same SHA by any earlier attempt or run (including a staging dry run), the job runs on Ubuntu and `release-candidate.mjs adopt` downloads it, verifies it against the producer's identity and manifest, and rebinds it to this run. |
+| `electron-package` | On macOS: installs dependencies, builds and verifies the native runtime, prepares helpers, bundles main, rebuilds native bindings, stages this run's web artifact and packages. Checks Cursor binaries, orchestration config, retired Bot resources and Info.plist descriptions. `scripts/release-candidate.mjs` writes `candidate.json` (bytes bound to source, run and attempt) and `release-manifest.json`. **Build reuse:** when preflight finds a retained DMG built at the same SHA by any earlier attempt or run (including a dry run), the job runs on Ubuntu and `release-candidate.mjs adopt` downloads it, verifies it against the producer's identity and manifest, and rebinds it to this run. |
 | `upgrade-check` | Starts from preflight without waiting for packaging. `release-preaged-upgrades.mjs` prepares a fresh profile with the previous supported release's own source and shipped runtime, creating retained and deleted history. It then polls this run's package job and candidate artifacts (15-minute deadline), verifies identity and DMG digest, extracts once and runs the candidate hop, data-root migration, history checks and held recovery. Failures are classified (see Qualification). |
 | `final-dmg-smoke` | Observes the unchanged final DMG: visible composer, native input, loopback-provider round-trip, rendered response, screenshots and owned-process shutdown. Quarantined as a tracked defect (see Final-DMG smoke). |
 | `stage` | Under the publication lock, writes drafts only: see Stage. Writes `staged.json`. |
@@ -47,10 +47,6 @@ The release uses at most two macOS runners at once (package plus qualification, 
 Main CI concurrency includes its commit SHA and does not cancel main-push runs; superseded pull requests still cancel. Every deterministic test remains covered by `validate:full`; `test-ci-lanes.mjs` splits portable and native files and the case shards, and suite contracts prove the inventory and disjoint shard union.
 
 `scripts/release.mjs` owns admission, stage, publish and published-byte verification; `release-github.mjs` the GitHub client; `release-state.mjs` the same-version states, the ledger marker and the shipped-discovery contract; `release-preflight.mjs` preflight; `release-candidate.mjs` candidate identity, the release manifest and build reuse; `release-ci-wait.mjs` the CI wait; `release-ci.mjs` web handoffs (its prepared-tree and Bot image commands remain for legacy tooling only).
-
-## Pipeline-change gate
-
-Release pipeline code is `.github/workflows/release.yml`, `scripts/release*.mjs` and `scripts/qa/release-*.mjs`, excluding tests. When any of it differs from the previous published release (compared by git blob), preflight requires a successful `mode=stage` run (run title `Release stage dry run`) whose `stage` and `publish` jobs passed at a commit with byte-identical pipeline files. Pipeline changes are therefore never first exercised by a production tag.
 
 ## GitHub client and retries
 
@@ -122,9 +118,7 @@ The smoke checks packaged startup, the first usable document, native keyboard an
 
 ## Dry runs
 
-`gh workflow run release.yml --ref <branch>` (`mode=build`) runs preflight, packaging and qualification with `RELEASE_DRY_RUN=true` and stops. `-f mode=stage` continues into `stage` and `publish` against `1H-Team/DevRyan-release-staging` with the `DEVRYAN_RELEASE_STAGING_TOKEN` secret (a fine-grained token scoped to that repository, contents read and write). It resets the staging repository (all releases and tags), creates a real draft, uploads, checks the digest, promotes, records the ledger tag there, discovers the staging `/releases/latest` with every shipped discovery (staging URLs mapped onto the canonical ones) and hashes the staging public download. The staged release stays until the next staging run. The staging repository must be public and have a `main` branch with at least one commit.
-
-Canonical writes are impossible from a dry run: `RELEASE_DRY_RUN` derives from the event name, `stage` and `publish` receive this repository's token only on a tag push, and every GitHub write goes through `assertReleaseWritesAllowed` (`scripts/release-artifacts.mjs`), which allows the staging repository only for `RELEASE_MODE=stage` and refuses the canonical repository in any dry run. `scripts/release-workflow.test.mjs` checks the workflow side of this contract.
+`gh workflow run release.yml --ref <branch>` runs preflight, packaging and qualification with `RELEASE_DRY_RUN=true` and stops; `stage`, `deploy-backend` and `publish` run only on a tag push. A dry run cannot write releases: `RELEASE_DRY_RUN` derives from the event name, and every GitHub write goes through `assertReleaseWritesAllowed` (`scripts/release-artifacts.mjs`), which refuses any dry run and any repository but this one. `scripts/release-workflow.test.mjs` checks the workflow side of this contract.
 
 ## Release visual QA
 
@@ -133,7 +127,7 @@ Run on an isolated macOS user or VM, never on the developer's running app or dat
 - **V1 Fresh install.** Download the public DMG and check its sha256 against the release digest. Mounting shows the "DevRyan X.Y.Z" window with DevRyan.app and an Applications link. Drag to /Applications. Record the Gatekeeper first-open prompt and path (right-click Open, or `xattr`) for the ad-hoc signed, quarantined app.
 - **V2 First launch.** Splash, then the main window. The composer is visible and focused. A prompt to the loopback provider gets a rendered response. No error toasts. A clean quit leaves no `DevRyan` or `opencode` processes.
 - **V3 About.** About shows exactly `X.Y.Z`, matching the tag and `CFBundleShortVersionString`.
-- **V5 Update from 2.1.9 to the candidate** (staged in the staging repository). The prompt shows the new version and its notes; the download reaches 100 %; "Restart to update" lands on X.Y.Z; sessions, settings and the `~/.config/devryan` link are kept.
+- **V5 Update from 2.1.9 to the candidate** (the published release). The prompt shows the new version and its notes; the download reaches 100 %; "Restart to update" lands on X.Y.Z; sessions, settings and the `~/.config/devryan` link are kept.
 - **V6 Updater states.** On the latest version the check says up to date. Offline or rate-limited shows the "Release discovery is unavailable. Retry later." message. An interrupted download resumes from the partial file; a corrupt partial is discarded.
 - **V7 Rollback.** Kill the installer mid-swap. The next launch recovers to the previous or the new version without data loss (installer intent phases in `packages/electron/desktop-update-install.mjs`).
 - **V8 Release page.** Exactly one asset with the contract name, marked Latest, notes equal to the CHANGELOG section, no drafts left.

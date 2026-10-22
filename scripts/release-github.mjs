@@ -52,7 +52,7 @@ export function retryableResponse(response) {
 export function githubClient({ token, fetchImpl = fetch, repository = RELEASE_REPOSITORY, environment = process.env,
   wait = ms => new Promise(resolve => setTimeout(resolve, ms)), now = Date.now, random = Math.random,
   timeoutMs = 30_000, attempts = 4, maxDelayMs = 60_000, log = () => {} }) {
-  if (!token) throw new Error('GITHUB_TOKEN is required (RELEASE_STAGING_TOKEN for a staging dry run)');
+  if (!token) throw new Error('GITHUB_TOKEN is required');
   const headers = { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' };
   const resolve = url => url.startsWith('https://') ? url : `https://api.github.com/repos/${repository}${url}`;
   // 1, 2, 4, 8 seconds plus up to 250 ms of jitter; GitHub's own delay wins when it sends one.

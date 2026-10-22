@@ -1,10 +1,7 @@
 name: Release
-run-name: ${{ github.event_name == 'workflow_dispatch' && format('Release {0} dry run', inputs.mode) || format('Release {0}', github.ref_name) }}
 
 # A vX.Y.Z tag push builds DevRyan-X.Y.Z-arm64.dmg, stages it on a draft and publishes it.
-# A manual run is a dry run of the same graph on its ref and never writes to this repository:
-#   mode=build  packages and qualifies, then stops;
-#   mode=stage  also stages, publishes and verifies the DMG in 1H-Team/DevRyan-release-staging.
+# A manual run is a dry run on its ref: it packages and qualifies, and writes nothing.
 # Retry a failed release on the same version by re-running the failed jobs; a rebuild at the
 # same SHA reuses the retained DMG. Move the tag only for a code fix
 # (`git tag -f vX.Y.Z <sha> && git push --atomic origin main +refs/tags/vX.Y.Z`).
@@ -14,24 +11,14 @@ on:
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
   workflow_dispatch:
-    inputs:
-      mode:
-        description: 'build: package and qualify only. stage: also stage, publish and verify in the staging repository.'
-        type: choice
-        options:
-          - build
-          - stage
-        default: build
 
 env:
   RELEASE_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' }}
-  RELEASE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'publish' }}
-  RELEASE_TARGET_REPOSITORY: ${{ github.event_name == 'workflow_dispatch' && '1H-Team/DevRyan-release-staging' || github.repository }}
 
 permissions:
   contents: read
 
-# Cancel obsolete builds, never an in-flight staging or production publication.
+# Cancel obsolete builds, never an in-flight production publication.
 
 jobs:
   preflight:
@@ -152,7 +139,7 @@ jobs:
       cancel-in-progress: true
     needs: [preflight, web]
     if: ${{ !cancelled() && needs.preflight.result == 'success' && needs.preflight.outputs.published != 'true' && (needs.web.result == 'success' || needs.preflight.outputs.reuse_run_id != '') }}
-    # A DMG already built at this SHA (an earlier attempt, run or staging dry run) is adopted on Ubuntu.
+    # A DMG already built at this SHA (an earlier attempt or run, such as a dry run) is adopted on Ubuntu.
     runs-on: ${{ needs.preflight.outputs.reuse_run_id != '' && 'ubuntu-latest' || 'macos-26' }}
     timeout-minutes: 35
     permissions:
@@ -387,7 +374,7 @@ jobs:
       group: devryan-production-publication
       cancel-in-progress: false
     needs: [preflight, electron-package, upgrade-check, final-dmg-smoke]
-    if: ${{ !cancelled() && needs.preflight.outputs.published != 'true' && (github.event_name == 'push' || inputs.mode == 'stage') && needs.electron-package.result == 'success' && needs.upgrade-check.result == 'success' && (needs.final-dmg-smoke.result == 'success' || vars.DEVRYAN_FINAL_DMG_SMOKE_GATE != 'qualified-3-runs') }}
+    if: ${{ !cancelled() && github.event_name == 'push' && needs.preflight.outputs.published != 'true' && needs.electron-package.result == 'success' && needs.upgrade-check.result == 'success' && (needs.final-dmg-smoke.result == 'success' || vars.DEVRYAN_FINAL_DMG_SMOKE_GATE != 'qualified-3-runs') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -401,9 +388,7 @@ jobs:
       RELEASE_ASSET_DIRECTORY: release-assets
       RELEASE_MANIFEST_PATH: release-identity/release-manifest.json
       RELEASE_PUBLICATION_LOCK: devryan-production-publication
-      # A tag push writes only with this repository's token; a staging dry run only with the staging token.
-      GITHUB_TOKEN: ${{ github.event_name == 'push' && secrets.GITHUB_TOKEN || '' }}
-      RELEASE_STAGING_TOKEN: ${{ github.event_name == 'workflow_dispatch' && secrets.DEVRYAN_RELEASE_STAGING_TOKEN || '' }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -481,7 +466,7 @@ jobs:
       group: devryan-production-publication
       cancel-in-progress: false
     needs: [preflight, trusted-ci, stage, deploy-backend]
-    if: ${{ !cancelled() && needs.stage.result == 'success' && ((github.event_name == 'push' && needs.trusted-ci.result == 'success' && needs.deploy-backend.result == 'success') || (github.event_name == 'workflow_dispatch' && inputs.mode == 'stage')) }}
+    if: ${{ !cancelled() && github.event_name == 'push' && needs.stage.result == 'success' && needs.trusted-ci.result == 'success' && needs.deploy-backend.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -491,8 +476,7 @@ jobs:
       RELEASE_ASSET_DIRECTORY: release-assets
       RELEASE_PUBLICATION_LOCK: devryan-production-publication
       RELEASE_STAGED: ${{ needs.stage.outputs.staged }}
-      GITHUB_TOKEN: ${{ github.event_name == 'push' && secrets.GITHUB_TOKEN || '' }}
-      RELEASE_STAGING_TOKEN: ${{ github.event_name == 'workflow_dispatch' && secrets.DEVRYAN_RELEASE_STAGING_TOKEN || '' }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -503,7 +487,6 @@ jobs:
           name: DevRyan-macos-arm64-release
           path: release-assets
       - name: Recheck exact-source CI inside the publication lock
-        if: ${{ github.event_name == 'push' }}
         run: node scripts/release.mjs trusted-ci
       - name: Publish the unchanged staged draft, record the ledger and confirm the shipped updaters discover the DMG
         run: node scripts/release.mjs publish

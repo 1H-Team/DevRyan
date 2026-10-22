@@ -49,8 +49,6 @@ test('state: published from the same source with the ledger and manifest bytes v
   const published = release({ draft: false, markerSource: source });
   assert.equal(releaseState({ version, releases: [published], ledger, source, sha256 }).action, 'verify-published');
   assert.equal(releaseState({ version, releases: [published], ledger: null, source }).action, 'verify-published', 'releases from before the ledger still verify');
-  assert.equal(releaseState({ version, releases: [release({ draft: false, commit: 'main', markerSource: source })], ledger, source, targetCommitish: 'main', sha256 }).action,
-    'verify-published', 'a staging release is identified by its marker source');
 });
 
 test('state: published from another source or with other bytes is refused', () => {
@@ -85,19 +83,17 @@ const canonical = `https://github.com/1H-Team/DevRyan/releases`;
 const published = (overrides = {}, asset = {}) => ({ draft: false, prerelease: false, tag_name: `v${version}`, html_url: `${canonical}/tag/v${version}`, body: '- notes',
   assets: [{ name, state: 'uploaded', size: 10, digest: `sha256:${sha256}`, browser_download_url: `${canonical}/download/v${version}/${name}`, ...asset }], ...overrides });
 
-test('projection maps only this repository\'s own release URLs and shows a draft as published', () => {
-  const staging = 'https://github.com/1H-Team/DevRyan-release-staging/releases';
-  const draft = published({ draft: true, html_url: `${staging}/tag/untagged-0123abcd` }, { browser_download_url: `${staging}/download/untagged-0123abcd/${name}` });
-  const projected = projectForDiscovery(draft, { repository: '1H-Team/DevRyan-release-staging', version, asPublished: true });
+test('projection shows a draft as published and maps only its own untagged URLs', () => {
+  const draft = published({ draft: true, html_url: `${canonical}/tag/untagged-0123abcd` }, { browser_download_url: `${canonical}/download/untagged-0123abcd/${name}` });
+  const projected = projectForDiscovery(draft, { version });
   assert.equal(projected.draft, false);
   assert.equal(projected.html_url, `${canonical}/tag/v${version}`);
   assert.equal(projected.assets[0].browser_download_url, `${canonical}/download/v${version}/${name}`);
-  assert.equal(projectForDiscovery(draft, { repository: '1H-Team/DevRyan-release-staging', version }).draft, true, 'a draft stays a draft unless asked');
-  for (const html_url of ['https://evil.example/release', `${staging}/tag/v1.0.0`, `${staging}/tag/untagged-x/../v9`]) {
-    assert.equal(projectForDiscovery({ ...draft, html_url }, { repository: '1H-Team/DevRyan-release-staging', version, asPublished: true }).html_url, html_url);
+  for (const html_url of ['https://evil.example/release', `${canonical}/tag/v1.0.0`, `${canonical}/tag/untagged-x/../v9`]) {
+    assert.equal(projectForDiscovery({ ...draft, html_url }, { version }).html_url, html_url);
   }
-  const elsewhere = published({}, { browser_download_url: `https://github.com/attacker/DevRyan/releases/download/v${version}/${name}` });
-  assert.deepEqual(projectForDiscovery(elsewhere, { repository: '1H-Team/DevRyan', version }), elsewhere);
+  const elsewhere = published({ draft: true }, { browser_download_url: `https://github.com/attacker/DevRyan/releases/download/untagged-1/${name}` });
+  assert.equal(projectForDiscovery(elsewhere, { version }).assets[0].browser_download_url, elsewhere.assets[0].browser_download_url);
 });
 
 const expected = { version, name, sha256, size: 10 };

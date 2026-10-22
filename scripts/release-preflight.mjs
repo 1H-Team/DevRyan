@@ -7,7 +7,6 @@
 //   versions, CHANGELOG, frozen lockfile    the commit is releasable
 //   shipped discovery fixtures              the vendored updater copies are what their tags shipped
 //   publication state, latest ordering      admit (scripts/release.mjs): same-version state and ledger
-//   pipeline-change gate                    changed release pipeline code passed a staging dry run
 //   build reuse                             a retained DMG from an earlier run at this SHA
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -15,74 +14,13 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { RELEASE_REPOSITORY } from '../packages/electron/release-assets.mjs';
-import { admit, checkVersions, compareVersions, findReleases, readLedger, releaseNotes, releaseVersion } from './release.mjs';
+import { admit, checkVersions, findReleases, readLedger, releaseNotes, releaseVersion } from './release.mjs';
 import { githubClient } from './release-github.mjs';
 import { findReusableCandidate } from './release-candidate.mjs';
 import { releaseState, shippedDiscoveryFixtureProblems } from './release-state.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const execute = promisify(execFile);
-
-/** The display title release.yml gives a `mode=stage` dispatch (its run-name). */
-export const STAGING_RUN_TITLE = 'Release stage dry run';
-const PIPELINE_DIRECTORIES = ['.github/workflows', 'scripts', 'scripts/qa'];
-
-/** Release pipeline code: the workflow and the release scripts it runs (not their tests). */
-export function isPipelinePath(file) {
-  if (file.endsWith('.test.mjs')) return false;
-  return file === '.github/workflows/release.yml' || /^scripts\/release[^/]*\.mjs$/.test(file) || /^scripts\/qa\/release-[^/]*\.mjs$/.test(file);
-}
-
-/** Paths whose blob differs between two {path: blob} maps, including added and removed files. */
-export function changedPipelinePaths(before, after) {
-  return [...new Set([...Object.keys(before), ...Object.keys(after)])].filter(file => before[file] !== after[file]).sort();
-}
-
-async function gitPipelineBlobs(repositoryRoot, revision, run) {
-  const { stdout } = await run('git', ['ls-tree', revision, '--', ...PIPELINE_DIRECTORIES.map(directory => `${directory}/`)], { cwd: repositoryRoot, maxBuffer: 16 * 1024 * 1024 });
-  return Object.fromEntries(stdout.trim().split('\n').filter(Boolean).map(line => /^\d+ blob ([a-f0-9]{40})\t(.+)$/.exec(line))
-    .filter(match => match && isPipelinePath(match[2])).map(match => [match[2], match[1]]));
-}
-
-async function remotePipelineBlobs(client, revision) {
-  const blobs = {};
-  for (const directory of PIPELINE_DIRECTORIES) {
-    for (const entry of await client.request('GET', `/contents/${directory}?ref=${revision}`)) {
-      if (entry.type === 'file' && isPipelinePath(entry.path)) blobs[entry.path] = entry.sha;
-    }
-  }
-  return blobs;
-}
-
-/**
- * Release pipeline code that changed since the previous published release must
- * have passed a staging dry run with exactly that code: a successful
- * `mode=stage` run whose stage and publish jobs passed at a commit whose
- * pipeline files are identical to this commit's.
- */
-export async function pipelineChangeGate({ repositoryRoot = root, client, version, revision = 'HEAD', run = execute, log = console.log }) {
-  const published = (await client.paginate('/releases', { maxPages: 10 }))
-    .filter(release => release.draft === false && release.prerelease === false && /^v\d+\.\d+\.\d+$/.test(release.tag_name)
-      && compareVersions(release.tag_name.slice(1), version) < 0)
-    .sort((left, right) => compareVersions(right.tag_name.slice(1), left.tag_name.slice(1)));
-  const previous = published[0]?.tag_name;
-  if (!previous) return 'no earlier published release to compare with';
-  const current = await gitPipelineBlobs(repositoryRoot, revision, run);
-  const changed = changedPipelinePaths(await gitPipelineBlobs(repositoryRoot, `${previous}^{commit}`, run), current);
-  if (!changed.length) return `no release pipeline changes since ${previous}`;
-  const runs = (await client.paginate('/actions/workflows/release.yml/runs?event=workflow_dispatch&status=success', { key: 'workflow_runs', maxPages: 3 }))
-    .filter(row => row.path === '.github/workflows/release.yml' && row.display_title === STAGING_RUN_TITLE
-      && row.conclusion === 'success' && row.repository?.full_name === client.repository)
-    .sort((left, right) => right.id - left.id).slice(0, 10);
-  for (const row of runs) {
-    if (changedPipelinePaths(await remotePipelineBlobs(client, row.head_sha), current).length) continue;
-    const { jobs = [] } = await client.request('GET', `/actions/runs/${row.id}/jobs?filter=latest&per_page=100`);
-    if (!['stage', 'publish'].every(name => jobs.some(job => job.name === name && job.conclusion === 'success'))) continue;
-    return `${changed.length} pipeline file(s) changed since ${previous}; staging dry run ${row.id} at ${row.head_sha} ran exactly this code`;
-  }
-  log(`[preflight] pipeline files changed since ${previous}:\n${changed.map(file => `  ${file}`).join('\n')}`);
-  throw new Error(`Release pipeline code changed since ${previous} without a passing staging dry run of it. Run one at this commit first: gh workflow run release.yml --ref <branch> -f mode=stage`);
-}
 
 async function githubToken(environment, run) {
   if (environment.GITHUB_TOKEN || environment.GH_TOKEN) return environment.GITHUB_TOKEN || environment.GH_TOKEN;
@@ -136,9 +74,6 @@ export async function preflight({ repositoryRoot = root, environment = process.e
       return `dry run: a tag push would ${state.action === 'refuse' ? `be refused (${state.message})` : state.action}`;
     });
     if (output.published !== 'true' && admission !== undefined) {
-      // A staging dry run is how the gate is satisfied, so dry runs only report it.
-      await check('pipeline-change gate', () => pipelineChangeGate({ repositoryRoot, client, version, revision: source, run, log })
-        .catch(error => { if (env.RELEASE_DRY_RUN === 'true') return `dry run: a tag push would fail: ${error.message}`; throw error; }));
       await check('build reuse', async () => {
         output.reuse_run_id = await findReusableCandidate({ environment: env, client });
         return output.reuse_run_id ? `reusing the DMG built by run ${output.reuse_run_id}` : 'no retained DMG at this SHA; packaging builds it';

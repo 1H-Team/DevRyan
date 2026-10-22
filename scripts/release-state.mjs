@@ -38,14 +38,13 @@ const refuse = (reason, message) => ({ action: 'refuse', reason, message });
  *
  * releases: every GitHub release whose tag is v<version>, with its assets.
  * ledger:   the parsed devryan-release ledger tag, or null when none exists.
- * source:   this run's source commit; targetCommitish is what a release made
- *           by this run records (the source SHA, or the staging branch).
+ * source:   this run's source commit, which a release made by this run targets.
  * sha256:   the candidate DMG digest; omitted at preflight, before the build.
  */
-export function releaseState({ version, releases, ledger, source, targetCommitish = source, sha256 }) {
+export function releaseState({ version, releases, ledger, source, sha256 }) {
   const name = releaseAssetName('macos-arm64', version);
   const digestOf = release => release.assets?.find(asset => asset.name === name)?.digest ?? null;
-  const sameSource = release => release.target_commitish === targetCommitish
+  const sameSource = release => release.target_commitish === source
     && (parseReleaseMarker(release.body)?.source ?? source) === source;
   const published = releases.filter(release => release.draft === false);
   if (published.length > 1) return refuse('duplicate-published', `v${version} has ${published.length} published releases; a published version is final, so bump the patch version.`);
@@ -67,26 +66,22 @@ export function releaseState({ version, releases, ledger, source, targetCommitis
 }
 
 /**
- * The release as installed updaters would see it from the canonical
- * repository. A staging repository's own URLs are mapped onto the canonical
- * ones, and with `asPublished` a draft (whose URLs use an untagged-* name) is
- * shown as published. Any other URL is left alone, so a wrong html_url or
- * download URL still fails discovery.
+ * A draft as installed updaters will see it once published: its untagged-*
+ * page and download URLs become the tag URLs. Any other URL is left alone, so
+ * a wrong html_url or download URL still fails discovery.
  */
-export function projectForDiscovery(payload, { repository, version, asPublished = false }) {
+export function projectForDiscovery(draft, { version }) {
   const tag = `v${version}`;
-  const own = `https://github.com/${repository}/releases`;
-  const canonical = `https://github.com/${RELEASE_REPOSITORY}/releases`;
-  const names = [tag, ...(asPublished && payload.draft === true ? [/^untagged-[A-Za-z0-9-]+$/] : [])];
-  const ownTag = value => names.some(name => typeof name === 'string' ? value === name : name.test(value));
-  const page = String(payload.html_url ?? '');
-  const html = page.startsWith(`${own}/tag/`) && ownTag(page.slice(`${own}/tag/`.length)) ? `${canonical}/tag/${tag}` : payload.html_url;
-  const assets = Array.isArray(payload.assets) ? payload.assets.map(asset => {
+  const releases = `https://github.com/${RELEASE_REPOSITORY}/releases`;
+  const ownTag = value => value === tag || /^untagged-[A-Za-z0-9-]+$/.test(value);
+  const page = String(draft.html_url ?? '');
+  const html = page.startsWith(`${releases}/tag/`) && ownTag(page.slice(`${releases}/tag/`.length)) ? `${releases}/tag/${tag}` : draft.html_url;
+  const assets = Array.isArray(draft.assets) ? draft.assets.map(asset => {
     const url = String(asset?.browser_download_url ?? '');
-    const [segment, file, ...rest] = url.startsWith(`${own}/download/`) ? url.slice(`${own}/download/`.length).split('/') : [];
-    return segment && !rest.length && ownTag(segment) && file === asset.name ? { ...asset, browser_download_url: `${canonical}/download/${tag}/${file}` } : asset;
-  }) : payload.assets;
-  return { ...payload, ...(asPublished ? { draft: false } : {}), html_url: html, assets };
+    const [segment, file, ...rest] = url.startsWith(`${releases}/download/`) ? url.slice(`${releases}/download/`.length).split('/') : [];
+    return segment && !rest.length && ownTag(segment) && file === asset.name ? { ...asset, browser_download_url: `${releases}/download/${tag}/${file}` } : asset;
+  }) : draft.assets;
+  return { ...draft, draft: false, html_url: html, assets };
 }
 
 /**

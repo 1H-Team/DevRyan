@@ -37,20 +37,11 @@ test('publish needs trusted CI, the staged draft and the deployed backend; Supab
   assert.ok(needs('stage').includes('upgrade-check') && needs('stage').includes('electron-package'));
 });
 
-test('a manual run is a dry run that can write only to the staging repository with its own token', () => {
+test('a manual run is a dry run that never stages, deploys or publishes', () => {
   assert.equal(workflow.env.RELEASE_DRY_RUN, "${{ github.event_name == 'workflow_dispatch' }}");
-  assert.equal(workflow.env.RELEASE_TARGET_REPOSITORY, "${{ github.event_name == 'workflow_dispatch' && '1H-Team/DevRyan-release-staging' || github.repository }}");
-  assert.equal(workflow.env.RELEASE_MODE, "${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'publish' }}");
-  assert.deepEqual(workflow.on.workflow_dispatch.inputs.mode.options, ['build', 'stage']);
-  assert.equal(workflow.on.workflow_dispatch.inputs.mode.default, 'build');
-  for (const name of ['stage', 'publish']) {
-    assert.equal(jobs[name].env.GITHUB_TOKEN, "${{ github.event_name == 'push' && secrets.GITHUB_TOKEN || '' }}", `${name} gets the repository token only on a tag push`);
-    assert.equal(jobs[name].env.RELEASE_STAGING_TOKEN, "${{ github.event_name == 'workflow_dispatch' && secrets.DEVRYAN_RELEASE_STAGING_TOKEN || '' }}");
-    for (const step of jobs[name].steps) assert.equal(step.env?.GITHUB_TOKEN, undefined, `${name} step ${step.name ?? step.uses} must not override the token`);
-  }
-  assert.match(jobs.stage.if, /github\.event_name == 'push' \|\| inputs\.mode == 'stage'/);
-  assert.match(jobs['deploy-backend'].if, /github\.event_name == 'push'/);
-  assert.match(workflow['run-name'], /format\('Release \{0\} dry run', inputs\.mode\)/, 'the pipeline-change gate finds staging runs by this title');
+  assert.equal(workflow.on.workflow_dispatch, null, 'dispatch takes no inputs');
+  for (const name of ['stage', 'deploy-backend', 'publish']) assert.match(jobs[name].if, /github\.event_name == 'push'/, name);
+  for (const name of ['stage', 'publish']) assert.equal(jobs[name].env.GITHUB_TOKEN, '${{ secrets.GITHUB_TOKEN }}');
 });
 
 test('preflight sees full history, and a retained DMG at the same SHA is adopted instead of rebuilt', () => {
