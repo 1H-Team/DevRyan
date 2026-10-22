@@ -863,7 +863,9 @@ export const createStandardSessionTitleRuntime = ({
     const firstUserContext = getFirstUserContext(records, { managed: Boolean(trimString(current.parentID) && trimString(current.agent)) });
     const firstUserText = firstUserContext?.text || normalizeWhitespace(text);
     if (!firstUserText) {
-      emitDiagnostic({ sessionID, directory, providerID, modelID, stage: 'input', outcome: 'failed' });
+      // A run scheduled at session creation usually precedes the first user
+      // message; the message event schedules it again. Waiting is not a failure.
+      emitDiagnostic({ sessionID, directory, providerID, modelID, stage: 'input', outcome: 'paused' });
       return false;
     }
     const currentTitle = trimString(current.title);

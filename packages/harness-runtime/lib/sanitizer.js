@@ -176,6 +176,26 @@ const looksHighEntropyToken = (value) => (
 
 const HIGH_ENTROPY_CANDIDATE = /(?<![A-Za-z0-9+/_=-])([A-Za-z0-9+/_=-]{32,512})(?![A-Za-z0-9+/_=-])/g;
 
+// Model-visible managed-task identifiers and result cursors are random by design
+// but are not credentials; redacting them made journals uncorrelatable. Session,
+// message and part identifiers stay redacted in free text (fields keep them).
+const NON_SECRET_IDENTIFIER = /^dvr_[a-z]+_[A-Za-z0-9_-]+$/;
+const NON_SECRET_CURSOR_PREFIX = 'dvr_result_cursor_v1.';
+// A file path such as `/tests/e2e/public-chat-positioning` matches the token
+// alphabet as one candidate. Every segment must read as a word (kebab, snake,
+// camel/Pascal words, or a short lowercase/digit name); random base64 segments do not.
+const PATH_WORD_SEGMENT = /^(?:[a-z0-9]{1,4}|[a-z]+(?:[-_][a-z0-9]+)*|_*[A-Za-z][a-z]+(?:[A-Z][a-z]+|[-_][a-z0-9]+)*_*)$/;
+const looksLikePathWords = (value) => {
+  if (!value.includes('/') || /[+=]/.test(value)) return false;
+  const segments = value.split('/').filter(Boolean);
+  // Random identifiers carry digit runs; real directory and file words rarely do.
+  return segments.length >= 2 && segments.every((segment) => PATH_WORD_SEGMENT.test(segment)
+    && (segment.match(/\d/g)?.length ?? 0) < 4);
+};
+const isNonSecretCandidate = (candidate, offset, text) => NON_SECRET_IDENTIFIER.test(candidate)
+  || text.slice(Math.max(0, offset - NON_SECRET_CURSOR_PREFIX.length), offset) === NON_SECRET_CURSOR_PREFIX
+  || looksLikePathWords(candidate);
+
 export const createDiagnosticSanitizer = (options = {}) => {
   const inventory = new Set(
     Array.isArray(options.knownSecrets)
@@ -241,8 +261,8 @@ export const createDiagnosticSanitizer = (options = {}) => {
     }
     if (redactOptions.highEntropy === false) return value;
     HIGH_ENTROPY_CANDIDATE.lastIndex = 0;
-    return value.replace(HIGH_ENTROPY_CANDIDATE, (candidate) => {
-      if (!looksHighEntropyToken(candidate)) return candidate;
+    return value.replace(HIGH_ENTROPY_CANDIDATE, (candidate, _group, offset, text) => {
+      if (!looksHighEntropyToken(candidate) || isNonSecretCandidate(candidate, offset, text)) return candidate;
       increment('high_entropy');
       return `${REDACTED}:high_entropy`;
     });

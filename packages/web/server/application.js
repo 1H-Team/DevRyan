@@ -1682,7 +1682,9 @@ async function constructWebHost(options = {}) {
       browserOperation: (invocation, event, context) => nativeRuntime.browserOperation(invocation, event, context),
       imageGeneration:(invocation,args,context)=>nativeRuntime.imageGeneration(invocation,args,context),
       cursor:{persist:input=>nativeRuntime.persistCursorRecord(input),withExecution:(input,action)=>nativeRuntime.withCursorExecution(input,action)},
-      workerBrowsers: false, readOnlyInvocation: input => nativeRuntime.nativeOwner.readOnlyExecution(input),
+      // Native shells get the same headless-Chromium support as other session
+      // executions (host Playwright cache, spawn adapter); DEVRYAN_WORKER_BROWSERS=0 opts out.
+      workerBrowsers: true, readOnlyInvocation: input => nativeRuntime.nativeOwner.readOnlyExecution(input),
       recheckPermit: input => nativeRuntime.nativeOwner.recheckExecution(input),
       stopSessions: input => nativeRuntime.stopSessions(input),
     } } : {}),

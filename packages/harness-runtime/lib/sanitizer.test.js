@@ -4,6 +4,19 @@ import { createDiagnosticSanitizer } from './sanitizer.js';
 import { parseNativeJournalObservation } from '../../shared-runtime/lib/native-observation.js';
 
 describe('diagnostic sanitizer', () => {
+  test('high-entropy redaction keeps file paths, DevRyan identifiers and result cursors but still redacts tokens', () => {
+    const sanitizer = createDiagnosticSanitizer();
+    for (const kept of ['/apps/web/src/components/floating/SupportWidget/__tests__/SupportWidget.test.tsx',
+      '<WORKTREE_1>/tests/e2e/public-chat-positioning.spec.ts', '/apps/web/src/hooks/__tests__/useMobileBottomNavClearanceSync.test.ts',
+      'dvr_task_8f3K2pQ9xL7mZ1vB4nR6tY0wE5sA3dHj',
+      'nextCursor=dvr_result_cursor_v1.eyJ2IjoxLCJ0IjoiZHZyX3Rhc2tfZ29sZGVuMSIsImUiOiJkdnJfcmVzdWx0X2dvbGRlbjFfMSJ9']) {
+      expect(sanitizer.sanitizeText(kept)).toBe(kept);
+    }
+    expect(sanitizer.sanitizeText('/session/ses_0123456789abcdefAbCdEfGhIjKlMnOp/message')).toBe('[REDACTED]:high_entropy');
+    for (const secret of ['8f3K2pQ9xL7mZ1vB4nR6tY0wE5sA3dHjK9', 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY', 'ab12/Cd34EfGh56/IjKl78MnOp90QrSt']) {
+      expect(sanitizer.sanitizeText(`value ${secret} end`)).toBe('value [REDACTED]:high_entropy end');
+    }
+  });
   test('Cursor final association retains only finite content-free metadata through journal and export', () => {
     const sanitizer = createDiagnosticSanitizer();
     const payload = { assistantMessageID: 'msg_fixture_assistant', partID: 'msg_fixture_assistant_part_000003_text',
