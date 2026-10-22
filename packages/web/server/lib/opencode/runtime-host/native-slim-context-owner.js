@@ -20,7 +20,7 @@ export function createNativeSlimContextOwner({admissionOwner,openCodeClient,prim
   return {taskID:task.taskId,parentSessionID:task.rootSessionId,alias:task.taskId,agent:task.agent,
    state:task.status==='failed'?'error':task.status==='aborted'?'cancelled':task.status==='timed_out'?'stopped':terminal.has(task.status)?task.status:'running',
    generation:task.attempt,taskGeneration:task.attempt,terminalRevision:envelope?.sequence??0,activityRevision:0,
-   description:task.label,objective:task.prompt,resultSummary:envelope?.recoverablePreview??'',lastStatusError:task.failureReason,
+   description:task.label,objective:task.label,resultSummary:envelope?.recoverablePreview??'',lastStatusError:task.failureReason,
    background:true,timedOut:task.status==='timed_out',statusUncertain:task.status==='timed_out',recoverableAfterLiveBusy:false,cancellationRequested:false,
    terminalUnreconciled:Boolean(envelope&&(envelope.promptObserved?.attempt!==task.attempt||envelope.promptObserved?.sequence!==envelope.sequence)),
    terminalState:task.status==='failed'?'error':task.status==='aborted'?'cancelled':task.status==='completed'?'completed':undefined,

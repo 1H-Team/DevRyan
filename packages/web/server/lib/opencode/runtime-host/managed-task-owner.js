@@ -36,13 +36,19 @@ const parse = args => {
 
 /** Narrow native tool adapter; scheduling, saved-model selection and results
  * remain owned by the existing orchestration runtime. */
-export function createNativeManagedTaskOwner({ admissionOwner, taskContext, executionHost, getManagedRuntime, readToolOutputLimits, readResultPublication }) {
+export function createNativeManagedTaskOwner({ admissionOwner, taskContext, executionHost, getManagedRuntime, readToolOutputLimits, readResultPublication,
+  startPhaseTimeoutMs = 25_000 }) {
   const collection = createNativeManagedResultCollection();
   return async (input, context = {}) => {
     if (!input || input.tool !== 'devryan_task' || input.authorization?.input?.provenance?.id !== 'devryan.managed-task'
       || input.authorization?.input?.provenance?.kind !== 'plugin') throw fail('native_task_origin_required');
-    if (input.input?.action === 'start') context = { ...context, signal: context.signal
-      ? AbortSignal.any([context.signal, AbortSignal.timeout(25_000)]) : AbortSignal.timeout(25_000) };
+    // Preparation and the permit-held commit each get their own start budget;
+    // time queued behind sibling starts for the session permit counts toward
+    // neither and stays bounded by the caller's request signal.
+    const requestSignal = context.signal;
+    const startBudget = () => ({ ...context, signal: requestSignal
+      ? AbortSignal.any([requestSignal, AbortSignal.timeout(startPhaseTimeoutMs)]) : AbortSignal.timeout(startPhaseTimeoutMs) });
+    if (input.input?.action === 'start') context = startBudget();
     const recheck = async () => {
       context.signal?.throwIfAborted();
       await admissionOwner.recheckExecution(input);
@@ -54,12 +60,15 @@ export function createNativeManagedTaskOwner({ admissionOwner, taskContext, exec
     const scope = { rootSessionId: input.sessionID, directory: input.directory, resultMode: 'reference', resultContractVersion: readResultPublication ? 2 : 1, maxOutputBytes };
     const ownedRuntime = getManagedRuntime();
     const runtime = { handleRpc: async (request, rpcContext) => assertManagedToolOutputSize(await ownedRuntime.handleRpc(request, rpcContext), maxOutputBytes) };
-    const authorized = async action => {
-      context.signal?.throwIfAborted();
-      await taskContext.authorizeNativeTaskInvocation(input);
+    const rechecked = async action => {
       await recheck();
       const result = await admissionOwner.withManagedTaskCatalogInvocation(input, action);
       await recheck(); context.signal?.throwIfAborted(); return result;
+    };
+    const authorized = async action => {
+      context.signal?.throwIfAborted();
+      await taskContext.authorizeNativeTaskInvocation(input);
+      return rechecked(action);
     };
     const publication=async(taskIDs=[])=>{
       if(!readResultPublication)return undefined;
@@ -147,6 +156,7 @@ export function createNativeManagedTaskOwner({ admissionOwner, taskContext, exec
         ...(args.timeout_seconds === undefined ? {} : { timeoutAt: Date.now() + Math.min(86_400, args.timeout_seconds) * 1000 }) };
       let committedStart;
       const commit = () => admissionOwner.withPermit(input, async () => {
+        context = startBudget();
         const currentPolicy = await taskContext.authorizeNativeTaskInvocation(input);
         if (JSON.stringify(currentPolicy) !== JSON.stringify(policy)) throw fail('native_task_policy_changed');
         await recheck();
@@ -181,6 +191,8 @@ export function createNativeManagedTaskOwner({ admissionOwner, taskContext, exec
         return await authorized(() => ownedRuntime.withSubmissionPreparation(params, context, commit));
       } catch (error) {
         if (committedStart) return assertManagedToolOutputSize({ ...committedStart, projectionError: 'native_task_post_commit_fenced' }, maxOutputBytes);
+        // Uncommitted: the attached executor may re-issue the same idempotent start.
+        if (error?.name === 'TimeoutError') throw fail('native_task_start_timeout');
         throw error;
       }
     }
@@ -192,7 +204,8 @@ export function createNativeManagedTaskOwner({ admissionOwner, taskContext, exec
       // single long wait, without changing the sealed model invocation.
       const normalizeCursor = cursor !== undefined;
       for (let slice = 0; slice < (normalizeCursor ? 2 : 1); slice++) {
-        const result = await resultRead(()=>authorized(() => runtime.handleRpc({ method: 'wait_any', params: { ...scope, taskIds: taskIDs,
+        // The invocation-level authorization above covers this RPC's slices.
+        const result = await resultRead(()=>rechecked(() => runtime.handleRpc({ method: 'wait_any', params: { ...scope, taskIds: taskIDs,
           ...(args.until===undefined?{}:{until:args.until}),
           ...(cursor === undefined ? {} : { afterCursor: cursor }), waitTimeoutMs: normalizeCursor && slice === 0 ? 1 : 25000 } }, context)));
         await recheck();
@@ -334,22 +347,24 @@ export function createNativeManagedTaskOwner({ admissionOwner, taskContext, exec
         if(!acknowledged(result,params.taskId,current.resultEnvelope.envelopeId,args.action))throw fail('native_task_acknowledgement_unconfirmed');
         committedReceipt={committed:true,taskId:params.taskId,envelopeId:current.resultEnvelope.envelopeId,action:args.action};
       }
-      collection.dispose(scope,params.taskId); return result;
+      // Continue creates no follow-up; v2 returns its receipt only.
+      collection.dispose(scope,params.taskId); return args.action==='continue'&&committedReceipt?committedReceipt:result;
     }));}catch(error){if(committedReceipt)return assertManagedToolOutputSize({...committedReceipt,projectionError:'native_task_post_commit_fenced'},maxOutputBytes);throw error;}
     }
     {
-      context.signal?.throwIfAborted();
-      await taskContext.authorizeNativeTaskInvocation(input); await recheck();
+      // One authorization per slice: the invocation-level pass above.
+      context.signal?.throwIfAborted(); await recheck();
       let result;
       try { result = await resultRead(()=>runtime.handleRpc({ method: args.action, params: { ...params,
         ...(args.action === 'wait' ? { waitTimeoutMs: 25_000 } : {}) } }, context)); }
       catch(error) { return recovered(params.taskId,error); }
-      await taskContext.authorizeNativeTaskInvocation(input); await recheck();
+      await recheck();
       validateNativeManagedResult(result,scope,params.taskId);
       const prior = await dispositioned(result); if (prior) return prior;
-      if (args.action !== 'wait') return result;
+      // A terminal status collects and stages exactly like wait, so read_result
+      // and disposition may follow either.
       if (isTerminalManagedTaskStatus(result.task.status)) { collection.collect(result,scope,params.taskId,Boolean(readResultPublication));return delivered(result,[params.taskId]); }
-      if (!liveStatuses.has(result.task.status)) throw fail('native_task_wait_status_invalid');
+      if (args.action === 'wait' && !liveStatuses.has(result.task.status)) throw fail('native_task_wait_status_invalid');
       return result;
     }
   };

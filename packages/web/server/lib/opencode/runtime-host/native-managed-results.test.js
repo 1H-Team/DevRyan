@@ -105,7 +105,7 @@ test('v2 last needed page publication cannot inherit review authority from an ea
  const publishedPage={info:{id:'msg_page',sessionID:scope.rootSessionId,role:'assistant'},parts:[{type:'tool',tool:'devryan_task',callID:'call_page',state:{status:'completed',input:read.input,output:JSON.stringify(output),metadata:{}}}]};
  const snapshot={identity:{...identity,stepID:'msg_page'},messages:[canonical(result),publishedPage]};
  expect(()=>collection.assertPublished(scope,task.taskId,snapshot,true)).toThrow('later_review_step_required');
- expect(()=>createNativeManagedResultCollection().assertPublished(scope,task.taskId,snapshot,true)).toThrow('not_published');
+ expect(()=>createNativeManagedResultCollection().assertPublished(scope,task.taskId,snapshot,true)).toThrow('native_task_wait_required');
  collection.collect(result,scope,task.taskId,true);
  expect(()=>collection.assertPublished(scope,task.taskId,snapshot,true)).toThrow('not_published');
  expect(()=>collection.next(scope,task.taskId,page.nextCursor)).toThrow('cursor_mismatch');

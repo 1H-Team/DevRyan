@@ -40,6 +40,12 @@ and each fails closed when unbound:
 - `bindReviewedAstGrepAsset` / `bindReviewedSlimImageWorker`: confined worker
   only, after manifest verification, with the private view as process cwd.
 
+`formatReviewedSlimTaskBoard` renders the host's managed children in
+`devryan_task` mode. Rows are addressed by task ID, guidance names only the real
+actions (wait/wait_any, read_result, continue, retry/resume/abandon), and each
+row shows its label, never the delegated prompt. `now` only filters aged rows;
+the rendered text holds no time. Slim's own `task`/`subagent` wording is unchanged.
+
 Interview documents are written only by the original document functions inside
 the host's confined worker; the service reaches them through
 `InterviewDocuments` (`src/interview/owned-documents.ts`).

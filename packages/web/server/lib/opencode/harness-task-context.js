@@ -4,13 +4,24 @@ import { validateCanonicalPlanSource } from '../plans/canonical-source.js';
 import fs from 'node:fs/promises';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createTaskContextRuntime, planReference } from '@devryan/harness-runtime';
-import { currentObjectiveUser } from '@devryan/harness-runtime/lib/objective-identity.js';
+import { currentObjectiveUser, isNativeCompactionRecord } from '@devryan/harness-runtime/lib/objective-identity.js';
 import { planError, readPlanRevision, writePlanRevision } from '../plans/revisions.js';
 import { resolveSelectedPlanRevision, assertGlobalPlanProjectScope } from '../plans/selected-revision.js';
 import { fingerprintCheckContent } from '../orchestration/required-check-observer.js';
 import { resolveGen2OpenCodeClient } from './opencode-client-seam.js';
 
 const identifier = (value) => typeof value === 'string' && /^[a-zA-Z0-9_-]{1,256}$/.test(value);
+const PLAN_ACTION_PREFIXES = ['[devryan-plan-action:v1] ', '[openchamber-plan-action:v1] '];
+// The saved plan version an Implement marker recorded, when well formed.
+const planMarkerVersion = (record) => {
+  const parts = Array.isArray(record?.parts) ? record.parts : [];
+  const marker = parts.find(part => part.type === 'text' && PLAN_ACTION_PREFIXES.some(prefix => part.text?.startsWith(prefix)));
+  if (!marker) return undefined;
+  let version;
+  try { version = JSON.parse(marker.text.slice(PLAN_ACTION_PREFIXES.find(prefix => marker.text.startsWith(prefix)).length)).version; }
+  catch { /* A malformed marker records no version. */ }
+  return typeof version === 'string' && /^[a-f0-9]{64}$/.test(version) ? version : undefined;
+};
 const fault = (code) => Object.assign(new Error(code), { code, statusCode: 503 });
 const managedToolMethods = new Set(['submit', 'status', 'wait', 'wait_any', 'wait_result_action', 'cancel', 'read_result', 'acknowledge', 'set_auto_resume']);
 
@@ -89,7 +100,9 @@ export const createHarnessTaskContextHost = (options) => {
       if (typeof options.verifyPlanSourceSettled !== 'function') throw planError(503, 'plan_source_settlement_unavailable');
       await options.verifyPlanSourceSettled({ sessionID, directory: session.directory, sourceIdentity: validated.sourceIdentity, providerID: message.info.providerID });
     }
-    return { sessionCreated: session.time.created, sessionSlug: session.slug, ...validated };
+    // Compaction after the source replaces its text in the model's context.
+    const compactedSinceSource = sourceIndex < 0 || records.slice(sourceIndex + 1).some(isNativeCompactionRecord);
+    return { sessionCreated: session.time.created, sessionSlug: session.slug, ...validated, compactedSinceSource };
   };
   const resolvePlan = (plan, context) => resolveSelectedPlanRevision({ plan, context, readSession, readProject, options: { ...options, readCanonicalPlanIdentity } });
   // Read the current saved outline; Plan View and root-agent updates share it.
@@ -209,7 +222,7 @@ export const createHarnessTaskContextHost = (options) => {
         && part.tool === 'devryan_task' && part.callID === input.callID && part.state?.status === 'running')) throw planError(409, 'plan_call_stale');
     const plan = planReference(anchor);
     if (!plan) throw planError(409, 'plan_selection_required', 'Select a saved plan with Implement before using plan tools');
-    return { primary, objectiveID, currentUser: currentObjectiveUser(primary), ...await resolvePlan(plan, context) };
+    return { primary, objectiveID, currentUser: currentObjectiveUser(primary), plan, markerVersion: planMarkerVersion(anchor), ...await resolvePlan(plan, context) };
   };
   const handlePlanRpc = async (input, recheck, { maxBytes } = {}) => {
     const fit = value => {
@@ -235,7 +248,15 @@ export const createHarnessTaskContextHost = (options) => {
       };
       if (input.action === 'plan_read') {
         const result = await readPlanRevision(selected.revision, { fsApi: options.fsApi });
-        await authorize(); return fit({ ...result, sourceIdentity: selected.sourceIdentity });
+        await authorize();
+        // The plan this session wrote is still in its context: the Implement
+        // marker, the saved file and the canonical source text share a version,
+        // and no compaction followed the source. Anything else gets full text.
+        if (selected.plan.sourceSessionId === input.sessionID && selected.markerVersion === result.version
+          && selected.sourceContentVersion === result.version && selected.compactedSinceSource === false) {
+          return fit({ unchanged: true, version: result.version, sourceMessageID: selected.sourceMessageID });
+        }
+        return fit({ ...result, sourceIdentity: selected.sourceIdentity });
       }
       fit({ path: selected.revision.path, saved: true, version: '0'.repeat(64), sourceIdentity: selected.sourceIdentity });
       const result = await writePlanRevision(selected.revision, { text: input.text, expectedVersion: input.expectedVersion, authorize, fsApi: options.fsApi });
@@ -313,10 +334,8 @@ export const createHarnessTaskContextHost = (options) => {
     observe('scope_read');
     const selected = await resolvePlan(plan, context);
     observe('selected_source_validated');
-    const marker = markerParts[0]; let version;
-    const prefix = marker.text.startsWith('[devryan-plan-action:v1] ') ? '[devryan-plan-action:v1] ' : '[openchamber-plan-action:v1] ';
-    try { version = JSON.parse(marker.text.slice(prefix.length)).version; } catch { /* Invalid marker fails below. */ }
-    if (typeof version !== 'string' || !/^[a-f0-9]{64}$/.test(version)) throw planError(409, 'plan_saved_version_required');
+    const version = planMarkerVersion(record);
+    if (version === undefined) throw planError(409, 'plan_saved_version_required');
     const saved = await readPlanRevision(selected.revision, { fsApi: options.fsApi });
     if (saved.version !== version) throw planError(409, 'plan_version_conflict');
     observe('saved_version_validated');

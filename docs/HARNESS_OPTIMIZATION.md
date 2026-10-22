@@ -19,12 +19,12 @@ Duplicate outputs default on only for a non-stale qualified profile: a verified 
 | Environment switch | Negotiated capability | Behavior |
 | --- | --- | --- |
 | `DEVRYAN_MANAGED_READ_OVERLAP` | `readOverlap` | Host-approved native reads and known retrieval tools while grouped children run or await disposition. |
-| `DEVRYAN_MANAGED_WAIT_ANY` | `waitAny` | `devryan_task` `wait_any` with explicit `task_ids` and optional `after_cursor`. |
-| `DEVRYAN_COMPACT_MANAGED_RESULTS` | `compactResults` | Version-1 canonical result header before selectively retrieved detail; declared required-check observation. |
+| `DEVRYAN_MANAGED_WAIT_ANY` | `waitAny` | On by default (`0` disables). `devryan_task` `wait_any` with explicit `task_ids` and optional `after_cursor`. |
+| `DEVRYAN_COMPACT_MANAGED_RESULTS` | `compactResults` | On by default (`0` disables). Version-1 canonical result header before selectively retrieved detail; declared required-check observation. |
 | `DEVRYAN_TASK_CONTEXT_PROJECTION` | `contextProjection` | Bounded task checkpoints, project decisions and native compaction context. |
 | `DEVRYAN_DUPLICATE_OUTPUTS` | `duplicateOutputs` | Qualified skill/managed-result duplicates in ordinary requests; independent of checkpoints. |
 
-Legacy eager/reference result clients and single-task `wait` remain supported. `DEVRYAN_MANAGED_RESULT_MODE=eager` retains its existing rollback behavior. No optional optimization is promoted solely because deterministic tests pass.
+The other switches need `1`. The compatibility plugin reads its own environment and advertises `wait_any` only with `DEVRYAN_MANAGED_WAIT_ANY=1`; native registration takes the resolved host policy. Legacy eager/reference result clients and single-task `wait` remain supported. `DEVRYAN_MANAGED_RESULT_MODE=eager` retains its existing rollback behavior. No optional optimization is promoted solely because deterministic tests pass.
 
 ## Reads, waits and result delivery
 

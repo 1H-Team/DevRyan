@@ -9,6 +9,8 @@ export interface NativeManagedDependencies {
   readResultPublication?(input: NativeManagedInvocation, options?: {messageIDs: readonly string[]}): Promise<{messages: readonly {info: {id: string; role: string; sessionID?: string}; parts: readonly unknown[]}[];
     identity: {controllerInstanceID: string; configurationDigest: string; objectiveID: string; cancellationGeneration: number; stepID: string;
       attempt: {traceID: string; spanID: string}; permitSha256: string}}>;
+  /** Budget for each start phase (preparation, permit-held commit); defaults to 25 s. */
+  startPhaseTimeoutMs?: number;
   readToolOutputLimits?(input: NativeManagedInvocation): {max_bytes?: number; max_lines?: number} | Promise<{max_bytes?: number; max_lines?: number}>;
   admissionOwner: Pick<NativeAdmissionOwner, 'recheckExecution' | 'withPermit' | 'withManagedTaskCatalogInvocation'> & Partial<Pick<NativeAdmissionOwner,'withManagedResultRead'>>;
   taskContext: {

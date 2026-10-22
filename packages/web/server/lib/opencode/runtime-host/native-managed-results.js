@@ -44,7 +44,8 @@ export function createNativeManagedResultCollection() {
       if (!record(envelope) || typeof envelope.envelopeId !== 'string') throw fault('native_task_result_envelope_required');
       if (envelope.action !== null) { collected.delete(key(scope, taskID)); return; }
       const header = result.resultHeader;
-      const compact = header?.schemaVersion === 1 && result.capabilities?.policies?.compactResults === true;
+      // v2 projections carry no capability copy; the header is only emitted under compactResults.
+      const compact = header?.schemaVersion === 1 && (scope.resultContractVersion === 2 || result.capabilities?.policies?.compactResults === true);
       if (header && (!compact || header.taskId !== taskID || header.envelopeId !== envelope.envelopeId
         || header.outcome?.status !== result.task.status || header.outcome?.partial !== envelope.partial
         || header.outcome?.disposition !== envelope.action || !Array.isArray(header.criticalFailures)
@@ -93,7 +94,8 @@ export function createNativeManagedResultCollection() {
     },
     assertPublished(scope, taskID, snapshot, review = false) {
       const value=collected.get(key(scope,taskID));
-      if(!value?.publications?.length)throw fault('native_task_result_not_published');
+      if(!value)throw fault('native_task_wait_required');
+      if(!value.publications?.length)throw fault('native_task_result_not_published');
       if(!Array.isArray(snapshot?.messages)||!samePublicationScope(value.publications[0].identity,snapshot.identity))throw fault('native_task_publication_scope_changed');
       const currentIndex=snapshot.messages.findIndex(message=>message.info?.id===snapshot.identity.stepID);
       if(currentIndex<0||snapshot.messages[currentIndex].info.role!=='assistant')throw fault('native_task_review_step_required');
