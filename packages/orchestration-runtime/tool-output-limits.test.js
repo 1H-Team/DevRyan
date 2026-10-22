@@ -4,8 +4,9 @@ import {projectManagedTaskResult, readManagedResultReference, MANAGED_RESULT_PAG
 import {createCompactResultHeader} from './compact-result-header.js';
 
 test('native limits are explicit and model capacity reserves the native envelope', () => {
-  expect(nativeToolOutputLimits()).toEqual({max_bytes: 45056, max_lines: 1000});
-  expect(managedToolOutputBudget()).toBe(43008);
+  expect(nativeToolOutputLimits()).toEqual({max_bytes: 51200, max_lines: 1000});
+  expect(managedToolOutputBudget()).toBe(MANAGED_TOOL_OUTPUT_MAX_BYTES);
+  expect(managedToolOutputBudget({max_bytes: 32768})).toBe(30720);
   expect(managedToolOutputBudget({max_bytes: 51200})).toBe(49152);
   expect(managedToolOutputBudget({max_bytes: 10000})).toBe(7952);
   for (const limits of [{max_bytes: 0}, {max_lines: 1.5}, {unknown: 1}, null]) expect(() => nativeToolOutputLimits(limits)).toThrow();
@@ -64,8 +65,8 @@ test('larger v2 pages fit actual escaped replies while default v1 and small nati
 // Native devryan_task emits JSON.stringify(reply) through OpenCode's global tool_output
 // limit, so a v2 inline first page and a wait_any reply at its cap must both fit the
 // derived budget (not the 48 KiB ceiling) and reach the model untruncated.
-test('default native limits keep a maximal v2 inline page and a capped wait_any reply intact', () => {
-  const limits=nativeToolOutputLimits(),budget=managedToolOutputBudget(limits);
+test.each([['default', undefined], ['32 KiB', {max_bytes: 32_768, max_lines: 1_000}]])('%s native limits keep a maximal v2 inline page and a capped wait_any reply intact', (_name, configured) => {
+  const limits=nativeToolOutputLimits(configured),budget=managedToolOutputBudget(limits);
   const bytes=value=>Buffer.byteLength(JSON.stringify(value));
   const emitted=value=>{const text=JSON.stringify(value);return {bytes:Buffer.byteLength(text),lines:text.split('\n').length};};
   const record=(id,preview)=>{
@@ -103,7 +104,8 @@ test('default native limits keep a maximal v2 inline page and a capped wait_any 
     expect(output.lines).toBeLessThanOrEqual(limits.max_lines);
   }
 
-  // A reply sized for the 48 KiB ceiling instead of the derived budget is refused, and fitting shortens its page.
+  // Below the ceiling, a reply sized for 48 KiB instead of the derived budget is refused, and fitting shortens its page.
+  if(budget>=MANAGED_TOOL_OUTPUT_MAX_BYTES)return;
   const ceilingSized=compactManagedTaskToolResult(reply(tail+4096,MANAGED_RESULT_V2_PAGE_MAX_BYTES));
   expect(bytes(ceilingSized)).toBeLessThanOrEqual(MANAGED_TOOL_OUTPUT_MAX_BYTES);
   expect(()=>assertManagedToolOutputSize(ceilingSized,budget)).toThrow('managed_tool_output_metadata_too_large');
