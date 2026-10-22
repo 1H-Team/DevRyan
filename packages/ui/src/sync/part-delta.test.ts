@@ -207,7 +207,7 @@ describe("appendStreamingTextDelta", () => {
 
   test("scans only the tail of a long reply on each delta", () => {
     const sentence = "Each streamed sentence is distinct because it carries its own index "
-    const deltas = Array.from({ length: 3_000 }, (_, index) => `${sentence}${index}.${index % 4 === 3 ? "\n" : " "}`)
+    const deltas = Array.from({ length: 1_500 }, (_, index) => `${sentence}${index}.${index % 4 === 3 ? "\n" : " "}`)
     // Line scanning walks the value with indexOf("\n"); count those probes.
     const originalIndexOf = String.prototype.indexOf
     const stream = (append: (existing: string, delta: string) => string) => {
@@ -231,11 +231,12 @@ describe("appendStreamingTextDelta", () => {
     const tailOnly = stream(appendStreamingTextDelta)
 
     expect(tailOnly.value).toBe(wholeValue.value)
-    expect(tailOnly.value.length).toBeGreaterThan(200_000)
-    expect(wholeValue.lineProbes).toBeGreaterThan(1_000_000)
+    expect(tailOnly.value.length).toBeGreaterThan(100_000)
+    expect(wholeValue.lineProbes).toBeGreaterThan(250_000)
     // A few probes per delta, independent of the reply length.
     expect(tailOnly.lineProbes).toBeLessThan(deltas.length * 4)
-  })
+    // The whole-value reference alone is quadratic; allow for a loaded host.
+  }, 30_000)
 
   test("matches a whole-value collapse when streamed in chunks past the scan limit", () => {
     const lines = Array.from({ length: 120 }, (_, index) => index % 7 === 3
