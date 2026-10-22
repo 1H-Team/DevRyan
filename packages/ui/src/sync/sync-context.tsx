@@ -4682,8 +4682,22 @@ const isContextUsagePart = (part: Part): boolean => {
   return value.trim() === "/compact"
 }
 
+// Published part arrays are immutable: filter each one once, not once per
+// store commit per subscriber.
+const contextUsagePartsCache = new WeakMap<Part[], Part[]>()
+
+function filterContextUsageParts(parts: Part[]): Part[] {
+  const cached = contextUsagePartsCache.get(parts)
+  if (cached) return cached
+  const filtered = parts.filter(isContextUsagePart)
+  const next = filtered.length > 0 ? filtered : EMPTY_PARTS
+  contextUsagePartsCache.set(parts, next)
+  return next
+}
+
 export function selectContextUsageParts(parts: Part[], previous?: Part[]): Part[] {
-  const next = parts.filter(isContextUsagePart)
+  const next = filterContextUsageParts(parts)
+  if (previous === next) return previous
   if (
     previous
     && previous.length === next.length
@@ -4691,7 +4705,7 @@ export function selectContextUsageParts(parts: Part[], previous?: Part[]): Part[
   ) {
     return previous
   }
-  return next.length > 0 ? next : EMPTY_PARTS
+  return next
 }
 
 function getVisibleMessagesForSession(state: State, sessionID: string, previous?: SessionMessageRecordsSnapshot): {
@@ -4729,15 +4743,36 @@ export function buildSessionMessageRecordsSnapshot(
   options?: { suspendPartUpdates?: boolean; contextUsagePartsOnly?: boolean },
 ): SessionMessageRecordsSnapshot {
   const { sourceMessages, visibleMessages, revertMessageID } = getVisibleMessagesForSession(state, sessionID, previous)
-  const nextById = new Map<string, SessionMessageRecord>()
-  const nextList = visibleMessages.map((message) => {
-    const previousRecord = previous?.byId.get(message.id)
+  const resolveParts = (message: Message, previousRecord: SessionMessageRecord | undefined) => {
     const sourceParts = state.part[message.id] ?? EMPTY_PARTS
-    const parts = options?.contextUsagePartsOnly
+    return options?.contextUsagePartsOnly
       ? selectContextUsageParts(sourceParts, previousRecord?.parts)
       : options?.suspendPartUpdates && previousRecord
         ? previousRecord.parts
         : sourceParts
+  }
+
+  // Every subscriber (each mounted tool part included) runs this on every
+  // directory store commit, almost always for an unrelated change. Confirm the
+  // previous snapshot still holds without allocating before building anew.
+  if (previous && previous.visibleMessages === visibleMessages && previous.list.length === visibleMessages.length) {
+    let unchanged = true
+    for (let index = 0; index < visibleMessages.length; index += 1) {
+      const record = previous.list[index]!
+      if (record.info !== visibleMessages[index] || record.parts !== resolveParts(visibleMessages[index]!, record)) {
+        unchanged = false
+        break
+      }
+    }
+    if (unchanged) {
+      return previous
+    }
+  }
+
+  const nextById = new Map<string, SessionMessageRecord>()
+  const nextList = visibleMessages.map((message) => {
+    const previousRecord = previous?.byId.get(message.id)
+    const parts = resolveParts(message, previousRecord)
 
     const nextRecord = previousRecord && previousRecord.info === message && previousRecord.parts === parts
       ? previousRecord

@@ -14,6 +14,10 @@ content. Canonical history replacement does not reattach removed Cursor parts.
 
 `ChildStoreManager.historyBudget` caps estimated retained transcript bytes across all directory stores at 128 MiB, alongside the existing count/TTL caps. Immutable record sizes are weakly memoized; dirty directories are measured at most once per 500 ms accounting interval. Estimates include UTF-16 text and structural overhead, not browser RSS. Active, loading, optimistic, unfinished, busy, unresolved-question/permission and pending-revert sessions may exceed this soft cap. Evicted idle histories invalidate loader coverage and reload normally; disposing a directory releases its accounting and subscription.
 
+Streamed `text` deltas collapse provider-replayed adjacent repeats (`part-delta.ts`). Up to the 2,048-character jammed-scan limit the whole value is rescanned; past it only the last two lines plus the delta are, since the rest was collapsed as it streamed, so a long reply costs a few line probes per delta instead of a quadratic rescan. Tool `output` is program output: it keeps repeated lines byte for byte and drops only a replayed full frame.
+
+`buildSessionMessageRecordsSnapshot` runs for every `useSessionMessageRecords` subscriber on every directory-store commit. It confirms the previous snapshot without allocating before it builds a new list, and context-usage part filtering is cached per published part array, so another session's stream costs each subscriber an identity check per message. `streaming.ts` copies `messageStreamStates` only when a lifecycle changes, checks a session's status before scanning its messages, and keeps completed lifecycles for at most 5 minutes and the newest 32.
+
 The pipeline passes ordered batches to `event-batch.ts`. Contiguous materialized text/reasoning deltas for busy sessions reuse one private parts-map clone and publish once. Each still runs the production event handler's diagnostics and activity bookkeeping. All other events flush the private state first, preserving status, permission, notification, cancellation and recovery ordering. Previously published part arrays/records remain immutable.
 
 ## Composer history snapshot
@@ -860,6 +864,23 @@ Intent prefetch is active-directory-only, one request at a time, and limited to
 six queued targets. Rows start exact-session work on pointer-down/click, hover
 after 180 ms, keyboard focus immediately, and settled neighbors after 600 ms.
 Only two non-active prefetched snapshots are retained on web/Electron. No directory-wide runtime bootstrap is performed by prefetch.
+
+The open session is bounded too. When its transcript has not changed for 3
+seconds while the reader is pinned to the end (`useChatTimelineController`),
+`SessionHistory.trimViewedSession` keeps the newest 10 prompts, fewer when they
+exceed 300 records, whole turns only and always the newest prompt. It refuses
+busy or retrying sessions, unanswered permissions or questions, an unfinished
+assistant (a stream gap), a revert marker or revert transaction, an optimistic
+send and any page load in flight. Native cursors are opaque and cannot point into
+history that arrived live, so `SessionMessageLoader.trimToTail` records the
+oldest retained message as `tailAnchorMessageID` instead of a cursor. The next
+Load Older walks pages from the newest (at most 10) to the page reaching below
+that anchor, prepends it (retained records are skipped) and resumes normal
+cursor paging. A forced first-page load clears the anchor. Independently, the
+mounted transcript window holds whole turns sized in rows (each prompt plus
+every tool call, text and reasoning part; `TURN_WINDOW_DEFAULTS` in
+`components/chat/lib/turns/constants.ts`), so one orchestrator turn with
+hundreds of tool rows no longer counts as one of ten.
 
 `useSessionMessageLoadState(sessionID, directory)` is the exact reactive leaf
 for status, loading kind, error, resolution, retained limit, cursor,

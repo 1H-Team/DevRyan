@@ -58,7 +58,7 @@ describe('WorkingPlaceholder status presentation', () => {
         });
     });
 
-    test('keeps one accessible label in flow beneath the visual shimmer layer', () => {
+    test('renders the status label once, with no decorative copy', () => {
         const html = renderToStaticMarkup(React.createElement(StatusShimmerText, {
             text: 'Waiting for subagent output',
             shouldAnimate: true,
@@ -66,35 +66,36 @@ describe('WorkingPlaceholder status presentation', () => {
 
         expect(html).toContain('data-animation-state="running"');
         expect(html).toContain('data-live-status-shimmer="true"');
-        expect(html).toContain('data-shimmer-text="Waiting for subagent output"');
         expect(html).toContain('>Waiting for subagent output</span>');
-        expect(html.match(/Waiting for subagent output/g)).toHaveLength(2);
+        expect(html.match(/Waiting for subagent output/g)).toHaveLength(1);
     });
 
-    test('keeps the gradient sweep decorative so the status is announced only once', () => {
+    test('brightens live status on the shared tick instead of an infinite animation', () => {
         // CSS has no runtime in bun:test; the stylesheet text is the contract.
         const styles = readFileSync(new URL('../../../../index.css', import.meta.url), 'utf8');
-        const shimmerRule = styles.slice(
-            styles.indexOf('@keyframes oc-text-shimmer'),
-            styles.indexOf('@keyframes oc-file-mention-marquee'),
+        const shimmerRules = styles.slice(
+            styles.indexOf('.oc-text-shimmer {'),
+            styles.indexOf('/* The desktop shell reports a hidden or minimized window'),
         );
 
-        expect(shimmerRule).toContain('animation: oc-text-shimmer 2.2s linear infinite;');
-        expect(shimmerRule).toContain('--oc-shimmer-highlight: color-mix(in oklch, var(--foreground) 92%, transparent);');
-        expect(shimmerRule).toContain('content: attr(data-shimmer-text) / "";');
-        expect(shimmerRule).toContain('background-position: 200% 0;');
-        expect(shimmerRule).toContain('background-position: -200% 0;');
-        expect(shimmerRule).toContain('background-clip: text;');
+        expect(shimmerRules).toContain('--oc-shimmer-highlight: color-mix(in oklch, var(--foreground) 92%, transparent);');
+        expect(shimmerRules).toContain('html[data-tick-blink="on"] .oc-text-shimmer[data-animation-state="running"] {');
+        expect(shimmerRules).not.toMatch(/\banimation(-[a-z]+)?:/);
+        expect(styles).not.toContain('@keyframes oc-text-shimmer');
     });
 
-    test('retains readable status text when reduced motion disables shimmer', () => {
-        const styles = readFileSync(new URL('../../../../index.css', import.meta.url), 'utf8');
-        const reducedMotionRule = styles.slice(styles.lastIndexOf('@media (prefers-reduced-motion: reduce)'));
+    test('keeps reduced-motion and hidden status static and readable', async () => {
+        const html = renderToStaticMarkup(React.createElement(StatusShimmerText, {
+            text: 'Reading files',
+            shouldAnimate: false,
+        }));
+        expect(html).toContain('data-animation-state="paused"');
+        expect(html).toContain('>Reading files</span>');
 
-        expect(reducedMotionRule).toContain('.oc-text-shimmer::after');
-        expect(reducedMotionRule).toContain('content: none;');
-        expect(reducedMotionRule).toContain('animation: none;');
-        expect(reducedMotionRule).toContain('background-image: none;');
+        await mountPlaceholder(working, async () => {
+            // A visible animated status holds the shared tick.
+            expect(globalThis.document.documentElement.getAttribute('data-tick-blink')).toBe('on');
+        });
     });
 
     test('keeps the live region and visual label mounted without keyed layout transitions', async () => {

@@ -2,11 +2,11 @@ import React from 'react';
 
 import type { ChatMessageEntry } from '../lib/turns/types';
 import type { MessageListHandle } from '../MessageList';
-import { TURN_WINDOW_DEFAULTS } from '../lib/turns/constants';
 import {
     buildTurnWindowModel,
     clampTurnStart,
-    getInitialTurnStart,
+    getInitialTurnStartByRows,
+    getRevealTurnStartByRows,
     updateTurnWindowModelIncremental,
     windowMessagesByTurn,
     type TurnWindowModel,
@@ -15,6 +15,10 @@ import type { TurnHistorySignals } from '../lib/turns/historySignals';
 import { getMemoryLimits, type SessionHistoryMeta } from '@/stores/types/sessionTypes';
 
 type ViewportAnchor = { messageId: string; offsetTop: number };
+
+// How long the open transcript must stay unchanged, with the reader pinned to
+// its end, before its retained history is bounded (SessionHistory.trimViewedSession).
+export const VIEWED_TRIM_SETTLE_MS = 3_000;
 
 type PendingScrollRequest = {
     sessionId: string;
@@ -44,6 +48,8 @@ interface UseChatTimelineControllerOptions {
     scrollRef: React.RefObject<HTMLDivElement | null>;
     messageListRef: React.RefObject<MessageListHandle | null>;
     loadMoreMessages: (sessionId: string, direction: 'up' | 'down') => Promise<void>;
+    /** Bounds the settled open transcript; the history owner refuses anything live. */
+    trimSettledHistory?: (sessionId: string) => void;
     goToBottom: (mode?: 'instant' | 'smooth') => void;
     releaseAutoFollow: () => void;
     isPinned: boolean;
@@ -78,6 +84,7 @@ export const useChatTimelineController = ({
     scrollRef,
     messageListRef,
     loadMoreMessages,
+    trimSettledHistory,
     goToBottom,
     releaseAutoFollow,
     isPinned,
@@ -97,7 +104,10 @@ export const useChatTimelineController = ({
         return nextModel;
     }, [messages]);
 
-    const [turnStart, setTurnStart] = React.useState(() => getInitialTurnStart(turnWindowModel.turnCount));
+    const [turnStart, setTurnStart] = React.useState(() => getInitialTurnStartByRows(messages, turnWindowModel));
+    // The start the window last took when following the end. A turn-count change
+    // moves the window along only while it still sits there.
+    const initialTurnStartRef = React.useRef(turnStart);
     // A session switch renders before the layout-effect reset below. Clamp the
     // previous session's window immediately so stale buffered-turn state cannot
     // expose an older-history control in a shorter session for one frame.
@@ -151,7 +161,9 @@ export const useChatTimelineController = ({
             return;
         }
         initializedSessionRef.current = sessionId;
-        setTurnStart(getInitialTurnStart(turnWindowModel.turnCount));
+        const initialStart = getInitialTurnStartByRows(messagesRef.current, turnModelRef.current);
+        initialTurnStartRef.current = initialStart;
+        setTurnStart(initialStart);
         setIsLoadingOlder(false);
         setPendingRevealWork(false);
         setActiveTurnId(null);
@@ -169,9 +181,10 @@ export const useChatTimelineController = ({
             return;
         }
 
+        const previousInitial = initialTurnStartRef.current;
+        const nextInitial = getInitialTurnStartByRows(messagesRef.current, turnModelRef.current);
+        initialTurnStartRef.current = nextInitial;
         setTurnStart((current) => {
-            const previousInitial = getInitialTurnStart(previousTurnCount);
-            const nextInitial = getInitialTurnStart(nextTurnCount);
             if (current === previousInitial) {
                 return nextInitial;
             }
@@ -320,10 +333,7 @@ export const useChatTimelineController = ({
         }
 
         setPendingRevealWork(true);
-        setTurnStart((current) => {
-            const next = current - TURN_WINDOW_DEFAULTS.batchTurns;
-            return next > 0 ? next : 0;
-        });
+        setTurnStart((current) => getRevealTurnStartByRows(messagesRef.current, turnModelRef.current, current));
 
         await waitForNextRenderCommit();
         setPendingRevealWork(false);
@@ -491,7 +501,8 @@ export const useChatTimelineController = ({
     }, [attemptPendingScrollRequest, releaseAutoFollow, sessionId]);
 
     const resumeToBottom = React.useCallback(async () => {
-        const nextStart = getInitialTurnStart(turnModelRef.current.turnCount);
+        const nextStart = getInitialTurnStartByRows(messagesRef.current, turnModelRef.current);
+        initialTurnStartRef.current = nextStart;
         setPendingRevealWork(false);
         setIsLoadingOlder(false);
 
@@ -505,7 +516,8 @@ export const useChatTimelineController = ({
     }, [goToBottom, waitForNextRenderCommit]);
 
     const resumeToBottomInstant = React.useCallback(async () => {
-        const nextStart = getInitialTurnStart(turnModelRef.current.turnCount);
+        const nextStart = getInitialTurnStartByRows(messagesRef.current, turnModelRef.current);
+        initialTurnStartRef.current = nextStart;
         setPendingRevealWork(false);
         setIsLoadingOlder(false);
 
@@ -517,6 +529,26 @@ export const useChatTimelineController = ({
 
         goToBottom('instant');
     }, [goToBottom, waitForNextRenderCommit]);
+
+    // Bound the retained transcript once it settles while the reader follows
+    // the end; any new message restarts the wait, so streaming never trims.
+    React.useEffect(() => {
+        if (!sessionId || !isPinned || !trimSettledHistory) {
+            return;
+        }
+        const timer = setTimeout(() => {
+            if (
+                sessionIdRef.current !== sessionId
+                || !isPinnedRef.current
+                || isLoadingOlderRef.current
+                || pendingRevealWorkRef.current
+            ) {
+                return;
+            }
+            trimSettledHistory(sessionId);
+        }, VIEWED_TRIM_SETTLE_MS);
+        return () => clearTimeout(timer);
+    }, [isPinned, messages, sessionId, trimSettledHistory]);
 
     const handleActiveTurnChange = React.useCallback((turnId: string | null) => {
         setActiveTurnId(turnId);

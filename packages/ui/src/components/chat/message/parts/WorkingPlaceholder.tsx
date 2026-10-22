@@ -1,6 +1,7 @@
 import React from 'react';
 import { useDocumentAnimationState } from '@/hooks/useDocumentAnimationState';
 import { cn } from '@/lib/utils';
+import { useSharedBlink } from './useDurationTicker';
 import { shouldPreserveWorkingStatus, type WorkingStatusLabel } from './workingPlaceholderStatus';
 import {
   formatRetryCountdown,
@@ -29,12 +30,12 @@ export function StatusShimmerText({
   shouldAnimate: boolean;
   className?: string;
 }) {
+  useSharedBlink(shouldAnimate);
   return (
     <span
       className={cn('oc-text-shimmer', className)}
       data-animation-state={shouldAnimate ? 'running' : 'paused'}
       data-live-status-shimmer="true"
-      data-shimmer-text={text}
     >
       {text}
     </span>

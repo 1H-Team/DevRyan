@@ -42,6 +42,12 @@ export function useSync() {
     [history, resolveDirectory],
   )
 
+  const trimViewedSession = useCallback(
+    (sessionID: string, options?: { directory?: string | null }) =>
+      history.trimViewedSession({ directory: resolveDirectory(options?.directory), sessionID }),
+    [history, resolveDirectory],
+  )
+
   const hasMore = useCallback(
     (sessionID: string, options?: { directory?: string | null }) =>
       history.hasMore({ directory: resolveDirectory(options?.directory), sessionID }),
@@ -100,6 +106,7 @@ export function useSync() {
       prefetchSession,
       resyncSession,
       loadMore,
+      trimViewedSession,
       hasMore,
       isLoading,
       hasPaginationMetadata,
@@ -108,6 +115,6 @@ export function useSync() {
         remove: optimisticRemove,
       },
     }),
-    [syncSession, prefetchSession, resyncSession, loadMore, hasMore, isLoading, hasPaginationMetadata, optimisticAdd, optimisticRemove],
+    [syncSession, prefetchSession, resyncSession, loadMore, trimViewedSession, hasMore, isLoading, hasPaginationMetadata, optimisticAdd, optimisticRemove],
   )
 }

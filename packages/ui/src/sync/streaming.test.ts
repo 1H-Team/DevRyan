@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test } from "bun:test"
 import type { Message, Part, SessionStatus } from "@opencode-ai/sdk/v2/client"
 import { registerManualAbortGuard, resetAbortGuardState } from "./abort-retry-guard"
 import { INITIAL_STATE, type State } from "./types"
-import { settleStreamingSessions, updateStreamingState, useStreamingStore } from "./streaming"
+import { MAX_COMPLETED_STREAM_STATES, settleStreamingSessions, updateStreamingState, useStreamingStore } from "./streaming"
 
 const message = (id: string, role: "user" | "assistant", completed?: number): Message => ({
   id,
@@ -340,5 +340,61 @@ describe("updateStreamingState", () => {
     expect(useStreamingStore.getState().streamingMessageIds.get("ses_1")).toBeNull()
     expect(useStreamingStore.getState().messageStreamStates.get("msg_assistant_1")?.phase).toBe("completed")
     expect(useStreamingStore.getState().messageStreamStates.get("msg_assistant_1")?.completedAt).toBe(123)
+  })
+
+  test("copies no lifecycle map on an emission that changes nothing", () => {
+    const busy = stateWithMessages([message("msg_user_1", "user"), message("msg_assistant_1", "assistant")], { type: "busy" } as SessionStatus, {
+      msg_assistant_1: [toolPart("msg_assistant_1", "running")],
+    })
+    updateStreamingState(busy)
+    const lifecycles = useStreamingStore.getState().messageStreamStates
+
+    const OriginalMap = globalThis.Map
+    let copies = 0
+    class CountingMap<K, V> extends OriginalMap<K, V> {
+      constructor(entries?: readonly (readonly [K, V])[] | Map<K, V> | null) {
+        super(entries)
+        if (entries instanceof OriginalMap) copies += 1
+      }
+    }
+    globalThis.Map = CountingMap as MapConstructor
+    try {
+      for (let index = 0; index < 100; index += 1) updateStreamingState({ ...busy })
+    } finally {
+      globalThis.Map = OriginalMap
+    }
+
+    expect(copies).toBe(0)
+    expect(useStreamingStore.getState().messageStreamStates).toBe(lifecycles)
+  })
+
+  test("retains only a bounded tail of completed lifecycles", () => {
+    for (let index = 0; index < MAX_COMPLETED_STREAM_STATES * 3; index += 1) {
+      const assistantId = `msg_assistant_${index}`
+      const messages = [message(`msg_user_${index}`, "user"), message(assistantId, "assistant")]
+      updateStreamingState(stateWithMessages(messages, { type: "busy" } as SessionStatus, { [assistantId]: [toolPart(assistantId, "running")] }))
+      updateStreamingState(stateWithMessages(messages, { type: "idle" } as SessionStatus))
+    }
+
+    const lifecycles = useStreamingStore.getState().messageStreamStates
+    expect(lifecycles.size).toBe(MAX_COMPLETED_STREAM_STATES)
+    expect([...lifecycles.values()].every((lifecycle) => lifecycle.phase === "completed")).toBe(true)
+    // The newest completions are the ones kept.
+    expect(lifecycles.has(`msg_assistant_${MAX_COMPLETED_STREAM_STATES * 3 - 1}`)).toBe(true)
+    expect(lifecycles.has("msg_assistant_0")).toBe(false)
+  })
+
+  test("drops completed lifecycles past their retention while keeping the live stream", () => {
+    useStreamingStore.setState({
+      streamingMessageIds: new Map(),
+      messageStreamStates: new Map([["msg_old", { phase: "completed", startedAt: 1, lastUpdateAt: 1, completedAt: 1 }]]),
+    })
+    updateStreamingState(stateWithMessages([message("msg_user_1", "user"), message("msg_assistant_1", "assistant")], { type: "busy" } as SessionStatus, {
+      msg_assistant_1: [toolPart("msg_assistant_1", "running")],
+    }))
+
+    const lifecycles = useStreamingStore.getState().messageStreamStates
+    expect(lifecycles.has("msg_old")).toBe(false)
+    expect(lifecycles.get("msg_assistant_1")?.phase).toBe("streaming")
   })
 })

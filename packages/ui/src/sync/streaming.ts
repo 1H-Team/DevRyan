@@ -41,6 +41,40 @@ export const useStreamingStore = create<StreamingStore>()(() => ({
  */
 /** Only update lastUpdateAt every this many ms to avoid 60Hz store churn */
 const STREAMING_HEARTBEAT_MS = 1000
+/**
+ * Completed lifecycles are kept only as a short tail for typing-indicator grace
+ * and diagnostics; every message that ever streamed would otherwise stay here
+ * for the life of the app, copied on every streaming-state write.
+ */
+export const MAX_COMPLETED_STREAM_STATES = 32
+export const COMPLETED_STREAM_STATE_TTL_MS = 5 * 60_000
+
+/** Drops completed lifecycles past the TTL or beyond the newest retained few. Mutates `states`. */
+function pruneCompletedStreamStates(states: Map<string, MessageStreamState>, now: number): void {
+  let completed = 0
+  for (const state of states.values()) {
+    if (state.phase === "completed") completed += 1
+  }
+  if (completed === 0) return
+
+  const ranked: Array<[string, number]> = []
+  for (const [messageID, state] of states) {
+    if (state.phase !== "completed") continue
+    const completedAt = state.completedAt ?? state.lastUpdateAt
+    if (now - completedAt > COMPLETED_STREAM_STATE_TTL_MS) {
+      states.delete(messageID)
+      completed -= 1
+      continue
+    }
+    ranked.push([messageID, completedAt])
+  }
+  if (completed <= MAX_COMPLETED_STREAM_STATES) return
+
+  ranked.sort((left, right) => left[1] - right[1])
+  for (const [messageID] of ranked.slice(0, completed - MAX_COMPLETED_STREAM_STATES)) {
+    states.delete(messageID)
+  }
+}
 
 export function settleStreamingSessions(sessionIDs: Iterable<string>, completedAt = Date.now()): void {
   const current = useStreamingStore.getState()
@@ -73,6 +107,9 @@ export function settleStreamingSessions(sessionIDs: Iterable<string>, completedA
     && nextStreamStates === current.messageStreamStates
   ) return
 
+  if (nextStreamStates !== current.messageStreamStates) {
+    pruneCompletedStreamStates(nextStreamStates, completedAt)
+  }
   useStreamingStore.setState({
     streamingMessageIds: nextStreamingIds,
     messageStreamStates: nextStreamStates,
@@ -110,7 +147,14 @@ export function updateStreamingState(state: State) {
   const currentStreamStates = currentStore.messageStreamStates
 
   const nextStreamingIds = new Map<string, string | null>()
-  const nextStreamStates = new Map(currentStreamStates)
+  // Copied on the first lifecycle write: most emissions change nothing here.
+  let nextStreamStates = currentStreamStates
+  const setStreamState = (messageID: string, value: MessageStreamState) => {
+    if (nextStreamStates === currentStreamStates) {
+      nextStreamStates = new Map(currentStreamStates)
+    }
+    nextStreamStates.set(messageID, value)
+  }
   let changed = false
 
   // Fast path: only scan sessions that are authoritatively active.
@@ -129,11 +173,9 @@ export function updateStreamingState(state: State) {
   // render/follow the latest live content. Do not scan historical messages.
   for (const [sessionID, messages] of Object.entries(state.message)) {
     if (busySessionIds.has(sessionID)) continue
-    const status = state.session_status?.[sessionID]
+    if (state.session_status?.[sessionID]) continue
     const streamingCandidate = selectStreamingAssistantMessage(messages, state)
     const streamingCandidateParts = streamingCandidate ? state.part[streamingCandidate.id] : undefined
-
-    if (status) continue
 
     if (isLiveAssistantMessage(streamingCandidate ?? undefined, streamingCandidateParts)) {
       busySessionIds.add(sessionID)
@@ -144,7 +186,7 @@ export function updateStreamingState(state: State) {
     nextStreamingIds.set(sessionID, null)
     const existing = nextStreamStates.get(msgId)
     if (existing && existing.phase === "streaming") {
-      nextStreamStates.set(msgId, {
+      setStreamState(msgId, {
         ...existing,
         phase: "completed",
         completedAt: now,
@@ -175,7 +217,7 @@ export function updateStreamingState(state: State) {
 
     const existing = nextStreamStates.get(streamingMsg.id)
     if (!existing || existing.phase !== "streaming") {
-      nextStreamStates.set(streamingMsg.id, {
+      setStreamState(streamingMsg.id, {
         phase: "streaming",
         startedAt: existing?.startedAt ?? now,
         lastUpdateAt: now,
@@ -183,7 +225,7 @@ export function updateStreamingState(state: State) {
       changed = true
     } else if (now - existing.lastUpdateAt >= STREAMING_HEARTBEAT_MS) {
       // Throttle lastUpdateAt writes to ~1Hz instead of 60Hz
-      nextStreamStates.set(streamingMsg.id, {
+      setStreamState(streamingMsg.id, {
         ...existing,
         lastUpdateAt: now,
       })
@@ -201,6 +243,9 @@ export function updateStreamingState(state: State) {
   }
 
   if (changed) {
+    if (nextStreamStates !== currentStreamStates) {
+      pruneCompletedStreamStates(nextStreamStates, now)
+    }
     useStreamingStore.setState({
       streamingMessageIds: nextStreamingIds,
       messageStreamStates: nextStreamStates,

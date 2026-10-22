@@ -444,48 +444,22 @@ textarea[data-chat-input="true"]:focus-visible {
   }
 }
 
-@keyframes oc-text-shimmer {
-  0% {
-    background-position: 200% 0;
-  }
-  100% {
-    background-position: -200% 0;
-  }
-}
-
 .oc-text-shimmer {
   --oc-shimmer-base: var(--muted-foreground);
   --oc-shimmer-highlight: color-mix(in oklch, var(--foreground) 92%, transparent);
-  position: relative;
   display: inline-block;
   min-width: 0;
   max-width: 100%;
   overflow: hidden;
   color: var(--oc-shimmer-base);
-  -webkit-text-fill-color: currentColor;
   text-overflow: ellipsis;
   white-space: nowrap;
   vertical-align: bottom;
 }
 
-.oc-text-shimmer::after {
-  content: attr(data-shimmer-text) / "";
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  pointer-events: none;
-  background-image: linear-gradient(
-    100deg,
-    transparent 40%,
-    var(--oc-shimmer-highlight) 50%,
-    transparent 60%
-  );
-  background-repeat: no-repeat;
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  -webkit-text-fill-color: transparent;
+/* Live status text brightens on the shared tick (see .oc-tick-blink). */
+html[data-tick-blink="on"] .oc-text-shimmer[data-animation-state="running"] {
+  color: var(--oc-shimmer-highlight);
 }
 
 /* The desktop shell reports a hidden or minimized window (its page otherwise
@@ -495,11 +469,6 @@ html[data-window-hidden] *,
 html[data-window-hidden] *::before,
 html[data-window-hidden] *::after {
   animation-play-state: paused !important;
-}
-
-.oc-text-shimmer[data-animation-state="running"]::after {
-  opacity: 1;
-  animation: oc-text-shimmer 2.2s linear infinite;
 }
 
 /* Provider output can span multiple assistant messages in one logical turn.
@@ -623,18 +592,19 @@ svg.animate-spin {
   }
 }
 
-@keyframes oc-plan-skeleton-pulse {
-  0% {
-    opacity: 0.95;
-  }
-  100% {
-    opacity: 0.35;
-  }
+/* Always-visible working indicators step on the shared one-second tick
+   (useSharedBlink, useDurationTicker.ts) instead of an infinite animation that
+   draws every frame. Without the root attribute they rest fully visible. */
+html[data-tick-blink="off"] .oc-tick-blink {
+  opacity: 0.35;
 }
 
-.oc-plan-skeleton-lines[data-animation-state="running"] {
-  animation: oc-plan-skeleton-pulse 1.6s ease-in-out infinite alternate;
-  will-change: opacity;
+.oc-plan-skeleton-lines {
+  opacity: 0.95;
+}
+
+html[data-tick-blink="off"] .oc-plan-skeleton-lines[data-animation-state="running"] {
+  opacity: 0.35;
 }
 
 .oc-plan-skeleton-line {
@@ -1723,11 +1693,6 @@ input[aria-label="Terminal input"] {
   animation: oc-busy-pulse 1.2s ease-in-out infinite;
 }
 
-/* Sidebar/mobile session "working" dot: a slow blink. Keep the duration in sync
-   with SESSION_WORKING_BLINK_DURATION_MS (sessionWorkingBlink.ts). */
-.animate-session-working-blink {
-  animation: oc-busy-pulse 2.4s ease-in-out infinite;
-}
 
 @keyframes bot-typing-dot {
   0%, 60%, 100% {
@@ -1830,12 +1795,6 @@ input[aria-label="Terminal input"] {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .oc-text-shimmer::after {
-    content: none;
-    animation: none;
-    background-image: none;
-  }
-
   .marquee-text--auto,
   .group:hover .marquee-text--active,
   .marquee-text--active:hover {
@@ -1845,12 +1804,6 @@ input[aria-label="Terminal input"] {
   .animate-busy-pulse {
     animation: none;
   }
-
-  .animate-session-working-blink {
-    animation: none;
-  }
-
-
 }
 
 /* Settings dialog: hide the overlay scrollbar; wheel/keyboard scroll still works. */
