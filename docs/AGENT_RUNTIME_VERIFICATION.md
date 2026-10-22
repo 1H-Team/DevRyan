@@ -49,9 +49,12 @@ bun scripts/journal.mjs list
 bun scripts/journal.mjs show <sessionID> --tail 200
 bun scripts/journal.mjs gaps
 bun scripts/journal.mjs gaps --verify
+bun scripts/journal.mjs summary <rootSessionID>
 ```
 
 `gaps` skips session buckets whose manifest records zero gaps; `gaps --verify` rereads every chunk and is the form qualification runs use. `show` also accepts `--type`, `--event`, `--since`, `--until` and `--grep`. Pass `--dir <journal-dir>` to read a specific host's journal.
+
+`summary` reads the root session and every descendant session (parents come from bucket manifests, or from `session.*` events when a manifest is missing) and prints: the session tree with agent, model, last status, active span and assistant busy time; tokens, cost and cache hit ratio (cache read / (input + cache read + cache write)) by agent/model, by agent and by model; tool calls with p50/p90/max/total latency, errors and unfinished calls; `session_execution` phases by action and phase; tool and `session.error` errors; and controls (aborts with their source, retries, provider recovery, permission and question events). It accepts `--since`/`--until` (records only; the tree is kept) and `--json` for the full structure (text output caps phases, errors and controls). It never prints control bodies, prompt text or question answers. Run `gaps` as well: a gap count above zero qualifies the summary.
 
 | Topic | Detail |
 | --- | --- |
