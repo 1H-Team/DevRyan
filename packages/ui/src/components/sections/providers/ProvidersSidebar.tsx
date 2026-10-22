@@ -12,7 +12,7 @@ import { cn } from '@/lib/utils';
 import { recordConfigMutationResponse, useConfigApplyStore } from '@/stores/useConfigApplyStore';
 import { useI18n } from '@/lib/i18n';
 import { getProviderDisplayName } from '@/lib/providers/display';
-import { getProviderModelsForDisplay, sortProvidersByDisplayName } from './providerSorting';
+import { sortProvidersByDisplayName } from './providerSorting';
 import {
   disconnectProvider,
   getProviderDisconnectOutcome,
@@ -259,7 +259,7 @@ export const ProvidersSidebar: React.FC<ProvidersSidebarProps> = ({ onItemSelect
 };
 
 const ProviderListItem: React.FC<{
-  provider: { id: string; name?: string; models?: unknown[] };
+  provider: { id: string; name?: string };
   selectedProviderId: string;
   sources?: ProviderSources;
   canDisconnect?: boolean;
@@ -269,10 +269,6 @@ const ProviderListItem: React.FC<{
   onDisconnect?: () => void;
 }> = ({ provider, selectedProviderId, sources, canDisconnect = false, isDisconnecting = false, isDisconnectPending = false, onSelect, onDisconnect }) => {
   const { t } = useI18n();
-  const modelCount = getProviderModelsForDisplay(
-    provider as { id?: string; models?: Array<{ id?: string; name?: string }> },
-    { hidePairedFastModels: true, hideUnavailable: true },
-  ).length;
   const isSelected = provider.id === selectedProviderId;
   const providerName = getProviderDisplayName(provider, sources);
   const showDisconnect = canDisconnect && Boolean(onDisconnect);
@@ -303,12 +299,11 @@ const ProviderListItem: React.FC<{
         'relative flex h-6 flex-shrink-0 items-center justify-end',
         isDisconnectPending ? 'w-auto' : 'w-7',
       )}>
-        <span className={cn(
-          'typography-micro text-right tabular-nums text-muted-foreground/60 transition-opacity',
-          showDisconnect && 'group-hover:opacity-0 group-focus-within:opacity-0',
-        )}>
-          {isDisconnectPending ? t('settings.providers.page.state.disconnectPendingShort') : modelCount}
-        </span>
+        {isDisconnectPending ? (
+          <span className="typography-micro text-right text-muted-foreground/60">
+            {t('settings.providers.page.state.disconnectPendingShort')}
+          </span>
+        ) : null}
         {showDisconnect ? (
           <Button
             type="button"
