@@ -8,12 +8,12 @@ import { createCursorSdkRuntime } from './index.js';
 import { collectSanitizedTools } from '../../scripts/agent-evals/client.mjs';
 
 const waitFor = async (predicate) => {
-  for (let index = 0; index < 25; index += 1) {
+  for (let index = 0; index < 300; index += 1) {
     const value = await predicate();
     if (value) return value;
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
-  return null;
+  throw new Error('Cursor adapter fixture did not reach its boundary');
 };
 
 describe('Cursor SDK runtime', () => {
@@ -3825,7 +3825,8 @@ describe('Cursor SDK runtime', () => {
 
     const records = await waitFor(async () => {
       const current = await runtime.getSessionMessages('ses_patch_removed');
-      return current.some((record) => record.info?.role === 'assistant' && record.info?.finish)
+      return runtime.getSessionStatus().ses_patch_removed?.type === 'idle'
+        && current.some((record) => record.info?.role === 'assistant' && record.info?.finish)
         ? current
         : null;
     });
