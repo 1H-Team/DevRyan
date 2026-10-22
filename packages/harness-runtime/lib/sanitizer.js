@@ -372,7 +372,8 @@ export const createDiagnosticSanitizer = (options = {}) => {
     const output = {};
     const events = new Set(['passthrough.checkpoint_settling', 'passthrough.checkpoint_settled', 'passthrough.checkpoint_rejected', 'passthrough.checkpoint_interrupt_failed', 'passthrough.checkpoint_retained', 'passthrough.checkpoint_replay']);
     const reasons = new Set(['tool_results_complete', 'invalid_boundary', 'control_failed', 'drain_timeout', 'client_abort', 'sdk_terminal',
-      'missing_terminal', 'unrecognized_sdk_exit', 'incomplete_boundary', 'persisted_boundary_unverified', 'persisted_tool_boundary', 'verified_handoff', 'incomplete_or_mismatched_results']);
+      'missing_terminal', 'unrecognized_sdk_exit', 'incomplete_boundary', 'persisted_boundary_unverified', 'persisted_tool_boundary', 'verified_handoff', 'incomplete_or_mismatched_results',
+      'noncanonical_session_evicted']);
     for (const [field, value] of Object.entries(asObject(candidate) || {})) {
       if (field === 'event' && events.has(value) || field === 'reason' && reasons.has(value)
         || field === 'toolCount' && Number.isSafeInteger(value) && value >= 0 && value <= 4096) output[field] = value;

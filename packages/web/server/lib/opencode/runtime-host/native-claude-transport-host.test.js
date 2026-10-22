@@ -287,3 +287,25 @@ test('early exit drains pending stdin without a post-settled ACK and discards on
   expect(received).toEqual(['pending']); expect(frames.some(f => f.id === first.id && f.action === 'input-accepted')).toBe(false);
   expect(runs[1].cancel).not.toHaveBeenCalled();
 });
+
+test('drain waits for the attempt child to exit on its own before release, without cancelling it', async () => {
+  const input = request(); admit(input); await started(input);
+  let drained = false; const drain = host.drain(input, 5000).then(() => { drained = true; });
+  await Promise.resolve(); expect(drained).toBe(false); expect(runs[0].cancel).not.toHaveBeenCalled();
+  runs[0].settled.resolve({ terminated: true, confined: true, cancelled: false, exitCode: 0 });
+  await drain; expect(runs[0].cancel).not.toHaveBeenCalled();
+  expect(frames.at(-1)).toMatchObject({ action: 'settled', receipt: { cancelled: false, exitCode: 0 } });
+  await host.release(input); expect(runs[0].cancel).not.toHaveBeenCalled();
+});
+
+test('drain is bounded: a child that does not exit is cancelled by the following release', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  try {
+    const input = request(); admit(input); await started(input);
+    const drain = host.drain(input, 12_000); await vi.advanceTimersByTimeAsync(12_000); await drain;
+    expect(runs[0].cancel).not.toHaveBeenCalled();
+    const release = host.release(input); expect(runs[0].cancel).toHaveBeenCalledOnce();
+    runs[0].settled.resolve({ terminated: true, confined: true, cancelled: true, exitCode: 143 }); await release;
+    await expect(host.drain(input, 1)).rejects.toMatchObject({ code: 'native_claude_transport_expired' });
+  } finally { vi.useRealTimers(); }
+});

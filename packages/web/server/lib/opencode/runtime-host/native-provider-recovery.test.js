@@ -1,7 +1,7 @@
 import { expect, test, vi, beforeEach } from 'vitest';
 const processFactory = vi.hoisted(() => vi.fn());
 vi.mock('./native-provider-process.js', () => ({ createNativeProviderProcess: processFactory }));
-import { createNativeProviderRuntimeOwner } from './native-provider-runtime-owner.js';
+import { createNativeProviderRuntimeOwner, MERIDIAN_HANDOFF_DRAIN_MS } from './native-provider-runtime-owner.js';
 
 beforeEach(() => processFactory.mockReset());
 const owner = (profiles=[]) => createNativeProviderRuntimeOwner({ instanceID: 'controller', claudeSupported: true,
@@ -87,4 +87,15 @@ test('only removal of a cached profile invalidates the old provider configuratio
   }
   await runtime.close();
  }
+});
+
+test('a normal attempt end drains the Meridian handoff while an abort releases immediately', async () => {
+  const process = worker(); processFactory.mockResolvedValue(process); const runtime = owner();
+  const binding = { sessionID: input.sessionID, directory: input.directory };
+  const attempt = await runtime.beginMeridian(input); await finish(runtime, attempt);
+  expect(process.releaseAttempt).toHaveBeenLastCalledWith(expect.objectContaining({ attemptID: attempt.attemptID, ...binding }), { drainMs: MERIDIAN_HANDOFF_DRAIN_MS });
+  const controller = new AbortController(); const aborted = await runtime.beginMeridian(input, { signal: controller.signal });
+  controller.abort(); await vi.waitFor(() => expect(process.releaseAttempt).toHaveBeenCalledTimes(2));
+  expect(process.releaseAttempt).toHaveBeenLastCalledWith(expect.objectContaining({ attemptID: aborted.attemptID, ...binding }), undefined);
+  await runtime.close();
 });

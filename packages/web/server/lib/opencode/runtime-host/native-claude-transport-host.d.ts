@@ -3,6 +3,7 @@ import type { ClaudeTransportReply } from './native-claude-transport-protocol.js
 export interface NativeClaudeTransportBinding { readonly attemptID: string; readonly sessionID: string; readonly directory: string }
 export interface NativeClaudeTransportHost {
   authorize(input: NativeClaudeTransportBinding): void;
+  drain(input: NativeClaudeTransportBinding, timeoutMs: number): Promise<void>;
   release(input: NativeClaudeTransportBinding): Promise<void>;
   accept(input: unknown): Promise<void>;
   close(): Promise<void>;

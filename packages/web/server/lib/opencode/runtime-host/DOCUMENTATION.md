@@ -573,6 +573,17 @@ configuration capture/retry stamp. The original native configuration plugin owns
 catalog activation; no placeholder API key or native credential is created.
 The physical Meridian attempt still requires the original admission permit and
 host-owned selected credential. Catalog visibility alone grants neither.
+At a passthrough tool boundary Meridian closes the client stream early and then
+drains the Claude SDK to its terminal result before it stores the session. A
+normal attempt end (`provider.meridian.end`) therefore first drains the
+attempt's Claude children on the transport host, waiting up to
+`MERIDIAN_HANDOFF_DRAIN_MS` (12 s, just above the handoff's 10 s drain bound)
+for them to exit on their own, and only then releases the worker attempt and
+kills what remains. The drain is not a provider command, so other attempts keep
+their command channel. An aborted attempt is released immediately. Killing the
+child before the drain finished made Meridian evict the session
+(`noncanonical_session_evicted`), so every later step replayed the whole history
+as one flattened block and only the system/tools prefix hit the prompt cache.
 The compiled provider owner is registered independently of the legacy plugin
 list. Disabling legacy plugins does not disconnect that native account or stop
 this metadata bridge; the saved plugin list is preserved.

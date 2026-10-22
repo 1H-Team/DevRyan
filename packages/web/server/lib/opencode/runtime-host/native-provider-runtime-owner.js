@@ -40,6 +40,10 @@ import {emptyClaudeLifecycle,parseClaudeLifecycle,transitionClaudeLifecycle,clau
 import {isVerifiedNativeClaudeEnrollmentProfile} from './native-setup-profiles.js';
 const fail=(code,status=403)=>Object.assign(new Error(code),{code,status,statusCode:status});
 const record=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
+// Just above Meridian's checkpoint drain bound (meridian-passthrough-handoff.js).
+// A normal attempt end lets its Claude child finish storing the session; an
+// aborted attempt is still released immediately.
+export const MERIDIAN_HANDOFF_DRAIN_MS=12_000;
 /** Called under the existing credential mutation queue by fresh enrollment only.
  * Adopt fences from configured services without rewriting their vendor records. */
 export async function migrateNativeClaudeLegacyFences({profiles,home,asset,lifecycle,ownedControlRoot,loadModule=()=>loadReviewedClaudeCredentials(asset),backend={}},{recheck,signal}){
@@ -333,7 +337,7 @@ export function createNativeProviderRuntimeOwner({instanceID,snapshot,registrati
       // Authorization can suspend in the worker. A canceled caller or closed
       // owner must not publish an attempt that nobody can subsequently settle.
       try{signal?.throwIfAborted();live();}catch(error){await target.releaseAttempt(workerBinding);throw error;}
-      const attempt={attemptID,input,finish,work:undefined,signal,retried:new Set(),recheck:async()=>{live();signal?.throwIfAborted();await target.recheck();live();if(attempts.get(attemptID)!==attempt)throw fail('native_provider_attempt_expired');},release:()=>target.releaseAttempt(workerBinding)};attempts.set(attemptID,attempt);
+      const attempt={attemptID,input,finish,work:undefined,signal,retried:new Set(),recheck:async()=>{live();signal?.throwIfAborted();await target.recheck();live();if(attempts.get(attemptID)!==attempt)throw fail('native_provider_attempt_expired');},release:options=>target.releaseAttempt(workerBinding,options)};attempts.set(attemptID,attempt);
       ready({attemptID,controllerInstanceID:instanceID,directory:input.directory,sessionID:input.sessionID,origin:target.origin,authorization:target.authorization});
       const abort=()=>{void attempt.release().finally(finish).catch(()=>{});};signal?.addEventListener('abort',abort,{once:true});
       try{await settled;}finally{signal?.removeEventListener('abort',abort);}
@@ -348,7 +352,7 @@ export function createNativeProviderRuntimeOwner({instanceID,snapshot,registrati
   const assertMeridian=input=>{const attempt=boundAttempt(input);live();return admissionOwner.withProviderAttempt(attempt.input,async()=>{live();});};
   // Settlement itself must remain callable after holds/revocation. The original
   // withProviderAttempt still checks its caller again before completing.
-  const endMeridian=async input=>{const attempt=boundAttempt(input);try{await attempt.release();}finally{attempt.finish();await attempt.work;attempts.delete(input.attemptID);}return null;};
+  const endMeridian=async input=>{const attempt=boundAttempt(input);try{await attempt.release({drainMs:MERIDIAN_HANDOFF_DRAIN_MS});}finally{attempt.finish();await attempt.work;attempts.delete(input.attemptID);}return null;};
   const cursorPrompt=(input,body)=>admissionOwner.withProviderAttempt(input,async()=>{live();if(!cursor||!locations.has(input.directory))throw fail('native_cursor_unavailable',503);input.signal?.throwIfAborted();const result=await cursor.handlePromptAsync({sessionID:input.sessionID,directory:input.directory,body});input.signal?.throwIfAborted();live();return result;});
   return {catalog,inspectClaude,withMeridian,beginMeridian,assertMeridian,endMeridian,cursorPrompt,abortCursor:async sessionID=>{if(!cursor)throw fail('native_cursor_unavailable',503);return cursor.abortAndWait(sessionID);},
     invalidateClaudeProfile:profileID=>{live();if(!removingProfile)throw fail('native_claude_enrollment_owner_required',409);if(credentialProfiles?.some(profile=>profile.id===profileID))profileConfigurationChanged=true;},

@@ -5,7 +5,8 @@ export const CLAUDE_CHECKPOINT_EVENTS = Object.freeze(['passthrough.checkpoint_s
   'passthrough.checkpoint_rejected', 'passthrough.checkpoint_interrupt_failed', 'passthrough.checkpoint_retained', 'passthrough.checkpoint_replay']);
 export const CLAUDE_CHECKPOINT_REASONS = Object.freeze(['tool_results_complete', 'invalid_boundary', 'control_failed',
   'drain_timeout', 'client_abort', 'sdk_terminal', 'missing_terminal', 'unrecognized_sdk_exit', 'incomplete_boundary',
-  'persisted_boundary_unverified', 'persisted_tool_boundary', 'verified_handoff', 'incomplete_or_mismatched_results']);
+  'persisted_boundary_unverified', 'persisted_tool_boundary', 'verified_handoff', 'incomplete_or_mismatched_results',
+  'noncanonical_session_evicted']);
 const fail = () => Object.assign(new Error('native_claude_transport_invalid'), { code: 'native_claude_transport_invalid' });
 
 /** Both sides derive this from the same immutable provider boot, never SDK environment claims. */

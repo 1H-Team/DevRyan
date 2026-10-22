@@ -88,6 +88,6 @@ export async function createNativeProviderProcess({binary,cwd,environment,boot:i
     child.stdin.write(JSON.stringify(boot)+'\n',error=>{if(error)failed(error);});
     await deadline(binding,'native_provider_boot_timeout');
   }catch(error){try{await terminate();}catch(cleanup){throw new AggregateError([error,cleanup],'native_provider_launch_unsettled');}throw error;}
-  return {bound,pid:child.pid,isFailed:()=>Boolean(fatal||stopped),health:()=>call('health'),authorizeAttempt:async input=>{await call('authorize-attempt',input);transports.authorize(input);return null;},releaseAttempt:async input=>{await call('release-attempt',input);await transports.release(input);return null;},killAndWaitForExit:terminate,
+  return {bound,pid:child.pid,isFailed:()=>Boolean(fatal||stopped),health:()=>call('health'),authorizeAttempt:async input=>{await call('authorize-attempt',input);transports.authorize(input);return null;},releaseAttempt:async(input,{drainMs=0}={})=>{if(drainMs>0)await transports.drain(input,drainMs);await call('release-attempt',input);await transports.release(input);return null;},killAndWaitForExit:terminate,
     close:()=>closeWork??=(async()=>{try{await closeTransports();await call('close');child.stdin.end();const result=await deadline(exited,'native_provider_exit_unconfirmed');if(result.code!==0||result.signal)throw fail('native_provider_close_unconfirmed');return result;}catch(error){await terminate();throw error;}})()};
 }

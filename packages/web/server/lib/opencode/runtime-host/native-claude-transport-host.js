@@ -124,6 +124,17 @@ export function createNativeClaudeTransportHost({ boot: input, environment, reso
       if (closed || !boot.transport.directories.includes(input.directory) || attempts.size >= 64 || attempts.has(input.attemptID)) throw fail('native_claude_transport_expired');
       attempts.set(input.attemptID, binding(input));
     },
+    // Meridian closes the client stream at a tool boundary and then drains the
+    // SDK to its terminal result before it stores the session. Waiting for the
+    // attempt's own exit (bounded) keeps that checkpoint; release still kills.
+    async drain(input, timeoutMs) {
+      if (attempts.get(input.attemptID) !== binding(input)) throw fail('native_claude_transport_expired');
+      const active = [...jobs.values()].filter(job => job.input.attemptID === input.attemptID);
+      if (!active.length) return;
+      let timer;
+      try { await Promise.race([Promise.all(active.map(job => job.work.catch(() => {}))), new Promise(resolve => { timer = setTimeout(resolve, timeoutMs); })]); }
+      finally { clearTimeout(timer); }
+    },
     async release(input) {
       if (attempts.get(input.attemptID) !== binding(input)) throw fail('native_claude_transport_expired');
       attempts.delete(input.attemptID);
