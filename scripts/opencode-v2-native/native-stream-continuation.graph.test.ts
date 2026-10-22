@@ -74,8 +74,8 @@ const runtime = createSessionMutationRuntime(`);
   if(method==='native.provider-timing'){`);
    replace('const gates = createAdmissionGates({',`const slimOrigin={kind:'plugin',id:'devryan.slim',manifestDigest:'a'.repeat(64),capabilities:['read','write','network','process']};
 const unavailable=()=>{throw Error('unexpected_fixture_owner');};
-const actualSlim=!FIXTURE.slim?undefined:createControllerSlim({snapshot,origin:slimOrigin,originals,ponytailCommand:{description:'unused',template:'unused'},rpc,executeOwned:unavailable,withControl:(_invocation,action)=>action,
- commands:{assertCommand:unavailable,executeCommand:unavailable},webfetchBinaryDirectory:directory=>directory,webfetchOwnersFor:unavailable,applyPonytailCommand:unavailable,
+const actualSlim=!FIXTURE.slim?undefined:createControllerSlim({snapshot,origin:slimOrigin,originals,rpc,executeOwned:unavailable,withControl:(_invocation,action)=>action,
+ commands:{assertCommand:unavailable,executeCommand:unavailable},webfetchBinaryDirectory:directory=>directory,webfetchOwnersFor:unavailable,
  interviewForDirectory:()=>({runtime:{},service:{getActiveInterviewId:async()=>null,handleCommandExecuteBefore:unavailable,handleEvent:async()=>{}},submitCommand:unavailable,assertAcceptedCommand:unavailable,assertCurrent:async()=>{},dispose:async()=>{}}),
  observePrompt:async()=>{},observeLifecycle:async()=>{},transformImages:async()=>{},disposeLocation:async()=>{},log:()=>{}});
 const gates = createAdmissionGates({...(FIXTURE.slim?{sessionHooks:(inner,location,owners)=>actualSlim.decorateHooks(inner,location,owners)}:{}),`);

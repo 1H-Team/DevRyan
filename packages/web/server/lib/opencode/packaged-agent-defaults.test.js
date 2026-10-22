@@ -4,10 +4,13 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import yaml from 'yaml';
 
+import { MANAGED_RECOVERY_INSTRUCTIONS } from '@devryan/orchestration-runtime';
+import { renderAgentPromptPolicies } from './packaged-agents.js';
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const AGENTS_DIR = path.resolve(__dirname, '../../default-config/agents');
 const PRE_TASK_ORCHESTRATOR_PROMPT_UTF8_BYTES = 15_902;
-const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 43_214;
+const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 31_251;
 const DEFAULT_SLIM_PROFILE_PATH = path.resolve(
   __dirname,
   '../../default-config/user-profile/devryan-agents.jsonc',
@@ -311,16 +314,10 @@ describe('packaged agent defaults', () => {
     for (const contract of [
       '**DevRyan-managed delegation.**',
       'at most one managed recovery',
+      'following the `instruction` the failed result carries',
       'never change its model automatically',
-      'at most one brief status sentence',
-      'Do not repeat recovery instructions',
-      'DevRyan sends one synthetic continuation to the idle parent',
       'Any collected result with `manualRecoveryRequired: true`',
-      'sends one transcript-marked same-child continuation when the child is already terminal',
-      'A collected `provider_prompt_rejected` failure is context-specific',
-      'compact, semantically complete task capsule',
-      'preserve the configured agent, model, and thinking level',
-      'do not retry again or enter Model Recovery solely for prompt rejection',
+      'issue every independent `devryan_task` start as parallel tool calls in the same assistant message',
       '**Managed dispatch barrier.**',
       'Workspace writes, general execution, dependent implementation, and final completion remain gated.',
       'Allowed subagents: `explorer`, `librarian`, `oracle`, `designer`, `fixer`, `council`.',
@@ -346,6 +343,20 @@ describe('packaged agent defaults', () => {
       expect(body, contract).toContain(contract);
     }
     expect(body).not.toContain('use `recover_in_place`');
+    // Recovery detail moved out of the static prompt into the failed result's instruction.
+    for (const [contract, instruction] of [
+      ['at most one brief status sentence', MANAGED_RECOVERY_INSTRUCTIONS.manual],
+      ['Do not repeat recovery instructions', MANAGED_RECOVERY_INSTRUCTIONS.manual],
+      ['never change its model automatically', MANAGED_RECOVERY_INSTRUCTIONS.manual],
+      ['DevRyan sends one synthetic continuation to the idle parent', MANAGED_RECOVERY_INSTRUCTIONS.scheduled],
+      ['sends one transcript-marked same-child continuation when the child is already terminal', MANAGED_RECOVERY_INSTRUCTIONS.failed],
+      ['compact, semantically complete task capsule', MANAGED_RECOVERY_INSTRUCTIONS.promptRejected],
+      ['preserving the configured agent, model, and thinking level', MANAGED_RECOVERY_INSTRUCTIONS.promptRejected],
+      ['do not retry again or enter Model Recovery solely for prompt rejection', MANAGED_RECOVERY_INSTRUCTIONS.promptRejected],
+    ]) {
+      expect(instruction, contract).toContain(contract);
+    }
+    expect(body).not.toContain('compact, semantically complete task capsule');
   });
 
   it('uses catalog-driven skill permissions without hardcoded skill names', () => {
@@ -397,24 +408,38 @@ describe('packaged agent defaults', () => {
   });
 
   it('permits negotiated reads and wait-any while preserving mutation and disposition gates', () => {
-    const content = readPackagedAgent('orchestrator').content;
+    const { body } = readPackagedAgent('orchestrator');
+    const off = renderAgentPromptPolicies(body, {});
+    const on = renderAgentPromptPolicies(body, { readOverlap: true, waitAny: true, compactResults: true, contextProjection: true });
 
-    expect(content).toContain('Start independent managed tasks, then collect and reconcile their results.');
-    expect(content).toContain('capabilities.policies.readOverlap');
-    expect(content).toContain('These reads are provisional: reread affected files after the barrier clears before building a mutation.');
-    expect(content).toContain('Workspace writes, general execution, dependent implementation, and final completion remain gated.');
-    expect(content).toContain('capabilities.policies.waitAny');
-    expect(content).toContain('Omit the cursor when changing the selected tasks.');
-    expect(content).toContain('Waits remain attached across internal transport slices');
-    expect(content).toContain('use `status` only for an intentional nonblocking snapshot');
-    expect(content).toContain('Read each legacy `resultReference.nextCursor` page in order until complete, then disposition the result.');
-    expect(content).toContain('Completed results require `continue`');
-    expect(content).toContain('Leave scheduled or manual recovery pending');
-    expect(content).toContain('Follow-up attempts remain in the same dispatch group and require collection and disposition too.');
-    expect(content).toContain('Follow legacy paging when no versioned header is present.');
-    expect(content).toContain('Canonical failure and check evidence outrank child prose, including facts outside the first detail page.');
-    expect(content).toContain('a pass followed by relevant edits needs another check');
-    expect(content).toContain('`continue` reconciles a result and never converts unverified work into a pass.');
+    for (const rendered of [off, on]) {
+      expect(rendered).toContain('Start independent managed tasks, then collect and reconcile their results.');
+      expect(rendered).toContain('Workspace writes, general execution, dependent implementation, and final completion remain gated');
+      expect(rendered).toContain('Follow-up attempts remain in the same dispatch group and require collection and disposition too.');
+      expect(rendered).toContain('a pass followed by relevant edits needs another check');
+      expect(rendered).toContain('`continue` reconciles a result and never converts unverified work into a pass.');
+      expect(rendered).not.toContain('<!-- devryan:');
+    }
+    // Default-off capabilities cost no prompt bytes until enabled.
+    for (const enabledOnly of [
+      'These reads are provisional: reread affected files after the barrier clears before building a mutation.',
+      '`action: wait_any`', 'Omit the cursor when changing the selected tasks.',
+      'Canonical failure and check evidence outrank child prose, including facts outside the first detail page.',
+      'Follow legacy paging when no versioned header is present.', '**Task and project context.**', '`remember_decision`',
+    ]) {
+      expect(off, enabledOnly).not.toContain(enabledOnly);
+      expect(on, enabledOnly).toContain(enabledOnly);
+    }
+    expect(off).toContain('While children run, use only orchestration bookkeeping.');
+    expect(off).toContain('Use `wait` for each task.');
+    expect(on).not.toContain('While children run, use only orchestration bookkeeping.');
+    expect(on).not.toContain('Use `wait` for each task.');
+  });
+
+  it('renders harness policy blocks fail-closed', () => {
+    expect(() => renderAgentPromptPolicies('a\n<!-- devryan:if notAPolicy -->\nb\n<!-- devryan:end -->\n', {})).toThrow(/Unknown harness policy/);
+    expect(() => renderAgentPromptPolicies('a\n<!-- devryan:if waitAny -->\nb\n', {})).toThrow(/Unbalanced/);
+    expect(renderAgentPromptPolicies('plain prompt', {})).toBe('plain prompt');
   });
 
   it('keeps managed deadlines as exceptional recovery boundaries', () => {
@@ -429,10 +454,10 @@ describe('packaged agent defaults', () => {
   it('never presents provider-native delegation as an Orchestrator path', () => {
     const content = readPackagedAgent('orchestrator').content;
 
-    expect(content).toContain('consume its partial output');
     expect(content).toContain('at most one managed recovery');
-    expect(content).toContain('prefer `resume` only for a resumable timed-out or interrupted result');
-    expect(content).toContain('never use `resume`, `recover_in_place`, or `retry_in_place`');
+    expect(MANAGED_RECOVERY_INSTRUCTIONS.failed).toContain('Consume its partial output');
+    expect(MANAGED_RECOVERY_INSTRUCTIONS.failed).toContain('prefer `resume` only for a resumable timed-out or interrupted result');
+    expect(MANAGED_RECOVERY_INSTRUCTIONS.promptRejected).toContain('never use `resume`, `recover_in_place`, or `retry_in_place`');
     expect(content).toContain('Number steps only when their order is a real dependency.');
     expect(content).toContain('Provider-native `task` is disabled for Orchestrator');
     expect(content).toContain('Provider-native `task` is unavailable to Orchestrator');
@@ -504,7 +529,7 @@ describe('packaged agent defaults', () => {
     expect(body).toContain('progress without findings does not establish discovery');
     expect(body).toContain('bounded findings, source paths, unresolved gaps; no raw logs');
     expect(body).toContain('tell parallel workers they are not alone and to preserve others\' changes');
-    expect(body).toContain('Only when the action is advertised and `contextProjection` is enabled');
+    expect(body).toContain('<!-- devryan:if contextProjection -->\n\n**Task and project context.**');
   });
 
   it('explorer is constrained to context discovery only', () => {

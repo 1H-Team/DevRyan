@@ -1136,6 +1136,38 @@ test('cold startup rebinds repaired host artifacts at the same OpenCode version 
  await u.launch(u.pinned,async()=>{throw Error('Explicit rollback must be retained');});
  expect(u.binding().selection).toMatchObject({revision:4,selectedBundleID:before.descriptor.bundleID,transition:'rollback'});
 },60_000);
+test('an installed bundle whose registrations still list the retired Ponytail origin rebinds to the shipped registrations and can roll back',async()=>{
+ const u=await startupUpgradeFixture('startup-ponytail-rebind-home');
+ const manifestPath=path.join(u.pinned,'native-bundle.json'),manifest=JSON.parse(await fs.readFile(manifestPath,'utf8'));
+ const slim={id:'devryan.slim',manifestDigest:'1'.repeat(64),capabilities:['read','write','process','network','control']};
+ const ponytail={id:'devryan.ponytail',manifestDigest:'2'.repeat(64),capabilities:['control']};
+ // The installed release still compiled the retired registration and its reviewed input.
+ await fs.writeFile(manifestPath,JSON.stringify({...manifest,inputs:{...manifest.inputs,reviewedPlugins:[slim,ponytail]}})+'\n');
+ await u.launch(u.pinned);const before=u.binding(),launch=before.descriptor.launch;
+ const registrations=async()=>JSON.parse(await fs.readFile(launch.reviewedPluginManifestPath,'utf8')).plugins.map(row=>row.id);
+ expect(await registrations()).toEqual(['devryan.slim','devryan.ponytail']);
+ // Stored Ponytail state in the bundle's configuration is user data, untouched by the rebind.
+ await fs.writeFile(path.join(launch.opencodeConfigDirectory,'.ponytail-active'),'ultra');
+ await fs.mkdir(path.join(launch.opencodeConfigDirectory,'ponytail'),{recursive:true});
+ await fs.writeFile(path.join(launch.opencodeConfigDirectory,'ponytail','config.json'),'{"defaultMode":"lite"}');
+ // The next release drops Ponytail only: same OpenCode version and core digest, new artifact identity.
+ await fs.writeFile(manifestPath,JSON.stringify({...manifest,inputs:{...manifest.inputs,reviewedPlugins:[slim]}})+'\n');
+ const shipped=sha256(await fs.readFile(manifestPath));expect(shipped).not.toBe(launch.artifactManifestSha256);
+ await u.launch(u.pinned,async()=>{throw Error('An unchanged core is never captured or copied');});
+ const after=u.binding();
+ expect(after.selection).toMatchObject({revision:before.selection.revision+1,selectedBundleID:before.descriptor.bundleID,transition:'activate',reconciliationRequired:false});
+ expect(after.descriptor.launch.artifactManifestSha256).toBe(shipped);
+ expect(artifactFields(after.descriptor.launch)).toEqual(artifactFields(launch));
+ expect(await registrations()).toEqual(['devryan.slim']);expect(readStartupBundleUpgradeFailure()).toBe(null);
+ expect(await fs.readFile(path.join(launch.opencodeConfigDirectory,'.ponytail-active'),'utf8')).toBe('ultra');
+ expect(await fs.readFile(path.join(launch.opencodeConfigDirectory,'ponytail','config.json'),'utf8')).toBe('{"defaultMode":"lite"}');
+ await expect(createRuntimeBundleStore({controlRoot:u.controlRoot,allowRecoveredInputStartup:true,runMigration:async()=>{throw Error('fixture no migration');},
+  withQuiescedSource:async()=>{throw Error('fixture no checkpoint');},verifyArtifacts:async()=>{}}).verify({bundleID:before.descriptor.bundleID,phase:'resume'})).resolves.toMatchObject({integrity:'verified'});
+ // An explicit rollback restores the previous launch documents, Ponytail registration included.
+ const lifecycle=await coldLifecycle(u,after);
+ expect(await lifecycle.rollback({expectedRevision:after.selection.revision})).toMatchObject({transition:'rollback',bundleID:before.descriptor.bundleID});
+ expect(u.binding().descriptor).toEqual(before.descriptor);expect(await registrations()).toEqual(['devryan.slim','devryan.ponytail']);
+},60_000);
 test('a rebind killed before its selector flips is undone at the next launch, and one killed after it is kept',async()=>{
  const {recoverRuntimeBundleRebind}=await import('./runtime-bundle.js');
  const u=await startupUpgradeFixture('startup-rebind-crash-home');

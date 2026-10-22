@@ -574,7 +574,8 @@ describe('Packaged DevRyan agents', () => {
     const orchestrator = listPackagedAgents().find((agent) => agent.name === 'orchestrator');
 
     expect(orchestrator?.prompt).toContain('Parallel delegation readiness gate');
-    expect(orchestrator?.prompt).toContain('Start every independent specialist needed by the task in the same dispatch; DevRyan does not impose an artificial managed concurrency cap, so do not serialize or batch work around a fixed slot count.');
+    expect(orchestrator?.prompt).toContain('Start every independent specialist needed by the task in the same dispatch: issue every independent `devryan_task` start as parallel tool calls in the same assistant message.');
+    expect(orchestrator?.prompt).toContain('DevRyan does not impose an artificial managed concurrency cap, so do not serialize or batch work around a fixed slot count.');
     expect(orchestrator?.prompt).toContain('Keep each brief bounded; follow the managed launch rule above.');
     expect(orchestrator?.prompt).toContain('Use parallel agents only when tasks are independently useful and target disjoint files or subsystems.');
     expect(orchestrator?.prompt).toContain('If tasks overlap files, share mutable state, or depend on earlier findings, sequence those dependencies.');

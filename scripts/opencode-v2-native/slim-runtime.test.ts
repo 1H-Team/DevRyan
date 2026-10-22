@@ -2,8 +2,6 @@ import { expect, test } from 'bun:test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import {pathToFileURL} from 'node:url';
-import {renderReviewedPonytailInstructions} from '../../packages/web/server/lib/opencode/runtime-host/reviewed-ponytail-instructions.js';
 import {bundleAgentsCore} from './agents-core-fixture.ts';
 
 for(const controllerComposition of [false,true])test((controllerComposition?'controller composition: ':'')+'composed pinned Slim runtime preserves two location catalogs across tool reload and disposes its native scope', async () => {
@@ -47,7 +45,7 @@ for(const controllerComposition of [false,true])test((controllerComposition?'con
         if(method==='native.slim.hook'){
          await hostOwner.assertContext(input);
          if(input.action==='message')return hostOwner.readMessage({directory:input.directory,sessionID:input.sessionID,messageID:input.requestedMessageID});
-         if(input.action==='ponytail')return hostOwner.ponytail.contextInstructions(input.directory);return null;
+         return null;
         }
         if(method==='native.slim.context'){
          if(JSON.stringify(input).includes('OWNED_MEDIA_SENTINEL'))throw new Error('media_payload_in_context_rpc');contextRpc.push(input);
@@ -56,7 +54,7 @@ for(const controllerComposition of [false,true])test((controllerComposition?'con
         }
         if(method==='native.slim.path'){escapedRead=authority.assertToolRead;if(input.action==='stat'){if(pathRefused)throw new Error('owned_path_refused');return {kind:'file'};}if(input.action==='assert')return null;throw new Error('unexpected_path_operation');}
         if(method==='native.slim.accepted-command')return null;throw new Error('unexpected_controller_rpc');
-       },webfetchBinaryDirectory:directory=>owner(directory).webfetch.binaryDirectory,webfetchOwnersFor:(invocation,context)=>owner(invocation.location.directory).webfetch.ownersFor(invocation,context),commands:commandOwners,applyPonytailCommand:()=>Effect.void,
+       },webfetchBinaryDirectory:directory=>owner(directory).webfetch.binaryDirectory,webfetchOwnersFor:(invocation,context)=>owner(invocation.location.directory).webfetch.ownersFor(invocation,context),commands:commandOwners,
        interviewForDirectory:directory=>({runtime:{},service:{getActiveInterviewId:createControllerInterview({controllerInstanceID:'fixture',isCurrent:()=>true,rpc:async(method,input,rpcOptions)=>{
         if(method!=='native.slim.interview.active')throw new Error('unexpected_interview_rpc');
         if(interviewRefused)throw new Error('accepted_interview_command_required');
@@ -80,9 +78,8 @@ for(const controllerComposition of [false,true])test((controllerComposition?'con
       const commandEvents=[];let commandRefused=false;const lifecycleEvents=[];const disposals=[];const hookAuthorities=[];const controlEvents=[];let releaseSecondary;let startedSecondary;let secondarySettled=false;const secondaryStarted=new Promise(resolve=>startedSecondary=resolve);let contextRefused=false;let activeReadSuspended=false,activeReadCancelled=false,startActiveRead;const activeReadStarted=new Promise(resolve=>startActiveRead=resolve);let transformRefused=false;let projectionTamper;let pathRefused=false;let interviewRefused=false;let escapedRead;const readProofs=[];
       const originals=await import(${JSON.stringify(slim)});
       let activeCommandControls;const commandOwners={assertCommand:input=>Effect.gen(function*(){const proof=yield* activeCommandControls.assertReviewedCommand(input);commandEvents.push({event:"authority",name:input.name,directory:input.directory,token:proof.permit.token});yield* Effect.sync(()=>{commandEvents.push({event:'assert',name:input.name,directory:input.directory});if(commandRefused)throw new Error('command_revoked')});}),executeCommand:input=>Effect.sync(()=>commandEvents.push({event:'execute',...input}))};
-      const runtime=createNativeSlimRuntime({snapshot,originals,origin,withControl:(_invocation,execute)=>Effect.sync(()=>controlEvents.push('control-start')).pipe(Effect.andThen(execute),Effect.ensuring(Effect.sync(()=>{controlEvents.push('control-finish');if(!secondarySettled)throw new Error('control_before_actual_settlement')}))),ponytailCommand:${JSON.stringify((await renderReviewedPonytailInstructions()).command)},executeOwned:()=>Effect.die(new Error('downstream_not_expected')),forDirectory:location=>({
+      const runtime=createNativeSlimRuntime({snapshot,originals,origin,withControl:(_invocation,execute)=>Effect.sync(()=>controlEvents.push('control-start')).pipe(Effect.andThen(execute),Effect.ensuring(Effect.sync(()=>{controlEvents.push('control-finish');if(!secondarySettled)throw new Error('control_before_actual_settlement')}))),executeOwned:()=>Effect.die(new Error('downstream_not_expected')),forDirectory:location=>({
        log:()=>{},commands:commandOwners,webfetch:{binaryDirectory:process.env.OPENCODE_CONFIG_DIR+'/binary',ownersFor:async(invocation,context)=>({assertCurrent:async()=>{if(invocation.existingPermit.token!=='e'.repeat(64))throw new Error('original_invocation_lost')},cache:originals.createReviewedWebfetchCache(),fetch:async()=>new Response(Array.from({length:40},(_,i)=>'owned'+i).join(' '),{headers:{'content-type':'text/plain'}}),loadJSDOM:async()=>{throw new Error('fixture_html_not_expected')},saveBinary:async()=>{throw new Error('fixture_binary_not_expected')},secondary:async request=>{startedSecondary();await new Promise(resolve=>releaseSecondary=resolve);secondarySettled=true;request.signal.throwIfAborted();return 'owned result'}})},
-       ponytail:{contextInstructions:async directory=>'EXACT PONYTAIL '+directory,applyCommand:()=>Effect.void},
        assertContext:async input=>{const authority=currentNativeSlimHookAuthority();if(!authority||authority.directory!==input.directory||authority.sessionID!==input.sessionID)throw new Error('actual_hook_authority_missing');hookAuthorities.push({phase:authority.phase,token:authority.permit.token,directory:authority.directory});if(contextRefused)throw new Error('context_revoked')},readMessage:async()=>({parts:[]}),observeLifecycle:async event=>{lifecycleEvents.push({directory:location.directory,event})},observePrompt:async()=>{},retry:async()=>{const authority=currentNativeSlimHookAuthority();if(!authority?.attempt||JSON.stringify(authority.attempt)!==JSON.stringify(expectedRetryAttempt))throw new Error('native_retry_attempt_hook_lost')},
        beforePaths:async()=>{const authority=currentNativeSlimHookAuthority();if(authority?.assertToolRead){escapedRead=authority.assertToolRead;await authority.assertToolRead('owned-target');}},transformMessages:async()=>{},dispose:async()=>{disposals.push(location.directory)},
        interviewBridge:{registerCommand:()=>{},handleContext:async()=>{if(interviewRefused)throw new Error('accepted_interview_command_required')},handleEvent:async()=>{},dispose:async()=>{}}})});
@@ -107,14 +104,14 @@ for(const controllerComposition of [false,true])test((controllerComposition?'con
         await Effect.runPromise(Effect.scoped(Effect.gen(function*(){
           const api=yield* OpenCode.create({database:{path:':memory:'},config:{project:false},models:{fetch:false,snapshot:false},fs:{filewatcher:false,fff:false},events:{persist:false}},
             {overrides:[...configurationOverridesForSnapshot(snapshot),Global.node.replace(Global.layerWith({home:process.env.HOME,config:process.env.OPENCODE_CONFIG_DIR,data:process.env.HOME+'/data',state:process.env.HOME+'/state',cache:process.env.HOME+'/cache',tmp:process.env.TMPDIR,bin:process.env.HOME+'/bin',log:process.env.HOME+'/log',repos:process.env.HOME+'/repos'})),
-            trustedPluginOverride({plugins:[{plugin:reviewed,origin},{plugin:commandBehavior,origin:commandOrigin},{plugin:runtime.ponytail,origin:{kind:'plugin',id:'devryan.ponytail',manifestDigest:'1'.repeat(64),capabilities:['control']}},{plugin:runtime.lifecycle,origin:{kind:'plugin',id:'devryan.slim-lifecycle',manifestDigest:'2'.repeat(64),capabilities:['control']}}],additionalOrigins:[],nativePlugins:new Map()}),...gates.overrides,capture]});
+            trustedPluginOverride({plugins:[{plugin:reviewed,origin},{plugin:commandBehavior,origin:commandOrigin},{plugin:runtime.lifecycle,origin:{kind:'plugin',id:'devryan.slim-lifecycle',manifestDigest:'2'.repeat(64),capabilities:['control']}}],additionalOrigins:[],nativePlugins:new Map()}),...gates.overrides,capture]});
           yield* api.agent.list({location:{directory}});
           if(!capturedPlugins||!capturedTools) throw new Error('native_catalog_missing');
           yield* capturedPlugins.awaitActivation;
           const agents=yield* api.agent.list({location:{directory}});
           if(directory===dirs[2]){
            const lists=[];for(let index=0;index<2;index++){if(index)yield* capturedTools.reload();const catalog=yield* capturedTools.list();lists.push(catalog.map(tool=>tool.id));}
-           const inactiveCommands=yield* capturedCommands.list();if(inactiveCommands.some(command=>['deepwork','loop','reflect','interview','ponytail'].includes(command.name)))throw new Error('inactive_plugin_command_registered');
+           const inactiveCommands=yield* capturedCommands.list();if(inactiveCommands.some(command=>['deepwork','loop','reflect','interview'].includes(command.name)))throw new Error('inactive_plugin_command_registered');
            if(lists.some(list=>list.some(tool=>['ast_grep_search','ast_grep_replace'].includes(tool))))throw new Error('inactive_plugin_tool_registered');
            rows.push({directory,agents:agents.data.map(agent=>({id:agent.id,model:agent.model,system:agent.system})),lists,calls});return;
           }
@@ -129,7 +126,8 @@ for(const controllerComposition of [false,true])test((controllerComposition?'con
            if(controllerComposition&&result.decision.retry!==false)throw new Error('native_retry_decision_lost');
           }).pipe(Effect.withSpan('SessionStep.attempt'));
           const transformed=yield* capturedHooks.trigger('session','context',contextEvent).pipe(Effect.provideService(OperationPermitRef,{token:'f'.repeat(64),revision:0,sessionID:contextSession.id}));
-          if(!transformed.system[0]?.text.startsWith('FIRST')||!transformed.system[0]?.text.includes('SECOND')||!transformed.system.some(part=>part.text==='EXACT PONYTAIL '+directory)||transformed.messages[0].content.length<2)throw new Error('original_context_or_ponytail_missing:'+JSON.stringify([transformed.system[0]?.text.startsWith('FIRST'),transformed.system[0]?.text.includes('SECOND'),transformed.system.some(part=>part.text==='EXACT PONYTAIL '+directory),transformed.messages[0].content.length]));
+          if(!transformed.system[0]?.text.startsWith('FIRST')||!transformed.system[0]?.text.includes('SECOND')||transformed.messages[0].content.length<2)throw new Error('original_context_missing:'+JSON.stringify([transformed.system[0]?.text.startsWith('FIRST'),transformed.system[0]?.text.includes('SECOND'),transformed.messages[0].content.length]));
+          if(transformed.system.some(part=>/PONYTAIL/i.test(part.text)))throw new Error('retired_ponytail_instructions_present');
           if(controllerComposition&&!transformed.messages[0].content.some(part=>part.data==='OWNED_MEDIA_SENTINEL'))throw new Error('native_media_reference_lost');
           if(controllerComposition&&!transformed.messages[0].content.some(part=>part.text==='ACTUAL OWNED TASKBOARD'))throw new Error('in_place_taskboard_changes_lost');
           if(controllerComposition){

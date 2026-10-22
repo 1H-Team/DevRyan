@@ -1,17 +1,11 @@
 // Build-only entry: Bun seals agents-core and the reviewed inputs into a Node asset.
 // Importing this module does not register plugins or acquire native services.
 import * as originals from '@devryan/agents-core';
-import instructions,{command,commands} from 'devryan:reviewed-ponytail-instructions';
 import {reviewedSlimCommandDeclarations} from './native-slim-commands.js';
 declare const DEVRYAN_NATIVE_BUILD_ID:string;
 export const nativeBuildID=typeof DEVRYAN_NATIVE_BUILD_ID==='string'?DEVRYAN_NATIVE_BUILD_ID:undefined;
 export {resolveReviewedSlimAgents as resolveSlimAgents} from '@devryan/agents-core';
 export const slimCommandDeclarations=reviewedSlimCommandDeclarations({deepwork:originals.createDeepworkCommandHook,loop:originals.createLoopCommandHook,reflect:originals.createReflectCommandHook});
-export const ponytailInstructions=instructions;
-export const ponytailCommandDeclaration=command;
-
-export const ponytailCommands=commands;
-
 export {createReviewedDocumentCache} from '../../../default-config/plugins/devryan-document-reader.mjs';
 
 export {reviewedSlimInterviewCommandDeclaration as interviewCommandDeclaration} from '@devryan/agents-core';

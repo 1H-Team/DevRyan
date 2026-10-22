@@ -43,7 +43,8 @@ test('sealed reviewed configuration imports under Node and builds original roles
    const hostResult=api.resolveSlimAgents({...selected,activePreset:'base',hostConfiguration:{agent:hostAgents,mcp:{}}});
    if(JSON.stringify(hostResult.agents.orchestrator.model)!==JSON.stringify(hostAgents.orchestrator.model)||JSON.stringify(hostResult.agents.orchestrator.backupModel)!==JSON.stringify(hostAgents.orchestrator.backupModel)||hostResult.agents.orchestrator.variant!==null)throw new Error('host_object_selection_or_backup_lost');
    if(JSON.stringify(hostResult.agents.council.councillors)!==JSON.stringify(hostAgents.council.councillors))throw new Error('saved_council_order_lost');
-   if(!api.slimCommandDeclarations.loop.template||!api.ponytailInstructions.ultra||!api.ponytailCommandDeclaration.template)throw new Error('declarations_absent');
+   if(!api.slimCommandDeclarations.loop.template||!api.interviewCommandDeclaration.template)throw new Error('declarations_absent');
+   if(Object.keys(api).some(key=>/ponytail/i.test(key)))throw new Error('retired_ponytail_export_present');
    const interview=api.reviewedSlimInterviewOriginals;
    if(!interview||typeof interview.createInterviewService!=='function'||typeof interview.createInterviewHandler!=='function')throw new Error('interview_originals_absent');
    if(!(new interview.InterviewDocumentOwnershipError('owned.md','ses_owner') instanceof Error))throw new Error('ownership_error_class_lost');

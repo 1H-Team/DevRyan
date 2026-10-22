@@ -186,7 +186,12 @@ plugin. `native-core-registrations.js` lists these origins;
 `native-configuration-snapshot.js` activates them in every location whenever
 the bundle registers them, with no `plugin` entry, and always resolves Slim
 agent routing. The retired adapter and package specs an upgraded setup still
-lists are ignored (`isRetiredDevRyanPluginSpec`), never rejected.
+lists are ignored (`isRetiredDevRyanPluginSpec`), never rejected. Ponytail's
+specs are retired the same way: there is no `devryan.ponytail` registration,
+`native.ponytail.command` RPC or `ponytail` action on `native.slim.hook` (which
+accepts `assert` and `message`), and the snapshot neither reads a stored
+`.ponytail-active` mode or `ponytail/config.json` default nor injects mode
+instructions or `/ponytail` commands.
 
 Its code is the workspace package `@devryan/agents-core`
 (`packages/agents-core`, see its `DOCUMENTATION.md`). Every `native-slim*`
@@ -655,7 +660,12 @@ rebind whose selector did not flip and completes an interrupted `restoring` one;
 a journal that matches neither selector refuses with
 `bundle_rebind_selection_changed`. Pruning keeps the artifacts the journaled
 previous descriptor names. A different version or core digest keeps the full
-migration-safe clone.
+migration-safe clone. Removing a reviewed registration is such an artifact-only
+change: when Ponytail was retired, the shipped manifest lost `devryan.ponytail`
+and its reviewed input while the core digest stayed, so a selected bundle that
+still lists it rebinds and its `config/reviewed-plugins.json` is replaced by the
+shipped registrations. A controller refuses a registration it has no plugin for
+(`native_reviewed_plugin_unavailable`); the rebind is what keeps the two in step.
 
 A clone hashes its copied tree several times (preparation record, prepared
 manifest, prepared-phase verification). `runtime-bundle.js` reuses a file's

@@ -17,8 +17,7 @@ describe('specialist-owned bundled agent routing', () => {
       'When the goal depends on external or version-specific facts, start `librarian` in the same dispatch as Explorer.',
       'answer stable, general programming knowledge directly',
       'Keep related tests and visible verification with the agent doing the change',
-      'Explicit user requests for a specialist take precedence',
-      'it never makes you the implementer or replaces Explorer-first discovery']) {
+      'Explicit user requests for a specialist take precedence']) {
       expect(prompt).toContain(rule);
     }
     // The 2026-09-25 direct-first policy left Orchestrator implementing everything after Explorer returned.
@@ -29,7 +28,9 @@ describe('specialist-owned bundled agent routing', () => {
       'Solve a small coherent change directly', 'simple work stays direct', 'complexity-based routing',
       'Plan approval does not change specialist ownership', 'a couple of lines with no test change', 'trivial one-file edit',
       'when it also depends on external', "a child's provider may report", 'An unknown filename alone never requires Explorer',
-      'direct-first discovery policy', 'only when it adds value']) {
+      'direct-first discovery policy', 'only when it adds value',
+      // Retired with Ponytail, the only source of appended minimal-diff style guidance.
+      'minimal-diff or lazy-developer']) {
       expect(prompt).not.toContain(obsolete);
     }
   });

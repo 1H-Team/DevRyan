@@ -1166,6 +1166,8 @@ export function validateRequiredChecks(value?: unknown): RequiredCheck[];
 export function validateRequiredCheckReceipts(receipts?: unknown, checks?: RequiredCheck[]): RequiredCheckReceipt[];
 export function projectRequiredCheckEvidence(checks?: RequiredCheck[], receipts?: RequiredCheckReceipt[], identities?: Record<string, string | null>): RequiredCheckEvidence[];
 export function createCompactResultHeader(input: { task: ManagedTaskRecord; envelope: ManagedTaskResultEnvelope; checks?: RequiredCheckEvidence[]; observedAt: number }): CompactResultHeader;
+export const MANAGED_RECOVERY_INSTRUCTIONS: Readonly<{ scheduled: string; manual: string; promptRejected: string; failed: string }>;
+export function managedRecoveryInstruction(task: ManagedTaskRecord | null | undefined, envelope: ManagedTaskResultEnvelope | null | undefined): string | null;
 export function readManagedResultReport(preview: string): CompactResultHeader['reported'];
 
 export const PROVIDER_AUTHENTICATION_FAILURE_KIND: 'provider_authentication';

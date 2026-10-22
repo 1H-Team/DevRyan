@@ -169,7 +169,7 @@ export function clearBackgroundJobSuppression(
  * Unified interface for background job operations.
  * Both BackgroundJobBoard and BackgroundJobCoordinator satisfy this.
  *
- * ponytail: single interface, both board and coordinator implement it.
+ * One interface: both the board and the coordinator implement it.
  */
 export interface BackgroundJobStore {
   // ── Mutation methods ──────────────────────────────────────────────

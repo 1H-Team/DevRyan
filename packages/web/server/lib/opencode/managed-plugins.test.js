@@ -166,6 +166,23 @@ describe('managed plugin manifest', () => {
     expect(RETIRED_DEVRYAN_PROFILE_DEPENDENCIES['oh-my-opencode-slim']).toBe('2.2.25');
   });
 
+  it('retires every Ponytail registration an upgraded setup still lists', () => {
+    for (const spec of [
+      './node_modules/@dietrichgebert/ponytail/.opencode/plugins/ponytail.mjs',
+      'file:///Users/test/.config/opencode/node_modules/@dietrichgebert/ponytail/.opencode/plugins/ponytail.mjs',
+      '@dietrichgebert/ponytail',
+      '@dietrichgebert/ponytail@4.10.0',
+    ]) {
+      expect(isRetiredDevRyanPluginSpec(spec)).toBe(true);
+      expect(getDevRyanManagedPluginForSpec(spec)).toBeNull();
+    }
+    expect(reconcileDevRyanManagedPluginSpecs([
+      'user-plugin@1.0.0',
+      ['./node_modules/@dietrichgebert/ponytail/.opencode/plugins/ponytail.mjs', { enabled: true }],
+      '@dietrichgebert/ponytail',
+    ]).some((entry) => JSON.stringify(entry).includes('ponytail'))).toBe(false);
+  });
+
   it('retires the Superpowers adapter and its upstream git plugin from existing profiles', () => {
     expect(isRetiredDevRyanPluginSpec('./plugins/devryan-superpowers.mjs')).toBe(true);
     expect(isRetiredDevRyanPluginSpec('file:///Users/test/.config/opencode/plugins/devryan-superpowers.mjs')).toBe(true);

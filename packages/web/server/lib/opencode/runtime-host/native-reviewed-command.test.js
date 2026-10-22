@@ -30,21 +30,21 @@ test('Node command derivation independently binds exact compiled origin/declarat
 
 test('reviewed command effects require the private derivation and retain fresh caller and ledger checks',async()=>{
  const directory='/fixture/commands',sessionID='ses_command';
- const origin={kind:'plugin',id:'devryan.ponytail',manifestDigest:'c'.repeat(64),capabilities:['control']};
- const definition={template:'Original ponytail command',description:'Original description'};
- const invocation={sessionID,prompt:{text:'full'},delivery:'queue'};
+ const origin={kind:'plugin',id:'devryan.slim-commands',manifestDigest:'c'.repeat(64),capabilities:['control']};
+ const definition={template:'Original deepwork command',description:'Original description'};
+ const invocation={sessionID,prompt:{text:'Original args'},delivery:'queue'};
  let allowed=true,revision=0;
- const owner=createNativeAdmissionOwner({directory,ownerID:'fixture',reviewedBehaviorCommands:[{origin,name:'ponytail',definition}],getReviewedConfiguration:()=>({commands:{}}),
+ const owner=createNativeAdmissionOwner({directory,ownerID:'fixture',reviewedBehaviorCommands:[{origin,name:'deepwork',definition}],getReviewedConfiguration:()=>({commands:{}}),
   runtime:{registerNativeSession:async()=>{},nativeAdmissionState:async()=>({revision,held:false})},getSession:async id=>({id,directory}),
   captureWebAuthorization:async()=>async()=>{if(!allowed)throw Object.assign(new Error('revoked'),{code:'revoked'});},authorizeOperation:async()=>{throw new Error('Unowned command');}});
  let captured;
- await owner.withWebOperation({operation:'commands.execute',method:'POST',path:`/api/session/${sessionID}/command`,directory,body:{name:'ponytail',text:'full',delivery:'queue'}},async()=>{
+ await owner.withWebOperation({operation:'commands.execute',method:'POST',path:`/api/session/${sessionID}/command`,directory,body:{name:'deepwork',text:'Original args',delivery:'queue'}},async()=>{
   const permit=JSON.parse(owner.requestHeaders()['x-devryan-native-permit']);
-  const derivation=await owner.handleRpc('native.admission.beginCommand',{permit,sessionID,name:'ponytail',definition,origin,invocation});
-  const request={operation:'session.command.effect',sessionID,derivation,input:{name:'ponytail',invocation}};
+  const derivation=await owner.handleRpc('native.admission.beginCommand',{permit,sessionID,name:'deepwork',definition,origin,invocation});
+  const request={operation:'session.command.effect',sessionID,derivation,input:{name:'deepwork',invocation}};
   const check=changes=>owner.handleRpc('native.admission.recheck',{permit,request:{...request,...changes}});
   await expect(check()).resolves.toBeNull();
-  for(const changes of [{derivation:undefined},{derivation:'f'.repeat(64)},{input:{name:'deepwork',invocation}},{input:{name:'ponytail',invocation:{...invocation,prompt:{text:'off'}}}}]){
+  for(const changes of [{derivation:undefined},{derivation:'f'.repeat(64)},{input:{name:'loop',invocation}},{input:{name:'deepwork',invocation:{...invocation,prompt:{text:'Different args'}}}}]){
    await expect(check(changes)).rejects.toMatchObject({code:'native_command_derivation_required'});
   }
   allowed=false;await expect(check()).rejects.toMatchObject({code:'revoked'});allowed=true;

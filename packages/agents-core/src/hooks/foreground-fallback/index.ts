@@ -112,7 +112,7 @@ const FAILOVER_ERROR_TYPES = new Set([
   'provider.auth',
   'provider.internal',
 ]);
-// (ponytail) validated against real OpenCode error shapes
+// Validated against real OpenCode error shapes
 const TRANSPORT_CODES = new Set([
   'ECONNREFUSED',
   'ECONNRESET',
@@ -1851,7 +1851,7 @@ export class ForegroundFallbackManager {
     // keep aborting in a loop. Surface errors to the user instead.
     if (this.chainExhaustion.get(sessionID) === 2) return;
     if (currentModel) tried.add(currentModel);
-    // ponytail: seed chain entries at or before the current model's index
+    // Seed chain entries at or before the current model's index
     // to prevent backward fallback onto models the session already left.
     if (currentModel) {
       const idx = chain.indexOf(currentModel);

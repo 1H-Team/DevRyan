@@ -172,6 +172,18 @@ describe('syncPackagedAgents', () => {
     });
   });
 
+  it('materializes rendered prompts without harness policy markers', async () => {
+    await writePackagedAgent('orchestrator', agentContent('orchestrator',
+      'Collect results.\n<!-- devryan:if contextProjection -->\nUse checkpoint.\n<!-- devryan:end -->\n<!-- devryan:if !contextProjection -->\nNo checkpoint.\n<!-- devryan:end -->'));
+
+    await syncPackagedAgents({ packagedAgentDirectory, targetAgentDirectory, manifestPath });
+
+    const written = await fs.readFile(path.join(targetAgentDirectory, 'orchestrator.md'), 'utf8');
+    expect(written).not.toContain('<!-- devryan:');
+    expect(written).toContain('No checkpoint.');
+    expect(written).not.toContain('Use checkpoint.');
+  });
+
   it('uses the packaged set hash fast path without reading unchanged target agent files', async () => {
     const builder = agentContent('builder', 'Builder prompt v1');
     const explorer = agentContent('explorer', 'Explorer prompt v1');

@@ -3,28 +3,21 @@ import {constants} from 'node:fs';
 import path from 'node:path';
 import {createNativeReadGuard} from './native-read-paths.js';
 import {toV1ToolName} from '../v2/projection/tools.js';
-import {createNativePonytailOwner} from './native-ponytail.js';
 import {lookupReviewedSkillResourcePath,readReviewedSkillResource} from './reviewed-skills.js';
 
 const record=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
 const fail=code=>Object.assign(new Error(code),{code,status:403});
 
-/** Read-only original hook IO and exact Ponytail command state. Mutating Slim
- * tools and continuations retain their separate execution owners. */
-export function createNativeSlimOwner({admissionOwner,openCodeClient,configurationSnapshot,configDirectory,ponytailInstructions,locations}) {
+/** Read-only original hook IO. Mutating Slim tools and continuations retain
+ * their separate execution owners. */
+export function createNativeSlimOwner({admissionOwner,openCodeClient,configurationSnapshot,locations}) {
  const location=directory=>{
   const found=configurationSnapshot.locations.find(value=>value.directory===directory);
   if(!found)throw fail('native_slim_location_unreviewed');return found;
  };
- const ponytail=(directory,assertCommand)=>{
-  const configured=location(directory);
-  if(!configured.activeRegistrationIDs?.includes('devryan.ponytail')||!record(configured.compatibility.ponytail))throw fail('native_ponytail_inactive');
-  return createNativePonytailOwner({configDirectory,directories:[directory],defaultMode:configured.compatibility.ponytail.defaultMode,
-   instructions:ponytailInstructions,assertCommand});
- };
  return {
   async hook(input,context={}) {
-   if(!record(input)||!['assert','message','ponytail'].includes(input.action)
+   if(!record(input)||!['assert','message'].includes(input.action)
     ||Object.keys(input).some(key=>!['action','permit','directory','sessionID','phase','messageID','requestedMessageID'].includes(key)))throw fail('native_slim_hook_invalid');
    location(input.directory);
    const captured=await admissionOwner.captureSessionHookAuthorization(input);
@@ -32,7 +25,6 @@ export function createNativeSlimOwner({admissionOwner,openCodeClient,configurati
    await recheck();
    let result;
    if(input.action==='assert')result=null;
-   else if(input.action==='ponytail')result=await ponytail(input.directory,async()=>{throw fail('native_command_derivation_required');}).contextInstructions(input.directory);
    else {
     if(typeof input.requestedMessageID!=='string'||!/^msg[A-Za-z0-9_-]{1,128}$/.test(input.requestedMessageID))throw fail('native_slim_message_invalid');
     const message=await openCodeClient.sessions.message(input.sessionID,input.requestedMessageID,{directory:input.directory});
@@ -87,15 +79,6 @@ export function createNativeSlimOwner({admissionOwner,openCodeClient,configurati
     await recheck();await guard(input.target);await guard(canonical);
     return bytes.subarray(0,bytesRead).toString('utf8');
    }finally{await file.close();}
-  },
-  async ponytailCommand(input,context={}) {
-   if(!record(input)||input.name!=='ponytail'||Object.keys(input).some(key=>!['directory','name','invocation','permit','derivation'].includes(key)))throw fail('native_ponytail_command_invalid');
-   const captured=await admissionOwner.captureCommandAuthorization(input);
-   const recheck=async()=>{context.signal?.throwIfAborted();await captured();context.signal?.throwIfAborted();};
-   await recheck();
-   const result=await ponytail(input.directory,recheck).applyCommand({directory:input.directory,sessionID:input.invocation.sessionID,
-    permit:input.permit,command:'ponytail',arguments:input.invocation.prompt.text??''});
-   await recheck();return result;
   },
  };
 }

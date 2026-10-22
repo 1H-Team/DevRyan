@@ -1041,7 +1041,7 @@ export function createNativeAdmissionOwner(options) {
     const { session, state } = await stateFor(input.sessionID);
     if (state.held || state.reverting) throw fail('native_session_held');
     const pending = await runtime.nativeContinuations({ directory: session.directory, sessionID: session.id });
-    // ponytail: Last-only Step evidence leaves earlier co-consumed notices in
+    // Known limit: Last-only Step evidence leaves earlier co-consumed notices in
     // per-step receipt scans until startup raw-sequence reconciliation. Upgrade
     // with a trusted native consumed-ID batch; REST folds these synthetic IDs.
     for (const operation of pending.filter(operation => operation.startsWith('shell.complete:'))) {
@@ -1691,14 +1691,6 @@ export function createNativeAdmissionOwner(options) {
         interviewAction:{kind:input.kind,body},reauthorize:grant.recheck,fingerprint,metadata});
       try{return await context.run(permit,async()=>{await grant.recheck();const result=await action({permit,kind:input.kind,body:copy(body)});await grant.recheck();return result;});}
       finally{active.delete(permit.token);}
-    }),
-    captureCommandAuthorization: input => inController(async()=>{
-      const entry=entryFor(input?.permit);
-      if(input.directory!==entry.directory || input.invocation?.sessionID!==entry.permit.sessionID)throw fail('native_command_scope_invalid',403);
-      const request={operation:'session.command.effect',sessionID:input.invocation.sessionID,derivation:input.derivation,
-        input:{name:input.name,invocation:copy(input.invocation)}};
-      const recheck=()=>inController(()=>assertRequest(entry,request));
-      await recheck();return recheck;
     }),
     withNativeTodoWrite: ({invocation,metadata},action)=>inController(async()=>{
       const parent=entryFor(invocation?.permit);

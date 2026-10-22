@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { MANAGED_RECOVERY_INSTRUCTIONS } from '@devryan/orchestration-runtime';
 import { describe, expect, it } from 'vitest';
 
 const readAgent = (name) => readFileSync(new URL(`./${name}.md`, import.meta.url), 'utf8');
@@ -6,8 +7,11 @@ const readAgent = (name) => readFileSync(new URL(`./${name}.md`, import.meta.url
 describe('bundled agent tool recovery guidance', () => {
   it('keeps parked Orchestrator output brief while the task card owns recovery controls', () => {
     const prompt = readAgent('orchestrator');
-    expect(prompt).toContain('at most one brief status sentence');
-    expect(prompt).toContain('Do not repeat recovery instructions');
+    // Recovery wording travels with the failed result, not the static prompt.
+    expect(prompt).toContain('following the `instruction` the failed result carries');
+    expect(MANAGED_RECOVERY_INSTRUCTIONS.manual).toContain('at most one brief status sentence');
+    expect(MANAGED_RECOVERY_INSTRUCTIONS.manual).toContain('Do not repeat recovery instructions');
+    expect(prompt).not.toContain('Do not repeat recovery instructions');
     expect(prompt).toContain('DevRyan owns automatic recovery');
     expect(prompt).not.toContain('tell the user to choose a model');
     expect(prompt).not.toContain('click Try Again');

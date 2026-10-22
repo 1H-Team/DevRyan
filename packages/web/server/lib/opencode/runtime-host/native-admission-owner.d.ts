@@ -154,7 +154,6 @@ export interface NativeAdmissionOwner {
     readonly messageID:string;readonly name:string;readonly arguments:string})=>Promise<()=>Promise<void>>;
   readonly captureInterviewAuthorization:(input:{readonly permit:OperationPermit;readonly directory:string;readonly sessionID:string;readonly messageID:string;readonly name:'interview';readonly arguments:string})=>Promise<{readonly authorizationID:string;readonly recheck:()=>Promise<void>;readonly signal:AbortSignal}>;
   readonly withInterviewAction:<A>(input:{readonly authorizationID:string;readonly directory:string;readonly sessionID:string;readonly messageID:string;readonly kind:'rename'|'notify'|'continue';readonly text:string},action:(input:import('./native-process-protocol.js').NativeInterviewAction&{readonly permit:OperationPermit})=>Promise<A>)=>Promise<A>;
-  readonly captureCommandAuthorization:(input:import('./native-slim-commands.js').NativeSlimCommandInput&{readonly permit:OperationPermit;readonly derivation:string})=>Promise<()=>Promise<void>>;
   readonly withPrimaryContinuationDispatch: <A>(input:NativePrimaryContinuationDispatch,action:()=>Promise<A>)=>Promise<A>;
   readonly withPrimaryRecoveryDispatch: <A>(input:NativePrimaryContinuationDispatch,action:()=>Promise<A>)=>Promise<A>;
   readonly withPrimaryContinuationOperation: <A>(input:NativePrimaryContinuationDispatch,action:(permit:OperationPermit)=>Promise<A>)=>Promise<A>;

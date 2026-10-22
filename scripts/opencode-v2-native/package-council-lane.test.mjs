@@ -31,7 +31,7 @@ test('optional Council fixture input refuses arbitrary saved graph replacement',
   const configuration = { providers: { 'devryan-smoke': { models: {
     'smoke-write': { limit: {} }, 'gpt-5-native-smoke': { limit: {} },
   } } } };
-  const bundle = { reviewedConfiguration: { resolveSlimAgents: () => {}, ponytailCommands: { ponytail: { template: 'Original bytes' } } } };
+  const bundle = { reviewedConfiguration: { resolveSlimAgents: () => {} } };
   assert.throws(() => attachReviewedSetup({ bundle, binding: {}, registrationBytes: Buffer.from('[]'), configuration,
     councilMembers: [{ model: 'unreviewed/model' }] }), /Only declared local Council/);
   assert.doesNotThrow(() => attachReviewedSetup({ bundle, binding: {}, registrationBytes: Buffer.from('[]'), configuration,

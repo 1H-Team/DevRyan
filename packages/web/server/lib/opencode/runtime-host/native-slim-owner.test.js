@@ -6,37 +6,26 @@ import {createNativeAdmissionOwner} from './native-admission-owner.js';
 import {createNativeSlimOwner} from './native-slim-owner.js';
 import {captureReviewedSkill} from './reviewed-skills.js';
 
-test('Ponytail state and hook reads retain exact native session, private command derivation and original caller',async()=>{
+test('hook reads retain exact native session and original caller; the retired Ponytail action is refused',async()=>{
  const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-slim-owner-')));
- const sessionID='ses_slim',origin={kind:'plugin',id:'devryan.ponytail',manifestDigest:'a'.repeat(64),capabilities:['control']};
- const definition={description:'original',template:'original $ARGUMENTS'},invocation={sessionID,prompt:{text:'ultra'},delivery:'queue'};
+ const sessionID='ses_slim';
  let allowed=true,messageSession=sessionID;
- const admissionOwner=createNativeAdmissionOwner({directory:root,ownerID:'fixture',reviewedBehaviorCommands:[{origin,name:'ponytail',definition}],
-  getReviewedConfiguration:()=>({commands:{}}),runtime:{registerNativeSession:async()=>{},nativeAdmissionState:async()=>({revision:0,held:false})},
-  getSession:async id=>({id,directory:root}),captureWebAuthorization:async()=>async()=>{if(!allowed)throw Error('revoked');},
-  authorizeOperation:async()=>{if(!allowed)throw Error('revoked');}});
- const owner=createNativeSlimOwner({admissionOwner,configDirectory:root,configurationSnapshot:{locations:[{directory:root,
-  activeRegistrationIDs:['devryan.ponytail'],compatibility:{ponytail:{defaultMode:'lite'}}}]},
-  ponytailInstructions:{lite:'exact lite',full:'exact full',ultra:'exact ultra',review:'exact review'},
+ const admissionOwner=createNativeAdmissionOwner({directory:root,ownerID:'fixture',getReviewedConfiguration:()=>({commands:{}}),
+  runtime:{registerNativeSession:async()=>{},nativeAdmissionState:async()=>({revision:0,held:false})},
+  getSession:async id=>({id,directory:root}),authorizeOperation:async()=>{if(!allowed)throw Error('revoked');}});
+ const owner=createNativeSlimOwner({admissionOwner,configurationSnapshot:{locations:[{directory:root,compatibility:{}}]},
   openCodeClient:{sessions:{message:async(_sessionID,id)=>({info:{id,sessionID:messageSession},parts:[{type:'text',text:'exact user input'}]})}}});
+ // A mode file an earlier release left in the configuration directory is never read.
+ await fs.writeFile(path.join(root,'.ponytail-active'),'ultra');
  try{
   const permit=await admissionOwner.handleRpc('native.admission.authorize',{operation:'runner.drain',sessionID});
-  const hook={action:'ponytail',permit,directory:root,sessionID,phase:'context'};
-  await expect(owner.hook(hook)).resolves.toBe('exact lite');
-  await expect(owner.hook({...hook,action:'message',requestedMessageID:'msg_user'})).resolves.toEqual({parts:[{type:'text',text:'exact user input'}]});
-  messageSession='ses_foreign';await expect(owner.hook({...hook,action:'message',requestedMessageID:'msg_user'})).rejects.toMatchObject({code:'native_slim_message_scope_invalid'});messageSession=sessionID;
-  const operation={operation:'commands.execute',method:'POST',path:`/api/session/${sessionID}/command`,directory:root,body:{name:'ponytail',text:'ultra',delivery:'queue'}};
-  await admissionOwner.withWebOperation(operation,async()=>{
-   const permit=JSON.parse(admissionOwner.requestHeaders()['x-devryan-native-permit']);
-   const derivation=await admissionOwner.handleRpc('native.admission.beginCommand',{permit,sessionID,name:'ponytail',definition,origin,invocation});
-   const command={permit,directory:root,derivation,name:'ponytail',invocation};
-   await expect(owner.ponytailCommand({...command,derivation:'f'.repeat(64)})).rejects.toMatchObject({code:'native_command_derivation_required'});
-   await expect(owner.ponytailCommand({...command,directory:root+'/other'})).rejects.toMatchObject({code:'native_command_scope_invalid'});
-   await expect(owner.ponytailCommand(command)).resolves.toEqual({kind:'changed',mode:'ultra'});
-   allowed=false;await expect(owner.ponytailCommand(command)).rejects.toThrow('revoked');allowed=true;
-  });
+  const base={permit,directory:root,sessionID,phase:'context'},hook={...base,action:'message',requestedMessageID:'msg_user'};
+  await expect(owner.hook({...base,action:'assert'})).resolves.toBeNull();
+  await expect(owner.hook(hook)).resolves.toEqual({parts:[{type:'text',text:'exact user input'}]});
+  messageSession='ses_foreign';await expect(owner.hook(hook)).rejects.toMatchObject({code:'native_slim_message_scope_invalid'});messageSession=sessionID;
+  await expect(owner.hook({...base,action:'ponytail'})).rejects.toMatchObject({code:'native_slim_hook_invalid'});
+  expect(owner).not.toHaveProperty('ponytailCommand');
   expect(await fs.readFile(path.join(root,'.ponytail-active'),'utf8')).toBe('ultra');
-  await expect(owner.hook(hook)).resolves.toBe('exact ultra');
   allowed=false;await expect(owner.hook(hook)).rejects.toThrow('revoked');allowed=true;
   await admissionOwner.invalidateController();await expect(owner.hook(hook)).rejects.toMatchObject({code:'native_permit_invalid'});
  }finally{admissionOwner.dispose();await fs.rm(root,{recursive:true,force:true});}

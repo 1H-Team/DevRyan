@@ -26,7 +26,6 @@ import { createControllerProviders } from './controller-providers.js';
 import {nativeImagegenPlugin,NATIVE_IMAGEGEN_PLUGIN_ID} from './native-imagegen-plugin.js';
 import {createNativeCursorIngress} from './native-cursor-ingress.js';
 import * as slimOriginals from '@devryan/agents-core';
-import {command as ponytailCommand} from 'devryan:reviewed-ponytail-instructions';
 import {scrubOpencodeFingerprints} from 'devryan:reviewed-claude-scrub';
 import {Effect,Schema} from 'effect';
 import {HostRefusal,refuseHost} from './host-refusal.js';
@@ -121,15 +120,11 @@ export async function startNativeController(boot:NativeProcessBoot,identity:{cor
   const skill=boot.configurationSnapshot?createReviewedSkillExecution({snapshot:boot.configurationSnapshot,withDirectRead:routing.withDirectRead}):undefined;
   let executeOwned:ExecuteOwned=invocation=>invocation.toolID==='skill'&&skill?skill(invocation):(documents?.executeOwned??routing.executeOwned)(invocation);
   const interview=createControllerInterview({controllerInstanceID:boot.instanceID,rpc,isCurrent:()=>bound&&!closing});
-  const applyPonytailCommand=(input:Parameters<typeof host.assertReviewedCommand>[0])=>Effect.gen(function*(){
-    const proof=yield* host.assertReviewedCommand(input);
-    yield* Effect.promise(()=>rpc('native.ponytail.command',{...input,...proof}));
-  });
   const slim=slimOrigin&&webfetch&&boot.configurationSnapshot?createControllerSlim({snapshot:boot.configurationSnapshot,origin:slimOrigin,
-    originals:slimOriginals,ponytailCommand,rpc,executeOwned,withControl:routing.withControl,
+    originals:slimOriginals,rpc,executeOwned,withControl:routing.withControl,
     webfetchOwnersFor:webfetch.ownersFor,webfetchBinaryDirectory:webfetch.binaryDirectory,
     commands:{assertCommand:input=>host.assertReviewedCommand(input).pipe(Effect.asVoid),executeCommand:input=>host.executeReviewedCommand(input)},
-    applyPonytailCommand,interviewForDirectory:interview.forDirectory,
+    interviewForDirectory:interview.forDirectory,
     observePrompt:async authority=>{await rpc('native.slim.hook',{action:'assert',directory:authority.directory,sessionID:authority.sessionID,permit:authority.permit,phase:authority.phase,...authority.messageID?{messageID:authority.messageID}:{}},{signal:authority.signal});},
     observeLifecycle:async(directory,event)=>{if(record(event)&&['message.updated','session.idle'].includes(String(event.type)))await interview.event(directory,event);},
     transformImages:createControllerImages(rpc,async authority=>{await rpc('native.slim.images-skipped',{directory:authority.directory,sessionID:authority.sessionID,permit:authority.permit,phase:authority.phase},{signal:authority.signal});}),
@@ -167,7 +162,6 @@ export async function startNativeController(boot:NativeProcessBoot,identity:{cor
     if(origin.id==='devryan.slim'&&slim)return {origin,plugin:slim.plugin};
     if(origin.id==='devryan.slim-commands'&&slim)return {origin,plugin:slim.commands};
     if(origin.id==='devryan.slim-lifecycle'&&slim)return {origin,plugin:slim.lifecycle};
-    if(origin.id==='devryan.ponytail'&&slim)return {origin,plugin:slim.ponytail};
     if(origin.id==='devryan.provider-compat'&&providers)return {origin,plugin:providers.plugin};
     if(!boot.configurationSnapshot)throw new Error('native_configuration_snapshot_required');
     if(origin.id==='devryan.reviewed-skills')return {origin,plugin:nativeSkillsPlugin(boot.configurationSnapshot)};
@@ -185,14 +179,12 @@ export async function startNativeController(boot:NativeProcessBoot,identity:{cor
   try {
     host=await createNativeRuntimeHost({helperText,databasePath:boot.databasePath,token:boot.httpToken,configuration:boot.configuration,configurationSnapshot:boot.configurationSnapshot,cursorCatalog:boot.cursorCatalog,globals:boot.globals,
       plugins,nativePlugins,reviewedBehaviorCommands:origins.flatMap(origin=>{
-        const declarations=origin.id==='devryan.slim-commands'&&slim?slim.commandDeclarations
-          :origin.id==='devryan.ponytail'&&slim?{ponytail:slim.ponytailCommandDeclaration}:undefined;
+        const declarations=origin.id==='devryan.slim-commands'&&slim?slim.commandDeclarations:undefined;
         return Object.entries(declarations??{}).map(([name,definition])=>({origin,name,definition}));
       }),providerHooks:inner=>observation.decorateHooks(integrations?.providerHooks(inner)??inner),
       executionActivity:cursor.decorateExecution,
       captureSessionStore:cursor.captureStore,
       sessionHooks:(inner,location,owners)=>{const decorated=sessionContext?.decorateHooks(inner,location)??inner;return slim?.decorateHooks(decorated,location,owners)??decorated;},
-      beforeConfiguredCommand:input=>input.name==='ponytail'&&boot.configurationSnapshot?.locations.find(row=>row.directory===input.directory)?.activeRegistrationIDs?.includes('devryan.ponytail')?applyPonytailCommand(input):Effect.void,
       executionOverrides:[...routing.overrides,...(webfetch?.overrides??[]),...(integrations?.overrides??[]),...(providers?.catalogOverrides??[]),...observation.overrides,primaryStepOverride(rpc,cursor.captureBus,(event,disposition)=>observation.observePublished(event,disposition).pipe(Effect.andThen(recoveredSettled(event)),Effect.andThen(wakeQueuedParents(event))),recoveredPublication,event=>host.persistRecoveredCancellation(event),event=>host.dropRecoveredCancellationReceipts(event),event=>host.assertHelperTitleCAS(event),prepareQueuedPublication,assertQueuedPublication,sessionID=>host.interruptStoppedHandoff(sessionID))],controllerHelper:createControllerHelper({rpc}),
       executeOwned,
       bridge,drainExecutions:routing.close,readiness:{hostVersion:'1.2.22',buildId:boot.buildId,migration:identity.migration,

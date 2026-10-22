@@ -1,22 +1,20 @@
-import {Effect} from 'effect';
 import {randomUUID} from 'node:crypto';
 import {isDeepStrictEqual} from 'node:util';
 import {createNativeSlimRuntime,currentNativeSlimHookAuthority,runNativeSlimOwnedHook,type NativeSlimRuntimeOptions,type NativeSlimHookAuthority,type NativeSlimLocationOwners} from './native-slim-runtime.js';
 import {createReviewedSlimPathHooks} from './native-slim-paths.js';
 import {createOwnedSlimInterviewBridge,type NativeSlimInterviewBridgeOwners} from './native-slim-interview-bridge.js';
 import type {ExecutionRpc} from './worker-protocol.js';
-import type {NativeSlimCommandInput,NativeSlimCommandOptions} from './native-slim-commands.js';
+import type {NativeSlimCommandOptions} from './native-slim-commands.js';
 import type {ReviewedSlimHook} from '@devryan/agents-core';
 
 const record=(value:unknown):value is Record<string,unknown>=>!!value&&typeof value==='object'&&!Array.isArray(value);
 const fail=(code:string)=>new Error(code);
 export type ControllerSlimInterviewOwners=NativeSlimInterviewBridgeOwners;
-export interface ControllerSlimOptions extends Pick<NativeSlimRuntimeOptions,'snapshot'|'origin'|'originals'|'ponytailCommand'|'executeOwned'|'withControl'> {
+export interface ControllerSlimOptions extends Pick<NativeSlimRuntimeOptions,'snapshot'|'origin'|'originals'|'executeOwned'|'withControl'> {
  readonly rpc:ExecutionRpc;
  readonly webfetchOwnersFor:NativeSlimLocationOwners['webfetch']['ownersFor'];
  readonly webfetchBinaryDirectory:(directory:string)=>string;
  readonly commands:Pick<NativeSlimCommandOptions,'assertCommand'|'executeCommand'>;
- readonly applyPonytailCommand:(input:NativeSlimCommandInput)=>Effect.Effect<void,unknown>;
  /** Node service is the original state machine, with actual owned IO. Event
   * callbacks bind constructor event provenance; they cannot borrow hook grants. */
  readonly interviewForDirectory:(directory:string)=>NativeSlimInterviewBridgeOwners;
@@ -130,7 +128,6 @@ export function createControllerSlim(options:ControllerSlimOptions) {
   };
   return {log:message=>options.log(directory,message),commands:options.commands,
    webfetch:{binaryDirectory:options.webfetchBinaryDirectory(directory),ownersFor:options.webfetchOwnersFor},interviewBridge:interview,
-   ponytail:{contextInstructions:async requested=>{const current=authority(directory);if(requested!==directory)throw fail('native_slim_hook_authority_required');const result=await call('native.slim.hook',{...scope(current),action:'ponytail'},current);if(typeof result!=='string')throw fail('native_ponytail_context_invalid');return result;},applyCommand:options.applyPonytailCommand},
    assertContext,readMessage:async input=>{const current=authority(directory,input.sessionID);if(input.directory!==directory)throw fail('native_slim_hook_authority_required');const result=await call('native.slim.hook',{...scope(current),action:'message',requestedMessageID:input.messageID},current);if(!record(result)||!Array.isArray(result.parts))throw fail('native_slim_message_result_invalid');return {parts:result.parts};},
    observePrompt:async(input,output)=>{const current=authority(directory,typeof input.sessionID==='string'?input.sessionID:undefined);await options.observePrompt(current,input,output);},
    observeLifecycle:event=>options.observeLifecycle(directory,event),

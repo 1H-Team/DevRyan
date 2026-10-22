@@ -38,7 +38,6 @@ const buildSources=await Promise.all(['scripts/build-native-runtime.mjs','script
   'packages/web/server/lib/opencode/runtime-host/reviewed-ast-asset.js',
   'packages/web/server/lib/opencode/runtime-host/reviewed-document-transform.js',
   'packages/web/server/lib/opencode/runtime-host/reviewed-browser-transform.js',
-  'packages/web/server/lib/opencode/runtime-host/reviewed-ponytail-instructions.js',
   'packages/web/server/lib/opencode/runtime-host/reviewed-claude-transform.js',
 ].map(async file=>({path:file,sha256:hash(await fs.readFile(path.join(repository,file)))})));
 const lockBytes=await fs.readFile(path.join(repository,'bun.lock')),lock=parseJsonc(lockBytes.toString());
@@ -119,7 +118,6 @@ try {
     ['devryan.slim','native-slim-runtime.ts',['read','write','process','network','control']],
     ['devryan.slim-commands','native-slim-commands.ts',['control']],
     ['devryan.slim-lifecycle','native-slim-runtime.ts',['control']],
-    ['devryan.ponytail','native-ponytail.js',['control']],
     ['devryan.provider-compat','native-provider-compat-plugin.ts',['provider']],
     ['opencode-gpt-imagegen','native-imagegen-plugin.ts',['write','network']],
   ]){

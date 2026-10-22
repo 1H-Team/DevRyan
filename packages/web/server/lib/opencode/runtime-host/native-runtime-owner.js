@@ -122,7 +122,7 @@ export async function loadNativeRuntimeBundle({ binding, launcher, verify = crea
   const deriveLocations=typeof getRegisteredProjects==='function'?createNativeProjectLocations({baseLocations:reviewed.locations,launch,getRegisteredProjects}):undefined;
   const refreshLocations=async()=>{if(deriveLocations)locations.splice(0,locations.length,...await deriveLocations());};
   await refreshLocations();
-  const resolveConfiguration=createNativeConfigurationSnapshotResolver({resolveSlimAgents:reviewedConfiguration?.resolveSlimAgents,ponytailCommands:reviewedConfiguration?.ponytailCommands,
+  const resolveConfiguration=createNativeConfigurationSnapshotResolver({resolveSlimAgents:reviewedConfiguration?.resolveSlimAgents,
     hasConfiguredClaudeProfile:async()=>{
       return hasConfiguredNativeClaudeProfile(await resolveNativeProviderConfiguration({globals:launch.global,environment:providerEnvironment,controlRoot:binding.controlRoot}));
     },
@@ -175,8 +175,7 @@ export function createNativeRuntimeOwner(options) {
   };
   let configurationRevision = 0;
   const reviewedBehaviorCommands = options.reviewedBehaviorCommands ?? bundle.reviewedPlugins.flatMap(origin=>{
-    const declarations=origin.id==='devryan.slim-commands'&&bundle.reviewedConfiguration?{...bundle.reviewedConfiguration.slimCommandDeclarations,interview:bundle.reviewedConfiguration.interviewCommandDeclaration}
-      :origin.id==='devryan.ponytail'&&bundle.reviewedConfiguration?{ponytail:bundle.reviewedConfiguration.ponytailCommandDeclaration}:undefined;
+    const declarations=origin.id==='devryan.slim-commands'&&bundle.reviewedConfiguration?{...bundle.reviewedConfiguration.slimCommandDeclarations,interview:bundle.reviewedConfiguration.interviewCommandDeclaration}:undefined;
     return Object.entries(declarations??{}).map(([name,definition])=>({origin:{kind:'plugin',...origin},name,definition}));
   });
   const active = () => { if (!child || child.hasExited()) throw fail('native_controller_unavailable'); return child; };
@@ -429,11 +428,11 @@ export function createNativeRuntimeOwner(options) {
       if(method==='native.document.settle')return documents.settle(params);
       return method==='native.document.context'?documents.context(params,context):documents.tool(params,context);
     }
-    if (['native.slim.hook','native.slim.path','native.slim.accepted-command','native.ponytail.command'].includes(method)) {
+    if (['native.slim.hook','native.slim.path','native.slim.accepted-command'].includes(method)) {
       if(!slim)throw fail('native_slim_owner_unavailable');
       if(method==='native.slim.path')return slim.path(params,context);
       if(method==='native.slim.accepted-command')return slim.acceptedCommand(params,context);
-      return method==='native.slim.hook'?slim.hook(params,context):slim.ponytailCommand(params,context);
+      return slim.hook(params,context);
     }
     if (method.startsWith('native.session-context')) {
       if (!sessionContext) throw fail('native_context_owner_unavailable');
@@ -518,7 +517,7 @@ export function createNativeRuntimeOwner(options) {
       configurationSnapshot = await timeStartupPhase('native_configuration_snapshot', async () => bundle.resolveConfiguration?.(++configurationRevision));
       if(configurationSnapshot&&JSON.stringify(configurationSnapshot.locations.map(location=>location.directory))!==JSON.stringify(bundle.locations.map(location=>location.directory)))throw fail('native_configuration_sources_changed');
       slim=configurationSnapshot&&bundle.reviewedConfiguration?createNativeSlimOwner({admissionOwner:nativeOwner,openCodeClient,
-        configurationSnapshot,locations:bundle.locations,configDirectory:descriptor.launch.opencodeConfigDirectory,ponytailInstructions:bundle.reviewedConfiguration.ponytailInstructions}):undefined;
+        configurationSnapshot,locations:bundle.locations}):undefined;
       slimContext=configurationSnapshot&&bundle.reviewedConfiguration?createNativeSlimContextOwner({admissionOwner:nativeOwner,openCodeClient,primaryRuntime,
         getManagedRuntime,getInstanceID:()=>nativeInstanceID===instanceID?instanceID:undefined,originals:bundle.reviewedConfiguration,locations:configurationSnapshot.locations}):undefined;
       images=configurationSnapshot&&bundle.reviewedPlugins.some(row=>row.id==='devryan.slim')?createNativeImageRuntime({admissionOwner:nativeOwner,executionHost,readContext:readCanonicalContext,locations:configurationSnapshot.locations,

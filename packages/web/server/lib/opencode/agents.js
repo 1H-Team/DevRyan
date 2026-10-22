@@ -7,7 +7,7 @@ import {
   readConfigFile,
   writeConfig,
 } from './shared.js';
-import { listPackagedAgents } from './packaged-agents.js';
+import { listPackagedAgents, renderAgentPromptPolicies } from './packaged-agents.js';
 import {
   applyDevRyanSidecarToConfig,
   persistDevRyanFromConfig,
@@ -851,7 +851,7 @@ function parseAgentMdFile(filePath, scope, rootDir) {
   const agent = {
     name: path.basename(filePath, '.md'),
     ...frontmatter,
-    ...(typeof body === 'string' && body.length > 0 ? { prompt: body } : {}),
+    ...(typeof body === 'string' && body.length > 0 ? { prompt: renderAgentPromptPolicies(body) } : {}),
     scope,
     source: scope,
     group: rootDir && path.dirname(filePath) !== rootDir

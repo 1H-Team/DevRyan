@@ -5,7 +5,6 @@ export function rewriteSealedNodeRequire(source:string):string;
 export const NATIVE_AGENT_DEFAULTS_SOURCE_SHA256:string;
 export function rewriteNativeAgentDefaults(source:Uint8Array):string;
 export function rewriteUnavailableNativePty(source:Uint8Array):string;
-export const REVIEWED_PONYTAIL_MODULE:'devryan:reviewed-ponytail-instructions';
 export const REVIEWED_AST_FILENAME:'DevRyan-ast-grep-darwin-arm64';
 export interface ReviewedNativeInputs {
  readonly inputFiles:ReadonlyMap<string,string>;

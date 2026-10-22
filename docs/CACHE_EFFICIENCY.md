@@ -249,6 +249,15 @@ No OpenAI explicit-breakpoint or Anthropic boundary/retention experiment is enab
 
 ## Verification and evidence limits
 
+Static prefix guards run with the owning package tests.
+`packages/agents-core/src/cache-safety-tripwire.test.ts` rejects unreviewed
+`Date.now()`, `new Date()`, `Math.random()`, `randomUUID`, `randomBytes()` and
+`performance.now()` in agents-core prompt assembly, the native runtime host and
+`packages/orchestration-runtime`; each allowlisted file states why its value cannot
+reach prefix bytes. `prompt-budget.test.js` and `tool-definition-budget.test.mjs`
+ratchet the byte size of packaged prompts, the shared Plan-mode suffix, the hidden
+Implement template and bundled or runtime-registered tool definitions.
+
 Deterministic tests use synthetic usage and disposable files. Run the owning
 shared/harness tests. The removed opt-in serializer probe used an explicitly
 supplied installed binary and only loopback synthetic requests; it checked the installed adapters on two turns for Sol, Astra and Grok, native normalized usage, byte-level

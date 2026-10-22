@@ -41,7 +41,7 @@ async function fixture(limits,{count=2,report=index=>'Verified child report '+in
   else primary={...primary,revision:primary.revision+1,...kind==='objective'?{anchorID:'msg_unrelated'}:{cancellationGeneration:1}};
  }};
 }
-// The 30 KiB fixture reports exceed one inline page, so at least one later read Step remains.
+// The fixture reports exceed one inline page, so at least one later read Step remains.
 const collect=async f=>{
  const waited=await f.invoke({action:'wait_any',task_ids:f.tasks.map(task=>task.taskId),until:'settled'});
  let cursors=waited.results.map(result=>({task_id:result.task.taskId,result_cursor:result.resultReference.nextCursor})),reply;

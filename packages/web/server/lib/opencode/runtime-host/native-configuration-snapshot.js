@@ -5,7 +5,6 @@ import { captureReviewedSkill, reviewedSkillAliases } from './reviewed-skills.js
 import {translateNativeSkillPermissions} from './native-skill-permissions.js';
 import { nativeModelSelection, translateNativeConfiguration } from './native-configuration-data.js';
 import { captureConfigurationSourceStamp } from './configuration-source-stamps.js';
-import {captureNativePonytailDefault} from './native-ponytail-default.js';
 import { captureNativeTextSettings, verifyNativeTextSettings } from './native-text-settings.js';
 import {configuredNativeSkillDirectories,discoverConfiguredNativeSkills} from './native-configured-skills.js';
 import { isRetiredDevRyanPluginSpec } from '../managed-plugins.js';
@@ -97,7 +96,7 @@ async function loadCurrentLocation({ directory, launch }) {
 }
 
 /** Constructor-only loader seam permits deterministic fixtures; production uses the existing settings owners. */
-export function createNativeConfigurationSnapshotResolver({ loadLocation = loadCurrentLocation, resolveSlimAgents, ponytailCommands, ponytailDefaultMode = process.env.PONYTAIL_DEFAULT_MODE, getRuntimeLocations, hasConfiguredClaudeProfile } = {}) {
+export function createNativeConfigurationSnapshotResolver({ loadLocation = loadCurrentLocation, resolveSlimAgents, getRuntimeLocations, hasConfiguredClaudeProfile } = {}) {
   return async function resolveNativeConfigurationSnapshot({ binding, revision, expectedRegistrationDigest }) {
     const descriptor = binding?.descriptor, launch = descriptor?.launch;
     if (descriptor?.generation !== 2 || !Number.isSafeInteger(revision) || revision < 1 || !/^[a-f0-9]{64}$/.test(expectedRegistrationDigest)) throw fail('native_snapshot_identity_invalid');
@@ -138,14 +137,6 @@ export function createNativeConfigurationSnapshotResolver({ loadLocation = loadC
       // Built-in agent orchestration is always active; it has no plugin spec to list.
       const activeRegistrationIDs=registrations.plugins.filter(origin=>NATIVE_CORE_REGISTRATION_IDS.includes(origin.id)||origin.legacySpecs?.some(spec=>activePlugins.includes(spec))).map(origin=>origin.id);
       if(activeRegistrationIDs.some(id=>typeof id!=='string')||new Set(activeRegistrationIDs).size!==activeRegistrationIDs.length)throw fail('native_registration_revision_mismatch');
-      if(activeRegistrationIDs.includes('devryan.ponytail')){
-        if(!ponytailCommands||typeof ponytailCommands!=='object'||Array.isArray(ponytailCommands)||Object.keys(ponytailCommands).length!==6)throw fail('native_ponytail_commands_owner_required');
-        for(const [name,value] of Object.entries(ponytailCommands)){
-          if(!/^ponytail(?:-(audit|debt|gain|help|review))?$/.test(name)||typeof value?.description!=='string'||typeof value.template!=='string')throw fail('native_ponytail_commands_invalid');
-          // Original config hook intentionally overwrites matching saved commands.
-          loaded.commands[name]=structuredClone(value);
-        }
-      }
       const allowedRoots = [directory, launch.opencodeConfigDirectory, launch.global.home];
       for (const source of policy.skillSources ?? []) {
         if (!activeRegistrationIDs.includes(source.pluginID)) continue;
@@ -175,8 +166,6 @@ export function createNativeConfigurationSnapshotResolver({ loadLocation = loadC
       }
       // Apply host helpers after Slim so user role resolution cannot restore competing titles or tools.
       Object.assign(textSettings.agents, buildRuntimeHelperAgents());
-      const ponytail=await captureNativePonytailDefault({launch,environmentDefaultMode:ponytailDefaultMode});
-      textSettings.textReferences.push(...ponytail.references);
       const aliases = reviewedSkillAliases(skills);
       const mcp = loaded.legacy.mcp ?? {};
       const requiredMCPs = Object.entries(mcp).filter(([, value]) => value?.enabled !== false).map(([id]) => id);
@@ -186,7 +175,7 @@ export function createNativeConfigurationSnapshotResolver({ loadLocation = loadC
         &&(!Array.isArray(loaded.legacy.enabled_providers)||loaded.legacy.enabled_providers.includes('anthropic'))){
         configuration.providers??={};configuration.providers.anthropic??={};
       }
-      const compatibility = { legacy: loaded.legacy, agents: activeSlim?textSettings.agents:{...loaded.agents,...buildRuntimeHelperAgents()}, commands: loaded.commands, slim: loaded.slim, mcp,ponytail:{defaultMode:ponytail.defaultMode,source:ponytail.source} };
+      const compatibility = { legacy: loaded.legacy, agents: activeSlim?textSettings.agents:{...loaded.agents,...buildRuntimeHelperAgents()}, commands: loaded.commands, slim: loaded.slim, mcp };
       locations.push({ directory, configuration, skills, aliases,
         instructions:textSettings.instructions,textReferences:textSettings.textReferences,
         activePlugins,activeRegistrationIDs, compatibility,

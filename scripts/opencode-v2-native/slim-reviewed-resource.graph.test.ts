@@ -35,9 +35,9 @@ const runtime = createSessionMutationRuntime(`);
   replace('const gates = createAdmissionGates({',`const routing=createExecutionRouting({rpc,bridge,directory:directories[0],locations:roots,configurationSnapshot:snapshot});
 const slimOrigin={kind:'plugin',id:'devryan.slim',manifestDigest:'a'.repeat(64),capabilities:['read','write','network','process']};
 const unavailable=()=>{throw Error('unexpected_fixture_owner');};
-const slim=createControllerSlim({snapshot,origin:slimOrigin,originals,ponytailCommand:{description:'unused',template:'unused'},rpc,
+const slim=createControllerSlim({snapshot,origin:slimOrigin,originals,rpc,
  executeOwned:routing.executeOwned,withControl:routing.withControl,commands:{assertCommand:unavailable,executeCommand:unavailable},
- webfetchBinaryDirectory:directory=>directory,webfetchOwnersFor:unavailable,applyPonytailCommand:unavailable,
+ webfetchBinaryDirectory:directory=>directory,webfetchOwnersFor:unavailable,
  interviewForDirectory:()=>({runtime:{},service:{getActiveInterviewId:async()=>null,handleCommandExecuteBefore:unavailable,handleEvent:async()=>{}},submitCommand:unavailable,assertAcceptedCommand:unavailable,assertCurrent:async()=>{},dispose:async()=>{}}),
  observePrompt:async()=>{},observeLifecycle:async()=>{},transformImages:async()=>{},disposeLocation:async()=>{},log:()=>{}});
 const gates = createAdmissionGates({sessionHooks:(inner,location,owners)=>slim.decorateHooks(inner,location,{assertToolRead:(event,target)=>owners.assertToolRead(event,target).pipe(Effect.tap(()=>Effect.sync(()=>stages.push('native-permission'))))}),`);

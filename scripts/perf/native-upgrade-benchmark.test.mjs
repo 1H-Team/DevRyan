@@ -184,7 +184,7 @@ test('copied snapshot preserves exact native provider and benchmark tuple withou
     const registrations = JSON.stringify({ schema: 1, plugins: [] });
     await fs.writeFile(launch.reviewedPluginManifestPath, registrations);
     await fs.writeFile(launch.reviewedNativeConfigPath, JSON.stringify({ schema: 1, locations: [{ directory }], catalogRequirements: {} }));
-    const resolve = createNativeConfigurationSnapshotResolver({ loadLocation: loadPerformanceLocation, ponytailDefaultMode: undefined });
+    const resolve = createNativeConfigurationSnapshotResolver({ loadLocation: loadPerformanceLocation });
     const binding = { descriptor: { generation: 2, launch, projectMap: [{ targetDirectory: directory }] } };
     const first = await resolve({ binding, revision: 1, expectedRegistrationDigest: performanceSha256(registrations) });
     assert.deepEqual(first.locations[0].configuration.providers, providers);

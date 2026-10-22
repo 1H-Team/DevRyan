@@ -237,7 +237,7 @@ static PSECURITY_DESCRIPTOR private_security(BOOL directory) {
 }
 
 static HANDLE private_namespace_mutex;
-/* ponytail: SDK subtree CAS serializes namespace mutations for one user;
+/* Known limit: SDK subtree CAS serializes namespace mutations for one user;
  * contention is bounded by 120 seconds. Measure before replacing this ceiling
  * with ordered per-tree locks. Per-parent publication locks remain the default
  * ownership guard, and are acquired only after this coordination mutex. */

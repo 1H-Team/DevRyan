@@ -374,7 +374,7 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
       // The baseline and parent-death fixtures use their owned loopback config,
       // through the same snapshot capture as the reviewed setup.
       const { agents, commands = {}, ...legacy } = structuredClone(configuration);
-      const resolve = createNativeConfigurationSnapshotResolver({ resolveSlimAgents:bundle.reviewedConfiguration.resolveSlimAgents, ponytailCommands:bundle.reviewedConfiguration.ponytailCommands, loadLocation: async () => ({
+      const resolve = createNativeConfigurationSnapshotResolver({ resolveSlimAgents:bundle.reviewedConfiguration.resolveSlimAgents, loadLocation: async () => ({
         legacy: structuredClone(legacy), agents: structuredClone(agents), commands: structuredClone(commands),
         skills: [], slim: { mergedConfig: {} }, parseMarkdown: () => { throw new Error('Unexpected baseline skill'); },
       }) });

@@ -1,6 +1,6 @@
 import {test} from 'bun:test';import assert from 'node:assert/strict';import fs from 'node:fs/promises';import {createRequire} from 'node:module';import {createHash} from 'node:crypto';import path from 'node:path';
 import os from 'node:os';
-import {rewriteNativeAsset,rewriteNativeAgentDefaults,NATIVE_AGENT_DEFAULTS_SOURCE_SHA256,rewriteUnavailableNativePty,NATIVE_ASSET_SOURCE_SHA,prepareReviewedNativeInputs,REVIEWED_PONYTAIL_MODULE,REVIEWED_AST_FILENAME} from '../native-runtime-assets.mjs';
+import {rewriteNativeAsset,rewriteNativeAgentDefaults,NATIVE_AGENT_DEFAULTS_SOURCE_SHA256,rewriteUnavailableNativePty,NATIVE_ASSET_SOURCE_SHA,prepareReviewedNativeInputs,REVIEWED_AST_FILENAME} from '../native-runtime-assets.mjs';
 import {execFileSync} from 'node:child_process';
 const repository=path.resolve(import.meta.dirname,'../..'),core=await fs.realpath(path.join(repository,'node_modules/@opencode/core'));
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
@@ -63,13 +63,16 @@ test('reviewed original closure and exact constructor transforms are inventoried
  const root=path.join(repository,'packages/web/runtime/reviewed-inputs');
  const manifest=JSON.parse(await fs.readFile(path.join(root,'manifest.json'),'utf8'));
  for(const input of manifest.inputs)for(const file of input.files)assert.equal(reviewed.inputFiles.get(path.join(root,input.id,file.path)),file.sha256);
- assert.equal(reviewed.inputFiles.has(path.join(root,'ponytail-4.10.0/LICENSE')),true);
+ // Ponytail was removed: no captured input, linked file, transform or virtual module remains.
+ assert.deepEqual(manifest.inputs.map(input=>input.id).sort(),['ast-grep-0.45.3','claude-1.8.0','imagegen-0.1.12','jsdom-30.1.1']);
+ assert.equal(Object.hasOwn(manifest.runtimeDisposition,'Ponytail'),false);
+ assert.equal([...reviewed.inputFiles.keys()].some(file=>file.startsWith(path.join(root,'ponytail-'))),false);
+ assert.equal([...reviewed.virtualModules.keys(),...reviewed.transforms.map(item=>String(item.path))].some(id=>/ponytail/i.test(id)),false);
  // The built-in agents are workspace source (packages/agents-core), not a
  // captured input with a build-time rewrite.
  assert.equal(manifest.inputs.some(input=>input.id.startsWith('slim-')),false);
  assert.equal([...reviewed.inputFiles.keys(),...reviewed.rewrites.keys()].some(file=>file.startsWith(path.join(root,'slim-'))),false);
  assert.equal(reviewed.transforms.some(item=>item.reason==='reviewed-slim-owned-constructor-seams'),false);
- assert.match(reviewed.virtualModules.get(REVIEWED_PONYTAIL_MODULE),/^export default /);
  assert.equal(reviewed.claudeCredentials.path,'DevRyan-Claude-credentials.mjs');
  assert.equal(reviewed.claudeCredentials.sha256,hash(reviewed.claudeCredentials.contents));
  assert.equal(reviewed.claudeCredentials.mode,0o644);
