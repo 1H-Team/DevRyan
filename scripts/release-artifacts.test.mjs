@@ -13,6 +13,13 @@ test('dry runs refuse external publication', () => {
   assert.throws(() => assertReleaseWritesAllowed({ RELEASE_DRY_RUN: 'true' }), { code: 'release_dry_run_write_forbidden' });
 });
 
+test('release writes go only to the canonical repository, never from a dry run', () => {
+  assertReleaseWritesAllowed({}, { repository: '1H-Team/DevRyan' });
+  for (const [environment, repository] of [[{ RELEASE_DRY_RUN: 'true' }, '1H-Team/DevRyan'], [{}, '1H-Team/DevRyan-release-staging'], [{}, 'attacker/DevRyan']]) {
+    assert.throws(() => assertReleaseWritesAllowed(environment, { repository }), { code: 'release_dry_run_write_forbidden' });
+  }
+});
+
 test('web handoff preserves hidden manifests and rejects changed identity, missing and corrupt files', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-web-artifact-'));
   try {

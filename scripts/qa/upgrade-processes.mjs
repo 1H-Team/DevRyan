@@ -33,7 +33,8 @@ export async function runUpgradeCommand(command, args, { timeout = 180_000, ...o
       owned.child.once('error', reject);
       owned.child.once('close', (code, signal) => signal ? reject(new Error('Qualification command interrupted')) : resolve(code));
     });
-    if (code !== 0) throw Object.assign(new Error(`Qualification ${command.split('/').at(-1)} exited (${code})`), { code: 'qa_release_upgrade_command', command: command.split('/').at(-1), exitCode: code });
+    if (code !== 0) throw Object.assign(new Error(`Qualification ${command.split('/').at(-1)} exited (${code})`), { code: 'qa_release_upgrade_command', command: command.split('/').at(-1), exitCode: code,
+      stderr: stderr.slice(-2000) });
     return { stdout, stderr };
   } finally {
     clearTimeout(timer);

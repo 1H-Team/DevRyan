@@ -1,97 +1,151 @@
 # Release pipeline
 
-A release is one tag push. `.github/workflows/release.yml` builds `DevRyan-<version>-arm64.dmg`, qualifies it, then creates or reconciles a draft GitHub Release under the production publication lock and publishes it. A manual run of the same workflow is a dry run: it builds everything on its ref and publishes nothing.
+A release is one tag push. `.github/workflows/release.yml` checks the commit, builds `DevRyan-<version>-arm64.dmg` (or reuses the DMG already built at that SHA), qualifies it, stages it on a draft GitHub Release, deploys the backend and then publishes the draft with a single write. A manual run of the same workflow is a dry run: it packages and qualifies on its ref and writes nothing.
 
 The public release carries exactly one asset, `DevRyan-<version>-arm64.dmg` (Apple silicon, ad-hoc signed, not notarized). The allowlist is `RELEASE_SCOPES` in `packages/electron/release-assets.mjs`, enforced by `scripts/verify-release-assets.mjs`. Intel and Windows builds are not released. `@devryan/web` on npm belongs to upstream; DevRyan never publishes to npm.
+
+**Supported upgrades.** In-app updates are supported from v2.1.9 on (`SUPPORTED_UPGRADE_FLOOR` in `scripts/qa/release-upgrade-lane.mjs`). Each release is qualified as an upgrade from the previous supported release only. Older installs reinstall from the DMG; the 2.0.x upgrade lanes are retired.
 
 ## Releasing a version
 
 1. `node scripts/bump-version.mjs X.Y.Z` updates every package manifest, the legacy Tauri files and the workspace versions in `bun.lock`.
 2. Add a `## [X.Y.Z]` section to `CHANGELOG.md`; it becomes the release notes.
-3. Run `bun run validate`, then commit with explicit paths. Do not run `supabase-migrate.yml`: `publish` deploys migrations and verifies migration history and authentication configuration.
-4. Optional: run packaging and qualification manually (`gh workflow run release.yml --ref main`). A dry run does not establish push-to-publication timing.
-5. Create the release tag and push the commit and tag together: `git tag vX.Y.Z && git push --atomic origin main vX.Y.Z`. Main CI and release preparation then start concurrently. The release waits for the canonical main-push CI run at the exact SHA before publication; it polls every 10 seconds for up to 15 minutes, allowing missing registration and pending execution but failing on failed or cancelled CI.
+3. Run `bun run validate` and `bun run release:preflight`, then commit with explicit paths. Do not run `supabase-migrate.yml`: `deploy-backend` deploys migrations and verifies migration history and authentication configuration.
+4. Optional: run a dry run of the commit (`gh workflow run release.yml --ref <branch>`). The tag run reuses the DMG it built.
+5. Create the release tag and push the commit and tag together: `git tag vX.Y.Z && git push --atomic origin main vX.Y.Z`. Main CI and release preparation then start concurrently.
 
 Only tags matching `vX.Y.Z` trigger a release.
 
 ## Graph
 
 ```text
-main push ── CI checks (Ubuntu) ── four portable + two native test workers ──┐
-                                                                          │
-tag push ── admit ──┬─ trusted-ci (wait outside publication lock) ──────────┤
-                    ├─ web (Ubuntu) ── electron-package ── final-dmg-smoke ┤
-                    └─ upgrade-check: pre-age → wait for DMG → qualify ───┤
-                                                                          └─ publish (locked)
+main push ── CI (ci.yml): static, build, two portable + three native test workers ──┐
+                                                                                    │
+tag push ── preflight ──┬─ trusted-ci (waits for main CI and its re-runs) ──────────┤
+                        ├─ web ── electron-package ──┬─ final-dmg-smoke (quarantined)┤
+                        │  (skipped: DMG reused)     │                               │
+                        └─ upgrade-check: previous release → wait for DMG → qualify ─┤
+                                                                                    ▼
+                         stage (lock: draft + upload + discovery) ── deploy-backend ── publish (lock: one PATCH)
 ```
 
 | Job | What it does |
 | --- | --- |
-| `admit` | Read-only version, tag/source and changelog checks. Published versions route to retained-original-candidate verification; unpublished releases remain untouched until locked upload. |
-| `trusted-ci` | Polls the canonical repository, workflow path, main-push event and exact source SHA outside the publication lock. A newer main push cannot substitute for this commit. |
-| `web` | Builds release web assets once on Ubuntu with `VITE_ENABLE_REACT_SCAN=false`, checks bundle budgets and describes every file digest. The handoff binds source SHA, version, lockfile and workflow run ID. It never consumes CI's build artifact. |
-| `electron-package` | On one macOS runner, installs dependencies, verifies and builds the native runtime, prepares helpers, bundles main, rebuilds native bindings, stages this run's web artifact and packages. Checks Cursor binaries, orchestration config, retired Bot resources and Info.plist descriptions. Uploads the unchanged DMG plus a separate private identity artifact; there is no prepared dependency-tree transfer. |
-| `upgrade-check` | Starts from admission without waiting for packaging. `release-preaged-upgrades.mjs` pins verified baseline installers and source revisions, shares baseline inputs within this run, and creates three fresh local profiles: newest-three aging, direct v2.0.2 and direct v2.0.15. Historical starts create retained/deleted history. After pre-aging it polls this run's package job and candidate artifacts, aborting on producer failure or a 15-minute deadline. It verifies the run/source/producer identity and DMG digest, extracts once, then runs each candidate hop, migration/history checks and held recovery sequentially. A before/after tree digest protects the shared candidate. Profiles are never cached or uploaded. |
-| `final-dmg-smoke` | Runs beside candidate qualification after packaging. Observes the unchanged final DMG, visible composer, native input, loopback-provider round-trip, rendered response, screenshots and owned-process shutdown. The existing qualification-controlled blocking policy remains unchanged. |
-| `publish` | Under the global publication lock, rechecks exact-source CI and tag identity, reconciles/uploads the single DMG, deploys and verifies Supabase migrations/authentication, rechecks CI, and promotes. The shipped updater must discover the expected metadata, and the public download is checked by the shipped integrity verifier. Published bytes remain immutable. |
+| `preflight` | `scripts/release-preflight.mjs` (also `bun run release:preflight` locally; `--local-only` skips the GitHub checks). Version files and `bun.lock`, the CHANGELOG section, `bun install --frozen-lockfile --dry-run`, the vendored shipped-updater copies against their tags, the same-version state and ledger (`admit` in `scripts/release.mjs`), latest ordering and build reuse. A published version routes to `verify-published`. A dry run reports what a tag push would decide without failing on it. |
+| `trusted-ci` | Polls the canonical repository's main-push `ci.yml` run at the exact SHA for up to 25 minutes. A red result does not end the wait: the log names the run to re-run (`gh run rerun <id> --failed`) and the job keeps polling while the run is re-run or a newer run for the SHA appears. A newer main push cannot substitute for this commit. |
+| `web` | Builds release web assets once on Ubuntu with `VITE_ENABLE_REACT_SCAN=false`, checks bundle budgets and describes every file digest. Skipped when the DMG is reused. |
+| `electron-package` | On macOS: installs dependencies, builds and verifies the native runtime, prepares helpers, bundles main, rebuilds native bindings, stages this run's web artifact and packages. Checks Cursor binaries, orchestration config, retired Bot resources and Info.plist descriptions. `scripts/release-candidate.mjs` writes `candidate.json` (bytes bound to source, run and attempt) and `release-manifest.json`. **Build reuse:** when preflight finds a retained DMG built at the same SHA by any earlier attempt or run (including a dry run), the job runs on Ubuntu and `release-candidate.mjs adopt` downloads it, verifies it against the producer's identity and manifest, and rebinds it to this run. |
+| `upgrade-check` | Starts from preflight without waiting for packaging. `release-preaged-upgrades.mjs` prepares a fresh profile with the previous supported release's own source and shipped runtime, creating retained and deleted history. It then polls this run's package job and candidate artifacts (15-minute deadline), verifies identity and DMG digest, extracts once and runs the candidate hop, data-root migration, history checks and held recovery. Failures are classified (see Qualification). |
+| `final-dmg-smoke` | Observes the unchanged final DMG: visible composer, native input, loopback-provider round-trip, rendered response, screenshots and owned-process shutdown. Quarantined as a tracked defect (see Final-DMG smoke). |
+| `stage` | Under the publication lock, writes drafts only: see Stage. Writes `staged.json`. |
+| `deploy-backend` | Its own job, after `stage` and before `publish`: links Supabase, syncs the authentication password policy, `db push` (idempotent) and checks migration history. Re-run it alone after a Supabase outage; no draft or DMG is touched. |
+| `publish` | Under the publication lock: rechecks exact-source CI and the tag, checks the draft is unchanged since `staged.json`, then one `PATCH {draft:false, make_latest:true}`. Records the ledger and verifies discovery and the public download (see Publish). |
+| `verify-published` | Only for an already published version: downloads the original retained DMG artifact and verifies published bytes, ledger, shipped discovery and the public download, read-only. |
 
-The release uses at most two macOS runners at once: package plus qualification, then smoke plus qualification. With two native CI workers, the combined peak is **four macOS jobs**. Four portable CI workers plus the CI-wait job bring the combined peak to **nine total jobs**, below the plan's GitHub Free defaults of 20 total and five macOS jobs. The fifth macOS slot is headroom, not a reservation; organization contention and custom limits remain unverified. `release-cache.yml` is manual-only because native CI already verifies these inputs on every main push.
+The release uses at most two macOS runners at once (package plus qualification, then smoke plus qualification); a reused DMG needs none for packaging. With three native CI workers the combined peak is five macOS jobs, the GitHub Free limit. The seven CI jobs plus at most five concurrent release jobs stay below the 20-job total. `release-cache.yml` is manual-only because native CI already verifies these inputs on every main push.
 
-Main CI concurrency includes its commit SHA and does not cancel main-push runs; superseded pull requests still cancel. Every deterministic test remains covered by `validate:full`; `test-ci-lanes.mjs` splits portable and native files, four session-mutation case shards and two native-stream case shards. Suite contracts prove the inventory and disjoint shard union. Cold native qualification starts never overlap, preserving the released 2.0.2 startup budget.
+Main CI concurrency includes its commit SHA and does not cancel main-push runs; superseded pull requests still cancel. Every deterministic test remains covered by `validate:full`; `test-ci-lanes.mjs` splits portable and native files and the case shards, and suite contracts prove the inventory and disjoint shard union.
 
-Qualification reports contain baseline identities and phase durations for downloads, installation, historical hops, candidate hops, held recovery, report writing and scratch deletion. The coordinator records shared-input deletion and logs total process-exit time. Cleanup is part of the measured path, including failure paths; private homes and raw process logs never become artifacts. Read-only baseline inputs are shared only within one run, with no prepared-profile or passing-result cache.
+`scripts/release.mjs` owns admission, stage, publish and published-byte verification; `release-github.mjs` the GitHub client; `release-state.mjs` the same-version states, the ledger marker and the shipped-discovery contract; `release-preflight.mjs` preflight; `release-candidate.mjs` candidate identity, the release manifest and build reuse; `release-ci-wait.mjs` the CI wait; `release-ci.mjs` web handoffs (its prepared-tree and Bot image commands remain for legacy tooling only).
 
-`scripts/release.mjs` owns admission/upload/promotion and published-byte recovery. `release-ci.mjs` owns web handoffs; its old prepared-tree and Bot image commands remain available for legacy tooling but the release workflow no longer invokes them. `release-ci-wait.mjs` owns bounded CI qualification and `release-candidate.mjs` owns exact-run candidate handoff verification.
+## GitHub client and retries
 
-## Timing acceptance
+`scripts/release-github.mjs` bounds every request (30 seconds; uploads 10 minutes per attempt). GET, PATCH, PUT and DELETE retry up to four attempts with 1-2-4-8 second backoff on 5xx, 429, rate-limited 403 (honouring `retry-after`), timeouts and connection resets; POST is never blindly repeated. Listings follow pages, so more than 100 releases or runs are read. Every write passes `assertReleaseWritesAllowed` for the repository in its URL.
 
-Upgrade preparation starts with v2.0.2 before the heavier newest-three aging
-inputs. Every lane still uses its unmodified released server and runtime and
-must preserve history. Candidate retries resolve GitHub's copied successful job
-records to the original execution with matching start and completion times;
-the source, producing attempt and exact DMG bytes must still match.
+| Step | Retry | Bound |
+| --- | --- | --- |
+| GitHub REST | 4 attempts, backoff with jitter | 30 s per request |
+| Asset upload | 3 attempts, reconciled by digest between attempts | 10 min per attempt |
+| Late asset digest | polled every 2 s | 30 s |
+| trusted-ci | keeps polling through CI re-runs | 25 min |
+| Qualification `infra` failure | 1 automatic retry | job timeout |
+| Qualification `product` failure | none | — |
+| Post-publish discovery and download | 5 s polls | 60 s, then rerun `publish` or `verify-published` |
 
-The interim target is **13–15 minutes** and the final target is **at most 10 minutes**, measured from the exact main-push CI workflow's `created_at` through successful updater discovery, including queues, publication and cleanup. Neither target is demonstrated by this implementation. The earlier 70.7-second post-report gap included report writing and synchronous scratch deletion; cleanup is a hypothesis until the new phase measurements establish its cost.
+## Stage
 
-For each of the next three authorized routine releases, retain the main CI/release run IDs, their SHA, main CI creation time, `[release] updater-discovery-verified-at` log timestamp, total elapsed time, job queue/run times and qualification phase reports. Report the interim result first. Claim the final target only if all three totals meet it; otherwise identify the measured remaining bottleneck before proposing more capacity. Manual dry runs validate packaging/qualification only and do not count toward these three observations. Ubuntu execution compatibility still needs its hosted CI run; local macOS tests do not prove it.
+Inside the publication lock, `release.mjs stage`:
 
-## Retrying a failed release
+1. Checks the local DMG against `release-manifest.json` (name, size, sha256, version, source).
+2. Re-checks the tag, the same-version state (below) and that no newer release is latest.
+3. Creates or reconciles the one draft for the version (notes plus a `devryan-release:` marker comment naming the bytes, source and run) and deletes stale drafts.
+4. Deletes only assets that are not exactly the candidate, then uploads the DMG streamed from disk. Before each attempt the asset list is reconciled: an uploaded asset with the manifest digest and size is kept; a partial `starter` upload or different bytes are deleted. A 422 `already_exists` reconciles instead of failing.
+5. Waits for a late GitHub digest, verifies the exact one-asset set, and runs every shipped `discoverDesktopUpdate` (this checkout's and each supported release's, vendored verbatim under `scripts/fixtures/shipped-updater/`) against the draft as installed apps will see it once published. Nothing is public yet.
+6. Writes `staged.json` (release and asset IDs, digest, size, both `updated_at` values and the marker) as a job output, an artifact and the step summary.
 
-A version is used only once it is published. Until then:
+## Publish
 
-- **Infrastructure flake:** `gh run rerun <run-id> --failed` within the artifact retention window (90 days for the original DMG, 14 for intermediate build inputs). After intermediate expiry, rerun the producing jobs as well; a published version must never be rebuilt to replace its bytes.
-- **Published but verification failed:** rerun the failed publish job while its original DMG artifact remains available. Upload verifies the published tag, source, exact one-asset set, size and digest, then skips upload and Supabase deployment. Publication only verifies discovery and public download integrity; if a newer stable release superseded it, verification reports that without changing latest. A full workflow rerun routes published admission to `verify-published`: it locates a retained candidate from this repository's tag-push release workflow at the exact tag/SHA, downloads that original Actions artifact, verifies it against the public asset, and skips every heavy build and deployment job. Missing/expired artifacts or differing source/bytes fail clearly; published bytes are never reconstructed.
-- **Code fix:** commit the fix, then move and atomically push the main commit and tag with `git tag -f vX.Y.Z <fixed-sha> && git push --atomic origin main +refs/tags/vX.Y.Z`. The new run cancels obsolete web/native/package/upgrade build jobs for that tag. Workflow-wide cancellation is disabled so it cannot interrupt production publication. `admit` qualifies without writes, locked `upload` reuses the draft, and upload refuses to attach bytes from a commit the tag no longer points at.
-- A published version is final. Changed bytes or source require a new patch version.
+`release.mjs publish` re-reads the draft and refuses if anything differs from `staged.json`: release or asset ID, tag, target, marker, asset count, name, state, size, digest or `updated_at`. It then sends one `PATCH {draft:false, make_latest:true}`; nothing else about the release changes. Afterwards it records the ledger and, within 60 seconds, requires `/releases/latest` to be discovered by every shipped discovery with exactly the staged bytes and the unauthenticated public download to hash to them. A rerun after promotion only records a missing ledger entry and verifies.
 
-If promotion succeeded but public download verification fails, the release stays published and its bytes remain immutable. Retry the verification job with the original candidate; do not delete/reupload the public asset or rebuild it. Download failures, truncated bodies, excess bytes and hash mismatches fail verification. Discovery and public-byte verification share a 60-second post-publication deadline, with five-second polls and each metadata/download request bounded by the remaining time. Timeout reports that publication succeeded but verification failed. Superseded-release offline recovery retains its separate three-minute download bound. Owned scratch is removed on success, failure and interruption.
+## Same-version retries
 
-For recovery beyond Actions retention, keep an authorized offline copy of the exact original DMG together with its tag, source SHA, byte size, SHA-256 and original Actions run URL before expiry. Do not add backup files as public release assets. With that original file in `RELEASE_ASSET_DIRECTORY`, the original `GITHUB_REF`/`GITHUB_SHA`, canonical `GITHUB_REPOSITORY` and a read-only `GITHUB_TOKEN`, `node scripts/release.mjs verify-published` verifies source, remote metadata, discovery and public bytes without writes. It also supports superseded published releases without changing latest. Without original trusted bytes, recovery fails closed; publish changed bytes only under a new patch version.
+A version is used up only once it is published. `admit` (preflight) and `stage` apply `releaseState` in `scripts/release-state.mjs`:
 
-Draft creation/reconciliation, asset deletion/upload, hosted migration deployment and promotion share the global `devryan-production-publication` job lock with cancellation disabled. Different versions may build concurrently. GitHub concurrency is not a durable FIFO queue: a newer pending job may replace an older pending job; rerun any superseded unpublished release deliberately. Source/tag checks repeat before upload and promotion, and an older candidate cannot replace a newer latest release.
+| Observed state | Action |
+| --- | --- |
+| No release, no ledger entry | Full path |
+| Draft from this source with the manifest digest | Keep the asset; stage re-records the draft |
+| Draft from another source (moved tag) or other bytes | Replace the asset (allowed while unpublished) |
+| Published from this source, digest matches ledger and manifest | Verify only |
+| Published from another source or with other bytes | Refuse: bump the patch version |
+| Published bytes differ from the ledger | Refuse: bytes were replaced outside the pipeline |
+| Ledger entry but no published release (deleted, or re-created as a draft) | Refuse: bump the patch version |
 
-## Final-DMG smoke rollout
+**Published-bytes ledger.** After promotion, `publish` writes an annotated tag `devryan-release/vX.Y.Z` whose message is `devryan-release: version=… sha256=… size=… source=… run=…/…`. It is write-once: an existing entry must name the same bytes. Because it outlives the release object, deleting and re-creating a published release (the v2.1.5 case) is refused. Releases up to v2.1.9 predate the ledger; `verify-published` warns when an entry is missing. Never run `gh release delete`, upload or edit assets by hand, or delete a `devryan-release/` tag: a published version is final.
 
-The smoke is observational until three **distinct Actions runs** produce passing `release-final-dmg-smoke/report.json` reports for their exact DMG hashes. A maintainer must confirm each report has `rendererSubmitted: true` and `rendererResponse: true`, inspect its `first-ready.png` and `conversation.png` screenshots, and confirm cleanup/prerequisites before setting the repository variable `DEVRYAN_FINAL_DMG_SMOKE_GATE=qualified-3-runs`. This is an explicit rollout decision, not an automatic claim that three executions passed. Once enabled, a failed or unavailable smoke blocks publication. Leave the variable unset during initial qualification. No live GUI runs were performed merely by adding this lane.
+Retrying:
 
-This bounded smoke checks packaged startup, the first usable document, native keyboard/pointer input through the composer and Send control, a visible rendered final response, and a deterministic loopback-provider tool round-trip through ordinary imported custom-provider configuration. API reads correlate the UI-created session and verify tool state; API writes do not submit the prompt. It saves `first-ready.png` before submission and `conversation.png` after completion. The renderer submission/response path requires fresh qualification in three distinct Actions runs; previous backend-only smoke reports do not qualify this revised path. No gate variable is enabled by this change; it does not claim updater replacement, launchd migration, OS-keychain access or paid-provider behavior. The direct native upgrade lanes cover separate state/history contracts. A smoke prerequisite failure is reported as a failure, never a passing skip.
+- **Infrastructure flake or red CI:** re-run the failed jobs (`gh run rerun <run-id> --failed`). If main CI failed, re-run CI; the waiting `trusted-ci` job picks up the re-run. Do not move the tag for a flaky test.
+- **Code fix before publication:** commit the fix, then move and atomically push the main commit and tag: `git tag -f vX.Y.Z <fixed-sha> && git push --atomic origin main +refs/tags/vX.Y.Z`. The new run cancels obsolete build jobs for that tag (never the lock-holding jobs) and `stage` replaces the draft's asset.
+- **Re-run at the same SHA:** the retained DMG is adopted instead of rebuilt (90-day artifact retention; intermediate web artifacts keep 14 days).
+- **Published but verification failed:** rerun `publish` (it only verifies and records a missing ledger entry) or the whole workflow, which routes to `verify-published` with the original retained DMG. Missing or expired artifacts or differing bytes fail clearly; published bytes are never rebuilt.
 
-Intermediate build artifacts have 14-day retention; the original final DMG and upgrade/final-DMG qualification artifacts have 90-day retention for newly uploaded artifacts (subject to repository retention policy; existing artifacts retain their original expiry). Reports export before scratch cleanup and upload on failure; setup failures produce an incomplete report. Private homes, credentials and raw subprocess logs are not uploaded. Local QA still removes scratch unless explicitly retained.
+For recovery beyond Actions retention, keep an authorized offline copy of the exact original DMG with its tag, source SHA, size, SHA-256 and original run URL. With that file in `RELEASE_ASSET_DIRECTORY`, the original `GITHUB_REF`/`GITHUB_SHA`, the canonical `GITHUB_REPOSITORY` and a read-only `GITHUB_TOKEN`, `node scripts/release.mjs verify-published` verifies without writes. Do not add backup files as public release assets.
+
+Stage and publish share the global `devryan-production-publication` lock with cancellation disabled; `deploy-backend` has its own non-cancelling group. GitHub concurrency is not a durable FIFO queue: a newer pending job may replace an older pending one; rerun a superseded unpublished release deliberately.
+
+## Qualification
+
+Setup failures in `upgrade-check` are classified by `scripts/qa/release-qualification-failure.mjs`. `infra` (a failed `gh`, `git`, `tar`, `ditto`, `bun` or `hdiutil` command, network errors and timeouts, a busy disk image, a corrupt baseline download) is retried once inside the job. `product` (candidate hop, migration, history or held-recovery failure, a changed candidate runtime, a failed producer) and anything unknown is never retried. The job log and each lane report carry the class and bounded error text (run paths replaced, opaque tokens removed). Details: [QA](QA.md#release-upgrade-lane).
+
+## Final-DMG smoke
+
+The smoke is quarantined as a tracked defect. It failed in every release run from v2.1.8 through v2.1.9 and passed only for v2.1.7 (`rendererResponse`, `toolRoundTrip`, `screenshot`). The v2.1.9 run 39735194056 report shows the cause: the composer never submitted (`release_dmg_renderer_submit_failed`, "Timed out: UI-created session", zero provider requests) because it resolved Builder's shipped model `openai/gpt-5.5` and showed "Configured model openai/gpt-5.5 is unavailable". The smoke's `settings.json` `agentModelSelections` apply only to managed non-admin users (`useConfigStore`), and the packaged Builder agent's model wins over the smoke's `opencode.json` agent entry. Fixing it needs the smoke to pin Builder's model the way the owner's UI does, verified on a macOS GUI runner.
+
+While quarantined, the smoke step has `continue-on-error`, so the job is green, and the summary step posts a warning annotation with the failure and its reason. Once three distinct Actions runs produce passing `release-final-dmg-smoke/report.json` reports for their exact DMG hashes, a maintainer confirms each has `rendererSubmitted: true` and `rendererResponse: true`, inspects `first-ready.png` and `conversation.png`, and sets the repository variable `DEVRYAN_FINAL_DMG_SMOKE_GATE=qualified-3-runs`. From then on a failed or unavailable smoke blocks `stage`. This is an explicit rollout decision, not an automatic claim.
+
+The smoke checks packaged startup, the first usable document, native keyboard and pointer input through the composer and Send control, a visible rendered final response, and a deterministic loopback-provider tool round-trip through ordinary imported custom-provider configuration. It does not claim updater replacement, launchd migration, OS-keychain access or paid-provider behaviour. A prerequisite failure is reported as a failure, never a passing skip. Reports export before scratch cleanup and upload on failure; private homes, credentials and raw subprocess logs are not uploaded.
 
 ## Dry runs
 
-`gh workflow run release.yml --ref main` runs the whole graph with `RELEASE_DRY_RUN=true`. `admit` prints instead of drafting, `upload` only checks the local DMG, and the Supabase and publish steps are skipped.
+`gh workflow run release.yml --ref <branch>` runs preflight, packaging and qualification with `RELEASE_DRY_RUN=true` and stops; `stage`, `deploy-backend` and `publish` run only on a tag push. A dry run cannot write releases: `RELEASE_DRY_RUN` derives from the event name, and every GitHub write goes through `assertReleaseWritesAllowed` (`scripts/release-artifacts.mjs`), which refuses any dry run and any repository but this one. `scripts/release-workflow.test.mjs` checks the workflow side of this contract.
+
+## Release visual QA
+
+Run on an isolated macOS user or VM, never on the developer's running app or data, with one screenshot per step attached to the release run.
+
+- **V1 Fresh install.** Download the public DMG and check its sha256 against the release digest. Mounting shows the "DevRyan X.Y.Z" window with DevRyan.app and an Applications link. Drag to /Applications. Record the Gatekeeper first-open prompt and path (right-click Open, or `xattr`) for the ad-hoc signed, quarantined app.
+- **V2 First launch.** Splash, then the main window. The composer is visible and focused. A prompt to the loopback provider gets a rendered response. No error toasts. A clean quit leaves no `DevRyan` or `opencode` processes.
+- **V3 About.** About shows exactly `X.Y.Z`, matching the tag and `CFBundleShortVersionString`.
+- **V5 Update from 2.1.9 to the candidate** (the published release). The prompt shows the new version and its notes; the download reaches 100 %; "Restart to update" lands on X.Y.Z; sessions, settings and the `~/.config/devryan` link are kept.
+- **V6 Updater states.** On the latest version the check says up to date. Offline or rate-limited shows the "Release discovery is unavailable. Retry later." message. An interrupted download resumes from the partial file; a corrupt partial is discarded.
+- **V7 Rollback.** Kill the installer mid-swap. The next launch recovers to the previous or the new version without data loss (installer intent phases in `packages/electron/desktop-update-install.mjs`).
+- **V8 Release page.** Exactly one asset with the contract name, marked Latest, notes equal to the CHANGELOG section, no drafts left.
+
+## Timing acceptance
+
+The interim target is **13–15 minutes** and the final target is **at most 10 minutes**, measured from the exact main-push CI workflow's `created_at` through successful updater discovery, including queues, publication and cleanup. Neither is demonstrated yet. For each of the next three routine releases, keep the main CI and release run IDs, the SHA, CI creation time, the `[release] updater-discovery-verified-at` log timestamp, total elapsed time, job queue and run times and qualification phase reports. Claim the final target only if all three totals meet it. Dry runs do not count.
+
+Qualification reports contain baseline identities and phase durations for downloads, installation, historical hops, candidate hops, held recovery, report writing and scratch deletion. Cleanup is measured, including on failure; private homes and raw process logs never become artifacts.
 
 ## Retired Bots
 
-Bots are disabled by the shared product capability at UI, web runtime/API and Electron/IPC boundaries. Administrator settings cannot re-enable them. The release has no Bot image jobs, manifest handoffs, packaged Bot runtime resources or Bot-schema marker requirement. Authentication configuration and migration-history verification remain required; existing migrations are retained.
-
-Previously installed Bot data, volumes, configuration and credentials are preserved. After ordinary desktop startup is accepted, bounded best-effort cleanup disables restarts and stops only containers carrying this installation's existing DevRyan deployment identity. Docker/keychain failure does not block startup, updater acceptance or ordinary chat. The shared runtime service and ordinary scheduled tasks remain available. Legacy Bot image tooling and its unit tests remain in source for compatibility; it is not part of the product release graph.
+Bots are disabled by the shared product capability at UI, web runtime/API and Electron/IPC boundaries. The release has no Bot image jobs, manifest handoffs, packaged Bot runtime resources or Bot-schema marker requirement. Authentication configuration and migration-history verification remain required; existing migrations are retained. Previously installed Bot data, volumes, configuration and credentials are preserved; legacy Bot image tooling remains in source but is not part of the release graph.
 
 ## Build notes
 
 - Release installs set `DEVRYAN_SKIP_INSTALL_PREPARE=1`. Without it, Bun runs the Electron workspace `prepare` script (a full web build plus native helpers) on every install.
-- `release-cache.yml` is an optional manual verification workflow; main CI already verifies native inputs on its two macOS workers. It does not export a reusable cache. Tag runs build and verify their own native runtime.
+- `release-cache.yml` is an optional manual verification workflow; it does not export a reusable cache.
 - Do not cache the Bun package store: on 2026-09-23 restoring it (~800 MB) was slower than a fresh install.
 - Every job has a timeout, so a stalled native build fails instead of holding the release open.
 
@@ -99,12 +153,13 @@ Previously installed Bot data, volumes, configuration and credentials are preser
 
 | Command | Outcome |
 | --- | --- |
+| `bun run release:preflight` | Release preflight; `-- --local-only` without GitHub |
 | `bun run build` | Web assets and the Electron main bundle; no native build |
 | `bun run --cwd packages/electron prepare` | Web staging, native helpers, main bundle, native ABI rebuild |
 | `bun run electron:build` | Full local preparation and packaging |
-| `bun run --cwd packages/electron package:prepared --publish=never` | Package prepared inputs; retired builds require no Bot manifest |
+| `bun run --cwd packages/electron package:prepared --publish=never` | Package prepared inputs |
 | `bun run pack:web` | Locally installable web tarball (not released) |
 
 ## Updater contract
 
-Installed 2.0.2 and later apps read `https://api.github.com/repos/1H-Team/DevRyan/releases/latest`. They need a published, non-prerelease release tagged `vX.Y.Z` with exactly one uploaded `DevRyan-X.Y.Z-arm64.dmg`, whose GitHub-computed `digest` and size they verify after download. Nothing else (no `latest-mac.yml`, ZIP or blockmaps) is used. Apps from 2.0.1 and earlier need a manual DMG install.
+Installed apps read `https://api.github.com/repos/1H-Team/DevRyan/releases/latest`. They need a published, non-prerelease release tagged `vX.Y.Z` with exactly one uploaded `DevRyan-X.Y.Z-arm64.dmg`, whose GitHub-computed `digest` and size they verify after download. Nothing else (no `latest-mac.yml`, ZIP or blockmaps) is used. The installer then requires a single-arch arm64 `DevRyan.app` whose `CFBundleShortVersionString` equals the tag, `CFBundleExecutable` is `DevRyan`, `CFBundleIdentifier` is one the installed version accepts, and whose signing mode matches the installed app. `scripts/release-packaging.test.mjs` and `scripts/release-state.test.mjs` check the packaging configuration and the bundle identifier against every supported shipped installer. Installs older than v2.1.9 are not supported for in-app updates; apps from 2.0.1 and earlier always need a manual DMG install.

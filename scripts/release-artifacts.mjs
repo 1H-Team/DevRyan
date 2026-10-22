@@ -5,9 +5,17 @@ import crypto from 'node:crypto';
 export const hash = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
 export const WEB_BUILD_OPTIONS = Object.freeze({ mode: 'production', reactScan: false });
 
-export function assertReleaseWritesAllowed(environment = process.env) {
+export const CANONICAL_RELEASE_REPOSITORY = '1H-Team/DevRyan';
+
+/**
+ * Dry runs never publish or tag. A `repository` names the GitHub repository a
+ * write targets; no repository but the canonical one accepts release writes.
+ */
+export function assertReleaseWritesAllowed(environment = process.env, { repository } = {}) {
+  const forbidden = message => Object.assign(new Error(message), { code: 'release_dry_run_write_forbidden' });
+  if (repository !== undefined && repository !== CANONICAL_RELEASE_REPOSITORY) throw forbidden(`Release writes to ${repository} are not allowed`);
   if (![undefined, 'false'].includes(environment.RELEASE_DRY_RUN) || ![undefined, 'false'].includes(environment.RELEASE_CANDIDATE)) {
-    throw Object.assign(new Error('Release dry runs prohibit external publication and tagging'), { code: 'release_dry_run_write_forbidden' });
+    throw forbidden('Release dry runs prohibit external publication and tagging');
   }
 }
 

@@ -10,6 +10,7 @@ import { createRunRoot, scratchParent } from './run-root.mjs';
 import { reservePort, startOwnedProcess } from './process.mjs';
 import { qaPlatformEnvironment } from './launch-environment.mjs';
 import { createQaUiDriver } from './ui-driver.mjs';
+import { boundedDiagnostic } from './release-qualification-failure.mjs';
 
 const execute = promisify(execFile);
 export function gradeFinalDmgSmoke({ prerequisites, ready, composer, rendererSubmitted, rendererResponse, toolRoundTrip, screenshot, stopped }) {
@@ -45,12 +46,7 @@ export function smokeSettings({ port, workspace, tuple }) {
     defaultAgent: 'builder', defaultModel: `${tuple.providerID}/${tuple.modelID}` };
 }
 
-/** Bounded report text: the run root becomes <run>, long opaque tokens are dropped, 240 printable characters at most. */
-export function boundedDiagnostic(value, runRoot) {
-  let text = String(value ?? '');
-  if (runRoot) text = text.replaceAll(runRoot, '<run>');
-  return text.replace(/[A-Za-z0-9+/_=-]{32,}/g, '<redacted>').replace(/[^\x20-\x7e]/g, '?').slice(0, 240);
-}
+export { boundedDiagnostic };
 
 const SAFE_TOKEN = /^[A-Za-z0-9_.:/-]{1,64}$/;
 /** Numbers, booleans and short identifier-like strings only, `depth` levels deep, at most 40 keys or 20 items each. */
@@ -251,7 +247,27 @@ export async function smokeFinalDmg({ dmg, report, timeoutMs = 120000 }) {
   return evidence;
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+/**
+ * One line for the job log and summary. Until the gate variable is set the
+ * smoke is quarantined: a failure is a tracked defect that does not block
+ * publication, reported as a warning rather than a red job.
+ */
+export function smokeSummary(report, { gated = false } = {}) {
+  if (report?.passed === true) return { level: 'notice', text: `Final-DMG smoke passed for sha256:${report.dmgSha256 ?? 'unknown'}.` };
+  const failures = (report?.failures ?? []).join(', ') || 'no report';
+  const code = /^[a-z_]{1,64}$/.test(report?.errorCode ?? '') ? report.errorCode : null;
+  const detail = [code, report?.error?.message && boundedDiagnostic(report.error.message)].filter(Boolean).join(': ');
+  const reason = `${failures}${detail ? ` (${detail})` : ''}`;
+  return gated ? { level: 'error', text: `Final-DMG smoke failed: ${reason}. Publication is blocked.` }
+    : { level: 'warning', text: `Final-DMG smoke is quarantined as a tracked defect (docs/RELEASE_PIPELINE.md, "Final-DMG smoke"); it failed: ${reason}. Publication is not blocked.` };
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url) && process.argv[2] === '--summary') {
+  const report = await fs.readFile(process.argv[3] ?? '', 'utf8').then(JSON.parse, () => null);
+  const { level, text } = smokeSummary(report, { gated: process.env.DEVRYAN_FINAL_DMG_SMOKE_GATE === 'qualified-3-runs' });
+  console.log(`::${level}::${text}`);
+  if (process.env.GITHUB_STEP_SUMMARY) await fs.appendFile(process.env.GITHUB_STEP_SUMMARY, `### Final-DMG smoke\n\n${text}\n`);
+} else if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
   if (args.length !== 4 || args[0] !== '--dmg' || args[2] !== '--report') throw new Error('Usage: release-final-dmg-smoke.mjs --dmg <absolute DMG> --report <absolute JSON>');
   const result = await smokeFinalDmg({ dmg: args[1], report: args[3] });

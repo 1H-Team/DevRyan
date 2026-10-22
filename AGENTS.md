@@ -11,7 +11,7 @@ DevRyan is the web and Electron interface to OpenCode over HTTP and SSE. Canonic
 - New desktop work goes in `packages/electron`. `packages/desktop` is frozen legacy Tauri, kept only for released-install compatibility ([cutover runbook](docs/TAURI_TO_ELECTRON_CUTOVER.md)).
 - No `codemap.md` files.
 - Commit with explicit `git add <paths>`; other sessions leave work in the tree.
-- The public release is exactly one `DevRyan-<version>-arm64.dmg`. Do not break `/releases/latest` updater discovery or upgrades from installed 2.0.x apps ([release pipeline](docs/RELEASE_PIPELINE.md)).
+- The public release is exactly one `DevRyan-<version>-arm64.dmg`. Do not break `/releases/latest` updater discovery or in-app upgrades from installed 2.1.9 and later apps; older installs are out of scope and reinstall from the DMG. Never delete, re-upload or edit a published release or its `devryan-release/` ledger tag ([release pipeline](docs/RELEASE_PIPELINE.md)).
 
 ## Code
 

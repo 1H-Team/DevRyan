@@ -253,25 +253,29 @@ describe('release workflow', () => {
     assert.equal(packaging.env.CSC_IDENTITY_AUTO_DISCOVERY, 'false');
     assert.match(packaging.run, /-c\.mac\.identity=null -c\.mac\.notarize=false -c\.dmg\.sign=false/);
 
-    // Nothing publishes until the packaged candidate upgrades a profile aged by the previous releases.
-    assert.ok(workflow.jobs.publish.needs.includes('upgrade-check'));
+    // Nothing is staged, let alone published, until the packaged candidate upgrades a profile made by the previous supported release.
+    assert.ok(workflow.jobs.stage.needs.includes('upgrade-check'));
+    assert.match(workflow.jobs.stage.if, /needs\.upgrade-check\.result == 'success'/);
+    assert.ok(workflow.jobs.publish.needs.includes('stage'));
     assert.equal(workflow.concurrency, undefined, 'workflow cancellation must not interrupt production');
-    assert.equal(workflow.jobs.publish.concurrency['cancel-in-progress'], false);
-    assert.equal(workflow.jobs.publish.concurrency.group, 'devryan-production-publication');
-    assert.equal(workflow.jobs.admit.permissions.contents, 'read', 'admission cannot change releases');
-    assert.equal(workflow.jobs.publish.env.RELEASE_PUBLICATION_LOCK, workflow.jobs.publish.concurrency.group);
-    assert.ok(!workflow.jobs.admit.steps.some(step => step.run === 'node scripts/release.mjs trusted-ci'));
+    for (const name of ['stage', 'publish']) {
+      assert.equal(workflow.jobs[name].concurrency['cancel-in-progress'], false);
+      assert.equal(workflow.jobs[name].concurrency.group, 'devryan-production-publication');
+      assert.equal(workflow.jobs[name].env.RELEASE_PUBLICATION_LOCK, workflow.jobs[name].concurrency.group);
+    }
+    assert.equal(workflow.jobs.preflight.permissions.contents, 'read', 'preflight cannot change releases');
+    assert.ok(!workflow.jobs.preflight.steps.some(step => step.run === 'node scripts/release.mjs trusted-ci'));
     assert.ok(workflow.jobs['trusted-ci'].steps.some(step => step.run === 'node scripts/release-ci-wait.mjs'));
     assert.equal(workflow.jobs['trusted-ci'].concurrency, undefined);
     assert.ok(workflow.jobs.publish.needs.includes('trusted-ci'));
-    assert.equal(workflow.jobs.publish.steps.filter(step => step.run === 'node scripts/release.mjs trusted-ci').length, 2);
+    assert.equal(workflow.jobs.publish.steps.filter(step => step.run === 'node scripts/release.mjs trusted-ci').length, 1);
     assert.match(workflow.jobs['verify-published'].if, /outputs.published == 'true'/);
-    assert.equal(workflow.jobs['verify-published'].steps.find(step => step.uses === 'actions/download-artifact@v4').with['run-id'], '${{ needs.admit.outputs.candidate_run_id }}');
+    assert.equal(workflow.jobs['verify-published'].steps.find(step => step.uses === 'actions/download-artifact@v4').with['run-id'], '${{ needs.preflight.outputs.candidate_run_id }}');
     for (const name of ['web', 'electron-package', 'upgrade-check']) assert.match(workflow.jobs[name].if, /outputs.published != 'true'/);
     // Every required lane (scripts/qa/release-upgrade-lanes.mjs REQUIRED_UPGRADE_LANES) in one job, never a subset.
     const upgrade = workflow.jobs['upgrade-check'];
     assert.equal(upgrade.strategy, undefined);
-    assert.equal(upgrade.needs, 'admit');
+    assert.equal(upgrade.needs, 'preflight');
     assert.equal(upgrade.permissions.actions, 'read');
     assert.ok(upgrade.steps.some(step => step.run === 'node scripts/qa/release-preaged-upgrades.mjs "$RUNNER_TEMP/release-reports"'));
     const fallback = upgrade.steps.find((step) => step.run?.includes('--fallback-reports'));
@@ -279,18 +283,18 @@ describe('release workflow', () => {
     assert.equal(upgrade.steps.filter((step) => step.uses === 'actions/download-artifact@v4').length, 0);
     // Release builds reuse exact-source CI's type-check instead of repeating it.
     assert.ok(!workflow.jobs.web.steps.some((step) => /type-check/.test(step.run ?? '')));
-    assert.ok(workflow.jobs['final-dmg-smoke']['continue-on-error'].includes('qualified-3-runs'));
+    assert.ok(workflow.jobs['final-dmg-smoke'].steps.find(step => step.name?.startsWith('Observe'))['continue-on-error'].includes('qualified-3-runs'));
     for (const job of Object.values(workflow.jobs)) for (const step of job.steps ?? []) {
       if (step.uses === 'actions/upload-artifact@v4') assert.equal(step.with['retention-days'],
-        ['DevRyan-macos-arm64-release', 'DevRyan-macos-arm64-candidate-identity', 'release-upgrade', 'release-final-dmg-smoke'].includes(step.with.name) ? 90 : 14);
+        ['DevRyan-macos-arm64-release', 'DevRyan-macos-arm64-candidate-identity', 'release-upgrade', 'release-final-dmg-smoke', 'release-staged'].includes(step.with.name) ? 90 : 14);
     }
-    assert.match(workflow.jobs.publish.if, /needs\.upgrade-check\.result == 'success'/);
     const ci = YAML.parse(readFileSync(new URL('.github/workflows/ci.yml', repoRoot), 'utf8'));
     // Native macOS lanes each build the native runtime in-lane.
     const nativeCI = ci.jobs['native-tests'].strategy.matrix.include.filter(row => row.runner === 'macos-26').length;
     assert.equal(ci.jobs['native-tests'].needs, undefined);
     assert.equal(nativeCI, 3);
-    assert.deepEqual(Object.entries(workflow.jobs).filter(([, job]) => job['runs-on'] === 'macos-26').map(([name]) => name), ['electron-package', 'upgrade-check', 'final-dmg-smoke']);
+    // electron-package runs on macOS unless it adopts a DMG already built at the same SHA.
+    assert.deepEqual(Object.entries(workflow.jobs).filter(([, job]) => String(job['runs-on']).includes('macos-26')).map(([name]) => name), ['electron-package', 'upgrade-check', 'final-dmg-smoke']);
     assert.ok(workflow.jobs['final-dmg-smoke'].needs.includes('electron-package'));
     // GitHub Free runs at most five macOS jobs at once. A release holds two (smoke
     // replaces package; qualification keeps the other) while it waits for CI.
@@ -300,18 +304,16 @@ describe('release workflow', () => {
     assert.ok(!JSON.stringify(workflow).includes('devryan_bot_schema_version'));
     assert.ok(!JSON.stringify(workflow).includes('PRODUCTION_BOTS_MIGRATION'));
 
+    // Stage the DMG, deploy the backend in its own job, then publish with one write.
+    assert.equal(workflow.jobs.stage.steps.find(step => step.id === 'stage').run, 'node scripts/release.mjs stage');
+    const backend = workflow.jobs['deploy-backend'];
+    assert.ok(backend.needs.includes('stage') && workflow.jobs.publish.needs.includes('deploy-backend'), 'order: stage, deploy Supabase, publish');
+    assert.match(backend.if, /github\.event_name == 'push'/);
+    const supabase = backend.steps.find(step => step.name?.startsWith('Deploy and verify Supabase'));
+    assert.match(supabase.run, /node scripts\/sync-supabase-auth-password-policy\.mjs\n\s*supabase db push --linked --dry-run/);
     const steps = workflow.jobs.publish.steps;
-    const index = (name) => steps.findIndex((step) => step.name === name);
-    const upload = index('Check the DMG and attach it to the draft');
-    const supabase = index('Deploy and verify Supabase configuration and migrations');
-    const publish = index('Publish and confirm the in-app updater discovers the DMG');
-    assert.ok(upload >= 0 && upload < supabase && supabase < publish, 'publish order: attach DMG, deploy Supabase, publish');
-    assert.equal(steps[upload].run, 'node scripts/release.mjs upload');
-    assert.equal(steps[publish].run, 'node scripts/release.mjs publish');
-    assert.equal(steps[publish].env.RELEASE_ID, '${{ steps.upload.outputs.release_id }}');
-    assert.equal(steps[supabase].if, "${{ github.event_name == 'push' && steps.upload.outputs.published != 'true' }}");
-    assert.equal(steps[publish].if, "${{ github.event_name == 'push' }}");
-    assert.match(steps[supabase].run, /node scripts\/sync-supabase-auth-password-policy\.mjs\n\s*supabase db push --linked --dry-run/);
+    assert.equal(steps.at(-1).run, 'node scripts/release.mjs publish');
+    assert.equal(workflow.jobs.publish.env.RELEASE_STAGED, '${{ needs.stage.outputs.staged }}');
   });
 });
 

@@ -1,0 +1,8 @@
+{
+  "v2.1.9": {
+    "packages/electron/desktop-download-windows.mjs": "d6a1920841a272512b6dbf8d090b1aa5105fca59",
+    "packages/electron/desktop-update-install.mjs": "c0fc51fe31a0a93573b656d0cea487a7b224aa02",
+    "packages/electron/desktop-updater.mjs": "0dbdc3954f4dc3769f9ba858403fd02fe89dbdfa",
+    "packages/electron/release-assets.mjs": "e802c9fb9cfb2e9d4f1c1df7eba5f57f39895cce"
+  }
+}

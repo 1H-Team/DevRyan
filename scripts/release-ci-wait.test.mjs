@@ -16,8 +16,27 @@ test('CI waits through missing registration and pending, accepting only the exac
   assert.deepEqual(waits, [10_000, 10_000]);
 });
 
-for (const conclusion of ['failure', 'cancelled', 'timed_out', 'skipped']) test(`CI fails immediately on ${conclusion}`, async () => {
-  await assert.rejects(waitForTrustedCI({ environment, ...clock(), request: async () => ({ workflow_runs: [{ ...canonical, conclusion }] }) }), new RegExp(conclusion));
+test('a red CI attempt followed by a green re-run within the deadline qualifies', async () => {
+  const responses = [[{ ...canonical, conclusion: 'failure', run_attempt: 1 }], [{ ...canonical, conclusion: 'failure', run_attempt: 1 }],
+    [{ ...canonical, status: 'in_progress', conclusion: null, run_attempt: 2 }], [{ ...canonical, run_attempt: 2 }]];
+  const lines = [];
+  const result = await waitForTrustedCI({ environment, ...clock(), log: line => lines.push(line), request: async () => ({ workflow_runs: responses.shift() }) });
+  assert.equal(result.run_attempt, 2);
+  assert.match(lines[0], /attempt 1 concluded failure\. Re-run it \(gh run rerun 1 --failed\); this job keeps waiting/);
+  assert.equal(lines.filter(line => line.includes('concluded failure')).length, 1, 'the hint is printed once per red attempt');
+  assert.match(lines.at(-1), /attempt 2 passed/);
+});
+
+test('a newer canonical run for the same SHA can replace a red one', async () => {
+  const responses = [[{ ...canonical, conclusion: 'cancelled' }], [{ ...canonical, conclusion: 'cancelled' }, { ...canonical, id: 2 }]];
+  assert.equal((await waitForTrustedCI({ environment, ...clock(), log: () => {}, request: async () => ({ workflow_runs: responses.shift() }) })).id, 2);
+});
+
+for (const conclusion of ['failure', 'cancelled', 'timed_out', 'skipped']) test(`CI ${conclusion} that is never re-run fails at the deadline with the re-run hint`, async () => {
+  const time = clock();
+  await assert.rejects(waitForTrustedCI({ environment, ...time, timeoutMs: 60_000, log: () => {}, request: async () => ({ workflow_runs: [{ ...canonical, conclusion }] }) }),
+    new RegExp(`Canonical CI 1 attempt 1 ${conclusion} and was not re-run to success within 1 minutes\\. Re-run CI \\(gh run rerun 1 --failed\\)`));
+  assert.equal(time.now(), 60_000);
 });
 
 test('newer main pushes, pull requests, other workflows and repositories cannot qualify a release', async () => {
@@ -27,7 +46,7 @@ test('newer main pushes, pull requests, other workflows and repositories cannot 
     request: async () => ({ workflow_runs: impostors }) }), /deadline/);
 });
 
-test('a later exact-source canonical failure cannot be hidden by an older passing rerun', async () => {
-  await assert.rejects(waitForTrustedCI({ environment, ...clock(), request: async () => ({ workflow_runs: [canonical,
-    { ...canonical, id: 2, conclusion: 'failure' }] }) }), /failure/);
+test('a later exact-source canonical failure cannot be hidden by an older passing run', async () => {
+  await assert.rejects(waitForTrustedCI({ environment, ...clock(), timeoutMs: 30_000, log: () => {}, request: async () => ({ workflow_runs: [canonical,
+    { ...canonical, id: 2, conclusion: 'failure' }] }) }), /Canonical CI 2 attempt 1 failure/);
 });
