@@ -505,6 +505,9 @@ for (const mode of ['direct', 'persistent', 'oneshot']) {
     try {
       await send(context.runtime, context.directory, 'different');
       expect((await readAssistant(context.runtime)).info.finish).toBe('stop');
+      // The in-memory finish precedes persistence and the final observer callbacks.
+      await waitForPresentation(() => context.emitted.some(event => event.type === 'session.status'
+        && event.properties.sessionID === 'ses_fixture' && event.properties.status.type === 'idle'));
       expect(calls).toBe(3);
       await send(context.runtime, context.directory, 'cancel', 'ses_cancel_observer');
       await readAssistant(context.runtime, row => row.parts.some(part => part.text === exact), 'ses_cancel_observer');
