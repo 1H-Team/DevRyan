@@ -224,7 +224,8 @@ const openReader = (cwd, args, check) => {
 };
 // One object by name (`<oid>` or `<tree>:<path>`), or null when absent.
 // `check` answers only { oid, type, size }.
-export function readGitObject(cwd, args, name, { check = false } = {}) {
+// `idleMs` (tests) shortens how long an idle reader lives.
+export function readGitObject(cwd, args, name, { check = false, idleMs = READER_IDLE_MS } = {}) {
   executionSignal()?.throwIfAborted();
   if (typeof name !== 'string' || !name || /[\n\r\0]/.test(name)) return Promise.reject(changeError('invalid_change_record'));
   const reader = openReader(cwd, args, check);
@@ -236,7 +237,9 @@ export function readGitObject(cwd, args, name, { check = false } = {}) {
   }).finally(() => {
     if (reader.closed || reader.pending.length) return;
     reader.hold(false);
-    reader.idle = setTimeout(() => reader.close(), READER_IDLE_MS);
+    // Reads settling together each get here: replace, never orphan, the timer.
+    clearTimeout(reader.idle);
+    reader.idle = setTimeout(() => { if (!reader.pending.length) reader.close(); }, idleMs);
     reader.idle.unref?.();
   });
 }
