@@ -78,6 +78,12 @@ describe('release asset verification', () => {
     assert.match(verify([uploaded(DMG)], 'desktop-macos-arm64', new Map())[0], /packaged sha256:missing/);
   });
 
+  it('rejects a partial starter upload, a duplicate installer and the v2.0.10 docs tarball', () => {
+    assert.deepEqual(verify([{ ...uploaded(DMG), state: 'starter', digest: null }]), [`asset integrity failures:\n- ${DMG} is not uploaded (starter)`]);
+    assert.deepEqual(verify([uploaded(DMG), uploaded(DMG)]), [`duplicate assets:\n- ${DMG}`]);
+    assert.deepEqual(verify([uploaded(DMG), uploaded('DevRyan-docs-source-aa5da4d8.tar.gz')]), ['unexpected public assets:\n- DevRyan-docs-source-aa5da4d8.tar.gz']);
+  });
+
   it('describes staged files for directory mode, flagging non-files', async () => {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'release-assets-'));
     try {

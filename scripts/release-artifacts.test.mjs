@@ -13,6 +13,16 @@ test('dry runs refuse external publication', () => {
   assert.throws(() => assertReleaseWritesAllowed({ RELEASE_DRY_RUN: 'true' }), { code: 'release_dry_run_write_forbidden' });
 });
 
+test('a staging dry run writes only to the staging repository and never to the canonical one', () => {
+  const stage = { RELEASE_DRY_RUN: 'true', RELEASE_MODE: 'stage' };
+  assertReleaseWritesAllowed(stage, { repository: '1H-Team/DevRyan-release-staging' });
+  assertReleaseWritesAllowed({}, { repository: '1H-Team/DevRyan' });
+  for (const [environment, repository] of [[stage, '1H-Team/DevRyan'], [{ RELEASE_DRY_RUN: 'true', RELEASE_MODE: 'build' }, '1H-Team/DevRyan-release-staging'],
+    [{}, '1H-Team/DevRyan-release-staging'], [{ RELEASE_MODE: 'stage' }, '1H-Team/DevRyan-release-staging'], [{}, 'attacker/DevRyan'], [stage, 'attacker/DevRyan']]) {
+    assert.throws(() => assertReleaseWritesAllowed(environment, { repository }), { code: 'release_dry_run_write_forbidden' });
+  }
+});
+
 test('web handoff preserves hidden manifests and rejects changed identity, missing and corrupt files', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-web-artifact-'));
   try {

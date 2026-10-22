@@ -1,52 +1,72 @@
 name: Release
+run-name: ${{ github.event_name == 'workflow_dispatch' && format('Release {0} dry run', inputs.mode) || format('Release {0}', github.ref_name) }}
 
-# A vX.Y.Z tag push builds DevRyan-X.Y.Z-arm64.dmg, attaches it to a draft and publishes it.
-# A manual run is a dry run of the same graph on its ref: it builds everything and publishes nothing.
-# Retry a failed release on the same version: re-run the failed jobs, or move the tag to a fixed
-# commit (`git tag -f vX.Y.Z <sha> && git push -f origin vX.Y.Z`); locked upload reuses the draft.
+# A vX.Y.Z tag push builds DevRyan-X.Y.Z-arm64.dmg, stages it on a draft and publishes it.
+# A manual run is a dry run of the same graph on its ref and never writes to this repository:
+#   mode=build  packages and qualifies, then stops;
+#   mode=stage  also stages, publishes and verifies the DMG in 1H-Team/DevRyan-release-staging.
+# Retry a failed release on the same version by re-running the failed jobs; a rebuild at the
+# same SHA reuses the retained DMG. Move the tag only for a code fix
+# (`git tag -f vX.Y.Z <sha> && git push --atomic origin main +refs/tags/vX.Y.Z`).
 # See docs/RELEASE_PIPELINE.md.
 on:
   push:
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
   workflow_dispatch:
+    inputs:
+      mode:
+        description: 'build: package and qualify only. stage: also stage, publish and verify in the staging repository.'
+        type: choice
+        options:
+          - build
+          - stage
+        default: build
 
 env:
   RELEASE_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' }}
+  RELEASE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'publish' }}
+  RELEASE_TARGET_REPOSITORY: ${{ github.event_name == 'workflow_dispatch' && '1H-Team/DevRyan-release-staging' || github.repository }}
 
 permissions:
   contents: read
 
-# Cancel obsolete builds, never an in-flight production publication.
+# Cancel obsolete builds, never an in-flight staging or production publication.
 
 jobs:
-  admit:
+  preflight:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     permissions:
       contents: read
       actions: read
     outputs:
-      version: ${{ steps.admit.outputs.version }}
-      release_id: ${{ steps.admit.outputs.release_id }}
-      published: ${{ steps.admit.outputs.published }}
-      candidate_run_id: ${{ steps.admit.outputs.candidate_run_id }}
+      version: ${{ steps.preflight.outputs.version }}
+      release_id: ${{ steps.preflight.outputs.release_id }}
+      published: ${{ steps.preflight.outputs.published }}
+      candidate_run_id: ${{ steps.preflight.outputs.candidate_run_id }}
+      reuse_run_id: ${{ steps.preflight.outputs.reuse_run_id }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.3'
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Qualify version metadata without changing releases
-        id: admit
+      - name: Check versions, lockfile, publication state, pipeline changes and build reuse
+        id: preflight
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: node scripts/release.mjs admit
+        run: node scripts/release-preflight.mjs
 
   trusted-ci:
-    needs: admit
+    needs: preflight
     if: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 17
+    timeout-minutes: 27
     permissions:
       contents: read
       actions: read
@@ -55,14 +75,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Wait for canonical main CI outside the publication lock
+      - name: Wait for canonical main CI (and its re-runs) outside the publication lock
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/release-ci-wait.mjs
 
   verify-published:
-    needs: [admit, trusted-ci]
-    if: ${{ needs.admit.outputs.published == 'true' }}
+    needs: [preflight, trusted-ci]
+    if: ${{ needs.preflight.outputs.published == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -70,7 +90,6 @@ jobs:
       actions: read
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      RELEASE_ID: ${{ needs.admit.outputs.release_id }}
       RELEASE_ASSET_DIRECTORY: retained-candidate
     steps:
       - uses: actions/checkout@v4
@@ -80,7 +99,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: DevRyan-macos-arm64-release
-          run-id: ${{ needs.admit.outputs.candidate_run_id }}
+          run-id: ${{ needs.preflight.outputs.candidate_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           path: retained-candidate
       - name: Verify original published bytes without rebuilding or deploying
@@ -88,10 +107,10 @@ jobs:
 
   web:
     concurrency:
-      group: release-build-${{ github.ref_name }}-web${{ matrix.baseline || '' }}
+      group: release-build-${{ github.ref_name }}-web
       cancel-in-progress: true
-    needs: admit
-    if: ${{ needs.admit.outputs.published != 'true' }}
+    needs: preflight
+    if: ${{ needs.preflight.outputs.published != 'true' && needs.preflight.outputs.reuse_run_id == '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -131,56 +150,77 @@ jobs:
     concurrency:
       group: release-build-${{ github.ref_name }}-electron-package
       cancel-in-progress: true
-    needs: [admit, web]
-    if: ${{ !cancelled() && needs.admit.outputs.published != 'true' && needs.web.result == 'success' }}
-    runs-on: macos-26
+    needs: [preflight, web]
+    if: ${{ !cancelled() && needs.preflight.result == 'success' && needs.preflight.outputs.published != 'true' && (needs.web.result == 'success' || needs.preflight.outputs.reuse_run_id != '') }}
+    # A DMG already built at this SHA (an earlier attempt, run or staging dry run) is adopted on Ubuntu.
+    runs-on: ${{ needs.preflight.outputs.reuse_run_id != '' && 'ubuntu-latest' || 'macos-26' }}
     timeout-minutes: 35
+    permissions:
+      contents: read
+      actions: read
     env:
       ELECTRON_BUILDER_ARCH: arm64
-      VERSION: ${{ needs.admit.outputs.version }}
+      VERSION: ${{ needs.preflight.outputs.version }}
       APP_DIR: packages/electron/dist/mac-arm64
+      REUSE_RUN_ID: ${{ needs.preflight.outputs.reuse_run_id }}
     steps:
       - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: '1.4.3'
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Adopt the DMG already built at this source
+        if: ${{ env.REUSE_RUN_ID != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release-candidate.mjs adopt "$REUSE_RUN_ID" packages/electron/dist
+      - uses: oven-sh/setup-bun@v2
+        if: ${{ env.REUSE_RUN_ID == '' }}
+        with:
+          bun-version: '1.4.3'
       - name: Install target dependencies
+        if: ${{ env.REUSE_RUN_ID == '' }}
         # Web assets come from the web job and native inputs are built below.
         env:
           DEVRYAN_SKIP_INSTALL_PREPARE: '1'
         run: bun install --frozen-lockfile --cpu '*' --os darwin
       - name: Restore reviewed Claude executable
+        if: ${{ env.REUSE_RUN_ID == '' }}
         run: node scripts/hydrate-reviewed-claude.mjs
       - name: Build and verify native v2 runtime
+        if: ${{ env.REUSE_RUN_ID == '' }}
         timeout-minutes: 20
         run: bun scripts/build-native-runtime.mjs
       - name: Prepare native helpers
+        if: ${{ env.REUSE_RUN_ID == '' }}
         working-directory: packages/electron
         run: bun run build:native-helpers
       - name: Bundle main process
+        if: ${{ env.REUSE_RUN_ID == '' }}
         run: bun run build:electron
       - name: Rebuild native bindings
+        if: ${{ env.REUSE_RUN_ID == '' }}
         working-directory: packages/electron
         run: bun run rebuild:native
       - uses: actions/download-artifact@v4
+        if: ${{ env.REUSE_RUN_ID == '' }}
         with:
           name: web-release
           path: web-artifact
       - name: Stage web assets
+        if: ${{ env.REUSE_RUN_ID == '' }}
         env:
           RELEASE_OPERATION: web-stage
           RELEASE_ARTIFACT_DIR: web-artifact
           RELEASE_WEB_TARGET: electron
         run: node scripts/release-ci.mjs
       - name: Package the app
+        if: ${{ env.REUSE_RUN_ID == '' }}
         working-directory: packages/electron
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: node scripts/package-prepared.mjs --mac --arm64 --publish=never -c.mac.identity=null -c.mac.notarize=false -c.dmg.sign=false
       - name: Check Cursor SDK native artifacts
+        if: ${{ env.REUSE_RUN_ID == '' }}
         run: |
           set -euo pipefail
           APP_PATH=$(find "$APP_DIR" -maxdepth 2 -name "*.app" -print -quit)
@@ -193,6 +233,7 @@ jobs:
             test -f "$file" || { echo "Error: Cursor SDK native binding missing: $file"; exit 1; }
           done
       - name: Check packaged orchestration config
+        if: ${{ env.REUSE_RUN_ID == '' }}
         run: |
           set -euo pipefail
           APP_PATH=$(find "$APP_DIR" -maxdepth 2 -name "*.app" -print -quit)
@@ -205,12 +246,14 @@ jobs:
           node scripts/verify-default-config-artifact.mjs --source packages/web/server/default-config --artifact-root "$ARTIFACT_ROOT"
           node scripts/smoke-packaged-orchestration-config.mjs --config-root "$ARTIFACT_ROOT"
       - name: Check retired Bots packaging
+        if: ${{ env.REUSE_RUN_ID == '' }}
         run: |
           set -euo pipefail
           APP_PATH=$(find "$APP_DIR" -maxdepth 2 -name "*.app" -print -quit)
           test ! -e "$APP_PATH/Contents/Resources/bot-runtime/images.release.json"
           test ! -e "$APP_PATH/Contents/Resources/bot-runtime/compose.production.yml"
       - name: Check macOS usage descriptions
+        if: ${{ env.REUSE_RUN_ID == '' }}
         run: |
           set -euo pipefail
           APP_PATH=$(find "$APP_DIR" -maxdepth 2 -name "*.app" -print -quit)
@@ -218,12 +261,15 @@ jobs:
             value=$(/usr/libexec/PlistBuddy -c "Print :$key" "$APP_PATH/Contents/Info.plist" 2>/dev/null || true)
             test -n "$value" || { echo "Error: required Info.plist usage description missing: $key"; exit 1; }
           done
-      - name: Bind candidate bytes to this source and producer run
+      - name: Bind candidate bytes to this source and run, and write the release manifest
+        if: ${{ env.REUSE_RUN_ID == '' }}
         run: node scripts/release-candidate.mjs packages/electron/dist
       - uses: actions/upload-artifact@v4
         with:
           name: DevRyan-macos-arm64-candidate-identity
-          path: packages/electron/dist/candidate.json
+          path: |
+            packages/electron/dist/candidate.json
+            packages/electron/dist/release-manifest.json
           overwrite: true
           if-no-files-found: error
           retention-days: 90
@@ -231,7 +277,7 @@ jobs:
         with:
           name: DevRyan-macos-arm64-release
           overwrite: true
-          path: packages/electron/dist/DevRyan-${{ needs.admit.outputs.version }}-arm64.dmg
+          path: packages/electron/dist/DevRyan-${{ needs.preflight.outputs.version }}-arm64.dmg
           if-no-files-found: error
           retention-days: 90
 
@@ -239,9 +285,9 @@ jobs:
     concurrency:
       group: release-build-${{ github.ref_name }}-upgrade-check
       cancel-in-progress: true
-    # Fresh private profiles age while the package runner builds the candidate.
-    needs: admit
-    if: ${{ needs.admit.outputs.published != 'true' }}
+    # The previous supported release's profile is prepared while the package runner builds the candidate.
+    needs: preflight
+    if: ${{ needs.preflight.outputs.published != 'true' }}
     runs-on: macos-26
     timeout-minutes: 40
     permissions:
@@ -249,7 +295,7 @@ jobs:
       actions: read
     env:
       GH_TOKEN: ${{ github.token }}
-      VERSION: ${{ needs.admit.outputs.version }}
+      VERSION: ${{ needs.preflight.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -264,7 +310,7 @@ jobs:
         env:
           DEVRYAN_SKIP_INSTALL_PREPARE: '1'
         run: bun install --frozen-lockfile
-      - name: Pre-age profiles, wait for this run's candidate and qualify sequential cold starts
+      - name: Prepare the previous supported release, wait for this run's candidate and qualify the upgrade
         run: node scripts/qa/release-preaged-upgrades.mjs "$RUNNER_TEMP/release-reports"
       - name: Export incomplete qualification reports if setup failed
         if: ${{ always() }}
@@ -281,12 +327,10 @@ jobs:
     concurrency:
       group: release-build-${{ github.ref_name }}-final-dmg-smoke
       cancel-in-progress: true
-    needs: [admit, electron-package]
+    needs: [preflight, electron-package]
     if: ${{ !cancelled() && needs.electron-package.result == 'success' }}
     runs-on: macos-26
     timeout-minutes: 12
-    # Enable only after reviewing three distinct qualified-run reports/screenshots.
-    continue-on-error: ${{ vars.DEVRYAN_FINAL_DMG_SMOKE_GATE != 'qualified-3-runs' }}
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -304,7 +348,10 @@ jobs:
           name: DevRyan-macos-arm64-release
           path: candidate-dmg
       - name: Observe the unchanged final DMG first launch
-        run: node scripts/qa/release-final-dmg-smoke.mjs --dmg "$PWD/candidate-dmg/DevRyan-${{ needs.admit.outputs.version }}-arm64.dmg" --report "$RUNNER_TEMP/release-smoke/report.json"
+        # Quarantined as a tracked defect (docs/RELEASE_PIPELINE.md, "Final-DMG smoke") until
+        # three distinct runs pass and DEVRYAN_FINAL_DMG_SMOKE_GATE is set.
+        continue-on-error: ${{ vars.DEVRYAN_FINAL_DMG_SMOKE_GATE != 'qualified-3-runs' }}
+        run: node scripts/qa/release-final-dmg-smoke.mjs --dmg "$PWD/candidate-dmg/DevRyan-${{ needs.preflight.outputs.version }}-arm64.dmg" --report "$RUNNER_TEMP/release-smoke/report.json"
       - name: Export an incomplete qualification report if setup failed
         if: ${{ always() }}
         env:
@@ -322,6 +369,11 @@ jobs:
               passed: false, failures: ['Qualification did not complete; inspect the failed setup step'] }) + '\n');
           }
           NODE
+      - name: Summarize the smoke and its quarantine
+        if: ${{ always() }}
+        env:
+          DEVRYAN_FINAL_DMG_SMOKE_GATE: ${{ vars.DEVRYAN_FINAL_DMG_SMOKE_GATE }}
+        run: node scripts/qa/release-final-dmg-smoke.mjs --summary "$RUNNER_TEMP/release-smoke/report.json"
       - uses: actions/upload-artifact@v4
         if: ${{ always() }}
         with:
@@ -330,22 +382,28 @@ jobs:
           if-no-files-found: warn
           retention-days: 90
 
-  publish:
+  stage:
     concurrency:
       group: devryan-production-publication
       cancel-in-progress: false
-    needs: [admit, trusted-ci, electron-package, upgrade-check, final-dmg-smoke]
-    if: ${{ !cancelled() && (needs.trusted-ci.result == 'success' || github.event_name == 'workflow_dispatch') && needs.electron-package.result == 'success' && needs.upgrade-check.result == 'success' && (needs.final-dmg-smoke.result == 'success' || vars.DEVRYAN_FINAL_DMG_SMOKE_GATE != 'qualified-3-runs') }}
+    needs: [preflight, electron-package, upgrade-check, final-dmg-smoke]
+    if: ${{ !cancelled() && needs.preflight.outputs.published != 'true' && (github.event_name == 'push' || inputs.mode == 'stage') && needs.electron-package.result == 'success' && needs.upgrade-check.result == 'success' && (needs.final-dmg-smoke.result == 'success' || vars.DEVRYAN_FINAL_DMG_SMOKE_GATE != 'qualified-3-runs') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    environment: DevRyan Secrets
+    timeout-minutes: 30
     permissions:
       contents: write
       actions: read
+    outputs:
+      published: ${{ steps.stage.outputs.published }}
+      release_id: ${{ steps.stage.outputs.release_id }}
+      staged: ${{ steps.stage.outputs.staged }}
     env:
       RELEASE_ASSET_DIRECTORY: release-assets
+      RELEASE_MANIFEST_PATH: release-identity/release-manifest.json
       RELEASE_PUBLICATION_LOCK: devryan-production-publication
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # A tag push writes only with this repository's token; a staging dry run only with the staging token.
+      GITHUB_TOKEN: ${{ github.event_name == 'push' && secrets.GITHUB_TOKEN || '' }}
+      RELEASE_STAGING_TOKEN: ${{ github.event_name == 'workflow_dispatch' && secrets.DEVRYAN_RELEASE_STAGING_TOKEN || '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -355,19 +413,44 @@ jobs:
         with:
           name: DevRyan-macos-arm64-release
           path: release-assets
-      - name: Recheck exact-source CI inside the publication lock
-        if: ${{ github.event_name == 'push' }}
-        run: node scripts/release.mjs trusted-ci
-      - name: Check the DMG and attach it to the draft
-        id: upload
-        run: node scripts/release.mjs upload
+      - uses: actions/download-artifact@v4
+        with:
+          name: DevRyan-macos-arm64-candidate-identity
+          path: release-identity
+      - name: Stage the DMG on the draft and prove every shipped updater discovers it
+        id: stage
+        env:
+          RELEASE_STAGED_PATH: ${{ runner.temp }}/staged.json
+        run: node scripts/release.mjs stage
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: release-staged
+          path: ${{ runner.temp }}/staged.json
+          if-no-files-found: ignore
+          retention-days: 90
+
+  deploy-backend:
+    concurrency:
+      group: devryan-backend-deploy
+      cancel-in-progress: false
+    needs: [preflight, trusted-ci, stage]
+    if: ${{ !cancelled() && github.event_name == 'push' && needs.trusted-ci.result == 'success' && needs.stage.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: DevRyan Secrets
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
       - name: Setup Supabase CLI
-        if: ${{ github.event_name == 'push' && steps.upload.outputs.published != 'true' }}
         uses: supabase/setup-cli@v1
         with:
           version: 2.115.0
-      - name: Deploy and verify Supabase configuration and migrations
-        if: ${{ github.event_name == 'push' && steps.upload.outputs.published != 'true' }}
+      - name: Deploy and verify Supabase configuration and migrations (idempotent)
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
@@ -392,11 +475,35 @@ jobs:
           const drift = (migrations.migrations || []).filter((entry) => !entry.local || !entry.remote || entry.local !== entry.remote);
           if (drift.length > 0) throw new Error(`Supabase migration history diverged for ${drift.length} migration(s).`);
           NODE
-      - name: Recheck CI before promotion
+
+  publish:
+    concurrency:
+      group: devryan-production-publication
+      cancel-in-progress: false
+    needs: [preflight, trusted-ci, stage, deploy-backend]
+    if: ${{ !cancelled() && needs.stage.result == 'success' && ((github.event_name == 'push' && needs.trusted-ci.result == 'success' && needs.deploy-backend.result == 'success') || (github.event_name == 'workflow_dispatch' && inputs.mode == 'stage')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      actions: read
+    env:
+      RELEASE_ASSET_DIRECTORY: release-assets
+      RELEASE_PUBLICATION_LOCK: devryan-production-publication
+      RELEASE_STAGED: ${{ needs.stage.outputs.staged }}
+      GITHUB_TOKEN: ${{ github.event_name == 'push' && secrets.GITHUB_TOKEN || '' }}
+      RELEASE_STAGING_TOKEN: ${{ github.event_name == 'workflow_dispatch' && secrets.DEVRYAN_RELEASE_STAGING_TOKEN || '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          name: DevRyan-macos-arm64-release
+          path: release-assets
+      - name: Recheck exact-source CI inside the publication lock
         if: ${{ github.event_name == 'push' }}
         run: node scripts/release.mjs trusted-ci
-      - name: Publish and confirm the in-app updater discovers the DMG
-        if: ${{ github.event_name == 'push' }}
-        env:
-          RELEASE_ID: ${{ steps.upload.outputs.release_id }}
+      - name: Publish the unchanged staged draft, record the ledger and confirm the shipped updaters discover the DMG
         run: node scripts/release.mjs publish

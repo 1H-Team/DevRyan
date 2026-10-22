@@ -1,6 +1,6 @@
-// Release upgrade qualification as one job: every required lane runs at the
-// same time against one extracted candidate runtime. Each lane is its own
-// process with its own private run root, profile and report
+// Release upgrade qualification as one job: every required lane (today only
+// the previous supported release) runs against one extracted candidate
+// runtime. Each lane is its own process with its own private run root, profile and report
 // (release-upgrade-lane.mjs); the candidate runtime is shared read-only input,
 // and a tree digest taken before and after proves no lane changed it.
 // Usage: node scripts/qa/release-upgrade-lanes.mjs --candidate-artifacts <abs dir> --report-dir <abs dir> [--sequential]
@@ -13,8 +13,8 @@ import { runTestUnits, summarizeTestUnits } from '../test-pool.mjs';
 
 // Node built-ins only (test-pool.mjs too): the fallback-report step must work
 // even when dependency installation failed.
-/** Aging through the newest three releases, plus each direct baseline (DIRECT_UPGRADE_BASELINES). Never a subset. */
-export const REQUIRED_UPGRADE_LANES = Object.freeze(['aging', 'v2.0.2', 'v2.0.15']);
+/** Upgrades are qualified from the previous supported release only (SUPPORTED_UPGRADE_FLOOR and later). */
+export const REQUIRED_UPGRADE_LANES = Object.freeze(['previous']);
 const lanePath = fileURLToPath(new URL('./release-upgrade-lane.mjs', import.meta.url));
 const USAGE = 'Usage: node scripts/qa/release-upgrade-lanes.mjs --candidate-artifacts <abs dir> --report-dir <abs dir> [--sequential] | --report-dir <abs dir> --fallback-reports';
 
@@ -38,8 +38,7 @@ export const laneReport = (reportDirectory, lane) => path.join(reportDirectory, 
 
 export function upgradeLaneUnits({ candidateArtifacts, reportDirectory }) {
   return REQUIRED_UPGRADE_LANES.map(lane => ({ name: `upgrade:${lane}`, command: process.execPath, args: [lanePath,
-    '--candidate-artifacts', candidateArtifacts, '--report', laneReport(reportDirectory, lane),
-    ...(lane === 'aging' ? [] : ['--direct-baseline', lane])] }));
+    '--candidate-artifacts', candidateArtifacts, '--report', laneReport(reportDirectory, lane), '--direct-baseline', lane] }));
 }
 
 /** Content digest of a directory tree: relative paths, types, modes, symlink targets and file bytes. */
@@ -66,7 +65,7 @@ export async function writeMissingReports(reportDirectory, { environment = proce
     const file = laneReport(reportDirectory, lane);
     if (await stat(file).catch(() => null)) continue;
     await writeFile(file, JSON.stringify({ schemaVersion: 1, kind: 'release-upgrade-lane', sourceRevision: environment.GITHUB_SHA ?? null,
-      runID: environment.GITHUB_RUN_ID ?? null, directBaseline: lane === 'aging' ? null : lane, passed: false,
+      runID: environment.GITHUB_RUN_ID ?? null, directBaseline: lane, passed: false,
       failures: ['Qualification did not complete; inspect the failed setup step'] }) + '\n');
     written.push(lane);
   }

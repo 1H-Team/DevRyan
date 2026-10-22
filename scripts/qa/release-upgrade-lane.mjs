@@ -1,7 +1,8 @@
-// Release upgrade lane: age a private profile through the previous published
-// releases' own server code and shipped native runtimes, then cold-start this
-// checkout with the candidate runtime and require the production startup
-// upgrade, verifier and native readiness to succeed. Headless; no Electron.
+// Release upgrade lane: create history in a private profile with the previous
+// supported release's own server code and shipped native runtime, then
+// cold-start this checkout with the candidate runtime and require the
+// production startup upgrade, verifier and native readiness to succeed.
+// Headless; no Electron.
 // Usage: docs/QA.md "Release upgrade lane".
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
@@ -14,24 +15,32 @@ import { createRunRoot, scratchParent } from './run-root.mjs';
 import { createPhaseTimings } from './phase-timings.mjs';
 import { withMountedDmg } from './mounted-dmg.mjs';
 import { runUpgradeCommand as run, stopUpgradeChildren, trackUpgradeChild } from './upgrade-processes.mjs';
+import { classifyQualificationFailure, describeQualificationError } from './release-qualification-failure.mjs';
 
 const repository = fileURLToPath(new URL('../../', import.meta.url)).replace(/\/$/, '');
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 const RELEASE_TAG = /^v\d+\.\d+\.\d+$/;
-export const DIRECT_UPGRADE_BASELINES = Object.freeze(['v2.0.2', 'v2.0.15']);
-// These are the shipped releases, not approximations built with today's server.
-// 2.0.2 predates the startup-upgrade status module; readiness and its actual
-// selected descriptor still have to prove that its profile was provisioned.
+// Upgrades are supported from this release on (docs/RELEASE_PIPELINE.md); older
+// installs reinstall from the DMG. A release is qualified against the previous
+// supported release, run as that release's own shipped server and runtime.
+export const SUPPORTED_UPGRADE_FLOOR = 'v2.1.9';
+const tagParts = tag => tag.slice(1).split('.').map(Number);
+export function compareReleaseTags(left, right) {
+  const [a, b] = [tagParts(left), tagParts(right)];
+  for (let index = 0; index < 3; index++) if (a[index] !== b[index]) return Math.sign(a[index] - b[index]);
+  return 0;
+}
+export const isSupportedBaseline = tag => RELEASE_TAG.test(tag) && compareReleaseTags(tag, SUPPORTED_UPGRADE_FLOOR) >= 0;
 export function releaseHopAdapter(release) {
-  if (release === 'v2.0.2') return { statusModule: false };
-  if (/^v2\.0\./.test(release) && !['v2.0.10', 'v2.0.11', 'v2.0.12', 'v2.0.15'].includes(release)) throw new Error(`Unsupported legacy release hop: ${release}`);
+  if (RELEASE_TAG.test(release) && !isSupportedBaseline(release)) throw new Error(`Unsupported release hop: ${release} is older than the supported upgrade floor ${SUPPORTED_UPGRADE_FLOOR}`);
   return { statusModule: true };
 }
-const USAGE = 'Usage: node scripts/qa/release-upgrade-lane.mjs --candidate-artifacts <abs dir> [--chain v2.0.12,v2.0.15,v2.1.0 | --direct-baseline v2.0.2|v2.0.15] [--report <abs JSON>] [--hop-timeout-ms 240000] [--keep-artifacts]';
+const USAGE = 'Usage: node scripts/qa/release-upgrade-lane.mjs --candidate-artifacts <abs dir> [--direct-baseline previous|vX.Y.Z | --chain vA,vB] [--report <abs JSON>] [--hop-timeout-ms 240000] [--keep-artifacts]';
 const usageError = message => Object.assign(new Error(`${message}\n${USAGE}`), { code: 'qa_release_upgrade_usage' });
 
 export function parseReleaseUpgradeArgs(argv) {
   const options = { chain: null, hopTimeoutMs: 240000 };
+  const requireSupported = tag => { if (!isSupportedBaseline(tag)) throw usageError(`${tag} is older than the supported upgrade floor ${SUPPORTED_UPGRADE_FLOOR}`); };
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
     if (flag === '--keep-artifacts') continue;
@@ -43,7 +52,8 @@ export function parseReleaseUpgradeArgs(argv) {
       if (!path.isAbsolute(value)) throw usageError('--report must be absolute');
       options.report = value;
     } else if (flag === '--direct-baseline') {
-      if (!DIRECT_UPGRADE_BASELINES.includes(value)) throw usageError('--direct-baseline must be v2.0.2 or v2.0.15');
+      if (value !== 'previous' && !RELEASE_TAG.test(value)) throw usageError('--direct-baseline takes previous or a vX.Y.Z tag');
+      if (value !== 'previous') requireSupported(value);
       options.directBaseline = value;
     } else if (flag === '--candidate-artifacts') {
       if (!path.isAbsolute(value)) throw usageError('--candidate-artifacts must be absolute');
@@ -51,6 +61,7 @@ export function parseReleaseUpgradeArgs(argv) {
     } else if (flag === '--chain') {
       const tags = value.split(',');
       if (!tags.length || tags.some(tag => !RELEASE_TAG.test(tag)) || new Set(tags).size !== tags.length) throw usageError('--chain takes distinct vX.Y.Z tags, oldest first');
+      tags.forEach(requireSupported);
       options.chain = tags;
     } else {
       const timeout = Number(value);
@@ -60,14 +71,22 @@ export function parseReleaseUpgradeArgs(argv) {
   }
   if (!options.candidateArtifacts) throw usageError('--candidate-artifacts is required');
   if (options.directBaseline && options.chain) throw usageError('--direct-baseline and --chain are mutually exclusive');
+  if (!options.chain && !options.directBaseline) options.directBaseline = 'previous';
   return options;
 }
 
-/** The newest `count` published (non-draft, non-prerelease) release tags, oldest first. */
-export function selectPreviousReleases(releases, count = 3) {
-  return releases.filter(release => !release.isDraft && !release.isPrerelease && RELEASE_TAG.test(release.tagName))
-    .sort((left, right) => Date.parse(right.publishedAt) - Date.parse(left.publishedAt))
-    .slice(0, count).map(release => release.tagName).reverse();
+/**
+ * The previous supported release for `candidateVersion`: the newest published
+ * (non-draft, non-prerelease) release at or above the support floor and below
+ * the candidate, or the candidate's own published version when a dry run
+ * re-qualifies it. Null when there is none.
+ */
+export function selectPreviousRelease(releases, candidateVersion) {
+  const candidate = `v${candidateVersion}`;
+  const published = releases.filter(release => !release.isDraft && !release.isPrerelease && isSupportedBaseline(release.tagName)
+    && compareReleaseTags(release.tagName, candidate) <= 0).map(release => release.tagName)
+    .sort((left, right) => compareReleaseTags(right, left));
+  return published.find(tag => tag !== candidate) ?? published[0] ?? null;
 }
 
 /**
@@ -314,9 +333,14 @@ async function* releaseUpgradePhases(options) {
   const runRoot = createRunRoot({ parent: scratchParent('release-upgrade'), owner: 'release-upgrade-lane', onInterrupt: stopUpgradeChildren });
   try {
     const root = await realpath(runRoot.dir);
-    const chain = options.directBaseline ? [options.directBaseline] : options.chain ?? selectPreviousReleases(JSON.parse((await run('gh', ['release', 'list', '--limit', '20',
-      '--json', 'tagName,isDraft,isPrerelease,publishedAt'], { cwd: repository })).stdout));
-    if (!chain.length || !options.directBaseline && !options.chain && chain.length !== 3) throw Object.assign(new Error('No published release to upgrade from'), { code: 'qa_release_upgrade_no_baseline' });
+    let chain = options.chain ?? [options.directBaseline];
+    if (options.directBaseline === 'previous') {
+      const candidateVersion = JSON.parse(await readFile(path.join(repository, 'package.json'), 'utf8')).version;
+      const previous = selectPreviousRelease(JSON.parse((await run('gh', ['release', 'list', '--repo', '1H-Team/DevRyan', '--limit', '30',
+        '--json', 'tagName,isDraft,isPrerelease'], { cwd: repository })).stdout), candidateVersion);
+      if (!previous) throw Object.assign(new Error(`No published release from ${SUPPORTED_UPGRADE_FLOOR} through v${candidateVersion} to upgrade from`), { code: 'qa_release_upgrade_no_baseline' });
+      chain = [previous];
+    }
     const layout = { root, home: path.join(root, 'home'), workspace: path.join(root, 'workspace') };
     layout.controlRoot = path.join(layout.home, '.local/state/devryan/runtime-bundles');
     for (const directory of [layout.home, layout.workspace]) await mkdir(directory, { recursive: true, mode: 0o700 });
@@ -360,13 +384,18 @@ async function* releaseUpgradePhases(options) {
     return evidence;
   } catch (error) {
     timings.measureSync('scratch-cleanup', () => finishUpgradeScratch(runRoot, 'failed'));
+    const failureClass = classifyQualificationFailure(error);
+    const errorText = describeQualificationError(error, { runRoot: runRoot.dir });
+    process.stderr.write(`[upgrade] lane could not complete (${failureClass}): ${errorText}\n`);
     if (options.report) {
       await mkdir(path.dirname(options.report), { recursive: true });
       await writeFile(options.report, `${JSON.stringify({ schemaVersion: 1, kind: 'release-upgrade-lane', sourceRevision: process.env.GITHUB_SHA ?? null,
-        directBaseline: options.directBaseline ?? null, timings: timings.phases, passed: false, failures: ['Release upgrade lane could not complete'],
+        directBaseline: options.directBaseline ?? null, timings: timings.phases, passed: false, failureClass,
+        failures: [`Release upgrade lane could not complete (${failureClass}): ${errorText}`], error: errorText,
         ...(error.code === 'qa_release_upgrade_command' ? { command: error.command, exitCode: error.exitCode } : {}),
         errorCode: /^[a-z_]+$/.test(error.code ?? '') ? error.code : 'qa_release_upgrade_failed' }, null, 2)}\n`);
     }
+    error.qualificationClass ??= failureClass;
     throw error;
   } finally {
     if (runRoot.status === 'running') timings.measureSync('scratch-cleanup', () => finishUpgradeScratch(runRoot, 'failed'));
@@ -375,11 +404,17 @@ async function* releaseUpgradePhases(options) {
 
 export function createBaselineInputs(root) {
   const inputs = new Map();
+  let generation = 0;
   return (release, timings) => {
-    if (!inputs.has(release)) inputs.set(release, settledInputs([
-      timings.measure(`baseline-download:${release}`, () => fetchReleaseArtifacts(release, root)),
-      timings.measure(`baseline-install:${release}`, () => prepareReleaseSource(release, root)),
-    ]).then(([artifactInput, sourceInput]) => ({ release, ...artifactInput, ...sourceInput })));
+    if (!inputs.has(release)) {
+      // A failed input is forgotten, so an infrastructure retry fetches it again into fresh directories.
+      const directory = path.join(root, `baseline-${++generation}`);
+      inputs.set(release, settledInputs([
+        timings.measure(`baseline-download:${release}`, () => fetchReleaseArtifacts(release, directory)),
+        timings.measure(`baseline-install:${release}`, () => prepareReleaseSource(release, directory)),
+      ]).then(([artifactInput, sourceInput]) => ({ release, ...artifactInput, ...sourceInput }),
+        error => { inputs.delete(release); throw error; }));
+    }
     return inputs.get(release);
   };
 }

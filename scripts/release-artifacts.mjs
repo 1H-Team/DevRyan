@@ -5,9 +5,24 @@ import crypto from 'node:crypto';
 export const hash = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
 export const WEB_BUILD_OPTIONS = Object.freeze({ mode: 'production', reactScan: false });
 
-export function assertReleaseWritesAllowed(environment = process.env) {
+export const CANONICAL_RELEASE_REPOSITORY = '1H-Team/DevRyan';
+export const STAGING_RELEASE_REPOSITORY = '1H-Team/DevRyan-release-staging';
+
+/**
+ * Dry runs never write outside the staging repository. A `repository` names the
+ * GitHub repository a write targets: the staging repository accepts writes only
+ * from a staging dry run (RELEASE_MODE=stage); every other repository follows
+ * the dry-run rule, and no repository but these two accepts release writes.
+ */
+export function assertReleaseWritesAllowed(environment = process.env, { repository } = {}) {
+  const forbidden = message => Object.assign(new Error(message), { code: 'release_dry_run_write_forbidden' });
+  if (repository === STAGING_RELEASE_REPOSITORY) {
+    if (environment.RELEASE_DRY_RUN === 'true' && environment.RELEASE_MODE === 'stage') return;
+    throw forbidden('Only a staging dry run writes to the release staging repository');
+  }
+  if (repository !== undefined && repository !== CANONICAL_RELEASE_REPOSITORY) throw forbidden(`Release writes to ${repository} are not allowed`);
   if (![undefined, 'false'].includes(environment.RELEASE_DRY_RUN) || ![undefined, 'false'].includes(environment.RELEASE_CANDIDATE)) {
-    throw Object.assign(new Error('Release dry runs prohibit external publication and tagging'), { code: 'release_dry_run_write_forbidden' });
+    throw forbidden('Release dry runs prohibit external publication and tagging');
   }
 }
 

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { parseHelperModelSelection } from '../../packages/shared-runtime/lib/helper-model-selection.js';
-import { TITLE_HELPER_PROMPT, boundedDiagnostic, createSmokeResponder, gradeFinalDmgSmoke, safeFields, smokeSettings } from './release-final-dmg-smoke.mjs';
+import { TITLE_HELPER_PROMPT, boundedDiagnostic, createSmokeResponder, gradeFinalDmgSmoke, safeFields, smokeSettings, smokeSummary } from './release-final-dmg-smoke.mjs';
 import { createRuntimeUiResponder, runtimeUiToolPrompt, runtimeUiTuple } from './native-backend-ui-diagnostic.mjs';
 
 test('a qualified immutable DMG smoke requires prerequisites, ready UI, screenshot and physical shutdown', () => {
@@ -49,4 +49,12 @@ test('report diagnostics are bounded, path-free and token-free', () => {
   assert.deepEqual(safeFields({ sessionCount: 2, lastError: 'native_session_directory_mismatch', note: 'free text with spaces', nested: { gaps: 0, deep: { hidden: 1 } },
     messages: [{ role: 'assistant', parts: ['tool:read:completed', 'text'] }] }, 4),
   { sessionCount: 2, lastError: 'native_session_directory_mismatch', nested: { gaps: 0, deep: { hidden: 1 } }, messages: [{ role: 'assistant', parts: ['tool:read:completed', 'text'] }] });
+});
+
+test('a failing smoke is a quarantined warning until the gate is set, then a blocking error', () => {
+  const failed = { passed: false, failures: ['rendererResponse', 'toolRoundTrip', 'screenshot'], errorCode: 'release_dmg_renderer_submit_failed', error: { message: 'Timed out: UI-created session' } };
+  assert.deepEqual(smokeSummary(failed), { level: 'warning', text: 'Final-DMG smoke is quarantined as a tracked defect (docs/RELEASE_PIPELINE.md, "Final-DMG smoke"); it failed: rendererResponse, toolRoundTrip, screenshot (release_dmg_renderer_submit_failed: Timed out: UI-created session). Publication is not blocked.' });
+  assert.equal(smokeSummary(failed, { gated: true }).level, 'error');
+  assert.match(smokeSummary(null).text, /failed: no report/);
+  assert.deepEqual(smokeSummary({ passed: true, dmgSha256: 'abc' }), { level: 'notice', text: 'Final-DMG smoke passed for sha256:abc.' });
 });
