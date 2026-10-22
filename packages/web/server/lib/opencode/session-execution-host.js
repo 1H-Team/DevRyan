@@ -142,6 +142,7 @@ export function createSessionExecutionHost(options) {
     return launch;
   };
   const directAdmissions = new Map();
+  const directIdentity = (input) => JSON.stringify([input.directory, input.sessionID, input.messageID, input.callID, input.tool]);
   // Claim times of control and process calls, keyed by lease token, so a
   // finish can journal how long the tool ran between its claim and its finish.
   // Bounded like directAdmissions.
@@ -886,13 +887,18 @@ export function createSessionExecutionHost(options) {
     void result.catch(() => {});
     return { ...handle, result };
   };
-  const dispatch = async (input, recheckNative) => {
+  // `admitted`: the direct admission of this exact call, whose canonical
+  // session and message identities were verified moments earlier. Neither can
+  // change for an existing call; revert and cancellation are fenced by the
+  // ledger generation in finishDirect, not by these reads.
+  const dispatch = async (input, recheckNative, admitted) => {
     options.assertExecutionReady?.();
     if (input.protocol === 2 && input.action === 'prepare-poll') {
       if (!preparationHost) throw failure('execution_owner_unavailable');
       return executionPhase('preparation_poll', async () => (await preparationHost).jobs.pollAuthenticated(input));
     }
-    const current = await executionPhase('identity_lookup', () => session(input));
+    const reuse = input.action === 'direct-finish' && admitted?.identity === directIdentity(input) && generation() === 2;
+    const current = reuse ? { parentID: admitted.parentID } : await executionPhase('identity_lookup', () => session(input));
     if (!await verifySessionExecutionLauncher({ launcher: launcher() })) throw failure('mutation_runtime_unsupported');
     if (input.action === 'admit') return runtime.assertAdmission(input);
     if (input.action === 'child') {
@@ -908,13 +914,16 @@ export function createSessionExecutionHost(options) {
       return runtime.registerPrompt({ ...input, parentID: current.parentID });
     }
     if (!identity(input.messageID) || !identity(input.callID)) throw failure('invalid_capture_identity', 400);
-    const record = await executionPhase('tool_identity_lookup', () => readMessage(input.sessionID, input.messageID, input.directory));
-    const call = record?.parts?.find((part) => part.type === 'tool' && part.callID === input.callID);
-    if (record?.info?.role !== 'assistant' || record.info.sessionID !== input.sessionID || !call || call.tool !== input.tool) {
-      throw failure('capture_identity_mismatch');
+    const record = reuse ? { info: { parentID: admitted.userMessageID } }
+      : await executionPhase('tool_identity_lookup', () => readMessage(input.sessionID, input.messageID, input.directory));
+    if (!reuse) {
+      const call = record?.parts?.find((part) => part.type === 'tool' && part.callID === input.callID);
+      if (record?.info?.role !== 'assistant' || record.info.sessionID !== input.sessionID || !call || call.tool !== input.tool) {
+        throw failure('capture_identity_mismatch');
+      }
+      if (record.turnOwnership?.source !== 'native-sequence'
+        || record.turnOwnership.userMessageID !== record.info.parentID) throw failure('capture_identity_mismatch');
     }
-    if (record.turnOwnership?.source !== 'native-sequence'
-      || record.turnOwnership.userMessageID !== record.info.parentID) throw failure('capture_identity_mismatch');
     await recheckNative?.();
     if (input.action === 'direct-admit' || input.action === 'direct-finish') {
       // Kill switch: the companion falls back to the reserved-lease protocol.
@@ -924,7 +933,7 @@ export function createSessionExecutionHost(options) {
       if (input.action === 'direct-admit') {
         const admitted = await executionPhase('direct_admission', () => runtime.admitDirect(identity));
         const token = randomUUID();
-        directAdmissions.set(token, Date.now());
+        directAdmissions.set(token, { at: Date.now(), identity: directIdentity(input), parentID: current.parentID, userMessageID: record.info.parentID });
         while (directAdmissions.size > DIRECT_ADMISSIONS_MAX) directAdmissions.delete(directAdmissions.keys().next().value);
         return { ...admitted, token };
       }
@@ -1049,11 +1058,11 @@ export function createSessionExecutionHost(options) {
   // receipt commit must settle. `tool_execution` is the companion's run time
   // between admission and this finish; it is not part of `elapsedMs`.
   const directFinish = (input, recheckNative, summarize = withExecutionSummary) => {
-    const admittedAt = typeof input.token === 'string' ? directAdmissions.get(input.token) : undefined;
-    if (admittedAt !== undefined) directAdmissions.delete(input.token);
+    const admitted = typeof input.token === 'string' ? directAdmissions.get(input.token) : undefined;
+    if (admitted !== undefined) directAdmissions.delete(input.token);
     return summarize(input, () => {
-      if (admittedAt !== undefined) executionStep('tool_execution', Date.now() - admittedAt);
-      return dispatch(input, recheckNative);
+      if (admitted !== undefined) executionStep('tool_execution', Date.now() - admitted.at);
+      return dispatch(input, recheckNative, admitted);
     }, { phase: 'direct_finish', onDiagnostic: options.onDiagnostic, minMs: options.admissionSummaryMinMs ?? 250 });
   };
   const dispatchPlugin = (input, recheckNative) => input.action === 'direct-finish' ? directFinish(input)

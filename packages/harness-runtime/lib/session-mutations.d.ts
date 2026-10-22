@@ -149,7 +149,7 @@ export interface SessionMutationRuntime {
   restoreForeign(input: { directory: string; files: Array<{ path: string; expected: { mode: string; bytes: Uint8Array } | null; target: { mode: string; bytes: Uint8Array } | null }> }):
     Promise<{ files: Array<{ path: string; status: 'unchanged' | 'added' | 'modified' | 'deleted' }>; conflicts: Array<{ path: string }> }>;
   leaseForCall(input: Pick<MutationScope, 'directory' | 'sessionID' | 'callID'>): Promise<MutationLease | null>;
-  executionOutcomes(input: {directory:string;sessionID:string;calls:readonly {callID:string;messageID:string}[]}): Promise<{sessionID:string;messageID:string;callID:string;outcome:'finished'|'never_started'|'uncertain'}[]>;
+  executionOutcomes(input: {directory:string;sessionID:string;calls:readonly {callID:string;messageID:string;tool?:string}[]}): Promise<{sessionID:string;messageID:string;callID:string;outcome:'finished'|'never_started'|'uncertain'}[]>;
   cancelLease(input: { directory: string; token: string }): Promise<void>;
   cancelUnstartedCall(input: { directory: string; sessionID: string; messageID: string; callID: string; token?: string; requireAbsent?: true;
     /** Constructor-only owner fence, checked under the ledger lock and atomic commit. */
@@ -162,6 +162,15 @@ export function createSessionMutationRuntime(options: {
   directory: string;
   windowsOwner?:WindowsPrivateFileOwner;
   windowsLauncher?:string;
+  /** Ledger store Git I/O (default: the package's own runners). Tests count processes and commits through it. */
+  gitRunner?: {
+    git(cwd: string, args: string[], options?: Record<string, unknown>): Promise<Buffer>;
+    gitTokens(cwd: string, args: string[], options?: Record<string, unknown>): AsyncIterable<string>;
+    gitRecords(cwd: string, args: string[], rows: AsyncIterable<{ key: string; oid: string; size: number }> | Iterable<{ key: string; oid: string; size: number }>):
+      AsyncIterable<{ key: string; oid: string; value: unknown }>;
+    /** Optional long-lived object reader; without it every read is its own process. */
+    readObject?(cwd: string, args: string[], name: string, options?: { check?: boolean }): Promise<{ oid: string; type: string; size: number; data?: Buffer } | null>;
+  };
   /** Rows per install transaction (defaults 128 and, for a first build, 1024). Tests shrink them. */
   batching?: { install?: number; initialInstall?: number };
   onChange?(input: MutationPublication & { directory: string }): void | Promise<void>;

@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { git, gitRecords, gitTokens, changeError } from './session-changes-git.js';
+import { git, gitRecords, gitTokens, changeError, persistentGitReaders, readGitObject } from './session-changes-git.js';
 import { syncPendingObjectDirectory } from './object-durability.js';
 
 export const changeKey = (value) => crypto.createHash('sha256').update(value).digest('hex');
@@ -30,13 +30,24 @@ const validKey = (key) => typeof key === 'string' && /^[a-zA-Z0-9/_-]+\.json$/.t
 // Git's tree is the on-disk index: one small blob per entity, fixed-size pages
 // for lists, and one atomic ref update for the entire transaction. Old readers
 // retain their tree identity. No lifetime-sized JSON document is rewritten.
-export async function openChangeStore(cwd, gitDir, { ref = STATE_REF,gitRunner,syncObjects=syncPendingObjectDirectory,listingLimitBytes=LISTING_LIMIT_BYTES } = {}) {
+// `persistentIndex` (owner-locked state commits only): keep this ledger's Git
+// index between commits instead of rebuilding it from the whole tree each time.
+export async function openChangeStore(cwd, gitDir, { ref = STATE_REF,gitRunner,syncObjects=syncPendingObjectDirectory,listingLimitBytes=LISTING_LIMIT_BYTES,persistentIndex=false } = {}) {
   if (!Number.isSafeInteger(listingLimitBytes) || listingLimitBytes <= 0) throw changeError('invalid_change_record');
   if (ref !== STATE_REF && !/^refs\/devryan\/leases\/[a-f0-9-]{36}$/.test(ref)) throw changeError('invalid_change_record');
   const args = ['--git-dir', gitDir];
   const runGit=gitRunner?.git??git,runTokens=gitRunner?.gitTokens??gitTokens,runRecords=gitRunner?.gitRecords??gitRecords;
   const run = (command, extra) => runGit(cwd, [...args, ...command], extra);
-  const refs = (await run(['for-each-ref', '--format=%(objectname)', ref])).toString().trim();
+  // Default runner only: one long-lived reader instead of a process per read.
+  const reader = gitRunner ? gitRunner.readObject ?? null : persistentGitReaders() ? readGitObject : null;
+  const readObject = (name, options) => reader(cwd, args, name, options);
+  // `update-ref` replaces a loose ref atomically; read it without a process.
+  // Absent (packed or not yet created) or unexpected content asks Git.
+  const looseRef = reader ? await fs.readFile(path.resolve(cwd, gitDir, ...ref.split('/')), 'utf8').then((value) => value.trim(), (cause) => {
+    if (['ENOENT', 'ENOTDIR'].includes(cause.code)) return null; throw cause;
+  }) : null;
+  const refs = looseRef && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(looseRef) ? looseRef
+    : (await run(['for-each-ref', '--format=%(objectname)', ref])).toString().trim();
   let tree = refs || null;
   const oidLength = tree?.length ?? ((await run(['rev-parse', '--show-object-format'])).toString().trim() === 'sha256' ? 64 : 40);
   const pending = new Map();
@@ -79,6 +90,27 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF,gitRunner,s
     }
     return listings.get(identity);
   };
+  // Row values by object id: the persistent reader when available, else
+  // bounded `cat-file --batch` processes.
+  const values = async function* (rows) {
+    if (!reader) { yield* runRecords(cwd, args, rows); return; }
+    let batch = [];
+    const flush = async () => {
+      const found = await Promise.all(batch.map((row) => readObject(row.oid)));
+      const result = batch.map((row, index) => {
+        if (found[index]?.type !== 'blob') throw changeError('invalid_change_record', 503);
+        return { key: row.key, oid: row.oid, value: JSON.parse(found[index].data.toString()) };
+      });
+      batch = [];
+      return result;
+    };
+    for await (const row of rows) {
+      if (!Number.isSafeInteger(row.size) || row.size < 0 || row.size > 512 * 1024) throw changeError('invalid_change_record', 503);
+      batch.push(row);
+      if (batch.length >= 256) yield* await flush();
+    }
+    if (batch.length) yield* await flush();
+  };
   const treeRows = async function* (snapshot, prefix) {
     const rows = await indexed(snapshot), start = `${prefix}/`;
     if (rows) {
@@ -96,6 +128,15 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF,gitRunner,s
     const fromTree = !pending.has(key);
     const observed = (value) => { if (fromTree) baseline.set(key, value); return value === null ? null : JSON.parse(value); };
     if (!tree) return observed(null);
+    if (reader) {
+      const object = pending.get(key)?.oid ?? `${tree}:${key}`, named = `${gitDir}:${object}`;
+      if (blobs.has(named)) return observed(blobs.get(named));
+      const found = await readObject(object);
+      if (!found) return observed(null);
+      if (found.type !== 'blob') throw changeError('invalid_change_record');
+      const value = found.data.toString();
+      remember(named, value); remember(`${gitDir}:${found.oid}`, value); return observed(value);
+    }
     const rows = pending.has(key) ? null : await indexed(tree);
     const row = rows?.[lowerBound(rows, key)];
     if (rows && row?.key !== key) return observed(null);
@@ -129,7 +170,7 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF,gitRunner,s
           yield row;
         }
       };
-      for await (const row of runRecords(cwd, args, rows())) {
+      for await (const row of values(rows())) {
         remember(`${gitDir}:${row.oid}`, JSON.stringify(row.value));
         yield row;
       }
@@ -148,7 +189,7 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF,gitRunner,s
     if (!snapshot) return;
     const rows = [];
     for await (const row of runTokens(cwd, [...args, 'ls-tree', '-r', '-l', '-z', snapshot])) rows.push(parseRow(row));
-    for await (const row of runRecords(cwd, args, rows)) {
+    for await (const row of values(rows)) {
       const data = JSON.stringify(row.value);
       remember(`${gitDir}:${row.oid}`, data);
       if (snapshot === tree && !pending.has(row.key)) baseline.set(row.key, data);
@@ -180,10 +221,19 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF,gitRunner,s
     if (!pending.size) return;
     // Objects this transaction references are durable before it is.
     await syncObjects(cwd);
-    const index = path.join(path.dirname(gitDir), `${crypto.randomUUID()}.metadata-index`);
-    const env = { GIT_INDEX_FILE: index };
+    // A kept index is valid only for the tree recorded beside it. The record
+    // is removed before the index changes and rewritten after the ref moves,
+    // so a crash or a refused commit leaves it absent and the next commit
+    // rebuilds the index from the published tree.
+    const kept = persistentIndex && ref === STATE_REF && process.env.DEVRYAN_LEDGER_PERSISTENT_INDEX !== '0';
+    const index = kept ? path.join(path.dirname(gitDir), 'state.metadata-index') : path.join(path.dirname(gitDir), `${crypto.randomUUID()}.metadata-index`);
+    const env = { GIT_INDEX_FILE: index }, record = `${index}.tree`;
     try {
-      await run(['read-tree', ...(tree ? [tree] : ['--empty'])], { env });
+      const indexed = kept ? await fs.readFile(record, 'utf8').then((value) => value.trim(), (cause) => {
+        if (cause.code === 'ENOENT') return null; throw cause;
+      }) : null;
+      if (kept) { await fs.rm(record, { force: true }); await fs.rm(`${index}.lock`, { force: true }); }
+      if (!kept || indexed !== (tree ?? 'empty')) await run(['read-tree', ...(tree ? [tree] : ['--empty'])], { env });
       const staged = `${index}.blobs`;
       const updates = async function* () {
         let batch = [];
@@ -220,10 +270,15 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF,gitRunner,s
         throw cause;
       }
       tree = next;
+      // The new tree differs from the old only by these values: rewriting
+      // one unchanged after this commit stages nothing.
+      for (const [key, data] of pending) {
+        if (typeof data !== 'object' || data === null) baseline.set(key, data); else baseline.delete(key);
+      }
       pending.clear();
-      baseline.clear();
+      if (kept) await fs.writeFile(record, next, { mode: 0o600 }).catch(() => {}); // Advisory: absent means rebuild.
     } finally {
-      await fs.rm(index, { force: true });
+      if (!kept) await fs.rm(index, { force: true });
       await fs.rm(`${index}.lock`, { force: true });
     }
   };
@@ -248,6 +303,7 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF,gitRunner,s
   const prefixIdentity = async (prefix) => {
     if (pending.size || !validKey(`${prefix}/page.json`)) throw changeError('invalid_change_record');
     if (!tree) return null;
+    if (reader) { const found = await readObject(`${tree}:${prefix}`, { check: true }); return found?.type === 'tree' ? found.oid : null; }
     return run(['rev-parse', '--verify', `${tree}:${prefix}`]).then((value) => value.toString().trim(), () => null);
   };
   // prefixIdentity for many prefixes: one listing per 128 (command lines stay
@@ -256,6 +312,14 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF,gitRunner,s
     if (pending.size || prefixes.some((prefix) => !validKey(`${prefix}/page.json`))) throw changeError('invalid_change_record');
     const result = new Map(prefixes.map((prefix) => [prefix, null]));
     if (!tree) return result;
+    if (reader) {
+      for (let start = 0; start < prefixes.length; start += 256) {
+        const slice = prefixes.slice(start, start + 256);
+        const found = await Promise.all(slice.map((prefix) => readObject(`${tree}:${prefix}`, { check: true })));
+        slice.forEach((prefix, index) => { if (found[index]?.type === 'tree') result.set(prefix, found[index].oid); });
+      }
+      return result;
+    }
     for (let start = 0; start < prefixes.length; start += 128) {
       for await (const row of runTokens(cwd, [...args, '--literal-pathspecs', 'ls-tree', '-z', tree, '--', ...prefixes.slice(start, start + 128)])) {
         const tab = row.indexOf('\t'), fields = row.slice(0, tab).trim().split(/\s+/), prefix = row.slice(tab + 1);

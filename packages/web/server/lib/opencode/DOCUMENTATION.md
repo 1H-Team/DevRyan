@@ -96,6 +96,13 @@ Every probe uses `SIGKILL` for timeout termination and rejects execution errors,
 
 Native Git discovery in `session-execution-host.js` skips only `ENOENT` for unrelated registered roots so removed projects do not block valid siblings; a missing requested cwd, an unowned cwd and other root errors still refuse.
 Native writer and shell publication emit scoped `session_execution` finish timing after the mutation runtime and durable change-receipt recording both settle, including publication recovery. This timing observes the existing work without adding admission/deadline checks or replacing its errors; cleanup retains its separate owner and follows the receipt boundary. Fast completions use the existing admission-summary threshold, while failures remain visible.
+A native `direct-finish` that presents the token of its own `direct-admit`
+for the same directory, session, message, call and tool reuses the canonical
+session and message identities that admission verified, instead of reading
+both again; the admission is consumed, so a retry or any other call reads
+them again. Revert and cancellation remain fenced by the ledger generation in
+`finishDirect`; the native permit is still rechecked.
+
 `execution-helper-command.js` resolves Apple's `/usr/bin/git` shim through bounded host-side `xcrun --find git` once per execution host. Helpers execute the selected Git binary inside the same supervisor, directory policy and clean environment; explicit non-shim commands are preserved. Failed selection is refused and can be retried. This avoids repeating Xcode discovery in each helper's empty confined home during native startup.
 
 ## Entrypoints and structure

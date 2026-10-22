@@ -2,7 +2,7 @@ import { afterEach, expect, test } from 'bun:test';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { git } from './session-changes-git.js';
+import { git, readGitObject } from './session-changes-git.js';
 import { openChangeStore } from './session-changes-store.js';
 
 const roots = [];
@@ -162,3 +162,17 @@ test('records() streams a ledger whose key listing exceeds the 1 MiB buffered-co
   for await (const { key, value } of reader.records()) { expect(value.i).toBe(Number(key.slice(6, 12))); count++; }
   expect(count).toBe(keys.length);
 }, 60_000);
+
+test('persistent object reader: reads settling together never leave a timer that closes a busy reader', async () => {
+  const { root, gitDir } = await store();
+  const oid = (await git(root, ['--git-dir', gitDir, 'hash-object', '-w', '--stdin'], { input: '{"a":1}' })).toString().trim();
+  const args = ['--git-dir', gitDir], read = (name) => readGitObject(root, args, name, { idleMs: 40 });
+  // A batch settling in one tick arms the idle timer once per read.
+  expect((await Promise.all(Array.from({ length: 8 }, () => read(oid)))).every((row) => row?.data.toString() === '{"a":1}')).toBe(true);
+  // Keep the reader busy across every timer the batch armed.
+  const started = Date.now(), failures = [];
+  while (Date.now() - started < 150) await read(oid).catch((cause) => failures.push(cause.code));
+  expect(failures).toEqual([]);
+  expect(await read('0'.repeat(oid.length))).toBeNull();
+  expect(await readGitObject(root, args, oid, { check: true, idleMs: 40 })).toEqual({ oid, type: 'blob', size: 7 });
+});

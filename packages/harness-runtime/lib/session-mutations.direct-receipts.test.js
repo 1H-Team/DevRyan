@@ -8,6 +8,7 @@ import { createSessionMutationRuntime } from './session-mutations.js';
 import { createSessionChangeRuntime } from './session-changes.js';
 import { openChangeStore, changeKey } from './session-changes-store.js';
 import { withExecutionAdmission } from './execution-admission.js';
+import { withCrossProcessFileLock } from './atomic-file.js';
 import { cleanupRoots, fixture, ledgerState, manyFiles, roots, SMALL_BATCHES, test, withEnv } from '../test/session-mutations-fixture.js';
 
 afterEach(cleanupRoots);
@@ -159,6 +160,63 @@ describe('direct receipts for native read-only tools', () => {
     const db = await openChangeStore(root, path.join(root, 'git'));
     expect(await db.get(`prompts/${changeKey('s\0failed-new-prompt')}.json`)).toBeNull();
     expect((await db.get('meta.json')).sequence).toBe(4);
+  });
+
+  test('finishes arriving as separate requests while the lock is held share one commit', async () => {
+    const timings = [], f = await fixture({ onLockTiming: record => timings.push(record) });
+    await f.runtime.registerPrompt({ ...scope(f, 'seed'), userMessageID: 'pd' });
+    timings.length = 0;
+    const lockPath = path.join(f.storage, changeKey(await fs.realpath(f.directory)), 'owner.lock');
+    let release, held;
+    const holding = new Promise(resolve => { held = resolve; });
+    const owner = withCrossProcessFileLock(lockPath, () => { held(); return new Promise(resolve => { release = resolve; }); });
+    await holding;
+    const finishes = [];
+    for (const call of ['s1', 's2', 's3', 's4']) {
+      finishes.push(f.runtime.finishDirect({ ...scope(f, call), token: randomUUID(), generation: 0, executionFingerprint: digest }));
+      await new Promise(resolve => setTimeout(resolve, 15));
+    }
+    release(); await owner;
+    expect((await Promise.all(finishes)).every(result => typeof result.operationID === 'string')).toBe(true);
+    expect(timings.filter(row => row.operation === 'finishDirect')).toHaveLength(1);
+    expect(timings.filter(row => row.operation === 'finishDirect' && row.wrote)).toHaveLength(1);
+    for (const call of ['s1', 's2', 's3', 's4']) expect(await outcome(f, call)).toBe('finished');
+    // The next arrival starts a new batch rather than joining a committed one.
+    await f.runtime.finishDirect({ ...scope(f, 's5'), token: randomUUID(), generation: 0, executionFingerprint: digest });
+    expect(timings.filter(row => row.operation === 'finishDirect' && row.wrote)).toHaveLength(2);
+  });
+
+  test('a published receipt is read from the committed snapshot while the owner lock is held', async () => {
+    const f = await fixture(); await f.runtime.registerPrompt(scope(f, 'seed'));
+    const token = randomUUID();
+    await f.runtime.finishDirect({ ...scope(f, 'held'), token, generation: 0, executionFingerprint: digest });
+    const lockPath = path.join(f.storage, changeKey(await fs.realpath(f.directory)), 'owner.lock');
+    let release, held;
+    const holding = new Promise(resolve => { held = resolve; });
+    const owner = withCrossProcessFileLock(lockPath, () => { held(); return new Promise(resolve => { release = resolve; }); });
+    await holding;
+    try { expect(await f.runtime.executionReceipt({ directory: f.directory, token })).toMatchObject({ callID: 'held', complete: true, files: [] }); }
+    finally { release(); await owner; }
+    await expect(f.runtime.executionReceipt({ directory: f.directory, token: randomUUID() })).rejects.toMatchObject({ code: 'execution_unavailable' });
+  });
+
+  test('outcomes treat read-only direct tools as complete unless a lease shows another execution', async () => {
+    const f = await fixture(); await f.runtime.registerPrompt(scope(f, 'seed'));
+    const outcomes = calls => f.runtime.executionOutcomes({ directory: f.directory, sessionID: 's', calls });
+    // Admitted, then its receipt never committed.
+    await f.runtime.admitDirect(scope(f, 'lost'));
+    expect((await outcomes([{ messageID: 'pd-assistant', callID: 'lost', tool: 'read' }]))[0].outcome).toBe('finished');
+    expect((await outcomes([{ messageID: 'pd-assistant', callID: 'lost' }]))[0].outcome).toBe('uncertain');
+    expect((await outcomes([{ messageID: 'pd-assistant', callID: 'lost', tool: 'bash' }]))[0].outcome).toBe('uncertain');
+    // A confined lease for the same call keeps its own evidence.
+    const lease = await f.runtime.reserve({ ...scope(f, 'confined'), kind: 'process' });
+    expect((await outcomes([{ messageID: 'pd-assistant', callID: 'confined', tool: 'grep' }]))[0].outcome).toBe('uncertain');
+    await f.runtime.cancelLease({ directory: f.directory, token: lease.token });
+    expect((await outcomes([{ messageID: 'pd-assistant', callID: 'confined', tool: 'grep' }]))[0].outcome).toBe('uncertain');
+    // Without a ledger at all.
+    const empty = await fixture();
+    expect((await empty.runtime.executionOutcomes({ directory: empty.directory, sessionID: 's',
+      calls: [{ messageID: 'm', callID: 'c', tool: 'glob' }, { messageID: 'm', callID: 'd' }] })).map(row => row.outcome)).toEqual(['finished', 'uncertain']);
   });
 
   test('a failed shared commit acknowledges no call and all original tokens remain retryable', async () => {

@@ -347,6 +347,11 @@ Repeated native session registration reads the committed ledger snapshot when
 the session already exists with the same parent and directory. New registrations
 and pending materialization recovery still take the owner lock and commit
 durably; the read path never bypasses lineage or directory validation.
+`executionReceipt`, the lease capture that starts `finish`, and the
+cleanability check in `cleanupLease` also read the last committed snapshot: a
+published lease and its publication rows never change again. An absent or
+unsettled lease in the snapshot falls back to the owner lock, and publication
+and cleanup still re-read the lease under it.
 
 Ledger work runs on the host event loop, which in Electron is the window's main
 thread. Gitignored directories without tracked content are inputs: linked into
@@ -401,7 +406,7 @@ Selected-project ledger warming may refresh an existing ledger within its file/b
 
 The web host emits `session_title_generation` lifecycle records with the target session in top-level `sessionID` and the hidden helper in `payload.helperSessionID`. The event-specific sanitizer preserves stable IDs, enumerated stage/outcome/source/selection mode/refusal codes, nonnegative bounded lengths and timing, strict equality/provenance booleans, and valid provider/model/status/attempt metadata. Native/candidate/expected title comparison evidence survives both journaling and export. Title text, raw errors, source prompts and title/source hashes are excluded even when injected into this event; these extra comparison fields do not widen unrelated payloads.
 
-Parent collection and native stream-continuation admission may request host-owned `executionOutcomes` for failed tools. The mutation ledger returns `never_started`, `finished`, or `uncertain`, scoped to exact session/message/call identities. A cancelled call without execution, or a cancelled and fully cleaned pre-launch lease, proves `never_started`; a published lease proves `finished`. Initial negative native Plan admission uses `cancelUnstartedCall` with `requireAbsent: true`: an existing execution pointer or mismatched receipt is refused without rewriting a lease. Missing, mismatched, or unsettled evidence stays uncertain. Neither collection nor recovery treats error text as execution evidence or replays those commands. Existing collection idempotency, stop and supersession fences remain in force.
+Parent collection and native stream-continuation admission may request host-owned `executionOutcomes` for failed tools. The mutation ledger returns `never_started`, `finished`, or `uncertain`, scoped to exact session/message/call identities. A cancelled call without execution, or a cancelled and fully cleaned pre-launch lease, proves `never_started`; a published lease proves `finished`. Initial negative native Plan admission uses `cancelUnstartedCall` with `requireAbsent: true`: an existing execution pointer or mismatched receipt is refused without rewriting a lease. Missing, mismatched, or unsettled evidence stays uncertain. A call the caller observed as a built-in read-only direct tool (`read`, `glob`, `grep`, `skill`, passed as `tool`) has no side effect to attest and is reported `finished` unless a non-direct lease for that call carries other evidence; provider recovery passes each failed part's tool. Read-only direct calls are admitted against the committed snapshot's generation and record their call row only through the grouped `finishDirect` commit, which still completes before the tool result is acknowledged. Neither collection nor recovery treats error text as execution evidence or replays those commands. Existing collection idempotency, stop and supersession fences remain in force.
 
 The session execution owner forwards its caller signal and diagnostic observer
 through admission and preparation. A rejected start waits for all preparation I/O,
@@ -409,13 +414,45 @@ the no-launch cancellation attestation and lease cleanup before rejecting to the
 provider; it never releases provider authority while cleanup is still pending.
 
 Concurrent native read-only `finishDirect` calls for the same requested directory
-and execution signal share a commit in groups of at most 64. Each call keeps its captured execution
+and execution signal share a commit in groups of at most 64. A group stays open
+while it queues for the owner lock and closes once the lock is held, so calls
+that arrive as separate requests during that wait join it. Each call keeps its captured execution
 scope, cancellation, generation and exact identity checks. Private store staging
 rolls back a refused call without losing accepted siblings; every caller waits
 for the shared durable commit before receiving its own acknowledgment. A failed
 commit acknowledges none of them, leaving the original tokens retryable. Queued
 callers follow the actual lock holder's progress, and mandatory commit I/O settles
 before ownership is released.
+
+Ledger stores read objects through one long-lived `git cat-file --batch`
+(and `--batch-check` for subtree identities) per ledger Git directory instead
+of a process per read, and read the state ref's loose file directly, asking
+Git only when it is absent or unexpected. Idle readers exit after 15 seconds
+and never keep the host alive; a dead or stuck reader fails its pending reads
+and the next read starts a new one. Windows and constructor-owned Git runners
+keep one process per read. Owner-locked state commits keep the ledger's Git
+index (`state.metadata-index`) between commits instead of rebuilding it from
+the whole tree; it is trusted only while its sibling `.tree` record names the
+current tree, which is removed before the index changes and rewritten after
+the ref moves. Kill switches: `DEVRYAN_LEDGER_PERSISTENT_READER=0`,
+`DEVRYAN_LEDGER_PERSISTENT_INDEX=0`. After a commit a store remembers the
+values it just wrote, so rewriting one unchanged stages nothing (a finished
+publication no longer commits its unchanged `meta.json` again). Publication
+recovery records the observation stamp of each file it writes and verifies,
+naming the document in its materialization rows; the next reconciliation then
+skips those files instead of restamping them in a commit of its own. Rows
+written by older hosts carry no document and are left to reconciliation.
+
+`createSessionMutationRuntime({ gitRunner })` routes ledger store Git I/O
+through an injected runner (`git`, `gitTokens`, `gitRecords`, optional
+`readObject`). `lib/session-mutations.latency-budget.test.js` counts store
+processes and state commits through it: a direct read costs one commit and at
+most four processes, eight concurrent finishes share one commit, staggered
+separate requests at most two, and a single-file confined edit at most seven
+commits (reserve, pin, ready, claim, publication intent and completion,
+cleanup). `scripts/perf/tool-latency-benchmark.mjs` reports per-phase p50/p90
+for the same calls on a seeded ledger, optionally with Git process and commit
+counts (`--count-git`) and against another checkout (`--runtime`).
 
 Read-only lease and outcome queries retain the owner lock and durable recovery checks, but do not stage unchanged metadata or rebuild the Git index. `lock_wait`, `ledger_open`, `ledger_recovery`, `ledger_transaction`, and `ledger_commit` diagnostics identify work inside the lock; they are journaled only when a phase fails or takes at least 250 ms, because every tool call takes this lock. Every confined worker receives its own scratch `HOME`, temporary paths, and execution-worker marker, including Cursor and read-only provider workers. On macOS each execution also gets a short private runtime directory, exported as `XDG_RUNTIME_DIR` and spelled `/tmp/dr-<uid>/<lease digest>`, because the scratch path exceeds the 104-byte Unix socket limit. The agent-browser daemon socket therefore fits with its full lease session name (budget: 26 bytes for the directory). The profile lets the execution create and reach sockets only there, plus the system resolver. Cleanup removes it, and host recovery sweeps orphans older than a day. The parent must be a real directory owned by the user with mode 0700, or preparation fails closed. Every session-scoped execution also gets `DEVRYAN_SESSION_TMP`, `context-cache/session-tmp/<session digest>`: unlike the per-call scratch it survives between the session's calls, so logs and reproduction output remain readable. Preparation never follows a link planted at either level, and directories idle for a week are swept at most hourly per project. `/tmp` itself stays unwritable. Session-scoped executions on macOS can also run headless Chromium (a project's Playwright check): `PLAYWRIGHT_BROWSERS_PATH` names the host's `~/Library/Caches/ms-playwright` (read and execute only; an explicit host value is kept), a `NODE_OPTIONS` preload (`$HOME/.devryan-node-spawn.cjs`) restores the verified spawn adapter that macOS strips when `npm run` passes through `/usr/bin/env` and `/bin/sh`, and the profile allows exactly one mach lookup, `org.chromium.Chromium.MachPortRendezvousServer.<pid>`, which Chromium's helpers need for their IPC ports. Provider transports never get these. `DEVRYAN_WORKER_BROWSERS=0` restores the previous environment and profile exactly. A detached child cannot get its own process group inside the boundary, so a starter that stops it with `process.kill(-pid)` (Playwright's `webServer`, bounded test wrappers) used to signal nothing and wait for an exit that never came. The preload names the group of each detached child in `DEVRYAN_SPAWN_GROUP` and delivers a group signal through the verified launcher's `--signal-group` mode; the spawn adapter does the same for processes that have it. Signals stay inside the execution's own sandbox. `DEVRYAN_WORKER_GROUP_SIGNALS=0` turns this off in the preload and the adapter. WebKit, Firefox, the Google Chrome channel, headed mode and `chromiumSandbox: true` remain unsupported.
 
