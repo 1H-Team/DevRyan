@@ -7,7 +7,7 @@ import { createExecutionRouting } from './execution-routing.js';
 import { createControllerHelper } from './controller-processes.js';
 import { createRemoteNativeAdmissionBridge } from './native-admission-bridge.js';
 import { createReviewedNativePluginRegistry } from './native-plugin-registry.js';
-import { managedTaskPlugin,withManagedTaskExecution,MANAGED_TASK_PLUGIN_ID } from './managed-task.js';
+import { managedTaskPlugin,withManagedTaskExecution,MANAGED_TASK_PLUGIN_ID,MANAGED_TASK_RPC_TIMEOUT_MS } from './managed-task.js';
 import { councilPlugin,withCouncilExecution,COUNCIL_PLUGIN_ID } from './council.js';
 import { nativeSkillsPlugin } from './native-skills.js';
 import { nativeConfiguredInstructionsPlugin } from './native-configured-instructions.js';
@@ -39,7 +39,8 @@ import { readResponseBody } from '../opencode-client/envelope.js';
 const record=(value:unknown):value is Record<string,unknown>=>value!==null&&typeof value==='object'&&!Array.isArray(value);
 export async function startNativeController(boot:NativeProcessBoot,identity:{coreDigest:string;hostDigest:string;reviewedPlugins:readonly Omit<RegistrationOrigin,'kind'>[];migration:'completed'|'not-needed'}) {
   const rpc: (method:string,params:unknown,options?:{readonly signal?:AbortSignal})=>Promise<unknown> = async(method,params,options)=>{
-    const timeout=AbortSignal.timeout(method==='native.council'?240_000:method.startsWith('native.document.')||method.startsWith('native.slim.interview.')||method.startsWith('native.slim.images')?120_000:30_000);
+    const timeout=AbortSignal.timeout(method==='native.council'?240_000:method.startsWith('native.document.')||method.startsWith('native.slim.interview.')||method.startsWith('native.slim.images')?120_000
+      :method==='native.managed-task'?MANAGED_TASK_RPC_TIMEOUT_MS:30_000);
     const signal=options?.signal?AbortSignal.any([options.signal,timeout]):timeout;
     const response=await fetch(boot.bridge.url,{method:'POST',headers:{authorization:`Bearer ${boot.bridge.token}`,'content-type':'application/json',connection:'close'},body:JSON.stringify({method,params}),signal});
     const body=await readResponseBody(response,{signal,maxResponseBytes:4*1024*1024});

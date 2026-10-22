@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -307,5 +308,35 @@ describe('selected saved-plan root authority', () => {
     const foreign = path.join(root, 'foreign.md'); await fs.writeFile(foreign, '# Foreign'); await fs.symlink(foreign, revision.path);
     await expect(rpc(value)).rejects.toMatchObject({ code: 'plan_path_unsafe' });
     expect(await fs.readFile(foreign, 'utf8')).toBe('# Foreign');
+  });
+
+  it('plan_read returns a compact unchanged receipt only for this session\'s own uncompacted, unedited plan', async () => {
+    const text = '# Plan\n- Original step\n', version = value => crypto.createHash('sha256').update(value).digest('hex');
+    routes['/session/ses_root/message/msg_root_plan_user'] = { info: { id: 'msg_root_plan_user', sessionID: 'ses_root', role: 'user',
+      metadata: { openchamberPlanMode: true } }, parts: [{ type: 'text', text: 'Make the plan.' }] };
+    routes['/session/ses_root/message/msg_root_plan'] = { info: { id: 'msg_root_plan', sessionID: 'ses_root', role: 'assistant',
+      parentID: 'msg_root_plan_user', time: { completed: 1700000000003 }, finish: 'stop' },
+      turnOwnership: { source: 'native-sequence', userMessageID: 'msg_root_plan_user' }, parts: [{ type: 'text', text }] };
+    const history = () => [routes['/session/ses_root/message/msg_root_plan_user'], routes['/session/ses_root/message/msg_root_plan'], user(), assistant()];
+    routes['/session/ses_root/message'] = history();
+    const own = await resolveSessionPlanRevision({ dataDirectory: root, directory, sessionCreated: 1700000000001, sessionSlug: 'root', sourceMessageID: 'msg_root_plan' });
+    await fs.mkdir(own.directory, { recursive: true }); await fs.writeFile(own.path, text);
+    select({ sourceSessionId: 'ses_root', sourceMessageId: 'msg_root_plan', projectDirectory: directory, version: version(text) });
+    const value = host();
+    expect(await rpc(value)).toEqual({ unchanged: true, version: version(text), sourceMessageID: 'msg_root_plan' });
+    // A compaction after the source replaced the plan text in context.
+    routes['/session/ses_root/message'] = [...history().slice(0, 2), { info: { id: 'msg_compaction', sessionID: 'ses_root', role: 'user' },
+      parts: [{ type: 'compaction' }] }, ...history().slice(2)];
+    expect(await rpc(value)).toMatchObject({ content: text, version: version(text) });
+    routes['/session/ses_root/message'] = history();
+    // The saved plan changed after Implement.
+    await fs.writeFile(own.path, '# Plan\n- Revised step\n');
+    expect(await rpc(value)).toMatchObject({ content: '# Plan\n- Revised step\n' });
+    // Edited in Plan View before Implement: marker and file agree, the transcript does not.
+    select({ sourceSessionId: 'ses_root', sourceMessageId: 'msg_root_plan', projectDirectory: directory, version: version('# Plan\n- Revised step\n') });
+    expect(await rpc(value)).toMatchObject({ content: '# Plan\n- Revised step\n' });
+    // A plan written in another session is not in this one's context.
+    select({ projectDirectory: directory, version: version(text) });
+    expect(await rpc(value)).toMatchObject({ content: text });
   });
 });

@@ -27,8 +27,9 @@ export function formatReviewedSlimTaskBoard(input: {
       jobs: input.jobs,
       reusable: input.reusable,
       readContextMaxFiles: input.readContextMaxFiles ?? 8,
-      // DevRyan's delegation tools are the task_* family.
-      delegationTool: 'task',
+      // Host rows are managed children; guidance names devryan_task actions.
+      delegationTool: 'devryan_task',
+      // Only gates TTL filtering of stale rows; the rendered text holds no time.
       now: input.now ?? Date.now(),
     }) ?? null
   );

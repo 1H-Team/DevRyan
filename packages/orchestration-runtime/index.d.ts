@@ -971,6 +971,7 @@ export function projectManagedTaskResult<TTask extends Record<string, unknown>>(
   resultEnvelope: ManagedTaskResultEnvelope | null | undefined,
   resultMode?: ManagedResultMode,
   maxPageBytes?: number,
+  options?: { inlineFirstPage?: boolean },
 ): {
   task: TTask | Omit<TTask, 'recoverablePreview'>;
   resultEnvelope?: ManagedTaskResultEnvelope | Omit<ManagedTaskResultEnvelope, 'recoverablePreview'>;

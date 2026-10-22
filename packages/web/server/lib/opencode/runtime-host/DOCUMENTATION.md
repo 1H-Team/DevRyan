@@ -129,6 +129,20 @@ v2 attention with `changedTaskIds`: an unchanged parked child does not return
 control to the model while a selected sibling runs. Full settlement still
 returns immediately; v1 ready/attention behavior is preserved.
 
+`native.managed-task` RPCs get a 45 s transport budget: a 25 s wait slice plus
+its single authorization pass and publication reads. On a transport timeout the
+attached executor re-issues `start`, `status`, `wait` and `wait_any` unchanged,
+up to three consecutive times, while the invocation stays live. An exhausted wait
+returns its last live slice, or a `wait_slice_timeout` notice. Other actions fail
+with `managed_task_host_timeout`, so raw timeout text never reaches the model.
+Each start phase has its own 25 s budget: preparation, then the commit, timed
+from when the session permit is acquired. Parallel starts queued behind
+siblings therefore cannot exhaust it. An uncommitted start that runs out reports
+`native_task_start_timeout`, and the executor retries it under the same
+idempotency key. A terminal `status` collects and stages exactly like `wait`.
+Reading a result that was never collected reports `native_task_wait_required`.
+v2 `continue` returns only its committed receipt.
+
 `native-managed-publication-owner.js` reads ordered canonical messages under
 the current prepared attempt and reviewed configuration. A handler response is
 only a delivery candidate: `native-managed-results.js` requires its exact

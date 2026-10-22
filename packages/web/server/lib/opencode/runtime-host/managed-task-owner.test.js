@@ -206,3 +206,16 @@ it('recognizes missing/dispositioned tasks only after the current authoritative 
   expect(await done({...invocation,input:{action:'retry',task_id:prior.task.taskId}})).toMatchObject({state:'already_dispositioned',barrier:{taskIds:['dvr_task_followup']}});
   expect(acks).toBe(0);
 });
+it('parallel starts queued behind the session permit get a full commit budget once they hold it',async()=>{
+  let tail=Promise.resolve(),submitted=0;
+  const serialized=action=>{const run=tail.then(action);tail=run.catch(()=>{});return run;};
+  const options={startPhaseTimeoutMs:100,executionHost:{nativeManagedControl:async()=>({lease:{token:'control'}})},
+    admissionOwner:{recheckExecution:async()=>{},withManagedTaskCatalogInvocation:async(_input,action)=>action(),withPermit:async(_input,action)=>serialized(action)}};
+  // Five 40 ms commits queue for 200 ms in total, twice one start's budget.
+  const run=adapter(async request=>{expect(request.method).toBe('submit');await new Promise(resolve=>setTimeout(resolve,40));submitted++;
+    return {task:{taskId:`dvr_task_parallel_${submitted}`,rootSessionId:invocation.sessionID,directory:invocation.directory,status:'queued'}};},options);
+  const results=await Promise.all(Array.from({length:5},(_,index)=>run({...invocation,callID:`call_${index}`,input:{action:'start',agent:'explorer',prompt:`Scope ${index}`}})));
+  expect(results.map(result=>result.task.taskId).sort()).toEqual(Array.from({length:5},(_,index)=>`dvr_task_parallel_${index+1}`));
+  const stalled=adapter((_request,context)=>new Promise((_resolve,reject)=>context.signal.addEventListener('abort',()=>reject(context.signal.reason))),options);
+  await expect(stalled({...invocation,input:{action:'start',agent:'explorer',prompt:'Stalled'}})).rejects.toMatchObject({code:'native_task_start_timeout'});
+});

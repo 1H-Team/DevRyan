@@ -163,7 +163,8 @@ const createInitialReference = (task, resultEnvelope, maxBytes) => createReferen
   maxBytes,
 });
 
-export const projectManagedTaskResult = (task, resultEnvelope, resultMode, maxPageBytes = MANAGED_RESULT_PAGE_MAX_BYTES) => {
+// Compact mode omits report text unless `inlineFirstPage` asks for the first page.
+export const projectManagedTaskResult = (task, resultEnvelope, resultMode, maxPageBytes = MANAGED_RESULT_PAGE_MAX_BYTES, { inlineFirstPage = false } = {}) => {
   const mode = resolveManagedResultMode(resultMode);
   const eager = {
     task,
@@ -186,7 +187,7 @@ export const projectManagedTaskResult = (task, resultEnvelope, resultMode, maxPa
   let resultReference;
   try {
     const totalBytes = utf8ByteLength(resultEnvelope.recoverablePreview);
-    resultReference = mode === 'compact'
+    resultReference = mode === 'compact' && !inlineFirstPage
       ? { taskId: task.taskId, envelopeId: resultEnvelope.envelopeId, totalBytes, text: '', returnedBytes: 0,
           nextCursor: totalBytes ? encodeCursor({ taskId: task.taskId, envelopeId: resultEnvelope.envelopeId,
             stringOffset: 0, returnedBytes: 0, totalBytes }) : null, complete: totalBytes === 0 }

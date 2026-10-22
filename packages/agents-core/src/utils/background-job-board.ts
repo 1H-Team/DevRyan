@@ -1924,8 +1924,15 @@ function timeoutSummary(state: TaskOutputState): string {
 }
 
 const REVIVE_ONLY = 'task_revive only';
+// DevRyan's host board: rows are managed devryan_task children, addressed by
+// task ID through its real actions, and render their label, never the prompt.
+const MANAGED_TASK_TOOL = 'devryan_task';
+const MANAGED_RECOVERY_ONLY = 'retry, resume or abandon';
+const recoveryOnly = (delegationTool: string) => delegationTool === MANAGED_TASK_TOOL ? MANAGED_RECOVERY_ONLY : REVIVE_ONLY;
+const purposeLine = (job: BackgroundJobRecord, delegationTool: string) => delegationTool === MANAGED_TASK_TOOL
+  ? `  Label: ${promptSafe(job.description)}` : `  Objective: ${promptSafe(job.description || job.objective || '')}`;
 
-function formatJob(job: BackgroundJobRecord): string {
+function formatJob(job: BackgroundJobRecord, delegationTool: string): string {
   const isResume = job.lastLaunchedAt !== job.launchedAt;
   // Exclude wall-clock age labels so prompts remain stable between job-state transitions for cache reuse.
   const displayState =
@@ -1940,8 +1947,8 @@ function formatJob(job: BackgroundJobRecord): string {
         ? `${job.state}, timed out`
         : displayState;
   const lines = [
-    `- ${promptSafe(job.alias)} / ${promptSafe(job.taskID)} / ${promptSafe(job.agent)} / ${promptSafe(job.state === 'stopped' ? `${status}, ${REVIVE_ONLY}` : status)}`,
-    `  Objective: ${promptSafe(job.description || job.objective || '')}`,
+    `- ${promptSafe(job.alias)} / ${promptSafe(job.taskID)} / ${promptSafe(job.agent)} / ${promptSafe(job.state === 'stopped' ? `${status}, ${recoveryOnly(delegationTool)}` : status)}`,
+    purposeLine(job, delegationTool),
   ];
 
   if (job.resultSummary && job.terminalUnreconciled) {
@@ -2032,42 +2039,49 @@ export function renderBackgroundJobBoard(
       return undefined;
     }
 
+    const managedGuidance = [
+      'Rows are managed children addressed by task ID. Collect terminal children with devryan_task wait or wait_any, then read_result any remaining pages.',
+      'Completed children accept only continue. Failed, cancelled and stopped children use retry, resume or abandon; leave scheduled or manual recovery pending.',
+    ];
+    const slimGuidance = [
+      ...(acknowledgedFailedSession
+        ? [
+            'Acknowledged terminal sessions are reusable by alias for the same specialist/context.',
+          ]
+        : [
+            'Completed or reconciled sessions are reusable by alias for the same specialist/context.',
+          ]),
+      'Timed-out running sessions are recoverable by alias for safe resume after a live busy signal.',
+      ...(acknowledgedFailedSession
+        ? [
+            'Active, uncertain, or unacknowledged terminal sessions are not reusable.',
+          ]
+        : ['Cancelled or errored sessions are not reusable.']),
+      ...(input.delegationTool === 'task'
+        ? [
+            'Continue an existing session with task_revive even when it is not listed here. task_result only reads a result and is not required before task_revive.',
+          ]
+        : [
+            'Completed sessions continue with subagent() by exact session id even when they are not listed. Cancelled, errored, and stopped sessions use task_revive.',
+          ]),
+      ...(retained.length > 0
+        ? [
+            `Stopped sessions without a terminal result are retained for task_revive, not ${input.delegationTool}().`,
+          ]
+        : []),
+    ];
     const text = formatSystemReminder(
       [
         '### Background Job Board',
         'SENTINEL: background-job-board-v2',
-        ...(acknowledgedFailedSession
-          ? [
-              'Acknowledged terminal sessions are reusable by alias for the same specialist/context.',
-            ]
-          : [
-              'Completed or reconciled sessions are reusable by alias for the same specialist/context.',
-            ]),
-        'Timed-out running sessions are recoverable by alias for safe resume after a live busy signal.',
-        ...(acknowledgedFailedSession
-          ? [
-              'Active, uncertain, or unacknowledged terminal sessions are not reusable.',
-            ]
-          : ['Cancelled or errored sessions are not reusable.']),
-        ...(input.delegationTool === 'task'
-          ? [
-              'Continue an existing session with task_revive even when it is not listed here. task_result only reads a result and is not required before task_revive.',
-            ]
-          : [
-              'Completed sessions continue with subagent() by exact session id even when they are not listed. Cancelled, errored, and stopped sessions use task_revive.',
-            ]),
-        ...(retained.length > 0
-          ? [
-              `Stopped sessions without a terminal result are retained for task_revive, not ${input.delegationTool}().`,
-            ]
-          : []),
+        ...(input.delegationTool === MANAGED_TASK_TOOL ? managedGuidance : slimGuidance),
         '',
         '#### Active / Unreconciled',
-        ...(active.length > 0 ? active.map(formatJob) : ['- none']),
+        ...(active.length > 0 ? active.map((job) => formatJob(job, input.delegationTool)) : ['- none']),
         '',
         '#### Reusable Sessions',
         ...(reusable.length > 0
-          ? reusable.map((job) => formatReusableJobLine(job, input.readContextMaxFiles))
+          ? reusable.map((job) => formatReusableJobLine(job, input.readContextMaxFiles, input.delegationTool))
           : ['- none']),
         ...(retained.length > 0
           ? [
@@ -2093,6 +2107,7 @@ export function renderBackgroundJobBoard(
 function formatReusableJobLine(
   job: BackgroundJobRecord,
   readContextMaxFiles: number,
+  delegationTool = 'task',
 ): string {
     const terminal = job.terminalState ?? terminalStateOf(job.state);
     const reconciliation = job.terminalUnreconciled
@@ -2100,7 +2115,7 @@ function formatReusableJobLine(
       : 'reconciled';
     const lines = [
       `- ${promptSafe(job.alias)} / ${promptSafe(job.taskID)} / ${promptSafe(job.agent)} / ${promptSafe(terminal ?? job.state)}, ${reconciliation}`,
-      `  Objective: ${promptSafe(job.description || job.objective || '')}`,
+      purposeLine(job, delegationTool),
     ];
     const context = formatContextFiles(
       job.contextFiles,
@@ -2116,9 +2131,9 @@ function formatRetainedJobLine(
   delegationTool: string,
 ): string {
     const lines = [
-      `- ${promptSafe(job.alias)} / ${promptSafe(job.taskID)} / ${promptSafe(job.agent)} / stopped, ${REVIVE_ONLY}`,
-      `  Objective: ${promptSafe(job.description || job.objective || '')}`,
-      ...(delegationTool === 'task'
+      `- ${promptSafe(job.alias)} / ${promptSafe(job.taskID)} / ${promptSafe(job.agent)} / stopped, ${recoveryOnly(delegationTool)}`,
+      purposeLine(job, delegationTool),
+      ...(delegationTool === 'task' || delegationTool === MANAGED_TASK_TOOL
         ? []
         : [
             `  Recovery: no terminal result; recoverable with task_revive, not ${delegationTool}()`,

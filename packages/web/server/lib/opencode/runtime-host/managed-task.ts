@@ -7,6 +7,10 @@ import type { ExecutionRpc } from './worker-protocol.js';
 import { currentNativeAttemptIdentity } from './native-observation.js';
 
 export const MANAGED_TASK_PLUGIN_ID = 'devryan.managed-task';
+// Host wait slices are 25 s; the remainder bounds their authorization and publication reads.
+export const MANAGED_TASK_RPC_TIMEOUT_MS = 25_000 + 20_000;
+// Consecutive transport timeouts re-issued while the invocation stays live.
+const MANAGED_TASK_TIMEOUT_RETRIES = 3;
 export const createManagedTaskInputSchema = (environment: Record<string, string | undefined> = process.env) => {
   const staticSchema = environment.DEVRYAN_CAPABILITY_TOOL_SCHEMA === '0';
   const v2=staticSchema||environment.DEVRYAN_MANAGED_RESULT_CONTRACT_VERSION==='2';
@@ -43,11 +47,18 @@ export const managedTaskInputSchema = createManagedTaskInputSchema({ DEVRYAN_CAP
 // supplies its authority and sends it to the existing managed scheduler.
 export const managedTaskPlugin = Plugin.define({ id: MANAGED_TASK_PLUGIN_ID,
   effect: ({ tool }) => tool.transform(editor => editor.add({ name: 'devryan_task', input: createManagedTaskInputSchema(),
-    description: 'Manage saved-model specialists and the selected Implement plan. Start independent work without an artificial concurrency cap. Use only advertised actions; waits stay attached through bounded host slices; status is nonblocking. V2 wait_any accepts until settled; read_result batches exact task/cursor pairs in reads; continue accepts exact task_ids and returns committed/failed/notProcessed. Collect terminal results and read required metadata/report pages in order. Disposition requires a later assistant Step than the last needed published page; never combine wait/read_result and disposition in one Step. Completed results accept only continue. Manual or scheduled Model Recovery stays unacknowledged. Required checks need real current content and exit receipts; collection never implies verification. Builder can only read or update its selected saved plan using plan_read/plan_update with expected_version and full text.',
+    description: 'Manage saved-model specialists and the selected Implement plan. Start independent work without an artificial concurrency cap: issue every independent start as a parallel tool call in the same assistant message. Use only advertised actions; waits stay attached through bounded host slices; status is nonblocking and collects a terminal result like wait. V2 wait_any accepts until settled; wait results inline each first report page that fits; read_result batches exact task/cursor pairs in reads for the remaining pages; continue accepts exact task_ids and returns committed/failed/notProcessed. Collect terminal results and read required metadata/report pages in order. Disposition requires a later assistant Step than the last needed published page; never combine wait/read_result and disposition in one Step. Completed results accept only continue. Manual or scheduled Model Recovery stays unacknowledged. Required checks need real current content and exit receipts; collection never implies verification. Builder can only read or update its selected saved plan using plan_read/plan_update with expected_version and full text.',
     options: { codemode: false }, execute: () => Effect.fail(new Tool.Error({ message: 'managed_task_host_required' })) })),
 });
 
 const record = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);
+// Reads and the idempotent start are safe to re-issue unchanged; staged pages
+// and dispositions are not.
+const retryableActions = new Set(['start', 'status', 'wait', 'wait_any']);
+const timedOut = (error: unknown) => record(error) && (error.name === 'TimeoutError' || error.code === 'native_task_start_timeout');
+// A raw transport timeout never reaches the model.
+const failureMessage = (error: unknown) => record(error) && error.name === 'TimeoutError' ? 'managed_task_host_timeout'
+  : error instanceof Error ? error.message : 'managed_task_failed';
 const liveStatuses = new Set(['queued', 'starting', 'running']);
 const terminalStatuses = new Set(['completed', 'failed', 'aborted', 'interrupted']);
 
@@ -95,18 +106,32 @@ export function withManagedTaskExecution(options: { readonly origin: Registratio
       const authorization = { operation: 'tool.execute', sessionID: invocation.nativeContext.sessionID,
         messageID: invocation.nativeContext.messageID, input: { toolID: invocation.toolID, callID: invocation.nativeContext.id,
           provenance: invocation.provenance, input: invocation.input } };
+      let live: unknown, timeouts = 0;
       for (;;) {
         yield* invocation.recheckPermit();
         const nativeAttempt=yield* currentNativeAttemptIdentity;
-        const result = yield* Effect.tryPromise({ try: signal => options.rpc('native.managed-task', {
+        const outcome = yield* Effect.tryPromise({ try: signal => options.rpc('native.managed-task', {
           directory: invocation.location.directory, sessionID: invocation.nativeContext.sessionID, messageID: invocation.nativeContext.messageID,
           callID: invocation.nativeContext.id, tool: invocation.toolID, input, permit: invocation.existingPermit, authorization,
           ...(nativeAttempt?{nativeAttempt}:{}),
-        }, { signal }), catch: error => new Tool.Error({ message: error instanceof Error ? error.message : 'managed_task_failed' }) });
+        }, { signal }).then(result => ({ ok: true as const, result }), (error: unknown) => ({ ok: false as const, error })),
+        catch: error => new Tool.Error({ message: failureMessage(error) }) });
+        if (!outcome.ok) {
+          if (!timedOut(outcome.error) || !retryableActions.has(input.action)) return yield* Effect.fail(new Tool.Error({ message: failureMessage(outcome.error) }));
+          if (++timeouts <= MANAGED_TASK_TIMEOUT_RETRIES) continue;
+          // An attached wait ends with its last live state; the task stays owned by the scheduler.
+          if (input.action === 'wait' || input.action === 'wait_any') return { content: JSON.stringify(live ?? { state: 'wait_slice_timeout', settled: false,
+            taskIds: 'task_ids' in input ? input.task_ids : 'task_id' in input ? [input.task_id] : [],
+            instruction: 'The scheduler still owns these tasks and no result was lost. Repeat the same wait to stay attached; do not restart, redispatch or disposition them.' }) };
+          return yield* Effect.fail(new Tool.Error({ message: 'managed_task_host_timeout' }));
+        }
+        timeouts = 0;
+        const result = outcome.result;
         yield* invocation.recheckPermit();
         const finished = yield* Effect.try({ try: () => waitFinished(input, result, invocation.nativeContext.sessionID, invocation.location.directory),
           catch: error => new Tool.Error({ message: error instanceof Error ? error.message : 'native_task_wait_response_invalid' }) });
         if (finished) return { content: JSON.stringify(result) };
+        live = result;
       }
     });
   };

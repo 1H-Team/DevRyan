@@ -123,6 +123,16 @@ The static `harness_capabilities` projection does not initialize the scheduler,
 acquire ledger ownership, or reconcile children. Native startup can read it before
 controller readiness; stateful scheduler RPCs still require initialization.
 
+Version-2 result projections inline as much of the first 24 KiB report page as
+the reply budget fits. `wait_any` fits every selected result's metadata first,
+then spends the remaining budget on first pages in selection order. It skips a
+page shorter than 1 KiB, which `read_result` delivers instead. A complete inline
+page needs no `read_result`. These projections omit the per-result
+`capabilities` copy; only the `wait_any` reply keeps one top-level copy. They
+also drop scheduler bookkeeping the model never acts on: owner, sequence, wave
+and lineage identities, creation and timeout times, child timing and transport
+recovery. Version 1 keeps its full projection.
+
 Submission carries the private caller's cancellation signal through exact agent
 and native catalog validation to the scheduler's pre-persistence gate. Native
 authority errors retain their bounded code and status, with a code-only public

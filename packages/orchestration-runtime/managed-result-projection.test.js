@@ -224,4 +224,20 @@ describe('managed result projection and paging', () => {
       resultCursor: `${prefix}${tamperedPayload}`,
     })).toThrow(expect.objectContaining({ code: 'invalid_result_cursor' }));
   });
+
+  test('compact mode omits report text unless the first page is requested inline', () => {
+    const { task, resultEnvelope } = resultPair('x'.repeat(30 * 1024));
+    const empty = projectManagedTaskResult(task, resultEnvelope, 'compact', 24 * 1024);
+    expect(empty.resultReference).toMatchObject({ text: '', returnedBytes: 0, complete: false });
+    expect(empty.task).not.toHaveProperty('recoverablePreview');
+    const inline = projectManagedTaskResult(task, resultEnvelope, 'compact', 24 * 1024, { inlineFirstPage: true });
+    expect(bytes(inline.resultReference.text)).toBe(24 * 1024);
+    expect(inline.resultReference).toMatchObject({ returnedBytes: 24 * 1024, totalBytes: 30 * 1024, complete: false });
+    expect(inline.task).not.toHaveProperty('recoverablePreview');
+    expect(readManagedResultReference({ task, resultEnvelope, resultCursor: inline.resultReference.nextCursor, maxPageBytes: 24 * 1024 }))
+      .toMatchObject({ text: 'x'.repeat(6 * 1024), complete: true });
+    const small = resultPair('Done');
+    expect(projectManagedTaskResult(small.task, small.resultEnvelope, 'compact', 24 * 1024, { inlineFirstPage: true }).resultReference)
+      .toMatchObject({ text: 'Done', complete: true, nextCursor: null });
+  });
 });

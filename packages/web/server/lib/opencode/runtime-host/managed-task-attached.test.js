@@ -43,3 +43,41 @@ test('composed scheduler owner and executor stay attached through unchanged park
   expect(requests[0]).toEqual(requests[1]);expect(JSON.parse(String(result.content))).toMatchObject({settled:true,changedTaskIds:[tasks[1].taskId]});
  }finally{await runtime.shutdown();}
 });
+
+const retryOrigin={kind:'plugin',id:'devryan.managed-task',manifestDigest:'a'.repeat(64),capabilities:['managed-task']};
+const attached=(input,replies)=>{
+ const requests=[];
+ const execute=withManagedTaskExecution({origin:retryOrigin,directory:'/project',executeOwned:()=>Effect.die(Error('Unowned tool')),
+  rpc:async(_method,request)=>{requests.push(request);const reply=replies.shift();if(reply instanceof Error)throw reply;return reply;}});
+ const run=Effect.runPromise(execute({toolID:'devryan_task',provenance:retryOrigin,input,
+  location:{directory:'/project',project:{id:'global',directory:'/project',canonical:'/project'}},
+  nativeContext:{sessionID:'ses_root',messageID:'msg_assistant',agent:'orchestrator',id:'call_retry',progress:()=>Effect.void},
+  existingPermit:{token:'private',sessionID:'ses_root',revision:1},recheckPermit:()=>Effect.void,nativePermissionAssert:()=>Effect.void,
+  executeNative:()=>Effect.die(Error('Unowned execution'))}));
+ return {run,requests};
+};
+const transportTimeout=()=>new DOMException('The operation timed out.','TimeoutError');
+const liveSlice={task:{taskId:'dvr_task_one',rootSessionId:'ses_root',directory:'/project',status:'running'}};
+const finishedSlice={task:{...liveSlice.task,status:'completed'}};
+
+test('an attached wait re-issues timed-out slices while live and returns the collected result',async()=>{
+ const {run,requests}=attached({action:'wait',task_id:'dvr_task_one'},[transportTimeout(),liveSlice,transportTimeout(),finishedSlice]);
+ expect(JSON.parse(String((await run).content))).toEqual(finishedSlice);
+ expect(requests).toHaveLength(4);expect(new Set(requests.map(request=>JSON.stringify(request))).size).toBe(1);
+});
+test('exhausted wait timeouts return the last live state, never the raw transport text',async()=>{
+ const {run,requests}=attached({action:'wait',task_id:'dvr_task_one'},[liveSlice,...Array.from({length:4},transportTimeout)]);
+ const content=String((await run).content);
+ expect(JSON.parse(content)).toEqual(liveSlice);expect(content).not.toContain('timed out');expect(requests).toHaveLength(5);
+ const first=attached({action:'wait_any',task_ids:['dvr_task_one','dvr_task_two']},Array.from({length:4},transportTimeout));
+ expect(JSON.parse(String((await first.run).content))).toMatchObject({state:'wait_slice_timeout',settled:false,taskIds:['dvr_task_one','dvr_task_two']});
+});
+test('timeouts on non-idempotent actions are typed and not re-issued; start re-issues its idempotent request',async()=>{
+ const read=attached({action:'read_result',task_id:'dvr_task_one',result_cursor:'cursor'},[transportTimeout()]);
+ await expect(read.run).rejects.toThrow('managed_task_host_timeout');
+ await expect(read.run).rejects.not.toThrow('timed out');expect(read.requests).toHaveLength(1);
+ const receipt={committed:true,taskId:'dvr_task_one',rootSessionId:'ses_root',action:'start',status:'queued'};
+ const start=attached({action:'start',agent:'fixer',prompt:'Fix it'},[Object.assign(Error('native_task_start_timeout'),{code:'native_task_start_timeout'}),receipt]);
+ expect(JSON.parse(String((await start.run).content))).toEqual(receipt);
+ expect(start.requests).toHaveLength(2);expect(start.requests[0]).toEqual(start.requests[1]);
+});

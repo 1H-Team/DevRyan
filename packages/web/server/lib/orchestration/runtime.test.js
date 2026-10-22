@@ -487,10 +487,13 @@ it('selects larger report pages only for v2 and still fits a smaller native repl
  try{
   const v1=await runtime.handleRpc({method:'status',params:{...scope,resultContractVersion:1}});
   expect(Buffer.byteLength(v1.resultReference.text)).toBe(8*1024);
+  // v2 inlines the first page when it fits the reply budget.
   const initial=await runtime.handleRpc({method:'status',params:{...scope,resultContractVersion:2}});
-  expect(initial.resultReference.text).toBe('');
+  expect(Buffer.byteLength(initial.resultReference.text)).toBe(24*1024);
+  expect(initial.resultReference).toMatchObject({returnedBytes:24*1024,totalBytes:50*1024,complete:false});
   const v2=await runtime.handleRpc({method:'read_result',params:{...scope,resultContractVersion:2,resultCursor:initial.resultReference.nextCursor}});
   expect(Buffer.byteLength(v2.resultReference.text)).toBe(24*1024);
+  expect(v2.resultReference.returnedBytes).toBe(48*1024);
   const small=await runtime.handleRpc({method:'read_result',params:{...scope,resultContractVersion:2,maxOutputBytes:1600,resultCursor:initial.resultReference.nextCursor}});
   expect(Buffer.byteLength(JSON.stringify(small))).toBeLessThanOrEqual(1600);
   expect(small.resultReference.text.length).toBeGreaterThan(0);

@@ -245,6 +245,14 @@ const projectTask = (task, envelope = null) => (
   toManagedTaskEvent(task, envelope).properties.task
 );
 
+// Scheduler lineage, timing and transport bookkeeping that v2 tool outputs omit;
+// the UI dispatch fallback still reads the identity fields that remain.
+const MANAGED_TOOL_TASK_OMITTED_FIELDS = new Set(['owner', 'sequence', 'dispatchGrouped', 'dispatchWaveId', 'recoveryLineageId',
+  'priorTaskId', 'executionKind', 'createdAt', 'timeoutAt', 'childPromptedAt', 'firstAssistantPartAt', 'transportRecovery']);
+const trimManagedToolTask = task => Object.fromEntries(Object.entries(task).filter(([key]) => !MANAGED_TOOL_TASK_OMITTED_FIELDS.has(key)));
+// An inline first page shorter than this is left to read_result.
+const MIN_INLINE_PAGE_BYTES = 1024;
+
 const OWNERSHIP_WARNING = 'Managed orchestration is unavailable because another DevRyan runtime owns this data directory. Close the other runtime or configure a separate DEVRYAN_DATA_DIR.';
 
 const isOwnershipError = (error) => (
@@ -698,20 +706,23 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
   };
 
   const projectTaskResult = async (task, resultMode, envelope = scheduler.getResultEnvelope(task.taskId), maxOutputBytes, resultContractVersion) => {
-    const result = projectManagedTaskResultForMode(
-      projectTask(task, envelope),
-      envelope,
-      resultMode,
-    );
+    const v2 = resultContractVersion === 2;
+    const projectResult = (pageBytes, inlineFirstPage = false) => {
+      const value = projectManagedTaskResultForMode(projectTask(task, envelope), envelope, resultMode, pageBytes, { inlineFirstPage });
+      return v2 ? { ...value, task: trimManagedToolTask(value.task) } : value;
+    };
+    const result = projectResult();
     if (resultMode === 'compact' && harnessPolicies.compactResults && envelope && result.resultReference) {
       result.resultHeader = createCompactResultHeader({ task, envelope,
         checks: await requiredCheckObserver.project(task), observedAt: now() });
     }
-    const capabilities = Object.values(harnessPolicies).some(Boolean) ? { capabilities: policyProjection() } : {};
-    const metadata=resultContractVersion===2&&envelope?await prepareManagedResultMetadata({...result,...capabilities,resultContractVersion:2}):null;
-    if (maxOutputBytes === undefined) return { ...result, ...capabilities,...resultContractVersion===2?{resultContractVersion:2}:{} };
+    // v2 outputs carry no per-result policy copy; wait_any keeps one top-level copy.
+    const capabilities = !v2 && Object.values(harnessPolicies).some(Boolean) ? { capabilities: policyProjection() } : {};
+    const metadata=v2&&envelope?await prepareManagedResultMetadata({...result,...capabilities,resultContractVersion:2}):null;
+    if (maxOutputBytes === undefined) return { ...result, ...capabilities,...v2?{resultContractVersion:2}:{} };
+    // v2 inlines as much of the first report page as the reply budget fits.
     return fitManagedToolOutput(pageBytes => {
-      const full={...projectManagedTaskResultForMode(projectTask(task,envelope),envelope,resultMode,pageBytes),
+      const full={...projectResult(pageBytes,v2),
         ...(result.resultHeader?{resultHeader:result.resultHeader}:{}),...capabilities,...resultContractVersion===2?{resultContractVersion:2}:{}};
       try{return assertManagedToolOutputSize(full,maxOutputBytes);}
       catch(error){if(error.code!=='managed_tool_output_metadata_too_large')throw error;return metadata?metadata.project(pageBytes,full.resultReference):full;}
@@ -974,7 +985,23 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
         if(params.resultContractVersion!==2)return { ...result, results:await Promise.all(selected.map(task=>project(task))),capabilities:policyProjection() };
         const projected=await Promise.all(selected.map(task=>projectTaskResult(task,resultMode,scheduler.getResultEnvelope(task.taskId),undefined,2)));
         const full=compactManagedTaskToolResult({...result,results:projected,capabilities:policyProjection(),resultContractVersion:2});
-        try{return assertManagedToolOutputSize(full,maxOutputBytes);}catch(error){if(error.code!=='managed_tool_output_metadata_too_large')throw error;}
+        let fitted;
+        try{fitted=assertManagedToolOutputSize(full,maxOutputBytes);}catch(error){if(error.code!=='managed_tool_output_metadata_too_large')throw error;}
+        if(fitted){
+          // Spend the remaining reply budget on first report pages, in selection order.
+          for(const [index,task] of selected.entries()){
+            const reference=fitted.results[index]?.resultReference;
+            if(!reference?.nextCursor||reference.returnedBytes!==0)continue;
+            const envelope=scheduler.getResultEnvelope(task.taskId),current=fitted;
+            const withPage=pageBytes=>({...current,results:current.results.map((value,position)=>position!==index?value:{...value,
+              resultReference:projectManagedTaskResultForMode(projectTask(task,envelope),envelope,resultMode,pageBytes,{inlineFirstPage:true}).resultReference})});
+            try{fitted=fitManagedToolOutput(withPage,maxOutputBytes,MANAGED_RESULT_V2_PAGE_MAX_BYTES);}
+            catch(error){if(error.code!=='managed_tool_output_metadata_too_large')throw error;break;}
+            const inline=fitted.results[index].resultReference;
+            if(inline.returnedBytes<Math.min(MIN_INLINE_PAGE_BYTES,inline.totalBytes)){fitted=current;break;}
+          }
+          return fitted;
+        }
         const metadata=await Promise.all(projected.map(value=>prepareManagedResultMetadata(value)));
         for(let count=projected.length;count>=0;count--){
           try{return fitManagedToolOutput(pageBytes=>({...result,results:metadata.slice(0,count).map(section=>section.project(pageBytes)),

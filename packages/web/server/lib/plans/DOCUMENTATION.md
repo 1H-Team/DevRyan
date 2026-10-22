@@ -127,6 +127,13 @@ conflicts remain refusals. The server checks identity before any save, so this
 retry cannot reinterpret a committed write as an uncommitted operation.
 
 Private `plan_read` must fit its constructor-owned reviewed output budget; large
-plans return an actionable refusal directing the user to Plan View.
+plans return an actionable refusal directing the user to Plan View. When the plan
+was written in this same session, `plan_read` returns
+`{unchanged:true, version, sourceMessageID}` instead of the text, but only if
+four things hold: the saved version matches the Implement marker, the saved
+version matches the canonical source text, no compaction followed the source
+message, and the source session is this session. Otherwise it returns the full
+text, for example after a compaction, a later update, or a Plan View edit made
+before Implement.
 `plan_update` preflights a lean saved/path/version/sourceIdentity receipt before
 publication and never echoes the submitted full plan after commit.
