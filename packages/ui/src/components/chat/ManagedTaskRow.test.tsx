@@ -460,6 +460,45 @@ describe('ManagedTaskRow', () => {
   expect(active).not.toContain('Resume as Task');
 });
 
+test('a user stop keeps Dismiss beside Resume as Task and names the last model, not a failed one', () => {
+  const stopped = record('dvr_task_stopped', 'aborted', { terminationIntent: 'user_stopped', failureReason: 'Stopped by the user' });
+  const envelope = createManagedTaskResultEnvelope(stopped, { sequence: 1, createdAt: 2000, resumable: true });
+  const task = toManagedTaskEvent(stopped, envelope).properties.task;
+  const html = renderView(<ManagedTaskRowView task={task} onOpenChild={() => undefined} resultEnvelope={envelope}
+    onRetryInPlace={() => undefined} onDismissStopped={() => undefined} />);
+  const recovery = html.slice(html.indexOf('aria-label="Model Recovery"'));
+  expect(recovery).toContain('Dismiss Stopped Task');
+  expect(recovery.indexOf('Dismiss Stopped Task')).toBeLessThan(recovery.indexOf('Resume as Task'));
+  expect(html.match(/Dismiss Stopped Task/g)).toHaveLength(1);
+  expect(html).toContain('Last model: github-copilot / gpt-4.1');
+  expect(html).not.toContain('Failed model');
+  expect(html).toContain('Open Subtask');
+
+  const active = renderView(<ManagedTaskRowView task={task} onOpenChild={() => undefined} resultEnvelope={envelope} childActive
+    onRetryInPlace={() => undefined} onDismissStopped={() => undefined} />);
+  expect(active).not.toContain('Model Recovery');
+  expect(active.match(/Dismiss Stopped Task/g)).toHaveLength(1);
+});
+
+test('the session surface renders its own card without linking to the session it is in', () => {
+  const stopped = record('dvr_task_stopped', 'aborted', { terminationIntent: 'user_stopped', failureReason: 'Stopped by the user' });
+  const envelope = createManagedTaskResultEnvelope(stopped, { sequence: 1, createdAt: 2000, resumable: true });
+  const task = toManagedTaskEvent(stopped, envelope).properties.task;
+  const html = renderView(<ManagedTaskRowView task={task} surface="session" onOpenChild={() => undefined} resultEnvelope={envelope}
+    onRetryInPlace={() => undefined} onDismissStopped={() => undefined} />);
+  expect(html).toContain('chat-message-column');
+  expect(html).toContain('rounded-xl');
+  expect(html).not.toContain('Open Subtask');
+  expect(html).toContain('Resume as Task');
+});
+
+test('a provider failure still names the failed model', () => {
+  const { task, envelope } = manualRecoveryFailure('model_unavailable', null);
+  const html = renderView(<ManagedTaskRowView task={task} resultEnvelope={envelope} onRetryInPlace={() => undefined} onOpenChild={() => undefined} />);
+  expect(html).toContain('Failed model: github-copilot / gpt-4.1');
+  expect(html).not.toContain('Last model');
+});
+
 
 test('runtime admission failures explain repair without claiming a connection interruption', () => {
   const failed = record('dvr_task_capability', 'failed', {

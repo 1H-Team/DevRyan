@@ -301,6 +301,8 @@ export type ManagedTaskRowViewProps = {
   onRetryInPlace?(selection: ProviderRecoverySelection): void | Promise<void>;
   autoResumePending?: boolean;
   onAutoResumeChange?(enabled: boolean): void | Promise<void>;
+  /** `session` renders the row as its own card inside the child session it would open. */
+  surface?: 'list' | 'session';
 };
 
 export const ManagedTaskRowView = React.memo(({
@@ -318,6 +320,7 @@ export const ManagedTaskRowView = React.memo(({
   onDismissStopped,
   autoResumePending = false,
   onAutoResumeChange,
+  surface = 'list',
 }: ManagedTaskRowViewProps) => {
   const { t } = useI18n();
   const userStopped = task.userStoppedRecoveryAvailable === true;
@@ -343,7 +346,10 @@ export const ManagedTaskRowView = React.memo(({
   React.useEffect(() => {
     setSelection({ providerId: task.providerId, modelId: task.modelId, variant: task.variant });
   }, [task.taskId, task.providerId, task.modelId, task.variant]);
-  return (
+  const showOpenChild = Boolean(task.childSessionId) && surface === 'list';
+  const dismissLabel = t('chat.managedTasks.dismissStopped');
+  const showDismissInRow = stopped && Boolean(onDismissStopped) && !showRecovery;
+  const article = (
     <article data-managed-task-id={task.taskId}>
       <div className="flex min-w-0 flex-col items-start gap-2 px-3 py-2.5 sm:flex-row sm:items-center sm:gap-3">
         <div className="min-w-0 flex-1">
@@ -362,7 +368,19 @@ export const ManagedTaskRowView = React.memo(({
             </p>
           ) : null}
         </div>
-        {task.childSessionId ? (
+        {showDismissInRow ? (
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost"
+            className="self-start w-auto min-h-[36px] gap-1 px-1 normal-case sm:self-auto sm:min-h-9 sm:px-1.5"
+            disabled={pending}
+            onClick={() => void onDismissStopped?.()}
+          >
+            {dismissLabel}
+          </Button>
+        ) : null}
+        {showOpenChild ? (
           <Button
             type="button"
             size="xs"
@@ -375,7 +393,6 @@ export const ManagedTaskRowView = React.memo(({
           </Button>
         ) : null}
       </div>
-      {stopped && onDismissStopped ? <Button size="xs" variant="ghost" disabled={pending} onClick={onDismissStopped}>{t('chat.managedTasks.dismissStopped')}</Button> : null}
       {showRecovery ? (
         <ModelRecoveryCard
           embedded
@@ -387,6 +404,13 @@ export const ManagedTaskRowView = React.memo(({
             ? t('chat.modelRecovery.timeoutDetail')
             : null}
           originalModelLabel={providerModelLabel(task, providers).combined}
+          originalModelCaption={stopped
+            ? t('chat.modelRecovery.stoppedModel', { model: providerModelLabel(task, providers).combined })
+            : undefined}
+          tone={stopped ? 'neutral' : 'warning'}
+          secondaryAction={stopped && onDismissStopped
+            ? { label: dismissLabel, onClick: onDismissStopped }
+            : undefined}
           providers={providers}
           selection={selection}
           pending={pending}
@@ -400,6 +424,14 @@ export const ManagedTaskRowView = React.memo(({
       ) : null}
     </article>
   );
+  if (surface === 'list') return article;
+  return (
+    <div className="chat-message-column px-4 pb-2 pt-3">
+      <div className="overflow-hidden rounded-xl border border-[color-mix(in_srgb,var(--primary-base)_16%,var(--border))] bg-[color-mix(in_srgb,var(--primary-base)_3%,var(--surface-background))]">
+        {article}
+      </div>
+    </div>
+  );
 });
 
 ManagedTaskRowView.displayName = 'ManagedTaskRowView';
@@ -408,10 +440,12 @@ export const ManagedTaskRow = React.memo(({
   taskId: sourceTaskId,
   displayTitle,
   onContentChange,
+  surface,
 }: {
   taskId: string;
   displayTitle?: string;
   onContentChange?: () => void;
+  surface?: ManagedTaskRowViewProps['surface'];
 }) => {
   const taskId = useManagedOrchestrationStore(React.useMemo(
     () => managedOrchestrationSelectors.taskIdForRecovery(sourceTaskId),
@@ -459,7 +493,7 @@ export const ManagedTaskRow = React.memo(({
   }, [onContentChange, task]);
 
   if (sameChildFollowUpTaskId) {
-    return <ManagedTaskRow taskId={sameChildFollowUpTaskId} displayTitle={displayTitle} onContentChange={onContentChange} />;
+    return <ManagedTaskRow taskId={sameChildFollowUpTaskId} displayTitle={displayTitle} onContentChange={onContentChange} surface={surface} />;
   }
   if (!task || !title) return null;
   return (
@@ -480,6 +514,7 @@ export const ManagedTaskRow = React.memo(({
       )}
       onDismissStopped={() => useManagedOrchestrationStore.getState().acknowledgeTask(taskId, 'abandon')}
       autoResumePending={pendingAction === 'auto_resume'}
+      surface={surface}
       onAutoResumeChange={(enabled) => useManagedOrchestrationStore.getState().setAutoResume(
         taskId,
         enabled,

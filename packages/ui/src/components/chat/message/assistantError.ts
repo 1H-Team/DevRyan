@@ -96,7 +96,7 @@ export function classifyAssistantError(
   }
   const detail = stripWrappedJsonQuotes(rawDetail)
   if (options.managedAbortRecovery?.state === 'user_stopped') return {
-    text: "Stopped by you. Use Resume as task in the parent session to continue with a selected model, or continue this chat independently.",
+    text: "Stopped by you. Use Resume as Task to continue with a selected model, or continue this chat independently.",
     variant: "info",
     abortKind: "manual",
   }

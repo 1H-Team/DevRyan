@@ -11,6 +11,36 @@ mock.module('@/components/ui/ProviderLogo', () => ({
 const { ModelRecoveryCard } = await import('./ModelRecoveryCard');
 
 describe('ModelRecoveryCard', () => {
+  test('a stopped task shows its last model, a neutral icon and a secondary action before the primary one', () => {
+    const html = renderToStaticMarkup(
+      <I18nProvider>
+        <ModelRecoveryCard
+          embedded
+          title="Choose a model to continue this subtask:"
+          originalModelLabel="Anthropic / Claude Opus 5.5"
+          originalModelCaption="Last model: Anthropic / Claude Opus 5.5"
+          tone="neutral"
+          retryLabel="Resume as Task"
+          secondaryAction={{ label: 'Dismiss Stopped Task', onClick: () => undefined }}
+          providers={[]}
+          selection={{ providerId: 'anthropic', modelId: 'claude-opus-5-5', variant: null }}
+          pending
+          actionError={null}
+          onSelectionChange={() => undefined}
+          onRetry={() => undefined}
+        />
+      </I18nProvider>,
+    );
+
+    expect(html).toContain('Last model: Anthropic / Claude Opus 5.5');
+    expect(html).not.toContain('Failed model');
+    expect(html).not.toContain('status-warning');
+    expect(html.indexOf('Dismiss Stopped Task')).toBeGreaterThan(-1);
+    expect(html.indexOf('Dismiss Stopped Task')).toBeLessThan(html.indexOf('Trying Again'));
+    // Both footer actions are disabled while the resume is in flight.
+    expect(html.match(/<button[^>]*disabled/g)?.length ?? 0).toBeGreaterThan(1);
+  });
+
   test('uses the Agent Dispatch visual shell with manual model recovery controls', () => {
     const html = renderToStaticMarkup(
       <I18nProvider>

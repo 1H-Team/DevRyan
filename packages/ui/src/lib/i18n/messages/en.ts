@@ -88,6 +88,7 @@ export const dict = {
   'chat.modelRecovery.timeoutTerminal': 'It hit its time limit before finishing.',
   'chat.modelRecovery.timeoutDetail': 'It hit its time limit before finishing. Try Again continues it from saved progress with at least the original time window.',
   'chat.modelRecovery.failedModel': 'Failed model: {model}',
+  'chat.modelRecovery.stoppedModel': 'Last model: {model}',
   'chat.modelRecovery.modelUnavailable': 'The selected model {provider} / {model} is unavailable.',
   'chat.modelRecovery.usageLimitStopped': '{detail}. This session was stopped.',
   'chat.modelRecovery.interrupted': 'The previous response stopped before it completed.',

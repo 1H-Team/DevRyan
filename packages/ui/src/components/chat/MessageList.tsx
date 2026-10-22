@@ -2030,7 +2030,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                                 activeStreamingPhase={activeStreamingPhase}
                             />
                         ) : null}
-                        {manualRecoveryTaskId ? <ManagedTaskRow taskId={manualRecoveryTaskId} onContentChange={() => stableTailContentChange('structural')} /> : null}
+                        {manualRecoveryTaskId ? <ManagedTaskRow taskId={manualRecoveryTaskId} surface="session" onContentChange={() => stableTailContentChange('structural')} /> : null}
                         <PrimaryModelRecovery
                             sessionId={sessionKey}
                             onContentChange={() => stableTailContentChange('structural')}
