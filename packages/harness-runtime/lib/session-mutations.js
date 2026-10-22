@@ -1402,6 +1402,9 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     if (await repo.db.get(key('calls', scopeKey))) throw changeError('execution_already_started');
     return { generation };
   });
+  // Open (not yet locked) batches per requested directory. A batch stays open
+  // while it queues for the owner lock and closes once the lock is held, so
+  // finishes arriving as separate requests during that wait share its commit.
   const directFinishQueues = new Map();
   const finishDirect = (input) => {
     if (!scopeFields.every((field) => validID(input[field])) || !/^[a-f0-9-]{36}$/.test(input.token ?? '')
@@ -1410,16 +1413,20 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     }
     const captured = structuredClone(input), run = AsyncLocalStorage.snapshot(), meter = executionProgressMeter(), signal = executionSignal();
     return new Promise((resolve, reject) => {
-      let queued = directFinishQueues.get(captured.directory);
-      if (!queued || queued.signal !== signal || queued.items.length >= 64) {
-        queued = { signal, items: [] }; directFinishQueues.set(captured.directory, queued);
-        const batch = queued.items;
+      const open = directFinishQueues.get(captured.directory) ?? [];
+      let queued = open.find((batch) => batch.signal === signal && batch.items.length < 64);
+      if (!queued) {
+        // Every member follows the meter of the call that queues the batch.
+        queued = { signal, items: [], holder: meter }; open.push(queued); directFinishQueues.set(captured.directory, open);
+        const batch = queued.items, holder = meter;
+        const close = () => {
+          const rest = (directFinishQueues.get(captured.directory) ?? []).filter((candidate) => candidate !== queued);
+          if (rest.length) directFinishQueues.set(captured.directory, rest); else directFinishQueues.delete(captured.directory);
+        };
         setImmediate(async () => {
-          if (directFinishQueues.get(captured.directory) === queued) directFinishQueues.delete(captured.directory);
-          const holder = executionProgressMeter();
-          for (const item of batch) if (item.meter && item.meter !== holder) item.meter.following = holder;
           try {
             const outcomes = await locked(captured.directory, async repo => {
+              close();
               const results = [];
               for (const item of batch) {
                 const previousMeta = structuredClone(repo.meta);
@@ -1437,10 +1444,11 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
             }, { operation: 'finishDirect' });
             // The shared durable commit finishes before any call is acknowledged.
             outcomes.forEach((outcome, index) => outcome.error ? batch[index].reject(outcome.error) : batch[index].resolve(outcome.value));
-          } catch (error) { for (const item of batch) item.reject(error); }
+          } catch (error) { close(); for (const item of batch) item.reject(error); }
           finally { for (const item of batch) if (item.meter && item.meter.following === holder) item.meter.following = undefined; }
         });
       }
+      if (meter && queued.holder && meter !== queued.holder) meter.following = queued.holder;
       queued.items.push({ input: captured, run, meter, resolve, reject });
     });
   };

@@ -8,6 +8,7 @@ import { createSessionMutationRuntime } from './session-mutations.js';
 import { createSessionChangeRuntime } from './session-changes.js';
 import { openChangeStore, changeKey } from './session-changes-store.js';
 import { withExecutionAdmission } from './execution-admission.js';
+import { withCrossProcessFileLock } from './atomic-file.js';
 import { cleanupRoots, fixture, ledgerState, manyFiles, roots, SMALL_BATCHES, test, withEnv } from '../test/session-mutations-fixture.js';
 
 afterEach(cleanupRoots);
@@ -159,6 +160,30 @@ describe('direct receipts for native read-only tools', () => {
     const db = await openChangeStore(root, path.join(root, 'git'));
     expect(await db.get(`prompts/${changeKey('s\0failed-new-prompt')}.json`)).toBeNull();
     expect((await db.get('meta.json')).sequence).toBe(4);
+  });
+
+  test('finishes arriving as separate requests while the lock is held share one commit', async () => {
+    const timings = [], f = await fixture({ onLockTiming: record => timings.push(record) });
+    await f.runtime.registerPrompt({ ...scope(f, 'seed'), userMessageID: 'pd' });
+    timings.length = 0;
+    const lockPath = path.join(f.storage, changeKey(await fs.realpath(f.directory)), 'owner.lock');
+    let release, held;
+    const holding = new Promise(resolve => { held = resolve; });
+    const owner = withCrossProcessFileLock(lockPath, () => { held(); return new Promise(resolve => { release = resolve; }); });
+    await holding;
+    const finishes = [];
+    for (const call of ['s1', 's2', 's3', 's4']) {
+      finishes.push(f.runtime.finishDirect({ ...scope(f, call), token: randomUUID(), generation: 0, executionFingerprint: digest }));
+      await new Promise(resolve => setTimeout(resolve, 15));
+    }
+    release(); await owner;
+    expect((await Promise.all(finishes)).every(result => typeof result.operationID === 'string')).toBe(true);
+    expect(timings.filter(row => row.operation === 'finishDirect')).toHaveLength(1);
+    expect(timings.filter(row => row.operation === 'finishDirect' && row.wrote)).toHaveLength(1);
+    for (const call of ['s1', 's2', 's3', 's4']) expect(await outcome(f, call)).toBe('finished');
+    // The next arrival starts a new batch rather than joining a committed one.
+    await f.runtime.finishDirect({ ...scope(f, 's5'), token: randomUUID(), generation: 0, executionFingerprint: digest });
+    expect(timings.filter(row => row.operation === 'finishDirect' && row.wrote)).toHaveLength(2);
   });
 
   test('a failed shared commit acknowledges no call and all original tokens remain retryable', async () => {

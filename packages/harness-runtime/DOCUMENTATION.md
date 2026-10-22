@@ -409,7 +409,9 @@ the no-launch cancellation attestation and lease cleanup before rejecting to the
 provider; it never releases provider authority while cleanup is still pending.
 
 Concurrent native read-only `finishDirect` calls for the same requested directory
-and execution signal share a commit in groups of at most 64. Each call keeps its captured execution
+and execution signal share a commit in groups of at most 64. A group stays open
+while it queues for the owner lock and closes once the lock is held, so calls
+that arrive as separate requests during that wait join it. Each call keeps its captured execution
 scope, cancellation, generation and exact identity checks. Private store staging
 rolls back a refused call without losing accepted siblings; every caller waits
 for the shared durable commit before receiving its own acknowledgment. A failed
