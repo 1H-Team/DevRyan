@@ -162,6 +162,15 @@ export function createSessionMutationRuntime(options: {
   directory: string;
   windowsOwner?:WindowsPrivateFileOwner;
   windowsLauncher?:string;
+  /** Ledger store Git I/O (default: the package's own runners). Tests count processes and commits through it. */
+  gitRunner?: {
+    git(cwd: string, args: string[], options?: Record<string, unknown>): Promise<Buffer>;
+    gitTokens(cwd: string, args: string[], options?: Record<string, unknown>): AsyncIterable<string>;
+    gitRecords(cwd: string, args: string[], rows: AsyncIterable<{ key: string; oid: string; size: number }> | Iterable<{ key: string; oid: string; size: number }>):
+      AsyncIterable<{ key: string; oid: string; value: unknown }>;
+    /** Optional long-lived object reader; without it every read is its own process. */
+    readObject?(cwd: string, args: string[], name: string, options?: { check?: boolean }): Promise<{ oid: string; type: string; size: number; data?: Buffer } | null>;
+  };
   /** Rows per install transaction (defaults 128 and, for a first build, 1024). Tests shrink them. */
   batching?: { install?: number; initialInstall?: number };
   onChange?(input: MutationPublication & { directory: string }): void | Promise<void>;

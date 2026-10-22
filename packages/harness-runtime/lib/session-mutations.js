@@ -154,11 +154,13 @@ const mapBounded = async (items, fn, limit = FILE_CONCURRENCY) => {
  * Adapters must enforce write confinement and stop every writer before finish.
  * The private Git metadata store pages histories and commits accepted intent
  * with an atomic ref update before the publication transaction writes files. */
-export function createSessionMutationRuntime({ directory: storage, onChange = () => {}, onMaterialize, onDiagnostic = () => {}, onLockTiming, maintenance: maintenanceOptions, batching = {}, windowsOwner, windowsLauncher } = {}) {
+export function createSessionMutationRuntime({ directory: storage, onChange = () => {}, onMaterialize, onDiagnostic = () => {}, onLockTiming, maintenance: maintenanceOptions, batching = {}, windowsOwner, windowsLauncher, gitRunner } = {}) {
   if (!path.isAbsolute(storage ?? '')) throw new TypeError('Absolute mutation storage directory is required');
   // Rows per install transaction. Tests shrink both to cross batch boundaries
   // with a few hundred files instead of thousands; production keeps the defaults.
   const { install: installBatch = INSTALL_BATCH, initialInstall: initialInstallBatch = INITIAL_INSTALL_BATCH } = batching;
+  // Ledger store Git I/O (tests count processes and commits through it).
+  const storeOptions = gitRunner ? { gitRunner } : {};
   if (![installBatch, initialInstallBatch].every((value) => Number.isSafeInteger(value) && value > 0)) throw new TypeError('Install batch sizes must be positive integers');
   // Background failures outside any admission context (codes only).
   const diagnostic = (record) => { try { onDiagnostic(record); } catch { /* Observer only. */ } };
@@ -260,13 +262,26 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
   const recover = async (repo) => {
     const pending = await repo.db.get('materialization.json');
     if (!pending) return;
+    const written = [];
     for await (const row of repo.db.list(`materializations/${pending.id}`)) {
-      const current = await inspect(repo, row.path);
-      if (equal(current, row.after)) continue;
-      if (!equal(current, row.before)) throw changeError('mutation_recovery_required', 503);
-      await onMaterialize?.(row);
-      await write(repo, row.path, row.after);
-      if (!equal(await inspect(repo, row.path), row.after)) throw changeError('mutation_recovery_required', 503);
+      let current = await inspect(repo, row.path);
+      if (!equal(current, row.after)) {
+        if (!equal(current, row.before)) throw changeError('mutation_recovery_required', 503);
+        await onMaterialize?.(row);
+        await write(repo, row.path, row.after);
+        current = await inspect(repo, row.path);
+        if (!equal(current, row.after)) throw changeError('mutation_recovery_required', 503);
+      }
+      if (current && row.documentID) written.push({ id: row.documentID, entry: current });
+    }
+    // Record the observation of each verified write, as reconciliation would:
+    // otherwise the next observation re-inspects every published file and
+    // restamps it in a commit of its own. Rows from older hosts carry no
+    // document and are left to reconciliation.
+    for (const { id, entry } of written) {
+      const doc = await repo.db.get(key('files', id));
+      if (!doc?.published || doc.published.deleted || !equal(doc.published, entry)) continue;
+      doc.published = { ...doc.published, ...entry }; repo.db.set(key('files', id), doc);
     }
     repo.db.remove('materialization.json');
     await repo.db.commit();
@@ -370,7 +385,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         } else await fs.mkdir(root, { recursive: true, mode: 0o700 });
         try { await fs.access(path.join(gitDir, 'HEAD')); }
         catch (error) { if (error.code !== 'ENOENT') throw error; await git(root, ['init', '--bare', '--quiet', gitDir]); }
-        const db = await quietExecutionPhase('ledger_open', () => openChangeStore(root, gitDir, { syncObjects, persistentIndex: true }));
+        const db = await quietExecutionPhase('ledger_open', () => openChangeStore(root, gitDir, { ...storeOptions, syncObjects, persistentIndex: true }));
         const storedMeta = await db.get('meta.json');
         const originalMeta = JSON.stringify(storedMeta);
         const meta = storedMeta ?? { version: 1, directory, sequence: 0 };
@@ -419,7 +434,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     const root = rootFor(directory), gitDir = path.join(root, 'git');
     try { await fs.access(path.join(gitDir, 'HEAD')); }
     catch (error) { if (error.code === 'ENOENT') return SNAPSHOT_MISS; throw error; }
-    const db = await quietExecutionPhase('ledger_snapshot', () => openChangeStore(root, gitDir, { syncObjects }));
+    const db = await quietExecutionPhase('ledger_snapshot', () => openChangeStore(root, gitDir, { ...storeOptions, syncObjects }));
     // A pending materialization may be unrecoverable (for example a foreign
     // edit); only the locked path can recover it or fail closed.
     if (!db.exists || await db.get('materialization.json')) return SNAPSHOT_MISS;
@@ -510,7 +525,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     const stamp = path.join(root, BASELINE_COMPACTED);
     try { await fs.access(stamp); return; }
     catch (cause) { if (cause.code !== 'ENOENT') throw cause; }
-    const snapshot = { root, db: await openChangeStore(root, path.join(root, 'git'), { syncObjects }) };
+    const snapshot = { root, db: await openChangeStore(root, path.join(root, 'git'), { ...storeOptions, syncObjects }) };
     const meta = await snapshot.db.get('meta.json');
     if (meta?.version !== 1 || !path.isAbsolute(meta.directory ?? '')) return;
     // A moved or deleted project resolves elsewhere; never lock another root.
@@ -758,7 +773,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       do {
         if (++attempts > 4) throw changeError('workspace_changing', 503);
         dirty = false;
-        const snapshot = { directory: lease.projectDirectory, root, gitDir, db: await openChangeStore(root, gitDir, { syncObjects }) };
+        const snapshot = { directory: lease.projectDirectory, root, gitDir, db: await openChangeStore(root, gitDir, { ...storeOptions, syncObjects }) };
         // Read-only here: reuse the listing cached by immutable `files` tree identity.
         const paths = await snapshotPaths(snapshot);
         const walk = { classifier: await classifierFor(snapshot.directory, lease.vcs !== false, warm), strict: warm, inputs: new Set(),
@@ -883,7 +898,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       const winner = winners.get(file)?.published;
       const after = winner?.deleted ? null : winner ?? null;
       const before = await inspect(repo, file);
-      if (!equal(before, after)) rows.push({ path: file, before, after });
+      if (!equal(before, after)) rows.push({ path: file, before, after, ...(after && winners.get(file) ? { documentID: winners.get(file).id } : {}) });
     }
     if (rows.length) {
       const id = randomUUID();
@@ -1547,7 +1562,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       });
       // Materialization uses immutable objects captured under the publication
       // lock; commands and copying do not hold that lock.
-      const root = rootFor(lease.projectDirectory), db = await openChangeStore(root, path.join(root, 'git'), { ref: lease.snapshotRef, syncObjects });
+      const root = rootFor(lease.projectDirectory), db = await openChangeStore(root, path.join(root, 'git'), { ...storeOptions, ref: lease.snapshotRef, syncObjects });
       const repo = { root, directory: lease.projectDirectory, db };
       // Operation state only filters eagerly copied base runs; lazy runs are
       // derived at publication, so the full operation scan is skipped.
@@ -1695,7 +1710,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     };
     if (captured.preparation !== 'none') {
       const root = rootFor(captured.projectDirectory), db = await openChangeStore(root, path.join(root, 'git'),
-        { ...(captured.snapshotRef ? { ref: captured.snapshotRef } : {}), syncObjects });
+        { ...storeOptions, ...(captured.snapshotRef ? { ref: captured.snapshotRef } : {}), syncObjects });
       const repo = { root, directory: captured.projectDirectory };
       snapshot = { root, directory: captured.projectDirectory, db };
       for await (const file of db.list(`bases/${token}/files`)) { base.set(file.path, file); if (file.identity) identities.set(file.identity, file); }
@@ -2299,7 +2314,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     for (const entry of await fs.readdir(storage, { withFileTypes: true }).catch((cause) => { if (cause.code === 'ENOENT') return []; throw cause; })) {
       if (!entry.isDirectory() || !/^[a-f0-9]{64}$/.test(entry.name)) continue;
       const root = path.join(storage, entry.name);
-      const db = await openChangeStore(root, path.join(root, 'git'), { syncObjects });
+      const db = await openChangeStore(root, path.join(root, 'git'), { ...storeOptions, syncObjects });
       const meta = await db.get('meta.json');
       if (meta?.version === 1 && path.isAbsolute(meta.directory ?? '')) directories.push(meta.directory);
     }

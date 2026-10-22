@@ -270,8 +270,12 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF,gitRunner,s
         throw cause;
       }
       tree = next;
+      // The new tree differs from the old only by these values: rewriting
+      // one unchanged after this commit stages nothing.
+      for (const [key, data] of pending) {
+        if (typeof data !== 'object' || data === null) baseline.set(key, data); else baseline.delete(key);
+      }
       pending.clear();
-      baseline.clear();
       if (kept) await fs.writeFile(record, next, { mode: 0o600 }).catch(() => {}); // Advisory: absent means rebuild.
     } finally {
       if (!kept) await fs.rm(index, { force: true });
