@@ -347,6 +347,11 @@ Repeated native session registration reads the committed ledger snapshot when
 the session already exists with the same parent and directory. New registrations
 and pending materialization recovery still take the owner lock and commit
 durably; the read path never bypasses lineage or directory validation.
+`executionReceipt`, the lease capture that starts `finish`, and the
+cleanability check in `cleanupLease` also read the last committed snapshot: a
+published lease and its publication rows never change again. An absent or
+unsettled lease in the snapshot falls back to the owner lock, and publication
+and cleanup still re-read the lease under it.
 
 Ledger work runs on the host event loop, which in Electron is the window's main
 thread. Gitignored directories without tracked content are inputs: linked into

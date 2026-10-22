@@ -186,6 +186,20 @@ describe('direct receipts for native read-only tools', () => {
     expect(timings.filter(row => row.operation === 'finishDirect' && row.wrote)).toHaveLength(2);
   });
 
+  test('a published receipt is read from the committed snapshot while the owner lock is held', async () => {
+    const f = await fixture(); await f.runtime.registerPrompt(scope(f, 'seed'));
+    const token = randomUUID();
+    await f.runtime.finishDirect({ ...scope(f, 'held'), token, generation: 0, executionFingerprint: digest });
+    const lockPath = path.join(f.storage, changeKey(await fs.realpath(f.directory)), 'owner.lock');
+    let release, held;
+    const holding = new Promise(resolve => { held = resolve; });
+    const owner = withCrossProcessFileLock(lockPath, () => { held(); return new Promise(resolve => { release = resolve; }); });
+    await holding;
+    try { expect(await f.runtime.executionReceipt({ directory: f.directory, token })).toMatchObject({ callID: 'held', complete: true, files: [] }); }
+    finally { release(); await owner; }
+    await expect(f.runtime.executionReceipt({ directory: f.directory, token: randomUUID() })).rejects.toMatchObject({ code: 'execution_unavailable' });
+  });
+
   test('a failed shared commit acknowledges no call and all original tokens remain retryable', async () => {
     const f = await fixture(); await f.runtime.registerPrompt(scope(f, 'seed'));
     const inputs = ['c1', 'c2'].map(call => ({ ...scope(f, call), token: randomUUID(), generation: 0, executionFingerprint: digest }));

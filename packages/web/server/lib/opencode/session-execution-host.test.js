@@ -1019,6 +1019,28 @@ test('native direct admissions and finishes are journaled like plugin ones witho
   expect(diagnostics.at(-1)).toMatchObject({ phase: 'direct_finish', state: 'failed' });
 });
 
+test('a direct finish reuses its own admission identities once; anything else reads them again', async () => {
+  const client = createFakeClient();
+  client.sessions.message.mockResolvedValue({ info: { role: 'assistant', sessionID: input.sessionID, parentID: 'msg_user' },
+    parts: [{ type: 'tool', callID: input.callID, tool: 'grep' }], turnOwnership: { source: 'native-sequence', userMessageID: 'msg_user' } });
+  const { host } = fixture({ openCodeClient: client, nativeExecution: { recheckPermit: async () => {} } });
+  const call = { ...input, tool: 'grep' };
+  const admitted = await host.nativeExecution({ ...call, action: 'direct-admit' });
+  const reads = () => [client.sessions.get.mock.calls.length, client.sessions.message.mock.calls.length];
+  const before = reads();
+  expect(await host.nativeExecution({ ...call, ...admitted, action: 'direct-finish' })).toEqual({ files: [] });
+  expect(reads()).toEqual(before);
+  expect(mocks.runtime.finishDirect).toHaveBeenLastCalledWith(expect.objectContaining({ userMessageID: 'msg_user', callID: input.callID }));
+  // The admission is consumed: a retry with the same token verifies again.
+  await host.nativeExecution({ ...call, ...admitted, action: 'direct-finish' });
+  expect(reads()).toEqual([before[0] + 1, before[1] + 1]);
+  // A finish naming another call never borrows this admission.
+  const other = await host.nativeExecution({ ...call, action: 'direct-admit' });
+  const counted = reads();
+  await expect(host.nativeExecution({ ...call, ...other, callID: 'call_other', action: 'direct-finish' })).rejects.toMatchObject({ code: 'capture_identity_mismatch' });
+  expect(reads()).toEqual([counted[0] + 1, counted[1] + 1]);
+});
+
 test('ledger lock timings reach the host observer', () => {
   const timings = [];
   fixture({ onLockTiming: (timing) => timings.push(timing) });

@@ -1672,7 +1672,13 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     return prepare(lease);
   };
   const finishOwned = async ({ directory, token, renames = [] }) => {
-    const captured = await locked(directory, (repo) => repo.db.get(key('leases', token)));
+    // Advisory capture; the publication transaction below re-reads the lease under the lock.
+    const captured = await snapshotOrLocked(directory, async (repo) => {
+      const lease = await repo.db.get(key('leases', token));
+      // Absence is only authoritative behind the lock.
+      if (!lease && repo.snapshot) throw changeError('snapshot_lease_absent');
+      return lease;
+    });
     if (!captured) throw changeError('execution_unavailable');
     if (captured.state === 'published') return captured.result;
     if (captured.state !== 'ready') throw changeError('execution_not_ready');
@@ -1839,9 +1845,13 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
   };
   const cleanupLease = async (input) => {
     if (preparations.has(input.token) || settlements.has(input.token)) return false;
-    const lease = await locked(input.directory, async (repo) => {
+    const lease = await snapshotOrLocked(input.directory, async (repo) => {
       const lease = await repo.db.get(key('leases', input.token));
-      if (!lease || lease.cleaned || !['published', 'cancelled'].includes(lease.state)) return null;
+      if (!lease || lease.cleaned || !['published', 'cancelled'].includes(lease.state)) {
+        // Only a cleanable lease is answered from the snapshot.
+        if (repo.snapshot) throw changeError('snapshot_lease_unsettled');
+        return null;
+      }
       if (lease.executionKind === 'process' && !lease.cancelledBeforeStart) await readSessionExecutionReceipt(lease);
       else if (lease.state === 'published' && lease.executionKind !== 'control') return null;
       return lease;
@@ -2114,7 +2124,9 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       repo.db.set(callKey, { token: lease.token });
     }
   });
-  const executionReceipt = (input) => locked(input.directory, async (repo) => {
+  // A published lease and its publication rows never change again; the last
+  // committed tree answers without queueing behind other ledger work.
+  const executionReceipt = (input) => snapshotOrLocked(input.directory, async (repo) => {
     const lease = await repo.db.get(key('leases', input.token));
     if (lease?.state !== 'published') throw changeError('execution_unavailable');
     const files = [];
