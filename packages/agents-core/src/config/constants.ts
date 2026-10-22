@@ -51,7 +51,10 @@ export const DEFAULT_MODELS: Record<AgentName, string | undefined> = {
 };
 
 // Workflow reminders
-export const PHASE_REMINDER_TEXT = `!IMPORTANT! Scheduler workflow: pick the lightest workflow that fits. Direct work: execute and verify proportionately. Otherwise: plan lanes → dispatch background specialists → track task IDs → await hook-driven completion → reconcile terminal results → verify. !END!`;
+// DevRyan: specialists own implementation (orchestrator.md <Routing>), so the
+// reminder must not invite direct work. Keep it static: it repeats on every
+// orchestrator user message and must stay byte-identical for prompt caching.
+export const PHASE_REMINDER_TEXT = `!IMPORTANT! Scheduler workflow: route the work to its specialists → start independent specialists together in one message → track task IDs → await completion → reconcile terminal results → verify. !END!`;
 
 export function formatSystemReminder(text: string): string {
   return `<system-reminder>\n${text}\n</system-reminder>`;

@@ -15,7 +15,12 @@ describe('toV1Error', () => {
     ['provider.invalid-request', 'APIError'],
     ['provider.content-filter', 'ContentFilterError'],
     ['provider.invalid-output', 'StructuredOutputError'],
-    ['provider.rate-limit', 'UnknownError'],
+    ['provider.rate-limit', 'APIError'],
+    ['provider.quota', 'APIError'],
+    ['provider.free-limit', 'APIError'],
+    ['provider.transport', 'APIError'],
+    ['provider.timeout', 'APIError'],
+    ['provider.no-route', 'APIError'],
     ['tool.execution', 'UnknownError'],
     ['unknown', 'UnknownError'],
   ])('maps %s to %s and keeps the v2 type', (type, name) => {
@@ -23,6 +28,14 @@ describe('toV1Error', () => {
       name,
       data: { message: 'boom', v2Type: type },
     });
+  });
+
+  it('passes a finite retryAfterMs through and back, and drops invalid values', () => {
+    const v2 = { type: 'provider.rate-limit', message: 'slow down', status: 429, retryAfterMs: 30000 };
+    expect(toV1Error(v2)).toEqual({ name: 'APIError', data: { message: 'slow down', statusCode: 429, v2Type: 'provider.rate-limit', retryAfterMs: 30000 } });
+    expect(toV2Error(toV1Error(v2))).toEqual(v2);
+    expect(toV1Error({ ...v2, retryAfterMs: -1 }).data).not.toHaveProperty('retryAfterMs');
+    expect(toV1Error({ ...v2, retryAfterMs: 'soon' }).data).not.toHaveProperty('retryAfterMs');
   });
 
   it('carries the HTTP status as statusCode only when it is a valid status', () => {

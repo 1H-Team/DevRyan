@@ -45,7 +45,7 @@ import {
   userTextPartId,
   userTextSegments,
 } from './ids.js';
-import { toV1ToolPart } from './tools.js';
+import { projectProviderState, toV1ToolPart } from './tools.js';
 
 /** Prefix of the opaque `x-next-cursor` the façade emits on gen 2. */
 export const V2_MESSAGE_CURSOR_PREFIX = 'v2:';
@@ -442,7 +442,8 @@ export const toV1AssistantParts = (message, context) => {
       // LOSS(text-time): v2 text items carry no time; the step's times stand in.
       const part = textPart(id, sessionID, messageID, typeof item.text === 'string' ? item.text : '', false);
       part.time = partTime(context.created, completed);
-      if (isRecord(item.native ?? item.state)) part.metadata = { providerState: item.native ?? item.state };
+      const providerState = projectProviderState(item.native ?? item.state);
+      if (providerState) part.metadata = { providerState };
       parts.push(part);
       return;
     }
@@ -458,7 +459,8 @@ export const toV1AssistantParts = (message, context) => {
         text: typeof item.text === 'string' ? item.text : '',
         time: partTime(start, end),
       };
-      if (isRecord(item.native ?? item.state)) part.metadata = item.native ?? item.state;
+      const providerState = projectProviderState(item.native ?? item.state);
+      if (providerState) part.metadata = providerState;
       parts.push(part);
       return;
     }

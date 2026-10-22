@@ -258,12 +258,12 @@ describe('toV1ToolState', () => {
 });
 
 describe('toV1ToolPart', () => {
-  it.each(['providerState','native'])('builds a v1 ToolPart with the synthesized id, v1 name and %s metadata', field => {
+  it.each(['providerState','native'])('builds a v1 ToolPart from %s, projecting only the DevRyan marker and never provider replay data', field => {
     expect(toV1ToolPart({
       type: 'tool',
       id: 'call_1',
       name: 'shell',
-      [field]: { itemId: 'fc_1' },
+      [field]: { itemId: 'fc_1', encryptedContent: 'opaque', devryan: { cursor: { partID: 'p' } } },
       state: { status: 'running', input: { command: 'ls' }, metadata: {} },
       time: { created: 10, ran: 11 },
     }, context)).toEqual({
@@ -274,8 +274,11 @@ describe('toV1ToolPart', () => {
       callID: 'call_1',
       tool: 'bash',
       state: { status: 'running', input: { command: 'ls' }, metadata: {}, title: 'ls', time: { start: 11 } },
-      metadata: { opencodeTool: 'shell', providerState: { itemId: 'fc_1' } },
+      metadata: { opencodeTool: 'shell', providerState: { devryan: { cursor: { partID: 'p' } } } },
     });
+    const plain = toV1ToolPart({ type: 'tool', id: 'call_2', name: 'shell', [field]: { itemId: 'fc_2' },
+      state: { status: 'running', input: { command: 'ls' }, metadata: {} }, time: { created: 10, ran: 11 } }, context);
+    expect(plain.metadata).toEqual({ opencodeTool: 'shell' });
   });
 
   it('keeps migrated v1 names and omits absent provider state', () => {

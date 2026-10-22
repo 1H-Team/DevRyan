@@ -12,11 +12,16 @@
 //                                caller-supplied overflow classifier matches
 //   provider.content-filter   -> ContentFilterError
 //   provider.invalid-output   -> StructuredOutputError
+//   provider.rate-limit, provider.quota, provider.free-limit,
+//   provider.transport, provider.timeout, provider.internal,
+//   provider.no-route, provider.unsupported-operation,
+//   provider.unknown          -> APIError (OpenCode 2.1 typed provider failures)
 //   anything else             -> UnknownError
 //
 // `v2Type` is a lossless pass-through for classifiers that will be rewritten
 // against v2 types later. `isRetryable` stays undefined; `response.body` is not
-// carried; finite provider code/parameter details are projected instead.
+// carried; finite provider code/parameter details are projected instead. A
+// finite `retryAfterMs` (rate-limit/quota resets) is passed through as is.
 // ---------------------------------------------------------------------------
 import { providerErrorDetails } from '../../../../../../shared-runtime/lib/provider-error-details.js';
 
@@ -36,6 +41,7 @@ import { providerErrorDetails } from '../../../../../../shared-runtime/lib/provi
  * @property {string} [reason]
  * @property {string} [providerCode]
  * @property {string} [providerParam]
+ * @property {number} [retryAfterMs]
  */
 
 /**
@@ -66,6 +72,9 @@ const V2_TYPE_TO_V1_NAME = new Map([
   [INVALID_REQUEST_TYPE, 'APIError'],
   ['provider.content-filter', 'ContentFilterError'],
   ['provider.invalid-output', 'StructuredOutputError'],
+  ...['provider.rate-limit', 'provider.quota', 'provider.free-limit', 'provider.transport', 'provider.timeout',
+    'provider.internal', 'provider.no-route', 'provider.unsupported-operation', 'provider.unknown']
+    .map((type) => [type, 'APIError']),
 ]);
 
 /** v1 `name` -> v2 `type`, as OpenCode 2.0.20's own v1 migration maps it. */
@@ -122,6 +131,7 @@ export const toV1Error = (error, options = {}) => {
   if (v2Type.startsWith('provider.') && isRecord(error.response)) {
     Object.assign(data, providerErrorDetails(error.response.body));
   }
+  if (Number.isFinite(error.retryAfterMs) && error.retryAfterMs >= 0) data.retryAfterMs = error.retryAfterMs;
   return { name: v1ErrorNameForV2Type(v2Type, message, options), data };
 };
 
@@ -158,7 +168,9 @@ export const toV2Error = (error) => {
   } else if (name === OUTPUT_LENGTH_NAME) {
     message = OUTPUT_LENGTH_MESSAGE;
   }
-  return isHttpStatus(data.statusCode)
+  const result = isHttpStatus(data.statusCode)
     ? { type, message, status: data.statusCode }
     : { type, message };
+  if (Number.isFinite(data.retryAfterMs) && data.retryAfterMs >= 0) result.retryAfterMs = data.retryAfterMs;
+  return result;
 };

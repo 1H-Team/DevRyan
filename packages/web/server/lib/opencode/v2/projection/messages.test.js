@@ -96,7 +96,7 @@ describe('vector 01: two-step tool turn (golden v1 records)', () => {
             type: 'reasoning',
             text: 'Let me think.',
             time: { start: 1767225608000, end: 1767225615000 },
-            metadata: { reasoningField: 'reasoning_content' },
+            // Provider replay state stays host-side; only DevRyan's own marker is projected.
           },
           {
             id: `${mid(2)}:text:0`,

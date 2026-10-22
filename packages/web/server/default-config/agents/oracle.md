@@ -19,6 +19,11 @@ permission:
     "*.env.example": allow
   council_session: deny
   devryan_task: deny
+  write: deny
+  edit: deny
+  patch: deny
+  apply_patch: deny
+  ast_grep_replace: deny
   skill: allow
   supabase_*: deny
 ---

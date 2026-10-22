@@ -314,13 +314,23 @@ export const toV1ToolState = (tool, context) => {
  * @param {ToolProjectionContext} context
  * @returns {Record<string, unknown> | null}
  */
+/**
+ * Browser-facing provider state. OpenCode's `native` replay data (encrypted
+ * reasoning, provider item ids, signatures) stays host-side: the UI reads only
+ * DevRyan's own Cursor provenance marker, so nothing else is projected.
+ * @param {unknown} state
+ * @returns {Record<string, unknown> | undefined}
+ */
+export const projectProviderState = (state) => (
+  isRecord(state) && isRecord(state.devryan) ? { devryan: state.devryan } : undefined
+);
+
 export const toV1ToolPart = (tool, context) => {
   if (!isRecord(tool) || !isNonEmptyString(tool.id) || typeof tool.name !== 'string') return null;
   const state = toV1ToolState(tool, context);
   if (!state) return null;
-  const metadata = isRecord(tool.native ?? tool.providerState)
-    ? { opencodeTool: tool.name, providerState: tool.native ?? tool.providerState }
-    : { opencodeTool: tool.name };
+  const providerState = projectProviderState(tool.native ?? tool.providerState);
+  const metadata = providerState ? { opencodeTool: tool.name, providerState } : { opencodeTool: tool.name };
   return {
     id: assistantToolPartId(context.messageID, tool.id),
     sessionID: context.sessionID,

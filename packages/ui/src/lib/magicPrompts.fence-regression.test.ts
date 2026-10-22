@@ -104,6 +104,18 @@ describe("plan task tracking prompts", () => {
     expect(def.template).not.toContain("plan-gap rules")
   })
 
+  test("implementation reuses gathered context, starts independent phases together and matches the system-prompt deviation classes", () => {
+    const def = MAGIC_PROMPT_DEFINITIONS.find((entry) => entry.id === "plan.implement.instructions")
+    if (!def) throw new Error("plan.implement.instructions definition missing")
+
+    expect(def.template).not.toContain("build a deep understanding of the project")
+    expect(def.template).toContain("read further only what a step needs")
+    expect(def.template).toContain("parallel sub-agent starts in the same assistant message")
+    expect(def.template).toContain("small reversible frontend corrections")
+    expect(def.template).toContain("correcting existing user-visible behavior does not by itself make a change Class 2")
+    expect(def.template).not.toContain("Class 2 (ask first): changes to user-visible behaviour")
+  })
+
   test("Class 2 deviations route through a resumable, explained structured question", () => {
     const def = MAGIC_PROMPT_DEFINITIONS.find((entry) => entry.id === "plan.implement.instructions")
     if (!def) throw new Error("plan.implement.instructions definition missing")

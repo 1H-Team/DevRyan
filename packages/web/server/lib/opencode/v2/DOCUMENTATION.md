@@ -173,6 +173,9 @@ Natural FIFO requests keep delivery `queue`, including the default. Human queue 
 
 The host pins OpenCode 2.1.2. Message and SSE projections read the current
 `native` provider metadata and the retained `state`/`providerState` aliases,
-including original Cursor content identities. The 144-operation inventory
+including original Cursor content identities, but project only DevRyan's own
+`devryan` marker into part metadata (`projectProviderState` in
+`projection/tools.js`). Encrypted reasoning, provider item IDs and signatures
+stay host-side; OpenCode replays them natively and no browser reader needs them. The 144-operation inventory
 denies the saved-permission PATCH; archival fields do not grant a browser
 a generic native mutation path.

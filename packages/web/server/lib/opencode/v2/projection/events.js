@@ -93,7 +93,7 @@ import {
   reconcileActiveStatuses,
   toV1RetryStatus,
 } from './status.js';
-import { toV1ToolPart } from './tools.js';
+import { projectProviderState, toV1ToolPart } from './tools.js';
 
 /** Default memory caps (B.4). */
 export const EVENT_PROJECTOR_LIMITS = Object.freeze({
@@ -743,7 +743,8 @@ export function createEventProjector(options = {}) {
       text,
       time: end === undefined ? { start: assistant.created } : { start: assistant.created, end },
     };
-    if (isRecord(providerState)) part.metadata = { providerState };
+    const projected = projectProviderState(providerState);
+    if (projected) part.metadata = { providerState: projected };
     return part;
   };
 
@@ -756,7 +757,8 @@ export function createEventProjector(options = {}) {
       text,
       time: end === undefined ? { start } : { start, end },
     };
-    if (isRecord(providerState)) part.metadata = providerState;
+    const projected = projectProviderState(providerState);
+    if (projected) part.metadata = projected;
     return part;
   };
 
