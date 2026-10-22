@@ -2828,6 +2828,44 @@ describe("session-ui-store send routing", () => {
     expect(String(additionalParts?.[0]?.text)).toContain("Assistant: Cursor changed the reviews page.")
   })
 
+  test("does not re-attach Cursor context once OpenCode has already replied after it", async () => {
+    mockSyncMessages = [
+      { id: "msg_1", role: "user", providerID: "cursor-acp", modelID: "composer-2.5", time: { created: 1 } },
+      { id: "msg_1_assistant", role: "assistant", providerID: "cursor-acp", modelID: "composer-2.5", time: { created: 2 } },
+      { id: "msg_2", role: "user", providerID: "anthropic", modelID: "claude-sonnet-4-5", time: { created: 3 } },
+      { id: "msg_2_assistant", role: "assistant", providerID: "anthropic", modelID: "claude-sonnet-4-5", time: { created: 4 } },
+    ]
+    mockPartsByMessage = new Map([
+      ["msg_1", [{ id: "prt_1", messageID: "msg_1", type: "text", text: "What did Cursor do?" }]],
+      ["msg_1_assistant", [{ id: "prt_2", messageID: "msg_1_assistant", type: "text", text: "Cursor changed the reviews page." }]],
+      ["msg_2", [{ id: "prt_3", messageID: "msg_2", type: "text", text: "Continue with OpenCode" }]],
+      ["msg_2_assistant", [{ id: "prt_4", messageID: "msg_2_assistant", type: "text", text: "OpenCode continued." }]],
+    ])
+
+    await useSessionUIStore.getState().sendMessageToSession("session-a", "And the tests?", "anthropic", "claude-sonnet-4-5", "builder")
+
+    const additionalParts = sendMessageCalls[0]?.additionalParts as Array<Record<string, unknown>> | undefined
+    expect((additionalParts ?? []).some((part) => String(part.text).includes("Conversation context from"))).toBe(false)
+  })
+
+  test("keeps the Cursor handoff when the first OpenCode send has no reply yet", async () => {
+    mockSyncMessages = [
+      { id: "msg_1", role: "user", providerID: "cursor-acp", modelID: "composer-2.5", time: { created: 1 } },
+      { id: "msg_1_assistant", role: "assistant", providerID: "cursor-acp", modelID: "composer-2.5", time: { created: 2 } },
+      { id: "msg_2", role: "user", providerID: "anthropic", modelID: "claude-sonnet-4-5", time: { created: 3 } },
+    ]
+    mockPartsByMessage = new Map([
+      ["msg_1", [{ id: "prt_1", messageID: "msg_1", type: "text", text: "What did Cursor do?" }]],
+      ["msg_1_assistant", [{ id: "prt_2", messageID: "msg_1_assistant", type: "text", text: "Cursor changed the reviews page." }]],
+      ["msg_2", [{ id: "prt_3", messageID: "msg_2", type: "text", text: "Continue with OpenCode" }]],
+    ])
+
+    await useSessionUIStore.getState().sendMessageToSession("session-a", "Retry", "anthropic", "claude-sonnet-4-5", "builder")
+
+    const additionalParts = sendMessageCalls[0]?.additionalParts as Array<Record<string, unknown>> | undefined
+    expect(String(additionalParts?.[0]?.text)).toContain("Assistant: Cursor changed the reviews page.")
+  })
+
   test("adds synthetic handoff context when switching from OpenCode to Cursor SDK", async () => {
     mockSyncMessages = [{
       id: "msg_open_assistant",

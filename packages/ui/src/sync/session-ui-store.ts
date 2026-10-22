@@ -1080,6 +1080,10 @@ const buildCrossRuntimeHandoffPart = (params: {
     const backend = getProviderBackend(getMessageProviderId(message))
     if (backend !== sourceBackend) {
       if (candidates.length > 0) break
+      // The target runtime already answered after the last source turn, so the
+      // handoff happened then; re-attaching it would repeat stale context on
+      // every later send. A target user message without a reply keeps scanning.
+      if (role === "assistant" && backend === targetBackend) return undefined
       continue
     }
 
