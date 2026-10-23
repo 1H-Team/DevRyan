@@ -10,7 +10,7 @@ describe('specialist-owned bundled agent routing', () => {
     const prompt = readAgent('orchestrator');
     for (const rule of ['**Explorer-first discovery.**', 'the user named the exact files or symbols to change',
       'the whole answer is one narrow lookup', 'do not repeat its search',
-      'Close a remaining gap with one narrow follow-up Explorer or at most 3 named reads, never open-ended search.', '**Specialist-owned implementation.**',
+      'Close a remaining gap with one narrow follow-up Explorer or up to three named reads, never open-ended search.', '**Specialist-owned implementation.**',
       'You are not the default implementer.', 'every bug fix, tests, fixtures, and backend/server/state/CLI/config work go to `fixer`',
       'visual or UX changes go to `designer`', 'current external documentation goes to `librarian`',
       'whatever its size', 'every bug fix', 'A one-line bug fix is still a bug fix: send it to `fixer` instead of patching it yourself.',
