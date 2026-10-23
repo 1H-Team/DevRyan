@@ -248,10 +248,12 @@ export function createNativeObservation(options:{readonly controllerInstanceID:s
         execution:{agent:input.agent,providerID:input.model.ref.providerID,modelID:input.model.ref.id,variant:input.model.ref.variant??null},
         options:{},hookOptions:{},modelLimits:{context:input.model.limit.context,input:input.model.limit.input??null,output:input.model.limit.output}};
       const scope=kind==='primary'&&continuation?yield* continuation.beforePrepare(input,observed.requestID):undefined;
-      const originalPrepared=yield* action;
-      const decorated=scope&&continuation?continuation.decorate(scope,originalPrepared):originalPrepared;
-      const bounded=withNativeHeaderDeadline(decorated.request);
-      const prepared=bounded===decorated.request?decorated:{...decorated,request:bounded};
+      const actionPrepared=yield* action;
+      // Bound the request before the continuation captures it: the continuation
+      // tracks the exact request object it decorates.
+      const bounded=withNativeHeaderDeadline(actionPrepared.request);
+      const originalPrepared=bounded===actionPrepared.request?actionPrepared:{...actionPrepared,request:bounded};
+      const prepared=scope&&continuation?continuation.decorate(scope,originalPrepared):originalPrepared;
       const materialized:PreparedObservation={...observed,toolCount:prepared.request.tools.length};
       let finalizationInterval:FinalizationInterval|undefined;
       if(kind==='primary')registerNativeFinalizationObservation(prepared.request,movement=>Effect.gen(function*(){
