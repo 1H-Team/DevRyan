@@ -312,7 +312,9 @@ current runtime finalizes with a typed `provider.transport`/`provider.timeout`
 error or the 2.x upstream stall text. It reuses the single-attempt reservation and
 the native recovery dispatch of model fallback (`recoveryKind: 'native_transport'`,
 `recoveryExecution` equal to the record's own selection, a synthetic read-only
-`RECOVERY_CONTINUATION` part). The snapshot field `automaticRecoveryPending` tells
+`RECOVERY_CONTINUATION` part, preceded by the original synthetic plan-mode preface
+and `planMode: true` for a plan turn; `recoveryPlanMode` and
+`nativeTransportContinuation` build it). The snapshot field `automaticRecoveryPending` tells
 the UI to hold its manual card; a declined failure sets `reason:
 'failure_not_eligible'` without changing state. The `provider_recovery_capability`
 diagnostic is written once per runtime instance and when `{supported, transport}`

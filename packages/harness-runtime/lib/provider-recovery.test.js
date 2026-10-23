@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createPrimaryRecoveryController } from './provider-recovery.js';
-import { classifyPrimaryTransportError, PROVIDER_RECOVERY_SUPPORTED_OPENCODE_VERSIONS, isNativePrimaryRuntimeVersion, isNativeTransportRecoveryRuntimeVersion, RECOVERY_CONTINUATION, validatePrimaryRecoveryRecord } from './provider-recovery-policy.js';
+import { classifyPrimaryTransportError, PROVIDER_RECOVERY_SUPPORTED_OPENCODE_VERSIONS, isNativePrimaryRuntimeVersion, isNativeTransportRecoveryRuntimeVersion, RECOVERY_CONTINUATION, recoveryPlanMode, validatePrimaryRecoveryRecord } from './provider-recovery-policy.js';
 
 const cleanups = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
@@ -1590,6 +1590,28 @@ describe('host-owned native transport continuation', () => {
     await f.controller.plugin({ action: 'step', ...identity, userMessageID: 'msg_recovery', assistantMessageID: 'msg_recovered', execution });
     await expect(f.controller.plugin({ action: 'step', ...identity, userMessageID: 'msg_recovery', assistantMessageID: 'msg_other',
       execution: { ...execution, modelID: 'other' } })).rejects.toMatchObject({ code: 'recovery_execution_changed' });
+  });
+
+  test('a plan-mode turn keeps its plan preface and plan marking on the continuation', async () => {
+    const preface = 'User has requested to enter plan mode.\n[devryan-plan-turn:v1] planMode=true; follow shared planning instructions and emit <!--plan--> before the final plan.';
+    const marked = await native();
+    marked.state.messages[0].parts.unshift({ type: 'text', synthetic: true, text: preface });
+    await idle(marked);
+    expect(marked.sent).toHaveLength(1);
+    expect(marked.sent[0]).toMatchObject({ planMode: true, tools: { read: true, glob: true, grep: true, shell: false, '*': false },
+      parts: [{ type: 'text', synthetic: true, text: `${preface}\n` }, continuation] });
+    expect((await marked.controller.readRecord(identity.sessionID)).recoveryPrompt).toEqual(marked.sent[0]);
+    // Projected metadata alone (no preface part) still marks the continuation a plan turn.
+    const metadataOnly = await native();
+    metadataOnly.state.messages[0].info.metadata = { devryanPlanMode: true };
+    await idle(metadataOnly);
+    expect(metadataOnly.sent[0]).toMatchObject({ planMode: true, parts: [continuation] });
+    // An ordinary turn is not marked.
+    const ordinary = await native();
+    await idle(ordinary);
+    expect(ordinary.sent[0].planMode).toBeUndefined();
+    expect(recoveryPlanMode({ messages: [{ info: { id: 'msg_a', role: 'assistant', metadata: { devryanPlanMode: true } }, parts: [] }] }, ['msg_a']))
+      .toEqual({ planMode: false, preface: null });
   });
 
   test('a successful continuation completes and a second failure falls back to the manual card', async () => {

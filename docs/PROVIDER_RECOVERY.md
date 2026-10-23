@@ -208,8 +208,15 @@ delegation stops and asks for explicit continuation.
 
 A pre-output failure (no bound Step; for example every OpenCode retry failed
 before the first byte) stays manual: this host has no Step receipt to bind the
-failed assistant to. A recovered plan-mode turn continues without the plan-mode
-preface, so its answer is presented as ordinary text.
+failed assistant to.
+
+A plan-mode turn stays a plan turn. When the objective's user message carries
+the UI's synthetic plan-mode preface (`User has requested to enter plan mode`,
+with the `[devryan-plan-turn:v1]` marker) or the projected `devryanPlanMode`
+metadata, the continuation repeats that preface as a leading synthetic part and
+sets `planMode: true`. Admission then records `metadata.devryan.planMode`, the
+native admission owner treats the turn as read-only planning, and the plan card
+and plan-ready publication still recognize the answer.
 
 The snapshot's `automaticRecoveryPending` is true while the host may still send
 this continuation for the current turn. The renderer still offers its Model

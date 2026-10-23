@@ -13,7 +13,7 @@ import {
   classifyPrimaryTransportError, inspectRecoveryTurn, recoveryError,
   RECOVERY_READ_TOOLS, PROVIDER_PROGRESS_TIMEOUT_MS, validatePrimaryRecoveryRecord,validateNativeStreamReceiptRecord,
   isProviderRecoverySupportedRuntimeVersion, isNativePrimaryRuntimeVersion, isPrimaryRecoveryProvider, primaryRecoveryMode,
-  isNativeTransportRecoveryRuntimeVersion, nativeTransportRecoveryMode, RECOVERY_CONTINUATION,
+  isNativeTransportRecoveryRuntimeVersion, nativeTransportRecoveryMode, nativeTransportContinuation, recoveryPlanMode,
 } from './provider-recovery-policy.js';
 
 const TERMINAL = new Set(['completed', 'needs_attention', 'cancelled', 'superseded']);
@@ -700,10 +700,13 @@ export function createPrimaryRecoveryController(options) {
       const execution = nativeFallback ? r.nativeFallback.execution : r;
       // The native transport continuation is system-originated: a synthetic
       // part the chat does not present as a user bubble. The original request
-      // remains in the native history, so it is never resent.
+      // remains in the native history, so it is never resent. A plan-mode
+      // turn keeps its plan marking, so admission plans read-only and the
+      // plan card still publishes.
+      const continuation = nativeTransport ? nativeTransportContinuation(recoveryPlanMode(final,
+        [...new Set([currentObjectiveUser(r), r.objectiveID, r.anchorID].filter(Boolean))])) : { parts: check.recoveryParts };
       const prompt = {messageID:recoveryID,model:{providerID:execution.providerID,modelID:execution.modelID},agent:execution.agent,
-        ...(execution.variant ? {variant:execution.variant} : {}),
-        parts:nativeTransport ? [{type:'text',text:RECOVERY_CONTINUATION,synthetic:true}] : check.recoveryParts,
+        ...(execution.variant ? {variant:execution.variant} : {}),...continuation,
         tools:{...r.tools,...Object.fromEntries(toolPolicy.toolIDs.map(tool=>[tool,false])),'*':false,
           ...Object.fromEntries(toolPolicy.allowedReadTools.map(tool=>[tool,r.tools['*']!==false&&r.tools[tool]!==false]))}};
       r = { ...r, revision: r.revision + 1, state: 'recovery_reserved', attemptCount: 1,

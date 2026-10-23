@@ -235,6 +235,30 @@ export function validatePrimaryRecoveryRecord(value) {
   return value;
 }
 
+// The UI's plan-mode preface (`buildPlanModeSyntheticInstruction`) and the
+// projected `devryanPlanMode` metadata both mark a plan turn.
+const PLAN_MODE_PREFACE = 'User has requested to enter plan mode';
+const PLAN_MODE_PREFACE_MAX_BYTES = 8 * 1024;
+/** Plan marking of the first plan-mode user among `userIDs` in the canonical transcript. */
+export function recoveryPlanMode(observation, userIDs) {
+  for (const id of userIDs) {
+    const message = observation?.messages?.find(item => item.info?.id === id && item.info.role === 'user');
+    if (!message) continue;
+    const preface = (message.parts ?? []).find(part => part?.type === 'text' && part.synthetic === true
+      && typeof part.text === 'string' && part.text.trimStart().startsWith(PLAN_MODE_PREFACE));
+    if (!preface && message.info.metadata?.devryanPlanMode !== true) continue;
+    const text = preface && Buffer.byteLength(preface.text) <= PLAN_MODE_PREFACE_MAX_BYTES ? preface.text : null;
+    return { planMode: true, preface: text === null ? null : text.endsWith('\n') ? text : `${text}\n` };
+  }
+  return { planMode: false, preface: null };
+}
+/** Body fields of the native transport continuation: synthetic parts, plus plan marking for a plan turn. */
+export const nativeTransportContinuation = (plan) => ({
+  parts: [...(plan.preface ? [{ type: 'text', text: plan.preface, synthetic: true }] : []),
+    { type: 'text', text: RECOVERY_CONTINUATION, synthetic: true }],
+  ...(plan.planMode ? { planMode: true } : {}),
+});
+
 // All records from the anchor to the current tail are required, not a UI page.
 export function inspectRecoveryTurn(record, observation, { allowSettledToolFailures = false } = {}) {
   if (!observation || observation.session?.id !== record.sessionID || observation.session.parentID
