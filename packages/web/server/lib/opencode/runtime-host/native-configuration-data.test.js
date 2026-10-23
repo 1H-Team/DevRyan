@@ -129,3 +129,12 @@ it('releases idle locations after the reviewed native idle timeout, decoded by t
  const timeout=info.experimental?.location_idle_timeout;
  expect(timeout===false||timeout===undefined?null:Duration.toMillis(timeout)).toBe(15*60*1000);
 });
+
+it('carries packaged specialist step caps into native agent info, decoded by the native schema',()=>{
+ const directory=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../../../default-config/agents');
+ const names=['explorer','librarian','fixer','designer'];
+ const agents=Object.fromEntries(names.map(name=>[name,parseMdFile(path.join(directory,`${name}.md`)).frontmatter]));
+ const configuration=translateNativeConfiguration({legacy:{},agents});
+ const info=Schema.decodeUnknownSync(NativeConfigSchema.Info)(configuration,{onExcessProperty:'error'});
+ expect(Object.fromEntries(names.map(name=>[name,info.agents?.[name]?.steps]))).toEqual({explorer:35,librarian:35,fixer:120,designer:120});
+});

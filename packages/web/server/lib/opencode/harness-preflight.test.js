@@ -32,6 +32,46 @@ describe('harness preflight', () => {
     expect(findings).toEqual([]);
   });
 
+  it('ships packaged step caps as positive integers on the bounded specialists', () => {
+    const agents = listPackagedAgents();
+    const findings = lintAgentHarness({ agents, skills: [], hiddenSkills: [], staleOverrides: [], toolManifest: {} })
+      .filter((finding) => finding.ruleId === 'invalid-agent-steps');
+    expect(findings).toEqual([]);
+    const steps = Object.fromEntries(agents.map((agent) => [agent.name, agent.frontmatter.steps]));
+    expect(steps).toMatchObject({ explorer: 35, librarian: 35, fixer: 120, designer: 120 });
+  });
+
+  it('reports step caps that are not positive integers and accepts valid or absent caps', () => {
+    const agent = (name, frontmatter) => ({ name, path: `/agents/${name}.md`, frontmatter });
+    const findings = lintAgentHarness({
+      agents: [
+        agent('valid', { steps: 35 }),
+        agent('absent', {}),
+        agent('unset', { steps: undefined }),
+        agent('zero', { steps: 0 }),
+        agent('negative', { steps: -3 }),
+        agent('fraction', { steps: 2.5 }),
+        agent('text', { steps: '35' }),
+        agent('empty', { steps: null }),
+        agent('legacy', { maxSteps: Number.POSITIVE_INFINITY }),
+      ],
+      skills: [],
+      hiddenSkills: [],
+      staleOverrides: [],
+      toolManifest: {},
+    }).filter((finding) => finding.ruleId === 'invalid-agent-steps');
+
+    expect(findings.map((finding) => finding.artifact.name)).toEqual(['zero', 'negative', 'fraction', 'text', 'empty', 'legacy']);
+    expect(findings[0]).toEqual(expect.objectContaining({
+      severity: 'error',
+      summary: 'Agent "zero" sets "steps" to a number value that is not a positive integer',
+      artifact: { type: 'agent', name: 'zero', path: '/agents/zero.md' },
+    }));
+    expect(findings[3].summary).toBe('Agent "text" sets "steps" to a string value that is not a positive integer');
+    expect(findings[4].summary).toBe('Agent "empty" sets "steps" to a null value that is not a positive integer');
+    expect(findings[5].summary).toContain('"maxSteps"');
+  });
+
   it('warns that external runtimes cannot guarantee skill-policy enforcement', () => {
     const findings = lintAgentHarness({
       agents: [],

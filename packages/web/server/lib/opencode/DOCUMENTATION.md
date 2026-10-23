@@ -429,7 +429,7 @@ discard them when the call ends: measured on 2026-09-30 at 10 to 20 seconds and
 - `withHarnessResult(payload, envelope)`: adds `harness` metadata and only fills top-level envelope fields that do not already exist on the payload.
 
 ## Public exports (harness-preflight.js)
-- `lintAgentHarness(options?)`: read-only linting for unavailable delegated agents, invalid permission keys, hidden skills still allowed by agents, stale model overrides, duplicate skill names by path, malformed skill frontmatter, skill names that do not use the canonical lowercase directory slug, and latest warmup failures.
+- `lintAgentHarness(options?)`: read-only linting for unavailable delegated agents, invalid permission keys, hidden skills still allowed by agents, stale model overrides, duplicate skill names by path, malformed skill frontmatter, skill names that do not use the canonical lowercase directory slug, agent `steps`/`maxSteps` caps that are not positive integers (`invalid-agent-steps`), and latest warmup failures.
 - Skill-capable agent linting also verifies the platform skill-announcement policy is present and flags prompt conflicts when an allowed skill explicitly requires visible announcements.
 - Permission-key linting accepts DevRyan's canonical tool aliases, including the edit/write/patch/apply_patch group, `webfetch`, and documented MCP-style wildcard denies such as `supabase_*`.
 - `auditPackagedPromptContext(options?)`: report-only prompt context budget audit for packaged agents. It measures byte count, repeated routing rules, duplicated tool-safety text, and extraction candidates without mutating prompt content.

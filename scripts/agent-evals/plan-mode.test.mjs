@@ -11,6 +11,8 @@ test('loads the composer Plan-mode preface with its prefix and plan-card sentine
   assert.ok(Buffer.byteLength(text) < 256, 'Turn metadata must not duplicate static planning guidance');
   assert.match(PLAN_MODE_SYSTEM_INSTRUCTIONS, /## Verification/);
   assert.match(PLAN_MODE_SYSTEM_INSTRUCTIONS, /do not edit files/);
+  // Read-only shell is admitted in Plan mode (native-admission-owner blockedPlanWriter).
+  assert.match(PLAN_MODE_SYSTEM_INSTRUCTIONS, /Read-only shell commands remain available for inspection/);
   // Captured host Plan authority survives compaction; this text grants none.
 });
 
