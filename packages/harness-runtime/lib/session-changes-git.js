@@ -244,7 +244,3 @@ export function readGitObject(cwd, args, name, { check = false, idleMs = READER_
   });
 }
 export const persistentGitReaders = () => process.platform !== 'win32' && process.env.DEVRYAN_LEDGER_PERSISTENT_READER !== '0';
-// Stops this process's readers for one Git directory (tests and teardown).
-export function closeGitReaders(gitDir) {
-  for (const reader of [...readers.values()]) if (reader.child.spawnargs.includes(gitDir)) reader.close(changeError('capture_git_failed', 503));
-}
