@@ -1,6 +1,6 @@
 {
   "name": "@devryan/electron",
-  "version": "2.1.9",
+  "version": "2.1.10",
   "private": true,
   "description": "Electron desktop runtime for DevRyan",
   "author": "DevRyan",

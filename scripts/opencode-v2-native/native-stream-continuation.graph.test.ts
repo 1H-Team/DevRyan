@@ -37,7 +37,7 @@ const FIXTURE=JSON.parse(process.env.DEVRYAN_STREAM_FIXTURE);
 `+source;
   replace('let initialPairReleased=false;','let initialPairReleased=true;');
   replace('let nativeURL, ready = false, handler, map,',`let primaryRuntime,realPrimaryStep,streamOwner,nativeStore,nativeExecution,slimOwner,slimContext;const published=[],streamTransitions=[],bodyTimings=[],transportFailures=[],nativeRetryProposals=[],outputFlags=[];const streamRefusals=[];let primaryRequests=0;let nativeURL, ready = false, handler, map,`);
-  replace('const options = { database:',"const options = { app:{name:'DevRyan native stream graph',version:'2.1.2',channel:'fixture'},database:");
+  replace('const options = { database:',"const options = { app:{name:'DevRyan native stream graph',version:'2.1.3',channel:'fixture'},database:");
   replace('let result, primaryFailure;','let result, primaryFailure, client;');
   replace('  const client = createOpenCodeClient(', '  client = createOpenCodeClient(');
   replace('const configuration = { model:',`const configuration = { commands:{interview:{description:'Owned stream fixture',template:'Original owned objective $ARGUMENTS'}}, model:`);
@@ -195,7 +195,7 @@ const sharedExecutable=()=>executablePromise??=(async()=>{
  if(!compiledBuild.success)throw new AggregateError(compiledBuild.logs,'Compiled native fixture failed');await fs.chmod(executable,0o755);return executable;
 })();
 afterAll(async()=>{if(buildRootPromise)await buildRootPromise.catch(()=>undefined);if(buildRoot)await fs.rm(buildRoot,{recursive:true,force:true});});
-for(const {scenario,slim,compiled,setter} of cases.filter((_, index) => testCaseShard(index, process.env.DEVRYAN_STREAM_TEST_SHARD)))test('pinned 2.1.2 native stream graph '+scenario+' Slim='+slim+' compiled='+compiled,async()=>{
+for(const {scenario,slim,compiled,setter} of cases.filter((_, index) => testCaseShard(index, process.env.DEVRYAN_STREAM_TEST_SHARD)))test('pinned 2.1.3 native stream graph '+scenario+' Slim='+slim+' compiled='+compiled,async()=>{
  const root=await fs.mkdtemp(path.join(repository,'.cache/v2-validation/native-stream-'));let child:ReturnType<typeof Bun.spawn>|undefined;
  try{
   const fixture:FixtureConfig={scenario,slim,...(setter?{setter}:{})};

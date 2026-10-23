@@ -10,7 +10,7 @@ for(const compiled of [false,true])test(`actual native post-model mandatory IO s
  const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-finalization-')));
  let child:ReturnType<typeof Bun.spawn>|undefined,timer:ReturnType<typeof setTimeout>|undefined,failure:unknown;
  try{
-  const observation:Bun.BunPlugin={name:'pinned-native-finalization',setup(builder){builder.onLoad({filter:/repository-cache-60xtzwnm\.js$/},async event=>({
+  const observation:Bun.BunPlugin={name:'pinned-native-finalization',setup(builder){builder.onLoad({filter:/instruction-discovery-bcyzxrby\.js$/},async event=>({
    contents:rewriteNativeFinalizationObservation(await fs.readFile(event.path,'utf8'),path.join(repository,'packages/web/server/lib/opencode/runtime-host/native-finalization-observation.ts')).contents,loader:'js'}));}};
   const executable=path.join(root,compiled?'witness-native':'witness.mjs');
   const built=await Bun.build({entrypoints:[path.join(repository,'scripts/opencode-v2-native/native-finalization.fixture.mjs')],target:'bun',

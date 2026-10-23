@@ -9,7 +9,7 @@ import { LayerNode } from '@opencode/util/effect/layer-node';
 import { ChildProcess } from 'effect/process';
 import { createControllerHelper } from '../../packages/web/server/lib/opencode/runtime-host/controller-processes.ts';
 import { createExecutionRouting } from '../../packages/web/server/lib/opencode/runtime-host/execution-routing.ts';
-import { WorkerInput, ExecutionBatch } from '../../packages/web/server/lib/opencode/runtime-host/worker-protocol.ts';
+import { WorkerInput, WorkerEvent, ExecutionBatch } from '../../packages/web/server/lib/opencode/runtime-host/worker-protocol.ts';
 import { rebaseWriterInput } from '../../packages/web/server/lib/opencode/runtime-host/writer-worker.ts';
 import type { NativeAdmissionBridge, OwnedToolInvocation } from '../../packages/web/server/lib/opencode/runtime-host/native-admission-contract.ts';
 import { nativeVcsGitFlags } from '../../packages/web/server/lib/opencode/execution-helper-policy.js';
@@ -379,4 +379,16 @@ test('the actual native ripgrep consumer accepts a bounded match without end or 
     expect(result.output).toMatchObject([{ line: 1, text: 'needle\n' }]);
     expect(result.content).toContain('Search results truncated'); expect(result.metadata?.truncated).toBe(true);
   } finally { await routing.close(); await fs.rm(project, { recursive: true, force: true }); }
+});
+
+
+test('worker permission assertions validate the native request fields and optional identities', () => {
+  const input = { sessionID: 'ses_permission', action: 'read', resources: ['/fixture/file'],
+    save: ['/fixture/*'], metadata: { reason: 'fixture' }, source: { type: 'tool', messageID: 'msg_fixture', id: 'call_fixture' },
+    id: 'per_fixture', agent: 'build' };
+  const decode = Schema.decodeUnknownSync(WorkerEvent);
+  expect(JSON.stringify(decode({ type: 'permission', id: 'request', input }))).toBe(JSON.stringify({ type: 'permission', id: 'request', input }));
+  for (const change of [{ sessionID: 1 }, { action: 1 }, { resources: [1] }, { save: [1] }, { source: { type: 'unknown' } }, { id: 1 }, { agent: 1 }]) {
+    expect(() => decode({ type: 'permission', id: 'request', input: { ...input, ...change } })).toThrow();
+  }
 });

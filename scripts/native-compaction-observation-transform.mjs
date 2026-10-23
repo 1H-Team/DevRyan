@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto';
 import path from 'node:path';
-export const NATIVE_COMPACTION_SOURCE_SHA256='186e07c136f5d0060e4f46af210d65cc36f15723e9da19645893970e18d10acf';
-export const NATIVE_COMPACTION_SOURCE_SUFFIX='@opencode/core/dist/chunks/repository-cache-vsa820f9.js';
+export const NATIVE_COMPACTION_SOURCE_SHA256='2f555a3967cf31c7488744d5df4d14e6937a3fe6d8701cc990a6162abf86b9a9';
+export const NATIVE_COMPACTION_SOURCE_SUFFIX='@opencode/core/dist/chunks/instruction-discovery-mbvnayvm.js';
 const hash=value=>createHash('sha256').update(value).digest('hex');
 const anchor='    const budget = trigger.reason === "overflow" ? Math.min(cap, Math.floor(estimateContext2(context) * SHRINK_STEPS[0])) : cap;\n';
 const inserted=`    try { observeNativeCompactionBudget(trigger, {

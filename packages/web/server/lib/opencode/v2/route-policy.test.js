@@ -72,7 +72,9 @@ const C3_RULES = [
   [DENY, /^GET \/api\/experimental\/session\/\{sessionID\}\/export$/],
   [DENY, /^POST \/api\/session\/\{sessionID\}\/generate$/],
   [DENY, /^POST \/api\/experimental\/generate$/],
+  [DENY, /^GET \/api\/experimental\/voice\/models$/],
   [DENY, /^POST \/api\/experimental\/voice\/session$/],
+  [DENY, /^POST \/api\/experimental\/voice\/session\/\{sessionID\}\/instructions$/],
   // deny: pairing and search
   [DENY, /^POST \/api\/pair$/],
   [DENY, /^GET \/auth\/connect\/\{code\}$/],
@@ -122,13 +124,13 @@ const BODY_FOR = {
 };
 
 describe('route table coverage', () => {
-  it('knows the 144 OpenAPI operations of 2.1.2 plus GET /openapi.json', () => {
-    expect(OPENCODE_V2_ROUTES_VERSION).toBe('2.1.2');
-    expect(OPENCODE_V2_ROUTES).toHaveLength(144);
+  it('knows the 146 OpenAPI operations of 2.1.3 plus GET /openapi.json', () => {
+    expect(OPENCODE_V2_ROUTES_VERSION).toBe('2.1.3');
+    expect(OPENCODE_V2_ROUTES).toHaveLength(146);
     expect(OPENCODE_V2_EXTRA_ROUTES.map(keyOf)).toEqual(['GET /openapi.json']);
     const known = listOpenCodeV2KnownRoutes().map(keyOf);
-    expect(known).toHaveLength(145);
-    expect(new Set(known).size).toBe(145);
+    expect(known).toHaveLength(147);
+    expect(new Set(known).size).toBe(147);
   });
 
   it('classifies every known route explicitly with a valid class and nothing else', () => {
@@ -475,7 +477,7 @@ describe('location binding', () => {
 
 describe('diffLiveSpec', () => {
   it('reports no drift for the vendored document, as an object or as text', () => {
-    expect(diffLiveSpec(vendoredDoc())).toMatchObject({ ok: true, version: '2.1.2', error: null, added: [], removed: [], changed: [] });
+    expect(diffLiveSpec(vendoredDoc())).toMatchObject({ ok: true, version: '2.1.3', error: null, added: [], removed: [], changed: [] });
     expect(diffLiveSpec(VENDORED_TEXT).ok).toBe(true);
   });
 

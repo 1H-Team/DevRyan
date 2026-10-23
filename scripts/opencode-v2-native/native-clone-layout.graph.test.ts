@@ -8,7 +8,7 @@ import {Database} from '@opencode/core/database/database';
 import {Global} from '@opencode/util/global';
 import {inspectNativeCloneLayout,REVIEWED_NATIVE_PROJECT_ARCHIVE_FRESH_CLONE_LAYOUT} from '../../packages/web/server/lib/opencode/runtime-host/native-bundle-compatibility.js';
 
-test('2.1.2 initializes and reopens the retained 2.0.32 schema without changing its layout or migration journal',async()=>{
+test('2.1.3 initializes and reopens the retained 2.0.32 schema without changing its layout or migration journal',async()=>{
  const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-clone-layout-')));
  const globals={home:root,data:root,cache:root,config:root,state:root,tmp:root,bin:root,log:root,repos:root};
  const initialize=(databasePath:string)=>Effect.runPromise(Effect.scoped(Effect.gen(function*(){

@@ -18,7 +18,7 @@ the canonical selected agent on every invocation, including reviewed setup.
 
 ## Compiled package lanes
 
-`native-stream-continuation.graph.test.ts` runs the real pinned 2.1.2
+`native-stream-continuation.graph.test.ts` runs the real pinned 2.1.3
 publisher, retry loop, Synthetic bus and Step with production constructor
 owners against disposable loopback provider fixtures. Run it with
 `bun test scripts/opencode-v2-native/native-stream-continuation.graph.test.ts`.

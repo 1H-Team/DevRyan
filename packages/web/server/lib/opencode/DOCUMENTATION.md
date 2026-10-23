@@ -882,7 +882,7 @@ passes fresh verified artifacts privately to the bundle loader; this receipt
 never extends the serialized verification result. Reviewed config bytes and
 the controller's immediate pre-spawn artifacts still receive their own checks.
 
-The current package and compiled host pin is OpenCode 2.1.2.
+The current package and compiled host pin is OpenCode 2.1.3.
 Cold startup compares the selected and shipped artifact manifest digests even
 when their OpenCode versions match, so a repaired DevRyan host is activated once
 through the existing verified clone, credential checkpoint and selector CAS.
@@ -894,8 +894,8 @@ accepts a retained bundle of any OpenCode 2.x release for rollback
 (`isNativeOpenCodeVersion`), each using its matching controller; startup never runs
 one above the host pin. Cross-version credential capture or projection cannot
 substitute a controller: exact OpenCode version, core digest and existing manifest
-checks still apply. The build pins PTY 0.3.1 bytes and the 2.1.2 compaction and finalization observation sources
-(`repository-cache-vsa820f9.js`, `repository-cache-60xtzwnm.js`). A pinned
+checks still apply. The build pins PTY 0.3.1 bytes and the 2.1.3 compaction and finalization observation sources
+(`instruction-discovery-mbvnayvm.js`, `instruction-discovery-bcyzxrby.js`). A pinned
 `@opencode/schema` agent-defaults transform restores the 2.0.24
 `external_directory: * → ask` default that 2.0.26 removed.
 
@@ -921,7 +921,7 @@ binding; physical exits are recorded before fallible owner cleanup.
 Native managed catalog reads use verified tool or recovery authority rather than a browser principal. Catalog access grants no execution rights. Managed Cursor prompt grants derive immutable read-only policy from the durable task; SDK create/resume permits only `read`, `grep`, `glob`, and `ls`, excludes task/MCP delegation, and includes policy in agent cache identity. Worker payloads carry this host-owned boolean, never a prompt-body override. Model discovery preserves SDK `reasoning_effort` choices; saved Medium resolves only to an actual Medium variant and never falls back to High or generic thinking.
 
 OpenCode 2.0.30 and 2.0.32 use Effect 4.0.1 and its stable HTTP/process/socket exports.
-The host pins 2.1.2; the Bot image still pins 2.0.30 (`BOT_TARGET_OPENCODE_VERSION`)
+The host pins 2.1.3; the Bot image still pins 2.0.30 (`BOT_TARGET_OPENCODE_VERSION`)
 until its image is rebuilt and requalified. Native plugin registration order
 matches the installed core inventory. HTTP schema errors remain sanitized
 startup evidence even when Effect marks them ignored for general reporting.
@@ -944,10 +944,10 @@ stored OpenAI/xAI keys into a realtime session; the route policy denies it.
 
 OpenCode 2.1.0 introduced logical clone level 3: native compaction/message
 formats cannot clone into older readers, while rollback keeps the original
-retained database. 2.1.2 adds no migration and stays at level 3, so 2.1.0 and
-2.1.2 clone in both directions. Native compaction windows use `native.messages`
+retained database. 2.1.2 and 2.1.3 add no migration and stay at level 3, so 2.1.0,
+2.1.2 and 2.1.3 clone in both directions. Native compaction windows use `native.messages`
 and provider/model references through `SessionHistory`; helper webfetch history
 uses the resolved model reference. The reviewed compaction observer follows
 `isNativeCompaction` and the finalization observer retains the original native
-Step writes. The generated 2.1.2 OpenAPI inventory has 144 operations; the saved-permission PATCH remains explicitly denied.
+Step writes. The generated 2.1.3 OpenAPI inventory has 146 operations; the saved-permission PATCH remains explicitly denied.
 The Bot image remains pinned to 2.0.30.

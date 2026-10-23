@@ -30,7 +30,7 @@ test('Windows-style Git checkout preserves byte-pinned reviewed resources',async
 });
 test('asset rewrites require exact pinned sources and embed only reviewed native paths',async()=>{
  const require=createRequire(path.join(core,'package.json'));
- const pty=await fs.readFile(path.join(core,'dist/chunks/repository-cache-dajrwvna.js'));
+ const pty=await fs.readFile(path.join(core,'dist/chunks/instruction-discovery-dajrwvna.js'));
  assert.equal(hash(pty),NATIVE_ASSET_SOURCE_SHA.pty);
  const assetPath=path.join(path.dirname(require.resolve('@opencode-ai/pty-darwin-arm64/package.json')),'bin/opencode-pty');
  const assetSha256=hash(await fs.readFile(assetPath));

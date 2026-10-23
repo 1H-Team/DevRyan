@@ -1,6 +1,6 @@
 {
   "name": "@devryan/bots-runtime",
-  "version": "2.1.9",
+  "version": "2.1.10",
   "private": true,
   "type": "module",
   "main": "./index.js",

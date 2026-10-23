@@ -15,6 +15,7 @@ export const REVIEWED_NATIVE_CLONE_RELEASES = Object.freeze({
   '2.0.32': '2d0c5bc5ae8f26bb22377f01d6a45584020307731dbb19ea2123af43a9e89c9b',
   '2.1.0': 'd007cf3b957d5efdd8e9930f7e289d99cf48167bae756df25dea7927640519d6',
   '2.1.2': 'f80e411fc11b1f0fc1a702b62c0ddcd559503abea13627afb4e80d286e4fb47c',
+  '2.1.3': '65c5ed2e7a3d9b23738d7256989b0989b78454a392dcea75c51130de4fd3be22',
 });
 // The later 2.0.26 build adds observation transforms without changing database layout.
 export const REVIEWED_NATIVE_CLONE_REBUILDS = Object.freeze({
@@ -35,11 +36,11 @@ export function assertReviewedNativeCoreDigest(manifest, target = TARGET_OPENCOD
 // 2.0.26 adds the data-only migration 20261007190000_azure_cli_external_credential,
 // whose `external` credential values older releases cannot decode. The DDL layout
 // is unchanged, so a clone never moves a database to a lower migration level.
-export const REVIEWED_NATIVE_CLONE_MIGRATION_LEVEL = Object.freeze({ '2.0.20': 0, '2.0.24': 0, '2.0.26': 1, '2.0.30': 2, '2.0.32': 2, '2.1.0': 3, '2.1.2': 3 });
+export const REVIEWED_NATIVE_CLONE_MIGRATION_LEVEL = Object.freeze({ '2.0.20': 0, '2.0.24': 0, '2.0.26': 1, '2.0.30': 2, '2.0.32': 2, '2.1.0': 3, '2.1.2': 3, '2.1.3': 3 });
 // 2.0.30 adds project.time_archived; its migrated database cannot clone backwards.
 // 2.1.0 writes native compaction windows and drops required legacy message fields.
 // Its logical level 3 prevents clones into older readers despite identical DDL.
-// 2.1.2 adds no migration and stays at level 3.
+// 2.1.2 and 2.1.3 add no migration and stay at level 3.
 // A layout is the database's structure (`inspectNativeCloneLayout`), not its DDL
 // text: a database created by an earlier release and migrated in place stores
 // `ALTER TABLE … ADD` text with the column last, a fresh one has it inside

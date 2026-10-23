@@ -31,7 +31,7 @@ import {SessionMessage} from '@opencode/core/session/message';
 `+source;
   replace('let initialPairReleased=false;','let initialPairReleased=true;');
   replace('let nativeURL, ready = false, handler, map,',`let primaryRuntime,realPrimaryStep,managedRuntime,managedOwner,nativeStore,nativeExecution,taskID,primaryRequests=0,continuationRequested=false,finalResponseSent=false;const published=[],managedCalls=[];let nativeURL, ready = false, handler, map,`);
-  replace('const options = { database:',"const options = {app:{name:'DevRyan result publication fixture',version:'2.1.2',channel:'fixture'},database:");
+  replace('const options = { database:',"const options = {app:{name:'DevRyan result publication fixture',version:'2.1.3',channel:'fixture'},database:");
   replace('const configuration = { model:',`const configuration = {commands:{interview:{description:'Owned result fixture',template:'Review owned results $ARGUMENTS'}},model:`);
   replace('  withSessionLock: lock,',`  getReviewedConfiguration:directory=>snapshot.locations.find(row=>row.directory===directory)?.configuration,
   verifyQueuedPrimaryIdle:input=>gates.controls.queuedPrimaryIdleOwned(input),captureQueuedPrimaryAdmission:sessionID=>primaryRuntime.captureNativePromptAdmission(sessionID),readQueuedPrimaryRecord:sessionID=>primaryRuntime.readRecord(sessionID),

@@ -39,13 +39,20 @@ export const WorkerInput = Schema.Union([
 ]);
 export type WorkerInput = typeof WorkerInput.Type;
 const Metadata = Schema.Record(Schema.String, Schema.Unknown);
+// OpenCode 2.1.3 exposes AssertInput as a type; derive its wire schema from Request.
+const PermissionAssertInput = Schema.Struct({
+  sessionID: Permission.Request.fields.sessionID, action: Permission.Request.fields.action,
+  resources: Permission.Request.fields.resources, save: Permission.Request.fields.save,
+  metadata: Permission.Request.fields.metadata, source: Permission.Request.fields.source,
+  id: Schema.optional(Permission.ID), agent: Schema.optional(Agent.ID),
+});
 export const NativeResult = Schema.Struct({ output: Schema.optional(Schema.Unknown),
   content: Schema.optional(Schema.Union([Schema.String, Schema.Array(Tool.Content)])), metadata: Schema.optional(Metadata) });
 export const WorkerError = Schema.Struct({ message: Schema.String, metadata: Schema.optional(Metadata), error: Schema.optional(Schema.Unknown) });
 export const WorkerEvent = Schema.Union([
   BrowserOperation,
   Schema.Struct({type:Schema.Literal('image-generation'),id:Schema.String}),
-  Schema.Struct({ type: Schema.Literal('permission'), id: Schema.String, input: Permission.AssertInput }),
+  Schema.Struct({ type: Schema.Literal('permission'), id: Schema.String, input: PermissionAssertInput }),
   Schema.Struct({ type: Schema.Literal('progress'), update: Metadata }),
   Schema.Struct({ type: Schema.Literal('result'), ok: Schema.Literal(true), result: NativeResult }),
   Schema.Struct({ type: Schema.Literal('result'), ok: Schema.Literal(false), error: WorkerError }),
@@ -60,7 +67,7 @@ export const SearchTruncation = Schema.Struct({ limitBytes: Schema.Int, limitRec
 export const ExecutionEvent = Schema.Union([
   Schema.Struct({ cursor: Schema.Int, type: Schema.Literal('started'), pid: Schema.Int }),
   Schema.Struct({ cursor: Schema.Int, type: Schema.Literal('output'), stream: Schema.Literals(['stdout', 'stderr']), data: Schema.String }),
-  Schema.Struct({ cursor: Schema.Int, type: Schema.Literal('permission'), id: Schema.String, input: Permission.AssertInput }),
+  Schema.Struct({ cursor: Schema.Int, type: Schema.Literal('permission'), id: Schema.String, input: PermissionAssertInput }),
   Schema.Struct({ cursor: Schema.Int, type: Schema.Literal('progress'), update: Metadata }),
   Schema.Struct({ cursor: Schema.Int, type: Schema.Literal('settled'), ok: Schema.Boolean,
     receipt: Schema.optional(TerminationReceipt), result: Schema.optional(NativeResult), error: Schema.optional(WorkerError),

@@ -145,9 +145,9 @@ const gates = createAdmissionGates(`);
     source=source.replace(/from ("file:[^"]+")/g,(_all,specifier:string)=>'from '+JSON.stringify(fileURLToPath(JSON.parse(specifier))));
     const entry = path.join(root, 'fixture.mjs'); await fs.writeFile(entry, source);
     const assetPlugin=await createNativeAssetFixturePlugin(repository);
-    const compactionPlugin: Bun.BunPlugin={name:'pinned-read-only-compaction-observation',setup(builder){builder.onLoad({filter:/repository-cache-vsa820f9\.js$/},async event=>({
+    const compactionPlugin: Bun.BunPlugin={name:'pinned-read-only-compaction-observation',setup(builder){builder.onLoad({filter:/instruction-discovery-mbvnayvm\.js$/},async event=>({
       contents:rewriteNativeCompactionObservation(await fs.readFile(event.path,'utf8'),path.join(repository,'packages/web/server/lib/opencode/runtime-host/native-compaction-observation.ts')).contents,loader:'js'}));}};
-    const finalizationPlugin:Bun.BunPlugin={name:'pinned-native-finalization-observation',setup(builder){builder.onLoad({filter:/repository-cache-60xtzwnm\.js$/},async event=>({contents:rewriteNativeFinalizationObservation(await fs.readFile(event.path,'utf8'),path.join(repository,'packages/web/server/lib/opencode/runtime-host/native-finalization-observation.ts')).contents,loader:'js'}));}};
+    const finalizationPlugin:Bun.BunPlugin={name:'pinned-native-finalization-observation',setup(builder){builder.onLoad({filter:/instruction-discovery-bcyzxrby\.js$/},async event=>({contents:rewriteNativeFinalizationObservation(await fs.readFile(event.path,'utf8'),path.join(repository,'packages/web/server/lib/opencode/runtime-host/native-finalization-observation.ts')).contents,loader:'js'}));}};
     const enqueueTracePlugin:Bun.BunPlugin={name:'fixture-only-finalization-enqueue-trace',setup(builder){builder.onLoad({filter:/runtime-host\/native-observation\.ts$/},async event=>{
       const original=await fs.readFile(event.path,'utf8');const seam='const queueFinalization=(permit:unknown,observation:Readonly<Record<string,unknown>>,interval:FinalizationInterval)=>{';
       if(original.split(seam).length!==2)throw Error('Native finalization enqueue fixture seam changed');

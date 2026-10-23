@@ -9,6 +9,7 @@ import {Location} from '@opencode/core/location';
 import {OpencodePlugin} from '@opencode/core/plugin/provider/opencode';
 import {Bus} from '@opencode/core/bus';
 import {ManagedPolicy} from '@opencode/core/managed-policy';
+import {Voice} from '@opencode/core/voice';
 import {FetchHttpClient} from 'effect/http';
 import {XAIPlugin} from '@opencode/core/plugin/provider/xai';
 import {Global} from '@opencode/util/global';
@@ -52,7 +53,7 @@ async function fixture(action,{fetchResponse,reauthorize,beforeRead,beforeResolu
     captureLocation:()=>{const captured=generation;return {acquisitionID:'fixture-acquisition-'+captured,configurationDigest:'d'.repeat(64),assertCurrent:()=>{if(!current||generation!==captured)throw Error('fixture_acquisition_expired');}};},
     assertAttempt:()=>assert,assertResolution:()=>assert,captureOAuthGrant:()=>Effect.succeed({authorizationID:'fixture-caller',reauthorize:assert}),
     ownsDelegatedIntegration:()=>false});
-  const layer=LayerNode.compile(LayerNode.group([Credential.node,Integration.node,PluginHooks.node,Bus.configured({persist:false}),ManagedPolicy.node]),{replacements:[
+  const layer=LayerNode.compile(LayerNode.group([Credential.node,Integration.node,PluginHooks.node,Bus.configured({persist:false}),ManagedPolicy.node,Voice.node]),{replacements:[
     Global.node.replace(Global.layerWith({home:root,data:root,state:root,config:root,tmp:root,cache:root,bin:root,log:root,repos:root})),
     Credential.node.replace(Credential.node.mapLayer(original=>Layer.effect(Credential.Service,Effect.gen(function*(){
       raw=yield* Credential.Service;const store=raw;return adapter.decorateCredential({...store,get:id=>Effect.gen(function*(){const result=yield* store.get(id);reads++;yield* Effect.promise(async()=>{await beforeRead?.(reads);});return result;})});
@@ -399,7 +400,7 @@ test('usage renewal traverses the original caller grant, reverse mutation queue 
   try{
     await Effect.runPromise(Effect.scoped(Effect.gen(function*(){
       const credentials=yield* Credential.Service,integration=yield* Integration.Service;
-      yield* provideRegistrationOrigin(origin,XAIPlugin.effect({app:{name:'DevRyan',version:'2.1.2',channel:'test'},integration:{transform:integration.transform},provider:{transform:()=>Effect.void}}));
+      yield* provideRegistrationOrigin(origin,XAIPlugin.effect({app:{name:'DevRyan',version:'2.1.3',channel:'test'},integration:{transform:integration.transform},provider:{transform:()=>Effect.void}}));
       const scope={kind:'provider',directory,integrationID:'xai',configurationDigest:fingerprint({}),operation:'provider.integration',method:'GET',path:'/api/integration/xai'};
       const selected=yield* Effect.promise(()=>node.readProviderSelected(scope));
       if(!selected||typeof selected.expectedFingerprint!=='string')throw Error('Selected native receipt missing');

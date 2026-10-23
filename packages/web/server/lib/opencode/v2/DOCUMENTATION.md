@@ -171,11 +171,12 @@ generation-2 execution can become active.
 
 Natural FIFO requests keep delivery `queue`, including the default. Human queue admission checks the original native subtree before selection, stages the existing primary callback until native enqueue commit, and preserves exact accepted identity on failure/retry. The final Bus transaction repeats the activity/selection proof. An authenticated rollback receipt reports known nonacceptance; a retained item without its current primary owner reports `native_queued_input_retained`. Explicit manual steering uses `steer`; request metadata cannot opt out of the reserved human queue contract.
 
-The host pins OpenCode 2.1.2. Message and SSE projections read the current
+The host pins OpenCode 2.1.3. Message and SSE projections read the current
 `native` provider metadata and the retained `state`/`providerState` aliases,
 including original Cursor content identities, but project only DevRyan's own
 `devryan` marker into part metadata (`projectProviderState` in
 `projection/tools.js`). Encrypted reasoning, provider item IDs and signatures
-stay host-side; OpenCode replays them natively and no browser reader needs them. The 144-operation inventory
-denies the saved-permission PATCH; archival fields do not grant a browser
-a generic native mutation path.
+stay host-side; OpenCode replays them natively and no browser reader needs them. The 146-operation inventory
+denies the saved-permission PATCH and experimental voice routes, including
+2.1.3 model discovery and session instruction updates; archival fields do not
+grant a browser a generic native mutation path.

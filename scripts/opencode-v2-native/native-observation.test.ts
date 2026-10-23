@@ -81,7 +81,7 @@ test('outer provider hooks record known local refusals before wrapping and prese
  }
 });
 test('only the exact native source gets one observation insertion; removal reproduces original bytes',async()=>{
- const original=await fs.readFile(path.resolve(import.meta.dirname,'../../node_modules/@opencode/core/dist/chunks/repository-cache-vsa820f9.js'),'utf8');
+ const original=await fs.readFile(path.resolve(import.meta.dirname,'../../node_modules/@opencode/core/dist/chunks/instruction-discovery-mbvnayvm.js'),'utf8');
  const helper=path.resolve(import.meta.dirname,'../../packages/web/server/lib/opencode/runtime-host/native-compaction-observation.ts');const result=rewriteNativeCompactionObservation(original,helper);
  expect(result.originalSha256).toBe(NATIVE_COMPACTION_SOURCE_SHA256);
  expect(result.transformedSha256).toBe(createHash('sha256').update(result.contents).digest('hex'));
@@ -156,7 +156,7 @@ test('optional helper tool and captured selection diagnostics are finite, backwa
  });
 
 
-test('compaction evidence accepts bounded 2.1.2 native witnesses and retained legacy rows',()=>{
+test('compaction evidence accepts bounded 2.1.3 native witnesses and retained legacy rows',()=>{
  const row:NativeObservation={...common,stage:'compaction-event',triggerID:'trigger_1',eventID:'evt_1',sequence:1,created:1,event:'ended',reason:'manual',inputID:'msg_1',messageID:'msg_2',witness:{recent:null,text:null,providerState:null,providerContext:null}};
  expect(parseNativeObservation(row)).toEqual(row);
  const current={...row,witness:{...row.witness,native:{sha256:'b'.repeat(64),bytes:4}}};

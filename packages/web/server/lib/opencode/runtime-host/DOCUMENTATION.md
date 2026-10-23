@@ -306,7 +306,7 @@ cannot change execution or retention.
 
 ## Native grep and glob execution
 
-OpenCode 2.0.30, 2.1.0 and 2.1.2 spawn ripgrep for `grep` and `glob` through `Environment.spawner`.
+OpenCode 2.0.30, 2.1.0 and 2.1.3 spawn ripgrep for `grep` and `glob` through `Environment.spawner`.
 `execution-routing.ts` turns that spawn into `execution.native.start` with
 `kind: 'read'`, and the host runs it under the read-only supervisor in
 `session-execution-host.js`. A location's read and protected roots may not exist
@@ -434,7 +434,7 @@ the lightweight retry-decorator tests do not substitute for that graph.
 
 The private `native.stream-continuation` owner binds the exact controller,
 configuration, permit, cancellation generation, physical attempt, original
-objective and canonical failed predecessor. The pinned OpenCode 2.1.2
+objective and canonical failed predecessor. The pinned OpenCode 2.1.3
 Synthetic event supplies its committed event ID, sequence, derived user ID and
 payload fingerprint. The durable pending reservation becomes consumed before
 successor preparation/send; Step adoption consumes its proof once. There are
@@ -461,7 +461,7 @@ Only content-free typed timing fields reach the journal/export. Existing
 unchanged; this path enables no new post-output timer.
 
 API-key Session WebSocket timing is separate from those HTTP limits. In pinned
-2.1.2, connection admission waits 15 seconds before its unsent HTTP fallback.
+2.1.3, connection admission waits 15 seconds before its unsent HTTP fallback.
 The real model resolver passes the provider's explicit `chunkTimeout` to the
 Session WebSocket: a number sets the idle bound, `false` disables it, and an
 omitted setting uses the session transport's 30-minute idle fallback. The model's
@@ -1100,7 +1100,7 @@ Native configuration translates legacy bash/task/write/patch permission names
 to shell/subagent/edit across ordered native and legacy supported shapes.
 Patterns and allow/deny/ask decisions are preserved; conflicting collapsed
 aliases fail closed. Boolean `tools` maps are translated at global and agent
-scope using pinned 2.1.2 precedence: global tool rules precede explicit rules;
+scope using pinned 2.1.3 precedence: global tool rules precede explicit rules;
 agent write/edit/patch entries merge into edit before explicit legacy action
 overrides. Invalid boolean maps and ambiguous aliases produce typed configuration
 errors. Frontmatter, frozen snapshots and native permission evaluation are
@@ -1221,3 +1221,7 @@ after 15 minutes without durable session activity instead of its 60-minute
 default. Running sessions, pending questions and background jobs still keep a
 location loaded; the next request rebuilds the services. Eviction itself is the
 same OpenCode path that previously ran at 60 minutes.
+
+`worker-protocol.ts` derives permission assertion wire validation from the native
+`Permission.Request` fields plus optional permission and agent IDs. OpenCode 2.1.3
+exports `AssertInput` only as a type; worker events retain the same validated shape.

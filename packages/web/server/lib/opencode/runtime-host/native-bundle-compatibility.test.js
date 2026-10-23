@@ -9,7 +9,7 @@ import { assertReviewedNativeCoreDigest, inspectNativeCloneLayout, isReviewedNat
 
 const manifest = version => ({ opencodeVersion: version, inputs: { coreDigest: REVIEWED_NATIVE_CLONE_RELEASES[version] },
   compiledContracts: ['devryan-v2-clone/1', 'devryan.bundle.credentials/2', 'devryan.bundle.credential-owners/2'] });
-test.each([['2.0.20', '2.0.24'], ['2.0.24', '2.0.20'], ['2.0.20', '2.0.26'], ['2.0.24', '2.0.26'], ['2.0.20', '2.0.30'], ['2.0.24', '2.0.30'], ['2.0.26', '2.0.30'], ['2.0.20', '2.0.32'], ['2.0.26', '2.0.32'], ['2.0.30', '2.0.32', '2.1.0'], ['2.0.32', '2.0.30'], ['2.0.32', '2.1.0'], ['2.0.26', '2.1.0'], ['2.1.0', '2.1.2'], ['2.1.2', '2.1.0'], ['2.0.32', '2.1.2'], ['2.0.26', '2.1.2']])('only the reviewed exact release graphs and layout permit %s to %s', (source, target) => {
+test.each([['2.0.20', '2.0.24'], ['2.0.24', '2.0.20'], ['2.0.20', '2.0.26'], ['2.0.24', '2.0.26'], ['2.0.20', '2.0.30'], ['2.0.24', '2.0.30'], ['2.0.26', '2.0.30'], ['2.0.20', '2.0.32'], ['2.0.26', '2.0.32'], ['2.0.30', '2.0.32', '2.1.0'], ['2.0.32', '2.0.30'], ['2.0.32', '2.1.0'], ['2.0.26', '2.1.0'], ['2.1.0', '2.1.2'], ['2.1.2', '2.1.0'], ['2.0.32', '2.1.2'], ['2.0.26', '2.1.2'], ['2.1.2', '2.1.3'], ['2.1.3', '2.1.2'], ['2.1.0', '2.1.3'], ['2.1.3', '2.1.0'], ['2.0.26', '2.1.3']])('only the reviewed exact release graphs and layout permit %s to %s', (source, target) => {
   const left = manifest(source), right = manifest(target);
   const reviewed = reviewedNativeCloneSourceLayout(source, 'legacy');
   expect(isReviewedNativeClonePair(left, right, reviewed)).toBe(true);
@@ -118,7 +118,7 @@ test('a release keeps the source DDL of its own migration level', () => {
     expect(reviewedNativeCloneSourceLayout(version, 'legacy')).toBe(REVIEWED_NATIVE_CLONE_LAYOUT);
     expect(reviewedNativeCloneSourceLayout(version, 'fresh-install')).toBe(REVIEWED_NATIVE_FRESH_CLONE_LAYOUT);
   }
-  for (const version of ['2.0.30', '2.0.32', '2.1.0', '2.1.2']) {
+  for (const version of ['2.0.30', '2.0.32', '2.1.0', '2.1.2', '2.1.3']) {
     expect(reviewedNativeCloneSourceLayout(version, 'legacy')).toBe(REVIEWED_NATIVE_PROJECT_ARCHIVE_CLONE_LAYOUT);
     expect(reviewedNativeCloneSourceLayout(version, 'fresh-install')).toBe(REVIEWED_NATIVE_PROJECT_ARCHIVE_FRESH_CLONE_LAYOUT);
   }
@@ -153,8 +153,8 @@ test('a production build must carry the reviewed core graph of the host pin', as
 });
 
 
-test('2.1.0 and 2.1.2 message formats cannot clone back into retained older readers', () => {
-  for (const source of ['2.1.0', '2.1.2']) {
+test('2.1.0, 2.1.2 and 2.1.3 message formats cannot clone back into retained older readers', () => {
+  for (const source of ['2.1.0', '2.1.2', '2.1.3']) {
     for (const target of ['2.0.30', '2.0.32']) {
       expect(isReviewedNativeClonePair(manifest(source), manifest(target), REVIEWED_NATIVE_PROJECT_ARCHIVE_FRESH_CLONE_LAYOUT)).toBe(false);
       expect(isReviewedNativeClonePair(manifest(target), manifest(source), REVIEWED_NATIVE_PROJECT_ARCHIVE_FRESH_CLONE_LAYOUT)).toBe(true);

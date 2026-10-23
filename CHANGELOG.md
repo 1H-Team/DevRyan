@@ -4,7 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.10] - 2026-10-23
+
+- Upgrade the bundled OpenCode host to 2.1.3, with matching native packages, compaction and finalization observation sources, and the 146-operation route inventory. Keep experimental voice routes denied and preserve retained runtime compatibility.
 - Remove Ponytail: its mode instructions, `/ponytail` commands and skills no longer reach any session. Setups that still list the Ponytail plugin start normally, and a stored Ponytail mode or default file is left untouched and never read.
+- Improve sub-agent waiting, recovery cards and specialist routing, and send cross-runtime handoff context only on the switching turn.
+- Reduce ledger and streaming overhead, trim static prompts and tool output, and release idle native locations after 15 minutes.
+- Improve diagnostic journal summaries and readability, browser handling for native shells, and Claude handoff shutdown.
+- Add release preflight, staged publication and an immutable published-bytes ledger, with pending database migrations deployed and verified before publication.
 
 ## [2.1.9] - 2026-10-22
 

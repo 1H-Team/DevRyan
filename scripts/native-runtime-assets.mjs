@@ -22,7 +22,7 @@ export const NATIVE_ASSET_SOURCE_SHA=Object.freeze({pty:'fe38312cd4acdfb067f520d
 /** Windows has no approved persistent PTY. Refuse before resolving a command,
  * creating an installation directory, or reading an environment override. */
 export function rewriteUnavailableNativePty(source) {
- if(hash(source)!=='2704aafc85e034be3674afb68865ab5e953cbdc973b3254dc8d55416181a44a9')throw new Error('Pinned native PTY resolver changed');
+ if(hash(source)!=='cf937086a2289d25079797471b657a9ee59912df29627caeda5fc18e3d9d77ce')throw new Error('Pinned native PTY resolver changed');
  return 'async function resolveBinary(){throw new Error("native_pty_platform_unsupported");}\nexport {resolveBinary};\n';
 }
 /** Build-only transformations require the exact pinned bytes before rewriting. */
