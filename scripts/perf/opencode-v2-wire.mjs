@@ -24,8 +24,6 @@ import { assistantReasoningPartId, assistantTextPartId, assistantToolPartId, com
 import { toV2Error } from '../../packages/web/server/lib/opencode/v2/projection/errors.js';
 import { toV2ToolInput, toV2ToolMetadata, toV2ToolName } from '../../packages/web/server/lib/opencode/v2/projection/tools.js';
 
-export const OPENCODE_V2_WIRE_VERSION = '2.0.20';
-
 /** Durable event types and their durable schema version (`@opencode/schema` session-event.js, worktree-event). */
 export const OPENCODE_V2_DURABLE_EVENT_VERSIONS = new Map([
   ['session.created', 1], ['session.agent.selected', 1], ['session.model.selected', 1], ['session.moved', 1],

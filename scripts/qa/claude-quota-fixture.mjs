@@ -102,35 +102,3 @@ export function isolatedClaudeEnvironment(fixture, claudeExecutable) {
     CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION: 'false',
   };
 }
-
-export const editingPrompts = [
-  'Implement this approved UI brief in the disposable project. Read ReviewStats.tsx and ReviewStats.css before editing. Change the heading Reviews to Review stats, gap-6 to gap-3, and CSS padding from 24px to 12px. Preserve the rating 4.8 and count 42 reviews. Add ReviewStats.test.mjs using node:test, node:assert/strict and file reads to check the requested edits and preserved values; run node --test ReviewStats.test.mjs. Work only on these three files. Briefly report the result.',
-  'Update the same component: add aria-label="Customer review statistics" to its section and add border-radius: 8px to its CSS. Extend ReviewStats.test.mjs to verify both additions, then run it. Preserve every earlier requested change, rating and count. Work only on the same three files and briefly report the result.',
-  'Review all three fixture files against both briefs. Run node --test ReviewStats.test.mjs again, fix any mistakes, and verify that all five requested UI changes and both original values remain. Briefly report the result.',
-];
-
-export async function seedEditingFixture(workspace) {
-  await fs.writeFile(path.join(workspace, 'ReviewStats.tsx'), 'import "./ReviewStats.css";\n\nexport function ReviewStats() {\n  return (\n    <section className="review-stats gap-6">\n      <h3>Reviews</h3>\n      <span className="rating">4.8</span>\n      <span className="count">42 reviews</span>\n    </section>\n  );\n}\n');
-  await fs.writeFile(path.join(workspace, 'ReviewStats.css'), '.review-stats {\n  display: flex;\n  padding: 24px;\n  align-items: center;\n}\n.gap-6 { gap: 24px; }\n.gap-3 { gap: 12px; }\n');
-  fixtureGit(workspace, ['init', '--quiet']);
-  fixtureGit(workspace, ['add', '.']);
-  fixtureGit(workspace, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', '-c', 'commit.gpgsign=false', 'commit', '--quiet', '--allow-empty', '-m', 'Initial review component']);
-}
-
-export async function verifyEditingFixture(workspace, { turn = 2 } = {}) {
-  const tsx = await fs.readFile(path.join(workspace, 'ReviewStats.tsx'), 'utf8');
-  const css = await fs.readFile(path.join(workspace, 'ReviewStats.css'), 'utf8');
-  const checks = {
-    heading: /<h3>Review stats<\/h3>/.test(tsx),
-    spacing: /className="[^"]*\bgap-3\b/.test(tsx) && !/className="[^"]*\bgap-6\b/.test(tsx),
-    padding: /padding:\s*12px/.test(css) && !/padding:\s*24px/.test(css),
-    rating: tsx.includes('>4.8<'), count: tsx.includes('>42 reviews<'),
-    ...(turn > 0 ? { label: tsx.includes('aria-label="Customer review statistics"'), radius: /border-radius:\s*8px/.test(css) } : {}),
-  };
-  const test = execFileSync(process.execPath, ['--test', 'ReviewStats.test.mjs'], {
-    cwd: workspace, encoding: 'utf8', timeout: 15_000, maxBuffer: 256 * 1024,
-    env: { PATH: process.env.PATH }, stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  checks.regressionTests = /(?:# |ℹ )pass [1-9]/.test(test);
-  return { passed: Object.values(checks).every(Boolean), checks };
-}
