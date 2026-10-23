@@ -2,6 +2,7 @@ import type { AttachedFile } from "@/stores/types/sessionTypes"
 import { isLikelyTransientStreamFailure } from "@/lib/messages/transientStreamError"
 import { decodeAssistantMessageError } from "@/lib/decoders/assistantMessageError"
 import { planManualRecovery, planTransientRecovery } from "@/lib/messages/transientRecovery"
+import { latestUserMessageId } from "@/lib/messages/providerRecovery"
 import { resolveSessionSendConfig } from "./send-config"
 import {
   getSyncMessages,
@@ -14,13 +15,6 @@ import {
   useProviderRecoveryStore,
   type ProviderRecoveryRecord,
 } from "@/stores/useProviderRecoveryStore"
-
-const latestUserMessageId = (messages: ReturnType<typeof getSyncMessages>): string | undefined => {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    if (messages[index]?.role === "user") return messages[index].id
-  }
-  return undefined
-}
 
 async function sendRecovery(
   sessionId: string,

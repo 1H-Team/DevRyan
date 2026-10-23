@@ -7,6 +7,14 @@ const clean = (value: unknown): string | null => (
   typeof value === 'string' && value.trim() ? value.trim() : null
 );
 
+/** The id of the newest user message, the anchor every provider recovery path keys on. */
+export function latestUserMessageId(messages: readonly Message[]): string | undefined {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.role === 'user') return messages[index].id;
+  }
+  return undefined;
+}
+
 export function getProviderUsageLimitDisplayReason(reason: unknown): string | null {
   const raw = clean(reason);
   if (!raw || !isDefiniteProviderUsageLimit(raw)) return null;

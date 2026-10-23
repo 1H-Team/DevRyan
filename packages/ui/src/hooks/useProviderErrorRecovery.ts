@@ -2,7 +2,7 @@ import React from 'react';
 import type { SessionStatus } from '@opencode-ai/sdk/v2/client';
 
 import { isQueuedMessageFlushInFlight } from '@/components/chat/queuedSend';
-import { buildProviderRecoveryInput } from '@/lib/messages/providerRecovery';
+import { buildProviderRecoveryInput, latestUserMessageId } from '@/lib/messages/providerRecovery';
 import { useMessageQueueStore } from '@/stores/messageQueueStore';
 import { useProviderRecoveryStore } from '@/stores/useProviderRecoveryStore';
 import { hostOwnsPrimaryRecovery } from '@/stores/usePrimaryRecoveryStore';
@@ -24,12 +24,13 @@ import {
   isPrimaryProviderRecoverySession,
 } from './providerErrorRecoveryDecision';
 
-const latestUserMessageId = (messages: ReturnType<typeof getSyncMessages>) => {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    if (messages[index]?.role === 'user') return messages[index].id;
-  }
-  return undefined;
-};
+// Queued sends (including one being flushed) and open permission/question
+// requests: recovery never competes with work the user already started.
+const pendingWork = (sessionId: string) => ({
+  queuedMessageCount: useMessageQueueStore.getState().getQueueForSession(sessionId).length
+    + (isQueuedMessageFlushInFlight(sessionId) ? 1 : 0),
+  blockingRequestCount: getSyncBlockingRequestCountAnyDirectory(sessionId),
+});
 
 export function useProviderErrorRecovery(enabled = true): void {
   const childStores = useSyncChildStores();
@@ -84,9 +85,8 @@ export function useProviderErrorRecovery(enabled = true): void {
             if (userMessageId) activeUserMessageIds.set(sessionId, userMessageId);
             const retryElapsedMs = trackProviderRetryLoop(retryLoopStarts, sessionId, userMessageId, status, Date.now());
             const retryDecision = decideProviderRetryLoopRecovery(status, retryElapsedMs);
-            const hasPendingWork = useMessageQueueStore.getState().getQueueForSession(sessionId).length > 0
-              || isQueuedMessageFlushInFlight(sessionId)
-              || getSyncBlockingRequestCountAnyDirectory(sessionId) > 0;
+            const { queuedMessageCount, blockingRequestCount } = pendingWork(sessionId);
+            const hasPendingWork = queuedMessageCount > 0 || blockingRequestCount > 0;
             if (
               retryDecision
               && userMessageId
@@ -119,9 +119,7 @@ export function useProviderErrorRecovery(enabled = true): void {
         retryLoopStarts.delete(sessionId);
         const previous = previousStatuses.get(sessionId);
         if (status.type !== 'idle' || !directory) continue;
-        const queuedMessageCount = useMessageQueueStore.getState().getQueueForSession(sessionId).length
-          + (isQueuedMessageFlushInFlight(sessionId) ? 1 : 0);
-        const blockingRequestCount = getSyncBlockingRequestCountAnyDirectory(sessionId);
+        const { queuedMessageCount, blockingRequestCount } = pendingWork(sessionId);
         let decision: { reason: string } | null = null;
         if (previous === 'busy' || previous === 'retry') {
           pendingInitialIdleRecovery.delete(sessionId);

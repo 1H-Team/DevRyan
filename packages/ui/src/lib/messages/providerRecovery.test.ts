@@ -4,6 +4,7 @@ import type { Message } from '@opencode-ai/sdk/v2/client';
 import {
   buildProviderRecoveryInput,
   getProviderUsageLimitDisplayReason,
+  latestUserMessageId,
 } from './providerRecovery';
 
 describe('buildProviderRecoveryInput', () => {
@@ -67,5 +68,23 @@ describe('getProviderUsageLimitDisplayReason', () => {
 
   test('returns null for unrelated provider failures', () => {
     expect(getProviderUsageLimitDisplayReason('Streaming response failed')).toBeNull();
+  });
+});
+
+describe('latestUserMessageId', () => {
+  test('returns the newest user message id, skipping later assistant messages', () => {
+    const messages = [
+      { id: 'msg_user_1', role: 'user' },
+      { id: 'msg_assistant_1', role: 'assistant' },
+      { id: 'msg_user_2', role: 'user' },
+      { id: 'msg_assistant_2', role: 'assistant' },
+    ] as unknown as Message[];
+    expect(latestUserMessageId(messages)).toBe('msg_user_2');
+    expect(latestUserMessageId(messages.slice(0, 3))).toBe('msg_user_2');
+  });
+
+  test('returns undefined without a user message', () => {
+    expect(latestUserMessageId([])).toBeUndefined();
+    expect(latestUserMessageId([{ id: 'msg_assistant', role: 'assistant' }] as unknown as Message[])).toBeUndefined();
   });
 });
