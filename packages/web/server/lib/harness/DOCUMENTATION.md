@@ -16,6 +16,10 @@ bounded per-session registry (`readAbortSource(sessionID)`, 60-second TTL). A
 non-2xx abort withdraws its own entry and an accepted prompt clears it, so the
 gen-2 event projector can attach the source to the interrupt it causes as
 `MessageAbortedError` `data.source`.
+
+After an accepted (2xx) explicit user Stop, the observer also ends the session
+tree's supervised shell runs (`session-execution-host.stopSessionRuns`) and
+journals `stop_runs` with the count or failure code.
 Shell tool calls are registered with the shared deadline controller without
 persisting command text. Its host adapter performs authenticated, directory-
 scoped exact-message reconciliation, one session abort, and a managed-runtime

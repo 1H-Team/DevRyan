@@ -1358,6 +1358,11 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     if(input.publicationPolicy==='interview-document'&&(!safeChangePath(input.publicationPath)||!input.publicationPath.endsWith('.md')
       ||input.publicationPath.split('/').some(part=>part.toLowerCase()==='.git')))throw changeError('invalid_publication_policy',400);
     if(input.publicationPolicy!=='interview-document'&&input.publicationPath!==undefined)throw changeError('invalid_publication_policy',400);
+    // A read-only process lease (Plan-mode shell) gets no private copy: its
+    // confined command runs from the live project under a read-only profile,
+    // and its publication is always empty (see prepareView and finishOwned).
+    if (input.preparation !== undefined && (input.preparation !== 'read-only' || input.kind !== 'process'
+      || input.publicationPolicy !== undefined)) throw changeError('invalid_capture_identity', 400);
     return locked(input.directory, async (repo) => {
       const { session, prompt } = await register(repo, input);
       if (session.pending) throw changeError('session_reverting');
@@ -1371,7 +1376,8 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
           || old.executionFingerprint !== input.executionFingerprint
           || old.publicationPolicy !== input.publicationPolicy
           || old.publicationPath !== input.publicationPath
-          || (old.preparation === 'none') !== (input.kind === 'control')) throw changeError('capture_identity_mismatch');
+          || (old.preparation === 'none') !== (input.kind === 'control')
+          || (old.preparation === 'read-only') !== (input.preparation === 'read-only')) throw changeError('capture_identity_mismatch');
         if (['preparing', 'published', 'ready'].includes(old.state)) return old;
         throw changeError('execution_cancelled');
       }
@@ -1388,7 +1394,8 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         executionFingerprint: input.executionFingerprint, reservedAt: Date.now(),
         ...(input.publicationPolicy?{publicationPolicy:input.publicationPolicy}:{}),
         ...(input.publicationPath?{publicationPath:input.publicationPath}:{}),
-        ...(input.ownerID ? { ownerID: input.ownerID } : {}), ...(control ? { preparation: 'none' } : {}) };
+        ...(input.ownerID ? { ownerID: input.ownerID } : {}),
+        ...(control ? { preparation: 'none' } : input.preparation === 'read-only' ? { preparation: 'read-only' } : {}) };
       repo.db.set(key('leases', token), result);
       repo.db.set(key('calls', scopeKey), { token });
       return result;
@@ -1524,7 +1531,9 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         try { await windowsOwner.createDirectory(lease.viewDirectory); createdView = lease.viewDirectory; }
         catch (cause) { if (cause.code !== 'EEXIST') throw cause; await windowsOwner.ensureDirectory(lease.viewDirectory); }
       } else createdView = await fs.mkdir(lease.viewDirectory, { recursive: true, mode: 0o700 });
-      if (lease.preparation === 'none') {
+      // Control and read-only process leases skip reconciliation and the view
+      // copy (view_files, view_git, view_inputs): neither publishes a file.
+      if (lease.preparation === 'none' || lease.preparation === 'read-only') {
         if (process.platform === 'win32') {
           const relative = path.relative(lease.viewDirectory, lease.workingDirectory);
           if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) throw changeError('invalid_execution_path');
@@ -1708,7 +1717,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       snapshotInactive ??= await inactive(snapshot);
       return visibleMutationRuns(await runsFor(snapshot, documentID), snapshotInactive);
     };
-    if (captured.preparation !== 'none') {
+    if (captured.preparation !== 'none' && captured.preparation !== 'read-only') {
       const root = rootFor(captured.projectDirectory), db = await openChangeStore(root, path.join(root, 'git'),
         { ...storeOptions, ...(captured.snapshotRef ? { ref: captured.snapshotRef } : {}), syncObjects });
       const repo = { root, directory: captured.projectDirectory };
@@ -1753,8 +1762,9 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       if (session.generation !== lease.generation || session.pending) throw changeError('execution_reverted');
       await assertNativeAdmission(repo, lease.scope.sessionID);
       if (lease.state !== 'ready') throw changeError('execution_not_ready');
-      if (lease.preparation === 'none') {
-        if (lease.executionKind !== 'control') throw changeError('execution_not_ready');
+      if (lease.preparation === 'none' || lease.preparation === 'read-only') {
+        // A read-only lease never publishes, whatever its empty view holds.
+        if (lease.executionKind !== (lease.preparation === 'none' ? 'control' : 'process')) throw changeError('execution_not_ready');
         const operation = { id: randomUUID(), sequence: next(repo), scope: lease.scope, parentCallID: lease.parentCallID,
           promptSequence: lease.promptSequence, origins: lease.origins, active: true, origin: 'execution', files: [], baseSequence: lease.baseSequence };
         repo.db.set(key('operations', operation.id), operation);
@@ -2176,6 +2186,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     const lease = await repo.db.get(key('leases', input.token));
     if (!['control', 'process'].includes(input.kind) || lease?.state !== 'ready' || lease.executionKind) throw changeError('execution_already_started');
     if (lease.preparation === 'none' && input.kind !== 'control') throw changeError('capture_identity_mismatch');
+    if (lease.preparation === 'read-only' && input.kind !== 'process') throw changeError('capture_identity_mismatch');
     const session = await repo.db.get(key('sessions', lease.scope.sessionID));
     await assertNativeAdmission(repo, lease.scope.sessionID);
     if (session?.pending || session?.generation !== lease.generation) throw changeError('execution_reverted');
@@ -2265,7 +2276,10 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     const lease = await repo.db.get(key('leases', input.token));
     if (!lease) throw changeError('execution_unavailable');
     if (lease.state === 'published') throw changeError('execution_already_published');
-    lease.state = 'cancelled'; lease.cleanupPending = !lease.cleaned; repo.db.set(key('leases', lease.token), lease);
+    if (input.stoppedBy !== undefined && input.stoppedBy !== 'operator') throw changeError('invalid_capture_identity', 400);
+    lease.state = 'cancelled'; lease.cleanupPending = !lease.cleaned;
+    if (input.stoppedBy === 'operator') lease.stoppedBy = 'operator';
+    repo.db.set(key('leases', lease.token), lease);
   });
   const cancelUnstartedCall = (input) => locked(input.directory, async (repo) => {
     input.guard?.assertCurrent();

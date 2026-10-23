@@ -205,7 +205,10 @@ Production capture has no fixed snapshot-byte, path-count, operation-count,
 session-registration, or cumulative storage-admission ceiling. Explicit runtime
 options can impose operator/test limits; they are not enabled by the host.
 Disk failures (`storage_unavailable`), command/capture deadlines (`capture_timeout`),
-and interrupted captures remain distinct. Diagnostics record the phase, session
+and interrupted captures remain distinct. A call whose confined command is still
+running (a background shell such as a dev server) is `background_running`, not
+`missing_capture`: its receipt is recorded when it ends, or when a user Stop ends
+it (the host's `activeExecutionCalls` option supplies these calls). Diagnostics record the phase, session
 and call identity without source contents. Tool execution keeps its existing
 behavior when capture fails; coverage never silently becomes complete.
 

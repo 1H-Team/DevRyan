@@ -405,8 +405,10 @@ read-only; Linux and Windows keep every input read-only
 Plan shell instead marks its execution lease read-only: preparation suppresses
 all input write grants and browser allowances, macOS denies networking, and the
 Linux launcher creates a private network namespace before its acknowledgement.
-The original snapshot remains visible as its logical working directory under
-the read-only host mount/profile. Windows refuses this mode because its current
+On Linux the original snapshot remains visible as its logical working directory
+under the read-only host mount/profile; on macOS a lease reserved with
+`preparation: 'read-only'` has no snapshot and runs from the live project
+directory under the same read-only profile. Windows refuses this mode because its current
 LPAC policy lacks equivalent read-only workspace and isolated-network grants.
 An ignored folder a call creates in its view is published like any other output.
 A `node_modules` input links instead to a
@@ -487,7 +489,17 @@ processes and state commits through it: a direct read costs one commit and at
 most four processes, eight concurrent finishes share one commit, staggered
 separate requests at most two, and a single-file confined edit at most seven
 commits (reserve, pin, ready, claim, publication intent and completion,
-cleanup). `scripts/perf/tool-latency-benchmark.mjs` reports per-phase p50/p90
+cleanup). A read-only process lease (`reserve({ preparation: 'read-only' })`,
+the macOS Plan-mode shell) runs no reconciliation and no `view_files`,
+`view_commit`, `view_git` or `view_inputs` step, costs at most five commits, and
+always publishes an empty result; on a 2,000-file fixture its preparation took
+75 ms instead of about 400 ms. `cancelLease({ stoppedBy: 'operator' })` records
+that a user Stop ended a run.
+
+`withExecutionPreparation` is its own summary root: one `preparation` record
+carries its steps, so the same time is no longer journaled as both `admission`
+and `preparation`. `executionToolMetadata` maps the native host kinds `shell`,
+`writer` and `read` to `executionTier: 'process'`. `scripts/perf/tool-latency-benchmark.mjs` reports per-phase p50/p90
 for the same calls on a seeded ledger, optionally with Git process and commit
 counts (`--count-git`) and against another checkout (`--runtime`).
 

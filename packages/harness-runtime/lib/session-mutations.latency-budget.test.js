@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { git, gitRecords, gitTokens, readGitObject } from './session-changes-git.js';
+import { withExecutionPreparation } from './execution-admission.js';
 import { cleanupRoots, fixture, manyFiles, test } from '../test/session-mutations-fixture.js';
 
 afterEach(cleanupRoots);
@@ -82,5 +83,43 @@ describe('native tool harness budgets', () => {
     // stamps the files it writes, so the next observation commits nothing.
     expect(measured.commits).toBeLessThanOrEqual(7);
     expect(measured.processes).toBeLessThanOrEqual(42);
+  });
+
+  test('read-only shell: no reconciliation, no view copy, and an empty publication', async () => {
+    const { counts, gitRunner } = countingRunner();
+    const f = await fixture({ gitRunner });
+    await manyFiles(f, 60);
+    const shell = async (index) => {
+      const records = [];
+      const lease = await withExecutionPreparation({ directory: f.directory, sessionID: 's', callID: `r${index}`, kind: 'shell' },
+        () => f.begin('s', `r${index}`, `shell${index}`, { kind: 'process', preparation: 'read-only' }),
+        { onDiagnostic: (record) => records.push(record), summary: { minMs: 0 } });
+      expect(lease).toMatchObject({ state: 'ready', preparation: 'read-only' });
+      // The private view is empty: the command reads the live project instead.
+      expect(await fs.readdir(lease.viewDirectory)).toEqual([]);
+      await f.runtime.claimLease({ directory: f.directory, token: lease.token, kind: 'process' });
+      // Nothing a read-only lease's view holds is ever published.
+      await fs.writeFile(path.join(lease.viewDirectory, 'stray.txt'), 'never published');
+      await fs.writeFile(path.join(path.dirname(lease.viewDirectory), 'termination.json'),
+        JSON.stringify({ terminated: true, confined: true, exitCode: 0, cancelled: false }), { flag: 'wx', mode: 0o600 });
+      expect((await f.finish(lease)).files).toEqual([]);
+      expect((await f.runtime.executionReceipt({ directory: f.directory, token: lease.token })).files).toEqual([]);
+      await f.runtime.cleanupLease({ directory: f.directory, token: lease.token });
+      return records.find((record) => record.phase === 'preparation' && record.state === 'completed');
+    };
+    await shell(0);
+    let summary;
+    const measured = await measure(counts, async () => { summary = await shell(1); });
+    // The phases that cost 2.5 s (reconciliation) and 3.8 s (view_files) at p50 in live QA never run.
+    for (const phase of ['reconciliation', 'view_files', 'view_commit', 'view_git', 'view_inputs']) expect(summary.steps).not.toContain(`${phase}:`);
+    // Reserve, ready, claim, publication, cleanup; no pin and no view Git repository.
+    expect(measured.commits).toBeLessThanOrEqual(5);
+    expect(measured.processes).toBeLessThanOrEqual(24);
+    expect(await fs.access(path.join(f.directory, 'stray.txt')).then(() => true, () => false)).toBe(false);
+    // A read-only lease cannot be claimed as a control call, nor reserved as one.
+    const other = await f.begin('s', 'r2', 'shell2', { kind: 'process', preparation: 'read-only' });
+    await expect(f.runtime.claimLease({ directory: f.directory, token: other.token, kind: 'control' })).rejects.toMatchObject({ code: 'capture_identity_mismatch' });
+    await expect(f.begin('s', 'r3', 'shell3', { kind: 'control', preparation: 'read-only' })).rejects.toMatchObject({ code: 'invalid_capture_identity' });
+    await expect(f.begin('s', 'r2', 'shell2', { kind: 'process' })).rejects.toMatchObject({ code: 'capture_identity_mismatch' });
   });
 });

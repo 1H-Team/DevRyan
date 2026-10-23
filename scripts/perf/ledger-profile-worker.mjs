@@ -15,8 +15,13 @@ const clock = () => performance.now();
 const round = value => Math.round(value * 10) / 10;
 export function phaseTotals(records) {
   const totals = {};
-  // Only summary rows: slow phase events repeat entries in their summary.
-  for (const record of records.filter(row => row.phase === 'admission')) {
+  // Only summary rows: slow phase events repeat entries in their summary. A
+  // preparation is its own summary root, so its time is its own row.
+  for (const record of records.filter(row => ['admission', 'preparation'].includes(row.phase) && row.steps !== undefined)) {
+    if (record.phase === 'preparation' && Number.isFinite(record.elapsedMs)) {
+      const entry = totals.preparation ??= { count: 0, elapsedMs: 0 };
+      entry.count += 1; entry.elapsedMs += record.elapsedMs;
+    }
     for (const step of (record.steps ?? '').split(',')) {
       const match = /^([a-z_]+):(\d+)\/(\d+)$/.exec(step);
       if (!match) continue;

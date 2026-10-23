@@ -150,6 +150,8 @@ export const resolveSessionChangesStatusKey = (entry?: Pick<SessionTreeChangesEn
     if (reasons.includes('invalid_change_receipt')) return 'chat.sessionChanges.invalidReceipt';
     if (reasons.includes('execution_delivery_failed')) return 'chat.sessionChanges.deliveryFailed';
     if (reasons.some((reason) => ['missing_capture', 'unverified_tool_changes', 'execution_receipt_unavailable', 'tool_changes_incomplete'].includes(reason))) return 'chat.sessionChanges.executionUnavailable';
+    // A background command (a dev server) records its edits when it ends or a Stop ends it.
+    if (reasons.includes('background_running')) return 'chat.sessionChanges.backgroundRunning';
     if (reasons.some((reason) => ['storage_limit', 'capture_limit', 'historical_capture_unavailable'].includes(reason))) return 'chat.sessionChanges.legacyCapture';
     if (reasons.includes('native_revert_active')) return 'chat.sessionChanges.rewound';
     return 'chat.sessionChanges.incomplete';

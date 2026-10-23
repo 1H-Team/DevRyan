@@ -6,6 +6,24 @@ directory/session/message/call identity and waits for supervised settlement;
 it never resolves processes by name or a caller-supplied PID. The web deadline
 adapter bounds that wait before falling back to existing session recovery.
 
+`session-execution-host.stopSessionRuns` is the constructor-only Stop boundary.
+After an accepted user Stop (`OPERATOR_STOP_SOURCES` in `application.js`), it
+ends every supervised shell run of the stopped session and its descendants
+(ancestry is read from OpenCode), because the native interrupt leaves a
+background shell job (a dev server) running. Each run settles through its own
+path: the lease is cancelled with `stoppedBy: 'operator'`, the cancelled call
+is recorded as a complete empty change receipt, and its view is removed. It
+takes no admission hold, unlike `executions.cancelAndWait`, so the next prompt
+is not blocked; the run's completion notice is queued without restarting the
+conversation (`native-admission-owner.js`). `DEVRYAN_STOP_ENDS_BACKGROUND_RUNS=0`
+turns it off. `activeExecutionCalls` lists a session's calls whose supervised
+command still runs; the change card reports them as `background_running`
+instead of `missing_capture`.
+
+Journal records of native executions carry `executionTier`: native `shell`,
+`writer` and `read` kinds are `process`; the native `finish` and deferred
+`lease_cleanup` records also carry the lease's session/message/call identity.
+
 DevRyan agent settings use the synthetic `devryan` config key and are stored in
 `.devryan/config.json` beside the OpenCode user config. The sidecar reader also
 accepts `.openchamber/config.json` and the former `openchamber` config key;

@@ -65,6 +65,28 @@ test('missing hooks cannot report complete coverage after a successful prompt re
   expect(result.body.files).toEqual([]);
 });
 
+test('a still-running background command is reported as running, not as a missing record', async () => {
+  await host.plugin({ action: 'message', sessionID: 'ses_a', directory, userMessageID: 'user_1' });
+  messages.push(tool('dev_server'));
+  let running = ['dev_server'];
+  const owned = createFixtureHost({ dataDirectory: base, activeExecutionCalls: ({ sessionID }) => sessionID === 'ses_a' ? running : [],
+    fetchImpl: async raw => {
+      const url = new URL(raw);
+      if (url.pathname.endsWith('/children')) return Response.json([]);
+      if (url.pathname.endsWith('/message')) return Response.json(messages);
+      return Response.json({ id: 'ses_a', directory });
+    } });
+  const live = (await owned.handleRequest('GET', endpoint())).body;
+  expect(live).toMatchObject({ coverage: 'partial', reasons: ['background_running'] });
+  expect(live.coverageBySession).toContainEqual({ sessionID: 'ses_a', reasons: ['background_running'] });
+  // Once it ends without its receipt, the record is missing; another missing call is never hidden.
+  running = [];
+  expect((await owned.handleRequest('GET', endpoint())).body).toMatchObject({ coverage: 'partial', reasons: ['missing_capture'] });
+  running = ['dev_server']; messages.push(tool('missing'));
+  expect((await owned.handleRequest('GET', endpoint())).body.reasons).toEqual(['background_running', 'missing_capture']);
+  await owned.drain();
+});
+
 const hostWithOutcomes = executionOutcomes => createFixtureHost({ dataDirectory: base, executionOutcomes,
   fetchImpl: async raw => {
     const url = new URL(raw);

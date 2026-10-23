@@ -107,6 +107,11 @@ test('phase summaries avoid counting repeated slow events and preserve nested ph
     { phase: 'admission', steps: 'preparation:1/5000,ledger_commit:2/3000,queue_wait:2/0' },
     { phase: 'admission', steps: 'ledger_commit:1/30,garbage' },
   ]), { preparation: { count: 1, elapsedMs: 5000 }, ledger_commit: { count: 3, elapsedMs: 3030 }, queue_wait: { count: 2, elapsedMs: 0 } });
+  // A preparation summary root counts its own time once; its slow event does not.
+  assert.deepEqual(phaseTotals([
+    { phase: 'preparation', state: 'completed', elapsedMs: 4000, slow: true },
+    { phase: 'preparation', state: 'completed', elapsedMs: 4000, steps: 'view_files:1/3000' },
+  ]), { preparation: { count: 1, elapsedMs: 4000 }, view_files: { count: 1, elapsedMs: 3000 } });
 });
 
 test('companion process samples label missing data and parse minutes, hours and days', () => {

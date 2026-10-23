@@ -1014,7 +1014,9 @@ export interface SessionChangeRuntime {
     firstUserMessageID?: string | null; coverageReasons?: string[];
     expectedCalls?: Array<{ sessionID: string; callID: string }>;
     hiddenMessages?: Array<{ sessionID: string; messageID: string }>;
-    reverts?: Array<{ sessionID: string; messageID: string }> }): Promise<SessionChangeSummary>;
+    reverts?: Array<{ sessionID: string; messageID: string }>;
+    /** Calls whose confined command still runs: `background_running` instead of `missing_capture`. */
+    activeCalls?: Array<{ sessionID: string; callID: string }> }): Promise<SessionChangeSummary>;
   summaryPage(input: { directory: string; rootSessionID: string; revision: string; cursor?: string | null }): Promise<SessionChangeSummary>;
   diff(input: { directory: string; rootSessionID: string; revision: string; file: string; cursor?: string | null; segment?: number | string | null }): Promise<SessionChangePage & {
     rootSessionID: string; revision: string; path: string; patch: string; totalBytes: number;
@@ -1056,6 +1058,8 @@ export function createSessionChangeHost(options: Pick<PrimaryRecoveryHostOptions
   assertLegacyRestore?: (input: { directory: string; sessionID: string }) => Promise<void>;
   onDiagnostic?: (event: SessionChangeDiagnostic) => void | Promise<void>;
   reconcileExecutionReceipts?: (scope: { directory: string; sessionID: string }) => Promise<{ pending: boolean; reasons: string[] }>;
+  /** Call IDs of the session whose confined command is still running (reported as `background_running`). */
+  activeExecutionCalls?: (scope: { directory: string; sessionID: string }) => readonly string[] | Promise<readonly string[]>;
 }): SessionChangeHost;
 export const SESSION_CHANGE_READ_ONLY_TOOLS: readonly string[];
 export function normalizeSessionChangeTool(value: unknown): string;

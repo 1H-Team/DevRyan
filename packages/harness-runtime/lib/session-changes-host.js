@@ -348,7 +348,15 @@ export function createSessionChangeHost(options) {
           await Promise.race([Promise.allSettled(sessions.flatMap((entry) => [...(observations.get(entry.id) ?? [])])),
             new Promise((resolve) => { settleTimer = setTimeout(resolve, 20_000); })]).finally(() => clearTimeout(settleTimer));
           const firstUserMessageID = histories[0].first;
-          const summary = await runtime.summarize({ directory, rootSessionID, sessions, firstUserMessageID,
+          // Calls whose confined command still runs (a background shell) have
+          // no change record yet; they are reported as running, not missing.
+          const activeCalls = [];
+          for (const entry of sessions) {
+            const calls = await options.activeExecutionCalls?.({ directory, sessionID: entry.id }) ?? [];
+            if (!Array.isArray(calls)) throw error('capture_identity_mismatch', 503);
+            for (const callID of calls) if (typeof callID === 'string' && callID) activeCalls.push({ sessionID: entry.id, callID });
+          }
+          const summary = await runtime.summarize({ directory, rootSessionID, sessions, firstUserMessageID, activeCalls,
             reverts: sessions.filter((entry) => entry.revert?.messageID).map((entry) => ({ sessionID: entry.id, messageID: entry.revert.messageID })),
             sessionCoverage: sessions.map((entry, index) => ({ sessionID: entry.id, reasons: [
               ...(entry.revert?.messageID ? ['native_revert_active'] : []),

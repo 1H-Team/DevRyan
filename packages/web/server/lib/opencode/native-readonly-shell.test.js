@@ -37,6 +37,22 @@ it.each(['darwin', 'linux'])('%s Plan shell retains the real inspection director
   const f = await fixture();
   expect((await readOnlyShellLease(f.lease, { platform })).logicalWorkingDirectory).toBe(f.snapshot);
 });
+it('a lease prepared read-only runs from the live project on macOS and stays confined to it', async () => {
+  const f = await fixture();
+  await fs.mkdir(path.join(f.snapshot, 'sub')); await fs.mkdir(path.join(f.project, 'sub'));
+  const live = { ...f.lease, preparation: 'read-only', workingDirectory: path.join(f.snapshot, 'sub') };
+  const lease = await readOnlyShellLease(live, { platform: 'darwin' });
+  expect(lease.logicalWorkingDirectory).toBe(path.join(f.project, 'sub'));
+  expect(lease.workingDirectory).toBe(path.join(f.root, 'read-only-worktree'));
+  expect(lease.readOnly).toBe(true); expect(lease.inputs).toBeUndefined(); expect(lease.projectDirectory).toBeUndefined();
+  // Linux keeps the private view; it never runs from the host directory.
+  await expect(readOnlyShellLease(live, { platform: 'linux' })).rejects.toMatchObject({ code: 'native_plan_confinement_unavailable' });
+  // A cwd outside the view, or a project link resolving elsewhere, is refused.
+  await expect(readOnlyShellLease({ ...live, workingDirectory: f.root }, { platform: 'darwin' })).rejects.toMatchObject({ code: 'invalid_execution_path' });
+  await fs.symlink(f.root, path.join(f.project, 'escape')); await fs.mkdir(path.join(f.snapshot, 'escape'));
+  await expect(readOnlyShellLease({ ...live, workingDirectory: path.join(f.snapshot, 'escape') }, { platform: 'darwin' }))
+    .rejects.toMatchObject({ code: 'invalid_execution_path' });
+});
 it('refuses when the launcher cannot grant a read-only workspace and isolated network', async () => {
   const f = await fixture();
   await expect(readOnlyShellLease(f.lease, { platform: 'win32' })).rejects.toMatchObject({ code: 'native_plan_confinement_unavailable' });

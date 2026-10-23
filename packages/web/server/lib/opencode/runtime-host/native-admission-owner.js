@@ -988,6 +988,10 @@ export function createNativeAdmissionOwner(options) {
         userMessageID: entry.messageID, assistantMessageID: latest.nativeShellJob.continuedAssistantID, expectedRevision: state.revision });
       return;
     }
+    // A run a user Stop ended (session-execution-host.js stopSessionRuns) must
+    // not restart the stopped conversation. Its notice stays queued, unsent,
+    // and reaches the model with the next prompt; no wake intent is recorded.
+    if (latest.state === 'cancelled' && latest.stoppedBy === 'operator') return;
     await runtime.deferNativeContinuation({ directory: entry.directory, sessionID, operation });
     const state = await runtime.nativeAdmissionState({ directory: entry.directory, sessionID });
     assertController();

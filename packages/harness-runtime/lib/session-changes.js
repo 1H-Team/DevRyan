@@ -456,7 +456,7 @@ export function createSessionChangeRuntime(options) {
     const directory = await resolveDirectory(requested);
     return serialize(directory, async () => { const repo = await load(directory); return page(repo, rootSessionID, await storedRevision(repo, rootSessionID, revision), cursor); });
   };
-  const summarize = async ({ directory: requestedDirectory, rootSessionID, sessions = [], firstUserMessageID = null, coverageReasons = [], sessionCoverage = [], expectedCalls = [], hiddenMessages = [], reverts = [] }) => {
+  const summarize = async ({ directory: requestedDirectory, rootSessionID, sessions = [], firstUserMessageID = null, coverageReasons = [], sessionCoverage = [], expectedCalls = [], hiddenMessages = [], reverts = [], activeCalls = [] }) => {
     const directory = await resolveDirectory(requestedDirectory);
     return serialize(directory, async () => {
       const repo = await load(directory), saved = await repo.db.get(summaryKey(rootSessionID));
@@ -519,7 +519,10 @@ export function createSessionChangeRuntime(options) {
       }
       if (!root || (firstUserMessageID && root.firstUserMessageID !== firstUserMessageID)) addReason('historical_capture_unavailable', rootSessionID);
       for await (const { value: op } of repo.db.entries('operations')) observedCalls.delete(op.id);
-      for (const call of observedCalls) addReason('missing_capture', observedCallSessions.get(call));
+      // A still-running command (background shell) records its change receipt
+      // when it ends or a Stop ends it; until then it is not a missing record.
+      const running = new Set(activeCalls.map((call) => hash(`${call.sessionID}\0${call.callID}`)));
+      for (const call of observedCalls) addReason(running.has(call) ? 'background_running' : 'missing_capture', observedCallSessions.get(call));
       const fingerprint = crypto.createHash('sha256');
       const generation = await repo.db.get(`generations/${hash(rootSessionID)}.json`) ?? 0;
       fingerprint.update(JSON.stringify({ attributionVersion: ATTRIBUTION_VERSION, ids: [...ids].sort(), firstUserMessageID, generation, directory: requestedDirectory }));
