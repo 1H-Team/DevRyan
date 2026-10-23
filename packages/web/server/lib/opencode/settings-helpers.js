@@ -99,7 +99,11 @@ export const createSettingsHelpers = (dependencies) => {
     if (typeof candidate.splashFgDark === 'string' && candidate.splashFgDark.trim().length > 0) {
       result.splashFgDark = candidate.splashFgDark.trim();
     }
-    if (typeof candidate.lastDirectory === 'string' && candidate.lastDirectory.length > 0) {
+    // '' is kept: the UI sends it to forget the last directory once the last
+    // project is removed, and every reader treats it as unset.
+    if (candidate.lastDirectory === '') {
+      result.lastDirectory = '';
+    } else if (typeof candidate.lastDirectory === 'string') {
       const normalized = normalizePathForPersistence(candidate.lastDirectory);
       if (typeof normalized === 'string' && normalized.length > 0) {
         result.lastDirectory = normalized;

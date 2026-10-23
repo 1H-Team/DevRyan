@@ -255,6 +255,15 @@ describe('settings runtime', () => {
     expect(fsPromises.stat).not.toHaveBeenCalled();
   });
 
+  it('does not turn a forgotten (empty) lastDirectory back into a project', async () => {
+    const { runtime } = createRuntime({ lastDirectory: '', projects: [] });
+
+    const updated = await runtime.readSettingsFromDiskMigrated();
+
+    expect(updated.projects).toEqual([]);
+    expect(updated.activeProjectId).toBeUndefined();
+  });
+
   it('does not stat existing project paths when saving unrelated settings', async () => {
     const projectPath = '/Users/test/Documents/ProtectedProject';
     const projectId = createProjectIdFromPath(projectPath);
