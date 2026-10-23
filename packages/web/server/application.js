@@ -1175,6 +1175,7 @@ async function constructWebHost(options = {}) {
     openCodeClient,
     getOpenCodeRuntime,
     recordDiagnostic: openCodeClientDeps.recordDiagnostic,
+    resolveAbortSource: (sessionID) => harnessRuntime.readAbortSource(sessionID),
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
     upstreamStallTimeoutMs: getUpstreamStallTimeoutMs,

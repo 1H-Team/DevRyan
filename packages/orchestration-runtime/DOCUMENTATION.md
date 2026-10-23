@@ -315,7 +315,7 @@ Owner adapters provide atomic `load()` and `save()` operations. The codec (below
 
 ## Public entrypoints
 
-- `ABORT_SOURCES` / `ABORT_SOURCE_HEADER` / `normalizeAbortSource(value)`: the single cross-host contract for which UI path requested a session abort. The UI sends it on every `session.abort`, and the web server journals it as `control` `payload.source` and classifies operator stops from it. Unknown values normalize to `'unknown'`.
+- `ABORT_SOURCES` / `ABORT_SOURCE_HEADER` / `normalizeAbortSource(value)`: the single cross-host contract for which UI path requested a session abort. The UI sends it on every `session.abort`, and the web server journals it as `control` `payload.source` and classifies operator stops from it. Unknown values normalize to `'unknown'`. `createAbortSourceRegistry({ now, ttlMs, maximumSessions })` keeps the latest accepted abort source per session (60-second TTL, bounded): `record` replaces it (an `'unknown'` source only clears), `withdraw` removes a rejected request's own entry, `read` returns the source or `null`, and `clear` drops it when the next turn is accepted. OpenCode reports every interrupt as reason `user`, so the web host attaches this source to the projected `MessageAbortedError` as `data.source`.
 - `createManagedTaskRecord(input)`: creates and validates a queued task record.
 - `formatManagedTaskDisplayName(label)`: derives the shared child-session and Agent Dispatch display name without mutating the durable label.
 - `supportsManagedReadOnlyAgent(agent)`: returns false for Designer and missing identities so plan-mode work cannot enter implementation ownership.

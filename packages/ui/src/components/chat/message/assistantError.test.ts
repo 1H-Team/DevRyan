@@ -288,3 +288,41 @@ test('canonical user stop overrides Step interrupted provider fallback', () => {
   expect(result?.text).not.toContain('provider');
   expect(result?.abortKind).toBe('manual');
 });
+
+describe('automatic abort sources', () => {
+  const aborted = (source?: unknown) => ({
+    name: 'MessageAbortedError',
+    data: { message: 'Step interrupted', v2Type: 'aborted', ...(source === undefined ? {} : { source }) },
+  })
+  const stopOptions = { manualAbortMessageId: 'msg_1', messageId: 'msg_1', isLatestMessage: true }
+
+  test('names the automatic cause instead of a manual stop', () => {
+    expect(classifyAssistantError(aborted('provider_retry'), stopOptions)).toEqual({
+      text: 'Stopped after repeated provider connection failures.',
+      variant: 'info',
+    })
+    expect(classifyAssistantError(aborted('stall_watchdog'), stopOptions)?.text)
+      .toBe('Stopped because the model provider stopped responding.')
+    expect(classifyAssistantError(aborted('abort_guard'), stopOptions)?.text)
+      .toBe('Stopped a provider retry that started after this turn was stopped.')
+  })
+
+  test('keeps the existing presentation for operator, unknown and missing sources', () => {
+    const operator = { name: 'MessageAbortedError', data: { message: 'Aborted', source: 'stop_button' } }
+    expect(classifyAssistantError(operator, stopOptions)).toEqual({ text: '', variant: 'plain', abortKind: 'manual' })
+    for (const source of ['double_escape', 'forged', 42, undefined]) {
+      expect(classifyAssistantError(aborted(source), stopOptions))
+        .toEqual(classifyAssistantError(aborted(), stopOptions))
+    }
+  })
+
+  test('a canonical managed user stop still wins', () => {
+    expect(classifyAssistantError(aborted('provider_retry'), { managedAbortRecovery: { state: 'user_stopped' } })?.abortKind)
+      .toBe('manual')
+  })
+
+  test('only MessageAbortedError carries a source', () => {
+    const classification = classifyAssistantError({ name: 'UnknownError', data: { message: 'Step interrupted', source: 'provider_retry' } })
+    expect(classification?.text).not.toBe('Stopped after repeated provider connection failures.')
+  })
+})

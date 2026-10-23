@@ -12,6 +12,19 @@ export type AbortSource =
 export const ABORT_SOURCE_HEADER: 'X-DevRyan-Abort-Source';
 export const ABORT_SOURCES: readonly AbortSource[];
 export function normalizeAbortSource(value: unknown): AbortSource | 'unknown';
+export const ABORT_SOURCE_TTL_MS: number;
+export type AbortSourceEntry = { sessionId: string; source: AbortSource; recordedAt: number };
+export function createAbortSourceRegistry(options?: {
+  now?: () => number;
+  ttlMs?: number;
+  maximumSessions?: number;
+}): {
+  record(input?: { sessionId?: unknown; source?: unknown }): AbortSourceEntry | null;
+  withdraw(entry: AbortSourceEntry | null | undefined): boolean;
+  read(sessionId: unknown): AbortSource | null;
+  clear(sessionId: unknown): boolean;
+  readonly size: number;
+};
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
 export interface ProviderToolCatalogEntry {

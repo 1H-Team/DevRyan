@@ -390,6 +390,35 @@ describe('execution terminals', () => {
     expect(assistant).toMatchObject({ finish: 'error', error: { name: 'MessageAbortedError' } });
   });
 
+  it('attaches the host-recorded abort source to the interrupt and the aborted assistant', () => {
+    const resolved = [];
+    const { projector } = createProjector({
+      resolveAbortSource: (sessionID) => { resolved.push(sessionID); return 'provider_retry'; },
+    });
+    const events = replay(projector, framesOf('03-abort.json'));
+    expect(ofType(events, 'session.error')).toEqual([{
+      sessionID: SID,
+      error: {
+        name: 'MessageAbortedError',
+        data: { message: 'Aborted', reason: 'user', v2Type: 'aborted', source: 'provider_retry' },
+      },
+    }]);
+    const assistant = ofType(events, 'message.updated').filter((props) => props.info.id === mid(2)).at(-1).info;
+    expect(assistant.error).toEqual({
+      name: 'MessageAbortedError',
+      data: { message: 'Step interrupted', v2Type: 'aborted', source: 'provider_retry' },
+    });
+    expect(new Set(resolved)).toEqual(new Set([SID]));
+  });
+
+  it('keeps the reported abort when the source resolver is empty or throws', () => {
+    for (const resolveAbortSource of [() => null, () => { throw new Error('unavailable'); }]) {
+      const { projector } = createProjector({ resolveAbortSource });
+      const [error] = ofType(replay(projector, framesOf('03-abort.json')), 'session.error');
+      expect(error.error).toEqual({ name: 'MessageAbortedError', data: { message: 'Aborted', reason: 'user', v2Type: 'aborted' } });
+    }
+  });
+
   it('maps an execution failure to session.error with the B.3 error', () => {
     const { projector } = createProjector();
     const events = replay(projector, framesOf('04-failure.json'));

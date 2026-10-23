@@ -11,7 +11,7 @@ import {
   validateCommandDeadlineRecord,
   validateWorktreeBootstrapReceipt,
 } from '@devryan/harness-runtime';
-import { ABORT_SOURCE_HEADER, normalizeAbortSource } from '@devryan/orchestration-runtime';
+import { ABORT_SOURCE_HEADER, createAbortSourceRegistry, normalizeAbortSource } from '@devryan/orchestration-runtime';
 
 // Node lower-cases incoming header names.
 const ABORT_SOURCE_REQUEST_HEADER = ABORT_SOURCE_HEADER.toLowerCase();
@@ -43,6 +43,7 @@ export const createWebHarnessRuntime = (options = {}) => {
     logger: options.logger ?? console,
   });
   const promptAdmission = createPromptAdmissionController();
+  const abortSources = createAbortSourceRegistry(options.abortSourceRegistry);
   let initialization = null;
   let worktreeRuntime = null;
   let evidenceRuntime = null;
@@ -148,6 +149,8 @@ export const createWebHarnessRuntime = (options = {}) => {
     });
     res.once('finish', () => {
       if (res.statusCode < 200 || res.statusCode >= 300) return;
+      // The next turn starts clean: an older abort source never labels its interrupt.
+      abortSources.clear(sessionID);
       turnTimingRuntime?.recordPromptAccepted?.({
         sessionID,
         messageID,
@@ -184,6 +187,14 @@ export const createWebHarnessRuntime = (options = {}) => {
       const input = { action, sessionID: req.params?.sessionID,
         directory: typeof req.query?.directory === 'string' ? req.query.directory : null,
         source: action === 'abort' ? readAbortSource(req) : null, res };
+      if (action === 'abort') {
+        const abortSource = abortSources.record({ sessionId: input.sessionID, source: input.source });
+        if (abortSource) {
+          res.once('finish', () => {
+            if (res.statusCode < 200 || res.statusCode >= 300) abortSources.withdraw(abortSource);
+          });
+        }
+      }
       const notify = () => {
         if (!controlObserver || typeof input.sessionID !== 'string') return;
         try { controlObserver(input); } catch { /* Advisory observers never block control. */ }
@@ -305,6 +316,8 @@ export const createWebHarnessRuntime = (options = {}) => {
     setControlPreparation(prepare) { controlPreparation = typeof prepare === 'function' ? prepare : null; },
     setControlObserver(observer) { controlObserver = typeof observer === 'function' ? observer : null; },
     setSessionChangeHost(runtime) { sessionChangeHost = runtime; },
+    // The source of the latest accepted abort, for the projected interrupt error.
+    readAbortSource: (sessionID) => abortSources.read(sessionID),
     getWorktreeRuntime: () => worktreeRuntime,
     getWorktreeReceipts,
     getCommandDeadlineRecoveryStatus: () => commandDeadlineRuntime?.getStatus?.() ?? null,

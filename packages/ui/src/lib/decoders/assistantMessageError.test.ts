@@ -18,6 +18,15 @@ describe('assistant message error decoder', () => {
     expect(readAssistantMessageError({ error: { name: 'MessageAbortedError', data: { message: 'aborted' } } }))
       .toEqual({ name: 'MessageAbortedError', message: undefined, dataMessage: 'aborted', detail: 'aborted' });
   });
+
+  test('abortSource is a known source on a MessageAbortedError only', () => {
+    expect(decodeAssistantMessageError({ name: 'MessageAbortedError', data: { message: 'Aborted', source: 'provider_retry' } })?.abortSource)
+      .toBe('provider_retry');
+    const forged = decodeAssistantMessageError({ name: 'MessageAbortedError', data: { message: 'Aborted', source: 'forged' } });
+    expect(forged && 'abortSource' in forged).toBe(false);
+    const other = decodeAssistantMessageError({ name: 'APIError', data: { message: 'boom', source: 'provider_retry' } });
+    expect(other && 'abortSource' in other).toBe(false);
+  });
 });
 
 describe('decoder guards', () => {

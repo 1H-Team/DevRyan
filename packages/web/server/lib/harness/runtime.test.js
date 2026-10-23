@@ -250,6 +250,44 @@ describe('web harness control journal', () => {
   });
 });
 
+describe('web harness abort source attribution', () => {
+  it('keeps an accepted abort source until the next accepted prompt', async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'devryan-web-harness-'));
+    temporaryDirectories.push(directory);
+    const runtime = createWebHarnessRuntime({ dataDirectory: directory, runtime: 'test' });
+    await runtime.initialize();
+    const abort = (sessionID, source) => ({
+      method: 'POST', path: '/abort', params: { sessionID }, query: { directory: '/repo' },
+      headers: source ? { 'x-devryan-abort-source': source } : {}, body: {},
+    });
+    const next = vi.fn();
+    const accepted = createResponse();
+    runtime.controlJournalMiddleware(abort('ses_retry', 'provider_retry'), accepted, next);
+    expect(runtime.readAbortSource('ses_retry')).toBe('provider_retry');
+    accepted.emit('finish');
+    expect(runtime.readAbortSource('ses_retry')).toBe('provider_retry');
+
+    const rejected = createResponse();
+    runtime.controlJournalMiddleware(abort('ses_rejected', 'stall_watchdog'), rejected, next);
+    rejected.statusCode = 409;
+    rejected.emit('finish');
+    expect(runtime.readAbortSource('ses_rejected')).toBeNull();
+
+    runtime.controlJournalMiddleware(abort('ses_retry'), createResponse(), next);
+    expect(runtime.readAbortSource('ses_retry')).toBeNull();
+
+    runtime.controlJournalMiddleware(abort('ses_retry', 'abort_guard'), createResponse(), next);
+    const prompt = createResponse();
+    runtime.promptAdmissionMiddleware()({
+      method: 'POST', params: { sessionID: 'ses_retry' }, query: { directory: '/repo' }, headers: {}, body: {},
+    }, prompt, next);
+    expect(runtime.readAbortSource('ses_retry')).toBe('abort_guard');
+    prompt.emit('finish');
+    expect(runtime.readAbortSource('ses_retry')).toBeNull();
+    await runtime.drain();
+  });
+});
+
 describe('web harness control observer', () => {
   it('hands accepted session controls to the server observer without letting it block the request', async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), 'devryan-web-harness-'));

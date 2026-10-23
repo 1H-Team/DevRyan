@@ -83,6 +83,7 @@ export function createGlobalMessageStreamHub({
   getOpenCodeRuntime = null,
   generation2StallTimeoutMs = GEN2_UPSTREAM_STALL_TIMEOUT_MS,
   recordDiagnostic = null,
+  resolveAbortSource = null,
 }) {
   const eventSubscribers = new Set();
   const statusSubscribers = new Set();
@@ -454,6 +455,7 @@ export function createGlobalMessageStreamHub({
     projector = openCodeClient.events.createProjector({
       onReseedRequested: scheduleReseedDrain,
       ...(typeof recordDiagnostic === 'function' ? { recordDiagnostic } : {}),
+      ...(typeof resolveAbortSource === 'function' ? { resolveAbortSource } : {}),
     });
     return projector;
   };

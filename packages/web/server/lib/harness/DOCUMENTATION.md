@@ -11,6 +11,11 @@ the native abort. The response accepts the exact pending receipt on2xx or
 withdraws it on non-2xx; only acceptance establishes user-stop provenance.
 Lost responses expire as uncertain explicit recovery through the scheduler abort bound. Observer failures never block controls,
 while preparation failures return a fixed503 response.
+The control journal also keeps each abort's `X-DevRyan-Abort-Source` in a
+bounded per-session registry (`readAbortSource(sessionID)`, 60-second TTL). A
+non-2xx abort withdraws its own entry and an accepted prompt clears it, so the
+gen-2 event projector can attach the source to the interrupt it causes as
+`MessageAbortedError` `data.source`.
 Shell tool calls are registered with the shared deadline controller without
 persisting command text. Its host adapter performs authenticated, directory-
 scoped exact-message reconciliation, one session abort, and a managed-runtime

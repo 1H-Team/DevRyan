@@ -54,7 +54,7 @@ import { isNativeStatusRecord, isNativeTurnParent } from '../../../../../../shar
 // the REST page folds into the next user record (LOSS(live-synthetic-fold)).
 // ---------------------------------------------------------------------------
 
-import { toV1Error, toV1InterruptError } from './errors.js';
+import { toV1Error, toV1InterruptError, withAbortSource } from './errors.js';
 import {
   assistantReasoningPartId,
   assistantTextPartId,
@@ -163,6 +163,9 @@ export const EVENT_PROJECTOR_DIAGNOSTICS = Object.freeze({
  * @property {() => number} [now] clock for seed payload times
  * @property {Partial<typeof EVENT_PROJECTOR_LIMITS>} [limits]
  * @property {import('./errors.js').ToV1ErrorOptions} [errorOptions]
+ * @property {(sessionID: string) => string | null | undefined} [resolveAbortSource] the
+ *   DevRyan source of the session's latest accepted abort; OpenCode reports every
+ *   interrupt as reason `user`, so this becomes `data.source` on MessageAbortedError
  */
 
 const isRecord = (value) => (
@@ -295,6 +298,17 @@ export function createEventProjector(options = {}) {
   const limits = { ...EVENT_PROJECTOR_LIMITS, ...(isRecord(options.limits) ? options.limits : {}) };
   const now = typeof options.now === 'function' ? options.now : Date.now;
   const errorOptions = isRecord(options.errorOptions) ? options.errorOptions : undefined;
+  /** @param {string} sessionID @returns {string | undefined} */
+  const readAbortSource = (sessionID) => {
+    if (typeof options.resolveAbortSource !== 'function') return undefined;
+    try {
+      const source = options.resolveAbortSource(sessionID);
+      return isNonEmptyString(source) ? source : undefined;
+    } catch {
+      // Attribution only: a failing resolver leaves the error as OpenCode reported it.
+      return undefined;
+    }
+  };
 
   /** @type {Map<string, ReturnType<typeof createSessionState>>} LRU: oldest first. */
   const sessions = new Map();
@@ -444,6 +458,7 @@ export function createEventProjector(options = {}) {
       /** @type {unknown} */ cost: undefined,
       /** @type {unknown} */ tokens: undefined,
       /** @type {unknown} */ error: undefined,
+      /** @type {string | undefined} */ abortSource: undefined,
       /** @type {string | undefined} */ snapshotStart: undefined,
       stepStarted: false,
       /** @type {unknown} */ cursorMetadata: undefined,
@@ -680,13 +695,15 @@ export function createEventProjector(options = {}) {
       tokens: assistant.tokens,
       error: assistant.error,
     };
-    return toV1AssistantInfo(row, {
+    const info = toV1AssistantInfo(row, {
       sessionID: state.sessionID,
       parentID: assistant.parentID,
       created: assistant.created,
       path: pathInfoOf(state),
       errorOptions,
     });
+    if (assistant.abortSource && info.error) info.error = withAbortSource(info.error, assistant.abortSource);
+    return info;
   };
 
   const evictOldestAssistant = (state) => {
@@ -1146,7 +1163,10 @@ export function createEventProjector(options = {}) {
 
   onSession('session.execution.interrupted', (ctx, state, data) => {
     if (data.reason === 'user') {
-      emit(ctx, 'session.error', { sessionID: state.sessionID, error: toV1InterruptError(data.reason) });
+      emit(ctx, 'session.error', {
+        sessionID: state.sessionID,
+        error: toV1InterruptError(data.reason, readAbortSource(state.sessionID)),
+      });
     }
     finishExecution(ctx, state);
     // [ev M16]: `shutdown` keeps the claim, so the host may resume the run.
@@ -1217,6 +1237,8 @@ export function createEventProjector(options = {}) {
     if (failed) {
       assistant.finish = typeof data.finish === 'string' ? data.finish : 'error';
       assistant.error = data.error;
+      assistant.abortSource = isRecord(data.error) && data.error.type === 'aborted'
+        ? readAbortSource(state.sessionID) : undefined;
     } else if (typeof data.finish === 'string') {
       assistant.finish = data.finish;
     }

@@ -11,6 +11,7 @@ import {
 } from "@/lib/messages/transientStreamError"
 import { isClaudeThirdPartyUsageClassificationError } from "@/lib/messages/claudeThirdPartyUsage"
 import { decodeAssistantMessageError } from "@/lib/decoders/assistantMessageError"
+import type { AbortSource } from "@/sync/abort-source"
 import { describeExecutionRecoveryFailure } from "@/lib/executionFailure"
 import type {
   ManagedAbortRecoveryPresentation,
@@ -54,6 +55,21 @@ const getTransportFailureCopy = (
       return "Your prompt was accepted, but the model provider connection failed before the turn finished."
     case "provider_queue_timeout":
       return "The model provider dropped this request from its queue before starting it. This is a provider-side capacity failure, not a problem with your prompt."
+  }
+}
+
+// Aborts DevRyan made on its own, not at the user's request. Operator stops
+// (Stop, double Escape, status row) keep the existing stop presentation.
+const getAutomaticAbortCopy = (source: AbortSource | undefined): string | undefined => {
+  switch (source) {
+    case "provider_retry":
+      return "Stopped after repeated provider connection failures."
+    case "stall_watchdog":
+      return "Stopped because the model provider stopped responding."
+    case "abort_guard":
+      return "Stopped a provider retry that started after this turn was stopped."
+    default:
+      return undefined
   }
 }
 
@@ -103,6 +119,11 @@ export function classifyAssistantError(
 
   const recoveryFailure = describeExecutionRecoveryFailure(detail)
   if (recoveryFailure) return { text: recoveryFailure.message, variant: "error" }
+
+  // Checked before the manual-abort match: every UI abort marks the message as
+  // manually stopped, but these were not the user's.
+  const automaticAbortCopy = getAutomaticAbortCopy(decoded?.abortSource)
+  if (automaticAbortCopy) return { text: automaticAbortCopy, variant: "info" }
 
 
   if (errorName === "SessionRetry") {

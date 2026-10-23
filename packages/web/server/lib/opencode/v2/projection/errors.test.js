@@ -5,6 +5,7 @@ import {
   toV1InterruptError,
   toV2Error,
   v1ErrorNameForV2Type,
+  withAbortSource,
 } from './errors.js';
 
 describe('toV1Error', () => {
@@ -117,6 +118,30 @@ describe('toV1InterruptError', () => {
       name: 'MessageAbortedError',
       data: { message: 'Aborted', v2Type: 'aborted' },
     });
+  });
+
+  it('attaches the recorded abort source and keeps the reported reason', () => {
+    expect(toV1InterruptError('user', 'provider_retry')).toEqual({
+      name: 'MessageAbortedError',
+      data: { message: 'Aborted', reason: 'user', v2Type: 'aborted', source: 'provider_retry' },
+    });
+    expect(toV1InterruptError('user', '')).toEqual(toV1InterruptError('user'));
+    expect(toV1InterruptError('user', null)).toEqual(toV1InterruptError('user'));
+  });
+});
+
+describe('withAbortSource', () => {
+  it('copies only a MessageAbortedError and never mutates it', () => {
+    const aborted = { name: 'MessageAbortedError', data: { message: 'Step interrupted', v2Type: 'aborted' } };
+    expect(withAbortSource(aborted, 'stall_watchdog')).toEqual({
+      name: 'MessageAbortedError',
+      data: { message: 'Step interrupted', v2Type: 'aborted', source: 'stall_watchdog' },
+    });
+    expect(aborted.data).not.toHaveProperty('source');
+    expect(withAbortSource(aborted, undefined)).toBe(aborted);
+    const failed = { name: 'APIError', data: { message: 'boom' } };
+    expect(withAbortSource(failed, 'provider_retry')).toBe(failed);
+    expect(withAbortSource(undefined, 'provider_retry')).toBeUndefined();
   });
 });
 
