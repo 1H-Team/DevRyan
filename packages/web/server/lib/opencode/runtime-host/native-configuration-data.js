@@ -2,7 +2,7 @@ import {ConfigProvider} from '@opencode/schema/config/provider';
 import {ConfigCompaction} from '@opencode/schema/config/compaction';
 import {Schema} from 'effect';
 import {nativeToolOutputLimits,PLAN_MODE_SYSTEM_INSTRUCTIONS} from '@devryan/orchestration-runtime';
-import {nativeProviderDeadlines} from './native-provider-deadlines.js';
+import {withNativeProviderDeadlines} from './native-provider-deadlines.js';
 
 export const NATIVE_LOCATION_IDLE_TIMEOUT = '15 minutes';
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -144,11 +144,9 @@ export function nativeProviderConfigurations(input) {
       delete result.package;
       for (const model of Object.values(result.models ?? {})) model.package ??= packageName;
     }
-    const settings = nativeProviderDeadlines(id, result.settings);
-    if (settings !== undefined) result.settings = settings;
     // Saved route IDs are compatibility identities. Preserve them rather than
     // applying the SDK whole-config migration's providerID alias collapse.
-    return [id, Schema.encodeSync(ConfigProvider.Info)(Schema.decodeUnknownSync(ConfigProvider.Info)(result, {onExcessProperty: 'error'}))];
+    return [id, Schema.encodeSync(ConfigProvider.Info)(Schema.decodeUnknownSync(ConfigProvider.Info)(withNativeProviderDeadlines(id, result), {onExcessProperty: 'error'}))];
   }));
 }
 
@@ -184,8 +182,7 @@ export function translateNativeConfiguration({ legacy, agents, commands = {} }) 
     if (!record(legacy.providers) || legacy.provider !== undefined) throw fail('native_provider_shapes_conflict');
     configuration.providers = Object.fromEntries(Object.entries(structuredClone(legacy.providers)).map(([id, provider]) => {
       if (!record(provider) || provider.settings !== undefined && !record(provider.settings)) throw fail('native_provider_invalid');
-      const settings = nativeProviderDeadlines(id, provider.settings);
-      return [id, settings === undefined ? provider : { ...provider, settings }];
+      return [id, withNativeProviderDeadlines(id, provider)];
     }));
   }
   const permissions = configuredPermissions(legacy);
