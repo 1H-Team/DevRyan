@@ -27,6 +27,19 @@ describe('bundled agent tool recovery guidance', () => {
     expect(explorer).toContain('never replay the rejected arguments unchanged');
   });
 
+  it('batches Explorer discovery and grounds every claim in path:line evidence', () => {
+    const explorer = readAgent('explorer');
+    expect(explorer).toContain('Batch independent globs, greps, and reads in one step (aim for 5-10 calls)');
+    expect(explorer).toContain('Back every claim in `## Answer` with a `path:line` entry under `## Files`.');
+    expect(explorer).toContain('## Open questions');
+  });
+
+  it.each(['designer', 'fixer'])('reuses one dev server and a warm browser page for %s', (agent) => {
+    const prompt = readAgent(agent);
+    expect(prompt).toContain('Reuse one dev server: if its port already serves, start no other.');
+    expect(prompt).toContain('checks use one warm `devryan_browser` page; Playwright runs only the final verification.');
+  });
+
   it('requires Orchestrator to correct guarded grep inputs once', () => {
     const orchestrator = readAgent('orchestrator');
     expect(orchestrator).toContain('`grep.path` accepts exactly one path');

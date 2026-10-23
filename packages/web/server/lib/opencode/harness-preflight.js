@@ -448,6 +448,23 @@ function lintPermissionKeys({ findings, permissionKeys, agent }) {
   }
 }
 
+// OpenCode maps `steps` (legacy alias `maxSteps`) to the native per-agent step cap.
+function lintAgentSteps({ findings, agent }) {
+  const frontmatter = getAgentFrontmatter(agent);
+  for (const key of ['steps', 'maxSteps']) {
+    const value = frontmatter[key];
+    if (value === undefined || (Number.isSafeInteger(value) && value > 0)) continue;
+    findings.push(createFinding({
+      ruleId: 'invalid-agent-steps',
+      severity: 'error',
+      summary: `Agent "${getAgentName(agent)}" sets "${key}" to a ${value === null ? 'null' : typeof value} value that is not a positive integer`,
+      artifact: { type: 'agent', name: getAgentName(agent), path: getAgentPath(agent) },
+      suggestedNextAction: `Set "${key}" to a positive integer step cap or remove it`,
+      stopCondition: `Stop relying on the "${getAgentName(agent)}" step cap until "${key}" is a positive integer`,
+    }));
+  }
+}
+
 function lintHiddenSkillAllows({ findings, hiddenSkills, agent }) {
   const frontmatter = getAgentFrontmatter(agent);
   const skillPermissions = frontmatter.permission?.skill;
@@ -831,6 +848,7 @@ function lintAgentHarness(options = {}) {
   for (const agent of agents) {
     lintDelegatedAgents({ findings, agentsByName, agent });
     lintPermissionKeys({ findings, permissionKeys, agent });
+    lintAgentSteps({ findings, agent });
     lintHiddenSkillAllows({ findings, hiddenSkills, agent });
     lintSkillAnnouncementPolicy({ findings, skills, hiddenSkills, agent });
   }

@@ -14,12 +14,12 @@ const MAX_SLACK_RATIO = 0.1;
 const PROMPT_BODY_BUDGETS = {
   builder: { maxBodyBytes: 8996, rationale: 'Sandbox write locations and EPERM recovery 2026-09-27 (7771 bytes) plus 3% headroom; Writing/Executing Plans guidance replacing the retired Superpowers skill 2026-10-05 (+992 bytes, 8984 bytes).' },
   council: { maxBodyBytes: 3900, rationale: 'Baseline 2026-09-23 (3700 bytes) plus ~3% headroom.' },
-  designer: { maxBodyBytes: 5280, rationale: '2026-10-20: compact repeated prose, preserve Git, skill visibility, authority and recovery rules; 5130 measured bytes within the retained ceiling.' },
-  explorer: { maxBodyBytes: 4930, rationale: '2026-10-20: compact repeated prose, preserve Git, skill visibility, authority and recovery rules; 4674 measured bytes within the retained ceiling.' },
-  fixer: { maxBodyBytes: 8108, rationale: '2026-10-20: compact repeated prose, preserve Git, skill visibility, authority and recovery rules; 7968 measured bytes within the retained ceiling.' },
+  designer: { maxBodyBytes: 5280, rationale: '2026-10-20: compact repeated prose, preserve Git, skill visibility, authority and recovery rules (5130 bytes); 2026-10-23 live QA: reuse one dev server and take interim checks on a warm devryan_browser page instead of cold Playwright runs, paid for by tighter batching wording (5275 bytes) within the retained ceiling.' },
+  explorer: { maxBodyBytes: 5155, rationale: '2026-10-20: compact repeated prose, preserve Git, skill visibility, authority and recovery rules (4674 bytes); 2026-10-23 live QA showed ~26 sequential steps at ~2 tool calls each, so batch 5-10 independent calls per step, cite path:line for every claim and report gaps under an optional Open questions section (5005 bytes) plus 3% headroom.' },
+  fixer: { maxBodyBytes: 8108, rationale: '2026-10-20: compact repeated prose, preserve Git, skill visibility, authority and recovery rules (7968 bytes); 2026-10-23 live QA: reuse one dev server and take interim checks on a warm devryan_browser page instead of cold Playwright runs, paid for by removing redundant words (8108 bytes) within the retained ceiling.' },
   librarian: { maxBodyBytes: 1551, rationale: '2026-10-20: compact research prose, preserve Git, authority and recovery rules; 1505 measured bytes plus 3% headroom.' },
   oracle: { maxBodyBytes: 5600, rationale: 'Code-review precision rules (change attribution, severity vs confidence, verified vs unverified) 2026-09-23; Context Mode guidance removed 2026-09-24 (5439 bytes) plus ~3% headroom.' },
-  orchestrator: { maxBodyBytes: 29700, rationale: '2026-10-22 context diet: recovery detail moved into failed-result instructions, default-off capability paragraphs rendered only when enabled, duplicated plan/template/tool-description text removed (42036 -> 29003 bytes rendered with default policies; 29572 with waitAny and compactResults on) plus ~2% headroom.' },
+  orchestrator: { maxBodyBytes: 29700, rationale: '2026-10-22 context diet: recovery detail moved into failed-result instructions, default-off capability paragraphs rendered only when enabled, duplicated plan/template/tool-description text removed (42036 -> 29003 bytes rendered with default policies; 29572 with waitAny and compactResults on) plus ~2% headroom; 2026-10-23 live QA: one narrow follow-up Explorer or at most 3 named reads for a discovery gap, and dev-server reuse (29697 bytes) within the retained ceiling.' },
   plan: { maxBodyBytes: 5268, rationale: 'Owner and dependency line per phase 2026-09-30 (3994 bytes) plus ~3% headroom; Writing/Executing plans guidance replacing the retired Superpowers skill 2026-10-05 (+1153 bytes, 5147 bytes).' },
 };
 
@@ -63,7 +63,7 @@ describe('packaged agent prompt budgets', () => {
 // visible primary prefix carries, and the hidden Implement handoff template
 // sent with each saved-plan implementation turn. Same ratchet as above.
 const SHARED_PROMPT_BUDGETS = {
-  planModeSuffix: { maxBytes: 4824, rationale: 'Measured 2026-10-22 as appended to a visible primary system prefix (4683 bytes) plus ~3% headroom.' },
+  planModeSuffix: { maxBytes: 4824, rationale: 'Measured 2026-10-22 as appended to a visible primary system prefix (4683 bytes) plus ~3% headroom; 2026-10-23 states that read-only shell inspection stays available (4741 bytes) within the retained ceiling.' },
   implementTemplate: { maxBytes: 8106, rationale: 'plan.implement.instructions default template measured 2026-10-23 (7870 bytes: parallel-phase start and the Class 1 frontend carve-out matching orchestrator.md) plus ~3% headroom.' },
 };
 
