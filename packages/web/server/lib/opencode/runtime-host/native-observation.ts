@@ -18,7 +18,7 @@ import { HostRefusal } from './host-refusal.js';
 import {createNativeFinalizationQueue,drainNativeFinalizationQueue,registerNativeFinalizationObservation} from './native-finalization-observation.js';
 import {createNativeStreamContinuation} from './native-stream-continuation.js';
 import {LLMRequest,type LLMClientShape} from '@opencode/ai';
-import {NATIVE_DEADLINE_EXEMPT_PROVIDERS,NATIVE_PROVIDER_DEADLINES} from './native-provider-deadlines.js';
+import {nativeRequestHeaderDeadline} from './native-provider-deadlines.js';
 
 export interface NativeAttemptIdentity {
   readonly traceID: string;
@@ -173,16 +173,11 @@ export function projectNativeProviderFailure(input:{readonly error:unknown;reado
     providerID:input.providerID,modelID:input.modelID,providerRequestID:read?nativeProviderRequestID(http?.headers)??input.state.providerRequestID??null:null}};
 }
 
-// Providers used without a config stanza (Zen, OAuth OpenAI) keep core's 300 s
-// header wait, and adding a stanza would change their activation. A request
-// whose model left the core default gets DevRyan's header deadline instead;
-// chunk waits stay as configured because reasoning models can stream nothing
-// for minutes. Core retries the resulting Transport/Timeout.
+/** Apply the per-request header deadline policy (`native-provider-deadlines.js`) to a prepared request. */
 export function withNativeHeaderDeadline<Request extends LLMRequest>(request:Request):Request {
-  if(NATIVE_DEADLINE_EXEMPT_PROVIDERS.includes(request.model.provider))return request;
-  const configured=request.http?.headerTimeout??request.model.defaults?.http?.headerTimeout;
-  if(configured!==undefined&&configured!==DEFAULT_HTTP_TIMEOUT_MS)return request;
-  return LLMRequest.update(request,{http:new HttpOptions({...request.http,headerTimeout:NATIVE_PROVIDER_DEADLINES.headerTimeout})}) as Request;
+  const headerTimeout=nativeRequestHeaderDeadline(request.model.provider,
+    request.http?.headerTimeout??request.model.defaults?.http?.headerTimeout,DEFAULT_HTTP_TIMEOUT_MS);
+  return headerTimeout===undefined?request:LLMRequest.update(request,{http:new HttpOptions({...request.http,headerTimeout})}) as Request;
 }
 
 export function createNativeObservation(options:{readonly controllerInstanceID:string;readonly configurationDigest:string;readonly rpc:ExecutionRpc;

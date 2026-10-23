@@ -111,6 +111,15 @@ codes and request parameter names from bounded structured bodies. Session error
 projection and the diagnostic sanitizer share this allowlist, preserving useful
 failure classification without copying response bodies into diagnostic fields.
 
+`lib/upstream-stall.js` is the single matcher for Meridian's upstream stall:
+`isUpstreamStallEnvelope` accepts only the bounded (4,096-character) JSON object
+with `type: upstream_timeout` and the exact `Upstream stalled: no data for <n>ms`
+message, and `isUpstreamStallText` only the OpenCode 2.x
+`upstream_timeout: Upstream stalled: no data for <n>ms` text. The orchestration
+transport classifier (`classifyProviderTransportFailure`) and the harness
+primary recovery classifier (`classifyPrimaryTransportError`) both use it; each
+keeps its own error-name and runtime-version gates.
+
 `lib/native-observation.js` validates native runtime observation envelopes.
 Its `provider-refusal` stage accepts only reviewed local OpenAI refusal codes,
 request kinds and physical hook names; additional fields are rejected. The

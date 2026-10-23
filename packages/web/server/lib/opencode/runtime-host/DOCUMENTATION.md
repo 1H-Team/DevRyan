@@ -1294,6 +1294,13 @@ The web execution host caps trusted `grep`/`glob` stdout before its event queue 
 
 ### Provider transport deadlines
 
+`native-provider-deadlines.js` owns the whole deadline policy: the values, the
+exempt providers, the stanza merge (`nativeProviderDeadlines`,
+`withNativeProviderDeadlines`) and the per-request header rule
+(`nativeRequestHeaderDeadline`). It has no imports, so the configuration
+translation and the native controller bundle both load it; the call sites
+below only apply it.
+
 `nativeProviderConfigurations` (`native-configuration-data.js`) merges
 `NATIVE_PROVIDER_DEADLINES` into the `settings` of every native provider stanza
 it emits: `headerTimeout` 45,000 ms and `chunkTimeout` 120,000 ms. The `openai`
@@ -1326,11 +1333,10 @@ providers used without one (Zen `opencode`, OpenAI signed in by OAuth with no
 `withNativeHeaderDeadline` (`native-observation.ts`) sets the prepared
 request's `http.headerTimeout` to 45,000 ms whenever neither the request nor its
 model configured one other than core's 300,000 ms default (`anthropic` excepted,
-as above). Chunk waits are left
+as above); `nativeRequestHeaderDeadline` decides, given core's
+`DEFAULT_HTTP_TIMEOUT_MS`. Chunk waits are left
 as configured for these providers, because reasoning models such as DeepSeek
-can legitimately stream nothing for minutes. The constants live in
-`native-provider-deadlines.js` so the controller and the configuration
-translation share them.
+can legitimately stream nothing for minutes.
 
 ### Idle location release
 

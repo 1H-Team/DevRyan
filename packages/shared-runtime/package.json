@@ -55,6 +55,10 @@
       "types": "./lib/provider-error-details.d.ts",
       "default": "./lib/provider-error-details.js"
     },
+    "./lib/upstream-stall.js": {
+      "types": "./lib/upstream-stall.d.ts",
+      "default": "./lib/upstream-stall.js"
+    },
     "./lib/usage-observation.js": {
       "types": "./lib/usage-observation.d.ts",
       "default": "./lib/usage-observation.js"

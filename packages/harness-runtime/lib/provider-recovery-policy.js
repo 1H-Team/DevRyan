@@ -1,4 +1,5 @@
 import { isNativeStatusRecord } from '../../shared-runtime/lib/native-message-status.js';
+import { isUpstreamStallEnvelope, isUpstreamStallText } from '../../shared-runtime/lib/upstream-stall.js';
 import { validateBuilderTodoGuard, validateObjectiveProgress, validateObjectiveRejections } from './objective-progress.js';
 import { currentObjectiveUser, isNativeCompactionRecord } from './objective-identity.js';
 
@@ -57,19 +58,12 @@ export function classifyPrimaryTransportError(error, runtimeVersion) {
   const status = error.statusCode ?? error.status ?? error.data?.statusCode;
   if (Number.isInteger(status) && status >= 400 && status < 500) return null;
   if (/auth|certificate|cert_|quota|policy|model.?not.?found|abort|cancel|usage.?limit/i.test(`${name} ${code} ${message}`)) return null;
-  if (name === 'UnknownError' && isProviderRecoverySupportedRuntimeVersion(runtimeVersion) && message.length <= 4096) {
-    try {
-      const envelope = JSON.parse(message);
-      if (envelope && typeof envelope === 'object' && !Array.isArray(envelope)
-        && envelope.type === 'upstream_timeout' && typeof envelope.message === 'string'
-        && /^Upstream stalled: no data for [1-9][0-9]{0,12}ms$/.test(envelope.message)) {
-        return { kind: 'chunk_timeout', source: 'upstream_timeout_envelope' };
-      }
-    } catch { /* Unrecognized envelopes cannot authorize recovery. */ }
+  // Unrecognized envelopes cannot authorize recovery.
+  if (name === 'UnknownError' && isProviderRecoverySupportedRuntimeVersion(runtimeVersion) && isUpstreamStallEnvelope(message)) {
+    return { kind: 'chunk_timeout', source: 'upstream_timeout_envelope' };
   }
   // Native 2.x reformats the same Meridian SSE error event as `<type>: <message>`.
-  if (name === 'APIError' && isNativePrimaryRuntimeVersion(runtimeVersion)
-    && /^upstream_timeout: Upstream stalled: no data for [1-9][0-9]{0,12}ms$/.test(message)) {
+  if (name === 'APIError' && isNativePrimaryRuntimeVersion(runtimeVersion) && isUpstreamStallText(message)) {
     return { kind: 'chunk_timeout', source: 'upstream_timeout_text' };
   }
   // OpenCode 2.1 types its provider failures. Only the transport and timeout

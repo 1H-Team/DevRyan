@@ -3,6 +3,7 @@ import { isDefiniteProviderUsageLimit } from '@devryan/orchestration-runtime';
 
 import { isLikelyProviderAuthFailure } from '@/lib/messages/providerAuthError';
 import { isLikelyProviderModelNotFound } from '@/lib/messages/providerModelNotFound';
+import { latestUserMessageId } from '@/lib/messages/providerRecovery';
 import { isLikelyTransientStreamFailure, stripWrappedJsonQuotes } from '@/lib/messages/transientStreamError';
 import { isAssistantTurnComplete } from '@/sync/session-working';
 import { isClaudeThirdPartyUsageClassificationError } from '@/lib/messages/claudeThirdPartyUsage';
@@ -71,13 +72,8 @@ export function decideProviderErrorRecovery(input: Input): { reason: string } | 
   const latest = input.messages.at(-1);
   if (!latest || latest.role !== 'assistant' || !latest.error) return null;
 
-  let anchorUserMessageId: string | undefined;
-  for (let index = input.messages.length - 2; index >= 0; index -= 1) {
-    if (input.messages[index]?.role === 'user') {
-      anchorUserMessageId = input.messages[index].id;
-      break;
-    }
-  }
+  // The latest message is the assistant, so this is the newest user before it.
+  const anchorUserMessageId = latestUserMessageId(input.messages);
   if (!anchorUserMessageId || anchorUserMessageId !== input.observedActiveUserMessageId) return null;
 
   const error = decodeAssistantMessageError(latest.error);
@@ -102,10 +98,5 @@ export function decideInterruptedProviderRecovery(
     return null;
   }
 
-  for (let index = input.messages.length - 2; index >= 0; index -= 1) {
-    if (input.messages[index]?.role === 'user') {
-      return { reason: INTERRUPTED_PROVIDER_RESPONSE_REASON };
-    }
-  }
-  return null;
+  return latestUserMessageId(input.messages) !== undefined ? { reason: INTERRUPTED_PROVIDER_RESPONSE_REASON } : null;
 }

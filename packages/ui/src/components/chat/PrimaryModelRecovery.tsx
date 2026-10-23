@@ -37,13 +37,13 @@ export const PrimaryModelRecovery = React.memo(({
     [sessionId],
   ));
   const providers = useConfigStore((state) => state.providers);
-  const hostEnforced = usePrimaryRecoveryStore((state) => primaryRecoveryDefersToHost(state.snapshots[sessionId]));
+  const defersToHost = usePrimaryRecoveryStore((state) => primaryRecoveryDefersToHost(state.snapshots[sessionId]));
 
   React.useLayoutEffect(() => {
     if (recovery) onContentChange?.();
   }, [onContentChange, recovery]);
 
-  if (!recovery || hostEnforced) return <><SessionFailureNotice sessionId={sessionId} /><HostPrimaryRecovery sessionId={sessionId} /></>;
+  if (!recovery || defersToHost) return <><SessionFailureNotice sessionId={sessionId} /><HostPrimaryRecovery sessionId={sessionId} /></>;
 
   const usageLimitReason = getProviderUsageLimitDisplayReason(recovery.reason);
   const isClaudeClassificationError = isClaudeThirdPartyUsageClassificationError(recovery.reason);
