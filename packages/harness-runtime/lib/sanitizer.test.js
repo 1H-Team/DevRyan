@@ -351,6 +351,10 @@ test('Claude checkpoint diagnostics keep finite reasons and correlation without 
   const row = { type: 'lifecycle', event: 'native_claude_checkpoint', payload };
   expect(sanitizer.sanitizeRecord(row).payload).toEqual(payload);
   expect(sanitizer.sanitizeExportValue(row).payload).toEqual(payload);
+  for (const event of ['passthrough.checkpoint_aborted', 'passthrough.checkpoint_retry']) {
+    const stalled = { ...payload, event, reason: 'upstream_idle', toolCount: 0 };
+    expect(sanitizer.sanitizeRecord({ ...row, payload: stalled }).payload).toEqual(stalled);
+  }
   const unsafe = { ...row, payload: { ...payload, reason: 'private raw failure', text: 'private prompt', path: '/private', headers: { authorization: 'private' } } };
   const expected = { ...payload }; delete expected.reason;
   expect(sanitizer.sanitizeRecord(unsafe).payload).toEqual(expected);

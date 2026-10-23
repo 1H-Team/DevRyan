@@ -36,6 +36,13 @@ test('checkpoint diagnostics are finite, attempt-bound and capped without raw pr
   expect(events).toEqual([]);
   for (let index = 0; index < 70; index++) owner.diagnostic(raw, 'passthrough.checkpoint_rejected', detail);
   expect(events).toHaveLength(64); expect(events[0].checkpoint).toEqual({ event: 'passthrough.checkpoint_rejected', ...detail });
+  const stalled = createNativeClaudeCheckpointOwner({ boot, assertAttempt() {}, publish: value => events.push(parseProviderDiagnostic(value)) });
+  for (const event of ['passthrough.checkpoint_aborted', 'passthrough.checkpoint_retry']) stalled.diagnostic(raw, event, { reason: 'upstream_idle', toolCount: 0 });
+  expect(events.slice(64).map(value => value.checkpoint)).toEqual([
+    { event: 'passthrough.checkpoint_aborted', reason: 'upstream_idle', toolCount: 0 },
+    { event: 'passthrough.checkpoint_retry', reason: 'upstream_idle', toolCount: 0 },
+  ]);
+  events.splice(64);
   active = false; owner.diagnostic(raw, 'passthrough.checkpoint_settled', { reason: 'sdk_terminal', toolCount: 2 });
   expect(events).toHaveLength(64);
   expect(() => parseProviderDiagnostic({ ...events[0], checkpoint: { ...events[0].checkpoint, token: 'private' } })).toThrow();

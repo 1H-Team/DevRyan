@@ -61,6 +61,7 @@ ${marker}`);
   const replay='          diagnosticLog2.session(requestMeta.requestId + " passthrough.checkpoint_replay reason=incomplete_or_mismatched_results", requestMeta.requestId);';
   if(output.split(replay).length!==2)throw new Error('native_meridian_source_shape_changed');
   output=output.replace(replay,checkpointObservation('passthrough.checkpoint_replay','incomplete_or_mismatched_results','0')+'\n'+replay);
+  output=rewriteReviewedMeridianStallRetry(output);
   output=output.replace('        const profileCredentialStore = credentialStoreForProfile(profile);',`        const profileCredentialStore = undefined;
         const renewNativeCredential = async () => {
           const next = await credentialResolver(c.req.raw, profile.id, 'authentication-retry', nativeCredential.fingerprint);
@@ -76,6 +77,44 @@ ${marker}`);
   output=output.replace('const profileTokenRefreshInterval = setInterval(() => {','const profileTokenRefreshInterval = process.env.DEVRYAN_EXECUTION_BOUNDARY === \"1\" ? undefined : setInterval(() => {').replace('if (profileTokenRefreshInterval.unref)','if (profileTokenRefreshInterval?.unref)');
   return output;
 }
+/** A streamed step that stalls on Meridian's idle guard after resuming a
+ * retained checkpoint is retried once (see retryStalledCheckpoint). The
+ * attempt guard runs inside the checkpoint settler so the stall is reported;
+ * the response guard becomes a backstop that cannot pre-empt that retry. */
+export function rewriteReviewedMeridianStallRetry(text){
+  const edits=[
+    ['import { settlePassthroughQuery } from "./devryan-meridian-passthrough-handoff.js";\n',
+      'import { retryStalledCheckpoint, settlePassthroughQuery, upstreamIdleBackstop, upstreamIdleBudget } from "./devryan-meridian-passthrough-handoff.js";\n'],
+    ['      yield* guardUpstreamIdle(settlePassthroughQuery(sdkQuery, { signal, queryOptions: params.options, ...requestMeta.passthroughHandoff }), UPSTREAM_IDLE_MS, (sinceLastMs) => claudeLog("upstream.stalled", { mode, sinceLastMs }));',
+      '      yield* settlePassthroughQuery(sdkQuery, { signal, queryOptions: params.options, ...requestMeta.passthroughHandoff, idle: { guard: guardUpstreamIdle, error: UpstreamIdleError, ms: upstreamIdleBudget(UPSTREAM_IDLE_MS, params.options.effort), onStall: (sinceLastMs) => claudeLog("upstream.stalled", { mode, sinceLastMs }) } });'],
+    ['                      for await (const event of runSdkQueryAttempt(buildQueryOptions({\n                        prompt: makePrompt(),',
+      '                      for await (const event of retryStalledCheckpoint(() => runSdkQueryAttempt(buildQueryOptions({\n                        prompt: makePrompt(),'],
+    ['                      }, requestAbort.controller), requestAbort.controller.signal, requestMeta, "stream")) {',
+      `                      }, requestAbort.controller), requestAbort.controller.signal, requestMeta, "stream"), {
+                        retained: Boolean(requestMeta.passthroughHandoff && resumeSessionId && passthroughToolCallAssistantUuid && !isUndo),
+                        isStall: (error) => error instanceof UpstreamIdleError,
+                        forwarded: () => streamClosed || textEventsForwarded > 0 || streamedToolUseIds.size > 0 || capturedToolUses.length > 0,
+                        close: () => {
+                          for (const index of openClientBlocks) safeEnqueue(encoder.encode(\`event: content_block_stop
+data: \${JSON.stringify({ type: "content_block_stop", index })}
+
+\`), "stall_retry_close");
+                          openClientBlocks.clear();
+                        },
+                        signal: requestAbort.controller.signal,
+                        queryOptions: { env: profileEnv },
+                        diagnostic: requestMeta.passthroughHandoff?.diagnostic
+                      })) {`],
+    ['                const guardedResponse = guardUpstreamIdle(response, UPSTREAM_IDLE_MS, ',
+      '                const guardedResponse = guardUpstreamIdle(response, upstreamIdleBackstop(UPSTREAM_IDLE_MS, effort), '],
+  ];
+  for(const [before,after] of edits){
+    if(text.split(before).length!==2)throw new Error('native_meridian_source_shape_changed');
+    text=text.replace(before,()=>after);
+  }
+  return text;
+}
+
 /** Preserve the captured confinement handoff, targeting the same compiled controller. */
 export function rewriteReviewedClaudeSpawn(source) {
   if(createHash('sha256').update(source).digest('hex')!=='b0b4dd45fbae18e015e6598f68187bcd4f2d9bf25396e0aec2ed7a00ecad4980')throw new Error('native_claude_spawn_unreviewed');

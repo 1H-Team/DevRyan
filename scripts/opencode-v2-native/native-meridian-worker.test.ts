@@ -15,13 +15,14 @@ const fixture=async()=>{
   const globals=Object.fromEntries(['home','config','data','state','cache','bin','log','repos','tmp'].map(name=>[name,path.join(root,name)])) as Record<'home'|'config'|'data'|'state'|'cache'|'bin'|'log'|'repos'|'tmp',string>;
   await Promise.all(Object.values(globals).map(directory=>fs.mkdir(directory)));
   const environment={HOME:globals.home,XDG_CONFIG_HOME:globals.config,XDG_DATA_HOME:globals.data,XDG_STATE_HOME:globals.state,XDG_CACHE_HOME:globals.cache,TMPDIR:globals.tmp};
-  const saved=Object.fromEntries([...Object.keys(environment),'MERIDIAN_HOST','CLAUDE_PROXY_HOST','MERIDIAN_PASSTHROUGH','MERIDIAN_CLAUDE_PATH','DEVRYAN_EXECUTION_BOUNDARY','DEVRYAN_PROVIDER_TRANSPORT','DEVRYAN_PROVIDER_AUTHORIZATION'].map(name=>[name,process.env[name]]));Object.assign(process.env,environment);
+  const saved=Object.fromEntries([...Object.keys(environment),'MERIDIAN_HOST','CLAUDE_PROXY_HOST','MERIDIAN_PASSTHROUGH','UPSTREAM_IDLE_MS','MERIDIAN_CLAUDE_PATH','DEVRYAN_EXECUTION_BOUNDARY','DEVRYAN_PROVIDER_TRANSPORT','DEVRYAN_PROVIDER_AUTHORIZATION'].map(name=>[name,process.env[name]]));Object.assign(process.env,environment);
   return {boot:{protocol:1 as const,type:'provider-boot' as const,provider:'anthropic' as const,requestAuthorization:'1'.repeat(64),instanceID:randomUUID(),buildId:'a'.repeat(64),globals,profiles:[],assets:{claude:{path:path.resolve(import.meta.dirname,'../../packages/web/runtime/reviewed-inputs/claude-1.8.0/assets',REVIEWED_CLAUDE_ASSETS.claude.path),sha256:REVIEWED_CLAUDE_ASSETS.claude.sha256},libsql:{path:path.resolve(import.meta.dirname,'../../packages/web/runtime/reviewed-inputs/claude-1.8.0/assets',REVIEWED_CLAUDE_ASSETS.libsql.path),sha256:REVIEWED_CLAUDE_ASSETS.libsql.sha256}},transport:{launcher:path.resolve(import.meta.dirname,'../../packages/web/runtime/darwin-arm64/DevRyan-execution-darwin-arm64'),storage:globals.state,directories:[globals.repos]}},async cleanup(){for(const [name,value] of Object.entries(saved)){if(value===undefined)delete process.env[name];else process.env[name]=value;}await fs.rm(root,{recursive:true,force:true});}};
 };
 test('the reviewed spawn hook brokers only live exact scope and finite SDK semantics without forwarding environment',async()=>{
  const owned=await fixture(),frames:ClaudeTransportRequest[]=[],transport=createClaudeTransportChannel(frame=>frames.push(frame));
  try{
   const worker=await startNativeMeridianWorker(owned.boot,{buildId:owned.boot.buildId,transport,startup:{async startReviewedProxy(){return {port:3456,async close(){}};},async checkReviewedProxy(){return {ok:true,version:'1.62.6'};}}});
+  expect(process.env.UPSTREAM_IDLE_MS).toBe('90000');
   const binding={attemptID:'a'.repeat(64),sessionID:'ses_fixture',directory:owned.boot.globals.repos};
   await worker.command({protocol:1,id:'admit',action:'authorize-attempt',...binding});
   const spawn=Reflect.get(globalThis,'__DEVRYAN_CLAUDE_TRANSPORT_SPAWN');

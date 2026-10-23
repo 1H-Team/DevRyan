@@ -90,6 +90,9 @@ export async function startNativeMeridianWorker(input:unknown,options:{buildId:s
   // These exact original helpers otherwise consult ambient listener/profile settings.
   process.env.MERIDIAN_HOST='127.0.0.1';process.env.CLAUDE_PROXY_HOST='127.0.0.1';
   process.env.MERIDIAN_PASSTHROUGH='true';
+  // Per-attempt stall budget, read once at bundle load. High-effort requests
+  // raise it (upstreamIdleBudget); a stalled retained step is retried once.
+  process.env.UPSTREAM_IDLE_MS='90000';
   process.env.MERIDIAN_CLAUDE_PATH=boot.assets.claude.path;
   process.env.DEVRYAN_PROVIDER_AUTHORIZATION=boot.requestAuthorization;
   process.env.DEVRYAN_EXECUTION_BOUNDARY='1';
