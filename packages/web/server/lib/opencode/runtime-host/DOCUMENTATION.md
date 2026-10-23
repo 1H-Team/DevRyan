@@ -460,6 +460,44 @@ Only content-free typed timing fields reach the journal/export. Existing
 120-second headers, 300-second body and 900-second total transport defaults are
 unchanged; this path enables no new post-output timer.
 
+#### Provider transport failures
+
+A provider request that fails in transport is recorded once, for every request
+kind and both transports. The header, chunk and total timeouts wrap the HTTP
+middleware from outside (the middleware only sees an interruption), so the
+middleware and WebSocket frame observer in `native-observation.ts` only record
+per-request send state: send start, last pulled byte or frame, target URL and
+the provider's response request ID (`x-request-id`, `request-id`,
+`openai-request-id`, `x-amzn-requestid`). The report comes from the decorator
+that `createNativeObservation` adds to the stream continuation's LLM client
+wrapper (the single LLM client replacement; production always enables it):
+when `stream` or `generate` fails with a typed AI `Transport` or `Timeout`
+reason, `projectNativeProviderFailure` sends one unawaited
+`native.provider-timing` frame with `event: 'failed'` and a `failure` object.
+Status, authentication, rate-limit and output errors are not transport
+failures, interruption (Stop) is not a failure, and the original error is
+rethrown unchanged.
+
+| Field | Meaning |
+| --- | --- |
+| `phase` | `stream` after response headers (operation `read`, or a timeout that carries the response); before headers, `connect` for connection-establishment codes (`ECONNREFUSED`, `ENOTFOUND`, `EHOSTUNREACH`, Bun `ConnectionRefused`, TLS certificate codes) or a WebSocket `connect` phase, otherwise `headers` (including the header timeout). |
+| `elapsedMs` | Since the physical send started (or preparation, when no send was observed). |
+| `sinceLastByteMs` | `stream` only: since the last pulled body byte or frame, else since headers. |
+| `code` | The error's bounded code (`ECONNRESET`, `Timeout`, …), else the first bounded `code` on its cause chain, else the innermost reason tag, else `unknown`. Never a message. |
+| `host`, `port` | Hostname and port only; never the path, query or credentials. |
+| `providerID`, `modelID`, `providerRequestID` | The prepared selection; the provider's request ID for `stream` failures, else `null`. |
+
+`native-provider-timing.js` accepts only that exact shape. The web host writes
+one `timing` journal record `turn.provider_request_failed` (the request
+identity, `kind`, `transport`, the failure fields and `probe`) and one
+`[native-provider] request failed …` line to the console, which Electron
+persists in `main.log`. The first failure per host in 60 seconds first runs
+`probeProviderHost`, a DNS + TCP connect to the same host and port within 3
+seconds, and adds `probe: 'ok'|'unreachable'`: `unreachable` points at the
+local network or a stopped local proxy, `ok` at the provider. Later failures in
+the window carry no `probe`. The diagnostic sanitizer allowlists `host`, `port`,
+`sinceLastByteMs` and `probe`.
+
 API-key Session WebSocket timing is separate from those HTTP limits. In pinned
 2.1.3, connection admission waits 15 seconds before its unsent HTTP fallback.
 The real model resolver passes the provider's explicit `chunkTimeout` to the

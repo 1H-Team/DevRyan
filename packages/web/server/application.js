@@ -118,7 +118,7 @@ import { createBootstrapRuntime } from './lib/opencode/bootstrap-runtime.js';
 import { createSessionRuntime } from './lib/opencode/session-runtime.js';
 import { createOpenCodeWatcherRuntime } from './lib/opencode/watcher.js';
 import { createTurnTimingRuntime, registerTurnTimingRoutes } from './lib/opencode/turn-timing.js';
-import { createNativeProviderTiming } from './lib/opencode/runtime-host/native-provider-timing.js';
+import { createNativeProviderTiming, formatNativeProviderFailure, probeProviderHost } from './lib/opencode/runtime-host/native-provider-timing.js';
 import { legacyApiPathRewrite } from './lib/legacy-api-path.js';
 import { createAgentRuntimeWarmup, registerAgentRuntimeWarmupRoute } from './lib/opencode/agent-runtime-warmup.js';
 import { createProjectPrewarmRuntime } from './lib/opencode/project-prewarm-runtime.js';
@@ -632,7 +632,13 @@ async function constructWebHost(options = {}) {
     onTurnSettled: (entry) => harnessRuntime.recordTurnTiming(entry),
   });
   // Native provider request marks and the primary step's request identity.
-  const nativeProviderTiming = createNativeProviderTiming({ onMark: (input) => turnTimingRuntime.recordSessionMark(input) });
+  // Transport failures go to the journal and main.log for every request kind.
+  const nativeProviderTiming = createNativeProviderTiming({ onMark: (input) => turnTimingRuntime.recordSessionMark(input),
+    probe: probeProviderHost,
+    onFailure: ({ sessionID, ...payload }) => {
+      console.warn(formatNativeProviderFailure({ sessionID, ...payload }));
+      harnessRuntime.recordTurnTiming({ sessionId: sessionID, mark: 'provider_request_failed', payload });
+    } });
 
   // Activity projection is observational; a slow Supabase must not accumulate
   // unbounded in-flight projections (one per tool event).

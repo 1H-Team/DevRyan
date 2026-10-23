@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { Context, Effect, Layer, Option, Schema, Stream, type Scope, type Tracer } from 'effect';
+import { Cause, Context, Effect, Layer, Option, Schema, Stream, type Scope, type Tracer } from 'effect';
 import { SessionModelRequest } from '@opencode/core/session/model-request';
 import { Location } from '@opencode/core/location';
 import { PluginHooks } from '@opencode/core/plugin/hooks';
@@ -17,7 +17,7 @@ import { isNativeCursorIngress } from './native-cursor-ingress.js';
 import { HostRefusal } from './host-refusal.js';
 import {createNativeFinalizationQueue,drainNativeFinalizationQueue,registerNativeFinalizationObservation} from './native-finalization-observation.js';
 import {createNativeStreamContinuation} from './native-stream-continuation.js';
-import type {LLMClientShape} from '@opencode/ai';
+import type {LLMClientShape,LLMRequest} from '@opencode/ai';
 
 export interface NativeAttemptIdentity {
   readonly traceID: string;
@@ -108,6 +108,70 @@ export function projectNativeWireObservation(body:unknown):{readonly options:Rea
 }
 export const projectNativeWireReasoningOptions=(body:unknown):Readonly<Record<string,unknown>>|null=>projectNativeWireObservation(body)?.options??null;
 
+/** Content-free projection of a provider transport failure: a bounded code,
+ * the target hostname and port, never a message, header, body or full URL. */
+export interface NativeProviderFailure {
+  readonly phase:'connect'|'headers'|'stream';readonly elapsedMs:number;readonly sinceLastByteMs?:number;readonly code:string;
+  readonly host:string|null;readonly port:number|null;readonly providerID:string;readonly modelID:string;readonly providerRequestID:string|null;
+}
+/** Per-request send state written by the transport observers; the failure projection reads it. */
+export interface NativeTransportState {
+  readonly preparedAt:number;startedAt?:number;lastByteAt?:number;url?:string;providerRequestID?:string|null;
+}
+const SAFE_CODE=/^[A-Za-z0-9_]{1,64}$/;
+const record=(value:unknown):value is Readonly<Record<string,unknown>>=>value!==null&&typeof value==='object';
+// Failures before the TCP/TLS session exists; any other pre-headers failure is `headers`.
+const CONNECT_CODES=new Set(['ECONNREFUSED','ENOTFOUND','EAI_AGAIN','EAI_FAIL','EAI_NONAME','EHOSTUNREACH','ENETUNREACH','ENETDOWN',
+  'EADDRNOTAVAIL','UND_ERR_CONNECT_TIMEOUT','ConnectionRefused','FailedToOpenSocket','DNSError']);
+const connectCode=(code:string)=>CONNECT_CODES.has(code)||/^(?:CERT_|ERR_TLS_|ERR_SSL_|DEPTH_ZERO_|SELF_SIGNED_|UNABLE_TO_)/.test(code);
+/** The first bounded `code` along an error's cause chain, else its innermost reason tag. */
+export function nativeProviderFailureCode(error:unknown):string {
+  let fallback:string|undefined;
+  let current:unknown=error;
+  for(let depth=0;depth<8&&record(current);depth++){
+    if(Cause.isTimeoutError(current))return 'Timeout';
+    if(typeof current.code==='string'&&SAFE_CODE.test(current.code))return current.code;
+    const reason=record(current.reason)?current.reason:undefined;
+    const tag=reason?reason._tag:current._tag;
+    if(typeof tag==='string'&&SAFE_CODE.test(tag)&&tag!=='HttpClientError')fallback=tag;
+    current=reason&&'cause' in reason?reason.cause:current.cause;
+  }
+  return fallback??'unknown';
+}
+export function nativeProviderFailureTarget(url:string|undefined):{host:string|null;port:number|null} {
+  try{
+    if(url===undefined)return {host:null,port:null};
+    const parsed=new URL(url);
+    const host=parsed.hostname.replace(/^\[|\]$/g,'');
+    const port=parsed.port?Number(parsed.port):parsed.protocol==='https:'||parsed.protocol==='wss:'?443:parsed.protocol==='http:'||parsed.protocol==='ws:'?80:null;
+    return {host:/^[A-Za-z0-9.:-]{1,253}$/.test(host)?host:null,port:port!==null&&Number.isSafeInteger(port)&&port>0&&port<65536?port:null};
+  }catch{return {host:null,port:null};}
+}
+export const nativeProviderRequestID=(headers:unknown):string|null=>{
+  if(!record(headers))return null;
+  for(const name of ['x-request-id','request-id','openai-request-id','x-amzn-requestid']){
+    const value=headers[name];
+    if(typeof value==='string'&&/^[A-Za-z0-9_.:-]{1,128}$/.test(value))return value;
+  }
+  return null;
+};
+/** A typed AI transport or timeout failure; any other error (status, auth, output) is not one. */
+export function projectNativeProviderFailure(input:{readonly error:unknown;readonly state:NativeTransportState;readonly now:number;
+  readonly providerID:string;readonly modelID:string}):{readonly transport:'http'|'ws';readonly failure:NativeProviderFailure}|null {
+  const reason=record(input.error)&&input.error._tag==='AI.Error'&&record(input.error.reason)?input.error.reason:undefined;
+  if(!reason||reason._tag!=='Transport'&&reason._tag!=='Timeout')return null;
+  const http=record(reason.http)?reason.http:undefined;
+  // Headers arrived when the error names a read or carries the response context.
+  const read=reason._tag==='Transport'?reason.operation==='read':Boolean(http);
+  const code=reason._tag==='Timeout'?'Timeout':typeof reason.code==='string'&&SAFE_CODE.test(reason.code)?reason.code:nativeProviderFailureCode(reason.cause);
+  const url=typeof reason.url==='string'?reason.url:typeof http?.url==='string'?http.url:input.state.url;
+  const startedAt=input.state.startedAt??input.state.preparedAt;
+  return {transport:reason.transport==='websocket'||/^wss?:/.test(url??'')?'ws':'http',failure:{
+    phase:read?'stream':connectCode(code)||reason.phase==='connect'?'connect':'headers',elapsedMs:Math.max(0,input.now-startedAt),
+    ...read?{sinceLastByteMs:Math.max(0,input.now-(input.state.lastByteAt??startedAt))}:{},code,...nativeProviderFailureTarget(url),
+    providerID:input.providerID,modelID:input.modelID,providerRequestID:read?nativeProviderRequestID(http?.headers)??input.state.providerRequestID??null:null}};
+}
+
 export function createNativeObservation(options:{readonly controllerInstanceID:string;readonly configurationDigest:string;readonly rpc:ExecutionRpc;
   readonly streamContinuation?:boolean;
   readonly decorateLlmClient?:(inner:LLMClientShape)=>Effect.Effect<LLMClientShape,never,Scope.Scope>;
@@ -130,11 +194,31 @@ export function createNativeObservation(options:{readonly controllerInstanceID:s
   // frame, raw HTTP body totals/gaps and the Responses
   // `response.created` frame. Never awaited, so the provider stream is not
   // delayed; a lost mark is only a missing measurement, never an authority.
-  const continuation=options.streamContinuation?createNativeStreamContinuation(options):undefined;
-  const timing=(prepared:PreparedObservation,transport:'http'|'ws',event:'headers'|'first-byte'|'response-created'|'body-end',statusCode:number|null,body?:{bytes:number;chunks:number;maxGapMs:number})=>{
+  const timing=(prepared:PreparedObservation,transport:'http'|'ws',event:'headers'|'first-byte'|'response-created'|'body-end'|'failed',statusCode:number|null,
+    detail?:{body:{bytes:number;chunks:number;maxGapMs:number}}|{failure:NativeProviderFailure})=>{
     try{void Promise.resolve(options.rpc('native.provider-timing',{controllerInstanceID:options.controllerInstanceID,sessionID:prepared.sessionID,
-      requestID:prepared.requestID,kind:prepared.kind,transport,event,statusCode,...body?{body}:{}})).catch(()=>undefined);}catch{/* Timing only. */}
+      requestID:prepared.requestID,kind:prepared.kind,transport,event,statusCode,...detail})).catch(()=>undefined);}catch{/* Timing only. */}
   };
+  // Transport failures are reported once, where the model stream fails with a
+  // typed AI error: header, chunk and total timeouts wrap the HTTP middleware
+  // from outside, so the middleware itself only records send state.
+  // Interruption (Stop) is not a failure; the original error is rethrown unchanged.
+  const transports=new WeakMap<LLMRequest,{readonly observed:PreparedObservation;readonly state:NativeTransportState}>();
+  const failed=(request:LLMRequest,error:unknown)=>{
+    try{
+      const scope=transports.get(request);
+      const projected=scope?projectNativeProviderFailure({error,state:scope.state,now:Date.now(),
+        providerID:scope.observed.execution.providerID,modelID:scope.observed.execution.modelID}):null;
+      if(scope&&projected)timing(scope.observed,projected.transport,'failed',null,{failure:projected.failure});
+    }catch{/* Timing only. */}
+  };
+  const observeTransport=(inner:LLMClientShape):LLMClientShape=>({...inner,
+    stream:(request,streamOptions)=>inner.stream(request,streamOptions).pipe(Stream.tapError(error=>Effect.sync(()=>failed(request,error)))),
+    generate:(request,streamOptions)=>inner.generate(request,streamOptions).pipe(Effect.tapError(error=>Effect.sync(()=>failed(request,error))))});
+  // The continuation owns the single LLM client replacement (production always
+  // enables it); transport observation decorates that wrapper.
+  const continuation=options.streamContinuation?createNativeStreamContinuation({...options,decorateLlmClient:inner=>
+    options.decorateLlmClient?options.decorateLlmClient(observeTransport(inner)):Effect.succeed(observeTransport(inner))}):undefined;
   const physical=(prepared:PreparedObservation,transport:'http'|'ws',ordinal:number,body:unknown)=>Effect.gen(function*(){
     const attempt=yield* currentNativeAttemptIdentity;
     const wire=projectNativeWireObservation(body);
@@ -189,16 +273,20 @@ export function createNativeObservation(options:{readonly controllerInstanceID:s
           Effect.flatMap(emit),Effect.catchCause(()=>Effect.logWarning('native_observation_unavailable',{stage:'model-prepared'})));
       let ordinal=0;
       const preparation:Preparation={observed:materialized,nextOrdinal:()=>++ordinal};
+      const state:NativeTransportState={preparedAt:Date.now()};
+      transports.set(prepared.request,{observed,state});
       const http:NonNullable<typeof prepared.options.http>=(request,handler)=>{
-        const send:typeof handler=sent=>physical(materialized,'http',++ordinal,sent.body._tag==='Uint8Array'?sent.body.body:undefined).pipe(Effect.andThen(handler(sent)),
+        const send:typeof handler=sent=>physical(materialized,'http',++ordinal,sent.body._tag==='Uint8Array'?sent.body.body:undefined).pipe(
+          Effect.andThen(Effect.suspend(()=>{Object.assign(state,{startedAt:Date.now(),lastByteAt:undefined,url:sent.url,providerRequestID:null});return handler(sent);})),
           Effect.map(response=>{
             timing(observed,'http','headers',response.status);
             let bytes=0,chunks=0,last=Date.now(),maxGapMs=0;
+            Object.assign(state,{lastByteAt:last,providerRequestID:nativeProviderRequestID(response.headers)});
             const stream=response.stream.pipe(Stream.tap(chunk=>Effect.sync(()=>{
-              const now=Date.now();maxGapMs=Math.max(maxGapMs,now-last);last=now;bytes+=chunk.byteLength;
+              const now=Date.now();maxGapMs=Math.max(maxGapMs,now-last);last=now;state.lastByteAt=now;bytes+=chunk.byteLength;
               if(scope&&continuation)continuation.progress(scope,chunk.byteLength);
               if(chunks++===0)timing(observed,'http','first-byte',response.status);
-            })),Stream.ensuring(Effect.sync(()=>timing(observed,'http','body-end',response.status,{bytes,chunks,maxGapMs:Math.max(maxGapMs,Date.now()-last)}))));
+            })),Stream.ensuring(Effect.sync(()=>timing(observed,'http','body-end',response.status,{body:{bytes,chunks,maxGapMs:Math.max(maxGapMs,Date.now()-last)}}))));
             // Retain prototype getters and cancellation; tap observes only pulled bytes.
             return new Proxy(response,{get:(target,key,receiver)=>key==='stream'?stream:Reflect.get(target,key,receiver)});
           }));
@@ -207,12 +295,13 @@ export function createNativeObservation(options:{readonly controllerInstanceID:s
       const webSocket=prepared.options.webSocket;
       // Only the first frames are inspected; `response.created` opens a stream.
       const markFrames=()=>{let seen=0,created=false;return (frame:string)=>{
+        state.lastByteAt=Date.now();
         if(scope&&continuation)continuation.progress(scope,Buffer.byteLength(frame));
         if(seen<8){if(seen++===0)timing(observed,'ws','first-byte',null);
           if(!created&&frame.includes('"response.created"')){created=true;timing(observed,'ws','response-created',null);}}
         return frame;};};
       return {...prepared,options:{...prepared.options,http,...webSocket?{webSocket:{execute:(exchange:WebSocketChannelExchange)=>
-        webSocket.execute(exchange).pipe(Effect.provideService(PreparationRef,preparation),Effect.map(execution=>({
+        Effect.suspend(()=>{Object.assign(state,{startedAt:Date.now(),lastByteAt:undefined,url:undefined,providerRequestID:null});return webSocket.execute(exchange);}).pipe(Effect.provideService(PreparationRef,preparation),Effect.map(execution=>({
           get http(){return execution.http;},
           frames:execution.frames.pipe(Stream.map(markFrames()),Stream.provideService(PreparationRef,preparation)),
           complete:execution.complete.pipe(Effect.provideService(PreparationRef,preparation)),

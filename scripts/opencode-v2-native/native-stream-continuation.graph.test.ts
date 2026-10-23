@@ -137,7 +137,15 @@ const gates = createAdmissionGates({executionActivity:inner=>{nativeExecution=in
   if(FIXTURE.scenario==='denied-tool'){assert.equal(synthetics.length,1);assert.equal(steps.length,3);assert.equal(record.nativeStream.consumed,1);
    assert.equal((await runtime.executionOutcomes({directory,sessionID:session.id,calls:[{messageID:steps[0].data.assistantMessageID,callID:'denied_call'}]}))[0].outcome,'never_started');
    assert.equal(await fs.stat(path.join(directory,'must-never-write.txt')).then(()=>true,()=>false),false);}
-  if(FIXTURE.scenario==='silence'){assert.ok(transportFailures.some(row=>row.reason._tag==='Transport'&&row.reason.code==='Timeout'&&row.reason.operation==='read'));assert.ok(nativeRetryProposals.some(row=>row.retry===true&&row.outputStarted===true));}
+  if(FIXTURE.scenario==='silence'){assert.ok(transportFailures.some(row=>row.reason._tag==='Transport'&&row.reason.code==='Timeout'&&row.reason.operation==='read'));assert.ok(nativeRetryProposals.some(row=>row.retry===true&&row.outputStarted===true));
+   // The chunk timeout wraps the HTTP middleware from outside; the typed stream error still reports it.
+   // The host is the request's target (the fixture serves the OAuth route's URL locally).
+   const failed=bodyTimings.filter(row=>row.event==='failed');assert.equal(failed.length,1);
+   assert.equal(failed[0].kind,'primary');assert.equal(failed[0].transport,'http');assert.equal(failed[0].statusCode,null);
+   assert.deepEqual(Object.keys(failed[0].failure).sort(),['code','elapsedMs','host','modelID','phase','port','providerID','providerRequestID','sinceLastByteMs']);
+   assert.equal(failed[0].failure.phase,'stream');assert.equal(failed[0].failure.code,'Timeout');assert.equal(failed[0].failure.host,'chatgpt.com');assert.equal(failed[0].failure.port,443);
+   assert.equal(failed[0].failure.providerID,'openai');assert.equal(failed[0].failure.modelID,'gpt-5.5');assert.ok(failed[0].failure.sinceLastByteMs>=200);}
+  if(FIXTURE.scenario==='plain-retry')assert.equal(bodyTimings.some(row=>row.event==='failed'),false,'A provider status error is not a transport failure');
   if(FIXTURE.scenario==='exhausted'){assert.equal(synthetics.length,2);assert.equal(steps.length,3);assert.equal(record.nativeStream.consumed,2);assert.equal(record.reason,'provider_stream_interrupted');assert.equal(streamTransitions.filter(row=>row.action==='reserve'&&row.answer===false).length,1);}
   if(FIXTURE.scenario==='plain-retry'){assert.equal(synthetics.length,0);assert.equal(record.nativeStream,undefined);assert.equal(streamTransitions.some(row=>row.action==='reserve'),false);}
   if(FIXTURE.scenario==='missing-attempt'){assert.equal(primaryRequests,2,'Lost post-output attempt must veto the third physical send');assert.equal(synthetics.length,1);assert.equal(steps.length,2);assert.equal(record.nativeStream.consumed,1);assert.equal(streamTransitions.filter(row=>row.action==='reserve').length,1);}

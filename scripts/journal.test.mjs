@@ -191,6 +191,10 @@ const writeSummaryFixture = async (directory) => {
       tokens: { input: 10, output: 30, reasoning: 0, cache: { read: 0, write: 990 } }, cost: 0.5, created: T0 + 3_000, completed: T0 + 8_000 }),
     toolPart(T0 + 7_000, 'ses_child', 'call_1', 'read', { status: 'completed', time: { start: T0 + 6_000, end: T0 + 6_500 } }),
     event(T0 + 7_100, 'ses_child', 'session.status', { status: { type: 'retry', attempt: 2, message: 'Rate limited' } }),
+    { type: 'timing', at: T0 + 7_050, runtime: 'test', mark: 'turn.provider_request_failed', sessionID: 'ses_child',
+      payload: { requestID: 'req_1', kind: 'primary', transport: 'http', statusCode: null, phase: 'stream', elapsedMs: 90_000, sinceLastByteMs: 75_000,
+        code: 'ECONNRESET', host: '127.0.0.1', port: 3456, providerID: 'anthropic', modelID: 'claude-x', providerRequestID: 'req_011', probe: 'ok' } },
+    { type: 'timing', at: T0 + 7_060, runtime: 'test', mark: 'turn.provider_first_byte', sessionID: 'ses_child', payload: { requestID: 'req_2' } },
     event(T0 + 7_200, 'ses_child', 'permission.asked', { id: 'per_1', permission: 'bash', patterns: ['rm *'] }),
     event(T0 + 7_300, 'ses_child', 'permission.replied', { requestID: 'per_1', reply: 'once' }),
     event(T0 + 7_400, 'ses_child', 'question.asked', { id: 'que_1', questions: [{ question: 'Pick one?' }] }),
@@ -264,6 +268,7 @@ describe('journal summary', () => {
 
     assert.deepEqual(summary.errors.map(({ sessionID, kind, detail }) => ({ sessionID, kind, detail })), [
       { sessionID: 'ses_root', kind: 'tool', detail: 'bash: Tool execution interrupted' },
+      { sessionID: 'ses_child', kind: 'provider', detail: 'stream ECONNRESET anthropic/claude-x host=127.0.0.1:3456 elapsedMs=90000 sinceLastByteMs=75000 probe=ok providerRequestID=req_011' },
       { sessionID: 'ses_root', kind: 'session', detail: '{"name":"MessageAbortedError","data":{"message":"Aborted"}}' },
     ]);
     assert.deepEqual(summary.controls.map(({ kind, action, source, detail }) => [kind, action, source, detail]), [
