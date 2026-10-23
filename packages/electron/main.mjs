@@ -2374,7 +2374,10 @@ const createBrowserWindow = ({ label, restoreGeometry, url }) => {
     const startupAction = startupActionForUrl(url);
     if (startupAction === 'copy-startup-diagnostics') {
       event.preventDefault();
-      if (desktopStartupFailed && lastStartupDiagnostic) clipboard.writeText(lastStartupDiagnostic);
+      if (desktopStartupFailed && lastStartupDiagnostic) {
+        // Electron 44+ clipboard writes are asynchronous; a failed copy must not become an unhandled rejection.
+        void clipboard.writeText(lastStartupDiagnostic).catch((error) => log.warn(`[startup] copy diagnostics failed: ${error?.message || error}`));
+      }
       return;
     }
     if (startupAction === 'prepare-reboot-recovery') {

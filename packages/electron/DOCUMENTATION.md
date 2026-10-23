@@ -1,5 +1,28 @@
 # Electron startup ownership
 
+## Electron runtime version
+
+The shell runs Electron 44.9.3 (Chromium 152, Node 24.22, `NODE_MODULE_VERSION`
+149), pinned exactly in the root and `packages/electron` manifests. It requires
+macOS 13 or later; the bundled `Electron.app` declares `LSMinimumSystemVersion`
+13.0. Changes that follow from the 42–44 majors:
+
+- The `electron` package no longer downloads its binary at install; it
+  downloads on the first resolution of `require('electron')`. The
+  `postinstall` script `scripts/sign-dev-electron.mjs` resolves it that way
+  before ad-hoc signing the dev binary with the stable `dev.devryan.desktop`
+  identifier, and skips signing (without failing the install) when the
+  download is unavailable. Packaging is unaffected: electron-builder fetches
+  its own Electron distribution.
+- `clipboard` methods return Promises. Main-process writes catch the
+  rejection; the context menu uses `electron-context-menu` 5.x, which writes
+  links through `ClipboardItem`.
+- `scripts/rebuild-native.mjs` rebuilds `node-pty` and `better-sqlite3`
+  against the pinned version through `@electron/rebuild`, whose `node-abi`
+  must know the target ABI (4.36.0 or later for Electron 44).
+- macOS notifications use `UNNotification`, which needs a code-signed app; an
+  unsigned app gets the existing `failed` handler.
+
 ## Bots retirement
 
 Bots are disabled by the shared product capability. Main wires no Bot IPC,

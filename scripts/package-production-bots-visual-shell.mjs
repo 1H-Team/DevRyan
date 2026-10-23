@@ -106,7 +106,7 @@ export const packageProductionBotsVisualShell = async () => {
     await writeFile(path.join(outputDirectory, 'package-evidence.json'), `${JSON.stringify({
       schemaVersion: 1,
       purpose: 'test-only Production Bots visual fixture shell',
-      electronVersion: '41.2.1',
+      electronVersion: '44.9.3',
       platform: process.platform,
       arch: process.arch,
       binary: path.relative(repositoryRoot, binary),
