@@ -170,7 +170,7 @@ in [identity compatibility](../../docs/IDENTITY_COMPATIBILITY.md#data-folder-mig
 - `session-id.js`: canonical four-way record attribution plus session-parent
   relations shared by storage and export selection.
 - `journal-trim.js`: bounded pre-sanitization policy that drops streaming
-  deltas and coalesces repeated part/session updates plus property-free,
+  deltas and coalesces repeated part/session updates, unchanged primary-recovery snapshots, plus property-free,
   unattributed `sync` events (OpenCode's `{ type, id, syncEvent }` shape; the
   held copy drops the `syncEvent` body the sanitizer never stores). It flushes on completion, lifecycle boundaries,
   debounce, drain, and capacity pressure.
@@ -193,6 +193,12 @@ in [identity compatibility](../../docs/IDENTITY_COMPATIBILITY.md#data-folder-mig
   Provider transport failure timing records (`turn.provider_request_failed`)
   add the nested fields `host`, `port`, `sinceLastByteMs` and `probe`; their
   producer already reduced the target to a hostname and port.
+  Free-text high-entropy redaction judges a slash-separated candidate segment
+  by segment: when every segment is a readable name (digit runs, lowercase
+  names with short digit runs such as `v2-native`, camel words and acronyms
+  such as `useSSE`) or is itself high-entropy, only the high-entropy segments
+  become `[REDACTED]:high_entropy`. Other slash-bearing tokens, such as base64
+  secrets, are still redacted whole.
   Web/Electron hosts record raw OpenCode events only from the canonical global
   watcher; event transport bridges never call the journal, preventing duplicate
   records when multiple UI stream clients are attached.
@@ -259,6 +265,13 @@ in [identity compatibility](../../docs/IDENTITY_COMPATIBILITY.md#data-folder-mig
   changing live SSE delivery; intentional trims never emit `gap` records.
   Stateless `server.heartbeat` events keep one record per 5 minutes and count
   the rest in `trimmedHeartbeats`.
+- `devryan:primary-recovery` (and the `openchamber:` alias) snapshots are
+  broadcast on every revision but journaled on identity change only: mode,
+  support/enforcement, anchor, failed and recovery message, state, attempt
+  count and failure fields. Revisions with the same identity are held
+  last-write-wins without a debounce timer and flush on the next change, a
+  session boundary, capacity pressure or drain; eliminated copies count in
+  `coalescedDiagnostics`.
 - Large sanitized strings are stored as bucket-local gzip blobs. Binary attachments
   retain only filename/MIME/size/SHA-256 metadata.
 - Worktree terminal receipts retain 90 days or 2,000 operations; active

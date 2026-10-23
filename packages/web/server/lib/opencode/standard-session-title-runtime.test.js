@@ -250,6 +250,25 @@ describe('standard session title runtime', () => {
       expect(generator).toHaveBeenCalledOnce();
     }finally{await runtime.dispose();}
   });
+  it('a busy turn writes one pre-persist comparison record until the compared titles change',async()=>{
+    vi.useFakeTimers();const fake=createFakeOpenCode({status:'busy',completed:true}),outbox=createMemorySessionTitleOutbox(),diagnostics=[];
+    const runtime=createRuntime({fake,outbox,diagnostics,watchdogEnabled:true,busyRecheckDelayMs:1_000});
+    const comparisons=()=>diagnostics.filter(row=>row.payload.stage==='comparison');
+    try{
+      await runtime.schedule({sessionID:'ses_1',directory:'/tmp/project'});
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(fake.state.patches).toEqual([]);
+      expect(fake.state.calls.filter(call=>call.target==='client:status').length).toBeGreaterThan(5);
+      expect(comparisons()).toHaveLength(1);
+      fake.state.sessions.get('ses_1').title='New session - 2026-08-28T12:00:05.000Z';
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(comparisons()).toHaveLength(2);
+      fake.state.statuses.set('ses_1','idle');
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(fake.state.sessions.get('ses_1').title).toBe('Reliable Session Title Summaries');
+      expect(await outbox.list()).toEqual([]);
+    }finally{await runtime.dispose();}
+  });
   it.each(['absent','false','failed','expired','replaced'])('persistent startup failure with %s readiness authority consumes the original three-cycle budget',async state=>{
     vi.useFakeTimers();const fake=createFakeOpenCode({status:'idle',completed:true}),outbox=createMemorySessionTitleOutbox();
     const deadline=Date.now()+20_000;let active=true;

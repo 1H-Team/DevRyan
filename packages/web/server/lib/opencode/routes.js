@@ -1134,13 +1134,25 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
         directory = resolved.directory;
       }
 
-      return res.json({
-        providerId,
-        sources: await readProviderSourceSnapshot(providerId, directory),
-      });
+      let sources;
+      try {
+        sources = await readProviderSourceSnapshot(providerId, directory);
+      } catch (error) {
+        // An unreviewed project location reads the default location, as quota inspection does.
+        if (!directory || error?.code !== 'native_provider_configuration_location_unreviewed') throw error;
+        sources = await readProviderSourceSnapshot(providerId, null);
+      }
+      return res.json({ providerId, sources });
     } catch (error) {
-      console.error('Failed to get provider sources:', error);
-      return res.status(error.statusCode ?? error.status ?? 500).json({ error: error.message || 'Failed to get provider sources', code: error.code });
+      const status = error?.statusCode ?? error?.status ?? 500;
+      // Expected refusals (a bounded code with a 4xx status) log one line without a stack.
+      if (Number.isInteger(status) && status >= 400 && status < 500
+        && typeof error?.code === 'string' && /^[A-Za-z0-9_.-]{1,96}$/.test(error.code)) {
+        console.warn(`Provider sources refused: ${error.code} (${status})`);
+      } else {
+        console.error('Failed to get provider sources:', error);
+      }
+      return res.status(status).json({ error: error.message || 'Failed to get provider sources', code: error.code });
     }
   });
 

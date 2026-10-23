@@ -239,6 +239,9 @@ export const createStandardSessionTitleRuntime = ({
   const idleSignals = new Set();
   const retiredKeys = new Set();
   const projectedKeys = new Set();
+  // Last pre-persist comparison per job; a busy turn re-reads every few
+  // seconds, so the comparison record is written only when its inputs change.
+  const lastComparisonByKey = new Map();
   const knownTitleDeferral = error => {
     if(knownBusyDeferral(error))return true;
     if(!['native_runtime_not_ready','native_startup_held'].includes(error?.code)||typeof isStartupReadinessPending!=='function')return false;
@@ -323,6 +326,7 @@ export const createStandardSessionTitleRuntime = ({
     jobsByKey.delete(key);
     idleSignals.delete(key);
     projectedKeys.delete(key);
+    lastComparisonByKey.delete(key);
     await outboxStore.remove(key);
     ensureWatchdog();
   };
@@ -572,7 +576,12 @@ export const createStandardSessionTitleRuntime = ({
         return false;
       }
       const currentTitle = trimString(currentResult.data?.title);
-      diagnoseComparison(job, currentTitle);
+      const comparison = [job.candidateTitle, job.replacesTitle ?? '', currentTitle];
+      const previousComparison = lastComparisonByKey.get(job.key);
+      if (!previousComparison || previousComparison.some((value, index) => value !== comparison[index])) {
+        lastComparisonByKey.set(job.key, comparison);
+        diagnoseComparison(job, currentTitle);
+      }
       if (currentTitle === job.candidateTitle) {
         await removeJob(job.key);
         emitDiagnostic({ ...job, stage: 'persistence', outcome: 'complete' });

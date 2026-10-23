@@ -1991,18 +1991,26 @@ async function constructWebHost(options = {}) {
         const titleDrain = standardSessionTitleRuntime.dispose();
         const browserObservationDrain = browserObservationRuntime?.holdForCheckpoint();
         const browserLeaseDrain = browserLeaseRuntime?.holdForCheckpoint();
-        await Promise.all([prewarmDrain, warmupDrain, notificationDrain, titleDrain, browserObservationDrain, browserLeaseDrain]);
-        await multiUserRuntime?.botsRuntime?.checkpointBotRuns?.();
-        await multiUserRuntime?.botsRuntime?.shutdown?.();
-        await cursorSdkRuntime.dispose();
-        await terminalRuntime?.shutdown(); terminalRuntime = null;
-        await messageStreamRuntime?.close(); messageStreamRuntime = null;
-        globalMessageStreamHub.stop();
-        await managedOrchestrationRuntime?.shutdown();
-        await openAiOAuthBridge.close();
-        await featureRoutesRuntime.close();
-        await tunnelService.stop();
+        // The tunnel stops even when an earlier producer step throws, so a
+        // failed checkpoint cannot leave cloudflared running.
+        let producerFailure;
+        try {
+          await Promise.all([prewarmDrain, warmupDrain, notificationDrain, titleDrain, browserObservationDrain, browserLeaseDrain]);
+          await multiUserRuntime?.botsRuntime?.checkpointBotRuns?.();
+          await multiUserRuntime?.botsRuntime?.shutdown?.();
+          await cursorSdkRuntime.dispose();
+          await terminalRuntime?.shutdown(); terminalRuntime = null;
+          await messageStreamRuntime?.close(); messageStreamRuntime = null;
+          globalMessageStreamHub.stop();
+          await managedOrchestrationRuntime?.shutdown();
+          await openAiOAuthBridge.close();
+          await featureRoutesRuntime.close();
+        } catch (error) { producerFailure = error; }
+        let tunnelFailure;
+        try { await tunnelService.stop(); } catch (error) { tunnelFailure = error; }
         tunnelAuthController.suspendActiveTunnel?.();
+        if (producerFailure) throw producerFailure;
+        if (tunnelFailure) throw tunnelFailure;
         if (scheduledFailure) throw scheduledFailure;
         // Producers finish their admitted reads/migrations before their stores
         // close entrypoints. Holding these stores earlier breaks their tails.

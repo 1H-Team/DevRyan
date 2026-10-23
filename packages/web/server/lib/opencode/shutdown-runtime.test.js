@@ -135,6 +135,21 @@ describe('graceful shutdown runtime', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it('stops the active tunnel even when auth disposal fails', async () => {
+    let controller = { stop: vi.fn(async () => {}) };
+    const tunnelAuthController = { suspendActiveTunnel: vi.fn(), clearActiveTunnel: vi.fn() };
+    const runtime = createRuntime(null, {
+      getUiAuthController: () => ({ dispose: vi.fn(async () => { throw new Error('auth store unavailable'); }) }),
+      getActiveTunnelController: () => controller,
+      setActiveTunnelController: (value) => { controller = value; },
+      tunnelAuthController,
+    });
+    const stop = controller.stop;
+    await expect(runtime.gracefulShutdown({ exitProcess: false })).rejects.toThrow('auth store unavailable');
+    expect(stop).toHaveBeenCalledOnce(); expect(controller).toBeNull();
+    expect(tunnelAuthController.suspendActiveTunnel).toHaveBeenCalledOnce();
+  });
+
   it('disposes the Cursor SDK runtime during graceful shutdown', async () => {
     const cursorSdkRuntime = { dispose: vi.fn(async () => {}) };
     const runtime = createRuntime(null, {

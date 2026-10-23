@@ -301,6 +301,28 @@ describe('OpenCode provider routes', () => {
     expect(f.run.mock.calls.every(([input]) => input.directory === '/tmp/project' && input.scope === 'read')).toBe(true);
   });
 
+  it('reads default-location sources for an unreviewed project directory and logs refusals without a stack', async () => {
+    const unreviewed = () => Object.assign(new Error('native_provider_configuration_location_unreviewed'),
+      { code: 'native_provider_configuration_location_unreviewed', statusCode: 403 });
+    const f = nativeFixture({ readAuthenticationSource: vi.fn(async () => ({ exists: true, path: null })) });
+    f.run.mockImplementation(async (input, action) => { if (input.directory) throw unreviewed(); return action(f.owner); });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const source = await request(f.app).get('/api/provider/openai/source?directory=/tmp/project');
+      expect(source.status).toBe(200); expect(source.body.sources.auth).toEqual({ exists: true, path: null });
+      expect(f.run.mock.calls.map(([input]) => input.directory)).toEqual(['/tmp/project', null]);
+      f.run.mockImplementation(async () => { throw unreviewed(); });
+      const refused = await request(f.app).get('/api/provider/openai/source');
+      expect(refused.status).toBe(403); expect(refused.body.code).toBe('native_provider_configuration_location_unreviewed');
+      expect(warn).toHaveBeenCalledExactlyOnceWith('Provider sources refused: native_provider_configuration_location_unreviewed (403)');
+      expect(error).not.toHaveBeenCalled();
+      f.run.mockImplementation(async () => { throw new Error('unexpected failure'); });
+      expect((await request(f.app).get('/api/provider/openai/source')).status).toBe(500);
+      expect(error).toHaveBeenCalledExactlyOnceWith('Failed to get provider sources:', expect.any(Error));
+    } finally { warn.mockRestore(); error.mockRestore(); }
+  });
+
   it('archives through the gen-2 client and rejects unrelated metadata mutations', async () => {
     const archive = vi.fn(async (id, at) => ({ id, time: { archived: at } }));
     const { app } = createApp({ openCodeClient: { generation: () => 2, sessions: { archive } } });

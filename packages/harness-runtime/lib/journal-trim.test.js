@@ -166,4 +166,34 @@ describe('diagnostic journal trimming', () => {
     const arrayBody = { at: 6, type: 'open_code_event', payload: { type: 'sync', id: 'evt_6', syncEvent: [] } };
     expect(trimmer.admit(arrayBody)).toEqual([arrayBody]);
   });
+
+  test('journals primary-recovery snapshots on state or anchor changes and holds revisions between them', () => {
+    const clock = createFakeClock();
+    const trimmer = createJournalTrimmer({ now: clock.now, setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout });
+    const snapshot = (at, revision, record = {}) => ({ ...event('devryan:primary-recovery', {
+      sessionID: 'ses_1',
+      recovery: { schemaVersion: 1, mode: 'enforce', supported: true, enforced: true,
+        record: { anchorID: 'msg_1', failedID: null, recoveryID: null, state: 'observing', attemptCount: 0, revision,
+          updatedAt: at, progress: { counts: { tools: revision } }, ...record } },
+    }), at });
+    const first = snapshot(1, 1);
+    expect(trimmer.admit(first)).toEqual([first]);
+    expect(trimmer.admit(snapshot(2, 2))).toEqual([]);
+    expect(trimmer.admit(snapshot(3, 3))).toEqual([]);
+    clock.advance(60_000);
+    expect(trimmer.admit(snapshot(4, 4))).toEqual([]);
+    const changed = snapshot(5, 5, { state: 'needs_attention' });
+    expect(trimmer.admit(changed).map((row) => [row.at, row.coalesced])).toEqual([[4, 3], [5, undefined]]);
+    const anchor = snapshot(6, 6, { state: 'needs_attention', anchorID: 'msg_2' });
+    expect(trimmer.admit(anchor)).toEqual([anchor]);
+    expect(trimmer.admit(snapshot(7, 7, { state: 'needs_attention', anchorID: 'msg_2' }))).toEqual([]);
+    const idle = event('session.status', { sessionID: 'ses_1', status: { type: 'idle' } });
+    expect(trimmer.admit(idle).map((row) => [row.payload.type, row.at, row.coalesced])).toEqual([
+      ['devryan:primary-recovery', 7, 1], ['session.status', 1, undefined],
+    ]);
+    expect(trimmer.stats().ses_1.coalescedDiagnostics).toBe(2);
+    const legacy = { ...snapshot(8, 8), payload: { ...snapshot(8, 8).payload, type: 'openchamber:primary-recovery' } };
+    expect(trimmer.admit(legacy)).toEqual([legacy]);
+    expect(trimmer.admit({ ...legacy, at: 9 })).toEqual([]);
+  });
 });

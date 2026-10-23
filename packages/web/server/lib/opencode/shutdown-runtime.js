@@ -222,21 +222,26 @@ export const createGracefulShutdownRuntime = (dependencies) => {
       }
     }
 
-    const uiAuthController = getUiAuthController();
-    if (uiAuthController) {
-      await uiAuthController.dispose();
-      setUiAuthController(null);
-    }
-
-    const activeTunnelController = getActiveTunnelController();
-    if (activeTunnelController) {
-      console.log('Stopping active tunnel...');
-      activeTunnelController.stop();
-      setActiveTunnelController(null);
-      // Restart suspends transport; only the explicit Stop action revokes
-      // durable Bot grants and sessions.
-      if (tunnelAuthController.suspendActiveTunnel) tunnelAuthController.suspendActiveTunnel();
-      else tunnelAuthController.clearActiveTunnel();
+    // A failing auth disposal still rejects shutdown, but never before the
+    // tunnel is stopped (an orphaned cloudflared outlives this host).
+    try {
+      const uiAuthController = getUiAuthController();
+      if (uiAuthController) {
+        await uiAuthController.dispose();
+        setUiAuthController(null);
+      }
+    } finally {
+      const activeTunnelController = getActiveTunnelController();
+      if (activeTunnelController) {
+        console.log('Stopping active tunnel...');
+        void Promise.resolve(activeTunnelController.stop())
+          .catch((error) => console.warn('Error stopping active tunnel:', error?.message || error));
+        setActiveTunnelController(null);
+        // Restart suspends transport; only the explicit Stop action revokes
+        // durable Bot grants and sessions.
+        if (tunnelAuthController.suspendActiveTunnel) tunnelAuthController.suspendActiveTunnel();
+        else tunnelAuthController.clearActiveTunnel();
+      }
     }
 
     console.log('Graceful shutdown complete');
