@@ -51,7 +51,9 @@ describe('script framework dispatch', () => {
 
 describe('Bun package runs', () => {
   test('give each package run the cores the outer pool leaves it, at least two workers', () => {
-    assert.equal(bunTestWorkers({}, 16), 8);
+    // The default outer pool on 16 cores is 4 (defaultTestConcurrency).
+    assert.equal(bunTestWorkers({}, 16), 4);
+    assert.equal(bunTestWorkers({}, 8), 2);
     assert.equal(bunTestWorkers({ DEVRYAN_TEST_CONCURRENCY: '4' }, 16), 4);
     assert.equal(bunTestWorkers({ DEVRYAN_TEST_CONCURRENCY: '4' }, 4), 2);
     assert.equal(bunTestWorkers({ DEVRYAN_TEST_WORKERS: '3' }, 16), 3);

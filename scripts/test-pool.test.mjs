@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, test } from 'node:test';
 
+import { defaultTestConcurrency } from './test-runner-utils.mjs';
 import { DEFAULT_TEST_UNIT_TIMEOUT_MS, recordTestTimings, runTestUnits, summarizeTestUnits, testConcurrency, testUnitTimeoutMs } from './test-pool.mjs';
 
 const node = (source) => ({ command: process.execPath, args: ['-e', source] });
@@ -50,8 +51,27 @@ describe('bounded test pool', () => {
       assert.deepEqual(outcome.results.map((row) => [row.name, row.status, row.timedOut]), [['hung', 'failed', true], ['quick', 'passed', false]]);
       assert.ok(lines.some((line) => /hung exceeded/.test(line)));
       const grandchild = Number(readFileSync(pidFile, 'utf8'));
-      for (let attempt = 0; attempt < 20 && alive(grandchild); attempt += 1) await new Promise((resolve) => setTimeout(resolve, 100));
+      for (let attempt = 0; attempt < 70 && alive(grandchild); attempt += 1) await new Promise((resolve) => setTimeout(resolve, 100));
       assert.equal(alive(grandchild), false, 'the timed-out unit\'s process group is killed');
+    } finally { rmSync(scratch, { recursive: true, force: true }); }
+  });
+
+  test('a weighted unit reserves its share of the capacity', async () => {
+    const scratch = mkdtempSync(path.join(os.tmpdir(), 'devryan-test-weight-'));
+    try {
+      // Each unit records how many units are running when it starts.
+      const counter = path.join(scratch, 'running');
+      writeFileSync(counter, '0');
+      const unit = (name, weight) => ({ name, weight, ...node(`const fs = require('node:fs'), file = ${JSON.stringify(counter)};
+        const now = Number(fs.readFileSync(file, 'utf8')) + 1; fs.writeFileSync(file, String(now));
+        fs.writeFileSync(${JSON.stringify(scratch)} + '/' + ${JSON.stringify(name)}, String(now));
+        setTimeout(() => fs.writeFileSync(file, String(Number(fs.readFileSync(file, 'utf8')) - 1)), 400);`) });
+      const outcome = await runTestUnits([unit('heavy', 3), unit('light-a', 1), unit('light-b', 1)], { ...quiet, concurrency: 3 });
+      assert.equal(outcome.passed, true);
+      // The weight-3 unit fills a capacity of 3, so it never overlaps a light unit.
+      assert.equal(readFileSync(path.join(scratch, 'heavy'), 'utf8'), '1');
+      const light = ['light-a', 'light-b'].map((name) => Number(readFileSync(path.join(scratch, name), 'utf8')));
+      assert.ok(light.every((count) => count <= 2), `light units ran alongside the heavy one: ${light}`);
     } finally { rmSync(scratch, { recursive: true, force: true }); }
   });
 
@@ -140,8 +160,8 @@ describe('bounded test pool', () => {
 
   test('reads its bound from DEVRYAN_TEST_CONCURRENCY and refuses duplicate units', async () => {
     assert.equal(testConcurrency({ DEVRYAN_TEST_CONCURRENCY: '2' }), 2);
-    assert.ok(testConcurrency({}) >= 1);
-    assert.ok(testConcurrency({}) <= 2);
+    assert.equal(testConcurrency({}), defaultTestConcurrency());
+    assert.deepEqual([2, 4, 8, 16].map(defaultTestConcurrency), [2, 2, 4, 4]);
     assert.throws(() => testConcurrency({ DEVRYAN_TEST_CONCURRENCY: '0' }), /positive integer/);
     await assert.rejects(runTestUnits([{ name: 'a', ...node('') }, { name: 'a', ...node('') }], quiet), /Duplicate test unit/);
   });

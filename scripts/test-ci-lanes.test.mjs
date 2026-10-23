@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
+import path from 'node:path';
 import { test } from 'node:test';
 
-import { packLanes, readUnitTimings } from './test-ci-lanes.mjs';
+import { LOCAL_SCRIPT_NODE_SHARDS, localTestUnits, packLanes, readUnitTimings } from './test-ci-lanes.mjs';
+import { planFullTests } from './test-full.mjs';
 import { mergeUnitTimings } from './update-test-timings.mjs';
 
 test('lanes are packed longest first onto the least-loaded lane, deterministically', () => {
@@ -26,4 +28,20 @@ test('units sharing an exclusive resource spread across lanes before the rest', 
   const lanes = packLanes(units, ['one', 'two'], { big: 300, g1: 100, g2: 90, small: 10 });
   assert.deepEqual(Object.fromEntries(Object.entries(lanes).map(([lane, rows]) => [lane, rows.map((row) => row.name)])),
     { one: ['g1', 'small'], two: ['g2', 'big'] });
+});
+
+test('local units shard and weight the full plan without dropping or duplicating a test file', () => {
+  const root = path.resolve(import.meta.dirname, '..');
+  const full = planFullTests(root);
+  const local = localTestUnits(full, { timings: {} });
+  const files = (units) => units.filter((unit) => unit.name.startsWith('scripts:node')).flatMap((unit) => unit.args.filter((arg) => !arg.startsWith('--'))).sort();
+  assert.deepEqual(files(local), files(full));
+  const shards = local.filter((unit) => unit.name.startsWith('scripts:node '));
+  assert.equal(shards.length, LOCAL_SCRIPT_NODE_SHARDS);
+  for (const shard of shards) assert.deepEqual(shard.args.filter((arg) => arg.startsWith('--')), full.find((unit) => unit.name === 'scripts:node').args.filter((arg) => arg.startsWith('--')));
+  assert.deepEqual(local.filter((unit) => unit.name.startsWith('web:vitest web-runtime-host')).map((unit) => unit.args.at(-1)), ['--shard=1/2', '--shard=2/2']);
+  assert.deepEqual(local.filter((unit) => unit.weight === 2).map((unit) => unit.name).sort(), ['harness-runtime', 'web:vitest web']);
+  // Every other unit is carried over unchanged.
+  const untouched = (unit) => !unit.name.startsWith('scripts:node') && !unit.name.startsWith('web:vitest web-runtime-host') && !['harness-runtime', 'web:vitest web'].includes(unit.name);
+  assert.deepEqual(local.filter(untouched), full.filter(untouched));
 });

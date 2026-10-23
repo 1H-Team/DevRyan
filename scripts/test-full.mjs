@@ -88,7 +88,9 @@ export function planFullTests(root = repositoryRoot, { scriptEnvironment, suites
 export async function runFullTests(root = repositoryRoot, { concurrency = testConcurrency(), suites } = {}) {
   const { env, cleanup } = prepareScriptTestEnvironment(root);
   try {
-    const units = planFullTests(root, { scriptEnvironment: env, suites }).map((unit) => ({ ...unit, env: unit.env ?? env, cwd: unit.cwd ?? root }));
+    // Loaded lazily: test-ci-lanes imports this module.
+    const { localTestUnits } = await import('./test-ci-lanes.mjs');
+    const units = localTestUnits(planFullTests(root, { scriptEnvironment: env, suites })).map((unit) => ({ ...unit, env: unit.env ?? env, cwd: unit.cwd ?? root }));
     const outcome = await runTestUnits(units, { concurrency, label: 'test:full', cwd: root, cleanup });
     summarizeTestUnits(outcome, { label: 'test:full', limit: 20 });
     recordTestTimings(outcome, units, { label: 'test:full' });

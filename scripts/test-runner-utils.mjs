@@ -16,13 +16,22 @@ export function isBunTestSource(source) {
  * (DEVRYAN_TEST_CONCURRENCY units at a time), at least two.
  * DEVRYAN_TEST_WORKERS overrides it.
  */
+/**
+ * Default outer pool capacity: half the cores, between 2 and 4. Heavy units
+ * that run their own workers weigh more (scripts/test-pool.mjs), so the pool
+ * fills the machine without oversubscribing it.
+ */
+export function defaultTestConcurrency(cores = os.availableParallelism()) {
+  return Math.max(2, Math.min(4, Math.floor(cores / 2)));
+}
+
 export function bunTestWorkers(environment = process.env, cores = os.availableParallelism()) {
   const explicit = environment.DEVRYAN_TEST_WORKERS;
   if (explicit !== undefined && explicit !== '') {
     if (!/^[1-9]\d*$/.test(explicit)) throw new Error('DEVRYAN_TEST_WORKERS must be a positive integer');
     return Number(explicit);
   }
-  const outer = Number(environment.DEVRYAN_TEST_CONCURRENCY) || Math.min(2, cores);
+  const outer = Number(environment.DEVRYAN_TEST_CONCURRENCY) || Math.min(defaultTestConcurrency(cores), cores);
   return Math.max(2, Math.floor(cores / outer));
 }
 

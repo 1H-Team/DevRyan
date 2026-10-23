@@ -43,6 +43,33 @@ export function ciTestInventory(root, options = {}) {
   });
 }
 
+/**
+ * Local runs (`test:full`, `validate`) keep the planFullTests inventory but
+ * split its two longest serial units and weight the units that start their
+ * own workers, so the weighted pool fills the machine without oversubscribing
+ * it. CI lanes use ciTestInventory instead.
+ */
+export const LOCAL_SCRIPT_NODE_SHARDS = 3;
+const HEAVY_LOCAL_UNITS = new Set(['web:vitest web', 'harness-runtime']);
+export function localTestUnits(units, { timings = readUnitTimings(), scriptShards = LOCAL_SCRIPT_NODE_SHARDS } = {}) {
+  return units.flatMap((unit) => {
+    if (unit.name === 'scripts:node') {
+      const flags = unit.args.filter((arg) => arg.startsWith('--')), files = unit.args.filter((arg) => !arg.startsWith('--'));
+      const shards = Math.max(1, Math.min(scriptShards, files.length));
+      if (shards === 1) return [unit];
+      const lanes = Array.from({ length: shards }, (_, index) => `${index + 1}/${shards}`);
+      const packed = packLanes(files.map((file) => ({ name: `scripts:${file}`, file })), lanes, timings);
+      return lanes.filter((lane) => packed[lane].length).map((lane) => ({ ...unit, name: `scripts:node ${lane}`,
+        args: [...flags, ...packed[lane].map((entry) => entry.file).sort()] }));
+    }
+    if (unit.name === 'web:vitest web-runtime-host') return Array.from({ length: 2 }, (_, index) => ({ ...unit,
+      name: `${unit.name} ${index + 1}/2`, args: [...unit.args, `--shard=${index + 1}/2`] }));
+    if (!HEAVY_LOCAL_UNITS.has(unit.name)) return [unit];
+    // A heavy unit holds two pool slots, so it may use two slots' share of workers.
+    return [{ ...unit, weight: 2, args: unit.args.map((arg) => /^--maxWorkers=\d+$/.test(arg) ? `--maxWorkers=${Number(arg.slice(13)) * 2}` : arg) }];
+  });
+}
+
 const TIMINGS_FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'test-unit-timings.json');
 
 /** Recorded unit durations (ms) from test-unit-timings.json; refreshed from CI artifacts. */

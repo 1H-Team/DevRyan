@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-import { BUILD_JOB_TESTS, CI_LANES, planCITests } from './test-ci-lanes.mjs';
+import { BUILD_JOB_TESTS, CI_LANES, localTestUnits, planCITests } from './test-ci-lanes.mjs';
 
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
@@ -483,6 +483,17 @@ function runStatic(item) {
   return { label: item.label, status: result.status, durationMs: performance.now() - started };
 }
 
+/** Async form of runStatic, so a build can run while the test pool is scheduling. */
+function runStaticAsync(item) {
+  console.log(`\n$ ${[item.executable, ...item.args].join(' ')}`);
+  const started = performance.now();
+  return new Promise((resolve) => {
+    const child = spawn(item.executable, item.args, { cwd: workspaceRoot, stdio: 'inherit', env: process.env });
+    child.once('error', () => resolve({ label: item.label, status: 1, durationMs: performance.now() - started }));
+    child.once('exit', (code) => resolve({ label: item.label, status: code ?? 1, durationMs: performance.now() - started }));
+  });
+}
+
 /** Pool units for the plan's test commands; each suite's units are those `test:full` runs. */
 export function testUnitsForPlan(commands, { root = workspaceRoot, scriptEnvironment } = {}) {
   const units = [];
@@ -493,7 +504,8 @@ export function testUnitsForPlan(commands, { root = workspaceRoot, scriptEnviron
     } else if (item.suite === 'scripts') units.push(...planScriptTests(root).map((unit) => ({ ...unit, env: scriptEnvironment, suite: 'scripts' })));
     else if (item.suite) units.push(...planFullTests(root, { scriptEnvironment, suites: [item.suite] }));
   }
-  return units.map((unit) => ({ ...unit, env: unit.env ?? scriptEnvironment, cwd: unit.cwd ?? root }));
+  const local = commands.some((item) => item.lane) ? units : localTestUnits(units);
+  return local.map((unit) => ({ ...unit, env: unit.env ?? scriptEnvironment, cwd: unit.cwd ?? root }));
 }
 
 /**
@@ -518,12 +530,23 @@ async function runCommands(commands) {
     for (const row of outcome.results) timings.push({ label: row.name, status: row.status === 'passed' ? 0 : 1, durationMs: row.durationMs });
     if (!outcome.passed) { report(); return 1; }
   }
-  for (const item of commands.filter(isBuildChain)) {
-    const row = runStatic(item);
-    timings.push(row);
-    if (row.status !== 0) { report(); return row.status ?? 1; }
-  }
+  const buildChain = commands.filter(isBuildChain);
   const tests = commands.filter(isTest);
+  // No test unit reads the build output except BUILD_JOB_TESTS, so the build
+  // chain runs beside the tests and those built-asset tests follow the build.
+  const overlap = buildChain.some((item) => item.label === 'build') && tests.length > 0;
+  const runBuildChain = async () => {
+    for (const item of overlap ? [...buildChain, command('built-assets', 'node', ['--test', ...BUILD_JOB_TESTS])] : buildChain) {
+      const row = overlap ? await runStaticAsync(item) : runStatic(item);
+      timings.push(row);
+      if (row.status !== 0) return row.status ?? 1;
+    }
+    return 0;
+  };
+  if (!overlap) {
+    const status = await runBuildChain();
+    if (status !== 0) { report(); return status; }
+  }
   if (tests.length === 0) { report(); return 0; }
   // Native suites need the pinned Claude binary. A fresh worktree lacks it and
   // would otherwise fail dozens of lanes after running them all.
@@ -539,13 +562,20 @@ async function runCommands(commands) {
   }
   const { env, cleanup } = prepareScriptTestEnvironment(workspaceRoot);
   try {
-    const units = testUnitsForPlan(tests, { scriptEnvironment: env });
-    const outcome = await runTestUnits(units, { concurrency: testConcurrency(), label: 'validate', cwd: workspaceRoot, cleanup });
+    const units = testUnitsForPlan(tests, { scriptEnvironment: env }).flatMap((unit) => {
+      if (!overlap || !unit.name.startsWith('scripts:node')) return [unit];
+      const args = unit.args.filter((arg) => !BUILD_JOB_TESTS.includes(arg));
+      return args.some((arg) => !arg.startsWith('--')) ? [{ ...unit, args }] : [];
+    });
+    const [outcome, buildStatus] = await Promise.all([
+      runTestUnits(units, { concurrency: testConcurrency(), label: 'validate', cwd: workspaceRoot, cleanup }),
+      overlap ? runBuildChain() : Promise.resolve(0),
+    ]);
     summarizeTestUnits(outcome, { label: 'validate', limit: 20 });
     recordTestTimings(outcome, units, { label: `validate:${mode}` });
     timings.push({ label: `tests (${tests.map((item) => item.label).join(', ')})`, status: outcome.passed ? 0 : 1, durationMs: outcome.wallMs });
     report();
-    return outcome.passed ? 0 : 1;
+    return outcome.passed && buildStatus === 0 ? 0 : 1;
   } finally {
     cleanup();
   }

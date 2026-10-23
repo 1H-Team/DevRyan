@@ -9,6 +9,7 @@
 // SIGTERM the runner signals every owned process group, removes its temp dir
 // and exits 130/143.
 import { spawn } from 'node:child_process';
+import { defaultTestConcurrency } from './test-runner-utils.mjs';
 import { closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -17,10 +18,10 @@ import process from 'node:process';
 const SIGNAL_EXIT_CODES = { SIGINT: 130, SIGTERM: 143 };
 const detached = process.platform !== 'win32';
 
-/** Package runners spawn their own workers; leave CPU headroom by default. */
+/** Outer pool capacity; unit `weight` reserves more of it (see runTestUnits). */
 export function testConcurrency(environment = process.env) {
   const value = environment.DEVRYAN_TEST_CONCURRENCY;
-  if (value === undefined || value === '') return Math.max(1, Math.min(2, os.availableParallelism()));
+  if (value === undefined || value === '') return defaultTestConcurrency();
   if (!/^[1-9]\d*$/.test(value) || !Number.isSafeInteger(Number(value))) throw new Error('DEVRYAN_TEST_CONCURRENCY must be a positive integer');
   return Number(value);
 }
@@ -53,8 +54,10 @@ function killGroup(child, signal) {
 }
 
 /**
- * Run `units` ({ name, command, args, cwd?, env?, resource? }) with at most `concurrency`
- * at once, serializing units that share an exclusive resource (such as a port).
+ * Run `units` ({ name, command, args, cwd?, env?, resource?, weight?, timeoutMs? }) within a
+ * capacity of `concurrency`: a unit reserves `weight` (default 1, at most the
+ * capacity) while it runs, so units that start their own workers count for
+ * more. Units that share an exclusive resource (such as a port) run one at a time.
  * Resolves to { passed, wallMs, results } where
  * results hold { name, status: 'passed'|'failed'|'not-run', code, signal, durationMs, timedOut }.
  * A unit past its wall-clock budget (testUnitTimeoutMs) is killed and fails.
@@ -157,17 +160,25 @@ export async function runTestUnits(units, { concurrency = testConcurrency(), lab
     child.once('exit', (code, signal) => finish(code, signal));
   });
 
-  const worker = async () => {
-    while (!stopping && pending.length) {
-      const available = pending.findIndex(index => !units[index].resource || !resources.has(units[index].resource));
-      if (available === -1) { await new Promise(resolve => waiters.add(resolve)); continue; }
-      const [index] = pending.splice(available, 1), resource = units[index].resource;
-      if (resource) resources.add(resource);
-      try { await launch(index); } finally { if (resource) resources.delete(resource); wake(); }
+  const weightOf = (index) => Math.min(slots, Math.max(1, Number.isSafeInteger(units[index].weight) ? units[index].weight : 1));
+  let used = 0;
+  const fits = (index) => (!units[index].resource || !resources.has(units[index].resource)) && (running.size === 0 || used + weightOf(index) <= slots);
+  const schedule = async () => {
+    const active = new Set();
+    while (true) {
+      for (let next = stopping ? -1 : pending.findIndex(fits); next !== -1; next = stopping ? -1 : pending.findIndex(fits)) {
+        const [index] = pending.splice(next, 1), resource = units[index].resource, weight = weightOf(index);
+        if (resource) resources.add(resource);
+        used += weight;
+        const run = launch(index).finally(() => { if (resource) resources.delete(resource); used -= weight; active.delete(run); wake(); });
+        active.add(run);
+      }
+      if (active.size === 0) break;
+      await new Promise((resolve) => { waiters.add(resolve); });
     }
   };
   try {
-    await Promise.all(Array.from({ length: slots }, worker));
+    await schedule();
   } finally {
     if (heartbeat) clearInterval(heartbeat);
     for (const [signal, handler] of Object.entries(handlers)) process.off(signal, handler);
