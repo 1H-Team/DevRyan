@@ -19,6 +19,7 @@ export type RecoveredInputDescriptor = z.infer<typeof recoveredInputDescriptorSc
 export const primaryRecoverySchema = z.object({
   schemaVersion: z.literal(1), mode: z.enum(['off', 'observe', 'enforce']),
   supported: z.boolean(), enforced: z.boolean(), progressTimeoutMs: z.union([z.number(), z.literal(false)]),
+  automaticRecoveryPending: z.boolean().optional(),
   record: z.object({
     sessionID: label, anchorID: label, failedID: label.nullable(), recoveryID: label.nullable(),
     state: z.enum(['observing', 'stopping', 'reconciling', 'recovery_reserved', 'recovering', 'completed', 'needs_attention', 'cancelled', 'superseded']),
@@ -67,8 +68,20 @@ export const usePrimaryRecoveryStore = create<{
   },
 }));
 
-export const hostOwnsPrimaryRecovery = (sessionID: string): boolean => {
-  const snapshot = usePrimaryRecoveryStore.getState().snapshots[sessionID];
-  return Boolean(snapshot?.recoveredInput || snapshot?.record && (snapshot.enforced || snapshot.record.readOnly
+const snapshotOwnsPrimaryRecovery = (snapshot: PrimaryRecoverySnapshot | undefined): boolean => Boolean(snapshot?.recoveredInput
+  || snapshot?.record && (snapshot.enforced || snapshot.record.readOnly
     || snapshot.record.reason === 'managed_repeated_preexecution_rejection'));
-};
+
+export const hostOwnsPrimaryRecovery = (sessionID: string): boolean => (
+  snapshotOwnsPrimaryRecovery(usePrimaryRecoveryStore.getState().snapshots[sessionID])
+);
+
+/**
+ * True while the manual Model Recovery card must stay hidden: the host owns
+ * recovery, or may still send its one automatic native transport continuation
+ * for this turn. The card is still offered, so it appears once the host
+ * declines the failure; the host itself fences any second send.
+ */
+export const primaryRecoveryDefersToHost = (snapshot: PrimaryRecoverySnapshot | undefined): boolean => (
+  snapshotOwnsPrimaryRecovery(snapshot) || Boolean(snapshot?.record && snapshot.automaticRecoveryPending === true)
+);

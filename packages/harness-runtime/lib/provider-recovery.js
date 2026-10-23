@@ -13,6 +13,7 @@ import {
   classifyPrimaryTransportError, inspectRecoveryTurn, recoveryError,
   RECOVERY_READ_TOOLS, PROVIDER_PROGRESS_TIMEOUT_MS, validatePrimaryRecoveryRecord,validateNativeStreamReceiptRecord,
   isProviderRecoverySupportedRuntimeVersion, isNativePrimaryRuntimeVersion, isPrimaryRecoveryProvider, primaryRecoveryMode,
+  isNativeTransportRecoveryRuntimeVersion, nativeTransportRecoveryMode, RECOVERY_CONTINUATION,
 } from './provider-recovery-policy.js';
 
 const TERMINAL = new Set(['completed', 'needs_attention', 'cancelled', 'superseded']);
@@ -64,6 +65,7 @@ export function createPrimaryRecoveryController(options) {
   // Consecutive unreadable-evidence collection attempts per session and task.
   const evidenceFailures = new Map();
   let handshake = null;
+  let capabilityLogged = null;
   let draining = false;
   let timer;
   let ownsRuntime = false;
@@ -80,6 +82,16 @@ export function createPrimaryRecoveryController(options) {
   const supported = (record) => providerSupported(record) && storageHealthy && ownsRuntime && isProviderRecoverySupportedRuntimeVersion(handshake?.version) && options.isManaged()
     && (!record || (record.requestedAt !== null && record.instanceID === handshake.instanceID));
   const active = (record) => !draining && modeFor(record) === 'enforce' && supported() && providerSupported(record);
+  // Host-owned native transport continuation. It changes no plugin
+  // enforcement, watchdog or Stop behaviour: it only lets the single attempt in
+  // reconcileOne follow a finalized failure of a Step bound by this runtime.
+  const nativeTransportCapable = (record) => Boolean(record) && record.executionGeneration === 2 && !draining
+    && storageHealthy && ownsRuntime && options.isManaged() && isNativeTransportRecoveryRuntimeVersion(handshake?.version)
+    && record.requestedAt !== null && record.instanceID === handshake.instanceID && !record.nativeFallback
+    && providerSupported(record) && nativeTransportRecoveryMode(record.providerID, options) === 'enforce';
+  // While true, the renderer's manual card defers to the host for this turn.
+  const nativeTransportPending = (record) => nativeTransportCapable(record) && !record.attemptCount
+    && !record.recoverySuppressed && ['observing', 'reconciling'].includes(record.state) && record.reason !== 'failure_not_eligible';
   const diagnostic = (event, record, detail = {}) => options.recordIncident?.({
     event, sessionID: record?.sessionID, messageID: record?.anchorID,
     assistantMessageID: record?.failedID ?? record?.stepID ?? null, recoveryMessageID: record?.recoveryID ?? null,
@@ -91,6 +103,7 @@ export function createPrimaryRecoveryController(options) {
   const project = (record) => ({
     schemaVersion: 1, mode: modeFor(record), supported: supported(record),
     enforced: active(record) && supported(record), progressTimeoutMs,
+    automaticRecoveryPending: nativeTransportPending(record),
     record: record ? {
       sessionID: record.sessionID, anchorID: record.anchorID, failedID: record.failedID,
       recoveryID: record.recoveryID, state: record.state, revision: record.revision,
@@ -571,9 +584,18 @@ export function createPrimaryRecoveryController(options) {
     const failureKind = options.classifyFailure?.(inspected.last?.info.error) ?? null;
     if ((before.failureKind ?? null) !== failureKind) await mutate(id, (record) => current()
       && record?.anchorID === before.anchorID ? { ...record, failureKind } : record);
+    // Once declined for this turn, the host never sends: the manual card owns it.
+    const nativeTransport = !nativeFallback && !watchdog && Boolean(failure) && nativeTransportPending(before);
+    // A finalized failure the host will not continue returns the turn to the
+    // renderer's manual card. The state stays unchanged, so explicit, managed
+    // and owned continuations keep their existing fences.
+    const declineNativeTransport = () => nativeTransportPending(before) && inspected.last?.info.error && inspected.last.info.time?.completed
+      ? mutate(id, (r) => r && current() && r.anchorID === before.anchorID && nativeTransportPending(r) ? { ...r, reason: 'failure_not_eligible' } : r)
+      : undefined;
     if ((!failure || before.recoverySuppressed) && !watchdog) {
       if (inspected.settled && !inspected.last.info.error) await mutate(id, (r) => current() ? { ...r, state: 'completed' } : r);
       else if (active(before) && inspected.last?.info.error && inspected.last.info.time?.completed) await attention(id, 'failure_not_eligible', before);
+      else await declineNativeTransport();
       return;
     }
     if (watchdog) {
@@ -599,7 +621,17 @@ export function createPrimaryRecoveryController(options) {
       meaningfulProgressAt: liveness.at, phase: liveness.phase, elapsedWithoutProgressMs: now() - liveness.at,
       executingTools: liveness.calls.size, pendingRequests: liveness.blockers.size, status: observation.status });
     liveness.candidateKey = candidateKey;
-    if ((!nativeFallback && (!active(before) || !supported(before))) || inspected.last?.info.id !== before.stepID) return;
+    if ((!nativeFallback && !nativeTransport && (!active(before) || !supported(before))) || inspected.last?.info.id !== before.stepID) {
+      await declineNativeTransport();
+      return;
+    }
+    if (nativeTransport) {
+      // Native OpenCode owns its retries and settlement: the host never aborts
+      // a live native turn, and continues only an idle, unblocked, fully
+      // resolved one. Anything else stays with the manual card.
+      if (observation.status !== 'idle') return;
+      if (!inspected.settled || inspected.unresolved || blocked(before, observation)) { await declineNativeTransport(); return; }
+    }
     if (watchdog && (liveness.at !== progressAt || blocked(before, observation) || observation.status !== 'busy')) return;
     if (watchdog && inspected.last?.parts.some((part) => part.type === 'tool' && part.state?.status === 'pending')) {
       // 1.18.25 publishes tool-input-start but drops subsequent input deltas.
@@ -615,7 +647,10 @@ export function createPrimaryRecoveryController(options) {
       if (current()) diagnostic('provider_recovery_tool_outcome_unknown', record, { classification: failure });
       return;
     }
-    if (!await authorizeBounded(before) || !current()) { await attention(id, 'recovery_authorization_unavailable', before); return; }
+    if (!await authorizeBounded(before) || !current()) {
+      if (nativeTransport) await declineNativeTransport(); else await attention(id, 'recovery_authorization_unavailable', before);
+      return;
+    }
     const stopping = await mutate(id, (r) => r && current() && !(watchdog && blocked(r, observation)) ? { ...r, state: watchdog ? 'stopping' : 'reconciling',
       failedID: r.recoveryID ? r.failedID : inspected.last?.info.id ?? r.stepID,
       reason: watchdog ? 'provider_progress_timeout' : failure.kind } : r);
@@ -645,15 +680,17 @@ export function createPrimaryRecoveryController(options) {
       finalizedAt: inspected.last.info.time.completed, blockersCleared: true });
     if (watchdog) { await attention(id, 'provider_progress_timeout', before); return; }
     if (!inspected.last.info.error) { await mutate(id, (r) => current() ? { ...r, state: 'completed' } : r); return; }
-    if (!inspected.recoveryParts.length) { await attention(id, 'recovery_input_unavailable', before); return; }
+    if (!nativeTransport && !inspected.recoveryParts.length) { await attention(id, 'recovery_input_unavailable', before); return; }
     // Reserve under the same lock as ordinary admission. Release it before POST:
     // plugin hooks called during POST must be able to inspect the reservation.
     const reserved = await lock(id, async () => {
       let r = await store.readRecord(keyFor(id));
-      if (!r || !current() || r.attemptCount || r.recoverySuppressed || TERMINAL.has(r.state) || (!nativeFallback && !active(r)) || (nativeFallback && !nativeFallbackEligible(r))) return;
+      if (!r || !current() || r.attemptCount || r.recoverySuppressed || TERMINAL.has(r.state) || (!nativeFallback && !nativeTransport && !active(r))
+        || (nativeFallback && !nativeFallbackEligible(r)) || (nativeTransport && !nativeTransportPending(r))) return;
       const final = await observeBounded(r);
       const check = inspectRecoveryTurn(r, final);
       if (!current() || !check.settled || check.superseded || blocked(r, final) || !await authorizeBounded(r)
+        || (nativeTransport && check.last?.info.id !== r.stepID)
         || !(nativeFallback ? r.nativeFallback?.stepID === check.last?.info.id && options.isNativeFallbackError(check.last?.info.error) === true
           : classifyPrimaryTransportError(check.last?.info.error, handshake?.version))) return;
       const recoveryID = (options.createMessageID ?? (() => messageID(now())))();
@@ -661,13 +698,18 @@ export function createPrimaryRecoveryController(options) {
         : { toolIDs: RECOVERY_READ_TOOLS, allowedReadTools: RECOVERY_READ_TOOLS };
       if (!current()) return;
       const execution = nativeFallback ? r.nativeFallback.execution : r;
+      // The native transport continuation is system-originated: a synthetic
+      // part the chat does not present as a user bubble. The original request
+      // remains in the native history, so it is never resent.
       const prompt = {messageID:recoveryID,model:{providerID:execution.providerID,modelID:execution.modelID},agent:execution.agent,
-        ...(execution.variant ? {variant:execution.variant} : {}),parts:check.recoveryParts,
+        ...(execution.variant ? {variant:execution.variant} : {}),
+        parts:nativeTransport ? [{type:'text',text:RECOVERY_CONTINUATION,synthetic:true}] : check.recoveryParts,
         tools:{...r.tools,...Object.fromEntries(toolPolicy.toolIDs.map(tool=>[tool,false])),'*':false,
           ...Object.fromEntries(toolPolicy.allowedReadTools.map(tool=>[tool,r.tools['*']!==false&&r.tools[tool]!==false]))}};
       r = { ...r, revision: r.revision + 1, state: 'recovery_reserved', attemptCount: 1,
         activeUserID: undefined, recoverySourceUserID: currentObjectiveUser(r),
-        recoveryID, ...(nativeFallback ? {recoveryExecution:r.nativeFallback.execution,recoveryPrompt:prompt} : {}), allowedReadTools: toolPolicy.allowedReadTools, guardedIDs: [...r.guardedIDs, recoveryID], updatedAt: now() };
+        recoveryID, ...(nativeFallback ? {recoveryExecution:r.nativeFallback.execution,recoveryPrompt:prompt} : {}),
+        ...(nativeTransport ? {recoveryKind:'native_transport',recoveryExecution:{providerID:r.providerID,modelID:r.modelID,agent:r.agent,variant:r.variant},recoveryPrompt:prompt} : {}), allowedReadTools: toolPolicy.allowedReadTools, guardedIDs: [...r.guardedIDs, recoveryID], updatedAt: now() };
       await store.writeRecord(keyFor(id), r);
       records.set(id, r); publish(r);
       diagnostic('provider_recovery_reserved', r);
@@ -708,6 +750,8 @@ export function createPrimaryRecoveryController(options) {
           });
           const latest = records.get(id);
           if (active(latest)) await attention(id, 'recovery_observation_unavailable', expected);
+          else if (!sweep && nativeTransportPending(latest)) await mutate(id, (next) => next && next.anchorID === latest.anchorID
+            && nativeTransportPending(next) ? { ...next, reason: 'failure_not_eligible' } : next);
           else if (sweep && error?.sessionMissing === true && latest && !TERMINAL.has(latest.state)
             && latest.updatedAt < sweep.startedAt && latest.instanceID !== handshake?.instanceID) {
             // Only a session the replaced runtime no longer has is retired, so
@@ -749,7 +793,13 @@ export function createPrimaryRecoveryController(options) {
         && isNativePrimaryRuntimeVersion(input.version) && handshake.version !== input.version) throw recoveryError('recovery_owner_mismatch');
       if (handshake && replaced) live.clear();
       handshake = { instanceID: input.instanceID, version: input.transport === 'websocket-unverified' ? null : input.version };
-      diagnostic('provider_recovery_capability', null, { supported: supported(), transport: input.transport ?? 'unverified' });
+      // Hellos repeat every few seconds; journal only a new runtime instance or
+      // a changed capability.
+      const capability = { supported: supported(), transport: input.transport ?? 'unverified' };
+      if (replaced || capabilityLogged?.supported !== capability.supported || capabilityLogged.transport !== capability.transport) {
+        capabilityLogged = capability;
+        diagnostic('provider_recovery_capability', null, capability);
+      }
       // Reconcile stored objectives once per runtime instance, not on every
       // plugin hello, and summarize the sweep in one diagnostic.
       if (replaced) {
@@ -1012,7 +1062,10 @@ export function createPrimaryRecoveryController(options) {
           ...(next.nativeContinuation?.messageID === input.userMessageID ? { nativeContinuation: undefined } : {}),
           ...(next.collectionWake?.messageID === input.userMessageID ? { collectionIssue: null } : {}),
           requestedAt: now(), instanceID: input.instanceID, failure: null, failureObserved: false, failureKind: null,
-          reason: next.reason === 'provider_input_progress_unavailable' ? null : next.reason };
+          // A new native Step may fail again: its predecessor's declined
+          // continuation must not decline this one.
+          reason: next.reason === 'provider_input_progress_unavailable'
+            || (next.executionGeneration === 2 && next.reason === 'failure_not_eligible') ? null : next.reason };
       },async()=>authorizePendingChoice?.());
       const timeouts = Object.fromEntries(['headers', 'chunk', 'total'].map((key) => [key,
         Number.isFinite(input.timeouts?.[key]) || input.timeouts?.[key] === false ? input.timeouts[key] : null]));

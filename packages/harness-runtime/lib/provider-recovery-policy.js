@@ -16,6 +16,12 @@ export const PROVIDER_RECOVERY_SUPPORTED_OPENCODE_VERSIONS = Object.freeze(['1.1
 // transport recovery. Keep exact canonical versions for retained rollback.
 export const NATIVE_PRIMARY_SUPPORTED_OPENCODE_VERSIONS = Object.freeze(['2.0.20', '2.0.24', '2.0.26', '2.0.30', '2.0.32','2.1.0','2.1.2','2.1.3']);
 export const isNativePrimaryRuntimeVersion = version => NATIVE_PRIMARY_SUPPORTED_OPENCODE_VERSIONS.includes(version);
+// Native transport class: the host's single read-only continuation after a
+// bound native primary Step finalizes with a typed transient transport failure.
+// It reuses the reviewed native recovery dispatch of model fallback, and the
+// typed `provider.transport`/`provider.timeout` errors OpenCode 2.1 reports.
+export const NATIVE_TRANSPORT_RECOVERY_OPENCODE_VERSIONS = Object.freeze(['2.1.0','2.1.2','2.1.3']);
+export const isNativeTransportRecoveryRuntimeVersion = version => NATIVE_TRANSPORT_RECOVERY_OPENCODE_VERSIONS.includes(version);
 // The bundled companion runtime is a pinned upstream release plus DevRyan's
 // execution patch, which does not touch provider transport; it reports
 // `<upstream>-devryan.<n>` and is compatible exactly as its upstream base.
@@ -33,6 +39,11 @@ export const isPrimaryRecoveryProvider = (providerID) => ['openai', 'anthropic']
 export const primaryRecoveryMode = (providerID, options) => providerID === 'anthropic'
   ? options.anthropicMode ?? options.mode ?? 'enforce'
   : options.mode ?? 'observe';
+// The native transport class continues only after a finalized failure; it never
+// aborts or watches a live stream, so it runs unless the host mode for that
+// provider is explicitly `off` or `observe` (the documented rollback switch).
+export const nativeTransportRecoveryMode = (providerID, options) => (providerID === 'anthropic'
+  ? options.anthropicMode ?? options.mode : options.mode) ?? 'enforce';
 
 export const recoveryError = (code, statusCode = 409) => Object.assign(
   new Error(code.replaceAll('_', ' ')), { code, statusCode },
@@ -60,6 +71,12 @@ export function classifyPrimaryTransportError(error, runtimeVersion) {
   if (name === 'APIError' && isNativePrimaryRuntimeVersion(runtimeVersion)
     && /^upstream_timeout: Upstream stalled: no data for [1-9][0-9]{0,12}ms$/.test(message)) {
     return { kind: 'chunk_timeout', source: 'upstream_timeout_text' };
+  }
+  // OpenCode 2.1 types its provider failures. Only the transport and timeout
+  // types, without a provider error code (usage, auth and model codes), qualify.
+  if (name === 'APIError' && isNativePrimaryRuntimeVersion(runtimeVersion) && error.data?.providerCode === undefined) {
+    if (error.data?.v2Type === 'provider.transport') return { kind: 'connection_reset', source: 'native_error_type' };
+    if (error.data?.v2Type === 'provider.timeout') return { kind: 'request_timeout', source: 'native_error_type' };
   }
   const codes = {
     ETIMEDOUT: 'request_timeout', ECONNRESET: 'connection_reset', EPIPE: 'connection_reset',
@@ -148,8 +165,14 @@ export function validatePrimaryRecoveryRecord(value) {
     || !/^msg_[a-zA-Z0-9]+$/.test(fallback.userMessageID ?? '') || !Array.isArray(fallback.tried) || fallback.tried.length > 128
     || fallback.tried.some(item => typeof item !== 'string' || item.length > 512) || ![0,1,2].includes(fallback.exhaustion)
     || (fallback.execution !== undefined && !validExecution(fallback.execution)))) throw recoveryError('invalid_native_fallback');
+  // A native transport continuation repeats the record's own selection; a
+  // native fallback recovery uses the fallback's.
+  if (value?.recoveryKind !== undefined && (value.recoveryKind !== 'native_transport' || value.executionGeneration !== 2
+    || fallback !== undefined || !value.recoveryID || value.recoveryExecution === undefined)) throw recoveryError('invalid_native_transport_recovery');
+  const recoveryExecution = value?.recoveryKind === 'native_transport'
+    ? { providerID: value.providerID, modelID: value.modelID, agent: value.agent, variant: value.variant } : fallback?.execution;
   if (value?.recoveryExecution !== undefined && (value.executionGeneration !== 2 || !value.recoveryID || !validExecution(value.recoveryExecution)
-    || JSON.stringify(value.recoveryExecution) !== JSON.stringify(fallback?.execution)
+    || JSON.stringify(value.recoveryExecution) !== JSON.stringify(recoveryExecution)
     || value.recoveryPrompt?.messageID !== value.recoveryID || value.recoveryPrompt?.model?.providerID !== value.recoveryExecution.providerID
     || value.recoveryPrompt?.model?.modelID !== value.recoveryExecution.modelID || value.recoveryPrompt?.agent !== value.agent
     || value.recoveryPrompt?.variant !== value.recoveryExecution.variant || !Array.isArray(value.recoveryPrompt?.parts)

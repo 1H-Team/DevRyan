@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createPrimaryRecoveryController } from './provider-recovery.js';
-import { classifyPrimaryTransportError, PROVIDER_RECOVERY_SUPPORTED_OPENCODE_VERSIONS, isNativePrimaryRuntimeVersion, validatePrimaryRecoveryRecord } from './provider-recovery-policy.js';
+import { classifyPrimaryTransportError, PROVIDER_RECOVERY_SUPPORTED_OPENCODE_VERSIONS, isNativePrimaryRuntimeVersion, isNativeTransportRecoveryRuntimeVersion, RECOVERY_CONTINUATION, validatePrimaryRecoveryRecord } from './provider-recovery-policy.js';
 
 const cleanups = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
@@ -1554,4 +1554,212 @@ test('a native runtime instance cannot change between supported release identiti
     await expect(f.controller.plugin({action:'hello',policyVersion:1,instanceID:'native-version-owner',version:version==='2.0.20'?'2.0.26':'2.0.20'})).rejects.toMatchObject({code:'recovery_owner_mismatch'});
     await expect(f.controller.plugin({action:'hello',policyVersion:1,instanceID:'native-version-owner',version})).resolves.toBeDefined();
   }
+});
+
+describe('host-owned native transport continuation', () => {
+  const execution = { providerID: 'openai', modelID: 'gpt-5.6-sol', agent: 'orchestrator', variant: 'xhigh' };
+  const transport = { name: 'APIError', data: { message: 'fetch failed', v2Type: 'provider.transport' } };
+  const getToolPolicy = async () => ({ toolIDs: ['read', 'glob', 'grep', 'shell'], allowedReadTools: ['read', 'glob', 'grep'] });
+  const idle = f => f.controller.observe({ type: 'session.status', properties: { sessionID: identity.sessionID, status: { type: 'idle' } } });
+  // The production default: no explicit host mode, native 2.1.3, a bound Step.
+  const native = async (overrides = {}, { providerID = 'openai', version = '2.1.3', error = transport } = {}) => {
+    const f = await fixture({ mode: undefined, getToolPolicy, ...overrides }, providerID, 'orchestrator', 2);
+    await f.controller.plugin({ action: 'hello', instanceID: identity.instanceID, policyVersion: 1, version, transport: 'native-v2' });
+    await f.controller.plugin({ action: 'step', ...identity, execution });
+    f.state.messages[1].parts = [{ type: 'text', text: 'Partial plan' }];
+    f.state.messages[1].info.error = error;
+    return f;
+  };
+  const continuation = { type: 'text', text: RECOVERY_CONTINUATION, synthetic: true };
+  const recoveryTurn = (f, assistant) => f.state.messages.push({ info: { id: 'msg_recovery', role: 'user' }, parts: [continuation] },
+    { info: { id: 'msg_recovered', role: 'assistant', parentID: 'msg_recovery', time: { completed: 20_000 }, ...assistant }, parts: [{ type: 'text', text: 'Done' }] });
+
+  test('sends exactly one read-only synthetic continuation with the original selection', async () => {
+    const f = await native();
+    expect((await f.snapshot()).automaticRecoveryPending).toBe(true);
+    await idle(f);
+    expect(f.sent).toEqual([{ messageID: 'msg_recovery', model: { providerID: 'openai', modelID: 'gpt-5.6-sol' }, agent: 'orchestrator',
+      variant: 'xhigh', parts: [continuation], tools: { read: true, glob: true, grep: true, shell: false, '*': false } }]);
+    const record = await f.controller.readRecord(identity.sessionID);
+    expect(record).toMatchObject({ state: 'recovering', attemptCount: 1, recoveryID: 'msg_recovery', recoveryKind: 'native_transport',
+      recoveryExecution: execution, failedID: 'msg_failed', reason: 'connection_reset', recoverySourceUserID: 'msg_user' });
+    expect(record.nativeFallback).toBeUndefined();
+    expect(f.aborted).toHaveLength(0);
+    expect(await f.snapshot()).toMatchObject({ automaticRecoveryPending: false, enforced: false, record: { readOnly: true, attemptCount: 1 } });
+    recoveryTurn(f);
+    await f.controller.plugin({ action: 'step', ...identity, userMessageID: 'msg_recovery', assistantMessageID: 'msg_recovered', execution });
+    await expect(f.controller.plugin({ action: 'step', ...identity, userMessageID: 'msg_recovery', assistantMessageID: 'msg_other',
+      execution: { ...execution, modelID: 'other' } })).rejects.toMatchObject({ code: 'recovery_execution_changed' });
+  });
+
+  test('a successful continuation completes and a second failure falls back to the manual card', async () => {
+    for (const failed of [false, true]) {
+      const f = await native();
+      await idle(f);
+      recoveryTurn(f, failed ? { error: transport } : {});
+      await f.controller.plugin({ action: 'step', ...identity, userMessageID: 'msg_recovery', assistantMessageID: 'msg_recovered', execution });
+      await idle(f);
+      expect((await f.snapshot()).record).toMatchObject(failed ? { state: 'needs_attention', reason: 'recovery_failed', readOnly: true }
+        : { state: 'completed', attemptCount: 1 });
+      await idle(f);
+      expect(f.sent).toHaveLength(1);
+    }
+  });
+
+  test('coalesced terminal signals and a second, fenced owner never send twice', async () => {
+    const f = await native();
+    const second = createPrimaryRecoveryController({ directory: f.directory, isManaged: () => true, pollMs: 1_000_000,
+      authorize: async () => true, observeTurn: async () => structuredClone(f.state), getToolPolicy,
+      abortSession: async () => {}, promptSession: async () => { throw new Error('second owner sent'); } });
+    await second.initialize(); cleanups.push(() => second.drain());
+    await expect(second.plugin({ action: 'hello', instanceID: identity.instanceID, policyVersion: 1, version: '2.1.3', transport: 'native-v2' }))
+      .rejects.toMatchObject({ code: 'recovery_owner_unavailable' });
+    expect((await second.getSnapshot(identity.sessionID)).automaticRecoveryPending).toBe(false);
+    const failed = f.state.messages[1].info;
+    await Promise.all([idle(f), idle(f),
+      f.controller.observe({ type: 'session.error', properties: { sessionID: identity.sessionID, error: transport } }),
+      f.controller.observe({ type: 'message.updated', properties: { info: { ...failed, sessionID: identity.sessionID } } })]);
+    await second.observe({ type: 'session.status', properties: { sessionID: identity.sessionID, status: { type: 'idle' } } });
+    expect(f.sent).toHaveLength(1);
+    expect((await f.controller.readRecord(identity.sessionID)).attemptCount).toBe(1);
+  });
+
+  test('a persisted reservation is reconciled after restart without another send', async () => {
+    const f = await native();
+    await idle(f);
+    expect(f.sent).toHaveLength(1);
+    await f.controller.drain();
+    const sent = [];
+    const restarted = createPrimaryRecoveryController({ directory: f.directory, isManaged: () => true, pollMs: 1_000_000,
+      authorize: async () => true, observeTurn: async () => structuredClone(f.state), getToolPolicy,
+      abortSession: async () => {}, promptSession: async (_r, body) => { sent.push(body); } });
+    await restarted.initialize(); cleanups.push(() => restarted.drain());
+    await restarted.plugin({ action: 'hello', instanceID: 'runtime-restarted', policyVersion: 1, version: '2.1.3', transport: 'native-v2' });
+    await restarted.observe({ type: 'session.status', properties: { sessionID: identity.sessionID, status: { type: 'idle' } } });
+    expect(await restarted.readRecord(identity.sessionID)).toMatchObject({ state: 'needs_attention', reason: 'recovery_dispatch_uncertain',
+      attemptCount: 1, recoveryID: 'msg_recovery' });
+    expect(sent).toHaveLength(0);
+  });
+
+  test.each([
+    ['usage limit', { name: 'APIError', data: { message: 'Usage limit reached', v2Type: 'provider.quota' } }],
+    ['rate limit', { name: 'APIError', data: { message: 'Slow down', v2Type: 'provider.rate-limit' } }],
+    ['authentication', { name: 'ProviderAuthError', data: { message: 'Unauthorized', v2Type: 'provider.auth', statusCode: 401 } }],
+    ['model not found', { name: 'APIError', data: { message: 'Not found', v2Type: 'provider.invalid-request', providerCode: 'model_not_found' } }],
+    ['coded transport', { name: 'APIError', data: { message: 'fetch failed', v2Type: 'provider.transport', providerCode: 'usage_limit_exceeded' } }],
+    ['abort', { name: 'MessageAbortedError', data: { message: 'Aborted', v2Type: 'aborted', source: 'stop_button' } }],
+  ])('%s failures return to the manual card without a send or a state change', async (_name, error) => {
+    const f = await native({}, { error });
+    await idle(f);
+    expect(f.sent).toHaveLength(0);
+    expect(await f.snapshot()).toMatchObject({ automaticRecoveryPending: false,
+      record: { state: 'observing', reason: 'failure_not_eligible', attemptCount: 0 } });
+    // The next native Step of the same objective is eligible again.
+    await f.controller.plugin({ action: 'step', ...identity, assistantMessageID: 'msg_next', execution });
+    expect((await f.snapshot()).automaticRecoveryPending).toBe(true);
+  });
+
+  test('explicit rollback modes, unattested Claude and unlisted runtimes stay manual', async () => {
+    for (const [overrides, options] of [[{ mode: 'observe' }, {}], [{ mode: 'off' }, {}], [{}, { providerID: 'anthropic' }],
+      [{}, { version: '2.0.26' }], [{ mode: 'enforce', anthropicMode: 'observe', isAnthropicConformant: () => true }, { providerID: 'anthropic' }]]) {
+      const f = await native(overrides, options);
+      expect((await f.snapshot()).automaticRecoveryPending).toBe(false);
+      await idle(f);
+      expect(f.sent).toHaveLength(0);
+    }
+    const attested = await native({ isAnthropicConformant: () => true }, { providerID: 'anthropic' });
+    expect((await attested.snapshot()).automaticRecoveryPending).toBe(true);
+  });
+
+  test('unresolved tools, blockers, busy status and a queued intent never authorize the continuation', async () => {
+    const unresolved = await native();
+    unresolved.state.messages[1].parts.push({ type: 'tool', callID: 'call_write', tool: 'write', state: { status: 'running' } });
+    await idle(unresolved);
+    expect(unresolved.sent).toHaveLength(0);
+    expect((await unresolved.snapshot()).record).toMatchObject({ state: 'observing', reason: 'failure_not_eligible' });
+    const blocked = await native();
+    blocked.state.blocked = true;
+    await idle(blocked);
+    expect(blocked.sent).toHaveLength(0);
+    expect((await blocked.snapshot()).automaticRecoveryPending).toBe(false);
+    const busy = await native();
+    busy.state.status = 'busy';
+    await idle(busy);
+    expect(busy.sent).toHaveLength(0);
+    expect(busy.aborted).toHaveLength(0);
+    expect((await busy.snapshot()).automaticRecoveryPending).toBe(true);
+    const queued = await native();
+    await queued.controller.control(identity.sessionID, 'intent', (await queued.snapshot()).record.revision);
+    await idle(queued);
+    expect(queued.sent).toHaveLength(0);
+    expect((await queued.snapshot()).automaticRecoveryPending).toBe(false);
+  });
+
+  test('revoked authorization and a lost acknowledgement fail closed', async () => {
+    let allowed = true;
+    const revoked = await native({ authorize: async () => allowed });
+    allowed = false;
+    await idle(revoked);
+    expect(revoked.sent).toHaveLength(0);
+    expect((await revoked.snapshot()).automaticRecoveryPending).toBe(false);
+    // Once the manual card owns the turn, restored authority never sends late.
+    allowed = true;
+    await idle(revoked);
+    expect(revoked.sent).toHaveLength(0);
+    const lost = await native({ promptSession: async () => { throw new Error('acknowledgement lost'); } });
+    await idle(lost);
+    expect((await lost.snapshot()).record).toMatchObject({ state: 'needs_attention', reason: 'recovery_dispatch_uncertain', attemptCount: 1, readOnly: true });
+  });
+
+  test('a failure without this runtime\'s bound Step stays manual', async () => {
+    const f = await native();
+    f.state.messages[1].info.id = 'msg_unbound';
+    await idle(f);
+    expect(f.sent).toHaveLength(0);
+    expect((await f.snapshot()).record.reason).toBe('failure_not_eligible');
+  });
+
+  test('the durable record schema binds the continuation to its own selection', () => {
+    const base = { version: 1, sessionID: 'ses_test', anchorID: 'msg_user', directory: '/project', ...execution, state: 'recovering',
+      revision: 2, attemptCount: 1, recoveryID: 'msg_recovery', guardedIDs: ['msg_recovery'], tools: {}, createdAt: 1, updatedAt: 1,
+      executionGeneration: 2, recoveryKind: 'native_transport', recoveryExecution: { ...execution },
+      recoveryPrompt: { messageID: 'msg_recovery', model: { providerID: 'openai', modelID: 'gpt-5.6-sol' }, agent: 'orchestrator',
+        variant: 'xhigh', parts: [continuation], tools: { '*': false, read: true } } };
+    expect(validatePrimaryRecoveryRecord(structuredClone(base))).toBeDefined();
+    for (const change of [{ recoveryKind: 'other' }, { recoveryExecution: { ...execution, modelID: 'fallback' } },
+      { recoveryExecution: undefined, recoveryPrompt: undefined },
+      { nativeFallback: { stepID: 'msg_failed', userMessageID: 'msg_user', tried: [], exhaustion: 0 } }]) {
+      expect(() => validatePrimaryRecoveryRecord({ ...structuredClone(base), ...change })).toThrow();
+    }
+  });
+});
+
+test('native typed transport errors classify only on native runtimes and without provider codes', () => {
+  const error = (v2Type, extra = {}) => ({ name: 'APIError', data: { message: 'fetch failed', v2Type, ...extra } });
+  expect(classifyPrimaryTransportError(error('provider.transport'), '2.1.3')).toEqual({ kind: 'connection_reset', source: 'native_error_type' });
+  expect(classifyPrimaryTransportError(error('provider.timeout'), '2.1.3')).toEqual({ kind: 'request_timeout', source: 'native_error_type' });
+  expect(classifyPrimaryTransportError(error('provider.transport'), '1.18.31')).toBeNull();
+  expect(classifyPrimaryTransportError(error('provider.transport', { providerCode: 'insufficient_quota' }), '2.1.3')).toBeNull();
+  expect(classifyPrimaryTransportError(error('provider.transport', { statusCode: 429 }), '2.1.3')).toBeNull();
+  for (const type of ['provider.quota', 'provider.rate-limit', 'provider.free-limit', 'provider.internal', 'provider.unknown', 'provider.auth']) {
+    expect(classifyPrimaryTransportError(error(type), '2.1.3')).toBeNull();
+  }
+  expect(classifyPrimaryTransportError({ name: 'APIError', data: { message: 'Usage limit reached', v2Type: 'provider.transport' } }, '2.1.3')).toBeNull();
+  expect(isNativeTransportRecoveryRuntimeVersion('2.1.3')).toBe(true);
+  for (const version of ['2.0.26', '2.0.32', '1.18.33', '2.1.4', null]) expect(isNativeTransportRecoveryRuntimeVersion(version)).toBe(false);
+});
+
+test('the runtime capability is journaled once per instance and on change, not on every hello', async () => {
+  const f = await fixture({ mode: 'observe' });
+  const count = () => f.incidents.filter(entry => entry.event === 'provider_recovery_capability').length;
+  const initial = count();
+  for (let index = 0; index < 5; index++) await f.controller.plugin({ action: 'hello', instanceID: identity.instanceID, policyVersion: 1, version: '1.18.25' });
+  expect(count()).toBe(initial);
+  await f.controller.plugin({ action: 'hello', instanceID: identity.instanceID, policyVersion: 1, version: '1.18.25', transport: 'websocket-unverified' });
+  expect(count()).toBe(initial + 1);
+  expect(f.incidents.at(-1)).toMatchObject({ event: 'provider_recovery_capability', supported: false, transport: 'websocket-unverified' });
+  await f.controller.plugin({ action: 'hello', instanceID: identity.instanceID, policyVersion: 1, version: '1.18.25', transport: 'websocket-unverified' });
+  expect(count()).toBe(initial + 1);
+  await f.controller.plugin({ action: 'hello', instanceID: 'runtime-replaced', policyVersion: 1, version: '1.18.25', transport: 'websocket-unverified' });
+  expect(count()).toBe(initial + 2);
 });

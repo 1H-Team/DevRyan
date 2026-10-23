@@ -195,6 +195,30 @@ it('keeps the reserved fallback tuple through successive canonical compaction ad
 });
 
 
+it('binds the host native transport continuation Step only with the original selection', async () => {
+  const selection = { providerID: 'openai', modelID: 'gpt-5.6-sol', agent: 'orchestrator', variant: 'xhigh' };
+  const record = { ...selection, sessionID: 'ses_root', directory: '/project', anchorID: 'msg_user', recoveryID: 'msg_recovery',
+    recoveryKind: 'native_transport', recoveryExecution: { ...selection }, attemptCount: 1, state: 'recovering', tools: { '*': false, read: true } };
+  let actual = selection;
+  const permit = { token: 'owned-runner', sessionID: 'ses_root' }, steps = [];
+  const event = () => ({ type: 'session.step.started', durable: { seq: 5, aggregateID: 'ses_root' },
+    data: { sessionID: 'ses_root', assistantMessageID: 'msg_recovered', agent: actual.agent, model: { providerID: actual.providerID, id: actual.modelID } } });
+  const owner = createNativePrimaryStepOwner({ instanceID: 'native-instance',
+    admissionOwner: { handleRpc: async () => permit, acknowledgeStartedContinuation: async () => {} },
+    openCodeClient: { sessions: { get: async () => ({ id: 'ses_root', directory: '/project' }),
+      message: async () => ({ info: { id: 'msg_recovered', sessionID: 'ses_root', role: 'assistant', parentID: 'msg_recovery',
+        agent: actual.agent, providerID: actual.providerID, modelID: actual.modelID, variant: actual.variant, time: {} },
+      turnOwnership: { source: 'native-sequence', userMessageID: 'msg_recovery' } }) } },
+    primaryRuntime: { readRecord: async () => record, helloNative: async () => {},
+      adoptOwnedNativeContinuation: async () => { throw Error('the continuation is the current objective user, never an adoption'); },
+      plugin: async input => { steps.push(input); } } });
+  await expect(owner({ permit, event: event() })).resolves.toEqual({ tracked: true });
+  expect(steps).toEqual([expect.objectContaining({ action: 'step', userMessageID: 'msg_recovery', assistantMessageID: 'msg_recovered', execution: selection })]);
+  actual = { ...selection, modelID: 'fallback' };
+  await expect(owner({ permit, event: event() })).rejects.toMatchObject({ code: 'native_primary_step_invalid' });
+  expect(steps).toHaveLength(1);
+});
+
 it('rechecks the trusted current controller before a delayed native hello can bind a Step',async()=>{
   const permit={token:'owned-runner',sessionID:'ses_root'},attempt={traceID:'a'.repeat(32),spanID:'b'.repeat(16)};
   const event={type:'session.step.started',durable:{seq:4,aggregateID:'ses_root'},data:{sessionID:'ses_root',assistantMessageID:'msg_assistant',agent:'orchestrator',model:{providerID:'sim',id:'m1'}}};

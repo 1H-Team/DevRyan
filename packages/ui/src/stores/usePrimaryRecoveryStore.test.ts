@@ -1,5 +1,5 @@
 import { beforeEach, expect, test } from 'bun:test';
-import { hostOwnsPrimaryRecovery, usePrimaryRecoveryStore } from './usePrimaryRecoveryStore';
+import { hostOwnsPrimaryRecovery, primaryRecoveryDefersToHost, usePrimaryRecoveryStore } from './usePrimaryRecoveryStore';
 
 const snapshot = (revision = 1, state = 'recovering') => ({ schemaVersion: 1, mode: 'enforce', supported: true,
   enforced: true, progressTimeoutMs: 300000, record: { sessionID: 'ses_test', anchorID: 'msg_user', failedID: 'msg_error',
@@ -88,4 +88,27 @@ test('partial record events preserve retained inventory until a full host snapsh
   expect(usePrimaryRecoveryStore.getState().snapshots.ses_test.recoveredInput).toBeUndefined();
   expect(usePrimaryRecoveryStore.getState().snapshots.ses_test.recoveredInputPartial).toBeUndefined();
   expect(hostOwnsPrimaryRecovery('ses_test')).toBe(false);
+});
+
+test('a pending native transport continuation hides the manual card until the host declines or acts', () => {
+  const store = usePrimaryRecoveryStore.getState();
+  const current = snapshot(1, 'observing');
+  const pending = { ...current, mode: 'observe', enforced: false, supported: false, automaticRecoveryPending: true,
+    record: { ...current.record, recoveryID: null, readOnly: false, attemptCount: 0 } };
+  store.accept('ses_test', pending);
+  const read = () => usePrimaryRecoveryStore.getState().snapshots.ses_test;
+  // The renderer still offers its card (it is not host-owned); only the card defers.
+  expect(hostOwnsPrimaryRecovery('ses_test')).toBe(false);
+  expect(primaryRecoveryDefersToHost(read())).toBe(true);
+  store.accept('ses_test', { ...pending, automaticRecoveryPending: false,
+    record: { ...pending.record, revision: 2, reason: 'failure_not_eligible' } });
+  expect(primaryRecoveryDefersToHost(read())).toBe(false);
+  store.accept('ses_test', { ...pending, automaticRecoveryPending: false,
+    record: { ...current.record, revision: 3, state: 'recovering' } });
+  expect(primaryRecoveryDefersToHost(read())).toBe(true);
+  expect(primaryRecoveryDefersToHost(undefined)).toBe(false);
+  // An older host without the field keeps today's manual behaviour.
+  const { automaticRecoveryPending: _omitted, ...legacy } = pending;
+  store.accept('ses_test', { ...legacy, record: { ...legacy.record, revision: 4 } });
+  expect(primaryRecoveryDefersToHost(read())).toBe(false);
 });

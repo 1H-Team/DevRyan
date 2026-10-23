@@ -50,6 +50,10 @@ Recovery is enabled per reviewed release, by exact version. Two allow-lists in
   generation. It gates the 1.x transport-error shape, managed collection
   continuation and retained rollback only; it does not make a 1.x runtime the
   current one, and it is never extended for new releases.
+- `NATIVE_TRANSPORT_RECOVERY_OPENCODE_VERSIONS`, tested through
+  `isNativeTransportRecoveryRuntimeVersion`, is the native transport class
+  described below. It lists the native releases that report OpenCode 2.1's typed
+  provider errors; it does not enable the watchdog, Stop or plugin enforcement.
 
 Read the constants for the exact versions rather than copying them into
 documents. Do not expand either list without transport and hook conformance
@@ -169,10 +173,58 @@ fails closed at capacity. Corrupt/quarantined storage disables safeguards and
 prevents an unknown recovery from executing tools. Do not delete recovery
 records as a troubleshooting shortcut while work may remain active.
 
+## Native transport continuation
+
+On the native runtime, OpenCode owns its own bounded retries and the
+interrupted-stream continuation above. When a primary turn still ends, the host
+sends one automatic continuation for that anchor user message, then leaves the
+turn to the manual card. It is the same single attempt as the legacy recovery
+(one reservation, `attemptCount` 1, the ID persisted before the one dispatch,
+never resent after restart), so two windows or a restarted host cannot send a
+second one. Eligibility, all checked again under the admission lock:
+
+- the runtime is in `NATIVE_TRANSPORT_RECOVERY_OPENCODE_VERSIONS`, this host owns
+  the runtime and healthy storage, and the provider is OpenAI or attested Claude;
+- the host mode for that provider is not explicitly `off` or `observe` (those
+  remain the rollback switch; without a setting the class is on);
+- the failed assistant is the Step this runtime instance bound
+  (`session.step.started`), finalized with an OpenCode 2.1 typed
+  `provider.transport` or `provider.timeout` error without a provider code, or
+  the exact 2.x upstream stall text. Usage-limit, rate-limit, authentication,
+  model-not-found, abort and every other type are excluded;
+- the session is idle with no unresolved tool, question, permission or managed
+  barrier, no queued-input intent, no native fallback choice, and authorization
+  still holds.
+
+The host never aborts a live native turn for this class and does not watch its
+progress. The continuation is dispatched through the reviewed native recovery
+dispatch of model fallback, with `recoveryKind: 'native_transport'` and
+`recoveryExecution` equal to the record's own selection. Its single part is the
+read-only `RECOVERY_CONTINUATION` marked `synthetic`, so the chat does not show
+it as a user message; the original request stays in the native history and is
+not resent. Tools are limited to verified `read`, `glob` and `grep`, exactly as
+for every automatic recovery, so a continuation that needs writes, shell or
+delegation stops and asks for explicit continuation.
+
+A pre-output failure (no bound Step; for example every OpenCode retry failed
+before the first byte) stays manual: this host has no Step receipt to bind the
+failed assistant to. A recovered plan-mode turn continues without the plan-mode
+preface, so its answer is presented as ordinary text.
+
+The snapshot's `automaticRecoveryPending` is true while the host may still send
+this continuation for the current turn. The renderer still offers its Model
+Recovery card, but keeps it hidden while the flag is true. When the host declines
+the failure it sets `reason: 'failure_not_eligible'` without changing the state,
+so managed, explicit and owned continuations keep their existing fences, and the
+card appears. Once the attempt is reserved the record is read-only and the host
+card owns the turn; a failed attempt ends in `needs_attention`
+(`recovery_failed`) with Continue with Original Permissions.
+
 ## Public contract
 
 - `GET /api/session/:sessionID/recovery`: version-1 snapshot, fixed selection,
-  state/revision, attempt count, restrictions and capability.
+  state/revision, attempt count, restrictions and capability, plus the optional
+  `automaticRecoveryPending` flag of the native transport class.
 - `POST .../recovery/cancel`: version-checked durable Stop; abort is requested,
   but the response explicitly does not claim settlement.
 - `POST .../recovery/intent`: version-checked queued-user-input fence.
@@ -188,6 +240,10 @@ automatic actions revalidate the saved application-session hash and current
 ownership. Hashes and private directory/tool policy data are never published.
 
 ## Diagnostics
+
+`provider_recovery_capability` is written once per runtime instance and again
+only when its `{supported, transport}` pair changes; repeated plugin hellos do
+not add records.
 
 Lifecycle records correlate runtime instance/version, host build (or explicitly
 unavailable), session, original/failed/recovery message IDs, and tool call IDs.

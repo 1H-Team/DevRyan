@@ -22,7 +22,7 @@ import {
 } from '@/sync/provider-stall-recovery';
 import { ModelRecoveryCard } from './ModelRecoveryCard';
 import { HostPrimaryRecovery } from './HostPrimaryRecovery';
-import { usePrimaryRecoveryStore } from '@/stores/usePrimaryRecoveryStore';
+import { primaryRecoveryDefersToHost, usePrimaryRecoveryStore } from '@/stores/usePrimaryRecoveryStore';
 
 export const PrimaryModelRecovery = React.memo(({
   sessionId,
@@ -37,11 +37,7 @@ export const PrimaryModelRecovery = React.memo(({
     [sessionId],
   ));
   const providers = useConfigStore((state) => state.providers);
-  const hostEnforced = usePrimaryRecoveryStore((state) => {
-    const snapshot = state.snapshots[sessionId];
-    return Boolean(snapshot?.recoveredInput || snapshot?.record && (snapshot.enforced || snapshot.record.readOnly
-      || snapshot.record.reason === 'managed_repeated_preexecution_rejection'));
-  });
+  const hostEnforced = usePrimaryRecoveryStore((state) => primaryRecoveryDefersToHost(state.snapshots[sessionId]));
 
   React.useLayoutEffect(() => {
     if (recovery) onContentChange?.();
