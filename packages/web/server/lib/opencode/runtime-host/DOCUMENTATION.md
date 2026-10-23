@@ -1299,10 +1299,17 @@ went into a managed `OPENCODE_CONFIG_DIR` overlay. The native snapshot never
 reads that overlay, because it loads only the user, project and `OPENCODE_CONFIG`
 layers, so those defaults have been removed.
 
-Coverage limit: a stanza sets core's provider `activation` to `enabled`, so
-DevRyan writes deadlines only for providers that already have a stanza. Built-in
-catalog providers used without one (Zen `opencode`, OpenAI signed in by OAuth
-with no `provider.openai` block) still use core's 300 s / 900 s defaults.
+A stanza sets core's provider `activation` to `enabled`, so DevRyan writes
+stanza deadlines only for providers that already have a stanza. Built-in catalog
+providers used without one (Zen `opencode`, OpenAI signed in by OAuth with no
+`provider.openai` block) are bounded per request instead:
+`withNativeHeaderDeadline` (`native-observation.ts`) sets the prepared
+request's `http.headerTimeout` to 45,000 ms whenever neither the request nor its
+model configured one other than core's 300,000 ms default. Chunk waits are left
+as configured for these providers, because reasoning models such as DeepSeek
+can legitimately stream nothing for minutes. The constants live in
+`native-provider-deadlines.js` so the controller and the configuration
+translation share them.
 
 ### Idle location release
 

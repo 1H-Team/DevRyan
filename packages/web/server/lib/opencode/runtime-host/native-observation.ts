@@ -4,7 +4,7 @@ import { SessionModelRequest } from '@opencode/core/session/model-request';
 import { Location } from '@opencode/core/location';
 import { PluginHooks } from '@opencode/core/plugin/hooks';
 import type { WebSocketChannelExchange } from '@opencode/ai/route';
-import { mergeProviderOptions } from '@opencode/ai/schema/options';
+import { DEFAULT_HTTP_TIMEOUT_MS, HttpOptions, mergeProviderOptions } from '@opencode/ai/schema/options';
 import { SessionCompaction } from '@opencode/core/session/compaction';
 import { SessionMessage } from '@opencode/schema/session-message';
 import { registerNativeCompactionObservation, type NativeCompactionBudget } from './native-compaction-observation.js';
@@ -17,7 +17,8 @@ import { isNativeCursorIngress } from './native-cursor-ingress.js';
 import { HostRefusal } from './host-refusal.js';
 import {createNativeFinalizationQueue,drainNativeFinalizationQueue,registerNativeFinalizationObservation} from './native-finalization-observation.js';
 import {createNativeStreamContinuation} from './native-stream-continuation.js';
-import type {LLMClientShape,LLMRequest} from '@opencode/ai';
+import {LLMRequest,type LLMClientShape} from '@opencode/ai';
+import {NATIVE_PROVIDER_DEADLINES} from './native-provider-deadlines.js';
 
 export interface NativeAttemptIdentity {
   readonly traceID: string;
@@ -172,6 +173,17 @@ export function projectNativeProviderFailure(input:{readonly error:unknown;reado
     providerID:input.providerID,modelID:input.modelID,providerRequestID:read?nativeProviderRequestID(http?.headers)??input.state.providerRequestID??null:null}};
 }
 
+// Providers used without a config stanza (Zen, OAuth OpenAI) keep core's 300 s
+// header wait, and adding a stanza would change their activation. A request
+// whose model left the core default gets DevRyan's header deadline instead;
+// chunk waits stay as configured because reasoning models can stream nothing
+// for minutes. Core retries the resulting Transport/Timeout.
+export function withNativeHeaderDeadline<Request extends LLMRequest>(request:Request):Request {
+  const configured=request.http?.headerTimeout??request.model.defaults?.http?.headerTimeout;
+  if(configured!==undefined&&configured!==DEFAULT_HTTP_TIMEOUT_MS)return request;
+  return LLMRequest.update(request,{http:new HttpOptions({...request.http,headerTimeout:NATIVE_PROVIDER_DEADLINES.headerTimeout})}) as Request;
+}
+
 export function createNativeObservation(options:{readonly controllerInstanceID:string;readonly configurationDigest:string;readonly rpc:ExecutionRpc;
   readonly streamContinuation?:boolean;
   readonly decorateLlmClient?:(inner:LLMClientShape)=>Effect.Effect<LLMClientShape,never,Scope.Scope>;
@@ -236,7 +248,9 @@ export function createNativeObservation(options:{readonly controllerInstanceID:s
         options:{},hookOptions:{},modelLimits:{context:input.model.limit.context,input:input.model.limit.input??null,output:input.model.limit.output}};
       const scope=kind==='primary'&&continuation?yield* continuation.beforePrepare(input,observed.requestID):undefined;
       const originalPrepared=yield* action;
-      const prepared=scope&&continuation?continuation.decorate(scope,originalPrepared):originalPrepared;
+      const decorated=scope&&continuation?continuation.decorate(scope,originalPrepared):originalPrepared;
+      const bounded=withNativeHeaderDeadline(decorated.request);
+      const prepared=bounded===decorated.request?decorated:{...decorated,request:bounded};
       const materialized:PreparedObservation={...observed,toolCount:prepared.request.tools.length};
       let finalizationInterval:FinalizationInterval|undefined;
       if(kind==='primary')registerNativeFinalizationObservation(prepared.request,movement=>Effect.gen(function*(){

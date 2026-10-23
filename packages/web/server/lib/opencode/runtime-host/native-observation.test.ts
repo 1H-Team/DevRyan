@@ -1,7 +1,9 @@
 import {expect,test} from 'vitest';
 import {Cause} from 'effect';
 import {AIError,HttpContext,RateLimitError,TimeoutError,TransportError} from '@opencode/ai';
-import {nativeProviderFailureCode,nativeProviderFailureTarget,projectNativeProviderFailure} from './native-observation.js';
+import {LLM} from '@opencode/ai';
+import {model as compatibleModel} from '@opencode/ai/providers/openai-compatible';
+import {nativeProviderFailureCode,nativeProviderFailureTarget,projectNativeProviderFailure,withNativeHeaderDeadline} from './native-observation.js';
 
 const model={providerID:'openai',modelID:'gpt-5.5'};
 const transport=(fields:Partial<ConstructorParameters<typeof TransportError>[0]>)=>new AIError({reason:new TransportError({message:'secret message body',transport:'http',operation:'request',...fields})});
@@ -52,4 +54,17 @@ test('targets keep only the hostname and port',()=>{
  expect(nativeProviderFailureTarget('http://[::1]:8080/path')).toEqual({host:'::1',port:8080});
  expect(nativeProviderFailureTarget('not a url')).toEqual({host:null,port:null});
  expect(nativeProviderFailureTarget(undefined)).toEqual({host:null,port:null});
+});
+
+test('requests left on the core header default get the DevRyan header deadline; configured waits are kept',()=>{
+ const zen=compatibleModel('deepseek-v4.1-flash',{baseURL:'http://127.0.0.1:1/v1',provider:'opencode'});
+ const unset=LLM.request({model:zen,prompt:'hi'});
+ expect(withNativeHeaderDeadline(unset).http).toMatchObject({headerTimeout:45_000});
+ expect(withNativeHeaderDeadline(unset).http?.chunkTimeout).toBeUndefined();
+ const coreDefault=LLM.request({model:zen,prompt:'hi',http:{headerTimeout:300_000,chunkTimeout:900_000}});
+ expect(withNativeHeaderDeadline(coreDefault).http).toMatchObject({headerTimeout:45_000,chunkTimeout:900_000});
+ const configured=LLM.request({model:zen,prompt:'hi',http:{headerTimeout:60_000}});
+ expect(withNativeHeaderDeadline(configured)).toBe(configured);
+ const disabled=LLM.request({model:zen,prompt:'hi',http:{headerTimeout:false}});
+ expect(withNativeHeaderDeadline(disabled)).toBe(disabled);
 });

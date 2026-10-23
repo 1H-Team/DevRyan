@@ -2,6 +2,7 @@ import {ConfigProvider} from '@opencode/schema/config/provider';
 import {ConfigCompaction} from '@opencode/schema/config/compaction';
 import {Schema} from 'effect';
 import {nativeToolOutputLimits,PLAN_MODE_SYSTEM_INSTRUCTIONS} from '@devryan/orchestration-runtime';
+import {nativeProviderDeadlines} from './native-provider-deadlines.js';
 
 export const NATIVE_LOCATION_IDLE_TIMEOUT = '15 minutes';
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -118,14 +119,7 @@ function providerModel(info) {
   }
   return result;
 }
-// Core waits 300 s for response headers and 900 s between stream chunks. Live
-// QA saw byte-less 75-90 s hangs end in ECONNRESET, so every native provider
-// stanza gets tighter deadlines; core retries the resulting Transport/Timeout.
-// The header timer starts at send, so it also bounds connect. OpenAI reasoning
-// can stream nothing for minutes before its first output item. Saved values win.
-export const NATIVE_PROVIDER_DEADLINES = Object.freeze({ headerTimeout: 45_000, chunkTimeout: 120_000 });
-const PROVIDER_DEADLINES = Object.freeze({ openai: Object.freeze({ chunkTimeout: 300_000 }) });
-export const nativeProviderDeadlines = (id, settings) => ({ ...NATIVE_PROVIDER_DEADLINES, ...PROVIDER_DEADLINES[id], ...settings });
+export { NATIVE_PROVIDER_DEADLINES, nativeProviderDeadlines } from './native-provider-deadlines.js';
 export function nativeProviderConfigurations(input) {
   if (!record(input)) throw fail('native_providers_invalid');
   return Object.fromEntries(Object.entries(input).map(([id, provider]) => {
