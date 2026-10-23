@@ -447,6 +447,7 @@ textarea[data-chat-input="true"]:focus-visible {
 .oc-text-shimmer {
   --oc-shimmer-base: var(--muted-foreground);
   --oc-shimmer-highlight: color-mix(in oklch, var(--foreground) 92%, transparent);
+  position: relative;
   display: inline-block;
   min-width: 0;
   max-width: 100%;
@@ -457,9 +458,53 @@ textarea[data-chat-input="true"]:focus-visible {
   vertical-align: bottom;
 }
 
-/* Live status text brightens on the shared tick (see .oc-tick-blink). */
-html[data-tick-blink="on"] .oc-text-shimmer[data-animation-state="running"] {
+/* The highlight sweep animates transforms only, so it runs on the compositor
+   and never repaints the text: the masked window slides across the label while
+   its highlighted copy of the text slides back by the same distance and stays
+   aligned with the label beneath it. */
+@keyframes oc-text-shimmer-window {
+  0% {
+    transform: translateX(-150%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
+}
+
+@keyframes oc-text-shimmer-glint {
+  0% {
+    transform: translateX(150%);
+  }
+  100% {
+    transform: translateX(-250%);
+  }
+}
+
+.oc-text-shimmer-sweep {
+  position: absolute;
+  inset: 0;
+  display: none;
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(100deg, transparent 30%, #000 50%, transparent 70%);
+  mask-image: linear-gradient(100deg, transparent 30%, #000 50%, transparent 70%);
+}
+
+.oc-text-shimmer-sweep::before {
+  content: attr(data-shimmer-text) / "";
+  display: block;
+  overflow: hidden;
   color: var(--oc-shimmer-highlight);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.oc-text-shimmer[data-animation-state="running"] > .oc-text-shimmer-sweep {
+  display: block;
+  animation: oc-text-shimmer-window 2.2s linear infinite;
+}
+
+.oc-text-shimmer[data-animation-state="running"] > .oc-text-shimmer-sweep::before {
+  animation: oc-text-shimmer-glint 2.2s linear infinite;
 }
 
 /* The desktop shell reports a hidden or minimized window (its page otherwise
@@ -592,19 +637,18 @@ svg.animate-spin {
   }
 }
 
-/* Always-visible working indicators step on the shared one-second tick
-   (useSharedBlink, useDurationTicker.ts) instead of an infinite animation that
-   draws every frame. Without the root attribute they rest fully visible. */
-html[data-tick-blink="off"] .oc-tick-blink {
-  opacity: 0.35;
+@keyframes oc-plan-skeleton-pulse {
+  0% {
+    opacity: 0.95;
+  }
+  100% {
+    opacity: 0.35;
+  }
 }
 
-.oc-plan-skeleton-lines {
-  opacity: 0.95;
-}
-
-html[data-tick-blink="off"] .oc-plan-skeleton-lines[data-animation-state="running"] {
-  opacity: 0.35;
+.oc-plan-skeleton-lines[data-animation-state="running"] {
+  animation: oc-plan-skeleton-pulse 1.6s ease-in-out infinite alternate;
+  will-change: opacity;
 }
 
 .oc-plan-skeleton-line {
@@ -1693,6 +1737,12 @@ input[aria-label="Terminal input"] {
   animation: oc-busy-pulse 1.2s ease-in-out infinite;
 }
 
+/* Sidebar/mobile session "working" dot: a slow opacity fade, which runs on the
+   compositor. Keep the duration in sync with SESSION_WORKING_BLINK_DURATION_MS
+   (sessionWorkingBlink.ts). */
+.animate-session-working-blink {
+  animation: oc-busy-pulse 2.4s ease-in-out infinite;
+}
 
 @keyframes bot-typing-dot {
   0%, 60%, 100% {
@@ -1795,6 +1845,11 @@ input[aria-label="Terminal input"] {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .oc-text-shimmer-sweep {
+    display: none !important;
+    animation: none;
+  }
+
   .marquee-text--auto,
   .group:hover .marquee-text--active,
   .marquee-text--active:hover {
@@ -1802,6 +1857,10 @@ input[aria-label="Terminal input"] {
   }
 
   .animate-busy-pulse {
+    animation: none;
+  }
+
+  .animate-session-working-blink {
     animation: none;
   }
 }

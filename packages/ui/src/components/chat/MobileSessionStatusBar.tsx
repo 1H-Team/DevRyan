@@ -32,7 +32,6 @@ import {
   resolveSidebarWorkingStatus,
 } from '@/components/session/sidebar/sessionIndicator';
 import { SessionStatusDot } from '@/components/session/sidebar/SessionStatusDot';
-import { useSharedBlink } from '@/components/chat/message/parts/useDurationTicker';
 import {
   resolveEffectivePlanIndicatorState,
   type PlanIndicatorState,
@@ -283,7 +282,6 @@ function SessionItem({
 }) {
   const agentName = getSessionAgentName(session);
   const agentColor = getAgentColor(agentName);
-  useSharedBlink((session._childIndicators?.length || 0) > 0);
   const extraCount =
     (session._runningChildrenCount || 0)
     + (session._statusType !== 'idle' ? 1 : 0)
@@ -333,7 +331,7 @@ function SessionItem({
                   title={`Sub-session: ${getSessionTitle(child)}`}
                 >
                   <RiLoader4Line
-                    className="h-2.5 w-2.5 oc-tick-blink"
+                    className="h-2.5 w-2.5 animate-spin"
                     style={{ color: `var(${childColor.var})` }}
                   />
                 </div>

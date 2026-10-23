@@ -51,6 +51,17 @@
         "/Users/zoubair/Repositories/DevRyan/packages/electron/main.mjs"
       ],
       "port": 61890
+    },
+    {
+      "name": "perf-idle-fixture",
+      "runtimeExecutable": "node_modules/.bin/vite",
+      "runtimeArgs": [
+        "--config",
+        "tests/perf-idle-subagent/vite.config.ts",
+        "--port",
+        "5191"
+      ],
+      "port": 5191
     }
   ]
 }

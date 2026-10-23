@@ -1,7 +1,6 @@
 import React from 'react';
 import { useDocumentAnimationState } from '@/hooks/useDocumentAnimationState';
 import { cn } from '@/lib/utils';
-import { useSharedBlink } from './useDurationTicker';
 import { shouldPreserveWorkingStatus, type WorkingStatusLabel } from './workingPlaceholderStatus';
 import {
   formatRetryCountdown,
@@ -30,7 +29,6 @@ export function StatusShimmerText({
   shouldAnimate: boolean;
   className?: string;
 }) {
-  useSharedBlink(shouldAnimate);
   return (
     <span
       className={cn('oc-text-shimmer', className)}
@@ -38,6 +36,9 @@ export function StatusShimmerText({
       data-live-status-shimmer="true"
     >
       {text}
+      {/* Decorative sweep: its highlighted copy is CSS generated content, so the
+          label is announced, selected and copied once. */}
+      <span className="oc-text-shimmer-sweep" data-shimmer-text={text} aria-hidden="true" />
     </span>
   );
 }

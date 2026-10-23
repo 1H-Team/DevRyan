@@ -58,7 +58,7 @@ describe('WorkingPlaceholder status presentation', () => {
         });
     });
 
-    test('renders the status label once, with no decorative copy', () => {
+    test('keeps one accessible label in flow beneath the decorative sweep', () => {
         const html = renderToStaticMarkup(React.createElement(StatusShimmerText, {
             text: 'Waiting for subagent output',
             shouldAnimate: true,
@@ -66,36 +66,59 @@ describe('WorkingPlaceholder status presentation', () => {
 
         expect(html).toContain('data-animation-state="running"');
         expect(html).toContain('data-live-status-shimmer="true"');
-        expect(html).toContain('>Waiting for subagent output</span>');
-        expect(html.match(/Waiting for subagent output/g)).toHaveLength(1);
+        expect(html).toContain('>Waiting for subagent output<span');
+        // The sweep's copy is generated content: one text node, one announcement.
+        expect(html).toContain('class="oc-text-shimmer-sweep" data-shimmer-text="Waiting for subagent output" aria-hidden="true"></span>');
+        expect(html.match(/Waiting for subagent output/g)).toHaveLength(2);
     });
 
-    test('brightens live status on the shared tick instead of an infinite animation', () => {
+    test('sweeps the highlight with compositor-only transforms', () => {
         // CSS has no runtime in bun:test; the stylesheet text is the contract.
         const styles = readFileSync(new URL('../../../../index.css', import.meta.url), 'utf8');
         const shimmerRules = styles.slice(
             styles.indexOf('.oc-text-shimmer {'),
             styles.indexOf('/* The desktop shell reports a hidden or minimized window'),
         );
+        const keyframes = (name: string) => {
+            const start = shimmerRules.indexOf(`@keyframes ${name} {`);
+            return shimmerRules.slice(start, shimmerRules.indexOf('\n}\n', start));
+        };
 
         expect(shimmerRules).toContain('--oc-shimmer-highlight: color-mix(in oklch, var(--foreground) 92%, transparent);');
-        expect(shimmerRules).toContain('html[data-tick-blink="on"] .oc-text-shimmer[data-animation-state="running"] {');
-        expect(shimmerRules).not.toMatch(/\banimation(-[a-z]+)?:/);
-        expect(styles).not.toContain('@keyframes oc-text-shimmer');
+        expect(shimmerRules).toContain('content: attr(data-shimmer-text) / "";');
+        expect(shimmerRules).toContain('animation: oc-text-shimmer-window 2.2s linear infinite;');
+        expect(shimmerRules).toContain('animation: oc-text-shimmer-glint 2.2s linear infinite;');
+        // The window and its copy move by equal and opposite distances, so the
+        // highlighted copy stays on the label; only transform is animated.
+        expect(keyframes('oc-text-shimmer-window')).toContain('transform: translateX(-150%);');
+        expect(keyframes('oc-text-shimmer-window')).toContain('transform: translateX(250%);');
+        expect(keyframes('oc-text-shimmer-glint')).toContain('transform: translateX(150%);');
+        expect(keyframes('oc-text-shimmer-glint')).toContain('transform: translateX(-250%);');
+        for (const name of ['oc-text-shimmer-window', 'oc-text-shimmer-glint']) {
+            const properties = keyframes(name).match(/^\s+([a-z-]+):/gm)?.map((line) => line.trim().slice(0, -1));
+            expect(new Set(properties)).toEqual(new Set(['transform']));
+        }
+        expect(shimmerRules).not.toContain('background-position');
     });
 
-    test('keeps reduced-motion and hidden status static and readable', async () => {
+    test('retains readable status text when paused or under reduced motion', () => {
         const html = renderToStaticMarkup(React.createElement(StatusShimmerText, {
             text: 'Reading files',
             shouldAnimate: false,
         }));
         expect(html).toContain('data-animation-state="paused"');
-        expect(html).toContain('>Reading files</span>');
+        expect(html).toContain('>Reading files<span');
 
-        await mountPlaceholder(working, async () => {
-            // A visible animated status holds the shared tick.
-            expect(globalThis.document.documentElement.getAttribute('data-tick-blink')).toBe('on');
-        });
+        const styles = readFileSync(new URL('../../../../index.css', import.meta.url), 'utf8');
+        const sweepRule = styles.slice(
+            styles.indexOf('.oc-text-shimmer-sweep {'),
+            styles.indexOf('.oc-text-shimmer-sweep::before {'),
+        );
+        // Only a running status shows the sweep.
+        expect(sweepRule).toContain('display: none;');
+        const reducedMotionRule = styles.slice(styles.lastIndexOf('@media (prefers-reduced-motion: reduce)'));
+        expect(reducedMotionRule).toContain('.oc-text-shimmer-sweep {');
+        expect(reducedMotionRule).toContain('display: none !important;');
     });
 
     test('keeps the live region and visual label mounted without keyed layout transitions', async () => {

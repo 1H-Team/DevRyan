@@ -130,21 +130,22 @@ read canonical state rather than the paint projection.
 
 ### Presentation animation ownership
 
-Always-visible working chrome never runs an infinite CSS animation, which
-draws every frame (the idle "Waiting for subagent output" view drew about 100
-frames per second). The bottom status shimmer, sidebar and mobile working dots,
-plan skeleton, active reasoning header, composer context-usage loader and mobile
-sub-session indicators hold `useSharedBlink` (`useDurationTicker.ts`): one
-one-second tick on the shared ticker flips `html[data-tick-blink]`, and
-`.oc-tick-blink` plus the shimmer and skeleton rules in `index.css` step between
-two states, so every indicator stays in unison and no component re-renders.
-Without a holder (nothing working, the window hidden, reduced motion) the
-attribute is absent and indicators rest in their readable static state.
-`PlanCardSkeleton.tsx` keeps the existing 8–48 line layout reservation.
+Always-visible working chrome animates only `opacity` and `transform`, which
+the compositor runs without main-thread style, layout or paint. The bottom status
+shimmer is a masked window (`.oc-text-shimmer-sweep`) that slides across the
+label while its generated-content copy of the text slides back by the same
+distance, so the highlight sweeps without repainting text; the label itself is
+the only text node. Sidebar and mobile working dots fade with
+`.animate-session-working-blink`, the plan skeleton's line group owns one
+opacity animation, the active reasoning header pulses and the context-usage and
+mobile sub-session loaders spin. Do not animate `background-position`, colors or
+other painted properties in always-visible working chrome: they repaint every
+frame. `PlanCardSkeleton.tsx` keeps the existing 8–48 line layout reservation.
 `useDocumentAnimationState()` is a module-level external store with one shared
 document-visibility listener and one shared reduced-motion listener. It is not
 Zustand state. The bottom status keeps one accessible label in flow; status
-changes update that stable node without a keyed vertical transition. The plan skeleton, bottom status shimmer, retry
+changes update that stable node without a keyed vertical transition. The plan
+skeleton, bottom status shimmer, retry
 countdown, and active duration labels pause while hidden; labels recompute on
 foreground. Reduced-motion presentation remains readable without a long-lived
 animation; the reasoning disclosure also disables both its panel animation and
