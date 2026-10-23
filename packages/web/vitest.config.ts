@@ -27,6 +27,10 @@ export default defineConfig({
   ...resolution,
   test: {
     exclude: [...configDefaults.exclude, ...notVitest, ...laneExclude],
+    // Every test file gets its own empty data folder in the OS temp dir, and a
+    // file that touches the real ~/.config/devryan or ~/.config/opencode fails.
+    globalSetup: ['./test/isolated-data.global.mjs'],
+    setupFiles: ['./test/isolated-data.setup.mjs'],
     projects: [
       // File-parallel: real git and process work in some tests runs slower under
       // load than it did serially, so the per-test hang budget is 15 s, not 5 s.
