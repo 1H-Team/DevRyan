@@ -190,6 +190,12 @@ in [identity compatibility](../../docs/IDENTITY_COMPATIBILITY.md#data-folder-mig
   Provider failures retain only finite allowlisted error types, codes and parameter
   names from `shared-runtime/lib/provider-error-details.js`; raw provider bodies
   remain excluded. Journal export revalidates these fields.
+  Free-text high-entropy redaction judges a slash-separated candidate segment
+  by segment: when every segment is a readable name (digit runs, lowercase
+  names with short digit runs such as `v2-native`, camel words and acronyms
+  such as `useSSE`) or is itself high-entropy, only the high-entropy segments
+  become `[REDACTED]:high_entropy`. Other slash-bearing tokens, such as base64
+  secrets, are still redacted whole.
   Web/Electron hosts record raw OpenCode events only from the canonical global
   watcher; event transport bridges never call the journal, preventing duplicate
   records when multiple UI stream clients are attached.

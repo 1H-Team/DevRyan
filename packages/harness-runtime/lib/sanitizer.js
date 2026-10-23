@@ -182,19 +182,38 @@ const HIGH_ENTROPY_CANDIDATE = /(?<![A-Za-z0-9+/_=-])([A-Za-z0-9+/_=-]{32,512})(
 const NON_SECRET_IDENTIFIER = /^dvr_[a-z]+_[A-Za-z0-9_-]+$/;
 const NON_SECRET_CURSOR_PREFIX = 'dvr_result_cursor_v1.';
 // A file path such as `/tests/e2e/public-chat-positioning` matches the token
-// alphabet as one candidate. Every segment must read as a word (kebab, snake,
-// camel/Pascal words, or a short lowercase/digit name); random base64 segments do not.
-const PATH_WORD_SEGMENT = /^(?:[a-z0-9]{1,4}|[a-z]+(?:[-_][a-z0-9]+)*|_*[A-Za-z][a-z]+(?:[A-Z][a-z]+|[-_][a-z0-9]+)*_*)$/;
-const looksLikePathWords = (value) => {
-  if (!value.includes('/') || /[+=]/.test(value)) return false;
-  const segments = value.split('/').filter(Boolean);
-  // Random identifiers carry digit runs; real directory and file words rarely do.
-  return segments.length >= 2 && segments.every((segment) => PATH_WORD_SEGMENT.test(segment)
-    && (segment.match(/\d/g)?.length ?? 0) < 4);
+// alphabet as one candidate. When every segment is either a readable name or
+// itself high-entropy, the candidate is a path: only its high-entropy segments
+// are redacted. Readable segments are `-`/`_`-separated parts that are digit
+// runs, lowercase names with short digit runs (`v2`, `e2e`, `h264`), or
+// camel/Pascal words and acronyms (`useSSE`, `XMLHttpRequest`, `OAuth`) with
+// digits only at the end. Random base64 chunks (`Cd34EfGh56`, `wJalrXUtnFEMI`) are not
+// readable, so a slash-bearing token made of them is still judged whole.
+const CAMEL_TOKEN = /^[A-Z](?=[A-Z][a-z])|[A-Z]{2,}(?![a-z])|[A-Z]?[a-z]+|\d+/g;
+const isReadablePart = (part) => {
+  if (!part || /^\d{1,14}$/.test(part)) return true;
+  if (/^[a-z][a-z0-9]*$|^\d{1,4}[a-z][a-z0-9]*$/.test(part)) {
+    return (part.match(/\d/g)?.length ?? 0) <= 4;
+  }
+  const tokens = part.match(CAMEL_TOKEN) ?? [];
+  if (tokens.join('') !== part) return false;
+  const digitIndex = tokens.findIndex((token) => /^\d/.test(token));
+  return digitIndex === -1 || (digitIndex > 0 && digitIndex === tokens.length - 1 && tokens[digitIndex].length <= 4);
+};
+const isReadablePathSegment = (segment) => /[A-Za-z0-9]/.test(segment) && segment.split(/[-_]/).every(isReadablePart);
+// Returns the path with high-entropy segments replaced, or null when the
+// candidate is not path-shaped and must be judged as one token.
+const redactPathSegments = (candidate, redactSegment) => {
+  if (!candidate.includes('/') || /[+=]/.test(candidate)) return null;
+  const segments = candidate.split('/');
+  const named = segments.filter(Boolean);
+  if (named.length < 2 || !named.every((segment) => looksHighEntropyToken(segment) || isReadablePathSegment(segment))) return null;
+  return segments.map((segment) => (
+    segment && looksHighEntropyToken(segment) && !NON_SECRET_IDENTIFIER.test(segment) ? redactSegment() : segment
+  )).join('/');
 };
 const isNonSecretCandidate = (candidate, offset, text) => NON_SECRET_IDENTIFIER.test(candidate)
-  || text.slice(Math.max(0, offset - NON_SECRET_CURSOR_PREFIX.length), offset) === NON_SECRET_CURSOR_PREFIX
-  || looksLikePathWords(candidate);
+  || text.slice(Math.max(0, offset - NON_SECRET_CURSOR_PREFIX.length), offset) === NON_SECRET_CURSOR_PREFIX;
 
 export const createDiagnosticSanitizer = (options = {}) => {
   const inventory = new Set(
@@ -261,10 +280,13 @@ export const createDiagnosticSanitizer = (options = {}) => {
     }
     if (redactOptions.highEntropy === false) return value;
     HIGH_ENTROPY_CANDIDATE.lastIndex = 0;
-    return value.replace(HIGH_ENTROPY_CANDIDATE, (candidate, _group, offset, text) => {
-      if (!looksHighEntropyToken(candidate) || isNonSecretCandidate(candidate, offset, text)) return candidate;
+    const redactHighEntropy = () => {
       increment('high_entropy');
       return `${REDACTED}:high_entropy`;
+    };
+    return value.replace(HIGH_ENTROPY_CANDIDATE, (candidate, _group, offset, text) => {
+      if (!looksHighEntropyToken(candidate) || isNonSecretCandidate(candidate, offset, text)) return candidate;
+      return redactPathSegments(candidate, redactHighEntropy) ?? redactHighEntropy();
     });
   };
 

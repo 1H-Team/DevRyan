@@ -12,8 +12,24 @@ describe('diagnostic sanitizer', () => {
       'nextCursor=dvr_result_cursor_v1.eyJ2IjoxLCJ0IjoiZHZyX3Rhc2tfZ29sZGVuMSIsImUiOiJkdnJfcmVzdWx0X2dvbGRlbjFfMSJ9']) {
       expect(sanitizer.sanitizeText(kept)).toBe(kept);
     }
-    expect(sanitizer.sanitizeText('/session/ses_0123456789abcdefAbCdEfGhIjKlMnOp/message')).toBe('[REDACTED]:high_entropy');
+    expect(sanitizer.sanitizeText('/session/ses_0123456789abcdefAbCdEfGhIjKlMnOp/message')).toBe('/session/[REDACTED]:high_entropy/message');
     for (const secret of ['8f3K2pQ9xL7mZ1vB4nR6tY0wE5sA3dHjK9', 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY', 'ab12/Cd34EfGh56/IjKl78MnOp90QrSt']) {
+      expect(sanitizer.sanitizeText(`value ${secret} end`)).toBe('value [REDACTED]:high_entropy end');
+    }
+  });
+  test('high-entropy redaction judges path segments separately', () => {
+    const sanitizer = createDiagnosticSanitizer();
+    for (const kept of ['/packages/web/server/lib/opencode/v2-native/session-host2.test.ts',
+      '/packages/ui/src/hooks/useSSE/v2-native-stream4.ts', '/apps/web/src/lib/XMLHttpRequestAdapter/OAuthCallbackSSE2.tsx',
+      '/server/migrations/20261023-native-profile/0001_initial.sql', '<WORKTREE_1>/tests/e2e2/v2-native/profile-dark-surfaces.visual.spec.ts',
+      '/tests/fixtures/issue-12345/h264-decoder/e2e2-render.ts']) {
+      expect(sanitizer.sanitizeText(kept)).toBe(kept);
+    }
+    expect(sanitizer.sanitizeText('/sessions/ses_0123456789abcdefAbCdEfGhIjKlMnOp/v2-native/useSSE.ts'))
+      .toBe('/sessions/[REDACTED]:high_entropy/v2-native/useSSE.ts');
+    expect(sanitizer.sanitizeText('cache /blobs/8f3K2pQ9xL7mZ1vB4nR6tY0wE5sA3dHjK9/2026-v2/index'))
+      .toBe('cache /blobs/[REDACTED]:high_entropy/2026-v2/index');
+    for (const secret of ['Cd34EfGh56/IjKl78MnOp90QrSt/ab12UvWx', 'docs/wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY']) {
       expect(sanitizer.sanitizeText(`value ${secret} end`)).toBe('value [REDACTED]:high_entropy end');
     }
   });
