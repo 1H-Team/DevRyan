@@ -83,4 +83,52 @@ describe.skipIf(process.platform === 'win32')('managed OpenCode parent-death wat
     expect(await waitFor(() => !alive(other.watchdog))).toBe(true);
     expect(alive(other.child)).toBe(true);
   }, 15_000);
+
+  // A cloudflared-like child identified by its exact argv rather than a port or nonce.
+  const startCommandOwner = async ({ childArgs, watchedArgs }) => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-watchdog-'));
+    cleanups.push(() => fs.rm(directory, { recursive: true, force: true }));
+    const script = path.join(directory, 'owner.mjs');
+    await fs.writeFile(script, `
+      import { spawn } from 'node:child_process';
+      import { startCommandParentDeathWatchdog } from ${JSON.stringify(watchdogModule)};
+      const argv = ['-e', 'setInterval(() => {}, 1000)', '--', ...${JSON.stringify(childArgs)}];
+      const child = spawn(process.execPath, argv, { detached: true, stdio: 'ignore' });
+      child.unref();
+      const watchdog = startCommandParentDeathWatchdog({ childPid: child.pid,
+        argv: [process.execPath, '-e', 'setInterval(() => {}, 1000)', '--', ...${JSON.stringify(watchedArgs)}] });
+      process.stdout.write(JSON.stringify({ child: child.pid, watchdog: watchdog.pid }) + '\\n');
+      setInterval(() => {}, 1000);
+    `);
+    const owner = spawn(process.execPath, [script], { stdio: ['ignore', 'pipe', 'inherit'] });
+    const line = await new Promise((resolve) => owner.stdout.once('data', (chunk) => resolve(chunk.toString())));
+    const { child, watchdog } = JSON.parse(line);
+    cleanups.push(() => { try { process.kill(-child, 'SIGKILL'); } catch { /* Gone. */ } });
+    return { owner, child, watchdog };
+  };
+
+  it('stops an argv-identified child when its owner is killed and leaves a different command alone', async () => {
+    const args = ['tunnel', '--url', 'http://127.0.0.1:47127'];
+    const { owner, child } = await startCommandOwner({ childArgs: args, watchedArgs: args });
+    expect(alive(child)).toBe(true);
+    owner.kill('SIGKILL');
+    expect(await waitFor(() => !alive(child))).toBe(true);
+    const other = await startCommandOwner({ childArgs: ['tunnel', '--url', 'http://127.0.0.1:47128'], watchedArgs: args });
+    other.owner.kill('SIGKILL');
+    expect(await waitFor(() => !alive(other.watchdog))).toBe(true);
+    expect(alive(other.child)).toBe(true);
+  }, 15_000);
+
+  it('reports an argv watchdog that could not be started and skips invalid identities', async () => {
+    const { startCommandParentDeathWatchdog } = await import(watchdogModule);
+    expect(startCommandParentDeathWatchdog({ childPid: 4242, argv: ['cloudflared', 'tunnel', 'run'], code: 'cloudflared_watchdog_unavailable',
+      spawnImpl: () => { throw Object.assign(new Error('fork failed'), { code: 'EAGAIN' }); } }))
+      .toMatchObject({ pid: null, error: { code: 'cloudflared_watchdog_unavailable', cause: 'EAGAIN' } });
+    const spawnImpl = vi.fn();
+    for (const argv of [[], ['cloudflared', 'line\nbreak'], ['cloudflared', '']]) {
+      expect(startCommandParentDeathWatchdog({ childPid: 4242, argv, spawnImpl })).toMatchObject({ pid: null });
+    }
+    expect(startCommandParentDeathWatchdog({ childPid: 4242, argv: ['cloudflared'], platform: 'win32', spawnImpl })).toMatchObject({ pid: null });
+    expect(spawnImpl).not.toHaveBeenCalled();
+  });
 });

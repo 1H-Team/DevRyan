@@ -150,6 +150,16 @@ artifacts or clearing the active tunnel identity. If the connector cannot be sto
 returns `tunnel_stop_failed` and preserves both controller and authentication state; this prevents a
 still-public connector from being reclassified as a local unauthenticated request path.
 
+On POSIX, `spawnCloudflared` (`cloudflare-tunnel.js`) starts every connector in its own process
+group and ties it to the host with `startCommandParentDeathWatchdog`
+(`opencode/parent-death-watchdog.js`). If the host exits without stopping the tunnel (crash,
+`SIGKILL`, or a shutdown step that threw), the watchdog signals the connector group with `SIGTERM`
+and then `SIGKILL`, but only while that PID still runs the exact launched argv. A watchdog that
+cannot start logs `cloudflared_watchdog_unavailable` and the tunnel keeps running. Host shutdown
+stops the tunnel even when an earlier step fails: the bundle checkpoint's producer stop runs
+`tunnelService.stop()` after any producer failure and rethrows afterwards, and graceful shutdown
+stops the active controller even if UI auth disposal rejects.
+
 ## Public exports (routes.js)
 - `createTunnelRoutesRuntime(dependencies)`: creates tunnel routes runtime and helpers.
 - Returned API:
