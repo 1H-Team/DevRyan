@@ -2,7 +2,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {parseMdFile} from '../shared.js';
 import {expect,it} from 'vitest';
-import {nativePermissionRules,translateNativeConfiguration} from './native-configuration-data.js';
+import {NATIVE_PROVIDER_DEADLINES,nativePermissionRules,translateNativeConfiguration} from './native-configuration-data.js';
 import {PLAN_MODE_SYSTEM_INSTRUCTIONS} from '@devryan/orchestration-runtime';
 
 it('captures planning format in visible primary prefixes and explicit native tool budgets', () => {
@@ -28,6 +28,22 @@ it('preserves exact saved routes and native provider/model settings without runn
  expect(model).toMatchObject({modelID:'upstream-model',settings:{reasoningEffort:'high',custom:{keep:true}},capabilities:{tools:false,input:['text'],output:['text']},variants:[{id:'medium',settings:{reasoningEffort:'medium'}},{id:'default',settings:{custom:7}}]});
  expect(model.cost).toEqual([{input:1,output:2,cache:{read:0.1}},{input:3,output:4,cache:{write:0.2},tier:{type:'context',size:200000}}]);
  expect(config.providers['google-vertex-anthropic'].models.saved.package).toBe('aisdk:@ai-sdk/google-vertex/anthropic');
+});
+it('bounds every native provider stanza with header and chunk deadlines under saved values',()=>{
+ expect(NATIVE_PROVIDER_DEADLINES).toEqual({headerTimeout:45000,chunkTimeout:120000});
+ const legacy={provider:{zen:{},anthropic:{options:{baseURL:'http://127.0.0.1:3456'}},openai:{options:{baseURL:'https://api.openai.com/v1'}},
+  tuned:{options:{headerTimeout:90000,chunkTimeout:600000,timeout:900000}},unbounded:{options:{headerTimeout:false,chunkTimeout:false}}}};
+ const before=structuredClone(legacy),{providers}=translateNativeConfiguration({legacy,agents:{}});
+ expect(legacy).toEqual(before);
+ expect(providers.zen.settings).toEqual({headerTimeout:45000,chunkTimeout:120000});
+ expect(providers.anthropic.settings).toEqual({headerTimeout:45000,chunkTimeout:120000,baseURL:'http://127.0.0.1:3456'});
+ // OpenAI reasoning may send nothing for minutes before its first output item.
+ expect(providers.openai.settings).toEqual({headerTimeout:45000,chunkTimeout:300000,baseURL:'https://api.openai.com/v1'});
+ expect(providers.tuned.settings).toEqual({headerTimeout:90000,chunkTimeout:600000,timeout:900000});
+ expect(providers.unbounded.settings).toEqual({headerTimeout:false,chunkTimeout:false});
+ const native=translateNativeConfiguration({legacy:{providers:{zen:{name:'Zen'},tuned:{settings:{chunkTimeout:60000}}}},agents:{}}).providers;
+ expect(native).toEqual({zen:{name:'Zen',settings:{headerTimeout:45000,chunkTimeout:120000}},tuned:{settings:{headerTimeout:45000,chunkTimeout:60000}}});
+ expect(()=>translateNativeConfiguration({legacy:{providers:{zen:{settings:'fast'}}},agents:{}})).toThrow('native_provider_invalid');
 });
 it('rejects malformed or conflicting provider definitions instead of silently dropping them',()=>{
  expect(()=>translateNativeConfiguration({legacy:{provider:[]},agents:{}})).toThrow('native_providers_invalid');

@@ -3,7 +3,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { captureReviewedSkill, reviewedSkillAliases } from './reviewed-skills.js';
 import {translateNativeSkillPermissions} from './native-skill-permissions.js';
-import { nativeModelSelection, translateNativeConfiguration } from './native-configuration-data.js';
+import { nativeModelSelection, nativeProviderDeadlines, translateNativeConfiguration } from './native-configuration-data.js';
 import { captureConfigurationSourceStamp } from './configuration-source-stamps.js';
 import { captureNativeTextSettings, verifyNativeTextSettings } from './native-text-settings.js';
 import {configuredNativeSkillDirectories,discoverConfiguredNativeSkills} from './native-configured-skills.js';
@@ -170,10 +170,10 @@ export function createNativeConfigurationSnapshotResolver({ loadLocation = loadC
       const mcp = loaded.legacy.mcp ?? {};
       const requiredMCPs = Object.entries(mcp).filter(([, value]) => value?.enabled !== false).map(([id]) => id);
       const configuration = translateNativeSkillPermissions(translateNativeConfiguration({...loaded,agents:textSettings.agents,commands:textSettings.commands}),directory,skills);
-      // Meridian owns this account; an empty native stanza activates catalog metadata without a synthetic credential.
+      // Meridian owns this account; a settings-only native stanza activates catalog metadata without a synthetic credential.
       if(claudeConfigured&&!(Array.isArray(loaded.legacy.disabled_providers)&&loaded.legacy.disabled_providers.includes('anthropic'))
         &&(!Array.isArray(loaded.legacy.enabled_providers)||loaded.legacy.enabled_providers.includes('anthropic'))){
-        configuration.providers??={};configuration.providers.anthropic??={};
+        configuration.providers??={};configuration.providers.anthropic??={settings:nativeProviderDeadlines('anthropic')};
       }
       const compatibility = { legacy: loaded.legacy, agents: activeSlim?textSettings.agents:{...loaded.agents,...buildRuntimeHelperAgents()}, commands: loaded.commands, slim: loaded.slim, mcp };
       locations.push({ directory, configuration, skills, aliases,
