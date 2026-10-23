@@ -182,6 +182,8 @@ records as a troubleshooting shortcut while work may remain active.
 - Ordinary prompt and abort routes use the same controller.
 - `openchamber:primary-recovery` (`devryan:primary-recovery` on the wire for the current UI): versioned per-session snapshot event. The UI
   uses a bounded narrow store and refreshes after reconnect and while visible.
+  Every revision is broadcast; the diagnostic journal stores a snapshot only
+  when its state, anchor or failure identity changes (see `journal-trim.js`).
 
 Web routes retain normal authentication and session ownership middleware;
 automatic actions revalidate the saved application-session hash and current

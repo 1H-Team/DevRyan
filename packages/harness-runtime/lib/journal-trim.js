@@ -80,6 +80,21 @@ const sessionIsIdle = (record) => {
   return value === 'idle';
 };
 
+// Primary-recovery snapshots are broadcast on every record revision (the UI
+// needs each one); the journal keeps each change of these fields and holds
+// the revisions between them last-write-wins. Revision, updatedAt and
+// progress counts are the churning fields and are not part of the identity.
+const PRIMARY_RECOVERY_EVENTS = new Set(['devryan:primary-recovery', 'openchamber:primary-recovery']);
+const MAX_PRIMARY_RECOVERY_SESSIONS = 256;
+const primaryRecoveryIdentity = (record) => {
+  const recovery = record?.payload?.properties?.recovery;
+  if (!isPlainObject(recovery)) return '';
+  const value = isPlainObject(recovery.record) ? recovery.record : null;
+  return JSON.stringify([recovery.mode ?? null, recovery.supported ?? null, recovery.enforced ?? null,
+    value && [value.anchorID ?? null, value.failedID ?? null, value.recoveryID ?? null, value.state ?? null,
+      value.attemptCount ?? null, value.failureKind ?? null, value.failureObserved ?? null, value.collectionIssue ?? null]]);
+};
+
 const addCoalescedCount = (record, count) => ({
   ...record,
   coalesced: count,
@@ -100,6 +115,7 @@ export const createJournalTrimmer = (options = {}) => {
   const clearTimer = options.clearTimeout ?? clearTimeout;
   const pending = new Map();
   const counters = new Map();
+  const primaryRecoveryIdentities = new Map();
   let pendingBytes = 0;
   let order = 0;
 
@@ -173,7 +189,7 @@ export const createJournalTrimmer = (options = {}) => {
     entry.timer?.unref?.();
   };
 
-  const hold = (key, kind, record, sessionKey) => {
+  const hold = (key, kind, record, sessionKey, { debounce = true } = {}) => {
     const previous = pending.get(key);
     if (previous) {
       pendingBytes -= previous.bytes;
@@ -191,7 +207,7 @@ export const createJournalTrimmer = (options = {}) => {
     };
     pending.set(key, entry);
     pendingBytes += entry.bytes;
-    scheduleEntry(key, entry);
+    if (debounce) scheduleEntry(key, entry);
     return flushOldestUntilWithinCap();
   };
 
@@ -243,6 +259,22 @@ export const createJournalTrimmer = (options = {}) => {
       return hold(`session:${sessionKey}`, 'session', record, sessionKey);
     }
 
+    if (PRIMARY_RECOVERY_EVENTS.has(eventType)) {
+      const key = `primary-recovery:${sessionKey}`;
+      const identity = primaryRecoveryIdentity(record);
+      // An unchanged snapshot waits, without a debounce timer, for the next
+      // change, a session boundary, capacity pressure or drain.
+      if (identity && primaryRecoveryIdentities.get(sessionKey) === identity) {
+        return hold(key, 'diagnostic', record, sessionKey, { debounce: false });
+      }
+      primaryRecoveryIdentities.delete(sessionKey);
+      if (identity) primaryRecoveryIdentities.set(sessionKey, identity);
+      while (primaryRecoveryIdentities.size > MAX_PRIMARY_RECOVERY_SESSIONS) {
+        primaryRecoveryIdentities.delete(primaryRecoveryIdentities.keys().next().value);
+      }
+      return [...emitKeys([key]), record];
+    }
+
     if (isPropertyFreeRuntimeSync(record, sessionKey)) {
       return hold('runtime:sync', 'runtime-sync', runtimeSyncProjection(record), sessionKey);
     }
@@ -255,6 +287,7 @@ export const createJournalTrimmer = (options = {}) => {
     ) {
       ready.push(...emitKeys(keysForSession(sessionKey)));
     }
+    if (eventType === 'session.deleted') primaryRecoveryIdentities.delete(sessionKey);
     ready.push(record);
     return ready;
   };
@@ -279,6 +312,7 @@ export const createJournalTrimmer = (options = {}) => {
     for (const entry of pending.values()) clearTimer(entry.timer);
     pending.clear();
     counters.clear();
+    primaryRecoveryIdentities.clear();
     pendingBytes = 0;
     lastHeartbeatAt = -Infinity;
   };
