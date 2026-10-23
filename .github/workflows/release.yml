@@ -1,7 +1,9 @@
 name: Release
 
-# A vX.Y.Z tag push builds DevRyan-X.Y.Z-arm64.dmg, stages it on a draft and publishes it.
-# A manual run is a dry run on its ref: it packages and qualifies, and writes nothing.
+# A vX.Y.Z tag push builds DevRyan-X.Y.Z-arm64.dmg, qualifies it, deploys the backend, then
+# one locked `release` job stages it on a draft and publishes it; `post-publish-verify` checks
+# discovery read-only. A manual run is a dry run on its ref: it packages, qualifies, simulates
+# the release against an in-memory GitHub and runs the non-gating visual QA, and writes nothing.
 # Retry a failed release on the same version by re-running the failed jobs; a rebuild at the
 # same SHA reuses the retained DMG. Move the tag only for a code fix
 # (`git tag -f vX.Y.Z <sha> && git push --atomic origin main +refs/tags/vX.Y.Z`).
@@ -71,7 +73,7 @@ jobs:
     needs: [preflight, trusted-ci]
     if: ${{ needs.preflight.outputs.published == 'true' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     permissions:
       contents: read
       actions: read
@@ -310,85 +312,16 @@ jobs:
           if-no-files-found: warn
           retention-days: 90
 
-  final-dmg-smoke:
-    concurrency:
-      group: release-build-${{ github.ref_name }}-final-dmg-smoke
-      cancel-in-progress: true
+  simulate-release:
+    # A dry run also exercises the publishing code: stage, promotion, ledger and the
+    # post-publish verifier run against an in-memory GitHub with this run's real DMG.
     needs: [preflight, electron-package]
-    if: ${{ !cancelled() && needs.electron-package.result == 'success' }}
-    runs-on: macos-26
-    timeout-minutes: 12
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: '1.4.3'
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Install smoke dependencies
-        env:
-          DEVRYAN_SKIP_INSTALL_PREPARE: '1'
-        run: bun install --frozen-lockfile
-      - uses: actions/download-artifact@v4
-        with:
-          name: DevRyan-macos-arm64-release
-          path: candidate-dmg
-      - name: Observe the unchanged final DMG first launch
-        # Quarantined as a tracked defect (docs/RELEASE_PIPELINE.md, "Final-DMG smoke") until
-        # three distinct runs pass and DEVRYAN_FINAL_DMG_SMOKE_GATE is set.
-        continue-on-error: ${{ vars.DEVRYAN_FINAL_DMG_SMOKE_GATE != 'qualified-3-runs' }}
-        run: node scripts/qa/release-final-dmg-smoke.mjs --dmg "$PWD/candidate-dmg/DevRyan-${{ needs.preflight.outputs.version }}-arm64.dmg" --report "$RUNNER_TEMP/release-smoke/report.json"
-      - name: Export an incomplete qualification report if setup failed
-        if: ${{ always() }}
-        env:
-          REPORT_PATH: ${{ runner.temp }}/release-smoke/report.json
-          REPORT_KIND: release-final-dmg-smoke
-        run: |
-          node --input-type=module - <<'NODE'
-          import fs from 'node:fs/promises';
-          import path from 'node:path';
-          const file = process.env.REPORT_PATH;
-          if (!await fs.stat(file).catch(() => null)) {
-            await fs.mkdir(path.dirname(file), { recursive: true });
-            await fs.writeFile(file, JSON.stringify({ schemaVersion: 1, kind: process.env.REPORT_KIND,
-              sourceRevision: process.env.GITHUB_SHA, runID: process.env.GITHUB_RUN_ID,
-              passed: false, failures: ['Qualification did not complete; inspect the failed setup step'] }) + '\n');
-          }
-          NODE
-      - name: Summarize the smoke and its quarantine
-        if: ${{ always() }}
-        env:
-          DEVRYAN_FINAL_DMG_SMOKE_GATE: ${{ vars.DEVRYAN_FINAL_DMG_SMOKE_GATE }}
-        run: node scripts/qa/release-final-dmg-smoke.mjs --summary "$RUNNER_TEMP/release-smoke/report.json"
-      - uses: actions/upload-artifact@v4
-        if: ${{ always() }}
-        with:
-          name: release-final-dmg-smoke
-          path: ${{ runner.temp }}/release-smoke/
-          if-no-files-found: warn
-          retention-days: 90
-
-  stage:
-    concurrency:
-      group: devryan-production-publication
-      cancel-in-progress: false
-    needs: [preflight, electron-package, upgrade-check, final-dmg-smoke]
-    if: ${{ !cancelled() && github.event_name == 'push' && needs.preflight.outputs.published != 'true' && needs.electron-package.result == 'success' && needs.upgrade-check.result == 'success' && (needs.final-dmg-smoke.result == 'success' || vars.DEVRYAN_FINAL_DMG_SMOKE_GATE != 'qualified-3-runs') }}
+    if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' && needs.electron-package.result == 'success' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: write
-      actions: read
-    outputs:
-      published: ${{ steps.stage.outputs.published }}
-      release_id: ${{ steps.stage.outputs.release_id }}
-      staged: ${{ steps.stage.outputs.staged }}
+    timeout-minutes: 15
     env:
       RELEASE_ASSET_DIRECTORY: release-assets
       RELEASE_MANIFEST_PATH: release-identity/release-manifest.json
-      RELEASE_PUBLICATION_LOCK: devryan-production-publication
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -402,25 +335,58 @@ jobs:
         with:
           name: DevRyan-macos-arm64-candidate-identity
           path: release-identity
-      - name: Stage the DMG on the draft and prove every shipped updater discovers it
-        id: stage
+      - name: Simulate stage, publish and post-publish verification against an in-memory GitHub
+        run: node scripts/release.mjs release --simulate
+
+  visual-qa:
+    # Non-gating and dispatch-only (docs/RELEASE_PIPELINE.md, "Release visual QA"):
+    # screenshots of the candidate DMG's first launch, About and update check on a
+    # disposable runner. Nothing waits for it.
+    needs: [preflight, electron-package]
+    if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' && needs.electron-package.result == 'success' }}
+    continue-on-error: true
+    runs-on: macos-26
+    timeout-minutes: 25
+    env:
+      VERSION: ${{ needs.preflight.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.3'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install QA dependencies
         env:
-          RELEASE_STAGED_PATH: ${{ runner.temp }}/staged.json
-        run: node scripts/release.mjs stage
+          DEVRYAN_SKIP_INSTALL_PREPARE: '1'
+        run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: DevRyan-macos-arm64-release
+          path: candidate-dmg
+      - uses: actions/download-artifact@v4
+        with:
+          name: DevRyan-macos-arm64-candidate-identity
+          path: candidate-identity
+      - name: Screenshot first launch, About and the update check of the candidate DMG
+        run: node scripts/qa/release-visual-qa.mjs --dmg "$PWD/candidate-dmg/DevRyan-$VERSION-arm64.dmg" --manifest "$PWD/candidate-identity/release-manifest.json" --report "$RUNNER_TEMP/release-visual-qa/report.json" --upgrade-from v2.1.9
       - uses: actions/upload-artifact@v4
         if: ${{ always() }}
         with:
-          name: release-staged
-          path: ${{ runner.temp }}/staged.json
-          if-no-files-found: ignore
-          retention-days: 90
+          name: release-visual-qa
+          path: ${{ runner.temp }}/release-visual-qa/
+          if-no-files-found: warn
+          retention-days: 14
 
   deploy-backend:
+    # Before the publication lock: migrations are backward-compatible with installed
+    # apps and `db push` is idempotent, so the locked window holds only GitHub writes.
     concurrency:
       group: devryan-backend-deploy
       cancel-in-progress: false
-    needs: [preflight, trusted-ci, stage]
-    if: ${{ !cancelled() && github.event_name == 'push' && needs.trusted-ci.result == 'success' && needs.stage.result == 'success' }}
+    needs: [preflight, trusted-ci, electron-package, upgrade-check]
+    if: ${{ !cancelled() && github.event_name == 'push' && needs.preflight.outputs.published != 'true' && needs.trusted-ci.result == 'success' && needs.electron-package.result == 'success' && needs.upgrade-check.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: DevRyan Secrets
@@ -461,21 +427,28 @@ jobs:
           if (drift.length > 0) throw new Error(`Supabase migration history diverged for ${drift.length} migration(s).`);
           NODE
 
-  publish:
+  release:
+    # The only job that holds the publication lock and the only one that writes:
+    # stage the draft, recheck exact-source CI, promote it with one PATCH and record
+    # the ledger, in one process. Nothing pending can be replaced between stage and publish.
     concurrency:
       group: devryan-production-publication
       cancel-in-progress: false
-    needs: [preflight, trusted-ci, stage, deploy-backend]
-    if: ${{ !cancelled() && github.event_name == 'push' && needs.stage.result == 'success' && needs.trusted-ci.result == 'success' && needs.deploy-backend.result == 'success' }}
+    needs: [preflight, trusted-ci, electron-package, upgrade-check, deploy-backend]
+    if: ${{ !cancelled() && github.event_name == 'push' && needs.preflight.outputs.published != 'true' && needs.trusted-ci.result == 'success' && needs.electron-package.result == 'success' && needs.upgrade-check.result == 'success' && needs.deploy-backend.result == 'success' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     permissions:
       contents: write
       actions: read
+    outputs:
+      published: ${{ steps.release.outputs.published }}
+      release_id: ${{ steps.release.outputs.release_id }}
+      staged: ${{ steps.release.outputs.staged }}
     env:
       RELEASE_ASSET_DIRECTORY: release-assets
+      RELEASE_MANIFEST_PATH: release-identity/release-manifest.json
       RELEASE_PUBLICATION_LOCK: devryan-production-publication
-      RELEASE_STAGED: ${{ needs.stage.outputs.staged }}
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
@@ -486,7 +459,38 @@ jobs:
         with:
           name: DevRyan-macos-arm64-release
           path: release-assets
-      - name: Recheck exact-source CI inside the publication lock
-        run: node scripts/release.mjs trusted-ci
-      - name: Publish the unchanged staged draft, record the ledger and confirm the shipped updaters discover the DMG
-        run: node scripts/release.mjs publish
+      - uses: actions/download-artifact@v4
+        with:
+          name: DevRyan-macos-arm64-candidate-identity
+          path: release-identity
+      - name: Stage the DMG on the draft, recheck exact-source CI, publish it with one write and record the ledger
+        id: release
+        env:
+          RELEASE_STAGED_PATH: ${{ runner.temp }}/staged.json
+        run: node scripts/release.mjs release
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: release-staged
+          path: ${{ runner.temp }}/staged.json
+          if-no-files-found: ignore
+          retention-days: 90
+
+  post-publish-verify:
+    # Read-only. The release is already published when this runs: a failure here is
+    # "published, verification pending" (rerun this job), never a failed publication.
+    needs: [preflight, release]
+    if: ${{ !cancelled() && github.event_name == 'push' && needs.release.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify updater discovery, the ledger and the public download as installed apps see them
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/release-verify-public.mjs "v${{ needs.preflight.outputs.version }}"

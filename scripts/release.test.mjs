@@ -4,9 +4,10 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { VERSION_FILES, admit, publish, releaseNotes, releaseTarget, requireTrustedCI, stage, stagedDifferences, verifyPublished, verifyPublicInstaller } from './release.mjs';
+import { VERSION_FILES, admit, githubClient, publish, releaseNotes, releaseTarget, requireTrustedCI, stage, stagedDifferences, verifyPublished, verifyPublicInstaller } from './release.mjs';
 import { releaseManifest, serializeReleaseManifest } from './release-candidate.mjs';
 import { formatReleaseMarker } from './release-state.mjs';
+import { verifyPublicRelease } from './release-verify-public.mjs';
 
 const version = '9.8.7';
 const source = 'a'.repeat(40);
@@ -132,6 +133,9 @@ const environment = (extra = {}) => ({ GITHUB_REF: `refs/tags/v${version}`, GITH
 const releaseEnvironment = ({ assets, manifest }, extra = {}) => environment({ RELEASE_ASSET_DIRECTORY: assets, RELEASE_MANIFEST_PATH: manifest, ...extra });
 const writes = calls => calls.filter(call => !call.startsWith('GET '));
 const instant = { wait: async () => {} };
+// The read-only post-publish verifier, anonymous as installed apps are.
+const verifyAfterPublish = (root, fetchImpl, options = {}) => verifyPublicRelease({ version, repositoryRoot: root, fetchImpl, log: quiet, ...instant,
+  client: githubClient({ anonymous: true, fetchImpl, environment: { RELEASE_DRY_RUN: 'true' } }), ...options });
 
 async function stageAndPublish(root, env, github, options = {}) {
   const staged = await stage({ repositoryRoot: root, environment: env, fetchImpl: github.fetchImpl, log: quiet, ...instant });
@@ -274,20 +278,26 @@ test('tag movement after initial stage qualification refuses all mutations', asy
   assert.deepEqual(writes(github.state.calls), []);
 });
 
-test('publish is one PATCH of the unchanged staged draft, then the ledger and shipped discovery', async (t) => {
+test('publish is one PATCH of the unchanged staged draft, then the ledger; post-publish verification confirms shipped discovery', async (t) => {
   const context = await fixture(t);
   const github = fakeGitHub();
   const env = releaseEnvironment(context);
   const { staged } = await stage({ repositoryRoot: context.root, environment: env, fetchImpl: github.fetchImpl, log: quiet });
   github.state.calls.length = 0;
   const lines = [];
-  await publish({ repositoryRoot: context.root, environment: { ...env, RELEASE_STAGED: JSON.stringify(staged) }, fetchImpl: github.fetchImpl, log: line => lines.push(line), ...instant });
+  const result = await publish({ repositoryRoot: context.root, environment: { ...env, RELEASE_STAGED: JSON.stringify(staged) }, fetchImpl: github.fetchImpl, log: line => lines.push(line), ...instant });
+  assert.deepEqual(result, { published: true, releaseId: staged.releaseId, staged });
   assert.equal(github.state.releases[0].draft, false);
   assert.deepEqual(writes(github.state.calls), [`PATCH /repos/${repository}/releases/${staged.releaseId}`, `POST /repos/${repository}/git/tags`, `POST /repos/${repository}/git/refs`]);
+  assert.ok(!github.state.calls.some(call => call.includes('/releases/download/')), 'publication success does not wait for the CDN');
   const [ledger] = github.state.repos[repository].tags.values();
   assert.equal(ledger.message, `${staged.marker}\n`);
   assert.equal(ledger.object.sha, source);
-  assert.match(lines.find(line => line.startsWith('Published')), /in-app updater discovers DevRyan-9\.8\.7-arm64\.dmg \(15 bytes/);
+  assert.match(lines.find(line => line.startsWith('Published')), /Published v9\.8\.7 with DevRyan-9\.8\.7-arm64\.dmg \(15 bytes.*ledger devryan-release\/v9\.8\.7 recorded/);
+  const verified = [];
+  await verifyAfterPublish(context.root, github.fetchImpl, { log: line => verified.push(line) });
+  assert.match(verified.find(line => line.startsWith('Published')), /in-app updater discovers DevRyan-9\.8\.7-arm64\.dmg \(15 bytes/);
+  assert.ok(github.state.calls.some(call => call.includes('/releases/download/v9.8.7/')));
 
   // A rerun after promotion records nothing new and changes nothing.
   github.state.calls.length = 0;
@@ -420,13 +430,16 @@ test('public byte verification rejects corrupt, truncated, oversized and unavail
   await assert.rejects(verifyPublicInstaller(update, { fetchImpl: async () => new Response('unavailable', { status: 503 }) }), /download failed \(503\)/);
 });
 
-test('published CDN failure preserves original bytes and verify-published is read-only', async t => {
+test('published CDN failure is verification pending, preserves original bytes, and verify-published is read-only', async t => {
   const context = await fixture(t);
   const github = fakeGitHub();
   const env = releaseEnvironment(context);
   github.state.downloads.set(`https://github.com/${repository}/releases/download/v${version}/${name}`, 'corrupted bytes');
-  await assert.rejects(stageAndPublish(context.root, env, github, { attempts: 1 }), /Published.*public verification failed.*never rebuild or replace/);
+  await stageAndPublish(context.root, env, github);
   assert.equal(github.state.releases[0].draft, false);
+  github.state.calls.length = 0;
+  await assert.rejects(verifyAfterPublish(context.root, github.fetchImpl), /v9\.8\.7 is published \(promotion and the ledger are recorded\); verification pending: the public download.*Never rebuild or replace published bytes/);
+  assert.deepEqual(writes(github.state.calls), []);
   const original = structuredClone(github.state.releases[0].assets);
   github.state.downloads.clear();
   github.state.calls.length = 0;
@@ -445,43 +458,44 @@ test('published-only verification cannot turn a reverted draft back into a relea
   assert.deepEqual(writes(github.state.calls), []);
 });
 
-test('post-publication discovery polls every five seconds and stops at sixty without replacing bytes', async t => {
+test('post-publish discovery polls every fifteen seconds for ten minutes, then reports verification pending without replacing bytes', async t => {
   const context = await fixture(t);
   const github = fakeGitHub();
   const env = releaseEnvironment(context);
-  const { staged } = await stage({ repositoryRoot: context.root, environment: env, fetchImpl: github.fetchImpl, log: quiet });
+  await stageAndPublish(context.root, env, github);
   const original = structuredClone(github.state.releases[0].assets);
   let time = 0, polls = 0;
   const waits = [];
   const fetchImpl = async (url, init) => {
-    if (url.endsWith('/releases/latest') && github.state.releases[0].draft === false) {
+    if (url.endsWith('/releases/latest')) {
       polls++;
       assert.ok(init.signal instanceof AbortSignal);
-      return Response.json({ tag_name: 'v1.0.0', draft: false, assets: [] });
+      return Response.json({ tag_name: 'v1.0.0', draft: false, prerelease: false, assets: [] });
     }
     return github.fetchImpl(url, init);
   };
-  await assert.rejects(publish({ repositoryRoot: context.root, environment: { ...env, RELEASE_STAGED: JSON.stringify(staged) }, fetchImpl, log: quiet,
-    now: () => time, wait: async ms => { waits.push(ms); time += ms; } }), /Published.*60-second discovery deadline.*never rebuild or replace/);
-  assert.equal(time, 60_000);
-  assert.equal(polls, 12);
-  assert.ok(waits.every(ms => ms === 5_000));
+  github.state.calls.length = 0;
+  await assert.rejects(verifyAfterPublish(context.root, fetchImpl, { now: () => time, wait: async ms => { waits.push(ms); time += ms; } }),
+    /v9\.8\.7 is published \(promotion and the ledger are recorded\); verification pending: updater discovery did not offer exactly the ledger bytes within 600 seconds.*rerun the post-publish-verify job.*Never rebuild or replace/);
+  assert.equal(time, 585_000);
+  assert.equal(polls, 40);
+  assert.ok(waits.every(ms => ms === 15_000));
+  assert.deepEqual(writes(github.state.calls), []);
   assert.equal(github.state.releases[0].draft, false);
   assert.deepEqual(github.state.releases[0].assets, original);
 });
 
-test('a slow discovery response consumes the deadline instead of adding another full retry window', async t => {
+test('a slow failing discovery response consumes the deadline instead of adding another full retry window', async t => {
   const context = await fixture(t);
   const github = fakeGitHub();
   const env = releaseEnvironment(context);
-  const { staged } = await stage({ repositoryRoot: context.root, environment: env, fetchImpl: github.fetchImpl, log: quiet });
+  await stageAndPublish(context.root, env, github);
+  github.state.calls.length = 0;
   let time = 0;
-  await assert.rejects(publish({ repositoryRoot: context.root, environment: { ...env, RELEASE_STAGED: JSON.stringify(staged) }, log: quiet, now: () => time,
-    wait: async () => assert.fail('No retry after the deadline'), fetchImpl: async (url, init) => {
-      const response = await github.fetchImpl(url, init);
-      if (url.endsWith('/releases/latest') && github.state.releases[0].draft === false) time = 60_000;
-      return response;
-    } }), /deadline/);
+  await assert.rejects(verifyAfterPublish(context.root, async (url, init) => {
+    if (url.endsWith('/releases/latest')) { time = 600_000; return Response.json({ tag_name: 'v1.0.0', draft: false, prerelease: false, assets: [] }); }
+    return github.fetchImpl(url, init);
+  }, { now: () => time, wait: async () => assert.fail('No retry after the deadline') }), /verification pending: updater discovery/);
   assert.ok(!github.state.calls.some(call => call.includes('/releases/download/')));
 });
 

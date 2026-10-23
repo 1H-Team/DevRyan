@@ -1,23 +1,26 @@
 #!/usr/bin/env node
 // Release preflight: every check that can fail a release before anything is
 // built, in one report. The `preflight` job runs it on every release run;
-// locally `bun run release:preflight` runs the same checks (`--local-only`
-// skips the ones that need GitHub).
+// locally `bun run release:preflight` runs the same checks in a temporary clean
+// worktree, as a fresh runner would (`--local-only` skips the ones that need
+// GitHub; `--in-place` runs in this checkout). `bun run validate` runs
+// `--local-only` whenever a version file, CHANGELOG.md or bun.lock changes.
 //
-//   versions, CHANGELOG, frozen lockfile    the commit is releasable
+//   versions, CHANGELOG, frozen lockfile    the commit is releasable (notes within the updater's 64 KiB)
 //   shipped discovery fixtures              the vendored updater copies are what their tags shipped
 //   publication state, latest ordering      admit (scripts/release.mjs): same-version state and ledger
 //   build reuse                             a retained DMG from an earlier run at this SHA
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { execFile } from 'node:child_process';
+import { execFile, execFileSync, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { RELEASE_REPOSITORY } from '../packages/electron/release-assets.mjs';
+import { createRunRoot, scratchParent } from './qa/run-root.mjs';
 import { admit, checkVersions, findReleases, readLedger, releaseNotes, releaseVersion } from './release.mjs';
 import { githubClient } from './release-github.mjs';
 import { findReusableCandidate } from './release-candidate.mjs';
-import { releaseState, shippedDiscoveryFixtureProblems } from './release-state.mjs';
+import { RELEASE_BODY_MAX_BYTES, formatReleaseMarker, releaseBody, releasePayloadProblems, releaseState, shippedDiscoveryFixtureProblems } from './release-state.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const execute = promisify(execFile);
@@ -46,7 +49,13 @@ export async function preflight({ repositoryRoot = root, environment = process.e
   const env = { ...environment, GITHUB_SHA: source, GITHUB_REPOSITORY: environment.GITHUB_REPOSITORY || RELEASE_REPOSITORY };
   const output = { version, release_id: '', published: 'false', candidate_run_id: '', reuse_run_id: '' };
   await check('version files and bun.lock', () => checkVersions({ repositoryRoot, log: () => {} }).then(() => version));
-  await check('CHANGELOG section', async () => `${releaseNotes(await fs.readFile(path.join(repositoryRoot, 'CHANGELOG.md'), 'utf8'), version).length} characters of notes`);
+  await check('CHANGELOG section', async () => {
+    const notes = releaseNotes(await fs.readFile(path.join(repositoryRoot, 'CHANGELOG.md'), 'utf8'), version);
+    // The body installed updaters read: the notes plus the marker comment stage appends.
+    const problems = releasePayloadProblems({ body: releaseBody(notes, formatReleaseMarker({ version, sha256: '0'.repeat(64), size: 1, source: '0'.repeat(40), runId: '0', runAttempt: '0' })) });
+    if (problems.length) throw new Error(problems.join('; '));
+    return `${notes.length} characters of notes, within the ${RELEASE_BODY_MAX_BYTES}-byte updater budget`;
+  });
   await check('frozen lockfile', async () => {
     await run('bun', ['install', '--frozen-lockfile', '--dry-run', '--ignore-scripts'], { cwd: repositoryRoot, timeout: 300_000, maxBuffer: 64 * 1024 * 1024,
       env: { ...process.env, DEVRYAN_SKIP_INSTALL_PREPARE: '1' } });
@@ -88,13 +97,64 @@ export async function preflight({ repositoryRoot = root, environment = process.e
   return output;
 }
 
+/**
+ * Preflight as a fresh CI runner sees the commit: in a temporary `git worktree`
+ * (OS temp dir) of this checkout as `git add -A` would commit it (snapshotted
+ * through a private index, so the real index and the shared stash list are
+ * untouched), with no node_modules or ignored files. A local node_modules once
+ * hid a root postinstall that failed on the runner (v2.1.10). The worktree is
+ * removed on success, failure and interruption.
+ */
+export async function preflightInCleanCheckout({ repositoryRoot = root, args = [], run = execute, environment = process.env,
+  spawnPreflight = (cwd, argv, env) => new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ['scripts/release-preflight.mjs', '--in-place', ...argv], { cwd, env, stdio: 'inherit' });
+    child.once('error', reject);
+    child.once('exit', (code, signal) => resolve(code ?? (signal ? 1 : 0)));
+  }) } = {}) {
+  const git = (gitArgs, options = {}) => run('git', gitArgs, { cwd: repositoryRoot, timeout: 120_000, maxBuffer: 16 * 1024 * 1024, ...options });
+  const head = (await git(['rev-parse', 'HEAD'])).stdout.trim();
+  let checkout = null;
+  const removeWorktree = () => {
+    if (!checkout) return;
+    // Only this run's worktree: never `git worktree prune`, which would touch other checkouts' records.
+    // An interrupt removes it here, before the run root is deleted.
+    try { execFileSync('git', ['worktree', 'remove', '--force', checkout], { cwd: repositoryRoot, stdio: 'ignore', timeout: 60_000 }); }
+    catch { console.error(`[preflight] could not remove the temporary worktree ${checkout}; remove it with: git worktree remove --force ${checkout}`); }
+    checkout = null;
+  };
+  const runRoot = createRunRoot({ parent: scratchParent('release-preflight'), owner: 'release-preflight', onInterrupt: removeWorktree });
+  let status = 1;
+  try {
+    const snapshotEnv = { ...process.env, GIT_INDEX_FILE: path.join(runRoot.dir, 'index'), GIT_AUTHOR_NAME: 'release-preflight', GIT_AUTHOR_EMAIL: 'release-preflight@localhost',
+      GIT_COMMITTER_NAME: 'release-preflight', GIT_COMMITTER_EMAIL: 'release-preflight@localhost' };
+    await git(['read-tree', 'HEAD'], { env: snapshotEnv });
+    await git(['add', '-A'], { env: snapshotEnv });
+    const tree = (await git(['write-tree'], { env: snapshotEnv })).stdout.trim();
+    const changed = tree !== (await git(['rev-parse', 'HEAD^{tree}'])).stdout.trim();
+    const snapshot = changed ? (await git(['commit-tree', tree, '-p', head, '-m', 'release preflight snapshot'], { env: snapshotEnv })).stdout.trim() : head;
+    const target = path.join(runRoot.dir, 'checkout');
+    await git(['worktree', 'add', '--detach', '--quiet', target, snapshot]);
+    checkout = target;
+    console.log(`[preflight] clean checkout of HEAD ${head}${changed ? ' plus uncommitted changes' : ''} (no node_modules or ignored files)`);
+    // GitHub checks name the real commit, never the local snapshot.
+    status = await spawnPreflight(checkout, args, { ...environment, GITHUB_SHA: environment.GITHUB_SHA || head });
+    return status;
+  } finally {
+    removeWorktree();
+    runRoot.finish(status === 0 ? 'passed' : 'failed');
+  }
+}
+
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
-  if (args.some(arg => arg !== '--local-only')) {
-    console.error('Usage: release-preflight.mjs [--local-only]');
+  if (args.some(arg => !['--local-only', '--in-place'].includes(arg))) {
+    console.error('Usage: release-preflight.mjs [--local-only] [--in-place]');
     process.exit(2);
   }
-  try {
+  // A CI checkout is already clean; locally the checks run in a temporary clean worktree.
+  if (!args.includes('--in-place') && process.env.GITHUB_ACTIONS !== 'true') {
+    process.exitCode = await preflightInCleanCheckout({ args: args.filter(arg => arg === '--local-only') }).catch(error => { console.error(error.message); return 1; });
+  } else try {
     const output = await preflight({ localOnly: args.includes('--local-only') });
     if (process.env.GITHUB_OUTPUT) await fs.appendFile(process.env.GITHUB_OUTPUT, Object.entries(output).map(([key, value]) => `${key}=${value}\n`).join(''));
   } catch (error) {

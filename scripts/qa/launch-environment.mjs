@@ -13,6 +13,15 @@ export const qaPlatformEnvironment = (baseEnvironment = process.env) => Object.f
   PLATFORM_KEYS.filter(key => typeof baseEnvironment[key] === 'string').map(key => [key, baseEnvironment[key]]),
 );
 
+/**
+ * Launch environment for a packaged release app on a private profile: platform
+ * inputs only, HOME and XDG inside the run root, no global Git configuration.
+ * Used by the final-DMG smoke and the release visual QA.
+ */
+export const qaPackagedAppEnvironment = ({ home, root }, baseEnvironment = process.env) => ({ ...qaPlatformEnvironment(baseEnvironment), HOME: home,
+  XDG_CONFIG_HOME: path.join(home, '.config'), XDG_DATA_HOME: path.join(home, '.local/share'), XDG_STATE_HOME: path.join(home, '.local/state'),
+  XDG_CACHE_HOME: path.join(home, '.cache'), TMPDIR: root, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0', GIT_CEILING_DIRECTORIES: root });
+
 export const createQaHostLaunchEnvironment = (profileEnvironment, overrides = {}, baseEnvironment = process.env) => ({
   ...qaPlatformEnvironment(baseEnvironment), ...profileEnvironment, ...overrides,
 });

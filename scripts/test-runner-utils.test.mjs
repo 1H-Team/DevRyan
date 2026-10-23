@@ -254,21 +254,19 @@ describe('release workflow', () => {
     assert.match(packaging.run, /-c\.mac\.identity=null -c\.mac\.notarize=false -c\.dmg\.sign=false/);
 
     // Nothing is staged, let alone published, until the packaged candidate upgrades a profile made by the previous supported release.
-    assert.ok(workflow.jobs.stage.needs.includes('upgrade-check'));
-    assert.match(workflow.jobs.stage.if, /needs\.upgrade-check\.result == 'success'/);
-    assert.ok(workflow.jobs.publish.needs.includes('stage'));
+    assert.ok(workflow.jobs.release.needs.includes('upgrade-check'));
+    assert.match(workflow.jobs.release.if, /needs\.upgrade-check\.result == 'success'/);
     assert.equal(workflow.concurrency, undefined, 'workflow cancellation must not interrupt production');
-    for (const name of ['stage', 'publish']) {
-      assert.equal(workflow.jobs[name].concurrency['cancel-in-progress'], false);
-      assert.equal(workflow.jobs[name].concurrency.group, 'devryan-production-publication');
-      assert.equal(workflow.jobs[name].env.RELEASE_PUBLICATION_LOCK, workflow.jobs[name].concurrency.group);
-    }
+    assert.equal(workflow.jobs.release.concurrency['cancel-in-progress'], false);
+    assert.equal(workflow.jobs.release.concurrency.group, 'devryan-production-publication');
+    assert.equal(workflow.jobs.release.env.RELEASE_PUBLICATION_LOCK, workflow.jobs.release.concurrency.group);
     assert.equal(workflow.jobs.preflight.permissions.contents, 'read', 'preflight cannot change releases');
     assert.ok(!workflow.jobs.preflight.steps.some(step => step.run === 'node scripts/release.mjs trusted-ci'));
     assert.ok(workflow.jobs['trusted-ci'].steps.some(step => step.run === 'node scripts/release-ci-wait.mjs'));
     assert.equal(workflow.jobs['trusted-ci'].concurrency, undefined);
-    assert.ok(workflow.jobs.publish.needs.includes('trusted-ci'));
-    assert.equal(workflow.jobs.publish.steps.filter(step => step.run === 'node scripts/release.mjs trusted-ci').length, 1);
+    // Exact-source CI is rechecked inside the lock by `release.mjs release`, between stage and promotion.
+    assert.ok(workflow.jobs.release.needs.includes('trusted-ci'));
+    assert.equal(workflow.jobs.release.steps.filter(step => step.run === 'node scripts/release.mjs release').length, 1);
     assert.match(workflow.jobs['verify-published'].if, /outputs.published == 'true'/);
     assert.equal(workflow.jobs['verify-published'].steps.find(step => step.uses === 'actions/download-artifact@v4').with['run-id'], '${{ needs.preflight.outputs.candidate_run_id }}');
     for (const name of ['web', 'electron-package', 'upgrade-check']) assert.match(workflow.jobs[name].if, /outputs.published != 'true'/);
@@ -283,10 +281,11 @@ describe('release workflow', () => {
     assert.equal(upgrade.steps.filter((step) => step.uses === 'actions/download-artifact@v4').length, 0);
     // Release builds reuse exact-source CI's type-check instead of repeating it.
     assert.ok(!workflow.jobs.web.steps.some((step) => /type-check/.test(step.run ?? '')));
-    assert.ok(workflow.jobs['final-dmg-smoke'].steps.find(step => step.name?.startsWith('Observe'))['continue-on-error'].includes('qualified-3-runs'));
+    assert.equal(workflow.jobs['final-dmg-smoke'], undefined, 'the always-failing GUI smoke is replaced by the non-gating visual QA');
+    assert.equal(workflow.jobs['visual-qa']['continue-on-error'], true);
     for (const job of Object.values(workflow.jobs)) for (const step of job.steps ?? []) {
       if (step.uses === 'actions/upload-artifact@v4') assert.equal(step.with['retention-days'],
-        ['DevRyan-macos-arm64-release', 'DevRyan-macos-arm64-candidate-identity', 'release-upgrade', 'release-final-dmg-smoke', 'release-staged'].includes(step.with.name) ? 90 : 14);
+        ['DevRyan-macos-arm64-release', 'DevRyan-macos-arm64-candidate-identity', 'release-upgrade', 'release-staged'].includes(step.with.name) ? 90 : 14);
     }
     const ci = YAML.parse(readFileSync(new URL('.github/workflows/ci.yml', repoRoot), 'utf8'));
     // Native macOS lanes each build the native runtime in-lane.
@@ -294,26 +293,24 @@ describe('release workflow', () => {
     assert.equal(ci.jobs['native-tests'].needs, undefined);
     assert.equal(nativeCI, 3);
     // electron-package runs on macOS unless it adopts a DMG already built at the same SHA.
-    assert.deepEqual(Object.entries(workflow.jobs).filter(([, job]) => String(job['runs-on']).includes('macos-26')).map(([name]) => name), ['electron-package', 'upgrade-check', 'final-dmg-smoke']);
-    assert.ok(workflow.jobs['final-dmg-smoke'].needs.includes('electron-package'));
-    // GitHub Free runs at most five macOS jobs at once. A release holds two (smoke
-    // replaces package; qualification keeps the other) while it waits for CI.
+    assert.deepEqual(Object.entries(workflow.jobs).filter(([, job]) => String(job['runs-on']).includes('macos-26')).map(([name]) => name), ['electron-package', 'upgrade-check', 'visual-qa']);
+    assert.ok(workflow.jobs['visual-qa'].needs.includes('electron-package'));
+    // GitHub Free runs at most five macOS jobs at once. A release holds two (package
+    // and qualification; on a dry run visual QA replaces package) while it waits for CI.
     assert.ok(nativeCI + 2 <= 5, 'CI macOS lanes plus the release macOS jobs fit the Free plan macOS concurrency');
     assert.ok(ci.jobs.tests.strategy.matrix.include.length + nativeCI + 3 <= 9, 'CI workers plus package, qualification and CI wait stay within the total limit');
     assert.equal(YAML.parse(readFileSync(new URL('.github/workflows/release-cache.yml', repoRoot), 'utf8')).on.push, undefined);
     assert.ok(!JSON.stringify(workflow).includes('devryan_bot_schema_version'));
     assert.ok(!JSON.stringify(workflow).includes('PRODUCTION_BOTS_MIGRATION'));
 
-    // Stage the DMG, deploy the backend in its own job, then publish with one write.
-    assert.equal(workflow.jobs.stage.steps.find(step => step.id === 'stage').run, 'node scripts/release.mjs stage');
+    // Deploy the backend in its own job before the lock, then stage and publish in one locked job.
+    assert.equal(workflow.jobs.release.steps.find(step => step.id === 'release').run, 'node scripts/release.mjs release');
     const backend = workflow.jobs['deploy-backend'];
-    assert.ok(backend.needs.includes('stage') && workflow.jobs.publish.needs.includes('deploy-backend'), 'order: stage, deploy Supabase, publish');
+    assert.ok(!backend.needs.includes('release') && workflow.jobs.release.needs.includes('deploy-backend'), 'order: deploy Supabase, then stage and publish');
     assert.match(backend.if, /github\.event_name == 'push'/);
     const supabase = backend.steps.find(step => step.name?.startsWith('Deploy and verify Supabase'));
     assert.match(supabase.run, /node scripts\/sync-supabase-auth-password-policy\.mjs\n\s*supabase db push --linked --dry-run/);
-    const steps = workflow.jobs.publish.steps;
-    assert.equal(steps.at(-1).run, 'node scripts/release.mjs publish');
-    assert.equal(workflow.jobs.publish.env.RELEASE_STAGED, '${{ needs.stage.outputs.staged }}');
+    assert.equal(workflow.jobs['post-publish-verify'].steps.at(-1).run, 'node scripts/release-verify-public.mjs "v${{ needs.preflight.outputs.version }}"');
   });
 });
 
@@ -460,8 +457,16 @@ describe('version-only and startup-covered validation', () => {
   test('a release bump checks version agreement and the startup contract instead of every suite', () => {
     const bump = ['CHANGELOG.md', 'bun.lock', 'package.json', 'packages/ui/package.json', 'packages/web/package.json', 'packages/desktop/src-tauri/Cargo.toml'];
     const plan = buildPlan('fast', bump, { versionOnly: new Set(bump.filter((file) => file !== 'CHANGELOG.md')) });
-    assert.deepEqual(plan.commands.map((c) => c.label), ['docs:validate', 'versions', 'test:startup']);
+    assert.deepEqual(plan.commands.map((c) => c.label), ['docs:validate', 'versions', 'release-preflight', 'test:startup']);
     assert.deepEqual(plan.commands.find((c) => c.label === 'versions').args, ['scripts/release.mjs', 'check-versions']);
+    // Release inputs re-run the local release preflight in a clean worktree, as a release runner sees the commit.
+    assert.deepEqual(plan.commands.find((c) => c.label === 'release-preflight').args, ['scripts/release-preflight.mjs', '--local-only']);
+    for (const file of ['CHANGELOG.md', 'bun.lock', 'packages/electron/package.json', 'packages/desktop/src-tauri/tauri.conf.json']) {
+      assert.ok(buildPlan('fast', [file]).commands.some((c) => c.label === 'release-preflight'), file);
+    }
+    for (const file of ['docs/TESTING.md', 'scripts/release.mjs', 'packages/ui/src/App.tsx']) {
+      assert.ok(!buildPlan('fast', [file]).commands.some((c) => c.label === 'release-preflight'), file);
+    }
     // The same files with real manifest changes keep the full shared-configuration plan.
     const labels = buildPlan('fast', bump).commands.map((c) => c.label);
     for (const label of ['lint:full', 'type-check:full', 'test:ui', 'test:web', 'test:startup']) assert.ok(labels.includes(label), label);

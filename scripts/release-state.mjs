@@ -147,3 +147,55 @@ export async function assertShippedDiscovery(payload, expected, { discoveries } 
   }
   return found;
 }
+
+/**
+ * Installed updaters keep 64 KiB of the release body and refuse a
+ * /releases/latest response of 2 MiB or more (packages/electron/desktop-updater.mjs).
+ */
+export const RELEASE_BODY_MAX_BYTES = 64 * 1024;
+export const DISCOVERY_PAYLOAD_MAX_BYTES = 2 * 1024 * 1024;
+
+/** Budget problems with a release body and, when given, the discovery payload installed apps will read. */
+export function releasePayloadProblems({ body, payload } = {}) {
+  const problems = [];
+  if (typeof body === 'string' && Buffer.byteLength(body) > RELEASE_BODY_MAX_BYTES) {
+    problems.push(`The release notes are ${Buffer.byteLength(body)} bytes; installed updaters keep only ${RELEASE_BODY_MAX_BYTES}. Shorten the CHANGELOG section.`);
+  }
+  if (payload !== undefined) {
+    const size = Buffer.byteLength(JSON.stringify(payload));
+    if (size >= DISCOVERY_PAYLOAD_MAX_BYTES) problems.push(`The /releases/latest payload is ${size} bytes; installed updaters refuse ${DISCOVERY_PAYLOAD_MAX_BYTES} or more.`);
+  }
+  return problems;
+}
+
+/**
+ * What every supported installed app (v2.1.9 on) compares literally: the
+ * repository its feed and URLs name, the tag format, and the signing mode,
+ * executable and architecture its installer requires. Changing any of them
+ * strands those installs: it needs a bridge release that first teaches
+ * installed apps the new identity.
+ */
+export const SHIPPED_RELEASE_IDENTITY = Object.freeze({
+  repository: '1H-Team/DevRyan',
+  feedUrl: 'https://api.github.com/repos/1H-Team/DevRyan/releases/latest',
+  htmlUrl: version => `https://github.com/1H-Team/DevRyan/releases/tag/v${version}`,
+  downloadUrl: version => `https://github.com/1H-Team/DevRyan/releases/download/v${version}/DevRyan-${version}-arm64.dmg`,
+  signingMode: 'adhoc',
+  executable: 'DevRyan',
+  arch: 'arm64',
+});
+
+export const bridgeReleaseRequired = detail => `${detail}. Installed v2.1.9+ apps compare this literally, so a bridge release required: first ship a release that accepts the new identity (docs/RELEASE_PIPELINE.md, "Updater contract").`;
+
+/** Problems with a release manifest that installed apps would refuse at install time. */
+export async function manifestIdentityProblems(manifest) {
+  const problems = [];
+  if (manifest.signingMode !== SHIPPED_RELEASE_IDENTITY.signingMode) problems.push(bridgeReleaseRequired(`The candidate is signed ${manifest.signingMode}, not ${SHIPPED_RELEASE_IDENTITY.signingMode}`));
+  if (manifest.executable !== SHIPPED_RELEASE_IDENTITY.executable || manifest.arch !== SHIPPED_RELEASE_IDENTITY.arch) {
+    problems.push(bridgeReleaseRequired(`The candidate is ${manifest.executable}/${manifest.arch}, not ${SHIPPED_RELEASE_IDENTITY.executable}/${SHIPPED_RELEASE_IDENTITY.arch}`));
+  }
+  for (const tag of SHIPPED_DISCOVERY_TAGS) {
+    if (!(await shippedAcceptedBundleIds(tag)).includes(manifest.bundleId)) problems.push(bridgeReleaseRequired(`The ${tag} installer does not accept bundle identifier ${manifest.bundleId}`));
+  }
+  return problems;
+}

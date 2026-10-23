@@ -99,6 +99,11 @@ const docsOnlyExtensions = new Set(['.md', '.mdx', '.txt']);
 const versionFiles = new Set(['package.json', 'bun.lock', 'packages/desktop/src-tauri/tauri.conf.json',
   'packages/desktop/src-tauri/Cargo.toml', 'packages/desktop/src-tauri/Cargo.lock']);
 const isVersionFile = (file) => versionFiles.has(file) || /^packages\/[^/]+\/package\.json$/.test(file);
+// Release inputs: a version file, the release notes or the lockfile. A change
+// re-runs the local release preflight in a clean worktree, as a release runner sees it.
+const isReleaseInput = (file) => isVersionFile(file) || file === 'CHANGELOG.md';
+const releasePreflightCommands = (files) => files.some(isReleaseInput)
+  ? [{ label: 'release-preflight', executable: 'node', args: ['scripts/release-preflight.mjs', '--local-only'] }] : [];
 
 function withoutVersion(source) {
   const value = JSON.parse(source);
@@ -425,12 +430,12 @@ export function buildPlan(requestedMode, providedFiles, { versionOnly } = {}) {
 
   const files = providedFiles ?? changedFilesFromGit();
   const metadata = versionOnly ?? (providedFiles ? new Set() : versionOnlyFilesFromGit(files));
-  const versionCheck = metadata.size ? [command('versions', 'node', ['scripts/release.mjs', 'check-versions'])] : [];
+  const versionCheck = [...(metadata.size ? [command('versions', 'node', ['scripts/release.mjs', 'check-versions'])] : []), ...releasePreflightCommands(files)];
   const codeFiles = files.filter((file) => !isDocsOnlyFile(file) && !metadata.has(file));
   const docs = files.some((file) => /\.mdx?$/.test(file)) ? [command('docs:validate', 'bun', ['run', 'docs:validate'])] : [];
   if (files.length === 0) return { files, commands: [startupCommand(new Set())], reason: 'no changed files; startup contract only' };
   if (codeFiles.length === 0) {
-    if (!metadata.size) return { files, commands: docs, reason: 'docs-only changes' };
+    if (!metadata.size) return { files, commands: [...docs, ...versionCheck], reason: 'docs-only changes' };
     return { files, commands: [...docs, ...versionCheck, startupCommand(new Set())], reason: 'version metadata and docs only' };
   }
 

@@ -51,9 +51,10 @@ export function retryableResponse(response) {
 
 export function githubClient({ token, fetchImpl = fetch, repository = RELEASE_REPOSITORY, environment = process.env,
   wait = ms => new Promise(resolve => setTimeout(resolve, ms)), now = Date.now, random = Math.random,
-  timeoutMs = 30_000, attempts = 4, maxDelayMs = 60_000, log = () => {} }) {
-  if (!token) throw new Error('GITHUB_TOKEN is required');
-  const headers = { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' };
+  timeoutMs = 30_000, attempts = 4, maxDelayMs = 60_000, log = () => {}, anonymous = false }) {
+  // `anonymous` reads public data the way installed updaters do; it can never write.
+  if (!token && !anonymous) throw new Error('GITHUB_TOKEN is required');
+  const headers = { ...(token ? { Authorization: `Bearer ${token}` } : {}), Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' };
   const resolve = url => url.startsWith('https://') ? url : `https://api.github.com/repos/${repository}${url}`;
   // 1, 2, 4, 8 seconds plus up to 250 ms of jitter; GitHub's own delay wins when it sends one.
   const backoff = (attempt, askedMs = null) => Math.min(maxDelayMs, askedMs ?? 1000 * 2 ** (attempt - 1) + Math.floor(random() * 250));
@@ -61,7 +62,10 @@ export function githubClient({ token, fetchImpl = fetch, repository = RELEASE_RE
   const request = async (method, url, { body, contentType, accept, allowNotFound = false, signal, timeoutMs: limit = timeoutMs,
     attempts: budget = IDEMPOTENT.has(method) ? attempts : 1, headers: extra = {} } = {}) => {
     const target = resolve(url);
-    if (method !== 'GET' && method !== 'HEAD') assertReleaseWritesAllowed(environment, { repository: repositoryOfUrl(target) });
+    if (method !== 'GET' && method !== 'HEAD') {
+      if (!token) throw new Error(`An anonymous GitHub client cannot ${method} ${target}`);
+      assertReleaseWritesAllowed(environment, { repository: repositoryOfUrl(target) });
+    }
     let lastError;
     for (let attempt = 1; attempt <= budget; attempt++) {
       const payload = typeof body === 'function' ? body() : body;
