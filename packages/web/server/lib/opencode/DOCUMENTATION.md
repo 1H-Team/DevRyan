@@ -304,7 +304,7 @@ credential. Bots and managed users on OAuth still fail with
   - `POST /api/opencode/directory`
   - `GET /api/behavior/agents-md`
   - `PUT /api/behavior/agents-md`
-- `GET /api/provider/:providerId/source`
+- `GET /api/provider/:providerId/source` reads the default location when the requested project directory is not a reviewed native location (`native_provider_configuration_location_unreviewed`), as Claude quota inspection does. Expected 4xx refusals with a bounded code log one line without a stack.
 - `GET /api/provider/anthropic/claude-cli`
 - `POST /api/provider/anthropic/check-oauth`
 - `GET /api/provider/anthropic/prompt-mode`
