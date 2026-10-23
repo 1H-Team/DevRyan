@@ -281,8 +281,6 @@ export const buildSafeFieldDeltas = (before = {}, after = {}) => {
   return changes;
 };
 
-export const isDetailedAnalyticsAction = (action) => DETAILED_ACTIONS.has(action);
-
 export const sanitizeActivityForReviewer = (rows, { isAdmin }) => {
   if (isAdmin) return rows || [];
   return (rows || [])

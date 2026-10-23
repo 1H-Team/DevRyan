@@ -7,7 +7,6 @@ import {
   createHarnessPaths,
   createPromptAdmissionController,
   createRecordStore,
-  createWorktreeBootstrapRuntime,
   validateCommandDeadlineRecord,
   validateWorktreeBootstrapReceipt,
 } from '@devryan/harness-runtime';
@@ -313,5 +312,3 @@ export const createWebHarnessRuntime = (options = {}) => {
     getStatus: () => journal.getStatus(),
   };
 };
-
-export const createConfiguredWorktreeRuntime = (options = {}) => createWorktreeBootstrapRuntime(options);

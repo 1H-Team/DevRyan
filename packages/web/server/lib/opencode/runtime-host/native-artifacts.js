@@ -49,8 +49,6 @@ const remember = async (target, key, update) => {
   if (verifiedFiles.size >= 4096 && !verifiedFiles.has(key)) verifiedFiles.clear();
   verifiedFiles.set(key, Object.freeze({ ...verifiedFiles.get(key), ...update }));
 };
-/** Tests and tools that rewrite artifacts in place within one process reset reuse. */
-export const clearNativeArtifactVerificationCache = () => verifiedFiles.clear();
 
 /** Initial provisioning needs a bounded manifest read before it can pin its digest. */
 export async function readNativeRuntimeManifest(manifestPath, purpose = 'current') {

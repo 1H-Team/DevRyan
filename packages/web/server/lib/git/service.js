@@ -1218,8 +1218,6 @@ export const configureWorktreeBootstrapRuntime = (options = {}) => {
   return worktreeBootstrapRuntime;
 };
 
-export const getConfiguredWorktreeBootstrapRuntime = () => worktreeBootstrapRuntime;
-
 const ensureRemoteWithUrl = async (primaryWorktree, remoteName, remoteUrl) => {
   const name = String(remoteName || '').trim();
   const url = String(remoteUrl || '').trim();
