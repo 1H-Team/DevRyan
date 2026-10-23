@@ -28,6 +28,9 @@ test('bounded closed inventory preserves main DB/WAL and credential bytes, exclu
  for(const [name,value] of Object.entries({'opencode/opencode.db':'db','opencode/opencode.db-wal':'wal','opencode/opencode.db-shm':'index','web-data/quota/cursor-acp.json':'credentials','global/log/log.txt':'transient','.native-controller/id/termination.json':'controller','global/home/.claude/.credentials.json':'account'})){const file=path.join(root,name);await fs.mkdir(path.dirname(file),{recursive:true});await fs.writeFile(file,value);}
  const before=await captureRollbackFiles(root);expect(before.map(row=>row.path)).toEqual(['global/home/.claude/.credentials.json','opencode/opencode.db','opencode/opencode.db-wal','web-data/quota/cursor-acp.json']);
  await fs.writeFile(path.join(root,'opencode/opencode.db-shm'),'different index');expect(await captureRollbackFiles(root)).toEqual(before);
+ // A parked execution view is disposable derived state, links included.
+ const standby=path.join(root,'web-data/harness/session-mutations',`${'a'.repeat(64)}`,'view-standby','view');await fs.mkdir(standby,{recursive:true});
+ await fs.writeFile(path.join(standby,'file.txt'),'copy');await fs.symlink('file.txt',path.join(standby,'link'));expect(await captureRollbackFiles(root)).toEqual(before);
  await fs.writeFile(path.join(root,'opencode/opencode.db-wal'),'different durable WAL');expect(await captureRollbackFiles(root)).not.toEqual(before);
  await fs.symlink(path.join(root,'opencode/opencode.db'),path.join(root,'foreign'));await expect(captureRollbackFiles(root)).rejects.toMatchObject({code:'bundle_recovery_inventory_invalid'});
 });

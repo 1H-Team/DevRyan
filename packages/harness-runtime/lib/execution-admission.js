@@ -48,11 +48,11 @@ const followedProgress = (start) => {
 // for `slowMs` (default 2 s), so a hang remains visible while it happens.
 const SLOW_PHASE_MS = 2_000;
 const MAX_SUMMARY_STEPS = 32;
-const recordStep = (current, phase, elapsedMs) => {
+const recordStep = (current, phase, elapsedMs, count = 1) => {
   const steps = current?.summary?.steps;
   if (!steps || (!steps.has(phase) && steps.size >= MAX_SUMMARY_STEPS)) return;
   const step = steps.get(phase) ?? { count: 0, elapsedMs: 0 };
-  step.count += 1; step.elapsedMs += elapsedMs;
+  step.count += count; step.elapsedMs += elapsedMs;
   steps.set(phase, step);
 };
 const formatSteps = (steps) => [...steps].map(([phase, step]) => `${phase}:${step.count}/${step.elapsedMs}`).join(',');
@@ -118,7 +118,9 @@ export async function withExecutionObservation(input, action, { phase, onDiagnos
 // Timing-only steps for an active summary. Unlike executionPhase, they never
 // check the admission signal, so code that did not observe cancellation
 // before (for example the session-changes queue) cannot start throwing.
-export const executionStep = (phase, elapsedMs) => recordStep(context.getStore(), phase, elapsedMs);
+// `count` (default 1) lets one call record many units, such as files copied.
+export const executionStep = (phase, elapsedMs, count = 1) => recordStep(context.getStore(), phase, elapsedMs,
+  Number.isSafeInteger(count) && count >= 0 ? count : 1);
 export async function timedExecutionStep(phase, action) {
   const current = context.getStore();
   if (!current?.summary) return action();

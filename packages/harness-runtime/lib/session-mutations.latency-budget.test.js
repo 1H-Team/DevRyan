@@ -85,6 +85,38 @@ describe('native tool harness budgets', () => {
     expect(measured.processes).toBeLessThanOrEqual(42);
   });
 
+  test('a session\'s later edits copy only the files that changed since its previous view, not the project', async () => {
+    const { counts, gitRunner } = countingRunner();
+    const f = await fixture({ gitRunner });
+    await manyFiles(f, 60);
+    const copies = (records) => Object.fromEntries((records.find((record) => record.phase === 'preparation' && record.state === 'completed')?.steps ?? '')
+      .split(',').filter((step) => /^view_(copied|reused):/.test(step)).map((step) => [step.split(':')[0], Number(step.split(':')[1].split('/')[0])]));
+    const edit = async (index, sessionID = 's') => {
+      const records = [];
+      const lease = await withExecutionPreparation({ sessionID, callID: `edit${index}` }, () => f.begin(sessionID, `e${index}`, `edit${index}`),
+        { onDiagnostic: (record) => records.push(record), summary: { minMs: 0 } });
+      await f.runtime.claimLease({ directory: f.directory, token: lease.token, kind: 'process' });
+      await fs.appendFile(path.join(lease.viewDirectory, 'd0/e0/f0.txt'), `edit ${index}\n`);
+      await fs.writeFile(path.join(path.dirname(lease.viewDirectory), 'termination.json'),
+        JSON.stringify({ terminated: true, confined: true, exitCode: 0, cancelled: false }), { flag: 'wx', mode: 0o600 });
+      expect((await f.finish(lease)).files).toEqual([{ path: 'd0/e0/f0.txt', status: 'modified' }]);
+      await f.runtime.cleanupLease({ directory: f.directory, token: lease.token });
+      return copies(records);
+    };
+    const first = await edit(0);
+    expect(first.view_reused).toBe(0);
+    expect(first.view_copied).toBeGreaterThan(60);
+    // Every later lease re-copies exactly the file the previous one edited.
+    for (let index = 1; index <= 3; index += 1) expect(await edit(index)).toEqual({ view_copied: 1, view_reused: first.view_copied - 1 });
+    let later;
+    const measured = await measure(counts, async () => { later = await edit(4); });
+    expect(later.view_copied).toBe(1);
+    // The same durable protocol states as a full copy (see the single-file edit budget).
+    expect(measured.commits).toBeLessThanOrEqual(7);
+    // A session without a previous view still copies everything.
+    expect((await edit(5, 'other')).view_reused).toBe(0);
+  });
+
   test('read-only shell: no reconciliation, no view copy, and an empty publication', async () => {
     const { counts, gitRunner } = countingRunner();
     const f = await fixture({ gitRunner });

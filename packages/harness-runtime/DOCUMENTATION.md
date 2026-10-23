@@ -496,6 +496,49 @@ always publishes an empty result; on a 2,000-file fixture its preparation took
 75 ms instead of about 400 ms. `cancelLease({ stoppedBy: 'operator' })` records
 that a user Stop ended a run.
 
+Incremental views (macOS and Linux; `DEVRYAN_VIEW_REUSE=0` copies every file
+again). Cleanup of a published process lease, after its termination receipt is
+verified, renames the view to `view-standby/<id>` in the ledger root instead of
+deleting it; the session's next preparation (`view_reuse` step) moves into its
+own fresh view every file still exactly as materialized and copies only the
+rest. A file is adopted only while its ledger entry is unchanged and its full
+stamp (inode, size, mode, nanosecond mtime and ctime) still equals the one
+recorded at materialization and found untouched by publication; any write,
+chmod, link, attribute change or replacement moves ctime or the inode. A
+directory is kept only while its stamp is unchanged since its preparation
+finished (`view_record` step), and is otherwise rebuilt fresh around its
+verified entries. Links (inputs among them), `.git`, special files and
+directories holding no expected file are discarded, so the view equals a full
+copy file by file (`session-mutations-view-reuse.test.js`). Summary steps
+`view_copied` and `view_reused` count files. Standbys are known only to the
+process that parked them: at most two per session and eight per process, never
+adopted after 30 minutes, and swept by any process after an hour. Windows views
+carry owner-created ACLs and are still rebuilt per lease. A later single-file
+edit (prepare, publish, cleanup; p50 of 12 on an idle machine) went from
+0.98 s to 0.71 s on 2,000 files, 2.1 s to 1.1 s on 6,000 and 5.4 s to 2.0 s on
+12,000, where `view_files` fell from 2,050 ms to 74 ms (plus 81 ms
+`view_reuse`) and cleanup from 954 ms to 120 ms. Edit and write tools still get the whole view: their worker runs the
+project's formatter, which reads configuration and dependencies outside the
+named target, so a target-only view would change their results.
+
+Publication finds the current owner of each path it writes from one parsed
+listing of the committed `files` documents per tree, shared with the
+preparation that read the same tree, plus this transaction's staged documents
+(`DEVRYAN_LEDGER_PATH_WINNERS=0` reads every document again, about 190 ms per
+publication on 6,000 files).
+
+While this process applies a publication or revert intent (between its intent
+commit and the commit that completes it), lock-free snapshot readers such as
+`nativeAdmissionState` and `assertAdmission` answer from the tree committed
+before that intent instead of queueing behind the owner: the operation has not
+completed, so the read is ordered before it, exactly as one arriving a moment
+earlier. Another process's pending intent, or an unrecoverable one, still makes
+them fall back to the lock and fail closed. A read that would fail or write
+also still takes the lock. Slow `ledger_lock` records of such a fallback carry
+`reason: snapshot_<absent|materialization|meta|write|error>`. Writers such as
+`bindNativeShellJob` keep the owner lock; their queue time behind sibling
+writers is reported in the same records.
+
 `withExecutionPreparation` is its own summary root: one `preparation` record
 carries its steps, so the same time is no longer journaled as both `admission`
 and `preparation`. `executionToolMetadata` maps the native host kinds `shell`,

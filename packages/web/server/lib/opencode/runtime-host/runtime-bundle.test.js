@@ -1277,12 +1277,16 @@ test('default startup settles an abandoned control lease before verification, th
  // A node_modules input leaves a link overlay in the ledger; the upgrade copy must skip it.
  const overlay=path.join(seeded.root,'module-overlays','0123456789abcdef');await fs.mkdir(overlay,{recursive:true});
  await fs.symlink(path.join(u.controlRoot,'missing-dependency'),path.join(overlay,'dependency'));
+ // A parked execution view is disposable: never copied into the new bundle.
+ const standby=path.join(seeded.root,'view-standby','parked');await fs.mkdir(standby,{recursive:true});
+ await fs.writeFile(path.join(standby,'file.txt'),'copy');await fs.symlink('file.txt',path.join(standby,'link'));
  const ledger=path.relative(u.binding().descriptor.launch.webDataDirectory,seeded.root);
  expect(await u.launch(u.pinned)).toBe(u.controlRoot);
  expect(readStartupBundleUpgradeFailure()).toBe(null);expect(u.binding().selection.revision).toBe(2);
  const upgraded=path.join(u.binding().descriptor.launch.webDataDirectory,ledger);
  expect(upgraded).not.toBe(seeded.root);expect((await fs.stat(path.join(upgraded,'git'))).isDirectory()).toBe(true);
  await expect(fs.lstat(path.join(upgraded,'module-overlays'))).rejects.toMatchObject({code:'ENOENT'});
+ await expect(fs.lstat(path.join(upgraded,'view-standby'))).rejects.toMatchObject({code:'ENOENT'});
  const db=await openChangeStore(seeded.root,seeded.gitDir);
  expect(await db.get(`leases/${changeKey(seeded.token)}.json`)).toMatchObject({state:'cancelled',cleaned:true,cleanupPending:false});
  expect(await fs.stat(seeded.viewDirectory).catch(error=>error.code)).toBe('ENOENT');

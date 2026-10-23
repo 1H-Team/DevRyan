@@ -65,6 +65,10 @@ reported instead:
 - The clone copy leaves behind sockets and FIFOs anywhere, and symlinks inside
   a project ledger and under `global/{cache,tmp,log}`. Links under config,
   `global/home` and `global/data` still refuse with `bundle_symlink_source`.
+  A ledger's derived `context-cache/`, `module-overlays/` and `view-standby/`
+  (parked execution views, adoptable only by the process that parked them) are
+  not copied; the rollback file inventory skips `context-cache/` and
+  `view-standby/` the same way.
 - Cursor recovery pauses the one session whose intent it cannot settle
   (invalid, foreign owner, scope mismatch, unconfirmed termination) with a
   `<bundleID>-cursor-recovery` hold, keeps the intent, and continues. The

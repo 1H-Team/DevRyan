@@ -32,8 +32,10 @@ const validKey = (key) => typeof key === 'string' && /^[a-zA-Z0-9/_-]+\.json$/.t
 // retain their tree identity. No lifetime-sized JSON document is rewritten.
 // `persistentIndex` (owner-locked state commits only): keep this ledger's Git
 // index between commits instead of rebuilding it from the whole tree each time.
-export async function openChangeStore(cwd, gitDir, { ref = STATE_REF,gitRunner,syncObjects=syncPendingObjectDirectory,listingLimitBytes=LISTING_LIMIT_BYTES,persistentIndex=false } = {}) {
+// `at`: a read-only store of that earlier committed tree; it never commits.
+export async function openChangeStore(cwd, gitDir, { ref = STATE_REF,gitRunner,syncObjects=syncPendingObjectDirectory,listingLimitBytes=LISTING_LIMIT_BYTES,persistentIndex=false,at } = {}) {
   if (!Number.isSafeInteger(listingLimitBytes) || listingLimitBytes <= 0) throw changeError('invalid_change_record');
+  if (at !== undefined && !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(at)) throw changeError('invalid_change_record');
   if (ref !== STATE_REF && !/^refs\/devryan\/leases\/[a-f0-9-]{36}$/.test(ref)) throw changeError('invalid_change_record');
   const args = ['--git-dir', gitDir];
   const runGit=gitRunner?.git??git,runTokens=gitRunner?.gitTokens??gitTokens,runRecords=gitRunner?.gitRecords??gitRecords;
@@ -43,9 +45,9 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF,gitRunner,s
   const readObject = (name, options) => reader(cwd, args, name, options);
   // `update-ref` replaces a loose ref atomically; read it without a process.
   // Absent (packed or not yet created) or unexpected content asks Git.
-  const looseRef = reader ? await fs.readFile(path.resolve(cwd, gitDir, ...ref.split('/')), 'utf8').then((value) => value.trim(), (cause) => {
+  const looseRef = at ?? (reader ? await fs.readFile(path.resolve(cwd, gitDir, ...ref.split('/')), 'utf8').then((value) => value.trim(), (cause) => {
     if (['ENOENT', 'ENOTDIR'].includes(cause.code)) return null; throw cause;
-  }) : null;
+  }) : null);
   const refs = looseRef && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(looseRef) ? looseRef
     : (await run(['for-each-ref', '--format=%(objectname)', ref])).toString().trim();
   let tree = refs || null;
@@ -217,7 +219,7 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF,gitRunner,s
   };
   const commit = async ({ assertCurrent } = {}) => {
     assertCurrent?.();
-    if (staging) throw changeError('invalid_change_record');
+    if (staging || at) throw changeError('invalid_change_record');
     if (!pending.size) return;
     // Objects this transaction references are durable before it is.
     await syncObjects(cwd);
@@ -300,11 +302,25 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF,gitRunner,s
       pending.set(destination + row.key.slice(prefix.length), { oid: row.oid });
     }
   };
-  const prefixIdentity = async (prefix) => {
-    if (pending.size || !validKey(`${prefix}/page.json`)) throw changeError('invalid_change_record');
+  // Identity of `prefix` in the committed tree, whatever is staged.
+  const committedIdentity = async (prefix) => {
+    if (!validKey(`${prefix}/page.json`)) throw changeError('invalid_change_record');
     if (!tree) return null;
     if (reader) { const found = await readObject(`${tree}:${prefix}`, { check: true }); return found?.type === 'tree' ? found.oid : null; }
     return run(['rev-parse', '--verify', `${tree}:${prefix}`]).then((value) => value.toString().trim(), () => null);
+  };
+  const prefixIdentity = async (prefix) => {
+    if (pending.size) throw changeError('invalid_change_record');
+    return committedIdentity(prefix);
+  };
+  // Staged writes under `prefix` by key, in `entries` order; null is a removal.
+  const staged = async (prefix) => {
+    if (!validKey(`${prefix}/page.json`)) throw changeError('invalid_change_record');
+    const result = new Map();
+    for (const [key, data] of [...pending].sort(([a], [b]) => a.localeCompare(b))) {
+      if (key.startsWith(`${prefix}/`)) result.set(key, data === null ? null : typeof data === 'object' ? await get(key) : JSON.parse(data));
+    }
+    return result;
   };
   // prefixIdentity for many prefixes: one listing per 128 (command lines stay
   // short on Windows). Absent prefixes map to null.
@@ -328,6 +344,6 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF,gitRunner,s
     }
     return result;
   };
-  return { get, set, remove, entries, records, list, setList, commit, stage, leaseRef, pin, release, importPrefix, prefixIdentity, prefixIdentities,
+  return { get, set, remove, entries, records, list, setList, commit, stage, leaseRef, pin, release, importPrefix, prefixIdentity, prefixIdentities, committedIdentity, staged,
     get tree() { return tree; }, get exists() { return tree !== null; }, get pendingCount() { return pending.size; } };
 }

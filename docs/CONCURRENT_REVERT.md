@@ -125,7 +125,8 @@ composer restoration are retained; activity follows authoritative events.
 
 Each reconciled execution base has a durable Git ref while preparation, execution
 or recovery consumes it. Cleanup requires a terminal lease, proof that native
-writers have stopped and no active consumers. It removes the private view while
+writers have stopped and no active consumers. It removes (or parks for the
+session's next view) the private view while
 preserving termination receipts, publication history and conflict objects. Snapshot ref identity commits before pin installation. Terminal leases carry durable pending cleanup; recovery also discovers older uncleaned terminal records and isolates each lease failure. Cleanup failures are reported separately from a successful publication and retried on recovery. Private read-only directories can be removed after these guards pass without following symlinks to project or dependency inputs.
 **Per-call cost.** A view records only its base file list. Publication
 recomputes the "before" runs of the files a call changed from the lease's
@@ -141,7 +142,11 @@ an exclusive create, then chmod and one lstat for its stamp (about four
 filesystem requests per file instead of about twelve). Symbolic links and
 existing entries (for example case-only collisions) use the general writer
 (`DEVRYAN_VIEW_FAST_MATERIALIZE=0` restores it for every file). Its steps are
-journaled as `view_files`, `view_commit`, `view_git` and `view_inputs`. Publication reuses
+journaled as `view_files`, `view_commit`, `view_git` and `view_inputs`. On macOS
+and Linux, cleanup parks a published process lease's view, and the session's
+next preparation adopts every file still exactly as materialized and copies only
+the rest (`view_reuse`; `DEVRYAN_VIEW_REUSE=0` copies everything; see
+`packages/harness-runtime/DOCUMENTATION.md`). Publication reuses
 the base entry of a file whose full stat stamp is unchanged (inode, size, mode,
 nanosecond mtime and ctime); whole-second timestamps are always re-hashed
 (`DEVRYAN_VIEW_STAT_REUSE=0` hashes every file). Repository resolution is

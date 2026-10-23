@@ -116,7 +116,7 @@ export async function captureRollbackFiles(root){
    const name=relative?relative+'/'+entry.name:entry.name,file=path.join(directory,entry.name);
    if(name==='.native-controller'||/^global\/(log|tmp|cache)(\/|$)/.test(name)||name==='opencode/opencode.db-shm'
     ||/(^|\/)[^/]+\.tmp-[^/]+$/.test(name)||['web-data/orchestration/owner.lock','web-data/harness/provider-recovery/runtime-owner.lock'].includes(name)
-    ||/^web-data\/harness\/session-mutations\/[a-f0-9]{64}\/(context-cache(\/|$)|owner\.lock|git\/index[^/]*)$/.test(name)
+    ||/^web-data\/harness\/session-mutations\/[a-f0-9]{64}\/(context-cache(\/|$)|view-standby(\/|$)|owner\.lock|git\/index[^/]*)$/.test(name)
     ||/^web-data\/harness\/(provider-recovery|context)\/[^/]+\.lock$/.test(name))continue;
    const stat=await fs.promises.lstat(file);if(stat.isSymbolicLink())throw fail('bundle_recovery_inventory_invalid');
    if(stat.isDirectory()){await walk(file,name);continue;}

@@ -1,4 +1,4 @@
-import { executionCleanup, executionDiagnostic, executionReporting, executionStep, checkExecutionAdmission, executionPhase, quietExecutionPhase, executionSignal, executionProgressMeter, executionProgress, withExecutionMeter, withoutExecutionDeadline, waitForExecutionQueue } from './execution-admission.js';
+import { executionCleanup, executionDiagnostic, executionReporting, executionStep, timedExecutionStep, checkExecutionAdmission, executionPhase, quietExecutionPhase, executionSignal, executionProgressMeter, executionProgress, withExecutionMeter, withoutExecutionDeadline, waitForExecutionQueue } from './execution-admission.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import fs from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
@@ -116,6 +116,22 @@ const MODULE_CACHE_ENTRIES = Object.freeze(['.vite', '.vite-temp', '.cache']);
 const moduleOverlay = (file) => process.env.DEVRYAN_MODULE_CACHE_OVERLAY !== '0' && process.platform !== 'win32'
   && path.posix.basename(file) === 'node_modules';
 const ignoreCode = (...codes) => (cause) => { if (!codes.includes(cause.code)) throw cause; };
+// Whole-second ctimes cannot rule out a same-tick write (git's racy-clean
+// case), so a stamp with them never proves a file or directory untouched.
+const preciseStamp = (value) => typeof value === 'string' && value.split(':')[4] !== undefined && !value.split(':')[4].endsWith('000000000');
+// A session's published lease parks its private view as a standby; the
+// session's next preparation adopts what is still exactly as materialized and
+// copies only the rest (adoptStandbyView). Linux and macOS: Windows views carry
+// owner-created ACLs and are rebuilt per lease. Standbys are known only to the
+// process that parked them; one left by another or an earlier process is never
+// adopted. Nothing adopts a standby older than STANDBY_MAX_AGE_MS, and only
+// standbys twice that old are swept, so a sweep never races an adoption in
+// another process. A few per session serve parallel calls; Linux views are
+// full copies, so the total stays small. Kill switch: DEVRYAN_VIEW_REUSE=0.
+const viewReuse = () => process.platform !== 'win32' && process.env.DEVRYAN_VIEW_REUSE !== '0';
+const STANDBY_PER_SESSION = 2;
+const STANDBY_LIMIT = 8;
+const STANDBY_MAX_AGE_MS = 30 * 60_000;
 // Mirrors the project listing on every preparation (two directory reads), so
 // installed or removed packages appear without rebuilding. Overlay entries
 // are only links this host created; concurrent preparations converge.
@@ -173,6 +189,8 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     if (executionReporting() || (timing.waitMs < LOCK_TIMING_SLOW_MS && timing.holdMs < LOCK_TIMING_SLOW_MS && !timing.failed)) return;
     diagnostic({ phase: 'ledger_lock', state: timing.failed ? 'failed' : 'completed', elapsedMs: timing.waitMs + timing.holdMs, slow: true,
       action: timing.operation, ...(timing.sessionID ? { sessionID: timing.sessionID } : {}),
+      // A read that would have answered lock-free names why it could not.
+      ...(timing.snapshotMiss ? { reason: `snapshot_${timing.snapshotMiss}` } : {}),
       steps: `queue_wait:1/${timing.queueMs},lock_wait:1/${timing.waitMs - timing.queueMs},lock_hold:1/${timing.holdMs}` });
   };
   const queues = new Map();
@@ -328,7 +346,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
   // Callers queued behind a repository's lock follow its current holder's
   // progress, so waiting behind productive work is not reported as a stall.
   const queueMeters = new Map();
-  const locked = async (requested, fn, { requireExisting = false, operation: explicitOperation, sessionID: explicitSessionID, assertCurrent } = {}) => {
+  const locked = async (requested, fn, { requireExisting = false, operation: explicitOperation, sessionID: explicitSessionID, assertCurrent, snapshotMiss } = {}) => {
     assertCurrent?.();
     checkExecutionAdmission();
     const label = lockOperation.getStore();
@@ -340,7 +358,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       catch (error) { if (error.code === 'ENOENT') return fn(null); throw error; }
     }
     const queued = Date.now();
-    const timing = { operation, ...(validID(sessionID) ? { sessionID } : {}), queueMs: 0, waitMs: 0, holdMs: 0, wrote: false, failed: false };
+    const timing = { operation, ...(validID(sessionID) ? { sessionID } : {}), ...(snapshotMiss ? { snapshotMiss } : {}), queueMs: 0, waitMs: 0, holdMs: 0, wrote: false, failed: false };
     const previous = queues.get(directory) ?? Promise.resolve();
     let queueMeter = queueMeters.get(directory);
     if (!queueMeter) { queueMeter = { progress: Date.now(), waiters: 0, following: undefined }; queueMeters.set(directory, queueMeter); }
@@ -423,7 +441,10 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       });
     }
   };
-  const SNAPSHOT_MISS = Symbol('snapshot-miss');
+  // Why a snapshot read fell back to the lock (named in slow lock timings).
+  const miss = (reason) => ({ miss: reason });
+  // Ledger root -> tree committed before the intent its owner applies now.
+  const materializing = new Map();
   // Lock-free answer from the last committed ledger tree. Any durable write
   // or error falls back to the locked path, which stays authoritative; this
   // only removes queueing for reads that would not change state (per-step
@@ -433,23 +454,29 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     const { logicalDirectory, directory, vcs } = await resolveRepository(requested);
     const root = rootFor(directory), gitDir = path.join(root, 'git');
     try { await fs.access(path.join(gitDir, 'HEAD')); }
-    catch (error) { if (error.code === 'ENOENT') return SNAPSHOT_MISS; throw error; }
-    const db = await quietExecutionPhase('ledger_snapshot', () => openChangeStore(root, gitDir, { ...storeOptions, syncObjects }));
+    catch (error) { if (error.code === 'ENOENT') return miss('absent'); throw error; }
+    // While an owner in this process applies a publication or revert intent,
+    // answer from the tree committed before that intent: the operation has not
+    // completed, so a reader may still be ordered before it. Locked callers
+    // keep queueing behind it; another process's intent still misses below.
+    const before = materializing.get(root);
+    const db = await quietExecutionPhase('ledger_snapshot', () => openChangeStore(root, gitDir, { ...storeOptions, syncObjects, ...(before ? { at: before } : {}) }));
     // A pending materialization may be unrecoverable (for example a foreign
     // edit); only the locked path can recover it or fail closed.
-    if (!db.exists || await db.get('materialization.json')) return SNAPSHOT_MISS;
+    if (!db.exists) return miss('absent');
+    if (await db.get('materialization.json')) return miss('materialization');
     const meta = await db.get('meta.json');
-    if (meta?.version !== 1 || meta.directory !== directory) return SNAPSHOT_MISS;
+    if (meta?.version !== 1 || meta.directory !== directory) return miss('meta');
     const repo = { directory, logicalDirectory, root, gitDir, db, meta: { ...meta }, vcs, snapshot: true };
     const result = await fn(repo);
-    return db.pendingCount === 0 && repo.meta.sequence === meta.sequence ? result : SNAPSHOT_MISS;
+    return db.pendingCount === 0 && repo.meta.sequence === meta.sequence ? { value: result } : miss('write');
   };
   const snapshotOrLocked = async (requested, fn, options) => {
     checkExecutionAdmission();
-    let result = SNAPSHOT_MISS;
+    let result;
     try { result = await readSnapshot(requested, fn); }
-    catch { checkExecutionAdmission(); } // The locked path reports the authoritative error.
-    return result === SNAPSHOT_MISS ? locked(requested, fn, options) : result;
+    catch { checkExecutionAdmission(); result = miss('error'); } // The locked path reports the authoritative error.
+    return 'value' in result ? result.value : locked(requested, fn, { ...options, snapshotMiss: result.miss });
   };
   const next = (repo) => ++repo.meta.sequence;
   // Parsed records keyed by the immutable subtree identity they were read
@@ -598,8 +625,65 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     }
     return paths;
   };
-  const activePaths = (repo) => cachedRecords(repo, 'files', readActivePaths,
-    (paths) => new Map([...paths].map(([file, doc]) => [file, structuredClone(doc)])));
+  // One parsed listing of the committed `files` documents per tree identity,
+  // shared by every reader of that tree: the winning document per published
+  // path (as readActivePaths: highest sequence, earliest on a tie) and every
+  // document per path, in listing order. Staged writes do not invalidate it,
+  // so a preparation and the publication that follows it read the documents
+  // once. The records are shared and never mutated; activePaths copies them.
+  const fileIndexes = new Map();
+  const EMPTY_INDEX = Object.freeze({ winners: new Map(), byPath: new Map() });
+  const committedFileIndex = async (repo) => {
+    if (!repo.db.tree) return EMPTY_INDEX;
+    const identity = await repo.db.committedIdentity('files');
+    if (!identity) return EMPTY_INDEX;
+    const cacheKey = `${repo.root}\0${identity}`;
+    let work = fileIndexes.get(cacheKey);
+    if (work) fileIndexes.delete(cacheKey);
+    else {
+      work = (async () => {
+        // A read-only store of the committed tree never lists a staged row.
+        const committed = await openChangeStore(repo.root, path.join(repo.root, 'git'), { ...storeOptions, syncObjects, at: repo.db.tree });
+        const winners = new Map(), byPath = new Map();
+        for await (const { key: documentKey, value } of committed.entries('files')) {
+          if (!value.published) continue;
+          const file = value.published.path, list = byPath.get(file);
+          if (list) list.push([documentKey, value]); else byPath.set(file, [[documentKey, value]]);
+          if (!winners.has(file) || (winners.get(file).published.sequence ?? 0) < (value.published.sequence ?? 0)) winners.set(file, value);
+        }
+        return { winners, byPath };
+      })();
+      void work.catch(() => { if (fileIndexes.get(cacheKey) === work) fileIndexes.delete(cacheKey); });
+    }
+    fileIndexes.set(cacheKey, work);
+    while (fileIndexes.size > 2) fileIndexes.delete(fileIndexes.keys().next().value);
+    return work;
+  };
+  const recordCacheOff = () => process.env.DEVRYAN_LEDGER_RECORD_CACHE === '0';
+  const activePaths = async (repo) => recordCacheOff() || repo.db.pendingCount !== 0 ? readActivePaths(repo)
+    : new Map([...(await committedFileIndex(repo)).winners].map(([file, doc]) => [file, structuredClone(doc)]));
+  // Read-only callers share the committed winners; no copy is made.
+  const snapshotPaths = async (repo) => process.env.DEVRYAN_LEDGER_SNAPSHOT_REUSE === '0' || recordCacheOff() || repo.db.pendingCount !== 0
+    ? readActivePaths(repo) : (await committedFileIndex(repo)).winners;
+  // activePaths restricted to `paths` inside a transaction, without reading
+  // every document again: the same winner among the committed documents this
+  // transaction has not staged and the staged ones. Read-only.
+  // Kill switch: DEVRYAN_LEDGER_PATH_WINNERS=0.
+  const activePathsFor = async (repo, paths) => {
+    if (process.env.DEVRYAN_LEDGER_PATH_WINNERS === '0' || recordCacheOff()) return activePaths(repo);
+    const staged = await repo.db.staged('files'), { byPath } = await committedFileIndex(repo);
+    const result = new Map();
+    for (const file of paths) {
+      let winner = null;
+      const consider = (value) => {
+        if (value?.published?.path === file && (!winner || (winner.published.sequence ?? 0) < (value.published.sequence ?? 0))) winner = value;
+      };
+      for (const [documentKey, value] of byPath.get(file) ?? []) if (!staged.has(documentKey)) consider(value);
+      for (const value of staged.values()) consider(value);
+      if (winner) result.set(file, winner);
+    }
+    return result;
+  };
   const recordFile = async (repo, { doc, beforeRuns, baseEntry, basePath, entry, file, operation, disabled }) => {
     // A new document's id was just generated, so it has no stored revisions
     // or runs. Skip their listings: on a large ledger each one is a Git spawn,
@@ -893,7 +977,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       doc.published = after;
       repo.db.set(key('files', doc.id), doc);
     }
-    const rows = [], winners = await activePaths(repo);
+    const rows = [], winners = await activePathsFor(repo, paths);
     for (const file of paths) {
       const winner = winners.get(file)?.published;
       const after = winner?.deleted ? null : winner ?? null;
@@ -910,8 +994,13 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     // Recovery must not rediscover an empty diff and lose the original receipt.
     await accept?.(files);
     repo.db.set('meta.json', repo.meta);
-    await repo.db.commit();
-    await recover(repo);
+    // Snapshot readers answer from the tree before this intent until it is
+    // applied (readSnapshot); only while this owner applies it.
+    if (rows.length && repo.db.tree && !repo.snapshot) materializing.set(repo.root, repo.db.tree);
+    try {
+      await repo.db.commit();
+      await recover(repo);
+    } finally { if (rows.length) materializing.delete(repo.root); }
     return files;
   };
   // Native holds live in the same committed session rows as Revert ownership.
@@ -1401,8 +1490,6 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       return result;
     });
   };
-  // Read-only callers share one parsed listing per immutable `files` tree;
-  // they never mutate these records, so no copy is made.
   // Direct receipts for built-in read, glob, grep and skill (read-only by
   // audit). Admission is a snapshot read with no commit, the
   // tool runs in the control process, and `finishDirect` then records the
@@ -1505,8 +1592,130 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       repo.db.set(key('calls', scopeKey), { token: lease.token });
       return lease.result;
   };
-  const snapshotPaths = (repo) => process.env.DEVRYAN_LEDGER_SNAPSHOT_REUSE === '0'
-    ? readActivePaths(repo) : cachedRecords(repo, 'files', readActivePaths, (paths) => paths);
+  // View reuse (see viewReuse). Per lease: the directory stamps recorded as its
+  // preparation finished and, once published, the files publication found
+  // untouched. Per (ledger, session): parked standby views, newest last.
+  const viewRecords = new Map();
+  const standbys = new Map();
+  const retiring = new Set();
+  const sweptStandbys = new Set();
+  // Disposable directories are removed off the call path; drain() awaits them.
+  const retire = (action) => {
+    const work = action().catch((cause) => diagnostic({ phase: 'view_standby', state: 'failed', code: cause?.code ?? 'view_standby_failed' }));
+    retiring.add(work); void work.finally(() => retiring.delete(work));
+  };
+  const retireView = (directory) => retire(() => removeExecutionDirectory(directory));
+  const rememberView = (token, record) => {
+    viewRecords.delete(token); viewRecords.set(token, record);
+    while (viewRecords.size > 256) viewRecords.delete(viewRecords.keys().next().value);
+  };
+  // Stamps of a view's real directories (never through a link), by relative path.
+  const directoryStamps = async (view) => {
+    const stamps = new Map();
+    for (let level = ['']; level.length;) {
+      const next = [];
+      for (const relative of level) {
+        const entries = await fs.readdir(path.join(view, relative), { withFileTypes: true });
+        const candidates = entries.filter((entry) => entry.name !== '.git' && !entry.isFile() && !entry.isSymbolicLink())
+          .map((entry) => relative ? path.posix.join(relative, entry.name) : entry.name);
+        const stats = await mapBounded(candidates, (file) => fs.lstat(path.join(view, file), { bigint: true }));
+        candidates.forEach((file, index) => { if (stats[index].isDirectory()) { stamps.set(file, mutationStatStamp(stats[index])); next.push(file); } });
+      }
+      level = next;
+      await yieldToEventLoop();
+    }
+    return stamps;
+  };
+  const takeStandby = (root, sessionID) => {
+    const standbyKey = `${root}\0${sessionID}`, entries = standbys.get(standbyKey), entry = entries?.pop();
+    if (entries && !entries.length) standbys.delete(standbyKey);
+    if (entry && Date.now() - entry.parkedAt > STANDBY_MAX_AGE_MS) { retireView(entry.directory); return null; }
+    return entry ?? null;
+  };
+  // Called by cleanup once the lease's processes are proven terminated and its
+  // publication committed: one rename instead of removing the whole view.
+  const parkView = async (record, lease) => {
+    const parent = path.join(record.root, 'view-standby'), directory = path.join(parent, randomUUID());
+    await fs.mkdir(parent, { recursive: true, mode: 0o700 });
+    await fs.rename(lease.viewDirectory, directory);
+    const standbyKey = `${record.root}\0${record.sessionID}`, entries = standbys.get(standbyKey) ?? [];
+    standbys.delete(standbyKey);
+    entries.push({ directory, files: record.files, directories: record.directories, parkedAt: Date.now() });
+    while (entries.length > STANDBY_PER_SESSION) retireView(entries.shift().directory);
+    standbys.set(standbyKey, entries);
+    let total = 0;
+    for (const list of standbys.values()) total += list.length;
+    // Least recently parked sessions go first; expired standbys are never adopted.
+    for (const [other, list] of standbys) {
+      while (list.length && (total > STANDBY_LIMIT || Date.now() - list[0].parkedAt > STANDBY_MAX_AGE_MS)) { retireView(list.shift().directory); total -= 1; }
+      if (!list.length) standbys.delete(other);
+    }
+    // Standbys of an earlier or another process are unknown here: sweep those
+    // long past adoption once per ledger and process.
+    if (!sweptStandbys.has(record.root)) {
+      sweptStandbys.add(record.root);
+      retire(async () => {
+        const known = new Set([...standbys.values()].flat().map((entry) => entry.directory));
+        for (const name of await fs.readdir(parent)) {
+          const stale = path.join(parent, name), stat = await fs.lstat(stale).catch(ignoreCode('ENOENT'));
+          if (stat && !known.has(stale) && Date.now() - stat.ctimeMs > 2 * STANDBY_MAX_AGE_MS) await removeExecutionDirectory(stale);
+        }
+      });
+    }
+    return true;
+  };
+  // Moves what a session's standby view still holds exactly as materialized
+  // into this lease's fresh, empty view and discards everything else. A file
+  // is kept only while its ledger entry is unchanged and its full stamp (inode,
+  // size, mode, nanosecond mtime and ctime) still equals the one recorded when
+  // it was materialized and publication then found it untouched: any write,
+  // chmod, link, attribute change or replacement moves ctime or the inode. A
+  // directory is kept as is only while its stamp is unchanged since its
+  // preparation finished; any other directory is rebuilt fresh around its
+  // verified entries. Links (inputs among them), `.git`, special files and
+  // directories holding no expected file are discarded. Returns the kept files.
+  const adoptStandbyView = async (standby, view, expected) => {
+    const kept = new Set(), directories = new Set();
+    for (const file of expected.keys()) {
+      for (let parent = path.posix.dirname(file); parent !== '.' && !directories.has(parent); parent = path.posix.dirname(parent)) directories.add(parent);
+    }
+    const move = async (from, to) => { await mapBounded(await fs.readdir(from), (name) => fs.rename(path.join(from, name), path.join(to, name))); };
+    const prune = async (relative, absolute) => {
+      const subdirectories = [];
+      await mapBounded(await fs.readdir(absolute), async (name) => {
+        checkExecutionAdmission();
+        const file = relative ? path.posix.join(relative, name) : name, target = path.join(absolute, name);
+        const stat = await fs.lstat(target, { bigint: true });
+        if (stat.isDirectory()) {
+          if (name !== '.git' && directories.has(file)) subdirectories.push({ file, target, stamp: mutationStatStamp(stat) });
+          else await removeExecutionDirectory(target);
+          return;
+        }
+        const recorded = standby.files.get(file), entry = expected.get(file);
+        if (name !== '.git' && recorded && entry && equal(recorded.entry, entry) && preciseStamp(recorded.stamp)
+          && mutationStatStamp(stat) === recorded.stamp
+          && (entry.mode === '120000' ? stat.isSymbolicLink() : stat.isFile() && stat.nlink === 1n)) kept.add(file);
+        else await fs.unlink(target);
+      });
+      for (const child of subdirectories) {
+        // Compared before pruning, which changes the directory itself.
+        const recorded = standby.directories.get(child.file);
+        await prune(child.file, child.target);
+        if (!preciseStamp(recorded) || recorded !== child.stamp) {
+          const fresh = `${child.target}.devryan-${randomUUID()}`;
+          await fs.mkdir(fresh);
+          await move(child.target, fresh);
+          await fs.rmdir(child.target);
+          await fs.rename(fresh, child.target);
+        }
+      }
+      await yieldToEventLoop();
+    };
+    await prune('', standby.directory);
+    // The view root is always this lease's own fresh directory.
+    await move(standby.directory, view);
+    return kept;
+  };
   const preparations = new Map();
   const prepare = (lease) => {
     if (lease.state === 'ready' || lease.state === 'published') return Promise.resolve(lease);
@@ -1583,13 +1792,35 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         && process.env.DEVRYAN_VIEW_CLONE !== '0'
         ? createViewMaterializer(repo, lease.viewDirectory, { io: (action) => withExecutionIO(repo.root, action) })
         : null;
+      const live = [...await snapshotPaths(repo)].filter(([file, doc]) => !doc.published.deleted && !underInput(file, inputSet));
+      // The session's previous view, when one is parked: files it still holds
+      // exactly as materialized are moved in instead of copied again.
+      const standby = fastView && viewReuse() ? takeStandby(root, lease.scope.sessionID) : null;
+      let adopted = null, copied = 0;
+      if (standby) adopted = await executionPhase('view_reuse', async () => {
+        try { return await adoptStandbyView(standby, lease.viewDirectory, new Map(live.map(([file, doc]) => [file, doc.published]))); }
+        catch (cause) {
+          checkExecutionAdmission();
+          // Not a failure of the call: set the partial view aside and copy everything.
+          executionDiagnostic({ phase: 'view_reuse', state: 'failed', code: cause?.code ?? 'view_reuse_failed' });
+          const discarded = path.join(root, 'view-standby', randomUUID());
+          await fs.rename(lease.viewDirectory, discarded);
+          retireView(discarded);
+          await fs.mkdir(lease.viewDirectory, { mode: 0o700 });
+          return null;
+        } finally { retireView(standby.directory); }
+      });
       const base = async function* () {
-        const live = [...await snapshotPaths(repo)].filter(([file, doc]) => !doc.published.deleted && !underInput(file, inputSet));
         for (let start = 0; start < live.length; start += 64) {
           // Copies overlap; ledger rows stay sequential and ordered.
           const identities = await mapBounded(live.slice(start, start + 64), async ([file, doc]) => {
             checkExecutionAdmission();
-            let stat = fastView ? await fastView(file, doc.published, permissions(doc.published)) : null;
+            let stat = adopted?.has(file) ? await fs.lstat(path.join(lease.viewDirectory, file), { bigint: true }) : null;
+            if (stat && !(doc.published.mode === '120000' ? stat.isSymbolicLink() : stat.isFile())) stat = null;
+            if (!stat) {
+              copied += 1;
+              stat = fastView ? await fastView(file, doc.published, permissions(doc.published)) : null;
+            }
             if (!stat) {
               await write(repo, file, doc.published, lease.viewDirectory, { durable: false });
               stat = await fs.lstat(path.join(lease.viewDirectory, file), { bigint: true });
@@ -1606,6 +1837,9 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         }
       };
       await executionPhase('view_files', () => db.setList(`bases/${lease.token}/files`, base()));
+      // Units, not time: how many view files were copied and how many adopted.
+      executionStep('view_copied', 0, copied);
+      executionStep('view_reused', 0, live.length - copied);
       await executionPhase('view_commit', () => db.commit());
       noteLedgerCommit(root);
       await executionPhase('view_git', async () => {
@@ -1646,6 +1880,9 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         }
       });
       await fs.mkdir(lease.workingDirectory, { recursive: true });
+      // Before the lease is ready, so no command can have touched the view yet.
+      if (viewReuse() && fastView) rememberView(lease.token, { root, sessionID: lease.scope.sessionID,
+        directories: await timedExecutionStep('view_record', () => directoryStamps(lease.viewDirectory)) });
       return await locked(lease.directory, async (current) => {
         if ((await current.db.get(key('leases', lease.token)))?.state === 'cancelled') throw changeError('execution_cancelled');
         const session = await current.db.get(key('sessions', lease.scope.sessionID));
@@ -1709,7 +1946,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     if (captured.state === 'published') return captured.result;
     if (captured.state !== 'ready') throw changeError('execution_not_ready');
     const base = new Map(), identities = new Map(), files = new Map(), ignoredInputs = [];
-    let snapshot = null, snapshotInactive = null;
+    let snapshot = null, snapshotInactive = null, untouched = null;
     // Exactly the runs the view was materialized from: the pinned snapshot's
     // runs filtered by the operations inactive in that same snapshot.
     const baseRuns = async (repo, documentID) => {
@@ -1742,13 +1979,17 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       // ctime or the inode. Whole-second ctimes cannot rule out a same-tick
       // write (git's racy-clean case), so those files are always re-hashed.
       const reuse = process.env.DEVRYAN_VIEW_STAT_REUSE !== '0';
-      const precise = (value) => typeof value === 'string' && value.split(':')[4] !== undefined && !value.split(':')[4].endsWith('000000000');
+      // Files still exactly as materialized, for the session's next view.
+      untouched = viewRecords.has(token) ? new Map() : null;
       const entries = await mapBounded(viewFiles, async (file) => {
         const row = base.get(file);
         // The walk descends only real directories and every writer has
         // terminated, so the file's own lstat is sufficient here.
-        if (reuse && row?.stamp && precise(row.stamp) && mutationStatStamp(await fs.lstat(path.join(captured.viewDirectory, file), { bigint: true })
-          .catch((cause) => { if (['ENOENT', 'ENOTDIR'].includes(cause.code)) return null; throw cause; })) === row.stamp) return row.entry;
+        if (reuse && row?.stamp && preciseStamp(row.stamp) && mutationStatStamp(await fs.lstat(path.join(captured.viewDirectory, file), { bigint: true })
+          .catch((cause) => { if (['ENOENT', 'ENOTDIR'].includes(cause.code)) return null; throw cause; })) === row.stamp) {
+          untouched?.set(file, { entry: row.entry, stamp: row.stamp });
+          return row.entry;
+        }
         return inspect(repo, file, captured.viewDirectory);
       });
       viewFiles.forEach((file, index) => files.set(file, entries[index]));
@@ -1861,6 +2102,9 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       });
       return lease.result;
     });
+    // Recorded only after publication committed; cleanup parks the view.
+    const record = viewRecords.get(token);
+    if (record && untouched) record.files = untouched;
     await onChange({ directory, ...result });
     return result;
   };
@@ -1884,8 +2128,18 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       return lease;
     });
     if (!lease) return false;
+    const record = viewRecords.get(input.token);
+    viewRecords.delete(input.token);
+    // Only a published process lease, whose termination receipt was verified
+    // above and whose view publication fully inspected, is parked for reuse.
+    const parked = record?.files && viewReuse() && lease.state === 'published' && lease.executionKind === 'process'
+      && lease.preparation === undefined && !lease.cancelledBeforeStart && !lease.rebootRecovery
+      && record.root === rootFor(lease.projectDirectory)
+      ? await parkView(record, lease).catch((cause) => {
+        diagnostic({ phase: 'view_standby', state: 'failed', code: cause?.code ?? 'view_standby_failed' }); return false;
+      }) : false;
     // The parent holds termination.json. It is recovery evidence, not scratch.
-    await removeExecutionDirectory(lease.viewDirectory);
+    if (!parked) await removeExecutionDirectory(lease.viewDirectory);
     await removeExecutionDirectory(path.join(path.dirname(lease.viewDirectory), 'scratch'));
     await removeExecutionSocketDirectory(lease);
     await locked(input.directory, async (repo) => {
@@ -2342,7 +2596,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     registerPrompt, registerChild, reserve, prepare, warm, begin, admitDirect, finishDirect, claimLease, finish, cleanupLease, executionReceipt, aliasCalls, prepareRevert, prepareRedo, prepareFileRestore, settleRevert, leaseForCall,
     transaction, updateTransaction, pendingTransactions, capturedSessionState, restoreForeign, cancelLease, cancelUnstartedCall, activeLeases, pendingCleanup, executionOutcomes,
     maintainLedger: ({ directory }) => resolveRepository(directory).then(({ directory: project }) => maintainLedger(rootFor(project))),
-    drain: () => Promise.allSettled([...preparations.values(), ...settlements.values(), ...queues.values(),
+    drain: () => Promise.allSettled([...preparations.values(), ...settlements.values(), ...queues.values(), ...retiring,
       ...[...maintenanceStates.values()].map((state) => state.running).filter(Boolean)]) };
   // Lock timings name the outermost runtime operation; nested calls keep it.
   for (const [name, method] of Object.entries(runtime)) {

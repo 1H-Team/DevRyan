@@ -59,8 +59,8 @@ export function withExecutionObservation<T>(input: {
 }): Promise<T>;
 /** True while an admission, summary or observation journals the current work. */
 export function executionReporting(): boolean;
-/** Records a timing step into the active summary, if any. Never checks the admission signal. */
-export function executionStep(phase: string, elapsedMs: number): void;
+/** Records a timing step into the active summary, if any; `count` (default 1) units at once. Never checks the admission signal. */
+export function executionStep(phase: string, elapsedMs: number, count?: number): void;
 /** Times `action` as a summary step when a summary is active. Never checks the admission signal. */
 export function timedExecutionStep<T>(phase: string, action: () => T | Promise<T>): Promise<T>;
 /** An admission whose root phase is `preparation` (its summary record), never nested in an `admission` record. */

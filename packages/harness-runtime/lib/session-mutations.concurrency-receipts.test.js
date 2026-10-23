@@ -355,6 +355,39 @@ test('lock-free reads fail closed when a materialization needs recovery', async 
     .rejects.toMatchObject({ code: 'mutation_recovery_required' });
 });
 
+test('admission reads never queue behind an intent this process is applying, and answer from before it', async () => {
+  const queued = (promise) => Promise.race([promise, new Promise((resolve) => setTimeout(() => resolve('queued'), 5_000))]);
+  const timings = [], foreign = [];
+  let probe = null, f;
+  const observed = [];
+  f = await fixture({ onLockTiming: (timing) => timings.push(timing), onMaterialize: async () => {
+    if (!probe) return;
+    // The owner holds the ledger lock here: a locked read would wait for it.
+    observed.push(await queued(f.runtime.nativeAdmissionState({ directory: f.directory, sessionID: 'owner' })));
+    if (probe.reverting) return;
+    observed.push(await queued(f.runtime.assertAdmission({ directory: f.directory, sessionID: 'owner' })));
+    probe.other = probe.restarted.nativeAdmissionState({ directory: f.directory, sessionID: 'owner' });
+  } });
+  await f.write('x', 'old');
+  const owner = await f.begin('owner', 'p0', 'c0');
+  await fs.writeFile(path.join(owner.viewDirectory, 'x'), 'new');
+  // Another process knows nothing of this owner's intent: it still falls back.
+  probe = { restarted: createSessionMutationRuntime({ directory: f.storage, onLockTiming: (timing) => foreign.push(timing) }) };
+  await f.finish(owner);
+  expect(observed).toEqual([expect.objectContaining({ held: false, reverting: false }), { admitted: true }]);
+  // A revert's intent clears the session's pending mark; until it is applied,
+  // readers still see the revert in progress, exactly as before the intent.
+  // (A read that would fail, such as assertAdmission, still takes the lock.)
+  observed.length = 0; probe.reverting = true;
+  await f.revert('owner', 'p0');
+  expect(observed).toEqual([expect.objectContaining({ reverting: true })]);
+  expect(await f.runtime.nativeAdmissionState({ directory: f.directory, sessionID: 'owner' })).toMatchObject({ reverting: false });
+  expect(await f.read('x')).toBe('old');
+  expect(timings.filter((timing) => ['nativeAdmissionState', 'assertAdmission'].includes(timing.operation))).toEqual([]);
+  await probe.other;
+  expect(foreign).toContainEqual(expect.objectContaining({ operation: 'nativeAdmissionState', snapshotMiss: 'materialization' }));
+});
+
 test('a caller queued behind an un-admitted publication follows its progress', async () => {
   const { withExecutionAdmission, executionProgress } = await import('./execution-admission.js');
   let entered;
