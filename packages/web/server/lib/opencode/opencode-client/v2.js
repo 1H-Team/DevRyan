@@ -767,12 +767,16 @@ export const createV2Backend = (deps) => {
 
   const read = async (path, query, options, label) => await request({ ...pass(options, label), path, directory: query.directory });
 
+  // Models are read before providers. Since OpenCode 2.0.27 the model routes
+  // wait for the directory's plugins to activate and the provider route does
+  // not: asked together in a directory OpenCode has not started, providers
+  // answer empty beside a full model list.
   const providerCatalog = async (query, options, label) => {
-    const [providers, models, defaultModel] = await Promise.all([
-      read('/api/provider', query, options, label),
+    const [models, defaultModel] = await Promise.all([
       read('/api/model', query, options, label),
       read('/api/model/default', query, options, label),
     ]);
+    const providers = await read('/api/provider', query, options, label);
     return { providers: unwrapList(providers), models: unwrapList(models), defaultModel: unwrapData(defaultModel) };
   };
 
