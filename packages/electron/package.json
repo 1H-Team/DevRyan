@@ -10,13 +10,13 @@
     "@devryan/bot-egress": "workspace:*",
     "@devryan/bot-db": "workspace:*",
     "@devryan/web": "workspace:*",
-    "electron-context-menu": "^4.1.2",
+    "electron-context-menu": "^5.1.0",
     "electron-log": "^5.4.4",
     "ws": "^8.21.3"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.2.1",
-    "electron": "41.2.1",
+    "electron": "44.9.3",
     "electron-builder": "^26.15.3"
   },
   "desktopPrerequisites": [

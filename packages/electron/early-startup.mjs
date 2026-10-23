@@ -177,7 +177,7 @@ export async function showEarlyStartupFailure({ app, clipboard, dialog }) {
     event.preventDefault();
     if (window.webContents.getURL() !== failureUrl) return;
     if (url === 'devryan://retry-startup' || url === 'openchamber://retry-startup') { app.relaunch(); app.quit(); }
-    if (url === 'devryan://copy-startup-diagnostics' || url === 'openchamber://copy-startup-diagnostics') clipboard.writeText('{"code":"electron_main_import_failed"}');
+    if (url === 'devryan://copy-startup-diagnostics' || url === 'openchamber://copy-startup-diagnostics') void Promise.resolve(clipboard.writeText('{"code":"electron_main_import_failed"}')).catch(() => {});
   });
   window.webContents.on('will-attach-webview', event => event.preventDefault());
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));

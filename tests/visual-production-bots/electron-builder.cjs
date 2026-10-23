@@ -3,7 +3,7 @@ const path = require('node:path');
 module.exports = {
   appId: 'ai.devryan.production-bots-visual-fixture',
   productName: 'DevRyan Production Bots Visual Fixture',
-  electronVersion: '41.2.1',
+  electronVersion: '44.9.3',
   asar: true,
   npmRebuild: false,
   files: [
