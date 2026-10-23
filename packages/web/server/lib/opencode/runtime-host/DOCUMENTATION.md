@@ -456,15 +456,17 @@ pre-output Retry and the two-continuation capacity gate retain their own traces.
 The HTTP observer measures pulled response bytes, chunk count and maximum gap
 before SSE framing, without reading ahead or changing cancellation. Response
 headers have their own timing mark; `first-byte` denotes the first body byte.
-Only content-free typed timing fields reach the journal/export. Existing
-120-second headers, 300-second body and 900-second total transport defaults are
-unchanged; this path enables no new post-output timer.
+Only content-free typed timing fields reach the journal/export. The observer
+enables no timer; the deadlines come from provider settings (see "Provider
+transport deadlines").
 
 API-key Session WebSocket timing is separate from those HTTP limits. In pinned
 2.1.3, connection admission waits 15 seconds before its unsent HTTP fallback.
 The real model resolver passes the provider's explicit `chunkTimeout` to the
 Session WebSocket: a number sets the idle bound, `false` disables it, and an
-omitted setting uses the session transport's 30-minute idle fallback. The model's
+omitted setting uses the session transport's 30-minute idle fallback. A
+configured `openai` stanza now carries the 300,000 ms deadline default below, so
+that is its idle bound. The model's
 HTTP defaults separately contain 300,000 ms; that value does not become the
 Session WebSocket idle default. Local source and compiled fixtures use actual
 API-key WebSocket handshakes and model-request/transport services, advance the
@@ -1212,6 +1214,34 @@ record contains transcript content, request bodies or exception messages.
 Broad native scans exclude `node_modules`, `.cache`, `dist`, `.worktrees`, `worktrees` (including `.claude/worktrees`), `.artifacts` and generated-worktree directories by default. An authorized canonical read directory explicitly inside one such tree expands only that category; user include globs cannot widen it. Git exclusions and `--no-ignore` remain mandatory.
 
 The web execution host caps trusted `grep`/`glob` stdout before its event queue at 64 KiB and 200 grep records or 1,000 glob paths. `native-search-output.js` retains complete newline records; it never inserts prose into ripgrep JSON. At the cap a separate search-limit controller stops the confined producer. Only an exact host-owned limit stop with a terminated, confined receipt and no user/owner abort, permit failure or queue overflow can settle as partial success. The raw cancellation/exit receipt is retained. The typed settled event carries `truncated` and its counts/limits; routing normalizes the native parser's exit code only for this successful limited read, then appends an explicit narrowing notice and `searchTruncation` metadata to the tool result. Writer/shell overflow and uncertain termination remain failures.
+
+### Provider transport deadlines
+
+`nativeProviderConfigurations` (`native-configuration-data.js`) merges
+`NATIVE_PROVIDER_DEADLINES` into the `settings` of every native provider stanza
+it emits: `headerTimeout` 45,000 ms and `chunkTimeout` 120,000 ms. The `openai`
+stanza gets `chunkTimeout` 300,000 ms, because reasoning can send nothing for
+minutes before the first output item. Native-shaped `providers` stanzas and the
+snapshot's settings-only Meridian `anthropic` stanza get the same defaults.
+Saved `options` or `settings` values, including `false`, always win. No total
+`timeout` is added.
+
+OpenCode 2.1.3 otherwise waits 300,000 ms for response headers and 900,000 ms
+between stream chunks. Its header timer starts at send, so it also bounds
+connect. Live QA (2026-10-23) saw byte-less 75–90 s hangs before
+ECONNRESET/ECONNREFUSED. A deadline failure is a `Transport/Timeout`, which core
+retries up to 3 times.
+
+This is the only source of these deadlines. The OpenAI header 120 s / chunk
+300 s / total 15 min defaults that `syncRuntimeAgentOverlays` used to write
+went into a managed `OPENCODE_CONFIG_DIR` overlay. The native snapshot never
+reads that overlay, because it loads only the user, project and `OPENCODE_CONFIG`
+layers, so those defaults have been removed.
+
+Coverage limit: a stanza sets core's provider `activation` to `enabled`, so
+DevRyan writes deadlines only for providers that already have a stanza. Built-in
+catalog providers used without one (Zen `opencode`, OpenAI signed in by OAuth
+with no `provider.openai` block) still use core's 300 s / 900 s defaults.
 
 ### Idle location release
 

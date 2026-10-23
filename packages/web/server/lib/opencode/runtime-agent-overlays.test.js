@@ -1702,8 +1702,9 @@ describe('syncRuntimeAgentOverlays', () => {
     expect(Object.keys(runtimeConfig.agent).filter((name) => runtimeConfig.agent[name]?.disable === true)).toEqual(['title']);
   });
 
-  it('adds bounded OpenAI connection and total-request liveness timeouts for OAuth auth', async () => {
-    const result = await syncRuntimeAgentOverlays({
+  it('leaves OpenAI transport deadlines to the native configuration snapshot', async () => {
+    process.env.OPENAI_API_KEY = 'test-api-key';
+    const syncOptions = {
       workingDirectory: projectDirectory,
       packagedAgentDirectory,
       packagedPluginDirectory,
@@ -1720,6 +1721,9 @@ describe('syncRuntimeAgentOverlays', () => {
               baseURL: 'http://127.0.0.1:3456',
             },
           },
+          openai: {
+            options: { baseURL: 'https://api.openai.com/v1' },
+          },
         },
       }),
       listMcpConfigs: () => ([{
@@ -1729,176 +1733,27 @@ describe('syncRuntimeAgentOverlays', () => {
         url: 'https://example.com/mcp',
         enabled: true,
       }]),
-    });
-
-    const runtimeConfig = JSON.parse(await fs.readFile(
-      path.join(result.targetConfigDirectory, 'opencode.json'),
-      'utf8',
-    ));
-    expect(runtimeConfig.provider?.openai).toEqual({
-      options: {
-        headerTimeout: 120_000,
-        chunkTimeout: 300_000,
-        timeout: 900_000,
-      },
-    });
-    expect(runtimeConfig.provider.openai.models).toBeUndefined();
-    expect(runtimeConfig.provider.anthropic.options.baseURL).toBe('http://127.0.0.1:3456');
-    expect(runtimeConfig.plugin || []).not.toContain('opencode-antigravity-auth@latest');
-    expect(runtimeConfig.mcp['remote-tools']).toMatchObject({
-      type: 'remote',
-      url: 'https://example.com/mcp',
-      timeout: 60_000,
-    });
-  });
-
-  it('adds OpenAI connection-liveness timeouts for an API-key environment', async () => {
-    process.env.OPENAI_API_KEY = 'test-api-key';
-
-    const result = await syncRuntimeAgentOverlays({
-      workingDirectory: projectDirectory,
-      packagedAgentDirectory,
-      packagedPluginDirectory,
-      overlayRoot,
-      manifestPath,
-      readAuthFile: () => ({}),
-      writeAuthFile: () => {},
-      readConfig: () => ({}),
-      listMcpConfigs: () => [],
-    });
-
-    const runtimeConfig = JSON.parse(await fs.readFile(
-      path.join(result.targetConfigDirectory, 'opencode.json'),
-      'utf8',
-    ));
-    expect(runtimeConfig.provider?.openai?.options).toEqual({
-      headerTimeout: 120_000,
-      chunkTimeout: 300_000,
-      timeout: 900_000,
-    });
-  });
-
-  it('adds OpenAI connection-liveness timeouts for an existing provider configuration', async () => {
-    const result = await syncRuntimeAgentOverlays({
-      workingDirectory: projectDirectory,
-      packagedAgentDirectory,
-      packagedPluginDirectory,
-      overlayRoot,
-      manifestPath,
-      readAuthFile: () => ({}),
-      writeAuthFile: () => {},
-      readConfig: () => ({
-        provider: {
-          openai: {
-            options: { baseURL: 'https://api.openai.com/v1' },
-          },
-        },
-      }),
-      listMcpConfigs: () => [],
-    });
-
-    const runtimeConfig = JSON.parse(await fs.readFile(
-      path.join(result.targetConfigDirectory, 'opencode.json'),
-      'utf8',
-    ));
-    expect(runtimeConfig.provider?.openai).toEqual({
-      options: {
-        headerTimeout: 120_000,
-        chunkTimeout: 300_000,
-        timeout: 900_000,
-      },
-    });
-  });
-
-  it.each([
-    { headerTimeout: 30_000, chunkTimeout: 45_000, timeout: 90_000 },
-    { headerTimeout: false, chunkTimeout: false, timeout: false },
-  ])('preserves explicit OpenAI timeout options: %j', async (providerOptions) => {
-    const result = await syncRuntimeAgentOverlays({
-      workingDirectory: projectDirectory,
-      packagedAgentDirectory,
-      packagedPluginDirectory,
-      overlayRoot,
-      manifestPath,
-      readAuthFile: () => ({}),
-      writeAuthFile: () => {},
-      readConfig: () => ({
-        provider: {
-          openai: {
-            options: providerOptions,
-          },
-        },
-      }),
-      listMcpConfigs: () => [],
-    });
-
-    const runtimeConfig = JSON.parse(await fs.readFile(
-      path.join(result.targetConfigDirectory, 'opencode.json'),
-      'utf8',
-    ));
-    expect(runtimeConfig.provider?.openai?.options).toEqual(providerOptions);
-  });
-
-  it('removes a stale generated OpenAI timeout after auth is removed', async () => {
-    let auth = { openai: { type: 'oauth', access: 'oauth-token' } };
-    const syncOptions = {
-      workingDirectory: projectDirectory,
-      packagedAgentDirectory,
-      packagedPluginDirectory,
-      overlayRoot,
-      manifestPath,
-      readAuthFile: () => auth,
-      writeAuthFile: () => {},
-      readConfig: () => ({}),
-      listMcpConfigs: () => [],
-    };
-
-    const initial = await syncRuntimeAgentOverlays(syncOptions);
-    expect(JSON.parse(await fs.readFile(
-      path.join(initial.targetConfigDirectory, 'opencode.json'),
-      'utf8',
-    )).provider?.openai?.options?.headerTimeout).toBe(120_000);
-
-    auth = {};
-    const updated = await syncRuntimeAgentOverlays(syncOptions);
-    const runtimeConfig = JSON.parse(await fs.readFile(
-      path.join(updated.targetConfigDirectory, 'opencode.json'),
-      'utf8',
-    ));
-    expect(updated.configUpdated).toBe(true);
-    expect(runtimeConfig.provider?.openai).toBeUndefined();
-  });
-
-  it('replaces a stale generated OpenAI total deadline on the next startup sync', async () => {
-    const syncOptions = {
-      workingDirectory: projectDirectory,
-      packagedAgentDirectory,
-      packagedPluginDirectory,
-      overlayRoot,
-      manifestPath,
-      readAuthFile: () => ({ openai: { type: 'oauth', access: 'oauth-token' } }),
-      writeAuthFile: () => {},
-      readConfig: () => ({}),
-      listMcpConfigs: () => [],
     };
 
     const initial = await syncRuntimeAgentOverlays(syncOptions);
     const generatedConfigPath = path.join(initial.targetConfigDirectory, 'opencode.json');
     const staleConfig = JSON.parse(await fs.readFile(generatedConfigPath, 'utf8'));
-    staleConfig.provider.openai.options = {
-      headerTimeout: 60_000,
-      chunkTimeout: 120_000,
-      timeout: 600_000,
+    expect(staleConfig.provider?.openai).toBeUndefined();
+    staleConfig.provider.openai = {
+      options: { headerTimeout: 120_000, chunkTimeout: 300_000, timeout: 900_000 },
     };
     await fs.writeFile(generatedConfigPath, `${JSON.stringify(staleConfig, null, 2)}\n`, 'utf8');
 
     const refreshed = await syncRuntimeAgentOverlays(syncOptions);
     const runtimeConfig = JSON.parse(await fs.readFile(generatedConfigPath, 'utf8'));
     expect(refreshed.configUpdated).toBe(true);
-    expect(runtimeConfig.provider.openai.options).toEqual({
-      headerTimeout: 120_000,
-      chunkTimeout: 300_000,
-      timeout: 900_000,
+    expect(runtimeConfig.provider?.openai).toBeUndefined();
+    expect(runtimeConfig.provider.anthropic.options.baseURL).toBe('http://127.0.0.1:3456');
+    expect(runtimeConfig.plugin || []).not.toContain('opencode-antigravity-auth@latest');
+    expect(runtimeConfig.mcp['remote-tools']).toMatchObject({
+      type: 'remote',
+      url: 'https://example.com/mcp',
+      timeout: 60_000,
     });
   });
 

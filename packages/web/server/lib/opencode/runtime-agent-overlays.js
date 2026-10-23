@@ -45,9 +45,6 @@ const DEFAULT_RUNTIME_AGENT_OVERLAY_MANIFEST_PATH = path.join(OPENCODE_CONFIG_DI
 // Must cover OAuth discovery + DCR + token refresh: an abort mid-refresh burns
 // the rotated refresh token and de-authenticates the MCP (invalid_grant loop).
 const DEFAULT_REMOTE_MCP_TIMEOUT_MS = 60_000;
-const DEFAULT_OPENAI_HEADER_TIMEOUT_MS = 120_000;
-const DEFAULT_OPENAI_CHUNK_TIMEOUT_MS = 300_000;
-const DEFAULT_OPENAI_REQUEST_TIMEOUT_MS = 15 * 60_000;
 const ANTHROPIC_OAUTH_CONFIG_PROVIDER_ID = 'anthropic';
 const SLIM_CONFIG_FILE_NAMES = [...AGENTS_CONFIG_FILE_NAMES, ...LEGACY_SLIM_CONFIG_FILE_NAMES];
 
@@ -467,59 +464,6 @@ const buildGitHubCopilotProviderOverlay = async (options = {}) => {
   };
 };
 
-const buildOpenAITimeoutOverlay = async (workingDirectory, options = {}) => {
-  const readActiveConfig = typeof options.readConfig === 'function' ? options.readConfig : readConfig;
-  const config = readActiveConfig(workingDirectory);
-  const providers = isPlainObject(config?.provider) ? config.provider : {};
-  const openAIProvider = isPlainObject(providers.openai) ? providers.openai : null;
-  let readAuthFile = typeof options.readAuthFile === 'function' ? options.readAuthFile : null;
-  let hasOpenAIAuth = false;
-
-  if (!readAuthFile) {
-    try {
-      const authModule = await import('./auth.js');
-      readAuthFile = authModule.readAuthFile;
-    } catch (error) {
-      console.warn('[OpenCode] Failed to load provider auth for the OpenAI timeout overlay:', error);
-    }
-  }
-
-  if (readAuthFile) {
-    try {
-      const auth = readAuthFile();
-      hasOpenAIAuth = isPlainObject(auth)
-        && Object.prototype.hasOwnProperty.call(auth, 'openai');
-    } catch (error) {
-      console.warn('[OpenCode] Failed to read provider auth for the OpenAI timeout overlay:', error);
-    }
-  }
-
-  const hasOpenAIApiKey = typeof process.env.OPENAI_API_KEY === 'string'
-    && Boolean(process.env.OPENAI_API_KEY.trim());
-  if (!hasOpenAIAuth && !hasOpenAIApiKey && !openAIProvider) {
-    return null;
-  }
-
-  const providerOptions = isPlainObject(openAIProvider?.options) ? openAIProvider.options : {};
-  const headerTimeout = Object.prototype.hasOwnProperty.call(providerOptions, 'headerTimeout')
-    ? providerOptions.headerTimeout
-    : DEFAULT_OPENAI_HEADER_TIMEOUT_MS;
-  const chunkTimeout = Object.prototype.hasOwnProperty.call(providerOptions, 'chunkTimeout')
-    ? providerOptions.chunkTimeout
-    : DEFAULT_OPENAI_CHUNK_TIMEOUT_MS;
-  const timeout = Object.prototype.hasOwnProperty.call(providerOptions, 'timeout')
-    ? providerOptions.timeout
-    : DEFAULT_OPENAI_REQUEST_TIMEOUT_MS;
-
-  return {
-    provider: {
-      openai: {
-        options: { headerTimeout, chunkTimeout, timeout },
-      },
-    },
-  };
-};
-
 const mergeProviderModels = (left, right) => {
   const modelIds = new Set([
     ...Object.keys(isPlainObject(left) ? left : {}),
@@ -592,7 +536,6 @@ const buildRuntimeConfigOverlay = (workingDirectory, options = {}) => {
       agent: buildRuntimeHelperAgents(),
     },
     options.githubCopilotProviderOverlay,
-    options.openAITimeoutOverlay,
     buildRemoteMcpTimeoutOverlay(workingDirectory, options),
     buildBlockedMcpOverlay(workingDirectory, options),
     activePluginPlan.overlay,
@@ -999,12 +942,10 @@ export const syncRuntimeAgentOverlays = async (options = {}) => {
   }
 
   const githubCopilotProviderOverlay = await buildGitHubCopilotProviderOverlay(runtimeOptions);
-  const openAITimeoutOverlay = await buildOpenAITimeoutOverlay(workingDirectory, runtimeOptions);
   const desiredRuntimeConfig = buildRuntimeConfigOverlay(workingDirectory, {
     ...options,
     packagedPluginSpecs: packagedPlugins.map((plugin) => plugin.spec),
     githubCopilotProviderOverlay,
-    openAITimeoutOverlay,
   });
 
   if (desiredRuntimeConfig) {

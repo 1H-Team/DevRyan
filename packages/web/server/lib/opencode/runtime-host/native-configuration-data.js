@@ -118,6 +118,14 @@ function providerModel(info) {
   }
   return result;
 }
+// Core waits 300 s for response headers and 900 s between stream chunks. Live
+// QA saw byte-less 75-90 s hangs end in ECONNRESET, so every native provider
+// stanza gets tighter deadlines; core retries the resulting Transport/Timeout.
+// The header timer starts at send, so it also bounds connect. OpenAI reasoning
+// can stream nothing for minutes before its first output item. Saved values win.
+export const NATIVE_PROVIDER_DEADLINES = Object.freeze({ headerTimeout: 45_000, chunkTimeout: 120_000 });
+const PROVIDER_DEADLINES = Object.freeze({ openai: Object.freeze({ chunkTimeout: 300_000 }) });
+export const nativeProviderDeadlines = (id, settings) => ({ ...NATIVE_PROVIDER_DEADLINES, ...PROVIDER_DEADLINES[id], ...settings });
 export function nativeProviderConfigurations(input) {
   if (!record(input)) throw fail('native_providers_invalid');
   return Object.fromEntries(Object.entries(input).map(([id, provider]) => {
@@ -142,6 +150,7 @@ export function nativeProviderConfigurations(input) {
       delete result.package;
       for (const model of Object.values(result.models ?? {})) model.package ??= packageName;
     }
+    result.settings = nativeProviderDeadlines(id, result.settings);
     // Saved route IDs are compatibility identities. Preserve them rather than
     // applying the SDK whole-config migration's providerID alias collapse.
     return [id, Schema.encodeSync(ConfigProvider.Info)(Schema.decodeUnknownSync(ConfigProvider.Info)(result, {onExcessProperty: 'error'}))];
@@ -178,7 +187,10 @@ export function translateNativeConfiguration({ legacy, agents, commands = {} }) 
   if (legacy.provider !== undefined) configuration.providers = nativeProviderConfigurations(legacy.provider);
   if (legacy.providers !== undefined) {
     if (!record(legacy.providers) || legacy.provider !== undefined) throw fail('native_provider_shapes_conflict');
-    configuration.providers = structuredClone(legacy.providers);
+    configuration.providers = Object.fromEntries(Object.entries(structuredClone(legacy.providers)).map(([id, provider]) => {
+      if (!record(provider) || provider.settings !== undefined && !record(provider.settings)) throw fail('native_provider_invalid');
+      return [id, { ...provider, settings: nativeProviderDeadlines(id, provider.settings) }];
+    }));
   }
   const permissions = configuredPermissions(legacy);
   if (permissions !== undefined) configuration.permissions = permissions;
