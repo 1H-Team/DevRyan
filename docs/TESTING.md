@@ -79,6 +79,7 @@ Module-graph rules that used to be source-text tests (a component must not impor
 ## Fixture rules
 
 - Use temporary directories in the OS temp dir, injected dependencies or loopback-only fakes. Never require credentials, live providers, external network, the user's configuration or installed-app state.
+- `packages/web` Vitest gives every test file its own empty `DEVRYAN_DATA_DIR` under `<os tmpdir>/devryan-web-test/run-*` (`test/isolated-data.global.mjs`, `test/isolated-data.setup.mjs`), removed when the run ends. A guard fails any test file whose process creates, writes, moves or removes a path inside the real `~/.config/devryan`, `~/.config/openchamber` or `~/.config/opencode`, even when the code swallows the refusal. Child processes and the Bun `test:native` suites are not intercepted.
 - The web `server/test-supertest.js` helper owns unbound loopback listeners until every sharing request finishes; already-bound servers remain caller-owned.
 - Clean up temp files and child processes on pass, failure and interruption. Never write scratch under `.cache/`.
 - `scripts/qa/run-root.mjs` `createRunRoot` removes a run directory (`<os tmpdir>/devryan-<family>`) unless `--keep-artifacts` or `DEVRYAN_KEEP_ARTIFACTS=1` is set.

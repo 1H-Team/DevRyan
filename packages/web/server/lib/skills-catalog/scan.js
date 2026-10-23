@@ -108,7 +108,14 @@ export async function scanSkillsRepository({
       if (sparseSet.ok) {
         const checkout = await runGit(['-C', tempBase, 'checkout', '--force', 'HEAD'], { identity, timeoutMs: 60_000 });
         if (checkout.ok) {
-          const lsFiles = await runGit(['-C', tempBase, 'ls-files'], { identity, timeoutMs: 15_000 });
+          // The index still lists every file outside the sparse patterns. Name
+          // the subpath, as the ls-tree fallback does, so SKILL.md files that
+          // are not on disk are never listed and read one `git show` at a time.
+          const lsFilesArgs = ['-C', tempBase, 'ls-files'];
+          if (effectiveSubpath) {
+            lsFilesArgs.push('--', effectiveSubpath);
+          }
+          const lsFiles = await runGit(lsFilesArgs, { identity, timeoutMs: 15_000 });
           if (lsFiles.ok) {
             skillMdPaths = lsFiles.stdout
               .split(/\r?\n/)

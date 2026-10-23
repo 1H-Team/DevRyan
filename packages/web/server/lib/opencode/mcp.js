@@ -13,6 +13,7 @@ import {
   isPlainObject,
   mergeConfigs,
   writeConfig,
+  getFolderConfigPaths,
 } from './shared.js';
 import { isInvalidJsoncError, parseConfigJsonc } from './jsonc-config.js';
 
@@ -178,21 +179,30 @@ function readMcpConfigLayers(workingDirectory) {
     });
   }
 
-  for (const projectPath of getProjectLegacyConfigPaths(workingDirectory)) {
+  for (const projectPath of [...getProjectOfficialConfigPaths(workingDirectory), ...getProjectLegacyConfigPaths(workingDirectory)]) {
     projectPaths.add(projectPath);
-    sources.push({
-      path: projectPath,
-      scope: AGENT_SCOPE.PROJECT,
-      config: readConfigFile(projectPath),
-    });
   }
 
-  for (const projectPath of getProjectOfficialConfigPaths(workingDirectory)) {
-    projectPaths.add(projectPath);
+  // OpenCode 2 reads every opencode.json(c) and .opencode/opencode.json(c)
+  // from the project folder up to the filesystem root, so a server a parent
+  // folder defines runs in this project too. Only the project folder's own
+  // files are project-scoped; a parent folder's file reaches every project
+  // below it, like the global file. A broken parent file is skipped, a broken
+  // project file still fails the read.
+  for (const folderPath of getFolderConfigPaths(workingDirectory)) {
+    const own = projectPaths.has(folderPath);
+    let config;
+    try {
+      config = readConfigFile(folderPath);
+    } catch (error) {
+      if (own) throw error;
+      console.warn('[MCP config] Ignoring unreadable parent folder config', { file: folderPath, code: error?.code });
+      continue;
+    }
     sources.push({
-      path: projectPath,
-      scope: AGENT_SCOPE.PROJECT,
-      config: readConfigFile(projectPath),
+      path: folderPath,
+      scope: own ? AGENT_SCOPE.PROJECT : AGENT_SCOPE.USER,
+      config,
     });
   }
 

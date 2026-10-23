@@ -61,6 +61,13 @@ Examples:
 - `useFeatureFlagsStore.ts`
 - `useUpdateStore.ts`
 
+`useDirectoryStore.ts` does not store the home-folder fallback as the last
+directory, locally or in the server settings, and `goHome` (used once the last
+project is removed) goes home without storing it and sends `lastDirectory: ''`
+to forget the removed project. The server turns a stored last directory into a
+project when the list is empty and warms it at startup, so either path used to
+put the home, or the project just removed, back in the sidebar.
+
 `useAgentRuntimeWarmupStore.ts` is a narrow, non-persisted status store for the
 single directory currently being warmed after the app becomes usable. Assistant
 status consumers subscribe only to this string and replace a generic working

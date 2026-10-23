@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import fsSync from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createExecutionHostOwner } from './execution-host-owner.js';
@@ -92,6 +93,66 @@ export const writeFileAtomic = async (filePath, data, options = {}) => {
     await handle?.close().catch(() => undefined);
     await fsApi.rm(temporaryPath, { force: true }).catch(() => undefined);
     throw error;
+  }
+};
+
+const isTransientWindowsReplaceError = (error) =>
+  process.platform === 'win32' && ['EPERM', 'EACCES', 'EBUSY'].includes(error?.code);
+
+// A symlink keeps pointing at the file that gets replaced, including a link
+// whose file does not exist yet.
+const resolveUserFileWriteTarget = (fsApi, filePath) => {
+  if (fsApi.existsSync(filePath)) return fsApi.realpathSync(filePath);
+  if (!fsApi.lstatSync(filePath, { throwIfNoEntry: false })?.isSymbolicLink()) return filePath;
+  return path.resolve(path.dirname(filePath), fsApi.readlinkSync(filePath));
+};
+
+/**
+ * Synchronous atomic replace for user-owned files that another process
+ * watches (OpenCode config, agent and command files), so a reader or a crash
+ * never sees a partial file. Unlike writeFileAtomic it is not a private-file
+ * writer: an existing file keeps its mode (a new one gets `mode`, default
+ * 0o666 minus the umask), a symlink is followed to its file, and a read-only
+ * file is refused as an in-place write would be. On Windows a rename refused
+ * because another process holds the target falls back to a direct write.
+ */
+export const writeFileAtomicSync = (filePath, data, options = {}) => {
+  const fsApi = options.fs ?? fsSync;
+  const now = options.now ?? Date.now;
+  const randomId = options.randomId ?? (() => crypto.randomUUID().replaceAll('-', ''));
+  const target = resolveUserFileWriteTarget(fsApi, filePath);
+  const directory = path.dirname(target);
+  fsApi.mkdirSync(directory, { recursive: true });
+  const exists = fsApi.existsSync(target);
+  // A rename only needs a writable directory; keep refusing a file the user
+  // made read-only.
+  if (exists) fsApi.accessSync(target, fsSync.constants.W_OK);
+  const existingMode = exists ? fsApi.statSync(target).mode & 0o7777 : null;
+  const temporaryPath = `${target}.tmp-${process.pid}-${now()}-${randomId()}`;
+  try {
+    const descriptor = fsApi.openSync(temporaryPath, 'wx', existingMode ?? options.mode ?? 0o666);
+    try {
+      fsApi.writeFileSync(descriptor, data, options.encoding ?? (typeof data === 'string' ? 'utf8' : undefined));
+      fsApi.fsyncSync(descriptor);
+    } finally {
+      fsApi.closeSync(descriptor);
+    }
+    // openSync's mode is masked by the umask; an existing file keeps its own.
+    if (existingMode !== null && process.platform !== 'win32') fsApi.chmodSync(temporaryPath, existingMode);
+    try {
+      fsApi.renameSync(temporaryPath, target);
+    } catch (error) {
+      if (!isTransientWindowsReplaceError(error)) throw error;
+      fsApi.copyFileSync(temporaryPath, target);
+      fsApi.rmSync(temporaryPath, { force: true });
+    }
+  } catch (error) {
+    try { fsApi.rmSync(temporaryPath, { force: true }); } catch { /* Keep the original failure. */ }
+    throw error;
+  }
+  if (process.platform !== 'win32') {
+    const handle = fsApi.openSync(directory, 'r');
+    try { fsApi.fsyncSync(handle); } finally { fsApi.closeSync(handle); }
   }
 };
 

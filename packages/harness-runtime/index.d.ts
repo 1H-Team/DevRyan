@@ -114,6 +114,18 @@ export function writeFileAtomic(
   },
 ): Promise<void>;
 
+export function writeFileAtomicSync(
+  filePath: string,
+  data: string | Uint8Array,
+  options?: {
+    mode?: number;
+    encoding?: BufferEncoding;
+    now?: () => number;
+    randomId?: () => string;
+    fs?: unknown;
+  },
+): void;
+
 export function withCrossProcessFileLock<T>(
   lockPath: string,
   callback: (ownershipSignal?: AbortSignal) => Promise<T> | T,

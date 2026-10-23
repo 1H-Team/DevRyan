@@ -285,3 +285,31 @@ it('LocationNotFoundError/404 stays a canonical not-found response and never pro
   await expect(client.sessions.get('ses_a', { directory: '/fixture' })).rejects.toMatchObject({ code: 'opencode_not_found', statusCode: 404, tag: 'LocationNotFoundError' });
   expect(await client.sessions.get('ses_a', { directory: '/fixture', allowNotFound: true })).toBeNull();
 });
+
+describe('provider catalog read order', () => {
+  it('asks for providers only after the model routes answered', async () => {
+    // OpenCode 2.0.27+ holds the model routes until the directory's plugins
+    // are active; a provider read sent alongside them answers first, empty.
+    const events = [];
+    const model = { id: 'openai/x', modelID: 'x', providerID: 'openai' };
+    const bodies = {
+      '/api/model': { location: {}, data: [model] },
+      '/api/model/default': { location: {}, data: model },
+      '/api/provider': { location: {}, data: [{ id: 'openai', name: 'OpenAI' }] },
+    };
+    const client = createOpenCodeClient({ getRuntime: () => runtime, fetchImpl: async (url) => {
+      const { pathname } = new URL(url);
+      events.push(`start ${pathname}`);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      events.push(`end ${pathname}`);
+      return Response.json(bodies[pathname]);
+    } });
+
+    const listed = await client.catalog.providerList({ directory: '/repo' });
+
+    const providerStart = events.indexOf('start /api/provider');
+    expect(providerStart).toBeGreaterThan(events.indexOf('end /api/model'));
+    expect(providerStart).toBeGreaterThan(events.indexOf('end /api/model/default'));
+    expect(listed.all.map((provider) => provider.id)).toEqual(['openai']);
+  });
+});

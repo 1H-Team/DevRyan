@@ -81,6 +81,26 @@ describe('createManagedTunnelConfigRuntime', () => {
     expect(JSON.parse(files.get(configPath)).tunnels.map(row => row.originPort)).toEqual([4001, 4002]);
   });
 
+  it('recovers its update chain after a failed write so later updates still persist', async () => {
+    const { runtime, fsPromises, files, configPath } = createRuntime();
+    const writeFile = fsPromises.writeFile;
+    let failNext = true;
+    fsPromises.writeFile = async (...args) => {
+      if (failNext) {
+        failNext = false;
+        throw Object.assign(new Error('disk full'), { code: 'ENOSPC' });
+      }
+      return writeFile(...args);
+    };
+
+    await expect(runtime.upsertManagedRemoteTunnelToken({ id: 'one', name: 'One', hostname: 'one.example.com', token: TOKEN, originPort: 4001 }))
+      .rejects.toMatchObject({ code: 'ENOSPC' });
+    await runtime.upsertManagedRemoteTunnelToken({ id: 'two', name: 'Two', hostname: 'two.example.com', token: TOKEN, originPort: 4002 });
+
+    expect(JSON.parse(files.get(configPath)).tunnels.map(row => row.id)).toEqual(['two']);
+    await expect(runtime.holdForCheckpoint()).resolves.toBeUndefined();
+  });
+
   it('persists only the normalized token from a cloudflared command', async () => {
     const { configPath, files, runtime } = createRuntime();
 

@@ -47,6 +47,16 @@ describe('settings helpers', () => {
     })).toEqual({ autoDeleteEnabled: false });
   });
 
+  it('keeps an empty lastDirectory so removing the last project forgets it', () => {
+    const helpers = createTestHelpers();
+
+    expect(helpers.sanitizeSettingsUpdate({ lastDirectory: '' })).toEqual({ lastDirectory: '' });
+    expect(helpers.mergePersistedSettings({ lastDirectory: '/Users/tester/project' }, { lastDirectory: '' }))
+      .toMatchObject({ lastDirectory: '' });
+    expect(helpers.sanitizeSettingsUpdate({ lastDirectory: '/Users/tester/other' })).toEqual({ lastDirectory: '/Users/tester/other' });
+    expect(helpers.sanitizeSettingsUpdate({ lastDirectory: 42 })).toEqual({});
+  });
+
   it('accepts a non-negative theme catalog version', () => {
     const helpers = createTestHelpers();
 

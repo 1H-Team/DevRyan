@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import yaml from 'yaml';
+import { writeFileAtomicSync } from '@devryan/harness-runtime/lib/atomic-file.js';
 import { isInvalidJsoncError, parseConfigJsonc, removeJsoncKeyPaths } from './jsonc-config.js';
 import { selectedRuntimeBundle, getRuntimeHome } from './runtime-host/runtime-bundle-binding.js';
 
@@ -95,7 +96,9 @@ function writeMdFile(filePath, frontmatter, body) {
     );
     const yamlStr = yaml.stringify(cleanedFrontmatter);
     const content = `---\n${yamlStr}---\n\n${body}`;
-    fs.writeFileSync(filePath, content, 'utf8');
+    // OpenCode watches its agent and command folders, so a rewrite must not
+    // expose a half-written file.
+    writeFileAtomicSync(filePath, content);
     console.log(`Successfully wrote markdown file: ${filePath}`);
   } catch (error) {
     console.error(`Failed to write markdown file ${filePath}:`, error);
@@ -258,8 +261,9 @@ function writeConfig(config, filePath = CONFIG_FILE) {
       console.log(`Created config backup: ${backupFile}`);
     }
 
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    fs.writeFileSync(filePath, JSON.stringify(config, null, 2), 'utf8');
+    // OpenCode watches its config and reloads on every change: replace the
+    // file atomically so neither it nor a crash ever sees a partial config.
+    writeFileAtomicSync(filePath, JSON.stringify(config, null, 2));
     console.log(`Successfully wrote config file: ${filePath}`);
   } catch (error) {
     if (isInvalidJsoncError(error)) throw error;
@@ -277,7 +281,7 @@ function removeConfigKeyPaths(filePath, keyPaths) {
   const next = removeJsoncKeyPaths(source, keyPaths);
   if (next === source) return false;
   fs.copyFileSync(filePath, `${filePath}.devryan.backup`);
-  fs.writeFileSync(filePath, next, 'utf8');
+  writeFileAtomicSync(filePath, next);
   return true;
 }
 
@@ -333,6 +337,43 @@ function getAncestors(startDir, stopDir) {
   }
 
   return result;
+}
+
+const realPathOrResolved = (filePath) => {
+  try {
+    return fs.realpathSync(filePath);
+  } catch {
+    return path.resolve(filePath);
+  }
+};
+
+const isConfigFile = (filePath) => {
+  try {
+    return fs.statSync(filePath).isFile();
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Every config file OpenCode 2 discovers walking up from the project folder to
+ * the filesystem root, lowest priority first: each folder's `opencode.json`
+ * then `opencode.jsonc`, outermost folder first, followed by each folder's
+ * `.opencode/opencode.json(c)` in the same order, so every `.opencode` file
+ * overrides every direct one. The global config folder's files are left out.
+ */
+function getFolderConfigPaths(workingDirectory) {
+  if (!workingDirectory) return [];
+  const globalDirectory = realPathOrResolved(OPENCODE_CONFIG_DIR);
+  if (realPathOrResolved(workingDirectory) === globalDirectory) return [];
+  const folders = getAncestors(workingDirectory).reverse();
+  const configFilesIn = (folder) => (realPathOrResolved(folder) === globalDirectory ? [] : ['opencode.json', 'opencode.jsonc']
+    .map((name) => path.join(folder, name))
+    .filter(isConfigFile));
+  return [
+    ...folders.flatMap(configFilesIn),
+    ...folders.map((folder) => path.join(folder, '.opencode')).flatMap(configFilesIn),
+  ];
 }
 
 function findWorktreeRoot(startDir) {
@@ -605,6 +646,7 @@ export {
   getJsonEntrySource,
   getJsonWriteTarget,
   getAncestors,
+  getFolderConfigPaths,
   findWorktreeRoot,
   isPromptFileReference,
   resolvePromptFilePath,

@@ -36,6 +36,13 @@ processes.
 The legacy malformed-lock threshold remains 30 seconds; existing lock records
 keep their format. Windows continues to use its execution-host owner.
 
+`writeFileAtomicSync` is the synchronous replace for user-owned files that
+another process watches (the web server's OpenCode config, agent and command
+writes). It is not a private-file writer: an existing file keeps its mode, a
+symlink is followed to its file, a read-only file is refused, and on Windows a
+rename refused because another process holds the target falls back to a direct
+write.
+
 Atomic writes accept an optional content-free progress observer. Started phases
 describe pending physical work; only completed write/sync/rename boundaries
 prove progress. Observer failures cannot interrupt or confirm persistence.

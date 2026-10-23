@@ -115,6 +115,17 @@ describe('settings runtime', () => {
     expect(runtime.holdForCheckpoint()).toBe(draining);
   });
 
+  it('recovers its write chain after a failed save so later saves still persist', async () => {
+    const { runtime, fsPromises } = createRuntime({});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    fsPromises.rename.mockRejectedValueOnce(Object.assign(new Error('disk full'), { code: 'ENOSPC' }));
+
+    await expect(runtime.persistSettings({ chatWidth: 500 })).rejects.toMatchObject({ code: 'ENOSPC' });
+    await expect(runtime.persistSettings({ chatWidth: 700 })).resolves.toMatchObject({ chatWidth: 700 });
+    expect(await runtime.readSettingsFromDisk()).toMatchObject({ chatWidth: 700 });
+    await expect(runtime.holdForCheckpoint()).resolves.toBeUndefined();
+  });
+
   it('removes its temporary file when a settings write fails', async () => {
     const { runtime, fsPromises } = createRuntime({});
     fsPromises.rename.mockRejectedValueOnce(Object.assign(new Error('disk full'), { code: 'ENOSPC' }));
@@ -242,6 +253,15 @@ describe('settings runtime', () => {
     ]);
     expect(updated.activeProjectId).toBe(projectId);
     expect(fsPromises.stat).not.toHaveBeenCalled();
+  });
+
+  it('does not turn a forgotten (empty) lastDirectory back into a project', async () => {
+    const { runtime } = createRuntime({ lastDirectory: '', projects: [] });
+
+    const updated = await runtime.readSettingsFromDiskMigrated();
+
+    expect(updated.projects).toEqual([]);
+    expect(updated.activeProjectId).toBeUndefined();
   });
 
   it('does not stat existing project paths when saving unrelated settings', async () => {

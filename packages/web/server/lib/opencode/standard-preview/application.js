@@ -54,7 +54,7 @@ export async function startWebUiServer(options = {}) {
     if (!record(parsed)) throw invalid('Invalid preview settings');
     settings = { ...settings, ...settingsHelpers.sanitizeSettingsUpdate(parsed) };
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
-  let workingDirectory = options.runtimeWorkingDirectory ?? settings.lastDirectory ?? path.join(dataDirectory, 'workspace');
+  let workingDirectory = options.runtimeWorkingDirectory ?? (settings.lastDirectory || path.join(dataDirectory, 'workspace'));
   if (typeof workingDirectory !== 'string' || !path.isAbsolute(workingDirectory)) throw invalid('Invalid preview project directory');
   await fs.promises.mkdir(workingDirectory, { recursive: true });
   workingDirectory = await fs.promises.realpath(workingDirectory);

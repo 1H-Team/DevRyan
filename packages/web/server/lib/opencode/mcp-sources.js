@@ -6,6 +6,7 @@ import {
   CONFIG_FILE,
   CUSTOM_CONFIG_FILE,
   OPENCODE_CONFIG_DIR,
+  getFolderConfigPaths,
   isPlainObject,
   readConfigFile,
 } from './shared.js';
@@ -79,29 +80,43 @@ function getActiveMcpSources(workingDirectory) {
     }));
   }
 
-  for (const projectPath of getProjectLegacyConfigPaths(workingDirectory)) {
-    sources.push(existingSource({
-      path: projectPath,
-      scope: AGENT_SCOPE.PROJECT,
-      kind: 'project-legacy',
-      active: true,
-      recoverable: false,
-      targetPath: getProjectMcpWritePath(workingDirectory),
-      origin: 'opencode',
-    }));
-  }
+  // Same order as mcp.js and OpenCode 2: direct opencode.json(c) files from
+  // the outermost parent folder in, then the .opencode files the same way. A
+  // parent folder's file is user-scoped and edited in place; an unreadable
+  // one is skipped.
+  const projectTargetPath = getProjectMcpWritePath(workingDirectory);
+  const ownSource = (projectPath, kind) => existingSource({
+    path: projectPath,
+    scope: AGENT_SCOPE.PROJECT,
+    kind,
+    active: true,
+    recoverable: false,
+    targetPath: projectTargetPath,
+    origin: 'opencode',
+  });
+  const ownPaths = new Set([...getProjectOfficialConfigPaths(workingDirectory), ...getProjectLegacyConfigPaths(workingDirectory)]);
+  const parentPaths = getFolderConfigPaths(workingDirectory).filter((folderPath) => !ownPaths.has(folderPath));
+  const inDotFolder = (folderPath) => path.basename(path.dirname(folderPath)) === '.opencode';
+  const parentSources = (paths) => paths.flatMap((folderPath) => {
+    try {
+      return [existingSource({
+        path: folderPath,
+        scope: AGENT_SCOPE.USER,
+        kind: 'folder',
+        active: true,
+        recoverable: false,
+        targetPath: folderPath,
+        origin: 'opencode',
+      })];
+    } catch {
+      return [];
+    }
+  });
 
-  for (const projectPath of getProjectOfficialConfigPaths(workingDirectory)) {
-    sources.push(existingSource({
-      path: projectPath,
-      scope: AGENT_SCOPE.PROJECT,
-      kind: 'project',
-      active: true,
-      recoverable: false,
-      targetPath: getProjectMcpWritePath(workingDirectory),
-      origin: 'opencode',
-    }));
-  }
+  sources.push(...parentSources(parentPaths.filter((folderPath) => !inDotFolder(folderPath))));
+  sources.push(...getProjectOfficialConfigPaths(workingDirectory).map((projectPath) => ownSource(projectPath, 'project')));
+  sources.push(...parentSources(parentPaths.filter(inDotFolder)));
+  sources.push(...getProjectLegacyConfigPaths(workingDirectory).map((projectPath) => ownSource(projectPath, 'project-legacy')));
 
   if (CUSTOM_CONFIG_FILE) {
     sources.push(existingSource({
