@@ -238,11 +238,16 @@ test('recognized legacy fence allows current shared access but never renewal; ma
  await assert.rejects(owned.owner({profileID:'one',purpose:'request'},owned.context()),/native_claude_legacy_fence_invalid/);
  assert.equal(owned.exchanges(),0);assert.equal(owned.state().revision,0);assert.ok(owned.operations.every(([operation])=>operation==='find-generic-password'));
 });
-test('status/quota resolution does not renew, write credentials, migrate fences or settle lifecycle',async()=>{
- const owned=fixture({expiresAt:Date.now()+120000}),before=owned.state();
- assert.equal((await owned.owner({profileID:'one',purpose:'request'},{...owned.context(),readOnly:true})).accessToken,'token-A');
- assert.deepEqual(owned.state(),before);assert.equal(owned.exchanges(),0);assert.ok(owned.operations.every(([operation])=>operation==='find-generic-password'));
- const expired=fixture({expiresAt:Date.now()-1});await assert.rejects(expired.owner({profileID:'one',purpose:'request'},{...expired.context(),readOnly:true}),/claude_credentials_expired/);assert.equal(expired.exchanges(),0);
+// 020c53db: inspection renews a due dedicated profile like a request, so an idle
+// enrollment is not reported expired; shared Claude Code profiles stay access-only.
+test('status/quota resolution renews a due dedicated profile but never renews, writes or settles a shared one',async()=>{
+ const dedicated=fixture({expiresAt:Date.now()+120000});
+ assert.equal((await dedicated.owner({profileID:'one',purpose:'request'},{...dedicated.context(),readOnly:true})).accessToken,'token-B');
+ assert.equal(dedicated.exchanges(),1);
+ const shared=fixture({dedicated:false,expiresAt:Date.now()+120000}),before=shared.state();
+ assert.equal((await shared.owner({profileID:'one',purpose:'request'},{...shared.context(),readOnly:true})).accessToken,'token-A');
+ assert.deepEqual(shared.state(),before);assert.equal(shared.exchanges(),0);assert.ok(shared.operations.every(([operation])=>operation==='find-generic-password'));
+ const expired=fixture({dedicated:false,expiresAt:Date.now()-1});await assert.rejects(expired.owner({profileID:'one',purpose:'request'},{...expired.context(),readOnly:true}),/claude_credentials_expired/);assert.equal(expired.exchanges(),0);
 });
 test('durable profile deletion refuses cached inference and inspection credential access without renewal',async()=>{
  const owned=fixture(),account=owned.state().accounts.find(row=>row.profileID==='one');
