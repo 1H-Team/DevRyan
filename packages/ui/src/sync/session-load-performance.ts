@@ -102,11 +102,3 @@ export function completeSessionNavigation(sessionID: string, directory?: string 
   streamPerfObserve("session.load.navigation.to_first_visible_ms", Math.max(0, now() - navigation.startedAt))
   streamPerfCount("session.load.navigation.first_visible")
 }
-
-export function cancelSessionNavigation(sessionID: string, directory?: string | null): void {
-  navigationStartedAt.delete(navigationKey(directory, sessionID))
-}
-
-export function resetSessionLoadPerformanceForTest(): void {
-  navigationStartedAt.clear()
-}

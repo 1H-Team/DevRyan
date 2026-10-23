@@ -10,12 +10,6 @@ export interface RuntimeDescriptor {
   label?: string;
 }
 
-export interface ApiError {
-  message: string;
-  code?: string;
-  cause?: unknown;
-}
-
 export interface Subscription {
 
   close: () => void;
@@ -1471,8 +1465,6 @@ export interface RuntimeAPIs {
 
   worktrees?: WorktreeMetadata[];
 }
-
-export type RuntimeAPISelector<TValue> = (apis: RuntimeAPIs) => TValue;
 
 // ============== Plugins Types ==============
 

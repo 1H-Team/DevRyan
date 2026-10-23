@@ -422,12 +422,6 @@ export const buildAgentModelOverridePayload = (config: Partial<AgentConfig>): Re
   return payload;
 };
 
-// Helper to check if agent is packaged (handles older builtIn/native metadata too).
-export const isAgentBuiltIn = (agent: Agent): boolean => {
-  const extended = agent as AgentWithExtras & { builtIn?: boolean };
-  return extended.scope === 'packaged' || extended.source === 'packaged' || extended.native === true || extended.builtIn === true;
-};
-
 // Helper to check if agent is hidden (internal agents like title, compaction, summary)
 // Checks both top-level hidden and options.hidden (OpenCode API inconsistency workaround)
 export const isAgentHidden = (agent: Agent): boolean => {

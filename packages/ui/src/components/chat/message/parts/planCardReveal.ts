@@ -28,7 +28,6 @@ export const getPlanCardCollapsedMaxHeight = ({
 } = {}): number => (lineCount * lineHeightPx) + bodyVerticalPaddingPx;
 
 export const PLAN_CARD_COLLAPSED_MAX_HEIGHT_PX = getPlanCardCollapsedMaxHeight();
-export const PLAN_CARD_EXPAND_BUTTON_SIZE_PX = 28;
 
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
 

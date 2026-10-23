@@ -315,9 +315,6 @@ export const probe = async ({
   }
 };
 
-/** Capability flags the UI reads from `/health` (`openCode.capabilities`). */
-export const OPENCODE_RUNTIME_CAPABILITY_KEYS = Object.freeze(['share', 'mcpOAuth', 'sessionShell', 'lsp', 'messageEdit']);
-
 // Gen 2 defaults closed. The owned host may qualify its MCP OAuth facade;
 // share, LSP, message edit and the public session shell remain unavailable.
 const UNAVAILABLE_CAPABILITIES = Object.freeze({

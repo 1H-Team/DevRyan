@@ -15,7 +15,6 @@ import { translateNativeConfiguration, nativeProviderConfigurations } from '../.
 import { listPackagedAgents } from '../../packages/web/server/lib/opencode/packaged-agents.js';
 import { openChangeStore, changeKey } from '../../packages/harness-runtime/lib/session-changes-store.js';
 import { readSessionExecutionReceipt } from '../../packages/harness-runtime/lib/session-execution.js';
-import { runQaMatrix } from './matrix-runner.mjs';
 import { TARGET_OPENCODE_VERSION } from '../../packages/web/server/lib/opencode/version-policy.js';
 import { parseHelperModelSelection } from '../../packages/shared-runtime/lib/helper-model-selection.js';
 import { isOwnedScratchPath } from './run-root.mjs';
@@ -310,9 +309,4 @@ export async function prepareRuntimeUiProfile({ cell, runtimeRoot, workspace, ta
         nativeBundle: { bundleID: selected.bundleID, revision: binding.selection.revision },
         excludedAcceptance: ['saved-user-graph', 'paid-provider', 'reasoning-policy', 'native-compaction', 'managed-task-ui'] } };
   } catch (error) { try { await provider.close(); } catch (cleanup) { throw new AggregateError([error, cleanup], 'Synthetic preparation and cleanup failed'); } throw error; }
-}
-
-/** Explicit constructor driver; no ambient home/default account acquisition. */
-export function runNativeBackendUiDiagnostic({ configPath, artifactRoot }) {
-  return runQaMatrix(configPath, { prepareRuntimeFixtureProfile: input => prepareRuntimeUiProfile({ ...input, artifactRoot }) });
 }

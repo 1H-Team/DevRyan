@@ -2,7 +2,6 @@
 // stores, behind a minimal runtime boundary. Production code never imports it.
 import React, { act } from 'react';
 import { mock } from 'bun:test';
-import { renderToStaticMarkup } from 'react-dom/server';
 import { useStore } from 'zustand';
 import type { Model } from '@opencode-ai/sdk/v2';
 import { withDom, type HostElement } from '@/components/bots/chat/botMountedDom';
@@ -88,9 +87,6 @@ const element = (panel: Panel, key = 0, onPanelChange: (next: Panel) => void = (
     </AgentHandoffGuardContext>
   </I18nProvider>
 );
-
-/** Server-render the real controls for the given panel (effects do not run). */
-export const staticModelControls = (panel: Panel = null as unknown as Panel) => renderToStaticMarkup(element(panel));
 
 /** Mount the real controls in the host DOM; `remount` replays restoration effects. */
 export const withModelControls = async (

@@ -86,11 +86,6 @@ export const managedQuotaCredentialNormalizers = Object.freeze({
   'cursor-acp': normalizeCursorCredential,
 });
 
-export const normalizeManagedQuotaCredential = (providerId, value) => {
-  const canonical = canonicalizeManagedQuotaProviderId(providerId);
-  return managedQuotaCredentialNormalizers[canonical](value);
-};
-
 export const assertManagedQuotaCredential = (providerId, value) => {
   const canonical = canonicalizeManagedQuotaProviderId(providerId);
   const credential = managedQuotaCredentialNormalizers[canonical](value);

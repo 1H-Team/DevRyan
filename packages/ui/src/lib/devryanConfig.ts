@@ -70,20 +70,9 @@ export interface DevRyanProjectPlanFileLink {
   createdAt: number;
 }
 
-export interface DevRyanProjectPlanFile {
-  title: string;
-  body: string;
-  raw: string;
-  path: string;
-}
-
 export interface DevRyanProjectNotesTodos {
   notes: string;
   todos: DevRyanProjectTodoItem[];
-}
-
-export interface DevRyanProjectContextData extends DevRyanProjectNotesTodos {
-  plans: DevRyanProjectPlanFileLink[];
 }
 
 export const DEVRYAN_PROJECT_NOTES_MAX_LENGTH = 1000;
@@ -326,43 +315,6 @@ const sanitizeProjectTodoItems = (value: unknown): DevRyanProjectTodoItem[] => {
   return sanitized;
 };
 
-const sanitizeProjectPlanFileLinks = (value: unknown): DevRyanProjectPlanFileLink[] => {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  const sanitized: DevRyanProjectPlanFileLink[] = [];
-  const seenIds = new Set<string>();
-
-  for (const entry of value) {
-    if (!entry || typeof entry !== 'object') {
-      continue;
-    }
-
-    const record = entry as {
-      id?: unknown;
-      path?: unknown;
-      createdAt?: unknown;
-    };
-
-    const id = typeof record.id === 'string' ? record.id.trim() : '';
-    const path = typeof record.path === 'string' ? record.path.trim() : '';
-    const createdAt =
-      typeof record.createdAt === 'number' && Number.isFinite(record.createdAt) && record.createdAt >= 0
-        ? record.createdAt
-        : Date.now();
-
-    if (!id || !path || seenIds.has(id)) {
-      continue;
-    }
-
-    seenIds.add(id);
-    sanitized.push({ id, path, createdAt });
-  }
-
-  return sanitized.sort((a, b) => b.createdAt - a.createdAt);
-};
-
 const sanitizeProjectActionPlatforms = (value: unknown): DevRyanProjectActionPlatform[] => {
   if (!Array.isArray(value)) {
     return [];
@@ -474,65 +426,8 @@ const sanitizeProjectNotesAndTodos = (value: {
   };
 };
 
-const sanitizeProjectContextData = (value: {
-  notes?: unknown;
-  todos?: unknown;
-  plans?: unknown;
-} | null | undefined): DevRyanProjectContextData => {
-  const notesAndTodos = sanitizeProjectNotesAndTodos(value);
-  return {
-    ...notesAndTodos,
-    plans: sanitizeProjectPlanFileLinks(value?.plans),
-  };
-};
-
-const slugifyPlanTitle = (value: string): string => {
-  const normalized = value
-    .trim()
-    .toLowerCase()
-    .replace(/[`*_#>[\](){}.!?,:;"']/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/[^a-z0-9-]/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-+|-+$/g, '');
-
-  return normalized || 'plan';
-};
-
 const sanitizePlanTitle = (value: string): string => {
   return trimToMaxLength(value.trim(), DEVRYAN_PROJECT_PLAN_TITLE_MAX_LENGTH);
-};
-
-const createProjectPlanId = (): string => {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-  return `plan_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-};
-
-const getProjectStorageDirectory = async (project: ProjectRef): Promise<string | null> => {
-  const base = await getUserProjectsDirectory();
-  const safeId = resolveConfigProjectId(project);
-  if (!base || !safeId) {
-    return null;
-  }
-  return joinPath(base, safeId);
-};
-
-const getProjectPlansDirectory = async (project: ProjectRef): Promise<string | null> => {
-  const projectDirectory = await getProjectStorageDirectory(project);
-  if (!projectDirectory) {
-    return null;
-  }
-  return joinPath(projectDirectory, 'plans');
-};
-
-export const formatProjectPlanMarkdown = (title: string, body: string): string => {
-  const normalizedTitle = sanitizePlanTitle(title) || 'Plan';
-  const normalizedBody = body.trim();
-  return normalizedBody
-    ? `# ${normalizedTitle}\n\n${normalizedBody}`
-    : `# ${normalizedTitle}\n`;
 };
 
 export const parseProjectPlanMarkdown = (raw: string): { title: string; body: string } => {
@@ -728,148 +623,6 @@ export async function saveProjectNotesAndTodos(
     projectNotes: sanitized.notes,
     projectTodos: sanitized.todos,
   });
-}
-
-export async function getProjectContextData(project: ProjectRef): Promise<DevRyanProjectContextData> {
-  const config = await readDevRyanConfig(project);
-  return sanitizeProjectContextData({
-    notes: config?.projectNotes,
-    todos: config?.projectTodos,
-    plans: config?.projectPlanFiles,
-  });
-}
-
-export async function getProjectPlanFiles(project: ProjectRef): Promise<DevRyanProjectPlanFileLink[]> {
-  const config = await readDevRyanConfig(project);
-  return sanitizeProjectPlanFileLinks(config?.projectPlanFiles);
-}
-
-export async function saveProjectPlanFiles(
-  project: ProjectRef,
-  value: DevRyanProjectPlanFileLink[]
-): Promise<boolean> {
-  const sanitized = sanitizeProjectPlanFileLinks(value);
-  return updateDevRyanConfig(project, {
-    projectPlanFiles: sanitized,
-  });
-}
-
-export async function readProjectPlanFile(path: string): Promise<DevRyanProjectPlanFile | null> {
-  const trimmedPath = typeof path === 'string' ? path.trim() : '';
-  if (!trimmedPath) {
-    return null;
-  }
-
-  const raw = await readTextFile(trimmedPath);
-  if (raw === null) {
-    return null;
-  }
-
-  const parsed = parseProjectPlanMarkdown(raw);
-  return {
-    title: parsed.title,
-    body: parsed.body,
-    raw,
-    path: trimmedPath,
-  };
-}
-
-const deleteFile = async (path: string): Promise<boolean> => {
-  const runtimeFiles = getRuntimeFilesAPI();
-  if (runtimeFiles?.delete) {
-    try {
-      const result = await runtimeFiles.delete(path);
-      if (result?.success !== false) {
-        return true;
-      }
-    } catch {
-      // fall through
-    }
-  }
-
-  const res = await postJson<{ success?: boolean }>(`${getBaseUrl()}/fs/delete`, { path });
-  return Boolean(res.ok);
-};
-
-export async function deleteProjectPlanFile(
-  project: ProjectRef,
-  planId: string
-): Promise<boolean> {
-  const trimmedId = typeof planId === 'string' ? planId.trim() : '';
-  if (!trimmedId) {
-    return false;
-  }
-
-  const existing = await getProjectPlanFiles(project);
-  const target = existing.find((entry) => entry.id === trimmedId);
-  if (!target) {
-    return false;
-  }
-
-  const next = existing.filter((entry) => entry.id !== trimmedId);
-  const saved = await saveProjectPlanFiles(project, next);
-  if (!saved) {
-    return false;
-  }
-
-  // Best-effort: remove underlying markdown file, ignore failure.
-  await deleteFile(target.path).catch(() => false);
-  return true;
-}
-
-export async function importProjectPlanFileFromContent(
-  project: ProjectRef,
-  content: string,
-  fallbackTitle?: string
-): Promise<DevRyanProjectPlanFileLink | null> {
-  const raw = typeof content === 'string' ? content : '';
-  if (!raw.trim()) {
-    return null;
-  }
-
-  const parsed = parseProjectPlanMarkdown(raw);
-  const title = parsed.title || sanitizePlanTitle(fallbackTitle ?? '') || 'Plan';
-  return createProjectPlanFile(project, { title, body: parsed.body });
-}
-
-export async function createProjectPlanFile(
-  project: ProjectRef,
-  value: { title: string; body: string }
-): Promise<DevRyanProjectPlanFileLink | null> {
-  const plansDirectory = await getProjectPlansDirectory(project);
-  if (!plansDirectory) {
-    return null;
-  }
-
-  const title = sanitizePlanTitle(value.title) || 'Plan';
-  const createdAt = Date.now();
-  const id = createProjectPlanId();
-  const filePath = joinPath(plansDirectory, `${createdAt}-${slugifyPlanTitle(title)}.md`);
-
-  const projectDirectory = await getProjectStorageDirectory(project);
-  if (!projectDirectory) {
-    return null;
-  }
-
-  const createdProjectDir = await mkdirp(projectDirectory);
-  const createdPlansDir = createdProjectDir ? await mkdirp(plansDirectory) : false;
-  if (!createdProjectDir || !createdPlansDir) {
-    return null;
-  }
-
-  const wrote = await writeTextFile(filePath, formatProjectPlanMarkdown(title, value.body));
-  if (!wrote) {
-    return null;
-  }
-
-  const existing = await getProjectPlanFiles(project);
-  const nextEntry = { id, path: filePath, createdAt };
-  const saved = await saveProjectPlanFiles(project, [nextEntry, ...existing]);
-  if (!saved) {
-    return null;
-  }
-
-  return nextEntry;
 }
 
 export async function getProjectActionsState(project: ProjectRef): Promise<DevRyanProjectActionsState> {

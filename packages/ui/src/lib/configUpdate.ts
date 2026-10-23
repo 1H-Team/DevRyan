@@ -40,16 +40,6 @@ export function finishConfigUpdate() {
   }
 }
 
-export function updateConfigUpdateMessage(message: string) {
-  if (currentMessage === message && pendingCount > 0) {
-    return;
-  }
-  currentMessage = message;
-  if (pendingCount > 0) {
-    notify();
-  }
-}
-
 export function subscribeConfigUpdate(listener: ConfigUpdateListener) {
   listeners.add(listener);
   listener({

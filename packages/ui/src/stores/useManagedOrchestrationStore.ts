@@ -1,8 +1,6 @@
 import { create } from 'zustand';
 import {
   canTransitionManagedTaskStatus,
-  decodeManagedTaskAutoResume,
-  decodeManagedTaskWaitingReason,
   decodeResultEnvelopePayload,
   decodeSnapshotPayload,
   decodeTaskEventRecord,
@@ -10,8 +8,6 @@ import {
   isTerminalManagedTaskStatus,
   MAX_MANAGED_TASK_FAILURE_BYTES,
   truncateManagedText,
-  type ManagedTaskEvent,
-  type ManagedTaskRemovalEvent,
   type ManagedTaskResultAction,
   type ManagedTaskStatus,
 } from '@devryan/orchestration-runtime';
@@ -21,10 +17,8 @@ import {
   managedOrchestrationApi,
   type ManagedOrchestrationApi,
   type ManagedOrchestrationSnapshot,
-  type ManagedTaskAutoResume,
   type ManagedTaskProjectedEnvelope,
   type ManagedTaskProjectedRecord,
-  type ManagedTaskWaitingReason,
 } from '@/lib/orchestrationApi';
 import { canonicalEventType } from '@/lib/eventTypes';
 
@@ -55,11 +49,6 @@ export type ManagedTaskPendingAction = 'cancel' | 'auto_resume' | ManagedTaskRes
 
 export type ManagedRootDelegationPhase = 'starting' | 'waiting' | null;
 
-type ManagedOrchestrationWarningEvent = {
-  type: 'devryan:managed-orchestration-warning';
-  properties: { message: string };
-};
-
 type ParsedManagedTaskProjection = {
   task: ManagedTaskProjectedRecord;
   envelope: ManagedTaskProjectedEnvelope | null;
@@ -69,8 +58,6 @@ type ParsedManagedOrchestrationSnapshot = Omit<ManagedOrchestrationSnapshot, 'ta
   tasks: ManagedTaskProjectedRecord[];
   resultEnvelopes: ManagedTaskProjectedEnvelope[];
 };
-
-export type ManagedOrchestrationUiEvent = ManagedTaskEvent | ManagedTaskRemovalEvent | ManagedOrchestrationWarningEvent;
 
 export type ManagedOrchestrationStore = {
   tasksById: Readonly<Record<string, ManagedTaskProjectedRecord>>;
@@ -119,22 +106,8 @@ const initialState = () => ({
 // to null instead of hiding the task or its result.
 const LENIENT = { mode: 'lenient' } as const;
 
-/** Why a queued task has not started; a malformed value degrades to null. */
-export const parseManagedTaskWaitingReason = (value: unknown): ManagedTaskWaitingReason | null => (
-  decodeManagedTaskWaitingReason(value)
-);
-
 const parseManagedTaskEventRecord = (value: unknown): ManagedTaskProjectedRecord | null => (
   decodeTaskEventRecord(value, LENIENT)
-);
-
-export const isManagedTaskEventRecord = (value: unknown): value is ManagedTaskProjectedRecord => (
-  parseManagedTaskEventRecord(value) !== null
-);
-
-/** The host's auto-resume block; anything incomplete degrades to null. */
-export const parseManagedTaskAutoResume = (value: unknown): ManagedTaskAutoResume | null => (
-  decodeManagedTaskAutoResume(value)
 );
 
 const parseEnvelope = (value: unknown): ManagedTaskProjectedEnvelope | null => (

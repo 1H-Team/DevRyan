@@ -313,5 +313,3 @@ export const createAgentHandoffCoordinator = (options: CoordinatorOptions) => {
     },
   };
 };
-
-export type AgentHandoffCoordinator = ReturnType<typeof createAgentHandoffCoordinator>;

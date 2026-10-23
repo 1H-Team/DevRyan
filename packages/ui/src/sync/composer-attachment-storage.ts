@@ -173,18 +173,8 @@ export const deserializeComposerAttachments = (value: unknown): AttachedFile[] =
   return attachments
 }
 
-export const readComposerAttachments = async (targetKey: string): Promise<AttachedFile[]> =>
-  deserializeComposerAttachments(await persistence().read(getPersistedComposerAttachmentKey(targetKey)))
-
 export const readComposerAttachmentsAtKey = async (storageKey: string): Promise<AttachedFile[]> =>
   deserializeComposerAttachments(await persistence().read(storageKey))
-
-export const writeComposerAttachments = async (
-  targetKey: string,
-  attachments: readonly AttachedFile[],
-): Promise<void> => {
-  await writeComposerAttachmentsAtKey(getPersistedComposerAttachmentKey(targetKey), attachments)
-}
 
 export const writeComposerAttachmentsAtKey = async (
   storageKey: string,
@@ -196,9 +186,6 @@ export const writeComposerAttachmentsAtKey = async (
   }
   await persistence().write(storageKey, serializeComposerAttachments(attachments))
 }
-
-export const removeComposerAttachments = async (targetKey: string): Promise<void> =>
-  persistence().remove(getPersistedComposerAttachmentKey(targetKey))
 
 export const removeComposerAttachmentsAtKey = async (storageKey: string): Promise<void> =>
   persistence().remove(storageKey)

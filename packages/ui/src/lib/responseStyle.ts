@@ -126,13 +126,3 @@ export const clearResponseStyleInstructionCacheForTests = (): void => {
   cachedResponseStyleLevel = 'provider';
   responseStyleInstructionLoaded = false;
 };
-
-export const fetchResponseStyleInstruction = async (): Promise<string | null> => {
-  const response = await fetch('/api/config/settings', {
-    method: 'GET',
-    headers: { Accept: 'application/json' },
-  });
-  if (!response.ok) return null;
-  const settings = await response.json().catch(() => null) as ResponseStyleSettings | null;
-  return cacheResponseStyleInstructionFromSettings(settings);
-};

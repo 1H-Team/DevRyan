@@ -411,52 +411,6 @@ const atomicWritePrivateJson = async (filePath, value, fsPromises) => {
   }
 };
 
-// Signals only a process proved to be this user's DevRyan --runtime-service
-// at that pid: ps gives its uid and argv, and lsof's first text entry gives its
-// executable image, because launchd starts the SMAppService BundleProgram with
-// the bare ProgramArguments ("DevRyan --runtime-service"). The legacy plist's
-// absolute argv only has to name a DevRyan image: a bundle moved (to the Trash,
-// or replaced) while running keeps its old argv; a path holding an option
-// (" -", e.g. a wrapping shell) is not one. Anything else, or an
-// unavailable probe, is left alone and reported false.
-const RUNTIME_SERVICE_IMAGE_PATTERN = /^\/[^\n]*\.app\/Contents\/MacOS\/DevRyan$/;
-export const terminateRuntimeServiceProcess = async ({
-  pid, signal = 'SIGTERM', uid = process.getuid?.(), platform = process.platform,
-  execute = execFile, kill = (target, name) => process.kill(target, name),
-} = {}) => {
-  if (platform !== 'darwin' || !Number.isSafeInteger(pid) || pid <= 1 || !Number.isSafeInteger(uid)
-    || !['SIGTERM', 'SIGKILL'].includes(signal)) return false;
-  // lsof lists every mapped library as text, tens of KiB for an Electron app.
-  const probe = (file, args, maxBuffer = 16 * 1_024) => new Promise((resolve, reject) => {
-    execute(file, args, {
-      encoding: 'utf8', timeout: 5_000, maxBuffer, env: { ...process.env, LC_ALL: 'C' },
-    }, (error, output) => error ? reject(error) : resolve(String(output)));
-  });
-  let processLine;
-  let imageLines;
-  try {
-    processLine = await probe('/bin/ps', ['-p', String(pid), '-o', 'uid=,command=']);
-    imageLines = (await probe('/usr/sbin/lsof', ['-a', '-p', String(pid), '-d', 'txt', '-Fn'], 1_024 * 1_024)).split('\n');
-  } catch {
-    return false;
-  }
-  const match = /^\s*(\d+)\s+([^\n]+?)\s*$/.exec(processLine);
-  if (!match || Number(match[1]) !== uid) return false;
-  if (imageLines[0] !== `p${pid}` || imageLines[1] !== 'ftxt' || !imageLines[2]?.startsWith('n')) return false;
-  const image = imageLines[2].slice(1);
-  const command = match[2];
-  const legacyPath = command.endsWith(' --runtime-service') ? command.slice(0, -' --runtime-service'.length) : '';
-  if (!RUNTIME_SERVICE_IMAGE_PATTERN.test(image)
-    || (command !== 'DevRyan --runtime-service' && legacyPath !== image
-      && (!RUNTIME_SERVICE_IMAGE_PATTERN.test(legacyPath) || /\s-/.test(legacyPath)))) return false;
-  try {
-    kill(pid, signal);
-    return true;
-  } catch {
-    return false;
-  }
-};
-
 export async function createRuntimeServiceCoordinator({
   dataDirectory,
   fsPromises = fs,

@@ -1087,11 +1087,6 @@ export async function startCloudflareManagedLocalTunnel({ configPath, hostname }
   };
 }
 
-export async function startCloudflareTunnel({ originUrl, port }) {
-  void port;
-  return startCloudflareQuickTunnel({ originUrl });
-}
-
 export function printTunnelWarning() {
   console.log(`
 ⚠️  Cloudflare Quick Tunnel Limitations:

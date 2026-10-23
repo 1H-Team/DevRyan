@@ -22,7 +22,6 @@ import type { ComponentType } from 'react';
 import {
   DEVRYAN_AUTO_DISCOVER_ACTION_ID,
   type DevRyanProjectAction,
-  type DevRyanProjectActionPlatform,
 } from '@/lib/devryanConfig';
 import type {
   DesktopSshInstance,
@@ -89,30 +88,6 @@ export const normalizeProjectActionDirectory = (value: string): string => {
     return '/';
   }
   return trimmed.length > 1 ? trimmed.replace(/\/+$/, '') : trimmed;
-};
-
-export const getCurrentProjectActionPlatform = (): DevRyanProjectActionPlatform => {
-  if (typeof navigator === 'undefined') {
-    return 'macos';
-  }
-  const ua = (navigator.userAgent || '').toLowerCase();
-  if (ua.includes('windows')) {
-    return 'windows';
-  }
-  if (ua.includes('linux')) {
-    return 'linux';
-  }
-  return 'macos';
-};
-
-export const isProjectActionEnabledOnPlatform = (
-  action: DevRyanProjectAction,
-  platform: DevRyanProjectActionPlatform
-): boolean => {
-  if (!Array.isArray(action.platforms) || action.platforms.length === 0) {
-    return true;
-  }
-  return action.platforms.includes(platform);
 };
 
 export const toProjectActionRunKey = (directory: string, actionId: string): string => {

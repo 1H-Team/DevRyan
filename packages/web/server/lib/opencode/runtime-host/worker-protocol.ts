@@ -4,7 +4,6 @@ import { Tool } from '@opencode/schema/tool';
 import { Session } from '@opencode/schema/session';
 import { SessionMessage } from '@opencode/schema/session-message';
 import { Agent } from '@opencode/schema/agent';
-import type { OperationPermit } from './native-admission-contract.js';
 
 const WorkerFields = {
   protocol: Schema.Literal(1), input: Schema.Unknown,
@@ -77,10 +76,6 @@ export const ExecutionEvent = Schema.Union([
 export type ExecutionEvent = typeof ExecutionEvent.Type;
 export const ExecutionBatch = Schema.Struct({ cursor: Schema.Int, done: Schema.Boolean, events: Schema.Array(ExecutionEvent) });
 export const StartResult = Schema.Struct({ handle: Schema.String });
-export interface ExecutionIdentity {
-  readonly directory: string; readonly sessionID: string; readonly messageID: string;
-  readonly callID: string; readonly tool: string; readonly agent: string; readonly permit: OperationPermit;
-}
 export interface WriterSpecification { readonly kind: 'writer'; readonly tool: string; readonly input: unknown }
 export interface ShellSpecification { readonly kind: 'shell' | 'read'; readonly command: string; readonly args: readonly string[];
   readonly env: Readonly<Record<string, string | undefined>>; readonly cwd?: string }

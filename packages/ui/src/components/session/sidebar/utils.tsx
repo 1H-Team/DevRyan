@@ -37,49 +37,6 @@ export const selectVisibleChatDrafts = <T extends VisibleChatDraft>(
     .sort((a, b) => b.createdAt - a.createdAt);
 };
 
-const formatDateLabel = (value: string | number) => {
-  const targetDate = new Date(value);
-  const today = new Date();
-  const isSameDay = (a: Date, b: Date) =>
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate();
-
-  const yesterday = new Date(today);
-  yesterday.setDate(today.getDate() - 1);
-
-  if (isSameDay(targetDate, today)) {
-    return 'Today';
-  }
-  if (isSameDay(targetDate, yesterday)) {
-    return 'Yesterday';
-  }
-  const formatted = targetDate.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
-  return formatted.replace(',', '');
-};
-
-export const formatSessionDateLabel = (updatedMs: number): string => {
-  const today = new Date();
-  const updatedDate = new Date(updatedMs);
-  const isSameDay = (a: Date, b: Date) =>
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate();
-
-  if (isSameDay(updatedDate, today)) {
-    const diff = Date.now() - updatedMs;
-    if (diff < 60_000) return 'Just now';
-    if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}min ago`;
-    return `${Math.floor(diff / 3_600_000)}h ago`;
-  }
-
-  return formatDateLabel(updatedMs);
-};
-
 export const normalizePath = (value?: string | null) => {
   if (!value) {
     return null;
@@ -119,11 +76,6 @@ export const normalizeForBranchComparison = (value: string): string => {
     .replace(/^opencode[/-]?/i, '')
     .replace(/[-_]/g, '')
     .trim();
-};
-
-export const isBranchDifferentFromLabel = (branch: string | null, label: string): boolean => {
-  if (!branch) return false;
-  return normalizeForBranchComparison(branch) !== normalizeForBranchComparison(label);
 };
 
 const toFiniteNumber = (value: unknown): number | undefined => {
@@ -218,20 +170,6 @@ export const compareSessionsByPinnedAndTime = (
   }
 
   return compareSessionsByUserActivity(a, b, sessionUserActivity);
-};
-
-export const compareSessionsByPinnedAndCreated = (
-  a: Session,
-  b: Session,
-  pinnedSessionIds: Set<string>,
-): number => {
-  const aPinned = pinnedSessionIds.has(a.id);
-  const bPinned = pinnedSessionIds.has(b.id);
-  if (aPinned !== bPinned) {
-    return aPinned ? -1 : 1;
-  }
-
-  return getSessionCreatedAt(b) - getSessionCreatedAt(a);
 };
 
 export const compareArchivedSessionsByParentAssistantActivity = (
@@ -445,27 +383,6 @@ export const resolveArchivedFolderName = (
     : resolved;
   const segments = source.split('/').filter(Boolean);
   return segments[segments.length - 1] ?? 'unassigned';
-};
-
-export const isSessionRelatedToProject = (
-  session: Session,
-  projectRoot: string,
-  validDirectories?: Set<string>,
-): boolean => {
-  const sessionDirectory = normalizePath((session as Session & { directory?: string | null }).directory ?? null);
-  const projectWorktree = normalizePath((session as Session & { project?: { worktree?: string | null } | null }).project?.worktree ?? null);
-
-  if (projectWorktree && (projectWorktree === projectRoot || projectWorktree.startsWith(`${projectRoot}/`))) {
-    return true;
-  }
-
-  if (!sessionDirectory) {
-    return false;
-  }
-  if (validDirectories && validDirectories.has(sessionDirectory)) {
-    return true;
-  }
-  return sessionDirectory === projectRoot || sessionDirectory.startsWith(`${projectRoot}/`);
 };
 
 export type SessionProjectOwnership = ReadonlyMap<string, string>;

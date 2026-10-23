@@ -24,8 +24,6 @@ import { createOpenCodeClientError, OPENCODE_CLIENT_ERROR_CODES } from './errors
 
 export const OPENCODE_LOCATION_HEADER = 'x-opencode-directory';
 
-export const LOCATION_MODES = Object.freeze(['header', 'session', 'query-directory', 'body-location', 'none']);
-
 const hasControlCharacter = (value) => {
   for (let index = 0; index < value.length; index += 1) {
     const code = value.charCodeAt(index);

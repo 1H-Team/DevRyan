@@ -126,15 +126,6 @@ export interface UserPolicyPayload {
   } & Record<CapabilityKey, boolean>;
 }
 
-export interface UserAnalyticsHour {
-  start: string;
-  end: string;
-  label: string;
-  offset: string;
-  activeMinutes: number;
-  promptCount: number;
-}
-
 export interface UserAnalyticsSession {
   id: string;
   start: string;
@@ -155,16 +146,6 @@ export interface UserAnalyticsTotals {
   filesOpened: number;
   copies: number;
   settingsChanges: number;
-}
-
-export interface UserAnalyticsDaily {
-  date: string;
-  timeZone: string;
-  dayStart: string;
-  dayEnd: string;
-  totals: UserAnalyticsTotals;
-  hours: UserAnalyticsHour[];
-  activitySessions: UserAnalyticsSession[];
 }
 
 export interface UserAnalyticsRangeDay extends UserAnalyticsTotals {

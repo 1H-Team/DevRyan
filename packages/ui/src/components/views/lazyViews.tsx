@@ -21,9 +21,6 @@ export const LazyTerminalView = /* @__PURE__ */ lazyWithChunkRecovery(() =>
 export const LazyMultiRunWindow = /* @__PURE__ */ lazyWithChunkRecovery(() =>
   import('@/components/views/MultiRunWindow').then((module) => ({ default: module.MultiRunWindow })),
 );
-export const LazyAgentManagerView = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/views/agent-manager/AgentManagerView').then((module) => ({ default: module.AgentManagerView })),
-);
 export const LazyBotView = /* @__PURE__ */ lazyWithChunkRecovery(() =>
   import('@/components/views/BotView').then((module) => ({ default: module.BotView })),
 );

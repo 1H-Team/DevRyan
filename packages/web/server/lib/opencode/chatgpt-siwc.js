@@ -6,7 +6,6 @@ import { createRemoteJWKSet, jwtVerify } from 'jose';
 /** Official Sign in with ChatGPT open-source plan-usage method. */
 export const CHATGPT_SIWC_METHOD_ID = 'chatgpt-siwc';
 export const CHATGPT_SIWC_DYNAMIC_CLIENT_ID = 'dynamic_agent_client';
-export const CHATGPT_SIWC_AGENT_NAME = 'DevRyan';
 export const CHATGPT_SIWC_AUTHORIZE_URL = 'https://auth.openai.com/api/accounts/authorize';
 export const CHATGPT_SIWC_TOKEN_URL = 'https://auth.openai.com/api/accounts/oauth/token';
 export const CHATGPT_SIWC_ISSUER = 'https://auth.openai.com';
@@ -14,7 +13,6 @@ export const CHATGPT_SIWC_JWKS_URL = 'https://auth.openai.com/.well-known/jwks.j
 export const CHATGPT_SIWC_RESOURCE = 'https://api.openai.com/v1';
 export const CHATGPT_SIWC_SCOPES = 'openid profile email offline_access resource.invoke chatgpt.tokens.use.direct';
 export const CHATGPT_SIWC_PLAN_SCOPE = 'chatgpt.tokens.use.direct';
-export const CHATGPT_SIWC_CALLBACK_PATH = '/auth/callback';
 
 const LEGACY_CODEX_METHODS = new Set(['chatgpt-browser', 'chatgpt-headless']);
 const jwks = createRemoteJWKSet(new URL(CHATGPT_SIWC_JWKS_URL));
@@ -37,16 +35,8 @@ export function createPkcePair() {
   return { verifier, challenge };
 }
 
-export function createOAuthNonce() {
-  return base64Url(crypto.randomBytes(32));
-}
-
 export function resolveSiwcHostIdPath(dataDirectory) {
   return path.join(dataDirectory, 'runtime', 'chatgpt-siwc-host-id');
-}
-
-export function resolveSiwcRegistrationPath(dataDirectory) {
-  return path.join(dataDirectory, 'runtime', 'chatgpt-siwc-registrations.json');
 }
 
 /** Stable per-install host ID. Created once; never derived from user identity. */
@@ -70,48 +60,6 @@ export function readOrCreateSiwcHostId(dataDirectory, { randomUUID = crypto.rand
     try { fs.rmSync(temporary, { force: true }); } catch { /* preserve write failure */ }
   }
   return value;
-}
-
-export function readSiwcRegistrations(dataDirectory) {
-  const file = resolveSiwcRegistrationPath(dataDirectory);
-  try {
-    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || !Array.isArray(parsed.accounts)) {
-      throw failSiwc('native_chatgpt_siwc_registration_invalid', 503);
-    }
-    if (parsed.accounts.length > 64) throw failSiwc('native_chatgpt_siwc_registration_invalid', 503);
-    const accounts = parsed.accounts.map(row => {
-      if (!row || typeof row.subject !== 'string' || !row.subject || typeof row.clientId !== 'string' || !row.clientId
-        || row.clientId === CHATGPT_SIWC_DYNAMIC_CLIENT_ID) throw failSiwc('native_chatgpt_siwc_registration_invalid', 503);
-      return { registrationRef: typeof row.registrationRef === 'string' ? row.registrationRef : crypto.randomUUID(),
-        subject: row.subject, clientId: row.clientId, credentialID: typeof row.credentialID === 'string' ? row.credentialID : null,
-        ...(typeof row.stagedCredentialID === 'string' ? { stagedCredentialID: row.stagedCredentialID } : {}),
-        ...(typeof row.email === 'string' ? { email: row.email } : {}),
-        ...(typeof row.savedAt === 'string' ? { savedAt: row.savedAt } : {}) };
-    });
-    // Older enrollment caches retained ID tokens. Strip them during the first read;
-    // returning hints are read solely through the scoped native credential owner.
-    const migrationRequired = parsed.accounts.some((row, index) => Object.keys(row).length !== Object.keys(accounts[index]).length
-      || Object.entries(accounts[index]).some(([key, value]) => row[key] !== value));
-    if (migrationRequired) writeSiwcRegistrations(dataDirectory, { accounts });
-    return { accounts };
-  } catch (error) {
-    if (error?.code === 'ENOENT') return { accounts: [] };
-    if (error?.code?.startsWith?.('native_chatgpt_siwc_')) throw error;
-    throw failSiwc('native_chatgpt_siwc_registration_invalid', 503);
-  }
-}
-
-export function writeSiwcRegistrations(dataDirectory, value) {
-  const file = resolveSiwcRegistrationPath(dataDirectory);
-  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-  const temporary = `${file}.${crypto.randomUUID()}.tmp`;
-  try {
-    fs.writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
-    fs.renameSync(temporary, file);
-  } finally {
-    try { fs.rmSync(temporary, { force: true }); } catch { /* preserve write failure */ }
-  }
 }
 
 export function parseScopeList(value) {
@@ -153,39 +101,6 @@ export function buildSiwcAuthorizeUrl({
   if (typeof idTokenHint === 'string' && idTokenHint) params.set('id_token_hint', idTokenHint);
   if (typeof loginHint === 'string' && loginHint) params.set('login_hint', loginHint);
   return `${CHATGPT_SIWC_AUTHORIZE_URL}?${params.toString()}`;
-}
-
-export async function exchangeSiwcAuthorizationCode({
-  clientId,
-  code,
-  codeVerifier,
-  redirectUri,
-  fetchImpl = fetch,
-}) {
-  const response = await fetchImpl(CHATGPT_SIWC_TOKEN_URL, {
-    method: 'POST',
-    redirect: 'error',
-    signal: AbortSignal.timeout(20_000),
-    headers: {
-      accept: 'application/json',
-      'content-type': 'application/x-www-form-urlencoded',
-    },
-    body: new URLSearchParams({
-      grant_type: 'authorization_code',
-      code,
-      redirect_uri: redirectUri,
-      client_id: clientId,
-      code_verifier: codeVerifier,
-      resource: CHATGPT_SIWC_RESOURCE,
-    }),
-  });
-  if (!response.ok) {
-    await response.body?.cancel();
-    throw failSiwc(response.status === 400 || response.status === 401
-      ? 'native_chatgpt_siwc_code_invalid'
-      : 'native_chatgpt_siwc_token_unavailable', response.status === 400 ? 400 : 503);
-  }
-  return readTokenResponse(response);
 }
 
 export async function refreshSiwcAccessToken({
@@ -358,31 +273,4 @@ export function isSiwcAuthRecord(auth) {
     && isChatgptSiwcMethodId(auth.methodID)
     && Boolean(siwcClientIdFromAuth(auth))
     && hasSiwcPlanUsage(auth.scopes ?? auth.metadata?.scopes);
-}
-
-
-/** Discovery is public; the renewable token never leaves this private host call. */
-export async function revokeSiwcSession(value, { fetchImpl = fetch } = {}) {
-  const clientId = siwcClientIdFromAuth(value);
-  if (value?.type !== 'oauth' || !clientId || typeof value.refresh !== 'string' || !value.refresh) return 'not_applicable';
-  try {
-    const discovery = await fetchImpl('https://auth.openai.com/.well-known/openid-configuration', {
-      redirect: 'error', signal: AbortSignal.timeout(10_000), headers: { accept: 'application/json' },
-    });
-    if (!discovery.ok) { await discovery.body?.cancel(); return 'unconfirmed'; }
-    const endpoint = new URL((await discovery.json()).revocation_endpoint);
-    if (endpoint.origin !== CHATGPT_SIWC_ISSUER || endpoint.username || endpoint.password || endpoint.hash) return 'unconfirmed';
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        const response = await fetchImpl(endpoint.href, { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(10_000),
-          headers: { 'content-type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({ token: value.refresh, token_type_hint: 'refresh_token', client_id: clientId }) });
-        await response.body?.cancel();
-        if (response.status === 200) return 'confirmed';
-        if (response.status < 500) return 'unconfirmed';
-      } catch { /* Retry a transient network failure once within the same bounded request. */ }
-      if (attempt === 0) await new Promise(resolve => setTimeout(resolve, 250));
-    }
-  } catch { /* Local sign-out still clears tokens and reports remote uncertainty. */ }
-  return 'unconfirmed';
 }

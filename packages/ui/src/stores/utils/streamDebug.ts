@@ -8,15 +8,6 @@ export const streamDebugEnabled = (): boolean => {
     }
 };
 
-export const sessionStatusDebugEnabled = (): boolean => {
-    if (typeof window === 'undefined') return false;
-    try {
-        return getSafeStorage().getItem('devryan_session_status_debug') === '1';
-    } catch {
-        return false;
-    }
-};
-
 const STREAM_PERF_STORAGE_KEY = 'devryan_stream_perf';
 
 type PerfCounter = {

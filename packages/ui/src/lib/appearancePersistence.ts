@@ -36,19 +36,6 @@ const extractRawAppearance = (data: unknown): RawAppearancePayload | null => {
   return payload;
 };
 
-export const saveAppearancePreferences = (preferences: AppearancePreferences): boolean => {
-  if (typeof window === 'undefined') {
-    return false;
-  }
-
-  try {
-    getSafeStorage().setItem('appearance-preferences', JSON.stringify(preferences));
-    return true;
-  } catch {
-    return false;
-  }
-};
-
 export const applyAppearancePreferences = (preferences: AppearancePreferences): void => {
   const store = useUIStore.getState();
 

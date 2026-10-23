@@ -224,13 +224,6 @@ export const hasPlanImplementationRequestPart = (parts: readonly Part[] | undefi
   (parts ?? []).some((part) => parsePlanImplementationRequestPart(part) !== null)
 );
 
-/** A host recovery wake may finish the human's existing planning turn. */
-export const isManagedPlanRecoveryMessage = (parts: readonly Part[] | undefined): boolean => (
-  !hasPlanImplementationRequestPart(parts) && (parts ?? []).some((part) => (
-    part.type === 'text' && part.synthetic === true && getPartText(part).startsWith(PROVIDER_RECOVERY_PREFIX)
-  ))
-);
-
 /** Managed collection/recovery wakes preserve policy but never request a new plan. */
 export const isManagedPlanMaintenanceMessage = (parts: readonly Part[] | undefined): boolean => {
   if (hasPlanImplementationRequestPart(parts)) return false;
@@ -300,16 +293,6 @@ export const collectAssistantTextParts = (parts: readonly Part[]): string[] => {
     if (text.length > 0) textParts.push(text);
   }
   return textParts;
-};
-
-export const collectAssistantReasoningParts = (parts: readonly Part[]): string[] => {
-  const reasoningParts: string[] = [];
-  for (const part of parts) {
-    if (part.type !== 'reasoning') continue;
-    const text = getPartText(part).trim();
-    if (text.length > 0) reasoningParts.push(text);
-  }
-  return reasoningParts;
 };
 
 const normalizePlanSectionHeading = (heading: string): string => (

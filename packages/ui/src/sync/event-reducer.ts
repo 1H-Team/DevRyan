@@ -23,7 +23,6 @@ import { dropSessionCaches } from "./session-cache"
 import { stripSessionDiffSnapshots } from "./sanitize"
 import { syncDebug } from "./debug"
 import { appendNonOverlappingDelta, appendStreamingFieldDelta, normalizeAssistantPartText } from "./part-delta"
-import { isTerminalAssistantMessage } from "./session-working"
 import {
   updateSessionUserActivityFromMessage,
   updateSessionUserActivityFromMessages,
@@ -46,7 +45,6 @@ import {
 
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
 const DELTA_OVERLAP_FIELDS = ["text", "output"] as const
-const CURSOR_PROVIDER_ID = "cursor-acp"
 
 type DedupeMetadata = {
   __dedupeNextDeltaFields?: string[]
@@ -140,14 +138,6 @@ function areSessionStatusesEqual(left: SessionStatus | undefined, right: Session
       return false
     }
   }
-}
-
-export function isTerminalCursorAssistantMessage(info: Message | undefined): boolean {
-  if (!info || info.role !== "assistant") return false
-  const providerID = (info as { providerID?: unknown }).providerID
-  if (providerID !== CURSOR_PROVIDER_ID) return false
-
-  return isTerminalAssistantMessage(info)
 }
 
 function areFileDiffsEquivalent(left: FileDiff[] | undefined, right: FileDiff[]): boolean {

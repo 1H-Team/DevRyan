@@ -9,16 +9,12 @@ const sessionDir = dirname(fileURLToPath(import.meta.url));
 const readSource = (path: string) => readFileSync(resolve(sessionDir, path), 'utf8');
 
 describe('thinking variant labels', () => {
-  test('formats scheduled-task and todo-send thinking values for display', () => {
+  test('formats scheduled-task thinking values for display', () => {
     const scheduledTaskEditor = readSource('ScheduledTaskEditorDialog.tsx');
-    const todoSendDialog = readSource('TodoSendDialog.tsx');
 
     expect(scheduledTaskEditor).toContain("import { formatEffortLabel, isPrimaryMode } from '@/components/chat/mobileControlsUtils';");
     expect(scheduledTaskEditor).toContain(': formatEffortLabel(value, { providerId: draft.execution.providerID })');
     expect(scheduledTaskEditor).toContain('{formatEffortLabel(variant, { providerId: draft.execution.providerID })}');
-    expect(todoSendDialog).toContain("import { formatEffortLabel, isPrimaryMode } from '@/components/chat/mobileControlsUtils';");
-    expect(todoSendDialog).toContain('const label = resolvedValue ? formatEffortLabel(resolvedValue, { providerId })');
-    expect(todoSendDialog).toContain('{formatEffortLabel(option, { providerId })}');
   });
 
   test('formats multirun thinking values without changing their wire keys', () => {
@@ -36,14 +32,12 @@ describe('thinking variant labels', () => {
     expect(messageHeader).toContain('const thinkingLabel = variant ? formatEffortLabel(variant, { providerId: providerID }) : undefined;');
   });
 
-  test('passes provider context through model controls, status chips, and agent settings', () => {
+  test('passes provider context through model controls and agent settings', () => {
     const modelControls = readSource('../chat/ModelControls.tsx');
-    const statusChip = readSource('../chat/StatusChip.tsx');
     const agentsPage = readSource('../sections/agents/AgentsPage.tsx');
 
     expect(modelControls).toContain('getChatThinkingState(provider, modelId, resolvedVariant)');
     expect(modelControls).toContain('formatEffortLabel(chatLevel, { providerId })');
-    expect(statusChip).toContain('{ providerId: currentProvider?.id }');
     expect(agentsPage).toContain('{ providerId: parsedRowModel?.providerId }');
   });
 

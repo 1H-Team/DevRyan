@@ -1,8 +1,6 @@
 // Only the verified OpenCode 2 wire contract is runnable in QA and performance fixtures.
 import { createLoopbackOpenCodeV2Fixture } from './loopback-opencode-v2-fixture.mjs';
 
-export const LOOPBACK_OPENCODE_FIXTURE_GENERATIONS = Object.freeze([2]);
-
 /** @param {unknown} generation @returns {2} */
 export const resolveLoopbackOpenCodeFixtureGeneration = (generation) => {
   if (generation === 2 || generation === '2') return 2;

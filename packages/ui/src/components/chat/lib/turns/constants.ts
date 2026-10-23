@@ -1,7 +1,3 @@
-export const ACTIVITY_STANDALONE_TOOL_NAMES = new Set<string>(['task']);
-
-export const HIDDEN_INTERNAL_TOOL_NAMES = new Set<string>(['todowrite', 'todoread']);
-
 // The mounted transcript window holds whole turns but is sized in rows (each
 // prompt plus every tool call, text and reasoning part of the replies): one
 // orchestrator turn can carry hundreds of tool rows. Up to
@@ -16,5 +12,3 @@ export const TURN_WINDOW_DEFAULTS = {
     initialRows: 40,
     batchRows: 40,
 } as const;
-
-export const TURN_TEXT_THROTTLE_DEFAULT_MS = 100;

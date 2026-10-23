@@ -54,5 +54,3 @@ export interface WorktreeMetadata {
   /** Initial durable setup receipt used to reconnect progress immediately. */
   bootstrap?: import('@/lib/api/types').GitWorktreeBootstrapStatus;
 }
-
-export type WorktreeMap = Map<string, WorktreeMetadata>;

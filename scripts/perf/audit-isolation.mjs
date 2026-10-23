@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { constants } from 'node:fs';
-import { cp, lstat, mkdir, readdir, readFile, readlink, realpath, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readdir, readFile, readlink, realpath, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -69,28 +68,6 @@ export async function assertAuditDependencyLinks(checkout) {
     try { await visit(path.join(canonical, directory)); }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
-}
-
-export async function cloneAuditDependencies(source, target) {
-  for (const relative of ['node_modules', ...(await readdir(path.join(source, 'packages')))
-    .map(name => path.join('packages', name, 'node_modules'))]) {
-    try { await lstat(path.join(source, relative)); }
-    catch (error) { if (error.code === 'ENOENT') continue; throw error; }
-    await cp(path.join(source, relative), path.join(target, relative), {
-      recursive: true, dereference: false, verbatimSymlinks: true,
-      mode: constants.COPYFILE_FICLONE,
-      errorOnExist: true, force: false,
-    });
-  }
-  // Reconcile the arm against its own frozen lockfile before validating links.
-  // Install scripts are intentionally absent: they can sign/rebuild shared or
-  // global state. Native preparation is a later, arm-owned operation.
-  await mkdir(path.join(target, '.audit-install-home'), { mode: 0o700 });
-  execFileSync('bun', ['install', '--frozen-lockfile', '--ignore-scripts'], {
-    cwd: target, stdio: 'pipe', env: { PATH: process.env.PATH, HOME: path.join(target, '.audit-install-home'),
-      DEVRYAN_SKIP_INSTALL_PREPARE: '1', OPENCHAMBER_SKIP_INSTALL_PREPARE: '1' },
-  });
-  await assertAuditDependencyLinks(target);
 }
 
 // Keep command arguments out of evidence: the user's running app can carry
