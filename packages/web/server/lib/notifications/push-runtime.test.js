@@ -88,6 +88,50 @@ describe('multi-user push delivery', () => {
     expect(sendNotification.mock.calls[0][0].endpoint).toBe('https://push.test/hidden');
   });
 
+  it('recovers its write chain after a failed subscription save', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-push-'));
+    temporaryDirectories.push(directory);
+    const subscriptionsPath = path.join(directory, 'push-subscriptions.json');
+    let failNextSubscriptionWrite = false;
+    const fsPromises = {
+      ...fs,
+      rename: async (source, destination) => {
+        if (failNextSubscriptionWrite && destination === subscriptionsPath) {
+          failNextSubscriptionWrite = false;
+          await fs.rm(source, { force: true });
+          throw Object.assign(new Error('disk full'), { code: 'ENOSPC' });
+        }
+        return fs.rename(source, destination);
+      },
+    };
+    const runtime = createPushRuntime({
+      fsPromises,
+      path,
+      webPush: {
+        generateVAPIDKeys: () => ({ publicKey: 'public', privateKey: 'private' }),
+        setVapidDetails() {},
+        sendNotification: vi.fn(async () => undefined),
+      },
+      PUSH_SUBSCRIPTIONS_FILE_PATH: subscriptionsPath,
+      readSettingsFromDiskMigrated: async () => ({
+        publicOrigin: 'https://devryan.example.test',
+        vapidKeys: { publicKey: 'public', privateKey: 'private' },
+      }),
+      writeSettingsToDisk: async () => undefined,
+    });
+    const subscription = (endpoint) => ({ endpoint, p256dh: `p256dh-${endpoint}`, auth: `auth-${endpoint}` });
+    await runtime.ensurePushInitialized();
+
+    failNextSubscriptionWrite = true;
+    await expect(runtime.addOrUpdatePushSubscription('session-one', subscription('https://push.test/one'), 'browser-one'))
+      .rejects.toMatchObject({ code: 'ENOSPC' });
+    await runtime.addOrUpdatePushSubscription('session-two', subscription('https://push.test/two'), 'browser-two');
+
+    const stored = await fs.readFile(subscriptionsPath, 'utf8');
+    expect(stored).toContain('https://push.test/two');
+    expect(stored).not.toContain('https://push.test/one');
+  });
+
   it('rewrites legacy raw session-token keys during initialization', async () => {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-push-'));
     temporaryDirectories.push(directory);

@@ -115,6 +115,17 @@ describe('settings runtime', () => {
     expect(runtime.holdForCheckpoint()).toBe(draining);
   });
 
+  it('recovers its write chain after a failed save so later saves still persist', async () => {
+    const { runtime, fsPromises } = createRuntime({});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    fsPromises.rename.mockRejectedValueOnce(Object.assign(new Error('disk full'), { code: 'ENOSPC' }));
+
+    await expect(runtime.persistSettings({ chatWidth: 500 })).rejects.toMatchObject({ code: 'ENOSPC' });
+    await expect(runtime.persistSettings({ chatWidth: 700 })).resolves.toMatchObject({ chatWidth: 700 });
+    expect(await runtime.readSettingsFromDisk()).toMatchObject({ chatWidth: 700 });
+    await expect(runtime.holdForCheckpoint()).resolves.toBeUndefined();
+  });
+
   it('removes its temporary file when a settings write fails', async () => {
     const { runtime, fsPromises } = createRuntime({});
     fsPromises.rename.mockRejectedValueOnce(Object.assign(new Error('disk full'), { code: 'ENOSPC' }));

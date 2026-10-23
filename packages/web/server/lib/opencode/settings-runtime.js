@@ -796,7 +796,9 @@ export const createSettingsRuntime = (deps) => {
   };
 
   const persistSettings = async (changes) => {
-    persistSettingsLock = persistSettingsLock.then(async () => {
+    // Chain from a settled copy: one failed write (a full disk, say) must not
+    // leave the lock rejected and skip every later write until restart.
+    const write = persistSettingsLock.then(async () => {
       // Key names only: the full body can be large (model lists, projects), and
       // in Electron every log line is a synchronous write on the main thread.
       console.log('[persistSettings] Called with changes:', Object.keys(changes ?? {}).join(', '));
@@ -865,7 +867,8 @@ export const createSettingsRuntime = (deps) => {
       return formatSettingsResponse(next);
     });
 
-    return persistSettingsLock;
+    persistSettingsLock = write.catch(() => undefined);
+    return write;
   };
 
   return {

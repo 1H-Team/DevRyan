@@ -139,7 +139,9 @@ export const createManagedTunnelConfigRuntime = (deps) => {
   };
 
   const updateManagedRemoteTunnelConfig = async (mutate) => {
-    persistManagedRemoteTunnelConfigLock = persistManagedRemoteTunnelConfigLock.then(async () => {
+    // Chain from a settled copy: one failed write (a full disk, say) must not
+    // leave the lock rejected and skip every later write until restart.
+    const write = persistManagedRemoteTunnelConfigLock.then(async () => {
       const current = await readManagedRemoteTunnelConfigFromDisk();
       const next = mutate({
         version: CLOUDFLARE_MANAGED_REMOTE_TUNNELS_VERSION,
@@ -152,7 +154,8 @@ export const createManagedTunnelConfigRuntime = (deps) => {
       });
     });
 
-    return persistManagedRemoteTunnelConfigLock;
+    persistManagedRemoteTunnelConfigLock = write.catch(() => undefined);
+    return write;
   };
 
   const syncManagedRemoteTunnelConfigWithPresets = async (presets) => {
