@@ -56,6 +56,11 @@ export function classifyPrimaryTransportError(error, runtimeVersion) {
       }
     } catch { /* Unrecognized envelopes cannot authorize recovery. */ }
   }
+  // Native 2.x reformats the same Meridian SSE error event as `<type>: <message>`.
+  if (name === 'APIError' && isNativePrimaryRuntimeVersion(runtimeVersion)
+    && /^upstream_timeout: Upstream stalled: no data for [1-9][0-9]{0,12}ms$/.test(message)) {
+    return { kind: 'chunk_timeout', source: 'upstream_timeout_text' };
+  }
   const codes = {
     ETIMEDOUT: 'request_timeout', ECONNRESET: 'connection_reset', EPIPE: 'connection_reset',
     UND_ERR_HEADERS_TIMEOUT: 'header_timeout', UND_ERR_SOCKET: 'connection_reset',

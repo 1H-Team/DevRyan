@@ -268,6 +268,13 @@ describe("classifyAssistantError", () => {
   })
 })
 
+ test('presents the OpenCode 2.x Claude upstream stall text without generic failure copy', () => {
+   const result = classifyAssistantError({ name: 'APIError', data: { message: 'upstream_timeout: Upstream stalled: no data for 90005ms', statusCode: 200, v2Type: 'provider.unknown' } }, { providerID: 'anthropic' });
+   expect(result?.text).toContain('Claude stopped sending data');
+   expect(result?.text).not.toContain('The model provider could not complete');
+   expect(result?.retryable).toBe(true);
+ });
+
  test('presents the Claude upstream stall without generic failure copy', () => {
    const result = classifyAssistantError({ name: 'UnknownError', data: { message: '{"type":"upstream_timeout","message":"Upstream stalled: no data for 208771ms"}' } }, { providerID: 'anthropic' });
    expect(result?.text).toContain('Claude stopped sending data');

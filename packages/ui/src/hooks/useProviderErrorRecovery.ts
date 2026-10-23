@@ -36,6 +36,7 @@ export function useProviderErrorRecovery(enabled = true): void {
   const cappedRetryUserMessageIdsRef = React.useRef<Map<string, string>>(new Map());
   const cappedRetryAbortsInFlightRef = React.useRef<Set<string>>(new Set());
   const pendingInitialIdleRecoveryRef = React.useRef<Set<string>>(new Set());
+  const retryLoopStartsRef = React.useRef<Map<string, { userMessageId: string; startedAt: number; attempt: number }>>(new Map());
 
   React.useEffect(() => {
     const previousStatuses = previousStatusesRef.current;
@@ -43,6 +44,7 @@ export function useProviderErrorRecovery(enabled = true): void {
     const cappedRetryUserMessageIds = cappedRetryUserMessageIdsRef.current;
     const cappedRetryAbortsInFlight = cappedRetryAbortsInFlightRef.current;
     const pendingInitialIdleRecovery = pendingInitialIdleRecoveryRef.current;
+    const retryLoopStarts = retryLoopStartsRef.current;
     let active = true;
     if (!enabled) {
       previousStatuses.clear();
@@ -50,6 +52,7 @@ export function useProviderErrorRecovery(enabled = true): void {
       cappedRetryUserMessageIds.clear();
       cappedRetryAbortsInFlight.clear();
       pendingInitialIdleRecovery.clear();
+      retryLoopStarts.clear();
       return;
     }
 
@@ -77,7 +80,19 @@ export function useProviderErrorRecovery(enabled = true): void {
           pendingInitialIdleRecovery.delete(sessionId);
           if (directory) {
             if (userMessageId) activeUserMessageIds.set(sessionId, userMessageId);
-            const retryDecision = decideProviderRetryLoopRecovery(status);
+            // OpenCode reports busy before every retried send, so a retry loop is
+            // identified by a non-decreasing attempt count for the same user message.
+            let retryElapsedMs = 0;
+            if (status.type === 'retry' && userMessageId) {
+              const started = retryLoopStarts.get(sessionId);
+              if (started?.userMessageId === userMessageId && status.attempt >= started.attempt) {
+                retryElapsedMs = Date.now() - started.startedAt;
+                started.attempt = status.attempt;
+              } else {
+                retryLoopStarts.set(sessionId, { userMessageId, startedAt: Date.now(), attempt: status.attempt });
+              }
+            }
+            const retryDecision = decideProviderRetryLoopRecovery(status, retryElapsedMs);
             const hasPendingWork = useMessageQueueStore.getState().getQueueForSession(sessionId).length > 0
               || isQueuedMessageFlushInFlight(sessionId)
               || getSyncBlockingRequestCountAnyDirectory(sessionId) > 0;
@@ -110,6 +125,7 @@ export function useProviderErrorRecovery(enabled = true): void {
           }
           continue;
         }
+        retryLoopStarts.delete(sessionId);
         const previous = previousStatuses.get(sessionId);
         if (status.type !== 'idle' || !directory) continue;
         const queuedMessageCount = useMessageQueueStore.getState().getQueueForSession(sessionId).length
@@ -151,6 +167,9 @@ export function useProviderErrorRecovery(enabled = true): void {
       for (const sessionId of pendingInitialIdleRecovery) {
         if (!nextStatuses.has(sessionId)) pendingInitialIdleRecovery.delete(sessionId);
       }
+      for (const sessionId of retryLoopStarts.keys()) {
+        if (!nextStatuses.has(sessionId)) retryLoopStarts.delete(sessionId);
+      }
     };
 
     processStatusSnapshot();
@@ -163,6 +182,7 @@ export function useProviderErrorRecovery(enabled = true): void {
       cappedRetryUserMessageIds.clear();
       cappedRetryAbortsInFlight.clear();
       pendingInitialIdleRecovery.clear();
+      retryLoopStarts.clear();
       useProviderRecoveryStore.getState().reset();
     };
   }, [childStores, enabled]);

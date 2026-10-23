@@ -975,6 +975,16 @@ test('Claude exact envelope requires a verified runtime and excludes ambiguous e
   expect(classifyPrimaryTransportError({ ...upstreamTimeout, statusCode: 401 }, '1.18.29')).toBeNull();
 });
 
+test('native 2.x upstream stall text is a chunk timeout only on native runtimes', () => {
+  const stall = { name: 'APIError', data: { message: 'upstream_timeout: Upstream stalled: no data for 90005ms', statusCode: 200, v2Type: 'provider.unknown' } };
+  expect(classifyPrimaryTransportError(stall, '2.1.3')).toEqual({ kind: 'chunk_timeout', source: 'upstream_timeout_text' });
+  expect(classifyPrimaryTransportError(stall, '1.18.29')).toBeNull();
+  expect(classifyPrimaryTransportError({ ...stall, name: 'UnknownError' }, '2.1.3')).toBeNull();
+  for (const message of ['upstream_timeout: request timeout', 'upstream_timeout: Upstream stalled: no data for 90005ms auth failed', 'Upstream stalled: no data for 90005ms']) {
+    expect(classifyPrimaryTransportError({ name: 'APIError', data: { message } }, '2.1.3')).toBeNull();
+  }
+});
+
 test('Claude message-only terminal error recovers once with the original selection and tool guards', async () => {
   const f = await claudeFixture();
   await Promise.all([f.finalize(), f.finalize()]);

@@ -205,6 +205,12 @@ describe('provider queue failures', () => {
   });
 });
 
+ it('recognizes the OpenCode 2.x upstream stall text form', () => {
+   expect(classifyProviderTransportFailure('APIError', 'upstream_timeout: Upstream stalled: no data for 90005ms')).toBe('stream_idle_timeout');
+   expect(classifyProviderTransportFailure('APIError', 'upstream_timeout: request timeout')).toBeNull();
+   expect(classifyProviderTransportFailure('AbortError', 'upstream_timeout: Upstream stalled: no data for 90005ms')).toBeNull();
+ });
+
  it('recognizes only the complete upstream stall envelope', () => {
    expect(classifyProviderTransportFailure('UnknownError', '{"type":"upstream_timeout","message":"Upstream stalled: no data for 208771ms"}')).toBe('stream_idle_timeout');
    expect(classifyProviderTransportFailure('UnknownError', '{"type":"upstream_timeout","message":"request timeout"}')).toBeNull();

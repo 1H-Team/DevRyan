@@ -16,6 +16,9 @@ type Input = {
 };
 
 export const MAX_TRANSIENT_PROVIDER_RETRY_ATTEMPTS = 3;
+// OpenCode 2 bounds its own transient retries (up to 10, 2-10 s backoff), so a
+// retry loop is only stopped here once it has also outlasted this window.
+export const MAX_TRANSIENT_PROVIDER_RETRY_WINDOW_MS = 5 * 60_000;
 export const INTERRUPTED_PROVIDER_RESPONSE_REASON = 'The previous response stopped before it completed.';
 
 export function isPrimaryProviderRecoverySession(
@@ -26,6 +29,7 @@ export function isPrimaryProviderRecoverySession(
 
 export function decideProviderRetryLoopRecovery(
   status: SessionStatus | undefined,
+  retryElapsedMs = 0,
 ): { reason: string } | null {
   if (status?.type !== 'retry') return null;
   const reason = stripWrappedJsonQuotes(status.message).trim();
@@ -35,6 +39,7 @@ export function decideProviderRetryLoopRecovery(
     || isDefiniteProviderUsageLimit(reason)
   ) return { reason };
   if (status.attempt < MAX_TRANSIENT_PROVIDER_RETRY_ATTEMPTS) return null;
+  if (retryElapsedMs < MAX_TRANSIENT_PROVIDER_RETRY_WINDOW_MS) return null;
   if (!isLikelyTransientStreamFailure(undefined, reason)) return null;
   return { reason };
 }

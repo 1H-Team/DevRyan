@@ -134,7 +134,7 @@ managed barrier, current authorization, and an unused budget. Settlement is
 bounded to 30 seconds with bounded individual observations. Idle, an abort
 acknowledgement, a failed read, and renderer-forced idle are not sufficient.
 Healthy status-map omission is accepted only with independent session,
-transcript and blocker checks. Generic timeout wording is ineligible; a bounded, valid JSON envelope with `type: upstream_timeout` and the exact `Upstream stalled: no data for <positive milliseconds>ms` message is classified as a chunk timeout on verified runtime versions. The presentation classifier maps the same envelope to `stream_idle_timeout`. The exact
+transcript and blocker checks. Generic timeout wording is ineligible; a bounded, valid JSON envelope with `type: upstream_timeout` and the exact `Upstream stalled: no data for <positive milliseconds>ms` message is classified as a chunk timeout on verified runtime versions. Native 2.x runtimes reformat that event as the `APIError` text `upstream_timeout: Upstream stalled: no data for <positive milliseconds>ms`; only that exact text on a native primary runtime version is classified as a chunk timeout (source `upstream_timeout_text`). The presentation classifier maps both forms to `stream_idle_timeout`. The exact
 `UnknownError` timeout shape of an allow-listed legacy runtime has a
 version-specific compatibility rule.
 

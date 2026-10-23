@@ -101,8 +101,11 @@ const CONNECTION_FAILURE_PATTERN = /(?:^terminated$|\beconn(?:aborted|refused|re
 const PROVIDER_QUEUE_FAILURE_PATTERN = /(?:\btimed out in queue\b|\bservice (?:is )?temporarily unavailable\b|\bthe model did not respond\b|\bmodel is overloaded\b|\bserver is overloaded\b|\bcapacity exceeded\b|\bno capacity available\b)/i;
 
 // Match the observed provider envelope, not arbitrary prose mentioning a timeout.
+// OpenCode 2.x reformats Meridian's SSE error event as `<type>: <message>`.
+const UPSTREAM_STALL_TEXT_PATTERN = /^upstream_timeout: Upstream stalled: no data for [1-9][0-9]{0,12}ms$/;
 const isUpstreamStallEnvelope = (detail) => {
   if (detail.length > 4096) return false;
+  if (UPSTREAM_STALL_TEXT_PATTERN.test(detail)) return true;
   try {
     const value = JSON.parse(detail);
     return value !== null && typeof value === 'object' && !Array.isArray(value)

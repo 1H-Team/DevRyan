@@ -443,8 +443,8 @@ should use the exported per-Bot, per-channel, and per-run leaf selectors.
 record per root session. Retryable terminal provider errors populate it after
 an authoritative active-to-idle transition. A definite provider usage limit in
 a live root retry status first receives a confirmed abort, then populates the
-same record immediately; ordinary transient retry loops remain bounded at
-three attempts. Child sessions are excluded by authoritative `parentID` and
+same record immediately; ordinary transient retry loops are stopped only after
+three attempts and five minutes of retrying. Child sessions are excluded by authoritative `parentID` and
 continue through managed-task recovery. The record owns a local
 provider/model/variant selection plus pending/action error leaves. Normal user
 sends clear it, while a manual recovery send preserves it until the send
