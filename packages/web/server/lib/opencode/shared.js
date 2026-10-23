@@ -339,6 +339,43 @@ function getAncestors(startDir, stopDir) {
   return result;
 }
 
+const realPathOrResolved = (filePath) => {
+  try {
+    return fs.realpathSync(filePath);
+  } catch {
+    return path.resolve(filePath);
+  }
+};
+
+const isConfigFile = (filePath) => {
+  try {
+    return fs.statSync(filePath).isFile();
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Every config file OpenCode 2 discovers walking up from the project folder to
+ * the filesystem root, lowest priority first: each folder's `opencode.json`
+ * then `opencode.jsonc`, outermost folder first, followed by each folder's
+ * `.opencode/opencode.json(c)` in the same order, so every `.opencode` file
+ * overrides every direct one. The global config folder's files are left out.
+ */
+function getFolderConfigPaths(workingDirectory) {
+  if (!workingDirectory) return [];
+  const globalDirectory = realPathOrResolved(OPENCODE_CONFIG_DIR);
+  if (realPathOrResolved(workingDirectory) === globalDirectory) return [];
+  const folders = getAncestors(workingDirectory).reverse();
+  const configFilesIn = (folder) => (realPathOrResolved(folder) === globalDirectory ? [] : ['opencode.json', 'opencode.jsonc']
+    .map((name) => path.join(folder, name))
+    .filter(isConfigFile));
+  return [
+    ...folders.flatMap(configFilesIn),
+    ...folders.map((folder) => path.join(folder, '.opencode')).flatMap(configFilesIn),
+  ];
+}
+
 function findWorktreeRoot(startDir) {
   if (!startDir) return null;
   let current = path.resolve(startDir);
@@ -609,6 +646,7 @@ export {
   getJsonEntrySource,
   getJsonWriteTarget,
   getAncestors,
+  getFolderConfigPaths,
   findWorktreeRoot,
   isPromptFileReference,
   resolvePromptFilePath,

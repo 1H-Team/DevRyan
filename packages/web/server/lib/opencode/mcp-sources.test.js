@@ -62,6 +62,30 @@ describe('MCP source helpers', () => {
     expect(getProjectMcpWritePath(projectDir)).toBe(rootPath);
   });
 
+  it('lists parent folder configs as active sources in OpenCode order', async () => {
+    const workspace = path.join(tempHome, 'workspace');
+    const projectDir = path.join(workspace, 'project');
+    writeJson(path.join(workspace, 'opencode.json'), { mcp: {} });
+    writeJson(path.join(workspace, '.opencode', 'opencode.json'), { mcp: {} });
+    // The global config folder's own files are never a parent folder source.
+    writeJson(path.join(tempHome, '.config', 'opencode', 'opencode.json'), { mcp: {} });
+
+    const { describeMcpSource, getActiveMcpSources } = await loadMcpSourcesModule();
+    const projectSources = getActiveMcpSources(projectDir)
+      .map(describeMcpSource)
+      .filter((source) => source.kind !== 'user' && source.kind !== 'user-legacy' && source.kind !== 'custom')
+      .map((source) => [path.relative(tempHome, source.path), source.kind, source.scope, path.relative(tempHome, source.targetPath)]);
+
+    expect(projectSources).toEqual([
+      ['workspace/opencode.json', 'folder', 'user', 'workspace/opencode.json'],
+      ['workspace/project/opencode.json', 'project', 'project', 'workspace/project/.opencode/opencode.json'],
+      ['workspace/project/opencode.jsonc', 'project', 'project', 'workspace/project/.opencode/opencode.json'],
+      ['workspace/.opencode/opencode.json', 'folder', 'user', 'workspace/.opencode/opencode.json'],
+      ['workspace/project/.opencode/opencode.json', 'project-legacy', 'project', 'workspace/project/.opencode/opencode.json'],
+      ['workspace/project/.opencode/opencode.jsonc', 'project-legacy', 'project', 'workspace/project/.opencode/opencode.json'],
+    ]);
+  });
+
   it('does not list home .opencode MCP config as an active user-scoped source', async () => {
     const homePath = path.join(tempHome, '.opencode', 'opencode.json');
     writeJson(homePath, {
