@@ -23,7 +23,6 @@ const lazyViewNames = [
   'PlanView',
   'TerminalView',
   'MultiRunWindow',
-  'AgentManagerView',
 ] as const;
 
 describe('shared lazy view boundaries', () => {
@@ -79,9 +78,7 @@ describe('shared lazy view boundaries', () => {
     expect(statusRow).toContain('void preloadPlanView().catch(() => undefined);');
 
     for (const viewName of lazyViewNames) {
-      const modulePath = viewName === 'AgentManagerView'
-        ? '@/components/views/agent-manager/AgentManagerView'
-        : `@/components/views/${viewName}`;
+      const modulePath = `@/components/views/${viewName}`;
 
       expect(source).toContain(`export const Lazy${viewName} = /* @__PURE__ */ lazyWithChunkRecovery`);
       const moduleOwner = viewName === 'PlanView' ? planViewLoader : source;

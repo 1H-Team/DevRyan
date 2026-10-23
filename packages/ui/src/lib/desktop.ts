@@ -1,15 +1,9 @@
 import type { HelperModelSelection } from '@/lib/helperModelSelection';
 import type { ProjectEntry } from '@/lib/api/types';
 import type { MobileKeyboardMode } from '@/lib/mobileKeyboardMode';
-import { getAuthPrincipal } from '@/lib/authSession';
 import type { AgentModelSelection } from '@/lib/agentModelSelection';
 
 export type { AgentModelSelection } from '@/lib/agentModelSelection';
-
-export type AssistantNotificationPayload = {
-  title?: string;
-  body?: string;
-};
 
 export type UpdateInfo = {
   available: boolean;
@@ -442,17 +436,6 @@ export const startDesktopWindowDrag = async (): Promise<boolean> => {
   }
 };
 
-export const isLoopbackStandaloneWebRuntime = (): boolean => {
-  if (typeof window === 'undefined' || isDesktopShell()) return false;
-  if (getAuthPrincipal().scope === 'managed') return false;
-  const current = parseUrl(window.location.href);
-  return Boolean(
-    current
-    && (current.protocol === 'http:' || current.protocol === 'https:')
-    && isLoopbackHost(current.hostname),
-  );
-};
-
 export const isStandaloneWebRuntime = (): boolean => {
   if (typeof window === 'undefined' || isDesktopShell()) return false;
   const current = parseUrl(window.location.href);
@@ -552,29 +535,6 @@ export const stopAccessingDirectory = async (
 ): Promise<{ success: boolean; error?: string }> => {
   void directoryPath;
   return { success: true };
-};
-
-export const sendAssistantCompletionNotification = async (
-  payload?: AssistantNotificationPayload
-): Promise<boolean> => {
-  if (isTauriShell()) {
-    try {
-      const tauri = (window as unknown as { __TAURI__?: TauriGlobal }).__TAURI__;
-      await tauri?.core?.invoke?.('desktop_notify', {
-        payload: {
-          title: payload?.title,
-          body: payload?.body,
-          tag: 'devryan-agent-complete',
-        },
-      });
-      return true;
-    } catch (error) {
-      console.warn('Failed to send assistant completion notification (tauri)', error);
-      return false;
-    }
-  }
-
-  return false;
 };
 
 export const checkForDesktopUpdates = async (): Promise<UpdateInfo | null> => {
@@ -850,60 +810,6 @@ export const openDesktopFileInApp = async (
   } catch (error) {
     console.warn('Failed to open file in app', error);
     return false;
-  }
-};
-
-export const filterInstalledDesktopApps = async (apps: string[]): Promise<string[]> => {
-  if (!isTauriShell() || !isDesktopLocalOriginActive()) {
-    return [];
-  }
-
-  const candidate = Array.isArray(apps) ? apps.filter((value) => typeof value === 'string') : [];
-  if (candidate.length === 0) {
-    return [];
-  }
-
-  try {
-    const tauri = (window as unknown as { __TAURI__?: TauriGlobal }).__TAURI__;
-    const result = await tauri?.core?.invoke?.('desktop_filter_installed_apps', {
-      apps: candidate,
-    });
-    return Array.isArray(result) ? result.filter((value) => typeof value === 'string') : [];
-  } catch (error) {
-    console.warn('Failed to check installed apps (tauri)', error);
-    return [];
-  }
-};
-
-export const fetchDesktopAppIcons = async (apps: string[]): Promise<Record<string, string>> => {
-  if (!isTauriShell() || !isDesktopLocalOriginActive()) {
-    return {};
-  }
-
-  const candidate = Array.isArray(apps) ? apps.filter((value) => typeof value === 'string') : [];
-  if (candidate.length === 0) {
-    return {};
-  }
-
-  try {
-    const tauri = (window as unknown as { __TAURI__?: TauriGlobal }).__TAURI__;
-    const result = await tauri?.core?.invoke?.('desktop_fetch_app_icons', {
-      apps: candidate,
-    });
-    if (!Array.isArray(result)) {
-      return {};
-    }
-    const map: Record<string, string> = {};
-    for (const entry of result) {
-      if (!entry || typeof entry !== 'object') continue;
-      const candidateEntry = entry as { app?: unknown; data_url?: unknown };
-      if (typeof candidateEntry.app !== 'string' || typeof candidateEntry.data_url !== 'string') continue;
-      map[candidateEntry.app] = candidateEntry.data_url;
-    }
-    return map;
-  } catch (error) {
-    console.warn('Failed to fetch installed app icons (tauri)', error);
-    return {};
   }
 };
 

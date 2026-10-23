@@ -4280,17 +4280,6 @@ export function useEnsureSessionChildren(
   })
 }
 
-/** Get the revert messageID for a session (if reverted) */
-export function useSessionRevertMessageID(sessionID: string, directory?: string): string | undefined {
-  return useDirectorySync(
-    useCallback((state: State) => {
-      const session = state.session.find((s) => s.id === sessionID)
-      return getEffectiveSessionRevertMessageID(state, sessionID, session)
-    }, [sessionID]),
-    directory,
-  )
-}
-
 /** Select only whether this session has an in-flight scoped revert. */
 export function useSessionRevertPending(sessionID: string, directory?: string): boolean {
   return useDirectorySync(
@@ -4308,19 +4297,6 @@ export function useSessionMessages(sessionID: string, directory?: string) {
     useCallback((state: State) => state.message[sessionID] ?? EMPTY_MESSAGES, [sessionID]),
     directory,
   )
-}
-
-/**
- * Get visible session messages — filters out reverted messages.
- * Splits reverted messages at the exact marker's chronological position.
- */
-export function useVisibleSessionMessages(sessionID: string, directory?: string) {
-  const messages = useSessionMessages(sessionID, directory)
-  const revertMessageID = useSessionRevertMessageID(sessionID, directory)
-  return useMemo(() => {
-    if (!revertMessageID) return messages
-    return messagesBefore(messages, revertMessageID)
-  }, [messages, revertMessageID])
 }
 
 /** Check whether the message list for a session has been loaded into sync state. */
@@ -4372,129 +4348,6 @@ export function useSessions(directory?: string) {
     useCallback((state: State) => state.session, []),
     directory,
   )
-}
-
-const getSidebarSessionSignature = (session: Session, stableUpdatedAt: number): string => {
-  const directory = (session as Session & { directory?: string | null }).directory ?? ''
-  const parentID = (session as Session & { parentID?: string | null }).parentID ?? ''
-  const projectWorktree = (session as Session & { project?: { worktree?: string | null } | null }).project?.worktree ?? ''
-  const shared = session.share?.url ?? ''
-  return [
-    session.id,
-    session.title ?? '',
-    session.time?.created ?? 0,
-    session.time?.archived ? 1 : 0,
-    directory,
-    parentID,
-    projectWorktree,
-    shared,
-    stableUpdatedAt,
-  ].join('|')
-}
-
-const isSidebarSessionWorking = (state: State, sessionID: string): boolean => {
-  const messages = state.message[sessionID] ?? EMPTY_MESSAGES
-  const lastMessage = messages[messages.length - 1]
-  const liveParts = lastMessage ? (state.part[lastMessage.id] ?? EMPTY_PARTS) : EMPTY_PARTS
-  const liveStreamingMessageId = useStreamingStore.getState().streamingMessageIds.get(sessionID) ?? null
-
-  return isSessionWorkingFromState({
-    status: state.session_status?.[sessionID],
-    permissions: state.permission[sessionID] ?? EMPTY_PERMISSION_REQUESTS,
-    messages,
-    liveStreamingMessageId,
-    liveParts,
-  })
-}
-
-/** Get sessions stabilized for sidebar tree rendering */
-export function useSidebarSessions(directory?: string): Session[] {
-  const store = useDirectoryStore(directory)
-  const cacheRef = React.useRef<{
-    source: Session[]
-    streamingSignature: string
-    array: Session[]
-    signatures: Map<string, string>
-    sessionsById: Map<string, Session>
-    stableUpdatedAtById: Map<string, number>
-    streamingById: Map<string, boolean>
-  } | null>(null)
-
-  const getSnapshot = React.useCallback(() => {
-    const state = store.getState()
-    const source = state.session
-    const cached = cacheRef.current
-    const streamingSignature = source
-      .map((session) => {
-        const isStreaming = isSidebarSessionWorking(state, session.id)
-        return `${session.id}:${isStreaming ? 1 : 0}`
-      })
-      .join('|')
-
-    if (cached && cached.source === source && cached.streamingSignature === streamingSignature) {
-      return cached.array
-    }
-
-    const signatures = new Map<string, string>()
-    const sessionsById = new Map<string, Session>()
-    const stableUpdatedAtById = new Map<string, number>()
-    const streamingById = new Map<string, boolean>()
-    let changed = !cached || cached.array.length !== source.length
-
-    const array = source.map((session) => {
-      const rawUpdatedAt = Number(session.time?.updated ?? session.time?.created ?? 0)
-      const isStreaming = isSidebarSessionWorking(state, session.id)
-      const cachedUpdatedAt = cached?.stableUpdatedAtById.get(session.id) ?? rawUpdatedAt
-      const wasStreaming = cached?.streamingById.get(session.id) ?? false
-      const stableUpdatedAt = isStreaming
-        ? (wasStreaming ? cachedUpdatedAt : Math.max(rawUpdatedAt, cachedUpdatedAt, Date.now()))
-        : cachedUpdatedAt
-      const signature = getSidebarSessionSignature(session, stableUpdatedAt)
-      signatures.set(session.id, signature)
-      stableUpdatedAtById.set(session.id, stableUpdatedAt)
-      streamingById.set(session.id, isStreaming)
-
-      const cachedSession = cached?.sessionsById.get(session.id)
-      if (
-        cachedSession
-        && cached?.signatures.get(session.id) === signature
-      ) {
-        sessionsById.set(session.id, cachedSession)
-        return cachedSession
-      }
-
-      changed = true
-      const nextSession = stableUpdatedAt === rawUpdatedAt
-        ? session
-        : {
-            ...session,
-            time: {
-              ...session.time,
-              updated: stableUpdatedAt,
-            },
-          }
-      sessionsById.set(session.id, nextSession)
-      return nextSession
-    })
-
-    if (!changed && cached) {
-      cacheRef.current = {
-        source,
-        streamingSignature,
-        array: cached.array,
-        signatures,
-        sessionsById: cached.sessionsById,
-        stableUpdatedAtById,
-        streamingById,
-      }
-      return cached.array
-    }
-
-    cacheRef.current = { source, streamingSignature, array, signatures, sessionsById, stableUpdatedAtById, streamingById }
-    return array
-  }, [store])
-
-  return React.useSyncExternalStore(store.subscribe, getSnapshot, getSnapshot)
 }
 
 /** Get one session by id for a directory */

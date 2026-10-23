@@ -1,5 +1,4 @@
 import { createStore } from "zustand/vanilla"
-import { useStore } from "zustand"
 
 export type SessionMessagePagination = {
   limit: number
@@ -71,17 +70,6 @@ export function setSessionMessagePagination(
     return { byKey }
   })
   return next
-}
-
-export function useSessionMessagePagination(
-  directory: string,
-  sessionID: string | null | undefined,
-): SessionMessagePagination {
-  const key = sessionID ? keyFor(directory, sessionID) : null
-  return useStore(
-    paginationStore,
-    (state) => (key ? state.byKey.get(key) : undefined) ?? DEFAULT_SESSION_MESSAGE_PAGINATION,
-  )
 }
 
 export function runSessionMessageLoad(input: {

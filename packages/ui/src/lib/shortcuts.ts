@@ -502,10 +502,6 @@ export function getShortcutAction(id: string): ShortcutAction | undefined {
   return SHORTCUT_ACTIONS.find((action) => action.id === id);
 }
 
-export function getAllShortcutActions(): ReadonlyArray<ShortcutAction> {
-  return SHORTCUT_ACTIONS;
-}
-
 export function getCustomizableShortcutActions(): ReadonlyArray<ShortcutAction> {
   return SHORTCUT_ACTIONS.filter((action) => action.customizable === true);
 }
@@ -602,17 +598,6 @@ export function getEffectiveShortcutCombo(
   return action.defaultCombo;
 }
 
-export function getEffectiveShortcutLabel(
-  actionId: string,
-  overrides?: Record<string, ShortcutCombo>
-): string {
-  const combo = getEffectiveShortcutCombo(actionId, overrides);
-  if (!combo) {
-    return '';
-  }
-  return formatShortcutForDisplay(combo);
-}
-
 export function isRiskyBrowserShortcut(combo: ShortcutCombo): boolean {
   if (isUnassignedShortcut(combo)) {
     return false;
@@ -692,14 +677,6 @@ export function eventMatchesShortcut(
   const expectedKey = keyToShortcutToken(parsed.key);
 
   return eventKey === expectedKey;
-}
-
-export function getShortcutLabel(id: string): string {
-  const action = getShortcutAction(id);
-  if (!action) return '';
-
-  const displayCombo = formatShortcutForDisplay(action.defaultCombo);
-  return `${displayCombo} - ${action.label}`;
 }
 
 export function getModifierLabel(): string {

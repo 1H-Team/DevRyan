@@ -36,26 +36,6 @@ const toNonNegativeInteger = (value: unknown): number => {
     return Math.round(value);
 };
 
-
-const sumTokenBreakdown = (breakdown: TokenBreakdown | null | undefined): number => {
-    if (!breakdown || typeof breakdown !== 'object') {
-        return 0;
-    }
-
-    const totalTokens = toNonNegativeInteger(breakdown.total);
-    if (totalTokens > 0) {
-        return totalTokens;
-    }
-
-    const inputTokens = toNonNegativeInteger(breakdown.input);
-    const outputTokens = toNonNegativeInteger(breakdown.output);
-    const reasoningTokens = toNonNegativeInteger(breakdown.reasoning);
-    const cacheReadTokens = breakdown.cache && typeof breakdown.cache === 'object' ? toNonNegativeInteger(breakdown.cache.read) : 0;
-    const cacheWriteTokens = breakdown.cache && typeof breakdown.cache === 'object' ? toNonNegativeInteger(breakdown.cache.write) : 0;
-
-    return inputTokens + outputTokens + reasoningTokens + cacheReadTokens + cacheWriteTokens;
-};
-
 /**
  * Cache hit rate = cached input tokens / total input-side tokens, as a 0-100
  * percent. Returns null when there are no input-side tokens to measure, so the
@@ -137,30 +117,4 @@ export const extractTokenBreakdownFromMessage = (message: ContextTokenMessage): 
     }
 
     return messageBreakdown;
-};
-
-export const extractTokensFromMessage = (message: { info: Message; parts: Part[] }): number => {
-    const tokens = (message.info as { tokens?: number | TokenBreakdown }).tokens;
-
-    if (typeof tokens === 'number') {
-        return toNonNegativeInteger(tokens);
-    }
-
-    if (tokens && typeof tokens === 'object') {
-        return sumTokenBreakdown(tokens);
-    }
-
-    const tokenPart = message.parts.find(
-        (part) => typeof (part as { tokens?: number | TokenBreakdown }).tokens !== 'undefined'
-    ) as { tokens?: number | TokenBreakdown } | undefined;
-
-    if (!tokenPart || typeof tokenPart.tokens === 'undefined') {
-        return 0;
-    }
-
-    if (typeof tokenPart.tokens === 'number') {
-        return toNonNegativeInteger(tokenPart.tokens);
-    }
-
-    return sumTokenBreakdown(tokenPart.tokens);
 };

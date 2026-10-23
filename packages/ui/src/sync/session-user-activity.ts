@@ -22,16 +22,6 @@ export const isRootSession = (session: Session | undefined): boolean => {
   return !((session as (Session & { parentID?: string | null }) | undefined)?.parentID)
 }
 
-export const isMessageVisibleForSession = (
-  message: Message,
-  session: Session | undefined,
-  messages: readonly Message[] = [message],
-): boolean => {
-  const revertMessageID = getSessionRevertMessageID(session)
-  if (!revertMessageID) return true
-  return filterMessagesForRevert(messages, revertMessageID).some((candidate) => candidate.id === message.id)
-}
-
 const isMessageVisibleForSessionState = (
   state: State,
   message: Message,

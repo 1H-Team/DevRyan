@@ -4,7 +4,6 @@ import {
   decodedEnvelopeMatchesTask,
   decodeResultEnvelopePayload,
   decodeTaskEventRecord,
-  isAutoResumeActiveState,
   type ManagedTaskAutoResume,
   type ManagedTaskWaitingReason,
   type ManagedTaskEventRecord,
@@ -27,10 +26,6 @@ export type ManagedTaskProjection = {
   resultEnvelope?: ManagedTaskProjectedEnvelope;
 };
 
-export type ManagedTaskActionResponse = ManagedTaskProjection | {
-  tasks: ManagedTaskProjection[];
-};
-
 export type ManagedTaskAcknowledgementResponse = {
   resultEnvelope: ManagedTaskResultEnvelope;
   followUpTask: ManagedTaskProjection | null;
@@ -46,10 +41,6 @@ export type {
   ManagedTaskWaitingReason,
   ManagedTaskWaitingReasonKind,
 } from '@devryan/orchestration-runtime';
-
-export const isManagedTaskAutoResumeActive = (
-  autoResume: { enabled: boolean; state: string } | null | undefined,
-) => Boolean(autoResume?.enabled && isAutoResumeActiveState(autoResume.state));
 
 /**
  * A task record as the store holds it. The store writes what the orchestration

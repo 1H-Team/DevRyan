@@ -8,13 +8,6 @@ export type ResolveSessionWorktreeStateInput = {
   runtimeResolution?: SessionWorktreeAttachment | null;
 };
 
-export type WorktreeDirectoryValidation = {
-  valid: boolean;
-  insideWorktreeRoot: boolean;
-  resolvedWorktreeRoot: string | null;
-  resolvedCwd: string | null;
-};
-
 export type WorktreeCanonicalizationResult = {
   worktreeRoot: string | null;
   cwd: string | null;

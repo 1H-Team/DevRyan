@@ -118,9 +118,6 @@ export interface SessionContextUsage {
 // Background trim is derived automatically as Math.round(limit * 0.6).
 export const DEFAULT_MESSAGE_LIMIT = 200;
 
-/** Timeout after which a session stuck in 'busy' or 'retry' with no SSE events is force-reset to idle. */
-export const STUCK_SESSION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
-
 export const MEMORY_CONSTANTS = {
     MAX_SESSIONS: 3,
     ZOMBIE_TIMEOUT: 10 * 60 * 1000,
@@ -157,11 +154,7 @@ export const getMemoryLimits = () => {
     };
 };
 
-export const getActiveSessionWindow = () => getMessageLimit();
-
-export const DEFAULT_ACTIVE_SESSION_WINDOW = DEFAULT_MESSAGE_LIMIT;
 export const MEMORY_LIMITS = DEFAULT_MEMORY_LIMITS;
-export const ACTIVE_SESSION_WINDOW = DEFAULT_ACTIVE_SESSION_WINDOW;
 
 /** Synthetic context parts to attach when sending initial message */
 export interface SyntheticContextPart {

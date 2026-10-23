@@ -372,7 +372,6 @@ export const createInteractionAnalyticsCollector = (dependencies: CollectorDepen
 const interactionAnalytics = createInteractionAnalyticsCollector();
 
 export const initializeInteractionAnalytics = interactionAnalytics.initialize;
-export const flushInteractionAnalytics = interactionAnalytics.flush;
 export const recordFileOpened = interactionAnalytics.recordFileOpened;
 export const recordProgrammaticCopy = interactionAnalytics.recordProgrammaticCopy;
 export const suppressNextNativeCopy = interactionAnalytics.suppressNextNativeCopy;

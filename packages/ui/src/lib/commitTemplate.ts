@@ -22,8 +22,6 @@ export const ALLOWED_COMMIT_TYPES = [
   'revert',
 ] as const;
 
-export type AllowedCommitType = (typeof ALLOWED_COMMIT_TYPES)[number];
-
 export const PREFERRED_COMMIT_SCOPES = [
   'dashboard',
   'admin',
@@ -40,31 +38,6 @@ export const PREFERRED_COMMIT_SCOPES = [
 ] as const;
 
 export const COMMIT_SUBJECT_MAX_LENGTH = 72;
-
-// The template text written to ~/.config/git/message. Comment lines (`#`) are
-// stripped by git's default `commit.cleanup=strip` mode on commit.
-export const COMMIT_TEMPLATE_CONTENT = `
-
-# ----------------------------------------------------------------------
-# Conventional Commit template
-#
-# Format:
-#   type(scope): summary
-# or:
-#   type: summary           (only when no clear scope fits)
-#
-# Allowed types:
-#   ${ALLOWED_COMMIT_TYPES.join(', ')}
-#
-# Preferred scopes:
-#   ${PREFERRED_COMMIT_SCOPES.join(', ')}
-#
-# Rules:
-#   - subject must be non-empty
-#   - subject ≤ ${COMMIT_SUBJECT_MAX_LENGTH} characters
-#   - imperative mood, no trailing period
-# ----------------------------------------------------------------------
-`;
 
 const TYPE_PATTERN = ALLOWED_COMMIT_TYPES.join('|');
 // type(scope): summary  OR  type: summary

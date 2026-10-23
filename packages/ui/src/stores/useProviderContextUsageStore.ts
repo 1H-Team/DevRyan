@@ -115,21 +115,6 @@ export const invalidateProviderContextUsageForCompaction = (
   return revision;
 };
 
-export const clearProviderContextUsage = (
-  sessionID: string,
-  directory?: string | null,
-): void => {
-  const key = getProviderContextUsageStoreKey(sessionID, directory);
-  useProviderContextUsageStore.setState((state) => {
-    if (!state.entries.has(key) && !state.compactionRevisions.has(key)) return state;
-    const entries = new Map(state.entries);
-    const compactionRevisions = new Map(state.compactionRevisions);
-    entries.delete(key);
-    compactionRevisions.delete(key);
-    return { entries, compactionRevisions };
-  });
-};
-
 export const clearAllProviderContextUsageForSession = (sessionID: string): void => {
   useProviderContextUsageStore.setState((state) => {
     const matchesSession = (key: string): boolean => {

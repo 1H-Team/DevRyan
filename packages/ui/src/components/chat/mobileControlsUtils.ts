@@ -1,7 +1,7 @@
 import { getChatThinkingState } from '@/lib/providers/chatThinking';
 import type { Agent } from '@opencode-ai/sdk/v2';
 import { getModelDisplayName as getSharedModelDisplayName } from '@/lib/providers/modelIdentity';
-import { getModelDefaultThinkingLevel, resolveThinkingVariant, type ProviderModelLike } from '@/lib/providers/variantControls';
+import { resolveThinkingVariant, type ProviderModelLike } from '@/lib/providers/variantControls';
 
 import { parseCursorAcpVariantKey, type CursorAcpVariantState } from '@/lib/providers/cursorThinking';
 export { getCursorAcpVariantState, resolveCursorAcpVariantSelection, normalizeCursorAcpVariantKey } from '@/lib/providers/cursorThinking';
@@ -146,18 +146,6 @@ export const formatVisibleEffortLabel = (
     return variants.length > 0 ? 'Provider-controlled' : null;
 };
 
-export const getDefaultThinkingDescription = (level?: string, providerId?: string) => level
-    ? `Uses this model's default thinking level: ${formatEffortLabel(level, { providerId })}.`
-    : 'The provider controls the thinking level and does not report a fixed default.';
-
-export const getDefaultThinkingLabel = (
-    provider: { id?: string; models?: ProviderModel[] } | undefined,
-    modelId: string | undefined,
-) => {
-    const level = getModelDefaultThinkingLevel(provider, modelId);
-    return level ? formatEffortLabel(level, { providerId: provider?.id }) : 'Provider-controlled';
-};
-
 export const getModelThinkingLevelLabel = (
     provider: { id?: string; models?: ProviderModel[] } | undefined,
     modelId: string | undefined,
@@ -169,58 +157,4 @@ export const getModelThinkingLevelLabel = (
 
     const { selected } = getChatThinkingState(provider, modelId, variant);
     return selected ? formatEffortLabel(selected, { providerId: provider.id }) : null;
-};
-
-export const DEFAULT_EFFORT_KEY = 'default';
-
-export const serializeEffortVariant = (variant?: string | null) => {
-    const trimmed = typeof variant === 'string' ? variant.trim() : '';
-    return trimmed.length > 0 ? trimmed : DEFAULT_EFFORT_KEY;
-};
-
-export const parseEffortVariant = (variant: string) => {
-    return variant === DEFAULT_EFFORT_KEY ? undefined : variant;
-};
-
-const EFFORT_RANKS: Record<string, number> = {
-    max: 6,
-    maximum: 6,
-    xhigh: 5,
-    high: 4,
-    medium: 3,
-    default: 2,
-    low: 1,
-    min: 0,
-    minimal: 0,
-};
-
-export const getEffortRank = (variant?: string | null) => {
-    if (!variant || variant.trim().length === 0) {
-        return EFFORT_RANKS.default;
-    }
-    const normalized = variant.trim().toLowerCase();
-    if (Object.prototype.hasOwnProperty.call(EFFORT_RANKS, normalized)) {
-        return EFFORT_RANKS[normalized];
-    }
-    const numeric = Number.parseFloat(normalized);
-    return Number.isFinite(numeric) ? numeric : 0;
-};
-
-export const getQuickEffortOptions = (variants: string[]) => {
-    const options = new Map<string, string>();
-    for (const variant of variants) {
-        options.set(variant, variant);
-    }
-
-    const ordered = Array.from(options.values()).sort((a, b) => getEffortRank(b) - getEffortRank(a));
-    if (ordered.length <= 4) {
-        return ordered;
-    }
-
-    const top = ordered.slice(0, 3);
-    const lowest = ordered[ordered.length - 1];
-    if (top.some((item) => item === lowest)) {
-        return top;
-    }
-    return [...top, lowest];
 };

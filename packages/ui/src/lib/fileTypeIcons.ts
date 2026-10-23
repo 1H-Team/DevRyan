@@ -207,5 +207,3 @@ export const getFileTypeIconHref = (
   const iconName = selectVariantIconName(baseIconName, options?.themeVariant || 'dark');
   return `#${iconName}`;
 };
-
-export const getFileTypeIconUrl = getFileTypeIconHref;

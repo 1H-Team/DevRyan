@@ -86,15 +86,6 @@ export function isMessageHiddenByRevert(
   return visible !== messages && !visible.some((message) => message.id === messageID)
 }
 
-export function hasActiveRevertTransactions(state: RevertAwareState): boolean {
-  const transactions = state.revert_transaction
-  if (!transactions) return false
-  for (const transaction of Object.values(transactions)) {
-    if (transaction && transaction.status !== "failed") return true
-  }
-  return false
-}
-
 export function isMessageHiddenByAnyActiveRevert(
   state: RevertAwareState,
   messageID: string,

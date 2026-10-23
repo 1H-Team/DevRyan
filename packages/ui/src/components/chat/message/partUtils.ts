@@ -70,16 +70,6 @@ export const filterVisibleParts = (parts: Part[], options: VisibleFilterOptions 
     });
 };
 
-type PartWithTime = Part & { time?: { start?: number; end?: number } };
-
-export const isFinalizedTextPart = (part: Part): boolean => {
-    if (part.type !== 'text') {
-        return false;
-    }
-    const time = (part as PartWithTime).time;
-    return Boolean(time && typeof time.end !== 'undefined');
-};
-
 const MIN_DUPLICATE_TEXT_PART_LENGTH = 32;
 
 // Compare text parts for duplication after collapsing internal whitespace runs, so

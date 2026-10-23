@@ -369,9 +369,6 @@ export function subscribeSessionTreeChanges(directory: string, rootSessionID: st
   }
 }
 
-export const isSessionTreeChangesSubscribed = (directory: string, rootSessionID: string): boolean =>
-  (subscriberCounts.get(getSessionTreeChangesKey(directory, rootSessionID)) ?? 0) > 0
-
 export function clearSessionTreeChanges(directory: string, rootSessionID: string): void {
   if (!directory || !rootSessionID) return
   const key = getSessionTreeChangesKey(directory, rootSessionID)
