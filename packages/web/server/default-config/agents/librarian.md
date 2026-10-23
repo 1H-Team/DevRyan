@@ -4,7 +4,6 @@ description: Authoritative online research specialist for current docs, URLs,
   web resources, and library API references.
 model: opencode/deepseek-v4-flash
 variant: low
-temperature: 0.1
 permission:
   "*": deny
   webfetch: allow

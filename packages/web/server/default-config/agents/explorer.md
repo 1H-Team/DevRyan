@@ -3,7 +3,6 @@ mode: subagent
 description: Locate repository files, symbols, and their relevant connections.
 model: opencode/deepseek-v4-flash
 variant: medium
-temperature: 0.1
 permission:
   "*": deny
   doom_loop: ask
@@ -30,7 +29,6 @@ permission:
   devryan_task: deny
   devryan_document: allow
   skill: allow
-top_p: 0.9
 steps: 35
 ---
 

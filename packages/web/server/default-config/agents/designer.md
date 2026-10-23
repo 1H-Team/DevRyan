@@ -4,7 +4,6 @@ description: Approved UI/UX implementation. Use for styling,
   responsive design, component architecture and visual polish.
 model: opencode/claude-opus-4-5
 variant: medium
-temperature: 0.7
 permission:
   "*": allow
   doom_loop: ask

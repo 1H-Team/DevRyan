@@ -10,7 +10,7 @@ import { renderAgentPromptPolicies } from './packaged-agents.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const AGENTS_DIR = path.resolve(__dirname, '../../default-config/agents');
 const PRE_TASK_ORCHESTRATOR_PROMPT_UTF8_BYTES = 15_902;
-const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 31_251;
+const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 31_366;
 const DEFAULT_SLIM_PROFILE_PATH = path.resolve(
   __dirname,
   '../../default-config/user-profile/devryan-agents.jsonc',
@@ -289,7 +289,6 @@ describe('packaged agent defaults', () => {
       description: 'AI coding orchestrator that delegates tasks to specialist agents for optimal quality, speed, and cost',
       model: 'openai/gpt-5.5',
       variant: 'medium',
-      temperature: 0.1,
       permission: {
         '*': 'allow',
         doom_loop: 'ask',

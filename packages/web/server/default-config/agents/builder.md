@@ -3,7 +3,6 @@ mode: primary
 description: General-purpose coding agent for implementing changes directly
 model: openai/gpt-5.5
 variant: medium
-temperature: 0.2
 permission:
   "*": allow
   task:

@@ -4,7 +4,6 @@ description: Fast implementation specialist. Receives complete context and task
   spec, executes code changes efficiently.
 model: openai/gpt-5.5
 variant: high
-temperature: 0.1
 permission:
   "*": allow
   doom_loop: ask
@@ -20,7 +19,6 @@ permission:
   council_session: deny
   devryan_task: deny
   skill: allow
-top_p: 0.9
 steps: 120
 ---
 

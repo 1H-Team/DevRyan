@@ -465,6 +465,28 @@ function lintAgentSteps({ findings, agent }) {
   }
 }
 
+// Native OpenCode sends agent sampling only to openai-compatible provider
+// packages (native-configured-instructions.ts); its built-in providers never
+// receive it, so a value set for them misstates what runs.
+const NATIVE_UNSAMPLED_PROVIDERS = new Set(['openai', 'anthropic', 'opencode', 'xai', 'github-copilot']);
+
+function lintAgentSampling({ findings, agent }) {
+  const frontmatter = getAgentFrontmatter(agent);
+  const providerID = typeof frontmatter.model === 'string' ? frontmatter.model.split('/')[0] : '';
+  if (!NATIVE_UNSAMPLED_PROVIDERS.has(providerID)) return;
+  for (const key of ['temperature', 'top_p']) {
+    if (frontmatter[key] === undefined) continue;
+    findings.push(createFinding({
+      ruleId: 'agent-sampling-not-applied',
+      severity: 'warning',
+      summary: `Agent "${getAgentName(agent)}" sets "${key}", which the native runtime does not send to provider "${providerID}"`,
+      artifact: { type: 'agent', name: getAgentName(agent), path: getAgentPath(agent) },
+      suggestedNextAction: `Remove "${key}" or use an openai-compatible provider that accepts it`,
+      stopCondition: `Stop expecting "${key}" to change "${getAgentName(agent)}" output on "${providerID}"`,
+    }));
+  }
+}
+
 function lintHiddenSkillAllows({ findings, hiddenSkills, agent }) {
   const frontmatter = getAgentFrontmatter(agent);
   const skillPermissions = frontmatter.permission?.skill;
@@ -849,6 +871,7 @@ function lintAgentHarness(options = {}) {
     lintDelegatedAgents({ findings, agentsByName, agent });
     lintPermissionKeys({ findings, permissionKeys, agent });
     lintAgentSteps({ findings, agent });
+    lintAgentSampling({ findings, agent });
     lintHiddenSkillAllows({ findings, hiddenSkills, agent });
     lintSkillAnnouncementPolicy({ findings, skills, hiddenSkills, agent });
   }

@@ -4,7 +4,6 @@ description: AI coding orchestrator that delegates tasks to specialist agents
   for optimal quality, speed, and cost
 model: openai/gpt-5.5
 variant: medium
-temperature: 0.1
 permission:
   "*": allow
   doom_loop: ask

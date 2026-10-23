@@ -4,7 +4,6 @@ description: Strategic technical advisor. Use for architecture decisions,
   complex debugging, code review, simplification, and engineering guidance.
 model: openai/gpt-5.5
 variant: high
-temperature: 0.1
 permission:
   "*": allow
   doom_loop: ask

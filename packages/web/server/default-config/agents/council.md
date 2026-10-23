@@ -3,7 +3,6 @@ mode: all
 description: Multi-LLM agent that synthesizes responses from multiple models
 model: openai/gpt-5.5
 variant: medium
-temperature: 0.1
 permission:
   "*": allow
   doom_loop: ask

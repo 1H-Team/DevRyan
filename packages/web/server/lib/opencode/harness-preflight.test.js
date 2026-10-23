@@ -41,6 +41,32 @@ describe('harness preflight', () => {
     expect(steps).toMatchObject({ explorer: 35, librarian: 35, fixer: 120, designer: 120 });
   });
 
+  it('ships no packaged sampling settings the native runtime would drop', () => {
+    const findings = lintAgentHarness({ agents: listPackagedAgents(), skills: [], hiddenSkills: [], staleOverrides: [], toolManifest: {} })
+      .filter((finding) => finding.ruleId === 'agent-sampling-not-applied');
+    expect(findings).toEqual([]);
+  });
+
+  it('warns when an agent sets sampling for a built-in provider that never receives it', () => {
+    const agent = (name, frontmatter) => ({ name, path: `/agents/${name}.md`, frontmatter });
+    const findings = lintAgentHarness({
+      agents: [
+        agent('openai', { model: 'openai/gpt-5.5', temperature: 0.1, top_p: 0.9 }),
+        agent('zen', { model: 'opencode/deepseek-v4-flash', temperature: 0.1 }),
+        agent('compatible', { model: 'local-llm/qwen', temperature: 0.2 }),
+        agent('unsampled', { model: 'openai/gpt-5.5' }),
+      ],
+      skills: [],
+      hiddenSkills: [],
+      staleOverrides: [],
+      toolManifest: {},
+    }).filter((finding) => finding.ruleId === 'agent-sampling-not-applied');
+    expect(findings.map((finding) => [finding.artifact.name, finding.severity])).toEqual([
+      ['openai', 'warning'], ['openai', 'warning'], ['zen', 'warning'],
+    ]);
+    expect(findings[0].summary).toBe('Agent "openai" sets "temperature", which the native runtime does not send to provider "openai"');
+  });
+
   it('reports step caps that are not positive integers and accepts valid or absent caps', () => {
     const agent = (name, frontmatter) => ({ name, path: `/agents/${name}.md`, frontmatter });
     const findings = lintAgentHarness({
