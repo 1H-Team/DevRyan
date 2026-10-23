@@ -8,7 +8,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { createRunRoot, scratchParent } from './run-root.mjs';
 import { reservePort, startOwnedProcess } from './process.mjs';
-import { qaPlatformEnvironment } from './launch-environment.mjs';
+import { qaPackagedAppEnvironment } from './launch-environment.mjs';
 import { createQaUiDriver } from './ui-driver.mjs';
 import { boundedDiagnostic } from './release-qualification-failure.mjs';
 
@@ -131,9 +131,7 @@ export async function smokeFinalDmg({ dmg, report, timeoutMs = 120000 }) {
     const data = path.join(home, '.config/devryan');
     await fs.mkdir(data, { recursive: true });
     await fs.writeFile(path.join(data, 'settings.json'), JSON.stringify(smokeSettings({ port, workspace, tuple: runtimeUiTuple })));
-    const env = { ...qaPlatformEnvironment(), HOME: home, XDG_CONFIG_HOME: path.join(home, '.config'), XDG_DATA_HOME: path.join(home, '.local/share'),
-      XDG_STATE_HOME: path.join(home, '.local/state'), XDG_CACHE_HOME: path.join(home, '.cache'), TMPDIR: root.dir,
-      GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0', GIT_CEILING_DIRECTORIES: root.dir };
+    const env = qaPackagedAppEnvironment({ home, root: root.dir });
     await execute('/usr/bin/git', ['init', '--quiet', '--initial-branch=main', '--template='], { cwd: workspace, env, timeout: 10000 });
     evidence.phase = 'first-ready';
     app = startOwnedProcess(path.join(mount, 'DevRyan.app/Contents/MacOS/DevRyan'),

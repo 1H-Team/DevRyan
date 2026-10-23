@@ -14,7 +14,7 @@ export const CANONICAL_RELEASE_REPOSITORY = '1H-Team/DevRyan';
 export function assertReleaseWritesAllowed(environment = process.env, { repository } = {}) {
   const forbidden = message => Object.assign(new Error(message), { code: 'release_dry_run_write_forbidden' });
   if (repository !== undefined && repository !== CANONICAL_RELEASE_REPOSITORY) throw forbidden(`Release writes to ${repository} are not allowed`);
-  if (![undefined, 'false'].includes(environment.RELEASE_DRY_RUN) || ![undefined, 'false'].includes(environment.RELEASE_CANDIDATE)) {
+  if (![undefined, 'false'].includes(environment.RELEASE_DRY_RUN)) {
     throw forbidden('Release dry runs prohibit external publication and tagging');
   }
 }

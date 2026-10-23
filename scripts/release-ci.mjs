@@ -1,11 +1,11 @@
-// Fixed CI operations for release.yml; reusable validation lives in release-artifacts/image modules.
-// GitHub Release admission and publication live in release.mjs.
+// Fixed CI operations for release.yml: the web artifact handoff (web-describe,
+// web-stage) and the legacy prepared-tree archive (prepare-export, prepare-import).
+// Reusable validation lives in release-artifacts.mjs; GitHub Release admission and
+// publication live in release.mjs. The retired Bot image commands were removed.
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { BOT_RUNTIME_IMAGE_DEFINITIONS, assembleBotRuntimeImages, createBotRuntimeImageBuildPlan, signBotRuntimeImage } from './build-bot-runtime-images.mjs';
-import { readBotRuntimeImageInputs, resolveBotRuntimeImages, tagBotRuntimeImageInputs } from './bot-runtime-image-inputs.mjs';
 import { describeWebArtifact, stageWebArtifact, hash, releaseIdentity, verifyPreparedMetadata } from './release-artifacts.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -25,48 +25,8 @@ const run = (args) => {
   if (result.status !== 0) throw new Error('Prepared artifact archive operation failed');
 };
 const preparedArchive = 'prepared.tar.zst';
-const botIdentity = { version: identity.release, revision: identity.revision, repositoryPrefix: `ghcr.io/${env.GITHUB_REPOSITORY_OWNER?.toLowerCase()}` };
 if (![undefined, 'true', 'false'].includes(env.RELEASE_DRY_RUN)) throw new Error('Invalid RELEASE_DRY_RUN');
 switch (env.RELEASE_OPERATION) {
-  case 'image-plan': {
-    const plan = createBotRuntimeImageBuildPlan({ ...botIdentity, root });
-    const build = plan.builds.find((entry) => entry.key === env.IMAGE_KEY);
-    if (!build) throw new Error('Unknown image');
-    const tags = [`${build.repository}:${identity.release}`, `${build.repository}:sha-${identity.revision.slice(0, 12)}`];
-    await fs.appendFile(env.GITHUB_OUTPUT, `dockerfile=${BOT_RUNTIME_IMAGE_DEFINITIONS[build.key].dockerfile}\nrepository=${build.repository}\ntags=${tags.join(',')}\n`);
-    break;
-  }
-  case 'image-resolve': {
-    // An image whose inputs match a verified signed :in-<digest> image is reused; the rest are built.
-    if (!['true', 'false', undefined].includes(env.REBUILD_BOT_IMAGES)) throw new Error('Invalid REBUILD_BOT_IMAGES');
-    const resolution = await resolveBotRuntimeImages({ ...botIdentity, root, workflowRepository: env.GITHUB_REPOSITORY,
-      keys: env.IMAGE_KEY ? [env.IMAGE_KEY] : undefined, rebuild: env.REBUILD_BOT_IMAGES === 'true' });
-    for (const result of resolution.reused) {
-      await write(`${result.key}.json`, result);
-      console.log(`[bots] ${result.key}: reusing ${result.image.repository}@${result.image.indexDigest}`);
-    }
-    for (const key of resolution.build) console.log(`[bots] ${key}: building (${resolution.reasons[key]})`);
-    if (env.RELEASE_DRY_RUN === 'true' && resolution.build.length) {
-      throw new Error(`Bot image inputs changed (${resolution.build.join(', ')}). A dry run never publishes images; push the release tag instead, which builds them (a failed attempt is retried on the same version).`);
-    }
-    await fs.appendFile(env.GITHUB_OUTPUT, `build=${JSON.stringify(resolution.build)}\n`);
-    await write('resolution.txt', { build: resolution.build });
-    break;
-  }
-  case 'image-sign': {
-    const result = await signBotRuntimeImage({ ...botIdentity, key: env.IMAGE_KEY, indexDigest: env.IMAGE_DIGEST, root });
-    const { digest } = await readBotRuntimeImageInputs({ key: env.IMAGE_KEY, root });
-    const tagged = await tagBotRuntimeImageInputs({ repository: result.image.repository, indexDigest: result.image.indexDigest, inputDigest: digest, environment: env });
-    console.log(tagged ? `[bots] ${env.IMAGE_KEY}: tagged ${tagged}` : `[bots] ${env.IMAGE_KEY}: input tag skipped outside tag-triggered release.yml runs`);
-    await write(`${env.IMAGE_KEY}.json`, result);
-    break;
-  }
-  case 'image-assemble': {
-    const entries = await fs.readdir(output);
-    const results = await Promise.all(entries.filter((name) => name.endsWith('.json')).map(read));
-    await write(`DevRyan-bot-runtime-images-${identity.release}.json`, await assembleBotRuntimeImages({ ...botIdentity, results, root }));
-    break;
-  }
   case 'web-describe':
     await write('web.json', await describeWebArtifact(path.join(output, 'web'), webIdentity));
     break;
