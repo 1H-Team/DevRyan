@@ -214,3 +214,29 @@ test('a ledger whose key listing exceeds 1 MiB inspects and relocates without bu
  const storage=path.join(f.web,'harness','session-mutations',changeKey(directory)),after=await openChangeStore(storage,path.join(storage,'git'));
  expect(await after.get(key)).toEqual({i:count-1});expect(await after.get('meta.json')).toMatchObject({directory});
 },60_000);
+
+test('settled evidence that names a deleted session is history; unsettled evidence still refuses',async()=>{
+ const f=await fixture({acked:true}),records=path.join(f.web,'harness','evidence','records');
+ await fs.mkdir(records,{recursive:true});
+ const save=record=>fs.writeFile(path.join(records,'run.json'),JSON.stringify(record));
+ await save({status:'complete',sessionID:'ses_gone',messageID:'msg_gone'});
+ expect((await f.verify()).findings.map(row=>[row.code,row.ledger])).toEqual([['bundle_session_reference_lost','evidence'],['bundle_message_reference_lost','evidence']]);
+ await save({status:'running',sessionID:'ses_gone',messageID:'msg_gone'});
+ await expect(f.verify()).rejects.toMatchObject({code:'bundle_session_reference_lost'});
+});
+
+test('a cancelled shell run reports its undelivered notice instead of refusing launch',async()=>{
+ const f=await fixture(),directory=f.member.directory,sessionID='ses_shell',token='40000000-0000-4000-8000-000000000004';
+ const key=`leases/${token}.json`,scope={sessionID,userMessageID:'msg_source',messageID:'msg_assistant',callID:'call_shell'};
+ const lease={token,directory,state:'cancelled',executionKind:'control',generation:0,preparation:'none',cleanupPending:false,cleaned:true,scope,
+  nativeShellJob:{jobID:'job_shell',command:'npx vite',notificationID:'msg_never_delivered'}};
+ f.db.set(`sessions/${changeKey(sessionID)}.json`,{id:sessionID,directory,generation:0,pending:null});f.db.set(key,lease);await f.db.commit();
+ const verify=()=>inspectBundleHarness(f.web,{sessionIDs:[sessionID],messageIDs:['msg_source','msg_assistant']});
+ expect((await verify()).findings.map(row=>row.code)).toContain('bundle_shell_notice_undelivered');
+ // Once delivered, the notice is a real message and must exist.
+ f.db.set(key,{...lease,nativeShellJob:{...lease.nativeShellJob,deliveredID:'msg_never_delivered'}});await f.db.commit();
+ await expect(verify()).rejects.toMatchObject({code:'bundle_message_reference_lost'});
+ // A published (not cancelled) run without a verified queued notice still refuses.
+ f.db.set(key,{...lease,state:'published'});await f.db.commit();
+ await expect(verify()).rejects.toMatchObject({code:'bundle_message_reference_lost'});
+});

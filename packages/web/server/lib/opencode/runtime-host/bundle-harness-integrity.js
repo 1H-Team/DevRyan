@@ -208,6 +208,14 @@ export async function inspectBundleHarness(webDataDirectory,{projectMap=[],reloc
           }
           }
         }
+        // A cancelled shell run never delivers its completion notice, so the
+        // message ID it reserved for that notice is reported, not required.
+        const cancelledShell=record.nativeShellJob;
+        if (!shellException && record.state==='cancelled' && isRecord(cancelledShell) && typeof cancelledShell.notificationID==='string'
+          && cancelledShell.deliveredID===undefined && typeof record.scope?.sessionID==='string') {
+          finding('bundle_shell_notice_undelivered',entry.name,key);
+          shellException=[{id:cancelledShell.notificationID,sessionID:record.scope.sessionID,paths:['nativeShellJob.notificationID']}];
+        }
         // A cancelled-call marker only blocks a late start of that call. It is
         // history, so a message or session it names that is gone is reported.
         if (key.startsWith('cancelled-calls/')) {
@@ -289,7 +297,13 @@ export async function inspectBundleHarness(webDataDirectory,{projectMap=[],reloc
     const file=path.join(webDataDirectory,'harness','evidence','records',entry.name),record=await readBundleJSON(file);
     if (!isRecord(record) || !['complete','gap'].includes(record.status)) finding('bundle_evidence_unsettled','evidence',entry.name);
     if (!isRecord(record)) continue;
-    references(record,collected);
+    // Settled evidence is history, like a finished task: a session or message
+    // it names that was later deleted is reported, not a reason to refuse launch.
+    if (['complete','gap'].includes(record.status)) {
+      const named={sessions:new Set(),messages:new Set(),messageScopes:new Map()};
+      references(record,named);
+      tombstones.push({ledger:'evidence',key:entry.name,named});
+    } else references(record,collected);
     if (relocate) await saveBundleJSON(file,await relocateRecord(record,projectMap,undefined,getRegistered));
   }
   if (sessionIDs) for (const id of collected.sessions) if (!sessionIDs.includes(id) && !removed.sessions.has(id)) throw bundleFailure('bundle_session_reference_lost');

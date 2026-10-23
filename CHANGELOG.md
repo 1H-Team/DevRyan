@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Fix startup refusing with `bundle_message_reference_lost` when finished evidence named a deleted session, or a cancelled background shell run (for example a dev server ended by Stop) had reserved a completion notice that was never delivered. Both are now reported instead of refusing launch.
+
 ## [2.1.10] - 2026-10-23
 
 - Upgrade the bundled OpenCode host to 2.1.3, with matching native packages, compaction and finalization observation sources, and the 146-operation route inventory. Keep experimental voice routes denied and preserve retained runtime compatibility.
