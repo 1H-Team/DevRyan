@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import yaml from 'yaml';
+import { writeFileAtomicSync } from '@devryan/harness-runtime/lib/atomic-file.js';
 import { isInvalidJsoncError, parseConfigJsonc, removeJsoncKeyPaths } from './jsonc-config.js';
 import { selectedRuntimeBundle, getRuntimeHome } from './runtime-host/runtime-bundle-binding.js';
 
@@ -95,7 +96,9 @@ function writeMdFile(filePath, frontmatter, body) {
     );
     const yamlStr = yaml.stringify(cleanedFrontmatter);
     const content = `---\n${yamlStr}---\n\n${body}`;
-    fs.writeFileSync(filePath, content, 'utf8');
+    // OpenCode watches its agent and command folders, so a rewrite must not
+    // expose a half-written file.
+    writeFileAtomicSync(filePath, content);
     console.log(`Successfully wrote markdown file: ${filePath}`);
   } catch (error) {
     console.error(`Failed to write markdown file ${filePath}:`, error);
@@ -258,8 +261,9 @@ function writeConfig(config, filePath = CONFIG_FILE) {
       console.log(`Created config backup: ${backupFile}`);
     }
 
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    fs.writeFileSync(filePath, JSON.stringify(config, null, 2), 'utf8');
+    // OpenCode watches its config and reloads on every change: replace the
+    // file atomically so neither it nor a crash ever sees a partial config.
+    writeFileAtomicSync(filePath, JSON.stringify(config, null, 2));
     console.log(`Successfully wrote config file: ${filePath}`);
   } catch (error) {
     if (isInvalidJsoncError(error)) throw error;
@@ -277,7 +281,7 @@ function removeConfigKeyPaths(filePath, keyPaths) {
   const next = removeJsoncKeyPaths(source, keyPaths);
   if (next === source) return false;
   fs.copyFileSync(filePath, `${filePath}.devryan.backup`);
-  fs.writeFileSync(filePath, next, 'utf8');
+  writeFileAtomicSync(filePath, next);
   return true;
 }
 

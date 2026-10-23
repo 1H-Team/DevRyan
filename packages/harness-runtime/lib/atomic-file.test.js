@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import fsSync from 'node:fs';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -9,6 +10,7 @@ import {
   readJsonGuarded,
   withCrossProcessFileLock,
   writeFileAtomic,
+  writeFileAtomicSync,
 } from './atomic-file.js';
 
 const temporaryDirectories = [];
@@ -71,6 +73,45 @@ describe('atomic file primitives', () => {
     expect(await fs.readFile(filePath, 'utf8')).toBe('{"ok":true}\n');
     expect((await fs.stat(filePath)).mode & 0o777).toBe(0o600);
     expect((await fs.readdir(path.dirname(filePath))).filter((name) => name.includes('.tmp-'))).toEqual([]);
+  });
+
+  test('replaces a user-owned file synchronously, keeping its mode and leaving no temporary file', async () => {
+    const directory = await temporaryDirectory();
+    const filePath = path.join(directory, 'opencode.json');
+    await fs.writeFile(filePath, '{"old":true}\n');
+    await fs.chmod(filePath, 0o640);
+
+    writeFileAtomicSync(filePath, '{"new":true}\n');
+
+    expect(await fs.readFile(filePath, 'utf8')).toBe('{"new":true}\n');
+    expect((await fs.stat(filePath)).mode & 0o777).toBe(0o640);
+    expect(await fs.readdir(directory)).toEqual(['opencode.json']);
+  });
+
+  test('keeps the old bytes and removes its temporary file when the synchronous replace fails', async () => {
+    const directory = await temporaryDirectory();
+    const filePath = path.join(directory, 'opencode.json');
+    await fs.writeFile(filePath, '{"old":true}\n');
+    const failure = Object.assign(new Error('fixture rename failed'), { code: 'ENOSPC' });
+    const fsApi = { ...fsSync, renameSync: () => { throw failure; } };
+
+    expect(() => writeFileAtomicSync(filePath, '{"new":true}\n', { fs: fsApi })).toThrow(failure);
+
+    expect(await fs.readFile(filePath, 'utf8')).toBe('{"old":true}\n');
+    expect(await fs.readdir(directory)).toEqual(['opencode.json']);
+  });
+
+  test.skipIf(process.platform === 'win32')('follows a symlink, even a dangling one, and keeps the link', async () => {
+    const directory = await temporaryDirectory();
+    const realPath = path.join(directory, 'dotfiles', 'opencode.json');
+    const linkPath = path.join(directory, 'opencode.json');
+    await fs.symlink(realPath, linkPath);
+
+    writeFileAtomicSync(linkPath, '{"a":1}\n');
+    writeFileAtomicSync(linkPath, '{"a":2}\n');
+
+    expect((await fs.lstat(linkPath)).isSymbolicLink()).toBe(true);
+    expect(await fs.readFile(realPath, 'utf8')).toBe('{"a":2}\n');
   });
 
   test('cleans stale temporary files without touching fresh ones', async () => {
