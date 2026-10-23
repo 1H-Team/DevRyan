@@ -11,6 +11,9 @@ the native abort. The response accepts the exact pending receipt on2xx or
 withdraws it on non-2xx; only acceptance establishes user-stop provenance.
 Lost responses expire as uncertain explicit recovery through the scheduler abort bound. Observer failures never block controls,
 while preparation failures return a fixed503 response.
+After an accepted (2xx) explicit user Stop, the observer also ends the session
+tree's supervised shell runs (`session-execution-host.stopSessionRuns`) and
+journals `stop_runs` with the count or failure code.
 Shell tool calls are registered with the shared deadline controller without
 persisting command text. Its host adapter performs authenticated, directory-
 scoped exact-message reconciliation, one session abort, and a managed-runtime

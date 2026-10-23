@@ -191,11 +191,16 @@ export function createSessionExecutionHost(options) {
   // finishes after a crash. Shutdown waits for the removals in flight.
   // Kill switch, read per call: DEVRYAN_DEFERRED_LEASE_CLEANUP=0.
   const cleanups = new Set();
-  const cleanupAfterPublication = (lease) => {
+  // Journal identity of a lease's own records: tier plus bounded scope IDs.
+  const leaseIdentity = (lease) => ({ executionTier: lease?.executionKind === 'control' ? 'control' : 'process',
+    ...Object.fromEntries(['sessionID', 'userMessageID', 'messageID', 'callID'].flatMap(key =>
+      typeof lease?.scope?.[key] === 'string' && lease.scope[key].length <= 512 ? [[key, lease.scope[key]]] : [])) });
+  // `owner` is the durable lease when `lease` carries only its directory and token.
+  const cleanupAfterPublication = (lease, owner = lease) => {
     if (process.env.DEVRYAN_DEFERRED_LEASE_CLEANUP === '0') return timedExecutionStep('lease_cleanup', () => cleanup(lease));
     const started = Date.now();
     const work = cleanup(lease).then(() => {
-      try { options.onDiagnostic?.({ event: 'session_execution', phase: 'lease_cleanup', state: 'completed', elapsedMs: Date.now() - started, deferred: true }); }
+      try { options.onDiagnostic?.({ event: 'session_execution', ...leaseIdentity(owner), phase: 'lease_cleanup', state: 'completed', elapsedMs: Date.now() - started, deferred: true }); }
       catch { /* Observer only. */ }
     }).finally(() => cleanups.delete(work));
     cleanups.add(work);
@@ -528,8 +533,14 @@ export function createSessionExecutionHost(options) {
       return { handle };
     }
     const { owner, jobs } = await preparations(); owner.assert(); signal?.throwIfAborted();
+    // A read-only (Plan-mode) shell on macOS skips the private view copy and
+    // runs from the live project under the read-only, network-denied profile
+    // (native-readonly-shell.js). Its lease, shell-job binding, termination
+    // receipt and empty publication are kept. Linux keeps the private view.
+    // Kill switch: DEVRYAN_READ_ONLY_SHELL_LIVE=0.
+    const liveReadOnly = readOnly && input.kind === 'shell' && process.platform === 'darwin' && process.env.DEVRYAN_READ_ONLY_SHELL_LIVE !== '0';
     const lease = await runtime.reserve({ ...input, kind: 'process', userMessageID: record.info.parentID,
-      parentID: current.parentID, executionFingerprint: fingerprint, ownerID: owner.id });
+      parentID: current.parentID, executionFingerprint: fingerprint, ownerID: owner.id, preparation: liveReadOnly ? 'read-only' : undefined });
     if (lease.ownerID !== owner.id || lease.executionKind || lease.state === 'published') throw failure('execution_already_started');
     const job = { input, lease, partID: call.id, tool: call.tool, controller: new AbortController(), events: [], cursor: 0, acknowledged: 0,
       delivered: 0, bytes: 0, waiters: new Set(), permissions: new Set(), done: false, child: null, failure: null, result: null,
@@ -555,8 +566,8 @@ export function createSessionExecutionHost(options) {
         } finally {
           try {
             const elapsedMs = Date.now() - started;
-            if (!completed || elapsedMs >= Math.max(0, Number(options.admissionSummaryMinMs ?? 250) || 0)) options.onDiagnostic?.({ event: 'session_execution', sessionID: input.sessionID, messageID: input.messageID,
-              callID: input.callID, phase: 'finish', state: completed ? 'completed' : 'failed', elapsedMs,
+            if (!completed || elapsedMs >= Math.max(0, Number(options.admissionSummaryMinMs ?? 250) || 0)) options.onDiagnostic?.({ event: 'session_execution', executionTier: 'process',
+              sessionID: input.sessionID, userMessageID: record.info.parentID, messageID: input.messageID, callID: input.callID, phase: 'finish', state: completed ? 'completed' : 'failed', elapsedMs,
               ...(!completed ? { code: 'local_execution_failed' } : {}) });
           } catch { /* Observer only. */ }
         }
@@ -569,6 +580,8 @@ export function createSessionExecutionHost(options) {
         while (prepared.state === 'preparing');
         if (prepared.state !== 'ready') throw failure(prepared.error?.code ?? 'execution_not_ready');
         job.lease = prepared.lease;
+        // A lease without a view copy may only run under the read-only profile.
+        if ((job.lease.preparation === 'read-only') !== liveReadOnly) throw failure('capture_identity_mismatch');
         await nativeRecheck(input); owner.assert();
         await jobs.claim(job.lease, () => runtime.claimLease({ directory: input.directory, token: lease.token, kind: 'process' }));
         const scratch = path.join(path.dirname(job.lease.viewDirectory), 'scratch');
@@ -701,7 +714,7 @@ export function createSessionExecutionHost(options) {
         pending += decoder.end();
         try { nativeOptions.onTermination?.({ ...job.lease.scope, token: lease.token, receipt }); } catch { /* Observer only. */ }
         if (receipt.cancelled || !receipt.confined || job.failure || (input.kind === 'writer' && (!job.result?.ok || receipt.exitCode !== 0 || pending))) {
-          await runtime.cancelLease({ directory: input.directory, token: lease.token });
+          await runtime.cancelLease({ directory: input.directory, token: lease.token, ...(job.operatorStop ? { stoppedBy: 'operator' } : {}) });
           await recordCancelled(job.lease, toV1ToolName(input.tool)); await cleanup(job.lease);
           try { nativeOptions.onOutcome?.({ ...job.lease.scope, token: lease.token, state: 'cancelled' }); } catch { /* Observer only. */ }
           nativeEvent(job, { type: 'settled', ok: false, receipt, error: job.result?.error ?? { message: job.failure?.message ?? 'execution_cancelled' } }, true);
@@ -733,7 +746,7 @@ export function createSessionExecutionHost(options) {
             nativeEvent(job, { type: 'settled', ok: true, receipt, result: nativePublicationResult(job.result?.result, publication, job.lease,input.tool) }, true);
             return;
           }
-          await runtime.cancelLease({ directory: input.directory, token: lease.token }); await cleanup(job.lease);
+          await runtime.cancelLease({ directory: input.directory, token: lease.token, ...(job.operatorStop ? { stoppedBy: 'operator' } : {}) }); await cleanup(job.lease);
           nativeEvent(job, { type: 'settled', ok: false, receipt, error: { message: cause.message, code: cause.code } }, true);
           return;
         }
@@ -1043,7 +1056,7 @@ export function createSessionExecutionHost(options) {
       const receipt = await timedExecutionStep('execution_receipt', () => runtime.executionReceipt({ directory: input.directory, token: lease.token }));
       await timedExecutionStep('change_receipt', async () => options.recordReceipt?.({ ...receipt, tool: input.tool }));
     }
-    await cleanupAfterPublication({ directory: input.directory, token: lease.token });
+    await cleanupAfterPublication({ directory: input.directory, token: lease.token }, lease);
     return result;
   };
   // A finish withholds the tool result until the change is published, its
@@ -1216,7 +1229,41 @@ export function createSessionExecutionHost(options) {
     });
     return job.terminationReceipt?.terminated === true && job.terminationReceipt.confined === true;
   };
-  return { get retentionReady() { return retentionReady; }, runtime, executions, coordinator, plugin, nativeManagedControl, nativeManagedChild, nativeExecution, nativeContextAssets, nativeInterviewDocument, nativeShellJobReceipt, cancelOwnedCommand, isConfined, persistCursorRecord, startCursor, assertLegacyRevertAllowed, warmLedger,
+  // A Stop interrupts the native turn, but OpenCode keeps a background shell
+  // job (a dev server, a watcher) running, so its call never finishes and
+  // never records its change receipt. After an accepted user Stop, end the
+  // supervised shell runs of the stopped sessions and their descendants. Each
+  // settles through its own path: the lease is cancelled with
+  // `stoppedBy: 'operator'` (its completion notice then does not restart the
+  // conversation, native-admission-owner.js), the cancelled call is recorded,
+  // and its view is removed. No admission hold is taken, unlike
+  // `executions.cancelAndWait`, so the next prompt is not blocked.
+  // Kill switch: DEVRYAN_STOP_ENDS_BACKGROUND_RUNS=0.
+  const stopSessionRuns = async ({ sessions } = {}) => {
+    if (!Array.isArray(sessions) || !sessions.length || sessions.some(id => !identity(id))) throw failure('invalid_capture_identity', 400);
+    if (process.env.DEVRYAN_STOP_ENDS_BACKGROUND_RUNS === '0') return { stopped: 0 };
+    const stopped = new Set(sessions), parents = new Map();
+    const owned = async (job) => {
+      for (let id = job.input.sessionID, depth = 0; identity(id) && depth < 64; depth++) {
+        if (stopped.has(id)) return true;
+        if (!parents.has(id)) parents.set(id, readSession(id, job.input.directory).then(info => info?.parentID, () => undefined));
+        id = await parents.get(id);
+      }
+      return false;
+    };
+    const running = [...nativeHandles.values()].filter(job => !job.done && job.input.kind === 'shell' && job.lease);
+    const selected = (await Promise.all(running.map(async job => await owned(job) ? job : null))).filter(Boolean);
+    for (const job of selected) { job.operatorStop = true; job.controller.abort(failure('execution_cancelled')); }
+    await Promise.allSettled(selected.map(job => job.settled));
+    return { stopped: selected.length };
+  };
+  // Calls of a session whose supervised command is still running: the change
+  // card reports them as running, not as a missing change record.
+  // Session IDs are global; the request directory spelling need not match.
+  const activeExecutionCalls = ({ sessionID } = {}) => [...nativeHandles.values()]
+    .filter(job => !job.done && job.lease && job.input.sessionID === sessionID)
+    .map(job => job.input.callID);
+  return { get retentionReady() { return retentionReady; }, runtime, executions, coordinator, plugin, nativeManagedControl, nativeManagedChild, nativeExecution, nativeContextAssets, nativeInterviewDocument, nativeShellJobReceipt, cancelOwnedCommand, stopSessionRuns, activeExecutionCalls, isConfined, persistCursorRecord, startCursor, assertLegacyRevertAllowed, warmLedger,
     recover: async () => {
       retentionReady = false; let failed = false;
       const report = (cause) => {

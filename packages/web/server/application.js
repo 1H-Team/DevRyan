@@ -1591,13 +1591,23 @@ async function constructWebHost(options = {}) {
       });
     });
   });
-  harnessRuntime.setControlObserver(({ action, sessionID, res }) => {
+  harnessRuntime.setControlObserver(({ action, sessionID, source, res }) => {
     if (action !== 'abort') return;
     const clearAbortedPresentation = sessionRuntime.captureSessionPresentationClear(sessionID);
     turnTimingRuntime.recordAbortRequested({ sessionID });
     res.once('finish', () => {
       if (res.statusCode >= 200 && res.statusCode < 300) {
         clearAbortedPresentation();
+        // An accepted user Stop also ends the session tree's background shell
+        // runs, which the native interrupt leaves running (session-execution-host.js).
+        if (OPERATOR_STOP_SOURCES.has(source)) {
+          void sessionExecutionHost.stopSessionRuns({ sessions: [sessionID] }).then(({ stopped }) => {
+            if (stopped) harnessRuntime.recordSessionExecution({ event: 'session_execution', sessionID, phase: 'stop_runs', state: 'completed', count: stopped });
+          }, (cause) => {
+            harnessRuntime.recordSessionExecution({ event: 'session_execution', sessionID, phase: 'stop_runs', state: 'failed',
+              code: typeof cause?.code === 'string' && /^[a-z][a-z0-9_]{0,95}$/.test(cause.code) ? cause.code : 'local_execution_failed' });
+          });
+        }
         return;
       }
       turnTimingRuntime.withdrawAbortRequest({ sessionID });
@@ -1652,6 +1662,7 @@ async function constructWebHost(options = {}) {
     getOpenCodeAuthHeaders,
     reconcileExecutionReceipts: (input) => cursorSdkRuntime.reconcileSessionChanges(input),
     executionOutcomes: (input) => sessionExecutionHost.runtime.executionOutcomes(input),
+    activeExecutionCalls: (input) => sessionExecutionHost.activeExecutionCalls(input),
   });
   harnessRuntime.setSessionChangeHost(sessionChangeHost);
   const sessionExecutionHost = createSessionExecutionHost({

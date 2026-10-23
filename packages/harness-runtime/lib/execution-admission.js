@@ -11,10 +11,13 @@ export const checkExecutionAdmission = () => executionSignal()?.throwIfAborted()
 export const executionProgressMeter = () => context.getStore()?.meter;
 // Optional private-companion observations, never authorization inputs. Older
 // companions remain valid and report unknown origin rather than a guessed one.
+// Native host kinds (shell, writer, read) each run one confined process.
+const NATIVE_PROCESS_KINDS = new Set(['shell', 'writer', 'read']);
 export const executionToolMetadata = (input) => ({
   ...(['builtin', 'custom'].includes(input?.toolOrigin) ? { toolOrigin: input.toolOrigin } : {}),
   ...(['direct-admit', 'direct-finish'].includes(input?.action) ? { executionTier: 'direct' }
-    : ['control', 'process'].includes(input?.kind) ? { executionTier: input.kind } : {}),
+    : ['control', 'process'].includes(input?.kind) ? { executionTier: input.kind }
+      : NATIVE_PROCESS_KINDS.has(input?.kind) ? { executionTier: 'process' } : {}),
   ...(['custom_tool', 'native_reads_disabled', 'direct_admission_failed'].includes(input?.fallbackReason)
     ? { fallbackReason: input.fallbackReason } : {}),
 });
@@ -68,7 +71,9 @@ const createReport = (input, onDiagnostic) => {
 // `timeoutMs` is an absolute cap. With `idleMs`, admission also expires once
 // neither this work nor the lock holder it waits behind has progressed for
 // that long, so queueing behind productive work does not end a turn.
-export async function withExecutionAdmission(input, action, { timeoutMs = 25_000, idleMs, onDiagnostic, signal, summary } = {}) {
+// `phase` names the root record (default `admission`); a preparation is its
+// own root, so its time is never reported twice (admission and preparation).
+export async function withExecutionAdmission(input, action, { timeoutMs = 25_000, idleMs, onDiagnostic, signal, summary, phase = 'admission' } = {}) {
   const controller = new AbortController();
   const expired = Object.assign(new Error('local_execution_timeout'), { code: 'local_execution_timeout', status: 503 });
   const started = Date.now();
@@ -83,9 +88,9 @@ export async function withExecutionAdmission(input, action, { timeoutMs = 25_000
   }, Math.min(idle, 1000));
   const combined = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
   const report = createReport(input, onDiagnostic);
-  const summarized = summary ? createSummary(summary, 'admission') : undefined;
+  const summarized = summary ? createSummary(summary, phase) : undefined;
   try {
-    return await context.run({ signal: combined, deadline: started + timeoutMs, report, meter, summary: summarized }, () => executionPhase('admission', action));
+    return await context.run({ signal: combined, deadline: started + timeoutMs, report, meter, summary: summarized }, () => executionPhase(phase, action));
   } finally { clearTimeout(timer); clearInterval(timer); }
 }
 
@@ -247,7 +252,7 @@ export async function withExecutionPreparation(input, action, { signal, onDiagno
         code: 'execution_preparation_stalled', status: 503,
       }));
     }, Math.min(stallMs, 1000));
-    try { return await executionPhase('preparation', action); }
+    try { return await action(); }
     finally { clearInterval(timer); }
-  }, { timeoutMs, onDiagnostic, summary, signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal });
+  }, { timeoutMs, onDiagnostic, summary, phase: 'preparation', signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal });
 }

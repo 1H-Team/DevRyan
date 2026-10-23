@@ -1051,14 +1051,26 @@ policy only after its complete parent chain is verified in the same project and
 directory. Unavailable boards and mismatched parents refuse; a mutable root
 never restores a pruned child's write authority. Legacy markers can only
 restrict authority. Writes/patches are denied before dispatch, and shell
-execution retains the normal outer lease/receipt while running in a private
-read-only view with no writable project inputs or ignored-output grants. Stop,
-publication and cleanup remain owned by the execution host. Children receive
+execution retains the normal outer lease, shell-job binding and termination
+receipt while running read-only with no writable project inputs or
+ignored-output grants. On macOS its lease is reserved with
+`preparation: 'read-only'`: no reconciliation and no private view copy
+(`view_files`, `view_git`, `view_inputs`), the command runs from the live
+project directory, and publication is always empty. Linux keeps the private
+read-only view. `DEVRYAN_READ_ONLY_SHELL_LIVE=0` restores the view on macOS.
+Stop, publication and cleanup remain owned by the execution host. A background
+shell completion whose lease a user Stop cancelled (`stoppedBy: 'operator'`) is
+admitted and delivered, but `native-admission-owner.js` neither wakes the
+stopped conversation nor retains a `shell.complete` intent; the notice reaches
+the model with the next prompt. Children receive
 the captured read-only policy; prompt text cannot grant write authority.
 Plan admission requires its canonical-policy and implementation-validation
 hooks; an Implement marker also requires validation. Missing hooks refuse Plan
 before dispatch while ordinary non-Plan admission remains available.
-Plan shell runs from the original snapshot under the read-only host boundary.
+Plan shell runs from the live project (macOS) or the original snapshot (Linux)
+under the read-only host boundary. The trade-off on macOS: it sees the current
+disk, including files a concurrent writer has published, rather than a ledger
+snapshot, exactly like native `read`/`glob`/`grep`.
 Its macOS profile denies network operations, including localhost POST/push;
 Linux adds a private network namespace. Other execution modes retain their
 existing network policy. The current Windows LPAC policy cannot supply a

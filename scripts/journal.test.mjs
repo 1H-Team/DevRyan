@@ -180,6 +180,13 @@ const writeSummaryFixture = async (directory) => {
       payload: { phase: 'ledger_lock', state: 'completed', elapsedMs: 500, action: 'reserve' } },
     { type: 'lifecycle', at: T0 + 1_350, runtime: 'test', event: 'session_execution', sessionID: 'ses_root',
       payload: { phase: 'admission', state: 'started' } },
+    // Native shell/writer records carry their tier, so no row is labelled `?`.
+    { type: 'lifecycle', at: T0 + 1_400, runtime: 'test', event: 'session_execution', sessionID: 'ses_root',
+      payload: { phase: 'preparation', state: 'completed', elapsedMs: 200, executionTier: 'process', steps: 'ledger_commit:2/70' } },
+    { type: 'lifecycle', at: T0 + 1_450, runtime: 'test', event: 'session_execution', sessionID: 'ses_root',
+      payload: { phase: 'finish', state: 'completed', elapsedMs: 100, executionTier: 'process' } },
+    { type: 'lifecycle', at: T0 + 1_460, runtime: 'test', event: 'session_execution', sessionID: 'ses_root',
+      payload: { phase: 'lease_cleanup', state: 'completed', elapsedMs: 50, executionTier: 'process', deferred: true } },
     { type: 'control', at: T0 + 10_000, runtime: 'test', sessionID: 'ses_root', action: 'abort',
       payload: { method: 'POST', body: { text: 'private prompt body' }, source: 'stop_button' } },
     event(T0 + 10_100, 'ses_root', 'session.error', { error: { name: 'MessageAbortedError', data: { message: 'Aborted' } } }),
@@ -260,6 +267,9 @@ describe('journal summary', () => {
 
     assert.deepEqual(summary.phases.map(({ tier, phase, count, p50Ms, totalMs, slow }) => ({ tier, phase, count, p50Ms, totalMs, slow })), [
       { tier: 'reserve', phase: 'ledger_lock', count: 2, p50Ms: 400, totalMs: 800, slow: 1 },
+      { tier: 'process', phase: 'preparation', count: 1, p50Ms: 200, totalMs: 200, slow: 0 },
+      { tier: 'process', phase: 'finish', count: 1, p50Ms: 100, totalMs: 100, slow: 0 },
+      { tier: 'process', phase: 'lease_cleanup', count: 1, p50Ms: 50, totalMs: 50, slow: 0 },
     ]);
 
     assert.deepEqual(summary.errors.map(({ sessionID, kind, detail }) => ({ sessionID, kind, detail })), [

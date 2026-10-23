@@ -104,7 +104,7 @@ export async function compareImageContext({artifactRoot,fileCount=1200,bytesPerF
      diagnostics:diagnostics.filter(row=>['admission','preparation','view_files'].includes(row.phase)).map(({phase,state,elapsedMs,steps,code})=>({phase,state,elapsedMs,steps,code})).slice(-16)};
     throw error;
    }finally{await close();stopActive=async()=>{};}
-   const phases=diagnostics.filter(row=>row.phase==='admission'&&row.state==='completed');
+   const phases=diagnostics.filter(row=>['admission','preparation'].includes(row.phase)&&row.state==='completed'&&row.steps!==undefined);
    const viewFiles=phases.flatMap(row=>String(row.steps??'').split(',')).filter(step=>step.startsWith('view_files:'));
    const viewFilesCount=viewFiles.reduce((sum,step)=>sum+Number(step.split(':')[1].split('/')[0]),0);
    const viewFilesMs=viewFiles.reduce((sum,step)=>sum+Number(step.split('/')[1]),0);

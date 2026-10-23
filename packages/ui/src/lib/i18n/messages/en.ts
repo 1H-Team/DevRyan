@@ -2039,6 +2039,7 @@ export const dict = {
   'chat.sessionChanges.invalidReceipt': 'A tool returned invalid change details. Retry to check for a corrected result.',
   'chat.sessionChanges.deliveryFailed': 'Saved tool changes could not be loaded. Retry to recover them.',
   'chat.sessionChanges.executionUnavailable': 'A tool did not provide a complete record of its file edits. Available recorded edits are shown.',
+  'chat.sessionChanges.backgroundRunning': 'A command is still running in the background, so its file edits are not recorded yet. They are recorded when it finishes or when you stop the session.',
   'chat.sessionChanges.recordedEdits': 'Recorded Edits',
   'chat.sessionChanges.recordedEditsDescription': 'Counts include this session’s separate recorded edits when a single net diff is unavailable.',
   'chat.sessionChanges.oneEdit': '1 edit',

@@ -115,6 +115,28 @@ test('a summarized admission journals one record with per-phase steps, and nothi
   expect(record.steps).toMatch(/^identity_lookup:1\/\d+,lease_lookup:2\/\d+,ledger_transaction:1\/\d+$/);
 });
 
+test('a preparation is its own summary root, so its time is journaled once, not as admission plus preparation', async () => {
+  const records = [];
+  await withExecutionPreparation({ sessionID: 's', callID: 'c', kind: 'shell' }, async () => {
+    await executionPhase('reconciliation', async () => {});
+    await executionPhase('view_files', () => delay(60));
+  }, { onDiagnostic: (record) => records.push(record), summary: { minMs: 0, slowMs: 40 } });
+  // The slow view copy is visible as it happens; the summary carries it once.
+  expect(records.map((record) => `${record.phase}:${record.state}`)).toEqual([
+    'preparation:started', 'view_files:started', 'view_files:completed', 'preparation:completed',
+  ]);
+  const summary = records.at(-1);
+  expect(summary).toMatchObject({ sessionID: 's', callID: 'c', executionTier: 'process', phase: 'preparation' });
+  expect(summary.steps).toMatch(/^reconciliation:1\/\d+,view_files:1\/\d+$/);
+  expect(records.some((record) => record.phase === 'admission')).toBe(false);
+  // Unsummarized, a preparation still journals one started/completed pair.
+  const plain = [];
+  await withExecutionPreparation({ sessionID: 's', kind: 'writer' }, async () => {}, { onDiagnostic: (record) => plain.push(record) });
+  expect(plain.map((record) => `${record.phase}:${record.state}:${record.executionTier}`)).toEqual([
+    'preparation:started:process', 'preparation:completed:process',
+  ]);
+});
+
 test('a summarized admission still journals failed and slow phases as they happen', async () => {
   const records = [];
   const failure = Object.assign(new Error('boom'), { code: 'workspace_changing' });

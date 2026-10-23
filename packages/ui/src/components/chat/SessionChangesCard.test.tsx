@@ -330,6 +330,11 @@ describe('SessionChangesCardView', () => {
     expect(resolveSessionChangesStatusKey({ ...partial, coverage: 'complete', reasons: [], reconciliationState: 'settled' })).toBeNull();
     expect(resolveSessionChangesStatusKey({ ...partial, reasons: ['receipt_conflict'] })).toBe('chat.sessionChanges.receiptConflict');
     expect(resolveSessionChangesStatusKey({ ...partial, reasons: ['storage_unavailable'] })).toBe('chat.sessionChanges.storageUnavailable');
+    // A still-running background command is not a missing record, unless another call's record is missing.
+    expect(resolveSessionChangesStatusKey({ ...partial, reasons: ['background_running'] })).toBe('chat.sessionChanges.backgroundRunning');
+    expect(resolveSessionChangesStatusKey({ ...partial, reasons: ['background_running', 'missing_capture'] })).toBe('chat.sessionChanges.executionUnavailable');
+    expect(canRetrySessionChanges({ ...partial, reasons: ['background_running'] })).toBe(false);
+    expect(dict['chat.sessionChanges.backgroundRunning']).toMatch(/still running in the background/);
     expect(canRetrySessionChanges({ ...partial, reasons: ['capture_interrupted'] })).toBe(true);
     expect(canRetrySessionChanges({ ...partial, reasons: ['receipt_conflict'] })).toBe(false);
     const failedRetry = { ...partial, reconciliationState: 'pending' as const, error: 'offline' };

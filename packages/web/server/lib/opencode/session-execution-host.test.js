@@ -348,7 +348,7 @@ async function nativePublicationFixture(options = {}, kind = 'writer') {
   });
   const f = fixture({ openCodeClient: client, admissionSummaryMinMs: 0, ...options,
     onDiagnostic: record => { diagnostics.push(record); options.onDiagnostic?.(record); },
-    nativeExecution: { workerCommand: '/fixture/bun', workerArgs: ['worker.ts'], recheckPermit: async () => {} } });
+    nativeExecution: { workerCommand: '/fixture/bun', workerArgs: ['worker.ts'], recheckPermit: async () => {}, ...options.nativeExecution } });
   const specification = kind === 'shell'
     ? { kind: 'shell', command: '/bin/sh', args: ['-c', 'fixture'], env: {}, cwd: directory }
     : { kind: 'writer', tool: 'write', input: { filePath: 'fixture.txt', content: 'fixture' } };
@@ -359,7 +359,7 @@ async function nativePublicationFixture(options = {}, kind = 'writer') {
     do { batch = await f.host.nativeExecution({ action: 'read', handle, cursor }); cursor = batch.cursor; events.push(...batch.events); } while (!batch.done);
     return events.at(-1);
   };
-  return { ...f, diagnostics, lease, receipt, terminated, launched, start, settled, processSignal: () => processSignal,
+  return { ...f, client, diagnostics, lease, receipt, terminated, launched, start, settled, processSignal: () => processSignal,
     finishes: () => diagnostics.filter(row => row.phase === 'finish') };
 }
 
@@ -381,6 +381,62 @@ test('deadline cancellation matches the exact live shell and waits for terminati
     f.terminated.resolve({ ...f.receipt, cancelled: true, exitCode: 137 });
     expect(await cancelled).toBe(true);
     expect(await f.host.cancelOwnedCommand({ directory, fingerprint })).toBe(false);
+  } finally { f.terminated.resolve(f.receipt); await f.host.drain(); }
+});
+
+if (process.platform !== 'win32') test('a read-only shell reserves no view copy on macOS and runs from the live project', async () => {
+  const native = await import('@devryan/harness-runtime/lib/session-execution.js');
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-readonly-host-')));
+  const f = await nativePublicationFixture({ nativeExecution: { readOnlyInvocation: async () => true } }, 'shell');
+  try {
+    const view = path.join(root, 'views', 'token', 'worktree'); await fs.mkdir(view, { recursive: true });
+    const lease = { ...f.lease, viewDirectory: view, workingDirectory: view };
+    mocks.runtime.reserve.mockImplementation(async request => ({ ...lease, ...(request.preparation ? { preparation: request.preparation } : {}) }));
+    mocks.runtime.prepare.mockImplementation(async reserved => reserved);
+    const { handle } = await f.start(); await f.launched.promise;
+    const live = process.platform === 'darwin';
+    expect(mocks.runtime.reserve).toHaveBeenCalledWith(expect.objectContaining({ kind: 'process', preparation: live ? 'read-only' : undefined }));
+    expect(native.startSessionExecution.mock.calls[0][0].lease).toMatchObject({ readOnly: true, inputs: undefined,
+      workingDirectory: path.join(root, 'views', 'token', 'read-only-worktree'), logicalWorkingDirectory: live ? await fs.realpath(directory) : view });
+    f.terminated.resolve(f.receipt);
+    expect(await f.settled(handle)).toMatchObject({ type: 'settled', ok: true });
+    await f.host.drain();
+    // Journal rows carry the tier and identity that `journal summary` groups by.
+    expect(f.finishes()).toEqual([expect.objectContaining({ executionTier: 'process', sessionID: input.sessionID, userMessageID: 'msg_user', state: 'completed' })]);
+    expect(f.diagnostics.filter(row => row.phase === 'lease_cleanup')).toEqual([expect.objectContaining({ deferred: true, executionTier: 'process',
+      sessionID: input.sessionID, messageID: input.messageID, callID: input.callID })]);
+  } finally { f.terminated.resolve(f.receipt); await f.host.drain(); await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test('an accepted Stop ends the stopped tree\'s running shell, records its cancellation and leaves other sessions running', async () => {
+  const f = await nativePublicationFixture({}, 'shell');
+  // The running shell belongs to a child of the stopped session.
+  f.client.sessions.get.mockImplementation(async id => ({ id, directory, ...(id === input.sessionID ? { parentID: 'ses_parent' } : {}) }));
+  try {
+    await f.start(); await f.launched.promise;
+    expect(f.host.activeExecutionCalls({ directory, sessionID: input.sessionID })).toEqual([input.callID]);
+    expect(await f.host.stopSessionRuns({ sessions: ['ses_other'] })).toEqual({ stopped: 0 });
+    expect(f.processSignal().aborted).toBe(false);
+    await expect(f.host.stopSessionRuns({ sessions: ['bad id'] })).rejects.toMatchObject({ code: 'invalid_capture_identity' });
+    const stopping = f.host.stopSessionRuns({ sessions: ['ses_parent'] });
+    await vi.waitFor(() => expect(f.processSignal().aborted).toBe(true));
+    f.terminated.resolve({ ...f.receipt, cancelled: true, exitCode: 143 });
+    expect(await stopping).toEqual({ stopped: 1 });
+    expect(mocks.runtime.cancelLease).toHaveBeenCalledWith({ directory, token: f.lease.token, stoppedBy: 'operator' });
+    expect(f.recordReceipt).toHaveBeenCalledWith(expect.objectContaining({ sessionID: input.sessionID, callID: input.callID,
+      source: 'confined-execution', complete: true, files: [], tool: 'bash' }));
+    expect(mocks.runtime.finish).not.toHaveBeenCalled();
+    expect(f.host.activeExecutionCalls({ directory, sessionID: input.sessionID })).toEqual([]);
+  } finally { f.terminated.resolve(f.receipt); await f.host.drain(); }
+});
+
+test('the Stop kill switch leaves running shells untouched', async () => {
+  vi.stubEnv('DEVRYAN_STOP_ENDS_BACKGROUND_RUNS', '0');
+  const f = await nativePublicationFixture({}, 'shell');
+  try {
+    await f.start(); await f.launched.promise;
+    expect(await f.host.stopSessionRuns({ sessions: [input.sessionID] })).toEqual({ stopped: 0 });
+    expect(f.processSignal().aborted).toBe(false);
   } finally { f.terminated.resolve(f.receipt); await f.host.drain(); }
 });
 

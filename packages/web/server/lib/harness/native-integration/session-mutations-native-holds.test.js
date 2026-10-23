@@ -589,6 +589,37 @@ test('shell synthetic admission requires actual terminal lease proof and commits
   expect(await f.runtime.nativeContinuations({ directory: f.directory, sessionID: 'ses_root' })).toEqual([]);
 }, 20_000);
 
+test('a background shell a user Stop ended delivers its notice without restarting the stopped conversation', async () => {
+  const f = await fixture(), notices = [];
+  const scope = { directory: f.directory, sessionID: 'ses_root', userMessageID: 'msg_u', messageID: 'msg_a', callID: 'call_stop', kind: 'process' };
+  const lease = await f.runtime.begin(scope);
+  await f.runtime.claimLease({ directory: f.directory, token: lease.token, kind: 'process' });
+  await f.runtime.bindNativeShellJob({ ...scope, token: lease.token, jobID: 'shell_stop', command: 'npm run dev' });
+  await f.runtime.bindNativeShellNotification({ directory: f.directory, sessionID: 'ses_root', jobID: 'shell_stop', notificationID: 'msg_stop_notice' });
+  await expect(f.runtime.cancelLease({ directory: f.directory, token: lease.token, stoppedBy: 'forged' })).rejects.toMatchObject({ code: 'invalid_capture_identity' });
+  await f.runtime.cancelLease({ directory: f.directory, token: lease.token, stoppedBy: 'operator' });
+  const owner = createNativeAdmissionOwner({ runtime: f.runtime, directory: f.directory, ownerID: 'shell-stop-fixture',
+    getSession: async id => ({ id, directory: f.directory }), authorizeOperation: async () => {}, withSessionLock: async (_id, action) => action(),
+    getShellJobReceipt: async input => ({ lease: await f.runtime.nativeShellJob(input), receipt: { terminated: true, confined: true, cancelled: true, exitCode: 143 } }),
+    onContinuation: async input => { notices.push(input); return { kind: 'registered', messageID: input.messageID }; } });
+  const rpc = (method, input) => owner.handleRpc(`native.admission.${method}`, input);
+  const input = { id: 'msg_stop_notice', sessionID: 'ses_root', description: 'npm run dev',
+    text: '<shell id="shell_stop" state="error" command="npm run dev">\nnative_worker_terminated\n</shell>',
+    metadata: { source: 'shell', jobID: 'shell_stop', shellID: 'shell_stop' },
+    nativeJob: { id: 'shell_stop', type: 'shell', title: 'npm run dev', status: 'error', error: 'native_worker_terminated', notificationID: 'msg_stop_notice' } };
+  const permit = await rpc('authorize', { operation: 'session.synthetic', sessionID: 'ses_root', messageID: input.id, input });
+  const metadata = await rpc('sealSynthetic', { permit, input });
+  const item = { type: 'synthetic', id: input.id, sessionID: input.sessionID, payload: { text: input.text, description: input.description, metadata } };
+  await rpc('verifyAccepted', { permit, accepted: { item, phase: 'committed' } });
+  // The notice is delivered (and stays queued for the next prompt), but no wake runs or is retained.
+  expect((await f.runtime.nativeShellJob({ directory: f.directory, sessionID: 'ses_root', jobID: 'shell_stop' }))).toMatchObject({
+    state: 'cancelled', stoppedBy: 'operator', nativeShellJob: { deliveredID: 'msg_stop_notice' } });
+  expect(notices).toEqual([]);
+  expect(await f.runtime.nativeContinuations({ directory: f.directory, sessionID: 'ses_root' })).toEqual([]);
+  await owner.recoverShellContinuations({ directory: f.directory });
+  expect(notices).toEqual([]);
+}, 20_000);
+
 test('same-owner replacement rebinds current canonical lineage before a retained shell wake enters Store.claim', async () => {
   const f = await fixture();
   const scope = { directory: f.directory, sessionID: 'ses_child', parentID: 'ses_root',
