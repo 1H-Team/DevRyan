@@ -304,6 +304,29 @@ record. Only event/reason enums, bounded tool counts and correlation identities
 cross that boundary. Raw Meridian logging remains disabled; diagnostic failure
 cannot change execution or retention.
 
+### Stalled step retry
+
+Meridian aborts an SDK attempt that sends nothing for `UPSTREAM_IDLE_MS`. The
+native worker sets it explicitly to 90 s; `upstreamIdleBudget` raises a `high`,
+`xhigh` or `max` effort attempt to 180 s (a disabled guard, 0, stays disabled).
+`rewriteReviewedMeridianStallRetry` (applied inside the reviewed Meridian
+rewrite) moves that attempt guard inside `settlePassthroughQuery`, so a stall
+reports `passthrough.checkpoint_aborted` (`upstream_idle`) instead of closing
+silently. The response-level guard becomes a backstop 5 s beyond the attempt
+budget, so it cannot fire before the retry decision.
+
+The primary streamed attempt runs through `retryStalledCheckpoint`. When it
+stalls while resuming a retained `verified_handoff` checkpoint, and only
+reasoning reached the client (no text, no forwarded or captured tool call, the
+client is still connected), Meridian closes the open reasoning blocks, reports
+`passthrough.checkpoint_retry` (`upstream_idle`) and runs the same step once
+more with a fresh prompt from the same retained session (a native fork at the
+checkpoint). The retry's blocks continue the same client message. A second stall,
+or any other failure, ends the turn with Meridian's original `upstream_timeout`
+error. Non-stream, fresh-replay and silent-recovery attempts are not retried.
+The legacy managed hotfix (`meridian-passthrough-hotfix.js`) does not apply this
+rewrite.
+
 ## Native grep and glob execution
 
 OpenCode 2.0.30, 2.1.0 and 2.1.3 spawn ripgrep for `grep` and `glob` through `Environment.spawner`.

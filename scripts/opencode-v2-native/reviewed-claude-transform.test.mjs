@@ -3,7 +3,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import {rewriteReviewedClaudeStartup,rewriteReviewedMeridianLibsql,rewriteReviewedClaudeSpawn,REVIEWED_CLAUDE_STARTUP} from '../../packages/web/server/lib/opencode/runtime-host/reviewed-claude-transform.js';
+import {rewriteReviewedClaudeStartup,rewriteReviewedMeridianLibsql,rewriteReviewedMeridianStallRetry,rewriteReviewedClaudeSpawn,REVIEWED_CLAUDE_STARTUP} from '../../packages/web/server/lib/opencode/runtime-host/reviewed-claude-transform.js';
+import {settlePassthroughQuery,upstreamIdleBudget} from '../../packages/web/server/lib/opencode/meridian-passthrough-handoff.js';
 const repository=path.resolve(import.meta.dirname,'../..');
 const sourceFile=path.join(repository,'scripts/opencode-v2-native/fixtures/reviewed-claude-1.8.0.txt');
 test('reviewed Claude transform exposes exact original startup, health, profile and scrub functions',async()=>{
@@ -49,4 +50,31 @@ test('reviewed confined spawn requires the exact host-owned transport hook and p
  assert.throws(()=>load(processFixture,{})(options),/transport_invalid/);
  assert.doesNotMatch(transformed,/spawn\(process.execPath|--claude-transport-worker/);
  assert.match(rewriteReviewedMeridianLibsql(await fs.readFile(path.join(path.dirname(file),'cli-wxk8xvd3.js'))),/profileID:profile.id/);
+});
+
+test('stalled retained stream steps retry once through the attempt guard; the response guard is only a backstop',async()=>{
+ const source=(await fs.readFile(path.join(repository,'packages/web/runtime/reviewed-inputs/claude-1.8.0/node_modules/@rynfar/meridian/dist/cli-wxk8xvd3.js'),'utf8'));
+ const meridian=rewriteReviewedMeridianLibsql(source);
+ assert.match(meridian,/^import \{ retryStalledCheckpoint, settlePassthroughQuery, upstreamIdleBackstop, upstreamIdleBudget \} from "\.\/devryan-meridian-passthrough-handoff\.js";$/m);
+ // Only the primary streamed attempt retries; non-stream, fresh-replay and silent recovery attempts do not.
+ assert.equal(meridian.split('retryStalledCheckpoint(() => runSdkQueryAttempt(').length,2);
+ assert.match(meridian,/retryStalledCheckpoint\(\(\) => runSdkQueryAttempt\(buildQueryOptions\(\{\n\s+prompt: makePrompt\(\),/);
+ assert.match(meridian,/retained: Boolean\(requestMeta\.passthroughHandoff && resumeSessionId && passthroughToolCallAssistantUuid && !isUndo\)/);
+ assert.match(meridian,/guardUpstreamIdle\(response, upstreamIdleBackstop\(UPSTREAM_IDLE_MS, effort\), /);
+ assert.doesNotMatch(meridian,/guardUpstreamIdle\(settlePassthroughQuery\(/);
+ assert.throws(()=>rewriteReviewedMeridianStallRetry(source.replace('const guardedResponse = guardUpstreamIdle(response, UPSTREAM_IDLE_MS, ','const guardedResponse = guardUpstreamIdle(response, 1, ')),/native_meridian_source_shape_changed/);
+ assert.throws(()=>rewriteReviewedMeridianStallRetry(meridian),/native_meridian_source_shape_changed/);
+ // Exercise the transformed attempt with the bundle's own guard: a stall is reported, not silently closed.
+ const guard=meridian.slice(meridian.indexOf('// src/proxy/streamIdleGuard.ts'),meridian.indexOf('// src/proxy/requestAbort.ts'));
+ const attempt=meridian.slice(meridian.indexOf('  async function* runSdkQueryAttempt('),meridian.indexOf('  const pluginDir = finalConfig.pluginDir'));
+ const load=new Function('query','sdkSemaphore','settlePassthroughQuery','upstreamIdleBudget','UPSTREAM_IDLE_MS','claudeLog',`${guard}\n${attempt}\nreturn {runSdkQueryAttempt,UpstreamIdleError};`);
+ const closed=[],budgets=[],logs=[],events=[];
+ const fakeQuery=()=>{const iterator=(async function*(){yield {type:'stream_event',session_id:'sdk',event:{type:'message_start'}};await new Promise(()=>{});})();iterator.close=()=>closed.push(true);return iterator;};
+ const {runSdkQueryAttempt,UpstreamIdleError}=load(fakeQuery,{acquire:async()=>({waitedMs:0,release(){}})},settlePassthroughQuery,(base,effort)=>{budgets.push(effort);return upstreamIdleBudget(base,effort)>base?40:20;},90_000,(event,detail)=>logs.push([event,detail.mode]));
+ const requestMeta={sdkQueueWaitMs:0,sdkActiveDurationMs:0,passthroughHandoff:{checkpoint:()=>null,diagnostic:(event,detail)=>events.push([event,detail.reason])}};
+ const started=Date.now();
+ await assert.rejects((async()=>{for await(const message of runSdkQueryAttempt({options:{effort:'max'}},undefined,requestMeta,'stream'))void message;})(),error=>error instanceof UpstreamIdleError&&error.idleMs===40);
+ assert.ok(Date.now()-started>=35);
+ assert.deepEqual(budgets,['max']);assert.deepEqual(logs,[['upstream.stalled','stream']]);assert.equal(closed.length,1);
+ assert.deepEqual(events,[['passthrough.checkpoint_aborted','upstream_idle']]);
 });

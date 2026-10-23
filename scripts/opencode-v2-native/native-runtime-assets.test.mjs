@@ -85,6 +85,7 @@ test('reviewed original closure and exact constructor transforms are inventoried
  const meridian=reviewed.rewrites.get(path.join(root,'claude-1.8.0/node_modules/@rynfar/meridian/dist/cli-wxk8xvd3.js'));
  assert.match(meridian,/__DEVRYAN_CLAUDE_CHECKPOINT_DIAGNOSTIC/);
  assert.match(meridian,/passthrough\.checkpoint_replay/);
+ assert.match(meridian,/retryStalledCheckpoint\(\(\) => runSdkQueryAttempt\(/);
  assert.match(reviewed.claudeCredentials.contents,/export \{createPlatformCredentialStore, ensureFreshToken, refreshOAuthToken\};/);
  assert.equal(reviewed.ast.path,REVIEWED_AST_FILENAME);
  assert.equal(reviewed.ast.sha256,hash(await fs.readFile(reviewed.ast.source)));
