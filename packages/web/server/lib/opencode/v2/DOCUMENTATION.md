@@ -78,6 +78,11 @@ performance parity. Remaining gates are in [the OpenCode module documentation](.
   built-in native automatic-compaction lifecycle coverage. A reviewed skill's
   hashed `devryan-<hash>` id is never projected as its name; skill tool rows take
   `input.name` and the title from `metadata.name` (live progress or completion).
+  OpenCode reports every interrupt as reason `user`; the live event projector
+  adds the host's recorded abort source (`resolveAbortSource`, the harness
+  control journal) as `data.source` on the interrupt's `session.error` and on
+  the aborted assistant's `MessageAbortedError`, keeping `reason` unchanged.
+  REST message pages do not carry it.
 
 [Captured vectors](__vectors__/README.md) and their
 [observed answers](__vectors__/ANSWERS.md) establish the native behavior below.

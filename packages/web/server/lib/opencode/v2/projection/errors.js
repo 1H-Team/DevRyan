@@ -39,6 +39,7 @@ import { providerErrorDetails } from '../../../../../../shared-runtime/lib/provi
  * @property {number} [statusCode]
  * @property {string} [v2Type]
  * @property {string} [reason]
+ * @property {string} [source] DevRyan abort source of a MessageAbortedError
  * @property {string} [providerCode]
  * @property {string} [providerParam]
  * @property {number} [retryAfterMs]
@@ -138,14 +139,31 @@ export const toV1Error = (error, options = {}) => {
 /**
  * The v1 error for `session.execution.interrupted`. v2 interruptions carry only
  * a reason (`user`, `shutdown`, `superseded`, `inactivity`) and no message.
+ * OpenCode reports every DevRyan abort as `user`, so the host passes the abort
+ * source it recorded; `reason` stays as reported for compatibility.
  * @param {unknown} reason
+ * @param {unknown} [source]
  * @returns {V1NamedError}
  */
-export const toV1InterruptError = (reason) => {
+export const toV1InterruptError = (reason, source) => {
   const data = typeof reason === 'string' && reason.length > 0
     ? { message: 'Aborted', reason, v2Type: 'aborted' }
     : { message: 'Aborted', v2Type: 'aborted' };
-  return { name: 'MessageAbortedError', data };
+  return withAbortSource({ name: 'MessageAbortedError', data }, source);
+};
+
+/**
+ * A copy of a projected `MessageAbortedError` with `data.source`; any other
+ * error, or a missing source, is returned unchanged.
+ * @template T
+ * @param {T} error
+ * @param {unknown} source
+ * @returns {T}
+ */
+export const withAbortSource = (error, source) => {
+  if (typeof source !== 'string' || source.length === 0 || !isRecord(error)
+    || error.name !== 'MessageAbortedError' || !isRecord(error.data)) return error;
+  return { ...error, data: { ...error.data, source } };
 };
 
 /**
