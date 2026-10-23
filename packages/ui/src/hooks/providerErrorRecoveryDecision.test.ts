@@ -5,6 +5,8 @@ import {
   decideProviderErrorRecovery,
   decideProviderRetryLoopRecovery,
   MAX_TRANSIENT_PROVIDER_RETRY_WINDOW_MS,
+  trackProviderRetryLoop,
+  type ProviderRetryLoopStart,
   decideInterruptedProviderRecovery,
   INTERRUPTED_PROVIDER_RESPONSE_REASON,
   isPrimaryProviderRecoverySession,
@@ -231,5 +233,25 @@ describe('isPrimaryProviderRecoverySession', () => {
     expect(isPrimaryProviderRecoverySession({})).toBe(true);
     expect(isPrimaryProviderRecoverySession({ parentID: 'ses_parent' })).toBe(false);
     expect(isPrimaryProviderRecoverySession(undefined)).toBe(false);
+  });
+});
+
+describe('trackProviderRetryLoop', () => {
+  const retry = (attempt: number) => ({ type: 'retry' as const, attempt, message: 'ECONNRESET', next: 10 });
+
+  test('keeps one window across busy re-sends and repeated snapshots of the same loop', () => {
+    const starts = new Map<string, ProviderRetryLoopStart>();
+    expect(trackProviderRetryLoop(starts, 'ses', 'msg', retry(2), 1_000)).toBe(0);
+    expect(trackProviderRetryLoop(starts, 'ses', 'msg', { type: 'busy' }, 5_000)).toBe(0);
+    expect(trackProviderRetryLoop(starts, 'ses', 'msg', retry(2), 6_000)).toBe(5_000);
+    expect(trackProviderRetryLoop(starts, 'ses', 'msg', retry(3), 96_000)).toBe(95_000);
+  });
+
+  test('restarts the window for a new loop or a new user message', () => {
+    const starts = new Map<string, ProviderRetryLoopStart>();
+    trackProviderRetryLoop(starts, 'ses', 'msg', retry(4), 1_000);
+    expect(trackProviderRetryLoop(starts, 'ses', 'msg', retry(1), 400_000)).toBe(0);
+    expect(trackProviderRetryLoop(starts, 'ses', 'msg-2', retry(5), 500_000)).toBe(0);
+    expect(trackProviderRetryLoop(starts, 'ses', undefined, retry(6), 600_000)).toBe(0);
   });
 });

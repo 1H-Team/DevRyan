@@ -27,6 +27,28 @@ export function isPrimaryProviderRecoverySession(
   return Boolean(session && !session.parentID);
 }
 
+export type ProviderRetryLoopStart = { userMessageId: string; startedAt: number; attempt: number };
+
+// OpenCode reports busy before every retried send, so a retry loop is
+// identified by a non-decreasing attempt count for the same user message.
+// Returns how long the current loop has been retrying.
+export function trackProviderRetryLoop(
+  starts: Map<string, ProviderRetryLoopStart>,
+  sessionId: string,
+  userMessageId: string | undefined,
+  status: SessionStatus,
+  now: number,
+): number {
+  if (status.type !== 'retry' || !userMessageId) return 0;
+  const started = starts.get(sessionId);
+  if (started?.userMessageId === userMessageId && status.attempt >= started.attempt) {
+    started.attempt = status.attempt;
+    return now - started.startedAt;
+  }
+  starts.set(sessionId, { userMessageId, startedAt: now, attempt: status.attempt });
+  return 0;
+}
+
 export function decideProviderRetryLoopRecovery(
   status: SessionStatus | undefined,
   retryElapsedMs = 0,
