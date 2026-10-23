@@ -10,7 +10,7 @@ The public release carries exactly one asset, `DevRyan-<version>-arm64.dmg` (App
 
 1. `node scripts/bump-version.mjs X.Y.Z` updates every package manifest, the legacy Tauri files and the workspace versions in `bun.lock`.
 2. Add a `## [X.Y.Z]` section to `CHANGELOG.md`; it becomes the release notes.
-3. Run `bun run validate` and `bun run release:preflight`, then commit with explicit paths. Do not run `supabase-migrate.yml`: `deploy-backend` deploys migrations and verifies migration history and authentication configuration.
+3. Run `bun run validate` and `RELEASE_DRY_RUN=true bun run release:preflight`, then commit with explicit paths. Preflight checks the frozen lockfile without install scripts so it also works on a fresh checkout. Do not run `supabase-migrate.yml`: `deploy-backend` deploys migrations and verifies migration history and authentication configuration.
 4. Optional: run a dry run of the commit (`gh workflow run release.yml --ref <branch>`). The tag run reuses the DMG it built.
 5. Create the release tag and push the commit and tag together: `git tag vX.Y.Z && git push --atomic origin main vX.Y.Z`. Main CI and release preparation then start concurrently.
 

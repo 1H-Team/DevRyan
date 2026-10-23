@@ -7,6 +7,7 @@ test('local preflight reports every check and fails on any of them', async () =>
   const shipped = JSON.parse(readFileSync(new URL('./fixtures/shipped-updater/shipped.json', import.meta.url), 'utf8'));
   const run = (failing) => async (command, args) => {
     if (command === failing) throw new Error(`${command} failed`);
+    if (command === 'bun') assert.deepEqual(args, ['install', '--frozen-lockfile', '--dry-run', '--ignore-scripts']);
     if (command === 'git' && args[0] === 'rev-parse' && args[1].includes(':')) {
       const [tag, file] = args[1].split(':');
       return { stdout: `${shipped[tag][file]}\n` };

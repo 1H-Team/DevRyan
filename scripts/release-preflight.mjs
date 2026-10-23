@@ -48,9 +48,9 @@ export async function preflight({ repositoryRoot = root, environment = process.e
   await check('version files and bun.lock', () => checkVersions({ repositoryRoot, log: () => {} }).then(() => version));
   await check('CHANGELOG section', async () => `${releaseNotes(await fs.readFile(path.join(repositoryRoot, 'CHANGELOG.md'), 'utf8'), version).length} characters of notes`);
   await check('frozen lockfile', async () => {
-    await run('bun', ['install', '--frozen-lockfile', '--dry-run'], { cwd: repositoryRoot, timeout: 300_000, maxBuffer: 64 * 1024 * 1024,
+    await run('bun', ['install', '--frozen-lockfile', '--dry-run', '--ignore-scripts'], { cwd: repositoryRoot, timeout: 300_000, maxBuffer: 64 * 1024 * 1024,
       env: { ...process.env, DEVRYAN_SKIP_INSTALL_PREPARE: '1' } });
-    return 'bun install --frozen-lockfile --dry-run';
+    return 'bun install --frozen-lockfile --dry-run --ignore-scripts';
   });
   await check('shipped discovery fixtures', async () => {
     const problems = await shippedDiscoveryFixtureProblems({ tagBlob: async (tag, file) =>
