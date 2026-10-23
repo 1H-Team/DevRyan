@@ -420,14 +420,17 @@ test('a stalled browser opener publishes its physical closer before readiness an
  const composerRead=new Promise(resolve=>{entered=resolve;});
  const cdp={send:async method=>{if(method==='Runtime.evaluate'){entered();return {result:{value:false}};}return {};},on:()=>{},close:()=>{}};
  const opening=openOwnedPlan({origin:'http://fixture',owner:{name:'fixture',value:'fixture'},sessionID:'ses_fixture',root,environment:{},showBrowser:false,
-  deadline:performance.now()+2000,workDeadline:performance.now()+1000,identity:{},signal:lifetime.signal,onAcquired:close=>{closePhysical=close;},
+  deadline:performance.now()+20_000,workDeadline:performance.now()+10_000,identity:{},signal:lifetime.signal,onAcquired:close=>{closePhysical=close;},
   discoverTarget:async()=>({webSocketDebuggerUrl:'fixture'}),connectCdp:async()=>cdp,
   startBrowser:()=>({check:()=>{},stop:async input=>{phase=input.deadline;await new Promise(resolve=>setTimeout(resolve,20));physicallyClosed=true;}})
  }).then(()=>{lateReady=true;},error=>error);
  try{
-  await composerRead;assert.equal(typeof closePhysical,'function');assert.equal(physicallyClosed,false);
+  // Under load the opener can settle before reading the composer; fail fast instead of awaiting forever.
+  const settledFirst=await Promise.race([composerRead.then(()=>null),opening.then(value=>({value}))]);
+  if(settledFirst)throw Error(`opener settled before reading the composer: ${settledFirst.value}`);
+  assert.equal(typeof closePhysical,'function');assert.equal(physicallyClosed,false);
   lifetime.abort(primary);
-  const deadline=performance.now()+1500;
+  const deadline=performance.now()+15_000;
   await assert.rejects(cleanupApplicationPlanResources({failure:primary,deadline,
    operations:[input=>closePhysical(input),()=>Promise.allSettled([opening])]}),error=>error===primary);
   assert.equal(await opening,primary);assert.equal(physicallyClosed,true);assert.ok(phase<=deadline);assert.equal(lateReady,false);

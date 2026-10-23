@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { createReadStream } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -26,12 +27,33 @@ export async function downloadPinnedClaude(directory, fetchImpl = fetch) {
   await verifyBinary(file);
 }
 
-export async function hydrateReviewedClaude({ repository = root, fetchImpl = fetch } = {}) {
-  const directory = path.join(repository, 'packages/web/runtime/reviewed-inputs/claude-1.8.0/assets');
+const claudeAssetDirectory = repository => path.join(repository, 'packages/web/runtime/reviewed-inputs/claude-1.8.0/assets');
+
+/** The checkout that owns a linked git worktree's shared repository, or null. */
+export function primaryCheckout(repository = root) {
+  try {
+    const common = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: repository, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    const checkout = path.dirname(common);
+    return path.basename(common) === '.git' && path.resolve(checkout) !== path.resolve(repository) ? checkout : null;
+  } catch { return null; }
+}
+
+export async function hydrateReviewedClaude({ repository = root, fetchImpl = fetch, sources = [primaryCheckout(repository)] } = {}) {
+  const directory = claudeAssetDirectory(repository);
   const destination = path.join(directory, REVIEWED_CLAUDE_ASSETS.claude.path);
   try { await verifyBinary(destination); return destination; }
   catch (error) { if (error.code !== 'ENOENT') throw error; }
   await fs.mkdir(directory, { recursive: true });
+  // A linked worktree reuses the main checkout's verified copy (a clone on
+  // APFS) instead of downloading 160 MB again.
+  for (const source of sources.filter(Boolean)) {
+    const candidate = path.join(claudeAssetDirectory(source), REVIEWED_CLAUDE_ASSETS.claude.path);
+    try { await verifyBinary(candidate); } catch { continue; }
+    await fs.copyFile(candidate, destination, fs.constants.COPYFILE_EXCL | fs.constants.COPYFILE_FICLONE);
+    await fs.chmod(destination, REVIEWED_CLAUDE_ASSETS.claude.mode);
+    await verifyBinary(destination);
+    return destination;
+  }
   const scratch = await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()), 'devryan-claude-hydrate-'));
   try {
     if (process.platform === 'darwin') await downloadClaudeInstallation({ directory: scratch, version: REVIEWED_CLAUDE_ASSETS.claude.version, fetchImpl });

@@ -43,7 +43,9 @@ export function planScriptTests(root = repositoryRoot, environment = process.env
     else node.push(file);
   }
   // The Node batch runs beside other package suites in the outer pool.
-  const args = ['--test', '--test-concurrency=1'];
+  // Each test gets a deadline and the file exits once its tests settle, so a
+  // never-resolving await or a leaked handle fails that test instead of hanging.
+  const args = ['--test', '--test-concurrency=1', '--test-timeout=300000', '--test-force-exit'];
   const concurrency = environment.DEVRYAN_SCRIPT_TEST_CONCURRENCY;
   if (concurrency !== undefined) {
     if (!/^[1-9]\d*$/.test(concurrency) || !Number.isSafeInteger(Number(concurrency))) {

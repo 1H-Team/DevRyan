@@ -60,3 +60,26 @@ test('the reviewed executable, captured metadata and source manifest pin the mod
   assert.equal(provenance.nativeExecutable.sha256, asset.sha256);
   assert.equal(provenance.nativeExecutable.archiveIntegrity, 'sha512-h0MlQtldJnHXdPB6KGQ6rYQocvNTEXBI+NW4791OD2mIZcq6fHrV4PsM+XK297OL0+wVENlDHtlBj1BL/3S52A==');
 });
+
+test('a worktree reuses a verified copy from the main checkout and ignores an unverified one', async () => {
+  const repository = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-hydrate-worktree-'));
+  const corrupt = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-hydrate-source-'));
+  try {
+    await fs.mkdir(path.dirname(path.join(corrupt, relative)), { recursive: true });
+    await fs.writeFile(path.join(corrupt, relative), 'not the reviewed binary');
+    // The unverified source is skipped, so hydration falls through to a download.
+    await assert.rejects(hydrateReviewedClaude({ repository, sources: [corrupt], fetchImpl: async () => { throw new Error('download attempted'); } }), /download attempted/);
+    await assert.rejects(fs.stat(path.join(repository, relative)), { code: 'ENOENT' });
+
+    const checkout = path.resolve(import.meta.dirname, '..');
+    const reviewed = path.join(checkout, relative);
+    const available = await fs.stat(reviewed).then(stat => stat.size === 267956720, () => false);
+    if (!available) return;
+    const installed = await hydrateReviewedClaude({ repository, sources: [checkout], fetchImpl: () => { throw new Error('must not download'); } });
+    assert.equal(installed, path.join(repository, relative));
+    assert.equal((await fs.stat(installed)).size, 267956720);
+  } finally {
+    await fs.rm(repository, { recursive: true, force: true });
+    await fs.rm(corrupt, { recursive: true, force: true });
+  }
+});

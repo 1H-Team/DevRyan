@@ -25,6 +25,20 @@ export function testConcurrency(environment = process.env) {
   return Number(value);
 }
 
+// A unit that outlives this wall-clock budget is killed with its process group
+// and reported as timed out, so one hung test can never stall a run for hours.
+// Units may set `timeoutMs`; DEVRYAN_TEST_UNIT_TIMEOUT_MS overrides the default.
+export const DEFAULT_TEST_UNIT_TIMEOUT_MS = 20 * 60_000;
+export function testUnitTimeoutMs(unit, environment = process.env) {
+  if (Number.isSafeInteger(unit?.timeoutMs) && unit.timeoutMs > 0) return unit.timeoutMs;
+  const configured = environment.DEVRYAN_TEST_UNIT_TIMEOUT_MS;
+  if (configured === undefined) return DEFAULT_TEST_UNIT_TIMEOUT_MS;
+  if (!/^[1-9]\d*$/.test(configured) || !Number.isSafeInteger(Number(configured))) {
+    throw new Error('DEVRYAN_TEST_UNIT_TIMEOUT_MS must be a positive integer');
+  }
+  return Number(configured);
+}
+
 export function formatDuration(ms) {
   const seconds = Math.round(ms / 1000);
   return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m${String(seconds % 60).padStart(2, '0')}s`;
@@ -42,7 +56,8 @@ function killGroup(child, signal) {
  * Run `units` ({ name, command, args, cwd?, env?, resource? }) with at most `concurrency`
  * at once, serializing units that share an exclusive resource (such as a port).
  * Resolves to { passed, wallMs, results } where
- * results hold { name, status: 'passed'|'failed'|'not-run', code, signal, durationMs }.
+ * results hold { name, status: 'passed'|'failed'|'not-run', code, signal, durationMs, timedOut }.
+ * A unit past its wall-clock budget (testUnitTimeoutMs) is killed and fails.
  */
 export async function runTestUnits(units, { concurrency = testConcurrency(), label = 'tests', failFast = false, cwd = process.cwd(),
   env = process.env, log = (line) => process.stdout.write(`${line}\n`), write = (text) => process.stdout.write(text), heartbeatMs = 60_000, cleanup = () => {} } = {}) {
@@ -52,6 +67,7 @@ export async function runTestUnits(units, { concurrency = testConcurrency(), lab
     if (names.has(unit.name)) throw new Error(`Duplicate test unit: ${unit.name}`);
     names.add(unit.name);
   }
+  const unitTimeouts = units.map((unit) => testUnitTimeoutMs(unit, env));
   const slots = Math.max(1, Math.min(concurrency, units.length || 1));
   const captured = slots > 1;
   const group = process.env.GITHUB_ACTIONS === 'true';
@@ -99,12 +115,24 @@ export async function runTestUnits(units, { concurrency = testConcurrency(), lab
       stdio: captured ? ['ignore', descriptor, descriptor] : ['ignore', 'inherit', 'inherit'] });
     if (descriptor !== null) closeSync(descriptor);
     running.set(index, { unit, child, startedAt: unitStarted });
+    let timedOut = false, forceKill = null;
+    const deadline = setTimeout(() => {
+      timedOut = true;
+      log(`[${label}] ${unit.name} exceeded ${formatDuration(unitTimeouts[index])}; killing its process group`);
+      killGroup(child, 'SIGTERM');
+      forceKill = setTimeout(() => killGroup(child, 'SIGKILL'), 5000);
+      forceKill.unref();
+    }, unitTimeouts[index]);
+    deadline.unref();
     const finish = (code, signal, error) => {
       if (!running.has(index)) return;
       running.delete(index);
+      clearTimeout(deadline);
+      if (forceKill) clearTimeout(forceKill);
+      result.timedOut = timedOut;
       result.durationMs = performance.now() - unitStarted;
       result.code = code; result.signal = signal;
-      result.status = code === 0 && !error ? 'passed' : 'failed';
+      result.status = code === 0 && !error && !timedOut ? 'passed' : 'failed';
       if (captured) {
         const output = readFileSync(logFile, 'utf8');
         const title = `${unit.name}: ${result.status} in ${formatDuration(result.durationMs)}`;
@@ -113,9 +141,11 @@ export async function runTestUnits(units, { concurrency = testConcurrency(), lab
         log(`$ ${[unit.command, ...unit.args].join(' ')}${unit.cwd ? `  (in ${path.relative(cwd, unit.cwd) || '.'})` : ''}`);
         if (output) write(output.endsWith('\n') ? output : `${output}\n`);
         if (error) log(`${unit.name} could not start: ${error.message}`);
+        if (timedOut) log(`${unit.name} timed out after ${formatDuration(unitTimeouts[index])}`);
         log(fold ? '::endgroup::' : `===== end ${unit.name}`);
         rmSync(logFile, { force: true });
       } else if (error) log(`${unit.name} could not start: ${error.message}`);
+      else if (timedOut) log(`${unit.name} timed out after ${formatDuration(unitTimeouts[index])}`);
       if (result.status === 'failed' && failFast && !stopping) {
         stopping = true;
         log(`[${label}] ${unit.name} failed; stopping (fail-fast)`);

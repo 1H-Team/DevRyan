@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, test } from 'node:test';
 
-import { recordTestTimings, runTestUnits, summarizeTestUnits, testConcurrency } from './test-pool.mjs';
+import { DEFAULT_TEST_UNIT_TIMEOUT_MS, recordTestTimings, runTestUnits, summarizeTestUnits, testConcurrency, testUnitTimeoutMs } from './test-pool.mjs';
 
 const node = (source) => ({ command: process.execPath, args: ['-e', source] });
 // Children must not inherit the node:test reporting channel of this file.
@@ -28,6 +28,38 @@ describe('bounded test pool', () => {
       assert.equal(outcome.passed, true);
       assert.equal(existsSync(path.join(scratch, 'independent')), true);
     } finally { rmSync(scratch, { recursive: true, force: true }); }
+  });
+
+  test('kills a unit that outlives its wall-clock budget, with its process group, and fails it', async () => {
+    const scratch = mkdtempSync(path.join(os.tmpdir(), 'devryan-test-timeout-'));
+    try {
+      const pidFile = path.join(scratch, 'grandchild.pid');
+      // The unit never exits and keeps a grandchild alive, like a hung test with a leaked server.
+      const hung = node(`const { spawn } = require('node:child_process');
+        const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+        require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(child.pid));
+        setInterval(() => {}, 1000);`);
+      const lines = [];
+      const started = performance.now();
+      const outcome = await runTestUnits([
+        { name: 'hung', timeoutMs: 400, ...hung },
+        { name: 'quick', ...node('') },
+      ], { ...quiet, concurrency: 2, log: (line) => lines.push(line) });
+      assert.ok(performance.now() - started < 8000, 'the hung unit must not stall the run');
+      assert.equal(outcome.passed, false);
+      assert.deepEqual(outcome.results.map((row) => [row.name, row.status, row.timedOut]), [['hung', 'failed', true], ['quick', 'passed', false]]);
+      assert.ok(lines.some((line) => /hung exceeded/.test(line)));
+      const grandchild = Number(readFileSync(pidFile, 'utf8'));
+      for (let attempt = 0; attempt < 20 && alive(grandchild); attempt += 1) await new Promise((resolve) => setTimeout(resolve, 100));
+      assert.equal(alive(grandchild), false, 'the timed-out unit\'s process group is killed');
+    } finally { rmSync(scratch, { recursive: true, force: true }); }
+  });
+
+  test('takes the unit budget from the unit, then the environment, then the default', () => {
+    assert.equal(testUnitTimeoutMs({ timeoutMs: 1234 }, { DEVRYAN_TEST_UNIT_TIMEOUT_MS: '99' }), 1234);
+    assert.equal(testUnitTimeoutMs({}, { DEVRYAN_TEST_UNIT_TIMEOUT_MS: '99' }), 99);
+    assert.equal(testUnitTimeoutMs({}, {}), DEFAULT_TEST_UNIT_TIMEOUT_MS);
+    assert.throws(() => testUnitTimeoutMs({}, { DEVRYAN_TEST_UNIT_TIMEOUT_MS: '0' }), /positive integer/);
   });
 
   test('runs units at the same time up to the bound and reports each one', async () => {
