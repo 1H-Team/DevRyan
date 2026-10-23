@@ -157,7 +157,7 @@
       ]
     },
     "dmg": {
-      "sign": true,
+      "sign": false,
       "title": "${productName} ${version}",
       "backgroundColor": "#FFFCF0",
       "iconSize": 100,

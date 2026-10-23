@@ -2,27 +2,34 @@
 // GitHub Release steps for .github/workflows/release.yml.
 //
 //   admit             read-only qualification and published-candidate recovery routing (run by preflight)
+//   release           stage, recheck CI, publish: one process inside the publication lock (the `release` job)
 //   stage             reconcile the draft and upload the DMG; write staged.json (publication lock, drafts only)
-//   publish           one PATCH that publishes the unchanged staged draft, record the ledger, verify discovery
+//   publish           one PATCH that publishes the unchanged staged draft and records the ledger
 //   verify-published  read-only: published bytes, ledger, shipped discovery and the public download
 //
+// Success is promotion plus the ledger. Discovery and the public download are
+// verified afterwards by scripts/release-verify-public.mjs (`post-publish-verify`),
+// whose failure means "published, verification pending", never a failed release.
 // A version is used up only once it is published: a failed attempt re-runs, or the
 // tag moves to a fixed commit and locked `stage` reuses the unpublished draft. Published
 // bytes are recorded in the devryan-release/vX.Y.Z ledger tag and never replaced.
 // RELEASE_DRY_RUN=true makes no GitHub writes (stage checks local files only).
+// `--simulate` runs stage, publish or release against the in-memory GitHub of
+// scripts/release-github-fake.mjs with the real DMG and manifest, writing nothing.
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { RELEASE_REPOSITORY, RELEASE_VERSION_PATTERN, releaseAssetName, releaseAssetDownloadUrl } from '../packages/electron/release-assets.mjs';
-import { verifyDownloadedUpdate } from '../packages/electron/desktop-updater.mjs';
+import { RELEASE_REPOSITORY, RELEASE_VERSION_PATTERN } from '../packages/electron/release-assets.mjs';
 import { describeDirectoryAssets, verifyReleaseAssets } from './verify-release-assets.mjs';
 import { createRunRoot, scratchParent } from './qa/run-root.mjs';
 import { githubClient } from './release-github.mjs';
 import { CANONICAL_RELEASE_REPOSITORY } from './release-artifacts.mjs';
 import { readReleaseManifest } from './release-candidate.mjs';
-import { assertShippedDiscovery, formatReleaseMarker, ledgerTagName, parseReleaseMarker, projectForDiscovery, releaseBody, releaseState } from './release-state.mjs';
+import { assertShippedDiscovery, formatReleaseMarker, ledgerTagName, manifestIdentityProblems, parseReleaseMarker, projectForDiscovery, releaseBody,
+  releasePayloadProblems, releaseState } from './release-state.mjs';
+import { readLedger, verifyPublicInstaller, verifyPublicRelease } from './release-verify-public.mjs';
 
-export { githubClient };
+export { githubClient, readLedger, verifyPublicInstaller };
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SCOPE = 'desktop-macos-arm64';
@@ -161,17 +168,6 @@ async function latestVersion(client) {
   return latest?.tag_name?.match(/^v(\d+\.\d+\.\d+)$/)?.[1] ?? null;
 }
 
-/** The published-bytes ledger entry for `version`: an annotated devryan-release/vX.Y.Z tag. */
-export async function readLedger(client, version) {
-  const name = ledgerTagName(version);
-  const ref = await client.request('GET', `/git/ref/tags/${name}`, { allowNotFound: true });
-  if (!ref) return null;
-  if (ref.object?.type !== 'tag') throw new Error(`${name} is not an annotated ledger tag; inspect it before releasing v${version}`);
-  const ledger = parseReleaseMarker((await client.request('GET', `/git/tags/${ref.object.sha}`)).message);
-  if (ledger?.version !== version) throw new Error(`${name} does not record v${version}; inspect it before releasing v${version}`);
-  return ledger;
-}
-
 /** Write-once: an existing entry must name the same bytes. */
 async function recordLedger(client, { version, marker, commit, log }) {
   const expected = parseReleaseMarker(marker);
@@ -272,6 +268,11 @@ export async function stage({ repositoryRoot = root, environment = process.env, 
   if (!environment.RELEASE_MANIFEST_PATH) throw new Error('RELEASE_MANIFEST_PATH is required');
   const manifest = await readReleaseManifest(path.resolve(environment.RELEASE_MANIFEST_PATH), { version, sourceSha: source });
   if (asset.name !== manifest.name || asset.size !== manifest.size || asset.digest !== `sha256:${manifest.sha256}`) throw new Error('The DMG does not match its release manifest');
+  const identityProblems = await manifestIdentityProblems(manifest);
+  if (identityProblems.length) throw new Error(identityProblems.join('\n'));
+  const notes = releaseNotes(await fs.readFile(path.join(repositoryRoot, 'CHANGELOG.md'), 'utf8'), version);
+  const budget = releasePayloadProblems({ body: releaseBody(notes, formatReleaseMarker({ version, sha256: manifest.sha256, size: manifest.size, source, runId: '0', runAttempt: '0' })) });
+  if (budget.length) throw new Error(budget.join('\n'));
   if (environment.RELEASE_DRY_RUN === 'true') {
     log(`Dry run: ${asset.name} (${asset.size} bytes, ${asset.digest}) is the only public asset.`);
     return { published: false, releaseId: '' };
@@ -297,7 +298,6 @@ export async function stage({ repositoryRoot = root, environment = process.env, 
   const latest = await latestVersion(client);
   if (latest && compareVersions(latest, version) > 0) throw new Error(`Refusing to stage ${tag}: v${latest} is already latest; production deployment must not run`);
   await assertTagAtSource(client, tag, source);
-  const notes = releaseNotes(await fs.readFile(path.join(repositoryRoot, 'CHANGELOG.md'), 'utf8'), version);
   const fields = { tag_name: tag, target_commitish: source, name: `DevRyan ${tag}`, body: releaseBody(notes, marker), draft: true, prerelease: false };
   let release;
   if (state.action === 'create') release = await client.request('POST', '/releases', { body: fields });
@@ -322,74 +322,16 @@ export async function stage({ repositoryRoot = root, environment = process.env, 
   const draft = await client.request('GET', `/releases/${release.id}`);
   if (!draft.draft || draft.tag_name !== tag || draft.target_commitish !== source) throw new Error(`Draft ${tag} changed while it was staged`);
   const expected = { version, name: asset.name, sha256: manifest.sha256, size: asset.size };
-  await assertShippedDiscovery(projectForDiscovery({ ...draft, assets }, { version }), expected);
+  const projected = projectForDiscovery({ ...draft, assets }, { version });
+  const payloadProblems = releasePayloadProblems({ body: projected.body, payload: projected });
+  if (payloadProblems.length) throw new Error(`Draft ${tag} would not be discoverable:\n${payloadProblems.join('\n')}`);
+  await assertShippedDiscovery(projected, expected);
   const staged = { schema: 1, repository: target.repository, version, tag, source, targetCommitish: source, marker,
     releaseId: String(draft.id), releaseUpdatedAt: draft.updated_at, assetId: String(assets[0].id), assetUpdatedAt: assets[0].updated_at,
     name: asset.name, size: asset.size, digest: `sha256:${manifest.sha256}` };
   await stagedEnvironmentFile(environment, staged);
   log(`${upload.uploaded ? 'Uploaded' : 'Kept'} ${asset.name} (${asset.size} bytes, sha256:${manifest.sha256}) on draft ${tag} in ${target.repository}; every shipped updater discovers it once published.`);
   return { published: false, releaseId: staged.releaseId, staged };
-}
-
-/** Download the unauthenticated public URL and use the shipped updater's byte verifier. */
-export async function verifyPublicInstaller(update, { fetchImpl = fetch, timeoutMs = 180_000 } = {}) {
-  const controller = new AbortController();
-  const run = createRunRoot({ parent: scratchParent('release-download'), owner: 'release-public-download', onInterrupt: () => controller.abort() });
-  let passed = false;
-  const timer = setTimeout(() => controller.abort(), Math.max(1, timeoutMs));
-  timer.unref();
-  try {
-    const response = await fetchImpl(update.url, { signal: controller.signal, headers: { 'Accept-Encoding': 'identity' } });
-    if (!response.ok || !response.body) throw new Error(`Public installer download failed (${response.status})`);
-    const file = path.join(run.dir, update.name);
-    const handle = await fs.open(file, 'wx', 0o600);
-    try {
-      let size = 0;
-      for await (const chunk of response.body) {
-        size += chunk.byteLength;
-        if (size > update.size) { controller.abort(); throw new Error('Public installer exceeds the expected size'); }
-        await handle.writeFile(chunk);
-      }
-    } finally { await handle.close(); }
-    await verifyDownloadedUpdate(file, update);
-    passed = true;
-  } finally { clearTimeout(timer); run.finish(passed ? 'passed' : 'failed'); }
-}
-
-/**
- * After promotion: within 60 seconds, /releases/latest must be discovered by
- * every shipped updater with exactly these bytes, and the public download must
- * hash to them. A release superseded by a newer latest only re-verifies its bytes.
- */
-async function verifyPublicRelease({ client, target, version, expected, fetchImpl, log, wait, attempts, now, promoted = false }) {
-  const tag = `v${version}`;
-  const publicUrl = releaseAssetDownloadUrl('macos-arm64', version, target.repository);
-  // Just promoted with make_latest after checking that nothing newer is latest.
-  const latest = promoted ? null : await latestVersion(client);
-  if (latest && compareVersions(latest, version) > 0) {
-    await verifyPublicInstaller({ name: expected.name, url: publicUrl, sha256: expected.sha256, size: expected.size }, { fetchImpl });
-    log(`Verified identical published ${tag}; superseded by v${latest}. Latest is unchanged.`);
-    return;
-  }
-  const discoveryDeadline = now() + 60_000;
-  let lastError = new Error('Updater discovery deadline expired (60 seconds)');
-  for (let attempt = 1; attempt <= attempts && now() < discoveryDeadline; attempt++) {
-    try {
-      const payload = await client.request('GET', '/releases/latest', { attempts: 1, signal: AbortSignal.timeout(Math.max(1, discoveryDeadline - now())) });
-      const [{ update }] = await assertShippedDiscovery(payload, expected);
-      if (now() >= discoveryDeadline) throw new Error('Updater discovery deadline expired (60 seconds)');
-      await verifyPublicInstaller({ ...update, url: publicUrl }, { fetchImpl, timeoutMs: discoveryDeadline - now() });
-      if (now() >= discoveryDeadline) throw new Error('Public verification deadline expired (60 seconds)');
-      log(`Published ${tag}; the in-app updater discovers ${expected.name} (${expected.size} bytes, sha256:${expected.sha256}); public download bytes verified.`);
-      log(`[release] updater-discovery-verified-at=${new Date(now()).toISOString()}`);
-      return;
-    } catch (error) {
-      lastError = error;
-      if (attempt >= attempts || now() >= discoveryDeadline) break;
-      await wait(Math.min(5_000, discoveryDeadline - now()));
-    }
-  }
-  throw new Error(`Published ${tag} but public verification failed within the 60-second discovery deadline: ${lastError.message}. Retry verification with the original candidate; never rebuild or replace published bytes.`, { cause: lastError });
 }
 
 /** The staged draft and its single asset must be exactly what staged.json recorded. */
@@ -414,12 +356,18 @@ export function stagedDifferences(release, assets, staged) {
   return differences;
 }
 
+/**
+ * Inside the publication lock: one PATCH promotes the unchanged staged draft,
+ * then the ledger is recorded and any other draft of the version is removed.
+ * That is the success point; discovery and the public download are verified
+ * afterwards by the read-only post-publish-verify job.
+ */
 export async function publish({ repositoryRoot = root, environment = process.env, fetchImpl = fetch, log = console.log,
-  wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), attempts = Infinity, now = Date.now } = {}) {
+  wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), now = Date.now, staged: stagedState } = {}) {
   const version = await releaseVersion(repositoryRoot, environment);
   const target = releaseTarget(environment);
   const tag = `v${version}`, source = environment.GITHUB_SHA;
-  const staged = JSON.parse(environment.RELEASE_STAGED || 'null');
+  const staged = stagedState ?? JSON.parse(environment.RELEASE_STAGED || 'null');
   if (staged?.schema !== 1 || staged.repository !== target.repository || staged.version !== version || staged.source !== source) {
     throw new Error('RELEASE_STAGED must be the staged.json of this version, source and target repository');
   }
@@ -442,8 +390,30 @@ export async function publish({ repositoryRoot = root, environment = process.env
     throw new Error(`Published ${tag} does not carry the staged bytes; never replace published bytes`);
   }
   await recordLedger(client, { version, marker: staged.marker, commit: source, log });
-  await verifyPublicRelease({ client, target, version, fetchImpl, log, wait, attempts, now, promoted,
-    expected: { version, name: releaseAssetName('macos-arm64', version), sha256: staged.digest.slice('sha256:'.length), size: staged.size } });
+  // Stage removed stale drafts; one created since (by hand or a raced run) must not linger beside the published version.
+  for (const draft of (await findReleases(client, tag)).filter(row => row.draft === true)) {
+    const current = await client.request('GET', `/releases/${draft.id}`, { allowNotFound: true });
+    if (current?.draft !== true) continue;
+    await client.request('DELETE', `/releases/${current.id}`);
+    log(`[release] removed stale draft ${current.id} of ${tag}`);
+  }
+  log(`${promoted ? 'Published' : 'Already published'} ${tag} with ${staged.name} (${staged.size} bytes, ${staged.digest}); ledger ${ledgerTagName(version)} recorded. post-publish-verify confirms discovery and the public download.`);
+  log(`[release] promoted-at=${new Date(now()).toISOString()}`);
+  return { published: true, releaseId: staged.releaseId, staged };
+}
+
+/**
+ * The `release` job: stage, recheck exact-source CI, then publish, in one
+ * process holding the publication lock, with the staged state in memory.
+ * staged.json is still written (RELEASE_STAGED_PATH) for audit and resume:
+ * a rerun stages again (reusing the identical draft) and publishes.
+ */
+export async function release({ repositoryRoot = root, environment = process.env, fetchImpl = fetch, log = console.log,
+  wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), now = Date.now, trustedCI = requireTrustedCI } = {}) {
+  const staged = await stage({ repositoryRoot, environment, fetchImpl, log, wait, now });
+  if (environment.RELEASE_DRY_RUN === 'true') return staged;
+  await trustedCI({ environment, fetchImpl, log });
+  return publish({ repositoryRoot, environment, fetchImpl, log, wait, now, staged: staged.staged });
 }
 
 /**
@@ -452,7 +422,7 @@ export async function publish({ repositoryRoot = root, environment = process.env
  * public download. Never writes, rebuilds or re-records anything.
  */
 export async function verifyPublished({ repositoryRoot = root, environment = process.env, fetchImpl = fetch, log = console.log,
-  wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), attempts = Infinity, now = Date.now } = {}) {
+  wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), now = Date.now, verification = {} } = {}) {
   const version = await releaseVersion(repositoryRoot, environment);
   const target = releaseTarget(environment);
   const tag = `v${version}`, source = environment.GITHUB_SHA;
@@ -465,21 +435,80 @@ export async function verifyPublished({ repositoryRoot = root, environment = pro
   if (state.action === 'refuse') throw new Error(state.message);
   if (state.action !== 'verify-published') throw new Error('Published verification refuses an unpublished release');
   await verifyRemoteInstaller(client, state.release, version, asset, digests);
-  if (!ledger) log(`[release] warning: ${ledgerTagName(version)} is missing (published before the ledger, or publish stopped before recording it); rerun the publish job to record it.`);
-  await verifyPublicRelease({ client, target, version, fetchImpl, log, wait, attempts, now,
-    expected: { version, name: asset.name, sha256: asset.digest.slice('sha256:'.length), size: asset.size } });
+  if (!ledger) log(`[release] warning: ${ledgerTagName(version)} is missing (published before the ledger, or the release job stopped before recording it); rerun the release job to record it.`);
+  return verifyPublicRelease({ client, repository: target.repository, version, fetchImpl, log, wait, now, repositoryRoot, rerun: 'rerun the verify-published job',
+    expected: { sha256: asset.digest.slice('sha256:'.length), size: asset.size }, ...verification });
 }
 
-const operations = { admit, stage, publish, 'trusted-ci': requireTrustedCI, 'verify-published': verifyPublished, 'check-versions': checkVersions };
+/**
+ * `stage|publish|release --simulate`: the unchanged release code against the
+ * in-memory GitHub of scripts/release-github-fake.mjs, with the real DMG and
+ * manifest from RELEASE_ASSET_DIRECTORY and RELEASE_MANIFEST_PATH. `release`
+ * also runs the post-publish verifier (discovery and the public download)
+ * against the fake. `stage` and `publish` run in separate processes share the
+ * fake through RELEASE_SIMULATION_STATE, which `publish` removes. Nothing
+ * reaches the network: the fake refuses every other host.
+ */
+export async function simulate(operation, { repositoryRoot = root, environment = process.env, log = console.log, source: givenSource } = {}) {
+  if (!['stage', 'publish', 'release'].includes(operation)) throw new Error('--simulate applies to stage, publish and release');
+  const { createFakeGitHub, restoreFakeGitHub } = await import('./release-github-fake.mjs');
+  const version = JSON.parse(await fs.readFile(path.join(repositoryRoot, 'package.json'), 'utf8')).version;
+  const source = givenSource ?? environment.GITHUB_SHA ?? (await import('node:child_process')).execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repositoryRoot, encoding: 'utf8' }).trim();
+  const statePath = environment.RELEASE_SIMULATION_STATE ? path.resolve(environment.RELEASE_SIMULATION_STATE) : null;
+  if (operation !== 'release' && !statePath) throw new Error('stage --simulate and publish --simulate share the simulated GitHub through RELEASE_SIMULATION_STATE');
+  const run = createRunRoot({ parent: scratchParent('release-simulate'), owner: 'release-simulate' });
+  const blobDirectory = statePath ? `${statePath}.blobs` : path.join(run.dir, 'blobs');
+  let passed = false;
+  try {
+    await fs.mkdir(blobDirectory, { recursive: true, mode: 0o700 });
+    const fake = operation === 'publish' ? restoreFakeGitHub(await fs.readFile(statePath, 'utf8'), { blobDirectory })
+      : createFakeGitHub({ tags: { [`v${version}`]: source }, blobDirectory, ciRuns: [{ id: 1, path: '.github/workflows/ci.yml', head_sha: source, head_branch: 'main',
+        event: 'push', status: 'completed', conclusion: 'success', repository: { full_name: CANONICAL_RELEASE_REPOSITORY } }] });
+    const env = { ...environment, GITHUB_REF: `refs/tags/v${version}`, GITHUB_SHA: source, GITHUB_REPOSITORY: CANONICAL_RELEASE_REPOSITORY, GITHUB_TOKEN: 'simulated-token',
+      RELEASE_DRY_RUN: 'false', RELEASE_PUBLICATION_LOCK: PUBLICATION_LOCK, GITHUB_RUN_ID: environment.GITHUB_RUN_ID || '0', GITHUB_RUN_ATTEMPT: environment.GITHUB_RUN_ATTEMPT || '1',
+      RELEASE_STAGED_PATH: undefined, GITHUB_STEP_SUMMARY: undefined, GITHUB_OUTPUT: undefined };
+    const options = { repositoryRoot, environment: env, fetchImpl: fake.fetchImpl, log: line => log(`[simulate] ${line}`) };
+    let result;
+    if (operation === 'stage') {
+      result = await stage(options);
+      fake.state.simulatedStaged = result.staged;
+      await fs.writeFile(statePath, fake.serialize(), { mode: 0o600 });
+    } else {
+      result = operation === 'release' ? await release(options)
+        : await publish({ ...options, staged: environment.RELEASE_STAGED ? JSON.parse(environment.RELEASE_STAGED) : fake.state.simulatedStaged });
+      const anonymous = githubClient({ anonymous: true, fetchImpl: fake.fetchImpl, environment: { RELEASE_DRY_RUN: 'true' } });
+      await verifyPublicRelease({ version, client: anonymous, fetchImpl: fake.fetchImpl, repositoryRoot, log: options.log, pollMs: 1_000, rerun: 'rerun the simulation' });
+      const problems = [...fake.state.violations];
+      if (fake.publicReleases().length !== 1) problems.push(`${fake.publicReleases().length} published releases`);
+      if (fake.state.releases.some(row => row.draft)) problems.push('a draft remains');
+      if (fake.ledgerRefs().length !== 1) problems.push(`${fake.ledgerRefs().length} ledger tags`);
+      if (problems.length) throw new Error(`Simulated release left an invalid state: ${problems.join('; ')}`);
+    }
+    log(`[simulate] ${operation} of v${version} at ${source} passed against the simulated GitHub (${fake.requests.length} requests, no network writes).`);
+    passed = true;
+    return result;
+  } finally {
+    if (operation !== 'stage' || !passed) {
+      if (statePath) await fs.rm(statePath, { force: true });
+      await fs.rm(blobDirectory, { recursive: true, force: true });
+    }
+    run.finish(passed ? 'passed' : 'failed');
+  }
+}
+
+const operations = { admit, release, stage, publish, 'trusted-ci': requireTrustedCI, 'verify-published': verifyPublished, 'check-versions': checkVersions };
+const OUTPUT_OPERATIONS = new Set(['admit', 'release', 'stage', 'publish']);
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const operation = operations[process.argv[2]];
-  if (!operation) {
-    console.error('Usage: release.mjs trusted-ci|admit|stage|publish|verify-published|check-versions');
+  const [name, ...flags] = process.argv.slice(2);
+  const simulated = flags.length === 1 && flags[0] === '--simulate';
+  const operation = operations[name];
+  if (!operation || (flags.length && !simulated) || (simulated && !['stage', 'publish', 'release'].includes(name))) {
+    console.error('Usage: release.mjs trusted-ci|admit|release|stage|publish|verify-published|check-versions, or release|stage|publish --simulate');
     process.exit(2);
   }
-  operation().then(async (result) => {
-    if (result && process.env.GITHUB_OUTPUT) {
+  (simulated ? simulate(name) : operation()).then(async (result) => {
+    if (result && process.env.GITHUB_OUTPUT && !simulated && OUTPUT_OPERATIONS.has(name)) {
       const fields = result.version ? `version=${result.version}\nrelease_id=${result.releaseId}\npublished=${result.published === true}\ncandidate_run_id=${result.candidateRunId ?? ''}\n`
         : typeof result.published === 'boolean' ? `published=${result.published}\nrelease_id=${result.releaseId}\nstaged=${JSON.stringify(result.staged ?? null)}\n` : '';
       await fs.appendFile(process.env.GITHUB_OUTPUT, fields);

@@ -140,7 +140,8 @@ describe('affected validation planning', () => {
 
   test('type-checks the frozen legacy Tauri package without running its cargo tests', () => {
     assert.deepEqual(labels(['packages/desktop/src-tauri/src/main.rs']), ['typeCheck:desktop', 'test:startup']);
-    assert.deepEqual(labels(['packages/desktop/src-tauri/Cargo.toml']), ['typeCheck:desktop', 'test:startup']);
+    // Cargo.toml carries the release version, so it also re-runs the local release preflight.
+    assert.deepEqual(labels(['packages/desktop/src-tauri/Cargo.toml']), ['release-preflight', 'typeCheck:desktop', 'test:startup']);
   });
 
   test('runs orchestration tests and every dependent runtime for orchestration core changes', () => {
