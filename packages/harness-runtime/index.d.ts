@@ -801,6 +801,8 @@ export interface PrimaryRecoverySnapshot {
   supported: boolean;
   enforced: boolean;
   progressTimeoutMs: number | false;
+  /** The host may still send its one native transport continuation for this turn. */
+  automaticRecoveryPending?: boolean;
   stopConfirmed?: boolean;
   /** Controller SSE updates only the record; inventory is confirmed by a full host snapshot. */
   recoveredInputPartial?: true;
@@ -1072,6 +1074,12 @@ export const RECOVERY_CONTINUATION: string;
 export function isPrimaryRecoveryProvider(providerID: unknown): providerID is 'openai' | 'anthropic';
 export function primaryRecoveryMode(providerID: unknown, options: Pick<PrimaryRecoveryHostOptions, 'mode' | 'anthropicMode'>): 'off' | 'observe' | 'enforce';
 export function classifyPrimaryTransportError(error: unknown, runtimeVersion: string): null | { kind: string; source: string };
+export const NATIVE_TRANSPORT_RECOVERY_OPENCODE_VERSIONS: readonly string[];
+export function isNativeTransportRecoveryRuntimeVersion(version: unknown): boolean;
+export function recoveryPlanMode(observation: unknown, userIDs: readonly string[]): { planMode: boolean; preface: string | null };
+export function nativeTransportContinuation(plan: { planMode: boolean; preface: string | null }): {
+  parts: Array<{ type: 'text'; text: string; synthetic: true }>; planMode?: true };
+export function nativeTransportRecoveryMode(providerID: unknown, options: Pick<PrimaryRecoveryHostOptions, 'mode' | 'anthropicMode'>): 'off' | 'observe' | 'enforce';
 export interface PrimaryRecoveryExecutionRecord {
   recoveredInput?: { inputID: string; payloadHash: string; enqueuedSeq: number; delivery: 'queue' | 'steer'; phase: 'adopted' };
   recoveredInputDispositions?: Array<{ inputID: string; payloadHash: string; enqueuedSeq: number;
@@ -1081,7 +1089,9 @@ export interface PrimaryRecoveryExecutionRecord {
   nativeFallback?:{userMessageID:string;tried:readonly string[];exhaustion:0|1|2;execution?:NativeFallbackExecution}
     & ({stepID:string;pending?:never}|{stepID:null;pending:NativeFallbackPending});
   recoveryExecution?:NativeFallbackExecution;
-  recoveryPrompt?:{messageID:string;model:{providerID:string;modelID:string};agent:string;variant:string;parts:readonly unknown[];tools:Record<string,boolean>};
+  /** Set when the recovery is the host's native transport continuation with the record's own selection. */
+  recoveryKind?:'native_transport';
+  recoveryPrompt?:{messageID:string;model:{providerID:string;modelID:string};agent:string;variant:string;parts:readonly unknown[];tools:Record<string,boolean>;planMode?:true};
   ownedNativeContinuation?: { kind: 'native-shell' | 'native-compaction' | 'native-stream'; sourceUserMessageID: string; userMessageID: string; assistantMessageID: string };
   nativeStream?:{consumed:number;pending?:NativeStreamReservation;committed?:NativeStreamReservation};
   nativeStreamReceipts?:NativeStreamContinuationReceipt[];

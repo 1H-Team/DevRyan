@@ -192,6 +192,32 @@ test('native fallback dispatch uses fresh exact constructor authority and receip
  await f.host.control('ses_test','stop');await expect(captured.recheck()).rejects.toMatchObject({code:'native_fallback_fenced'});
 });
 
+test('native transport continuation uses the reviewed native recovery dispatch with the original selection',async()=>{
+ let dispatched;
+ const f=await nativeSelectionHost({mode:undefined,dispatchNativeRecovery:async(record,prompt)=>{dispatched={record,prompt};}});
+ f.client.health.runtimeInfo=async()=>({version:'2.1.3'});
+ await f.host.helloNative({policyVersion:1,instanceID:'native-owner'});await f.host.admitNativePrompt(selectionReceipt('msg_user'),{owner:'original'});
+ await f.host.plugin({action:'step',sessionID:'ses_test',userMessageID:'msg_user',assistantMessageID:'msg_assistant',instanceID:'native-owner'});
+ expect((await f.host.getSnapshot('ses_test')).automaticRecoveryPending).toBe(true);
+ Object.assign(f.messages.at(-1),{parts:[{type:'text',text:'Partial work'}]});
+ f.messages.at(-1).info.error={name:'APIError',data:{message:'fetch failed',v2Type:'provider.transport'}};
+ await f.host.observe({type:'session.status',properties:{sessionID:'ses_test',status:{type:'idle'}}});
+ // Never the raw prompt route: only the constructor-owned native dispatch.
+ expect(f.prompts).toHaveLength(0);
+ const record=await f.host.readRecord('ses_test');
+ expect(record).toMatchObject({recoveryKind:'native_transport',attemptCount:1,owner:'original',
+  recoveryExecution:{providerID:'openai',modelID:'m1',agent:'orchestrator',variant:'default'}});
+ expect(dispatched.prompt).toEqual({messageID:record.recoveryID,model:{providerID:'openai',modelID:'m1'},agent:'orchestrator',variant:'default',
+  parts:[{type:'text',text:expect.stringContaining('read-only'),synthetic:true}],tools:{read:true,'*':false}});
+ const captured=await f.host.captureNativeRecoveryDispatch({sessionID:'ses_test',directory:'/project',messageID:record.recoveryID});
+ expect(captured.prompt).toEqual(dispatched.prompt);
+ const receipt={...selectionReceipt(record.recoveryID),body:dispatched.prompt,execution:record.recoveryExecution};
+ await f.host.admitNativePrompt(receipt,{owner:'unrelated-inherited-context'});expect(await f.host.readRecord('ses_test')).toEqual(record);
+ await expect(f.host.admitNativePrompt({...receipt,body:{...receipt.body,parts:[{type:'text',text:'Replaced'}]}})).rejects.toMatchObject({code:'native_fallback_fenced'});
+ await f.host.observe({type:'session.status',properties:{sessionID:'ses_test',status:{type:'idle'}}});
+ expect((await f.host.readRecord('ses_test')).attemptCount).toBe(1);
+});
+
 test('native command admission keeps local owner and opt-outs while fencing the exact durable write',async()=>{
  const f=await nativeSelectionHost();let checks=0;
  const receipt=selectionReceipt('msg_command');

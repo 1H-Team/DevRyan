@@ -28,6 +28,7 @@ import {
   validateCanonicalDevryanPromptMetadata,
 } from './admission.js';
 import { createPrimaryRecoveryHost } from '../../../../../harness-runtime/lib/provider-recovery-host.js';
+import { nativeTransportContinuation, RECOVERY_CONTINUATION, recoveryPlanMode } from '../../../../../harness-runtime/lib/provider-recovery-policy.js';
 import { resolveProviderPromptTools } from '../../../../../orchestration-runtime/provider-prompt-tools.js';
 import { createWebManagedOpenCodeExecutor } from '../../orchestration/open-code-executor.js';
 import { readDevryanPartDescriptors, userTextSegments } from './projection/ids.js';
@@ -308,6 +309,36 @@ describe('admission against the v2 fixture', () => {
       parts: [{ type: 'text', text: 'Next.' }] }, { directory });
     expect(writes(second())).toEqual([`POST /api/session/${sessionID}/prompt`]);
     await waitForIdle(fixture, sessionID);
+  });
+
+  it('a host native transport continuation of a plan turn is admitted and projected as a plan turn', async () => {
+    const sessionID = await newSession();
+    // The UI's plan-mode preface (buildPlanModeSyntheticInstruction).
+    const preface = 'User has requested to enter plan mode.\n[devryan-plan-turn:v1] planMode=true; follow shared planning instructions and emit <!--plan--> before the final plan.';
+    const planID = createV2MessageId();
+    quickPrompt(fixture, sessionID);
+    await h.admission.prompt(sessionID, { messageID: planID, agent: 'build', model: MODEL, variant: 'high', planMode: true,
+      parts: [{ type: 'text', text: preface, synthetic: true }, { type: 'text', text: 'Plan the change.' }] }, { directory, origin: 'human' });
+    await waitForIdle(fixture, sessionID);
+    const observation = await h.client.sessions.messages(sessionID, { limit: 10 }, { directory });
+    const plan = recoveryPlanMode({ messages: observation.records }, [planID]);
+    expect(plan.planMode).toBe(true);
+    const recoveryID = createV2MessageId();
+    quickPrompt(fixture, sessionID);
+    const window = h.since();
+    await h.admission.prompt(sessionID, { messageID: recoveryID, agent: 'build', model: MODEL, variant: 'high',
+      tools: { '*': false, read: true, glob: true, grep: true }, ...nativeTransportContinuation(plan) }, { directory, origin: 'provider-recovery' });
+    const sent = window().find((call) => call.path.endsWith('/prompt')).body;
+    expect(sent.text).toBe(`${preface}\n${RECOVERY_CONTINUATION}`);
+    expect(sent.metadata.devryan).toMatchObject({ origin: 'provider-recovery', planMode: true,
+      parts: [{ kind: 'synthetic', length: preface.length + 1 }, { kind: 'synthetic', length: RECOVERY_CONTINUATION.length }] });
+    await waitForIdle(fixture, sessionID);
+    const page = await h.client.sessions.messages(sessionID, { limit: 10 }, { directory });
+    const user = page.records.find((record) => record.info.id === recoveryID);
+    // The UI's plan-card detection reads this metadata marker and the synthetic preface.
+    expect(user.info.metadata).toMatchObject({ devryanPlanMode: true });
+    expect(user.parts.map((part) => [part.synthetic === true, part.text.trimStart().startsWith('User has requested to enter plan mode')]))
+      .toEqual([[true, true], [true, false]]);
   });
 
   it('takes the id from the message id header and maps empty and omitted variants', async () => {

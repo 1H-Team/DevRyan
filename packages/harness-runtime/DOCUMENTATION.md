@@ -326,6 +326,20 @@ cancellation across web/Electron. OpenAI defaults to observe; Anthropic has a pr
 safety, protocol, storage, rollout and rollback contracts are documented in
 [`docs/PROVIDER_RECOVERY.md`](../../docs/PROVIDER_RECOVERY.md).
 
+On the native transport class (`NATIVE_TRANSPORT_RECOVERY_OPENCODE_VERSIONS`,
+2.1.x), `reconcileOne` owns one automatic continuation after a Step bound by the
+current runtime finalizes with a typed `provider.transport`/`provider.timeout`
+error or the 2.x upstream stall text. It reuses the single-attempt reservation and
+the native recovery dispatch of model fallback (`recoveryKind: 'native_transport'`,
+`recoveryExecution` equal to the record's own selection, a synthetic read-only
+`RECOVERY_CONTINUATION` part, preceded by the original synthetic plan-mode preface
+and `planMode: true` for a plan turn; `recoveryPlanMode` and
+`nativeTransportContinuation` build it). The snapshot field `automaticRecoveryPending` tells
+the UI to hold its manual card; a declined failure sets `reason:
+'failure_not_eligible'` without changing state. The `provider_recovery_capability`
+diagnostic is written once per runtime instance and when `{supported, transport}`
+changes, not on every hello.
+
 For the exact pinned native 2.1.3 controller (and retained 2.0.26/2.0.30/2.1.0), constructor-only
 `nativeStreamContinuation` owns interrupted-stream reserve, canonical Synthetic
 binding, successor preparation/send and Step adoption. Pending plus consumed
