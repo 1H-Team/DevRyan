@@ -40,6 +40,20 @@ export function testUnitTimeoutMs(unit, environment = process.env) {
   return Number(configured);
 }
 
+/**
+ * Host load gate: while the 1-minute load average exceeds the core count, no
+ * further unit starts (one always may), so concurrent runs on one machine
+ * (other worktrees, a build) queue instead of driving 5 s test timeouts.
+ * DEVRYAN_TEST_LOAD_LIMIT sets the ceiling as a multiple of the cores; 0 turns it off.
+ */
+export function testLoadCeiling(environment = process.env, cores = os.availableParallelism()) {
+  const configured = environment.DEVRYAN_TEST_LOAD_LIMIT;
+  if (configured === undefined || configured === '') return cores;
+  const factor = Number(configured);
+  if (!Number.isFinite(factor) || factor < 0) throw new Error('DEVRYAN_TEST_LOAD_LIMIT must be a non-negative number');
+  return factor === 0 ? Number.POSITIVE_INFINITY : factor * cores;
+}
+
 export function formatDuration(ms) {
   const seconds = Math.round(ms / 1000);
   return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m${String(seconds % 60).padStart(2, '0')}s`;
@@ -63,7 +77,8 @@ function killGroup(child, signal) {
  * A unit past its wall-clock budget (testUnitTimeoutMs) is killed and fails.
  */
 export async function runTestUnits(units, { concurrency = testConcurrency(), label = 'tests', failFast = false, cwd = process.cwd(),
-  env = process.env, log = (line) => process.stdout.write(`${line}\n`), write = (text) => process.stdout.write(text), heartbeatMs = 60_000, cleanup = () => {} } = {}) {
+  env = process.env, log = (line) => process.stdout.write(`${line}\n`), write = (text) => process.stdout.write(text), heartbeatMs = 60_000, cleanup = () => {},
+  loadCeiling = testLoadCeiling(env), loadAverage = () => os.loadavg()[0], loadPollMs = 2000 } = {}) {
   const names = new Set();
   for (const unit of units) {
     if (!unit?.name || !unit.command || !Array.isArray(unit.args)) throw new TypeError('Test units need name, command and args');
@@ -162,7 +177,9 @@ export async function runTestUnits(units, { concurrency = testConcurrency(), lab
 
   const weightOf = (index) => Math.min(slots, Math.max(1, Number.isSafeInteger(units[index].weight) ? units[index].weight : 1));
   let used = 0;
-  const fits = (index) => (!units[index].resource || !resources.has(units[index].resource)) && (running.size === 0 || used + weightOf(index) <= slots);
+  const fits = (index) => (!units[index].resource || !resources.has(units[index].resource))
+    && (running.size === 0 || (used + weightOf(index) <= slots && loadAverage() <= loadCeiling));
+  let loadNoticed = false;
   const schedule = async () => {
     const active = new Set();
     while (true) {
@@ -174,7 +191,13 @@ export async function runTestUnits(units, { concurrency = testConcurrency(), lab
         active.add(run);
       }
       if (active.size === 0) break;
-      await new Promise((resolve) => { waiters.add(resolve); });
+      // Re-check the load gate periodically while units wait only on it.
+      const loadBlocked = !stopping && pending.length > 0 && used < slots && loadAverage() > loadCeiling;
+      if (loadBlocked && !loadNoticed) { loadNoticed = true; log(`[${label}] host load above ${Math.round(loadCeiling)}; starting units as it falls`); }
+      await new Promise((resolve) => {
+        waiters.add(resolve);
+        if (loadBlocked) setTimeout(() => { waiters.delete(resolve); resolve(); }, loadPollMs).unref();
+      });
     }
   };
   try {

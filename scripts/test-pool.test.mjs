@@ -6,13 +6,14 @@ import path from 'node:path';
 import { describe, test } from 'node:test';
 
 import { defaultTestConcurrency } from './test-runner-utils.mjs';
-import { DEFAULT_TEST_UNIT_TIMEOUT_MS, recordTestTimings, runTestUnits, summarizeTestUnits, testConcurrency, testUnitTimeoutMs } from './test-pool.mjs';
+import { DEFAULT_TEST_UNIT_TIMEOUT_MS, recordTestTimings, runTestUnits, summarizeTestUnits, testConcurrency, testLoadCeiling, testUnitTimeoutMs } from './test-pool.mjs';
 
 const node = (source) => ({ command: process.execPath, args: ['-e', source] });
 // Children must not inherit the node:test reporting channel of this file.
 const env = { ...process.env };
 delete env.NODE_TEST_CONTEXT;
-const quiet = { log: () => {}, heartbeatMs: 0, env };
+// The host-load gate is exercised by its own test; elsewhere it must not depend on this machine's load.
+const quiet = { log: () => {}, heartbeatMs: 0, env, loadCeiling: Number.POSITIVE_INFINITY };
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 
 describe('bounded test pool', () => {
@@ -73,6 +74,23 @@ describe('bounded test pool', () => {
       const light = ['light-a', 'light-b'].map((name) => Number(readFileSync(path.join(scratch, name), 'utf8')));
       assert.ok(light.every((count) => count <= 2), `light units ran alongside the heavy one: ${light}`);
     } finally { rmSync(scratch, { recursive: true, force: true }); }
+  });
+
+  test('starts no further unit while host load is above the ceiling, but always keeps one running', async () => {
+    let load = 100;
+    const lines = [];
+    const units = ['a', 'b', 'c'].map((name) => ({ name, ...node('setTimeout(() => {}, 300)') }));
+    const started = performance.now();
+    setTimeout(() => { load = 0; }, 900).unref();
+    const outcome = await runTestUnits(units, { ...quiet, concurrency: 3, loadCeiling: 8, loadAverage: () => load, loadPollMs: 50, log: (line) => lines.push(line) });
+    assert.equal(outcome.passed, true);
+    // Under load the units ran one at a time until the load fell, instead of all three at once.
+    assert.ok(performance.now() - started >= 850, `units must wait for the load to fall (${performance.now() - started} ms)`);
+    assert.ok(lines.some((line) => /host load above 8/.test(line)));
+    assert.equal(testLoadCeiling({}, 8), 8);
+    assert.equal(testLoadCeiling({ DEVRYAN_TEST_LOAD_LIMIT: '1.5' }, 8), 12);
+    assert.equal(testLoadCeiling({ DEVRYAN_TEST_LOAD_LIMIT: '0' }, 8), Number.POSITIVE_INFINITY);
+    assert.throws(() => testLoadCeiling({ DEVRYAN_TEST_LOAD_LIMIT: '-1' }, 8), /non-negative/);
   });
 
   test('takes the unit budget from the unit, then the environment, then the default', () => {
@@ -140,7 +158,7 @@ describe('bounded test pool', () => {
         import { rmSync } from 'node:fs';
         await runTestUnits([0, 1].map((index) => ({ name: 'u' + index, command: process.execPath, args: ['-e', ${JSON.stringify(grandchild)}, ${JSON.stringify(scratch)} + '/pid-' + index] })),
           { concurrency: 2, heartbeatMs: 0, cleanup: () => rmSync(${JSON.stringify(callerScratch)}) });`;
-      const child = spawn(process.execPath, ['--input-type=module', '-e', runner], { env: { ...env, TMPDIR: scratch }, stdio: 'ignore' });
+      const child = spawn(process.execPath, ['--input-type=module', '-e', runner], { env: { ...env, TMPDIR: scratch, DEVRYAN_TEST_LOAD_LIMIT: '0' }, stdio: 'ignore' });
       const deadline = Date.now() + 10_000;
       while (!['pid-0', 'pid-1'].every((name) => existsSync(path.join(scratch, name)) && readFileSync(path.join(scratch, name), 'utf8'))) {
         assert.ok(Date.now() < deadline, 'units did not start');
