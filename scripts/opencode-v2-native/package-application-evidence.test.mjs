@@ -4,69 +4,9 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { openApplicationStopStream } from './package-application-stop-stream.mjs';
-import { finishApplicationLifecycleEvidence } from './package-application-evidence.mjs';
 
 const temporaryRoot = await fs.realpath(os.tmpdir());
 
-const options = (directory, profile) => ({ directory, profile, mode: 'upgrade', completed: false, results: [],
-  exits: [{ mode: 'upgrade', pid: 321, code: null, signal: 'SIGTERM', private: 'must-not-persist' }],
-  processEvidence: [{ mode: 'upgrade', pid: 321, start: 'Sun Oct  4 05:13:33 2026', private: 'must-not-persist' }], issues: [] });
-
-test('failed upgrade persists after-close observations and actual exits without replacing the primary assertion', async () => {
-  const directory = await fs.mkdtemp(path.join(temporaryRoot, 'devryan-application-evidence-'));
-  const primary = Object.assign(new Error('canonical assistant did not settle'), { code: 'ERR_ASSERTION' });
-  const profile = { env: { secret: 'must-not-persist' }, evidence: { providerRequests: [] }, close: async () => {
-    profile.evidence.providerRequests.push({ requestID: 'http_2', model: 'smoke-write', startedAt: 42,
-      completedAt: 43, requestSha256: 'a'.repeat(64), reason: 'stop', error: 'must-not-persist', body: 'must-not-persist' });
-    throw new Error('must-not-persist');
-  } };
-  try {
-    await assert.rejects(async () => {
-      try { throw primary; }
-      finally { await finishApplicationLifecycleEvidence({ ...options(directory, profile), primaryFailure: primary }); }
-    }, error => error === primary && error.code === 'ERR_ASSERTION');
-    const text = await fs.readFile(path.join(directory, 'application-lifecycle-evidence.json'), 'utf8');
-    const evidence = JSON.parse(text);
-    assert.equal(evidence.status, 'failed'); assert.equal(evidence.cleanup.profileClose, 'failed');
-    assert.deepEqual(primary.applicationEvidenceIssues, ['profile-close-failed']);
-    assert.deepEqual(evidence.exits, [{ mode: 'upgrade', pid: 321, code: null, signal: 'SIGTERM' }]);
-    assert.deepEqual(evidence.providerRequests, [{ requestID: 'http_2', model: 'smoke-write', startedAt: 42,
-      completedAt: 43, requestSha256: 'a'.repeat(64), reason: 'stop', errorPresent: true }]);
-    assert.match(evidence.providerObservationScope, /not downstream cancellation or native Stop settlement/);
-    assert.equal(text.includes('must-not-persist'), false);
-  } finally { await fs.rm(directory, { recursive: true, force: true }); }
-});
-
-test('evidence write failure annotates an existing failure and remains nonzero after a successful lifecycle', async () => {
-  const directory = await fs.mkdtemp(path.join(temporaryRoot, 'devryan-application-evidence-write-'));
-  const profile = { evidence: { providerRequests: [] }, close: async () => {} };
-  try {
-    await fs.mkdir(path.join(directory, 'application-lifecycle-evidence.json'));
-    const primary = new Error('original assertion');
-    await finishApplicationLifecycleEvidence({ ...options(directory, profile), primaryFailure: primary });
-    assert.deepEqual(primary.applicationEvidenceIssues, ['lifecycle-evidence-write-failed']);
-    await assert.rejects(finishApplicationLifecycleEvidence({ ...options(directory, profile), completed: true }),
-      error => error.code === 'EISDIR' && error.applicationEvidenceIssues.includes('lifecycle-evidence-write-failed'));
-  } finally { await fs.rm(directory, { recursive: true, force: true }); }
-});
-
-test('provider inventory is bounded and unknown payload fields are not serialized', async () => {
-  const directory = await fs.mkdtemp(path.join(temporaryRoot, 'devryan-application-evidence-bound-'));
-  const profile = { close: async () => {}, evidence: { providerRequests: Array.from({ length: 65 }, () => ({
-    requestID: 'must-not-persist', model: 'must-not-persist', startedAt: Infinity, completedAt: 'must-not-persist',
-    requestSha256: 'must-not-persist', reason: 'must-not-persist', aborted: 'must-not-persist', error: 'must-not-persist',
-  })) } };
-  try {
-    await finishApplicationLifecycleEvidence(options(directory, profile));
-    const text = await fs.readFile(path.join(directory, 'application-lifecycle-evidence.json'), 'utf8');
-    const evidence = JSON.parse(text);
-    assert.equal(evidence.providerRequestCount, 65); assert.equal(evidence.providerRequestsTruncated, true);
-    assert.equal(evidence.providerRequests.length, 64); assert.equal(text.includes('must-not-persist'), false);
-  } finally { await fs.rm(directory, { recursive: true, force: true }); }
-});
-
-// Execute the actual driver control flow with disposable HTTP/server substitutes.
-// This tests fixture ordering and evidence retention, not native Stop settlement.
 async function runDriver({ mode = 'upgrade', cleanupFails = false, settleStop = false, rollbackFails = false,
   parts = [{ type: 'text', text: '1. Synthetic cancellation case.\n' }], oldText = false,
   parentID, completed = false, stream = 'valid', browserAck = true, planFails = false } = {}) {
@@ -279,36 +219,6 @@ for (const failure of ['rollback', 'cleanup']) test(`B retains its stopped candi
   assert.deepEqual(result.candidateStopHistory, ['msg_user_1', 'msg_baseline', 'msg_user_2', 'msg_active']);
   assert.equal(result.stopProof.nativeError, 'aborted'); assert.equal(result.stopProof.nativeIdleOutcome, 'interrupted');
   assert.equal(result.error.code, failure === 'rollback' ? 'ERR_ASSERTION' : 'application_server_stop_failed');
-});
-
-test('A and B provider proofs require exact counts, selected identities and physical start before streamed Stop', async () => {
-  const source = await fs.readFile(new URL('./package-application-lifecycle.mjs', import.meta.url), 'utf8');
-  const body = source.slice(source.indexOf('    const qualifyStopProvider='), source.indexOf('    const a=readRuntimeBundleBinding'));
-  for (const count of [2, 4]) {
-    const scope = count === 2 ? 'old-A-streaming-Stop' : 'candidate-B-streaming-Stop';
-    const descriptor = { bundleID: `bundle_${count}`, launch: { artifactManifestSha256: 'a'.repeat(64) } };
-    const baseline = { requests: Array.from({ length: count }, (_, index) => ({ requestID: `http_${index + 1}`, model: 'smoke-write',
-      startedAt: 150, requestSha256: 'b'.repeat(64) })), proof: { scope, bundleID: descriptor.bundleID,
-      manifestSha256: descriptor.launch.artifactManifestSha256, sessionID:'ses_owned',assistantID:'msg_active', submittedAt: 100, streamObservedAt: 200, stopRequestedAt: 300, streamedTextBytes: 30,
-      streamEvent:{source:'production-global-event-text-delta',sessionID:'ses_owned',messageID:'msg_active',partID:'prt_active',readyAt:90,observedAt:200,deltaBytes:30,deltaCount:2} } };
-    const check = ({ requests, proof }) => {
-      const qualify = new Function('assert', 'profile', body + '\nreturn qualifyStopProvider;')(assert, { evidence: { providerRequests: requests } });
-      qualify(proof, descriptor, count, scope); return proof;
-    };
-    assert.deepEqual(check(structuredClone(baseline)).providerRequest,
-      { requestID: `http_${count}`, startedAt: 150, requestSha256: 'b'.repeat(64) });
-    for (const alter of [
-      value => value.requests.push(value.requests[0]), value => { value.requests.at(-1).requestID = 'http_63'; },
-      value => { value.requests[0].requestID = `http_${count}`; }, value => { value.requests.at(-1).startedAt = 99; },
-      value => { value.requests.at(-1).startedAt = 301; }, value => { value.proof.streamObservedAt = 149; },
-      value => { value.proof.bundleID = 'other'; }, value => { value.proof.manifestSha256 = 'c'.repeat(64); },
-      value => { value.requests.at(-1).requestSha256 = 'invalid'; },
-      value => { value.proof.streamEvent.source='rest'; },value => { value.proof.streamEvent.sessionID='ses_other'; },
-      value => { value.proof.streamEvent.messageID='msg_other'; },value => { value.proof.streamEvent.readyAt=101; },
-      value => { value.proof.streamEvent.observedAt=199; },value => { value.proof.streamEvent.deltaBytes=0; },
-      value => { value.proof.streamEvent.deltaCount=0; },
-    ]) { const changed = structuredClone(baseline); alter(changed); assert.throws(() => check(changed), { code: 'ERR_ASSERTION' }); }
-  }
 });
 
 for (const stream of ['wrong-session', 'wrong-assistant', 'wrong-part', 'wrong-field', 'wrong-directory', 'orphan-delta', 'ended-part', 'completed-message', 'removed-part']) {

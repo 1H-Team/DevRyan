@@ -184,7 +184,6 @@
     "scripts:scripts/opencode-v2-native/package-agents-core-tools-lane.test.mjs": 565,
     "scripts:scripts/opencode-v2-native/package-application-evidence.test.mjs": 296,
     "scripts:scripts/opencode-v2-native/package-bundle-upgrade-lane.test.mjs": 677,
-    "scripts:scripts/opencode-v2-native/package-cold-recovery.test.mjs": 615,
     "scripts:scripts/opencode-v2-native/package-council-lane.test.mjs": 701,
     "scripts:scripts/opencode-v2-native/package-document-lane.test.mjs": 871,
     "scripts:scripts/opencode-v2-native/package-failure-events.test.mjs": 303,
