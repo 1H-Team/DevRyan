@@ -1921,7 +1921,7 @@ describe('managed task presentation', () => {
     expect(mobileStyles).toContain('overflow: hidden !important;');
   });
 
-  test('centers the agent icon and name without clipping text descenders', async () => {
+  test('centers the agent icon and name between the divider and the title without clipping text descenders', async () => {
     const fallbacks = [{
       partId: 'fixer-start',
       taskId: 'dvr_task_fixer',
@@ -1938,7 +1938,10 @@ describe('managed task presentation', () => {
       </I18nProvider>, fallbacks,
     );
 
-    expect(html).toContain('flex h-7 items-center');
+    // The label row's top padding equals the row's top padding, and no fixed height can clip it.
+    expect(html).toContain('<div class="flex items-center px-3 pt-2.5 typography-meta text-muted-foreground">');
+    expect(html).toContain('flex min-w-0 flex-col items-start gap-2 px-3 py-2.5');
+    expect(html).not.toContain('h-7');
     expect(html).toContain('inline-flex min-w-0 items-center gap-1.5');
     expect(html).not.toContain('translate-y-1');
     expect(html).not.toContain('leading-none');

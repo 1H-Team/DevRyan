@@ -11,8 +11,12 @@ import '../../packages/ui/src/index.css';
 
 const record = { ...createManagedTaskRecord({ taskId: 'dvr_task_visual', idempotencyKey: 'visual', rootSessionId: 'ses_visual', parentTaskId: null, directory: '/fixture', sequence: 1, mode: 'orchestrator', providerId: 'openai', modelId: 'gpt-6-astra', agent: 'designer', variant: null, label: 'Managed designer task', prompt: 'Implement approved plan: Feedback Chat Greeting and Form.', attempt: 1, priorTaskId: null, executionKind: 'start', createdAt: 1000, timeoutAt: null }), childSessionId: 'ses_visual_child', status: 'running' as const, startedAt: 1100, dispatchCallId: 'call_visual' };
 useManagedOrchestrationStore.getState().ingestEvent(toManagedTaskEvent(record));
+// A second agent group shows the spacing between the card header, agent labels and rows.
+const fixerRecord = { ...createManagedTaskRecord({ taskId: 'dvr_task_visual_fixer', idempotencyKey: 'visual-fixer', rootSessionId: 'ses_visual', parentTaskId: null, directory: '/fixture', sequence: 2, mode: 'orchestrator', providerId: 'openai', modelId: 'gpt-6-astra', agent: 'fixer', variant: null, label: 'Managed fixer task', prompt: 'Verify and stabilize guest chat geometry.', attempt: 1, priorTaskId: null, executionKind: 'start', createdAt: 1000, timeoutAt: null }), childSessionId: 'ses_visual_fixer_child', status: 'running' as const, startedAt: 1100, dispatchCallId: 'call_visual_fixer' };
+useManagedOrchestrationStore.getState().ingestEvent(toManagedTaskEvent(fixerRecord));
 const name = 'Feedback Chat Greeting and Form';
-const setTitle = (title: string) => fixtureSessions.setState({ session: [{ id: record.childSessionId, title }] });
+const fixerSession = { id: fixerRecord.childSessionId, title: 'Verify and Stabilize Guest Chat Geometry' };
+const setTitle = (title: string) => fixtureSessions.setState({ session: [{ id: record.childSessionId, title }, fixerSession] });
 export const App = () => {
   const title = useStore(fixtureSessions, (state) => state.session[0].title);
   return <I18nProvider><main style={{ maxWidth: 900, padding: 20, margin: 'auto' }}>

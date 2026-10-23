@@ -51,6 +51,15 @@
         "/Users/zoubair/Repositories/DevRyan/packages/electron/main.mjs"
       ],
       "port": 61890
+    },
+    {
+      "name": "managed-dispatch-fixture",
+      "runtimeExecutable": "node_modules/.bin/vite",
+      "runtimeArgs": [
+        "--config",
+        "tests/visual-managed-dispatch/vite.config.ts"
+      ],
+      "port": 4191
     }
   ]
 }

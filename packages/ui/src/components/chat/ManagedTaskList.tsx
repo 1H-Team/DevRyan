@@ -314,7 +314,8 @@ export const ManagedTaskList = React.memo(({
             const agentLabel = formatAgentLabel(group.agent);
             return (
               <section key={group.agent.toLocaleLowerCase()} aria-label={agentLabel}>
-                <div className="flex h-7 items-center bg-muted/25 px-3 typography-meta text-muted-foreground">
+                {/* Top padding matches the rows' py-2.5, so the label sits midway between the divider and the first title. */}
+                <div className="flex items-center px-3 pt-2.5 typography-meta text-muted-foreground">
                   <span className="inline-flex min-w-0 items-center gap-1.5">
                     <RiAiAgentLine
                       className="size-3.5 shrink-0"
@@ -337,7 +338,7 @@ export const ManagedTaskList = React.memo(({
           })}
           {cursorNativeTasks.length > 0 ? (
             <section aria-label={t('chat.managedTasks.cursorNative.source')} data-task-source="cursor-native">
-              <div className="flex h-7 items-center gap-1.5 bg-muted/25 px-3 typography-meta text-muted-foreground">
+              <div className="flex items-center gap-1.5 px-3 pt-2.5 typography-meta text-muted-foreground">
                 <RiAiAgentLine className="size-3.5 shrink-0 text-[var(--primary-base)]" aria-hidden="true" />
                 <span className="truncate">{t('chat.managedTasks.cursorNative.source')}</span>
                 <span className="ml-auto shrink-0 typography-micro text-muted-foreground/70">
