@@ -62,6 +62,15 @@
         "5191"
       ],
       "port": 5191
+    },
+    {
+      "name": "managed-dispatch-fixture",
+      "runtimeExecutable": "node_modules/.bin/vite",
+      "runtimeArgs": [
+        "--config",
+        "tests/visual-managed-dispatch/vite.config.ts"
+      ],
+      "port": 4191
     }
   ]
 }
