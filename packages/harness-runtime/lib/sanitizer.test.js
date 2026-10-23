@@ -331,6 +331,17 @@ test('retains turn timing summaries with bridge, ledger and provider request tim
   expect(incident.payload).toEqual({ providerRequestID: 'req_native', requestPreparedAt: 1_000, requestSentAt: 1_400, transport: 'ws' });
 });
 
+test('retains provider transport failure records with their target host only', () => {
+  const sanitizer = createDiagnosticSanitizer();
+  const payload = { requestID: '3f1c2e8a-6b0d-4c55-9a51-0d6e2b7f9c11', kind: 'primary', transport: 'http', statusCode: null, phase: 'stream',
+    elapsedMs: 90_000, sinceLastByteMs: 75_000, code: 'ECONNRESET', host: 'api.openai.com', port: 443, providerID: 'openai',
+    modelID: 'gpt-5.5', providerRequestID: 'req_0a1b2c3d4e5f', probe: 'unreachable' };
+  const record = sanitizer.sanitizeRecord({ type: 'timing', at: 7, mark: 'turn.provider_request_failed', sessionID: 'ses_1',
+    payload: { ...payload, stack: 'Error: private at fetch' } });
+  expect(record.payload).toEqual(payload);
+  expect(sanitizer.sanitizeExportValue(record).payload).toEqual(payload);
+});
+
 
 test('Claude process receipt fields are bounded and scoped to their exact lifecycle event',()=>{
  const sanitizer=createDiagnosticSanitizer();

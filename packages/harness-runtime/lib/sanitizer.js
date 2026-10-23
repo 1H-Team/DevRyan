@@ -94,6 +94,8 @@ const NESTED_FIELDS = new Set([
   // milliseconds only) and native provider request timestamps.
   'bridge', 'ledger', 'methods', 'operations', 'maxMs', 'reusedCount', 'failedCount',
   'queueMs', 'waitMs', 'holdMs', 'maxWaitMs', 'maxHoldMs', 'requestPreparedAt', 'requestSentAt',
+  // Provider transport failures: target hostname/port and probe outcome only.
+  'host', 'port', 'sinceLastByteMs', 'probe',
 ]);
 
 const MEMORY_EXTRACTION_COUNTS = new Set([

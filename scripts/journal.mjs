@@ -585,6 +585,16 @@ export const summarizeSessionTree = async (journalDirectory, rootSessionID, { si
       entry.values.push(payload.elapsedMs);
       if (payload.slow === true) entry.slow += 1;
       phases.set(key, entry);
+    } else if (record?.type === 'timing' && record.mark === 'turn.provider_request_failed') {
+      const host = asString(payload.host);
+      errors.push({ at, sessionID, kind: 'provider', detail: [
+        asString(payload.phase) || '?', asString(payload.code) || '?', modelLabel(payload.providerID, payload.modelID),
+        `host=${host || '?'}${Number.isFinite(payload.port) ? `:${payload.port}` : ''}`,
+        Number.isFinite(payload.elapsedMs) ? `elapsedMs=${payload.elapsedMs}` : '',
+        Number.isFinite(payload.sinceLastByteMs) ? `sinceLastByteMs=${payload.sinceLastByteMs}` : '',
+        asString(payload.probe) ? `probe=${payload.probe}` : '',
+        asString(payload.providerRequestID) ? `providerRequestID=${payload.providerRequestID}` : '',
+      ].filter(Boolean).join(' ') });
     } else if (record?.type === 'lifecycle' && record.event === 'provider_recovery_control') {
       counts.providerRecoveries += 1;
       controls.push({ at, sessionID, kind: 'provider_recovery', action: asString(payload.action) || '?', source: null,

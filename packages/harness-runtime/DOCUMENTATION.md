@@ -190,6 +190,9 @@ in [identity compatibility](../../docs/IDENTITY_COMPATIBILITY.md#data-folder-mig
   Provider failures retain only finite allowlisted error types, codes and parameter
   names from `shared-runtime/lib/provider-error-details.js`; raw provider bodies
   remain excluded. Journal export revalidates these fields.
+  Provider transport failure timing records (`turn.provider_request_failed`)
+  add the nested fields `host`, `port`, `sinceLastByteMs` and `probe`; their
+  producer already reduced the target to a hostname and port.
   Web/Electron hosts record raw OpenCode events only from the canonical global
   watcher; event transport bridges never call the journal, preventing duplicate
   records when multiple UI stream clients are attached.
