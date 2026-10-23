@@ -113,7 +113,7 @@ it('activates selected Claude catalog metadata only through the registered compa
  let configured=true,reads=0;
  const resolver=createNativeConfigurationSnapshotResolver({hasConfiguredClaudeProfile:async()=>{reads++;return configured;},
   loadLocation:async()=>({...structuredClone({...f.loaded,parseMarkdown:undefined}),parseMarkdown:f.loaded.parseMarkdown})});
- expect((await resolver(f.input)).locations[0].configuration.providers.anthropic).toEqual({settings:{headerTimeout:45000,chunkTimeout:120000}});expect(reads).toBe(1);
+ expect((await resolver(f.input)).locations[0].configuration.providers.anthropic).toEqual({});expect(reads).toBe(1);
  f.loaded.legacy.provider={anthropic:{options:{timeout:1234},models:{saved:{name:'Saved model'}}}};
  const saved=(await resolver({...f.input,revision:2})).locations[0].configuration.providers.anthropic;
  expect(saved).toMatchObject({settings:{timeout:1234},models:{saved:{name:'Saved model'}}});expect(saved.settings.apiKey).toBeUndefined();
@@ -124,7 +124,7 @@ it('activates selected Claude catalog metadata only through the registered compa
  }
  f.loaded.legacy.plugin=[];
  const withoutLegacyPlugins=(await resolver(f.input)).locations[0];
- expect(withoutLegacyPlugins.activeRegistrationIDs).toEqual([]);expect(withoutLegacyPlugins.configuration.providers.anthropic).toEqual({settings:{headerTimeout:45000,chunkTimeout:120000}});
+ expect(withoutLegacyPlugins.activeRegistrationIDs).toEqual([]);expect(withoutLegacyPlugins.configuration.providers.anthropic).toEqual({});
  expect(withoutLegacyPlugins.compatibility.legacy.plugin).toEqual([]);
  configured=false;expect((await resolver(f.input)).locations[0].configuration.providers).toBeUndefined();
  const unregistered={schema:1,plugins:[]};await fs.writeFile(manifestFile,JSON.stringify(unregistered));

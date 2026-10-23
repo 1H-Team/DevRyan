@@ -187,7 +187,10 @@ test('copied snapshot preserves exact native provider and benchmark tuple withou
     const resolve = createNativeConfigurationSnapshotResolver({ loadLocation: loadPerformanceLocation });
     const binding = { descriptor: { generation: 2, launch, projectMap: [{ targetDirectory: directory }] } };
     const first = await resolve({ binding, revision: 1, expectedRegistrationDigest: performanceSha256(registrations) });
-    assert.deepEqual(first.locations[0].configuration.providers, providers);
+    // The snapshot keeps the exact stanza and adds only DevRyan's provider deadlines.
+    const { nativeProviderDeadlines } = await import('../../packages/web/server/lib/opencode/runtime-host/native-provider-deadlines.js');
+    assert.deepEqual(first.locations[0].configuration.providers, Object.fromEntries(Object.entries(providers)
+      .map(([id, provider]) => [id, { ...provider, settings: nativeProviderDeadlines(id, provider.settings) }])));
     assert.deepEqual(first.locations[0].configuration.agents.benchmark.model, { providerID: 'devryan-smoke', model: 'smoke-write', variant: 'default' });
     const { PLAN_MODE_SYSTEM_INSTRUCTIONS } = await import('../../packages/orchestration-runtime/index.js');
     assert.equal(first.locations[0].configuration.agents.benchmark.system, performanceRole.prompt

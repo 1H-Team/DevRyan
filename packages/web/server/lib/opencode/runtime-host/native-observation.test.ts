@@ -68,3 +68,9 @@ test('requests left on the core header default get the DevRyan header deadline; 
  const disabled=LLM.request({model:zen,prompt:'hi',http:{headerTimeout:false}});
  expect(withNativeHeaderDeadline(disabled)).toBe(disabled);
 });
+
+test('the Meridian anthropic route keeps its own idle guard and gets no header deadline',()=>{
+ const meridian=compatibleModel('claude-opus-5-5',{baseURL:'http://127.0.0.1:3456/v1',provider:'anthropic'});
+ const request=LLM.request({model:meridian,prompt:'hi'});
+ expect(withNativeHeaderDeadline(request)).toBe(request);
+});

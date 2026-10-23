@@ -1294,8 +1294,12 @@ The web execution host caps trusted `grep`/`glob` stdout before its event queue 
 `NATIVE_PROVIDER_DEADLINES` into the `settings` of every native provider stanza
 it emits: `headerTimeout` 45,000 ms and `chunkTimeout` 120,000 ms. The `openai`
 stanza gets `chunkTimeout` 300,000 ms, because reasoning can send nothing for
-minutes before the first output item. Native-shaped `providers` stanzas and the
-snapshot's settings-only Meridian `anthropic` stanza get the same defaults.
+minutes before the first output item. Native-shaped `providers` stanzas get the
+same defaults. `anthropic` is exempt (`NATIVE_DEADLINE_EXEMPT_PROVIDERS`): it is
+the local Meridian passthrough to the Claude Agent SDK, which can withhold
+headers through long silent reasoning and enforces its own upstream idle guard
+(90 s, 180 s for high effort), so an HTTP deadline would abort and replay a live
+Claude step. The snapshot's Meridian `anthropic` stanza stays `{}`.
 Saved `options` or `settings` values, including `false`, always win. No total
 `timeout` is added.
 
@@ -1317,7 +1321,8 @@ providers used without one (Zen `opencode`, OpenAI signed in by OAuth with no
 `provider.openai` block) are bounded per request instead:
 `withNativeHeaderDeadline` (`native-observation.ts`) sets the prepared
 request's `http.headerTimeout` to 45,000 ms whenever neither the request nor its
-model configured one other than core's 300,000 ms default. Chunk waits are left
+model configured one other than core's 300,000 ms default (`anthropic` excepted,
+as above). Chunk waits are left
 as configured for these providers, because reasoning models such as DeepSeek
 can legitimately stream nothing for minutes. The constants live in
 `native-provider-deadlines.js` so the controller and the configuration

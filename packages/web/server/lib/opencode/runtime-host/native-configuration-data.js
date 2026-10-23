@@ -144,7 +144,8 @@ export function nativeProviderConfigurations(input) {
       delete result.package;
       for (const model of Object.values(result.models ?? {})) model.package ??= packageName;
     }
-    result.settings = nativeProviderDeadlines(id, result.settings);
+    const settings = nativeProviderDeadlines(id, result.settings);
+    if (settings !== undefined) result.settings = settings;
     // Saved route IDs are compatibility identities. Preserve them rather than
     // applying the SDK whole-config migration's providerID alias collapse.
     return [id, Schema.encodeSync(ConfigProvider.Info)(Schema.decodeUnknownSync(ConfigProvider.Info)(result, {onExcessProperty: 'error'}))];
@@ -183,7 +184,8 @@ export function translateNativeConfiguration({ legacy, agents, commands = {} }) 
     if (!record(legacy.providers) || legacy.provider !== undefined) throw fail('native_provider_shapes_conflict');
     configuration.providers = Object.fromEntries(Object.entries(structuredClone(legacy.providers)).map(([id, provider]) => {
       if (!record(provider) || provider.settings !== undefined && !record(provider.settings)) throw fail('native_provider_invalid');
-      return [id, { ...provider, settings: nativeProviderDeadlines(id, provider.settings) }];
+      const settings = nativeProviderDeadlines(id, provider.settings);
+      return [id, settings === undefined ? provider : { ...provider, settings }];
     }));
   }
   const permissions = configuredPermissions(legacy);

@@ -18,7 +18,7 @@ import { HostRefusal } from './host-refusal.js';
 import {createNativeFinalizationQueue,drainNativeFinalizationQueue,registerNativeFinalizationObservation} from './native-finalization-observation.js';
 import {createNativeStreamContinuation} from './native-stream-continuation.js';
 import {LLMRequest,type LLMClientShape} from '@opencode/ai';
-import {NATIVE_PROVIDER_DEADLINES} from './native-provider-deadlines.js';
+import {NATIVE_DEADLINE_EXEMPT_PROVIDERS,NATIVE_PROVIDER_DEADLINES} from './native-provider-deadlines.js';
 
 export interface NativeAttemptIdentity {
   readonly traceID: string;
@@ -179,6 +179,7 @@ export function projectNativeProviderFailure(input:{readonly error:unknown;reado
 // chunk waits stay as configured because reasoning models can stream nothing
 // for minutes. Core retries the resulting Transport/Timeout.
 export function withNativeHeaderDeadline<Request extends LLMRequest>(request:Request):Request {
+  if(NATIVE_DEADLINE_EXEMPT_PROVIDERS.includes(request.model.provider))return request;
   const configured=request.http?.headerTimeout??request.model.defaults?.http?.headerTimeout;
   if(configured!==undefined&&configured!==DEFAULT_HTTP_TIMEOUT_MS)return request;
   return LLMRequest.update(request,{http:new HttpOptions({...request.http,headerTimeout:NATIVE_PROVIDER_DEADLINES.headerTimeout})}) as Request;

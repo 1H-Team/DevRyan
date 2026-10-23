@@ -36,7 +36,8 @@ it('bounds every native provider stanza with header and chunk deadlines under sa
  const before=structuredClone(legacy),{providers}=translateNativeConfiguration({legacy,agents:{}});
  expect(legacy).toEqual(before);
  expect(providers.zen.settings).toEqual({headerTimeout:45000,chunkTimeout:120000});
- expect(providers.anthropic.settings).toEqual({headerTimeout:45000,chunkTimeout:120000,baseURL:'http://127.0.0.1:3456'});
+ // Meridian (anthropic) keeps its own idle guard; DevRyan adds no HTTP deadlines.
+ expect(providers.anthropic.settings).toEqual({baseURL:'http://127.0.0.1:3456'});
  // OpenAI reasoning may send nothing for minutes before its first output item.
  expect(providers.openai.settings).toEqual({headerTimeout:45000,chunkTimeout:300000,baseURL:'https://api.openai.com/v1'});
  expect(providers.tuned.settings).toEqual({headerTimeout:90000,chunkTimeout:600000,timeout:900000});
