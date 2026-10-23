@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import { QUOTA_PROVIDERS, getSortedQuotaProviders } from './providers';
 import {
+  getCatalogProviderForQuotaProvider,
   getQuotaProviderIdForProvider,
   getUsageOnlyQuotaProviders,
   parseUsageOnlyProviderSelection,
@@ -49,6 +50,13 @@ describe('provider usage ids', () => {
     expect(getUsageOnlyQuotaProviders(visible, ['anthropic', 'openai']).map((provider) => provider.id).sort())
       .toEqual(['cursor-acp', 'opencode']);
     expect(getUsageOnlyQuotaProviders(visible, ['anthropic', 'openai', 'cursor-acp', 'opencode'])).toEqual([]);
+  });
+
+  test('finds the Providers row that now covers a usage-only source', () => {
+    expect(getCatalogProviderForQuotaProvider('claude', ['openai', 'anthropic'])).toBe('anthropic');
+    expect(getCatalogProviderForQuotaProvider('codex', ['anthropic', 'openai'])).toBe('openai');
+    expect(getCatalogProviderForQuotaProvider('claude', ['openai', 'xai'])).toBeNull();
+    expect(getCatalogProviderForQuotaProvider('claude', [])).toBeNull();
   });
 
   test('round-trips usage-only selections and rejects unknown ids', () => {

@@ -4,7 +4,7 @@ import path from 'node:path';
 import {randomUUID} from 'node:crypto';
 import os,{userInfo} from 'node:os';
 import {createNativeClaudeSecurityHome} from './native-claude-security-home.js';
-import {createNativeClaudeCredentialOwner,migrateNativeClaudeLegacyFences} from './native-provider-runtime-owner.js';
+import {createNativeClaudeCredentialOwner,createNativeProviderRuntimeOwner,migrateNativeClaudeLegacyFences} from './native-provider-runtime-owner.js';
 import {createNativeClaudeEnrollmentOwner} from './native-claude-enrollment.js';
 import {emptyClaudeLifecycle,transitionClaudeLifecycle,claudeRecordFingerprint,claudeGrantFingerprint} from './native-claude-lifecycle.js';
 import {claudeKeychainService} from '../claude-credential-projection.js';
@@ -140,4 +140,24 @@ test('a selected fresh account is not reread by legacy migration before the next
  const first=await owner.begin({});await owner.complete(first.enrollmentID,{code:'fixture-only-code',state:new URL(first.url).searchParams.get('state')},{});await owner.select(first.enrollmentID,{});
  const second=await owner.begin({});expect(second.status).toBe('pending');expect(f.state.accounts).toHaveLength(2);expect(f.state.unresolved).toEqual([]);
  expect(f.commands.every(command=>command.home===securityHome)).toBe(true);await owner.close();
+});
+
+test('status inspection renews a due dedicated profile through the same guarded renewal as a request',async()=>{
+ const f=await fixture({expired:true});
+ const runtime=createNativeProviderRuntimeOwner({instanceID:'fixture-instance',snapshot:{locations:[{directory:f.home}]},
+  registrationOrigin:{kind:'plugin',id:'devryan.provider-compat',manifestDigest:'a'.repeat(64)},controller:()=>({instanceID:'fixture-instance'}),isReady:()=>true,
+  withMutationQueue:action=>action(),meridian:{boot:{profiles:f.options.profiles,globals:{home:f.home},defaultProfile:f.binding.profileID}},claudeCredentials:f.options,claudeSupported:true});
+ expect(await runtime.inspectClaude({kind:'status',directory:f.home},{recheck:f.check})).toMatchObject({loggedIn:true,authStatus:'authenticated'});
+ expect(f.exchanges).toBe(1);expect(f.state.unresolved).toEqual([]);expect(f.records.get(f.binding.service).claudeAiOauth.accessToken).toBe('fixture-next');
+ expect(await runtime.inspectClaude({kind:'status',directory:f.home},{recheck:f.check})).toMatchObject({loggedIn:true});expect(f.exchanges).toBe(1);
+});
+
+test('status inspection of an expired shared Claude Code profile stays access-only',async()=>{
+ const f=await fixture(),configDirectory=path.join(f.home,'.claude'),service=claudeKeychainService(configDirectory,f.home);
+ f.records.set(service,{claudeAiOauth:{accessToken:'shared-access',refreshToken:'shared-grant',expiresAt:Date.now()+1000}});
+ const runtime=createNativeProviderRuntimeOwner({instanceID:'fixture-instance',snapshot:{locations:[{directory:f.home}]},
+  registrationOrigin:{kind:'plugin',id:'devryan.provider-compat',manifestDigest:'a'.repeat(64)},controller:()=>({instanceID:'fixture-instance'}),isReady:()=>true,
+  withMutationQueue:action=>action(),meridian:{boot:{profiles:[],globals:{home:f.home}}},claudeCredentials:{...f.options,profiles:[]},claudeSupported:true});
+ await expect(runtime.inspectClaude({kind:'status',directory:f.home},{recheck:f.check})).rejects.toMatchObject({code:'claude_credentials_expired'});
+ expect(f.exchanges).toBe(0);expect(f.records.get(service).claudeAiOauth.accessToken).toBe('shared-access');
 });

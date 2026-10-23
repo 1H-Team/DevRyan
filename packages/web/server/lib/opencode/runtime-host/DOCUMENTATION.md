@@ -559,7 +559,9 @@ profiles, the sole profile when there is one, and the exact configured default
 when there are several. An ambiguous selection stays unavailable. Ordinary
 shared credentials are read from their original owner without renewal or writes;
 expired shared credentials require reconnecting through Claude Code/Meridian.
-Dedicated enrollment is optional automatic renewal.
+Dedicated enrollment is optional automatic renewal: a due dedicated profile
+renews during status and usage inspection through the same serialized,
+journaled renewal as a request, so an idle enrollment is never reported expired.
 
 The host configuration snapshot also activates Claude catalog metadata for the
 same unambiguous saved `claude-max` profile (including the legacy omitted type),

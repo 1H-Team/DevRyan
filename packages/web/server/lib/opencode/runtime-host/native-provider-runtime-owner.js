@@ -98,7 +98,7 @@ export function createNativeClaudeCredentialOwner({profiles,home,withMutationQue
   return {accessToken:oauth.accessToken,expiresAt:oauth.expiresAt,fingerprint:credentialMutationFingerprint(oauth.accessToken)};
  };
  const enrollment=row=>({profileID:row.profileID,service:row.service,configDirectory:row.configDirectory,enrollmentID:row.enrollmentID,generation:row.generation});
- return (input,{recheck,signal,retried,readOnly=false},consume=async value=>value)=>withMutationQueue(async()=>{
+ return (input,{recheck,signal,retried},consume=async value=>value)=>withMutationQueue(async()=>{
   const check=async()=>{await recheck();signal?.throwIfAborted();};await check();
   const profile=accounts.get(input.profileID);
   if(profile?.type==='oauth-token'&&profile.credentialPolicy==='access-only'){
@@ -158,7 +158,7 @@ export function createNativeClaudeCredentialOwner({profiles,home,withMutationQue
    const grantFingerprint=grant();
    const pending=state.unresolved.find(row=>row.grantFingerprint===grantFingerprint||row.replacementGrantFingerprint===grantFingerprint||sameClaudeEnrollment(row,authority));
    if(pending){
-    if(!readOnly&&pending.phase==='replacement-prepared'&&sameClaudeEnrollment(pending,authority)
+    if(pending.phase==='replacement-prepared'&&sameClaudeEnrollment(pending,authority)
      &&pending.replacementRecordFingerprint===before&&pending.replacementGrantFingerprint===grantFingerprint){
      await transition({kind:'settle',binding:enrollment(authority),attemptID:pending.attemptID,recordFingerprint:before});await check();
      authority=state.accounts.find(row=>row.profileID===profile.id);
@@ -172,7 +172,7 @@ export function createNativeClaudeCredentialOwner({profiles,home,withMutationQue
   }
   const due=token.expiresAt<=now()+300000;
   if(forced||due){
-   if(readOnly||!authority||policy==='access-only'||legacyFence){
+   if(!authority||policy==='access-only'||legacyFence){
     if(forced||token.expiresAt<=now()+60000)throw fail('claude_credentials_expired',401);
    }else{
     const attemptID=randomUUID(),binding=enrollment(authority);settlementAttemptID=attemptID;let prepared=false,settled=false,committed=false,begun=false,failure;
@@ -239,6 +239,8 @@ export function createNativeProviderRuntimeOwner({instanceID,snapshot,registrati
     if(!claudeSupported)throw fail('native_claude_update_required',503);
     live();if(!record(input)||Object.keys(input).some(key=>!['directory','kind'].includes(key))||!locations.has(input.directory)||!['status','quota'].includes(input.kind)||typeof recheck!=='function')throw fail('native_claude_inspection_invalid');
     // Inspection uses the saved selection, never inference's priority/sticky routing.
+    // A due dedicated profile renews here exactly as for a request, so an idle
+    // enrollment is not reported expired; shared profiles stay access-only.
     const profiles=credentialProfiles;
     if(!profiles||!resolveClaude)throw fail('claude_credentials_missing',401);
     let profile;
@@ -250,7 +252,7 @@ export function createNativeProviderRuntimeOwner({instanceID,snapshot,registrati
     const cancel=new AbortController();catalogControllers.add(cancel);
     const currentSignal=signal?AbortSignal.any([signal,cancel.signal]):cancel.signal;
     const check=async()=>{live();currentSignal.throwIfAborted();await recheck();live();currentSignal.throwIfAborted();};
-    const work=resolveClaude({profileID:profile.id,purpose:'request'},{recheck:check,signal:currentSignal,retried:new Set(),readOnly:true},async credential=>{
+    const work=resolveClaude({profileID:profile.id,purpose:'request'},{recheck:check,signal:currentSignal,retried:new Set()},async credential=>{
       await check();
       const result=input.kind==='status'?{installed:true,path:null,loggedIn:true,authStatus:'authenticated',authMethod:'oauth'}:
         await fetchSelectedClaudeQuota({accessToken:credential.accessToken,signal:currentSignal,fetchImpl});

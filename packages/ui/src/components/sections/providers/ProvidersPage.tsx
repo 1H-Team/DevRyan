@@ -49,7 +49,7 @@ import {
   type ManagedQuotaProviderId,
 } from './ManagedQuotaCredentials';
 import type { ModelMetadata } from '@/types';
-import { parseUsageOnlyProviderSelection } from '@/lib/quota';
+import { getCatalogProviderForQuotaProvider, parseUsageOnlyProviderSelection } from '@/lib/quota';
 import { ProviderUsageSection, UsageOnlyProviderView } from './ProviderUsage';
 import { useUsageOnlySelectionAvailable } from './useProviderUsage';
 import { useI18n } from '@/lib/i18n';
@@ -304,14 +304,25 @@ const ProvidersPageContent: React.FC = () => {
 
   const usageOnlyQuotaProviderId = parseUsageOnlyProviderSelection(selectedProviderId);
   const usageOnlySelectionAvailable = useUsageOnlySelectionAvailable(usageOnlyQuotaProviderId);
+  // The usage-only view has no sign-in, so a provider row that now covers it wins.
+  const usageOnlyCoveringProviderId = React.useMemo(
+    () => (usageOnlyQuotaProviderId
+      ? getCatalogProviderForQuotaProvider(usageOnlyQuotaProviderId, providers.map((provider) => provider.id))
+      : null),
+    [providers, usageOnlyQuotaProviderId],
+  );
 
   React.useEffect(() => {
     if (selectedProviderId === ADD_PROVIDER_ID) return;
+    if (usageOnlyCoveringProviderId) {
+      setSelectedProvider(usageOnlyCoveringProviderId);
+      return;
+    }
     if (usageOnlySelectionAvailable) return;
     if (pendingConnections[selectedProviderId]) return;
     if (providers.some((provider) => provider.id === selectedProviderId)) return;
     setSelectedProvider(providers[0]?.id ?? ADD_PROVIDER_ID);
-  }, [providers, pendingConnections, selectedProviderId, setSelectedProvider, usageOnlySelectionAvailable]);
+  }, [providers, pendingConnections, selectedProviderId, setSelectedProvider, usageOnlyCoveringProviderId, usageOnlySelectionAvailable]);
 
   React.useEffect(() => {
     let isMounted = true;
@@ -1145,7 +1156,7 @@ const ProvidersPageContent: React.FC = () => {
     return <div className="mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">{connectionStatus}</div>;
   }
 
-  if (usageOnlyQuotaProviderId && usageOnlySelectionAvailable) {
+  if (usageOnlyQuotaProviderId && usageOnlySelectionAvailable && !usageOnlyCoveringProviderId) {
     return <UsageOnlyProviderView quotaProviderId={usageOnlyQuotaProviderId} />;
   }
 

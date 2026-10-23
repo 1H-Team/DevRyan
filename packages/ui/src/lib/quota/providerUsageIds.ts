@@ -53,6 +53,20 @@ export const getUsageOnlyQuotaProviders = (
   return visibleQuotaProviders.filter((provider) => !covered.has(provider.id));
 };
 
+/**
+ * The Providers row that now reports a usage source, or null while none does.
+ * A usage-only selection saved before that provider connected yields to it.
+ */
+export const getCatalogProviderForQuotaProvider = (
+  quotaProviderId: QuotaProviderId,
+  catalogProviderIds: Iterable<string>,
+): string | null => {
+  for (const providerId of catalogProviderIds) {
+    if (getQuotaProviderIdForProvider(providerId) === quotaProviderId) return providerId;
+  }
+  return null;
+};
+
 /** Settings Providers selection for a usage-only row (`useConfigStore.selectedProviderId`). */
 export const USAGE_ONLY_PROVIDER_SELECTION_PREFIX = '__usage__:';
 
