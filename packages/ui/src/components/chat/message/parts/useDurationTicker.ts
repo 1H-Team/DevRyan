@@ -56,57 +56,6 @@ const subscribeToTicker = (intervalMs: number, subscriber: Subscriber): (() => v
     };
 };
 
-// Always-visible "working" chrome (status shimmer, sidebar working dots, plan
-// skeleton, loading icons) blinks on this one shared tick instead of running an
-// infinite CSS animation: an infinite animation draws every frame, this draws
-// one per second. The tick flips one root attribute that `.oc-tick-blink` and
-// the shimmer/skeleton rules in index.css read, so no component re-renders.
-// Without a holder (nothing working, window hidden, reduced motion) the
-// attribute is absent and every indicator rests in its static state.
-export const SHARED_BLINK_INTERVAL_MS = 1_000;
-export const SHARED_BLINK_ATTRIBUTE = 'data-tick-blink';
-
-let sharedBlinkHolders = 0;
-let stopSharedBlink: (() => void) | null = null;
-
-const holdSharedBlink = (): (() => void) => {
-    sharedBlinkHolders += 1;
-    if (sharedBlinkHolders === 1) {
-        let on = false;
-        stopSharedBlink = subscribeToTicker(SHARED_BLINK_INTERVAL_MS, () => {
-            on = !on;
-            document.documentElement.setAttribute(SHARED_BLINK_ATTRIBUTE, on ? 'on' : 'off');
-        });
-    }
-
-    let released = false;
-    return () => {
-        if (released) {
-            return;
-        }
-        released = true;
-        sharedBlinkHolders -= 1;
-        if (sharedBlinkHolders > 0) {
-            return;
-        }
-        stopSharedBlink?.();
-        stopSharedBlink = null;
-        document.documentElement.removeAttribute(SHARED_BLINK_ATTRIBUTE);
-    };
-};
-
-export const useSharedBlink = (active: boolean): void => {
-    const { shouldAnimate } = useDocumentAnimationState();
-
-    React.useEffect(() => {
-        if (!active || !shouldAnimate || typeof document === 'undefined') {
-            return;
-        }
-
-        return holdSharedBlink();
-    }, [active, shouldAnimate]);
-};
-
 export const useDurationTickerNow = (active: boolean, intervalMs: number = 250): number => {
     const [now, setNow] = React.useState(() => Date.now());
     const { isVisible } = useDocumentAnimationState();

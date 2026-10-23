@@ -6,7 +6,6 @@ import { useI18n } from '@/lib/i18n';
 import { RiInformationLine, RiLoader4Line } from '@remixicon/react';
 import type { SessionContextUsage } from '@/stores/types/sessionTypes';
 import type { ContextUsageAvailability } from '@/lib/contextUsagePresentation';
-import { useSharedBlink } from '@/components/chat/message/parts/useDurationTicker';
 
 interface ContextUsageProgressIconProps {
   percentage: number;
@@ -85,7 +84,6 @@ export const ContextUsageDisplay: React.FC<ContextUsageDisplayProps> = ({
   let effectiveAvailability: ContextUsageAvailability = availability ?? (usage ? 'available' : 'unavailable');
   if (effectiveAvailability === 'available' && !usage) effectiveAvailability = 'unavailable';
   const hasMeasuredUsage = Boolean(usage && effectiveAvailability === 'available');
-  useSharedBlink(effectiveAvailability === 'loading');
   const activeInputTokens = usage?.activeInputTokens ?? 0;
   const percentage = usage?.percentage ?? null;
   const capacityLimit = usage?.capacityLimit ?? null;
@@ -146,7 +144,7 @@ export const ContextUsageDisplay: React.FC<ContextUsageDisplayProps> = ({
             className="h-4 w-4 text-muted-foreground/50"
           />
         ) : effectiveAvailability === 'loading' ? (
-          <RiLoader4Line className="h-4 w-4 oc-tick-blink text-muted-foreground" aria-hidden="true" />
+          <RiLoader4Line className="h-4 w-4 animate-spin text-muted-foreground" aria-hidden="true" />
         ) : hasKnownCapacity ? (
           <ContextUsageProgressIcon
             percentage={percentage}
@@ -167,7 +165,7 @@ export const ContextUsageDisplay: React.FC<ContextUsageDisplayProps> = ({
                 />
               ) : effectiveAvailability === 'loading' ? (
                 <RiLoader4Line
-                  className={cn('h-3.5 w-3.5 oc-tick-blink text-muted-foreground', percentIconClassName)}
+                  className={cn('h-3.5 w-3.5 animate-spin text-muted-foreground', percentIconClassName)}
                   aria-hidden="true"
                 />
               ) : hasKnownCapacity ? (
@@ -204,7 +202,7 @@ export const ContextUsageDisplay: React.FC<ContextUsageDisplayProps> = ({
           />
         ) : effectiveAvailability === 'loading' ? (
           <RiLoader4Line
-            className={cn('h-3.5 w-3.5 oc-tick-blink text-muted-foreground', percentIconClassName)}
+            className={cn('h-3.5 w-3.5 animate-spin text-muted-foreground', percentIconClassName)}
             aria-hidden="true"
           />
         ) : hasKnownCapacity ? (

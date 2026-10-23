@@ -19,7 +19,6 @@ import {
 import { isReasoningDisclosureToggleKey } from './reasoningDisclosureKeyboard';
 import { registerActiveReasoningDisclosure } from './reasoningDisclosureStatus';
 import { formatReasoningDuration, getReasoningDurationMilliseconds } from './reasoningDuration';
-import { useSharedBlink } from './useDurationTicker';
 
 export interface ReasoningGroupEntry {
     part: Part;
@@ -82,7 +81,6 @@ export const ReasoningDisclosure: React.FC<ReasoningDisclosureProps> = ({
         isTrailingLiveRun,
     });
     const sessionID = (entries[0]?.part as { sessionID?: unknown } | undefined)?.sessionID;
-    useSharedBlink(isActive);
 
     React.useLayoutEffect(() => {
         if (!isActive || typeof sessionID !== 'string' || sessionID.length === 0) return;
@@ -120,7 +118,7 @@ export const ReasoningDisclosure: React.FC<ReasoningDisclosureProps> = ({
                     isMobile ? 'min-h-11 py-2' : 'min-h-6 py-1 max-md:min-h-11 max-md:py-2'
                 }`}
             >
-                <span className="oc-tick-blink">{headerText}</span>
+                <span className="animate-pulse motion-reduce:animate-none">{headerText}</span>
             </div>
         );
     }
@@ -147,7 +145,7 @@ export const ReasoningDisclosure: React.FC<ReasoningDisclosureProps> = ({
                     className={`h-3.5 w-3.5 shrink-0 transition-transform motion-reduce:transition-none ${isExpanded ? 'rotate-90' : ''}`}
                     aria-hidden="true"
                 />
-                <span className={`min-w-0 truncate ${isActive ? 'oc-tick-blink' : ''}`}>
+                <span className={`min-w-0 truncate ${isActive ? 'animate-pulse motion-reduce:animate-none' : ''}`}>
                     {headerText}
                 </span>
             </CollapsibleTrigger>

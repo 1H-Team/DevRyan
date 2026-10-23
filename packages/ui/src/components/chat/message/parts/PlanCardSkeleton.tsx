@@ -1,6 +1,5 @@
 import React from 'react';
 import { useDocumentAnimationState } from '@/hooks/useDocumentAnimationState';
-import { useSharedBlink } from './useDurationTicker';
 
 interface PlanCardSkeletonProps {
   lineCount?: number;
@@ -12,7 +11,6 @@ interface PlanCardSkeletonProps {
 
 const PlanCardSkeleton: React.FC<PlanCardSkeletonProps> = ({ lineCount = 4, className, minHeight }) => {
   const { shouldAnimate } = useDocumentAnimationState();
-  useSharedBlink(shouldAnimate);
   const style = minHeight !== undefined ? { minHeight } : undefined;
   return (
     <div
