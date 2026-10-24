@@ -95,7 +95,7 @@ export function createRuntimeBundleVerifier(binding, privatePersistence={}) {
  * `verified` is the result of `verify()` that the caller has just awaited, so boot does
  * not stream every harness ledger or signed artifact twice. It must match the binding, otherwise loading fails closed.
  * Each launch still runs `verify` again. */
-export async function loadNativeRuntimeBundle({ binding, launcher, verify = createRuntimeBundleVerifier(binding), verified, getRegisteredProjects, providerEnvironment = {} }) {
+export async function loadNativeRuntimeBundle({ binding, launcher, verify = createRuntimeBundleVerifier(binding), verified, getRegisteredProjects, listProjectWorktrees, providerEnvironment = {} }) {
   if (binding.admission === 'held') throw fail('runtime_bundle_reconciliation_required');
   if (binding.descriptor.generation !== 2) throw fail('native_runtime_generation_mismatch');
   if (verified === undefined) verified = await verify();
@@ -119,7 +119,7 @@ export async function loadNativeRuntimeBundle({ binding, launcher, verify = crea
   const reviewedConfiguration = await loadNativeReviewedConfiguration(artifacts);
   const locations=reviewed.locations.map(location=>({...location,readRoots:[...(location.readRoots??[location.directory]),
     nativeWebfetchBinaryDirectory(launch.global.tmp,location.directory)]}));
-  const deriveLocations=typeof getRegisteredProjects==='function'?createNativeProjectLocations({baseLocations:reviewed.locations,launch,getRegisteredProjects}):undefined;
+  const deriveLocations=typeof getRegisteredProjects==='function'?createNativeProjectLocations({baseLocations:reviewed.locations,launch,getRegisteredProjects,listProjectWorktrees}):undefined;
   const refreshLocations=async()=>{if(deriveLocations)locations.splice(0,locations.length,...await deriveLocations());};
   await refreshLocations();
   const resolveConfiguration=createNativeConfigurationSnapshotResolver({resolveSlimAgents:reviewedConfiguration?.resolveSlimAgents,

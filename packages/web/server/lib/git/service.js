@@ -2660,6 +2660,13 @@ export async function getWorktrees(directory, { strict = false } = {}) {
   }
 }
 
+/** Linked worktrees this app created (under OpenCode's worktree root); the
+ * native runtime admits these as locations of their registered project. */
+export async function listManagedWorktrees(directory) {
+  const root = path.join(getOpenCodeDataPath(), 'worktree') + path.sep;
+  return (await getWorktrees(directory)).map((entry) => entry.path).filter((worktree) => worktree.startsWith(root));
+}
+
 export async function getPrimaryWorktreeRoot(directory) {
   const directoryPath = normalizeDirectoryPath(directory);
   if (!directoryPath) {

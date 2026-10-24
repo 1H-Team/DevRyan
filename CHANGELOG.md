@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Admit worktrees created in the app as native locations, so a new worktree session no longer fails with `native_session_directory_mismatch`.
 - Fix a host-only update locking out a runtime that an OpenCode upgrade had cloned: the in-place rebind now reseals the clone's proof with the new manifest, and a runtime an earlier build rebound without it is restored and rebound at the next start.
 - Fix startup refusing with `bundle_message_reference_lost` when finished evidence named a deleted session, or a cancelled background shell run (for example a dev server ended by Stop) had reserved a completion notice that was never delivered. Both are now reported instead of refusing launch.
 

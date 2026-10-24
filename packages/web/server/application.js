@@ -224,7 +224,8 @@ const DEFAULT_PORT = 3000;
 let activeHost = null;
 const nativeBundle = await loadNativeRuntimeBundle({binding:selectedRuntimeBundle,verify:verifySelectedRuntimeBundle,verified:bootVerifiedRuntimeBundle,
  launcher:executionArtifacts(path.dirname(selectedRuntimeBundle.descriptor.launch.artifactManifestPath)).launcher,
- getRegisteredProjects:async()=>(await activeHost?.getRegisteredProjects()) ?? []});
+ getRegisteredProjects:async()=>(await activeHost?.getRegisteredProjects()) ?? [],
+ listProjectWorktrees:async directory=>(await import('./lib/git/service.js')).listManagedWorktrees(directory)});
 const executionReadiness={state:'active',diagnostic:null,companion:{version:nativeBundle.artifacts.manifest.opencodeVersion},
  environment:{DEVRYAN_EXECUTION_BOUNDARY:'1',DEVRYAN_OPENCODE_ARTIFACT:nativeBundle.artifacts.controller,
  DEVRYAN_EXECUTION_LAUNCHER:nativeBundle.artifacts.launcher},assertReady(){}};

@@ -909,6 +909,16 @@ directory still fails with `bundle_harness_directory_unmapped`.
 Removed registered projects retain these historical identities without becoming
 executable locations; recreated symlink or noncanonical directories still refuse.
 
+Native locations (`native-project-locations.js`) are the reviewed base locations,
+then registered projects, then each location's app-created linked worktrees
+(`listManagedWorktrees` in `lib/git/service.js`: worktrees under OpenCode's
+`worktree/` data root). A worktree that is missing, a symlink, noncanonical,
+protected or unreadable is skipped rather than failing the list. Creating a
+worktree through `POST /api/git/worktrees` prepares its location with the same
+`ensureNativeDirectory` restart a newly opened project uses; while sessions are
+busy the response carries `nativeLocation: {status:'pending'}` and the
+location joins at the next native restart.
+
 ### Launcher order and binding
 
 `server/index.js` calls `prepareNativeRuntimeEntry()` (`runtime-entry-bootstrap.js`)

@@ -125,6 +125,8 @@ export function registerGitRoutes(app, {
   // The client or a getter; forwarded so OpenCode helpers pick the runtime generation.
   openCodeClient = null,
   recordCommitTiming = () => {},
+  // Admits a new worktree as a native location (restarts OpenCode when idle).
+  prepareNativeDirectory,
   loadGitLibraries,
 } = {}) {
   registerCommitTemplateRoutes(app);
@@ -1489,7 +1491,15 @@ export function registerGitRoutes(app, {
       }
 
       const created = await createWorktree(directory, req.body || {});
-      res.json(created);
+      if (typeof prepareNativeDirectory !== 'function' || typeof created?.path !== 'string') return res.json(created);
+      try {
+        await prepareNativeDirectory(created.path);
+        res.json(created);
+      } catch (cause) {
+        // The worktree exists; sessions in it wait for the next native restart.
+        console.warn(`Failed to prepare native location for worktree: ${cause?.code || cause?.message || cause}`);
+        res.json({ ...created, nativeLocation: { status: 'pending', code: cause?.code || 'native_location_pending' } });
+      }
     } catch (error) {
       console.error('Failed to create worktree:', error);
       res.status(error?.statusCode || 500).json({

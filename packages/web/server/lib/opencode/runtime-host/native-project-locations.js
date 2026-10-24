@@ -6,8 +6,10 @@ const fail=code=>Object.assign(new Error(code),{code,status:403,statusCode:403})
 const within=(root,file)=>file===root||file.startsWith(root+path.sep);
 
 /** Registered project settings are the existing durable owner. Request paths
- * alone never add a native location; every boot rederives canonical scopes. */
-export function createNativeProjectLocations({baseLocations,launch,getRegisteredProjects}) {
+ * alone never add a native location; every boot rederives canonical scopes.
+ * `listProjectWorktrees` names the app-created linked worktrees of a project;
+ * an unsafe or unreadable worktree is skipped, never fatal to the project list. */
+export function createNativeProjectLocations({baseLocations,launch,getRegisteredProjects,listProjectWorktrees}) {
  const protectedRoots=[...new Set([...baseLocations.flatMap(location=>location.protectedRoots??[]),launch.webDataDirectory,
   launch.webConfigDirectory,launch.opencodeConfigDirectory,...Object.values(launch.global)])];
  return async()=>{
@@ -31,6 +33,19 @@ export function createNativeProjectLocations({baseLocations,launch,getRegistered
    locations.push({directory,readRoots:[directory,nativeWebfetchBinaryDirectory(launch.global.tmp,directory)],protectedRoots});
   }
   if(locations.length>128)throw fail('native_project_directory_invalid');
+  if(typeof listProjectWorktrees==='function'){
+   for(const project of locations.slice()){
+    for(const directory of await listProjectWorktrees(project.directory).catch(()=>[])){
+     if(locations.length>=128)break;
+     if(typeof directory!=='string'||!path.isAbsolute(directory)||directory!==path.resolve(directory)||/[\u0000-\u001f]/.test(directory)
+      ||locations.some(location=>location.directory===directory))continue;
+     const stat=await fs.lstat(directory).catch(()=>undefined);
+     if(!stat?.isDirectory()||stat.isSymbolicLink()||await fs.realpath(directory).catch(()=>undefined)!==directory
+      ||canonicalRoots.some(root=>within(root,directory)))continue;
+     locations.push({directory,readRoots:[directory,nativeWebfetchBinaryDirectory(launch.global.tmp,directory)],protectedRoots});
+    }
+   }
+  }
   return locations;
  };
 }

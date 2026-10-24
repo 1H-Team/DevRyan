@@ -63,3 +63,19 @@ it('protects the target of a sealed root that is now a compatibility link',async
  const read=createNativeProjectLocations({baseLocations:[{directory:base,readRoots:[base],protectedRoots:[legacy]}],launch,getRegisteredProjects:async()=>[{path:inside}]});
  await expect(read()).rejects.toMatchObject({code:'native_project_directory_protected'});
 });
+
+it('admits listed worktrees of a location and skips unsafe ones without failing the list',async()=>{
+ const f=await fixture();const worktree=path.join(path.dirname(f.base),'worktree-one'),alias=worktree+'-alias';
+ await fs.mkdir(worktree);await fs.symlink(worktree,alias);
+ const launch={webDataDirectory:f.privateRoot,webConfigDirectory:f.privateRoot,opencodeConfigDirectory:f.privateRoot,global:{tmp:f.privateRoot,home:f.privateRoot}};
+ const listed=[];
+ const read=createNativeProjectLocations({baseLocations:[{directory:f.base,readRoots:[f.base],protectedRoots:[f.privateRoot]}],launch,
+  getRegisteredProjects:async()=>[{path:f.second}],
+  listProjectWorktrees:async directory=>{listed.push(directory);if(directory===f.second)throw new Error('git unavailable');
+   return [f.base,worktree,alias,'relative',worktree+'-missing',path.join(f.privateRoot,'inside')];}});
+ await fs.mkdir(path.join(f.privateRoot,'inside'));
+ const locations=await read();
+ expect(listed).toEqual([f.base,f.second]);
+ expect(locations.map(location=>location.directory)).toEqual([f.base,f.second,worktree]);
+ expect(locations[2].readRoots[0]).toBe(worktree);expect(locations[2].protectedRoots).toContain(f.privateRoot);
+});

@@ -338,6 +338,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       resolveHelperSelection,
       cursorRuntime: cursorTextRuntime,
       recordCommitTiming,
+      prepareNativeDirectory: routeDependencies.ensureNativeDirectory,
       // Native Zen helper sessions, plus PR description tier 2 (session model).
       buildOpenCodeUrl,
       getOpenCodeAuthHeaders,
