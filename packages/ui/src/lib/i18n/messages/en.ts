@@ -2019,6 +2019,8 @@ export const dict = {
   'chat.sessionChanges.current.restored': 'Captured files match their original content. Historical edits remain available.',
   'chat.sessionChanges.current.verified': '{count} files still match the captured changes.',
   'chat.sessionChanges.current.uncertain': 'Current changes in {count} files could not be verified. Review the working tree.',
+  'chat.sessionChanges.current.verifiedOne': '1 file still matches the captured changes.',
+  'chat.sessionChanges.current.uncertainOne': 'Current changes in 1 file could not be verified. Review the working tree.',
   'chat.sessionChanges.coverageGaps': 'Capture gaps in {count} sessions',
   'chat.sessionChanges.card.reviewChanges': 'Review changes',
   'chat.sessionChanges.card.showMore': 'Show {count} more files',

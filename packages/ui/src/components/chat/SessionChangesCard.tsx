@@ -129,9 +129,12 @@ export const SessionChangesCardView: React.FC<SessionChangesCardViewProps> = ({
     const canCollapse = isExpanded && fileCount > Math.max(0, initialVisible);
     const showToggle = mode === 'changes' && (current ? fileCount > 0 : hiddenCount > 0 || canCollapse);
     const coverageGaps = coverageBySession?.filter((entry) => entry.reasons.length > 0) ?? [];
+    const currentCount = current?.state === 'verified' ? current.verifiedFileCount : current?.uncertainFileCount;
     const currentMessage = current ? t(current.state === 'restored' ? 'chat.sessionChanges.current.restored'
-        : current.state === 'verified' ? 'chat.sessionChanges.current.verified' : 'chat.sessionChanges.current.uncertain',
-        { count: current.state === 'verified' ? current.verifiedFileCount : current.uncertainFileCount }) : null;
+        : current.state === 'verified'
+            ? (currentCount === 1 ? 'chat.sessionChanges.current.verifiedOne' : 'chat.sessionChanges.current.verified')
+            : (currentCount === 1 ? 'chat.sessionChanges.current.uncertainOne' : 'chat.sessionChanges.current.uncertain'),
+        { count: currentCount }) : null;
 
     // Mount, undo/redo flips and expand/collapse all change the height below the
     // last message; stick-to-bottom only stays correct when it hears about them.

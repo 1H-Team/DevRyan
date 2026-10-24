@@ -226,6 +226,14 @@ describe('SessionChangesCardView', () => {
     onOpenFile: () => {},
   };
 
+  test('a single current file uses singular copy', () => {
+    const view = (current: { state: 'verified' | 'uncertain'; verifiedFileCount: number; uncertainFileCount: number }) => render(React.createElement(SessionChangesCardView, { ...viewProps,
+      current: { restoredFileCount: 0, checkedFileCount: 4, observedAt: 1000, reasons: [], ...current } }));
+    expect(view({ state: 'uncertain', verifiedFileCount: 3, uncertainFileCount: 1 })).toContain('Current changes in 1 file could not be verified');
+    expect(view({ state: 'uncertain', verifiedFileCount: 2, uncertainFileCount: 2 })).toContain('Current changes in 2 files could not be verified');
+    expect(view({ state: 'verified', verifiedFileCount: 1, uncertainFileCount: 0 })).toContain('1 file still matches the captured changes');
+  });
+
   test('restored current files are not presented as remaining edits and captured history starts folded', () => {
     const markup = render(React.createElement(SessionChangesCardView, { ...viewProps,
       current: { state: 'restored', verifiedFileCount: 0, restoredFileCount: 2, uncertainFileCount: 0,
