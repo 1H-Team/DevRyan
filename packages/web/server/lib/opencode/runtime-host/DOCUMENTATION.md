@@ -81,6 +81,8 @@ reader (Electron main, the server entry outside Electron, the CLI); a merged or
 unmovable folder becomes a `data_root` startup notice. `startup-notices.js`
 collects these for the process. The health snapshot
 exposes them as `startupNotices`, and the UI shows a persistent warning.
+Expected leftovers that need no action (`bundle_shell_notice_undelivered`) are
+logged but never become a notice.
 
 A refused cold upgrade is recorded, not thrown. When the selected runtime
 still meets the OpenCode version pin and passes its own launch verification,

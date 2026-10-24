@@ -14,13 +14,16 @@ export function recordStartupFindings(source, rows = [], log = console) {
 }
 
 export const readStartupFindings = () => [...findings.values()];
+// Expected leftovers that need no action stay in the log, not the open app:
+// a cancelled background run (a dev server ended by Stop) never delivers its notice.
+const QUIET_FINDINGS = new Set(['bundle_shell_notice_undelivered']);
 export const resetStartupFindings = () => findings.clear();
 
 /** What the open app tells its owner about a startup that continued. */
 export function startupNotices() {
   const rows = readStartupFindings(), upgrade = rows.find(row => row.source === 'bundle_upgrade');
   const dataRoot = rows.find(row => row.source === 'data_root');
-  const isolated = rows.filter(row => row.source !== 'bundle_upgrade' && row.source !== 'data_root');
+  const isolated = rows.filter(row => row.source !== 'bundle_upgrade' && row.source !== 'data_root' && !QUIET_FINDINGS.has(row.code));
   return [
     ...(dataRoot?.code === 'data_root_merged' ? [{ code: 'data_root_merged', count: 1,
       message: 'DevRyan moved its data from ~/.config/openchamber to ~/.config/devryan. Older files whose names already existed there were kept in a legacy-openchamber folder inside it.' }] : []),

@@ -25,7 +25,7 @@ import { nativeUpgradeBundleID } from './runtime-bundle-lifecycle.js';
 import { readStartupBundleUpgradeFailure, recordStartupBundleUpgradeFailure } from './bundle-startup-upgrade-status.js';
 import { TARGET_OPENCODE_VERSION } from '../version-policy.js';
 import { BUNDLE_DOCUMENT_MAX_BYTES } from './bundle-document-limits.js';
-import { readStartupFindings, resetStartupFindings, startupNotices } from './startup-notices.js';
+import { readStartupFindings, recordStartupFindings, resetStartupFindings, startupNotices } from './startup-notices.js';
 
 const execute=promisify(execFile), roots=[];
 // Git and SQLite fixtures need headroom on hosted macOS runners.
@@ -1329,6 +1329,8 @@ test('a used ledger with finished and derived leftovers upgrades and reports the
   'bundle_verifier:bundle_evidence_layout_invalid:notes.txt','bundle_verifier:bundle_execution_unsettled:leases','bundle_verifier:bundle_harness_layout_invalid:.DS_Store',
   'bundle_verifier:bundle_native_removal_invalid:native-removals']);
  expect(startupNotices()).toMatchObject([{code:'startup_records_isolated'}]);
+ resetStartupFindings();recordStartupFindings('bundle_verifier',[{code:'bundle_shell_notice_undelivered',ledger:'l',key:'leases/x'}],{});
+ expect(readStartupFindings()).toHaveLength(1);expect(startupNotices()).toEqual([]);
  const upgraded=u.binding().descriptor.launch,ledger=path.join(upgraded.webDataDirectory,path.relative(launch.webDataDirectory,seeded.root));
  expect(ledger).not.toBe(seeded.root);
  for(const gone of [path.join(ledger,'module-overlays'),path.join(ledger,'scratch-links','link'),path.join(upgraded.global.cache,'cache-link'),path.join(upgraded.global.cache,'pipe')])
