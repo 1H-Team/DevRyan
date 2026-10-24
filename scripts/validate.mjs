@@ -592,14 +592,14 @@ if (isDirectExecution) {
     printPlan(plan);
     const cacheBefore = snapshotCache(workspaceRoot);
     const status = await runCommands(plan.commands);
-    if (status !== 0) process.exit(status);
+    process.exitCode = status;
     const growth = cacheGrowthFailure(workspaceRoot, cacheBefore);
     if (growth) {
       console.error(`\n${growth}`);
-      process.exit(1);
+      process.exitCode = 1;
     }
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
-    process.exit(1);
+    process.exitCode = 1;
   }
 }
