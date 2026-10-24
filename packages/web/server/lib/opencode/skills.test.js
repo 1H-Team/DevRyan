@@ -1,12 +1,23 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { createSkill, deleteSkill, discoverSkills, getSkillSources } from './skills.js';
 import { readSkillSupportingFile, writeSkillSupportingFile, deleteSkillSupportingFile } from './shared.js';
 
 describe('skill discovery', () => {
+  it('rejects retired and invalid names before creating config directories', () => {
+    const mkdir = vi.spyOn(fs, 'mkdirSync');
+    try {
+      for (const name of ['test-driven-development', 'subagent-driven-development', '../invalid']) {
+        expect(() => createSkill(name, {}, null, 'user')).toThrow();
+      }
+      expect(mkdir).not.toHaveBeenCalled();
+    } finally {
+      mkdir.mockRestore();
+    }
+  });
   it('refuses final and parent symlink escapes for supporting file reads, writes and deletes', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-skill-symlink-'));
     try {
