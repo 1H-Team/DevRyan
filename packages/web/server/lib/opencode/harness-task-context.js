@@ -66,7 +66,9 @@ export const createHarnessTaskContextHost = (options) => {
     await assertGlobalPlanProjectScope(project.id, directory, [session.directory]);
     const records = [], cursors = new Set(); let before, totalBytes = 0, nativeSequence = [];
     if (typeof options.readCanonicalPlanSequence === 'function') {
-      const sequence = await options.readCanonicalPlanSequence({sessionID,directory});
+      // The requested directory may be the project root of a worktree session;
+      // the native sequence is read where the session lives.
+      const sequence = await options.readCanonicalPlanSequence({sessionID,directory:session.directory});
       if (!Array.isArray(sequence?.records)||sequence.records.length>2000||!Array.isArray(sequence.nativeSequence)
         ||sequence.nativeSequence.length>2000||Buffer.byteLength(JSON.stringify(sequence))>16*1024*1024)throw planError(503,'plan_source_unavailable');
       records.push(...sequence.records);nativeSequence=sequence.nativeSequence;

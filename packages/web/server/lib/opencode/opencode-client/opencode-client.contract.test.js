@@ -451,22 +451,7 @@ describe('openCodeClient contract (native v2 fixture)', () => {
       const forged=await client.readCanonicalPlanSequence(sessionID,{directory});
       expect(requests).toBe(2);
       expect(forged.nativeSequence.find(row=>row.id==='msg_auto')).toEqual({id:'msg_auto',type:'synthetic',ordinal:2,turnParent:true});
-      raw=[tail,tail];requests=0;await expect(client.readCanonicalPlanSequence(sessionID,{directory})).rejects.toMatchObject({code:C.invalidResponse});
-      expect(requests).toBe(6);
-    });
-    it('private Plan sequence rereads a snapshot that changed while a turn was writing',async()=>{
-      const sessionID='ses_plan_race',info={id:sessionID,location:{directory},agent:'build',model:{providerID:'fixture',id:'fixture'}};
-      const user={id:'msg_user',type:'user',text:'Plan it',time:{created:1}};
-      const answer={id:'msg_answer',type:'assistant',agent:'build',model:{providerID:'fixture',id:'fixture'},finish:'stop',content:[{type:'text',text:'done'}],time:{created:2,completed:3}};
-      let reads=0;
-      const client=createPrivilegedOpenCodeClient({getRuntime:()=>({generation:2,baseUrl:'http://127.0.0.1:1'}),fetchImpl:async url=>{
-        if(!new URL(url).pathname.endsWith('/message'))return Response.json({data:info});
-        // The first read sees the finishing answer twice; the next is consistent.
-        return Response.json({data:++reads===1?[answer,answer,user]:[answer,user]});
-      }});
-      const result=await client.readCanonicalPlanSequence(sessionID,{directory});
-      expect(reads).toBe(2);
-      expect(result.nativeSequence.map(row=>row.id)).toEqual(['msg_user','msg_answer']);
+      raw=[tail,tail];await expect(client.readCanonicalPlanSequence(sessionID,{directory})).rejects.toMatchObject({code:C.invalidResponse});
     });
     it('private Plan sequence refuses repeated cursors, incomplete bounded history and foreign scope',async()=>{
       const sessionID='ses_plan_bounds';let pages=0,mode='cycle';
@@ -475,8 +460,7 @@ describe('openCodeClient contract (native v2 fixture)', () => {
         if(!parsed.pathname.endsWith('/message'))return Response.json({data:{id:sessionID,location:{directory:mode==='foreign'?'/foreign':directory}}});
         pages++;return Response.json({data:mode==='empty'?[]:Array.from({length:200},(_,index)=>({id:`msg_idle_${pages}_${index}`,type:'idle',time:{created:1}})),cursor:{next:mode==='cycle'?'repeated':`older_${pages}`}});
       }});
-      // A repeated cursor is rereadable (the history moved); it is refused after three reads.
-      await expect(client.readCanonicalPlanSequence(sessionID,{directory})).rejects.toMatchObject({code:C.invalidResponse});expect(pages).toBe(6);
+      await expect(client.readCanonicalPlanSequence(sessionID,{directory})).rejects.toMatchObject({code:C.invalidResponse});expect(pages).toBe(2);
       mode='bounded';pages=0;
       await expect(client.readCanonicalPlanSequence(sessionID,{directory})).rejects.toMatchObject({code:C.invalidResponse});expect(pages).toBe(10);
       mode='empty';pages=0;

@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-- Fix "Couldn't save plan" when a plan finished: the plan source read raced the turn's last write and failed instead of rereading.
+- Fix "Couldn't save plan" and a disabled Implement Plan for plans written in a worktree: the plan source was read at the project root instead of the worktree the session runs in.
 - A new worktree's first background ledger build now yields to tool calls; reads and searches waited 10–15 s behind it.
 - Admit worktrees created in the app as native locations, so a new worktree session no longer fails with `native_session_directory_mismatch`.
 - Fix a host-only update locking out a runtime that an OpenCode upgrade had cloned: the in-place rebind now reseals the clone's proof with the new manifest, and a runtime an earlier build rebound without it is restored and rebound at the next start.

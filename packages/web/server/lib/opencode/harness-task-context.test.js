@@ -270,6 +270,19 @@ describe('native canonical task-context adapter on OpenCode 2', () => {
       await expect(host.readCanonicalPlanIdentity({...scope,sourceMessageID:'msg_plan'})).rejects.toThrow();
     }finally{await host.drain();}
   });
+  it('reads a worktree session\'s native Plan sequence where the session lives, not at the requested project root', async () => {
+    const worktree='/project-worktrees/calm';
+    routes['session:ses_root']={...routes['session:ses_root'],directory:worktree,slug:'worktree-plan',time:{created:1700000000000}};
+    routes['message:ses_root/msg_plan']=savedSource('ses_root');
+    const records=sourceHistory('ses_root'),nativeSequence=[{id:'msg_plan_user',type:'user'},{id:'msg_plan',type:'assistant'}]
+      .map((row,ordinal)=>({...row,ordinal,turnParent:row.type!=='assistant'}));
+    const read=[];
+    const host=createHost(fakeClient(),primary,{readCanonicalPlanSequence:async input=>{read.push(input);return {records,nativeSequence};}});
+    try {
+      expect(await host.readCanonicalPlanIdentity({...scope,sourceMessageID:'msg_plan'})).toMatchObject({sourceIdentity:{sourceMessageID:'msg_plan'}});
+      expect(read).toEqual([{sessionID:'ses_root',directory:worktree}]);
+    }finally{await host.drain();}
+  });
   it('captures canonical native Plan restrictions for children even when projected markers are absent', async () => {
     const active = { ...primary, agent: 'orchestrator', stepID: 'msg_assistant', state: 'working' };
     routes['message:ses_root/msg_assistant'] = { info: { id: 'msg_assistant', sessionID: 'ses_root', role: 'assistant', parentID: 'msg_user' },
