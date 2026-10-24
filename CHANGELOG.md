@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Fix sidebar projects and worktrees showing "No chats" after a restart when another folder was last used: the global session list was scoped to that folder and returned archived chats only.
 - Fix "Couldn't save plan" and a disabled Implement Plan for plans written in a worktree: the plan source was read at the project root instead of the worktree the session runs in.
 - A new worktree's first background ledger build now yields to tool calls; reads and searches waited 10–15 s behind it.
 - Admit worktrees created in the app as native locations, so a new worktree session no longer fails with `native_session_directory_mismatch`.

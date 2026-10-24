@@ -77,9 +77,12 @@ export const readFacadeSessionQuery = (req) => ({
 
 export const readFacadeMessagePage = (req) => ({ limit: numberQuery(req, 'limit', true), before: stringQuery(req, 'before') });
 
-/** Keep each timestamp cohort together for legacy strict-before cursors. */
+/** Keep each timestamp cohort together for legacy strict-before cursors.
+ * v1 global history: `archived=true` includes archived sessions instead of
+ * selecting only them, and `archived=false` still excludes them. */
 export const listFacadeSessionPage = async (client, req, options = {}) => {
   const { limit = 100, ...query } = readFacadeSessionQuery(req);
+  if (query.archived === true) delete query.archived;
   const before = numberQuery(req, 'cursor');
   const start = numberQuery(req, 'start');
   if (stringQuery(req, 'workspace')) throw unavailable('workspaceSessionFilter');
@@ -158,7 +161,10 @@ export const createOpenCodeV2FacadeRouter = (deps) => {
   route('get', '/session/status', (client, _req, _res, options) => client.sessions.status({ directory: options.directory }, options));
   route('get', '/session', (client, req, _res, options) => client.sessions.list(readFacadeSessionQuery(req), options));
   route('get', '/experimental/session', async (client, req, res, options) => {
-    const page = await listFacadeSessionPage(client, req, options);
+    // Global history spans every location: without an explicit directory the
+    // native list is unscoped (it activates no location), never the last-used one.
+    const explicit = req.query?.directory !== undefined || req.headers?.['x-opencode-directory'] !== undefined;
+    const page = await listFacadeSessionPage(client, req, explicit ? options : { ...options, directory: undefined });
     if (page.nextCursor !== null) res.setHeader('x-next-cursor', String(page.nextCursor));
     return page.sessions;
   });

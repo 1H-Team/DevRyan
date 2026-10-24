@@ -156,6 +156,18 @@ describe('gen-2 browser facade', () => {
     expect((await request(app).get('/api/experimental/session?limit=1&cursor=2')).body.map((row) => row.id)).toEqual(['ses_c']);
   });
 
+  it('lists global history across locations and includes archived sessions when asked', async () => {
+    const { app, client } = setup();
+    client.sessions.list.mockResolvedValue([{ id: 'ses_a', time: { updated: 2 } }]);
+    await request(app).get('/api/experimental/session?archived=true&limit=200').expect(200);
+    // No last-used directory scopes the list, and archived=true filters nothing.
+    expect(client.sessions.list.mock.calls[0][0]).toEqual({ directory: undefined, parentID: undefined, roots: undefined, search: undefined });
+    expect(client.sessions.list.mock.calls[0][1].directory).toBeUndefined();
+    await request(app).get('/api/experimental/session?archived=false&directory=/project').expect(200);
+    expect(client.sessions.list.mock.calls[1][0]).toMatchObject({ directory: '/project', archived: false });
+    expect(client.sessions.list.mock.calls[1][1].directory).toBe('/project');
+  });
+
   it('only permits raw browser-class routes, even when the legacy guard is disabled', async () => {
     const { app, fetchImpl } = setup();
     for (const path of ['/api/opencode-v2/session', '/api/opencode-v2/credential', '/api/opencode-v2/experimental/config',

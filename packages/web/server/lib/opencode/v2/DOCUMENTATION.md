@@ -57,6 +57,9 @@ performance parity. Remaining gates are in [the OpenCode module documentation](.
   absent, malformed and constructor-origin markers remain unknown. The marker
   does not replace principal or native admission authorization, and private
   canonical metadata remains constructor-owned.
+  `GET /experimental/session` is global history: without an explicit directory
+  it lists unscoped (every location, none activated) instead of the last-used
+  directory, and `archived=true` includes archived sessions (v1 meaning).
   Session creation retains its deadline and content-free attempt timing; an ambiguous
   dispatched write is never retried. `sse-routes.js` maps live native frames and
   requests reconciliation on stream loss. Its active global subscriber owns the
