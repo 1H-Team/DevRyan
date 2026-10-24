@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.11] - 2026-10-24
+
+- Upgrade Electron from 41.2.1 to 44.9.3.
+- Improve provider timeout handling and recovery after stalled native or Claude requests, preserve Plan mode during recovery, and let Stop end background runs.
+- Restore working animations, improve Agent Dispatch label spacing, and fix Claude sign-in and idle profile renewal.
+- Improve provider loading, parent-folder MCP discovery, configuration writes and persistence recovery.
+- Reduce session-view and ledger overhead, trim unused code, and improve test isolation and scheduling.
+- Consolidate release publication under one lock, add read-only release status and verification, and verify releases from a clean worktree.
 - Fix sidebar projects and worktrees showing "No chats" after a restart when another folder was last used: the global session list was scoped to that folder and returned archived chats only.
 - Fix "Couldn't save plan" and a disabled Implement Plan for plans written in a worktree: the plan source was read at the project root instead of the worktree the session runs in.
 - A new worktree's first background ledger build now yields to tool calls; reads and searches waited 10–15 s behind it.

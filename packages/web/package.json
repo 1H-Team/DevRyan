@@ -1,6 +1,6 @@
 {
   "name": "@devryan/web",
-  "version": "2.1.10",
+  "version": "2.1.11",
   "private": false,
   "type": "module",
   "main": "./server/index.js",

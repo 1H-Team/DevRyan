@@ -131,13 +131,16 @@ test('private bundle proofs are occurrence-scoped and cancellation-pinned; defau
 });
 
 test('settled adoption history and harmless notices do not consume the startup backlog bound',async()=>{
- const f=await fixture(),records=[];for(let index=0;index<140;index++){
+ const f=await fixture(),records=[];
+ // Seed the history in one transaction instead of syncing every fixture row.
+ f.db.exec('BEGIN');for(let index=0;index<140;index++){
   const sessionID='ses_history'+index,userID='msg_history'+index,assistantID='msg_done'+index;
   f.db.prepare('INSERT INTO session_v2 VALUES(?,?,?,?,?,?,?,?)').run(sessionID,f.root,null,'build',null,'[]',null,null);
   for(const [id,type,seq,data] of [[userID,'user',1,{time:{created:1},text:'done'}],[assistantID,'assistant',2,{time:{created:1,completed:2},agent:'build',model:{providerID:'devryan-smoke',id:'smoke-write'},content:[],finish:'stop'}]])f.db.prepare('INSERT INTO session_message VALUES(?,?,?,?,?)').run(id,sessionID,type,seq,JSON.stringify(data));
   records.push({...f.record(),sessionID,anchorID:userID,stepID:assistantID,recoveredInput:{inputID:userID,payloadHash:'a'.repeat(64),enqueuedSeq:1,delivery:'queue',phase:'adopted'}});
   f.message('msg_notice'+index,'synthetic',index+10,{text:'status',metadata:{devryan:{v:1,origin:'interview',statusOnly:true}}});
  }
+ f.db.exec('COMMIT');
  f.primaryRuntime.nativeStartupRecords=async()=>[...records,f.record()];const owner=f.owner();expect(await owner.install('epoch')).toEqual([f.sessionID]);expect((await owner.snapshot(f.sessionID)).inputs).toHaveLength(1);
 });
 test('refresh is scoped to the affected session while unrelated live queues keep working',async()=>{

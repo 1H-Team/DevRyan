@@ -37,6 +37,7 @@ const lastDirectoryUpdates = () => settingsUpdates.filter((changes) => 'lastDire
 describe('home directory fallback', () => {
   beforeEach(() => {
     storage.removeItem('lastDirectory');
+    useDirectoryStore.getState().synchronizeHomeDirectory(HOME);
     settingsUpdates.length = 0;
     directoriesSet.length = 0;
   });
