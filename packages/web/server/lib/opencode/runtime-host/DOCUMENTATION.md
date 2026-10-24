@@ -1163,6 +1163,9 @@ owner. It reads at most 2,000 native rows/8 MiB, preserves canonical paging
 order and native compaction type/status/reason, and projects the complete
 sequence once. The Plan validator can therefore verify automatic-compaction
 successors without trusting display parts, summary text or client metadata.
+A snapshot that changed while it was paged (a row seen twice, a repeated
+cursor) is reread up to twice before `opencode_invalid_response`; malformed,
+oversized or foreign-scope history is refused at once.
 
 Initial negative writer admission records no-start evidence through
 `native-plan-denial-owner.js` only after captured read-only policy, exact pending

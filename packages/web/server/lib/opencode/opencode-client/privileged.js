@@ -236,6 +236,19 @@ export const createPrivilegedOpenCodeClient = (deps) => {
     const info=unwrapData(infoBody), context=sessionMessageContext(info);
     const invalid=()=>createInvalidResponseError({label:'readCanonicalPlanSequence',generation:2});
     if (!context || info.id!==sessionID || info.location?.directory!==options.directory) throw invalid();
+    // Paging while a turn writes its last message can yield an inconsistent
+    // snapshot (a row seen twice across pages); a fresh read is consistent.
+    for (let attempt = 1; ; attempt += 1) {
+      try { return await readPlanSequence(sessionID, options, context, invalid); }
+      catch (error) {
+        if (attempt >= 3 || !inconsistent.has(error)) throw error;
+        await new Promise(resolve => setTimeout(resolve, 150 * attempt));
+      }
+    }
+  });
+  const inconsistent = new WeakSet();
+  const readPlanSequence = async (sessionID, options, context, invalid) => {
+    const changed = () => { const error = invalid(); inconsistent.add(error); return error; };
     const messages=[], cursors=new Set(); let cursor, bytes=0, pages=0;
     do {
       if(++pages>20)throw invalid();
@@ -247,18 +260,18 @@ export const createPrivilegedOpenCodeClient = (deps) => {
       if(bytes>8*1024*1024||messages.length+body.data.length>2000)throw invalid();
       messages.unshift(...[...body.data].reverse());
       cursor=body.cursor?.next;
-      if(cursor){if(cursor.length>8192||cursors.has(cursor)||messages.length>=2000||bytes>=8*1024*1024)throw invalid();cursors.add(cursor);}
+      if(cursor){if(cursors.has(cursor))throw changed();if(cursor.length>8192||messages.length>=2000||bytes>=8*1024*1024)throw invalid();cursors.add(cursor);}
     }while(cursor);
     const ids=new Set();
     const nativeSequence=messages.map((row,ordinal)=>{
-      if(!isRecord(row)||!/^msg[A-Za-z0-9_-]{1,128}$/.test(row.id??'')||typeof row.type!=='string'
-        ||ids.has(row.id))throw invalid();
+      if(!isRecord(row)||!/^msg[A-Za-z0-9_-]{1,128}$/.test(row.id??'')||typeof row.type!=='string')throw invalid();
+      if(ids.has(row.id))throw changed();
       ids.add(row.id);
       return {id:row.id,type:row.type,ordinal,turnParent:isNativeTurnParent(row),
         ...(row.type==='compaction'?{status:typeof row.status==='string'?row.status:'unavailable',reason:typeof row.reason==='string'?row.reason:'unavailable'}:{})};
     });
     return {records:projectMessagePage(messages,context).records,nativeSequence};
-  });
+  };
 
   const switchAgent = gen2('switchAgent', async (sessionID, agent, options = {}) => {
     if (!isNonEmptyString(agent)) throw invalidInput('switchAgent', 'agent is required');
