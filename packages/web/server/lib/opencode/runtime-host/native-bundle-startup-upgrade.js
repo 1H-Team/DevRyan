@@ -3,6 +3,7 @@ import path from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
 import { createRuntimeBundleLifecycle, nativeUpgradeBundleID } from './runtime-bundle-lifecycle.js';
 import { readRuntimeBundleBinding } from './runtime-bundle-binding.js';
+import { isStaleRebindClone } from './runtime-bundle.js';
 import { recordStartupBundleUpgradeFailure } from './bundle-startup-upgrade-status.js';
 import { isNativePrimaryRuntimeVersion } from '../../../../../harness-runtime/lib/provider-recovery-policy.js';
 import { recordStartupFindings } from './startup-notices.js';
@@ -104,7 +105,10 @@ export async function upgradeSelectedNativeBundleAtStartup({ controlRoot, env = 
     selectedVersion = selected?.version ?? null;
     if (selected?.version === expected && binding.selection.transition === 'rollback') return { status: 'current' };
     const shipped = await readManifest(path.join(artifactDirectory, 'native-bundle.json'));
-    if (selected?.version === expected && (selected.sha256 === shipped?.sha256 || selected.claudeBaseManifestSha256 === shipped?.sha256)) return { status: 'current' };
+    // A cloned bundle rebound without resealing its clone proof cannot boot; the
+    // lifecycle restores its journaled launch and upgrades it again.
+    const staleClone = await isStaleRebindClone(controlRoot, binding.descriptor, binding.selection);
+    if (!staleClone && selected?.version === expected && (selected.sha256 === shipped?.sha256 || selected.claudeBaseManifestSha256 === shipped?.sha256)) return { status: 'current' };
     if (shipped?.version !== expected) return refused('bundle_upgrade_unavailable');
     if (newer(selected?.version, expected)) return refused('bundle_runtime_newer_than_application');
     upgradeStartedAt = Date.now();

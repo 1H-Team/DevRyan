@@ -5,7 +5,7 @@ import { newerClaude } from './managed-claude-installation.js';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import express from 'express';
-import { createRuntimeBundleStore } from './runtime-bundle.js';
+import { createRuntimeBundleStore, isStaleRebindClone } from './runtime-bundle.js';
 import { createRuntimeBundleCheckpoint } from './bundle-checkpoint.js';
 import { retainNativeArtifacts } from './retained-native-artifacts.js';
 import { verifyNativeRuntimeArtifacts, readNativeRuntimeManifest } from './native-artifacts.js';
@@ -198,7 +198,15 @@ export function createRuntimeBundleLifecycle({ binding, getController, closeAdmi
       try { await requestRecomposition(); }
       catch { reason = 'bundle_host_restart_failed'; throw fail(reason); }
     },
-    upgrade: input => run('upgrade', input, async current => {
+    upgrade: input => run('upgrade', input, async selected => {
+      let current = selected;
+      // An earlier build rebound a cloned bundle without resealing its clone proof,
+      // so it cannot boot. Return it to its journaled launch, then upgrade again.
+      if (!current.selection.reconciliationRequired && await isStaleRebindClone(binding.controlRoot, current.descriptor, current.selection)) {
+        const restored = await store.restoreRebind({ expectedRevision: input.expectedRevision });
+        input = { ...input, expectedRevision: restored.selection.revision };
+        current = await store.readSelected();
+      }
       const candidate = await readCandidate();
       if (candidate.manifestSha256 === current.descriptor.launch.artifactManifestSha256) throw fail('bundle_upgrade_not_available');
       return applyCandidate(input, current, candidate);

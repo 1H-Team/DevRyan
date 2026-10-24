@@ -1117,6 +1117,10 @@ test('cold startup rebinds repaired host artifacts at the same OpenCode version 
   transition:'activate',reconciliationRequired:false});
  expect(after.descriptor.launch.artifactManifestSha256).toBe(shipped);
  expect(artifactFields(after.descriptor.launch)).toEqual(artifactFields(before.descriptor.launch));
+ // The clone proof is resealed: every boot, resume and rollback check compares its target with the launch.
+ const cloneProof=()=>fs.readFile(path.join(u.controlRoot,'bundles',before.descriptor.bundleID,'sources','clone.json'),'utf8').then(JSON.parse);
+ expect(before.descriptor.sourceBundleID).toBeTruthy();
+ expect((await cloneProof()).compatibility.targetManifestSha256).toBe(shipped);
  expect(await fs.readdir(path.join(u.controlRoot,'bundles'))).toEqual(bundles);expect(u.captures).toEqual(captures);
  await expect(createRuntimeBundleStore({controlRoot:u.controlRoot,allowRecoveredInputStartup:true,runMigration:async()=>{throw Error('fixture no migration');},
   withQuiescedSource:async()=>{throw Error('fixture no checkpoint');},verifyArtifacts:async()=>{}}).verify({bundleID:before.descriptor.bundleID,phase:'resume'})).resolves.toMatchObject({integrity:'verified'});
@@ -1131,6 +1135,7 @@ test('cold startup rebinds repaired host artifacts at the same OpenCode version 
  expect(await lifecycle.rollback({expectedRevision:3})).toMatchObject({transition:'rollback',revision:4,bundleID:before.descriptor.bundleID});
  const restored=u.binding();
  expect(restored.descriptor).toEqual(before.descriptor);
+ expect((await cloneProof()).compatibility.targetManifestSha256).toBe(before.descriptor.launch.artifactManifestSha256);
  expect(restored.selection).toMatchObject({revision:4,transition:'rollback',preparedManifestSha256:before.selection.preparedManifestSha256});
  // A selected same-version rollback is an explicit choice, not a stale host to replace.
  await u.launch(u.pinned,async()=>{throw Error('Explicit rollback must be retained');});

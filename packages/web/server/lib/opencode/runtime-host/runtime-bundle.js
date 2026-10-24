@@ -257,6 +257,11 @@ const selection = value => {
 // place. Its journal keeps byte copies of the previous ones; the selector is the commit.
 const REBIND_PROTOCOL='devryan.bundle.rebind/1';
 const rebindFiles=['descriptor.json','config/reviewed-plugins.json','prepared.json'];
+// A cloned bundle's clone proof names its target manifest, which every boot,
+// resume and rollback check compares with the launch, so a rebind reseals it.
+// Journals written before this carry only the three launch documents.
+const CLONE_PROOF='sources/clone.json';
+const journaledFiles=intent=>Object.hasOwn(intent.previous,CLONE_PROOF)?[...rebindFiles,CLONE_PROOF]:rebindFiles;
 const rebindRoot=controlRoot=>path.join(controlRoot,'rebind');
 const rebindCopy=(controlRoot,relative)=>path.join(rebindRoot(controlRoot),'previous-'+path.basename(relative));
 const readOwnedBytes=async file=>{
@@ -270,16 +275,30 @@ const readRebindIntent=async controlRoot=>{
   try{value=await readBundleJSONOwned(path.join(rebindRoot(controlRoot),'intent.json'));}catch(error){if(error.code==='ENOENT')return null;throw error;}
   if(!isRecord(value)||value.schema!==1||value.protocol!==REBIND_PROTOCOL||!['pending','committed','abandoned','restoring','restored'].includes(value.state)
     ||!validID(value.bundleID)||!isRecord(value.previous)||!isRecord(value.next)
-    ||rebindFiles.some(file=>!validHash(value.previous[file])||!validHash(value.next[file])))throw fail('bundle_rebind_intent_invalid');
+    ||rebindFiles.some(file=>!validHash(value.previous[file])||!validHash(value.next[file]))
+    ||Object.hasOwn(value.previous,CLONE_PROOF)!==Object.hasOwn(value.next,CLONE_PROOF)
+    ||(Object.hasOwn(value.previous,CLONE_PROOF)&&(!validHash(value.previous[CLONE_PROOF])||!validHash(value.next[CLONE_PROOF]))))throw fail('bundle_rebind_intent_invalid');
   selection(value.sourceSelection);selection(value.selection);
   if(['restoring','restored'].includes(value.state))selection(value.restoreSelection);
   return value;
 };
 const saveRebindIntent=(controlRoot,value)=>saveBundleJSONOwned(path.join(rebindRoot(controlRoot),'intent.json'),value);
+/** Whether `selection` is the committed result of an artifact rebind (read-only). */
+export const isCommittedRebindSelection=async(controlRoot,selection)=>{
+  const intent=await readRebindIntent(controlRoot);
+  return intent?.state==='committed'&&canonicalJSON(intent.selection)===canonicalJSON(selection);
+};
+/** Whether the selected cloned bundle was rebound by a build that left its clone
+ * proof naming the previous manifest; such a launch cannot boot (read-only). */
+export const isStaleRebindClone=async(controlRoot,descriptor,selection)=>{
+  if(!descriptor?.sourceBundleID||!await isCommittedRebindSelection(controlRoot,selection))return false;
+  const clone=await readBundleJSONOwned(path.join(controlRoot,'bundles',descriptor.bundleID,CLONE_PROOF));
+  return clone?.compatibility?.targetManifestSha256!==descriptor.launch.artifactManifestSha256;
+};
 /** Puts each launch document of the bundle back to its journaled previous bytes. */
 const restoreRebindFiles=async (controlRoot,intent)=>{
   const root=path.join(controlRoot,'bundles',intent.bundleID);
-  for(const relative of rebindFiles){
+  for(const relative of journaledFiles(intent)){
     const file=path.join(root,relative);
     if(await fileHashOwned(file)===intent.previous[relative])continue;
     const bytes=await readOwnedBytes(rebindCopy(controlRoot,relative));
@@ -836,13 +855,18 @@ export function createRuntimeBundleStore(options) {
         if (canonicalJSON(selected?.selection) !== canonicalJSON(current.selection) || selected.selection.revision !== expectedRevision) throw fail('bundle_selection_revision_conflict');
         await assertRebindable(selected);
         const root = path.join(controlRoot, 'bundles', bundleID);
-        const previous = Object.fromEntries(await Promise.all(rebindFiles.map(async file => [file, await readOwnedBytes(path.join(root, file))])));
+        const files = selected.descriptor.sourceBundleID ? [...rebindFiles, CLONE_PROOF] : rebindFiles;
+        const previous = Object.fromEntries(await Promise.all(files.map(async file => [file, await readOwnedBytes(path.join(root, file))])));
         if (sha256(previous['prepared.json']) !== selected.selection.preparedManifestSha256) throw fail('bundle_selected_evidence_changed');
         const value = descriptor(controlRoot, bundleID, { ...selected.descriptor, launch: { ...selected.descriptor.launch,
           controllerBinary: artifacts.controllerBinary, writerBinary: artifacts.writerBinary,
           artifactManifestPath: artifacts.artifactManifestPath, artifactManifestSha256: artifacts.artifactManifestSha256 } });
         const descriptorBytes = Buffer.from(canonicalJSON(value) + '\n');
-        const replaced = { 'descriptor.json': sha256(descriptorBytes), 'config/reviewed-plugins.json': sha256(plugins) };
+        const clone = previous[CLONE_PROOF] ? JSON.parse(previous[CLONE_PROOF].toString('utf8')) : null;
+        const cloneBytes = clone ? Buffer.from(canonicalJSON({ ...clone, compatibility: { ...clone.compatibility,
+          targetManifestSha256: artifacts.artifactManifestSha256 } }) + '\n') : null;
+        const replaced = { 'descriptor.json': sha256(descriptorBytes), 'config/reviewed-plugins.json': sha256(plugins),
+          ...(cloneBytes ? { [CLONE_PROOF]: sha256(cloneBytes) } : {}) };
         const rows = list => list.map(row => replaced[row.path] ? { ...row, sha256: replaced[row.path] } : row);
         const prepared = JSON.parse(previous['prepared.json'].toString('utf8'));
         const preparedBytes = Buffer.from(canonicalJSON({ ...prepared, descriptorSha256: replaced['descriptor.json'],
@@ -851,15 +875,16 @@ export function createRuntimeBundleStore(options) {
           immutableFiles: rows(prepared.immutableFiles), initialFiles: rows(prepared.initialFiles) }) + '\n');
         const next = { ...selected.selection, revision: selected.selection.revision + 1, transition: 'activate',
           reconciliationRequired: false, preparedManifestSha256: sha256(preparedBytes) };
-        const rebound = { 'descriptor.json': descriptorBytes, 'config/reviewed-plugins.json': plugins, 'prepared.json': preparedBytes };
-        const hashes = bytes => Object.fromEntries(rebindFiles.map(file => [file, sha256(bytes[file])]));
+        const rebound = { 'descriptor.json': descriptorBytes, 'config/reviewed-plugins.json': plugins, 'prepared.json': preparedBytes,
+          ...(cloneBytes ? { [CLONE_PROOF]: cloneBytes } : {}) };
+        const hashes = bytes => Object.fromEntries(files.map(file => [file, sha256(bytes[file])]));
         const intent = { schema: 1, protocol: REBIND_PROTOCOL, state: 'pending', bundleID,
           sourceSelection: selected.selection, selection: next, previous: hashes(previous), next: hashes(rebound) };
         await saveRebindIntent(controlRoot, intent);
         try {
-          for (const file of rebindFiles) await writeOwnedBytes(rebindCopy(controlRoot, file), previous[file]);
+          for (const file of files) await writeOwnedBytes(rebindCopy(controlRoot, file), previous[file]);
           await scope?.assertHeld?.();
-          for (const file of rebindFiles) await writeOwnedBytes(path.join(root, file), rebound[file]);
+          for (const file of files) await writeOwnedBytes(path.join(root, file), rebound[file]);
           await verify({ bundleID, phase: 'resume', allowOwnedContinuations: false });
           await scope?.assertHeld?.();
         } catch (error) {
@@ -898,7 +923,7 @@ export function createRuntimeBundleStore(options) {
         if (intent?.state !== 'committed' || canonicalJSON(intent.selection) !== canonicalJSON(selected.selection)) throw fail('bundle_rollback_target_invalid');
         // The data is unchanged; only the journaled bytes must still be the previous launch.
         await verify({ bundleID: intent.bundleID, phase: 'resume', allowOwnedContinuations: false });
-        for (const file of rebindFiles) if (sha256(await readOwnedBytes(rebindCopy(controlRoot, file))) !== intent.previous[file]) throw fail('bundle_rebind_recovery_changed');
+        for (const file of journaledFiles(intent)) if (sha256(await readOwnedBytes(rebindCopy(controlRoot, file))) !== intent.previous[file]) throw fail('bundle_rebind_recovery_changed');
         const restored = { ...selected.selection, revision: selected.selection.revision + 1, transition: 'rollback',
           reconciliationRequired: false, preparedManifestSha256: intent.previous['prepared.json'] };
         await scope?.assertHeld?.();

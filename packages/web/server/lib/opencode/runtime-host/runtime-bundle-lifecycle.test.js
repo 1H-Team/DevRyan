@@ -18,7 +18,7 @@ afterEach(async () => { for (const root of roots.splice(0)) await fs.rm(root, { 
 
 async function fixture({ unknownController = false, unsettledController = false, failDrain = false, drainFailures = 0, failProjection = false,
   failRestart = false, failQuiesce = false, failCapture = false, failRetain = false, failStore = null, reconciliationRequired = false,
-  retainCheckpoint, beforeReadSelected, beforeDrain, neverStarted = false, assertOwner, claude = {}, sameCore = false, rebound = false } = {}) {
+  retainCheckpoint, beforeReadSelected, beforeDrain, neverStarted = false, assertOwner, claude = {}, sameCore = false, rebound = false, cloned = false, staleClone = false } = {}) {
   const root = await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()), 'runtime-bundle-lifecycle-')); roots.push(root);
   const launch = { opencodeDatabasePath: path.join(root, 'a.db'), webDataDirectory: path.join(root, 'web'),
     webConfigDirectory: path.join(root, 'web-config'), opencodeConfigDirectory: path.join(root, 'config'),
@@ -27,8 +27,18 @@ async function fixture({ unknownController = false, unsettledController = false,
     reviewedNativeConfigPath: path.join(root, 'reviewed.json') };
   await fs.writeFile(launch.opencodeDatabasePath, 'fixture database');
   for (const directory of [launch.webDataDirectory, launch.webConfigDirectory, launch.opencodeConfigDirectory]) await fs.mkdir(directory);
-  const descriptor = { bundleID: 'A', generation: 2, launch, projectMap: [{ sourceDirectory: root, targetDirectory: root, mode: 'identity' }] };
-  const binding = { controlRoot: root, descriptor, selection: { revision: 1, selectedBundleID: 'A', previousBundleID: 'prior', reconciliationRequired } };
+  const descriptor = { bundleID: 'A', generation: 2, launch, projectMap: [{ sourceDirectory: root, targetDirectory: root, mode: 'identity' }], ...(cloned ? { sourceBundleID: 'prior' } : {}) };
+  const binding = { controlRoot: root, descriptor, selection: { revision: 1, selectedBundleID: 'A', previousBundleID: 'prior', reconciliationRequired,
+    ...(staleClone ? { schema: 1, transition: 'activate', preparedManifestSha256: 'b'.repeat(64) } : {}) } };
+  if (staleClone) {
+    // What an earlier build left: a committed rebind whose clone proof still names the pre-rebind manifest.
+    const hashes = { 'descriptor.json': '1'.repeat(64), 'config/reviewed-plugins.json': '2'.repeat(64), 'prepared.json': '3'.repeat(64) };
+    await fs.mkdir(path.join(root, 'rebind'), { recursive: true });
+    await fs.writeFile(path.join(root, 'rebind', 'intent.json'), JSON.stringify({ schema: 1, protocol: 'devryan.bundle.rebind/1', state: 'committed', bundleID: 'A',
+      sourceSelection: { ...binding.selection, revision: 0 + 1 }, selection: binding.selection, previous: hashes, next: hashes }));
+    await fs.mkdir(path.join(root, 'bundles', 'A', 'sources'), { recursive: true });
+    await fs.writeFile(path.join(root, 'bundles', 'A', 'sources', 'clone.json'), JSON.stringify({ compatibility: { targetManifestSha256: '9'.repeat(64) } }));
+  }
   let selected = structuredClone({ descriptor, selection: binding.selection });
   let exited = false, prepared, callbacks, remainingDrainFailures = drainFailures;
   // The selection a committed rebind wrote; its rollback restores the previous launch.
@@ -183,6 +193,20 @@ test('an unchanged OpenCode core rebinds the selected bundle in place, with no d
   await expect(failed.lifecycle.upgrade({ expectedRevision: 1 })).rejects.toMatchObject({ code: 'bundle_rebind_write_failed' });
   expect(await failed.lifecycle.inspect()).toMatchObject({ state: 'held', revision: 1, reason: 'bundle_rebind_write_failed' });
   expect(failed.events).not.toContain('prepare');
+});
+
+test('a cloned bundle at an unchanged core still rebinds in place', async () => {
+  const value = await fixture({ sameCore: true, cloned: true });
+  expect(await value.lifecycle.upgrade({ expectedRevision: 1 })).toMatchObject({ state: 'restart_required', mode: 'rebind' });
+  expect(value.events).toContain('rebind');
+});
+
+test('a cloned bundle rebound without resealing its clone proof is restored, then rebound again', async () => {
+  const value = await fixture({ sameCore: true, cloned: true, rebound: true, staleClone: true });
+  expect(await value.lifecycle.upgrade({ expectedRevision: 1 })).toMatchObject({ state: 'restart_required', mode: 'rebind' });
+  const restore = value.events.indexOf('restore-rebind'), rebind = value.events.indexOf('rebind');
+  expect(restore).toBeGreaterThanOrEqual(0);
+  expect(rebind).toBeGreaterThan(restore);
 });
 
 test('rollback of a committed rebind restores its previous launch without credential projection', async () => {

@@ -83,4 +83,6 @@ export function createRuntimeBundleStore(options: RuntimeBundleStoreOptions): {
 };
 /** Cold bootstrap only, before any binding read: settles an interrupted rebind or rebind rollback. */
 export function recoverRuntimeBundleRebind(input: { readonly controlRoot: string }): Promise<'committed' | 'abandoned' | 'restored' | null>;
+export function isCommittedRebindSelection(controlRoot: string, selection: RuntimeBundleSelection): Promise<boolean>;
+export function isStaleRebindClone(controlRoot: string, descriptor: RuntimeBundleDescriptor, selection: RuntimeBundleSelection): Promise<boolean>;
 export function readRuntimeBundleDescriptor(controlRoot: string, bundleID: string, options?:Pick<RuntimeBundleStoreOptions,'windowsOwner'>): Promise<RuntimeBundleDescriptor>;
