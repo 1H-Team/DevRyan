@@ -420,7 +420,10 @@ while dependencies, the overlay, and the project's own caches stay read-only
 (`DEVRYAN_MODULE_CACHE_OVERLAY=0` restores the direct link). Walks yield between tree levels and batches;
 diffs and hunk bookkeeping have fixed work budgets past which they emit exact
 but coarser replacements. The background first build (`warm`) is a single
-budgeted pass that real calls never treat as their observation. Maintenance and
+budgeted pass that real calls never treat as their observation. Every 32 rows
+under the ledger lock it checks for a queued call; when one waits, it commits
+what it installed and carries the rest to its next batch, so a new worktree's
+first build no longer holds tool receipts for 10–15 s. Maintenance and
 input-classification failures reach `onDiagnostic` as codes.
 
 `createSessionRevertCoordinator` requires both the legacy conversation-only API

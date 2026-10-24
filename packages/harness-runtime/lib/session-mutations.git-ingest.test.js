@@ -115,6 +115,29 @@ test('a writer committing between first-build batches is re-read, not overwritte
   expect((await f.runtime.capturedSessionState({ directory: f.directory, sessionID: 'other' })).captured).toBe(true);
 });
 
+test('a warm first build yields its lock to a queued call and still installs every file', async () => {
+  // One 1024-row initial batch would hold the lock for the whole build.
+  const f = await fixture(); await manyFiles(f, 150);
+  const lstat = fs.lstat.bind(fs);
+  let seen = 0, queued = null, called = false, stampedAfterCall = 0;
+  const probe = spyOn(fs, 'lstat').mockImplementation(async (file, ...rest) => {
+    if (called && /f\d+\.txt$/.test(String(file))) stampedAfterCall += 1;
+    // Inspection stats each file three times; the fourth is the under-lock check.
+    if (!queued && String(file).endsWith(`${path.sep}f100.txt`) && ++seen === 4) {
+      queued = f.runtime.registerPrompt({ directory: f.directory, sessionID: 'other', userMessageID: 'up' }).then(() => { called = true; });
+    }
+    return lstat(file, ...rest);
+  });
+  try { expect(await f.runtime.warm({ directory: f.directory })).toMatchObject({ built: true }); }
+  finally { probe.mockRestore(); }
+  expect(queued).not.toBeNull(); await queued;
+  // The call ran between batches: the warm still had rows to stamp after it.
+  expect(stampedAfterCall).toBeGreaterThan(0);
+  const state = await ledgerState(f);
+  expect(Object.keys(state).length).toBe(153);
+  expect(state[`d${149 % 17}/e${149 % 5}/f149.txt`].text).toBe('line 149\n'.repeat(2));
+  expect((await f.runtime.capturedSessionState({ directory: f.directory, sessionID: 'other' })).captured).toBe(true);
+});
 test('warm builds a missing ledger once, skips non-repositories, and a real call reuses it', async () => {
   const f = await fixture(); await manyFiles(f, 40);
   const plain = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-plain-')); roots.push(plain);

@@ -66,6 +66,9 @@ const INSTALL_BATCH_BYTES = 32 * 1024 * 1024;
 const WARM_MAX_FILES = 20_000;
 const WARM_MAX_BYTES = 512 * 1024 * 1024;
 const WARM_BATCH_GAP_MS = 25;
+// A warm batch checks this often whether a call is queued for its lock, then
+// commits what it installed and yields (an initial batch held it 10–15 s).
+const WARM_YIELD_ROWS = 32;
 // Lock timings outside a journaled context reach the journal from this long.
 const LOCK_TIMING_SLOW_MS = 250;
 // Kill switches: set to exactly '0' to restore the previous behaviour.
@@ -345,7 +348,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
   };
   // Callers queued behind a repository's lock follow its current holder's
   // progress, so waiting behind productive work is not reported as a stall.
-  const queueMeters = new Map();
+  const queueMeters = new Map(), queuedCalls = new Map();
   const locked = async (requested, fn, { requireExisting = false, operation: explicitOperation, sessionID: explicitSessionID, assertCurrent, snapshotMiss } = {}) => {
     assertCurrent?.();
     checkExecutionAdmission();
@@ -362,7 +365,10 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     const previous = queues.get(directory) ?? Promise.resolve();
     let queueMeter = queueMeters.get(directory);
     if (!queueMeter) { queueMeter = { progress: Date.now(), waiters: 0, following: undefined }; queueMeters.set(directory, queueMeter); }
-    const ready = executionPhase('queue_wait', () => waitForExecutionQueue(previous.catch(() => {}), queueMeter));
+    // Callers queued for this lock (not `waiters`, which marks I/O-slot progress).
+    queuedCalls.set(directory, (queuedCalls.get(directory) ?? 0) + 1);
+    const ready = executionPhase('queue_wait', () => waitForExecutionQueue(previous.catch(() => {}), queueMeter))
+      .finally(() => { const left = queuedCalls.get(directory) - 1; if (left) queuedCalls.set(directory, left); else queuedCalls.delete(directory); });
     const work = ready.then(async () => {
       checkExecutionAdmission();
       if (process.platform === 'win32') {
@@ -887,7 +893,9 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
             const stamps = restamp
               ? await mapBounded(rows, (row) => { checkExecutionAdmission(); return mutationFileStamp(repo.directory, row.file); })
               : null;
+            let done = rows.length;
             for (const [index, row] of rows.entries()) {
+              if (warm && index && index % WARM_YIELD_ROWS === 0 && queuedCalls.has(repo.directory)) { done = index; break; }
               const doc = latest.get(row.file);
               if (JSON.stringify(doc?.published ?? null) !== JSON.stringify(row.published)
                 || (stamps ? stamps[index] : await mutationFileStamp(repo.directory, row.file)) !== (row.entry?.observation ?? null)) { dirty = true; continue; }
@@ -904,14 +912,20 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
               if (operation) { operation.files = [changed.id]; repo.db.set(key('operations', operation.id), operation); }
               executionProgress();
             }
-            written = { db: repo.db, latest, disabled };
+            written = { db: repo.db, latest, disabled, done };
           }, { operation: warm ? 'ledger_warm_install' : 'observation_install', ...(warm ? { assertCurrent } : {}) });
           // The store's tree is the one this batch committed (or read, if it
           // changed nothing); the next batch reuses state only from that tree.
           carried = fast && written ? { tree: written.db.tree, latest: written.latest, disabled: written.disabled } : null;
           executionProgress();
-          installed += rows.length;
-          rows = []; rowBytes = 0; changedRows = 0;
+          // A yielded warm batch keeps its uninstalled rows for the next one.
+          const done = written?.done ?? rows.length;
+          installed += done;
+          rows = rows.slice(done); rowBytes = 0; changedRows = 0;
+          for (const row of rows) {
+            rowBytes += row.entry && !row.entry.whole ? row.entry.size : 0;
+            if (!equal(row.published, row.entry)) changedRows += 1;
+          }
           if (warm) await new Promise((resolve) => setTimeout(resolve, WARM_BATCH_GAP_MS));
         };
         const ordered = [...names];
@@ -941,7 +955,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
             if (ingestedBytes > maxBytes) { skipped = 'too-large'; break; }
           }
         }
-        await install();
+        while (rows.length) await install();
       } while (dirty && !warm && !skipped);
       // Counts only (no paths): shows what drove a large reconciliation, such
       // as a checkout or tool that rewrote many files with identical bytes.
