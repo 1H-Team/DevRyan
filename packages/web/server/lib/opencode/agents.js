@@ -690,6 +690,11 @@ function mergeSlimAgentLayers(installedAgent, configAgent) {
     ...configAgent,
     prompt: configAgent.prompt ?? installedAgent.prompt,
   };
+  // A configured model owns its effort: the installed file's variant describes
+  // its own model, so it must not survive a Provider default selection.
+  if (configAgent.model && !Object.prototype.hasOwnProperty.call(configAgent, 'variant')) {
+    delete merged.variant;
+  }
   if (installedAgent.__path) {
     Object.defineProperty(merged, '__path', { value: installedAgent.__path, enumerable: false });
   }

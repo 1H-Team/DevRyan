@@ -13,8 +13,11 @@ test('real native graph classifies HTTP model encoding failure and isolates the 
     try {
       const original = path.join(repository, 'scripts/opencode-v2-native/controller-integrations.graph-fixture.mjs');
       let source = await fs.readFile(original, 'utf8');
-      source = "import {createNativeCatalogDiagnostics} from " + JSON.stringify(pathToFileURL(path.join(repository,'packages/web/server/lib/opencode/runtime-host/native-catalog-diagnostics.ts')).href) + ";\nconst graphDiagnostics=createNativeCatalogDiagnostics();\n" + source;
+      source = "import {createNativeCatalogDiagnostics,nativeCatalogEncodeLogger} from " + JSON.stringify(pathToFileURL(path.join(repository,'packages/web/server/lib/opencode/runtime-host/native-catalog-diagnostics.ts')).href) + ";\nconst graphDiagnostics=createNativeCatalogDiagnostics();\n" + source;
       source = source.replaceAll('new Set([reportCause])', 'new Set([reportCause,...Context.get(graphDiagnostics.context,ErrorReporter.CurrentErrorReporters)])');
+      // As in production bootstrap: 2.2.0 reports a response encoding failure only through its logs.
+      expect(source.split('Effect.provide(Logger.layer([Logger.make(entry => {').length).toBe(2);
+      source = source.replace('Effect.provide(Logger.layer([Logger.make(entry => {', 'Effect.provide(Logger.layer([nativeCatalogEncodeLogger,Logger.make(entry => {');
       const start = source.indexOf('  const catalog = await assertNativeCatalog('), end = source.indexOf('} catch (error) { primaryFailure');
       expect(start).toBeGreaterThan(0); expect(end).toBeGreaterThan(start);
       const setupStart=source.indexOf('  server = Bun.serve('),setupEnd=source.indexOf("  assert.equal((await call(directories[0], '/api/integration/openai')).connections");
@@ -33,8 +36,8 @@ test('real native graph classifies HTTP model encoding failure and isolates the 
     assert.ok(!body.data.some(model=>model.id==='synthetic-invalid'));
     result={status:200,invalidRemoved:true};
   }else{
-    await assert.rejects(inspect,/^Error: native_catalog_read_failed_model_http_400_response_schema_invalid$/);
-    result={status:400,cause:'response_schema_invalid'};
+    await assert.rejects(inspect,/^Error: native_catalog_read_failed_model_http_500_response_schema_invalid$/);
+    result={status:500,cause:'response_schema_invalid'};
   }
 ` + source.slice(end);
       if (!guarded) source = source.replace('...factory.overrides,...compatibility.overrides,', '...factory.overrides,');
@@ -47,7 +50,7 @@ test('real native graph classifies HTTP model encoding failure and isolates the 
       if (!child.stdout || typeof child.stdout === 'number' || !child.stderr || typeof child.stderr === 'number') throw Error('Owned pipes required');
       const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
       expect({ code, errors: stderr.split('\n').filter(line => line && !/^level=(?:error|warn) msg=(?:response_schema_invalid|model_response_schema_invalid) name=(?:HttpApiSchemaError|SchemaError) schemaPath=/.test(line)) }).toEqual({ code: 0, errors: [] });
-      expect(JSON.parse(stdout.trim().split('\n').at(-1)!)).toEqual(guarded ? { status: 200, invalidRemoved: true } : { status: 400, cause: 'response_schema_invalid' });
+      expect(JSON.parse(stdout.trim().split('\n').at(-1)!)).toEqual(guarded ? { status: 200, invalidRemoved: true } : { status: 500, cause: 'response_schema_invalid' });
     } finally {
       if (child && child.exitCode === null) { child.kill(); await child.exited; }
       await fs.rm(root, { recursive: true, force: true });

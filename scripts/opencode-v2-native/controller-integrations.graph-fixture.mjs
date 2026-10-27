@@ -159,7 +159,7 @@ const rpc = async (method, input, context) => {
 };
 const bridge = createRemoteNativeAdmissionBridge({ rpc });
 const factory = createControllerIntegrations({ controllerInstanceID: controller.instanceID, configurationSnapshot: snapshot, rpc,
-  registrationOrigin: nativePlugins.get('devryan.remote-mcp'), reviewedNativeOpenAiOrigin:nativePlugins.get('opencode.provider.chatgpt'), reviewedNativeCodexOrigin:nativePlugins.get('opencode.provider.openai'), reviewedConfigurationOrigins: new Map([...nativePlugins].filter(([id]) => ['opencode.config.mcp', 'opencode.mcp.codemode.defaults', 'opencode.provider.opencode'].includes(id))),
+  registrationOrigin: nativePlugins.get('devryan.remote-mcp'), reviewedNativeOpenAiOrigin:nativePlugins.get('opencode.provider.chatgpt'), reviewedNativeCodexOrigin:nativePlugins.get('opencode.provider.openai'), reviewedConfigurationOrigins: new Map([...nativePlugins].filter(([id]) => ['opencode.config.mcp', 'opencode.mcp.codemode.defaults', 'opencode.provider.opencode', 'opencode.config.policy'].includes(id))),
   isBound: () => Boolean(nativeURL), isExecutionReady: () => ready, executeOwnedFallback: () => Effect.die(new Error('Unexpected executable tool')),
   authorizeMcpCall: (_invocation, _binding, action) => action });
 const gates = createAdmissionGates({ bridge, nativePlugins, providerHooks: inner => { const actual=factory.providerHooks(inner); return {...actual,trigger:(domain,name,event)=>actual.trigger(domain,name,event).pipe(Effect.tap(result=>Effect.promise(async()=>{
@@ -254,7 +254,7 @@ try {
   result = { integrationLocations: 2, nativeOAuthCommit: true, revokedAttemptRefused: false, closedHandlesRefused: false,
     providerKinds: [], physicalReceipts: 0, permitsWereOwned: true };
   // Provider lanes are added only through actual native Session services below.
-  const deps = { getRuntime: () => ({ generation: 2, version: '2.1.4', baseUrl: nativeURL, epoch: 1 }), getAuthHeaders: () => admissionOwner.requestHeaders(),
+  const deps = { getRuntime: () => ({ generation: 2, version: '2.2.0', baseUrl: nativeURL, epoch: 1 }), getAuthHeaders: () => admissionOwner.requestHeaders(),
     withNativeWebOperation: (spec, action) => admissionOwner.withWebOperation(spec, action) };
   const admission = createOpenCodeAdmission(deps, { nativeOwner: admissionOwner });
   const client = createOpenCodeClient({ ...deps, getAdmission: () => admission });

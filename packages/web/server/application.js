@@ -484,6 +484,7 @@ async function constructWebHost(options = {}) {
     normalizeDirectoryPath,
     getReadSettingsFromDiskMigrated: () => readSettingsFromDiskMigrated,
     sanitizeProjects,
+    getDefaultDirectory: () => openCodeWorkingDirectory,
   });
 
   const resolveDirectoryCandidate = (...args) => projectDirectoryRuntime.resolveDirectoryCandidate(...args);

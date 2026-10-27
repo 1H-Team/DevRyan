@@ -25,7 +25,7 @@ for(const controllerComposition of [false,true])test((controllerComposition?'con
       import { Plugin } from '@opencode/core/plugin';
       import { Command } from '@opencode/core/command';
       import { PluginHooks } from '@opencode/core/plugin/hooks';
-      import { Message } from '@opencode/ai/schema/messages';
+      import { Message } from '@opencode/ai/effect';
       const { OpenCode } = await import(${JSON.stringify(sdk)});
       const { default: packagePlugin, bindReviewedSlimConfiguration,bindReviewedSlimHost,createWebfetchTool,ast_grep_search,ast_grep_replace,createDeepworkCommandHook,createLoopCommandHook,createReflectCommandHook } = await import(${JSON.stringify(slim)});
       const { createNativeSlimRuntime:createRuntime,currentNativeSlimHookAuthority } = await import(${JSON.stringify(`${host}native-slim-runtime.ts`)});

@@ -615,7 +615,7 @@ discard them when the call ends: measured on 2026-09-30 at 10 to 20 seconds and
 - Returned API:
   - `resolveDirectoryCandidate(value)`
   - `validateDirectoryPath(candidate)`: validates that the candidate exists as a directory and returns its filesystem realpath so request-scoped OpenCode calls use the same canonical directory key as session records.
-  - `resolveProjectDirectory(req)`: resolves managed assignments even when their intended worktree directory has not been provisioned yet; ordinary local/unassigned paths still require an existing directory.
+  - `resolveProjectDirectory(req)`: resolves managed assignments even when their intended worktree directory has not been provisioned yet; ordinary local/unassigned paths still require an existing directory. Without a requested directory it uses `lastDirectory`, then the active project, then (only when no project is registered) `getDefaultDirectory()`, the host's base native location, so a fresh profile's global bootstrap reads such as `GET /api/path` succeed.
   - `resolveOptionalProjectDirectory(req)`: applies the same missing-assignment behavior when an optional directory was supplied.
 
 ## Public exports (config-entity-routes.js)
@@ -933,7 +933,7 @@ passes fresh verified artifacts privately to the bundle loader; this receipt
 never extends the serialized verification result. Reviewed config bytes and
 the controller's immediate pre-spawn artifacts still receive their own checks.
 
-The current package and compiled host pin is OpenCode 2.1.4.
+The current package and compiled host pin is OpenCode 2.2.0.
 Cold startup compares the selected and shipped artifact manifest digests even
 when their OpenCode versions match, so a repaired DevRyan host is activated once
 through the existing verified clone, credential checkpoint and selector CAS.
@@ -945,10 +945,13 @@ accepts a retained bundle of any OpenCode 2.x release for rollback
 (`isNativeOpenCodeVersion`), each using its matching controller; startup never runs
 one above the host pin. Cross-version credential capture or projection cannot
 substitute a controller: exact OpenCode version, core digest and existing manifest
-checks still apply. The build pins PTY 0.3.1 bytes and the 2.1.4 compaction and finalization observation sources
-(`location-4fspmagn.js`, `location-2cjxs9ry.js`). 2.1.4 resolves the compaction
+checks still apply. The build pins PTY 0.3.1 bytes and the 2.2.0 compaction and finalization observation sources,
+found by content (`scripts/native-core-sources.mjs`) and gated by exact SHA-256, and
+keeps Photon image resizing on the main thread in every installed core copy. 2.2.0 resolves the compaction
 model's ceiling inside `selectModel`, so the compaction observer recomputes it with
-the same pure `calculateCeiling` from that selected model. A pinned
+the same pure `calculateCeiling` from that selected model. 2.2.0 also lets a
+trigger carry its own prompt estimate into the budget and `due` check; the
+observer records that estimate (`trigger.estimate ?? estimatePrompt(context)`). A pinned
 `@opencode/schema` agent-defaults transform restores the 2.0.24
 `external_directory: * → ask` default that 2.0.26 removed.
 
@@ -980,7 +983,7 @@ binding; physical exits are recorded before fallible owner cleanup.
 Native managed catalog reads use verified tool or recovery authority rather than a browser principal. Catalog access grants no execution rights. Managed Cursor prompt grants derive immutable read-only policy from the durable task; SDK create/resume permits only `read`, `grep`, `glob`, and `ls`, excludes task/MCP delegation, and includes policy in agent cache identity. Worker payloads carry this host-owned boolean, never a prompt-body override. Model discovery preserves SDK `reasoning_effort` choices; saved Medium resolves only to an actual Medium variant and never falls back to High or generic thinking.
 
 OpenCode 2.0.30 and 2.0.32 use Effect 4.0.1 and its stable HTTP/process/socket exports.
-The host pins 2.1.4. Native plugin registration order
+The host pins 2.2.0. Native plugin registration order
 matches the installed core inventory. HTTP schema errors remain sanitized
 startup evidence even when Effect marks them ignored for general reporting.
 The project archive migration raises the clone migration level to 2: existing
@@ -1007,7 +1010,20 @@ retained database. 2.1.2, 2.1.3 and 2.1.4 add no migration and stay at level 3, 
 and provider/model references through `SessionHistory`; helper webfetch history
 uses the resolved model reference. The reviewed compaction observer follows
 `isNativeCompaction` and the finalization observer retains the original native
-Step writes. The generated 2.1.4 OpenAPI inventory has 149 operations; the saved-permission list, PATCH and DELETE are server-only, reached through the Saved Approvals route (`v2/saved-permission-facade.js`).
+Step writes. The generated 2.2.0 OpenAPI inventory has 156 operations; the saved-permission list, PATCH and DELETE are server-only, reached through the Saved Approvals route (`v2/saved-permission-facade.js`).
+
+OpenCode 2.2.0 is clone level 4. It adds the `blob`/`blob_ref` media store and
+drops `session_pending`, which 2.1.x declared but never wrote; host reads of
+queued input use `session_inbox` only, and removal dispositions keep an empty
+`pendingIDs`. A 2.2.0 database cannot clone into a 2.1.x reader. A 2.1.x source
+is still checked against its own level 3 layout. A 2.2.0 controller's fresh database
+and a retained 2.0.32 schema it migrates in place share one reviewed layout; no
+legacy-imported 2.2.0 layout is measured yet, so such a database is not a
+reviewed clone source until a later upgrade measures it. DevRyan owns the whole
+`experimental` block, so `experimental.media_blob` stays off and tool media stays
+inline. `@opencode/ai` 2.2.0 moved its Effect API to `@opencode/ai/effect` and
+stopped exporting `schema/options`; `native-observation.ts` imports the SDK's
+`mergeProviderOptions` and `DEFAULT_HTTP_TIMEOUT_MS` from that module by path.
 
 Under ChatGPT browser or headless sign-in, 2.1.4 enables only `gpt-5.6-*` and
 later OpenAI models (not `gpt-5.6` itself); `gpt-5.5` and `gpt-5.3-codex-spark`

@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { describe, test } from 'node:test';
 
 import { stopChildTree } from './dev-child-utils.mjs';
-import { resolveDevDataDirectory } from './dev-data-directory.mjs';
+import { resolveDevDataDirectory, resolveDevRuntimeEnvironment } from './dev-data-directory.mjs';
 import { shouldRestartDevChild } from './dev-restart-policy.mjs';
 import { buildPlan, testUnitsForPlan } from './validate.mjs';
 
@@ -84,6 +86,26 @@ describe('resolveDevDataDirectory', () => {
       scope: 'electron',
     }), first);
     assert.equal(path.dirname(path.dirname(path.dirname(first))), '/tmp/devryan-tests');
+  });
+});
+
+describe('resolveDevRuntimeEnvironment', () => {
+  test('gives dev servers a private, symlink-free state home', (t) => {
+    const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-dev-runtime-'));
+    t.after(() => fs.rmSync(scratch, { recursive: true, force: true }));
+    const devDataDirectory = path.join(scratch, 'web-hmr');
+    const environment = resolveDevRuntimeEnvironment({ env: { XDG_STATE_HOME: '/Users/person/.local/state' }, devDataDirectory });
+
+    assert.equal(environment.XDG_STATE_HOME, fs.realpathSync(path.join(devDataDirectory, 'xdg-state')));
+    assert.equal(fs.realpathSync(environment.XDG_STATE_HOME), environment.XDG_STATE_HOME);
+    assert.deepEqual(resolveDevRuntimeEnvironment({ env: {}, devDataDirectory }), environment);
+  });
+
+  test('leaves an explicit runtime bundle root to the caller', () => {
+    assert.deepEqual(resolveDevRuntimeEnvironment({
+      env: { DEVRYAN_RUNTIME_BUNDLE_ROOT: '/owned/bundles' },
+      devDataDirectory: '/never/created',
+    }), {});
   });
 });
 

@@ -85,6 +85,26 @@ describe('agent model overrides', () => {
     expect(saved.model).toEqual(preview.config.model);
   });
 
+  it('keeps Provider default when the installed agent file carries its own variant', async () => {
+    const slimConfigDirectory = path.dirname(userConfigPath);
+    await writeJson(path.join(slimConfigDirectory, 'devryan-agents.json'), {
+      preset: 'openai',
+      presets: { openai: { explorer: { model: 'openai/gpt-5.4-mini', variant: 'low' } } },
+      agents: { explorer: { model: 'opencode/nemotron-3.5-lightning-free' } },
+    });
+    await writeSlimInstalledAgent(slimConfigDirectory, 'explorer', [
+      'mode: subagent',
+      'model: opencode/deepseek-v4-flash',
+      'variant: medium',
+    ]);
+
+    const options = { userConfigPath, slimConfigDirectory };
+    const explorer = listConfigAgents(projectDirectory, options).find((agent) => agent.name === 'explorer');
+    expect(explorer.model).toEqual({ providerID: 'opencode', modelID: 'nemotron-3.5-lightning-free' });
+    expect(explorer.variant).toBeUndefined();
+    expect(getAgentConfig('explorer', projectDirectory, options).config.variant).toBeUndefined();
+  });
+
   it('persists the validated effective pair for partial model changes', async () => {
     await writeProjectAgent(projectDirectory, 'builder', ['mode: primary', 'model: openai/original', 'variant: low']);
     const options = { userConfigPath };

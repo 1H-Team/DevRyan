@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.2] - 2026-10-27
+
+- Run agents on the bundled native OpenCode 2.2.0 host. Its database adds a media blob store and cannot be cloned back into OpenCode 2.1.x; rollback returns to the retained previous bundle and its original database. New experimental routes (file watch, stateless generation, blob media, usage limits and plugin GUI) are denied, and media stays inline in messages.
+- Keep development data and native runtime bundles separate from the installed app, and initialize fresh profiles from the home directory so global startup reads succeed.
+- Use the shared model picker tabs and legacy model navigation in agent settings, and preserve Provider default thinking effort when overriding an installed agent's model.
+
 ## [2.0.1] - 2026-10-27
 
 - Make the desktop composer model selector transparent while preserving the mobile touch target.

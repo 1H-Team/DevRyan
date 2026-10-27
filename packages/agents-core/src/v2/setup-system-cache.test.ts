@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test';
-import { Auth, CacheHint, LLM, Message, SystemPart } from '@opencode/ai';
+import { Auth, CacheHint, LLM, Message, SystemPart } from '@opencode/ai/effect';
 import * as Anthropic from '@opencode/ai/providers/anthropic';
 import * as OpenAI from '@opencode/ai/providers/openai';
-import { compileRequest } from '@opencode/ai/route/client';
+import { compileRequest } from '@opencode/ai/testing';
 import type { PluginHooks } from '@opencode/core/plugin/hooks';
 import { Location } from '@opencode/core/location';
 import type {

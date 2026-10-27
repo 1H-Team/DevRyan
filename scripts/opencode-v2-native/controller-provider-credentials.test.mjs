@@ -9,6 +9,7 @@ import {Location} from '@opencode/core/location';
 import {OpencodePlugin} from '@opencode/core/plugin/provider/opencode';
 import {Bus} from '@opencode/core/bus';
 import {ManagedPolicy} from '@opencode/core/managed-policy';
+import {Config} from '@opencode/core/config';
 import {Voice} from '@opencode/core/voice';
 import {FetchHttpClient} from 'effect/http';
 import {XAIPlugin} from '@opencode/core/plugin/provider/xai';
@@ -217,11 +218,16 @@ test('aborting original refresh settles its fetch signal and never persists a pa
   await fixture(({raw,credentials,resolve})=>Effect.gen(function*(){
     const created=yield* raw.create({integrationID:id('xai'),value:stale});
     const fiber=yield* Effect.forkChild(resolve());yield* Effect.promise(()=>started);
-    const {Fiber}=yield* Effect.promise(()=>import('effect'));yield* Fiber.interrupt(fiber);yield* Effect.promise(()=>settled);
+    // 2.2.0 Credential.lock runs one shared refresh in the credential scope:
+    // interrupting a caller ends only its wait, never a rotating-token exchange.
+    const {Fiber}=yield* Effect.promise(()=>import('effect'));yield* Fiber.interrupt(fiber);
+    expect((yield* Fiber.await(fiber))._tag).toBe('Failure');
     expect((yield* credentials.get(created.id)).value).toEqual(stale);
   }),{fetchResponse:({options})=>new Promise((resolve,reject)=>{
     entered();options.signal.addEventListener('abort',()=>{aborted();reject(options.signal.reason);},{once:true});
   })});
+  // Closing the credential scope aborts the in-flight refresh; no token was persisted.
+  await Promise.race([settled,new Promise((_,reject)=>setTimeout(()=>reject(Error('refresh signal never settled')),3000))]);
 });
 
 test('every finite physical provider hook rechecks original caller after resolution and prior hooks',async()=>{
@@ -260,7 +266,9 @@ test('original OpenCode builtin can activate with a key while Console OAuth rema
     const emptyTransform=callback=>Effect.sync(()=>callback({get:()=>undefined,provider:{get:()=>undefined}}));
     yield* OpencodePlugin.effect({app:{name:'DevRyan',version:'2.0.20',channel:'test'},
       integration,provider:{transform:emptyTransform},model:{transform:emptyTransform},websearch:{transform:emptyTransform},
-      mcp:{transform:emptyTransform},session:{hook:(name,callback,options)=>hooks.register('session',name,callback,options)}});
+      mcp:{transform:emptyTransform},session:{hook:(name,callback,options)=>hooks.register('session',name,callback,options)}})
+      // 2.2.0 reads the location config for the Console integration document.
+      .pipe(Effect.provide(Config.testLayer()));
     const methods=(yield* integration.get(id('opencode'))).methods;
     expect(methods.some(method=>method.type==='key')).toBe(true);
     const oauth=methods.find(method=>method.type==='oauth');expect(oauth).toBeDefined();

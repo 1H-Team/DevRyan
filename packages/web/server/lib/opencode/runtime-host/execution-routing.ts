@@ -1,4 +1,5 @@
 import { randomUUID, createHash } from 'node:crypto';
+import path from 'node:path';
 import { Environment } from '@opencode/core/environment/index';
 import { Shell } from '@opencode/core/shell';
 import { ShellSelect } from '@opencode/core/shell/select';
@@ -64,6 +65,14 @@ export function createExecutionRouting(options: { readonly rpc: ExecutionRpc; re
     catch: (error) => error instanceof HostRefusal ? error : new HostRefusal('native_read_authority_unavailable', 503, 'tool.read') })
     .pipe(Effect.catch((error) => refuseHost(error)));
   const reviewedRead = (invocation: OwnedToolInvocation | undefined) => invocation && ['read', 'glob', 'grep'].includes(invocation.toolID);
+  // OpenCode 2.2.0 FileAccess.resolve probes every parent of an external read
+  // target for a `.git`/`.hg` marker to suggest a save pattern. A probe the read
+  // boundary would refuse (repository metadata, or outside the read roots) sees
+  // no marker, without touching the file system, so native suggests the narrower
+  // directory pattern instead of failing the read.
+  const hiddenProjectMarker = (target: string, directory: string) => ['.git', '.hg'].includes(path.basename(target))
+    ? Effect.promise(() => Promise.resolve().then(() => createNativeReadGuard(rootsFor(directory))(target)).then(() => false, () => true))
+    : Effect.succeed(false);
   const handles = new Map<string, { cancel: () => Promise<void>; done: Promise<unknown> }>();
   const shellHandles = new Map<string, string>();
   type ShellSettlement = { state: 'pending' } | { state: 'uncertain'; code: string }
@@ -377,7 +386,10 @@ export function createExecutionRouting(options: { readonly rpc: ExecutionRpc; re
         }),
         stat: target => Effect.gen(function* () {
           const invocation = yield* TrustedToolInvocationRef, resource = resourceFor(target, invocation);
-          return resource && invocation ? (yield* resourceRead(target, invocation, resource)).info : yield* checked(target, inner.files.stat(target));
+          if (resource && invocation) return (yield* resourceRead(target, invocation, resource)).info;
+          if (reviewedRead(invocation) && (yield* hiddenProjectMarker(target, invocation?.location.directory ?? options.directory)))
+            return yield* new Environment.NotFound({ path: target });
+          return yield* checked(target, inner.files.stat(target));
         }),
         list: target => checked(target, inner.files.list(target)),
       } });

@@ -2,12 +2,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Cause, Effect, Schema, Stream } from 'effect';
-import { LLMRequest, Message, ToolCallPart, ToolChoice, ToolDefinition } from '@opencode/ai/schema/index';
+import { LLMRequest, Message, ToolCallPart, ToolChoice, ToolDefinition } from '@opencode/ai/effect';
 import * as OpenAI from '@opencode/ai/providers/openai';
 import * as XAI from '@opencode/ai/providers/xai';
 import * as OpenAIResponses from '@opencode/ai/protocols/openai-responses';
-import * as XAIResponses from '@opencode/ai/protocols/xai-responses';
-import { Framing } from '@opencode/ai/route/framing';
+import { XAIResponses } from '@opencode/ai/protocols';
+import { Framing } from '@opencode/ai/route';
 import { providerErrorDetails, isSafeErrorType } from '../../packages/shared-runtime/lib/provider-error-details.js';
 
 const repository = fileURLToPath(new URL('../../', import.meta.url));

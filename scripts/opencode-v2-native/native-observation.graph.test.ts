@@ -6,6 +6,7 @@ import {createNativeAssetFixturePlugin,writeNativeFixtureOutputs} from './native
 import {rewriteNativeFinalizationObservation} from '../native-finalization-observation-transform.mjs';
 import {rewriteNativeCompactionObservation} from '../native-compaction-observation-transform.mjs';
 import {prepareReviewedNativeInputs,reviewedNativeInputPlugin} from '../native-runtime-assets.mjs';
+import {findNativeCoreSources,nativeCoreSourceFilter} from '../native-core-sources.mjs';
 
 const repository = path.resolve(import.meta.dirname, '../..');
 // Child logs and results land in the test's own temp root (removed afterwards) unless DEVRYAN_KEEP_ARTIFACTS=1.
@@ -145,9 +146,10 @@ const gates = createAdmissionGates(`);
     source=source.replace(/from ("file:[^"]+")/g,(_all,specifier:string)=>'from '+JSON.stringify(fileURLToPath(JSON.parse(specifier))));
     const entry = path.join(root, 'fixture.mjs'); await fs.writeFile(entry, source);
     const assetPlugin=await createNativeAssetFixturePlugin(repository);
-    const compactionPlugin: Bun.BunPlugin={name:'pinned-read-only-compaction-observation',setup(builder){builder.onLoad({filter:/location-4fspmagn\.js$/},async event=>({
+    const coreSources=await findNativeCoreSources(await fs.realpath(path.join(repository,'node_modules/@opencode/core')));
+    const compactionPlugin: Bun.BunPlugin={name:'pinned-read-only-compaction-observation',setup(builder){builder.onLoad({filter:nativeCoreSourceFilter(coreSources.compaction)},async event=>({
       contents:rewriteNativeCompactionObservation(await fs.readFile(event.path,'utf8'),path.join(repository,'packages/web/server/lib/opencode/runtime-host/native-compaction-observation.ts')).contents,loader:'js'}));}};
-    const finalizationPlugin:Bun.BunPlugin={name:'pinned-native-finalization-observation',setup(builder){builder.onLoad({filter:/location-2cjxs9ry\.js$/},async event=>({contents:rewriteNativeFinalizationObservation(await fs.readFile(event.path,'utf8'),path.join(repository,'packages/web/server/lib/opencode/runtime-host/native-finalization-observation.ts')).contents,loader:'js'}));}};
+    const finalizationPlugin:Bun.BunPlugin={name:'pinned-native-finalization-observation',setup(builder){builder.onLoad({filter:nativeCoreSourceFilter(coreSources.finalization)},async event=>({contents:rewriteNativeFinalizationObservation(await fs.readFile(event.path,'utf8'),path.join(repository,'packages/web/server/lib/opencode/runtime-host/native-finalization-observation.ts')).contents,loader:'js'}));}};
     const enqueueTracePlugin:Bun.BunPlugin={name:'fixture-only-finalization-enqueue-trace',setup(builder){builder.onLoad({filter:/runtime-host\/native-observation\.ts$/},async event=>{
       const original=await fs.readFile(event.path,'utf8');const seam='const queueFinalization=(permit:unknown,observation:Readonly<Record<string,unknown>>,interval:FinalizationInterval)=>{';
       if(original.split(seam).length!==2)throw Error('Native finalization enqueue fixture seam changed');

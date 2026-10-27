@@ -162,9 +162,13 @@ export function defaultNativeRegistrations(origins) {
  * retain their complete state; setup seeding applies only to the first bundle.
  * A selected bundle whose OpenCode version misses the application pin is
  * upgraded from the shipped artifacts first (native-bundle-startup-upgrade.js).
+ * The first bundle's base location is the home directory, as in the desktop
+ * app (which changes to it at launch), never the launch directory: a launch from
+ * inside a repository (a dev server in packages/web) would make that subfolder
+ * the base while OpenCode runs git discovery at the work-tree root outside it.
  * Constructor seams are for disposable fixtures, never environment metadata.
  */
-export async function provisionDefaultNativeBundle({env=process.env,home=os.homedir(),cwd=process.cwd(),
+export async function provisionDefaultNativeBundle({env=process.env,home=os.homedir(),cwd=home,
  artifactDirectory=executionArtifacts().directory,verifyArtifacts=verifyNativeRuntimeArtifacts,runMigration,credentialProcess,
  defaultConfigRoot=new URL('../../../default-config/',import.meta.url),captureLogicalSetup}={}) {
  recordStartupBundleUpgradeFailure(null);

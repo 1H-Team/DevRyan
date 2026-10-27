@@ -1,4 +1,4 @@
-import { Context, Effect, ErrorReporter, Schema, type SchemaIssue, type Cause } from 'effect';
+import { Context, Effect, ErrorReporter, Logger, References, Schema, type SchemaIssue, type Cause } from 'effect';
 import { HttpApiSchemaError } from 'effect/http-api/HttpApiError';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { sanitizeNativeSchemaPath } from '@devryan/harness-runtime/lib/sanitizer.js';
@@ -21,7 +21,8 @@ const causes = new Map([
   ['native_provider_location_expired', 'provider_location_expired'],
   ['native_openai_method_unsupported', 'openai_method_unsupported'],
 ]);
-const catalogRequest = new AsyncLocalStorage<(cause: Cause.Cause<unknown>) => void>();
+interface CatalogRequest { readonly capture: (cause: Cause.Cause<unknown>) => void; readonly encodeFailure: (reason: string) => void }
+const catalogRequest = new AsyncLocalStorage<CatalogRequest>();
 const responseSchemaError = (error: object) => HttpApiSchemaError.is(error) && error.kind === 'Body'
   || '_tag' in error && error._tag === 'InvalidRequestError' && 'kind' in error && error.kind === 'Body';
 const pathKey = (key: PropertyKey) => typeof key === 'number' && Number.isSafeInteger(key) && key >= 0 ? `[${key}]`
@@ -40,27 +41,31 @@ export const nativeCatalogCause = (error: unknown): string | undefined => {
   return undefined;
 };
 
+// The SDK schema-error middleware discards the original issue tree. Parse only
+// formatter path lines and whitelist their keys; never retain its reason text.
+const formatterSchemaPaths = (message: string): readonly string[] => {
+  const paths: string[] = [];
+  for (const line of message.slice(0, 4096).split('\n')) {
+    const path = /^\s+at (\[.*\])$/.exec(line)?.[1];
+    if (!path || paths.length >= 8) continue;
+    const tokens = [...path.matchAll(/\[(\d+|"(?:[^"\\]|\\.)*")\]/g)];
+    if (tokens.map(token => token[0]).join('') !== path) continue;
+    try {
+      paths.push(tokens.map(token => {
+        const key: unknown = JSON.parse(token[1]);
+        return typeof key === 'number' || typeof key === 'string' ? pathKey(key) : '<key>';
+      }).join('.').slice(0, 256));
+    } catch { /* Malformed formatter paths are not diagnostic evidence. */ }
+  }
+  return [...new Set(paths)];
+};
+
 export function nativeCatalogSchemaPaths(error: unknown): readonly string[] {
   const seen = new Set<unknown>();
   while (error && typeof error === 'object' && !seen.has(error) && seen.size < 16) {
     seen.add(error);
-    // The SDK schema-error middleware discards the original issue tree. Parse only
-    // formatter path lines and whitelist their keys; never retain its reason text.
     if (responseSchemaError(error) && !HttpApiSchemaError.is(error) && 'message' in error && typeof error.message === 'string') {
-      const paths: string[] = [];
-      for (const line of error.message.slice(0, 4096).split('\n')) {
-        const path = /^\s+at (\[.*\])$/.exec(line)?.[1];
-        if (!path || paths.length >= 8) continue;
-        const tokens = [...path.matchAll(/\[(\d+|"(?:[^"\\]|\\.)*")\]/g)];
-        if (tokens.map(token => token[0]).join('') !== path) continue;
-        try {
-          paths.push(tokens.map(token => {
-            const key: unknown = JSON.parse(token[1]);
-            return typeof key === 'number' || typeof key === 'string' ? pathKey(key) : '<key>';
-          }).join('.').slice(0, 256));
-        } catch { /* Malformed formatter paths are not diagnostic evidence. */ }
-      }
-      return [...new Set(paths)];
+      return formatterSchemaPaths(error.message);
     }
     if (Schema.isSchemaError(error)) {
       const paths: string[] = [];
@@ -79,10 +84,25 @@ export function nativeCatalogSchemaPaths(error: unknown): readonly string[] {
   return [];
 }
 
+/**
+ * OpenCode 2.2.0 answers a response encoding failure with a 500 and only logs its
+ * schema reason (`failed to encode response`, kind `Body`). Install this logger with
+ * the native handler's loggers so the active catalog read still records the failure.
+ */
+export const nativeCatalogEncodeLogger = Logger.make(({ message, fiber }) => {
+  const request = catalogRequest.getStore();
+  if (!request || (Array.isArray(message) ? message[0] : message) !== 'failed to encode response') return;
+  const annotations = fiber.getRef(References.CurrentLogAnnotations);
+  if (annotations.kind === 'Body' && typeof annotations.reason === 'string') request.encodeFailure(annotations.reason);
+});
+
 /** One construction/read scope; SDK-caught defects never retain raw messages or stacks. */
 export function createNativeCatalogDiagnostics() {
   let cause: string | undefined;
   let paths: readonly string[] = [];
+  const encodeFailure = (reason: string) => {
+    if (!cause) { cause = 'response_schema_invalid'; paths = formatterSchemaPaths(reason); }
+  };
   const capture = (reported: Cause.Cause<unknown>) => {
     for (const reason of reported.reasons) {
       const recognized = nativeCatalogCause(reason._tag === 'Fail' ? reason.error : reason._tag === 'Die' ? reason.defect : undefined);
@@ -92,9 +112,9 @@ export function createNativeCatalogDiagnostics() {
   // SDK endpoints capture construction context; direct its reporter to the active request.
   // HTTP schema errors are ignored by Effect's general reporter but are startup evidence.
   const reporter: ErrorReporter.ErrorReporter = { [ErrorReporter.TypeId]: ErrorReporter.TypeId,
-    report: ({ cause: reported }) => (catalogRequest.getStore() ?? capture)(reported) };
+    report: ({ cause: reported }) => (catalogRequest.getStore()?.capture ?? capture)(reported) };
   return { context: Context.make(ErrorReporter.CurrentErrorReporters, new Set([reporter])), capture, cause: () => cause, paths: () => paths,
-    run: <A>(work: () => Promise<A>) => catalogRequest.run(capture, work) };
+    run: <A>(work: () => Promise<A>) => catalogRequest.run({ capture, encodeFailure }, work) };
 }
 
 export type NativeCatalogStageCode = 'native_catalog_file_invalid' | 'native_model_build_failed'

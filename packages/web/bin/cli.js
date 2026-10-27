@@ -966,7 +966,7 @@ ENVIRONMENT:
   DEVRYAN_DATA_DIR         Override DevRyan data directory
 
 RUNTIME:
-  DevRyan serves its bundled native OpenCode 2.1.4 runtime.
+  DevRyan serves its bundled native OpenCode 2.2.0 runtime.
   Update DevRyan to update the bundled runtime.
 
 EXAMPLES:

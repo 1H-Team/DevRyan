@@ -1,5 +1,5 @@
 import { Effect, Schema } from 'effect';
-import { Message } from '@opencode/ai';
+import { Message } from '@opencode/ai/effect';
 import { Plugin } from '@opencode/plugin/effect';
 import type {PluginHooks} from '@opencode/core/plugin/hooks';
 import type {Location} from '@opencode/core/location';

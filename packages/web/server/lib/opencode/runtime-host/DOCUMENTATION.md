@@ -649,7 +649,7 @@ the lightweight retry-decorator tests do not substitute for that graph.
 
 The private `native.stream-continuation` owner binds the exact controller,
 configuration, permit, cancellation generation, physical attempt, original
-objective and canonical failed predecessor. The pinned OpenCode 2.1.4
+objective and canonical failed predecessor. The pinned OpenCode 2.2.0
 Synthetic event supplies its committed event ID, sequence, derived user ID and
 payload fingerprint. The durable pending reservation becomes consumed before
 successor preparation/send; Step adoption consumes its proof once. There are
@@ -713,7 +713,7 @@ local network or a stopped local proxy, `ok` at the provider. Later failures in
 the window carry no `probe`. The diagnostic sanitizer allowlists `host`, `port`,
 `sinceLastByteMs` and `probe`.
 
-API-key Session WebSocket timing is separate from those HTTP limits. In pinned
+API-key Session WebSocket timing is separate from those HTTP limits. Since
 2.1.4, connection admission waits 15 seconds before its unsent HTTP fallback.
 The real model resolver passes the provider's explicit `chunkTimeout` to the
 Session WebSocket: a number sets the idle bound, `false` disables it, and an
@@ -1128,6 +1128,9 @@ directory still fails with `bundle_harness_directory_unmapped`.
 Removed registered projects retain these historical identities without becoming
 executable locations; recreated symlink or noncanonical directories still refuse.
 
+The first provisioned bundle's base location is the home directory
+(`provisionDefaultNativeBundle`), whatever directory the host was launched from.
+
 Native locations (`native-project-locations.js`) are the reviewed base locations,
 then registered projects, then each location's app-created linked worktrees
 (`listManagedWorktrees` in `lib/git/service.js`: worktrees under OpenCode's
@@ -1437,7 +1440,7 @@ Native configuration translates legacy bash/task/write/patch permission names
 to shell/subagent/edit across ordered native and legacy supported shapes.
 Patterns and allow/deny/ask decisions are preserved; conflicting collapsed
 aliases fail closed. Boolean `tools` maps are translated at global and agent
-scope using pinned 2.1.4 precedence: global tool rules precede explicit rules;
+scope using 2.1.4 precedence: global tool rules precede explicit rules;
 agent write/edit/patch entries merge into edit before explicit legacy action
 overrides. Invalid boolean maps and ambiguous aliases produce typed configuration
 errors. Frontmatter, frozen snapshots and native permission evaluation are
@@ -1629,7 +1632,7 @@ and 2.1.4 export `AssertInput` only as a type; worker events retain the same val
 
 ## MCP elicitation (Form gate)
 
-OpenCode 2.1.4 owns every MCP elicitation form with the sentinel session
+OpenCode 2.1.4 and 2.2.0 own every MCP elicitation form with the sentinel session
 `global`, so no client can tell which turn asked. DevRyan attributes it on the
 host, in `native-mcp-elicitation.ts`:
 

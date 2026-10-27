@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {Effect,Exit,Fiber,Stream} from 'effect';
-import {LLMClient} from '@opencode/ai';
+import {LLMClient} from '@opencode/ai/effect';
 import {Bus} from '@opencode/core/bus';
 import {Snapshot} from '@opencode/core/snapshot';
 import {ToolOutput} from '@opencode/core/tool-output';

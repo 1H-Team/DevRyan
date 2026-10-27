@@ -4,7 +4,7 @@ import path from 'node:path';
 import os from 'node:os';
 import {execFileSync} from 'node:child_process';
 import {Effect,Schema} from 'effect';
-import {Message} from '@opencode/ai';
+import {Message} from '@opencode/ai/effect';
 import {Global} from '@opencode/util/global';
 import {LayerNode} from '@opencode/util/effect/layer-node';
 import {Database} from '@opencode/core/database/database';

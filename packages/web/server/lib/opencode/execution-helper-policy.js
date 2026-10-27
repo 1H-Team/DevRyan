@@ -6,11 +6,15 @@ export const nativeVcsGitFlags = Object.freeze([
 const discovery = new Set([
   JSON.stringify(['rev-parse', '--git-dir', '--git-common-dir', '--show-toplevel']),
   JSON.stringify(['remote', 'get-url', 'origin']), JSON.stringify(['rev-list', '--max-parents=0', 'HEAD']),
+  // 2.2.0 tells an empty repository from a failed root-commit read.
+  JSON.stringify(['rev-parse', '-q', '--verify', 'HEAD']),
   JSON.stringify(['worktree', 'list', '--porcelain']),
 ]);
 const info = new Set([
   JSON.stringify(['symbolic-ref', '--quiet', '--short', 'HEAD']), JSON.stringify(['remote']),
+  // 2.1.x lists branches with refname:short, 2.2.0 with refname:lstrip=2.
   JSON.stringify(['for-each-ref', '--format=%(refname:short)', 'refs/heads']),
+  JSON.stringify(['for-each-ref', '--format=%(refname:lstrip=2)', 'refs/heads']),
   JSON.stringify(['config', 'init.defaultBranch']),
 ]);
 export function isReviewedControllerGitArgs(args) {

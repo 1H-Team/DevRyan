@@ -6,6 +6,7 @@ export const createProjectDirectoryRuntime = (dependencies) => {
     readSettingsFromDiskMigrated,
     getReadSettingsFromDiskMigrated,
     sanitizeProjects,
+    getDefaultDirectory,
   } = dependencies;
 
   const resolveDirectoryCandidate = (value) => {
@@ -110,6 +111,13 @@ export const createProjectDirectoryRuntime = (dependencies) => {
 
     const projects = sanitizeProjects(settings.projects) || [];
     if (projects.length === 0) {
+      // A fresh profile has no browsed directory or project yet; host-wide reads
+      // (the UI's global path bootstrap) use the host's base native location.
+      const fallback = typeof getDefaultDirectory === 'function' ? getDefaultDirectory() : null;
+      const validated = fallback ? await validateDirectoryPath(fallback) : null;
+      if (validated?.ok) {
+        return { directory: validated.directory, error: null };
+      }
       return { directory: null, error: 'Directory parameter or active project is required' };
     }
 

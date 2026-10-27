@@ -8,14 +8,13 @@ import { RiCheckLine, RiFlashlightFill, RiSearchLine } from '@remixicon/react';
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { ProviderLogo } from '@/components/ui/ProviderLogo';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { useI18n } from '@/lib/i18n';
+import { getExecutionProviderId, getModelDisplayName } from '@/lib/providers/modelIdentity';
 import { cn } from '@/lib/utils';
 import { useUIStore } from '@/stores/useUIStore';
 import type { ProviderRecoverySelection } from '@/stores/useProviderRecoveryStore';
@@ -27,6 +26,14 @@ import {
   type ControlledModelPickerProvider,
 } from './controlledModelPickerOptions';
 import { formatEffortLabel } from './mobileControlsUtils';
+import { LegacyModelsHeader, LegacyModelsRow, ModelPickerRail } from './ModelPickerParts';
+import {
+  buildModelPickerRefKey,
+  buildModelPickerTabs,
+  resolveDefaultModelPickerTabId,
+  resolveModelPickerView,
+  type ModelPickerRow,
+} from './lib/modelPickerTabs';
 
 export type { ControlledModelPickerProvider } from './controlledModelPickerOptions';
 
@@ -46,31 +53,17 @@ export function ControlledModelPicker({
   const { t } = useI18n();
   const hiddenModels = useUIStore((state) => state.hiddenModels);
   const favoriteModels = useUIStore((state) => state.favoriteModels);
+  const setSettingsPage = useUIStore((state) => state.setSettingsPage);
+  const setSettingsDialogOpen = useUIStore((state) => state.setSettingsDialogOpen);
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState('');
+  const [tabId, setTabId] = React.useState<string | null>(null);
+  const [legacyOpen, setLegacyOpen] = React.useState(false);
+  const searchInputRef = React.useRef<HTMLInputElement>(null);
   const options = React.useMemo(
     () => getControlledModelOptions(providers, hiddenModels),
     [hiddenModels, providers],
   );
-  const filtered = React.useMemo(() => {
-    const normalized = query.trim().toLocaleLowerCase();
-    if (!normalized) return options;
-    return options.filter((option) => (
-      option.modelName.toLocaleLowerCase().includes(normalized)
-      || option.providerName.toLocaleLowerCase().includes(normalized)
-    ));
-  }, [options, query]);
-  const favoriteKeys = React.useMemo(() => new Map(
-    favoriteModels.map((favorite, index) => [`${favorite.providerID}:${favorite.modelID}`, index]),
-  ), [favoriteModels]);
-  const ordered = React.useMemo(() => [...filtered].sort((left, right) => {
-    const leftIndex = favoriteKeys.get(`${left.providerId}:${left.modelId}`);
-    const rightIndex = favoriteKeys.get(`${right.providerId}:${right.modelId}`);
-    if (leftIndex !== undefined || rightIndex !== undefined) {
-      return (leftIndex ?? Number.MAX_SAFE_INTEGER) - (rightIndex ?? Number.MAX_SAFE_INTEGER);
-    }
-    return 0;
-  }), [favoriteKeys, filtered]);
   const nativeProvider = findControlledModelProvider(providers, value.providerId, value.modelId);
   const displayModelId = getModelVariantDisplayState(nativeProvider, value.modelId, value.variant)?.displayModelId ?? value.modelId;
   const selected = options.find((option) => (
@@ -88,15 +81,55 @@ export function ControlledModelPicker({
       : resolveModelVariantSelection(nativeProvider, value.modelId, normalizedVariant, { variant: updates.effort, fastEnabled: updates.fastEnabled });
     onChange({ ...value, modelId: next.modelId, variant: next.variant ?? null });
   };
-  const grouped = React.useMemo(() => {
-    const groups = new Map<string, { name: string; options: ControlledModelOption[] }>();
-    for (const option of ordered) {
-      const group = groups.get(option.providerId) ?? { name: option.providerName, options: [] };
-      group.options.push(option);
-      groups.set(option.providerId, group);
+  // Same rail tabs (favorites + providers, legacy split) as the composer picker, limited to this picker's providers.
+  const optionByKey = React.useMemo(
+    () => new Map(options.map((option) => [buildModelPickerRefKey(option.providerId, option.modelId), option])),
+    [options],
+  );
+  const tabs = React.useMemo(() => {
+    const groups = new Map<string, { id: string; name: string; models: ControlledModelOption['model'][] }>();
+    for (const option of options) {
+      const group = groups.get(option.provider.id) ?? { id: option.provider.id, name: option.providerName, models: [] };
+      group.models.push(option.model);
+      groups.set(option.provider.id, group);
     }
-    return [...groups.entries()];
-  }, [ordered]);
+    const favorites = favoriteModels.flatMap(({ providerID, modelID }) => {
+      const option = optionByKey.get(buildModelPickerRefKey(providerID, modelID));
+      return option ? [{ model: option.model, providerID, modelID }] : [];
+    });
+    return buildModelPickerTabs({
+      providers: [...groups.values()],
+      favorites,
+      now: Date.now(),
+      favoritesLabel: t('chat.modelControls.favorites'),
+      getExecutionProviderId,
+      getProviderName: (providerId) => options.find((option) => option.providerId === providerId)?.providerName ?? providerId,
+      isCurrentModel: (providerId, modelId) => providerId === value.providerId && modelId === displayModelId,
+    });
+  }, [displayModelId, favoriteModels, optionByKey, options, t, value.providerId]);
+  const view = resolveModelPickerView({
+    tabs,
+    activeTabId: tabId ?? resolveDefaultModelPickerTabId(tabs, value.providerId, displayModelId),
+    legacyOpen,
+    query,
+    matches: (candidate, search) => candidate.toLocaleLowerCase().includes(search.toLocaleLowerCase()),
+    getModelLabel: getModelDisplayName,
+  });
+  const rows: ModelPickerRow<ControlledModelOption['model']>[] = view?.rows ?? [];
+  const showProviderLogo = view?.mode === 'search' || view?.tab.kind === 'favorites';
+
+  const selectTab = (nextTabId: string) => {
+    setTabId(nextTabId);
+    setLegacyOpen(false);
+    setQuery('');
+    searchInputRef.current?.focus();
+  };
+
+  const openProvidersSettings = () => {
+    setSettingsPage('providers');
+    setSettingsDialogOpen(true);
+    setOpen(false);
+  };
 
   const choose = (option: ControlledModelOption) => {
     onChange({
@@ -115,7 +148,11 @@ export function ControlledModelPicker({
   return (
     <DropdownMenu open={open} onOpenChange={(next) => {
       setOpen(next);
-      if (!next) setQuery('');
+      if (!next) {
+        setQuery('');
+        setTabId(null);
+        setLegacyOpen(false);
+      }
     }}>
       <DropdownMenuTrigger asChild>
         <button
@@ -134,33 +171,46 @@ export function ControlledModelPicker({
           </span> : null}
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent className="flex w-[min(380px,calc(100vw-2rem))] flex-col p-0" align={align}>
-        <div className="border-b border-border/40 p-2">
-          <div className="relative">
-            <RiSearchLine className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder={t('chat.modelControls.searchModels')}
-              className="h-8 pl-8 typography-meta"
-              autoFocus
-            />
-          </div>
-        </div>
-        <ScrollableOverlay outerClassName="max-h-[min(400px,calc(100dvh-12rem))]" className="overlay-scrollbar-target--no-gutter">
-          <div className="p-1">
-            {grouped.length === 0 ? (
-              <div className="px-2 py-4 text-center typography-meta text-muted-foreground">
-                {t('chat.modelControls.noModelsFound')}
+      <DropdownMenuContent className="flex w-[min(460px,calc(100vw-2rem))] flex-col p-0" align={align}>
+        <div className="flex h-[min(420px,calc(100dvh-12rem))] min-h-0 flex-row">
+          <ModelPickerRail
+            tabs={tabs}
+            activeTabId={view?.tab?.id ?? null}
+            dimmed={view?.mode === 'search'}
+            onSelectTab={selectTab}
+            settingsLabel={t('chat.modelControls.providerSettings')}
+            onOpenSettings={openProvidersSettings}
+          />
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <div className="border-b border-border/40 p-2">
+              <div className="relative">
+                <RiSearchLine className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  ref={searchInputRef}
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder={t('chat.modelControls.searchModels')}
+                  className="h-8 pl-8 typography-meta"
+                  autoFocus
+                />
               </div>
-            ) : grouped.map(([providerId, group], groupIndex) => (
-              <div key={providerId}>
-                {groupIndex > 0 ? <DropdownMenuSeparator /> : null}
-                <DropdownMenuLabel className="-mx-1 flex items-center gap-2 border-b border-border/30 px-3 py-1.5 typography-micro font-semibold uppercase tracking-wider text-muted-foreground">
-                  <ProviderLogo providerId={providerId} className="h-4 w-4 shrink-0" />
-                  <span className="truncate">{group.name}</span>
-                </DropdownMenuLabel>
-                {group.options.map((option) => {
+            </div>
+            <ScrollableOverlay outerClassName="min-h-0 flex-1" className="overlay-scrollbar-target--no-gutter">
+              <div className="p-1">
+                {view?.mode === 'legacy' ? (
+                  <LegacyModelsHeader
+                    title={t('chat.modelControls.legacyModels')}
+                    backLabel={t('chat.modelControls.backToProviderModels', { provider: view.tab.label })}
+                    onBack={() => setLegacyOpen(false)}
+                  />
+                ) : null}
+                {rows.length === 0 ? (
+                  <div className="px-2 py-4 text-center typography-meta text-muted-foreground">
+                    {t('chat.modelControls.noModelsFound')}
+                  </div>
+                ) : rows.map((row) => {
+                  const option = optionByKey.get(buildModelPickerRefKey(row.providerID, row.modelID));
+                  if (!option) return null;
                   const active = option.providerId === value.providerId && option.modelId === displayModelId;
                   return (
                     <button
@@ -172,15 +222,25 @@ export function ControlledModelPicker({
                         active && 'bg-interactive-hover/30',
                       )}
                     >
+                      {showProviderLogo ? <ProviderLogo providerId={option.providerId} className="h-3.5 w-3.5 shrink-0" /> : null}
                       <span className="min-w-0 flex-1 truncate text-foreground">{option.modelName}</span>
                       {active ? <RiCheckLine className="h-4 w-4 shrink-0 text-primary" /> : null}
                     </button>
                   );
                 })}
+                {view?.mode === 'tab' && view.legacyCount > 0 ? (
+                  <LegacyModelsRow
+                    title={t('chat.modelControls.legacyModels')}
+                    countLabel={t('chat.modelControls.legacyModelCount', { count: view.legacyCount })}
+                    highlighted={false}
+                    onOpen={() => setLegacyOpen(true)}
+                    onPointerActivity={() => undefined}
+                  />
+                ) : null}
               </div>
-            ))}
+            </ScrollableOverlay>
           </div>
-        </ScrollableOverlay>
+        </div>
         {hasThinking ? (
           <div className="shrink-0 border-t border-border/40 px-4 pt-2 pb-3" onKeyDown={(event) => event.stopPropagation()}>
             <ThinkingSlider levels={levels} value={activeLevel} providerId={value.providerId} disabled={disabled} onChange={(effort) => applyThinking({ effort })}

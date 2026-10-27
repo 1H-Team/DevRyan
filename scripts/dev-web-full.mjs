@@ -2,7 +2,7 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { resolveDevDataDirectory } from './dev-data-directory.mjs';
+import { resolveDevDataDirectory, resolveDevRuntimeEnvironment } from './dev-data-directory.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -13,12 +13,13 @@ const devDataDirectory = resolveDevDataDirectory({
   repoRoot,
   scope: 'web-full',
 });
+const devRuntimeEnvironment = resolveDevRuntimeEnvironment({ env: process.env, devDataDirectory });
 
 function run(label, command, args, options = {}) {
   const child = spawn(command, args, {
     cwd: repoRoot,
     stdio: ['inherit', 'pipe', 'pipe'],
-    env: { ...process.env, DEVRYAN_DATA_DIR: devDataDirectory },
+    env: { ...process.env, DEVRYAN_DATA_DIR: devDataDirectory, ...devRuntimeEnvironment },
     detached: useDetachedChildren,
     ...options,
   });

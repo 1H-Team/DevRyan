@@ -4,7 +4,7 @@ import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
 import {createRequire} from 'node:module';
-import {rewriteNativeAsset,rewriteNativeAgentDefaults,rewriteUnavailableNativePty,prepareReviewedNativeInputs,reviewedNativeInputPlugin,rewriteSealedNodeRequire} from './native-runtime-assets.mjs';
+import {rewriteNativeAsset,rewriteNativeAgentDefaults,rewriteNativePhotonWorker,rewriteUnavailableNativePty,prepareReviewedNativeInputs,reviewedNativeInputPlugin,rewriteSealedNodeRequire} from './native-runtime-assets.mjs';
 import {REVIEWED_WINDOWS_LIBSQL_EVIDENCE} from '../packages/web/server/lib/opencode/runtime-host/reviewed-windows-assets.js';
 import {hydrateWindowsReviewedExecutables} from './build-windows-reviewed-executables.mjs';
 import {hydrateWindowsGit} from './build-windows-git.mjs';
@@ -12,6 +12,7 @@ import {assertWindowsBinaryArchitecture,readWindowsReviewedLibsqlAsset} from './
 import {createReviewedNativePluginRegistry} from '../packages/web/server/lib/opencode/runtime-host/native-plugin-registry.ts';
 import {rewriteNativeFinalizationObservation} from './native-finalization-observation-transform.mjs';
 import {rewriteNativeCompactionObservation} from './native-compaction-observation-transform.mjs';
+import {findNativeCoreSources,isNativePhotonWorkerSource,nativeCoreSourceFilter} from './native-core-sources.mjs';
 import {CLAUDE_LIFECYCLE_PROTOCOL} from '../packages/web/server/lib/opencode/runtime-host/native-claude-lifecycle.js';
 import {NATIVE_BUNDLE_CREDENTIAL_CONTRACT} from '../packages/web/server/lib/opencode/runtime-host/native-bundle-credential-contract.js';
 
@@ -60,7 +61,8 @@ if(windowsCandidate){
 }
 const entries=[['controller',path.join(host,'controller-entry.ts')],['writer',path.join(host,'writer-entry.ts')]];
 const configurationEntry=path.join(host,'reviewed-configuration-entry.ts');
-const ptyBinding=path.join(coreRoot,windowsCandidate?'dist/persistent-pty/binary.bun.js':'dist/chunks/location-dajrwvna.js');
+const coreSources=await findNativeCoreSources(coreRoot);
+const ptyBinding=windowsCandidate?path.join(coreRoot,'dist/persistent-pty/binary.bun.js'):coreSources.pty;
 const photonFile=createRequire(path.join(coreRoot,'package.json')).resolve('@silvia-odwyer/photon-node');
 let ptySource;
 if(windowsCandidate)ptySource=rewriteUnavailableNativePty(await fs.readFile(ptyBinding));
@@ -70,17 +72,26 @@ else{
   ptySource=rewriteNativeAsset('pty',await fs.readFile(ptyBinding),{assetPath:ptyBinary,assetSha256:hash(await fs.readFile(ptyBinary))});
 }
 const photonSource=rewriteNativeAsset('photon',await fs.readFile(photonFile));
-const compactionFile=path.join(coreRoot,'dist/chunks/location-4fspmagn.js');
+const compactionFile=coreSources.compaction;
 const compaction=rewriteNativeCompactionObservation(await fs.readFile(compactionFile,'utf8'),path.join(host,'native-compaction-observation.ts'));
-const finalizationFile=path.join(coreRoot,'dist/chunks/location-2cjxs9ry.js');
+const finalizationFile=coreSources.finalization;
 const finalization=rewriteNativeFinalizationObservation(await fs.readFile(finalizationFile,'utf8'),path.join(host,'native-finalization-observation.ts'));
 // Core's own @opencode/schema dependency; its exports are import-only.
 const agentDefaultsFile=await fs.realpath(path.join(path.dirname(coreRoot),'schema/dist/agent.js'));
 const rewrites=new Map([[ptyBinding,ptySource],[photonFile,photonSource],[compactionFile,compaction.contents],[finalizationFile,finalization.contents],[agentDefaultsFile,rewriteNativeAgentDefaults(await fs.readFile(agentDefaultsFile))]]);
 for(const [file,contents] of rewrites) transforms.push({path:path.relative(repository,file),sha256:hash(await fs.readFile(file)),outputSha256:hash(contents),
   reason:file===ptyBinding?(windowsCandidate?'windows-persistent-pty-unavailable':'compiled-dynamic-package-resolve-unavailable'):file===compactionFile?'pinned-native-compaction-read-only-observation':file===finalizationFile?'pinned-native-finalization-read-only-observation':file===agentDefaultsFile?'pinned-native-external-directory-default-ask':'compiled-photon-source-wasm-read-denied'});
-const assetFilter=windowsCandidate?/(location-4fspmagn|location-2cjxs9ry|persistent-pty[\\/]binary\.bun|photon_rs|@opencode[\\/]schema[\\/]dist[\\/]agent)\.js$/:/(location-dajrwvna|location-4fspmagn|location-2cjxs9ry|photon_rs|@opencode[\\/]schema[\\/]dist[\\/]agent)\.js$/;
-const plugin={name:'devryan-pinned-asset-resolvers',setup(builder){builder.onLoad({filter:assetFilter},event=>{const contents=rewrites.get(path.resolve(event.path));if(contents===undefined) throw new Error('Unexpected native asset resolver');return {contents,loader:'js'};});}};
+const assetFilter=new RegExp([nativeCoreSourceFilter(ptyBinding,compactionFile,finalizationFile).source,/(?:photon_rs|@opencode[\\/]schema[\\/]dist[\\/]agent)\.js$/.source,/@opencode[\\/]core[\\/]dist[\\/]image[\\/]photon\.js$/.source].join('|'));
+// Every installed core copy (peer-dependency variants) shares the pinned Photon worker bytes.
+const photonWorkers=new Map();
+const plugin={name:'devryan-pinned-asset-resolvers',setup(builder){builder.onLoad({filter:assetFilter},async event=>{
+  const file=path.resolve(event.path);
+  if(isNativePhotonWorkerSource(file)){
+    const source=await fs.readFile(file),contents=rewriteNativePhotonWorker(source);
+    photonWorkers.set(file,{path:path.relative(repository,file),sha256:hash(source),outputSha256:hash(contents),reason:'pinned-native-photon-main-thread'});
+    return {contents,loader:'js'};
+  }
+  const contents=rewrites.get(file);if(contents===undefined) throw new Error('Unexpected native asset resolver');return {contents,loader:'js'};});}};
 const settings={target:'bun',minify:true,conditions:['bun'],sourcemap:'none',metafile:true,plugins:[plugin,reviewedNativeInputPlugin(reviewed)]};
 await fs.mkdir(path.dirname(output),{recursive:true});
 // Windows keeps compiled executable handles open. Its unqualified output is
@@ -105,7 +116,7 @@ try {
   }
   const linkedFiles=new Map(loaded);
   for(const [file,digest] of reviewed.inputFiles)loaded.set(file,digest);
-  transforms.push(...reviewed.transforms);
+  transforms.push(...[...photonWorkers.values()].sort((a,b)=>a.path.localeCompare(b.path)),...reviewed.transforms);
   const reviewedPlugins=[];
   for(const [id,file,capabilities] of [
     ['devryan.managed-task','managed-task.ts',['managed-task']],
@@ -150,7 +161,7 @@ try {
   const inputs={buildSources,lockSha256:hash(lockBytes),coreDigest,hostDigest,sourceFiles,resolvedPackages,
     reviewedInputProvenance:reviewed.provenance,
     nativeRegistrations:[...createReviewedNativePluginRegistry(coreDigest,{hostDigest}).values()].map(({id,manifestDigest,capabilities})=>({id,manifestDigest,capabilities})),reviewedPlugins,transforms};
-  const identity={bunVersion:Bun.version,bunRevision:Bun.revision,opencodeVersion:'2.1.4',target:`bun-${target}`,compiledContracts:[NATIVE_BUNDLE_CREDENTIAL_CONTRACT,CLAUDE_LIFECYCLE_PROTOCOL,'devryan-v2-clone/1','devryan.primary-step-stop/1','devryan.bundle.credential-owners/2'],inputs,
+  const identity={bunVersion:Bun.version,bunRevision:Bun.revision,opencodeVersion:'2.2.0',target:`bun-${target}`,compiledContracts:[NATIVE_BUNDLE_CREDENTIAL_CONTRACT,CLAUDE_LIFECYCLE_PROTOCOL,'devryan-v2-clone/1','devryan.primary-step-stop/1','devryan.bundle.credential-owners/2'],inputs,
     ...(windowsGitResource?{windowsGit:windowsGitResource.windowsGit}:{})};
   const buildId=hash(JSON.stringify(identity));
   const files=[];

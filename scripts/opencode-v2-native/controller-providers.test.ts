@@ -1,5 +1,5 @@
 import {expect,test} from 'bun:test';
-import {LLMRequest} from '@opencode/ai';
+import {LLMRequest} from '@opencode/ai/effect';
 import * as OpenAI from '@opencode/ai/providers/openai';
 import {Agent} from '@opencode/core/agent';
 import {Location} from '@opencode/core/location';

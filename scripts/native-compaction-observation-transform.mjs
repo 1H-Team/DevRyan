@@ -1,19 +1,20 @@
 import {createHash} from 'node:crypto';
 import path from 'node:path';
-export const NATIVE_COMPACTION_SOURCE_SHA256='487d0a8d2bf7b736753d30f4d1d2b0be34f08c106295c7a3c2e7d1027bf27a77';
-export const NATIVE_COMPACTION_SOURCE_SUFFIX='@opencode/core/dist/chunks/location-4fspmagn.js';
+export const NATIVE_COMPACTION_SOURCE_SHA256='91ea95d2fcfb7372aab9249ed0c82e84d7e0d9cb2a9b46b208688a4f85a26223';
 const hash=value=>createHash('sha256').update(value).digest('hex');
-const anchor='    const budget = trigger.reason === "overflow" ? Math.min(model.cap, Math.floor(estimateContext2(context) * SHRINK_STEPS[0])) : model.cap;\n';
-// 2.1.4 keeps the selected model's ceiling inside selectModel; the evidence
+const anchor='    const budget = trigger.reason === "overflow" ? Math.min(model.cap, Math.floor(total(trigger.estimate ?? estimatePrompt2(context)) * SHRINK_STEPS[0])) : model.cap;\n';
+// 2.2.0 keeps the selected model's ceiling inside selectModel; the evidence
 // recomputes it with the same pure calculateCeiling from that selected model.
+// It records the prompt estimate native used: the trigger's own when supplied.
 const ceiling='calculateCeiling(model.context.model.limit, settings.buffer)';
+const estimate='(trigger.estimate ?? estimatePrompt2(context))';
 const inserted=`    try { observeNativeCompactionBudget(trigger, {
       auto: settings.auto, buffer: settings.buffer ?? null, keep: settings.keep,
       ceiling: Number.isFinite(${ceiling}) ? ${ceiling} : null, budget,
-      estimatePrompt: estimatePrompt2(context), estimateContext: estimateContext2(context),
+      estimatePrompt: ${estimate}, estimateContext: total(${estimate}),
       limits: { context: context.model.limit.context, input: context.model.limit.input ?? null, output: context.model.limit.output },
       anchorIndex: context.messages.findLastIndex(message => hasMeasuredPrompt(message, context.model.ref)),
-      checkpointIndex: context.messages.findLastIndex(isNativeCompaction2), stateRevision: state.revision(), due: due(context, ${ceiling})
+      checkpointIndex: context.messages.findLastIndex(isNativeCompaction2), stateRevision: state.revision(), due: due(context, ${ceiling}, trigger.estimate)
     }); } catch { /* Read-only evidence must not alter native compaction. */ }
 `;
 export function rewriteNativeCompactionObservation(source,helperSpecifier){

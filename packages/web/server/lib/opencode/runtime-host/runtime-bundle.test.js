@@ -723,9 +723,11 @@ test('native bundle refuses unproved pending rows and changed durable continuati
     f.native.prepare('INSERT INTO session_inbox(id,session_id,type,payload,delivery,enqueued_seq,time_created) VALUES(?,?,?,?,?,?,?)')
       .run('msg_extra',f.sessionID,'user',JSON.stringify(f.payload),'queue',1000,102);
     await expect(f.verify()).rejects.toMatchObject(refused);f.native.prepare('DELETE FROM session_inbox WHERE id=?').run('msg_extra');
+    // OpenCode 2.2.0 drops session_pending; a retained older database can still carry rows.
+    f.native.exec('CREATE TABLE session_pending(id TEXT PRIMARY KEY,session_id TEXT NOT NULL,type TEXT NOT NULL,data TEXT NOT NULL,delivery TEXT,admitted_seq INTEGER NOT NULL,time_created INTEGER NOT NULL)');
     f.native.prepare('INSERT INTO session_pending(id,session_id,type,data,admitted_seq,time_created) VALUES(?,?,?,?,?,?)')
       .run('msg_pending',f.sessionID,'user',JSON.stringify(f.payload),1000,102);
-    await expect(f.verify()).rejects.toMatchObject(refused);f.native.prepare('DELETE FROM session_pending').run();
+    await expect(f.verify()).rejects.toMatchObject(refused);f.native.exec('DROP TABLE session_pending');
     f.native.prepare('UPDATE session_v2 SET agent=? WHERE id=?').run('build',f.sessionID);
     await expect(f.verify()).rejects.toMatchObject(refused);f.native.prepare('UPDATE session_v2 SET agent=? WHERE id=?').run(f.record.agent,f.sessionID);
     const source=f.native.prepare('SELECT data FROM session_message WHERE id=?').get(f.record.nativeContinuation.sourceAssistantMessageID).data;
@@ -881,6 +883,19 @@ test('default startup ignores old conversation databases and never falls back to
  expect(await fs.stat(path.join(fresh,'.local','state','devryan','runtime-bundles','selection.json')).catch(error=>error.code)).toBe('ENOENT');
 });
 
+test('a fresh bundle is based on the home directory, not the launch directory',async()=>{
+ const f=await fixture(),home=path.join(f.root,'launch-home');await fs.mkdir(home);
+ const artifactDirectory=path.dirname(f.launchArtifacts.artifactManifestPath);await fs.copyFile(f.launchArtifacts.artifactManifestPath,path.join(artifactDirectory,'native-bundle.json'));
+ const {provisionDefaultNativeBundle}=await import('./native-default-bundle.js');
+ expect(process.cwd()).not.toBe(home);
+ const controlRoot=await provisionDefaultNativeBundle({env:{},home,artifactDirectory,runMigration:f.runMigration,
+  verifyArtifacts:async({manifestPath,manifestSha256,launcher})=>{const directory=path.dirname(manifestPath);return {directory,manifestPath,manifestSha256,launcher,controller:path.join(directory,path.basename(f.launchArtifacts.controllerBinary)),writer:path.join(directory,path.basename(f.launchArtifacts.writerBinary)),manifest:{inputs:{reviewedPlugins:[]}}};}});
+ const {descriptor}=readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot});
+ const reviewed=JSON.parse(await fs.readFile(descriptor.launch.reviewedNativeConfigPath,'utf8'));
+ expect(reviewed.locations.map(location=>location.directory)).toEqual([await fs.realpath(home)]);
+ expect(descriptor.projectMap.map(mapping=>mapping.targetDirectory)).toEqual([await fs.realpath(home)]);
+});
+
 const releaseArtifacts=async(f,release,reviewedPlugins=[])=>{
  const directory=path.join(f.root,'release-'+release),files=[];await fs.mkdir(directory);
  for(const name of ['DevRyan-controller','DevRyan-writer']){const bytes=Buffer.from(`fixture ${name} ${release}\n`);await fs.writeFile(path.join(directory,name),bytes);await fs.chmod(path.join(directory,name),0o755);
@@ -987,7 +1002,17 @@ const startupUpgradeFixture=async name=>{
  // Dummy older executables use the current importer; restore their historical fixture schema.
  const baseline=readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot});
  const database=resolveSqliteDriver().open(baseline.descriptor.launch.opencodeDatabasePath);
- try{database.exec("ALTER TABLE project DROP COLUMN time_archived; DELETE FROM migration WHERE id IN ('20261007190000_azure_cli_external_credential','20261010180456_project_time_archived')");}finally{database.close();}
+ try{database.exec("ALTER TABLE project DROP COLUMN time_archived; DELETE FROM migration WHERE id IN ('20261007190000_azure_cli_external_credential','20261010180456_project_time_archived')");
+  // Undo 2.2.0's blob store and its session_pending drop (reviewed 2.0.32 DDL).
+  database.exec(`DROP TABLE blob_ref; DROP TABLE blob;
+   CREATE TABLE \`session_pending\` (\`id\` text PRIMARY KEY, \`session_id\` text NOT NULL, \`type\` text NOT NULL, \`data\` text NOT NULL, \`delivery\` text,
+    \`admitted_seq\` integer NOT NULL, \`time_created\` integer NOT NULL,
+    CONSTRAINT \`fk_session_pending_session_id_session_v2_id_fk\` FOREIGN KEY (\`session_id\`) REFERENCES \`session_v2\`(\`id\`) ON DELETE CASCADE);
+   CREATE INDEX \`session_pending_session_delivery_seq_idx\` ON \`session_pending\` (\`session_id\`,\`delivery\`,\`admitted_seq\`);
+   CREATE UNIQUE INDEX \`session_pending_session_compaction_idx\` ON \`session_pending\` (\`session_id\`) WHERE "session_pending"."type" = 'compaction';
+   CREATE UNIQUE INDEX \`session_pending_session_admitted_seq_idx\` ON \`session_pending\` (\`session_id\`,\`admitted_seq\`);
+   DELETE FROM migration WHERE id IN ('20261024002554_session_allowance','20261024175301_drop_session_allowance','20261025123711_blob','20261025154125_drop_session_pending');`);
+ }finally{database.close();}
  return {f,home,older,pinned,controlRoot,captures,credentialProcess,launch:(release,process=credentialProcess)=>launchPinned(f,home,release,process),
   binding:()=>readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot})};
 };

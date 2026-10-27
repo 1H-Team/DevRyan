@@ -6,7 +6,7 @@ import {
   spawnManagedChild,
   stopChildTree,
 } from '../../../scripts/dev-child-utils.mjs';
-import { resolveDevDataDirectory } from '../../../scripts/dev-data-directory.mjs';
+import { resolveDevDataDirectory, resolveDevRuntimeEnvironment } from '../../../scripts/dev-data-directory.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -19,6 +19,7 @@ const devDataDirectory = resolveDevDataDirectory({
   repoRoot,
   scope: 'web-server',
 });
+const devRuntimeEnvironment = resolveDevRuntimeEnvironment({ env: process.env, devDataDirectory });
 
 let shuttingDown = false;
 let activeChild = null;
@@ -31,6 +32,7 @@ function spawnServer() {
     args: ['server/index.js', '--port', String(port)],
     env: {
       DEVRYAN_DATA_DIR: devDataDirectory,
+      ...devRuntimeEnvironment,
       DEVRYAN_DEV_MODE: 'true',
     },
   });

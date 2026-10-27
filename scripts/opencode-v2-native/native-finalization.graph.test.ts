@@ -5,12 +5,14 @@ import os from 'node:os';
 import {rewriteNativeFinalizationObservation} from '../native-finalization-observation-transform.mjs';
 import {createNativeAssetFixturePlugin,writeNativeFixtureOutputs} from './native-asset-fixture.mjs';
 import {prepareReviewedNativeInputs,reviewedNativeInputPlugin} from '../native-runtime-assets.mjs';
+import {findNativeCoreSources,nativeCoreSourceFilter} from '../native-core-sources.mjs';
 const repository=path.resolve(import.meta.dirname,'../..');
 for(const compiled of [false,true])test(`actual native post-model mandatory IO success/error/cancellation ${compiled?'compiled':'source'} witness`,async()=>{
  const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-finalization-')));
  let child:ReturnType<typeof Bun.spawn>|undefined,timer:ReturnType<typeof setTimeout>|undefined,failure:unknown;
  try{
-  const observation:Bun.BunPlugin={name:'pinned-native-finalization',setup(builder){builder.onLoad({filter:/location-2cjxs9ry\.js$/},async event=>({
+  const finalizationSource=(await findNativeCoreSources(await fs.realpath(path.join(repository,'node_modules/@opencode/core')))).finalization;
+  const observation:Bun.BunPlugin={name:'pinned-native-finalization',setup(builder){builder.onLoad({filter:nativeCoreSourceFilter(finalizationSource)},async event=>({
    contents:rewriteNativeFinalizationObservation(await fs.readFile(event.path,'utf8'),path.join(repository,'packages/web/server/lib/opencode/runtime-host/native-finalization-observation.ts')).contents,loader:'js'}));}};
   const executable=path.join(root,compiled?'witness-native':'witness.mjs');
   const built=await Bun.build({entrypoints:[path.join(repository,'scripts/opencode-v2-native/native-finalization.fixture.mjs')],target:'bun',

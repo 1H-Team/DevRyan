@@ -6,7 +6,7 @@ import {
   spawnManagedChild,
   stopChildTree,
 } from './dev-child-utils.mjs';
-import { resolveDevDataDirectory } from './dev-data-directory.mjs';
+import { resolveDevDataDirectory, resolveDevRuntimeEnvironment } from './dev-data-directory.mjs';
 import { shouldRestartDevChild } from './dev-restart-policy.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -25,6 +25,7 @@ const baseDevEnv = {
   DEVRYAN_ALLOW_DEV_SHUTDOWN: 'true',
   DEVRYAN_DEV_ORCHESTRATOR_PID: String(process.pid),
   DEVRYAN_DATA_DIR: devDataDirectory,
+  ...resolveDevRuntimeEnvironment({ env: process.env, devDataDirectory }),
 };
 
 /** @type {Array<{ label: string, command: string, args: string[], cwd?: string }>} */

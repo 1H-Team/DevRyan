@@ -1,5 +1,5 @@
 import {Integration as NativeIntegration} from '@opencode/core/integration';
-import {SystemPart} from '@opencode/ai';
+import {SystemPart} from '@opencode/ai/effect';
 import {Location} from '@opencode/core/location';
 import {Layer} from 'effect';
 import {Model} from '@opencode/core/model';

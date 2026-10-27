@@ -47,12 +47,12 @@ test('private native hello verifies the canonical pin without asserting readines
   await expect(f.host.plugin({ action: 'hello', policyVersion: 1, instanceID: 'forged', transport: 'native-v2' }))
     .rejects.toMatchObject({ code: 'recovery_runtime_unverified' });
   expect(reads).toHaveLength(0);
-  for (const version of ['2.0.20', '2.0.24', '2.0.26', '2.0.30', '2.0.32','2.1.0','2.1.2','2.1.3','2.1.4']) {
+  for (const version of ['2.0.20', '2.0.24', '2.0.26', '2.0.30', '2.0.32','2.1.0','2.1.2','2.1.3','2.1.4','2.2.0']) {
     f.client.health.runtimeInfo = async options => { reads.push(options); return { version }; };
     const hello = await f.host.helloNative({ policyVersion: 1, instanceID: `native-owner-${version}` });
     expect(hello).toMatchObject({ instanceID: `native-owner-${version}`, supported: false, enforced: false });
   }
-  expect(reads).toHaveLength(9);
+  expect(reads).toHaveLength(10);
   expect(reads[0].signal).toBeInstanceOf(AbortSignal);
   expect(reads[0].maxResponseBytes).toBe(16 * 1024 * 1024);
   expect(typeof reads[0].onResponseRead).toBe('function');
@@ -195,7 +195,7 @@ test('native fallback dispatch uses fresh exact constructor authority and receip
 test('native transport continuation uses the reviewed native recovery dispatch with the original selection',async()=>{
  let dispatched;
  const f=await nativeSelectionHost({mode:undefined,dispatchNativeRecovery:async(record,prompt)=>{dispatched={record,prompt};}});
- f.client.health.runtimeInfo=async()=>({version:'2.1.4'});
+ f.client.health.runtimeInfo=async()=>({version:'2.2.0'});
  await f.host.helloNative({policyVersion:1,instanceID:'native-owner'});await f.host.admitNativePrompt(selectionReceipt('msg_user'),{owner:'original'});
  await f.host.plugin({action:'step',sessionID:'ses_test',userMessageID:'msg_user',assistantMessageID:'msg_assistant',instanceID:'native-owner'});
  expect((await f.host.getSnapshot('ses_test')).automaticRecoveryPending).toBe(true);

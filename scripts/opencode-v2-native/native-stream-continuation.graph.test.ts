@@ -30,8 +30,8 @@ import {createNativePlanDenialOwner} from ${JSON.stringify(path.join(repository,
 import {createPrimaryRecoveryHost} from ${JSON.stringify(path.join(repository,'packages/harness-runtime/lib/provider-recovery-host.js'))};
 import {createNativePrimaryStepOwner} from ${JSON.stringify(path.join(repository,'packages/web/server/lib/opencode/runtime-host/primary-step-owner.js'))};
 import {SessionMessage} from '@opencode/core/session/message';
-import {LLMRequest} from '@opencode/ai';
-import {HttpOptions} from '@opencode/ai/schema/options';
+import {LLMRequest} from '@opencode/ai/effect';
+import {HttpOptions} from '@opencode/ai/effect';
 import {primaryStepOverride} from ${JSON.stringify(path.join(repository,'packages/web/server/lib/opencode/runtime-host/primary-step.ts'))};
 const FIXTURE=JSON.parse(process.env.DEVRYAN_STREAM_FIXTURE);
 `+source;

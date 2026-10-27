@@ -4,7 +4,7 @@ import { existsSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { stopChildTree, useDetachedChildren } from './dev-child-utils.mjs';
-import { resolveDevDataDirectory } from './dev-data-directory.mjs';
+import { resolveDevDataDirectory, resolveDevRuntimeEnvironment } from './dev-data-directory.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -15,6 +15,7 @@ const devDataDirectory = resolveDevDataDirectory({
   repoRoot,
   scope: 'web-hmr',
 });
+const devRuntimeEnvironment = resolveDevRuntimeEnvironment({ env: process.env, devDataDirectory });
 
 function run(label, command, args, env = {}, options = {}) {
   return spawn(command, args, {
@@ -46,6 +47,7 @@ clearViteCache();
 
 const api = run('api', 'bun', ['run', '--cwd', 'packages/web', 'dev:server:watch'], {
   DEVRYAN_DATA_DIR: devDataDirectory,
+  ...devRuntimeEnvironment,
   DEVRYAN_PORT: backendPort,
 });
 const vite = run(
@@ -54,6 +56,7 @@ const vite = run(
   ['x', 'vite', '--force', '--host', '127.0.0.1', '--port', uiPort, '--strictPort'],
   {
     DEVRYAN_DATA_DIR: devDataDirectory,
+    ...devRuntimeEnvironment,
     DEVRYAN_PORT: backendPort,
     DEVRYAN_DISABLE_PWA_DEV: '1',
   },

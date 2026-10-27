@@ -17,6 +17,7 @@ export const REVIEWED_NATIVE_CLONE_RELEASES = Object.freeze({
   '2.1.2': 'f80e411fc11b1f0fc1a702b62c0ddcd559503abea13627afb4e80d286e4fb47c',
   '2.1.3': '65c5ed2e7a3d9b23738d7256989b0989b78454a392dcea75c51130de4fd3be22',
   '2.1.4': '5d1face783a648c12be33db9ff08b9d33ab71fa127861f6a203a9d24c91545d3',
+  '2.2.0': '06fc02814588210524a7b7269a0a17fa3b81811864fcc1d963047024cb5933e0',
 });
 // The later 2.0.26 build adds observation transforms without changing database layout.
 export const REVIEWED_NATIVE_CLONE_REBUILDS = Object.freeze({
@@ -37,11 +38,13 @@ export function assertReviewedNativeCoreDigest(manifest, target = TARGET_OPENCOD
 // 2.0.26 adds the data-only migration 20261007190000_azure_cli_external_credential,
 // whose `external` credential values older releases cannot decode. The DDL layout
 // is unchanged, so a clone never moves a database to a lower migration level.
-export const REVIEWED_NATIVE_CLONE_MIGRATION_LEVEL = Object.freeze({ '2.0.20': 0, '2.0.24': 0, '2.0.26': 1, '2.0.30': 2, '2.0.32': 2, '2.1.0': 3, '2.1.2': 3, '2.1.3': 3, '2.1.4': 3 });
+export const REVIEWED_NATIVE_CLONE_MIGRATION_LEVEL = Object.freeze({ '2.0.20': 0, '2.0.24': 0, '2.0.26': 1, '2.0.30': 2, '2.0.32': 2, '2.1.0': 3, '2.1.2': 3, '2.1.3': 3, '2.1.4': 3, '2.2.0': 4 });
 // 2.0.30 adds project.time_archived; its migrated database cannot clone backwards.
 // 2.1.0 writes native compaction windows and drops required legacy message fields.
 // Its logical level 3 prevents clones into older readers despite identical DDL.
 // 2.1.2, 2.1.3 and 2.1.4 add no migration and stay at level 3.
+// 2.2.0 adds the blob/blob_ref media store and drops the unused session_pending
+// table (level 4); its databases cannot clone into 2.1.x readers.
 // A layout is the database's structure (`inspectNativeCloneLayout`), not its DDL
 // text: a database created by an earlier release and migrated in place stores
 // `ALTER TABLE … ADD` text with the column last, a fresh one has it inside
@@ -74,11 +77,21 @@ export const REVIEWED_NATIVE_PROJECT_ARCHIVE_FRESH_CLONE_LAYOUT = Object.freeze(
   migrationsSha256: null,
   userVersion: 0,
 });
+// A level 4 (2.2.0) database has the blob store and no session_pending table.
+// A 2.2.0 controller's fresh database and the retained 2.0.32 schema it migrates
+// in place share this structure. No legacy-imported level 4 layout has been
+// measured yet, so a legacy 2.2.0 source is not a reviewed clone source.
+export const REVIEWED_NATIVE_BLOB_STORE_FRESH_CLONE_LAYOUT = Object.freeze({
+  structureSha256: '362e71cb0f473fbc2071a87e96baf0f2377785f8a90b1478d6fcfa9c6ad3ed3e',
+  migrationsSha256: null,
+  userVersion: 0,
+});
 const REVIEWED_SOURCE_LAYOUTS = Object.freeze({
   0: Object.freeze({ legacy: REVIEWED_NATIVE_CLONE_LAYOUT, 'fresh-install': REVIEWED_NATIVE_FRESH_CLONE_LAYOUT }),
   1: Object.freeze({ legacy: REVIEWED_NATIVE_CLONE_LAYOUT, 'fresh-install': REVIEWED_NATIVE_FRESH_CLONE_LAYOUT }),
   2: Object.freeze({ legacy: REVIEWED_NATIVE_PROJECT_ARCHIVE_CLONE_LAYOUT, 'fresh-install': REVIEWED_NATIVE_PROJECT_ARCHIVE_FRESH_CLONE_LAYOUT }),
   3: Object.freeze({ legacy: REVIEWED_NATIVE_PROJECT_ARCHIVE_CLONE_LAYOUT, 'fresh-install': REVIEWED_NATIVE_PROJECT_ARCHIVE_FRESH_CLONE_LAYOUT }),
+  4: Object.freeze({ 'fresh-install': REVIEWED_NATIVE_BLOB_STORE_FRESH_CLONE_LAYOUT }),
 });
 /** The reviewed `kind` ('legacy' | 'fresh-install') layout a source release's database has. */
 export const reviewedNativeCloneSourceLayout = (version, kind) => Object.hasOwn(REVIEWED_NATIVE_CLONE_MIGRATION_LEVEL, version)
@@ -90,8 +103,10 @@ export function isReviewedNativeClonePair(left, right, layout) {
     && reviewedGraph(left)
     && reviewedGraph(right)
     && REVIEWED_NATIVE_CLONE_MIGRATION_LEVEL[left.opencodeVersion] <= REVIEWED_NATIVE_CLONE_MIGRATION_LEVEL[right.opencodeVersion]
-    && ['legacy', 'fresh-install'].some(kind => Object.entries(reviewedNativeCloneSourceLayout(left.opencodeVersion, kind))
-      .every(([key, value]) => layout?.[key] === value));
+    && ['legacy', 'fresh-install'].some(kind => {
+      const reviewed = reviewedNativeCloneSourceLayout(left.opencodeVersion, kind);
+      return reviewed !== undefined && Object.entries(reviewed).every(([key, value]) => layout?.[key] === value);
+    });
 }
 // SQLite DDL text as a comparable string: identifier quotes dropped, whitespace and case folded.
 const normalizedSQL = sql => sql?.replace(/[`"[\]]/g, '').replace(/\s+/g, ' ').trim().toLowerCase() ?? null;

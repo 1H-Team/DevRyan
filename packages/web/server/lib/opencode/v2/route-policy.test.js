@@ -47,6 +47,7 @@ const C3_RULES = [
   [DENY, /^POST \/api\/session\/\{sessionID\}\/shell$/],
   // deny: files, config and MCP
   [DENY, /^POST \/api\/experimental\/fs\/write$/],
+  [DENY, /^(POST|DELETE) \/api\/experimental\/fs\/watch$/],
   [DENY, /^\w+ \/api\/fs\//],
   [DENY, /^PATCH \/api\/experimental\/config$/],
   [DENY, /^(PUT|DELETE) \/api\/experimental\/mcp\/\{server\}$/],
@@ -68,16 +69,18 @@ const C3_RULES = [
   // deny: plugins and debug
   [DENY, /^POST \/api\/rpc\//],
   [DENY, /^POST \/api\/plugin\/(update|check)$/],
+  [DENY, /^GET \/api\/plugin\/gui$/],
   [DENY, /^(GET|DELETE) \/api\/debug\/location$/],
   [DENY, /^POST \/api\/debug\/heap-dump$/],
   // deny: import, export and generation
   [DENY, /^POST \/api\/experimental\/session\/import$/],
   [DENY, /^GET \/api\/experimental\/session\/\{sessionID\}\/export$/],
   [DENY, /^POST \/api\/session\/\{sessionID\}\/generate$/],
-  [DENY, /^POST \/api\/experimental\/generate$/],
+  [DENY, /^POST \/api\/experimental\/generate(\/(text|image|decisions))?$/],
+  [DENY, /^GET \/api\/experimental\/media\/\{hash\}$/],
+  [DENY, /^GET \/api\/experimental\/usage\/limits$/],
   [DENY, /^GET \/api\/experimental\/voice\/models$/],
   [DENY, /^POST \/api\/experimental\/voice\/session$/],
-  [DENY, /^POST \/api\/experimental\/voice\/session\/\{sessionID\}\/instructions$/],
   // deny: pairing and search
   [DENY, /^POST \/api\/pair$/],
   [DENY, /^GET \/auth\/connect\/\{code\}$/],
@@ -105,6 +108,7 @@ const PARAM_VALUES = {
   requestID: 'per_test1',
   ptyID: 'pty_test1',
   key: 'entry.key',
+  hash: 'a'.repeat(64),
 };
 
 const concreteParam = (parameter) => {
@@ -127,13 +131,13 @@ const BODY_FOR = {
 };
 
 describe('route table coverage', () => {
-  it('knows the 149 OpenAPI operations of 2.1.4 plus GET /openapi.json', () => {
-    expect(OPENCODE_V2_ROUTES_VERSION).toBe('2.1.4');
-    expect(OPENCODE_V2_ROUTES).toHaveLength(149);
+  it('knows the 156 OpenAPI operations of 2.2.0 plus GET /openapi.json', () => {
+    expect(OPENCODE_V2_ROUTES_VERSION).toBe('2.2.0');
+    expect(OPENCODE_V2_ROUTES).toHaveLength(156);
     expect(OPENCODE_V2_EXTRA_ROUTES.map(keyOf)).toEqual(['GET /openapi.json']);
     const known = listOpenCodeV2KnownRoutes().map(keyOf);
-    expect(known).toHaveLength(150);
-    expect(new Set(known).size).toBe(150);
+    expect(known).toHaveLength(157);
+    expect(new Set(known).size).toBe(157);
   });
 
   it('classifies every known route explicitly with a valid class and nothing else', () => {
@@ -493,7 +497,7 @@ describe('location binding', () => {
 
 describe('diffLiveSpec', () => {
   it('reports no drift for the vendored document, as an object or as text', () => {
-    expect(diffLiveSpec(vendoredDoc())).toMatchObject({ ok: true, version: '2.1.4', error: null, added: [], removed: [], changed: [] });
+    expect(diffLiveSpec(vendoredDoc())).toMatchObject({ ok: true, version: '2.2.0', error: null, added: [], removed: [], changed: [] });
     expect(diffLiveSpec(VENDORED_TEXT).ok).toBe(true);
   });
 

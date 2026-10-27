@@ -340,7 +340,7 @@ the UI to hold its manual card; a declined failure sets `reason:
 diagnostic is written once per runtime instance and when `{supported, transport}`
 changes, not on every hello.
 
-For the exact pinned native 2.1.4 controller (and retained 2.0.26/2.0.30/2.1.0/2.1.3), constructor-only
+For the exact pinned native 2.2.0 controller (and retained 2.0.26/2.0.30/2.1.0/2.1.3/2.1.4), constructor-only
 `nativeStreamContinuation` owns interrupted-stream reserve, canonical Synthetic
 binding, successor preparation/send and Step adoption. Pending plus consumed
 reservations never exceed two per original objective; preparation consumes the

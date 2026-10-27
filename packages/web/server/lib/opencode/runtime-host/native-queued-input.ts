@@ -37,9 +37,8 @@ export function assertQueuedInputIdle(deps:QueuedInputDependencies,input:QueuedI
    if(row.location.directory!==root.location.directory)return yield* blocked(input.sessionID);
    if(phase==='delivery'&&row.id===root.id)continue;
    const claim=yield* deps.database.db.$client.unsafe<{time_suspended:number|null}>('SELECT time_suspended FROM session_v2 WHERE id=?',[row.id]).pipe(Effect.orDie);
-   const pending=yield* deps.database.db.$client.unsafe('SELECT 1 FROM session_pending WHERE session_id=? LIMIT 1',[row.id]).pipe(Effect.orDie);
    const queued=yield* deps.database.db.$client.unsafe('SELECT 1 FROM session_inbox WHERE session_id=? AND id<>? LIMIT 1',[row.id,row.id===root.id?input.messageID:'']).pipe(Effect.orDie);
-   if(claim.length!==1||claim[0].time_suspended!==null||pending.length||queued.length||(yield* deps.execution.isActive(row.id)))return yield* blocked(input.sessionID);
+   if(claim.length!==1||claim[0].time_suspended!==null||queued.length||(yield* deps.execution.isActive(row.id)))return yield* blocked(input.sessionID);
   }
  }).pipe(Effect.catchDefect(error=>error instanceof HostRefusal?Effect.die(error):blocked(input.sessionID)));
 }

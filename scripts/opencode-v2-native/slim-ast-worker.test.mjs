@@ -7,6 +7,7 @@ import {prepareReviewedNativeInputs,reviewedNativeInputPlugin,rewriteNativeAsset
 import {startSessionExecution,verifySessionExecutionLauncher} from '../../packages/harness-runtime/lib/session-execution.js';
 import {Schema} from 'effect';
 import {WorkerInput} from '../../packages/web/server/lib/opencode/runtime-host/worker-protocol.ts';
+import {findNativeCoreSources} from '../native-core-sources.mjs';
 
 test('actual original AST tools run in supervised private views with permission, progress and real settlement',async()=>{
  const repository=path.resolve(import.meta.dirname,'../..');
@@ -16,7 +17,7 @@ test('actual original AST tools run in supervised private views with permission,
  const inputs=await prepareReviewedNativeInputs(repository);
  const core=await fs.realpath(path.join(repository,'node_modules/@opencode/core'));
  const require=createRequire(path.join(core,'package.json'));
- const pty=path.join(core,'dist/chunks/location-dajrwvna.js');
+ const pty=(await findNativeCoreSources(core)).pty;
  const ptyAsset=path.join(path.dirname(require.resolve('@opencode-ai/pty-darwin-arm64/package.json')),'bin/opencode-pty');
  const photon=require.resolve('@silvia-odwyer/photon-node');
  const rewrites=new Map(inputs.rewrites);

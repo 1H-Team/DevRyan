@@ -1,5 +1,5 @@
 import {expect,test} from 'bun:test';
-import {Message} from '@opencode/ai';
+import {Message} from '@opencode/ai/effect';
 import {applyNativeClaudeHeaders,normalizeNativeClaudeSystemUpdates} from '../../packages/web/server/lib/opencode/runtime-host/native-claude-request.js';
 
 test('Claude helper affinity is detached while private session authorization stays bound',()=>{

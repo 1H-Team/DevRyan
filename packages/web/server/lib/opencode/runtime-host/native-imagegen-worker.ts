@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import {constants} from 'node:fs';
 import path from 'node:path';
-import {Effect,Layer,Schema} from 'effect';
+import {Effect,Layer,Logger,Schema} from 'effect';
 import {Image} from '@opencode/core/image';
 import {Location} from '@opencode/core/location';
 import {LayerNode} from '@opencode/util/effect/layer-node';
@@ -82,7 +82,9 @@ export async function runNativeImagegenWorker(request:WorkerInput&{readonly tool
    const image=yield* Image.Service;
    yield* image.transform(editor=>editor.configure({autoResize:false,maxWidth:3840,maxHeight:3840,maxBase64Bytes:IMAGEGEN_SCRATCH_LIMIT}));
    yield* image.normalize('gpt_imagegen',{uri:'owned:imagegen',content,encoding:'base64',mime:'image/png'});
-  }).pipe(Effect.provide(LayerNode.compile(Image.node,{replacements:[Location.node.replace(Layer.succeed(Location.Service,location))]})))));
+  }).pipe(Effect.provide(LayerNode.compile(Image.node,{replacements:[Location.node.replace(Layer.succeed(Location.Service,location))]})),
+   // stdout is the worker protocol; native logs never reach it.
+   Effect.provide(Logger.layer([],{mergeWithExisting:false})))));
   await guard(out);callbacks.signal.throwIfAborted();return content;
  }},()=>tool.execute({...input,out,...(images?{images}:{})},{directory:request.directory}));
  return apiKeyBilling?{...generated,metadata:{...generated.metadata,billing:'api-key'}}:generated;

@@ -1,7 +1,6 @@
 import {createHash} from 'node:crypto';
 import path from 'node:path';
-export const NATIVE_FINALIZATION_SOURCE_SHA256='be96c90a78360bfc5f6d5c49f374ae15d48811fea44cdd12d5f712707f314f59';
-export const NATIVE_FINALIZATION_SOURCE_SUFFIX='@opencode/core/dist/chunks/location-2cjxs9ry.js';
+export const NATIVE_FINALIZATION_SOURCE_SHA256='cb104cac2bd4e40afaa95f1df54636175e06fafe306a76986121545ca4a41502';
 const hash=value=>createHash('sha256').update(value).digest('hex');
 const start='      if (record.finish || record.failure) {\n';
 const end='      if (llmFailure && llmError && retry?.retry && record.outputStarted';

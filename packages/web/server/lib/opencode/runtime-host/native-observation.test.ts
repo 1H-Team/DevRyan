@@ -1,7 +1,7 @@
 import {expect,test} from 'vitest';
 import {Cause} from 'effect';
-import {AIError,HttpContext,RateLimitError,TimeoutError,TransportError} from '@opencode/ai';
-import {LLM} from '@opencode/ai';
+import {AIError,HttpContext,RateLimitError,TimeoutError,TransportError} from '@opencode/ai/effect';
+import {LLM} from '@opencode/ai/effect';
 import {model as compatibleModel} from '@opencode/ai/providers/openai-compatible';
 import {nativeProviderFailureCode,nativeProviderFailureTarget,projectNativeProviderFailure,withNativeHeaderDeadline} from './native-observation.js';
 

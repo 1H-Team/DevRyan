@@ -16,6 +16,7 @@ import {HostRefusal} from '../../packages/web/server/lib/opencode/runtime-host/h
 import {OperationPermitRef} from '../../packages/web/server/lib/opencode/runtime-host/native-admission-contract.js';
 import {registerNativeCompactionObservation,observeNativeCompactionBudget} from '../../packages/web/server/lib/opencode/runtime-host/native-compaction-observation.js';
 import {rewriteNativeCompactionObservation,NATIVE_COMPACTION_SOURCE_SHA256} from '../native-compaction-observation-transform.mjs';
+import {findNativeCoreSources} from '../native-core-sources.mjs';
 const common={schema:1 as const,controllerInstanceID:'controller_1',configurationDigest:'a'.repeat(64),sessionID:'ses_1',directory:'/owned/project'};
 const budget={auto:true,buffer:7500,keep:15000,ceiling:8884,budget:8884,estimatePrompt:{measured:100,estimated:200},estimateContext:300,
  limits:{context:32768,input:16384,output:4096},anchorIndex:0,checkpointIndex:-1,stateRevision:1,due:false};
@@ -82,7 +83,7 @@ test('outer provider hooks record known local refusals before wrapping and prese
  }
 });
 test('only the exact native source gets one observation insertion; removal reproduces original bytes',async()=>{
- const original=await fs.readFile(path.resolve(import.meta.dirname,'../../node_modules/@opencode/core/dist/chunks/location-4fspmagn.js'),'utf8');
+ const original=await fs.readFile((await findNativeCoreSources(await fs.realpath(path.resolve(import.meta.dirname,'../../node_modules/@opencode/core')))).compaction,'utf8');
  const helper=path.resolve(import.meta.dirname,'../../packages/web/server/lib/opencode/runtime-host/native-compaction-observation.ts');const result=rewriteNativeCompactionObservation(original,helper);
  expect(result.originalSha256).toBe(NATIVE_COMPACTION_SOURCE_SHA256);
  expect(result.transformedSha256).toBe(createHash('sha256').update(result.contents).digest('hex'));

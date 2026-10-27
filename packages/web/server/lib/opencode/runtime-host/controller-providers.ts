@@ -1,5 +1,5 @@
 import {randomUUID} from 'node:crypto';
-import {LanguageModel,LLMRequest} from '@opencode/ai';
+import {LanguageModel,LLMRequest} from '@opencode/ai/effect';
 import {Agent} from '@opencode/core/agent';
 import {Location} from '@opencode/core/location';
 import {SessionModelRequest} from '@opencode/core/session/model-request';

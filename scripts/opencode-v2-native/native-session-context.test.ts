@@ -1,6 +1,6 @@
 import {expect,test} from 'bun:test';
 import {Effect,Schema} from 'effect';
-import {Message} from '@opencode/ai';
+import {Message} from '@opencode/ai/effect';
 import {Location} from '@opencode/core/location';
 import {Model} from '@opencode/schema/model';
 import {Agent} from '@opencode/schema/agent';

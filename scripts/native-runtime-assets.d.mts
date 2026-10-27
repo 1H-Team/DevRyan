@@ -4,7 +4,10 @@ export function rewriteNativeAsset(kind:'pty'|'photon',source:Uint8Array,options
 export function rewriteSealedNodeRequire(source:string):string;
 export const NATIVE_AGENT_DEFAULTS_SOURCE_SHA256:string;
 export function rewriteNativeAgentDefaults(source:Uint8Array):string;
+export const NATIVE_WINDOWS_PTY_SOURCE_SHA256:string;
 export function rewriteUnavailableNativePty(source:Uint8Array):string;
+export const NATIVE_PHOTON_WORKER_SOURCE_SHA256:string;
+export function rewriteNativePhotonWorker(source:Uint8Array):string;
 export const REVIEWED_AST_FILENAME:'DevRyan-ast-grep-darwin-arm64';
 export interface ReviewedNativeInputs {
  readonly inputFiles:ReadonlyMap<string,string>;

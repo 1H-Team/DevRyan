@@ -1,4 +1,4 @@
-import {Message} from '@opencode/ai';
+import {Message} from '@opencode/ai/effect';
 import type {NativeProviderAttempt} from './native-provider-runtime-owner.js';
 
 /** v1.11.2's V2 routing, with private authorization independent of resume affinity. */

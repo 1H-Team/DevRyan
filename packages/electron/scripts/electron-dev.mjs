@@ -3,7 +3,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { resolveDevDataDirectory } from '../../../scripts/dev-data-directory.mjs';
+import { resolveDevDataDirectory, resolveDevRuntimeEnvironment } from '../../../scripts/dev-data-directory.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -19,6 +19,7 @@ const baseDevEnvironment = {
   DEVRYAN_ELECTRON_DEV: '1',
   DEVRYAN_DATA_DIR: devDataDirectory,
   DEVRYAN_ELECTRON_USER_DATA_DIR: path.join(devDataDirectory, 'electron-user-data'),
+  ...resolveDevRuntimeEnvironment({ env: process.env, devDataDirectory }),
 };
 
 // On macOS, prefer launching via the built & signed DevRyan.app binary so

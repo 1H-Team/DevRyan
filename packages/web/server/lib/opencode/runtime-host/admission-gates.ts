@@ -741,15 +741,16 @@ export function createAdmissionGates(options: AdmissionGateOptions) {
   const removalObservation = async (sessionID: string) => {
     if (!removalDatabase || !store || !inbox || !execution) throw new HostRefusal('native_removal_observation_unavailable', 503, 'removal.inspect', sessionID);
     const db = removalDatabase.db.$client;
-    const [rows, pending, queued, active] = await Promise.all([
+    // OpenCode 2.2.0 dropped the never-written session_pending table; the inbox
+    // holds all queued input, and pendingIDs stays empty in recorded dispositions.
+    const [rows, queued, active] = await Promise.all([
       runControllerEffect(db.unsafe<{id:string;time_suspended:number|null}>('SELECT id,time_suspended FROM session_v2 WHERE id=?', [sessionID])),
-      runControllerEffect(db.unsafe<{id:string}>('SELECT id FROM session_pending WHERE session_id=? ORDER BY admitted_seq LIMIT 10001', [sessionID])),
       runControllerEffect(db.unsafe<{id:string}>('SELECT id FROM session_inbox WHERE session_id=? ORDER BY enqueued_seq LIMIT 10001', [sessionID])),
       runControllerEffect(execution.isActive(SessionSchema.ID.make(sessionID))),
     ]);
-    if (pending.length + queued.length > 10000) throw new HostRefusal('native_removal_inventory_unbounded',409,'removal.inspect',sessionID);
+    if (queued.length > 10000) throw new HostRefusal('native_removal_inventory_unbounded',409,'removal.inspect',sessionID);
     return {sessionID,exists:rows.length===1,claimed:rows.length===1 && rows[0].time_suspended!==null,active,
-      pendingIDs:pending.map(row=>row.id),inboxIDs:queued.map(row=>row.id)};
+      pendingIDs:[],inboxIDs:queued.map(row=>row.id)};
   };
   const withRemovalPermit = async <A>(request: OperationRequest, permit: OperationPermit, action:()=>Promise<A>):Promise<A> => {
     const authorized=await bridge.authorize({...request,existingPermit:permit});

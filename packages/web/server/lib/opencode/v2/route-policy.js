@@ -70,6 +70,8 @@ export const OPENCODE_V2_ROUTE_CLASSES = Object.freeze({
   'GET /api/location': S,
   'POST /api/location/reload': P,
   'GET /api/plugin': S,
+  // Serves a plugin's own GUI module for the OpenCode app to load.
+  'GET /api/plugin/gui': D,
   'POST /api/plugin/check': D,
   'POST /api/plugin/update': D,
   'POST /api/rpc/{rpcID}/{method}': D,
@@ -103,10 +105,17 @@ export const OPENCODE_V2_ROUTE_CLASSES = Object.freeze({
   'GET /api/websearch/provider': S,
   'POST /api/websearch': D,
   'POST /api/experimental/generate': D,
+  // Stateless model calls outside any session, permit or journal.
+  'POST /api/experimental/generate/text': D,
+  'POST /api/experimental/generate/image': D,
+  'POST /api/experimental/generate/decisions': D,
+  // Blob store media; DevRyan keeps `experimental.media_blob` off, so media stays inline.
+  'GET /api/experimental/media/{hash}': D,
+  // Unreviewed provider usage probe; DevRyan reads provider usage itself.
+  'GET /api/experimental/usage/limits': D,
   // Brokers the server's stored OpenAI/xAI keys into a realtime session.
   'GET /api/experimental/voice/models': D,
   'POST /api/experimental/voice/session': D,
-  'POST /api/experimental/voice/session/{sessionID}/instructions': D,
 
   // Events.
   'GET /api/event': S,
@@ -206,6 +215,8 @@ export const OPENCODE_V2_ROUTE_CLASSES = Object.freeze({
   'GET /api/fs/list': D,
   'GET /api/fs/find': D,
   'POST /api/experimental/fs/write': D,
+  'POST /api/experimental/fs/watch': D,
+  'DELETE /api/experimental/fs/watch': D,
 
   // Terminals and shells.
   'GET /api/pty': D,

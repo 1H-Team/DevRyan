@@ -160,6 +160,19 @@ test('controller discovery helper requires reviewed Git arguments and verified b
   expect(calls).toEqual(['execution.native.helper']);
 });
 
+test('controller discovery permits the 2.2.0 empty-repository HEAD probe with exact operands only', async () => {
+  const accepted: unknown[] = [];
+  const helper = createControllerHelper({ rpc: async (_method, params) => {
+    accepted.push(params.args);
+    return { exitCode: 1, stdout: '', stderr: '', receipt: { terminated: true, confined: true, cancelled: false, exitCode: 1 } };
+  } });
+  await Effect.runPromise(helper(ChildProcess.make('git', ['rev-parse', '-q', '--verify', 'HEAD'], { cwd: '/fixture/project' })));
+  for (const args of [['rev-parse', '-q', '--verify', 'HEAD~1'], ['rev-parse', '-q', '--verify', 'HEAD', '--', 'x'], ['rev-parse', '--verify', 'HEAD']]) {
+    await expect(Effect.runPromise(helper(ChildProcess.make('git', args, { cwd: '/fixture/project' })))).rejects.toThrow('controller_helper_denied');
+  }
+  expect(accepted).toEqual([['rev-parse', '-q', '--verify', 'HEAD']]);
+});
+
 test('controller VCS info permits only the pinned prefix and required read operands', async () => {
   const accepted: unknown[] = [];
   const helper = createControllerHelper({ rpc: async (_method, params) => {
@@ -167,18 +180,18 @@ test('controller VCS info permits only the pinned prefix and required read opera
     return { exitCode: 0, stdout: '', stderr: '', receipt: { terminated: true, confined: true, cancelled: false, exitCode: 0 } };
   } });
   for (const args of [['symbolic-ref', '--quiet', '--short', 'HEAD'], ['remote'],
-    ['for-each-ref', '--format=%(refname:short)', 'refs/heads'], ['config', 'init.defaultBranch'],
-    ['symbolic-ref', 'refs/remotes/origin/HEAD']]) {
+    ['for-each-ref', '--format=%(refname:short)', 'refs/heads'], ['for-each-ref', '--format=%(refname:lstrip=2)', 'refs/heads'],
+    ['config', 'init.defaultBranch'], ['symbolic-ref', 'refs/remotes/origin/HEAD']]) {
     await Effect.runPromise(helper(ChildProcess.make('git', [...nativeVcsGitFlags, ...args], { cwd: '/fixture/project' })));
   }
   for (const args of [['config', 'init.defaultBranch', 'mutate'], ['config', 'credential.helper'],
     ['symbolic-ref', 'refs/remotes/../HEAD'], ['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/heads/new'],
-    ['status', '--porcelain'], ['fetch', 'origin']]) {
+    ['status', '--porcelain'], ['fetch', 'origin'], ['for-each-ref', '--format=%(refname:lstrip=2)', 'refs/remotes']]) {
     await expect(Effect.runPromise(helper(ChildProcess.make('git', [...nativeVcsGitFlags, ...args], { cwd: '/fixture/project' })))).rejects.toThrow('controller_helper_denied');
   }
   const changed = [...nativeVcsGitFlags]; changed[2] = 'core.fsmonitor=arbitrary';
   await expect(Effect.runPromise(helper(ChildProcess.make('git', [...changed, 'remote'], { cwd: '/fixture/project' })))).rejects.toThrow('controller_helper_denied');
-  expect(accepted).toHaveLength(5);
+  expect(accepted).toHaveLength(6);
 });
 
 test('helper transport and malformed receipts remain host refusals through native error fallback', async () => {

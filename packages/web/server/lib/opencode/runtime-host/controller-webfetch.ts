@@ -2,7 +2,7 @@ import {NativeHelperContextRef} from './native-helper-context.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {Cause,Context,Effect,Exit,Layer,Option,Scope,Schema} from 'effect';
-import {LLM,LLMClient,Message,type LLMClientShape} from '@opencode/ai';
+import {LLM,LLMClient,Message,type LLMClientShape} from '@opencode/ai/effect';
 import {llmClient} from '@opencode/core/effect/app-node-platform';
 import {Location} from '@opencode/core/location';
 import {LocationServiceMap} from '@opencode/core/location-service-map';

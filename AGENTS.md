@@ -19,6 +19,7 @@ DevRyan is the web and Electron interface to OpenCode over HTTP and SSE. Canonic
 - Electron starts the web server in-process or connects to its own runtime service; do not add a sidecar backend. Shared UI uses runtime capabilities and the preload bridge, not shell-identity branches.
 - Make the smallest correct change in the surrounding style. Enforce safety in core logic, not only in UI or prompts, and make partial failure and recovery explicit.
 - Use typed boundaries: no `any`, blind casts or guessed payload shapes. Use Base UI wrappers, theme variables and `packages/ui/src/lib/typography.ts`; import toasts from `@/components/ui`.
+- OpenCode host upgrades start from `bun scripts/opencode-upgrade-report.mjs` and follow the [OpenCode upgrade runbook](docs/OPENCODE_UPGRADES.md).
 - Keep streaming paths cheap: stable references, narrow subscriptions ([performance guidance](docs/AGENT_PERFORMANCE.md)). Terminal CLI behaviour follows the [CLI policy](docs/CLI_POLICY.md).
 
 ## Verify

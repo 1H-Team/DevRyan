@@ -2,6 +2,7 @@ import {test} from 'bun:test';import assert from 'node:assert/strict';import fs 
 import os from 'node:os';
 import {rewriteNativeAsset,rewriteNativeAgentDefaults,NATIVE_AGENT_DEFAULTS_SOURCE_SHA256,rewriteUnavailableNativePty,NATIVE_ASSET_SOURCE_SHA,prepareReviewedNativeInputs,REVIEWED_AST_FILENAME} from '../native-runtime-assets.mjs';
 import {execFileSync} from 'node:child_process';
+import {findNativeCoreSources} from '../native-core-sources.mjs';
 const repository=path.resolve(import.meta.dirname,'../..'),core=await fs.realpath(path.join(repository,'node_modules/@opencode/core'));
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
 test('FFI verification embeds the native library from the locked core dependency',async()=>{
@@ -30,7 +31,7 @@ test('Windows-style Git checkout preserves byte-pinned reviewed resources',async
 });
 test('asset rewrites require exact pinned sources and embed only reviewed native paths',async()=>{
  const require=createRequire(path.join(core,'package.json'));
- const pty=await fs.readFile(path.join(core,'dist/chunks/location-dajrwvna.js'));
+ const pty=await fs.readFile((await findNativeCoreSources(core)).pty);
  assert.equal(hash(pty),NATIVE_ASSET_SOURCE_SHA.pty);
  const assetPath=path.join(path.dirname(require.resolve('@opencode-ai/pty-darwin-arm64/package.json')),'bin/opencode-pty');
  const assetSha256=hash(await fs.readFile(assetPath));

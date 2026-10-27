@@ -2,13 +2,14 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {createRequire} from 'node:module';
-import {rewriteNativeAsset,rewriteNativeAgentDefaults} from '../native-runtime-assets.mjs';
+import {rewriteNativeAsset,rewriteNativeAgentDefaults,rewriteNativePhotonWorker} from '../native-runtime-assets.mjs';
+import {findNativeCoreSources,isNativePhotonWorkerSource,nativeCoreSourceFilter} from '../native-core-sources.mjs';
 
 // Test bundles use the same guarded native asset resolvers as production.
 export async function createNativeAssetFixturePlugin(repository){
  const core=await fs.realpath(path.join(repository,'node_modules/@opencode/core'));
  const require=createRequire(path.join(core,'package.json'));
- const ptyBinding=path.join(core,'dist/chunks/location-dajrwvna.js');
+ const ptyBinding=(await findNativeCoreSources(core)).pty;
  const ptyBinary=path.join(path.dirname(require.resolve('@opencode-ai/pty-darwin-arm64/package.json')),'bin/opencode-pty');
  const photon=require.resolve('@silvia-odwyer/photon-node'),agentDefaults=await fs.realpath(path.join(path.dirname(core),'schema/dist/agent.js'));
  const sha256=createHash('sha256').update(await fs.readFile(ptyBinary)).digest('hex');
@@ -18,7 +19,10 @@ export async function createNativeAssetFixturePlugin(repository){
   [agentDefaults,rewriteNativeAgentDefaults(await fs.readFile(agentDefaults))],
  ]);
  return {name:'production-pinned-native-assets',setup(builder){
-  builder.onLoad({filter:/(location-dajrwvna|photon_rs|@opencode[\\/]schema[\\/]dist[\\/]agent)\.js$/},event=>{
+  const filter=new RegExp([nativeCoreSourceFilter(ptyBinding).source,/(?:photon_rs|@opencode[\\/]schema[\\/]dist[\\/]agent|@opencode[\\/]core[\\/]dist[\\/]image[\\/]photon)\.js$/.source].join('|'));
+  builder.onLoad({filter},async event=>{
+   // Every installed core copy shares the pinned Photon worker bytes.
+   if(isNativePhotonWorkerSource(event.path))return {contents:rewriteNativePhotonWorker(await fs.readFile(event.path)),loader:'js'};
    const contents=rewrites.get(path.resolve(event.path));
    if(contents===undefined)throw Error('Unexpected native asset resolver');
    return {contents,loader:'js'};

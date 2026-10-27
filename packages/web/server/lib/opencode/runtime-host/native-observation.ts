@@ -5,7 +5,9 @@ import { SessionModelRequest } from '@opencode/core/session/model-request';
 import { Location } from '@opencode/core/location';
 import { PluginHooks } from '@opencode/core/plugin/hooks';
 import type { WebSocketChannelExchange } from '@opencode/ai/route';
-import { DEFAULT_HTTP_TIMEOUT_MS, HttpOptions, mergeProviderOptions } from '@opencode/ai/schema/options';
+// 2.2.0 no longer exports these through a subpath. Import the exact SDK module by
+// path; Bun resolves it to the same module instance @opencode/ai/effect loads.
+import { DEFAULT_HTTP_TIMEOUT_MS, mergeProviderOptions } from '../../../../../../node_modules/@opencode/ai/dist/schema/options.js';
 import { SessionCompaction } from '@opencode/core/session/compaction';
 import { SessionMessage } from '@opencode/schema/session-message';
 import { registerNativeCompactionObservation, type NativeCompactionBudget } from './native-compaction-observation.js';
@@ -18,7 +20,7 @@ import { isNativeCursorIngress } from './native-cursor-ingress.js';
 import { HostRefusal } from './host-refusal.js';
 import {createNativeFinalizationQueue,drainNativeFinalizationQueue,registerNativeFinalizationObservation} from './native-finalization-observation.js';
 import {createNativeStreamContinuation} from './native-stream-continuation.js';
-import {LLMRequest,type LLMClientShape} from '@opencode/ai';
+import {HttpOptions,LLMRequest,type LLMClientShape} from '@opencode/ai/effect';
 import {nativeRequestHeaderDeadline} from './native-provider-deadlines.js';
 
 export interface NativeAttemptIdentity {

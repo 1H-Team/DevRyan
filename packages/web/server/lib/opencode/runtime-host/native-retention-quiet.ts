@@ -31,9 +31,8 @@ export function quietNativeRetention(deps:QuietRetentionDependencies, input:{rea
    if(JSON.stringify(rows.map(row=>row.id).sort())!==JSON.stringify(initial.map(row=>row.id).sort()))return yield* refuse('native_retention_tree_changed',input.sessionID);
    for(const row of rows){
     const claims=yield* deps.database.db.$client.unsafe<{time_suspended:number|null}>('SELECT time_suspended FROM session_v2 WHERE id=?',[row.id]).pipe(Effect.orDie);
-    const pending=yield* deps.database.db.$client.unsafe('SELECT 1 FROM session_pending WHERE session_id=? LIMIT 1',[row.id]).pipe(Effect.orDie);
     const queued=yield* deps.database.db.$client.unsafe('SELECT 1 FROM session_inbox WHERE session_id=? LIMIT 1',[row.id]).pipe(Effect.orDie);
-    if(claims.length!==1||claims[0].time_suspended!==null||pending.length||queued.length||(yield* deps.execution.isActive(row.id)))return yield* refuse('native_retention_session_active',row.id);
+    if(claims.length!==1||claims[0].time_suspended!==null||queued.length||(yield* deps.execution.isActive(row.id)))return yield* refuse('native_retention_session_active',row.id);
    }
    const members:NativeRetentionMember[]=rows.map(row=>{const devryan=row.metadata?.devryan;const archived=devryan&&typeof devryan==='object'&&!Array.isArray(devryan)&&'archive' in devryan?devryan.archive:undefined;const owned=archived&&typeof archived==='object'&&!Array.isArray(archived)&&'sessionID' in archived&&'at' in archived&&archived.sessionID===row.id;const archive=owned?archived.at:row.time.archived?DateTime.toEpochMillis(row.time.archived):undefined;return {id:row.id,parentID:row.parentID??null,directory:row.location.directory,time:{created:DateTime.toEpochMillis(row.time.created),updated:DateTime.toEpochMillis(row.time.updated),...(typeof archive==='number'?{archived:archive}:{})},metadata:row.metadata};});
    yield* Effect.tryPromise(()=>deps.authorize(input.permit,members,input.at===undefined)).pipe(Effect.orDie);

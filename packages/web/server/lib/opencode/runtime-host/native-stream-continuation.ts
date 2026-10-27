@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto';
 import {Effect,Layer,Stream,Schema,type Scope} from 'effect';
 import {SessionEvent} from '@opencode/schema/session-event';
-import {LLMClient,type LLMRequest,type LLMClientShape} from '@opencode/ai';
+import {LLMClient,type LLMRequest,type LLMClientShape} from '@opencode/ai/effect';
 import {llmClient} from '@opencode/core/effect/app-node-platform';
 import {SessionMessage} from '@opencode/schema/session-message';
 import type {SessionModelRequest} from '@opencode/core/session/model-request';

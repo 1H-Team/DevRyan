@@ -19,10 +19,11 @@ const resolvePinnedJsonc=async resolved=>{
  return {modulePath,packagePath,packageBytes};
 };
 export const NATIVE_ASSET_SOURCE_SHA=Object.freeze({pty:'fe38312cd4acdfb067f520d3917daf52add098bb267e33bf7a8f7f44fc74ac8f',photon:'d60656705f0d59baa79e36b0381eb023f1864eeb57e92956cf21dcd9fb8f879f'});
+export const NATIVE_WINDOWS_PTY_SOURCE_SHA256='75e0c596f41f8b2e745c7fbee3dacff6a1013e923c2b10cf67b37ef433933772';
 /** Windows has no approved persistent PTY. Refuse before resolving a command,
  * creating an installation directory, or reading an environment override. */
 export function rewriteUnavailableNativePty(source) {
- if(hash(source)!=='ef4f293d75e5f238c4225867c153b07437299adeaf865f3056b284c218513304')throw new Error('Pinned native PTY resolver changed');
+ if(hash(source)!==NATIVE_WINDOWS_PTY_SOURCE_SHA256)throw new Error('Pinned native PTY resolver changed');
  return 'async function resolveBinary(){throw new Error("native_pty_platform_unsupported");}\nexport {resolveBinary};\n';
 }
 /** Build-only transformations require the exact pinned bytes before rewriting. */
@@ -45,6 +46,15 @@ export function rewriteNativeAgentDefaults(source) {
  const text=Buffer.from(source).toString('utf8'),anchor='            { action: "*", resource: "*", effect: "allow" },\n';
  if(hash(source)!==NATIVE_AGENT_DEFAULTS_SOURCE_SHA256||text.split(anchor).length!==2) throw new Error('Pinned native agent defaults changed');
  return text.replace(anchor,anchor+'            { action: "external_directory", resource: "*", effect: "ask" },\n');
+}
+export const NATIVE_PHOTON_WORKER_SOURCE_SHA256='8ca4b0972af2ea05b80234e48fe85728d5818673c431c27dc780cd1a4bd14b32';
+/** 2.2.0 resizes images in a worker thread that loads Photon outside the sealed
+ * WASM resolver, from a file a compiled bundle does not contain. Keep the reviewed
+ * main-thread Photon path, which never logs its worker fallback to stdout. */
+export function rewriteNativePhotonWorker(source) {
+ const text=Buffer.from(source).toString('utf8'),anchor='  let useWorker = true;\n';
+ if(hash(source)!==NATIVE_PHOTON_WORKER_SOURCE_SHA256||text.split(anchor).length!==2) throw new Error('Pinned native Photon worker changed');
+ return text.replace(anchor,'  let useWorker = false;\n');
 }
 export const REVIEWED_AST_FILENAME='DevRyan-ast-grep-darwin-arm64';
 

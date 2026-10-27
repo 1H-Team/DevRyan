@@ -25,6 +25,24 @@ const createRuntime = (overrides = {}) => {
 };
 
 describe('createProjectDirectoryRuntime', () => {
+  it('falls back to the host base location only when no directory or project is known', async () => {
+    const home = path.join(path.sep, 'Users', 'person');
+    const { runtime } = createRuntime({ dependencies: { getDefaultDirectory: () => home } });
+
+    await expect(runtime.resolveProjectDirectory({ get: () => null, query: {} })).resolves.toEqual({ directory: home, error: null });
+
+    const project = path.join(path.sep, 'work', 'project');
+    const { runtime: withProject } = createRuntime({ dependencies: {
+      getDefaultDirectory: () => home,
+      readSettingsFromDiskMigrated: async () => ({ projects: [{ id: 'p', path: project }] }),
+    } });
+    await expect(withProject.resolveProjectDirectory({ get: () => null, query: {} })).resolves.toEqual({ directory: project, error: null });
+
+    const { runtime: noBase } = createRuntime({ dependencies: { getDefaultDirectory: () => undefined } });
+    await expect(noBase.resolveProjectDirectory({ get: () => null, query: {} }))
+      .resolves.toEqual({ directory: null, error: 'Directory parameter or active project is required' });
+  });
+
   it('canonicalizes validated directories to their filesystem realpath', async () => {
     const aliasPath = path.join(path.sep, 'tmp', 'devryan-project');
     const canonicalPath = path.join(path.sep, 'private', 'tmp', 'devryan-project');

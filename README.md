@@ -22,4 +22,6 @@ bun run dev
 
 The dev orchestrator keeps the API, web build watcher, and UI typecheck watcher running. If a child process exits unexpectedly, it is restarted automatically. Press **Ctrl+C** in the terminal to stop everything.
 
+Every dev launcher (`dev`, `dev:web:hmr`, `dev:web:full`, the web server watcher and Electron dev) runs on a private data directory and a private `XDG_STATE_HOME` under `<os tmpdir>/devryan-development/<checkout>/<mode>`, so it provisions its own native runtime bundle and never takes the installed app's OpenCode runtime. Set `DEVRYAN_DATA_DIR` or `DEVRYAN_RUNTIME_BUNDLE_ROOT` to choose your own.
+
 Use **Services → Stop DevRyan** in the app when you want to end the dev stack from the UI (with confirmation).
