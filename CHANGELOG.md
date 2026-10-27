@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-10-27
+
+- Make the desktop composer model selector transparent while preserving the mobile touch target.
+
 ## [2.0.0] - 2026-10-27
 
 This release ships the macOS Apple silicon desktop app only, as one `DevRyan-2.0.0-arm64.dmg`. Web/npm, Intel macOS, Linux and Windows distributions are not released. Install it from the DMG: quit DevRyan and replace it in Applications.

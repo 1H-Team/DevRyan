@@ -180,11 +180,11 @@ describe('ModelControls composer alignment', () => {
     }, { isMobile: true });
   });
 
-  test('renders the desktop trigger as the message header model badge and keeps the mobile touch height', async () => {
+  test('renders the desktop trigger fully transparent and keeps the mobile touch height', async () => {
     await withModelControls(async (container) => {
       const classes = classOf(container, 'model-controls__model-trigger').split(/\s+/);
-      for (const name of ['agent-badge', 'agent-badge-combined', 'h-6', 'rounded-md', 'px-1.5']) expect(classes).toContain(name);
-      expect(classes).not.toContain('border-0');
+      for (const name of ['h-6', 'border-0', 'bg-transparent', 'hover:bg-transparent']) expect(classes).toContain(name);
+      for (const name of ['agent-badge', 'agent-badge-combined']) expect(classes).not.toContain(name);
     }, { isMobile: false });
     await withModelControls(async (container) => {
       expect(classOf(container, 'model-controls__model-trigger').split(/\s+/)).toContain('h-9');

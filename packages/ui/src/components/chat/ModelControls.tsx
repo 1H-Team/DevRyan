@@ -1,5 +1,4 @@
 import { ThinkingSlider } from './ThinkingSlider';
-import { MODEL_BADGE_STYLE } from './chatBadgeStyles';
 import { getChatThinkingState, resolveChatThinkingVariant } from '@/lib/providers/chatThinking';
 import React from 'react';
 import type { ComponentType } from 'react';
@@ -693,8 +692,8 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     const inlineGapClass = sizeVariant === 'mobile' ? 'gap-x-1' : 'gap-x-3';
     // Model name and thinking level share a baseline so they stay aligned at every interface font size.
     const modelLabelRowClass = 'model-controls__model-row flex min-w-0 items-baseline gap-1';
-    // Desktop trigger uses the message header model badge pill (ChatMetadataBadge kind="model"); mobile keeps its touch height.
-    const modelBadgeTriggerClass = 'agent-badge agent-badge-combined h-6 gap-1 rounded-md px-1.5';
+    // Desktop trigger stays transparent; mobile keeps its touch height.
+    const modelBadgeTriggerClass = 'h-6 gap-1 border-0 bg-transparent p-0 hover:bg-transparent';
     // 10px at the default 14px meta size; scales with the interface font size like the model name.
     const variantLabelTextSize = isCompact ? 'text-[calc(var(--text-micro)*0.7143)]' : 'text-[calc(var(--text-meta)*0.7143)]';
     const agentLabelAlignmentClass = isDesktop ? undefined : '-translate-y-px';
@@ -2882,7 +2881,6 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                         'model-controls__model-trigger flex items-center cursor-pointer text-left hover:opacity-70 min-w-0',
                                         isReady ? modelBadgeTriggerClass : cn('gap-1.5 border-0 bg-transparent p-0 hover:bg-transparent', buttonHeight)
                                     )}
-                                    style={isReady ? MODEL_BADGE_STYLE : undefined}
                                 >
                                     {!isReady ? (
                                         <>
