@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import type { OpencodeClient, SessionStatus } from "@opencode-ai/sdk/v2/client"
 
 import { registerManualAbortGuard, resetAbortGuardState, setAbortGuardExecutor } from "./abort-retry-guard"
@@ -36,6 +36,16 @@ const createState = (): State => ({
   part: {},
 })
 
+// retry() backs off 500 ms then 1 s between attempts. Run just those waits on the next tick; every other timer stays real.
+const realSetTimeout = globalThis.setTimeout
+beforeEach(() => {
+  globalThis.setTimeout = ((handler: TimerHandler, delay?: number, ...args: unknown[]) =>
+    realSetTimeout(handler, delay === 500 || delay === 1000 ? 0 : delay, ...args)) as unknown as typeof setTimeout
+})
+afterEach(() => {
+  globalThis.setTimeout = realSetTimeout
+})
+
 describe("bootstrapDirectory session list readiness", () => {
   beforeEach(() => {
     console.error = mock(() => {}) as unknown as typeof console.error
@@ -45,6 +55,102 @@ describe("bootstrapDirectory session list readiness", () => {
       streamingMessageIds: new Map(),
       messageStreamStates: new Map(),
     })
+  })
+
+  test("loads sessions concurrently, waits for required data, then starts optional enrichment", async () => {
+    let state = createState()
+    const sdk = createSdk()
+    let releasePath!: () => void
+    const pathReady = new Promise<void>(resolve => { releasePath = resolve })
+    const originalPath = sdk.path.get.bind(sdk.path)
+    Object.assign(sdk.path, { get: async (...args: Parameters<typeof sdk.path.get>) => {
+      await pathReady
+      return originalPath(...args)
+    } })
+    const agents = mock(sdk.app.agents.bind(sdk.app))
+    Object.assign(sdk.app, { agents })
+    let sessionsStarted = false
+    const boot = bootstrapDirectory({
+      directory: "/repo", sdk, getState: () => state,
+      set: patch => { state = { ...state, ...patch } },
+      global: { config: {}, projects: [], providers: { all: [], connected: [], default: {} } },
+      loadSessions: async directory => {
+        expect(directory).toBe("/repo")
+        sessionsStarted = true
+      },
+    })
+    expect(sessionsStarted).toBe(true)
+    expect(state.status).toBe("partial")
+    expect(agents).toHaveBeenCalledTimes(0)
+    releasePath()
+    await boot
+    expect(state.status).toBe("complete")
+    expect(agents).toHaveBeenCalledTimes(1)
+  })
+
+  test("exposes critical failure instead of leaving preparing directory without a Retry error", async () => {
+    let state = createState()
+    const sdk = createSdk()
+    Object.assign(sdk.path, { get: () => Promise.resolve({ error: "directory unavailable", response: { status: 400 } }) })
+    await bootstrapDirectory({
+      directory: "/repo", sdk, getState: () => state,
+      set: patch => { state = { ...state, ...patch } },
+      global: { config: {}, projects: [], providers: { all: [], connected: [], default: {} } },
+      loadSessions: async () => {},
+    })
+    expect(state.status).toBe("partial")
+    expect(state.bootstrapError).toContain("directory unavailable")
+  })
+
+  test("late responses from a cancelled directory cannot finish or replace state", async () => {
+    let state = createState()
+    const sdk = createSdk()
+    const owner = new AbortController()
+    let releasePath!: () => void
+    const waiting = new Promise<void>(resolve => { releasePath = resolve })
+    const originalPath = sdk.path.get.bind(sdk.path)
+    Object.assign(sdk.path, { get: async (...args: Parameters<typeof sdk.path.get>) => {
+      await waiting
+      return originalPath(...args)
+    } })
+    const boot = bootstrapDirectory({
+      directory: "/repo", sdk, signal: owner.signal, getState: () => state,
+      set: patch => { state = { ...state, ...patch } },
+      global: { config: {}, projects: [], providers: { all: [], connected: [], default: {} } },
+      loadSessions: async () => {},
+    })
+    owner.abort()
+    await boot
+    const stopped = state
+    releasePath()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(state).toBe(stopped)
+    expect(state.status).toBe("partial")
+    expect(state.bootstrapError).toBeUndefined()
+  })
+
+  test("reconciles a large history without overwriting live status received during status loading", async () => {
+    let state = createState()
+    const sdk = createSdk()
+    Object.assign(sdk.session, { status: async (input: { directory: string }) => {
+      expect(input.directory).toBe("/repo")
+      await Promise.resolve()
+      state = { ...state, session_status: { "session-0": { type: "busy" } } }
+      return { data: { "session-0": { type: "idle" } } }
+    } })
+    await bootstrapDirectory({
+      directory: "/repo", sdk, getState: () => state,
+      set: patch => { state = { ...state, ...patch } },
+      global: { config: {}, projects: [], providers: { all: [], connected: [], default: {} } },
+      loadSessions: async () => {
+        state = { ...state, session: Array.from({ length: 5000 }, (_, index) =>
+          ({ id: `session-${index}`, directory: "/repo" }) as State["session"][number]) }
+      },
+    })
+    expect(state.status).toBe("complete")
+    expect(state.session_status["session-0"]).toEqual({ type: "busy" })
+    expect(state.session_status["session-4999"]).toEqual({ type: "idle" })
   })
 
   test("marks an empty session list ready after a successful first request", async () => {
@@ -95,6 +201,7 @@ describe("bootstrapDirectory session list readiness", () => {
     expect(state.status).toBe("partial")
     expect(state.sessionListStatus).toBe("error")
     expect(state.sessionListError).toContain("503")
+    expect(state.bootstrapError).toBe(state.sessionListError)
   })
 
   test("treats listed sessions missing from a successful status snapshot as idle", async () => {

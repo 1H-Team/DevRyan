@@ -7,6 +7,8 @@ import {
 } from './harness-result.js';
 import { isDeepStrictEqual } from 'node:util';
 import { canReadSettingsPage } from '../multi-user/policy.js';
+import { previewAgentModelOverride } from './agents.js';
+import { inspectModelSelection } from '../../../../shared-runtime/lib/model-selection-availability.js';
 
 const sanitizeModel = (model) => {
   if (typeof model === 'string') return model;
@@ -72,12 +74,13 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
     listStaleAgentModelOverrides,
     listShadowedAgentModelOverrides,
     writeAgentModelOverride,
+    readAgentModelCatalog,
+    validateCursorModelSelection,
     deleteAgentModelOverride,
     writeAgentBackupModel,
     deleteAgentBackupModel,
-    readAgentRuntimeSettings,
-    writeAgentRuntimeSettings,
-    getAgentRuntimeApplicationState,
+    getPackagedAgentPrompts,
+    restorePackagedAgentPrompt,
     listConfigAgents,
     getCommandSources,
     createCommand,
@@ -164,6 +167,31 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
       retryable,
     },
   })));
+
+  const requireHostAdmin = (req, res, next) => {
+    if (req.principal?.scope !== 'local-admin' && req.principal?.role !== 'admin') {
+      return res.status(403).json({ error: 'Host administrator access required' });
+    }
+    next();
+  };
+  app.get('/api/config/packaged-agent-prompts', requireHostAdmin, async (_req, res) => {
+    if (typeof getPackagedAgentPrompts !== 'function') return res.status(503).json({ error: 'Packaged prompt maintenance unavailable' });
+    try { return res.json(await getPackagedAgentPrompts()); }
+    catch (error) { return res.status(error.status ?? 500).json({ error: formatErrorMessage(error, 'Unable to inspect packaged prompts') }); }
+  });
+  app.post('/api/config/packaged-agent-prompts/restore', requireHostAdmin, express.json({ limit: '4kb' }), async (req, res) => {
+    if (typeof restorePackagedAgentPrompt !== 'function') return res.status(503).json({ error: 'Packaged prompt maintenance unavailable' });
+    if (!req.body || Object.keys(req.body).length !== 2 || !Object.hasOwn(req.body, 'name') || !Object.hasOwn(req.body, 'expectedHash')) {
+      return res.status(400).json({ error: 'An agent name and current revision are required' });
+    }
+    try {
+      const result = await restorePackagedAgentPrompt(req.body);
+      return completeAgentOverrideMutation(res, 'packaged agent prompt restored', req.body.name,
+        { success: true, ...result }, result.changed);
+    } catch (error) {
+      return res.status(error.status ?? 500).json({ error: formatErrorMessage(error, 'Unable to restore packaged prompt'), code: error.code });
+    }
+  });
 
   app.get('/api/config/agents', async (req, res) => {
     try {
@@ -324,7 +352,49 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
       }
 
       const previousAgent = getAgentConfig(agentName, directory);
-      const override = writeAgentModelOverride(agentName, req.body || {}, directory);
+      if (!previousAgent?.config?.name) return res.status(404).json({ error: 'Agent not found' });
+      const preview = previewAgentModelOverride(previousAgent.config, req.body || {});
+      const selections = [
+        { model: preview.config.model, variant: preview.config.variant },
+        ...(Array.isArray(preview.config.councillors) ? preview.config.councillors : []),
+      ];
+      // Validate the merged pair, including an unchanged effort on model-only updates.
+      for (const selection of selections) {
+        const model = sanitizeModel(selection.model);
+        const slash = typeof model === 'string' ? model.indexOf('/') : -1;
+        const providerID = typeof model === 'string' ? model.slice(0, slash) : model?.providerID;
+        const modelID = typeof model === 'string' ? model.slice(slash + 1) : model?.modelID;
+        if (!providerID || !modelID || (typeof model === 'string' && slash < 1)) {
+          return res.status(409).json({ error: 'Agent has no executable model', code: 'managed_agent_model_unavailable',
+            retryable: false, details: { reason: 'model_missing', agent: agentName } });
+        }
+        let result;
+        if (providerID === 'cursor-acp') {
+          let available;
+          try { available = await validateCursorModelSelection?.({ directory, modelID, variant: selection.variant, signal: AbortSignal.timeout(5_000) }); }
+          catch { /* Display fallbacks are not authoritative catalog evidence. */ }
+          result = available === true ? { status: 'available', reason: null }
+            : available === false ? { status: 'unavailable', reason: 'selection_unavailable' }
+              : { status: 'unknown', reason: 'catalog_unavailable' };
+        } else {
+          let catalog;
+          try { catalog = await readAgentModelCatalog?.(directory); } catch { /* Unavailable is retryable, never a missing model. */ }
+          result = inspectModelSelection({ providerID, modelID, variant: selection.variant }, catalog);
+        }
+        if (result.status !== 'available') {
+          const retryable = result.status === 'unknown';
+          const message = retryable ? 'The model catalog could not be verified. Retry saving the agent settings.'
+            : result.reason === 'variant_missing' ? `${agentName}: reasoning effort '${selection.variant}' is unsupported for ${providerID}/${modelID}. Choose a supported effort or Provider default.`
+              : `${agentName}: ${providerID}/${modelID} is unavailable. Choose an available model.`;
+          return res.status(retryable ? 503 : 409).json({ error: message,
+            code: retryable ? 'managed_agent_model_availability_unknown' : 'managed_agent_model_unavailable', retryable,
+            details: { reason: result.reason, agent: agentName, providerID, modelID, variant: selection.variant ?? null } });
+        }
+      }
+      if (!isDeepStrictEqual(previousAgent.config, getAgentConfig(agentName, directory)?.config)) {
+        return res.status(409).json({ error: 'Agent settings changed while validating. Reload and retry.', code: 'agent_configuration_changed', retryable: true });
+      }
+      const override = writeAgentModelOverride(agentName, preview.override, directory);
       const agent = getAgentConfig(agentName, directory);
       return completeAgentOverrideMutation(
         res,
@@ -406,63 +476,6 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
       console.error('Failed to delete agent backup model:', error);
       res.status(500).json({ error: formatErrorMessage(error, 'Failed to delete agent backup model') });
     }
-  });
-
-  // Desired switches stay in the sidecar. Only successful managed readiness
-  // proves which launch snapshot OpenCode applied; saves never rewrite its overlay.
-  const projectAgentRuntimeSettings = (settings) => {
-    const application = typeof getAgentRuntimeApplicationState === 'function'
-      ? getAgentRuntimeApplicationState() : null;
-    const runtimeMode = ['managed', 'external'].includes(application?.runtimeMode)
-      ? application.runtimeMode : 'unknown';
-    const appliedLsp = runtimeMode === 'managed' && typeof application?.appliedLsp === 'boolean'
-      ? application.appliedLsp : null;
-    return {
-      lsp: settings.lsp,
-      appliesOnRestart: true,
-      runtimeMode,
-      appliedLsp,
-      restartRequired: appliedLsp === null ? null : settings.lsp !== appliedLsp,
-    };
-  };
-  const AGENT_RUNTIME_UNAVAILABLE = 'Agent runtime settings are not supported by this host';
-  const AGENT_RUNTIME_FORBIDDEN = 'Agent runtime settings are not available for this user';
-
-  app.get('/api/config/agent-runtime', (req, res) => {
-    if (!canReadFullAgentConfig(req.principal)) {
-      return res.status(403).json({ error: AGENT_RUNTIME_FORBIDDEN });
-    }
-    if (typeof readAgentRuntimeSettings !== 'function') {
-      return res.status(501).json({ error: AGENT_RUNTIME_UNAVAILABLE });
-    }
-    try {
-      const settings = readAgentRuntimeSettings();
-      return res.json(projectAgentRuntimeSettings(settings));
-    } catch (error) {
-      console.error('Failed to read agent runtime settings:', error);
-      return res.status(500).json({ error: formatErrorMessage(error, 'Failed to read agent runtime settings') });
-    }
-  });
-
-  app.put('/api/config/agent-runtime', express.json({ limit: '16kb' }), async (req, res) => {
-    if (!canReadFullAgentConfig(req.principal)) {
-      return res.status(403).json({ error: AGENT_RUNTIME_FORBIDDEN });
-    }
-    if (typeof readAgentRuntimeSettings !== 'function' || typeof writeAgentRuntimeSettings !== 'function') {
-      return res.status(501).json({ error: AGENT_RUNTIME_UNAVAILABLE });
-    }
-    let next;
-    try {
-      next = writeAgentRuntimeSettings(req.body || {});
-    } catch (error) {
-      const invalid = error?.code === 'invalid_agent_runtime_settings';
-      if (!invalid) console.error('Failed to write agent runtime settings:', error);
-      return res.status(invalid ? 400 : 500).json({
-        error: formatErrorMessage(error, 'Failed to write agent runtime settings'),
-      });
-    }
-
-    return res.json(projectAgentRuntimeSettings(next));
   });
 
   const rejectAgentMutation = (_req, res) => {

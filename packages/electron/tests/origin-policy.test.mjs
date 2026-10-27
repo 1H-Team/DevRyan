@@ -80,8 +80,11 @@ describe('buildInitScript privileged globals', () => {
     const { fileURLToPath } = await import('node:url');
     const mainPath = fileURLToPath(new URL('../main.mjs', import.meta.url));
     const source = readFileSync(mainPath, 'utf8');
-    expect(source).toContain('if(__oc_is_local){window.__OPENCHAMBER_HOME__');
-    expect(source).toContain('if(__oc_is_local&&__oc_server){window.__OPENCHAMBER_DESKTOP_SERVER__');
+    // Home and the desktop server are set (under both names) only behind the local-origin guard.
+    expect(source).toContain("if(__oc_is_local){__oc_set('HOME',");
+    expect(source).toContain("if(__oc_is_local&&__oc_server){__oc_set('DESKTOP_SERVER',");
+    expect(source).toContain("window['__DEVRYAN_'+n+'__']=v;window['__OPENCHAMBER_'+n+'__']=v;");
+    expect(source).not.toMatch(/window\.__(?:DEVRYAN|OPENCHAMBER)_(?:HOME|DESKTOP_SERVER)__=/);
     expect(source).not.toMatch(/localhost\|127\\\.0\.0\.1/);
   });
 });

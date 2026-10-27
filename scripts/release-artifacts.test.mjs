@@ -3,10 +3,23 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { describeWebArtifact, stageWebArtifact, verifyWebArtifact, verifyPreparedMetadata } from './release-artifacts.mjs';
+import { describeWebArtifact, stageWebArtifact, verifyWebArtifact, verifyPreparedMetadata, assertReleaseWritesAllowed } from './release-artifacts.mjs';
 import { packagePrepared } from '../packages/electron/scripts/package-prepared.mjs';
 
-const identity = { revision: 'a'.repeat(40), release: '1.2.3', lockfile: 'b'.repeat(64) };
+const identity = { revision: 'a'.repeat(40), release: '1.2.3', lockfile: 'b'.repeat(64), runID: '123' };
+test('dry runs refuse external publication', () => {
+  assertReleaseWritesAllowed({});
+  assertReleaseWritesAllowed({ RELEASE_DRY_RUN: 'false' });
+  assert.throws(() => assertReleaseWritesAllowed({ RELEASE_DRY_RUN: 'true' }), { code: 'release_dry_run_write_forbidden' });
+});
+
+test('release writes go only to the canonical repository, never from a dry run', () => {
+  assertReleaseWritesAllowed({}, { repository: '1H-Team/DevRyan' });
+  for (const [environment, repository] of [[{ RELEASE_DRY_RUN: 'true' }, '1H-Team/DevRyan'], [{}, '1H-Team/DevRyan-release-staging'], [{}, 'attacker/DevRyan']]) {
+    assert.throws(() => assertReleaseWritesAllowed(environment, { repository }), { code: 'release_dry_run_write_forbidden' });
+  }
+});
+
 test('web handoff preserves hidden manifests and rejects changed identity, missing and corrupt files', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-web-artifact-'));
   try {
@@ -17,6 +30,7 @@ test('web handoff preserves hidden manifests and rejects changed identity, missi
     await stageWebArtifact({ source, metadata, identity, destination: path.join(root, 'staged') });
     await verifyWebArtifact(path.join(root, 'staged'), metadata, identity);
     await assert.rejects(verifyWebArtifact(source, metadata, { ...identity, revision: 'c'.repeat(40) }), /mismatch/);
+    await assert.rejects(verifyWebArtifact(source, metadata, { ...identity, runID: '124' }), /mismatch/);
     await fs.writeFile(path.join(source, 'sw.js'), 'corrupt');
     await assert.rejects(verifyWebArtifact(source, metadata, identity), /mismatch/);
     await fs.rm(path.join(source, 'index.html'));
@@ -32,17 +46,14 @@ test('prepared native archive is bound to architecture, commit and bytes', () =>
   assert.throws(() => verifyPreparedMetadata(metadata, { ...identity, lockfile: 'other' }, 'arm64', 'abc'), /mismatch/);
 });
 
-test('packaging requires verified manifest before invoking builder and verifies built artifacts', async () => {
+test('packaging verifies the runtime before invoking builder and verifies built artifacts', async () => {
   const calls = [];
   const options = { arch: 'x64', builder: () => 'builder', execute: (args) => calls.push(args),
-    stageManifest: async (args) => { assert.equal(args.required, true); calls.push('manifest'); },
     verifyRuntime: async (args) => { assert.equal(args.arch, 'x64'); calls.push('revert-runtime'); } };
   await packagePrepared(options);
-  assert.deepEqual(calls, ['manifest', 'revert-runtime', ['builder'], ['./scripts/verify-runtime-service-package.mjs', '--arch', 'x64']]);
+  assert.deepEqual(calls, ['revert-runtime', ['builder'], ['./scripts/verify-runtime-service-package.mjs', '--arch', 'x64']]);
   calls.length = 0;
-  await assert.rejects(packagePrepared({ ...options, stageManifest: async () => { throw new Error('invalid'); } }), /invalid/);
-  assert.equal(calls.length, 0);
   await assert.rejects(packagePrepared({ ...options, verifyRuntime: async () => { throw new Error('unverified runtime'); } }), /unverified runtime/);
-  assert.deepEqual(calls, ['manifest']);
+  assert.equal(calls.length, 0);
   await assert.rejects(packagePrepared({ ...options, execute: () => { throw new Error('builder failed'); } }), /builder failed/);
 });

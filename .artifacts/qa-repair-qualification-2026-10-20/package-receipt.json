@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "purpose": "actual packaged Electron Coding Agents QA with isolated test bootstrap",
+  "electronVersion": "41.2.1",
+  "arch": "arm64",
+  "sourceSha256": "bc036d34bb0eb230624859eebf7aa2392b5715cd0800b6efb2a0a89c9c6227a2",
+  "webSha256": "94df68b63bc4cf24806d896d9aa32aae643e5db7a7e9e0568ca41887763cf588",
+  "archiveSha256": "e69136e5f47dbcf62f6e2ebb73bf20d8910ce7668c7a4aea139492884745a40c",
+  "mainSha256": "30b03903c5ae64ae6322ff346255b56005a32fec471499d448713afb471bb6dc",
+  "nativeSmoke": {
+    "electron": "41.2.1",
+    "nodeModuleAbi": "145",
+    "sqlite": "passed",
+    "pty": "passed"
+  },
+  "nativeRuntimeManifestSha256": "fce52f2f2c4618a8f7649a973219633827666d3439290df1bab2cca6ec172c4a",
+  "nativeRuntimeBuildId": "6abdc8e8949b58961232392f8d9075f487a2ce30b6adc3774a3f3402c837dc02",
+  "nativeRuntimeVersion": "2.1.0",
+  "compiledWorkerCurrent": false,
+  "signing": "disabled",
+  "publication": "disabled",
+  "excludedAcceptance": [
+    "signing/notarization",
+    "updater installation",
+    "global protocol registration",
+    "OS keychain integration",
+    "background Bot service",
+    "legacy Tauri"
+  ]
+}

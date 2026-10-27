@@ -1,13 +1,13 @@
-import type { UsageResetCredits, UsageWindow } from '@/types';
+import type { UsageResetCredits, UsageWindow, UsageSourceMetadata } from '@/types';
 
-export interface RateLimitGroup {
+export interface RateLimitGroup extends UsageSourceMetadata {
   providerId: string;
   providerName: string;
   entries: Array<[string, UsageWindow]>;
   error?: string;
   warnings?: string[];
   usageUpdatedAt?: number | null;
-  resetCredits?: UsageResetCredits;
+  resetCredits?: UsageResetCredits | null;
   modelFamilies?: Array<{
     familyId: string | null;
     familyLabel: string;

@@ -11,19 +11,15 @@ import {
 } from '../packages/web/server/lib/opencode/default-plugins.js';
 import { ANTHROPIC_OAUTH_PLUGIN_SPEC } from '../packages/web/server/lib/opencode/anthropic-oauth-plugin.js';
 import {
-  DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE,
-  DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC,
-  SLIM_MANAGED_VERSION,
-  SLIM_PLUGIN_PACKAGE_NAME,
-} from '../packages/web/server/lib/opencode/slim-config.js';
-import {
   DEVRYAN_MANAGED_PLUGINS,
   DEVRYAN_MANAGED_PLUGIN_IDS,
   DEVRYAN_MANAGED_PROFILE_PLUGIN_FILES,
   DEVRYAN_MANAGED_PROFILE_PLUGIN_SPECS,
+  isRetiredDevRyanPluginSpec,
 } from '../packages/web/server/lib/opencode/managed-plugins.js';
 import { createUserProfileProvisioningRuntime } from '../packages/web/server/lib/opencode/user-profile-provisioning.js';
 import { syncRuntimeAgentOverlays } from '../packages/web/server/lib/opencode/runtime-agent-overlays.js';
+const pluginSdkPin = JSON.parse(fs.readFileSync(new URL('../packages/web/package.json', import.meta.url), 'utf8')).devDependencies['@opencode-ai/plugin'];
 
 const readJson = (filePath) => JSON.parse(fs.readFileSync(filePath, 'utf8'));
 const requireFile = (filePath, label) => {
@@ -47,12 +43,16 @@ export const smokePackagedOrchestrationConfig = async ({ configRoot }) => {
   requireFile(path.join(resolvedConfigRoot, 'opencode.json'), 'default config');
   requireFile(path.join(resolvedConfigRoot, 'agents', 'orchestrator.md'), 'required orchestration agent');
   requireFile(path.join(resolvedConfigRoot, 'plugins', 'devryan-managed-orchestration.mjs'), 'required orchestration runtime plugin');
-  requireFile(path.join(resolvedConfigRoot, 'plugins', DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE), 'default Slim wrapper plugin');
+  // The agent orchestration (formerly the Oh My OpenCode Slim plugin) is built
+  // into the native runtime: nothing may ship, register or install it as a plugin.
+  if (fs.existsSync(path.join(resolvedConfigRoot, 'plugins', 'devryan-oh-my-opencode-slim.mjs'))) {
+    throw new Error('Retired Slim adapter must not ship: the agent orchestration is built in');
+  }
   requireFile(path.join(resolvedConfigRoot, 'plugins', 'openai-tool-schema-sanitizer.mjs'), 'default OpenAI tool schema sanitizer plugin');
   requireFile(path.join(resolvedConfigRoot, 'plugins', 'devryan-document-reader.mjs'), 'default document reader plugin');
   requireFile(path.join(profileRoot, 'opencode.json'), 'user profile config');
   requireFile(path.join(profileRoot, 'package.json'), 'user profile dependency declaration');
-  requireFile(path.join(profileRoot, 'oh-my-opencode-slim.json'), 'user profile Slim configuration');
+  requireFile(path.join(profileRoot, 'devryan-agents.jsonc'), 'user profile agent configuration');
 
   const profileConfig = readJson(path.join(profileRoot, 'opencode.json'));
   const profilePackage = readJson(path.join(profileRoot, 'package.json'));
@@ -62,8 +62,8 @@ export const smokePackagedOrchestrationConfig = async ({ configRoot }) => {
   if (!profilePackage.dependencies || Object.keys(profilePackage.dependencies).length === 0) {
     throw new Error('Missing user profile dependency declarations');
   }
-  if (!profileConfig.plugin.includes(DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC)) {
-    throw new Error(`Missing default Slim registration: ${DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC}`);
+  if (profileConfig.plugin.some((entry) => isRetiredDevRyanPluginSpec(entry))) {
+    throw new Error('User profile registers a retired plugin; the agent orchestration is built in');
   }
   if (!profileConfig.plugin.includes(ANTHROPIC_OAUTH_PLUGIN_SPEC)) {
     throw new Error(`Missing default Claude registration: ${ANTHROPIC_OAUTH_PLUGIN_SPEC}`);
@@ -71,14 +71,15 @@ export const smokePackagedOrchestrationConfig = async ({ configRoot }) => {
   if (JSON.stringify(profileConfig.plugin) !== JSON.stringify(DEVRYAN_MANAGED_PROFILE_PLUGIN_SPECS)) {
     throw new Error('User profile plugin declarations do not match the managed local registrations');
   }
-  if (profilePackage.dependencies[SLIM_PLUGIN_PACKAGE_NAME] !== SLIM_MANAGED_VERSION) {
-    throw new Error(`Missing default Slim dependency: ${SLIM_PLUGIN_PACKAGE_NAME}@${SLIM_MANAGED_VERSION}`);
+  if (Object.hasOwn(profilePackage.dependencies, 'oh-my-opencode-slim')) {
+    throw new Error('User profile installs the retired Slim package; the agent orchestration is built in');
   }
-  if (profilePackage.dependencies['opencode-with-claude'] !== '1.8.0') {
+  if (profilePackage.dependencies['opencode-with-claude'] !== '1.11.2') {
     throw new Error(`Missing default Claude dependency: ${ANTHROPIC_OAUTH_PLUGIN_SPEC}`);
   }
+  // The packaged plugin SDK follows its compatibility dependency pin.
   for (const [packageName, version] of Object.entries({
-    '@opencode-ai/plugin': '1.18.33',
+    '@opencode-ai/plugin': pluginSdkPin,
     'adm-zip': '0.6.0',
     'mammoth': '1.12.1',
     'unpdf': '1.8.0',
@@ -144,7 +145,6 @@ export const smokePackagedOrchestrationConfig = async ({ configRoot }) => {
     });
     const provisioned = await runtime.provision();
     if (!provisioned.ok) throw new Error(provisioned.error || 'Clean-user provisioning failed');
-    requireFile(path.join(configDirectory, 'node_modules', SLIM_PLUGIN_PACKAGE_NAME), 'installed default Slim dependency');
     requireFile(path.join(configDirectory, 'node_modules', 'opencode-with-claude'), 'installed default Claude dependency');
     const documentReader = DEVRYAN_MANAGED_PLUGINS.find((plugin) => (
       plugin.id === DEVRYAN_MANAGED_PLUGIN_IDS.DOCUMENT_READER
@@ -157,7 +157,7 @@ export const smokePackagedOrchestrationConfig = async ({ configRoot }) => {
     }
 
     const expectedManagedFiles = managedProfileFiles(assets);
-    const manifest = readJson(path.join(configDirectory, '.openchamber', 'user-profile-manifest.json'));
+    const manifest = readJson(path.join(configDirectory, '.devryan', 'user-profile-manifest.json'));
     for (const relativePath of expectedManagedFiles) {
       requireFile(path.join(configDirectory, relativePath), `provisioned managed file ${relativePath}`);
       if (!manifest.files?.[relativePath]?.hash) throw new Error(`Missing manifest record for ${relativePath}`);

@@ -1,3 +1,4 @@
+import type {WindowsPrivateFileOwner} from './windows-private-files.js';
 import type { MutationFile, MutationTarget, SessionMutationRuntime } from './session-mutations.js';
 
 export interface MutationSession {
@@ -24,18 +25,23 @@ export interface SessionRevertCoordinator {
   }>;
   recover(input: { directory: string }): Promise<void>;
   restoreFiles(input: MutationSessionReference & { revision: string; redo?: boolean;
-    calls: Array<{ sessionID: string; callID: string; messageID?: string }> }): Promise<{
+    calls: Array<{ sessionID: string; callID: string; messageID: string }>; proof: { version: 1; digest: string } }): Promise<{
     files: MutationFile[]; sessions: MutationTarget[]; redoAvailable: boolean;
   }>;
 }
 export function createSessionRevertCoordinator(options: {
   directory: string;
+  windowsOwner?:WindowsPrivateFileOwner;
+  windowsLauncher?:string;
   runtime: SessionMutationRuntime;
   conversation: {
-    capabilities(input: { directory: string }): Promise<{ legacyConversationRevert?: number }>;
+    capabilities(input: { directory: string }): Promise<{ conversationOnlyRevert?: number }>;
     get(input: MutationSessionReference): Promise<MutationSession>;
-    revert(input: MutationSessionReference & { messageID: string; partID?: string; files: false }): Promise<MutationSession>;
-    unrevert(input: MutationSessionReference): Promise<MutationSession>;
+    revert(input: MutationSessionReference & { messageID: string; partID?: string; files: false; transactionID: string }): Promise<MutationSession>;
+    unrevert(input: MutationSessionReference & { transactionID: string }): Promise<MutationSession>;
+    /** Called only after the durable transaction has committed or cancelled. */
+    releaseHolds?(input: MutationTerminationRequest): Promise<void>;
+    recoverHolds?(input: { directory: string }): Promise<void>;
     /** Required with `legacy`: direct children and one message for adopted conversations. */
     children?(input: MutationSessionReference): Promise<Array<{ id: string }>>;
     message?(input: MutationSessionReference & { messageID: string }): Promise<{ info: { id: string; role: string; time: { created: number } } }>;

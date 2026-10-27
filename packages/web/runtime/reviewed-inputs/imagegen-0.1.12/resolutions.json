@@ -1,0 +1,1237 @@
+{
+  "schema": 1,
+  "packages": [
+    {
+      "name": "@borewit/text-codec",
+      "version": "0.2.2",
+      "license": "MIT"
+    },
+    {
+      "name": "@opencode-ai/plugin",
+      "version": "1.18.31",
+      "license": "MIT"
+    },
+    {
+      "name": "@tokenizer/inflate",
+      "version": "0.4.1",
+      "license": "MIT"
+    },
+    {
+      "name": "debug",
+      "version": "4.4.3",
+      "license": "MIT"
+    },
+    {
+      "name": "eventsource-parser",
+      "version": "4.1.1",
+      "license": "MIT"
+    },
+    {
+      "name": "file-type",
+      "version": "22.0.2",
+      "license": "MIT"
+    },
+    {
+      "name": "ieee754",
+      "version": "1.2.1",
+      "license": "BSD-3-Clause"
+    },
+    {
+      "name": "ms",
+      "version": "2.1.3",
+      "license": "MIT"
+    },
+    {
+      "name": "strtok3",
+      "version": "10.3.5",
+      "license": "MIT"
+    },
+    {
+      "name": "token-types",
+      "version": "6.1.2",
+      "license": "MIT"
+    },
+    {
+      "name": "uint8array-extras",
+      "version": "1.5.0",
+      "license": "MIT"
+    },
+    {
+      "name": "zod",
+      "version": "4.1.8",
+      "license": "MIT"
+    }
+  ],
+  "edges": [
+    {
+      "importer": "dist/index.js",
+      "specifier": "@opencode-ai/plugin/tool",
+      "target": "node_modules/@opencode-ai/plugin@1.18.31/dist/tool.js"
+    },
+    {
+      "importer": "dist/index.js",
+      "specifier": "eventsource-parser/stream",
+      "target": "node_modules/eventsource-parser@4.1.1/dist/stream.js"
+    },
+    {
+      "importer": "dist/index.js",
+      "specifier": "file-type",
+      "target": "node_modules/file-type@22.0.2/source/index.js"
+    },
+    {
+      "importer": "node_modules/@opencode-ai/plugin@1.18.31/dist/tool.js",
+      "specifier": "zod",
+      "target": "node_modules/zod@4.1.8/index.js"
+    },
+    {
+      "importer": "node_modules/@tokenizer/inflate@0.4.1/lib/index.js",
+      "specifier": "./GzipHandler.js",
+      "target": "node_modules/@tokenizer/inflate@0.4.1/lib/GzipHandler.js"
+    },
+    {
+      "importer": "node_modules/@tokenizer/inflate@0.4.1/lib/index.js",
+      "specifier": "./ZipHandler.js",
+      "target": "node_modules/@tokenizer/inflate@0.4.1/lib/ZipHandler.js"
+    },
+    {
+      "importer": "node_modules/@tokenizer/inflate@0.4.1/lib/ZipHandler.js",
+      "specifier": "./ZipToken.js",
+      "target": "node_modules/@tokenizer/inflate@0.4.1/lib/ZipToken.js"
+    },
+    {
+      "importer": "node_modules/@tokenizer/inflate@0.4.1/lib/ZipHandler.js",
+      "specifier": "debug",
+      "target": "node_modules/debug@4.4.3/src/index.js"
+    },
+    {
+      "importer": "node_modules/@tokenizer/inflate@0.4.1/lib/ZipHandler.js",
+      "specifier": "token-types",
+      "target": "node_modules/token-types@6.1.2/lib/index.js"
+    },
+    {
+      "importer": "node_modules/@tokenizer/inflate@0.4.1/lib/ZipToken.js",
+      "specifier": "token-types",
+      "target": "node_modules/token-types@6.1.2/lib/index.js"
+    },
+    {
+      "importer": "node_modules/debug@4.4.3/src/browser.js",
+      "specifier": "./common",
+      "target": "node_modules/debug@4.4.3/src/common.js"
+    },
+    {
+      "importer": "node_modules/debug@4.4.3/src/common.js",
+      "specifier": "ms",
+      "target": "node_modules/ms@2.1.3/index.js"
+    },
+    {
+      "importer": "node_modules/debug@4.4.3/src/index.js",
+      "specifier": "./browser.js",
+      "target": "node_modules/debug@4.4.3/src/browser.js"
+    },
+    {
+      "importer": "node_modules/debug@4.4.3/src/index.js",
+      "specifier": "./node.js",
+      "target": "node_modules/debug@4.4.3/src/node.js"
+    },
+    {
+      "importer": "node_modules/debug@4.4.3/src/node.js",
+      "specifier": "./common",
+      "target": "node_modules/debug@4.4.3/src/common.js"
+    },
+    {
+      "importer": "node_modules/eventsource-parser@4.1.1/dist/parse.js",
+      "specifier": "./errors.js",
+      "target": "node_modules/eventsource-parser@4.1.1/dist/errors.js"
+    },
+    {
+      "importer": "node_modules/eventsource-parser@4.1.1/dist/stream.js",
+      "specifier": "./errors.js",
+      "target": "node_modules/eventsource-parser@4.1.1/dist/errors.js"
+    },
+    {
+      "importer": "node_modules/eventsource-parser@4.1.1/dist/stream.js",
+      "specifier": "./parse.js",
+      "target": "node_modules/eventsource-parser@4.1.1/dist/parse.js"
+    },
+    {
+      "importer": "node_modules/file-type@22.0.2/source/detectors/asf.js",
+      "specifier": "../parser.js",
+      "target": "node_modules/file-type@22.0.2/source/parser.js"
+    },
+    {
+      "importer": "node_modules/file-type@22.0.2/source/detectors/asf.js",
+      "specifier": "strtok3/core",
+      "target": "node_modules/strtok3@10.3.5/lib/core.js"
+    },
+    {
+      "importer": "node_modules/file-type@22.0.2/source/detectors/asf.js",
+      "specifier": "token-types",
+      "target": "node_modules/token-types@6.1.2/lib/index.js"
+    },
+    {
+      "importer": "node_modules/file-type@22.0.2/source/detectors/ebml.js",
+      "specifier": "../parser.js",
+      "target": "node_modules/file-type@22.0.2/source/parser.js"
+    },
+    {
+      "importer": "node_modules/file-type@22.0.2/source/detectors/ebml.js",
+      "specifier": "token-types",
+      "target": "node_modules/token-types@6.1.2/lib/index.js"
+    },
+    {
+      "importer": "node_modules/file-type@22.0.2/source/detectors/ebml.js",
+      "specifier": "uint8array-extras",
+      "target": "node_modules/uint8array-extras@1.5.0/index.js"
+    },
+    {
+      "importer": "node_modules/file-type@22.0.2/source/detectors/png.js",
+      "specifier": "../parser.js",
+      "target": "node_modules/file-type@22.0.2/source/parser.js"
+    },
+    {
+      "importer": "node_modules/file-type@22.0.2/source/detectors/png.js",
+      "specifier": "strtok3/core",
+      "target": "node_modules/strtok3@10.3.5/lib/core.js"
+    },
+    {
+      "importer": "node_modules/file-type@22.0.2/source/detectors/png.js",
+      "specifier": "token-types",
+      "target": "node_modules/token-types@6.1.2/lib/index.js"
+    },
+    {
+      "importer": "node_modules/file-type@22.0.2/source/detectors/zip.js",
+      "specifier": "../parser.js",
+      "target": "node_modules/file-type@22.0.2/source/parser.js"
+    },
+    {
+      "importer": "node_modules/file-type@22.0.2/source/detectors/zip.js",
+      "specifier": "@tokenizer/inflate",
+      "target": "node_modules/@tokenizer/inflate@0.4.1/lib/index.js"
+    },
+    {
+      "importer": "node_modules/file-type@22.0.2/source/detectors/zip.js",
+      "specifier": "strtok3/core",
+      "target": "node_modules/strtok3@10.3.5/lib/core.js"
+    },
+    {
+      "importer": "node_modules/file-type@22.0.2/source/detectors/zip.js",
+      "specifier": "token-types",
+      "target": "node_modules/token-types@6.1.2/lib/index.js"
+    },
+    {
+      "importer": "node_modules/file-type@22.0.2/source/index.js",
+      "specifier": "./detectors/asf.js",
+      "target": "node_modules/file-type@22.0.2/source/detectors/asf.js"
+    },
+    {
+      "importer": "node_modules/file-type@22.0.2/source/index.js",
+      "specifier": "./detectors/ebml.js",
+      "target": "node_modules/file-type@22.0.2/source/detectors/ebml.js"
+    },
+    {
+      "importer": "node_modules/file-type@22.0.2/source/index.js",
+      "specifier": "./detectors/png.js",
+      "target": "node_modules/file-type@22.0.2/source/detectors/png.js"
+    },
+    {
+      "importer": "node_modules/file-type@22.0.2/source/index.js",
+      "specifier": "./detectors/zip.js",
+      "target": "node_modules/file-type@22.0.2/source/detectors/zip.js"
+    },
+    {
+      "importer": "node_modules/file-type@22.0.2/source/index.js",
+      "specifier": "./parser.js",
+      "target": "node_modules/file-type@22.0.2/source/parser.js"
+    },
+    {
+      "importer": "node_modules/file-type@22.0.2/source/index.js",
+      "specifier": "./supported.js",
+      "target": "node_modules/file-type@22.0.2/source/supported.js"
+    },
+    {
+      "importer": "node_modules/file-type@22.0.2/source/index.js",
+      "specifier": "./tokens.js",
+      "target": "node_modules/file-type@22.0.2/source/tokens.js"
+    },
+    {
+      "importer": "node_modules/file-type@22.0.2/source/index.js",
+      "specifier": "@tokenizer/inflate",
+      "target": "node_modules/@tokenizer/inflate@0.4.1/lib/index.js"
+    },
+    {
+      "importer": "node_modules/file-type@22.0.2/source/index.js",
+      "specifier": "strtok3/core",
+      "target": "node_modules/strtok3@10.3.5/lib/core.js"
+    },
+    {
+      "importer": "node_modules/file-type@22.0.2/source/index.js",
+      "specifier": "token-types",
+      "target": "node_modules/token-types@6.1.2/lib/index.js"
+    },
+    {
+      "importer": "node_modules/file-type@22.0.2/source/index.js",
+      "specifier": "uint8array-extras",
+      "target": "node_modules/uint8array-extras@1.5.0/index.js"
+    },
+    {
+      "importer": "node_modules/file-type@22.0.2/source/tokens.js",
+      "specifier": "token-types",
+      "target": "node_modules/token-types@6.1.2/lib/index.js"
+    },
+    {
+      "importer": "node_modules/strtok3@10.3.5/lib/AbstractTokenizer.js",
+      "specifier": "./stream/index.js",
+      "target": "node_modules/strtok3@10.3.5/lib/stream/index.js"
+    },
+    {
+      "importer": "node_modules/strtok3@10.3.5/lib/BlobTokenizer.js",
+      "specifier": "./AbstractTokenizer.js",
+      "target": "node_modules/strtok3@10.3.5/lib/AbstractTokenizer.js"
+    },
+    {
+      "importer": "node_modules/strtok3@10.3.5/lib/BlobTokenizer.js",
+      "specifier": "./stream/index.js",
+      "target": "node_modules/strtok3@10.3.5/lib/stream/index.js"
+    },
+    {
+      "importer": "node_modules/strtok3@10.3.5/lib/BufferTokenizer.js",
+      "specifier": "./AbstractTokenizer.js",
+      "target": "node_modules/strtok3@10.3.5/lib/AbstractTokenizer.js"
+    },
+    {
+      "importer": "node_modules/strtok3@10.3.5/lib/BufferTokenizer.js",
+      "specifier": "./stream/index.js",
+      "target": "node_modules/strtok3@10.3.5/lib/stream/index.js"
+    },
+    {
+      "importer": "node_modules/strtok3@10.3.5/lib/core.js",
+      "specifier": "./AbstractTokenizer.js",
+      "target": "node_modules/strtok3@10.3.5/lib/AbstractTokenizer.js"
+    },
+    {
+      "importer": "node_modules/strtok3@10.3.5/lib/core.js",
+      "specifier": "./BlobTokenizer.js",
+      "target": "node_modules/strtok3@10.3.5/lib/BlobTokenizer.js"
+    },
+    {
+      "importer": "node_modules/strtok3@10.3.5/lib/core.js",
+      "specifier": "./BufferTokenizer.js",
+      "target": "node_modules/strtok3@10.3.5/lib/BufferTokenizer.js"
+    },
+    {
+      "importer": "node_modules/strtok3@10.3.5/lib/core.js",
+      "specifier": "./ReadStreamTokenizer.js",
+      "target": "node_modules/strtok3@10.3.5/lib/ReadStreamTokenizer.js"
+    },
+    {
+      "importer": "node_modules/strtok3@10.3.5/lib/core.js",
+      "specifier": "./stream/index.js",
+      "target": "node_modules/strtok3@10.3.5/lib/stream/index.js"
+    },
+    {
+      "importer": "node_modules/strtok3@10.3.5/lib/core.js",
+      "specifier": "./stream/index.js",
+      "target": "node_modules/strtok3@10.3.5/lib/stream/index.js"
+    },
+    {
+      "importer": "node_modules/strtok3@10.3.5/lib/ReadStreamTokenizer.js",
+      "specifier": "./AbstractTokenizer.js",
+      "target": "node_modules/strtok3@10.3.5/lib/AbstractTokenizer.js"
+    },
+    {
+      "importer": "node_modules/strtok3@10.3.5/lib/ReadStreamTokenizer.js",
+      "specifier": "./stream/index.js",
+      "target": "node_modules/strtok3@10.3.5/lib/stream/index.js"
+    },
+    {
+      "importer": "node_modules/strtok3@10.3.5/lib/stream/AbstractStreamReader.js",
+      "specifier": "./Errors.js",
+      "target": "node_modules/strtok3@10.3.5/lib/stream/Errors.js"
+    },
+    {
+      "importer": "node_modules/strtok3@10.3.5/lib/stream/index.js",
+      "specifier": "./Errors.js",
+      "target": "node_modules/strtok3@10.3.5/lib/stream/Errors.js"
+    },
+    {
+      "importer": "node_modules/strtok3@10.3.5/lib/stream/index.js",
+      "specifier": "./StreamReader.js",
+      "target": "node_modules/strtok3@10.3.5/lib/stream/StreamReader.js"
+    },
+    {
+      "importer": "node_modules/strtok3@10.3.5/lib/stream/index.js",
+      "specifier": "./WebStreamByobReader.js",
+      "target": "node_modules/strtok3@10.3.5/lib/stream/WebStreamByobReader.js"
+    },
+    {
+      "importer": "node_modules/strtok3@10.3.5/lib/stream/index.js",
+      "specifier": "./WebStreamDefaultReader.js",
+      "target": "node_modules/strtok3@10.3.5/lib/stream/WebStreamDefaultReader.js"
+    },
+    {
+      "importer": "node_modules/strtok3@10.3.5/lib/stream/index.js",
+      "specifier": "./WebStreamReaderFactory.js",
+      "target": "node_modules/strtok3@10.3.5/lib/stream/WebStreamReaderFactory.js"
+    },
+    {
+      "importer": "node_modules/strtok3@10.3.5/lib/stream/StreamReader.js",
+      "specifier": "./AbstractStreamReader.js",
+      "target": "node_modules/strtok3@10.3.5/lib/stream/AbstractStreamReader.js"
+    },
+    {
+      "importer": "node_modules/strtok3@10.3.5/lib/stream/StreamReader.js",
+      "specifier": "./Deferred.js",
+      "target": "node_modules/strtok3@10.3.5/lib/stream/Deferred.js"
+    },
+    {
+      "importer": "node_modules/strtok3@10.3.5/lib/stream/StreamReader.js",
+      "specifier": "./Errors.js",
+      "target": "node_modules/strtok3@10.3.5/lib/stream/Errors.js"
+    },
+    {
+      "importer": "node_modules/strtok3@10.3.5/lib/stream/WebStreamByobReader.js",
+      "specifier": "./WebStreamReader.js",
+      "target": "node_modules/strtok3@10.3.5/lib/stream/WebStreamReader.js"
+    },
+    {
+      "importer": "node_modules/strtok3@10.3.5/lib/stream/WebStreamDefaultReader.js",
+      "specifier": "./AbstractStreamReader.js",
+      "target": "node_modules/strtok3@10.3.5/lib/stream/AbstractStreamReader.js"
+    },
+    {
+      "importer": "node_modules/strtok3@10.3.5/lib/stream/WebStreamDefaultReader.js",
+      "specifier": "./Errors.js",
+      "target": "node_modules/strtok3@10.3.5/lib/stream/Errors.js"
+    },
+    {
+      "importer": "node_modules/strtok3@10.3.5/lib/stream/WebStreamReader.js",
+      "specifier": "./AbstractStreamReader.js",
+      "target": "node_modules/strtok3@10.3.5/lib/stream/AbstractStreamReader.js"
+    },
+    {
+      "importer": "node_modules/strtok3@10.3.5/lib/stream/WebStreamReaderFactory.js",
+      "specifier": "./WebStreamByobReader.js",
+      "target": "node_modules/strtok3@10.3.5/lib/stream/WebStreamByobReader.js"
+    },
+    {
+      "importer": "node_modules/strtok3@10.3.5/lib/stream/WebStreamReaderFactory.js",
+      "specifier": "./WebStreamDefaultReader.js",
+      "target": "node_modules/strtok3@10.3.5/lib/stream/WebStreamDefaultReader.js"
+    },
+    {
+      "importer": "node_modules/token-types@6.1.2/lib/index.js",
+      "specifier": "@borewit/text-codec",
+      "target": "node_modules/@borewit/text-codec@0.2.2/lib/index.js"
+    },
+    {
+      "importer": "node_modules/token-types@6.1.2/lib/index.js",
+      "specifier": "@borewit/text-codec",
+      "target": "node_modules/@borewit/text-codec@0.2.2/lib/index.js"
+    },
+    {
+      "importer": "node_modules/token-types@6.1.2/lib/index.js",
+      "specifier": "ieee754",
+      "target": "node_modules/ieee754@1.2.1/index.js"
+    },
+    {
+      "importer": "node_modules/token-types@6.1.2/lib/index.js",
+      "specifier": "ieee754",
+      "target": "node_modules/ieee754@1.2.1/index.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/index.js",
+      "specifier": "./v4/classic/external.js",
+      "target": "node_modules/zod@4.1.8/v4/classic/external.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/index.js",
+      "specifier": "./v4/classic/external.js",
+      "target": "node_modules/zod@4.1.8/v4/classic/external.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/classic/checks.js",
+      "specifier": "../core/index.js",
+      "target": "node_modules/zod@4.1.8/v4/core/index.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/classic/coerce.js",
+      "specifier": "../core/index.js",
+      "target": "node_modules/zod@4.1.8/v4/core/index.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/classic/coerce.js",
+      "specifier": "./schemas.js",
+      "target": "node_modules/zod@4.1.8/v4/classic/schemas.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/classic/compat.js",
+      "specifier": "../core/index.js",
+      "target": "node_modules/zod@4.1.8/v4/core/index.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/classic/compat.js",
+      "specifier": "../core/index.js",
+      "target": "node_modules/zod@4.1.8/v4/core/index.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/classic/errors.js",
+      "specifier": "../core/index.js",
+      "target": "node_modules/zod@4.1.8/v4/core/index.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/classic/errors.js",
+      "specifier": "../core/index.js",
+      "target": "node_modules/zod@4.1.8/v4/core/index.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/classic/errors.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/classic/external.js",
+      "specifier": "../core/index.js",
+      "target": "node_modules/zod@4.1.8/v4/core/index.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/classic/external.js",
+      "specifier": "../core/index.js",
+      "target": "node_modules/zod@4.1.8/v4/core/index.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/classic/external.js",
+      "specifier": "../core/index.js",
+      "target": "node_modules/zod@4.1.8/v4/core/index.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/classic/external.js",
+      "specifier": "../locales/en.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/en.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/classic/external.js",
+      "specifier": "../locales/index.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/index.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/classic/external.js",
+      "specifier": "./checks.js",
+      "target": "node_modules/zod@4.1.8/v4/classic/checks.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/classic/external.js",
+      "specifier": "./coerce.js",
+      "target": "node_modules/zod@4.1.8/v4/classic/coerce.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/classic/external.js",
+      "specifier": "./compat.js",
+      "target": "node_modules/zod@4.1.8/v4/classic/compat.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/classic/external.js",
+      "specifier": "./errors.js",
+      "target": "node_modules/zod@4.1.8/v4/classic/errors.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/classic/external.js",
+      "specifier": "./iso.js",
+      "target": "node_modules/zod@4.1.8/v4/classic/iso.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/classic/external.js",
+      "specifier": "./iso.js",
+      "target": "node_modules/zod@4.1.8/v4/classic/iso.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/classic/external.js",
+      "specifier": "./parse.js",
+      "target": "node_modules/zod@4.1.8/v4/classic/parse.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/classic/external.js",
+      "specifier": "./schemas.js",
+      "target": "node_modules/zod@4.1.8/v4/classic/schemas.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/classic/iso.js",
+      "specifier": "../core/index.js",
+      "target": "node_modules/zod@4.1.8/v4/core/index.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/classic/iso.js",
+      "specifier": "./schemas.js",
+      "target": "node_modules/zod@4.1.8/v4/classic/schemas.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/classic/parse.js",
+      "specifier": "../core/index.js",
+      "target": "node_modules/zod@4.1.8/v4/core/index.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/classic/parse.js",
+      "specifier": "./errors.js",
+      "target": "node_modules/zod@4.1.8/v4/classic/errors.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/classic/schemas.js",
+      "specifier": "../core/index.js",
+      "target": "node_modules/zod@4.1.8/v4/core/index.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/classic/schemas.js",
+      "specifier": "../core/index.js",
+      "target": "node_modules/zod@4.1.8/v4/core/index.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/classic/schemas.js",
+      "specifier": "./checks.js",
+      "target": "node_modules/zod@4.1.8/v4/classic/checks.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/classic/schemas.js",
+      "specifier": "./iso.js",
+      "target": "node_modules/zod@4.1.8/v4/classic/iso.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/classic/schemas.js",
+      "specifier": "./parse.js",
+      "target": "node_modules/zod@4.1.8/v4/classic/parse.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/core/api.js",
+      "specifier": "./checks.js",
+      "target": "node_modules/zod@4.1.8/v4/core/checks.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/core/api.js",
+      "specifier": "./schemas.js",
+      "target": "node_modules/zod@4.1.8/v4/core/schemas.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/core/api.js",
+      "specifier": "./util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/core/checks.js",
+      "specifier": "./core.js",
+      "target": "node_modules/zod@4.1.8/v4/core/core.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/core/checks.js",
+      "specifier": "./regexes.js",
+      "target": "node_modules/zod@4.1.8/v4/core/regexes.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/core/checks.js",
+      "specifier": "./util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/core/errors.js",
+      "specifier": "./core.js",
+      "target": "node_modules/zod@4.1.8/v4/core/core.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/core/errors.js",
+      "specifier": "./util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/core/index.js",
+      "specifier": "../locales/index.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/index.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/core/index.js",
+      "specifier": "./api.js",
+      "target": "node_modules/zod@4.1.8/v4/core/api.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/core/index.js",
+      "specifier": "./checks.js",
+      "target": "node_modules/zod@4.1.8/v4/core/checks.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/core/index.js",
+      "specifier": "./core.js",
+      "target": "node_modules/zod@4.1.8/v4/core/core.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/core/index.js",
+      "specifier": "./doc.js",
+      "target": "node_modules/zod@4.1.8/v4/core/doc.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/core/index.js",
+      "specifier": "./errors.js",
+      "target": "node_modules/zod@4.1.8/v4/core/errors.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/core/index.js",
+      "specifier": "./json-schema.js",
+      "target": "node_modules/zod@4.1.8/v4/core/json-schema.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/core/index.js",
+      "specifier": "./parse.js",
+      "target": "node_modules/zod@4.1.8/v4/core/parse.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/core/index.js",
+      "specifier": "./regexes.js",
+      "target": "node_modules/zod@4.1.8/v4/core/regexes.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/core/index.js",
+      "specifier": "./registries.js",
+      "target": "node_modules/zod@4.1.8/v4/core/registries.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/core/index.js",
+      "specifier": "./schemas.js",
+      "target": "node_modules/zod@4.1.8/v4/core/schemas.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/core/index.js",
+      "specifier": "./to-json-schema.js",
+      "target": "node_modules/zod@4.1.8/v4/core/to-json-schema.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/core/index.js",
+      "specifier": "./util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/core/index.js",
+      "specifier": "./versions.js",
+      "target": "node_modules/zod@4.1.8/v4/core/versions.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/core/parse.js",
+      "specifier": "./core.js",
+      "target": "node_modules/zod@4.1.8/v4/core/core.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/core/parse.js",
+      "specifier": "./errors.js",
+      "target": "node_modules/zod@4.1.8/v4/core/errors.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/core/parse.js",
+      "specifier": "./util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/core/schemas.js",
+      "specifier": "./checks.js",
+      "target": "node_modules/zod@4.1.8/v4/core/checks.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/core/schemas.js",
+      "specifier": "./core.js",
+      "target": "node_modules/zod@4.1.8/v4/core/core.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/core/schemas.js",
+      "specifier": "./doc.js",
+      "target": "node_modules/zod@4.1.8/v4/core/doc.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/core/schemas.js",
+      "specifier": "./parse.js",
+      "target": "node_modules/zod@4.1.8/v4/core/parse.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/core/schemas.js",
+      "specifier": "./regexes.js",
+      "target": "node_modules/zod@4.1.8/v4/core/regexes.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/core/schemas.js",
+      "specifier": "./util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/core/schemas.js",
+      "specifier": "./util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/core/schemas.js",
+      "specifier": "./versions.js",
+      "target": "node_modules/zod@4.1.8/v4/core/versions.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/core/to-json-schema.js",
+      "specifier": "./registries.js",
+      "target": "node_modules/zod@4.1.8/v4/core/registries.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/core/to-json-schema.js",
+      "specifier": "./util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/ar.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/az.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/be.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/ca.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/cs.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/da.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/de.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/en.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/eo.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/es.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/fa.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/fi.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/fr-CA.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/fr.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/he.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/hu.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/id.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./ar.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/ar.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./az.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/az.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./be.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/be.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./ca.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/ca.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./cs.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/cs.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./da.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/da.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./de.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/de.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./en.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/en.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./eo.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/eo.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./es.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/es.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./fa.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/fa.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./fi.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/fi.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./fr-CA.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/fr-CA.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./fr.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/fr.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./he.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/he.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./hu.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/hu.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./id.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/id.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./is.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/is.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./it.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/it.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./ja.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/ja.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./ka.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/ka.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./kh.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/kh.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./km.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/km.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./ko.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/ko.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./lt.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/lt.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./mk.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/mk.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./ms.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/ms.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./nl.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/nl.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./no.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/no.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./ota.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/ota.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./pl.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/pl.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./ps.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/ps.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./pt.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/pt.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./ru.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/ru.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./sl.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/sl.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./sv.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/sv.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./ta.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/ta.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./th.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/th.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./tr.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/tr.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./ua.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/ua.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./uk.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/uk.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./ur.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/ur.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./vi.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/vi.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./yo.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/yo.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./zh-CN.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/zh-CN.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/index.js",
+      "specifier": "./zh-TW.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/zh-TW.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/is.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/it.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/ja.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/ka.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/kh.js",
+      "specifier": "./km.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/km.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/km.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/ko.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/lt.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/mk.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/ms.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/nl.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/no.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/ota.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/pl.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/ps.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/pt.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/ru.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/sl.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/sv.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/ta.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/th.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/tr.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/ua.js",
+      "specifier": "./uk.js",
+      "target": "node_modules/zod@4.1.8/v4/locales/uk.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/uk.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/ur.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/vi.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/yo.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/zh-CN.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    },
+    {
+      "importer": "node_modules/zod@4.1.8/v4/locales/zh-TW.js",
+      "specifier": "../core/util.js",
+      "target": "node_modules/zod@4.1.8/v4/core/util.js"
+    }
+  ]
+}

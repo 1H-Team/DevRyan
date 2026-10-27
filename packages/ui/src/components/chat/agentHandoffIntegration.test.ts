@@ -25,12 +25,12 @@ describe('agent handoff guard integration', () => {
     expect(autoSend).toContain('authorizeSend: guardQueuedBuilderSend');
   });
 
-  test('keeps the queued-send guard mounted when the Agents presentation swaps to Bots', () => {
+  test('keeps the queued-send guard mounted above the main layout', () => {
     const app = read('../../App.tsx');
     const mainLayout = read('../layout/MainLayout.tsx');
 
     expect(app.indexOf('<AgentHandoffGuardProvider>')).toBeLessThan(app.indexOf('<MainLayout />'));
-    expect(mainLayout).toContain('botMode ? <LazyViewBoundary><LazyBotView /></LazyViewBoundary> : <ChatView />');
+    expect(mainLayout).toContain('<ChatView />');
     expect(mainLayout).not.toContain('AgentHandoffGuardProvider');
   });
 });

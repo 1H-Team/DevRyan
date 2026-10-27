@@ -79,7 +79,6 @@ const setManagedDeveloper = () => setAuthPrincipal({
   scope: "managed",
   policy: {
     settingsPages: ["sessions"],
-    bots: true,
     files: false,
     terminal: false,
     browser: true,
@@ -95,10 +94,20 @@ const setManagedDeveloper = () => setAuthPrincipal({
   assignments: [],
 })
 
+const initialSessionUIState = useSessionUIStore.getState()
+
 describe("useConfigStore default agent selection", () => {
   beforeEach(() => {
     setAuthPrincipal(null)
-    useSessionUIStore.setState({ currentSessionId: null, currentDraftId: null })
+    // Tests seed draftsById/newSessionDraft send configs; applyDefaultsToCurrent reads them
+    // as explicit model intent, so every test starts from the pristine draft state.
+    useSessionUIStore.setState({
+      currentSessionId: null,
+      currentDraftId: null,
+      draftsById: initialSessionUIState.draftsById,
+      draftOrder: initialSessionUIState.draftOrder,
+      newSessionDraft: initialSessionUIState.newSessionDraft,
+    })
     useSelectionStore.setState((state) => ({
       ...state,
       sessionModelSelections: new Map(),
@@ -222,7 +231,7 @@ describe("useConfigStore default agent selection", () => {
     })
   })
 
-  test("managed fresh drafts retain settings default while new chat captures use Medium", () => {
+  test("managed fresh drafts send a concrete effort for a captured null default", () => {
     setManagedDeveloper()
     useSessionUIStore.setState({
       currentSessionId: null,
@@ -369,7 +378,7 @@ describe("useConfigStore default agent selection", () => {
     expect(useConfigStore.getState().currentVariant).toBeNull()
   })
 
-  test("rejects unsupported managed variants without inventing an effort", () => {
+  test("preserves unsupported managed variants for availability validation", () => {
     setManagedDeveloper()
     useConfigStore.setState({
       providers: [{
@@ -395,10 +404,10 @@ describe("useConfigStore default agent selection", () => {
 
     useConfigStore.getState().applyDefaultsToCurrent()
 
-    expect(useConfigStore.getState().currentVariant).toBeNull()
+    expect(useConfigStore.getState().currentVariant).toBe("retired")
   })
 
-  test("falls back from an unavailable managed selection to the configured agent model and variant", () => {
+  test("preserves an unavailable managed selection instead of inheriting another tuple", () => {
     setManagedDeveloper()
     useConfigStore.setState({
       providers: [{
@@ -425,8 +434,8 @@ describe("useConfigStore default agent selection", () => {
 
     useConfigStore.getState().applyDefaultsToCurrent()
 
-    expect(useConfigStore.getState().currentModelId).toBe("gpt-5.6-sol")
-    expect(useConfigStore.getState().currentVariant).toBe("high")
+    expect(useConfigStore.getState().currentModelId).toBe("retired-model")
+    expect(useConfigStore.getState().currentVariant).toBe("low")
   })
 
   test("stores model and variant together for later managed-account persistence", () => {

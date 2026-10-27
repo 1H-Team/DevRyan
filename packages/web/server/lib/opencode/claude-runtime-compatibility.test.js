@@ -30,9 +30,9 @@ describe('Claude runtime compatibility', () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  it('selects Claude Code 2.1.281 while preserving the historical control tuple', () => {
+  it('selects Claude Code 2.1.302 while preserving the historical control tuple', () => {
     expect(CLAUDE_RUNTIME_CONTROL.claudeCode).toBe('2.1.215');
-    expect(CLAUDE_RUNTIME_CANDIDATE.claudeCode).toBe('2.1.281');
+    expect(CLAUDE_RUNTIME_CANDIDATE.claudeCode).toBe('2.1.302');
     expect(CLAUDE_RUNTIME_SELECTION).toMatchObject({
       channel: 'candidate',
       compatibilityStatus: 'upstream_blocked',
@@ -227,18 +227,18 @@ describe('Claude runtime compatibility', () => {
     const configDirectory = path.join(root, 'config');
     writeJson(path.join(configDirectory, 'package.json'), {
       dependencies: {
-        '@rynfar/meridian': '1.62.6',
-        'opencode-with-claude': '1.8.0',
+        '@rynfar/meridian': '1.79.0',
+        'opencode-with-claude': '1.11.2',
       },
       overrides: CLAUDE_RUNTIME_MANAGED_OVERRIDES,
     });
     writeJson(
       path.join(configDirectory, 'node_modules', '@rynfar', 'meridian', 'package.json'),
-      { version: '1.62.6' },
+      { version: '1.79.0' },
     );
     writeJson(
       path.join(configDirectory, 'node_modules', 'opencode-with-claude', 'package.json'),
-      { version: '1.8.0' },
+      { version: '1.11.2' },
     );
     const corruptPath = path.join(
       configDirectory,
@@ -257,8 +257,8 @@ describe('Claude runtime compatibility', () => {
       compatibilityStatus: 'drifted',
       runtimeStatus: 'missing',
       installed: {
-        opencodeWithClaude: '1.8.0',
-        meridian: '1.62.6',
+        opencodeWithClaude: '1.11.2',
+        meridian: '1.79.0',
         agentSdk: null,
         claudeCode: null,
       },

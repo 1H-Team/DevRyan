@@ -12,6 +12,20 @@ import {
 } from './StatusRowContainer';
 
 describe('resolveManagedDelegationStatusPhase', () => {
+  for (const activeToolAction of ['wait', 'wait_any']) test(`projects ${activeToolAction} from authoritative child state after reload and settlement`, () => {
+    for (const rootPhase of ['starting', 'waiting'] as const) {
+      expect(resolveManagedDelegationStatusPhase({ rootPhase, activeToolAction,
+        activeToolName: 'devryan_task', hasConfirmedSnapshot: true })).toBe(rootPhase);
+    }
+    expect(resolveManagedDelegationStatusPhase({ rootPhase: null, activeToolAction,
+      activeToolName: 'devryan_task', hasConfirmedSnapshot: true })).toBeNull();
+    expect(resolveManagedDelegationStatusPhase({ rootPhase: null, activeToolAction,
+      activeToolName: 'devryan_task', isLoadingSnapshot: true })).toBe('waiting');
+  });
+  test('keeps argument preparation in startup before the action is available', () => {
+    expect(resolveManagedDelegationStatusPhase({ rootPhase: null, activeToolName: 'devryan_task' })).toBe('starting');
+  });
+
   test('shows startup copy for provisional and authoritative pre-running dispatches', () => {
     expect(resolveManagedDelegationStatusPhase({
       rootPhase: null,
@@ -228,12 +242,12 @@ describe('managed status authority', () => {
   test('clears provisional waiting when an empty snapshot confirms the root', () => {
     const input = { rootPhase: null, activeToolName: 'devryan_task', activeToolAction: 'wait', isLoadingSnapshot: true } as const;
     expect(resolveManagedDelegationStatusPhase(input)).toBe('waiting');
-    expect(resolveManagedDelegationStatusPhase({ ...input, isLoadingSnapshot: false })).toBe('managing');
-    expect(resolveManagedDelegationStatusPhase({ ...input, hasConfirmedSnapshot: true })).toBe('managing');
+    expect(resolveManagedDelegationStatusPhase({ ...input, isLoadingSnapshot: false })).toBeNull();
+    expect(resolveManagedDelegationStatusPhase({ ...input, hasConfirmedSnapshot: true })).toBeNull();
   });
 
   test('uses neutral copy for control and result operations without claiming children run', () => {
-    for (const activeToolAction of ['status', 'cancel', 'continue', 'resume', 'recover_in_place', 'retry_in_place', 'abandon', 'read_result', undefined]) {
+    for (const activeToolAction of ['status', 'cancel', 'continue', 'resume', 'recover_in_place', 'retry_in_place', 'abandon', 'read_result']) {
       expect(resolveManagedDelegationStatusPhase({ rootPhase: null, activeToolName: 'devryan_task', activeToolAction })).toBe('managing');
     }
   });

@@ -1,6 +1,6 @@
 import {
     RiAiAgentLine,
-    RiBookLine,
+    RiBrainLine,
     RiFileEditLine,
     RiFileList2Line,
     RiFileSearchLine,
@@ -66,7 +66,7 @@ export const getToolIcon = (toolName: string) => {
         return <RiListCheck2 className={iconClass} />;
     }
     if (tool === 'skill') {
-        return <RiBookLine className={iconClass} />;
+        return <RiBrainLine className={iconClass} />;
     }
     if (tool === 'task') {
         return <RiAiAgentLine className={iconClass} />;

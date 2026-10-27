@@ -24,6 +24,7 @@ const harness = (overrides = {}, executorOptions = {}) => {
   const registry = createManagedAssistantActivityRegistry({ now: executorOptions.now ?? (() => 101) });
   const stamps = [];
   const diagnostics = [];
+  const progress = [];
   let subscriptions = 0;
   const control = {
     async setChildSessionId() { return true; }, async markAccepted() { return true; },
@@ -39,15 +40,18 @@ const harness = (overrides = {}, executorOptions = {}) => {
   const executor = createManagedOpenCodeExecutor({
     transport, now: () => 100, idleStablePolls: 1,
     ...executorOptions,
-    subscribeAssistantActivity(input, listener) {
+    subscribeAssistantActivity(input, listener, onProgress) {
       subscriptions++;
-      const dispose = registry.subscribe(input, listener);
+      const dispose = registry.subscribe(input, listener, value => {
+        progress.push(value);
+        onProgress?.(value);
+      });
       let disposed = false;
       return () => { if (!disposed) { disposed = true; subscriptions--; dispose(); } };
     },
     onFirstAssistantActivity(value) { diagnostics.push(value); },
   });
-  return { registry, stamps, diagnostics, control, executor, subscriptions: () => subscriptions };
+  return { registry, stamps, diagnostics, progress, control, executor, subscriptions: () => subscriptions };
 };
 
 test('publishes first activity while prompt acceptance and transcript polling are still blocked', async () => {
@@ -60,11 +64,98 @@ test('publishes first activity while prompt acceptance and transcript polling ar
   emit(h.registry);
   await flush();
   expect(h.stamps).toEqual([{ firstAssistantPartAt: 101 }]);
-  expect(h.subscriptions()).toBe(0);
+  expect(h.subscriptions()).toBe(1);
   expect(h.diagnostics).toEqual([{ taskId: task.taskId, childSessionId: 'child', messageId: 'new', observedAt: 101, source: 'event' }]);
+  h.registry.observe({ id: 'fresh-live-delta', type: 'message.part.delta', properties: {
+    sessionID: 'child', messageID: 'new', partID: 'live-text', field: 'text', delta: 'More',
+  } });
+  await flush();
+  expect(h.progress).toEqual([{ messageId: 'new', observedAt: 101 }]);
+  expect(h.stamps).toEqual([{ firstAssistantPartAt: 101 }]);
+  expect(h.subscriptions()).toBe(1);
   acceptPrompt();
   expect((await result).status).toBe('completed');
+  expect(h.subscriptions()).toBe(0);
   expect(h.stamps.filter((v) => v.firstAssistantPartAt)).toHaveLength(1);
+});
+
+test.each([60_000, 750, 1500])('a terminal event during a blocked canonical read cannot be lost before the healthy wait (%ims)', async eventReconcileIntervalMs => {
+  const registry=createManagedAssistantActivityRegistry();
+  let releaseRead,enteredRead,statusReads=0,subscriptions=0,busy=true;
+  const entered=new Promise(resolve=>{enteredRead=resolve;});
+  const executor=createManagedOpenCodeExecutor({idleStablePolls:1,eventReconcileIntervalMs,
+    subscribeSessionChanges(input,callback){subscriptions++;const dispose=registry.subscribeChanges(input,callback);return()=>{subscriptions--;dispose();};},
+    transport:{async createSession(){return{id:'child'};},async promptSession(){},async readSession(){return{id:'child'};},
+      async readStatus(){statusReads++;return{type:busy?'busy':'idle'};},
+      async readMessages(){if(busy){enteredRead();return new Promise(resolve=>{releaseRead=resolve;});}return[output()];},
+      async abortSession(){return true;},async deleteSession(){return true;}},
+  });
+  const running=executor.observe(task,{});
+  try{
+    await entered;busy=false;
+    registry.observe({type:'session.idle',properties:{sessionID:'child'}},'/workspace');
+    releaseRead([]);
+    expect((await running).status).toBe('completed');
+    expect(statusReads).toBe(2);expect(subscriptions).toBe(0);
+  }finally{releaseRead?.([]);await executor.shutdown();}
+});
+
+test.each([['missed-event', 10], ['reconnect', 60_000], ['missed-event', 750], ['missed-event', 1500],
+  ['reconnect', 750], ['reconnect', 1500]])('healthy canonical observation recovers %s without posting another prompt (%ims)',async (mode,eventReconcileIntervalMs)=>{
+  const registry=createManagedAssistantActivityRegistry();let reads=0,busy=true,subscriptions=0,prompts=0;
+  let firstRead;const ready=new Promise(resolve=>{firstRead=resolve;});
+  const executor=createManagedOpenCodeExecutor({idleStablePolls:1,eventReconcileIntervalMs,
+    subscribeSessionChanges(input,callback){subscriptions++;const dispose=registry.subscribeChanges(input,callback);return()=>{subscriptions--;dispose();};},
+    transport:{async createSession(){return{id:'child'};},async promptSession(){prompts++;},async readSession(){return{id:'child'};},
+      async readStatus(){return{type:busy?'busy':'idle'};},async readMessages(){reads++;if(busy){firstRead();return [];}return[output()];},
+      async abortSession(){return true;},async deleteSession(){return true;}},
+  });
+  // Missed-event recovery waits one reconcile interval. Request exactly that wait, then run it on the next tick.
+  const realSetTimeout=globalThis.setTimeout,requested=[];
+  globalThis.setTimeout=(handler,delay,...args)=>{
+    if(mode==='missed-event'&&delay===eventReconcileIntervalMs&&delay>=750){requested.push(delay);return realSetTimeout(handler,0,...args);}
+    return realSetTimeout(handler,delay,...args);
+  };
+  const running=executor.observe(task,{});
+  try{
+    await ready;await flush();busy=false;
+    if(mode==='reconnect')registry.observe({type:'server.connected',properties:{}},'/workspace');
+    expect((await running).status).toBe('completed');
+    expect(reads).toBe(2);expect(prompts).toBe(0);expect(subscriptions).toBe(0);
+    if(mode==='missed-event'&&eventReconcileIntervalMs>=750)expect(requested).toContain(eventReconcileIntervalMs);
+  }finally{globalThis.setTimeout=realSetTimeout;await executor.shutdown();}
+});
+
+test.each([60_000, 750, 1500])('shutdown releases an event wait and its subscription without claiming remote settlement (%ims)',async eventReconcileIntervalMs=>{
+  const registry=createManagedAssistantActivityRegistry();let subscriptions=0,firstRead;
+  const ready=new Promise(resolve=>{firstRead=resolve;});
+  const executor=createManagedOpenCodeExecutor({eventReconcileIntervalMs,
+    subscribeSessionChanges(input,callback){subscriptions++;const dispose=registry.subscribeChanges(input,callback);return()=>{subscriptions--;dispose();};},
+    transport:{async createSession(){return{id:'child'};},async promptSession(){},async readSession(){return{id:'child'};},
+      async readStatus(){return{type:'busy'};},async readMessages(){firstRead();return[];},async abortSession(){return false;},async deleteSession(){return true;}},
+  });
+  const running=executor.observe(task,{});void running.catch(()=>{});
+  await ready;await flush();await executor.shutdown();await expect(running).rejects.toThrow();expect(subscriptions).toBe(0);
+});
+
+test.each([60_000, 750, 1500])('Stop interrupts a healthy event wait but waits for actual abort confirmation (%ims)',async eventReconcileIntervalMs=>{
+  const registry=createManagedAssistantActivityRegistry();let subscriptions=0,firstRead,enteredCancellation,releaseCancellation,aborts=0;
+  const ready=new Promise(resolve=>{firstRead=resolve;});
+  const cancelled=new Promise(resolve=>{enteredCancellation=resolve;});
+  const settlement=new Promise(resolve=>{releaseCancellation=resolve;});
+  const executor=createManagedOpenCodeExecutor({eventReconcileIntervalMs,
+    sleep:async()=>{enteredCancellation();await settlement;},
+    subscribeSessionChanges(input,callback){subscriptions++;const dispose=registry.subscribeChanges(input,callback);return()=>{subscriptions--;dispose();};},
+    transport:{async createSession(){return{id:'child'};},async promptSession(){},async readSession(){return{id:'child'};},
+      async readStatus(){return{type:'busy'};},async readMessages(){firstRead();return[];},async abortSession(){return ++aborts>1;},async deleteSession(){return true;}},
+  });
+  const running=executor.observe(task,{});let settled=false;void running.then(()=>{settled=true;});
+  try{
+    await ready;await flush();expect((await executor.abort(task)).aborted).toBe(false);
+    await cancelled;expect(settled).toBe(false);expect(subscriptions).toBe(0);
+    expect((await executor.abort(task)).aborted).toBe(true);releaseCancellation();
+    expect((await running).status).toBe('aborted');
+  }finally{releaseCancellation();await executor.shutdown();}
 });
 
 test('events bypass an in-flight transcript read without adding transcript requests', async () => {
@@ -131,10 +222,11 @@ test('lost ownership and prompt failure dispose listeners without diagnostics', 
 
 test('abort and shutdown release activity listeners even during blocked reads', async () => {
   for (const action of ['abort', 'shutdown']) {
-    let finishRead;
-    const h = harness({ readMessages: () => new Promise((resolve) => { finishRead = resolve; }) });
+    let finishRead, enteredRead;
+    const entered = new Promise((resolve) => { enteredRead = resolve; });
+    const h = harness({ readMessages: () => new Promise((resolve) => { finishRead = resolve; enteredRead(); }) });
     const result = h.executor.observe(task, h.control).catch(() => null);
-    await flush();
+    await entered;
     await h.executor[action](task);
     emit(h.registry);
     await flush();
@@ -154,7 +246,7 @@ test('same-child retry and resume listen before posting and reject inherited out
     const h = harness({
       promptSession: () => { prompted = true; return new Promise((resolve) => { finishPrompt = resolve; }); },
       readMessages: async () => prompted ? [prior, output()] : [prior],
-    });
+    }, { pollIntervalMs: 10 });
     const result = h.executor[method]({ ...task, executionKind: method === 'resume' ? 'resume' : 'retry_in_place' }, h.control);
     // Retry includes teardown/observation checkpoints before prompt submission.
     for (let i = 0; i < 10 && !finishPrompt; i++) await flush();
@@ -170,4 +262,56 @@ test('same-child retry and resume listen before posting and reject inherited out
     expect(h.stamps.filter((v) => v.firstAssistantPartAt)).toHaveLength(1);
     expect(h.subscriptions()).toBe(0);
   }
+});
+
+test.each([[true, 3000], [false, 750]])('event-driven child waits (enabled=%s) back up missed events every %ims and detect idle within 300 ms of its event', async (enabled, fallbackMs) => {
+  const registry = createManagedAssistantActivityRegistry();
+  let busy = true, firstRead;
+  const ready = new Promise(resolve => { firstRead = resolve; });
+  const executor = createManagedOpenCodeExecutor({ idleStablePolls: 1, eventDrivenWait: () => enabled,
+    subscribeSessionChanges: (input, callback) => registry.subscribeChanges(input, callback),
+    transport: { async createSession() { return { id: 'child' }; }, async promptSession() {}, async readSession() { return { id: 'child' }; },
+      async readStatus() { return { type: busy ? 'busy' : 'idle' }; },
+      async readMessages() { if (busy) { firstRead(); return []; } return [output()]; },
+      async abortSession() { return true; }, async deleteSession() { return true; } },
+  });
+  const realSetTimeout = globalThis.setTimeout, requested = [];
+  globalThis.setTimeout = (handler, delay, ...args) => { requested.push(delay); return realSetTimeout(handler, delay, ...args); };
+  const running = executor.observe(task, {});
+  try {
+    await ready; await flush();
+    expect(requested).toContain(fallbackMs);
+    if (enabled) expect(requested).not.toContain(750);
+    busy = false;
+    const idleAt = performance.now();
+    registry.observe({ type: 'session.idle', properties: { sessionID: 'child' } }, '/workspace');
+    expect((await running).status).toBe('completed');
+    expect(performance.now() - idleAt).toBeLessThan(300);
+  } finally { globalThis.setTimeout = realSetTimeout; await executor.shutdown(); }
+});
+
+test('an idle child between steps waits for its next event instead of a 750 ms poll when event-driven', async () => {
+  const registry = createManagedAssistantActivityRegistry();
+  let reads = 0, release;
+  const between = new Promise(resolve => { release = resolve; });
+  const midStep = { info: { id: 'new', role: 'assistant', finish: 'tool-calls', time: { created: 100, completed: 150 } },
+    parts: [{ type: 'tool', tool: 'read', callID: 'call', state: { status: 'completed' } }] };
+  const executor = createManagedOpenCodeExecutor({ idleStablePolls: 1, eventDrivenWait: () => true,
+    subscribeSessionChanges: (input, callback) => registry.subscribeChanges(input, callback),
+    transport: { async createSession() { return { id: 'child' }; }, async promptSession() {}, async readSession() { return { id: 'child' }; },
+      async readStatus() { return { type: 'idle' }; },
+      async readMessages() { reads++; if (reads === 1) { release(); return [midStep]; } return [output()]; },
+      async abortSession() { return true; }, async deleteSession() { return true; } },
+  });
+  const realSetTimeout = globalThis.setTimeout, requested = [];
+  globalThis.setTimeout = (handler, delay, ...args) => { requested.push(delay); return realSetTimeout(handler, delay, ...args); };
+  const running = executor.observe(task, {});
+  try {
+    await between; await flush();
+    expect(requested).not.toContain(750);
+    const eventAt = performance.now();
+    registry.observe({ type: 'message.updated', properties: { info: { id: 'new', sessionID: 'child', role: 'assistant', time: { created: 100, completed: 200 } } } }, '/workspace');
+    expect((await running).status).toBe('completed');
+    expect(performance.now() - eventAt).toBeLessThan(300);
+  } finally { globalThis.setTimeout = realSetTimeout; await executor.shutdown(); }
 });

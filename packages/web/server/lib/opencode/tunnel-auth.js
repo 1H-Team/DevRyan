@@ -200,9 +200,7 @@ const isLocalHost = (host, req) => {
     return false;
   }
 
-  const isLocalHostname = host === 'localhost'
-    || host === 'host.docker.internal'
-    || isPrivateOrLoopbackIp(host);
+  const isLocalHostname = host === 'localhost' || isPrivateOrLoopbackIp(host);
 
   return isLocalHostname && isPrivateOrLoopbackIp(getSocketRemoteIp(req));
 };

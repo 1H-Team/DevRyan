@@ -1,3 +1,4 @@
+import { assertRuntimeFeatureAvailable } from '@/lib/opencode/runtime-capabilities';
 import { getRetentionNavigationRevision, type SelectionOptions } from '@/lib/sessionRetention';
 /**
  * Session actions — SDK-calling operations for session management.
@@ -14,7 +15,7 @@ import {
 } from "./input-store"
 import { getSessionComposerTargetKey } from "./composer-target"
 import type { ChildStoreManager, DirectoryStore } from "./child-store"
-import { opencodeClient } from "@/lib/opencode/client"
+import { InputSubscriptionUnavailableError, opencodeClient } from "@/lib/opencode/client"
 import {
   beginGlobalSessionMembershipMutation,
   queueGlobalSessionsRefreshAfterMutation,
@@ -46,6 +47,7 @@ import { isQuestionOrphanedError } from "./question-orphan"
 import { abortSourceHeaders, type AbortSource } from "./abort-source"
 import { isTransientError, retry } from "./retry"
 import { getSdkErrorMessage } from "@/lib/opencode/sdk-error"
+import { resolveRuntimeCapability } from "@/lib/opencode/runtime-capabilities"
 import { useManagedOrchestrationStore } from "@/stores/useManagedOrchestrationStore"
 import { createClientMessageId } from "./client-message-id"
 import { useProviderRecoveryStore } from "@/stores/useProviderRecoveryStore"
@@ -508,6 +510,8 @@ export type SessionMutationFailure = {
   sessionId: string
   message: string
   status?: number
+  code?: string
+  retryable?: boolean
 }
 export type DeleteSessionsResult = {
   deletedIds: string[]
@@ -840,12 +844,12 @@ function restoreOptimisticallyUnarchivedDirectorySessions(
   }
 
   for (const snapshot of snapshots) {
-    const store = _childStores.children.get(snapshot.directory)
+    const store: StoreApi<DirectoryStore> | undefined = _childStores.children.get(snapshot.directory)
     if (!store) {
       continue
     }
 
-    const current = store.getState().session
+    const current: Session[] = store.getState().session
     let next = current
     for (const entry of snapshot.entries) {
       if (!ids.has(entry.sessionId)) {
@@ -1246,10 +1250,13 @@ function stringifyErrorMessage(error: unknown): string {
 
 function createSessionMutationFailure(sessionId: string, error: unknown): SessionMutationFailure {
   const status = readErrorStatus(error)
+  const details = error && typeof error === "object" ? error : undefined
   return {
     sessionId,
     message: stringifyErrorMessage(error),
     ...(status !== undefined ? { status } : {}),
+    ...(details && "code" in details && typeof details.code === "string" ? { code: details.code } : {}),
+    ...(details && "retryable" in details && typeof details.retryable === "boolean" ? { retryable: details.retryable } : {}),
   }
 }
 
@@ -1412,9 +1419,12 @@ export async function createSessionRecord(
       registerSessionDirectory(session.id, sessionDirectory)
       getSessionUIStore().getState().setSessionDirectory(session.id, sessionDirectory)
     }
-    getSessionUIStore().getState().markSessionAsOpenChamberCreated(session.id)
+    getSessionUIStore().getState().markSessionAsDevRyanCreated(session.id)
     if (!isHiddenCreatedSession) {
       useGlobalSessionsStore.getState().upsertSession(session)
+    }
+    if (!parentID && !options?.isGitGenerationSession) {
+      sessionEvents.notifyRootSessionCreated(session.id)
     }
     return session
   } catch (error) {
@@ -1681,6 +1691,8 @@ export async function updateSessionTitle(sessionId: string, title: string): Prom
 }
 
 export async function shareSession(sessionId: string): Promise<Session | null> {
+  // Gen 2 has no share route (DESIGN C.5); report failure without a request.
+  if (!(await resolveRuntimeCapability("share"))) return null
   const sessionDirectory = getSessionDirectory(sessionId)
   const result = await sdk().session.share({ sessionID: sessionId, directory: sessionDirectory })
   if (result.data) {
@@ -1690,6 +1702,7 @@ export async function shareSession(sessionId: string): Promise<Session | null> {
 }
 
 export async function unshareSession(sessionId: string): Promise<Session | null> {
+  if (!(await resolveRuntimeCapability("share"))) return null
   const sessionDirectory = getSessionDirectory(sessionId)
   const result = await sdk().session.unshare({ sessionID: sessionId, directory: sessionDirectory })
   if (result.data) {
@@ -1704,7 +1717,7 @@ export async function unshareSession(sessionId: string): Promise<Session | null>
 
 /**
  * Wraps an async send operation with optimistic user-message insertion.
- * Uses useSync()'s optimistic infrastructure — message + parts are inserted
+ * Uses SessionHistory's optimistic infrastructure — message + parts are inserted
  * into the store AND registered in the shadow Map. mergeOptimisticPage
  * handles deduplication when the server echoes back the real message.
  */
@@ -1741,7 +1754,7 @@ export async function optimisticSend(input: {
   messageID?: string
 }): Promise<void> {
   if (!_optimisticAdd || !_optimisticRemove) {
-    throw new Error("Optimistic refs not set — is useSync() mounted?")
+    throw new Error("Optimistic refs not set — is SyncProvider mounted?")
   }
 
   throwIfAborted(input.signal)
@@ -1808,7 +1821,7 @@ export async function optimisticSend(input: {
       // the captured thinking choice. Empty string is explicit provider default.
       ...(input.variant !== undefined ? { variant: input.variant === null ? "" : input.variant } : {}),
     } satisfies UserMessage["model"],
-    metadata: input.planMode === true ? { openchamberPlanMode: true } as Record<string, unknown> : {} as Record<string, unknown>,
+    metadata: input.planMode === true ? { devryanPlanMode: true } as Record<string, unknown> : {} as Record<string, unknown>,
     time: { created: Date.now() },
   } as unknown as Message
   const assistantPlaceholderID = `${messageID}_assistant`
@@ -1910,6 +1923,7 @@ export async function optimisticSend(input: {
     // not release the composer's newer explicit intent. Failures keep it too.
     useSelectionStore.getState().consumeSessionModelSelectionIntent(input.sessionId, manualSelection, input)
   } catch (error) {
+    if (error instanceof InputSubscriptionUnavailableError && error.knownBeforeTransport) transportGateFailed = true
     // Rollback via optimistic infrastructure
     if (optimisticAssistantMessage) {
       _optimisticRemove({
@@ -1939,7 +1953,9 @@ export async function optimisticSend(input: {
         // state, so restore that instead of masking a live busy/retry with idle.
         [input.sessionId]: transportGateFailed && statusBeforeSend
           ? statusBeforeSend
-          : { type: "idle" as const },
+          : error instanceof InputSubscriptionUnavailableError && !error.knownBeforeTransport
+            ? s.session_status[input.sessionId] ?? { type: "busy" as const }
+            : { type: "idle" as const },
       },
     })
     throw error
@@ -1952,7 +1968,7 @@ export async function optimisticSend(input: {
 // Abort
 // ---------------------------------------------------------------------------
 
-async function cancelActiveManagedSubtasks(rootSessionId: string): Promise<void> {
+async function cancelActiveManagedSubtasks(rootSessionId: string): Promise<boolean> {
   const state = useManagedOrchestrationStore.getState()
   const taskIds = state.taskIdsByRootId[rootSessionId] ?? []
   const activeTasks = taskIds
@@ -1965,10 +1981,18 @@ async function cancelActiveManagedSubtasks(rootSessionId: string): Promise<void>
     cascade: true,
     reason: "Parent session stopped",
   })))
-  results.forEach((result) => {
+  const actionsSucceeded = results.every((result, index) => {
     if (result.status === "rejected") {
       console.error("[session-actions] managed subtask cancellation failed", result.reason)
+      return false
     }
+    // Store actions retain their error for the task card instead of rejecting.
+    return !useManagedOrchestrationStore.getState().actionErrorByTaskId[cascadeRoots[index].taskId]
+  })
+  const latest = useManagedOrchestrationStore.getState()
+  return actionsSucceeded && !(latest.taskIdsByRootId[rootSessionId] ?? []).some(taskId => {
+    const task = latest.tasksById[taskId]
+    return task && (task.status === "queued" || task.status === "starting" || task.status === "running")
   })
 }
 
@@ -1984,9 +2008,9 @@ export async function abortCurrentOperationConfirmed(
   const sessionDirectory = getSessionDirectory(sessionId)
   const status = statusHint ?? getSessionStatusForAction(sessionId, sessionDirectory)
   getSessionUIStore().getState().abortPendingSend?.(sessionId)
-  // Cancel managed subtasks in the background — the parent abort must not wait
-  // on their orchestration round-trips (failures are logged inside).
-  void cancelActiveManagedSubtasks(sessionId)
+  // Dispatch both immediately; confirmation covers the entire stopped tree.
+  const subtaskCancellation = cancelActiveManagedSubtasks(sessionId)
+  let parentConfirmed = false
   let watchdogTimer: ReturnType<typeof setTimeout> | undefined
   try {
     postAbortRequestedMark(sessionId, sessionDirectory)
@@ -2006,6 +2030,7 @@ export async function abortCurrentOperationConfirmed(
     if (!result.data) {
       throw new Error("OpenCode did not confirm the session abort")
     }
+    parentConfirmed = true
     markManualAbort(sessionId, getLatestAssistantMessageId(sessionId, sessionDirectory))
     getSessionUIStore().getState().clearSessionTurnCompletion(sessionId)
     forceSessionIdleAfterManualAbort(
@@ -2013,14 +2038,18 @@ export async function abortCurrentOperationConfirmed(
       sessionDirectory,
       status?.type === "retry",
     )
+    const subtasksConfirmed = await Promise.race([subtaskCancellation, watchdog])
+    if (!subtasksConfirmed) throw new Error("Managed subtask cancellation was not confirmed")
     return true
   } catch (error) {
-    // The stop never reached the server — do not mask live retry/busy state.
-    clearAbortGuard(sessionId)
+    // A child failure must not undo an already-confirmed parent interrupt.
+    if (!parentConfirmed) clearAbortGuard(sessionId)
     getSessionUIStore().getState().clearSessionStopping?.(sessionId)
     console.error("[session-actions] abort failed", error)
-    void import("sonner").then(({ toast }) => {
-      toast.error("Couldn't stop the session — it may still be running. Try again.")
+    void import("@/components/ui").then(({ toast }) => {
+      toast.error(parentConfirmed
+        ? "The parent session stopped, but some subtasks could not be confirmed stopped. Try Stop again."
+        : "Couldn't stop the session — it may still be running. Try again.")
     })
     return false
   } finally {
@@ -2092,35 +2121,44 @@ export async function interruptCurrentOperationForSteeredSend(
   if (!sessionId) return
   const sessionDirectory = getSessionDirectory(sessionId)
   const status = getSessionStatusForAction(sessionId, sessionDirectory)
-  if (status?.type === "idle") return
-
-  postAbortRequestedMark(sessionId, sessionDirectory)
-  registerManualAbortGuard(sessionId, sessionDirectory, status)
+  // Root idle does not prove that its descendants have stopped.
+  const subtaskCancellation = cancelActiveManagedSubtasks(sessionId)
+  const parentWasActive = status?.type !== "idle"
+  let parentConfirmed = !parentWasActive
   let watchdogTimer: ReturnType<typeof setTimeout> | undefined
+  if (parentWasActive) {
+    postAbortRequestedMark(sessionId, sessionDirectory)
+    registerManualAbortGuard(sessionId, sessionDirectory, status)
+  }
   try {
     const watchdog = new Promise<never>((_resolve, reject) => {
-      watchdogTimer = setTimeout(() => {
-        reject(new Error("Session abort timed out"))
-      }, timeoutMs)
+      watchdogTimer = setTimeout(() => reject(new Error("Session abort timed out")), timeoutMs)
     })
-    await Promise.race([
-      sdk().session.abort(
-        { sessionID: sessionId, directory: sessionDirectory },
-        abortSourceHeaders("steered_send"),
-      ),
-      watchdog,
+    if (parentWasActive) {
+      const result = await Promise.race([
+        sdk().session.abort(
+          { sessionID: sessionId, directory: sessionDirectory },
+          { throwOnError: true, ...abortSourceHeaders("steered_send") },
+        ),
+        watchdog,
+      ])
+      if (!result.data) throw new Error("OpenCode did not confirm the session abort")
+      parentConfirmed = true
+      markSessionAbort(sessionId, "steered", getLatestAssistantMessageId(sessionId, sessionDirectory))
+      forceSessionIdleAfterManualAbort(sessionId, sessionDirectory)
+    }
+    if (!await Promise.race([subtaskCancellation, watchdog])) {
+      throw new Error("Managed subtask cancellation was not confirmed")
+    }
+    if (parentWasActive) await Promise.race([
+      waitForSessionIdleAfterQueuedInterrupt(sessionId, sessionDirectory), watchdog,
     ])
   } catch (error) {
-    // The interrupt never reached the server, or never settled — do not mask
-    // live status.
-    clearAbortGuard(sessionId)
+    if (!parentConfirmed) clearAbortGuard(sessionId)
     throw error
   } finally {
     if (watchdogTimer !== undefined) clearTimeout(watchdogTimer)
   }
-  markSessionAbort(sessionId, "steered", getLatestAssistantMessageId(sessionId, sessionDirectory))
-  forceSessionIdleAfterManualAbort(sessionId, sessionDirectory)
-  await waitForSessionIdleAfterQueuedInterrupt(sessionId, sessionDirectory)
 }
 
 /**
@@ -2557,7 +2595,7 @@ function settleSessionTreeAfterRevert(directory: string | undefined, rootSession
  * 1. Resolve the known tree for optimistic coordination and legacy compatibility
  * 2. Extract text from the target message for prompt restoration
  * 3. Optimistically set revert marker so messages hide immediately
- * 4. Call OpenChamber's tree-scoped session revert and merge returned session
+ * 4. Call DevRyan's tree-scoped session revert and merge returned session
  * 5. Queue a session- and revision-owned composer restoration after acknowledgement
  */
 export async function revertToMessage(
@@ -2565,6 +2603,7 @@ export async function revertToMessage(
   messageId: string,
   options: RevertToMessageOptions = {},
 ): Promise<void> {
+  assertRuntimeFeatureAvailable('revert');
   if (!messageId) {
     throw new Error("messageID is required")
   }
@@ -2889,6 +2928,7 @@ export async function undoSession(sessionId: string): Promise<void> {
  * `redo_unavailable` is not an error for the user: it toasts "Nothing to redo".
  */
 export async function unrevertSession(sessionId: string): Promise<void> {
+  assertRuntimeFeatureAvailable('revert');
   const sessionDirectory = getSessionDirectory(sessionId)
   const store = directoryStore(sessionDirectory)
   const state = store.getState()

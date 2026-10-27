@@ -2,6 +2,7 @@ import React from 'react';
 import { RiArrowDownSLine, RiArrowRightSLine, RiInformationLine, RiRefreshLine } from '@remixicon/react';
 
 import { UsageResetCreditsList } from '@/components/layout/usage/UsageResetCreditsList';
+import { UsageSourceDetails } from '@/components/layout/usage/UsageSourceDetails';
 import { sortUsageEntries } from '@/components/layout/usage/usage-groups';
 import { SettingsDetailSection } from '@/components/sections/shared/SettingsDetailSection';
 import { Button } from '@/components/ui/button';
@@ -100,6 +101,7 @@ export const ProviderUsagePanel: React.FC<ProviderUsagePanelProps> = ({
   const result = useQuotaStore((state) => state.results.find((entry) => entry.providerId === quotaProviderId) ?? null);
   const refreshState = useQuotaStore((state) => state.providerRefreshState[quotaProviderId]);
   const isLoading = useQuotaStore((state) => state.isLoading);
+  const discoveryFinished = useQuotaStore((state) => state.configuredProviderIds !== null);
   const error = useQuotaStore((state) => state.error);
   const autoRefresh = useQuotaStore((state) => state.autoRefresh);
   const refreshIntervalMs = useQuotaStore((state) => state.refreshIntervalMs);
@@ -223,7 +225,13 @@ export const ProviderUsagePanel: React.FC<ProviderUsagePanelProps> = ({
 
   const notices: Notice[] = [];
   if (!result) {
-    notices.push({ tone: 'info', title: t('settings.usage.page.state.noData') });
+    notices.push(discoveryFinished
+      ? {
+        tone: 'info',
+        title: t('settings.usage.page.state.unreadableTitle'),
+        body: t('settings.usage.page.state.unreadableDescription'),
+      }
+      : { tone: 'info', title: t('settings.usage.page.state.noData') });
   }
   if (error) {
     notices.push({ tone: 'error', title: t('settings.usage.page.state.refreshFailedTitle'), body: error });
@@ -294,6 +302,7 @@ export const ProviderUsagePanel: React.FC<ProviderUsagePanelProps> = ({
 
   const body = (
     <div className="space-y-4">
+      {result ? <UsageSourceDetails source={result.source} account={result.account} /> : null}
       {notices.map((notice) => <UsageNotice key={`${notice.tone}:${notice.title}`} {...notice} />)}
 
       {overallUsageEntries.length > 0 ? (
@@ -312,8 +321,8 @@ export const ProviderUsagePanel: React.FC<ProviderUsagePanelProps> = ({
         </div>
       ) : null}
 
-      {usage?.resetCredits ? (
-        <UsageResetCreditsList resetCredits={usage.resetCredits} />
+      {usage?.resetCredits || result?.source === 'codex-app-server' && usage?.resetCredits === null ? (
+        <UsageResetCreditsList resetCredits={usage?.resetCredits ?? null} />
       ) : null}
 
       {modelGroups.length > 0 ? (

@@ -1,7 +1,6 @@
 import {
   findProviderModel,
   resolveModelVariantSelection,
-  resolveProviderModelVariant,
   type ProviderLike,
   type ProviderModelLike,
 } from '@/lib/providers/variantControls';
@@ -32,6 +31,12 @@ const parseModelRef = (modelRef: string): ParsedModelRef | null => {
 };
 
 const normalizeVariantKey = (variant: string) => variant.trim().toLowerCase();
+
+// A catalog model without thinking levels runs at its only level: a level saved
+// for another model means nothing here and is dropped, not reported as invalid.
+const hasNoThinkingLevels = (model: ProviderModelLike | undefined) => (
+  Boolean(model) && Object.keys(model?.variants ?? {}).length === 0
+);
 
 const findVariantKey = (
   variants: Record<string, unknown> | undefined,
@@ -64,7 +69,12 @@ export const resolveAgentVariantSelection = (
   const selection = resolveModelVariantSelection(provider, parsed.modelId, variant, updates);
   return {
     modelRef: `${parsed.providerId}/${selection.modelId}`,
-    variant: selection.variant,
+    // A fast-model toggle must not discard an effort the destination lacks.
+    // Keep it visible so the user can choose a supported effort or default.
+    variant: updates.fastEnabled !== undefined && selection.modelId !== parsed.modelId
+      && variant && normalizeVariantKey(variant) !== 'fast'
+      ? resolveAgentVariantForModel(provider, `${parsed.providerId}/${selection.modelId}`, variant)
+      : selection.variant,
   };
 };
 
@@ -75,10 +85,31 @@ export const resolveAgentVariantForModel = (
 ): string | undefined => {
   const parsed = parseModelRef(modelRef);
   if (!parsed) {
-    return undefined;
+    return variant?.trim() || undefined;
   }
 
-  return resolveProviderModelVariant(provider, parsed.modelId, variant);
+  const cleanedVariant = variant?.trim() || undefined;
+  if (cleanedVariant === 'default') return undefined;
+  const model = findProviderModel(provider, parsed.modelId);
+  if (hasNoThinkingLevels(model)) return undefined;
+  return findVariantKey(model?.variants, cleanedVariant) ?? cleanedVariant;
+};
+
+export const getAgentVariantSelectionError = (
+  provider: ProviderLike<ProviderModelLike> | undefined,
+  modelRef: string,
+  variant: string | undefined,
+): string | undefined => {
+  const parsed = parseModelRef(modelRef);
+  const model = parsed && provider?.id === parsed.providerId ? findProviderModel(provider, parsed.modelId) : undefined;
+  if (!parsed || !model || ('available' in model && model.available === false)) {
+    return 'Model availability is not confirmed. Refresh the model catalog or choose an available model before saving.';
+  }
+  const cleanedVariant = variant?.trim();
+  if (cleanedVariant && cleanedVariant !== 'default' && !hasNoThinkingLevels(model) && !findVariantKey(model.variants, cleanedVariant)) {
+    return `Thinking level “${cleanedVariant}” is unavailable for this model. Choose a supported thinking level before saving.`;
+  }
+  return undefined;
 };
 
 export const resolveAgentVariantForSave = (
@@ -86,22 +117,7 @@ export const resolveAgentVariantForSave = (
   modelRef: string,
   variant: string | undefined,
 ): string | undefined => {
-  const cleanedVariant = typeof variant === 'string' && variant.trim().length > 0
-    ? variant.trim()
-    : undefined;
-  if (!cleanedVariant) {
-    return undefined;
-  }
-
-  const parsed = parseModelRef(modelRef);
-  if (!parsed || !provider) {
-    return cleanedVariant;
-  }
-
-  const model = findProviderModel(provider, parsed.modelId);
-  if (!model?.variants) {
-    return cleanedVariant;
-  }
-
-  return findVariantKey(model.variants, cleanedVariant);
+  const error = getAgentVariantSelectionError(provider, modelRef, variant);
+  if (error) throw new Error(error);
+  return resolveAgentVariantForModel(provider, modelRef, variant);
 };

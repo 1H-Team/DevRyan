@@ -3,9 +3,7 @@ import type {
   DiagnosticsClearRange,
   DiagnosticsExportResult,
   DiagnosticsExportScope,
-  OpenCodeStorageCompactResult,
-  OpenCodeStorageStatus,
-} from '@openchamber/ui/lib/api/types';
+} from '@devryan/ui/lib/api/types';
 
 const getNativeInvoke = () => {
   const tauri = (window as unknown as {
@@ -53,7 +51,7 @@ export const createWebDiagnosticsAPI = (): DiagnosticsAPI => ({
 
   async export(scope: DiagnosticsExportScope) {
     const invoke = getNativeInvoke();
-    if (invoke && window.__OPENCHAMBER_ELECTRON__) {
+    if (invoke && window.__DEVRYAN_ELECTRON__) {
       return invoke<DiagnosticsExportResult>('desktop_export_diagnostics', { scope });
     }
 
@@ -95,35 +93,6 @@ export const createWebDiagnosticsAPI = (): DiagnosticsAPI => ({
     if (!response.ok) {
       const payload = await response.json().catch(() => null) as { error?: string } | null;
       throw new Error(payload?.error || `Failed to clear diagnostics (${response.status})`);
-    }
-    return response.json();
-  },
-
-  async getOpenCodeStorage(): Promise<OpenCodeStorageStatus> {
-    const response = await fetch('/api/storage/opencode-db', {
-      headers: { Accept: 'application/json' },
-      cache: 'no-store',
-    });
-    if (!response.ok) {
-      const payload = await response.json().catch(() => null) as { error?: string } | null;
-      throw new Error(payload?.error || `Failed to read OpenCode storage (${response.status})`);
-    }
-    return response.json();
-  },
-
-  async compactOpenCodeStorage(options: { dryRun?: boolean } = {}): Promise<OpenCodeStorageCompactResult> {
-    const response = await fetch('/api/storage/opencode-db/compact', {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-        'X-DevRyan-CSRF': '1',
-      },
-      body: JSON.stringify({ dryRun: options.dryRun === true }),
-    });
-    if (!response.ok) {
-      const payload = await response.json().catch(() => null) as { error?: string } | null;
-      throw new Error(payload?.error || `Failed to compact OpenCode storage (${response.status})`);
     }
     return response.json();
   },

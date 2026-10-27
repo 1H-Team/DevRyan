@@ -4,10 +4,13 @@ import {
   type SessionSummaryDiffStats,
 } from "@/lib/sessionDiffStats"
 import { getToolLifecycleState } from "@/lib/toolStatus"
+import { hasNativeCursorTextProvenance } from "../lib/messages/nativeCursorText"
 import { filterMessagesForRevert, getEffectiveSessionRevertMessageID, type RevertTransaction } from "./revert-transactions"
 import { isAssistantTurnComplete } from "./session-working"
+import { keepFullToolOutput } from "./tool-output"
 import {
   compareMessagesChronologically,
+  findMessageIndex,
   messagesBefore,
   messagesFrom,
   sortMessagesChronologically,
@@ -137,6 +140,9 @@ function hasLiveStreamingField(part: Part): boolean {
 }
 
 function mergeMaterializedPart(existing: Part | undefined, next: Part): Part {
+  const kept = keepFullToolOutput(existing, next)
+  if (kept !== next) return kept
+  if (hasNativeCursorTextProvenance(next)) return next
   if (!existing || getPartEndTime(next) !== undefined) return next
 
   if (existing.type === "tool" && next.type === "tool") {
@@ -188,7 +194,8 @@ function mergeMaterializedParts(
 
   const snapshotIDs = new Set(nextParts.map((part) => part.id))
   const missingLiveParts = existing.filter(
-    (part) => !!part?.id && !snapshotIDs.has(part.id) && !skipPartTypes.has(part.type) && hasLiveStreamingField(part),
+    (part) => !!part?.id && !snapshotIDs.has(part.id) && !skipPartTypes.has(part.type)
+      && !hasNativeCursorTextProvenance(part) && hasLiveStreamingField(part),
   )
   if (missingLiveParts.length === 0) return mergedParts
 
@@ -255,6 +262,10 @@ export function materializeSessionSnapshots(
     if (record.info.role === "user" && !Array.isArray(record.parts)) continue
 
     const existing = nextPartState[messageID]
+    if (existing?.some(hasNativeCursorTextProvenance) && !isAssistantTurnComplete(record.info)) {
+      const previousIndex = findMessageIndex(currentMessages, messageID)
+      if (previousIndex >= 0 && isAssistantTurnComplete(currentMessages[previousIndex])) continue
+    }
     const nextParts = mergeMaterializedParts(
       existing,
       filterRenderableParts(record.parts ?? [], skipPartTypes),

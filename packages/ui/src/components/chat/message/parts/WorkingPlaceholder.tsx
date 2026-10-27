@@ -34,9 +34,11 @@ export function StatusShimmerText({
       className={cn('oc-text-shimmer', className)}
       data-animation-state={shouldAnimate ? 'running' : 'paused'}
       data-live-status-shimmer="true"
-      data-shimmer-text={text}
     >
       {text}
+      {/* Decorative sweep: its highlighted copy is CSS generated content, so the
+          label is announced, selected and copied once. */}
+      <span className="oc-text-shimmer-sweep" data-shimmer-text={text} aria-hidden="true" />
     </span>
   );
 }

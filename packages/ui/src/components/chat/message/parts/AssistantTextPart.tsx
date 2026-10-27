@@ -4,10 +4,10 @@ import { cn } from '@/lib/utils';
 import { MarkdownRenderer } from '../../MarkdownRenderer';
 import type { StreamPhase } from '../types';
 import type { ContentChangeReason } from '@/hooks/useChatAutoFollow';
-import { useStreamingTextThrottle } from '../../hooks/useStreamingTextThrottle';
-import { resolveAssistantDisplayText, shouldRenderAssistantText } from './assistantTextVisibility';
+import { useStreamingTextReveal } from '../../hooks/useStreamingTextReveal';
+import { shouldRenderAssistantText } from './assistantTextVisibility';
 import { postRendererTurnTimingMark, streamPerfCount, streamPerfObserve } from '@/stores/utils/streamDebug';
-import { stripAssistantImageMarkdown } from '../../../../../../shared-runtime/lib/assistant-image-sources.js';
+import { stripAssistantImageMarkdown } from '@devryan/shared-runtime/lib/assistant-image-sources.js';
 
 type PartWithText = Part & { text?: string; content?: string; value?: string; time?: { start?: number; end?: number } };
 
@@ -65,16 +65,12 @@ const AssistantTextPart: React.FC<AssistantTextPartProps> = ({
         );
     });
 
-    const throttledTextContent = useStreamingTextThrottle({
+    // The reveal finishes draining its backlog after the stream ends, so the
+    // tail does not jump in; it always settles on the exact canonical text.
+    const displayTextContent = useStreamingTextReveal({
         text: textContent,
         phase: isStreaming ? 'streaming' : 'terminal',
         identityKey: `${messageId}:${part.id ?? 'text'}`,
-    });
-
-    const displayTextContent = resolveAssistantDisplayText({
-        textContent,
-        throttledTextContent,
-        isStreaming,
     });
 
     streamPerfObserve('ui.assistant_text_part.display_len', displayTextContent.length);

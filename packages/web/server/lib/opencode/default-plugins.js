@@ -3,14 +3,13 @@ import {
   DEVRYAN_MANAGED_PLUGINS,
   getDevRyanManagedPluginForFile,
   getDevRyanManagedPluginForSpec,
+  isRetiredDevRyanPluginSpec,
 } from './managed-plugins.js';
 
 export const DEVRYAN_DEFAULT_PLUGIN_IDS = Object.freeze({
   OPEN_CURSOR: DEVRYAN_MANAGED_PLUGIN_IDS.OPEN_CURSOR,
   CLAUDE: DEVRYAN_MANAGED_PLUGIN_IDS.CLAUDE,
   GPT_IMAGEGEN: DEVRYAN_MANAGED_PLUGIN_IDS.GPT_IMAGEGEN,
-  SLIM: DEVRYAN_MANAGED_PLUGIN_IDS.SLIM,
-  SUPERPOWERS: DEVRYAN_MANAGED_PLUGIN_IDS.SUPERPOWERS,
   OPENAI_TOOL_SCHEMA_SANITIZER: DEVRYAN_MANAGED_PLUGIN_IDS.OPENAI_TOOL_SCHEMA_SANITIZER,
 });
 
@@ -42,11 +41,13 @@ export const getDevRyanDefaultPluginIdForFile = (fileName) => (
 );
 
 export const buildDevRyanDefaultPluginInventory = ({ entries = [], files = [] } = {}) => {
-  const annotatedEntries = entries.map((entry) => {
+  // Retired registrations an upgraded setup still lists load nothing; listing
+  // them would present built-in features (such as the agents) as plugins.
+  const annotatedEntries = entries.filter((entry) => !isRetiredDevRyanPluginSpec(entry?.spec)).map((entry) => {
     const defaultPluginId = getDevRyanDefaultPluginIdForSpec(entry?.spec);
     return defaultPluginId ? { ...entry, defaultPluginId } : entry;
   });
-  const annotatedFiles = files.map((file) => {
+  const annotatedFiles = files.filter((file) => !isRetiredDevRyanPluginSpec(`./plugins/${file?.fileName ?? ''}`)).map((file) => {
     const defaultPluginId = getDevRyanDefaultPluginIdForFile(file?.fileName);
     return defaultPluginId ? { ...file, defaultPluginId } : file;
   });

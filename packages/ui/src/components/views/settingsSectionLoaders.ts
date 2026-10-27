@@ -4,8 +4,8 @@ import { getAuthPrincipal, useAuthPrincipal } from '@/lib/authSession';
 import { canPrepareSettingsSection, usesManagedSettings } from './SettingsView.access';
 import { createPreparedSettingsComponent } from './preparedSettingsComponent';
 import type { SettingsDataBoundaryProps } from './SettingsDataBoundary';
-import { OpenChamberPage } from '@/components/sections/openchamber/OpenChamberPage';
-import { openChamberSectionResources } from '@/components/sections/openchamber/openChamberSectionResources';
+import { DevRyanPage } from '@/components/sections/devryan/DevRyanPage';
+import { devRyanSectionResources } from '@/components/sections/devryan/devRyanSectionResources';
 
 export { createPreparedSettingsComponent } from './preparedSettingsComponent';
 import type { SettingsPageSlug } from '@/lib/settings/metadata';
@@ -60,13 +60,11 @@ const magicPromptsPage = createPreparedSettingsComponent(() =>
 const gitPage = createPreparedSettingsComponent(() =>
   import('@/components/sections/git-identities/GitPage').then((module) => ({ default: module.GitPage })));
 const aboutSettings = createPreparedSettingsComponent(() =>
-  import('@/components/sections/openchamber/AboutSettings').then((module) => ({ default: module.AboutSettings })));
+  import('@/components/sections/devryan/AboutSettings').then((module) => ({ default: module.AboutSettings })));
 const userManagementPage = createPreparedSettingsComponent(() =>
   import('@/components/sections/users/UserManagementPage').then((module) => ({ default: module.UserManagementPage })));
 const bugReportsPage = createPreparedSettingsComponent(() =>
   import('@/components/sections/bug-reports/BugReportsPage').then((module) => ({ default: module.BugReportsPage })));
-const botsPage = createPreparedSettingsComponent(() =>
-  import('@/components/sections/bots/BotsPage').then((module) => ({ default: module.BotsPage })));
 
 export const PreparedAgentsSidebar = agentsSidebar.Component;
 export const PreparedAgentsSettingsPicker = agentsPicker.Component;
@@ -92,11 +90,10 @@ export const PreparedUsagePage = usagePage.Component;
 export const PreparedMagicPromptsSidebar = magicPromptsSidebar.Component;
 export const PreparedMagicPromptsPage = magicPromptsPage.Component;
 export const PreparedGitPage = gitPage.Component;
-export const PreparedOpenChamberPage = OpenChamberPage;
+export const PreparedDevRyanPage = DevRyanPage;
 export const PreparedAboutSettings = aboutSettings.Component;
 export const PreparedUserManagementPage = userManagementPage.Component;
 export const PreparedBugReportsPage = bugReportsPage.Component;
-export const PreparedBotsPage = botsPage.Component;
 
 type SettingsSectionResource = { isReady: () => boolean; load: () => Promise<unknown> };
 
@@ -132,17 +129,16 @@ const pageResources: Partial<Record<SettingsPageSlug, readonly SettingsSectionRe
   plugins: [pluginsSidebar, pluginsPage],
   providers: [providersSidebar, providersPage],
   usage: [usageSidebar, usagePage],
-  bots: [botsPage],
   'magic-prompts': [magicPromptsSidebar, magicPromptsPage],
   git: [gitPage],
   about: [aboutSettings],
-  appearance: [openChamberSectionResources.visual],
-  chat: [openChamberSectionResources.chat],
-  shortcuts: [openChamberSectionResources.shortcuts],
+  appearance: [devRyanSectionResources.visual],
+  chat: [devRyanSectionResources.chat],
+  shortcuts: [devRyanSectionResources.shortcuts],
   sessions: [agentsSidebar, agentsPicker, sessionDefaultsPage],
-  notifications: [openChamberSectionResources.notifications],
-  voice: [openChamberSectionResources.voice],
-  tunnel: [openChamberSectionResources.tunnel],
+  notifications: [devRyanSectionResources.notifications],
+  voice: [devRyanSectionResources.voice],
+  tunnel: [devRyanSectionResources.tunnel],
 };
 
 const sectionPreloads = new Map<string, Promise<void>>();

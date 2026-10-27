@@ -287,7 +287,7 @@ describe("applyDirectoryEvent", () => {
     expect(draft.message.ses_1[0]?.role).toBe("assistant")
     expect(draft.message.ses_1[0]?.time).toEqual({ created: 123 })
     expect((draft.message.ses_1[0] as { finish?: unknown }).finish).toBe(undefined)
-    expect((draft.message.ses_1[0]?.time as { completed?: unknown }).completed).toBe(undefined)
+    expect((draft.message.ses_1[0]!.time as { completed?: unknown }).completed).toBe(undefined)
     expect(draft.part.msg_reasoning_1.map((item) => item.id)).toEqual(["prt_reasoning_1"])
     expect(result).toEqual({
       changed: true,

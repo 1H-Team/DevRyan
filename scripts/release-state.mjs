@@ -1,0 +1,325 @@
+// Same-version release state, the published-bytes ledger and the shipped
+// updater discovery contract, as pure functions over GitHub release JSON.
+// scripts/release.mjs applies them in preflight, stage, publish and
+// verify-published; docs/RELEASE_PIPELINE.md describes the states.
+import fs from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
+import { RELEASE_REPOSITORY, RELEASE_VERSION_PATTERN, releaseAssetName } from '../packages/electron/release-assets.mjs';
+import { discoverDesktopUpdate } from '../packages/electron/desktop-updater.mjs';
+
+export const LEDGER_TAG_PREFIX = 'devryan-release/';
+const MARKER = /devryan-release: version=(\d+\.\d+\.\d+) sha256=([a-f0-9]{64}) size=(\d+) source=([a-f0-9]{40}) run=(\d+)\/(\d+)/;
+
+/** One line recording the bytes a version was (or is about to be) published with. */
+export function formatReleaseMarker({ version, sha256, size, source, runId, runAttempt }) {
+  const marker = `devryan-release: version=${version} sha256=${sha256} size=${size} source=${source} run=${runId}/${runAttempt}`;
+  const parsed = parseReleaseMarker(marker);
+  if (!parsed || parsed.version !== version || parsed.sha256 !== sha256) throw new Error('Invalid release marker fields');
+  return marker;
+}
+
+export function parseReleaseMarker(text) {
+  const match = MARKER.exec(String(text ?? ''));
+  if (!match || !RELEASE_VERSION_PATTERN.test(match[1])) return null;
+  return { version: match[1], sha256: match[2], size: Number(match[3]), source: match[4], runId: match[5], runAttempt: match[6] };
+}
+
+export const ledgerTagName = version => `${LEDGER_TAG_PREFIX}v${version}`;
+
+/** The release notes plus the marker comment that names the staged bytes. */
+export const releaseBody = (notes, marker) => `${notes}\n\n<!-- ${marker} -->\n`;
+
+const refuse = (reason, message) => ({ action: 'refuse', reason, message });
+
+/**
+ * What a run may do with version `version` (docs/RELEASE_PIPELINE.md,
+ * "Same-version retries").
+ *
+ * releases: every GitHub release whose tag is v<version>, with its assets.
+ * ledger:   the parsed devryan-release ledger tag, or null when none exists.
+ * source:   this run's source commit, which a release made by this run targets.
+ * sha256:   the candidate DMG digest; omitted at preflight, before the build.
+ */
+export function releaseState({ version, releases, ledger, source, sha256 }) {
+  const name = releaseAssetName('macos-arm64', version);
+  const digestOf = release => release.assets?.find(asset => asset.name === name)?.digest ?? null;
+  const sameSource = release => release.target_commitish === source
+    && (parseReleaseMarker(release.body)?.source ?? source) === source;
+  const published = releases.filter(release => release.draft === false);
+  if (published.length > 1) return refuse('duplicate-published', `v${version} has ${published.length} published releases; a published version is final, so bump the patch version.`);
+  if (published.length === 1) {
+    const [release] = published;
+    const digest = digestOf(release);
+    if (!sameSource(release) || release.prerelease === true) return refuse('published-different-source', `v${version} is already published from another source; bump the patch version.`);
+    if (ledger && digest !== `sha256:${ledger.sha256}`) return refuse('published-bytes-replaced', `v${version} was published as sha256:${ledger.sha256} (run ${ledger.runId}) but now serves ${digest ?? 'no installer'}. Published bytes were replaced outside the pipeline; bump the patch version.`);
+    if (sha256 && digest !== `sha256:${sha256}`) return refuse('published-different-bytes', `v${version} is published as ${digest ?? 'no installer'}, not this candidate's sha256:${sha256}; bump the patch version.`);
+    return { action: 'verify-published', release };
+  }
+  if (ledger) return refuse('ledger-without-release', `v${version} was published as sha256:${ledger.sha256} by run ${ledger.runId}, and that release no longer exists. Deleted releases are never re-created; bump the patch version.`);
+  const drafts = releases.filter(release => release.draft === true).sort((left, right) => right.id - left.id);
+  if (!drafts.length) return { action: 'create' };
+  const [draft] = drafts;
+  const asset = draft.assets?.find(row => row.name === name);
+  if (sha256 && sameSource(draft) && asset?.state === 'uploaded' && asset.digest === `sha256:${sha256}`) return { action: 'reuse-draft', release: draft, stale: drafts.slice(1) };
+  return { action: 'replace-draft', release: draft, stale: drafts.slice(1) };
+}
+
+/**
+ * A draft as installed updaters will see it once published: its untagged-*
+ * page and download URLs become the tag URLs. Any other URL is left alone, so
+ * a wrong html_url or download URL still fails discovery.
+ */
+export function projectForDiscovery(draft, { version }) {
+  const tag = `v${version}`;
+  const releases = `https://github.com/${RELEASE_REPOSITORY}/releases`;
+  const ownTag = value => value === tag || /^untagged-[A-Za-z0-9-]+$/.test(value);
+  const page = String(draft.html_url ?? '');
+  const html = page.startsWith(`${releases}/tag/`) && ownTag(page.slice(`${releases}/tag/`.length)) ? `${releases}/tag/${tag}` : draft.html_url;
+  const assets = Array.isArray(draft.assets) ? draft.assets.map(asset => {
+    const url = String(asset?.browser_download_url ?? '');
+    const [segment, file, ...rest] = url.startsWith(`${releases}/download/`) ? url.slice(`${releases}/download/`.length).split('/') : [];
+    return segment && !rest.length && ownTag(segment) && file === asset.name ? { ...asset, browser_download_url: `${releases}/download/${tag}/${file}` } : asset;
+  }) : draft.assets;
+  return { ...draft, draft: false, html_url: html, assets };
+}
+
+/**
+ * Every discovery implementation an installed, supported app runs: this
+ * checkout's and each shipped release's (verbatim copies under
+ * scripts/fixtures/shipped-updater, verified against their tags by preflight).
+ */
+export const SHIPPED_DISCOVERY_TAGS = Object.freeze([]);
+const SHIPPED_ROOT = new URL('./fixtures/shipped-updater/', import.meta.url);
+
+/** Git's object id for a file's bytes, so a vendored copy can be compared with `git rev-parse <tag>:<path>`. */
+export const gitBlobId = bytes => createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex');
+
+/**
+ * Problems with the vendored shipped discovery copies: a file that differs
+ * from the blob recorded in shipped.json, or (with `tagBlob`, which reads the
+ * repository's git objects) a recorded blob that is not what the tag shipped.
+ */
+export async function shippedDiscoveryFixtureProblems({ tagBlob } = {}) {
+  const recorded = JSON.parse(await fs.readFile(new URL('shipped.json', SHIPPED_ROOT), 'utf8'));
+  const problems = [];
+  if (Object.keys(recorded).sort().join() !== [...SHIPPED_DISCOVERY_TAGS].sort().join()) problems.push(`shipped.json lists ${Object.keys(recorded).join(', ')}, not ${SHIPPED_DISCOVERY_TAGS.join(', ')}`);
+  for (const [tag, files] of Object.entries(recorded)) {
+    for (const [file, blob] of Object.entries(files)) {
+      const local = gitBlobId(await fs.readFile(fileURLToPath(new URL(`${tag}/${file}`, SHIPPED_ROOT))).catch(() => Buffer.alloc(0)));
+      if (local !== blob) problems.push(`${tag}/${file} is not the recorded blob ${blob}`);
+      if (tagBlob) {
+        const shipped = await tagBlob(tag, file);
+        if (shipped !== blob) problems.push(`${tag}:${file} is ${shipped ?? 'missing'}, not the recorded ${blob}`);
+      }
+    }
+  }
+  return problems;
+}
+
+const CURRENT_INSTALLER = new URL('../packages/electron/desktop-update-install.mjs', import.meta.url);
+
+/** The CFBundleIdentifier values the installer of `tag` (or this checkout's, for 'current') accepts for a downloaded candidate app. */
+export async function shippedAcceptedBundleIds(tag) {
+  const source = await fs.readFile(tag === 'current' ? CURRENT_INSTALLER : new URL(`${tag}/packages/electron/desktop-update-install.mjs`, SHIPPED_ROOT), 'utf8');
+  const match = /\[([^\]]+)\]\.includes\(info\.CFBundleIdentifier\)/.exec(source);
+  if (!match) throw new Error(`Cannot read the bundle identifiers the ${tag} installer accepts`);
+  return [...match[1].matchAll(/'([^']+)'/g)].map(literal => literal[1]);
+}
+
+export async function shippedDiscoveries() {
+  const shipped = await Promise.all(SHIPPED_DISCOVERY_TAGS.map(async tag => ({ label: tag,
+    discoverDesktopUpdate: (await import(new URL(`${tag}/packages/electron/desktop-updater.mjs`, SHIPPED_ROOT).href)).discoverDesktopUpdate })));
+  return [{ label: 'current', discoverDesktopUpdate }, ...shipped];
+}
+
+/** The oldest installed version supported for in-app updates (SUPPORTED_UPGRADE_FLOOR in scripts/qa/release-upgrade-lane.mjs). */
+export const SUPPORTED_INSTALLED_FLOOR = '2.0.0';
+
+const compareVersions = (left, right) => {
+  for (let index = 0; index < 3; index++) {
+    const delta = Number(left.split('.')[index]) - Number(right.split('.')[index]);
+    if (delta) return Math.sign(delta);
+  }
+  return 0;
+};
+
+/**
+ * Every version an installed, supported app can be running when `version`
+ * ships: the floor and each published stable release from it up to the
+ * previous one, oldest first.
+ */
+export function installedVersionsBefore(releases, version) {
+  const published = releases.filter(release => release.draft === false && release.prerelease !== true && /^v\d+\.\d+\.\d+$/.test(release.tag_name ?? ''))
+    .map(release => release.tag_name.slice(1));
+  return [...new Set([SUPPORTED_INSTALLED_FLOOR, ...published])]
+    .filter(installed => compareVersions(installed, SUPPORTED_INSTALLED_FLOOR) >= 0 && compareVersions(installed, version) < 0)
+    .sort(compareVersions);
+}
+
+/**
+ * Run every shipped discovery against a projected release and require each to
+ * offer exactly the expected installer to an app that predates it: a fresh
+ * app (0.0.0) and every installed version in `installedVersions` (by default
+ * the supported floor). An app already on the expected version is offered nothing.
+ */
+export async function assertShippedDiscovery(payload, expected, { discoveries, installedVersions } = {}) {
+  const installed = installedVersions ?? installedVersionsBefore([], expected.version);
+  const found = [];
+  for (const { label, discoverDesktopUpdate: discover } of discoveries ?? await shippedDiscoveries()) {
+    const offer = currentVersion => {
+      try { return discover(payload, { currentVersion, platform: 'darwin', arch: 'arm64' }); }
+      catch (error) { throw new Error(`Shipped discovery ${label} rejected the release for an app on ${currentVersion}: ${error.code ?? error.name}: ${error.message}`, { cause: error }); }
+    };
+    let update;
+    for (const currentVersion of ['0.0.0', ...installed]) {
+      const offered = offer(currentVersion);
+      const shape = { version: offered?.version, name: offered?.name, sha256: offered?.sha256, size: offered?.size };
+      if (JSON.stringify(shape) !== JSON.stringify(expected)) throw new Error(`Shipped discovery ${label} offered an app on ${currentVersion} ${JSON.stringify(shape)}, expected ${JSON.stringify(expected)}`);
+      update ??= offered;
+    }
+    if (offer(expected.version) !== null) throw new Error(`Shipped discovery ${label} offers v${expected.version} to an app already on it`);
+    found.push({ label, update, installed });
+  }
+  return found;
+}
+
+/**
+ * Installed updaters keep 64 KiB of the release body and refuse a
+ * /releases/latest response of 2 MiB or more (packages/electron/desktop-updater.mjs).
+ */
+export const RELEASE_BODY_MAX_BYTES = 64 * 1024;
+export const DISCOVERY_PAYLOAD_MAX_BYTES = 2 * 1024 * 1024;
+
+/** Budget problems with a release body and, when given, the discovery payload installed apps will read. */
+export function releasePayloadProblems({ body, payload } = {}) {
+  const problems = [];
+  if (typeof body === 'string' && Buffer.byteLength(body) > RELEASE_BODY_MAX_BYTES) {
+    problems.push(`The release notes are ${Buffer.byteLength(body)} bytes; installed updaters keep only ${RELEASE_BODY_MAX_BYTES}. Shorten the CHANGELOG section.`);
+  }
+  if (payload !== undefined) {
+    const size = Buffer.byteLength(JSON.stringify(payload));
+    if (size >= DISCOVERY_PAYLOAD_MAX_BYTES) problems.push(`The /releases/latest payload is ${size} bytes; installed updaters refuse ${DISCOVERY_PAYLOAD_MAX_BYTES} or more.`);
+  }
+  return problems;
+}
+
+/**
+ * What every supported installed app (v2.0.0 on) compares literally: the
+ * repository its feed and URLs name, the tag format, and the signing mode,
+ * executable and architecture its installer requires. Changing any of them
+ * strands those installs: it needs a bridge release that first teaches
+ * installed apps the new identity.
+ */
+export const SHIPPED_RELEASE_IDENTITY = Object.freeze({
+  repository: '1H-Team/DevRyan',
+  feedUrl: 'https://api.github.com/repos/1H-Team/DevRyan/releases/latest',
+  htmlUrl: version => `https://github.com/1H-Team/DevRyan/releases/tag/v${version}`,
+  downloadUrl: version => `https://github.com/1H-Team/DevRyan/releases/download/v${version}/DevRyan-${version}-arm64.dmg`,
+  signingMode: 'adhoc',
+  executable: 'DevRyan',
+  arch: 'arm64',
+});
+
+export const bridgeReleaseRequired = detail => `${detail}. Installed v2.0.0+ apps compare this literally, so a bridge release required: first ship a release that accepts the new identity (docs/RELEASE_PIPELINE.md, "Updater contract").`;
+
+/**
+ * Before it stops, a shipped macOS installer verifies the downloaded
+ * candidate's native runtime. Installers before PIN_FREE_INSTALLER_SINCE would
+ * use the installed app's own `verifyNativeRuntimeArtifacts`, which requires
+ * exactly the Bun and reviewed asset digests that app shipped; from it they use
+ * `verifyUpdateCandidateArtifacts`, which keeps integrity checks and drops
+ * those pins. `candidate-pins.json` records the pins of every pinned installer
+ * from the supported floor (preflight re-reads them from the tags), so a
+ * toolchain or provider change that a supported install would refuse fails
+ * before packaging.
+ */
+export const PIN_FREE_INSTALLER_SINCE = '2.0.0';
+export const CANDIDATE_PIN_SOURCES = Object.freeze({
+  main: 'packages/electron/main.mjs',
+  artifacts: 'packages/web/server/lib/opencode/runtime-host/native-artifacts.js',
+  claude: 'packages/web/server/lib/opencode/runtime-host/reviewed-claude-transform.js',
+  ast: 'packages/web/server/lib/opencode/runtime-host/reviewed-ast-asset.js',
+});
+const CANDIDATE_PINS = new URL('candidate-pins.json', SHIPPED_ROOT);
+
+/** The Bun and reviewed asset digests a checkout's native runtime is built with (and its own verifier pins). */
+export function readRuntimePins(sources) {
+  const bunVersion = /export const NATIVE_BUNDLE_BUN_VERSION = '(\d+\.\d+\.\d+)';/.exec(sources.artifacts ?? '')?.[1];
+  const assets = {};
+  for (const [, file, sha256] of (sources.claude ?? '').matchAll(/\b(?:claude|libsql): Object\.freeze\(\{path:'([^']+)',sha256:'([a-f0-9]{64})'/g)) assets[file] = sha256;
+  const credentials = /REVIEWED_CLAUDE_CREDENTIALS = Object\.freeze\(\{path:'([^']+)',sourceSha256:'[a-f0-9]{64}',sha256:'([a-f0-9]{64})'/.exec(sources.claude ?? '');
+  if (credentials) assets[credentials[1]] = credentials[2];
+  const ast = /REVIEWED_AST_ASSET_SHA256\s*=\s*'([a-f0-9]{64})'/.exec(sources.ast ?? '')?.[1];
+  if (ast) assets['DevRyan-ast-grep-darwin-arm64'] = ast;
+  if (!bunVersion || Object.keys(assets).length !== 4) throw new Error('Cannot read the native runtime pins (Bun version and four reviewed asset digests)');
+  return { bunVersion, assets: Object.fromEntries(Object.entries(assets).sort(([left], [right]) => left.localeCompare(right))) };
+}
+
+/** The pins a shipped macOS installer imposes on a candidate, or null when it verifies integrity only. */
+export function readInstallerCandidatePins(sources) {
+  const installer = /createMacDmgInstaller\(\{[\s\S]*?\}\)/.exec(sources.main ?? '')?.[0] ?? '';
+  if (/verifyNativeArtifacts: verifyUpdateCandidateArtifacts,/.test(installer)) return null;
+  if (!/verifyNativeArtifacts: verifyNativeRuntimeArtifacts,/.test(installer)) throw new Error('Cannot tell which verifier the macOS installer uses');
+  return readRuntimePins(sources);
+}
+
+export async function readCheckoutSources(repositoryRoot) {
+  return Object.fromEntries(await Promise.all(Object.entries(CANDIDATE_PIN_SOURCES)
+    .map(async ([name, file]) => [name, await fs.readFile(`${repositoryRoot}/${file}`, 'utf8').catch(() => '')])));
+}
+
+export const recordedCandidatePins = async () => JSON.parse(await fs.readFile(CANDIDATE_PINS, 'utf8'));
+
+/**
+ * What a supported pinned installer would refuse in this checkout's candidate:
+ * each is an install that cannot update in-app (it fails at "Restart to update").
+ */
+export function candidatePinProblems({ recorded, candidate, floor = SUPPORTED_INSTALLED_FLOOR }) {
+  const problems = [];
+  for (const [tag, pins] of Object.entries(recorded)) {
+    if (compareVersions(tag.slice(1), floor) < 0) continue;
+    if (pins.bunVersion !== candidate.bunVersion) problems.push(`${tag}'s installer requires a native runtime built by Bun ${pins.bunVersion}; this checkout builds ${candidate.bunVersion}`);
+    for (const [file, sha256] of Object.entries(pins.assets)) {
+      if (candidate.assets[file] !== sha256) problems.push(`${tag}'s installer requires ${file} ${sha256.slice(0, 12)}; this checkout ships ${candidate.assets[file]?.slice(0, 12) ?? 'none'}`);
+    }
+  }
+  return problems.length ? [...problems, `Supported installs from v${floor} would refuse this update; keep those inputs, or obtain an owner decision to raise SUPPORTED_UPGRADE_FLOOR (docs/RELEASE_PIPELINE.md, "Updater contract")`] : [];
+}
+
+/**
+ * candidate-pins.json against the tags: exactly the pinned installers released
+ * from the floor up to (not including) `version`, each with the pins its tag
+ * shipped. `tags` lists the repository's release tags; `readTagFile(tag, file)`
+ * returns a file's text at a tag.
+ */
+export async function candidatePinFixtureProblems({ recorded, tags, readTagFile, version, floor = SUPPORTED_INSTALLED_FLOOR }) {
+  const problems = [], expected = {};
+  for (const tag of tags.filter(tag => /^v\d+\.\d+\.\d+$/.test(tag)).sort((left, right) => compareVersions(left.slice(1), right.slice(1)))) {
+    const installed = tag.slice(1);
+    if (compareVersions(installed, floor) < 0 || compareVersions(installed, version) >= 0) continue;
+    const sources = Object.fromEntries(await Promise.all(Object.entries(CANDIDATE_PIN_SOURCES).map(async ([name, file]) => [name, await readTagFile(tag, file) ?? ''])));
+    try {
+      const pins = readInstallerCandidatePins(sources);
+      if (pins) expected[tag] = pins;
+    } catch (error) { problems.push(`${tag}: ${error.message}`); }
+  }
+  const inRange = Object.fromEntries(Object.entries(recorded).filter(([tag]) => compareVersions(tag.slice(1), floor) >= 0));
+  if (JSON.stringify(inRange) !== JSON.stringify(expected)) {
+    problems.push(`candidate-pins.json records ${Object.keys(inRange).join(', ') || 'nothing'} from v${floor}; the tags pin ${JSON.stringify(expected)}`);
+  }
+  return problems;
+}
+
+/** Problems with a release manifest that installed apps would refuse at install time. */
+export async function manifestIdentityProblems(manifest) {
+  const problems = [];
+  if (manifest.signingMode !== SHIPPED_RELEASE_IDENTITY.signingMode) problems.push(bridgeReleaseRequired(`The candidate is signed ${manifest.signingMode}, not ${SHIPPED_RELEASE_IDENTITY.signingMode}`));
+  if (manifest.executable !== SHIPPED_RELEASE_IDENTITY.executable || manifest.arch !== SHIPPED_RELEASE_IDENTITY.arch) {
+    problems.push(bridgeReleaseRequired(`The candidate is ${manifest.executable}/${manifest.arch}, not ${SHIPPED_RELEASE_IDENTITY.executable}/${SHIPPED_RELEASE_IDENTITY.arch}`));
+  }
+  for (const tag of ['current', ...SHIPPED_DISCOVERY_TAGS]) {
+    if (!(await shippedAcceptedBundleIds(tag)).includes(manifest.bundleId)) problems.push(bridgeReleaseRequired(`The ${tag} installer does not accept bundle identifier ${manifest.bundleId}`));
+  }
+  return problems;
+}

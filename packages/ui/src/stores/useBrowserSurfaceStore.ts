@@ -148,9 +148,3 @@ export const createDesktopBrowserSurface = async (
   });
   return useBrowserSurfaceStore.getState().applySnapshot(result, tabId);
 };
-
-export const browserSurfaceSelectors = {
-  surface: (surfaceId: string) => (state: BrowserSurfaceState): BrowserSurfaceSnapshot | null => (
-    state.byId.get(surfaceId) ?? null
-  ),
-};

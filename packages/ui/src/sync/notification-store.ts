@@ -1,7 +1,7 @@
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
 import { hasPlanImplementationRequestPart, isPlanModeInstructionPart, isPlanSelectionMaintenanceMessage } from "@/lib/messages/actionablePlan"
 import { compareMessagesChronologically } from "./message-order"
-import { describeSessionFailure, type SessionFailure } from "./session-failure"
+import { describeSessionFailure, sessionFailureRetryAt, type SessionFailure } from "./session-failure"
 // ---------------------------------------------------------------------------
 // Notification store — session turn-complete and error tracking
 //
@@ -63,7 +63,7 @@ type NotificationIndex = {
 
 const MAX_NOTIFICATIONS = 500
 const NOTIFICATION_TTL_MS = 1000 * 60 * 60 * 24 * 30 // 30 days
-const COMPLETION_NOTIFICATION_STORAGE_KEY = "openchamber:notification-completions:v1"
+const COMPLETION_NOTIFICATION_STORAGE_KEY = "devryan:notification-completions:v1"
 const notificationStorage = getSafeStorage()
 
 // ---------------------------------------------------------------------------
@@ -101,6 +101,22 @@ function buildIndex(list: Notification[]): NotificationIndex {
   return index
 }
 
+// Storage keeps the classification code and, for limited providers, the
+// absolute reset time; never raw provider messages or bodies.
+function storedFailure(error: SessionFailure | undefined, time: number): SessionFailure {
+  const retryAt = sessionFailureRetryAt(error, time)
+  return { ...describeSessionFailure(error), ...(retryAt === undefined ? {} : { retryAt }) }
+}
+
+function persistedFailure(value: unknown): SessionFailure {
+  if (!value || typeof value !== "object") return describeSessionFailure(undefined)
+  const stored = value as Record<string, unknown>
+  const code = typeof stored.code === "string" ? stored.code : undefined
+  const failure = describeSessionFailure(code === undefined ? undefined : { code })
+  const retryAt = stored.retryAt
+  return typeof retryAt === "number" && Number.isFinite(retryAt) && retryAt > 0 ? { ...failure, retryAt } : failure
+}
+
 function readPersistedCompletionNotifications(): Notification[] {
   try {
     const raw = notificationStorage.getItem(COMPLETION_NOTIFICATION_STORAGE_KEY)
@@ -119,9 +135,7 @@ function readPersistedCompletionNotifications(): Notification[] {
 
       completions.push({
         type: candidate.type,
-        ...(candidate.type === "error" ? { error: describeSessionFailure(
-          candidate.error && typeof candidate.error === "object" && "code" in candidate.error
-            && typeof candidate.error.code === "string" ? { code: candidate.error.code } : undefined),
+        ...(candidate.type === "error" ? { error: persistedFailure(candidate.error),
           ...(typeof candidate.resolvedByMessageId === "string" ? { resolvedByMessageId: candidate.resolvedByMessageId } : {}),
           ...(typeof candidate.failedUserMessageId === "string" ? { failedUserMessageId: candidate.failedUserMessageId } : {}),
           ...(typeof candidate.failedUserCreatedAt === "number" && Number.isFinite(candidate.failedUserCreatedAt) && candidate.failedUserCreatedAt > 0
@@ -148,7 +162,7 @@ function persistCompletionNotifications(list: Notification[]): void {
   try {
     const completions = pruneNotifications(list.filter((notification) => notification.type !== "question"))
       .map((notification) => notification.type === "error"
-        ? { ...notification, error: describeSessionFailure(notification.error) } : notification)
+        ? { ...notification, error: storedFailure(notification.error, notification.time) } : notification)
     if (completions.length === 0) {
       notificationStorage.removeItem(COMPLETION_NOTIFICATION_STORAGE_KEY)
       return
@@ -196,11 +210,14 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
       return
     }
     const current = get().list
-    if (notification.messageId && notification.session) {
+    const attempt = notification.messageId ?? (notification.type === "error" ? notification.failedUserMessageId : undefined)
+    if (attempt && notification.session) {
       const duplicate = current.some((existing) => (
         existing.type === notification.type
         && existing.session === notification.session
-        && existing.messageId === notification.messageId
+        && (existing.messageId ?? (existing.type === "error" ? existing.failedUserMessageId : undefined)) === attempt
+        && (existing.type !== "error" || notification.type !== "error"
+          || describeSessionFailure(existing.error).code === describeSessionFailure(notification.error).code)
       ))
       if (duplicate) return
     }
@@ -369,24 +386,4 @@ export function markSessionsViewed(sessionIds: string[]) {
 
 export function markSessionCompletionsViewed(sessionId: string) {
   useNotificationStore.getState().markSessionCompletionsViewed(sessionId)
-}
-
-// ---------------------------------------------------------------------------
-// React hooks for fine-grained subscriptions
-// ---------------------------------------------------------------------------
-
-export function useSessionUnseenCount(sessionId: string): number {
-  return useNotificationStore((s) => s.index.session.unseenCount[sessionId] ?? 0)
-}
-
-export function useSessionHasError(sessionId: string): boolean {
-  return useNotificationStore((s) => s.index.session.unseenHasError[sessionId] ?? false)
-}
-
-export function useSessionHasCompletion(sessionId: string): boolean {
-  return useNotificationStore((s) => s.index.session.unseenHasCompletion[sessionId] ?? false)
-}
-
-export function useProjectUnseenCount(directory: string): number {
-  return useNotificationStore((s) => s.index.project.unseenCount[directory] ?? 0)
 }

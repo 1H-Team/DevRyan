@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, test } from 'node:test';
+import { after, afterEach, describe, test } from 'node:test';
 import { loadPlanModeInstruction } from './plan-mode.mjs';
 
 import {
@@ -18,6 +18,11 @@ import {
   fetchSessionTree,
   runSessionTurn,
 } from './client.mjs';
+
+// Temporary fixtures live under os.tmpdir(), which may be repository-local; remove them afterwards.
+const tempRoots = [];
+const trackTemp = directory => { tempRoots.push(directory); return directory; };
+after(() => { for (const directory of tempRoots) rmSync(directory, { recursive: true, force: true }); });
 
 const servers = new Set();
 
@@ -193,7 +198,7 @@ describe('DevRyan loopback evaluation client', () => {
     );
     if (process.platform !== 'darwin') return;
 
-    const fixtureRoot = mkdtempSync(path.join(os.tmpdir(), 'devryan-eval-zsh-'));
+    const fixtureRoot = trackTemp(mkdtempSync(path.join(os.tmpdir(), 'devryan-eval-zsh-')));
     mkdirSync(path.join(fixtureRoot, 'src'));
     writeFileSync(
       path.join(fixtureRoot, 'src', 'devryan-eval-portable.test.mjs'),
@@ -212,7 +217,7 @@ describe('DevRyan loopback evaluation client', () => {
 
   test('keeps the canonical owned-test wrapper observable under shell errexit', () => {
     if (process.platform !== 'darwin') return;
-    const fixtureRoot = mkdtempSync(path.join(os.tmpdir(), 'devryan-eval-zsh-errexit-'));
+    const fixtureRoot = trackTemp(mkdtempSync(path.join(os.tmpdir(), 'devryan-eval-zsh-errexit-')));
     mkdirSync(path.join(fixtureRoot, 'src'));
     writeFileSync(
       path.join(fixtureRoot, 'src', 'devryan-eval-portable.test.mjs'),
@@ -935,23 +940,26 @@ describe('DevRyan loopback evaluation client', () => {
     assert.equal(bodies[1].tools, undefined);
     assert.deepEqual(bodies[2].tools, {
       task: false,
-      invalid: false,
     });
     assert.deepEqual(bodies[3].tools, {
       'resend_*': false,
       'mcp__resend__*': false,
       task: false,
-      invalid: false,
     });
-    assert.equal(bodies[4].tools['*'], false);
-    assert.equal(bodies[4].tools.read, true);
-    assert.equal(bodies[4].tools.oc_read, true);
-    assert.equal(bodies[4].tools.ast_grep_search, true);
+    assert.deepEqual(bodies[4].tools, {
+      '*': false,
+      read: true,
+      glob: true,
+      grep: true,
+      webfetch: true,
+      devryan_plan_read: true,
+    });
     assert.equal(bodies[4].tools.ctx_search, undefined);
     assert.equal(bodies[4].tools.write, undefined);
     assert.equal(bodies[4].tools.oc_write, undefined);
     assert.equal(bodies[4].tools.shell, undefined);
     assert.equal(bodies[4].tools.devryan_task, undefined);
+    assert.equal(bodies[4].tools.websearch, undefined);
     assert.equal(new Set(bodies.map(body => body.messageID)).size, bodies.length);
   });
 

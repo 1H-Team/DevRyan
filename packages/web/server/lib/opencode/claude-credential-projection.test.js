@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -25,9 +26,7 @@ const read = (options) => readClaudeAccessToken({ account, home, username: 'fixt
 
 const roots = [];
 const stateFixture = () => {
-  const cache = path.resolve(import.meta.dirname, '../../../../../.cache/qa');
-  fs.mkdirSync(cache, { recursive: true });
-  const root = fs.mkdtempSync(path.join(cache, 'claude-credential-projection-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-claude-credential-projection-'));
   roots.push(root);
   return root;
 };
@@ -51,6 +50,13 @@ describe('Claude credential projection for the confined transport', () => {
 
     const hex = vi.fn(async () => Buffer.from(credentials(), 'utf8').toString('hex'));
     await expect(read({ execFile: hex, readFile: missingFile })).resolves.toEqual({ token: TOKEN });
+  });
+
+  it('preserves the constructor-owned original keychain identity after account relocation',async()=>{
+    const execFile=vi.fn(async()=>credentials());const relocated='/private/setup/accounts/owned';
+    expect(await read({account:relocated,keychainService:'Claude Code-credentials-deadbeef',execFile,readFile:missingFile})).toEqual({token:TOKEN});
+    expect(execFile).toHaveBeenCalledWith('/usr/bin/security',expect.arrayContaining(['Claude Code-credentials-deadbeef']),expect.any(Object));
+    execFile.mockClear();expect(await read({keychainService:'arbitrary-service',execFile,readFile:missingFile})).toEqual({reason:CLAUDE_CREDENTIALS_UNREADABLE});expect(execFile).not.toHaveBeenCalled();
   });
 
   it('falls back to the credential file and never uses the keychain elsewhere', async () => {

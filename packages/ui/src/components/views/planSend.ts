@@ -97,11 +97,13 @@ export const buildPlanImplementationSyntheticParts = ({
   sourceMessageId,
   instructions,
   projectDirectory,
+  version,
 }: {
   sourceSessionId: string;
   sourceMessageId: string;
   instructions: string;
   projectDirectory?: string;
+  version?: string;
 }): PlanSendSyntheticPart[] => [
   {
     synthetic: true,
@@ -110,6 +112,7 @@ export const buildPlanImplementationSyntheticParts = ({
       sourceMessageId,
       planIndex: 0,
       projectDirectory,
+      version,
     }),
   },
   { synthetic: true, text: instructions },

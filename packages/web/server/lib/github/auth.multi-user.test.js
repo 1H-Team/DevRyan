@@ -7,11 +7,11 @@ let directory;
 let auth;
 let getOctokitOrNull;
 let runWithRequestPrincipal;
-const originalDataDirectory = process.env.OPENCHAMBER_DATA_DIR;
+const originalDataDirectory = process.env.DEVRYAN_DATA_DIR;
 
 beforeAll(async () => {
   directory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-github-auth-'));
-  process.env.OPENCHAMBER_DATA_DIR = directory;
+  process.env.DEVRYAN_DATA_DIR = directory;
   vi.resetModules();
   auth = await import('./auth.js');
   ({ getOctokitOrNull } = await import('./octokit.js'));
@@ -19,8 +19,8 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  if (originalDataDirectory === undefined) delete process.env.OPENCHAMBER_DATA_DIR;
-  else process.env.OPENCHAMBER_DATA_DIR = originalDataDirectory;
+  if (originalDataDirectory === undefined) delete process.env.DEVRYAN_DATA_DIR;
+  else process.env.DEVRYAN_DATA_DIR = originalDataDirectory;
   await fs.rm(directory, { recursive: true, force: true });
 });
 

@@ -1,3 +1,5 @@
+// Intentional divergence from upstream: buildResult adds an optional `errorCode` field that quota
+// providers and the UI rely on. Preserve it when merging or porting upstream changes.
 export const formatResetTime = (timestamp) => {
   try {
     const resetDate = new Date(timestamp);
@@ -76,22 +78,6 @@ export const buildResult = ({
   ...(typeof usageUpdatedAt === 'number' && Number.isFinite(usageUpdatedAt) ? { usageUpdatedAt } : {}),
   fetchedAt: Date.now()
 });
-
-export const durationToLabel = (duration, unit) => {
-  if (!duration || !unit) return 'limit';
-  if (unit === 'TIME_UNIT_MINUTE') return `${duration}m`;
-  if (unit === 'TIME_UNIT_HOUR') return `${duration}h`;
-  if (unit === 'TIME_UNIT_DAY') return `${duration}d`;
-  return 'limit';
-};
-
-export const durationToSeconds = (duration, unit) => {
-  if (!duration || !unit) return null;
-  if (unit === 'TIME_UNIT_MINUTE') return duration * 60;
-  if (unit === 'TIME_UNIT_HOUR') return duration * 3600;
-  if (unit === 'TIME_UNIT_DAY') return duration * 86400;
-  return null;
-};
 
 export const formatMoney = (value) => {
   if (typeof value !== 'number' || !Number.isFinite(value)) return null;

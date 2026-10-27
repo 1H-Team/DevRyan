@@ -1,10 +1,10 @@
 import fs from 'node:fs/promises';
-import { constants, createReadStream } from 'node:fs';
+import { constants, createReadStream, lstatSync } from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
-import { checkExecutionAdmission, executionProgress } from './execution-admission.js';
+import { checkExecutionAdmission, executionProgress, executionStep } from './execution-admission.js';
 import { changeError } from './session-changes-git.js';
-import { hasDirectoryAncestors, safeChangePath } from './session-changes-snapshot.js';
+import { hasDirectoryAncestors, hasDirectoryAncestorsSync, safeChangePath } from './session-changes-snapshot.js';
 import { markObjectDirectoryPending, markObjectIfUnsynced } from './object-durability.js';
 
 export const GRANULAR_TEXT_BYTES = 8 * 1024 * 1024;
@@ -15,6 +15,13 @@ const absent = (cause) => { if (['ENOENT', 'ENOTDIR'].includes(cause.code)) retu
 export async function mutationFileStamp(directory, file, verifiedAncestors) {
   if (!await hasDirectoryAncestors(directory, file, verifiedAncestors)) return null;
   return stamp(await fs.lstat(path.join(directory, file), { bigint: true }).catch(absent));
+}
+
+// mutationFileStamp with synchronous lstat, for the ledger worker's walks.
+export function mutationFileStampSync(directory, file, verifiedAncestors) {
+  if (!hasDirectoryAncestorsSync(directory, file, verifiedAncestors)) return null;
+  try { return stamp(lstatSync(path.join(directory, file), { bigint: true })); }
+  catch (cause) { return absent(cause); }
 }
 
 export async function requireMutationSpace(directory, bytes) {
@@ -70,7 +77,7 @@ const classifier = (stat) => {
   };
 };
 
-export async function inspectMutationFile(repo, file, directory = repo.directory) {
+export async function inspectMutationFile(repo, file, directory = repo.directory, { preview = false } = {}) {
   checkExecutionAdmission();
   if (!await hasDirectoryAncestors(directory, file)) return null;
   const target = path.join(directory, file);
@@ -91,6 +98,7 @@ export async function inspectMutationFile(repo, file, directory = repo.directory
     });
     if (await mutationFileStamp(directory, file) !== stamp(stat)) throw changeError('observation_changed');
     const digest = hash.digest('hex');
+    if (preview) return describe(stat, digest, kind.whole);
     const existing = await fs.lstat(path.join(objects, digest)).catch((cause) => { if (cause.code === 'ENOENT') return null; throw cause; });
     if (existing?.isFile() && existing.size === size) {
       markObjectIfUnsynced(objects, existing.ctimeMs);
@@ -115,9 +123,12 @@ export async function inspectMutationFile(repo, file, directory = repo.directory
     const digest = hash.digest('hex');
     // Objects are immutable. A hard link installs once without replacing an
     // existing reader's inode, even when different observers see the same bytes.
-    await fs.link(temporary, path.join(objects, digest)).catch((cause) => { if (cause.code !== 'EEXIST') throw cause; });
+    const installed = await fs.link(temporary, path.join(objects, digest)).then(() => true, (cause) => { if (cause.code !== 'EEXIST') throw cause; return false; });
     // The ledger commit that references this object syncs the directory first.
     markObjectDirectoryPending(objects);
+    // Unlinking the temporary name changes the object's link count and so
+    // its change time: record the identity only after it is gone.
+    if (installed) { await fs.rm(temporary, { force: true }); await recordInstalledObject(objects, digest); }
     return describe(stat, digest, kind.whole);
   } catch (cause) {
     if (['ENOSPC', 'EDQUOT'].includes(cause.code)) throw changeError('storage_unavailable', 503);
@@ -130,17 +141,83 @@ export async function inspectMutationFile(repo, file, directory = repo.directory
 // Content-addressed objects are immutable once written. Verify each object's
 // bytes once per file identity, then let views clone it (APFS copy-on-write;
 // libuv falls back to a byte copy where cloning is unsupported).
+//
+// Verified identities also persist in `<root>/verified-objects.v1`, so the
+// first view after an app start does not rehash every object (13k files took
+// 5.9 s in the 2026-10-24 live QA). An identity includes the inode change
+// time, which any write or chmod advances and which no unprivileged process
+// can set back, so a matching identity means the bytes are unchanged since
+// they were hashed. The file sits inside the ledger root's private trust
+// boundary. Kill switch, read per use: DEVRYAN_PERSISTENT_OBJECT_VERIFY=0.
 const verifiedObjects = new Map();
 const MAX_VERIFIED_OBJECTS = 100_000;
+const VERIFIED_OBJECTS_FILE = 'verified-objects.v1';
+const VERIFIED_LINE = /^([a-f0-9]{64}) (\d+:\d+:\d+:\d+:\d+)$/;
+const persistentVerify = () => process.env.DEVRYAN_PERSISTENT_OBJECT_VERIFY !== '0';
+const objectIdentity = (stat) => [stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs].join(':');
+const rememberVerified = (expected, identity) => {
+  verifiedObjects.delete(expected); verifiedObjects.set(expected, identity);
+  while (verifiedObjects.size > MAX_VERIFIED_OBJECTS) verifiedObjects.delete(verifiedObjects.keys().next().value);
+};
+// One load per ledger root and process. Unreadable or partial lines are
+// ignored: a missing identity only costs a rehash.
+const persistedRoots = new Map();
+const loadVerifiedObjects = (root) => {
+  let pending = persistedRoots.get(root);
+  if (!pending) {
+    pending = (async () => {
+      const file = path.join(root, VERIFIED_OBJECTS_FILE);
+      const text = await fs.readFile(file, 'utf8').catch((cause) => { if (cause.code === 'ENOENT') return ''; throw cause; });
+      const latest = new Map();
+      let lines = 0;
+      for (const line of text.split('\n')) {
+        const match = VERIFIED_LINE.exec(line);
+        if (!match) continue;
+        lines += 1; latest.delete(match[1]); latest.set(match[1], match[2]);
+      }
+      for (const [hash, identity] of latest) if (!verifiedObjects.has(hash)) rememberVerified(hash, identity);
+      // Appends repeat an object whose identity changed; compact once the
+      // file holds twice as many lines as live objects.
+      if (lines > 1_024 && lines > latest.size * 2) {
+        const temporary = path.join(root, `.${VERIFIED_OBJECTS_FILE}-${randomUUID()}`);
+        try {
+          await fs.writeFile(temporary, [...latest].map(([hash, identity]) => `${hash} ${identity}\n`).join(''), { mode: 0o600, flag: 'wx' });
+          await fs.rename(temporary, file);
+        } finally { await fs.rm(temporary, { force: true }); }
+      }
+    })().catch(() => { /* Rehashing is always correct. */ });
+    persistedRoots.set(root, pending);
+  }
+  return pending;
+};
+const persistVerified = (root, expected, identity) => fs.appendFile(path.join(root, VERIFIED_OBJECTS_FILE),
+  `${expected} ${identity}\n`, { mode: 0o600 }).catch(() => { /* Rehashing is always correct. */ });
+/** Tests only: forget identities verified by this process. */
+export const resetVerifiedMutationObjects = () => { verifiedObjects.clear(); persistedRoots.clear(); };
+
 async function verifyMutationObject(file, expected) {
+  const root = path.dirname(path.dirname(file));
+  if (persistentVerify()) await loadVerifiedObjects(root);
   const stat = await fs.stat(file, { bigint: true });
-  const identity = [stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs].join(':');
+  const identity = objectIdentity(stat);
   if (verifiedObjects.get(expected) === identity) return;
   const hash = createHash('sha256');
   for await (const chunk of createReadStream(file)) { checkExecutionAdmission(); hash.update(chunk); executionProgress(); }
   if (hash.digest('hex') !== expected) throw changeError('invalid_change_record');
-  verifiedObjects.delete(expected); verifiedObjects.set(expected, identity);
-  while (verifiedObjects.size > MAX_VERIFIED_OBJECTS) verifiedObjects.delete(verifiedObjects.keys().next().value);
+  executionStep('object_verify_hashed', 0);
+  rememberVerified(expected, identity);
+  if (persistentVerify()) await persistVerified(root, expected, identity);
+}
+
+// The installer just hashed these bytes, so the new object is verified.
+async function recordInstalledObject(objects, digest) {
+  if (!persistentVerify()) return;
+  const stat = await fs.stat(path.join(objects, digest), { bigint: true }).catch(() => null);
+  if (!stat?.isFile()) return;
+  const identity = objectIdentity(stat);
+  if (verifiedObjects.get(digest) === identity) return;
+  rememberVerified(digest, identity);
+  await persistVerified(path.dirname(objects), digest, identity);
 }
 
 // Materializes files into a disposable view directory this preparation just

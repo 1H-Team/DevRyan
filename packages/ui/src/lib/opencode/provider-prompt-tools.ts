@@ -1,1 +1,1 @@
-export { resolveProviderPromptTools } from "@openchamber/orchestration-runtime";
+export { resolveProviderPromptTools } from "@devryan/orchestration-runtime";

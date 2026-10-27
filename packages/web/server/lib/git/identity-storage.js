@@ -1,10 +1,8 @@
 import fs from 'fs';
 import path from 'path';
-import os from 'os';
+import { resolveDevRyanDataRoot } from '@devryan/shared-runtime/node/data-root.js';
 
-const STORAGE_DIR = process.env.OPENCHAMBER_DATA_DIR
-  ? path.resolve(process.env.OPENCHAMBER_DATA_DIR)
-  : path.join(os.homedir(), '.config', 'openchamber');
+const STORAGE_DIR = resolveDevRyanDataRoot();
 const STORAGE_FILE = path.join(STORAGE_DIR, 'git-identities.json');
 
 function ensureStorageDir() {

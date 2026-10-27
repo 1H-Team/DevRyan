@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test } from "bun:test"
 import { getSafeStorage } from "@/stores/utils/safeStorage"
 import { appendNotification, markSessionViewed, markSessionsViewed, reconcileSessionFailureNotifications, useNotificationStore } from "./notification-store"
 
-const COMPLETION_NOTIFICATION_STORAGE_KEY = "openchamber:notification-completions:v1"
+const COMPLETION_NOTIFICATION_STORAGE_KEY = "devryan:notification-completions:v1"
 
 function resetNotificationStore() {
   useNotificationStore.setState({
@@ -401,3 +401,15 @@ describe("notification-store", () => {
     expect(afterNoOp.index).toBe(beforeNoOp.index)
   })
 })
+
+test('coalesces the same classified cause and attempt while preserving distinct causes and later attempts', () => {
+  const store = useNotificationStore.getState();
+  const base = { type: 'error' as const, session: 'ses_coalesce', messageId: 'msg_attempt', time: Date.now(), viewed: false };
+  store.append({ ...base, error: { code: 'provider_transport_failed' } });
+  const first = useNotificationStore.getState();
+  store.append({ ...base, error: { code: 'provider_transport_failed', message: 'same failed stream' } });
+  expect(useNotificationStore.getState()).toBe(first);
+  store.append({ ...base, error: { code: 'session_cancelled' } });
+  store.append({ ...base, messageId: 'msg_attempt_2', error: { code: 'provider_transport_failed' } });
+  expect(useNotificationStore.getState().list.filter(notice => notice.session === 'ses_coalesce')).toHaveLength(3);
+});

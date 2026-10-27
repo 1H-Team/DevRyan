@@ -1077,7 +1077,7 @@ describe('bounded browser sequences', () => {
     writeFileSync(binary, 'fixture'); chmodSync(binary, 0o755);
     const stat = statSync(binary);
     writeFileSync(join(directory, 'ready.json'), JSON.stringify({ release: 'b6.1.1', sha256: 'a'.repeat(64),
-      identity: [stat.dev, stat.ino, stat.size, stat.mtimeMs, stat.ctimeMs].join(':') }));
+      identity: [stat.ino, stat.size, stat.mtimeMs, stat.ctimeMs].join(':') }));
   };
   it('validates every step before network/process work, including nested sequences and recording balance', async () => {
     const spawnImpl = vi.fn(); const requests = stubLeaseFetch();

@@ -10,8 +10,10 @@ import {
   DEVRYAN_MANAGED_PROFILE_DEPENDENCIES,
   DEVRYAN_MANAGED_PROFILE_PLUGIN_SPECS,
   RETIRED_DEVRYAN_PROFILE_DEPENDENCIES,
+  getDevRyanManagedPluginForSpec,
   getDevRyanManagedPluginRegistrationForConfigPath,
   inspectDevRyanManagedPluginInstallation,
+  isRetiredDevRyanPluginSpec,
   reconcileDevRyanManagedPluginSpecs,
   removeDevRyanManagedLegacyPluginSpecs,
 } from './managed-plugins.js';
@@ -44,17 +46,14 @@ describe('managed plugin manifest', () => {
       'adm-zip': '0.6.0',
       'mammoth': '1.12.1',
       'unpdf': '1.8.0',
-      '@rama_nigg/open-cursor': '2.5.8',
-      'opencode-with-claude': '1.8.0',
+      '@rama_nigg/open-cursor': '2.5.17',
+      'opencode-with-claude': '1.11.2',
       'opencode-gpt-imagegen': '0.1.12',
-      'oh-my-opencode-slim': '2.2.25',
     });
     expect(DEVRYAN_MANAGED_PROFILE_PLUGIN_SPECS).toEqual([
       './plugins/devryan-open-cursor.mjs',
       './node_modules/opencode-with-claude/dist/index.js',
       './node_modules/opencode-gpt-imagegen/dist/index.js',
-      './plugins/devryan-oh-my-opencode-slim.mjs',
-      './plugins/devryan-superpowers.mjs',
       './plugins/devryan-skill-context.mjs',
       './plugins/devryan-document-reader.mjs',
     ]);
@@ -92,6 +91,7 @@ describe('managed plugin manifest', () => {
     expect(webProfileConfig.plugin).toEqual(DEVRYAN_MANAGED_PROFILE_PLUGIN_SPECS);
     expect(tauriRootConfig).toEqual(webRootConfig);
     expect(webPackage.dependencies).toMatchObject(DEVRYAN_MANAGED_PROFILE_DEPENDENCIES);
+    expect(webPackage.dependencies).not.toHaveProperty('oh-my-opencode-slim');
     expect(tauriProfileConfig.plugin).not.toContain('./plugins/devryan-document-reader.mjs');
     expect(tauriProfileConfig.plugin).not.toContain('./plugins/devryan-skill-context.mjs');
     expect(tauriPackage.dependencies).not.toHaveProperty('unpdf');
@@ -110,14 +110,13 @@ describe('managed plugin manifest', () => {
       expect(packageJson.dependencies).not.toHaveProperty('context-mode');
     }
 
-    // Tauri retains Slim 2.0.5 and its legacy loader; the forward profile also
-    // supports the server descriptor exported by its pinned Slim 2.2.25.
-    expect(fs.readFileSync(path.join(webDefaultConfigRoot, 'plugins', 'devryan-oh-my-opencode-slim.mjs'), 'utf8'))
-      .toContain('exported.server');
+    // The forward profile has no Slim adapter: the agent orchestration is built
+    // into the native runtime. Released Tauri retains Slim 2.0.5 and its loader.
+    expect(fs.existsSync(path.join(webDefaultConfigRoot, 'plugins', 'devryan-oh-my-opencode-slim.mjs'))).toBe(false);
     expect(fs.readFileSync(path.join(tauriDefaultConfigRoot, 'plugins', 'devryan-oh-my-opencode-slim.mjs'), 'utf8'))
       .not.toContain('exported.server');
-    expect(fs.readFileSync(path.join(webDefaultConfigRoot, 'plugins', 'devryan-superpowers.mjs'), 'utf8'))
-      .not.toContain('experimental.chat.messages.transform');
+    // Superpowers is retired from the forward profile; released Tauri keeps its frozen copy.
+    expect(fs.existsSync(path.join(webDefaultConfigRoot, 'plugins', 'devryan-superpowers.mjs'))).toBe(false);
     expect(fs.readFileSync(path.join(tauriDefaultConfigRoot, 'plugins', 'devryan-superpowers.mjs'), 'utf8'))
       .toContain('experimental.chat.messages.transform');
     expect(fs.existsSync(path.join(webDefaultConfigRoot, 'plugins', 'devryan-document-reader.mjs'))).toBe(true);
@@ -143,11 +142,57 @@ describe('managed plugin manifest', () => {
       './plugins/devryan-open-cursor.mjs',
       ['./node_modules/opencode-with-claude/dist/index.js', { enabled: true }],
       './node_modules/opencode-gpt-imagegen/dist/index.js',
-      './plugins/devryan-oh-my-opencode-slim.mjs',
-      './plugins/devryan-superpowers.mjs',
       './plugins/devryan-skill-context.mjs',
       './plugins/devryan-document-reader.mjs',
     ]);
+  });
+
+  it('retires the Slim adapter and package registrations now that agent orchestration is built in', () => {
+    for (const spec of [
+      './plugins/devryan-oh-my-opencode-slim.mjs',
+      'file:///Users/test/.config/opencode/plugins/devryan-oh-my-opencode-slim.mjs',
+      'oh-my-opencode-slim',
+      'oh-my-opencode-slim@2.2.25',
+      './node_modules/oh-my-opencode-slim/dist/index.js',
+    ]) {
+      expect(isRetiredDevRyanPluginSpec(spec)).toBe(true);
+      expect(getDevRyanManagedPluginForSpec(spec)).toBeNull();
+    }
+    expect(reconcileDevRyanManagedPluginSpecs([
+      'user-plugin@1.0.0',
+      ['./plugins/devryan-oh-my-opencode-slim.mjs', { enabled: true }],
+      'oh-my-opencode-slim@2.2.24',
+    ]).some((entry) => JSON.stringify(entry).includes('slim'))).toBe(false);
+    expect(RETIRED_DEVRYAN_PROFILE_DEPENDENCIES['oh-my-opencode-slim']).toBe('2.2.25');
+  });
+
+  it('retires every Ponytail registration an upgraded setup still lists', () => {
+    for (const spec of [
+      './node_modules/@dietrichgebert/ponytail/.opencode/plugins/ponytail.mjs',
+      'file:///Users/test/.config/opencode/node_modules/@dietrichgebert/ponytail/.opencode/plugins/ponytail.mjs',
+      '@dietrichgebert/ponytail',
+      '@dietrichgebert/ponytail@4.10.0',
+    ]) {
+      expect(isRetiredDevRyanPluginSpec(spec)).toBe(true);
+      expect(getDevRyanManagedPluginForSpec(spec)).toBeNull();
+    }
+    expect(reconcileDevRyanManagedPluginSpecs([
+      'user-plugin@1.0.0',
+      ['./node_modules/@dietrichgebert/ponytail/.opencode/plugins/ponytail.mjs', { enabled: true }],
+      '@dietrichgebert/ponytail',
+    ]).some((entry) => JSON.stringify(entry).includes('ponytail'))).toBe(false);
+  });
+
+  it('retires the Superpowers adapter and its upstream git plugin from existing profiles', () => {
+    expect(isRetiredDevRyanPluginSpec('./plugins/devryan-superpowers.mjs')).toBe(true);
+    expect(isRetiredDevRyanPluginSpec('file:///Users/test/.config/opencode/plugins/devryan-superpowers.mjs')).toBe(true);
+    expect(isRetiredDevRyanPluginSpec('superpowers@git+https://github.com/obra/superpowers.git')).toBe(true);
+    expect(getDevRyanManagedPluginForSpec('./plugins/devryan-superpowers.mjs')).toBeNull();
+    expect(reconcileDevRyanManagedPluginSpecs([
+      'user-plugin@1.0.0',
+      './plugins/devryan-superpowers.mjs',
+      ['/Users/test/.config/opencode/plugins/devryan-superpowers.mjs', { enabled: true }],
+    ]).some((entry) => JSON.stringify(entry).includes('superpowers'))).toBe(false);
   });
 
   it('moves Open Cursor registrations from the installed entrypoint to its adapter, relative or absolute', () => {
@@ -183,6 +228,7 @@ describe('managed plugin manifest', () => {
     expect(RETIRED_DEVRYAN_PROFILE_DEPENDENCIES).toEqual({
       'context-mode': '1.0.169',
       'opencode-antigravity-auth': '1.6.0',
+      'oh-my-opencode-slim': '2.2.25',
     });
   });
 

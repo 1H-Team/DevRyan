@@ -2,6 +2,7 @@ import React from 'react';
 import { RiArrowLeftSLine, RiArrowRightSLine, RiCheckLine, RiEditLine, RiQuestionLine } from '@remixicon/react';
 
 import { cn } from '@/lib/utils';
+import { openExternalUrl } from '@/lib/url';
 import { isIMECompositionEvent } from '@/lib/ime';
 import type { QuestionRequest } from '@/types/question';
 import { useUIStore } from '@/stores/useUIStore';
@@ -18,6 +19,7 @@ import {
 import { useOrphanedQuestionKeys } from './useOrphanedQuestionKeys';
 import { useI18n } from '@/lib/i18n';
 import { useMessageQueueStore, type QueuedMessage } from '@/stores/messageQueueStore';
+import { dispatchQueuedMessageForSession, type QueuedSendLifecycleCallbacks } from './queuedSend';
 import { toast } from '@/components/ui/toast';
 import {
   buildQuestionRequestAnswerGroups,
@@ -28,9 +30,16 @@ import {
   getIndexAfterOptionSelection,
   getNextQuestionIndex,
   getPreviousQuestionIndex,
-  isQuestionAnswerComplete,
   shouldHandleQuestionAnswerEnter,
 } from './questionCardNavigation';
+import {
+  initialQuestionInputText,
+  isQuestionRequired,
+  QUESTION_LINK_COMPLETED,
+  questionEntryError,
+  type QuestionInputError,
+} from './questionCardInputs';
+import { QuestionLinkCard, QuestionTypedInput } from './QuestionTypedFields';
 import { deriveCustomModeFromText, getQuestionOptionPresentation } from './questionCardOptions';
 import { QuestionOptionRow } from './QuestionOptionRow';
 import { QuestionExplanation } from './QuestionPromptText';
@@ -71,7 +80,7 @@ type AnswerSubmissionCopy = {
   retryFailed: string;
 };
 
-const sendDelivery = (delivery: OrphanResumeDelivery) => useSessionUIStore.getState().sendMessageToSession(
+const sendDelivery = (delivery: OrphanResumeDelivery, lifecycle?: QueuedSendLifecycleCallbacks) => useSessionUIStore.getState().sendMessageToSession(
   delivery.sessionId,
   delivery.content,
   delivery.config.providerID,
@@ -83,6 +92,7 @@ const sendDelivery = (delivery: OrphanResumeDelivery) => useSessionUIStore.getSt
   delivery.config.variant,
   'normal',
   delivery.config.planMode,
+  lifecycle,
 );
 
 const queueDelivery = (delivery: OrphanResumeDelivery): QueuedMessage | undefined => {
@@ -111,12 +121,14 @@ const createAnswerSubmissionDependencies = (
     const queued = queueDelivery(delivery);
     const retry = async () => {
       if (!queued) return;
-      const claim = useMessageQueueStore.getState().claimMessageForSession(delivery.sessionId, queued.id);
-      if (!claim) return;
       try {
-        await sendDelivery(delivery);
+        await dispatchQueuedMessageForSession({ sessionId: delivery.sessionId, queuedMessageId: queued.id,
+          dispatch: (message, assertCurrent) => sendDelivery(delivery, {
+            messageID: message.messageId, directory: message.directory, delivery: message.dispatchDelivery,
+            awaitTransportGate: async () => { assertCurrent(); },
+          }),
+        });
       } catch (retryError) {
-        useMessageQueueStore.getState().restoreClaimedMessage(delivery.sessionId, claim);
         toast.error(copy.retryFailed, {
           description: retryError instanceof Error ? retryError.message : undefined,
         });
@@ -290,29 +302,54 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
   const boundedActiveIndex = Math.min(activeIndex, Math.max(0, totalCount - 1));
   const activeEntry = entries[boundedActiveIndex] ?? null;
   const isLastQuestion = boundedActiveIndex >= totalCount - 1;
+  // Direction of the last step change; the keyed question body replays its
+  // enter animation from that side. Derived during render so the first frame
+  // of the new question already carries it.
+  const activeEntryKey = activeEntry?.entryKey ?? null;
+  const [stepMotion, setStepMotion] = React.useState<{
+    entryKey: string | null;
+    index: number;
+    direction: 'idle' | 'forward' | 'back';
+  }>({ entryKey: activeEntryKey, index: boundedActiveIndex, direction: 'idle' });
+  if (stepMotion.entryKey !== activeEntryKey) {
+    setStepMotion({
+      entryKey: activeEntryKey,
+      index: boundedActiveIndex,
+      direction: stepMotion.entryKey === null || activeEntryKey === null
+        ? 'idle'
+        : boundedActiveIndex < stepMotion.index ? 'back' : 'forward',
+    });
+  }
   const progressLabel = totalCount > 1
     ? t('chat.questionCard.progress', { current: boundedActiveIndex + 1, total: totalCount })
     : null;
 
-  const isEntryAnswered = React.useCallback(
-    (entryKey: string): boolean => isQuestionAnswerComplete({
-      isCustom: Boolean(customMode[entryKey]),
-      customText: customText[entryKey],
-      selectedOptions: selectedOptions[entryKey] ?? [],
+  // A typed field starts from its declared default until the user edits it.
+  const typedTextFor = React.useCallback(
+    (entry: QuestionEntry): string => customText[entry.entryKey] ?? initialQuestionInputText(entry.question.input),
+    [customText],
+  );
+
+  const entryError = React.useCallback(
+    (entry: QuestionEntry): QuestionInputError | null => questionEntryError(entry.question, {
+      isCustom: Boolean(customMode[entry.entryKey]),
+      customText: customText[entry.entryKey],
+      selectedOptions: selectedOptions[entry.entryKey] ?? [],
+      text: typedTextFor(entry),
     }),
-    [customMode, customText, selectedOptions],
+    [customMode, customText, selectedOptions, typedTextFor],
   );
 
   const unansweredEntryKeys = React.useMemo(() => {
     const pending: string[] = [];
     for (const entry of entries) {
-      if (!isEntryAnswered(entry.entryKey)) pending.push(entry.entryKey);
+      if (entryError(entry)) pending.push(entry.entryKey);
     }
     return pending;
-  }, [entries, isEntryAnswered]);
+  }, [entries, entryError]);
 
   const requiredSatisfied = totalCount > 0 && unansweredEntryKeys.length === 0;
-  const activeAnswerComplete = activeEntry ? isEntryAnswered(activeEntry.entryKey) : false;
+  const activeAnswerComplete = activeEntry ? entryError(activeEntry) === null : false;
 
   const handleBack = React.useCallback(() => {
     setActiveIndex((current) => getPreviousQuestionIndex(current));
@@ -324,7 +361,12 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
   }, [activeAnswerComplete, totalCount]);
 
   const buildAnswerForEntry = React.useCallback(
-    (entryKey: string): string[] => {
+    (entry: QuestionEntry): string[] => {
+      const entryKey = entry.entryKey;
+      if (entry.question.input) {
+        const value = typedTextFor(entry).trim();
+        return value ? [value] : [];
+      }
       const isCustom = Boolean(customMode[entryKey]);
       if (isCustom) {
         const value = (customText[entryKey] ?? '').trim();
@@ -332,10 +374,32 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
       }
       return selectedOptions[entryKey] ?? [];
     },
-    [customMode, customText, selectedOptions],
+    [customMode, customText, selectedOptions, typedTextFor],
   );
 
   const customInputRef = React.useRef<HTMLTextAreaElement | null>(null);
+  const typedInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  const handleTypedTextChange = React.useCallback((entry: QuestionEntry, value: string) => {
+    setCustomText((prev) => ({ ...prev, [entry.entryKey]: value }));
+  }, []);
+
+  const handleToggleLinkCompleted = React.useCallback((entry: QuestionEntry) => {
+    setSelectedOptions((prev) => ({
+      ...prev,
+      [entry.entryKey]: (prev[entry.entryKey]?.length ?? 0) > 0 ? [] : [QUESTION_LINK_COMPLETED],
+    }));
+  }, []);
+
+  const handleOpenLink = React.useCallback(async (href: string) => {
+    // Only on an explicit click; `openExternalUrl` itself refuses non-http(s).
+    if (!(await openExternalUrl(href))) toast.error(t('chat.questionCard.linkOpenFailed'));
+  }, [t]);
+
+  const inputErrorMessage = React.useCallback((error: QuestionInputError): string => {
+    if ('limit' in error) return t(`chat.questionCard.validation.${error.code}`, { limit: error.limit });
+    return t(`chat.questionCard.validation.${error.code}`);
+  }, [t]);
 
   const handleToggleOption = React.useCallback(
     (entry: QuestionEntry, label: string) => {
@@ -419,7 +483,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
         entries.map((entry): QuestionAnswerEntry => ({
           request: entry.request,
           withinRequestIndex: entry.withinRequestIndex,
-          answers: buildAnswerForEntry(entry.entryKey),
+          answers: buildAnswerForEntry(entry),
         })),
       ),
       acknowledgedRequestKeys,
@@ -484,7 +548,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
   ]);
 
   const handleKeyDown = React.useCallback(
-    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    (e: React.KeyboardEvent<HTMLTextAreaElement | HTMLInputElement>) => {
       if (isIMECompositionEvent(e)) return;
       if (shouldHandleQuestionAnswerEnter({
         key: e.key,
@@ -569,24 +633,48 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
   const footerError = Array.from(new Set(Object.values(requestErrors).filter(Boolean))).join(' ');
   const primaryDisabled = isSubmitting || (isLastQuestion ? !requiredSatisfied : !activeAnswerComplete);
   const handlePrimaryAction = isLastQuestion ? handleConfirm : handleNext;
+  // An MCP server, not the agent, asked: Skip declines (cancels) the request.
+  const elicitation = activeEntry?.request.source?.type === 'mcp-elicitation' ? activeEntry.request.source : null;
+  const activeTypedError = activeEntry?.question.input && customText[activeEntry.entryKey] !== undefined
+    ? entryError(activeEntry) : null;
 
   const renderQuestionBody = (entry: QuestionEntry, opts: { withHeader: boolean }) => {
     const selected = selectedOptions[entry.entryKey] ?? [];
     const prompt = splitQuestionPrompt(entry.question.question);
+    const requirement = entry.question.required === undefined ? null
+      : isQuestionRequired(entry.question) ? t('chat.questionCard.required') : t('chat.questionCard.optional');
     return (
-      <div key={entry.entryKey}>
+      <div
+        key={entry.entryKey}
+        data-question-step={stepMotion.direction === 'idle' ? undefined : stepMotion.direction}
+      >
         {opts.withHeader && entry.question.header?.trim() ? (
           <div className="typography-micro font-medium text-muted-foreground mb-0.5">
             {entry.question.header}
           </div>
         ) : null}
-        <div className={cn('typography-ui-label font-medium text-foreground', prompt.explanation.length > 0 ? 'mb-1' : 'mb-2')}>{prompt.title}</div>
+        <div className={cn('typography-ui-label font-medium text-foreground', prompt.explanation.length > 0 ? 'mb-1' : 'mb-2')}>
+          {prompt.title}
+          {requirement ? <span className="ml-1.5 typography-micro font-normal text-muted-foreground">{requirement}</span> : null}
+        </div>
         <QuestionExplanation lines={prompt.explanation} className="mb-2" />
+        {entry.question.external ? (
+          <QuestionLinkCard
+            question={entry.question}
+            completed={selected.length > 0}
+            disabled={isSubmitting}
+            openLabel={t('chat.questionCard.openLink')}
+            completedLabel={t('chat.questionCard.linkCompleted')}
+            hint={t('chat.questionCard.linkHint')}
+            onOpen={(href) => { void handleOpenLink(href); }}
+            onToggleCompleted={() => handleToggleLinkCompleted(entry)}
+          />
+        ) : null}
         {entry.question.multiple ? (
           <div className="typography-micro text-muted-foreground mb-1.5">{t('chat.questionCard.selectMultiple')}</div>
         ) : null}
 
-        <div
+        {entry.question.options.length > 0 || !(entry.question.input || entry.question.external) ? <div
           className="space-y-0.5"
           role={entry.question.multiple ? 'group' : 'radiogroup'}
           aria-label={prompt.title}
@@ -608,7 +696,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
               />
             );
           })}
-        </div>
+        </div> : null}
       </div>
     );
   };
@@ -623,7 +711,9 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
       {/* Meta row */}
       <div className="flex items-center gap-2 pb-1.5">
         <RiQuestionLine className="h-3.5 w-3.5 text-primary" />
-        <span className="typography-micro font-medium text-muted-foreground">{t('chat.questionCard.inputNeeded')}</span>
+        <span className="typography-micro font-medium text-muted-foreground">
+          {elicitation?.server ? t('chat.questionCard.mcpRequest', { server: elicitation.server }) : t('chat.questionCard.inputNeeded')}
+        </span>
         {isFromSubagent ? (
           <span className="typography-micro text-muted-foreground px-1.5 py-0.5 rounded bg-foreground/5">
             {t('chat.questionCard.fromSubagent')}
@@ -640,6 +730,10 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
         <div className="mb-2 rounded-md bg-muted/30 px-2 py-1.5 typography-micro text-muted-foreground" role="status">
           {t('chat.questionCard.turnStopped')}
         </div>
+      ) : null}
+
+      {elicitation?.message.trim() ? (
+        <div className="mb-2 typography-meta text-muted-foreground whitespace-pre-wrap break-words">{elicitation.message}</div>
       ) : null}
 
       {activeEntry ? renderQuestionBody(activeEntry, { withHeader: totalCount > 1 }) : null}
@@ -660,6 +754,22 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
               isSubmitting ? 'opacity-60' : null,
             )}
           >
+            {activeEntry.question.input ? (
+              <QuestionTypedInput
+                key={activeEntry.entryKey}
+                input={activeEntry.question.input}
+                label={activeEntry.question.header || activeEntry.question.question}
+                value={typedTextFor(activeEntry)}
+                required={isQuestionRequired(activeEntry.question)}
+                disabled={isSubmitting}
+                autoFocus={!isMobile}
+                error={activeTypedError ? inputErrorMessage(activeTypedError) : null}
+                placeholder={t('chat.questionCard.inputPlaceholder')}
+                inputRef={typedInputRef}
+                onChange={(value) => handleTypedTextChange(activeEntry, value)}
+                onKeyDown={handleKeyDown}
+              />
+            ) : activeEntry.question.external ? null : (
             <div className="flex min-w-0 items-start gap-2 px-3 py-2">
               <RiEditLine aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
               <textarea
@@ -681,6 +791,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
                 )}
               />
             </div>
+            )}
 
             <div className="flex flex-wrap items-center justify-end gap-1 border-t border-border/30 px-1.5 py-1">
               {boundedActiveIndex > 0 ? (
@@ -723,7 +834,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
                   'disabled:opacity-50 disabled:cursor-not-allowed',
                 )}
               >
-                {t('chat.questionCard.skip')}
+                {elicitation ? t('chat.questionCard.decline') : t('chat.questionCard.skip')}
               </button>
             </div>
           </div>

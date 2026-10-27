@@ -1,7 +1,6 @@
 export type BugReportStatus = 'submitted' | 'in_progress' | 'resolved';
 export type ErrorLogKind = 'session' | 'tool' | 'managed_task' | 'client';
 export type ErrorLogClearRange = '24h' | '7d' | '14d' | 'all';
-export type BotAuditClearRange = '24h' | '7d' | '30d' | 'all';
 export type DiagnosticImpact = 'low' | 'medium' | 'high' | 'critical';
 export type DiagnosticDisposition = 'actionable' | 'expected';
 export type DiagnosticClassificationSource = 'observed' | 'inferred';
@@ -19,8 +18,6 @@ export type DiagnosticFailureClass =
   | 'platform_security'
   | 'platform_integrity'
   | 'unknown';
-export type BotAuditResult = 'failure' | 'partial' | 'unknown' | 'denied' | 'success';
-export type BotAuditResultFilter = BotAuditResult | 'issues' | 'all';
 
 export interface BugReportReporter {
   id: string | null;
@@ -57,53 +54,6 @@ export interface ErrorLogProject {
 export interface ErrorLogActorOption {
   id: string;
   displayName: string;
-}
-
-export interface BotAuditBot {
-  id: string | null;
-  name: string;
-  title: string | null;
-  lifecycle: 'draft' | 'active' | 'paused' | 'retired' | null;
-  deleted: boolean;
-}
-
-export interface BotAuditBotOption {
-  id: string;
-  name: string;
-  title: string | null;
-  lifecycle: 'draft' | 'active' | 'paused' | 'retired';
-}
-
-export interface BotAuditActor {
-  id: string | null;
-  displayName: string;
-  email: string;
-  role: 'admin' | 'senior_developer' | 'developer' | null;
-  former: boolean;
-}
-
-export interface BotAuditTarget {
-  type: string;
-  id: string | null;
-}
-
-export interface BotAuditSummary {
-  eventId: string;
-  action: string;
-  result: BotAuditResult;
-  timestamp: string;
-  summary: string;
-  diagnosticCode: string | null;
-  bot: BotAuditBot;
-  actor: BotAuditActor;
-  target: BotAuditTarget;
-  resolvedAt?: string | null;
-  resolvedByEventId?: string | null;
-}
-
-export interface BotAuditDetail extends BotAuditSummary {
-  metadata: Record<string, unknown>;
-  metadataRedacted: boolean;
 }
 
 export interface ErrorLogSummary {
@@ -181,16 +131,6 @@ export const diagnosticOutcomeLabelKey = (outcome: DiagnosticOutcome) => {
   if (outcome === 'recovered') return 'settings.bugReports.errors.outcome.recovered' as const;
   if (outcome === 'unresolved') return 'settings.bugReports.errors.outcome.unresolved' as const;
   return 'settings.bugReports.errors.outcome.unknown' as const;
-};
-
-export const botAuditResultLabelKey = (result: BotAuditResult | 'issues' | 'all') => {
-  if (result === 'issues') return 'settings.bugReports.botAudit.result.issues' as const;
-  if (result === 'failure') return 'settings.bugReports.botAudit.result.failure' as const;
-  if (result === 'partial') return 'settings.bugReports.botAudit.result.partial' as const;
-  if (result === 'unknown') return 'settings.bugReports.botAudit.result.unknown' as const;
-  if (result === 'denied') return 'settings.bugReports.botAudit.result.denied' as const;
-  if (result === 'success') return 'settings.bugReports.botAudit.result.success' as const;
-  return 'settings.bugReports.botAudit.result.all' as const;
 };
 
 export const selectClassName =

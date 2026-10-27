@@ -5,8 +5,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolveDevRyanDataRoot } from '@devryan/shared-runtime/node/data-root.js';
 
-export const AGENT_BROWSER_VERSION = '0.38.1';
+export const AGENT_BROWSER_VERSION = '0.39.2';
 export const AGENT_BROWSER_MANAGED_CONFIG_FILE = 'devryan-agent-browser.json';
 
 const PACKAGE_NAME = 'agent-browser';
@@ -153,9 +154,7 @@ const parseBinaryVersion = (value) => {
 const normalizeDataRoot = (dataRoot, pathApi, homeDir) => {
   const configured = typeof dataRoot === 'string' && dataRoot.trim()
     ? dataRoot.trim()
-    : typeof process.env.OPENCHAMBER_DATA_DIR === 'string' && process.env.OPENCHAMBER_DATA_DIR.trim()
-      ? process.env.OPENCHAMBER_DATA_DIR.trim()
-      : pathApi.join(homeDir, '.config', 'openchamber');
+    : resolveDevRyanDataRoot({ home: homeDir });
   return pathApi.resolve(configured);
 };
 
@@ -433,7 +432,7 @@ export const createAgentBrowserInstaller = (options = {}) => {
     };
   };
 
-  const mutate = ({ repair = false } = {}) => {
+  const mutate = ({ repair = false, awaitRecording = true } = {}) => {
     if (mutationPromise) return mutationPromise;
     mutationPromise = (async () => {
       const before = await status();
@@ -566,19 +565,22 @@ export const createAgentBrowserInstaller = (options = {}) => {
           ],
         };
       }
-    })().then(async (browser) => ({
-      ...browser,
-      recording: browser.ok
-        ? await recordingInstaller.ensureInstalled({ repair })
-        : await recordingInstaller.status(),
-    })).finally(() => {
+    })().then(async (browser) => {
+      if (!browser.ok) return { ...browser, recording: await recordingInstaller.status() };
+      if (awaitRecording) return { ...browser, recording: await recordingInstaller.ensureInstalled({ repair }) };
+      // Recording is optional. Runtime startup must not wait on its download,
+      // so a missing or unverified FFmpeg is repaired in the background.
+      const recording = await recordingInstaller.status();
+      if (!recording.ok) void recordingInstaller.ensureInstalled().catch(() => {});
+      return { ...browser, recording };
+    }).finally(() => {
       mutationPromise = null;
     });
     return mutationPromise;
   };
 
   const install = () => mutate({ repair: false });
-  const ensureInstalled = () => mutate({ repair: false });
+  const ensureInstalled = () => mutate({ repair: false, awaitRecording: false });
   const repair = () => mutate({ repair: true });
 
   return {

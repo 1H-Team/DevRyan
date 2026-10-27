@@ -1,7 +1,7 @@
 # Tunnels Module Documentation
 
 ## Purpose
-This module contains tunnel provider orchestration for OpenChamber, including provider registry/service wiring, managed remote token config lifecycle, and tunnel HTTP route registration.
+This module contains tunnel provider orchestration for DevRyan, including provider registry/service wiring, managed remote token config lifecycle, and tunnel HTTP route registration.
 
 ## Entrypoints and structure
 - `packages/web/server/lib/tunnels/index.js`: tunnel service orchestration.
@@ -68,28 +68,24 @@ hostname with Supabase On (`policy: account-login`). With Supabase Off or absent
 an enrolled local owner can start or resume the tunnel (`policy: owner-link`).
 Manual startup returns a one-time owner link; automatic resume restores the connector
 and existing sessions without minting a link. The local settings page can issue a
-replacement using `POST /api/openchamber/tunnel/links` with `{ "access": "owner" }`.
-Other tunnel modes and explicit Bot sharing retain selected-Bot links. A database
+replacement using `POST /api/devryan/tunnel/links`. Owner links are the only
+links an enrolled owner issues; other tunnel modes issue none. A database
 outage while On never enables owner-link authentication.
 
-Owner links use the same encrypted vault, hashed credentials, single-use POST exchange,
-15-minute link expiry, seven-day session expiry, origin/CSRF checks, and revocation
-as Bot links. An explicit persisted `access: owner` grant is accepted only with
-local-owner authentication and a managed-remote profile; existing grants without an
-access field remain Bot-only. Owner sessions grant the local administrator's workspace
+Owner links use the encrypted vault, hashed credentials, single-use POST exchange,
+15-minute link expiry, seven-day session expiry, origin/CSRF checks, and revocation.
+A persisted `access: owner` grant is accepted only with local-owner authentication
+and a managed-remote profile. Grants saved by the retired Bot-only link mode (no
+access field, or `access: bots`) still parse and are dropped when the controller
+initializes; the vault key `bot-tunnel-authorization-v1` keeps its name. Owner sessions grant the local administrator's workspace
 access, including chat, files, Git, terminal and preview streams. Native capabilities,
 tunnel/Supabase controls, passkey enrollment and cloud-only features remain unavailable
 remotely. Logout revokes only that owner's remote grant. The early boundary records
 verified owner requests in a private WeakMap; auth adapters never trust a supplied
 principal or a local-owner cookie forwarded through the tunnel.
 
-Before downgrading to a build without owner-grant support, stop the tunnel in the
-current build to clear its grants. Older builds reject persisted owner grants
-rather than interpreting them as Bot authorization.
-
 On an active managed hostname, stale tunnel cookies are cleared before normal
-account authentication. Valid Bot sessions retain their restricted permissions;
-clearing a stale cookie never authenticates a visitor. WebSocket upgrades follow
+account authentication. Clearing a stale cookie never authenticates a visitor. WebSocket upgrades follow
 the same distinction and still require downstream account authentication.
 
 `access-control.js` is the production authority, initialized before private native
@@ -104,32 +100,23 @@ Links use `/tunnel/connect#t=...`. GET renders a landing page, removes the fragm
 from history and exchanges nothing. Connect sends a same-origin, CSRF-protected
 POST. Tokens expire within 15 minutes and are single-use. Fixed seven-day sessions
 and hashed link credentials live in the private encrypted authorization vault.
-Sessions bind owner, grant access, selected Bot UUIDs when applicable, durable profile, hostname and
+Sessions bind owner, grant access, durable profile, hostname and
 authorization generation. Raw credentials do not enter server logs or referrers.
 Two fixed installation/tunnel buckets limit exchanges without trusting forwarding headers.
 
-The explicit `tunnel-bot` principal has no administrator or host capabilities.
-`bot-grants.js` allows only enumerated Bot catalog, conversation, attachment, run,
-approval and isolated computer routes. Membership and channel ACLs still apply,
-including action/run channel checks and SSE filtering. Host terminal/files/Git,
-agent sessions, previews, imports, credentials, settings, tunnel control and
-native capabilities are denied before handlers. Shared UI mounts only Bot state
-and its event owner for this principal.
-Persisted UI state is namespaced by grant as well as owner, so replacing a link
-cannot restore cached conversations from another grant or the owner's account.
 
 Normal restart resumes the saved managed-remote profile with its existing connector
 configuration and preserves unexpired sessions. Recovery suspends live connections
 without deleting sessions. Stop, grant revocation, owner changes, authentication-mode
 changes and hostname changes invalidate authorization and close associated streams.
 Expired/lost sessions require another locally issued link; remote passkey enrollment
-is unsupported. `POST /api/openchamber/tunnel/links` issues a selected-Bot link;
-`DELETE /api/openchamber/tunnel/grants/:grantId` revokes a Bot or owner grant. Both require direct-local
+is unsupported. `POST /api/devryan/tunnel/links` issues an owner link;
+`DELETE /api/devryan/tunnel/grants/:grantId` revokes an owner grant. Both require direct-local
 owner authentication and CSRF protection.
 
 Electron enrolls an absent local owner through its in-process server handle or
 authenticated runtime-service bootstrap. Standalone web owners explicitly run
-`openchamber enroll-owner --port <port>` with the matching `OPENCHAMBER_DATA_DIR`.
+`openchamber enroll-owner --port <port>` with the matching `DEVRYAN_DATA_DIR`.
 The private filesystem challenge expires after two minutes and is consumed only
 by a loopback, same-origin POST. Visiting localhost cannot enroll an owner. Missing
 or corrupt vault/key state fails closed; restore the matching pair to recover access.
@@ -145,10 +132,20 @@ Tunnel shutdown is asynchronous and process-authoritative. Provider controllers 
 grace periods. `createTunnelService().stop()` keeps the active controller registered until the
 provider confirms exit and coalesces concurrent stop requests onto the same promise.
 
-The `/api/openchamber/tunnel/stop` route waits for that promise before revoking bootstrap/session
+The `/api/devryan/tunnel/stop` route waits for that promise before revoking bootstrap/session
 artifacts or clearing the active tunnel identity. If the connector cannot be stopped, the route
 returns `tunnel_stop_failed` and preserves both controller and authentication state; this prevents a
 still-public connector from being reclassified as a local unauthenticated request path.
+
+On POSIX, `spawnCloudflared` (`cloudflare-tunnel.js`) starts every connector in its own process
+group and ties it to the host with `startCommandParentDeathWatchdog`
+(`opencode/parent-death-watchdog.js`). If the host exits without stopping the tunnel (crash,
+`SIGKILL`, or a shutdown step that threw), the watchdog signals the connector group with `SIGTERM`
+and then `SIGKILL`, but only while that PID still runs the exact launched argv. A watchdog that
+cannot start logs `cloudflared_watchdog_unavailable` and the tunnel keeps running. Host shutdown
+stops the tunnel even when an earlier step fails: the bundle checkpoint's producer stop runs
+`tunnelService.stop()` after any producer failure and rethrows afterwards, and graceful shutdown
+stops the active controller even if UI auth disposal rejects.
 
 ## Public exports (routes.js)
 - `createTunnelRoutesRuntime(dependencies)`: creates tunnel routes runtime and helpers.

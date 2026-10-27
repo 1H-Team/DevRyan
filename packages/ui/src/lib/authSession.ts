@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { isRuntimeFeatureAvailable, useRuntimeCapabilityStore } from '@/lib/opencode/runtime-capabilities';
 import {
   canonicalSettingsPermissionSlug,
   fullSettingsPermissions,
@@ -36,12 +37,11 @@ export interface AuthPrincipal {
   email: string | null;
   displayName: string;
   role: DevRyanRole;
-  scope: 'local-admin' | 'managed' | 'tunnel-bot';
+  scope: 'local-admin' | 'managed';
   policy: {
     settingsPages: string[];
     settingsPermissions?: SettingsPermissions;
     featureOverrides?: AuthFeatureOverrides;
-    bots: boolean;
     files: boolean;
     terminal: boolean;
     browser: boolean;
@@ -55,22 +55,7 @@ export interface AuthPrincipal {
     github: boolean;
   };
   assignments: AuthAssignment[];
-  tunnelGrant?: {
-    id: string;
-    sessionId: string;
-    ownerId: string;
-    profileId: string;
-    generation: string;
-    botIds: readonly string[];
-    expiresAt: number;
-  };
 }
-
-// Two links associated with the same owner can expose different workspaces.
-// Their persisted UI caches must never share the owner's account namespace.
-export const authStoragePrincipalId = (principal: AuthPrincipal): string => principal.scope === 'tunnel-bot'
-  ? `${principal.id}:tunnel:${principal.tunnelGrant?.id || 'unavailable'}`
-  : principal.id;
 
 export type AuthCapability = keyof AuthPrincipal['policy'];
 
@@ -82,7 +67,7 @@ const LOCAL_ADMIN: AuthPrincipal = {
   scope: 'local-admin',
   policy: {
     settingsPages: ['*'], settingsPermissions: fullSettingsPermissions(),
-    bots: true, files: true, terminal: true, browser: true, createWorktrees: true, createBranches: true, manageProjects: true,
+    files: true, terminal: true, browser: true, createWorktrees: true, createBranches: true, manageProjects: true,
     manageUsers: true, manageGlobalSettings: true, manageGit: true, push: true, github: true,
   },
   assignments: [],
@@ -126,18 +111,29 @@ export const retryAuthSession = async (): Promise<void> => {
   await retrySessionHandler?.();
 };
 
-export const getAuthPrincipal = (): AuthPrincipal => currentPrincipal;
+let runtimePrincipal: AuthPrincipal = currentPrincipal;
+let runtimePrincipalSource = currentPrincipal;
+let runtimeFeatures = useRuntimeCapabilityStore.getState().snapshot.features;
+export const getAuthPrincipal = (): AuthPrincipal => {
+  const snapshot = useRuntimeCapabilityStore.getState().snapshot;
+  if (runtimePrincipalSource !== currentPrincipal || runtimeFeatures !== snapshot.features) {
+    runtimePrincipalSource = currentPrincipal;
+    runtimeFeatures = snapshot.features;
+    runtimePrincipal = snapshot.runtimeMode === 'standard-preview' ? { ...currentPrincipal, policy: {
+      ...currentPrincipal.policy, browser: false, terminal: false,
+    } } : currentPrincipal;
+  }
+  return runtimePrincipal;
+};
 
 export const subscribeAuthPrincipal = (listener: () => void): (() => void) => {
   listeners.add(listener);
-  return () => { listeners.delete(listener); };
+  const unsubscribe = useRuntimeCapabilityStore.subscribe(listener);
+  return () => { listeners.delete(listener); unsubscribe(); };
 };
 
 export const useAuthPrincipal = (): AuthPrincipal => React.useSyncExternalStore(
-  (listener) => {
-    listeners.add(listener);
-    return () => listeners.delete(listener);
-  },
+  subscribeAuthPrincipal,
   getAuthPrincipal,
   () => LOCAL_ADMIN,
 );
@@ -194,7 +190,8 @@ export const canEditPersonalAgentModels = (principal: AuthPrincipal): boolean =>
 export const hasAuthCapability = (
   principal: AuthPrincipal,
   capability: Exclude<AuthCapability, 'settingsPages' | 'settingsPermissions' | 'featureOverrides'>,
-): boolean => principal.scope === 'local-admin' || principal.policy[capability] === true;
+): boolean => (!(capability === 'terminal' || capability === 'browser')
+  || isRuntimeFeatureAvailable(capability)) && (principal.scope === 'local-admin' || principal.policy[capability] === true);
 
 export const assertCanCreateBranches = (): void => {
   if (!hasAuthCapability(getAuthPrincipal(), 'createBranches')) {

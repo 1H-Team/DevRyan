@@ -1,4 +1,5 @@
-import { canAccessSettingsPage, hasAuthCapability, type AuthPrincipal } from '@/lib/authSession';
+import { isRuntimeFeatureAvailable } from '@/lib/opencode/runtime-capabilities';
+import { canAccessSettingsPage, type AuthPrincipal } from '@/lib/authSession';
 import { getSettingsPageMeta, type SettingsPageSlug } from '@/lib/settings/metadata';
 import { isDesktopShell, isWebRuntime } from '@/lib/desktop';
 
@@ -7,11 +8,11 @@ export const usesManagedSettings = (principal: AuthPrincipal): boolean => (
 );
 
 const managedSettingsPages: ReadonlySet<SettingsPageSlug> = new Set([
-  'home', 'appearance', 'chat', 'shortcuts', 'sessions', 'notifications', 'bots',
+  'home', 'appearance', 'chat', 'shortcuts', 'sessions', 'notifications',
   'agents', 'skills.installed', 'plugins', 'providers', 'usage', 'mcp', 'bug-reports',
 ]);
 
-export const isBotCapabilitySettingsSlug = (slug: SettingsPageSlug): boolean => (
+export const isCodingAgentCapabilitySettingsSlug = (slug: SettingsPageSlug): boolean => (
   slug === 'skills.installed' || slug === 'mcp'
 );
 
@@ -19,14 +20,11 @@ export const canAccessSettingsDestination = (
   principal: AuthPrincipal,
   slug: SettingsPageSlug,
 ): boolean => (
-  slug === 'bots'
-    ? hasAuthCapability(principal, 'bots') && canAccessSettingsPage(principal, slug)
-    : canAccessSettingsPage(principal, slug)
+  slug === 'voice' && !isRuntimeFeatureAvailable('media') ? false : canAccessSettingsPage(principal, slug)
 );
 
 /** Check live policy and runtime availability before importing or displaying a section. */
 export const canPrepareSettingsSection = (principal: AuthPrincipal, slug: SettingsPageSlug): boolean => {
-  if (principal.scope === 'tunnel-bot') return false;
   if (usesManagedSettings(principal) && !managedSettingsPages.has(slug)) return false;
   if (slug === 'home') return true;
   if (!canAccessSettingsDestination(principal, slug)) return false;

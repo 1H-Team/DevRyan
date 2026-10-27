@@ -3,7 +3,7 @@ import type { Part } from '@opencode-ai/sdk/v2';
 import type { ContentChangeReason } from '@/hooks/useChatAutoFollow';
 import { useUIStore } from '@/stores/useUIStore';
 import { MarkdownRenderer } from '../../MarkdownRenderer';
-import { useStreamingTextThrottle } from '../../hooks/useStreamingTextThrottle';
+import { useStreamingTextReveal } from '../../hooks/useStreamingTextReveal';
 import type { ResponseStyleLevel } from '@/lib/responseStyle';
 import { formatReasoningText } from './reasoningSummaryDisplay';
 import { isReasoningPartActive } from '../reasoningGrouping';
@@ -107,7 +107,7 @@ const ReasoningPart = React.memo(({
     );
     const isActive = isReasoningPartActive(part);
     const isStreaming = chatRenderMode === 'live' && !isMessageCompleted && isActive;
-    const throttledText = useStreamingTextThrottle({
+    const throttledText = useStreamingTextReveal({
         text: textContent,
         phase: isStreaming ? 'streaming' : 'terminal',
         identityKey: `${messageId}:${part.id ?? 'reasoning'}`,

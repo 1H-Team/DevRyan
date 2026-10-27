@@ -87,9 +87,6 @@ export const getPdfAttachmentValidation = (params: {
 export const PDF_UNSUPPORTED_MESSAGE =
   "The selected model does not support PDF input. Choose a PDF-capable model or convert the PDF to text."
 
-export const PDF_UNKNOWN_SUPPORT_MESSAGE =
-  "This model's PDF support is unknown. The PDF will be sent, but the agent may not be able to read it."
-
 export const assertPdfAttachmentsSupported = (params: {
   providerID: string
   modelID: string

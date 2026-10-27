@@ -1,0 +1,5 @@
+{
+  "schemaVersion": 1,
+  "description": "Temporary cross-package imports of private package files by production code. Each entry names the plan stage that removes it; unscheduled entries have no removal stage yet. Tests are exempt (see scripts/check-import-boundaries.mjs). Currently none.",
+  "exceptions": []
+}

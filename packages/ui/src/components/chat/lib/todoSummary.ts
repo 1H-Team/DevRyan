@@ -150,3 +150,15 @@ export const formatCompactTodoTotal = (total: number): string => {
     const count = Math.max(0, Math.trunc(total));
     return `${count} ${count === 1 ? 'task' : 'tasks'}`;
 };
+
+/** Dependency reasons are metadata, never a new terminal TODO status. */
+export const getTodoDependencyReasons = (todo: unknown): readonly string[] => {
+    if (!todo || typeof todo !== 'object' || !('status' in todo) || todo.status !== 'pending'
+        || !('blockedBy' in todo) || !Array.isArray(todo.blockedBy) || todo.blockedBy.length > 16) return [];
+    const reasons: string[] = [];
+    for (const value of todo.blockedBy) {
+        if (typeof value !== 'string' || !value.trim() || value.length > 512) return [];
+        reasons.push(value);
+    }
+    return reasons;
+};

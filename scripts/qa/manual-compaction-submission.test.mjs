@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { runInNewContext } from 'node:vm';
+import { createRequire } from 'node:module';
 import { QA_COMPACTION_COMPOSER, qaManualCompactionKey, observeQaManualCompactionRequest,
-  readQaManualCompactionQueueMode, withQaManualCompactionSubmission } from './manual-compaction-submission.mjs';
+  QA_QUEUE_MODE_STATE, readQaManualCompactionQueueMode, withQaManualCompactionSubmission } from './manual-compaction-submission.mjs';
+
+const requireUi = createRequire(new URL('../../packages/ui/package.json', import.meta.url));
+const React = requireUi('react');
+const { renderToStaticMarkup } = requireUi('react-dom/server');
+const { Switch } = requireUi('@base-ui/react/switch');
 
 const origin='http://127.0.0.1:3101';
 const sessionID='ses_manual123';
@@ -45,10 +52,46 @@ test('submission key matches each actual queue preference and rejects an absent 
 
 test('queue preference observation reads mounted control without changing it',async()=>{
   const cdp=new FakeCdp(),clicks=[];
-  const ui={click:async target=>clicks.push(target),waitExpression:async label=>label.startsWith('authoritative')?{enabled:true,checked:'true',pressed:'true'}:true};
+  const ui={click:async target=>clicks.push(target),waitExpression:async label=>label.startsWith('authoritative')?{enabled:true,checked:'true',controlID:'queue-mode'}:true};
   const observed=await readQaManualCompactionQueueMode({cdp,ui});
   assert.equal(observed.enabled,true);assert.equal(observed.source,'rendered-settings-control');assert.equal(observed.origin,origin);
   assert.deepEqual(clicks,[{label:'Settings'},{selector:'[data-settings-view] button',text:'Appearance'},{selector:'[data-settings-view] button',label:'Back'}]);
+});
+
+test('queue preference reads the original Base UI labelled switch and refuses ambiguous or malformed controls',()=>{
+  const read = (checked, patch = {}, count = 1) => {
+    const markup = renderToStaticMarkup(React.createElement(Switch.Root, {
+      id: 'queue-mode', checked, onCheckedChange: () => {}, 'aria-labelledby': 'queue-label',
+    }, React.createElement(Switch.Thumb)));
+    const attributes = Object.fromEntries([...markup.matchAll(/([\w-]+)="([^"]*)"/g)].map(match => [match[1], match[2]]));
+    // Evaluate the shipped browser expression against the actual primitive's
+    // rendered attributes; this substitution supplies only the DOM read APIs.
+    const controls = Array.from({ length: count }, () => ({
+      id: attributes.id,
+      getAttribute: name => ({ ...attributes, ...patch })[name] ?? null,
+      getClientRects: () => patch.hidden ? [] : [{}],
+    }));
+    const value = runInNewContext(QA_QUEUE_MODE_STATE, {
+      document: {
+        querySelectorAll: selector => controls.filter(control => {
+          const role = selector.match(/\[role="([^"]+)"\]/)?.[1];
+          return control.getAttribute('role') === role
+            && (!selector.includes('[aria-labelledby]') || control.getAttribute('aria-labelledby'))
+            && (!selector.includes('[aria-label=') || control.getAttribute('aria-label') === 'Queue Messages by Default');
+        }),
+        getElementById: id => id === 'queue-label' ? { textContent: 'Queue Messages by Default' } : null,
+      },
+      getComputedStyle: () => ({ display: 'inline-flex', visibility: 'visible' }),
+    });
+    return value === null ? null : JSON.parse(JSON.stringify(value));
+  };
+  for (const checked of [true, false]) {
+    assert.deepEqual(read(checked), { enabled: checked, checked: String(checked), controlID: 'queue-mode' });
+  }
+  assert.equal(read(true, {}, 2), null);
+  assert.equal(read(true, { hidden: true }), null);
+  assert.equal(read(true, { 'aria-checked': 'mixed' }), null);
+  assert.equal(read(true, { 'aria-labelledby': 'other-label' }), null);
 });
 
 test('collector excludes pre-arm traffic, other methods, origins, sessions and response identities',async()=>{
@@ -127,6 +170,59 @@ for(const submitted of [false,true])test(`absolute deadline classifies ${submitt
     assert.equal(receipt.outcome,'failed');
   } finally {observer.close();}
   assert.equal(cdp.count(),0);
+});
+
+for(const submitted of [false,true])test(`an early ${submitted?'response':'request'} timer rearms only the remaining absolute budget`,async context=>{
+  context.mock.timers.enable({apis:['Date'],now:1_000_000});
+  const timers=new Map();
+  context.mock.method(globalThis,'setTimeout',(callback,delay)=>{
+    const timer={callback,delay};timers.set(timer,timer);return timer;
+  });
+  context.mock.method(globalThis,'clearTimeout',timer=>timers.delete(timer));
+  const {cdp,receipt,observer}=setup(120_000);
+  const fire=timer=>{assert.ok(timers.delete(timer));timer.callback();};
+  try {
+    observer.arm();if(submitted)request(cdp);
+    const requestDeadline=receipt.requestDeadline,targetDeadline=submitted?1_120_000:requestDeadline;
+    const original=[...timers.values()].find(timer=>timer.delay===targetDeadline-Date.now());
+    assert.ok(original);
+    context.mock.timers.tick(targetDeadline-Date.now()-1);
+    fire(original);
+    observer.assertHealthy();assert.equal(receipt.requestFailureObservedAt,undefined);
+    assert.equal(receipt.requestDeadline,requestDeadline,'Rearming cannot reset the request budget');
+    const remaining=[...timers.values()].find(timer=>timer.delay===1);assert.ok(remaining);
+    context.mock.timers.tick(1);fire(remaining);
+    await assert.rejects(observer.waitForAcknowledgement(),submitted?/summarize-response-unobserved-at-deadline/:/summarize-request-unobserved-at-request-deadline/);
+    if(!submitted)assert.equal(receipt.requestFailureObservedAt,requestDeadline);
+  } finally {
+    observer.close();assert.equal(cdp.count(),0);assert.equal(timers.size,0,'Close must clear every owned timer');
+    context.mock.restoreAll();context.mock.timers.reset();
+  }
+});
+
+for(const kind of ['request','response','request-after-cell-deadline'])test(`a late ${kind} cannot beat an unfired deadline timer`,async context=>{
+  context.mock.timers.enable({apis:['Date'],now:1_000_000});
+  const timers=new Set();
+  context.mock.method(globalThis,'setTimeout',callback=>{timers.add(callback);return callback;});
+  context.mock.method(globalThis,'clearTimeout',timer=>timers.delete(timer));
+  const {cdp,receipt,observer}=setup(120_000);
+  try {
+    observer.arm();
+    if(kind==='response')request(cdp);
+    context.mock.timers.tick(kind==='request'?30_000:120_000);
+    if(kind!=='response')request(cdp);
+    response(cdp);
+    const failure=kind==='response'?'summarize-response-unobserved-at-deadline':'summarize-request-unobserved-at-request-deadline';
+    await assert.rejects(observer.waitForAcknowledgement(),error=>error.message.includes(failure));
+    assert.equal(receipt.failure,failure);assert.equal(receipt.outcome,'failed');
+    if(kind==='response')assert.equal(receipt.requests[0].response,undefined);
+    else {assert.equal(receipt.matchingRequestCount,0);assert.deepEqual(receipt.requests,[]);}
+    cdp.emit('Network.loadingFailed',{requestId:'42.1',errorText:'net::ERR_ABORTED'});
+    assert.equal(receipt.failure,failure,'Later network evidence must not overwrite the original deadline cause');
+  } finally {
+    observer.close();assert.equal(cdp.count(),0);assert.equal(timers.size,0);
+    context.mock.restoreAll();context.mock.timers.reset();
+  }
 });
 
 test('request observation gets 30 seconds from arm while a matched request keeps the original response deadline',async context=>{

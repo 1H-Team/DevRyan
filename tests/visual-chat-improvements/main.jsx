@@ -1,3 +1,4 @@
+import { profileSessionTree, releaseProfileSessionTree, profileRetainedRecords } from './performance';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { flushSync } from 'react-dom';
@@ -5,12 +6,23 @@ import { createStore } from 'zustand/vanilla';
 import { useStore } from 'zustand';
 import { I18nProvider } from '@/lib/i18n';
 import { RuntimeAPIProvider } from '@/contexts/RuntimeAPIProvider';
-import { useUserMessageHistory } from '@/sync/sync-context';
+import { useSessions, useUserMessageHistory } from '@/sync/sync-context';
+import { useChatSearchDirectory } from '@/hooks/useChatSearchDirectory';
+import { useSessionUIStore } from '@/sync/session-ui-store';
 import { INITIAL_STATE } from '@/sync/types';
 import { buildUserMessageHistory } from '@/sync/user-message-history';
 import { useUIStore } from '@/stores/useUIStore';
 import MessageBody from '@/components/chat/message/MessageBody';
+import { GroupedToolActivityRow } from '@/components/chat/message/parts/ProgressiveGroup';
+import { ModelRecoveryCard } from '@/components/chat/ModelRecoveryCard';
 import ToolPart from '@/components/chat/message/parts/ToolPart';
+import PlanCard from '@/components/chat/message/parts/PlanCard';
+import { PlanTurnTraceContext } from '@/components/chat/PlanTurnTraceContext';
+import { ManagedTaskRowView } from '@/components/chat/ManagedTaskRow';
+import { SessionChangesCardView } from '@/components/chat/SessionChangesCard';
+import { CSSVariableGenerator } from '@/lib/theme/cssGenerator';
+import { getDefaultTheme } from '@/lib/theme/themes';
+import { getPlanCardImplementationKey } from '@/components/chat/message/parts/planCardReveal';
 import { RawPatchFallback } from '@/components/chat/message/parts/RawPatchFallback';
 import { getMessageCopyText } from '@/lib/messages/messageCopyText';
 import { copyTextToClipboard } from '@/lib/clipboard';
@@ -21,6 +33,8 @@ import './style.css';
 const text = (id, value, messageID = 'user') => ({ id, messageID, sessionID: 'session', type: 'text', text: value });
 const info = (id, role = 'user') => ({ id, sessionID: 'session', role, time: { created: 1 } });
 const store = createStore(() => ({ ...INITIAL_STATE,
+    session: [{ id: 'session', directory: '/fixture', title: 'Selected', time: { created: 1, updated: 1 } },
+        { id: 'other', directory: '/fixture', title: 'Other', time: { created: 1, updated: 1 } }],
     message: { session: [info('user'), info('assistant', 'assistant')] },
     part: { user: [text('p', 'Initial prompt')], assistant: [] },
 }));
@@ -32,9 +46,9 @@ const childStores = {
     subscribeSessionLists: (notify) => store.subscribe(notify),
 };
 // The production module shares this context across chunks. Supply only isolated fixture state.
-const FixtureSyncContext = globalThis.__openchamber_sync_context__;
+const FixtureSyncContext = globalThis.__devryan_sync_context__;
 const sync = { childStores, directory: '/fixture' };
-const counts = { history: 0, broad: 0 };
+const counts = { history: 0, broad: 0, directory: 0, broadDirectory: 0 };
 const huge = '--- a/example.txt\r\n+++ b/example.txt\r\n@@ -1 +1 @@\r\n-old\r\n+' + 'x'.repeat(262144) + '\r\nFULL SOURCE TAIL\r\n';
 const write = 'new file line\r\n'.repeat(2100);
 const markdown = '  paragraph\r\n\r\n```ts\r\n  const x = 1;\r\n```\r\n\r\n    indented code\r\n';
@@ -71,28 +85,67 @@ function BroadBaseline() {
     React.useLayoutEffect(() => { counts.broad += 1; });
     return <span hidden>{history.join(' | ')}</span>;
 }
+function SearchDirectory() {
+    const directory = useChatSearchDirectory();
+    React.useLayoutEffect(() => { counts.directory += 1; });
+    return <output id="search-directory">{directory}</output>;
+}
+function BroadDirectoryBaseline() {
+    const sessions = useSessions('/fixture');
+    React.useLayoutEffect(() => { counts.broadDirectory += 1; });
+    return <span hidden>{sessions.find(session => session.id === 'session')?.directory}</span>;
+}
 const tool = (name, state, id = name) => ({ id, type: 'tool', messageID: 'assistant', sessionID: 'session', callID: id, tool: name, state });
 const noop = () => {};
+const planEntry = { sessionId: 'session', planVersion: 1, turnId: 'user', userMessageId: 'user',
+    memberTurnIds: ['user'], sourceTurnId: 'user', intent: 'plan', isPlanModeRevision: true,
+    assistantSourceMessageId: 'fixture-plan', assistantParentMessageId: 'user', completedAt: null,
+    isLatestPlan: true, isSuperseded: false, isSettled: false, hasTerminalError: false, isActionable: false };
+const planIndex = { entries: [planEntry], byTurnId: new Map([['user', planEntry]]),
+    bySourceMessageId: new Map([['fixture-plan', planEntry]]), messageRoleById: new Map(), suppressedTurnIds: new Set() };
+const failedTask = (taskId, label, failureKind, failureReason) => ({ taskId, rootSessionId: 'session', parentTaskId: null,
+    childSessionId: 'child', status: 'failed', agent: 'fixer', providerId: 'openai', modelId: 'fixture', variant: null,
+    label, failureKind, failureReason, agentRetryAvailable: false, manualRecoveryRequired: false });
+const searchPart = tool('glob', { status: 'completed', input: { pattern: '**/*.ts', path: '/fixture' }, output: '/fixture/src/one.ts\n/fixture/src/two.ts', title: 'Search', metadata: {}, time: { start: 1, end: 2 } }, 'search-files');
+const searchActivities = [{ id: 'search-files', messageId: 'assistant', turnId: 'user', partIndex: 0, kind: 'tool', part: searchPart }];
 function Fixture() {
+    const [compact, setCompact] = React.useState({ count: 6, status: 'running', mobile: false });
+    const [compactOpenedFile, setCompactOpenedFile] = React.useState('');
+    const compactFiles = Array.from({ length: compact.count }, (_, index) => ({
+        path: `/fixture/packages/ui/src/components/a/deeply/nested/directory/${index === 0 ? 'very-long-file-name-'.repeat(14) : `card-${index}`}.tsx`,
+        status: 'M', insertions: index + 2, deletions: index + 1,
+        verification: { state: 'uncertain', reason: 'current_content_diverged' },
+    }));
     const [diffStage, setDiffStage] = React.useState('oversized');
     const patchSource = diffStage === 'error' ? '--- a/fixture-renderer-error\n+++ b/fixture-renderer-error\n@@ -1 +1 @@\n-old\n+new' : huge;
-    const [stage, setStage] = React.useState('pending');
+    const [stage, setStage] = React.useState(() => new URLSearchParams(location.search).get('question-stage') ?? 'pending');
     const [directory, setDirectory] = React.useState('/fixture');
     const [sessionID, setSession] = React.useState('session');
     const [copyResult, setCopyResult] = React.useState('');
-    const questionState = stage === 'answered' ? { status: 'completed', input: { questions: [{ question: 'Choose a color', options: [] }] }, title: 'Question', output: 'Blue', metadata: {}, time: { start: 1, end: 2 } }
-        : stage === 'failed' ? { status: 'error', input: {}, error: 'Cancelled', time: { start: 1, end: 2 } }
+    const questionState = stage === 'answered' ? { status: 'completed', input: { questions: [{ question: 'Choose a color', options: [] }] }, title: 'Question', output: 'User has answered your questions: "Choose a color"="Blue". You can now continue.', metadata: {}, time: { start: 1, end: 2 } }
+        : stage === 'failed' ? { status: 'error', input: { questions: [{ question: 'Choose a color', options: [{ label: 'Blue' }] }] }, error: 'owned_tool_capability_unavailable', time: { start: 1, end: 2 } }
         : { status: 'pending', input: { questions: [{ question: 'Choose a color', options: [] }] }, raw: '' };
     const parts = [text('explanation', stage === 'plan' ? 'Context before the question.\n<!--plan-->\n# Fixture plan\n\n## Implementation\n\n1. Keep this plan card.' : 'Context before the question.', 'assistant')];
     if (stage !== 'delayed') parts.push(tool(stage === 'similar' ? 'questionnaire' : 'question', questionState));
     const completed = ['answered', 'failed'].includes(stage);
     React.useEffect(() => {
         useUIStore.setState({ chatRenderMode: 'sorted' });
+        useSessionUIStore.setState({ currentSessionId: 'session' });
         window.__chatFixture = {
-            setStage, setDiffStage, setDirectory, setSession, counts, store, urls, sourceOperations,
+            setCompact: (patch) => setCompact(previous => ({ ...previous, ...patch })),
+            setTheme: (dark) => {
+                document.documentElement.classList.toggle('dark', dark);
+                let style = document.getElementById('fixture-theme');
+                if (!style) { style = document.createElement('style'); style.id = 'fixture-theme'; document.head.append(style); }
+                style.textContent = `:root { ${new CSSVariableGenerator().generate(getDefaultTheme(dark))} }`;
+            },
+            profileSessionTree, releaseProfileSessionTree, profileRetainedRecords, setStage, setDiffStage, setDirectory, setSession, counts, store, urls, sourceOperations,
+            markPlanStarted: () => useSessionUIStore.getState().markPlanImplementationRequested(getPlanCardImplementationKey('session', 'fixture-plan')),
             sources: { huge, write, markdown },
             setMode: (chatRenderMode) => useUIStore.setState({ chatRenderMode }),
             stream: (index) => flushSync(() => store.setState({ part: { ...store.getState().part, assistant: [text('stream', `token ${index}`, 'assistant')] } })),
+            updateSession: (id, patch) => flushSync(() => store.setState({ session: store.getState().session.map(session =>
+                session.id === id ? { ...session, ...patch } : session) })),
             editUser: () => store.setState({ part: { ...store.getState().part, user: [text('p', 'Edited prompt')] } }),
             clipboard: () => clipboard,
             denyCopy: (value) => { denyClipboard = value; },
@@ -106,6 +159,13 @@ function Fixture() {
             isMessageCompleted={completed} messageFinish="tool-calls" syntaxTheme={{}} isMobile={false} copiedCode={null}
             onCopyCode={noop} expandedTools={new Set(['question'])} onToggleTool={noop} onShowPopup={noop}
             streamPhase={completed ? 'completed' : 'streaming'} allowAnimation={false} /></section>
+        <section id="search-contract"><GroupedToolActivityRow groupInfo={{ key: 'search', kind: 'search', representativeToolName: 'glob' }}
+            activities={searchActivities} syntaxTheme={{}} isMobile={false} expandedTools={new Set()} onToggleTool={noop} onShowPopup={noop} animateTailText={false} animateRows={false} /></section>
+        <section id="command-failure"><ToolPart part={tool('bash', { status: 'completed', input: { command: 'bun test fixture' },
+            output: 'One assertion failed', metadata: { exitCode: 1 }, title: 'Run tests', time: { start: 1, end: 2 } })} isExpanded onToggle={noop} syntaxTheme={{}} isMobile={false} /></section>
+        <section id="recovery-wait"><ModelRecoveryCard title="Choose a model to continue:" originalModelLabel="Fixture / Model" providers={[]}
+            selection={{ providerId: 'fixture', modelId: 'model', variant: null }} pending waitingForEvents onCancelWaiting={noop}
+            actionError={null} onSelectionChange={noop} onRetry={noop} /></section>
         <section id="patch"><ToolPart part={tool('apply_patch', { status: 'completed', input: {}, metadata: { patch: patchSource },
             output: '', title: 'Large patch', time: { start: 1, end: 2 } })} isExpanded onToggle={noop} syntaxTheme={{}} isMobile={false} /></section>
         <section id="write"><ToolPart part={tool('write', { status: 'completed', input: { filePath: '/fixture/new.txt', content: write },
@@ -116,6 +176,32 @@ function Fixture() {
             setCopyResult(result.ok ? 'Copied' : 'Copy failed');
         }}>Copy Markdown</button><output id="copy-result">{copyResult}</output>
         <Composer directory={directory} sessionID={sessionID} /><BroadBaseline />
+        <SearchDirectory /><BroadDirectoryBaseline />
+        <section id="plan-controls"><PlanTurnTraceContext.Provider value={planIndex}>
+            <PlanCard sessionId="session" sourceMessageId="fixture-plan" streamPhase="streaming"
+                planText={'# Fixture plan\n\n1. Preserve completion and duplicate-start safeguards.'}
+                projectPath={null} sessionDirectory="/fixture" sessionCreated={null} sessionSlug={null} />
+        </PlanTurnTraceContext.Provider></section>
+        <section id="dispatch-errors">
+            <ManagedTaskRowView task={failedTask('capability', 'Implementation admission failure', 'runtime_capability',
+                'admission.prompt: the native permission action for tool todoread is unavailable')} onOpenChild={noop} />
+            <ManagedTaskRowView task={failedTask('authentication', 'Provider access failure', 'provider_authentication',
+                'Upstream request failed: An active OpenCode Go subscription is required to use Go models.')} onOpenChild={noop} />
+        </section>
+        <section id="compact-cards">
+            <ManagedTaskRowView task={{ ...failedTask('compact-verification', 'Implement compact cards', null, null),
+                status: compact.status, firstAssistantPartAt: 1100,
+                verification: { ready: false, status: 'failed', checks: [{ name: 'Focused tests', status: 'failed' }] },
+            }} onOpenChild={() => setCompactOpenedFile('child')} />
+            {compact.count > 0 ? <SessionChangesCardView directory="/fixture" files={compactFiles} subagentCount={2}
+                current={{ state: 'uncertain', verifiedFileCount: 0, uncertainFileCount: compact.count, foreignModifiedCount: 1,
+                    restoredFileCount: 0, checkedFileCount: compact.count, observedAt: 1000, reasons: ['current_content_diverged'] }}
+                coverageBySession={[{ sessionID: 'child-fixture', reasons: ['execution_receipt_unavailable'] }]}
+                statusMessage="Complete capture records are unavailable for this session."
+                mode="changes" undoDisabled disabledReason="Current content could not be verified. Review the working tree."
+                busy={null} isMobile={compact.mobile} onUndo={noop} onRedo={noop} onOpenFile={file => setCompactOpenedFile(file.path)} /> : null}
+            <output id="compact-opened-file">{compactOpenedFile}</output>
+        </section>
         <output id="stage" data-stage={stage}>{stage}</output>
     </main>;
 }

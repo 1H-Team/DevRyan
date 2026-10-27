@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { MERIDIAN_HANDOFF_EDITS, MERIDIAN_HANDOFF_HELPER, MERIDIAN_HANDOFF_V1_EDITS, patchMeridianHandoff, stripMeridianHandoffPatch } from './meridian-passthrough-hotfix.js';
-import { MERIDIAN_168_EDITS, MERIDIAN_168_HANDOFF_EDITS } from './meridian-upgrade-patches.js';
+import { MERIDIAN_168_EDITS, MERIDIAN_168_HANDOFF_EDITS, MERIDIAN_179_EDITS } from './meridian-upgrade-patches.js';
 
 export const MERIDIAN_HTTP_HOTFIX_VERSION = '1.62.6';
 export const MERIDIAN_HTTP_HOTFIX_ORIGINAL_SHA256 = '522decb5f1d2775c04f3a5c9b7e75f49a41fa40de1a62ebe4e2806167ca7b0ab';
@@ -11,6 +11,15 @@ export const MERIDIAN_REVIEWED_PATCHES = Object.freeze({
   '1.62.6': Object.freeze({
     entry: 'cli-wxk8xvd3.js', originalSha256: MERIDIAN_HTTP_HOTFIX_ORIGINAL_SHA256,
     edits: MERIDIAN_HANDOFF_EDITS, previousEdits: MERIDIAN_HANDOFF_V1_EDITS,
+  }),
+  '1.79.0': Object.freeze({
+    entry: 'cli-ykdmqmn4.js', originalSha256: 'f24f4e714c9793ada690d15bca566b058591d626406919edfb46acc2d7bcfedf',
+    edits: MERIDIAN_179_EDITS, previousEdits: MERIDIAN_168_HANDOFF_EDITS,
+    httpOriginal: '    server = serve({\n      fetch: app.fetch,',
+    httpPatched: '    server = serveMeridianHttp({\n      idleTimeoutSeconds: finalConfig.idleTimeoutSeconds,\n      fetch: app.fetch,',
+    endOriginal: '    }, (info) => onListening(info.port));',
+    endPatched: '    }, (info) => onListening(info.port), serve);',
+
   }),
   '1.68.0': Object.freeze({
     entry: 'cli-0zhb8ss4.js', originalSha256: '738e3782bb54d66422fff39b68cef3df3550917252878e3db568b06892b345ef',
@@ -57,14 +66,18 @@ export const applyMeridianHttpHotfix = ({ configDirectory, fs: fsApi = fs,
     source = fsApi.readFileSync(entry, 'utf8');
   } catch { return incompatible('Meridian HTTP hotfix files are unavailable'); }
   const originalSha256 = expectedOriginalSha256 ?? review.originalSha256;
+  const httpOriginal = review.httpOriginal ?? MERIDIAN_HTTP_SERVER_ORIGINAL;
+  const httpPatchedAnchor = review.httpPatched ?? PATCHED;
+  const endOriginal = review.endOriginal ?? ORIGINAL_END;
+  const endPatched = review.endPatched ?? PATCHED_END;
   const withoutProvider = source.replace(PROVIDER_IMPORT, '').replace(PROVIDER_PATCHED, PROVIDER_ANCHOR)
     .replace(DIRECTORY_IMPORT, '').replace(DIRECTORY_PATCHED, DIRECTORY_ANCHOR);
-  const original = stripMeridianHandoffPatch(withoutProvider, review.edits).replace(IMPORT, '').replace(PATCHED, MERIDIAN_HTTP_SERVER_ORIGINAL).replace(PATCHED_END, ORIGINAL_END);
+  const original = stripMeridianHandoffPatch(withoutProvider, review.edits).replace(IMPORT, '').replace(httpPatchedAnchor, httpOriginal).replace(endPatched, endOriginal);
   if (sha256(original) !== originalSha256) return incompatible('Meridian HTTP source hash is incompatible');
-  if (original.split(MERIDIAN_HTTP_SERVER_ORIGINAL).length !== 2 || original.split(ORIGINAL_END).length !== 2) {
+  if (original.split(httpOriginal).length !== 2 || original.split(endOriginal).length !== 2) {
     return incompatible('Meridian HTTP source anchors are incompatible');
   }
-  const httpPatched = IMPORT + original.replace(MERIDIAN_HTTP_SERVER_ORIGINAL, PATCHED).replace(ORIGINAL_END, PATCHED_END);
+  const httpPatched = IMPORT + original.replace(httpOriginal, httpPatchedAnchor).replace(endOriginal, endPatched);
   let patched;
   let previousPatched;
   try {

@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import express from 'express';
@@ -11,7 +12,7 @@ import { createDisconnectedAuth } from './disconnected-auth.js';
 import { attachSupabaseConnectionBoundary, registerSupabaseConnectionRoutes } from './connection-routes.js';
 import { supabaseTrafficOperation } from './supabase-traffic.js';
 import { createMultiUserRuntime } from './runtime.js';
-import { PRODUCTION_BOTS_MIGRATION } from './auth-compat.js';
+import { getRequestPrincipal } from './request-context.js';
 
 const roots = []; const connections = []; const servers = [];
 afterEach(async () => {
@@ -21,9 +22,7 @@ afterEach(async () => {
   vi.useRealTimers();
 });
 const fixture = async (enabled = true, fetchImpl = vi.fn()) => {
-  const base = path.resolve('../../.cache/supabase-test');
-  await fs.mkdir(base, { recursive: true });
-  const root = await fs.mkdtemp(path.join(base, 'fixture-')); roots.push(root);
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-supabase-test-')); roots.push(root);
   const config = { configured: true, enabled, dataDirectory: root, url: 'https://supabase.invalid', publishableKey: 'fixture-public', secretKey: 'fixture-secret' };
   const connection = await createSupabaseConnection({ config, fetchImpl }); connections.push(connection);
   return { connection, config, root, fetchImpl };
@@ -48,13 +47,12 @@ describe('persistent Supabase connection', () => {
     try {
       expect(runtime.enabled).toBe(false);
       expect(await auth.resolvePrincipal(request(cookie))).toMatchObject({ id: 'owner', scope: 'local-admin' });
-      await runtime.botsRuntime.start();
       expect(await runtime.resolveScheduledTaskAccess({ ownerUserId: 'owner' })).toMatchObject({ state: 'dormant' });
       expect(await runtime.resolveScheduledTaskAccess({})).toMatchObject({ state: 'runnable' });
       await runtime.recordOpenCodeActivity({ type: 'session.created', properties: { info: { id: 'ses_local_fixture', directory: '/fixture/project' } } });
       expect(runtime.connection.localSessionOwner('ses_local_fixture')).toEqual({ userId: 'owner', directory: '/fixture/project' });
       expect(fetchImpl).not.toHaveBeenCalled();
-    } finally { await runtime.botsRuntime.shutdown(); await auth.dispose(); }
+    } finally { await auth.dispose(); }
   });
 
   it('persists Off before restart, waits for blockers and does not retry a failed restart automatically', async () => {
@@ -100,7 +98,57 @@ describe('persistent Supabase connection', () => {
     expect(await auth.resolvePrincipal(request(cookie))).toBeNull();
   });
 
-  it('makes zero calls on disconnected restart and failed REST, RPC, Auth and Storage access', async () => {
+  it('captures only authenticated owner principals and rechecks exact sessions, expiry and disposal', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const { connection } = await fixture(false), cookie = await enroll(connection);
+    const original = connection.authenticateLocalOwner(request(cookie));
+    const check = connection.captureAuthorization(original);
+    expect(check()).toBe(true);
+    expect(connection.captureAuthorization(structuredClone(original))).toBeNull();
+    expect(connection.captureAuthorization(connection.ownerPrincipal())).toBeNull();
+    await connection.logoutLocalOwner({ getHeader: () => undefined, setHeader: vi.fn() }, request(cookie));
+    expect(check()).toBe(false);
+    const second = await connection.issueLocalOwnerSession();
+    const secondPrincipal = connection.authenticateLocalOwner(request(`${second.name}=${second.value}`));
+    const secondCheck = connection.captureAuthorization(secondPrincipal); expect(secondCheck()).toBe(true);
+    vi.setSystemTime(Date.now() + 31 * 24 * 60 * 60 * 1000); expect(secondCheck()).toBe(false);
+    const third = await connection.issueLocalOwnerSession();
+    const thirdCheck = connection.captureAuthorization(connection.authenticateLocalOwner(request(`${third.name}=${third.value}`)));
+    expect(thirdCheck()).toBe(true);
+    await connection.dispose(); expect(thirdCheck()).toBe(false); expect(connection.isLocalAccessActive()).toBe(false);
+  });
+
+  it('binds distinct legacy local callers to private grants before entering request context', async () => {
+    const { root } = await fixture(false);
+    const runtime = await createMultiUserRuntime({ dataDirectory: root, fetchImpl: () => { throw new Error('No cloud calls'); } });
+    connections.push(runtime.connection);
+    let live = true;
+    const auth = runtime.wrapLegacyAuthController({ enabled: false, requireAuth: (_req, _res, next) => next(), captureAuthorization: () => () => live });
+    try {
+      const first = request(), second = request();
+      await auth.requireAuth(first, {}, () => { expect(getRequestPrincipal()).toBe(first.principal); });
+      await auth.requireAuth(second, {}, () => { expect(getRequestPrincipal()).toBe(second.principal); });
+      expect(first.principal).not.toBe(second.principal);
+      expect(auth.captureAuthorization(structuredClone(first.principal))).toBeNull();
+      const check = auth.captureAuthorization(first.principal); expect(check()).toBe(true);
+      live = false; expect(check()).toBe(false);
+    } finally { await auth.dispose?.(); }
+  });
+
+  it('revokes captured owner grants when the owner or requested authentication mode changes', async () => {
+    const { connection } = await fixture(false, async url => new Response(JSON.stringify(String(url).includes('/rpc/')
+      ? '99999999999999' : [{ id: principal.id, role: 'admin', status: 'active' }])));
+    const cookie = await enroll(connection), original = connection.authenticateLocalOwner(request(cookie));
+    const check = connection.captureAuthorization(original); expect(check()).toBe(true);
+    await connection.change(true); expect(check()).toBe(false);
+    // Until explicit restart, the host still serves its effective Off mode.
+    expect(connection.isLocalAccessActive()).toBe(true);
+    const renewed = connection.captureAuthorization(connection.authenticateLocalOwner(request(cookie))); expect(renewed()).toBe(true);
+    await connection.rememberOwner({ ...principal, id: 'replacement-owner' }, { setHeader: vi.fn() });
+    expect(renewed()).toBe(false);
+  });
+
+  it('makes zero calls on disconnected restart and failed REST, RPC and Auth access', async () => {
     const { connection, config, fetchImpl, root } = await fixture(false);
     const cookie = await enroll(connection);
     await writeSupabaseConnectionPreference(root, false);
@@ -108,8 +156,7 @@ describe('persistent Supabase connection', () => {
     expect(restarted.authenticateLocalOwner(request(cookie))).toMatchObject({ id: 'owner' });
     const client = createSupabaseServerClient({ ...config, fetchImpl, isConnectionEnabled: () => restarted.enabled });
     const operations = [() => client.rest('user_profiles'), () => client.rpc('fixture'),
-      () => client.refreshSession('fixture'), () => client.storageDownload('fixture', 'object'),
-      () => client.storageUpload('fixture', 'object', Buffer.from('fixture')), () => client.storageDelete('fixture', ['object'])];
+      () => client.refreshSession('fixture')];
     for (const operation of operations) await expect(operation()).rejects.toMatchObject({ code: 'supabase_disconnected' });
     expect(fetchImpl).not.toHaveBeenCalled();
     expect(client.traffic.snapshot()).toMatchObject({ requests: 0, blockedRequests: operations.length });
@@ -122,7 +169,7 @@ describe('persistent Supabase connection', () => {
     await connection.change(true);
     expect(connection.status()).toMatchObject({ effectiveEnabled: false, desiredEnabled: false, state: 'connection_failed', errorCode: 'supabase_quota_exceeded' });
     expect(readSupabaseConnectionPreference(root).enabled).toBe(false);
-    fetchImpl.mockImplementation(async (url) => new Response(JSON.stringify(url.includes('/rpc/') ? PRODUCTION_BOTS_MIGRATION : [{ id: 'owner', role: 'admin', status: 'active' }])));
+    fetchImpl.mockImplementation(async (url) => new Response(JSON.stringify(url.includes('/rpc/') ? '20260101000000' : [{ id: 'owner', role: 'admin', status: 'active' }])));
     await connection.change(true);
     expect(connection.status()).toMatchObject({ effectiveEnabled: false, desiredEnabled: true, state: 'connecting' });
   });
@@ -138,10 +185,8 @@ describe('persistent Supabase connection', () => {
     await new Promise((done) => server.listen(0, '127.0.0.1', done));
     const url = `http://127.0.0.1:${server.address().port}`;
     expect((await fetch(`${url}/private`, { headers: { 'x-forwarded-for': '203.0.113.1' } })).status).toBe(503);
-    // Cloud administration closes while Off; local Bots authorize themselves
-    // and are never blocked by the Supabase boundary.
+    // Cloud administration closes while Off.
     expect((await fetch(`${url}/api/admin/users`, { headers: { cookie } })).status).toBe(503);
-    expect((await fetch(`${url}/api/bots`, { headers: { cookie } })).status).toBe(404);
     expect((await fetch(`${url}/api/system/supabase-connection`)).status).toBe(403);
     const status = await fetch(`${url}/api/system/supabase-connection`, { headers: { cookie } });
     expect(status.status).toBe(200); expect((await status.json()).effectiveEnabled).toBe(false);
@@ -150,7 +195,7 @@ describe('persistent Supabase connection', () => {
     const unauthenticated = await fetch(`${url}/api/system/supabase-connection`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'x-devryan-csrf': '1' }, body: '{"enabled":true}' });
     expect(unauthenticated.status).toBe(403);
     expect((await unauthenticated.json()).error).toBe('Local administrator authentication required');
-    fetchImpl.mockImplementation(async (url) => new Response(JSON.stringify(url.includes('/rpc/') ? PRODUCTION_BOTS_MIGRATION : [{ id: 'owner', role: 'admin', status: 'active' }])));
+    fetchImpl.mockImplementation(async (url) => new Response(JSON.stringify(url.includes('/rpc/') ? '20260101000000' : [{ id: 'owner', role: 'admin', status: 'active' }])));
     const accepted = await fetch(`${url}/api/system/supabase-connection`, { method: 'PATCH', headers: { cookie, 'Content-Type': 'application/json', 'x-devryan-csrf': '1' }, body: '{"enabled":true}' });
     expect(accepted.status).toBe(202);
     expect(await accepted.json()).toMatchObject({ desiredEnabled: true, effectiveEnabled: false, state: 'connecting' });
@@ -192,24 +237,26 @@ describe('principal request coalescing', () => {
   });
 
   it.each([
-    ['an older Bots schema', async (url) => new Response(JSON.stringify(url.includes('/rpc/') ? '20260101000000' : [{ id: 'owner', role: 'admin', status: 'active' }]))],
-    ['a missing Bots schema function', async (url) => url.includes('/rpc/')
+    ['an RPC that answers', async (url) => new Response(JSON.stringify(url.includes('/rpc/') ? '20260101000000' : [{ id: 'owner', role: 'admin', status: 'active' }]))],
+    ['a missing RPC', async (url) => url.includes('/rpc/')
       ? new Response(JSON.stringify({ message: 'function not found' }), { status: 404 })
       : new Response(JSON.stringify([{ id: 'owner', role: 'admin', status: 'active' }]))],
-  ])('reconnects the core with %s and reports Bots as migration required', async (_label, implementation) => {
+  ])('reconnects the core with %s and makes no schema RPC', async (_label, implementation) => {
     const { connection, fetchImpl } = await fixture(false);
     await enroll(connection);
     connection.configureDriver({ getBlockers: vi.fn().mockResolvedValue(['active_chats']), prepare: vi.fn(), restart: vi.fn(),
       pauseAdmissions: vi.fn(), resumeAdmissions: vi.fn() });
     fetchImpl.mockImplementation(implementation);
     await connection.change(true);
-    expect(connection.status()).toMatchObject({ desiredEnabled: true, errorCode: null, state: 'connecting', botsSchema: 'migration_required' });
+    expect(connection.status()).toMatchObject({ desiredEnabled: true, errorCode: null, state: 'connecting' });
+    expect(connection.status()).not.toHaveProperty('botsSchema');
+    expect(fetchImpl.mock.calls.some(([url]) => String(url).includes('/rpc/'))).toBe(false);
   });
 
   it('still refuses to reconnect when the saved administrator lost access', async () => {
     const { connection, fetchImpl } = await fixture(false);
     await enroll(connection);
-    fetchImpl.mockImplementation(async (url) => new Response(JSON.stringify(url.includes('/rpc/') ? PRODUCTION_BOTS_MIGRATION : [{ id: 'owner', role: 'developer', status: 'active' }])));
+    fetchImpl.mockImplementation(async (url) => new Response(JSON.stringify(url.includes('/rpc/') ? '20260101000000' : [{ id: 'owner', role: 'developer', status: 'active' }])));
     await connection.change(true);
     expect(connection.status()).toMatchObject({ errorCode: 'supabase_owner_revoked', state: 'connection_failed' });
   });

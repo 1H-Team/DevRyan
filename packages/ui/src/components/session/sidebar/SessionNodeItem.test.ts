@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { existsSync, readFileSync } from 'node:fs';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { SessionSidebarMotionRow } from './SessionSidebarMotionRow';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Session } from '@opencode-ai/sdk/v2';
@@ -151,6 +154,17 @@ describe('SessionNodeItem status selectors', () => {
     expect(source).toContain('managedOrchestrationSelectors.hasActiveTasksForRoot(');
     expect(source).toContain('isSessionWorking || hasWorkingDescendant || hasActiveManagedSubtask');
   });
+
+  test('shows working as the leading status dot instead of a trailing spinner', () => {
+    const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'SessionNodeItem.tsx'), 'utf8');
+
+    expect(source).toContain('resolveSessionLeadingIndicatorPresentation({');
+    expect(source).toContain('isWorking: sidebarIsWorking,');
+    expect(source).toContain('<SessionStatusDot');
+    expect(source).not.toContain('SidebarSpinner');
+    expect(source).not.toContain('activeStatusMarker');
+    expect(source).not.toContain('workingStatusPaddingClass');
+  });
 });
 
 describe('session sidebar quick hover actions', () => {
@@ -217,31 +231,43 @@ describe('session sidebar archive reflow animation wiring', () => {
     expect(motionRowClose).toBeGreaterThan(childrenAnimatePresence);
   });
 
-  test('collapses entering and exiting rows without scale animation', () => {
-    const testDir = dirname(fileURLToPath(import.meta.url));
-    const source = readFileSync(join(testDir, 'SessionSidebarMotionRow.tsx'), 'utf8');
-    const itemSource = readFileSync(join(testDir, 'SessionNodeItem.tsx'), 'utf8');
+  test('collapses entering and exiting rows through a clipped grid track without scale animation', () => {
+    const markup = renderToStaticMarkup(createElement(SessionSidebarMotionRow, null, createElement('b', null, 'row')));
+    const outerStyle = /^<div style="([^"]*)"/.exec(markup)?.[1] ?? '';
+    const innerStyle = /<div style="([^"]*)"><b>/.exec(markup)?.[1] ?? '';
 
-    expect(source).toContain("initial={{ gridTemplateRows: '0fr', opacity: 0 }}");
-    expect(source).toContain("animate={{ gridTemplateRows: '1fr', opacity: 1 }}");
-    expect(source).toContain("exit={{ gridTemplateRows: '0fr', opacity: 0 }}");
-    expect(source).toContain("overflowX: 'visible'");
-    expect(source).toContain("overflowY: 'clip'");
-    expect(source).toContain("display: 'grid'");
-    expect(source).toContain('minHeight: 0');
-    expect(itemSource).toContain('data-session-leading-rail');
-    expect(itemSource).toContain('grid-cols-[minmax(0,4fr)_minmax(0,7fr)_2px_minmax(0,7fr)_1px]');
-    expect(itemSource).not.toContain('left-[-');
-    expect(source).not.toContain('SESSION_LEADING_INDICATOR_CLIP_GUTTER_PX');
-    expect(source).not.toContain('marginLeft');
-    expect(source).not.toContain('paddingLeft');
-    expect(source).not.toContain('scale');
+    // A new row starts collapsed and transparent, and grows from there.
+    expect(outerStyle).toContain('grid-template-rows:0fr');
+    expect(outerStyle).toContain('opacity:0');
+    expect(outerStyle).toContain('display:grid');
+    expect(outerStyle).toContain('overflow-x:visible');
+    expect(outerStyle).toContain('overflow-y:clip');
+    expect(outerStyle).toContain('min-width:0');
+    expect(outerStyle).toContain('width:100%');
+    expect(/scale|transform|margin-left|padding-left/.test(outerStyle)).toBe(false);
+    expect(innerStyle).toContain('min-height:0');
+    expect(innerStyle).toContain('min-width:0');
+    expect(innerStyle).toContain('width:100%');
+    expect(markup).toContain('<b>row</b>');
   });
 
-  test('keeps status left of chevron and chevron left of the session title without shifting titles', () => {
+  test('keeps the leading rail outside the animated row boundary', () => {
+    const testDir = dirname(fileURLToPath(import.meta.url));
+    const itemSource = readFileSync(join(testDir, 'SessionNodeItem.tsx'), 'utf8');
+
+    expect(itemSource).toContain('data-session-leading-rail');
+    expect(itemSource).toContain('absolute right-full top-1/2 mr-[7px] flex h-4');
+    expect(itemSource).not.toContain('left-[-');
+  });
+
+  test('keeps status next to the title and swaps it for the parent chevron on hover without shifting titles', () => {
     const testDir = dirname(fileURLToPath(import.meta.url));
     const itemSource = readFileSync(join(testDir, 'SessionNodeItem.tsx'), 'utf8');
     const motionSource = readFileSync(join(testDir, 'SessionSidebarMotionRow.tsx'), 'utf8');
+    const statusSlotStart = itemSource.indexOf('const leadingStatusSlot = ');
+    const statusSlotEnd = itemSource.indexOf('const leadingRailSlotContent', statusSlotStart);
+    const statusSlotSource = itemSource.slice(statusSlotStart, statusSlotEnd);
+    const parentStatusSlotSource = statusSlotSource.slice(0, statusSlotSource.indexOf(') : ('));
     const leadingRailStart = itemSource.indexOf('const leadingRail = (');
     const leadingRailEnd = itemSource.indexOf('const streamingIndicator', leadingRailStart);
     const leadingRailSource = itemSource.slice(leadingRailStart, leadingRailEnd);
@@ -259,14 +285,23 @@ describe('session sidebar archive reflow animation wiring', () => {
     expect(leadingRailEnd).toBeGreaterThan(leadingRailStart);
     expect(leadingRailSource).toContain('absolute right-full');
     expect(leadingRailSource).toContain('leadingRailLayout.slots.map');
-    expect(leadingRailSource).toContain("index === 2 && 'col-start-4'");
-    expect(leadingRailSource).toContain("slot === 'status'");
+    expect(statusSlotStart).toBeGreaterThan(-1);
+    expect(statusSlotSource).toContain('leadingRailLayout.hasChildren');
+    // Parent rows always draw the chevron directly left of the dot, with no
+    // hover swap and no separate touch-only chevron.
+    expect(parentStatusSlotSource).toContain("renderSubsessionChevron('absolute left-1/2 top-1/2 inline-flex -translate-x-1/2 -translate-y-1/2')");
+    expect(parentStatusSlotSource.indexOf('renderSubsessionChevron(')).toBeGreaterThan(-1);
+    expect(parentStatusSlotSource.indexOf('renderSubsessionChevron(')).toBeLessThan(
+      parentStatusSlotSource.indexOf('{leadingStatusMarker}'),
+    );
+    expect(parentStatusSlotSource).not.toContain('group-hover/session-row');
+    expect(parentStatusSlotSource).not.toContain('group-focus-within/session-row');
+    expect(itemSource).toContain("'group group/session-row relative my-0.5 flex items-center rounded-sm px-1.5 py-1'");
+    expect(leadingRailSource).not.toContain('renderSubsessionChevron');
+    expect(leadingRailSource).not.toContain('[.mobile-pointer_&]:inline-flex');
     expect(leadingRailSource).not.toContain('justify-between');
     expect(itemSource).not.toContain('<span className="h-4 w-9 flex-shrink-0" aria-hidden="true" />');
-    expect(itemSource).toContain('status: leadingStatusMarker');
-    expect(itemSource.indexOf('status: leadingStatusMarker')).toBeLessThan(
-      itemSource.indexOf('chevron: subsessionChevron'),
-    );
+    expect(itemSource).toContain('status: leadingStatusSlot');
     expect(leadingRailRenderIndex).toBeGreaterThan(leadingRailEnd);
     expect(rowButtonStart).toBeGreaterThan(-1);
     expect(leadingRailRenderIndex).toBeLessThan(rowButtonStart);
@@ -274,7 +309,7 @@ describe('session sidebar archive reflow animation wiring', () => {
     expect(rowButtonSource).toContain('overflow-hidden rounded-sm text-left');
     expect(rowButtonSource).not.toContain('pl-9');
     expect(rowButtonSource).not.toContain('{leadingStatusSlot}');
-    expect(rowButtonSource).not.toContain('{subsessionChevron}');
+    expect(rowButtonSource).not.toContain('renderSubsessionChevron');
     expect(titleRowStart).toBeGreaterThan(-1);
     expect(agentIconIndex).toBeGreaterThan(-1);
     expect(agentIconIndex).toBeLessThan(titleIndex);
@@ -390,5 +425,15 @@ describe('session export outcome wiring', () => {
     expect(source).toContain('saveSessionExportMarkdown(\n        preparedExportPromise.then((prepared) => prepared.markdown),');
     expect(source.indexOf('const saveResult = await saveSessionExportMarkdown('))
       .toBeLessThan(source.indexOf('const preparedExport = await preparedExportPromise;'));
+  });
+});
+
+describe('session share menu capability gating', () => {
+  test('shows copy-link and unshare only when the runtime supports sharing', () => {
+    const testDir = dirname(fileURLToPath(import.meta.url));
+    const source = readFileSync(join(testDir, 'SessionNodeItem.tsx'), 'utf8');
+
+    expect(source).toContain("const shareAvailable = useRuntimeCapability('share');");
+    expect(source).toContain('{shareAvailable && resolvedSession.share ? (');
   });
 });

@@ -1,18 +1,18 @@
-#!/usr/bin/env tsx
+#!/usr/bin/env bun
 
 /*
- * Port OpenCode themes into full OpenChamber theme JSON files.
+ * Port OpenCode themes into full DevRyan theme JSON files.
  *
  * Usage:
  *   bun run themes:port:opencode --list
  *   bun run themes:port:opencode github cursor lucent-orng --force
- *   bun run themes:port:opencode aura --out-dir /tmp/openchamber-theme-port-test --force
+ *   bun run themes:port:opencode aura --out-dir /tmp/devryan-theme-port-test --force
  *   bun run themes:port:opencode path/to/theme.json --stdout
  *
  * Expected result:
  *   - resolves theme colors from OpenCode desktop themes, TUI context themes,
- *     or existing OpenChamber theme JSON files
- *   - writes complete OpenChamber light/dark theme JSON output with solid core
+ *     or existing DevRyan theme JSON files
+ *   - writes complete DevRyan light/dark theme JSON output with solid core
  *     surfaces, interactive colors, syntax colors, and full schema coverage
  *   - produces files ready to register in presets without half-mapped tokens
  */
@@ -61,7 +61,7 @@ interface DesktopTheme {
   dark: ThemeVariant;
 }
 
-interface OpenChamberTheme {
+interface DevRyanTheme {
   metadata: {
     id: string;
     name: string;
@@ -89,7 +89,7 @@ type ResolvedContextTheme = Record<string, string> & {
   thinkingOpacity?: number;
 };
 
-type ThemeSource = DesktopTheme | ContextThemeJson | OpenChamberTheme;
+type ThemeSource = DesktopTheme | ContextThemeJson | DevRyanTheme;
 
 type ResolvedTheme = Record<string, ColorValue>;
 
@@ -104,18 +104,6 @@ type ParsedArgs = {
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..');
 const DEFAULT_OPENCODE_ROOT = path.join(os.homedir(), 'projects', 'opencode');
-const DEFAULT_DESKTOP_SOURCE_DIR = path.join(DEFAULT_OPENCODE_ROOT, 'packages', 'ui', 'src', 'theme', 'themes');
-const DEFAULT_CONTEXT_SOURCE_DIR = path.join(
-  DEFAULT_OPENCODE_ROOT,
-  'packages',
-  'opencode',
-  'src',
-  'cli',
-  'cmd',
-  'tui',
-  'context',
-  'theme',
-);
 const DEFAULT_OUT_DIR = path.join(REPO_ROOT, 'packages', 'ui', 'src', 'lib', 'theme', 'themes');
 
 const DEFAULT_CONFIG = {
@@ -149,7 +137,7 @@ const DEFAULT_CONFIG = {
 const usage = () => {
   console.error(
     [
-      'Usage: tsx scripts/port-opencode-theme.ts [options] <theme-id|path> [...more]',
+      'Usage: bun scripts/port-opencode-theme.ts [options] <theme-id|path> [...more]',
       '',
       'Options:',
       '  --opencode-root <path>  OpenCode repo root (default: ~/projects/opencode)',
@@ -287,7 +275,7 @@ function isContextTheme(value: ThemeSource): value is ContextThemeJson {
   return Boolean(value && typeof value === 'object' && 'theme' in value && !('light' in value) && !('metadata' in value));
 }
 
-function isOpenChamberTheme(value: ThemeSource): value is OpenChamberTheme {
+function isDevRyanTheme(value: ThemeSource): value is DevRyanTheme {
   return Boolean(value && typeof value === 'object' && 'metadata' in value && 'colors' in value);
 }
 
@@ -544,13 +532,26 @@ function syntheticTokensFromContextTheme(resolved: ResolvedContextTheme, mode: C
   };
 }
 
-function syntheticTokensFromOpenChamberTheme(theme: OpenChamberTheme): ResolvedTheme {
-  const colors = theme.colors as Record<string, any>;
-  const primary = colors.primary ?? {};
-  const surface = colors.surface ?? {};
-  const interactive = colors.interactive ?? {};
-  const status = colors.status ?? {};
-  const syntax = colors.syntax ?? { base: {}, tokens: {}, highlights: {} };
+type ThemeColorGroup = Partial<Record<string, string>>;
+
+const themeColorRecord = (value: unknown): Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value) ? Object.fromEntries(Object.entries(value)) : {};
+
+const themeColorGroup = (value: unknown): ThemeColorGroup =>
+  Object.fromEntries(Object.entries(themeColorRecord(value)).filter((entry): entry is [string, string] => typeof entry[1] === 'string'));
+
+function syntheticTokensFromDevRyanTheme(theme: DevRyanTheme): ResolvedTheme {
+  const colors = theme.colors;
+  const primary = themeColorGroup(colors.primary);
+  const surface = themeColorGroup(colors.surface);
+  const interactive = themeColorGroup(colors.interactive);
+  const status = themeColorGroup(colors.status);
+  const syntaxColors = themeColorRecord(colors.syntax);
+  const syntax = {
+    base: themeColorGroup(syntaxColors.base),
+    tokens: themeColorGroup(syntaxColors.tokens),
+    highlights: themeColorGroup(syntaxColors.highlights),
+  };
 
   return {
     'background-base': surface.background ?? '#151313',
@@ -595,7 +596,7 @@ function syntheticTokensFromOpenChamberTheme(theme: OpenChamberTheme): ResolvedT
     'text-on-warning-base': status.warningForeground ?? accessibleForeground(status.warning ?? '#DA702C'),
     'text-on-critical-base': status.errorForeground ?? accessibleForeground(status.error ?? '#AF3029'),
     'text-on-info-base': status.infoForeground ?? accessibleForeground(status.info ?? '#205EA6'),
-    'text-interactive-base': colors.markdown?.link ?? primary.base ?? '#5A96BC',
+    'text-interactive-base': themeColorGroup(colors.markdown).link ?? primary.base ?? '#5A96BC',
     'icon-success-base': status.success ?? '#66800B',
     'icon-warning-base': status.warning ?? '#DA702C',
     'icon-critical-base': status.error ?? '#AF3029',
@@ -787,7 +788,7 @@ function buildTheme(
   variant: ThemeVariant,
   resolved: ResolvedTheme,
   mode: 'light' | 'dark',
-): OpenChamberTheme {
+): DevRyanTheme {
   const isDark = mode === 'dark';
   const background = token(resolved, 'background-base', isDark ? '#151313' : '#FFFCF0');
   const foreground = token(resolved, 'text-base', isDark ? '#CECDC3' : '#100F0F');
@@ -801,7 +802,6 @@ function buildTheme(
   const surfaceBase = token(resolved, 'surface-base', surfaceWeak);
   const surfaceBaseHover = token(resolved, 'surface-base-hover', surfaceBase);
   const surfaceBaseActive = token(resolved, 'surface-base-active', surfaceBaseHover);
-  const surfaceStrong = token(resolved, 'surface-strong', surfaceRaised);
   const borderBase = token(resolved, 'border-base', withAlpha(foreground, isDark ? 0.2 : 0.16));
   const borderHover = token(resolved, 'border-hover', borderBase);
   const borderFocus = token(resolved, 'border-interactive-selected', token(resolved, 'border-focus', borderHover));
@@ -1240,7 +1240,7 @@ async function main(): Promise<void> {
   }
 
   const resolveThemeVariant = await loadResolver(args.opencodeRoot);
-  const generated: Array<{ fileName: string; theme: OpenChamberTheme }> = [];
+  const generated: Array<{ fileName: string; theme: DevRyanTheme }> = [];
 
   for (const spec of args.specs) {
     const themePath = await resolveThemeSpec(spec, args.opencodeRoot);
@@ -1297,20 +1297,26 @@ async function main(): Promise<void> {
       continue;
     }
 
-    if (isOpenChamberTheme(source)) {
-      const colors = source.colors as Record<string, any>;
+    if (isDevRyanTheme(source)) {
+      const surface = themeColorGroup(source.colors.surface);
+      const primary = themeColorGroup(source.colors.primary);
+      const status = themeColorGroup(source.colors.status);
+      const interactive = themeColorGroup(source.colors.interactive);
+      const syntaxColors = themeColorRecord(source.colors.syntax);
+      const syntaxBase = themeColorGroup(syntaxColors.base);
+      const syntaxHighlights = themeColorGroup(syntaxColors.highlights);
       const variant = syntheticVariantFromResolvedTheme({
-        neutral: colors.surface?.background ?? '#151313',
-        ink: colors.surface?.foreground,
-        primary: colors.primary?.base ?? '#5A96BC',
-        success: colors.status?.success ?? '#66800B',
-        warning: colors.status?.warning ?? '#DA702C',
-        error: colors.status?.error ?? '#AF3029',
-        info: colors.status?.info ?? '#205EA6',
-        accent: colors.syntax?.base?.keyword ?? colors.status?.info ?? colors.primary?.base ?? '#205EA6',
-        interactive: colors.interactive?.focus ?? colors.primary?.base ?? '#5A96BC',
-        diffAdd: colors.syntax?.highlights?.diffAdded ?? colors.status?.success ?? '#66800B',
-        diffDelete: colors.syntax?.highlights?.diffRemoved ?? colors.status?.error ?? '#AF3029',
+        neutral: surface.background ?? '#151313',
+        ink: surface.foreground,
+        primary: primary.base ?? '#5A96BC',
+        success: status.success ?? '#66800B',
+        warning: status.warning ?? '#DA702C',
+        error: status.error ?? '#AF3029',
+        info: status.info ?? '#205EA6',
+        accent: syntaxBase.keyword ?? status.info ?? primary.base ?? '#205EA6',
+        interactive: interactive.focus ?? primary.base ?? '#5A96BC',
+        diffAdd: syntaxHighlights.diffAdded ?? status.success ?? '#66800B',
+        diffDelete: syntaxHighlights.diffRemoved ?? status.error ?? '#AF3029',
       });
 
       const syntheticTheme: DesktopTheme = {
@@ -1325,7 +1331,7 @@ async function main(): Promise<void> {
         theme: buildTheme(
           syntheticTheme,
           variant,
-          syntheticTokensFromOpenChamberTheme(source),
+          syntheticTokensFromDevRyanTheme(source),
           source.metadata.variant,
         ),
       });

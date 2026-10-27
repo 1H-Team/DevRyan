@@ -4,11 +4,13 @@ import { readAuthFile } from '../../opencode/auth.js';
 import { readConfigLayers } from '../../opencode/shared.js';
 import { fetchQuota, isConfigured } from './zhipuai-coding-plan.js';
 
-vi.mock('../../opencode/auth.js', () => ({
+vi.mock('../../opencode/auth.js', async () => ({
+  OPENCODE_DATA_DIR: (await import('node:path')).join((await import('node:os')).tmpdir(), 'devryan-quota-fixtures', 'zhipuai', 'data'),
   readAuthFile: vi.fn(() => ({}))
 }));
 
-vi.mock('../../opencode/shared.js', () => ({
+vi.mock('../../opencode/shared.js', async () => ({
+  OPENCODE_CONFIG_DIR: (await import('node:path')).join((await import('node:os')).tmpdir(), 'devryan-quota-fixtures', 'zhipuai', 'config'),
   readConfigLayers: vi.fn(() => ({ mergedConfig: {} }))
 }));
 

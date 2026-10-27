@@ -23,16 +23,16 @@ export function resolveMultiUserConfig({ dataDirectory, env = process.env } = {}
   const root = path.resolve(dataDirectory || '.');
   const configPath = path.join(root, 'supabase.json');
   const stored = readPrivateJson(configPath);
-  const url = firstString(env.OPENCHAMBER_SUPABASE_URL, env.SUPABASE_URL, stored.url);
+  const url = firstString(env.DEVRYAN_SUPABASE_URL, env.SUPABASE_URL, stored.url);
   const publishableKey = firstString(
-    env.OPENCHAMBER_SUPABASE_PUBLISHABLE_KEY,
+    env.DEVRYAN_SUPABASE_PUBLISHABLE_KEY,
     env.SUPABASE_PUBLISHABLE_KEY,
     env.SUPABASE_ANON_KEY,
     stored.publishableKey,
     stored.anonKey,
   );
   const secretKey = firstString(
-    env.OPENCHAMBER_SUPABASE_SECRET_KEY,
+    env.DEVRYAN_SUPABASE_SECRET_KEY,
     env.SUPABASE_SECRET_KEY,
     env.SUPABASE_SERVICE_ROLE_KEY,
     stored.secretKey,

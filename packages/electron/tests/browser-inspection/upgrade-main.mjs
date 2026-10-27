@@ -1,9 +1,12 @@
+import { AGENT_BROWSER_VERSION } from '../../../web/server/lib/agent-browser/install.js';
 // Opt-in actual CLI/CDP acceptance. Run through upgrade-run.mjs, never the app profile.
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createServer } from 'node:http';
+import { Readable } from 'node:stream';
+import { createBrowserObservationRuntime } from '../../../web/server/lib/browser-cdp/observation-runtime.js';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { sessionExecutionProfile, verifySessionExecutionLauncher } from '../../../harness-runtime/lib/session-execution.js';
@@ -21,8 +24,11 @@ app.setName('DevRyan Browser Upgrade Fixture');
 for (const key of ['userData', 'sessionData', 'logs', 'crashDumps']) app.setPath(key, path.join(root, key));
 app.on('window-all-closed', () => {});
 const evidence = { status: 'failed', versions: {}, checks: [], results: [], leaseIds: [] };
-let window, surfaces, bridge, http, plugin;
+let window, surfaces, bridge, http, plugin, observation, viewer;
+let activeView;
+const principal = { id: 'fixture-owner', scope: 'managed', policy: { browser: true } };
 let active;
+let captureClick = false, clickFrame;
 const token = crypto.randomBytes(32).toString('hex');
 const html = `<!doctype html><html><head><meta charset="utf-8"><title>Browser upgrade fixture</title>
 <style>body{background:#fff;color:#123;font:20px sans-serif}button,input{margin:16px;padding:12px}#box,#drop{width:120px;height:80px;background:#28a}#drop{background:#ddd;margin-top:12px}</style></head>
@@ -50,7 +56,20 @@ async function run() {
     bridge = createBrowserCdpBridge({ crypto, createWebSocketServer: options => {
         return new WebSocketServer(options);
       },
-      onAgentInput: input => surfaces.showAgentInput(input.leaseId, input),
+      onAgentInput: input => {
+        surfaces.showAgentInput(input.leaseId, input);
+        if (captureClick && input.kind === 'down') {
+          captureClick = false;
+          clickFrame = new Promise(resolve => setTimeout(resolve, 100)).then(async () => {
+            const image = await surfaces.surfaceForLease(input.leaseId).view.webContents.capturePage();
+            await fs.writeFile(path.join(root, 'live-click.png'), image.toPNG());
+            if (viewer) {
+              await new Promise(resolve => setTimeout(resolve, 150));
+              await fs.writeFile(path.join(root, 'web-live-click.png'), (await viewer.webContents.capturePage()).toPNG());
+            }
+          });
+        }
+      },
       onBeforeCommand: async ({ leaseId, method }) => {
         if (method === 'Input.dispatchMouseEvent') return surfaces.prepareAgentInput(leaseId);
         if (['Page.captureScreenshot', 'DevRyan.captureAttached'].includes(method)) return surfaces.setAgentCursorSuppressed(leaseId, true);
@@ -59,8 +78,32 @@ async function run() {
         if (['Page.captureScreenshot', 'DevRyan.captureDetached'].includes(method)) return surfaces.setAgentCursorSuppressed(leaseId, false);
       },
     });
+    observation = createBrowserObservationRuntime({
+      getLeaseRecords: () => active ? [{ leaseId: active.leaseId, rootSessionId: context.sessionID, ownerUserId: principal.id }] : [],
+      ownsSession: async (owner, sessionID) => owner.id === principal.id && sessionID === context.sessionID,
+      openHostLeaseStream: ({ leaseId, signal }) => {
+        let ready = true;
+        const body = new Readable({ read() { ready = true; } });
+        const unsubscribe = surfaces.subscribeLeaseFrames(leaseId, { onFrame: jpeg => {
+          if (ready && !body.destroyed) ready = body.push(Buffer.concat([
+            Buffer.from('--fixture-frame\r\nContent-Type: image/jpeg\r\nContent-Length: ' + jpeg.length + '\r\n\r\n'), jpeg, Buffer.from('\r\n'),
+          ]));
+        }, onClose: () => body.push(null) });
+        signal.addEventListener('abort', () => body.push(null), { once: true });
+        body.once('close', unsubscribe);
+        return { contentType: 'multipart/x-mixed-replace; boundary=fixture-frame', body };
+      },
+    });
     http = createServer(async (req, res) => {
       try {
+        if (req.url === '/viewer') {
+          res.setHeader('Content-Type', 'text/html');
+          res.end('<!doctype html><style>body{margin:0;background:#111}img{width:100%;height:100vh;object-fit:contain;pointer-events:none}</style><img src="' + activeView.streamUrl + '">'); return;
+        }
+        if (activeView && req.url === activeView.streamUrl) {
+          res.status = code => { res.statusCode = code; return res; };
+          await observation.openView(principal, active.leaseId, activeView.id, res); return;
+        }
         if (req.url.startsWith('/fixture')) { res.setHeader('Content-Type', 'text/html'); res.end(html); return; }
         assert.equal(req.headers.authorization, `Bearer ${token}`);
         let body = ''; for await (const chunk of req) body += chunk;
@@ -118,8 +161,50 @@ async function run() {
     assert.match(evidence.results.find(row => row.input.command === 'eval').result, /Verified/);
     assert.ok((await fs.stat(path.join(root, 'common.png'))).size > 100);
     evidence.checks.push('actual CLI navigation, interactive snapshot, fill/click, inspect/eval, hidden screenshot');
+    const guest = surfaces.surfaceForLease(active.leaseId).view.webContents;
+    await assert.rejects(observation.startView({ ...principal, id: 'other-owner' }, active.leaseId), { code: 'browser_lease_not_found' });
+    activeView = (await observation.startView(principal, active.leaseId)).view;
+    viewer = new BrowserWindow({ width: 800, height: 600, show: false, webPreferences: { session: partition, nodeIntegration: false, contextIsolation: true, sandbox: true } });
+    // Multipart image streams do not finish loading the document.
+    void viewer.loadURL(`${origin}/viewer`).catch(() => {});
+    for (let attempt = 0; attempt < 100; attempt++) {
+      if (await viewer.webContents.executeJavaScript('Boolean(document.querySelector("img")?.naturalWidth)').catch(() => false)) break;
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    assert.equal(await viewer.webContents.executeJavaScript('Boolean(document.querySelector("img")?.naturalWidth)'), true);
+    captureClick = true;
+    await call({ command: 'click', args: ['#save'] });
+    const overlay = await guest.executeJavaScript(`(() => {
+      const cursor = document.getElementById('__devryan_agent_browser_cursor');
+      const pulse = document.getElementById('__devryan_agent_browser_cursor_pulse');
+      const event = events.findLast(e => e.type === 'pointerdown');
+      return { cursor: cursor?.style.display, pulse: Boolean(pulse),
+        x: parseFloat(pulse?.style.left) + 16, y: parseFloat(pulse?.style.top) + 16, event };
+    })()`);
+    assert.equal(overlay.cursor, 'block'); assert.equal(overlay.pulse, true);
+    // CSS serialization rounds subpixel coordinates; require alignment within 0.01 CSS px.
+    assert.ok(Math.abs(overlay.x - overlay.event.x) < 0.01);
+    assert.ok(Math.abs(overlay.y - overlay.event.y) < 0.01);
+    assert.ok(clickFrame);
+    await clickFrame;
+    await observation.stopView(principal, active.leaseId, activeView.id);
+    assert.equal(bridge.status().leaseCount, 1, 'Closing web observation must preserve the agent lease');
+    viewer.destroy(); viewer = null;
+    evidence.checks.push('real Chromium web image stream shows live surface; other owner refused; stopping observation retains agent lease');
+    await new Promise(resolve => setTimeout(resolve, 700));
+    assert.equal(await guest.executeJavaScript("Boolean(document.getElementById('__devryan_agent_browser_cursor_pulse'))"), false);
+    await call({ command: 'open', args: [`${origin}/fixture?cursor-navigation`] });
+    await call({ command: 'click', args: ['#save'] });
+    assert.equal(await guest.executeJavaScript("Boolean(document.getElementById('__devryan_agent_browser_cursor_pulse'))"), true);
+    await call({ command: 'eval', args: ['document.querySelector("#save").disabled=true'] });
+    await assert.rejects(call({ command: 'click', args: ['#save'], timeout_ms: 2000 }));
+    await call({ command: 'eval', args: ['document.querySelector("#save").disabled=false;document.querySelector("#save").style.display="none"'] });
+    await assert.rejects(call({ command: 'click', args: ['#save'], timeout_ms: 2000 }));
+    await call({ command: 'open', args: [`${origin}/fixture`] });
+    evidence.checks.push('visible cursor and blue pulse match dispatched click; pulse expires; navigation restores overlay; disabled and hidden clicks fail');
+
     surfaces.layout(window, { surfaceId: surfaces.surfaceForLease(active.leaseId).surfaceId, visible: false });
-    if (evidence.versions.agentBrowser === '0.38.1') {
+    if (evidence.versions.agentBrowser === AGENT_BROWSER_VERSION) {
       const compare = JSON.parse(await call({ command: 'sequence', timeout_ms: 120000, steps: [
         { command: 'snapshot', args: ['-i', '--delta'] }, { command: 'snapshot', args: ['-i', '--delta'] },
         { command: 'eval', args: ['document.querySelector("#save").textContent="Save updated"'] },
@@ -174,7 +259,7 @@ async function run() {
     await call({ command: 'close' });
     assert.equal(bridge.status().leaseCount, 0);
     evidence.checks.push('explicit close releases bridge and hidden surface');
-    if (evidence.versions.agentBrowser === '0.38.1') {
+    if (evidence.versions.agentBrowser === AGENT_BROWSER_VERSION) {
       const launcher = fileURLToPath(new URL(`../../../web/runtime/${process.platform}-${process.arch}/DevRyan-execution-${process.platform}-${process.arch}`, import.meta.url));
       assert.equal(process.platform, 'darwin', 'Native fixture currently requires macOS');
       assert.equal(await verifySessionExecutionLauncher({ launcher }), true);
@@ -243,7 +328,7 @@ async function run() {
   } catch (error) { evidence.error = error.stack; }
   finally {
     if (active && plugin && bridge.getLeaseStatus(active.leaseId).ok) await plugin.tool.devryan_browser.execute({ command: 'close', timeout_ms: 3000 }, { ...context, abort: AbortSignal.timeout(3000) }).catch(() => {});
-    bridge?.closeAll(); surfaces?.closeAll(); window?.destroy();
+    observation?.closeAll(); viewer?.destroy(); bridge?.closeAll(); surfaces?.closeAll(); window?.destroy();
     if (http) { http.closeAllConnections(); await new Promise(resolve => http.close(resolve)); }
     await fs.writeFile(path.join(root, 'result.json'), JSON.stringify(evidence, null, 2));
     process.stdout.write(JSON.stringify({ status: evidence.status, checks: evidence.checks, error: evidence.error }) + '\n');

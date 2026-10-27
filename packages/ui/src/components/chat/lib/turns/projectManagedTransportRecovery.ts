@@ -5,43 +5,38 @@ import {
     isManagedTransientTransportContinuationPrompt,
     type ManagedTaskEventRecord,
     type ProviderTransportFailureKind,
-} from '@openchamber/orchestration-runtime';
+} from '@devryan/orchestration-runtime';
 
 import type {
     ChatMessageEntry,
     ManagedAbortRecoveryState,
     ManagedTransportRecoveryState,
 } from './types';
+import { readAssistantMessageError } from '@/lib/decoders/assistantMessageError';
+import {
+    readMessageCreatedAt,
+    readMessageParentId,
+    readMessageRole,
+    readMessageSessionId,
+} from '@/lib/decoders/messageInfo';
 
-const resolveMessageRole = (message: ChatMessageEntry): string => {
-    const info = message.info as { clientRole?: string | null; role?: string | null };
-    return info.clientRole ?? info.role ?? '';
-};
+const resolveMessageRole = (message: ChatMessageEntry): string => readMessageRole(message.info) ?? '';
 
 const resolveMessageId = (message: ChatMessageEntry): string => (
     typeof message.info.id === 'string' ? message.info.id : ''
 );
 
-const resolveParentMessageId = (message: ChatMessageEntry): string | null => {
-    const parentId = (message.info as { parentID?: unknown }).parentID;
-    return typeof parentId === 'string' && parentId.trim() ? parentId : null;
-};
+const resolveParentMessageId = (message: ChatMessageEntry): string | null => readMessageParentId(message.info);
 
-const resolveSessionId = (message: ChatMessageEntry): string | null => {
-    const sessionId = (message.info as { sessionID?: unknown }).sessionID;
-    return typeof sessionId === 'string' && sessionId.trim() ? sessionId : null;
-};
+const resolveSessionId = (message: ChatMessageEntry): string | null => readMessageSessionId(message.info);
 
 const resolveTransportFailureKind = (
     message: ChatMessageEntry,
 ): ProviderTransportFailureKind | null => {
     if (resolveMessageRole(message) !== 'assistant') return null;
-    const error = (message.info as {
-        error?: { data?: { message?: unknown }; message?: unknown; name?: unknown };
-    }).error;
+    const error = readAssistantMessageError(message.info);
     if (!error) return null;
-    const detail = error.data?.message ?? error.message;
-    return classifyProviderTransportFailure(error.name, detail);
+    return classifyProviderTransportFailure(error.name, error.dataMessage ?? error.message);
 };
 
 const isManagedTransportContinuationMessage = (message: ChatMessageEntry): boolean => (
@@ -74,21 +69,21 @@ export const orderChatMessagesChronologically = (
     messages: ChatMessageEntry[],
 ): ChatMessageEntry[] => {
     if (messages.length < 2) return messages;
-    const indexed = messages.map((message, index) => ({
-        createdAt: (message.info as { time?: { created?: unknown } }).time?.created,
-        index,
-        message,
-    }));
-    if (indexed.some(({ createdAt }) => !Number.isFinite(createdAt))) return messages;
+    const indexed: Array<{ createdAt: number; index: number; message: ChatMessageEntry }> = [];
+    for (const [index, message] of messages.entries()) {
+        const createdAt = readMessageCreatedAt(message.info);
+        if (createdAt === null) return messages;
+        indexed.push({ createdAt, index, message });
+    }
 
     const hasInversion = indexed.some((entry, index) => (
         index > 0
-        && (entry.createdAt as number) < (indexed[index - 1].createdAt as number)
+        && entry.createdAt < indexed[index - 1].createdAt
     ));
     if (!hasInversion) return messages;
 
     indexed.sort((left, right) => (
-        (left.createdAt as number) - (right.createdAt as number)
+        left.createdAt - right.createdAt
         || left.index - right.index
     ));
     return indexed.map(({ message }) => message);
@@ -96,10 +91,8 @@ export const orderChatMessagesChronologically = (
 
 const isAbortedAssistant = (message: ChatMessageEntry): boolean => {
     if (resolveMessageRole(message) !== 'assistant') return false;
-    const error = (message.info as {
-        error?: { data?: { message?: unknown }; message?: unknown; name?: unknown };
-    }).error;
-    return [error?.data?.message, error?.message, error?.name].some((candidate) => (
+    const error = readAssistantMessageError(message.info);
+    return [error?.dataMessage, error?.message, error?.name].some((candidate) => (
         typeof candidate === 'string' && candidate.trim().toLowerCase() === 'aborted'
     ));
 };
@@ -165,6 +158,7 @@ const resolveAbortRecoveryState = (
     task: ManagedTaskEventRecord,
     manualRecoveryTaskId: string | undefined,
 ): ManagedAbortRecoveryState => {
+    if (task.terminationIntent === 'user_stopped' && task.status === 'aborted') return 'user_stopped';
     if (manualRecoveryTaskId) return 'manual_recovery';
     if (task.status === 'queued' || task.status === 'starting' || task.status === 'running') {
         return 'continuing';
@@ -266,7 +260,8 @@ export const projectManagedTransportRecovery = (
         const message = projected[index];
         if (
             resolveSessionId(message) !== latestTask.childSessionId
-            || !isAbortedAssistant(message)
+            || !(isAbortedAssistant(message) || latestTask.terminationIntent === 'user_stopped'
+                && readAssistantMessageError(message.info)?.dataMessage === 'Step interrupted')
         ) continue;
         const presented = message.presentation?.managedAbortRecovery;
         if (

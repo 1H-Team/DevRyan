@@ -50,7 +50,7 @@ export const formatManagedAssignmentContext = (task, { maxPromptBytes, maxBytes 
   const points = Array.from(prompt.text);
   const rule = `${ASSIGNMENT_RULE}${task.readOnly === true ? ' This assignment is read-only: do not modify files.' : ''}`
     + ' If promptTruncated is true, preserve it in subsequent summaries; use complete scope already in context, otherwise request missing scope from the parent before making changes.';
-  const render = (count) => `${rule}\n${JSON.stringify({ ...assignment, prompt: points.slice(0, count).join(''),
+  const render = (count) => `${rule}\n${JSON.stringify({ ...assignment, ...(task.taskPrerequisites?.length ? { taskPrerequisites: task.taskPrerequisites } : {}), prompt: points.slice(0, count).join(''),
     ...(prompt.truncated || count < points.length ? { promptTruncated: true } : {}) })}`;
   const full = render(points.length);
   if (Buffer.byteLength(full) <= budget) return full;

@@ -4,12 +4,15 @@ import { createRecordStore } from './record-store.js';
 import { withCrossProcessFileLock } from './atomic-file.js';
 import { isManagedMaintenancePrompt } from './objective-identity.js';
 
+const PLAN_ACTION_PREFIXES = ['[devryan-plan-action:v1] ', '[openchamber-plan-action:v1] '];
+const planActionPrefix = text => PLAN_ACTION_PREFIXES.find(prefix => text.startsWith(prefix));
+
 const MAX_RECORD_BYTES = 64 * 1024;
 const hash = (value) => crypto.createHash('sha256').update(value).digest('hex');
 const object = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 const textParts = (record) => (record?.parts ?? []).filter((part) => part.type === 'text' && typeof part.text === 'string');
 const isRealUser = (record) => record?.info?.role === 'user' && !isManagedMaintenancePrompt(record)
-  && textParts(record).some((part) => part.synthetic !== true || part.text.startsWith('[openchamber-plan-action:v1] '));
+  && textParts(record).some((part) => part.synthetic !== true || planActionPrefix(part.text));
 const boundedText = (value, bytes) => {
   let result = String(value ?? '');
   if (Buffer.byteLength(result) <= bytes) return result;
@@ -19,10 +22,10 @@ const boundedText = (value, bytes) => {
 const fault = (code) => Object.assign(new Error(code), { code, statusCode: 409 });
 export const planReference = (record) => {
   if (record?.info?.role !== 'user') return null;
-  const markers = textParts(record).filter((part) => part.synthetic === true && part.text.startsWith('[openchamber-plan-action:v1] '));
+  const markers = textParts(record).filter((part) => part.synthetic === true && planActionPrefix(part.text));
   if (markers.length !== 1) return null;
   try {
-    const value = JSON.parse(markers[0].text.slice('[openchamber-plan-action:v1] '.length));
+    const value = JSON.parse(markers[0].text.slice(planActionPrefix(markers[0].text).length));
     if (value?.action === 'implement' && [value.sourceSessionId, value.sourceMessageId]
       .every((id) => typeof id === 'string' && /^[A-Za-z0-9_-]{1,200}$/.test(id))
       && Number.isSafeInteger(value.planIndex) && value.planIndex >= 0
@@ -49,7 +52,7 @@ export const validateTaskContextRecord = (record) => {
 // This is a replaceable view of canonical sessions, TODOs, plans and ledgers.
 // Task checkpoints never authorize execution or change the recovery controller.
 export const deriveTaskCheckpoint = ({ session, anchor, primary, tasks = [], envelopes = [], todos = [], decisions = [],
-  projectKey, now = Date.now(), sanitizeText = (value) => value }) => {
+  projectKey, verification, now = Date.now(), sanitizeText = (value) => value }) => {
   if (!session?.id || !isRealUser(anchor) || (anchor.info.sessionID && anchor.info.sessionID !== session.id)) throw fault('context_anchor_unavailable');
   const sourceText = textParts(anchor).map((part) => part.text).join('\n\n');
   const safeText = sanitizeText(sourceText);
@@ -59,8 +62,10 @@ export const deriveTaskCheckpoint = ({ session, anchor, primary, tasks = [], env
     || envelopeMap.get(task.taskId)?.action === null));
   const children = outstanding.slice(0, 100).map((task) => {
     const envelope = envelopeMap.get(task.taskId);
-    return { taskId: task.taskId, childSessionId: task.childSessionId, status: task.status,
+    return { taskId: task.taskId, childSessionId: task.childSessionId, status: task.status, ...(task.waitingReason ? { waitingReason: task.waitingReason } : {}),
       envelopeId: envelope?.envelopeId ?? null, action: envelope?.action ?? null,
+      ...(task.approvedPlanRef ? { approvedPlanRef: { sourceMessageId: task.approvedPlanRef.sourceMessageId, version: task.approvedPlanRef.version, phase: task.approvedPlanRef.phase, paths: task.approvedPlanRef.paths, contentHash: task.approvedPlanRef.contentHash } } : {}),
+      ...(task.taskPrerequisites?.length ? { taskPrerequisites: task.taskPrerequisites } : {}),
       failureReason: task.failureReason ? boundedText(sanitizeText(task.failureReason), 512) : null,
       recovery: envelope?.autoResume ? { state: envelope.autoResume.state, nextAttemptAt: envelope.autoResume.nextAttemptAt } : null,
       checks: (task.requiredChecks ?? []).map((check) => {
@@ -71,11 +76,16 @@ export const deriveTaskCheckpoint = ({ session, anchor, primary, tasks = [], env
       }),
     };
   });
+  const currentVerification = verification?.objectiveId === anchor.info.id && Array.isArray(verification.checks)
+    ? { objectiveId: verification.objectiveId, ready: verification.ready === true, status: verification.status,
+      checks: verification.checks.slice(0, 100).map(check => ({ name: check.name, status: check.status, reason: check.reason,
+        coverage: check.coverage, evidence: check.evidence, ...(check.source ? { source: check.source } : {}) })),
+      coverage: { returned: Math.min(verification.checks.length, 100), total: verification.checks.length, complete: verification.checks.length <= 100 } } : null;
   const missingObjective = sourceText !== safeText || objective !== safeText;
   const checkpoint = { schemaVersion: 1, kind: 'task', sessionID: session.id, projectKey, updatedAt: now,
     anchor: { messageID: anchor.info.id, objective, complete: !missingObjective,
       reference: { sessionID: session.id, messageID: anchor.info.id } },
-    selectedPlan: planReference(anchor),
+    selectedPlan: planReference(anchor), verification: currentVerification,
     decisions: decisions.slice(0, 8),
     unresolvedWork: todos.filter((entry) => entry?.status !== 'completed' && entry?.status !== 'cancelled').slice(0, 20)
       .map((entry) => ({ id: entry.id ?? null, status: entry.status, content: boundedText(sanitizeText(entry.content ?? ''), 512) })),
@@ -85,7 +95,7 @@ export const deriveTaskCheckpoint = ({ session, anchor, primary, tasks = [], env
       cancellationGeneration: primary.cancellationGeneration, readOnly: primary.guardedIDs?.length > 0,
       activeUserID: primary.activeUserID ?? primary.recoveryID ?? primary.continuationID ?? primary.anchorID } : null,
     nextAction: missingObjective ? { kind: 'retrieve-objective', messageID: anchor.info.id }
-      : children.length ? { kind: 'inspect-managed-barrier', rootSessionId: session.id }
+      : children.length || currentVerification && !currentVerification.ready ? { kind: 'inspect-managed-barrier', rootSessionId: session.id }
         : { kind: 'continue-current-objective', messageID: anchor.info.id },
     authority: 'derived-view; canonical instructions, live task state and current check evidence prevail',
   };
@@ -93,7 +103,10 @@ export const deriveTaskCheckpoint = ({ session, anchor, primary, tasks = [], env
   while (Buffer.byteLength(JSON.stringify(checkpoint)) > MAX_RECORD_BYTES && checkpoint.children.length) {
     checkpoint.children.pop(); checkpoint.childCoverage.returned--; checkpoint.childCoverage.complete = false;
   }
-  if (!checkpoint.childCoverage.complete && !missingObjective) checkpoint.nextAction = { kind: 'inspect-managed-barrier', rootSessionId: session.id };
+  while (Buffer.byteLength(JSON.stringify(checkpoint)) > MAX_RECORD_BYTES && checkpoint.verification?.checks.length) {
+    checkpoint.verification.checks.pop(); checkpoint.verification.coverage.returned--; checkpoint.verification.coverage.complete = false;
+  }
+  if ((!checkpoint.childCoverage.complete || checkpoint.verification?.coverage.complete === false) && !missingObjective) checkpoint.nextAction = { kind: 'inspect-managed-barrier', rootSessionId: session.id };
   return validateTaskContextRecord(checkpoint);
 };
 
@@ -119,6 +132,8 @@ const NEXT_ACTION_TEXT = {
  * request stays small and the post-compaction prefix stays cacheable. */
 export const formatCompactionAnchor = (checkpoint, { planPath = null, planOutline = null } = {}) => {
   const todos = checkpoint.unresolvedWork.map((entry) => `- [${entry.status}] ${boundedText(entry.content, 200)}`);
+  const checks = (checkpoint.verification?.checks ?? []).filter(check => !['passed', 'waived'].includes(check.status))
+    .map(check => `- ${boundedText(check.name, 128)}: ${check.status} (${boundedText(check.reason, 256)})`);
   const children = checkpoint.children.map((child) => `- ${child.taskId} ${child.status}${child.action === null ? ' (result not yet collected)' : ''}`);
   const build = ({ objectiveBytes, outline, childCount, todoCount }) => {
     const objective = boundedText(checkpoint.anchor.objective, objectiveBytes);
@@ -133,6 +148,8 @@ export const formatCompactionAnchor = (checkpoint, { planPath = null, planOutlin
       ...(todoCount < todos.length ? ['- (more todos outstanding)'] : []));
     if (children.length || !checkpoint.childCoverage.complete) sections.push('', '### Outstanding sub-agent tasks', ...children.slice(0, childCount),
       ...(childCount < children.length || !checkpoint.childCoverage.complete ? ['- (more tasks outstanding)'] : []));
+    if (checks.length || checkpoint.verification?.coverage.complete === false) sections.push('', '### Required verification', ...checks.slice(0, 10),
+      ...(checks.length > 10 || checkpoint.verification?.coverage.complete === false ? ['- (more requirements; inspect current verification)'] : []));
     if (checkpoint.recovery?.readOnly) sections.push('', '### Restrictions', 'Recovery is read-only: do not modify files until the user resumes normal work.');
     sections.push('', '### Next action', truncated ? NEXT_ACTION_TEXT['retrieve-objective']
       : NEXT_ACTION_TEXT[checkpoint.nextAction?.kind] ?? NEXT_ACTION_TEXT['continue-current-objective']);
@@ -165,12 +182,12 @@ export const createTaskContextRuntime = (options) => {
   const now = options.now ?? Date.now;
   const sanitizeText = options.sanitizeText ?? ((value) => value);
   const store = options.store ?? createRecordStore({ directory: path.join(options.dataDirectory, 'harness', 'context'),
-    validateRecord: validateTaskContextRecord, maxReadBytes: MAX_RECORD_BYTES + 4096, logger: options.logger });
+    validateRecord: validateTaskContextRecord, maxReadBytes: MAX_RECORD_BYTES + 4096, logger: options.logger, windowsOwner: options.windowsOwner });
   const pending = new Map();
   const operations = new Set();
   let lastPruneAt = null;
   let pruning = null;
-  const pruneDerived = async (protectedKey) => {
+  const pruneDerived = async (protectedKey, source) => {
     if (pruning) return pruning;
     if (lastPruneAt !== null && now() - lastPruneAt < 60_000) return;
     lastPruneAt = now();
@@ -185,13 +202,14 @@ export const createTaskContextRuntime = (options) => {
         if (!reason) continue;
         options.recordDiagnostic?.({ type: 'lifecycle', event: 'context_checkpoint_evicted', sessionID: record.sessionID,
           payload: { reason, bytes: Buffer.byteLength(JSON.stringify(record)), ageMs: now() - record.updatedAt } });
+        await options.authorizeWrite?.({ action: 'prune', ...source });
         await store.deleteRecord(key); count--; bytes -= Buffer.byteLength(JSON.stringify(record));
       }
     })().finally(() => { pruning = null; });
     return pruning;
   };
   const withLock = (key, run) => options.withLock ? options.withLock(key, run)
-    : withCrossProcessFileLock(path.join(store.directory, `${key}.lock`), run);
+    : withCrossProcessFileLock(path.join(store.directory, `${key}.lock`), run, { windowsLauncher: options.windowsLauncher });
   const scope = async (sessionID, directory) => {
     const value = await options.readScope({ sessionID, directory });
     if (!value || value.session?.id !== sessionID || value.session.directory !== directory || value.session.time?.archived
@@ -214,22 +232,32 @@ export const createTaskContextRuntime = (options) => {
       || b.score - a.score || b.createdAt - a.createdAt).slice(0, 8).map(({ score: _score, ...entry }) => entry);
   };
   const checkpoint = async ({ sessionID, directory, query = '' }) => {
-    const key = `${sessionID}:${directory}`;
-    if (pending.has(key)) return pending.get(key);
-    const operation = (async () => {
-      const context = await scope(sessionID, directory);
-      if (context.session.parentID) return { available: false, reason: 'child_uses_its_dispatch_brief' };
-      const data = await options.readTaskState(context);
-      const decisions = await readDecisions(context, query || textParts(data.anchor).map((part) => part.text).join(' ').slice(0, 2048));
-      const result = deriveTaskCheckpoint({ ...data, session: context.session, projectKey: context.projectKey,
-        now: now(), sanitizeText, decisions });
-      const recordKey = `task_${hash(key)}`;
-      await store.writeRecord(recordKey, result);
-      await pruneDerived(recordKey);
-      return { available: true, checkpoint: result };
-    })().finally(() => pending.delete(key));
-    pending.set(key, operation);
-    return operation;
+    const context = await scope(sessionID, directory);
+    if (context.session.parentID) return { available: false, reason: 'child_uses_its_dispatch_brief' };
+    const recordIdentity = `${sessionID}:${directory}`;
+    const key = JSON.stringify([sessionID, directory, context.projectKey, String(query || '')]);
+    let operation = pending.get(key);
+    if (!operation) {
+      operation = (async () => {
+        const data = await options.readTaskState(context);
+        const decisions = await readDecisions(context, query || textParts(data.anchor).map((part) => part.text).join(' ').slice(0, 2048));
+        return deriveTaskCheckpoint({ ...data, session: context.session, projectKey: context.projectKey,
+          now: now(), sanitizeText, decisions });
+      })();
+      pending.set(key, operation);
+      const release = () => { if (pending.get(key) === operation) pending.delete(key); };
+      void operation.then(release, release);
+    }
+    const result = await operation;
+    // Only canonical reads are shared. Each caller keeps its own captured
+    // authorization and rechecks scope after those reads, before its commit.
+    const current = await scope(sessionID, directory);
+    if (current.session.parentID || current.projectKey !== context.projectKey) throw fault('context_scope_changed');
+    const recordKey = `task_${hash(recordIdentity)}`;
+    await options.authorizeWrite?.({ action: 'checkpoint', sessionID, directory });
+    await store.writeRecord(recordKey, result);
+    await pruneDerived(recordKey, { sessionID, directory });
+    return { available: true, checkpoint: result };
   };
   const rememberDecision = async (input) => {
     const context = await scope(input.sessionID, input.directory);
@@ -259,6 +287,7 @@ export const createTaskContextRuntime = (options) => {
       const next = { ...current, updatedAt: now(), decisions: [...decisions, decision] };
       if (Buffer.byteLength(JSON.stringify(next)) > MAX_RECORD_BYTES) throw fault('project_decision_capacity_requires_review');
       if (!current.decisions.length && (await store.listRecords()).filter(({ record }) => record.kind === 'project').length >= 256) throw fault('project_context_capacity_requires_review');
+      await options.authorizeWrite?.({ action: 'remember_decision', sessionID: input.sessionID, directory: input.directory });
       await store.writeRecord(key, next);
       return decision;
     });

@@ -3,7 +3,6 @@ import { createSessionVault } from './vault.js';
 import { writeSupabaseConnectionPreference } from './connection-preference.js';
 import { createSupabaseServerClient } from './supabase-client.js';
 import { createSupabaseTraffic } from './supabase-traffic.js';
-import { PRODUCTION_BOTS_MIGRATION } from './auth-compat.js';
 import { isDirectLocalRequest } from '../security/direct-local-request.js';
 export { isDirectLocalRequest } from '../security/direct-local-request.js';
 
@@ -36,8 +35,10 @@ export async function createSupabaseConnection({ config, fetchImpl = fetch, now 
   let disposed = false;
   let driver = null;
   let owner = vault?.get(OWNER_KEY) || null;
+  let authorizationGeneration = 0;
+  const localAuthorizations = new WeakMap();
   const authorizationListeners = new Set();
-  const authorizationChanged = async () => { for (const listener of authorizationListeners) await listener(); };
+  const authorizationChanged = async () => { authorizationGeneration += 1; for (const listener of authorizationListeners) await listener(); };
   const localSessions = new Map(Object.entries(vault?.get(LOCAL_SESSIONS_KEY) || {}));
   // One vault rewrite per burst of root sessions.
   let localSessionWrite = null;
@@ -47,7 +48,6 @@ export async function createSupabaseConnection({ config, fetchImpl = fetch, now 
     localSessionWrite = null;
     return vault.set(LOCAL_SESSIONS_KEY, Object.fromEntries(localSessions));
   });
-  let botsSchema = 'unknown';
   const restartRequired = () => desiredEnabled !== effectiveEnabled
     || desiredEnabled !== (authenticationMode === 'managed-accounts');
   // New work is held only while an automatic restart will actually apply the
@@ -60,19 +60,23 @@ export async function createSupabaseConnection({ config, fetchImpl = fetch, now 
     restartRequired: restartRequired(),
     restartPending: restartPending(),
     restartAvailable: typeof driver?.restart === 'function',
-    botsSchema,
     blockers: [...blockers], traffic: traffic.snapshot(),
   });
   const ownerPrincipal = () => owner?.principal?.role === 'admin'
     ? { ...structuredClone(owner.principal), scope: 'local-admin', localOwner: true, offlineGrace: false }
     : null;
+  const isLocalAccessActive = () => !disposed && authenticationMode === 'local-owner' && !effectiveEnabled && !restartPending();
   const authenticateLocalOwner = (req) => {
     if (!isDirectLocalRequest(req) || !ownerPrincipal()) return null;
     const token = cookies(req)[COOKIE];
     if (!token || token.length > 256) return null;
     const tokenHash = hash(token);
     if (!(owner.sessions || []).some((session) => session.expiresAt > now() && session.tokenHash === tokenHash)) return null;
-    return ownerPrincipal();
+    const principal = ownerPrincipal(), generation = authorizationGeneration;
+    localAuthorizations.set(principal, () => isLocalAccessActive() && generation === authorizationGeneration
+      && ownerPrincipal()?.id === principal.id
+      && (owner.sessions || []).some(session => session.tokenHash === tokenHash && session.expiresAt > now()));
+    return principal;
   };
   const issueLocalOwnerSession = async () => {
     if (!ownerPrincipal()) return null;
@@ -96,18 +100,12 @@ export async function createSupabaseConnection({ config, fetchImpl = fetch, now 
       query: { id: `eq.${owner.principal.id}`, limit: 1 }, select: 'id,role,status', maybeSingle: true,
     });
     if (profile?.role !== 'admin' || profile.status !== 'active') throw failure('The saved administrator no longer has access', 'supabase_owner_revoked', 403);
-    // Bots-only schema lag makes Bots unavailable; it never takes the core
-    // connection (auth, orchestration policy, error logs) offline.
-    botsSchema = await client.rpc('devryan_bot_schema_version').then((version) => (
-      typeof version === 'string' && /^\d{14}$/.test(version) && version >= PRODUCTION_BOTS_MIGRATION ? 'ready' : 'migration_required'
-    ), (error) => (Number(error?.status) === 404 ? 'migration_required' : 'unknown'));
   };
   const recordFailure = async (error) => {
     effectiveEnabled = false;
     state = 'connection_failed';
     errorCode = Number(error?.status) === 402 ? 'supabase_quota_exceeded'
-      : ['supabase_owner_revoked', 'bot_schema_migration_required'].includes(error?.code)
-        ? error.code : 'supabase_connection_failed';
+      : error?.code === 'supabase_owner_revoked' ? error.code : 'supabase_connection_failed';
     // Availability cannot change the owner's selected authentication policy.
     // A failed explicit reconnect retains Off; a failed On startup retains On.
     await writeSupabaseConnectionPreference(config.dataDirectory, desiredEnabled);
@@ -156,7 +154,10 @@ export async function createSupabaseConnection({ config, fetchImpl = fetch, now 
     authenticationMode,
     get configured() { return configured; },
     get admissionPaused() { return restartPending() || !effectiveEnabled; },
-    authenticateLocalOwner, ownerPrincipal, setOwnerCookie,
+    authenticateLocalOwner, ownerPrincipal, setOwnerCookie, isLocalAccessActive,
+    // Only principals actually authenticated here have a private live grant.
+    // Retain the hash, never the original cookie or a caller-supplied identity.
+    captureAuthorization: principal => localAuthorizations.get(principal) ?? null,
     // The cloud account enrolled as this host's owner (from an authenticated
     // managed administrator), if any. A bootstrapped local owner has none.
     enrolledCloudOwnerId: () => (owner?.principal?.scope === 'managed' && typeof owner.principal.id === 'string'

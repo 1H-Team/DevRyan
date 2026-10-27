@@ -7,7 +7,6 @@ import {
   createCursorSdkRuntime,
   defaultGetWorkspaceDiff,
   filterWorkspaceDiffFilesAgainstBaseline,
-  isLossyStreamedTextVariant,
   MAX_UNTRACKED_FILE_BYTES,
   resetUntrackedDiffCacheForTests,
   getUntrackedDiffCacheSizeForTests,
@@ -76,29 +75,6 @@ describe('filterWorkspaceDiffFilesAgainstBaseline', () => {
   });
 });
 
-describe('isLossyStreamedTextVariant', () => {
-  test('detects streamed text that lost fragments of the final text', () => {
-    const streamed = 'AppendedMaintained with care.` to of`. No other files were changed.';
-    const final = 'Appended `Maintained with care.` to the end of `README.md`. No other files were changed.';
-    expect(isLossyStreamedTextVariant(streamed, final)).toBe(true);
-  });
-
-  test('rejects unrelated text', () => {
-    expect(isLossyStreamedTextVariant('Working on the database migration now.', 'Appended a line to README.md and verified the result.')).toBe(false);
-  });
-
-  test('rejects streamed text that is not shorter than the final text', () => {
-    expect(isLossyStreamedTextVariant('Same text.', 'Same text.')).toBe(false);
-  });
-
-  test('rejects short fragments that could embed by coincidence', () => {
-    expect(isLossyStreamedTextVariant('I did.', 'Importantly, dinner is ready tonight.')).toBe(false);
-  });
-
-  test('rejects streamed text under half the final length', () => {
-    expect(isLossyStreamedTextVariant('Appended a line.', 'Appended a line to README.md, verified the workspace diff, and confirmed no other files changed at all.')).toBe(false);
-  });
-});
 
 describe('deleteSessionState', () => {
   test('removes the stored session state file and reports success', async () => {

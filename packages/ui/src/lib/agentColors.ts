@@ -56,7 +56,3 @@ export function getAgentIconColor(agentName: string | undefined) {
 
   return getAgentColor(agentName);
 }
-
-export function getAgentColorPalette() {
-  return AGENT_COLOR_PALETTE;
-}

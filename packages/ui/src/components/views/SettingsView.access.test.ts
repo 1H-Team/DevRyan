@@ -13,7 +13,6 @@ const developer: AuthPrincipal = {
   scope: 'managed',
   policy: {
     settingsPages: [],
-    bots: true,
     files: false,
     terminal: false,
     browser: false,
@@ -30,25 +29,16 @@ const developer: AuthPrincipal = {
 };
 
 describe('Settings capability access', () => {
-  test('keeps Bot-specific Skills inside Bot Resources without granting host settings access', () => {
-    expect(canAccessSettingsDestination(developer, 'bots')).toBe(false);
+  test('grants no Coding Agent settings without a settings permission', () => {
     expect(canAccessSettingsDestination(developer, 'skills.installed')).toBe(false);
     expect(canAccessSettingsDestination(developer, 'mcp')).toBe(false);
     expect(canAccessSettingsDestination(developer, 'skills.catalog')).toBe(false);
   });
 
-  test('removes Bot-only destinations while keeping separately granted Coding Agent settings', () => {
-    const agentsOnly = {
-      ...developer,
-      policy: {
-        ...developer.policy,
-        bots: false,
-        settingsPages: ['skills.installed'],
-      },
-    };
+  test('keeps separately granted Coding Agent settings', () => {
+    const skillsOnly = { ...developer, policy: { ...developer.policy, settingsPages: ['skills.installed'] } };
 
-    expect(canAccessSettingsDestination(agentsOnly, 'bots')).toBe(false);
-    expect(canAccessSettingsDestination(agentsOnly, 'skills.installed')).toBe(true);
-    expect(canAccessSettingsDestination(agentsOnly, 'mcp')).toBe(false);
+    expect(canAccessSettingsDestination(skillsOnly, 'skills.installed')).toBe(true);
+    expect(canAccessSettingsDestination(skillsOnly, 'mcp')).toBe(false);
   });
 });

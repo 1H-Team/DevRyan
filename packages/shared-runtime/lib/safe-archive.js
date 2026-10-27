@@ -478,7 +478,9 @@ async function moveStagingIntoPlace(stagingDir, targetDir, parentDir, basename, 
     if (error?.code !== 'EXDEV') throw error;
   }
 
-  const copiedStaging = await fsOps.mkdtemp(path.join(parentDir, `.${basename}.copy-`));
+  // Copy into a fresh child: Bun 1.4 rejects an existing (even empty) cp destination.
+  const copyParent = await fsOps.mkdtemp(path.join(parentDir, `.${basename}.copy-`));
+  const copiedStaging = path.join(copyParent, 'tree');
   try {
     await fsOps.cp(stagingDir, copiedStaging, {
       recursive: true,
@@ -487,9 +489,10 @@ async function moveStagingIntoPlace(stagingDir, targetDir, parentDir, basename, 
       dereference: false,
     });
     await fsOps.rename(copiedStaging, targetDir);
+    await removeQuietly(fsOps, copyParent);
     return stagingDir;
   } catch (error) {
-    await removeQuietly(fsOps, copiedStaging);
+    await removeQuietly(fsOps, copyParent);
     throw error;
   }
 }

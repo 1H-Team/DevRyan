@@ -1,3 +1,4 @@
+import { useRuntimeFeature } from '@/lib/opencode/runtime-capabilities';
 import { getRetentionNavigationRevision } from '@/lib/sessionRetention';
 import React from 'react';
 import { MainLayout } from '@/components/layout/MainLayout';
@@ -33,6 +34,7 @@ import { opencodeClient } from '@/lib/opencode/client';
 import { SyncProvider, useDirectorySync, useGlobalSyncSelector, useSessions } from '@/sync/sync-context';
 import { useGlobalSyncStore } from '@/sync/global-sync-store';
 import { ConfigUpdateOverlay } from '@/components/ui/ConfigUpdateOverlay';
+import { StandardPreviewNotice } from '@/components/ui/StandardPreviewNotice';
 import { OpenCodeProfileNotices } from '@/components/ui/OpenCodeProfileNotices';
 import { AboutDialog } from '@/components/ui/AboutDialog';
 import { RuntimeAPIProvider } from '@/contexts/RuntimeAPIProvider';
@@ -50,6 +52,7 @@ import { applyMobileKeyboardMode } from '@/lib/mobileKeyboardMode';
 import { SyncAppEffects } from '@/apps/AppEffects';
 import { useAppFontEffects } from '@/apps/useAppFontEffects';
 import {
+  markStartupReadiness,
   createStartupReadinessSnapshot,
   recoverStartupInitialization,
   shouldShowStartupReadinessScreen,
@@ -60,6 +63,7 @@ import {
   type StartupReadinessSummary,
 } from '@/lib/startup/readiness';
 import { warmAgentRuntime } from '@/lib/startup/agent-runtime-warmup';
+import { STARTUP_PROGRESS_TIMEOUT_MS, watchStartupRecovery } from '@/lib/startup/health';
 import { warmChatRuntime } from '@/lib/startup/chat-runtime-warmup';
 import { primeWorktreeBootstrap } from '@/lib/worktrees/worktreeBootstrap';
 import { useAgentRuntimeWarmupStore } from '@/stores/useAgentRuntimeWarmupStore';
@@ -184,10 +188,9 @@ const STARTUP_PHASE_LABELS = {
   globalSync: 'Syncing workspace',
   directorySync: 'Preparing directory',
   sessionList: 'Loading sessions',
+  eventStream: 'Connecting to the event stream',
   responseStyle: 'Loading chat settings',
   worktree: 'Priming worktree state',
-  agentRuntime: 'Warming agent runtime',
-  chatRuntime: 'Warming chat',
 } satisfies Record<NonNullable<StartupReadinessSummary['phase']>, string>;
 
 const getStartupStatusText = (summary: StartupReadinessSummary): string => {
@@ -198,6 +201,7 @@ const getStartupStatusText = (summary: StartupReadinessSummary): string => {
 
 type DirectoryStartupSnapshot = {
   status: 'loading' | 'partial' | 'complete';
+  bootstrapError?: string;
   sessionListStatus: 'idle' | 'loading' | 'ready' | 'error';
   sessionListError?: string;
 };
@@ -207,12 +211,13 @@ const DirectoryStartupProbe: React.FC<{
   onSnapshot: (snapshot: DirectoryStartupSnapshot) => void;
 }> = ({ directory, onSnapshot }) => {
   const status = useDirectorySync((state) => state.status, directory);
+  const bootstrapError = useDirectorySync((state) => state.bootstrapError, directory);
   const sessionListStatus = useDirectorySync((state) => state.sessionListStatus, directory);
   const sessionListError = useDirectorySync((state) => state.sessionListError, directory);
 
   React.useEffect(() => {
-    onSnapshot({ status, sessionListStatus, sessionListError });
-  }, [onSnapshot, sessionListError, sessionListStatus, status]);
+    onSnapshot({ status, bootstrapError, sessionListStatus, sessionListError });
+  }, [onSnapshot, bootstrapError, sessionListError, sessionListStatus, status]);
 
   return null;
 };
@@ -222,12 +227,14 @@ const StartupReadinessScreen: React.FC<{
   onRetry: () => void;
   isRetrying: boolean;
 }> = ({ summary, onRetry, isRetrying }) => {
+  const diagnostics = useConfigStore((state) => state.initializationDiagnostics);
   const statusText = getStartupStatusText(summary);
   const isError = Boolean(summary.error);
 
   return (
     <RuntimeLoadingScreen
       message={statusText}
+      diagnostics={diagnostics}
       state={isError ? 'error' : 'loading'}
       onRetry={isError ? onRetry : undefined}
       isRetrying={isRetrying}
@@ -260,6 +267,7 @@ const StartupReadinessGate: React.FC<{
   isRetrying,
   onRetry,
 }) => {
+  const nativeExecution = useRuntimeFeature('nativeExecution');
   const providersLoadStatus = useConfigStore((state) => state.providersLoadStatus);
   const providersLoadError = useConfigStore((state) => state.providersLoadError);
   const agentsLoadStatus = useConfigStore((state) => state.agentsLoadStatus);
@@ -268,6 +276,14 @@ const StartupReadinessGate: React.FC<{
   const initializationLoadError = useConfigStore((state) => state.initializationLoadError);
   const responseStyleInstructionLoaded = useConfigStore((state) => state.responseStyleInstructionLoaded);
   const globalReady = useGlobalSyncSelector((state) => state.ready);
+  const eventStreamReady = useGlobalSyncStore((state) => state.eventStreamReady);
+  const [eventStreamTimedOut, setEventStreamTimedOut] = React.useState(false);
+  React.useEffect(() => {
+    setEventStreamTimedOut(false);
+    if (!nativeExecution || !isInitialized || eventStreamReady || isRetrying) return;
+    const timer = window.setTimeout(() => setEventStreamTimedOut(true), 120_000);
+    return () => window.clearTimeout(timer);
+  }, [nativeExecution, isInitialized, eventStreamReady, isRetrying]);
   const globalError = useGlobalSyncSelector((state) => state.error?.message);
   const [directorySnapshot, setDirectorySnapshot] = React.useState<DirectoryStartupSnapshot>({
     status: currentDirectory ? 'loading' : 'complete',
@@ -276,14 +292,6 @@ const StartupReadinessGate: React.FC<{
   });
   const [worktreePhase, setWorktreePhase] = React.useState<StartupPhaseSnapshot>({
     status: currentDirectory ? 'idle' : 'ready',
-    error: null,
-  });
-  const [agentRuntimePhase, setAgentRuntimePhase] = React.useState<StartupPhaseSnapshot>({
-    status: 'loading',
-    error: null,
-  });
-  const [chatRuntimePhase, setChatRuntimePhase] = React.useState<StartupPhaseSnapshot>({
-    status: 'loading',
     error: null,
   });
   const [hasCompletedStartup, setHasCompletedStartup] = React.useState(false);
@@ -304,7 +312,7 @@ const StartupReadinessGate: React.FC<{
 
   React.useEffect(() => {
     let cancelled = false;
-    if (!currentDirectory) {
+    if (!nativeExecution || !currentDirectory) {
       setWorktreePhase({ status: 'ready', error: null });
       return;
     }
@@ -330,10 +338,10 @@ const StartupReadinessGate: React.FC<{
     return () => {
       cancelled = true;
     };
-  }, [currentDirectory, isConnected]);
+  }, [currentDirectory, isConnected, nativeExecution]);
 
   React.useEffect(() => {
-    let cancelled = false;
+    if (!hasCompletedStartup || !nativeExecution || !isConnected) return;
     const warmupDirectory = currentDirectory || null;
     const clearWarmingDirectory = () => {
       const warmupState = useAgentRuntimeWarmupStore.getState();
@@ -342,64 +350,46 @@ const StartupReadinessGate: React.FC<{
       }
     };
 
-    if (!isConnected) {
-      clearWarmingDirectory();
-      setAgentRuntimePhase({ status: 'idle', error: null });
-      return;
-    }
-
-    useAgentRuntimeWarmupStore.getState().setWarmingDirectory(warmupDirectory);
-    setAgentRuntimePhase({ status: 'loading', error: null });
-    void warmAgentRuntime({ directory: warmupDirectory })
-      .then((result) => {
-        if (result.timedOut) {
-          console.warn('[startup] agent runtime warmup timed out; continuing startup.');
-        } else if (result.errors.length > 0) {
-          console.warn('[startup] agent runtime warmup failed partially; continuing startup:', result.errors);
-        }
-        if (!cancelled) {
-          setAgentRuntimePhase({ status: 'ready', error: null });
-        }
-      })
-      .catch((error) => {
-        console.warn('[startup] agent runtime warmup failed; continuing startup:', error);
-        if (!cancelled) {
-          setAgentRuntimePhase({ status: 'ready', error: null });
-        }
-      })
-      .finally(clearWarmingDirectory);
+    // Let the usable app paint before optional project discovery competes for work.
+    const timer = window.setTimeout(() => {
+      useAgentRuntimeWarmupStore.getState().setWarmingDirectory(warmupDirectory);
+      void warmAgentRuntime({ directory: warmupDirectory })
+        .then((result) => {
+          if (result.timedOut) {
+            console.warn('[startup] background agent runtime warmup timed out.');
+          } else if (result.errors.length > 0) {
+            console.warn('[startup] background agent runtime warmup failed partially:', result.errors);
+          }
+        })
+        .catch((error) => {
+          console.warn('[startup] background agent runtime warmup failed:', error);
+        })
+        .finally(clearWarmingDirectory);
+    }, 1_000);
 
     return () => {
-      cancelled = true;
+      window.clearTimeout(timer);
       clearWarmingDirectory();
     };
-  }, [currentDirectory, isConnected]);
+  }, [currentDirectory, hasCompletedStartup, isConnected, nativeExecution]);
 
   React.useEffect(() => {
-    let cancelled = false;
-    setChatRuntimePhase({ status: 'loading', error: null });
-    void warmChatRuntime()
-      .then((result) => {
-        if (result.timedOut) {
-          console.warn('[startup] chat runtime warmup timed out; continuing startup.');
-        }
-        if (!cancelled) {
-          setChatRuntimePhase({ status: 'ready', error: null });
-        }
-      })
-      .catch((error) => {
-        console.warn('[startup] chat runtime warmup failed; continuing startup:', error);
-        if (!cancelled) {
-          setChatRuntimePhase({ status: 'ready', error: null });
-        }
-      });
+    if (!hasCompletedStartup) return;
+    const timer = window.setTimeout(() => {
+      void warmChatRuntime()
+        .then((result) => {
+          if (result.timedOut) {
+            console.warn('[startup] background chat runtime warmup timed out.');
+          }
+        })
+        .catch((error) => {
+          console.warn('[startup] background chat runtime warmup failed:', error);
+        });
+    }, 1_000);
+    return () => window.clearTimeout(timer);
+  }, [hasCompletedStartup]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const summary = React.useMemo(() => {
+  const readinessSnapshot = React.useMemo(() => {
     let snapshot = createStartupReadinessSnapshot('ready');
     snapshot = withStartupBootstrapReadiness(snapshot, {
       desktopBootReady: !isDesktopRuntime || (bootOutcomeKnown && bootViewIsMain),
@@ -418,7 +408,8 @@ const StartupReadinessGate: React.FC<{
       ? { status: 'error', error: globalError }
       : { status: globalReady ? 'ready' : 'loading' });
     snapshot = withStartupReadinessPhase(snapshot, 'directorySync', {
-      status: directorySnapshot.status === 'complete' ? 'ready' : 'loading',
+      status: directorySnapshot.bootstrapError ? 'error' : directorySnapshot.status === 'complete' ? 'ready' : 'loading',
+      error: directorySnapshot.bootstrapError,
     });
     snapshot = withStartupReadinessPhase(snapshot, 'sessionList', {
       status: directorySnapshot.sessionListStatus === 'ready'
@@ -431,21 +422,27 @@ const StartupReadinessGate: React.FC<{
     snapshot = withStartupReadinessPhase(snapshot, 'responseStyle', {
       status: responseStyleInstructionLoaded ? 'ready' : 'loading',
     });
+    snapshot = withStartupReadinessPhase(snapshot, 'eventStream', {
+      status: (nativeExecution ? eventStreamReady : isConnected) ? 'ready' : eventStreamTimedOut ? 'error' : 'loading',
+      error: eventStreamTimedOut ? 'The event stream did not become ready. Retry to reconnect.' : null,
+    });
     snapshot = withStartupReadinessPhase(snapshot, 'worktree', worktreePhase);
-    snapshot = withStartupReadinessPhase(snapshot, 'agentRuntime', agentRuntimePhase);
-    snapshot = withStartupReadinessPhase(snapshot, 'chatRuntime', chatRuntimePhase);
 
-    return summarizeStartupReadiness(snapshot, { route: 'main' });
+    return snapshot;
   }, [
     agentsLoadError,
     agentsLoadStatus,
     bootOutcomeKnown,
     bootViewIsMain,
+    directorySnapshot.bootstrapError,
     directorySnapshot.sessionListError,
     directorySnapshot.sessionListStatus,
     directorySnapshot.status,
     globalError,
     globalReady,
+    eventStreamReady,
+    eventStreamTimedOut,
+    nativeExecution,
     isConnected,
     isDesktopRuntime,
     isInitialized,
@@ -456,10 +453,15 @@ const StartupReadinessGate: React.FC<{
     providersLoadError,
     providersLoadStatus,
     responseStyleInstructionLoaded,
-    agentRuntimePhase,
-    chatRuntimePhase,
     worktreePhase,
   ]);
+
+  const summary = React.useMemo(() => summarizeStartupReadiness(readinessSnapshot, { route: 'main' }), [readinessSnapshot]);
+  const measuredReadiness = React.useRef(new Set<string>());
+  React.useEffect(() => {
+    if (hasCompletedStartup) return;
+    markStartupReadiness(readinessSnapshot, measuredReadiness.current);
+  }, [readinessSnapshot, hasCompletedStartup]);
 
   React.useEffect(() => {
     setInitialLoadingStatus(getStartupStatusText(summary));
@@ -475,21 +477,21 @@ const StartupReadinessGate: React.FC<{
 
   React.useEffect(() => {
     if (!summary.ready) return;
-    setHasCompletedStartup(true);
     if (readyDispatchedRef.current) return;
-    readyDispatchedRef.current = true;
     const timer = window.setTimeout(() => {
+      readyDispatchedRef.current = true;
       dismissInitialLoadingElement();
       (window as unknown as {
-        __openchamberAppReady?: boolean;
-        __openchamberStartupReady?: boolean;
-      }).__openchamberAppReady = true;
+        __devryanAppReady?: boolean;
+        __devryanStartupReady?: boolean;
+      }).__devryanAppReady = true;
       (window as unknown as {
-        __openchamberAppReady?: boolean;
-        __openchamberStartupReady?: boolean;
-      }).__openchamberStartupReady = true;
-      window.dispatchEvent(new Event('openchamber:startup-ready'));
-      window.dispatchEvent(new Event('openchamber:app-ready'));
+        __devryanAppReady?: boolean;
+        __devryanStartupReady?: boolean;
+      }).__devryanStartupReady = true;
+      window.dispatchEvent(new Event('devryan:startup-ready'));
+      window.dispatchEvent(new Event('devryan:app-ready'));
+      setHasCompletedStartup(true);
     }, 150);
 
     return () => window.clearTimeout(timer);
@@ -521,15 +523,7 @@ const StartupReadinessGate: React.FC<{
   );
 };
 
-const BotTunnelApp = React.lazy(() => import('./apps/BotTunnelApp').then((module) => ({ default: module.BotTunnelApp })));
-
 function App({ apis }: AppProps) {
-  const principal = useAuthPrincipal();
-  if (principal.scope === 'tunnel-bot') return <React.Suspense fallback={<p role="status">Loading Bot workspaces…</p>}><BotTunnelApp apis={apis} /></React.Suspense>;
-  return <HostApp apis={apis} />;
-}
-
-function HostApp({ apis }: AppProps) {
   const initializeApp = useConfigStore((s) => s.initializeApp);
   const isInitialized = useConfigStore((s) => s.isInitialized);
   const isConnected = useConfigStore((s) => s.isConnected);
@@ -541,12 +535,14 @@ function HostApp({ apis }: AppProps) {
   const [showMemoryDebug, setShowMemoryDebug] = React.useState(false);
   const refreshGitHubAuthStatus = useGitHubAuthStore((state) => state.refreshStatus);
   const authPrincipal = useAuthPrincipal();
+  const nativeExecution = useRuntimeFeature('nativeExecution');
 
   const [isEmbeddedVisible, setIsEmbeddedVisible] = React.useState(true);
   const [initRetryExhausted, setInitRetryExhausted] = React.useState(false);
   const [openCodeFailureDetail, setOpenCodeFailureDetail] = React.useState<string | null>(null);
   const [initRetryEpoch, setInitRetryEpoch] = React.useState(0);
   const [manualInitRetrying, setManualInitRetrying] = React.useState(false);
+  const initializationControllerRef = React.useRef<AbortController | null>(null);
   const mobileKeyboardMode = useUIStore((state) => state.mobileKeyboardMode);
   const isDesktopRuntime = React.useMemo(() => isDesktopShell(), []);
   const setPlanModeEnabled = useFeatureFlagsStore((state) => state.setPlanModeEnabled);
@@ -586,12 +582,12 @@ function HostApp({ apis }: AppProps) {
   }, [apis]);
 
   React.useEffect(() => {
-    if (embeddedSessionChat) {
+    if (embeddedSessionChat || !nativeExecution) {
       return;
     }
 
     void refreshGitHubAuthStatus(apis.github, { force: true });
-  }, [apis.github, authPrincipal.id, authPrincipal.scope, embeddedSessionChat, refreshGitHubAuthStatus]);
+  }, [apis.github, authPrincipal.id, authPrincipal.scope, embeddedSessionChat, refreshGitHubAuthStatus, nativeExecution]);
 
   useAppFontEffects();
 
@@ -669,56 +665,47 @@ function HostApp({ apis }: AppProps) {
   }, [setPlanModeEnabled]);
 
   React.useEffect(() => {
-
-    // Doing the default initialization here can race with startup and lead to one-shot failures.
-
-    void initializeApp();
-  }, [initializeApp]);
-
-  React.useEffect(() => {
     if (isInitialized) return;
 
-    let active = true;
+    const controller = new AbortController();
+    initializationControllerRef.current = controller;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
-    let retryCount = 0;
-    const MAX_RETRIES = 10;
-    const BASE_DELAY_MS = 1000;
+    let connectedOnce = false;
+    let deadline = performance.now() + STARTUP_PROGRESS_TIMEOUT_MS;
+    setInitRetryExhausted(false);
+    setOpenCodeFailureDetail(null);
 
     const retryInitialization = async () => {
-      if (!active) return;
-      if (retryCount >= MAX_RETRIES) {
-        setInitRetryExhausted(true);
-        return;
-      }
+      if (controller.signal.aborted) return;
       const state = useConfigStore.getState();
-      if (state.isInitialized) {
-        setInitRetryExhausted(false);
-        return;
-      }
-      retryCount += 1;
-      await state.initializeApp();
+      if (state.isInitialized) return;
+      await initializeApp({ startup: true, signal: controller.signal,
+        startupTimeoutMs: Math.max(1, Math.ceil(deadline - performance.now())) });
 
       const next = useConfigStore.getState();
-      if (!active) return;
-      if (next.isInitialized) {
-        setInitRetryExhausted(false);
-        return;
+      if (controller.signal.aborted || next.isInitialized) return;
+      // A slow startup may have used the whole window; loading after the host
+      // answered still gets its own retry budget.
+      if (next.isConnected && !connectedOnce) {
+        connectedOnce = true;
+        deadline = Math.max(deadline, performance.now() + STARTUP_PROGRESS_TIMEOUT_MS);
       }
-      if (retryCount >= MAX_RETRIES) {
+      if (!next.initializationRetryable || performance.now() >= deadline) {
+        setOpenCodeFailureDetail(next.initializationRetryable ? null : next.initializationLoadError ?? null);
         setInitRetryExhausted(true);
         return;
       }
-      const delay = Math.min(BASE_DELAY_MS * Math.pow(2, retryCount - 1), 16000);
-      retryTimer = setTimeout(retryInitialization, delay);
+      retryTimer = setTimeout(retryInitialization, 1_000);
     };
 
-    retryTimer = setTimeout(retryInitialization, BASE_DELAY_MS);
+    void retryInitialization();
 
     return () => {
-      active = false;
+      controller.abort();
+      if (initializationControllerRef.current === controller) initializationControllerRef.current = null;
       if (retryTimer) clearTimeout(retryTimer);
     };
-  }, [initRetryEpoch, isInitialized]);
+  }, [initializeApp, initRetryEpoch, isInitialized]);
 
   React.useEffect(() => {
     if (isInitialized) {
@@ -732,26 +719,15 @@ function HostApp({ apis }: AppProps) {
     dismissInitialLoadingElement();
   }, [initRetryExhausted]);
 
-  // Once retries give up, name the server's reason instead of a generic
-  // connection failure.
   React.useEffect(() => {
-    if (!initRetryExhausted) {
-      setOpenCodeFailureDetail(null);
-      return;
-    }
-    let cancelled = false;
-    void fetch('/health', { method: 'GET', cache: 'no-store' })
-      .then((response) => (response.ok ? response.json() : null))
-      .then((health: { lastOpenCodeError?: unknown } | null) => {
-        if (cancelled) return;
-        const detail = health?.lastOpenCodeError;
-        setOpenCodeFailureDetail(typeof detail === 'string' && detail.trim() ? detail.trim() : null);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [initRetryExhausted, initRetryEpoch]);
+    // Only a startup that never reached the host recovers on its own; failures
+    // after connecting (providers, agents) stay on the Retry screen.
+    if (!initRetryExhausted || useConfigStore.getState().isConnected) return;
+    const controller = new AbortController();
+    void watchStartupRecovery((signal) => opencodeClient.readHealth({ signal }), { signal: controller.signal })
+      .then(() => setInitRetryEpoch((value) => value + 1), () => {});
+    return () => controller.abort();
+  }, [initRetryExhausted]);
 
   React.useEffect(() => {
     if (isSwitchingDirectory) {
@@ -782,7 +758,7 @@ function HostApp({ apis }: AppProps) {
       }
 
       const data = event.data as { type?: unknown; payload?: EmbeddedVisibilityPayload };
-      if (data?.type !== 'openchamber:embedded-visibility') {
+      if (data?.type !== 'devryan:embedded-visibility') {
         return;
       }
 
@@ -790,16 +766,16 @@ function HostApp({ apis }: AppProps) {
     };
 
     const scopedWindow = window as unknown as {
-      __openchamberSetEmbeddedVisibility?: (payload?: EmbeddedVisibilityPayload) => void;
+      __devryanSetEmbeddedVisibility?: (payload?: EmbeddedVisibilityPayload) => void;
     };
 
-    scopedWindow.__openchamberSetEmbeddedVisibility = applyVisibility;
+    scopedWindow.__devryanSetEmbeddedVisibility = applyVisibility;
     window.addEventListener('message', handleMessage);
 
     return () => {
       window.removeEventListener('message', handleMessage);
-      if (scopedWindow.__openchamberSetEmbeddedVisibility === applyVisibility) {
-        delete scopedWindow.__openchamberSetEmbeddedVisibility;
+      if (scopedWindow.__devryanSetEmbeddedVisibility === applyVisibility) {
+        delete scopedWindow.__devryanSetEmbeddedVisibility;
       }
     };
   }, [embeddedSessionChat]);
@@ -850,8 +826,8 @@ function HostApp({ apis }: AppProps) {
       });
     };
 
-    window.addEventListener('openchamber:open-session', handler as EventListener);
-    return () => window.removeEventListener('openchamber:open-session', handler as EventListener);
+    window.addEventListener('devryan:open-session', handler as EventListener);
+    return () => window.removeEventListener('devryan:open-session', handler as EventListener);
   }, []);
 
   React.useEffect(() => {
@@ -874,8 +850,8 @@ function HostApp({ apis }: AppProps) {
       });
     };
 
-    window.addEventListener('openchamber:open-draft-session', handler as EventListener);
-    return () => window.removeEventListener('openchamber:open-draft-session', handler as EventListener);
+    window.addEventListener('devryan:open-draft-session', handler as EventListener);
+    return () => window.removeEventListener('devryan:open-draft-session', handler as EventListener);
   }, []);
 
   React.useEffect(() => {
@@ -894,8 +870,8 @@ function HostApp({ apis }: AppProps) {
       }
     };
 
-    window.addEventListener('openchamber:open-project', handler as EventListener);
-    return () => window.removeEventListener('openchamber:open-project', handler as EventListener);
+    window.addEventListener('devryan:open-project', handler as EventListener);
+    return () => window.removeEventListener('devryan:open-project', handler as EventListener);
   }, []);
 
   // useEventStream replaced by SyncProvider + SyncBridge
@@ -947,7 +923,7 @@ function HostApp({ apis }: AppProps) {
   }, [clearError, embeddedSessionChat, error]);
 
   // Poll for the injected boot outcome until it becomes available (desktop only).
-  // The Rust backend sets window.__OPENCHAMBER_DESKTOP_BOOT_OUTCOME__ once the
+  // The Rust backend sets window.__DEVRYAN_DESKTOP_BOOT_OUTCOME__ once the
   // sidecar reaches a stable state. We poll with exponential backoff to handle
   // potential race conditions during startup and config writes.
   React.useEffect(() => {
@@ -1023,11 +999,13 @@ function HostApp({ apis }: AppProps) {
     setManualInitRetrying(true);
     try {
       const recovery = await recoverStartupInitialization({
+        cancelInitialization: () => initializationControllerRef.current?.abort(),
         loadHealth: async () => {
           const response = await fetch('/health', {
             method: 'GET',
             headers: { Accept: 'application/json' },
             cache: 'no-store',
+            signal: AbortSignal.timeout(3_000),
           });
           if (!response.ok) return null;
           return await response.json() as {
@@ -1037,7 +1015,7 @@ function HostApp({ apis }: AppProps) {
           };
         },
         restartOpenCode: apis.settings.restartOpenCode,
-        initializeApp: () => useConfigStore.getState().initializeApp(),
+        initializeApp: async () => { setInitRetryEpoch((value) => value + 1); },
       });
       if (recovery.restartError) {
         console.warn('[startup] OpenCode recovery restart failed:', recovery.restartError);
@@ -1046,10 +1024,6 @@ function HostApp({ apis }: AppProps) {
       useGlobalSyncStore.getState().actions.retryBootstrap();
     } finally {
       setManualInitRetrying(false);
-    }
-
-    if (!useConfigStore.getState().isInitialized) {
-      setInitRetryEpoch((value) => value + 1);
     }
   }, [apis.settings.restartOpenCode, manualInitRetrying]);
 
@@ -1165,6 +1139,7 @@ function HostApp({ apis }: AppProps) {
                     <>
                       <ConfigUpdateOverlay />
                       <OpenCodeProfileNotices />
+                      <StandardPreviewNotice />
                       <AboutDialogWrapper />
                       {showMemoryDebug && (
                         <MemoryDebugPanel onClose={() => setShowMemoryDebug(false)} />

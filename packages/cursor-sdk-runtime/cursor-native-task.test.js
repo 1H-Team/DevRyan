@@ -6,6 +6,17 @@ import {
 } from './cursor-native-task.js';
 
 describe('Cursor native task activity', () => {
+  test('concatenates nested callback fragments exactly and preserves summary whitespace', () => {
+    const fragments = ['/', '/', '-', '-', '*', '*', '`', '`', 'é', 'é', '\t', '\n', '  '];
+    let projection = null;
+    for (const text of fragments) {
+      const message = normalizeInteractionUpdateToSdkMessage({ type: 'tool-call-delta', callId: 'parent', taskUpdate: { type: 'text-delta', text } });
+      projection = mergeCursorNativeTaskActivity(projection, message);
+    }
+    expect(projection.text).toBe(fragments.join(''));
+    expect(normalizeInteractionUpdateToSdkMessage({ type: 'summary', summary: ' \tSummary\n ' })).toEqual({ type: 'task', text: ' \tSummary\n ' });
+  });
+
   test('normalizes one-level task text and tool activity', () => {
     expect(normalizeInteractionUpdateToSdkMessage({
       type: 'tool-call-delta',

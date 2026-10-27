@@ -3,12 +3,9 @@ import nodeFs from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-import {
-  assertManagedTaskResultEnvelopeMatchesTask,
-  validateManagedTaskRecord,
-  validateManagedTaskResultEnvelope,
-} from '@openchamber/orchestration-runtime';
-import { writeFileAtomic } from '@openchamber/harness-runtime';
+import { decodeLedgerSnapshot, encodeLedgerSnapshot } from '@devryan/orchestration-runtime';
+import { writeFileAtomic } from '@devryan/harness-runtime';
+import { createExecutionHostOwner } from '@devryan/harness-runtime/lib/execution-host-owner.js';
 
 // Well above the 20 MiB the scheduler writes: an oversized ledger is
 // quarantined, which forgets every task, so reading must tolerate one a
@@ -18,6 +15,13 @@ const DEFAULT_MAX_LEDGER_READ_BYTES = 64 * 1024 * 1024;
 // file once, beside it, in case the removed history is wanted back.
 const COMPACTION_BACKUP_MIN_BYTES = 5 * 1024 * 1024;
 const COMPACTION_BACKUP_SUFFIX = '.before-compaction';
+const observeWrite = async (observation, phase, action) => {
+  const report = state => { try { observation?.onProgress?.({ phase, state }); } catch { /* Observation only. */ } };
+  report('started');
+  const value = await action();
+  report('completed');
+  return value;
+};
 const DEFAULT_OWNER_HEARTBEAT_MS = 10_000;
 const DEFAULT_OWNER_STALE_MS = 45_000;
 const MAX_OWNER_RECORD_BYTES = 4 * 1024;
@@ -51,65 +55,92 @@ const defaultIsProcessAlive = (pid) => {
   }
 };
 
-const validateSnapshot = (value) => {
-  if (!value || typeof value !== 'object' || Array.isArray(value) || value.version !== 1) {
-    throw new TypeError('managed orchestration ledger version is invalid');
+/** The Windows lifetime belongs to the retained native kernel keeper. Ledger
+ * JSON, timestamps and numeric process probes never authorize stealing it. */
+function createWindowsManagedLedger({ filePath, ownerPath, maxReadBytes, now, logger, windowsLedgerOwner, windowsLauncher, createWindowsKeeper }) {
+  const files = windowsLedgerOwner;
+  if (!files || files.maxBytes !== DEFAULT_MAX_LEDGER_READ_BYTES || !Number.isSafeInteger(maxReadBytes)
+    || maxReadBytes < 1 || maxReadBytes > files.maxBytes || path.dirname(ownerPath) !== path.dirname(filePath)) {
+    throw Object.assign(new Error('managed_orchestration_windows_authority_unavailable'), { code: 'managed_orchestration_windows_authority_unavailable', statusCode: 503 });
   }
-  if (!Array.isArray(value.tasks) || !Array.isArray(value.resultEnvelopes)) {
-    throw new TypeError('managed orchestration ledger collections are invalid');
-  }
-
-  const tasks = new Map();
-  const normalizedTasks = [];
-  const idempotencyKeys = new Set();
-  for (const candidate of value.tasks) {
-    const task = {
-      ...candidate,
-      dispatchGroupId: candidate?.dispatchGroupId ?? null,
-      dispatchCallId: candidate?.dispatchCallId ?? null,
-      dispatchWaveId: candidate?.dispatchWaveId ?? null,
-      readOnly: candidate?.readOnly ?? false,
-      recoveryLineageId: candidate?.recoveryLineageId ?? null,
-      childPromptedAt: candidate?.childPromptedAt ?? null,
-      firstAssistantPartAt: candidate?.firstAssistantPartAt ?? null,
-      waitingReason: candidate?.waitingReason ?? null,
-    };
-    validateManagedTaskRecord(task);
-    if (tasks.has(task.taskId)) {
-      throw new TypeError(`duplicate managed task ${task.taskId}`);
+  const createKeeper = createWindowsKeeper ?? (() => createExecutionHostOwner({ directory: path.dirname(ownerPath), launcher: windowsLauncher, lockFile: ownerPath }));
+  let keeper, acquirePromise, closePromise, saveTail = Promise.resolve(), releasing = false, closing = false, ownershipState = 'unowned', observedAt = null,
+    quarantinedPath = null, recoveryWarning = null, writeCount = 0;
+  const lost = cause => {
+    ownershipState = 'lost';
+    return Object.assign(createOwnershipError('managed_orchestration_ownership_lost', 'Managed orchestration lost its native data-directory owner'), { cause });
+  };
+  const assertOwnership = async () => {
+    if (!keeper || closing) throw createOwnershipError('managed_orchestration_owner_conflict', 'Managed orchestration requires its native data-directory owner');
+    try { keeper.assert(); observedAt = now(); } catch (error) { throw lost(error); }
+  };
+  const acquireOwnership = () => acquirePromise ??= (async () => {
+    if (keeper) { await assertOwnership(); return; }
+    if (closing || releasing) throw createOwnershipError('managed_orchestration_owner_conflict', 'Managed orchestration is shutting down');
+    await files.ensureDirectory(path.dirname(ownerPath));
+    try { keeper = await createKeeper(); keeper.assert(); ownershipState = 'owned'; observedAt = now(); }
+    catch (error) {
+      ownershipState = 'conflict';
+      if (keeper) { await keeper.close(); keeper = null; }
+      if (error.code === 'LOCK_BUSY') throw createOwnershipError('managed_orchestration_owner_conflict', 'Another native owner holds managed orchestration'); throw error;
     }
-    const key = `${task.rootSessionId}\u0000${task.idempotencyKey}`;
-    if (idempotencyKeys.has(key)) {
-      throw new TypeError(`duplicate managed idempotency key for root ${task.rootSessionId}`);
+  })().finally(() => { acquirePromise = null; });
+  const read = async target => {
+    await assertOwnership();
+    const value = await files.read(target).catch(error => { if (error.code === 'ENOENT') return null; throw error; });
+    await assertOwnership(); return value;
+  };
+  const loadNow = async () => {
+    const previous = await read(filePath); if (!previous) return null;
+    let value;
+    try {
+      if (!Buffer.isBuffer(previous.bytes) || previous.bytes.length > maxReadBytes) throw new RangeError(`managed orchestration ledger exceeds ${maxReadBytes} bytes`);
+      value = decodeLedgerSnapshot(JSON.parse(previous.bytes.toString('utf8')));
+    } catch (error) {
+      await assertOwnership(); quarantinedPath = await files.quarantine(filePath, previous); await assertOwnership();
+      recoveryWarning = `Managed orchestration ledger was quarantined: ${error instanceof Error ? error.message : String(error)}`;
+      logger.warn?.('[ManagedOrchestration] Quarantined invalid ledger', { reason: error instanceof Error ? error.message : String(error) }); return null;
     }
-    tasks.set(task.taskId, task);
-    normalizedTasks.push(task);
-    idempotencyKeys.add(key);
-  }
-
-  const envelopes = new Set();
-  const normalizedEnvelopes = [];
-  for (const candidate of value.resultEnvelopes) {
-    const envelope = {
-      ...candidate,
-      providerResetAt: candidate?.providerResetAt ?? null,
-      autoResume: candidate?.autoResume ?? null,
-    };
-    validateManagedTaskResultEnvelope(envelope);
-    if (envelopes.has(envelope.taskId)) {
-      throw new TypeError(`duplicate managed result envelope for task ${envelope.taskId}`);
+    await assertOwnership(); return value;
+  };
+  const saveNow = async (snapshot, observation) => {
+    await observeWrite(observation, 'owner_verify', assertOwnership); const bytes = Buffer.from(encodeLedgerSnapshot(snapshot));
+    if (bytes.length > files.maxBytes) throw Object.assign(new RangeError('managed orchestration ledger exceeds native byte bound'), { code: 'ledger_capacity_exceeded' });
+    const previous = await observeWrite(observation, 'previous_read', () => read(filePath));
+    await observeWrite(observation, 'backup', async () => {
+    if (previous && previous.bytes.length >= COMPACTION_BACKUP_MIN_BYTES && bytes.length * 2 < previous.bytes.length) {
+      const backup = filePath + COMPACTION_BACKUP_SUFFIX;
+      if (await read(backup) === null) {
+        await assertOwnership(); await files.write(backup, previous.bytes, { expected: null }); await assertOwnership();
+      }
     }
-    const task = tasks.get(envelope.taskId);
-    if (!task) {
-      throw new TypeError(`managed result envelope has no task ${envelope.taskId}`);
-    }
-    assertManagedTaskResultEnvelopeMatchesTask(task, envelope);
-    envelopes.add(envelope.taskId);
-    normalizedEnvelopes.push(envelope);
-  }
-
-  return { ...value, tasks: normalizedTasks, resultEnvelopes: normalizedEnvelopes };
-};
+    });
+    await assertOwnership();
+    await observeWrite(observation, 'native_commit', () => files.write(filePath, bytes, { expected: previous }));
+    await observeWrite(observation, 'commit_confirm', assertOwnership); writeCount++;
+  };
+  const enqueue = action => {
+    if (releasing || closing) return Promise.reject(createOwnershipError('managed_orchestration_owner_conflict', 'Managed orchestration is shutting down'));
+    const operation = saveTail.then(action); saveTail = operation.catch(() => {}); return operation;
+  };
+  const save = (snapshot, observation) => enqueue(() => saveNow(snapshot, observation));
+  const load = () => enqueue(loadNow);
+  const releaseOwnership = () => closePromise ??= (async () => {
+    // Keep the kernel lease until every admitted write has settled. New work
+    // is fenced immediately; uncertain close never reports released ownership.
+    releasing = true; await acquirePromise?.catch(() => {});
+    const held = keeper; if (!held) { await saveTail; return false; }
+    await saveTail; closing = true;
+    let failure;
+    try { held.assert(); } catch (error) { failure = error; }
+    try { await held.close(); keeper = null; } catch (error) { throw lost(error); }
+    if (failure) throw lost(failure);
+    ownershipState = 'unowned'; return true;
+  })();
+  return { filePath, acquireOwnership, verifyOwnership: assertOwnership, releaseOwnership, load, save,
+    getDiagnostics: () => ({ filePath, quarantinedPath, recoveryWarning, writeCount, ownership: { state: ownershipState,
+      heartbeatAgeMs: observedAt === null ? null : Math.max(0, now() - observedAt), staleAfterMs: DEFAULT_OWNER_STALE_MS } }) };
+}
 
 export const createAtomicManagedOrchestrationLedger = (options = {}) => {
   const dataDirectory = path.resolve(options.dataDirectory);
@@ -124,6 +155,7 @@ export const createAtomicManagedOrchestrationLedger = (options = {}) => {
   const ownerPath = options.ownerPath
     ? path.resolve(options.ownerPath)
     : path.join(path.dirname(filePath), 'owner.lock');
+  if ((options.platform ?? process.platform) === 'win32') return createWindowsManagedLedger({ ...options, filePath, ownerPath, maxReadBytes, now, logger });
   const processId = options.pid ?? process.pid;
   const isProcessAlive = options.isProcessAlive ?? defaultIsProcessAlive;
   const heartbeatIntervalMs = options.heartbeatIntervalMs ?? DEFAULT_OWNER_HEARTBEAT_MS;
@@ -415,7 +447,7 @@ export const createAtomicManagedOrchestrationLedger = (options = {}) => {
       }
       const parsed = JSON.parse(await fsApi.readFile(filePath, 'utf8'));
       await assertOwnership();
-      return validateSnapshot(parsed);
+      return decodeLedgerSnapshot(parsed);
     } catch (error) {
       await quarantine(error);
       return null;
@@ -443,23 +475,23 @@ export const createAtomicManagedOrchestrationLedger = (options = {}) => {
     }
   };
 
-  const saveNow = async (snapshot) => {
-    await assertOwnership();
-    const validated = validateSnapshot(snapshot);
-    const serialized = `${JSON.stringify(validated)}\n`;
-    await backUpBeforeCompaction(Buffer.byteLength(serialized, 'utf8'));
+  const saveNow = async (snapshot, observation) => {
+    await observeWrite(observation, 'owner_verify', assertOwnership);
+    const serialized = encodeLedgerSnapshot(snapshot);
+    await observeWrite(observation, 'backup', () => backUpBeforeCompaction(Buffer.byteLength(serialized, 'utf8')));
     await writeFileAtomic(filePath, serialized, {
       fs: fsApi,
       mode: 0o600,
       directoryMode: 0o700,
       randomId,
+      onProgress: observation?.onProgress,
     });
-    await assertOwnership();
+    await observeWrite(observation, 'commit_confirm', assertOwnership);
     writeCount += 1;
   };
 
-  const save = (snapshot) => {
-    const operation = saveTail.then(() => saveNow(snapshot));
+  const save = (snapshot, observation) => {
+    const operation = saveTail.then(() => saveNow(snapshot, observation));
     saveTail = operation.catch(() => undefined);
     return operation;
   };

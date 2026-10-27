@@ -2,6 +2,13 @@ import type { Express } from "express";
 import type { Server } from "http";
 
 export interface WebUiServerController {
+  runtimeBundle: {
+    inspect(): Promise<{ state: string; reason: string | null; bundleID: string; previousBundleID: string | null;
+      revision: number; reconciliationRequired: boolean; restartRequired: boolean; availableManifestSha256?: string }>;
+    upgrade(input: { expectedRevision: number }): Promise<unknown>;
+    rollback(input: { expectedRevision: number }): Promise<unknown>;
+    recompose?(): Promise<void>;
+  };
   issueLocalOwnerSession: () => Promise<{ name: string; value: string; maxAge: number } | null> | null;
   expressApp: Express;
   httpServer: Server;
@@ -48,29 +55,14 @@ export interface BrowserLeaseAvailability {
   available?: boolean;
 }
 
-export interface BotRuntimeStatus {
-  ok: boolean;
-  state: string;
-  code: string | null;
-  issues: Array<{ code: string; message: string }>;
-  canSetup?: boolean;
-  canRepair?: boolean;
-  canUpdate?: boolean;
-  canRollback?: boolean;
-  indexState?: string | null;
-}
-
-export interface BotIndexerRequest {
-  operation: "status" | "upsert" | "delete" | "search" | "rebuild";
-  body?: Record<string, unknown>;
-}
-
 export interface StartWebUiServerOptions {
   port?: number;
   host?: string;
   attachSignals?: boolean;
   exitOnShutdown?: boolean;
   onRestartHost?: () => Promise<void>;
+  onRuntimeBundleCheckpoint?: () => Promise<void>;
+  retainRuntimeBundleCheckpoint?: (grant: RuntimeBundleCheckpointGrant) => void;
   uiPassword?: string | null;
   getIsWindowFocused?: () => boolean;
   getBrowserCdpDiscoveryToken?: () => string;
@@ -89,14 +81,16 @@ export interface StartWebUiServerOptions {
     leaseId: string;
     reason: string;
   }) => Promise<unknown>;
-  getBotEncryptionKey?: () => Uint8Array | Promise<Uint8Array>;
-  getBotRuntimeStatus?: () => BotRuntimeStatus | Promise<BotRuntimeStatus>;
-  ensureBotReasoningRuntime?: (input: Record<string, unknown>) => Promise<unknown>;
-  ensureBotComputerRuntime?: (input: Record<string, unknown>) => Promise<unknown>;
-  inspectBotRuntimeResource?: (input: Record<string, unknown>) => Promise<unknown>;
-  stopBotRuntimeResource?: (input: Record<string, unknown>) => Promise<unknown>;
-  requestBotIndexer?: (input: BotIndexerRequest) => Promise<Record<string, unknown>>;
+  /** Trusted host constructor only; exact owned Claude enrollment commands. */
+  nativeClaudeSecurityHome?: string;
   getManagedBrowserEnvironment?: () => ManagedBrowserEnvironment | Promise<ManagedBrowserEnvironment>;
+}
+
+/** Private constructor capability. The held scope expires after each action. */
+export interface RuntimeBundleCheckpointGrant {
+  readonly ownerID: string;
+  readonly controlRoot: string;
+  readonly withHeldCheckpoint: <T>(action: (scope: Readonly<{ assertHeld: () => Promise<void> }>) => Promise<T>) => Promise<T>;
 }
 
 export declare function startWebUiServer(

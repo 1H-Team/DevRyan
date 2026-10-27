@@ -1,11 +1,13 @@
 import type { Message, SessionStatus } from '@opencode-ai/sdk/v2/client';
-import { isDefiniteProviderUsageLimit } from '@openchamber/orchestration-runtime';
+import { isDefiniteProviderUsageLimit } from '@devryan/orchestration-runtime';
 
 import { isLikelyProviderAuthFailure } from '@/lib/messages/providerAuthError';
 import { isLikelyProviderModelNotFound } from '@/lib/messages/providerModelNotFound';
+import { latestUserMessageId } from '@/lib/messages/providerRecovery';
 import { isLikelyTransientStreamFailure, stripWrappedJsonQuotes } from '@/lib/messages/transientStreamError';
 import { isAssistantTurnComplete } from '@/sync/session-working';
 import { isClaudeThirdPartyUsageClassificationError } from '@/lib/messages/claudeThirdPartyUsage';
+import { decodeAssistantMessageError } from '@/lib/decoders/assistantMessageError';
 
 type Input = {
   messages: Message[];
@@ -15,6 +17,9 @@ type Input = {
 };
 
 export const MAX_TRANSIENT_PROVIDER_RETRY_ATTEMPTS = 3;
+// OpenCode 2 bounds its own transient retries (up to 10, 2-10 s backoff), so a
+// retry loop is only stopped here once it has also outlasted this window.
+export const MAX_TRANSIENT_PROVIDER_RETRY_WINDOW_MS = 5 * 60_000;
 export const INTERRUPTED_PROVIDER_RESPONSE_REASON = 'The previous response stopped before it completed.';
 
 export function isPrimaryProviderRecoverySession(
@@ -23,8 +28,31 @@ export function isPrimaryProviderRecoverySession(
   return Boolean(session && !session.parentID);
 }
 
+export type ProviderRetryLoopStart = { userMessageId: string; startedAt: number; attempt: number };
+
+// OpenCode reports busy before every retried send, so a retry loop is
+// identified by a non-decreasing attempt count for the same user message.
+// Returns how long the current loop has been retrying.
+export function trackProviderRetryLoop(
+  starts: Map<string, ProviderRetryLoopStart>,
+  sessionId: string,
+  userMessageId: string | undefined,
+  status: SessionStatus,
+  now: number,
+): number {
+  if (status.type !== 'retry' || !userMessageId) return 0;
+  const started = starts.get(sessionId);
+  if (started?.userMessageId === userMessageId && status.attempt >= started.attempt) {
+    started.attempt = status.attempt;
+    return now - started.startedAt;
+  }
+  starts.set(sessionId, { userMessageId, startedAt: now, attempt: status.attempt });
+  return 0;
+}
+
 export function decideProviderRetryLoopRecovery(
   status: SessionStatus | undefined,
+  retryElapsedMs = 0,
 ): { reason: string } | null {
   if (status?.type !== 'retry') return null;
   const reason = stripWrappedJsonQuotes(status.message).trim();
@@ -34,6 +62,7 @@ export function decideProviderRetryLoopRecovery(
     || isDefiniteProviderUsageLimit(reason)
   ) return { reason };
   if (status.attempt < MAX_TRANSIENT_PROVIDER_RETRY_ATTEMPTS) return null;
+  if (retryElapsedMs < MAX_TRANSIENT_PROVIDER_RETRY_WINDOW_MS) return null;
   if (!isLikelyTransientStreamFailure(undefined, reason)) return null;
   return { reason };
 }
@@ -43,31 +72,19 @@ export function decideProviderErrorRecovery(input: Input): { reason: string } | 
   const latest = input.messages.at(-1);
   if (!latest || latest.role !== 'assistant' || !latest.error) return null;
 
-  let anchorUserMessageId: string | undefined;
-  for (let index = input.messages.length - 2; index >= 0; index -= 1) {
-    if (input.messages[index]?.role === 'user') {
-      anchorUserMessageId = input.messages[index].id;
-      break;
-    }
-  }
+  // The latest message is the assistant, so this is the newest user before it.
+  const anchorUserMessageId = latestUserMessageId(input.messages);
   if (!anchorUserMessageId || anchorUserMessageId !== input.observedActiveUserMessageId) return null;
 
-  const error = latest.error as { name?: unknown; message?: unknown; data?: { message?: unknown } };
-  const raw = typeof error.data?.message === 'string'
-    ? error.data.message
-    : typeof error.message === 'string'
-      ? error.message
-      : typeof error.name === 'string'
-        ? error.name
-        : '';
-  const reason = stripWrappedJsonQuotes(raw).trim();
+  const error = decodeAssistantMessageError(latest.error);
+  const reason = stripWrappedJsonQuotes(error?.detail ?? '').trim();
   if (!reason || isLikelyProviderAuthFailure(reason)) return null;
   if (
     isClaudeThirdPartyUsageClassificationError(reason)
     ||
     isLikelyProviderModelNotFound(reason)
-    || error.name === 'ProviderModelNotFoundError'
-    || isLikelyTransientStreamFailure(error.name, reason)
+    || error?.name === 'ProviderModelNotFoundError'
+    || isLikelyTransientStreamFailure(error?.name, reason)
   ) return { reason };
   return null;
 }
@@ -81,10 +98,5 @@ export function decideInterruptedProviderRecovery(
     return null;
   }
 
-  for (let index = input.messages.length - 2; index >= 0; index -= 1) {
-    if (input.messages[index]?.role === 'user') {
-      return { reason: INTERRUPTED_PROVIDER_RESPONSE_REASON };
-    }
-  }
-  return null;
+  return latestUserMessageId(input.messages) !== undefined ? { reason: INTERRUPTED_PROVIDER_RESPONSE_REASON } : null;
 }

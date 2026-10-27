@@ -13,11 +13,8 @@ import { toolDisplayStyles } from '@/lib/typography';
 import { LazySyntaxHighlighter as SyntaxHighlighter } from '@/components/chat/LazySyntaxHighlighter';
 import { useOptionalThemeSystem } from '@/contexts/useThemeSystem';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
-import { useSessionChildren, useSessionMessageRecords, useEnsureSessionMessages } from '@/sync/sync-context';
-import { getSyncChildStores } from '@/sync/sync-refs';
+import { useSessionChildren } from '@/sync/sync-context';
 import { useUIStore } from '@/stores/useUIStore';
-import { useSessionActivity } from '@/hooks/useSessionActivity';
-import { opencodeClient } from '@/lib/opencode/client';
 import { sessionEvents } from '@/lib/sessionEvents';
 import { Text } from '@/components/ui/text';
 import { FileTypeIcon } from '@/components/icons/FileTypeIcon';
@@ -38,6 +35,7 @@ import { JsonTreeViewer } from '@/components/ui/JsonTreeViewer';
 import { DiffViewToggle, type DiffViewMode } from '../DiffViewToggle';
 import { MinDurationShineText } from './MinDurationShineText';
 import { TaskToolSummary } from './TaskToolSummary';
+import { TaskChildSessionSummary } from './TaskChildSessionSummary';
 import { ToolScrollableSection } from './ToolScrollableSection';
 import { getToolIcon } from './toolPresentation';
 import { isToolHeaderInteractive } from './toolHeaderInteractions';
@@ -51,21 +49,20 @@ import { areRenderRelevantPartsEqual } from '../renderCompare';
 import { useI18n } from '@/lib/i18n';
 import { getToolPartDiffStatsFromToolPart } from './tool-activity/targets';
 import {
-    buildTaskSessionMessagesSignature,
-    buildTaskSummaryEntriesFromSession,
-    materializeTaskSessionSnapshot,
     normalizeTaskSummaryEntries,
     parseTaskMetadataBlock,
     readTaskSessionIdFromOutput,
     readTaskSessionIdFromRecord,
-    type SessionMessageWithParts,
     type TaskToolSummaryEntry,
 } from './taskToolUtils';
 import { getDiffPatchEntries, resolveRawPatchFallback } from './toolPartDiffEntries';
 import { getPatchText, getToolDiffPreview, getWriteDiffPreview, isToolDiffPreviewOversized } from './toolDiffPreview';
 import { RawPatchFallback } from './RawPatchFallback';
-import { resolveToolExpandedDetails } from './toolExpandedFallback';
+import { isFailedCommandExitCode, resolveToolExpandedDetails } from './toolExpandedFallback';
 import { coerceRuntimeText } from './runtimeText';
+import ToolImageAttachments from './ToolImageAttachments';
+import { OmittedToolOutput } from './OmittedToolOutput';
+import { isToolOutputOmitted } from '@/sync/tool-output';
 
 type ToolStateWithMetadata = ToolStateUnion & { metadata?: Record<string, unknown>; input?: Record<string, unknown>; output?: string; error?: unknown; time?: { start: number; end?: number } };
 
@@ -160,14 +157,6 @@ const getMultiFileDescription = (
 };
 
 const EMPTY_TASK_CHILD_SESSIONS: Session[] = [];
-const TASK_TOOL_POLL_FAST_MS = 1200;
-const TASK_TOOL_POLL_IDLE_MS = 3200;
-const TASK_TOOL_POLL_HIDDEN_MS = 6000;
-const TASK_TOOL_INITIAL_FETCH_LIMIT = 500;
-const TASK_TOOL_ACTIVE_FETCH_LIMIT = 160;
-const TASK_TOOL_IDLE_FETCH_LIMIT = 80;
-const TASK_TOOL_NO_CHANGE_BACKOFF_AFTER_POLLS = 3;
-const TASK_TOOL_SETTLE_GRACE_MS = 2500;
 const GIT_REFRESH_MUTATING_TOOLS = new Set([
     'bash',
     'edit',
@@ -587,6 +576,9 @@ const getToolDescription = (part: ToolPartType, state: ToolStateUnion, currentDi
         return '';
     }
 
+    // Failed execution never created an answerable request.
+    if (part.tool === 'question' && state.status === 'error') return 'Question failed';
+
     // Question tool: show "Asked N question(s)"
     if (part.tool === 'question' && input?.questions && Array.isArray(input.questions)) {
         const count = input.questions.length;
@@ -940,6 +932,8 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
     const metadata = stateWithData.metadata;
     const input = stateWithData.input;
     const rawOutput = stateWithData.output;
+    // A history row whose output the page left out loads it while expanded.
+    const omittedOutputPart = isToolOutputOmitted(part) ? part : null;
     const hasStringOutput = typeof rawOutput === 'string' && rawOutput.length > 0;
     const outputString = typeof rawOutput === 'string' ? rawOutput : '';
 
@@ -1012,9 +1006,10 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
         inputText: hasInputText ? 'input' : '',
         output: rawOutput,
         error: stateWithData.error,
+        exitCode: normalizeToolName(part.tool) === 'bash' ? metadata?.exitCode : undefined,
         status: lifecycle.status,
         isFinalized: lifecycle.isFinalized,
-    }), [hasInputText, hasStructuredDetails, lifecycle.isFinalized, lifecycle.status, rawOutput, stateWithData.error]);
+    }), [hasInputText, hasStructuredDetails, lifecycle.isFinalized, lifecycle.status, rawOutput, stateWithData.error, metadata?.exitCode, part.tool]);
     const failureDisplayText = expandedDetails.failureReason
         ?? t('chat.toolPart.endedWithStatus', { status: expandedDetails.failureStatus ?? lifecycle.status ?? 'unknown' });
 
@@ -1089,6 +1084,10 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
                 </div>
             );
         };
+
+        if (omittedOutputPart) {
+            return renderScrollableBlock(<OmittedToolOutput part={omittedOutputPart} />, { maxHeightClass: 'max-h-60' });
+        }
 
         // Question tool: show parsed Q&A summary or question content from input
         if (part.tool === 'question') {
@@ -1279,7 +1278,7 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
                         </div>
                     ) : null}
 
-                    {expandedDetails.showResult && (
+                    {(expandedDetails.showResult || omittedOutputPart) && (
                         <div>
                             {isDiffOutputTool && rawPatchSource ? (
                                 <div className="mb-1 flex items-center justify-end gap-2">
@@ -1335,7 +1334,9 @@ const ToolPart: React.FC<ToolPartProps> = ({
     const lifecycle = getToolLifecycleState(state as { status?: unknown; time?: { start?: unknown; end?: unknown } } | undefined);
     const status = lifecycle.status;
     const isFinalized = lifecycle.isFinalized;
-    const isError = status === 'error' || status === 'failed';
+    const isError = status === 'error' || status === 'failed' || (isFinalized
+        && normalizedPartTool === 'bash' && 'metadata' in state
+        && isFailedCommandExitCode(state.metadata?.exitCode));
 
     const [activeLatched, setActiveLatched] = React.useState<boolean>(!isFinalized);
     const previousPartIdRef = React.useRef<string | undefined>(part.id);
@@ -1517,9 +1518,6 @@ const ToolPart: React.FC<ToolPartProps> = ({
 
     const taskSessionId = explicitTaskSessionId ?? fallbackTaskSessionId;
 
-    const childSessionMessages = useSessionMessageRecords(taskSessionId ?? '', currentDirectory);
-    useEnsureSessionMessages(taskSessionId ?? '', currentDirectory);
-
     const metadataTaskSummaryEntries = React.useMemo<TaskToolSummaryEntry[]>(() => {
         if (!isTaskTool) {
             return [];
@@ -1535,194 +1533,6 @@ const ToolPart: React.FC<ToolPartProps> = ({
 
         return parsedTaskMetadata.summaryEntries;
     }, [isTaskTool, metadata, parsedTaskMetadata.summaryEntries]);
-
-    const childSessionTaskSummaryEntries = React.useMemo<TaskToolSummaryEntry[]>(() => {
-        if (!isTaskTool || !taskSessionId) {
-            return [];
-        }
-        if (!Array.isArray(childSessionMessages) || childSessionMessages.length === 0) {
-            return [];
-        }
-        return buildTaskSummaryEntriesFromSession(childSessionMessages);
-    }, [childSessionMessages, isTaskTool, taskSessionId]);
-
-    const childSessionHasInFlightTools = React.useMemo(() => {
-        if (!isTaskTool || !taskSessionId || !Array.isArray(childSessionMessages) || childSessionMessages.length === 0) {
-            return false;
-        }
-
-        for (const message of childSessionMessages) {
-            if (message?.info?.role !== 'assistant') {
-                continue;
-            }
-            const parts = Array.isArray(message.parts) ? message.parts : [];
-            for (const childPart of parts) {
-                if (childPart?.type !== 'tool') {
-                    continue;
-                }
-                const childStatus =
-                    typeof childPart === 'object' && childPart !== null && 'state' in childPart
-                        ? (childPart.state as { status?: string } | undefined)?.status
-                        : undefined;
-                if (childStatus === 'running' || childStatus === 'pending' || childStatus === 'started') {
-                    return true;
-                }
-            }
-        }
-
-        return false;
-    }, [childSessionMessages, isTaskTool, taskSessionId]);
-
-    const childSessionActivity = useSessionActivity(taskSessionId, currentDirectory);
-    const [taskChildSeenActive, setTaskChildSeenActive] = React.useState(false);
-    const [taskChildPollingStopped, setTaskChildPollingStopped] = React.useState(false);
-    const [taskPendingFinalFetch, setTaskPendingFinalFetch] = React.useState(false);
-
-    const taskPollNoChangeCountRef = React.useRef(0);
-    const taskPollLastSignatureRef = React.useRef<string>('');
-    const taskFinalFetchDoneRef = React.useRef(false);
-
-    React.useEffect(() => {
-        setTaskChildSeenActive(false);
-        setTaskChildPollingStopped(false);
-        setTaskPendingFinalFetch(false);
-        taskPollNoChangeCountRef.current = 0;
-        taskPollLastSignatureRef.current = '';
-        taskFinalFetchDoneRef.current = false;
-    }, [taskSessionId]);
-
-    React.useEffect(() => {
-        if (!isTaskTool || !taskSessionId) {
-            return;
-        }
-
-        const childSessionIsActive =
-            childSessionActivity.phase === 'busy'
-            || childSessionActivity.phase === 'retry'
-            || childSessionHasInFlightTools;
-
-        if (childSessionIsActive) {
-            if (!taskChildSeenActive) {
-                setTaskChildSeenActive(true);
-            }
-            if (taskChildPollingStopped) {
-                setTaskChildPollingStopped(false);
-            }
-            if (taskPendingFinalFetch) {
-                setTaskPendingFinalFetch(false);
-            }
-            return;
-        }
-
-        // Always stop polling if already done.
-        if (taskChildPollingStopped && taskFinalFetchDoneRef.current) {
-            return;
-        }
-
-        // Normal settle path: child went idle after we saw it active, and we have entries.
-        // Schedule a grace period before marking polling as stopped.
-        if (taskChildSeenActive && childSessionTaskSummaryEntries.length > 0 && !taskChildPollingStopped) {
-            if (typeof window === 'undefined') {
-                setTaskChildPollingStopped(true);
-                return;
-            }
-
-            const timer = window.setTimeout(() => {
-                setTaskChildPollingStopped(true);
-            }, TASK_TOOL_SETTLE_GRACE_MS);
-
-            return () => {
-                window.clearTimeout(timer);
-            };
-        }
-
-        // Final-fetch path: child went idle before parent saw it active, or we have no
-        // entries yet. First stop polling after the settle grace period. A separate
-        // effect performs the final fetch once polling has fully stopped, avoiding
-        // races with any in-flight polling response.
-        if (!taskChildPollingStopped && !taskFinalFetchDoneRef.current) {
-            if (typeof window === 'undefined') {
-                setTaskPendingFinalFetch(true);
-                setTaskChildPollingStopped(true);
-                return;
-            }
-
-            const timer = window.setTimeout(() => {
-                setTaskPendingFinalFetch(true);
-                setTaskChildPollingStopped(true);
-            }, TASK_TOOL_SETTLE_GRACE_MS);
-
-            return () => {
-                window.clearTimeout(timer);
-            };
-        }
-    }, [
-        childSessionActivity.phase,
-        childSessionHasInFlightTools,
-        childSessionTaskSummaryEntries.length,
-        currentDirectory,
-        activeLatched,
-        isFinalized,
-        isTaskTool,
-        taskPendingFinalFetch,
-        taskChildPollingStopped,
-        taskChildSeenActive,
-        taskSessionId,
-    ]);
-
-    React.useEffect(() => {
-        if (!isTaskTool || !taskSessionId || !taskChildPollingStopped || !taskPendingFinalFetch || taskFinalFetchDoneRef.current) {
-            return;
-        }
-
-        let cancelled = false;
-        const capturedSessionId = taskSessionId;
-
-        const runFinalFetch = async () => {
-            try {
-                const scopedClient = opencodeClient.getScopedSdkClient(currentDirectory);
-                const response = await scopedClient.session.messages({
-                    sessionID: capturedSessionId,
-                    limit: TASK_TOOL_INITIAL_FETCH_LIMIT,
-                });
-
-                if (cancelled) {
-                    return;
-                }
-
-                const messages = response.data ?? [];
-                if (Array.isArray(messages) && messages.length > 0) {
-                    const childStores = getSyncChildStores();
-                    childStores.update(currentDirectory, (prev) => {
-                        const records = messages as SessionMessageWithParts[];
-                        return materializeTaskSessionSnapshot(prev, capturedSessionId, records);
-                    });
-                }
-
-                taskFinalFetchDoneRef.current = true;
-                setTaskPendingFinalFetch(false);
-            } catch {
-                if (cancelled) {
-                    return;
-                }
-
-                setTaskPendingFinalFetch(false);
-                setTaskChildPollingStopped(false);
-            }
-        };
-
-        void runFinalFetch();
-
-        return () => {
-            cancelled = true;
-        };
-    }, [
-        currentDirectory,
-        isTaskTool,
-        taskChildPollingStopped,
-        taskPendingFinalFetch,
-        taskSessionId,
-    ]);
 
     React.useEffect(() => {
         if (typeof time?.end === 'number' || typeof pinnedTime.end === 'number') {
@@ -1754,133 +1564,19 @@ const ToolPart: React.FC<ToolPartProps> = ({
         && (taskSessionLinkContext.isLoading || !taskSessionLinkContext.hasFetched);
     const shouldTreatAsFinalized = isFinalized;
 
-    const taskSummaryEntries = React.useMemo<TaskToolSummaryEntry[]>(() => {
-        if (childSessionTaskSummaryEntries.length > 0) {
-            return childSessionTaskSummaryEntries;
-        }
-        return metadataTaskSummaryEntries;
-    }, [childSessionTaskSummaryEntries, metadataTaskSummaryEntries]);
-
-    React.useEffect(() => {
-        if (!isTaskTool || !taskSessionId) {
-            return;
-        }
-
-        const childSessionActive = childSessionActivity.phase === 'busy' || childSessionActivity.phase === 'retry';
-        const shouldPoll =
-            !taskChildPollingStopped
-            && (childSessionHasInFlightTools || childSessionActive || childSessionTaskSummaryEntries.length === 0);
-        const shouldFetchSnapshot = !taskPendingFinalFetch && (childSessionTaskSummaryEntries.length === 0 || shouldPoll);
-        if (!shouldFetchSnapshot) {
-            return;
-        }
-
-        let cancelled = false;
-        let pollTimer: number | undefined;
-
-        const isVisible = () => {
-            if (typeof document === 'undefined') {
-                return true;
-            }
-            return document.visibilityState === 'visible';
-        };
-
-        const resolveFetchLimit = (isInitialFetch: boolean) => {
-            if (isInitialFetch && childSessionTaskSummaryEntries.length === 0) {
-                return TASK_TOOL_INITIAL_FETCH_LIMIT;
-            }
-            if (isActive || childSessionHasInFlightTools || childSessionActive) {
-                return TASK_TOOL_ACTIVE_FETCH_LIMIT;
-            }
-            return TASK_TOOL_IDLE_FETCH_LIMIT;
-        };
-
-        const resolvePollDelay = () => {
-            if (!isVisible()) {
-                return TASK_TOOL_POLL_HIDDEN_MS;
-            }
-            if (taskPollNoChangeCountRef.current >= TASK_TOOL_NO_CHANGE_BACKOFF_AFTER_POLLS) {
-                return TASK_TOOL_POLL_IDLE_MS;
-            }
-            return TASK_TOOL_POLL_FAST_MS;
-        };
-
-        const scheduleNextPoll = () => {
-            if (!shouldPoll || typeof window === 'undefined' || cancelled) {
-                return;
-            }
-            pollTimer = window.setTimeout(() => {
-                pollTimer = undefined;
-                void fetchSessionMessages(false);
-            }, resolvePollDelay());
-        };
-
-        const fetchSessionMessages = async (isInitialFetch: boolean) => {
-            try {
-                const scopedClient = opencodeClient.getScopedSdkClient(currentDirectory);
-                const response = await scopedClient.session.messages({
-                    sessionID: taskSessionId,
-                    limit: resolveFetchLimit(isInitialFetch),
-                });
-                const messages = response.data ?? [];
-                if (cancelled || !Array.isArray(messages) || messages.length === 0) {
-                    return;
-                }
-
-                const nextSignature = buildTaskSessionMessagesSignature(messages as SessionMessageWithParts[]);
-                if (nextSignature === taskPollLastSignatureRef.current) {
-                    taskPollNoChangeCountRef.current += 1;
-                    return;
-                }
-
-                taskPollLastSignatureRef.current = nextSignature;
-                taskPollNoChangeCountRef.current = 0;
-                // Inject fetched subagent messages into sync child store
-                const childStores = getSyncChildStores();
-                childStores.update(currentDirectory, (prev) => {
-                    const records = messages as SessionMessageWithParts[];
-                    return materializeTaskSessionSnapshot(prev, taskSessionId, records);
-                });
-            } catch {
-                // Ignore transient subagent fetch errors.
-            } finally {
-                scheduleNextPoll();
-            }
-        };
-
-        void fetchSessionMessages(true);
-
-        return () => {
-            cancelled = true;
-            if (typeof pollTimer === 'number') {
-                window.clearTimeout(pollTimer);
-            }
-        };
-    }, [
-        childSessionActivity.phase,
-        childSessionHasInFlightTools,
-        childSessionTaskSummaryEntries.length,
-        currentDirectory,
-        isActive,
-        isTaskTool,
-        taskPendingFinalFetch,
-        taskChildPollingStopped,
-        taskSessionId,
-    ]);
-
-    const taskSummaryLenRef = React.useRef<number>(taskSummaryEntries.length);
+    const taskSummaryLenRef = React.useRef<number>(metadataTaskSummaryEntries.length);
     React.useEffect(() => {
         if (!isTaskTool) {
             return;
         }
-        if (taskSummaryLenRef.current === taskSummaryEntries.length) {
+        if (taskSummaryLenRef.current === metadataTaskSummaryEntries.length) {
             return;
         }
-        taskSummaryLenRef.current = taskSummaryEntries.length;
+        taskSummaryLenRef.current = metadataTaskSummaryEntries.length;
         onContentChange?.('structural');
-    }, [isTaskTool, onContentChange, taskSummaryEntries.length]);
+    }, [isTaskTool, metadataTaskSummaryEntries.length, onContentChange]);
 
-    const isMultiFileApplyPatch = normalizedPartTool === 'apply_patch' && Array.isArray(metadata?.files) && (metadata?.files as []).length > 1;
+    const isMultiFileApplyPatch = normalizedPartTool === 'apply_patch' && Array.isArray(metadata?.files) && (metadata!.files as []).length > 1;
     const normalizedPart = normalizedPartTool !== part.tool ? ({ ...part, tool: normalizedPartTool } as ToolPartType) : part;
     const diffStats = (normalizedPartTool === 'edit' || normalizedPartTool === 'multiedit' || normalizedPartTool === 'apply_patch')
         ? getToolPartDiffStatsFromToolPart(normalizedPart)
@@ -2092,10 +1788,32 @@ const ToolPart: React.FC<ToolPartProps> = ({
                 )}
             </div>
 
+            {!isTaskTool ? <ToolImageAttachments part={part} onShowPopup={onShowPopup} onContentChange={onContentChange} /> : null}
+
             {}
-            {isTaskTool && (taskSummaryEntries.length > 0 || isActive || isResolvingTaskSession || shouldTreatAsFinalized || taskSessionId) ? (
+            {isTaskTool && isExpanded && taskSessionId ? (
+                <TaskChildSessionSummary
+                    taskSessionId={taskSessionId}
+                    currentDirectory={currentDirectory}
+                    isTaskActive={isActive}
+                    isFinalized={isFinalized}
+                    activeLatched={activeLatched}
+                    metadataEntries={metadataTaskSummaryEntries}
+                    onContentChange={onContentChange}
+                    isExpanded={isExpanded}
+                    isMobile={isMobile}
+                    output={taskOutputString}
+                    error={stateWithData.error}
+                    status={stateWithData.status}
+                    onShowPopup={onShowPopup}
+                    input={input}
+                    sessionAgent={taskAssignment?.agent}
+                    animateTailText={animateTailText}
+                    isActive={isActive || isResolvingTaskSession}
+                />
+            ) : isTaskTool && (metadataTaskSummaryEntries.length > 0 || isActive || isResolvingTaskSession || shouldTreatAsFinalized || taskSessionId) ? (
                 <TaskToolSummary
-                    entries={taskSummaryEntries}
+                    entries={metadataTaskSummaryEntries}
                     isExpanded={isExpanded}
                     isMobile={isMobile}
                     output={taskOutputString}

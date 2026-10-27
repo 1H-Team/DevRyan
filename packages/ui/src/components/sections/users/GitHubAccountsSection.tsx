@@ -6,8 +6,8 @@ import { Button } from '@/components/ui/button';
 import { SettingsSection } from '@/components/sections/shared/SettingsSection';
 import {
   GitHubDeviceFlowPanel,
-} from '@/components/sections/openchamber/GitHubDeviceFlow';
-import { useGitHubDeviceFlow } from '@/components/sections/openchamber/useGitHubDeviceFlow';
+} from '@/components/sections/devryan/GitHubDeviceFlow';
+import { useGitHubDeviceFlow } from '@/components/sections/devryan/useGitHubDeviceFlow';
 import { ConfirmActionDialog } from './ConfirmActionDialog';
 import {
   requestJson,

@@ -6,6 +6,7 @@ import {
   gradeCaseOutcome,
   gradeManagedTaskOutcome,
   gradeManagedIndependentFacts,
+  gradeInitialAssessment,
   gradeOracleReviewOutcome,
   gradeToolRequirements,
   summarizeGraders,
@@ -14,6 +15,15 @@ import {
 const tools = (...names) => names.map((tool) => ({ tool, status: 'completed', final: true }));
 const ownedTestRelativePath = 'src/devryan-eval-causal.test.mjs';
 const ownedTestCommand = `node --test ${ownedTestRelativePath}`;
+
+test('initial assessment requires visible task prose before the first root tool', () => {
+  const prose = { type: 'text', text: 'I will map mobile positioning and shared dark profile styles before planning the corrections.' };
+  const dispatch = { type: 'tool', tool: 'devryan_task', state: { input: { action: 'start' } } };
+  const grade = parts => gradeInitialAssessment({ rootSessionId: 'ses_root', sessionTree: [{ sessionId: 'ses_root', messages: [{ info: { role: 'assistant' }, parts }] }] }).passed;
+  assert.equal(grade([prose, dispatch]), true);
+  for (const parts of [[dispatch, prose], [{ ...prose, type: 'reasoning' }, dispatch], [{ ...prose, synthetic: true }, dispatch], [{ type: 'text', text: 'Starting subagent delegation.' }, dispatch], [prose]]) assert.equal(grade(parts), false);
+  assert.equal(gradeInitialAssessment({ rootSessionId: 'ses_root', sessionTree: [{ sessionId: 'ses_child', messages: [{ info: { role: 'assistant' }, parts: [prose, dispatch] }] }] }).passed, false);
+});
 
 test('independent-child outcome requires final root facts and three distinct children', () => {
   const text = JSON.stringify({ identity: 60, session: 60, billing: 60, elevated: 36, standard: 144, sentinel: 'bounded-context-control' });

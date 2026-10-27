@@ -489,11 +489,21 @@ const resolveConfigRoot = () => {
   return configured ? path.resolve(configured) : path.resolve(import.meta.dirname, '..');
 };
 
-const getCacheRoot = () => path.join(resolveConfigRoot(), '.openchamber', 'document-cache-v1');
+const getCacheRoot = () => path.join(resolveConfigRoot(), '.devryan', 'document-cache-v1');
+const getLegacyCacheRoot = () => path.join(resolveConfigRoot(), '.openchamber', 'document-cache-v1');
 const getSessionKey = (sessionID) => sha256(`session\0${sessionID}`);
 const getSessionCacheDirectory = (sessionID) => path.join(getCacheRoot(), getSessionKey(sessionID));
+const getLegacySessionCacheDirectory = (sessionID) => path.join(getLegacyCacheRoot(), getSessionKey(sessionID));
+const getReadableSessionDirectories = (sessionID) => [getSessionCacheDirectory(sessionID), getLegacySessionCacheDirectory(sessionID)];
 const getDocumentPath = (sessionID, documentID) => path.join(getSessionCacheDirectory(sessionID), `${documentID}.json`);
 const getSourcePath = (sessionID, sourceID) => path.join(getSessionCacheDirectory(sessionID), `${sourceID}.json`);
+const readCachedJSON = async (sessionID, name) => {
+  for (const directory of getReadableSessionDirectories(sessionID)) {
+    const file = path.join(directory, `${name}.json`);
+    if (fs.existsSync(file)) return readJsonFile(file);
+  }
+  return null;
+};
 
 const ensurePrivateDirectory = async (directory) => {
   await fs.promises.mkdir(directory, { recursive: true, mode: 0o700 });
@@ -634,13 +644,13 @@ const isCachedDocument = (value) => (
 
 const readCachedDocument = async (sessionID, documentID) => {
   if (!DOC_ID_PATTERN.test(documentID)) return null;
-  const parsed = await readJsonFile(getDocumentPath(sessionID, documentID));
+  const parsed = await readCachedJSON(sessionID, documentID);
   return isCachedDocument(parsed) ? parsed : null;
 };
 
 const readCachedSource = async (sessionID, sourceID) => {
   if (!SOURCE_ID_PATTERN.test(sourceID)) return null;
-  const parsed = await readJsonFile(getSourcePath(sessionID, sourceID));
+  const parsed = await readCachedJSON(sessionID, sourceID);
   if (
     parsed?.version !== CACHE_VERSION
     || parsed.id !== sourceID
@@ -959,12 +969,15 @@ const resolveAccessibleSessions = async (client, sessionID, directory) => {
 };
 
 const listSessionDocuments = async (sessionID) => {
-  const directory = getSessionCacheDirectory(sessionID);
   const documents = [];
-  for (const entry of await listCacheFiles(directory)) {
-    if (!entry.name.startsWith('doc_')) continue;
-    const document = await readJsonFile(path.join(directory, entry.name));
-    if (isCachedDocument(document)) documents.push(document);
+  const seen = new Set();
+  for (const directory of getReadableSessionDirectories(sessionID)) {
+    for (const entry of await listCacheFiles(directory)) {
+      if (!entry.name.startsWith('doc_') || seen.has(entry.name)) continue;
+      seen.add(entry.name);
+      const document = await readJsonFile(path.join(directory, entry.name));
+      if (isCachedDocument(document)) documents.push(document);
+    }
   }
   return documents.sort((left, right) => left.name.localeCompare(right.name));
 };
@@ -1000,10 +1013,11 @@ const hasParentDocuments = async (client, sessionID, directory, parentLinks) => 
     }
     if (!parentID || seen.has(parentID)) return false;
     seen.add(parentID);
-    const sessionDirectory = getSessionCacheDirectory(parentID);
-    for (const entry of await listCacheFiles(sessionDirectory)) {
-      if (!entry.name.startsWith('doc_')) continue;
-      if (isCachedDocument(await readJsonFile(path.join(sessionDirectory, entry.name)))) return true;
+    for (const sessionDirectory of getReadableSessionDirectories(parentID)) {
+      for (const entry of await listCacheFiles(sessionDirectory)) {
+        if (!entry.name.startsWith('doc_')) continue;
+        if (isCachedDocument(await readCachedJSON(parentID, entry.name.slice(0, -5)))) return true;
+      }
     }
     current = parentID;
   }
@@ -1144,7 +1158,8 @@ export const DevRyanDocumentReaderPlugin = async (pluginContext = {}) => {
       if (!sessionID) return;
       parentLinks.delete(sessionID);
       for (const key of sourceIDs.keys()) if (key.startsWith(`${sessionID}\u0000`)) sourceIDs.delete(key);
-      await fs.promises.rm(getSessionCacheDirectory(sessionID), { recursive: true, force: true }).catch(() => undefined);
+      await Promise.all(getReadableSessionDirectories(sessionID).map(cacheDirectory =>
+        fs.promises.rm(cacheDirectory, { recursive: true, force: true }).catch(() => undefined)));
     },
     'experimental.chat.messages.transform': async (input, output) => {
       if (!Array.isArray(output?.messages)) return;

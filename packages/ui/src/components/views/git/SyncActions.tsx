@@ -3,7 +3,6 @@ import {
   RiArrowDownLine,
   RiDownloadLine,
   RiLoader4Line,
-  RiLoopRightLine,
   RiRefreshLine,
   RiUploadLine,
 } from '@remixicon/react';
@@ -18,19 +17,6 @@ const COMPACT_ACTION_BUTTON_CLASS_NAME = cn(
   'inline-flex h-6 w-6 items-center justify-center rounded bg-transparent text-muted-foreground',
   'transition-colors hover:bg-interactive-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50'
 );
-
-interface SyncChangesButtonProps {
-  syncAction: SyncAction;
-  remotes: GitRemote[];
-  onSync: (remote: GitRemote) => void;
-  disabled: boolean;
-  aheadCount?: number;
-  behindCount?: number;
-  trackingRemoteName?: string;
-  hasUncommittedChanges?: boolean;
-  className?: string;
-  iconClassName?: string;
-}
 
 interface SyncActionsProps {
   syncAction: SyncAction;
@@ -48,58 +34,6 @@ interface SyncActionsProps {
   trackingRemoteName?: string;
   hasUncommittedChanges?: boolean;
 }
-
-export const SyncChangesButton: React.FC<SyncChangesButtonProps> = ({
-  syncAction,
-  remotes = [],
-  onSync,
-  disabled,
-  aheadCount = 0,
-  behindCount = 0,
-  trackingRemoteName,
-  hasUncommittedChanges = false,
-  className,
-  iconClassName = 'size-3.5',
-}) => {
-  const { t } = useI18n();
-  const trackingRemote = remotes.find((remote) => remote.name === trackingRemoteName) ?? remotes[0];
-  const blocksRebaseSync = behindCount > 0 && hasUncommittedChanges;
-  const hasKnownSyncWork = aheadCount > 0 || behindCount > 0;
-  const isDisabled = disabled || syncAction !== null || !trackingRemote || blocksRebaseSync;
-  const tooltipLabel = blocksRebaseSync
-    ? t('gitView.sync.commitOrStashTooltip')
-    : trackingRemote
-    ? hasKnownSyncWork
-      ? t('gitView.sync.syncChangesTooltip', { ahead: aheadCount, behind: behindCount })
-      : t('gitView.sync.syncChanges')
-    : t('gitView.sync.noRemoteTooltip');
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          onClick={() => {
-            if (trackingRemote) {
-              onSync(trackingRemote);
-            }
-          }}
-          disabled={isDisabled}
-          className={cn(COMPACT_ACTION_BUTTON_CLASS_NAME, className)}
-          aria-label={t('gitView.sync.syncChanges')}
-          title={t('gitView.sync.syncChanges')}
-        >
-          {syncAction === 'sync' ? (
-            <RiLoader4Line className={cn(iconClassName, 'animate-spin')} />
-          ) : (
-            <RiLoopRightLine className={iconClassName} />
-          )}
-        </button>
-      </TooltipTrigger>
-      <TooltipContent sideOffset={8}>{tooltipLabel}</TooltipContent>
-    </Tooltip>
-  );
-};
 
 export const SyncActions: React.FC<SyncActionsProps> = ({
   syncAction,

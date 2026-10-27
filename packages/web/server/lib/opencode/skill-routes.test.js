@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
+import { createNativeConsumerFixture } from './test-native-consumer-client.js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from '../../test-supertest.js';
 import path from 'path';
@@ -6,6 +7,17 @@ import fs from 'fs';
 import os from 'os';
 
 import { registerSkillRoutes } from './skill-routes.js';
+
+const temporaryRoots = new Set();
+const createTemporaryRoot = () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-skill-routes-'));
+  temporaryRoots.add(directory);
+  return directory;
+};
+afterEach(() => {
+  for (const directory of temporaryRoots) fs.rmSync(directory, { recursive: true, force: true });
+  temporaryRoots.clear();
+});
 
 const createApp = ({
   skillDir,
@@ -38,6 +50,7 @@ const createApp = ({
   })));
 
   registerSkillRoutes(app, {
+    openCodeClient: createNativeConsumerFixture({ readFixture: (...args) => globalThis.fetch(...args) }),
     fs,
     path,
     os,
@@ -108,7 +121,7 @@ const createApp = ({
 
 describe('skill routes', () => {
   it('keeps same-name skills separate when their canonical SKILL.md paths differ', async () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-skill-routes-'));
+    const tempRoot = createTemporaryRoot();
     const userSkillDir = path.join(tempRoot, 'user-skills', 'lint-helper');
     const projectSkillDir = path.join(tempRoot, '.opencode', 'skills', 'lint-helper');
     fs.mkdirSync(userSkillDir, { recursive: true });
@@ -146,7 +159,7 @@ describe('skill routes', () => {
   });
 
   it('lists only user-scoped skills when Settings requests the global skills scope', async () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-skill-routes-'));
+    const tempRoot = createTemporaryRoot();
     const userSkillDir = path.join(tempRoot, 'home', '.config', 'opencode', 'skills', 'lint-helper');
     const projectSkillDir = path.join(tempRoot, 'project', '.opencode', 'skills', 'lint-helper');
     fs.mkdirSync(userSkillDir, { recursive: true });
@@ -191,7 +204,7 @@ describe('skill routes', () => {
   });
 
   it('lists all active skill scopes and sources when Settings does not request a scope filter', async () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-skill-routes-'));
+    const tempRoot = createTemporaryRoot();
     const userAgentsSkillDir = path.join(tempRoot, 'home', '.agents', 'skills', 'lint-helper');
     const projectAgentsSkillDir = path.join(tempRoot, 'project', '.agents', 'skills', 'lint-helper');
     const projectOpenCodeSkillDir = path.join(tempRoot, 'project', '.opencode', 'skills', 'lint-helper');
@@ -245,7 +258,7 @@ describe('skill routes', () => {
   });
 
   it('wraps catalog scan and install responses without removing compatibility fields', async () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-skill-routes-'));
+    const tempRoot = createTemporaryRoot();
     const userSkillDir = path.join(tempRoot, 'home', '.config', 'opencode', 'skills', 'lint-helper');
     fs.mkdirSync(userSkillDir, { recursive: true });
 
@@ -331,7 +344,7 @@ describe('skill routes', () => {
   });
 
   it('wraps catalog source and install validation errors without removing compatibility fields', async () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-skill-routes-'));
+    const tempRoot = createTemporaryRoot();
     const skillDir = path.join(tempRoot, 'skills', 'lint-helper');
     fs.mkdirSync(skillDir, { recursive: true });
     const settingsRef = {
@@ -377,7 +390,7 @@ describe('skill routes', () => {
   });
 
   it('updates and reads supporting files from the exact selected same-name skill path', async () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-skill-routes-'));
+    const tempRoot = createTemporaryRoot();
     const userSkillDir = path.join(tempRoot, 'home', '.agents', 'skills', 'lint-helper');
     const projectSkillDir = path.join(tempRoot, 'project', '.opencode', 'skills', 'lint-helper');
     fs.mkdirSync(userSkillDir, { recursive: true });
@@ -487,7 +500,7 @@ describe('skill routes', () => {
   });
 
   it('lists user-scoped skills without an active project directory', async () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-skill-routes-'));
+    const tempRoot = createTemporaryRoot();
     const skillDir = path.join(tempRoot, 'lint-helper');
     fs.mkdirSync(skillDir, { recursive: true });
     fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '---\nname: lint-helper\n---\n', 'utf8');
@@ -502,7 +515,7 @@ describe('skill routes', () => {
   });
 
   it('removes the exact selected user skill when a same-name project skill exists', async () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-skill-routes-'));
+    const tempRoot = createTemporaryRoot();
     const userSkillDir = path.join(tempRoot, 'home', '.config', 'opencode', 'skills', 'lint-helper');
     const projectSkillDir = path.join(tempRoot, 'project', '.opencode', 'skills', 'lint-helper');
     fs.mkdirSync(userSkillDir, { recursive: true });
@@ -553,7 +566,7 @@ describe('skill routes', () => {
   });
 
   it('hides and restores a skill without deleting its directory', async () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-skill-routes-'));
+    const tempRoot = createTemporaryRoot();
     const skillDir = path.join(tempRoot, 'lint-helper');
     fs.mkdirSync(skillDir, { recursive: true });
     fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '---\nname: lint-helper\ndescription: Helps lint code\n---\n', 'utf8');
@@ -604,7 +617,7 @@ describe('skill routes', () => {
   });
 
   it('permanently deletes only the selected same-name skill path and removes its stale hidden entry', async () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-skill-routes-'));
+    const tempRoot = createTemporaryRoot();
     const userSkillDir = path.join(tempRoot, '.agents', 'skills', 'lint-helper');
     const projectSkillDir = path.join(tempRoot, '.opencode', 'skills', 'lint-helper');
     const userSkillPath = path.join(userSkillDir, 'SKILL.md');
@@ -652,7 +665,7 @@ describe('skill routes', () => {
   });
 
   it('queues permanent deletion for the managed runtime without restarting it', async () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-skill-routes-'));
+    const tempRoot = createTemporaryRoot();
     const skillDir = path.join(tempRoot, 'lint-helper');
     const skillPath = path.join(skillDir, 'SKILL.md');
     fs.mkdirSync(skillDir, { recursive: true });
@@ -670,7 +683,7 @@ describe('skill routes', () => {
   });
 
   it('marks external runtimes as requiring a manual restart after deletion', async () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-skill-routes-'));
+    const tempRoot = createTemporaryRoot();
     const skillDir = path.join(tempRoot, 'lint-helper');
     const skillPath = path.join(skillDir, 'SKILL.md');
     fs.mkdirSync(skillDir, { recursive: true });
@@ -704,7 +717,7 @@ describe('skill routes', () => {
   });
 
   it('reports a marker failure after the deletion has already committed', async () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-skill-routes-'));
+    const tempRoot = createTemporaryRoot();
     const skillDir = path.join(tempRoot, 'lint-helper');
     const skillPath = path.join(skillDir, 'SKILL.md');
     fs.mkdirSync(skillDir, { recursive: true });
@@ -733,7 +746,7 @@ describe('skill routes', () => {
   });
 
   it('reports settings cleanup failure as a warning after the skill directory is deleted', async () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-skill-routes-'));
+    const tempRoot = createTemporaryRoot();
     const skillDir = path.join(tempRoot, 'lint-helper');
     const skillPath = path.join(skillDir, 'SKILL.md');
     fs.mkdirSync(skillDir, { recursive: true });
@@ -760,7 +773,7 @@ describe('skill routes', () => {
   });
 
   it('rejects stale skill paths instead of falling back to a same-name skill', async () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-skill-routes-'));
+    const tempRoot = createTemporaryRoot();
     const skillDir = path.join(tempRoot, 'lint-helper');
     fs.mkdirSync(skillDir, { recursive: true });
     fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '---\nname: lint-helper\n---\n', 'utf8');
@@ -781,7 +794,7 @@ describe('skill routes', () => {
   });
 
   it('keeps persisted hidden skills visible in the hidden list when discovery is delayed', async () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-skill-routes-'));
+    const tempRoot = createTemporaryRoot();
     const skillDir = path.join(tempRoot, 'lint-helper');
     fs.mkdirSync(skillDir, { recursive: true });
     const skillPath = path.join(skillDir, 'SKILL.md');
@@ -821,7 +834,7 @@ describe('skill routes', () => {
   });
 
   it('does not duplicate hidden skill settings when a skill is hidden twice', async () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-skill-routes-'));
+    const tempRoot = createTemporaryRoot();
     const skillDir = path.join(tempRoot, 'lint-helper');
     fs.mkdirSync(skillDir, { recursive: true });
     fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '---\nname: lint-helper\ndescription: Helps lint code\n---\n', 'utf8');
@@ -847,7 +860,7 @@ describe('skill routes', () => {
   });
 
   it('drops upstream-only and unsupported skills returned by the OpenCode runtime', async () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-skill-routes-'));
+    const tempRoot = createTemporaryRoot();
     const skillDir = path.join(tempRoot, 'lint-helper');
     fs.mkdirSync(skillDir, { recursive: true });
 

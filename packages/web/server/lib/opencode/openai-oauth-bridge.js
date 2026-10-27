@@ -1,30 +1,6 @@
 import crypto from 'node:crypto';
 import http from 'node:http';
 
-// UI-driven auth writes in the managed child share the coordinator's mutation
-// queue, including other providers because OpenCode persists a whole auth file.
-// Direct clients of independently managed OpenCode are outside this contract.
-export function registerManagedOAuthMutationGate(app, { coordinator, isManaged }) {
-  app.use((req, res, next) => {
-    const authWrite = ['PUT', 'DELETE'].includes(req.method) && /^\/api\/auth\/[^/]+\/?$/.test(req.path);
-    const callback = req.method === 'POST' && /^\/api\/provider\/[^/]+\/oauth\/callback\/?$/.test(req.path);
-    if (!isManaged() || (!authWrite && !callback)) return next();
-    void coordinator.withAuthMutation(() => new Promise((resolve) => {
-      if (res.destroyed) { resolve(); return; }
-      res.once('finish', resolve);
-      res.once('close', () => {
-        // An interrupted auth write may still be finishing in the child. Keep
-        // coordinated work unavailable until its plugin next initializes.
-        if (!res.writableFinished) coordinator.markStopped();
-        resolve();
-      });
-      next();
-    })).catch(() => {
-      if (!res.headersSent) res.status(503).json({ code: 'bot_oauth_coordinator_unavailable' });
-    });
-  });
-}
-
 // Separate from UI authentication. Only a managed OpenCode child receives this
 // capability, and the endpoint cannot select a provider, account, or target URL.
 export function createOpenAiOAuthBridge({ coordinator }) {

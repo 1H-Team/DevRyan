@@ -245,7 +245,7 @@ const projectFingerprint = (value) => value?.schemaVersion === 1 ? {
     })) : null,
   } : null, configured: Array.isArray(value.plugins?.configured) ? value.plugins.configured.slice(0, 128).map((entry) => ({ name: opaqueIdentifier(entry.name, 'plugin'), sourceHash: safeHash(entry.sourceHash) })) : null,
     observed: Array.isArray(value.plugins?.observed) ? value.plugins.observed.slice(0, 128).map((entry) => ({ name: opaqueIdentifier(entry.name, 'plugin'), contentHash: safeHash(entry.contentHash), factoryCalls: nonNegativeInteger(entry.factoryCalls), ownership: normalizeStatus(entry.ownership) })) : null },
-  policies: Object.fromEntries(['readOverlap', 'waitAny', 'compactResults', 'contextProjection', 'duplicateOutputs'].map((key) => [key, value.policies?.[key] === true])),
+  policies: Object.fromEntries(['readOverlap', 'waitAny', 'compactResults', 'contextProjection', 'duplicateOutputs', 'adaptiveDelegation'].map((key) => [key, value.policies?.[key] === true])),
 } : null;
 
 const measured = (value) => ({ observed: nonNegativeInteger(value?.observed), unknown: nonNegativeInteger(value?.unknown), total: finiteNumber(value?.total) });

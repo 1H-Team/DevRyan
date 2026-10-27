@@ -510,9 +510,6 @@ export const UserDetail: React.FC<UserDetailProps> = ({
     .reduce((total, permission) => total + Object.values(permission || {}).filter((value) => typeof value === 'boolean').length, 0), [policyDraft.permissionOverrides]);
   const capabilityOverrideCount = React.useMemo(() => capabilityLabels
     .filter(([key]) => policyDraft.capabilities[key] !== 'inherit').length, [policyDraft.capabilities]);
-  const botsAccessAllowed = policyDraft.capabilities.bots === 'inherit'
-    ? policyDraft.inheritedCapabilities.bots
-    : policyDraft.capabilities.bots === 'on';
   const mcpOverrideCount = React.useMemo(
     () => Object.values(policyDraft.mcpOverrides).filter((value) => value === 'on' || value === 'off').length,
     [policyDraft.mcpOverrides],
@@ -855,32 +852,6 @@ export const UserDetail: React.FC<UserDetailProps> = ({
                 </CollapsibleContent>
               </div>
             </Collapsible>
-
-            <label className="flex items-start gap-2 rounded-xl border border-border/60 bg-[var(--surface-subtle)]/25 px-3 py-3 typography-meta text-foreground">
-              <Checkbox
-                checked={botsAccessAllowed}
-                disabled={!isAdmin || policyLoading || busy || user.role === 'admin'}
-                onChange={(checked) => setPolicyDraft((current) => ({
-                  ...current,
-                  capabilities: {
-                    ...current.capabilities,
-                    bots: checked === current.inheritedCapabilities.bots
-                      ? 'inherit'
-                      : checked ? 'on' : 'off',
-                  },
-                }))}
-                ariaLabel="Allow Bots Access"
-                className="mt-0.5 size-4"
-                iconClassName="size-4"
-              />
-              <span>
-                <span className="block typography-ui-label font-semibold text-foreground">Allow Bots Access</span>
-                <span className="block typography-micro text-muted-foreground">
-                  When Off, This User Has an Agents-Only Interface and Cannot Access Bot Settings, Conversations, Streams, or APIs.
-                  {' '}Inherited: {policyDraft.inheritedCapabilities.bots ? 'On' : 'Off'}.
-                </span>
-              </span>
-            </label>
 
             <Collapsible open={capabilityPolicyOpen} onOpenChange={setCapabilityPolicyOpen}>
               <div className="rounded-xl border border-border/60 bg-[var(--surface-subtle)]/25">

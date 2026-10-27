@@ -6,7 +6,7 @@ import {
   isElectronShell,
   isStandaloneWebRuntime,
 } from '@/lib/desktop';
-import { subscribeOpenchamberEvents } from '@/lib/openchamberEvents';
+import { subscribeDevRyanEvents } from '@/lib/devryanEvents';
 import { resolveRootSessionID } from '@/lib/sessionLineage';
 import { useUIStore } from '@/stores/useUIStore';
 
@@ -201,6 +201,7 @@ export const sanitizeBrowserAgentLeaseSnapshot = (value: unknown): BrowserAgentL
 const leasesEqual = (left: BrowserAgentLease, right: BrowserAgentLease): boolean => (
   left.transport === right.transport
   && left.leaseId === right.leaseId
+  && left.surfaceId === right.surfaceId
   && left.rootSessionId === right.rootSessionId
   && left.opencodeSessionID === right.opencodeSessionID
   && left.directory === right.directory
@@ -443,7 +444,7 @@ export const ensureBrowserAgentListeners = (): void => {
   listenersInstalled = true;
 
   if (isStandaloneWebRuntime()) {
-    subscribeOpenchamberEvents((event) => {
+    subscribeDevRyanEvents((event) => {
       if (event.type === 'stream-ready' || event.type === 'browser-agent-leases-changed') {
         void refreshRemoteBrowserAgentLeases();
       }

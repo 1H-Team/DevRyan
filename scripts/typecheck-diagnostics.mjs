@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
+import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { totalmem } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-import { getHeapStatistics } from 'node:v8';
+import { fileURLToPath } from 'node:url';
 
 const target = process.argv[2];
 if (process.argv.length !== 3 || !['ui', 'web'].includes(target)) {
@@ -31,22 +31,21 @@ console.log(JSON.stringify({
   typescript: require('typescript/package.json').version,
   platform: process.platform,
   arch: process.arch,
-  heapLimitMiB: Math.round(getHeapStatistics().heap_size_limit / 1024 ** 2),
   hostMemoryMiB: Math.round(totalmem() / 1024 ** 2),
   nodeOptionsPresent: Boolean(process.env.NODE_OPTIONS),
   incrementalCache: 'fresh',
 }));
 
-process.on('exit', (exitCode) => {
-  console.log(JSON.stringify({ target, exitCode,
-    elapsedMs: Math.round(performance.now() - start),
-    maxRssMiB: Math.round(process.resourceUsage().maxRSS / 1024),
-  }));
+// TypeScript 7 is a native compiler: its --extendedDiagnostics report its own
+// memory, and the child's exit code keeps type errors nonzero.
+const compiler = path.join(path.dirname(require.resolve('typescript/package.json')), 'bin', 'tsc');
+let exitCode = 1;
+try {
+  const result = spawnSync(process.execPath, [compiler, ...args], { cwd: root, stdio: 'inherit' });
+  if (result.error) throw result.error;
+  exitCode = result.status ?? 1;
+} finally {
+  console.log(JSON.stringify({ target, exitCode, elapsedMs: Math.round(performance.now() - start) }));
   rmSync(cache, { recursive: true, force: true });
-});
-
-// Run the actual CLI in this Node process, so the reported heap and RSS belong
-// to the compiler. TypeScript retains its own diagnostics and nonzero exit codes.
-const compiler = require.resolve('typescript/lib/tsc.js');
-process.argv = [process.execPath, compiler, ...args];
-await import(pathToFileURL(compiler).href);
+}
+process.exitCode = exitCode;

@@ -10,6 +10,7 @@ import {
   MERIDIAN_HTTP_HOTFIX_INCOMPATIBLE,
   MERIDIAN_HTTP_HOTFIX_VERSION,
 } from '../packages/web/server/lib/opencode/meridian-http-hotfix.js';
+const compatibilityPluginPin = JSON.parse(await fs.readFile(new URL('../packages/web/package.json', import.meta.url), 'utf8')).devDependencies['@opencode-ai/plugin'];
 
 const sourceRoot = path.resolve('packages/web/server/default-config');
 
@@ -75,19 +76,25 @@ for (const [name, mutate, message] of [
   ['plugin', (root) => fs.rm(path.join(root, 'plugins', 'devryan-managed-orchestration.mjs')), /Missing required orchestration runtime plugin/],
   ['profile', (root) => fs.rm(path.join(root, 'user-profile', 'opencode.json')), /Missing user profile config/],
   ['dependency', async (root) => fs.writeFile(path.join(root, 'user-profile', 'package.json'), '{"dependencies":{}}\n'), /Missing user profile dependency declarations/],
-  ['Slim dependency', async (root) => {
+  ['retired Slim dependency', async (root) => {
     const packagePath = path.join(root, 'user-profile', 'package.json');
     const profilePackage = JSON.parse(await fs.readFile(packagePath, 'utf8'));
-    delete profilePackage.dependencies['oh-my-opencode-slim'];
+    profilePackage.dependencies['oh-my-opencode-slim'] = '2.2.25';
     await fs.writeFile(packagePath, `${JSON.stringify(profilePackage, null, 2)}\n`);
-  }, /Missing default Slim dependency/],
+  }, /installs the retired Slim package/],
+  ['retired Slim registration', async (root) => {
+    const configPath = path.join(root, 'user-profile', 'opencode.json');
+    const profileConfig = JSON.parse(await fs.readFile(configPath, 'utf8'));
+    profileConfig.plugin.push('./plugins/devryan-oh-my-opencode-slim.mjs');
+    await fs.writeFile(configPath, `${JSON.stringify(profileConfig, null, 2)}\n`);
+  }, /registers a retired plugin/],
   ['Claude dependency', async (root) => {
     const packagePath = path.join(root, 'user-profile', 'package.json');
     const profilePackage = JSON.parse(await fs.readFile(packagePath, 'utf8'));
     delete profilePackage.dependencies['opencode-with-claude'];
     await fs.writeFile(packagePath, `${JSON.stringify(profilePackage, null, 2)}\n`);
   }, /Missing default Claude dependency/],
-  ['Slim wrapper', (root) => fs.rm(path.join(root, 'plugins', 'devryan-oh-my-opencode-slim.mjs')), /Missing default Slim wrapper plugin/],
+  ['retired Slim adapter', (root) => fs.writeFile(path.join(root, 'plugins', 'devryan-oh-my-opencode-slim.mjs'), 'export default async () => ({});\n'), /Retired Slim adapter must not ship/],
   ['document reader plugin', (root) => fs.rm(path.join(root, 'plugins', 'devryan-document-reader.mjs')), /Missing default document reader plugin/],
   ['document dependency', async (root) => {
     const packagePath = path.join(root, 'user-profile', 'package.json');
@@ -96,6 +103,13 @@ for (const [name, mutate, message] of [
     await fs.writeFile(packagePath, `${JSON.stringify(profilePackage, null, 2)}\n`);
   }, /Missing default document dependency/],
   ['sanitizer plugin', (root) => fs.rm(path.join(root, 'plugins', 'openai-tool-schema-sanitizer.mjs')), /Missing default OpenAI tool schema sanitizer plugin/],
+  // The packaged pure-tool SDK pin follows its manifest dependency, independently of the native runtime pin.
+  ['plugin SDK pin', async (root) => {
+    const packagePath = path.join(root, 'user-profile', 'package.json');
+    const profilePackage = JSON.parse(await fs.readFile(packagePath, 'utf8'));
+    profilePackage.dependencies['@opencode-ai/plugin'] = '0.0.0';
+    await fs.writeFile(packagePath, `${JSON.stringify(profilePackage, null, 2)}\n`);
+  }, new RegExp(`Missing default document dependency: @opencode-ai/plugin@${compatibilityPluginPin.replaceAll('.', '\\.')}`)],
 ]) {
   test(`reports an explicit missing ${name} failure without modifying repository defaults`, async () => {
     await assert.rejects(() => withConfig(mutate), message);

@@ -11,12 +11,10 @@ describe("branch dropdown search inputs", () => {
     const branchSelector = read("BranchSelector.tsx");
     const integrateCommits = read("IntegrateCommitsSection.tsx");
     const newWorktreeDialog = read("../../session/NewWorktreeDialog.tsx");
-    const directoryTree = read("../../session/DirectoryTree.tsx");
 
     expect(branchSelector).toContain("onKeyDown={stopDropdownTypeahead}");
     expect(integrateCommits).toContain("onKeyDown={(event) => event.stopPropagation()}");
     expect(newWorktreeDialog.match(/onKeyDown=\{stopDropdownTypeahead\}/g) ?? []).toHaveLength(2);
-    expect(directoryTree.match(/onKeyDown=\{\(e\) => \{\n\s+e\.stopPropagation\(\);/g) ?? []).toHaveLength(2);
   });
 
   test("labels local branches that are already attached to worktrees", () => {

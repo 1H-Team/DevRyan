@@ -1,54 +1,34 @@
-const OPENAI_PROVIDER_ID = 'openai';
-const OPENAI_OAUTH_GPT_56_MODEL_IDS = new Set([
-  'gpt-5.6-sol',
-  'gpt-5.6-sol-fast',
-  'gpt-5.6-terra',
-  'gpt-5.6-terra-fast',
-  'gpt-5.6-luna',
-  'gpt-5.6-luna-fast',
-]);
-const isOpenAIOAuthUnsupportedModel = (modelID) => (
-  (modelID === 'gpt-5.6' || modelID.startsWith('gpt-5.6-'))
-  && !OPENAI_OAUTH_GPT_56_MODEL_IDS.has(modelID)
-);
+import { credentialMutationFingerprint } from './runtime-host/native-credential-mutation-owner.js';
 
-const normalizeAuthType = (authEntry) => {
-  const type = typeof authEntry?.type === 'string' ? authEntry.type.trim().toLowerCase() : '';
-  if (type === 'oauth') return 'oauth';
-  if (type === 'api') return 'api';
-  return undefined;
-};
+/** Catalog/status reads observe metadata and never resolve or refresh a credential. */
+export async function readNativeOpenAiMetadata(getNativeRuntimeOwner, directory) {
+  const owner = getNativeRuntimeOwner();
+  const snapshot = owner?.getConfigurationSnapshot?.();
+  const location = snapshot?.locations?.find(row => row.directory === directory) ?? snapshot?.locations?.[0];
+  if (!owner?.isReady?.() || !location) throw Object.assign(new Error('native_runtime_not_ready'), { code: 'native_runtime_not_ready' });
+  const rows = await owner.credentialMetadata({ kind: 'openai', directory: location.directory, integrationID: 'openai',
+    configurationDigest: credentialMutationFingerprint(location.configuration?.providers?.openai ?? {}),
+    operation: 'openai.integration', method: 'GET', path: '/api/integration/openai' });
+  if (!Array.isArray(rows)) throw Object.assign(new Error('native_credential_invalid'), { code: 'native_credential_invalid' });
+  const active = rows.filter(row => row.active === true);
+  if (active.length > 1) throw Object.assign(new Error('native_credential_invalid'), { code: 'native_credential_invalid' });
+  const row = active[0];
+  if (!row) return null;
+  if (row.integrationID !== 'openai' || !['key', 'oauth'].includes(row.valueType)
+    || row.valueType === 'oauth' && typeof row.methodID !== 'string') throw Object.assign(new Error('native_credential_invalid'), { code: 'native_credential_invalid' });
+  return { type: row.valueType, methodID: row.methodID, credentialID: row.id };
+}
 
-export const annotateOpenAIModelAvailability = (payload, authEntry) => {
-  const authType = normalizeAuthType(authEntry);
-  if (!authType || !payload || typeof payload !== 'object' || !Array.isArray(payload.providers)) {
-    return payload;
-  }
-
-  return {
-    ...payload,
-    providers: payload.providers.map((provider) => {
-      if (provider?.id !== OPENAI_PROVIDER_ID) return provider;
-
-      const models = provider.models && typeof provider.models === 'object' ? provider.models : {};
-      const nextModels = Object.fromEntries(Object.entries(models).map(([modelID, model]) => {
-        if (authType !== 'oauth' || !isOpenAIOAuthUnsupportedModel(modelID)) {
-          return [modelID, model];
-        }
-
-        return [modelID, {
-          ...model,
-          available: false,
-          unavailableReason: 'auth_type_unsupported',
-          requiredAuthType: 'api',
-        }];
-      }));
-
-      return {
-        ...provider,
-        authType,
-        models: nextModels,
-      };
-    }),
-  };
+/** The built-in sign-in supplies OpenCode's usable model catalog. */
+export const annotateOpenAIModelAvailability = (payload, authEntry, options = {}) => {
+  if (!payload || typeof payload !== 'object' || !Array.isArray(payload.providers)) return payload;
+  const authType = ['api', 'key'].includes(authEntry?.type) ? 'api' : authEntry?.type === 'oauth' ? 'oauth' : undefined;
+  if (!authType && !options.unavailable) return payload;
+  return { ...payload, providers: payload.providers.map(provider => {
+    if (provider?.id !== 'openai') return provider;
+    if (authType === 'api' || ['chatgpt-token-sharing', 'chatgpt-browser'].includes(authEntry?.methodID)) return { ...provider, authType };
+    const models = provider.models && typeof provider.models === 'object' ? provider.models : {};
+    return { ...provider, authType, accountModelsStatus: 'unavailable', models: Object.fromEntries(Object.entries(models)
+      .map(([id, model]) => [id, { ...model, available: false, unavailableReason: authType ? 'reauthorization_required' : 'account_models_unavailable' }])) };
+  }) };
 };

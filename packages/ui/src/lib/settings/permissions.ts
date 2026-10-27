@@ -18,7 +18,6 @@ export const SETTINGS_PERMISSION_SECTIONS = [
     pages: [
       ['chat', 'Chat'],
       ['sessions', 'Session Defaults'],
-      ['bots', 'Bots'],
       ['agents', 'Agents'],
       ['magic-prompts', 'Magic Prompts'],
     ],

@@ -8,12 +8,13 @@
 
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const electronDir = path.resolve(__dirname, '..');
-const STABLE_IDENTIFIER = 'dev.openchamber.desktop';
+const STABLE_IDENTIFIER = 'dev.devryan.desktop';
 
 function exit(msg, code = 0) {
   if (msg) console.log(`[sign-dev-electron] ${msg}`);
@@ -22,15 +23,20 @@ function exit(msg, code = 0) {
 
 if (process.platform !== 'darwin') exit('skipped (not macOS)');
 
-const electronAppPath = path.join(
-  electronDir,
-  'node_modules',
-  'electron',
-  'dist',
-  'Electron.app',
-);
+// Electron 42+ no longer downloads its binary in a postinstall script; the
+// package downloads it the first time its path is resolved. Resolve it here so
+// the binary exists before signing, as it did before, and resolve from this
+// package so a hoisted or isolated install is found. A failed download leaves
+// the install usable: the first `electron` run downloads it again.
+let electronAppPath;
+try {
+  const electronExecutable = createRequire(path.join(electronDir, 'package.json'))('electron');
+  electronAppPath = path.resolve(path.dirname(electronExecutable), '..', '..');
+} catch (error) {
+  exit(`skipped (Electron binary unavailable: ${error instanceof Error ? error.message : String(error)})`);
+}
 
-if (!existsSync(electronAppPath)) {
+if (path.basename(electronAppPath) !== 'Electron.app' || !existsSync(electronAppPath)) {
   exit(`skipped (no Electron.app at ${electronAppPath})`);
 }
 

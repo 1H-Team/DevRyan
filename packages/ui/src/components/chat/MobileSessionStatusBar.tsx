@@ -26,10 +26,12 @@ import { useI18n } from '@/lib/i18n';
 import { useShallow } from 'zustand/react/shallow';
 import {
   collectSessionIndicatorScopeIds,
-  resolveMobileSessionIndicatorPresentation,
+  resolveSessionLeadingIndicatorLabelKey,
+  resolveSessionLeadingIndicatorPresentation,
   resolveSidebarIndicator,
   resolveSidebarWorkingStatus,
 } from '@/components/session/sidebar/sessionIndicator';
+import { SessionStatusDot } from '@/components/session/sidebar/SessionStatusDot';
 import {
   resolveEffectivePlanIndicatorState,
   type PlanIndicatorState,
@@ -248,43 +250,17 @@ function MobileSessionLifecycleIndicator({
     pendingQuestionCount,
     planState,
   });
-  const presentation = resolveMobileSessionIndicatorPresentation({
+  const presentation = resolveSessionLeadingIndicatorPresentation({
     indicator,
     isWorking: sidebarIsWorking,
-    planState,
+    isImplementingPlan: planState === 'implementing',
   });
-
-  if (presentation.kind === 'status') {
-    const label = t(presentation.indicator.labelKey);
-    return (
-      <span
-        className={cn('h-1.5 w-1.5 rounded-full', presentation.indicator.className)}
-        aria-label={label}
-        title={label}
-      />
-    );
-  }
-
-  if (presentation.kind === 'working') {
-    const label = t(presentation.labelKey);
-    return (
-      <span
-        className="inline-flex h-2.5 w-2.5 items-center justify-center"
-        aria-label={label}
-        title={label}
-      >
-        <RiLoader4Line
-          className="h-2.5 w-2.5 animate-spin text-[var(--status-info)]"
-          aria-hidden="true"
-        />
-      </span>
-    );
-  }
+  const labelKey = resolveSessionLeadingIndicatorLabelKey(presentation);
 
   return (
-    <span
-      className="h-1.5 w-1.5 rounded-full border border-[var(--surface-mutedForeground)]"
-      aria-hidden="true"
+    <SessionStatusDot
+      presentation={presentation}
+      label={labelKey ? t(labelKey) : undefined}
     />
   );
 }

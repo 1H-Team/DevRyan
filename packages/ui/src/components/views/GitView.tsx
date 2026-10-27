@@ -97,6 +97,13 @@ type CommitScope = {
   files: string[];
   stagedOnly: boolean;
 };
+
+const gitErrorField = (err: unknown, key: 'code' | 'details'): string | undefined => {
+  if (!err || typeof err !== 'object' || !(key in err)) return undefined;
+  const value = (err as { code?: unknown; details?: unknown })[key];
+  return typeof value === 'string' && value.trim() ? value : undefined;
+};
+
 type HistoryBranchDivider = {
   insertBeforeIndex: number;
   branchName: string;
@@ -618,7 +625,7 @@ export const GitView: React.FC = () => {
   // Conflict state persistence key
   const conflictStorageKey = React.useMemo(() => {
     if (!currentSessionId) return null;
-    return `openchamber.conflict:${currentSessionId}`;
+    return `devryan.conflict:${currentSessionId}`;
   }, [currentSessionId]);
 
   // Save conflict state to localStorage
@@ -1023,6 +1030,21 @@ export const GitView: React.FC = () => {
     });
   }, [status, stagedEntries]);
 
+  const showGitActionError = React.useCallback((err: unknown, fallback: string) => {
+    const message = err instanceof Error ? err.message : fallback;
+    const details = gitErrorField(err, 'details');
+    if (gitErrorField(err, 'code') === 'GIT_PUSH_HOOK_FAILED' || gitErrorField(err, 'code') === 'GIT_PUSH_FAILED') {
+      toast.error(message, details ? {
+        action: {
+          label: t('gitView.toast.copyHookOutput'),
+          onClick: () => { void copyTextToClipboard(details); },
+        },
+      } : undefined);
+      return;
+    }
+    toast.error(message);
+  }, [t]);
+
   const showPushSyncToast = React.useCallback((result: GitPushSyncResult) => {
     if (result.pulledFileCount > 0 && result.pushedChanges) {
       toast.success(
@@ -1091,8 +1113,8 @@ export const GitView: React.FC = () => {
             : t('gitView.toast.pulledFilesPlural', { count: result.files.length, name: remote.name })
         );
       } else if (action === 'push') {
-        const result = await syncGitBranchForPush(currentDirectory);
-        showPushSyncToast(result);
+        await git.gitPush(currentDirectory);
+        toast.success(t('gitView.toast.pushedToUpstream'));
       } else if (action === 'sync') {
         if (!remote) {
           throw new Error('No remote available for sync');
@@ -1112,13 +1134,12 @@ export const GitView: React.FC = () => {
         await refreshLog();
       }
     } catch (err) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : t('gitView.toast.syncActionFailed', { action: action === 'sync' ? t('gitView.sync.syncChanges') : action === 'pull' ? t('gitView.sync.pull') : action });
-      toast.error(message);
+      const fallback = t('gitView.toast.syncActionFailed', {
+        action: action === 'sync' ? t('gitView.sync.syncChanges') : action === 'pull' ? t('gitView.sync.pull') : action,
+      });
+      showGitActionError(err, fallback);
+      await refreshAfterRemoteMutation();
     } finally {
-      await refreshStatusAndBranches(false);
       setSyncAction(null);
     }
   };
@@ -1176,6 +1197,9 @@ export const GitView: React.FC = () => {
           : []),
       ].join('\n'));
       const warning = result.warnings?.find((value) => typeof value === 'string' && value.trim());
+      if (result.source === 'session_model') {
+        toast.info(t('gitView.toast.activeModelFallback'), { description: result.model ?? undefined });
+      }
       if (warning) {
         toast.warning(t('gitView.toast.generateCommitMessageFallback'), { description: warning });
       }
@@ -1272,16 +1296,15 @@ export const GitView: React.FC = () => {
       setCommitMessage('');
       setSelectedPaths(new Set());
 
-      await refreshStatusAndBranches();
-
       if (options.pushAfter) {
         setSyncAction('push');
-        const result = await syncGitBranchForPush(currentDirectory);
-        showPushSyncToast(result);
+        await git.gitPush(currentDirectory);
+        toast.success(t('gitView.toast.pushedToUpstream'));
         triggerFireworks();
         await refreshAfterRemoteMutation();
       } else if (options.syncAfter) {
         setSyncAction('sync');
+        void refreshStatusAndBranches();
         const trackingRemoteName = status?.tracking?.split('/')[0];
         const syncRemote = effectiveRemotes.find((remote) => remote.name === trackingRemoteName) ?? effectiveRemotes[0];
         if (!syncRemote) {
@@ -1302,8 +1325,8 @@ export const GitView: React.FC = () => {
 
       setIntegrateRefreshKey((v) => v + 1);
     } catch (err) {
-      const message = err instanceof Error ? err.message : t('gitView.toast.createCommitFailed');
-      toast.error(message);
+      showGitActionError(err, t('gitView.toast.createCommitFailed'));
+      await refreshAfterRemoteMutation();
     } finally {
       setCommitAction(null);
       if (options.pushAfter || options.syncAfter) {

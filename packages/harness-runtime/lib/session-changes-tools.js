@@ -1,12 +1,14 @@
-// Capture and history use the same classification. Only known tool identities
-// are aliases; arbitrary MCP suffixes must never inherit native-tool authority.
-export const SESSION_CHANGE_READ_ONLY_TOOLS = Object.freeze([
+import { REVIEWED_READ_ONLY_TOOLS } from './session-tool-effects.js';
+
+// These names only suppress speculative capture; history still requires a
+// call-bound reviewed effect. Arbitrary MCP suffixes remain unknown.
+export const SESSION_CHANGE_READ_ONLY_TOOLS = Object.freeze([...new Set([
   'read', 'oc_read', 'glob', 'oc_glob', 'grep', 'oc_grep', 'list', 'ls', 'oc_ls', 'stat', 'oc_stat',
   'webfetch', 'websearch', 'todowrite', 'todoread', 'question', 'skill',
-  'task', 'devryan_task', 'council_session',
-  // Legacy: retired Context Mode tools, kept read-only so stored sessions replay their history.
+  'task', 'devryan_task', 'council_session', ...REVIEWED_READ_ONLY_TOOLS,
+  // Legacy capture hints; historical names alone do not establish an effect.
   'ctx_search', 'ctx_stats',
-]);
+])]);
 const READ_ONLY = new Set(SESSION_CHANGE_READ_ONLY_TOOLS);
 const FILE_TOOLS = new Set(['edit', 'write', 'apply_patch', 'multiedit', 'create', 'file_write', 'str_replace', 'str_replace_based_edit_tool']);
 const ALIASES = new Map([

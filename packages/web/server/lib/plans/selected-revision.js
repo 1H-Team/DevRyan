@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { planError, readPlanRevision, resolveSessionPlanRevision } from './revisions.js';
@@ -87,5 +88,11 @@ export const resolveSelectedPlanRevision = async ({ plan, context, readSession, 
     }
   }
   if (found.length !== 1) throw planError(409, 'plan_selection_required', 'Reselect the saved plan to identify its project');
-  return { ...found[0], source, ownerKey, sourceMessageID: plan.sourceMessageId };
+  if (typeof options.readCanonicalPlanIdentity !== 'function') throw planError(503, 'plan_identity_unavailable');
+  const { sourceIdentity, content, compactedSinceSource } = await options.readCanonicalPlanIdentity({ sessionID: source.id, sourceMessageID: plan.sourceMessageId,
+    directory: found[0].projectDirectory, allowSelected: current.id === source.id });
+  // The canonical source text's saved-file version; plan_read compares it to skip resending an unchanged plan.
+  const sourceContentVersion = typeof content === 'string' ? crypto.createHash('sha256').update(content).digest('hex') : undefined;
+  return { ...found[0], source, sourceIdentity, ownerKey, sourceMessageID: plan.sourceMessageId, sourceContentVersion,
+    compactedSinceSource: compactedSinceSource !== false };
 };

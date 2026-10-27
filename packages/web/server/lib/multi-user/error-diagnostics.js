@@ -1,4 +1,4 @@
-import { classifyProviderTransportFailure } from '@openchamber/orchestration-runtime';
+import { classifyProviderTransportFailure } from '@devryan/orchestration-runtime';
 
 export const DIAGNOSTIC_IMPACTS = Object.freeze(['low', 'medium', 'high', 'critical']);
 export const DIAGNOSTIC_SOURCES = Object.freeze(['observed', 'inferred']);
@@ -21,7 +21,6 @@ export const FAILURE_CLASSES = Object.freeze([
 
 const DIAGNOSTIC_IMPACT_SET = new Set(DIAGNOSTIC_IMPACTS);
 const DIAGNOSTIC_SOURCE_SET = new Set(DIAGNOSTIC_SOURCES);
-const DIAGNOSTIC_OUTCOME_SET = new Set(DIAGNOSTIC_OUTCOMES);
 const DIAGNOSTIC_DISPOSITION_SET = new Set(DIAGNOSTIC_DISPOSITIONS);
 const FAILURE_CLASS_SET = new Set(FAILURE_CLASSES);
 
@@ -432,10 +431,6 @@ export const normalizeDiagnosticImpact = (value) => (
 
 export const normalizeDiagnosticSource = (value) => (
   DIAGNOSTIC_SOURCE_SET.has(value) ? value : null
-);
-
-export const normalizeDiagnosticOutcome = (value) => (
-  DIAGNOSTIC_OUTCOME_SET.has(value) ? value : 'unknown'
 );
 
 export const normalizeDiagnosticDisposition = (value) => (

@@ -4,7 +4,7 @@ export const ROLE_NAMES = Object.freeze(['admin', 'senior_developer', 'developer
 
 export const SETTINGS_PERMISSION_SLUGS = Object.freeze([
   'appearance', 'notifications', 'shortcuts', 'voice', 'about',
-  'chat', 'sessions', 'bots', 'agents', 'magic-prompts',
+  'chat', 'sessions', 'agents', 'magic-prompts',
   'plugins', 'skills.installed', 'skills.catalog', 'mcp', 'providers', 'usage', 'remote-instances', 'tunnel',
   'users', 'bug-reports', 'git', 'projects', 'commands',
 ]);
@@ -148,7 +148,7 @@ export const ROLE_POLICY_DEFAULTS = Object.freeze({
   admin: Object.freeze({
     settingsPages: ['*'], settingsPermissions: ADMIN_SETTINGS_PERMISSIONS,
     featureOverrides: Object.freeze({}),
-    bots: true, files: true, terminal: true, browser: true, createWorktrees: true, createBranches: true, manageProjects: true,
+    files: true, terminal: true, browser: true, createWorktrees: true, createBranches: true, manageProjects: true,
     manageUsers: true, manageGlobalSettings: true, manageGit: true, push: true, github: true,
   }),
   senior_developer: Object.freeze({
@@ -158,7 +158,7 @@ export const ROLE_POLICY_DEFAULTS = Object.freeze({
       editPages: [...USER_EDITABLE_SETTINGS_PAGES],
     }),
     featureOverrides: Object.freeze({}),
-    bots: true, files: false, terminal: true, browser: true, createWorktrees: true, createBranches: true, manageProjects: false, manageUsers: false,
+    files: false, terminal: true, browser: true, createWorktrees: true, createBranches: true, manageProjects: false, manageUsers: false,
     manageGlobalSettings: false, manageGit: true, push: true, github: true,
   }),
   developer: Object.freeze({
@@ -170,7 +170,7 @@ export const ROLE_POLICY_DEFAULTS = Object.freeze({
     featureOverrides: Object.freeze({
       agents: Object.freeze({ hideGlobalBehaviorUi: true }),
     }),
-    bots: true, files: false, terminal: false, browser: true, createWorktrees: false, createBranches: false, manageProjects: false, manageUsers: false,
+    files: false, terminal: false, browser: true, createWorktrees: false, createBranches: false, manageProjects: false, manageUsers: false,
     manageGlobalSettings: false, manageGit: true, push: true, github: true,
   }),
 });
@@ -192,7 +192,7 @@ const SETTINGS_FIELDS_BY_PAGE = Object.freeze({
   ],
   sessions: [
     'autoDeleteEnabled', 'autoDeleteAfterDays', 'sessionRetentionAction', 'defaultModel',
-    'defaultVariant', 'defaultAgent', 'defaultPlanMode', 'autoCreateWorktree', 'zenModel',
+    'defaultVariant', 'defaultAgent', 'defaultPlanMode', 'helperModelSelection', 'autoCreateWorktree', 'zenModel',
     'messageStreamTransport', 'messageLimit', 'favoriteModels', 'favoriteModelsUpdatedAt',
     'hiddenModels', 'hiddenModelsUpdatedAt', 'agentModelSelections',
   ],
@@ -233,7 +233,7 @@ const SETTINGS_FIELDS_BY_PAGE = Object.freeze({
 });
 
 const CAPABILITY_KEYS = Object.freeze([
-  'bots', 'files', 'terminal', 'browser', 'createWorktrees', 'createBranches', 'manageProjects', 'manageUsers', 'manageGlobalSettings',
+  'files', 'terminal', 'browser', 'createWorktrees', 'createBranches', 'manageProjects', 'manageUsers', 'manageGlobalSettings',
   'manageGit', 'push', 'github',
 ]);
 
@@ -329,7 +329,6 @@ export function normalizeRolePolicy(role, row = null, userPolicy = null) {
   }
   const fromRow = row ? {
     settingsPermissions: roleSettingsPermissions,
-    bots: base.bots,
     files: row.can_use_files,
     terminal: row.can_use_terminal,
     browser: typeof row.can_use_browser === 'boolean' ? row.can_use_browser : base.browser,
@@ -434,7 +433,7 @@ export function settingsPageForRequest(requestPath, method = 'GET') {
   if (/^\/(?:config\/mcp|mcp)(?:\/|$)/.test(path)) return 'mcp';
   if (/^\/config\/skills\/(?:catalog|install|scan)(?:\/|$)/.test(path)) return 'skills.catalog';
   if (/^\/config\/skills(?:\/|$)/.test(path)) return 'skills.installed';
-  if (/^\/config\/(?:plugins|slim)(?:\/|$)/.test(path)) return 'plugins';
+  if (/^\/config\/plugins(?:\/|$)/.test(path)) return 'plugins';
   // Reading the effective host prompt catalog is a chat/action runtime
   // dependency. Keep the editor and every mutation permission-gated without
   // requiring managed users to see the Magic Prompts settings page.
@@ -448,12 +447,14 @@ export function settingsPageForRequest(requestPath, method = 'GET') {
     || /^\/auth(?:\/|$)/.test(path)
     || path === '/provider'
     || path === '/provider/auth'
-    || /^\/provider\/[^/]+\/(?:auth|source|oauth|usage-auth|runtime-status)(?:\/|$)/.test(path)
+    || /^\/provider\/[^/]+\/(?:auth|source|oauth|usage-auth|runtime-status|accounts)(?:\/|$)/.test(path)
+    // Provider account rename, switch and removal.
+    || /^\/credential(?:\/|$)/.test(path)
     || /^\/provider\/(?:anthropic\/(?:check-oauth|claude-cli|prompt-mode)|cursor-acp\/configure|xai\/oauth)(?:\/|$)/.test(path)) return 'providers';
   if (/^\/quota\/credentials(?:\/|$)/.test(path)) return 'providers';
-  if (/^\/openchamber\/tunnel(?:\/|$)/.test(path)) return 'tunnel';
+  if (/^\/(?:devryan|openchamber)\/tunnel(?:\/|$)/.test(path)) return 'tunnel';
   if (/^\/diagnostics(?:\/(?:status|export|sanitize))?$/.test(path)
-    || /^\/(?:opencode\/update-check|openchamber\/update-(?:check|install))(?:\/|$)/.test(path)) return 'about';
+    || /^\/(?:opencode\/update-check|(?:devryan|openchamber)\/update-(?:check|install))(?:\/|$)/.test(path)) return 'about';
   const projectRuntimeRoute = /^\/projects\/[^/]+\/(?:branch-target|scheduled-tasks(?:\/[^/]+)?(?:\/run)?)$/.test(path);
   if (/^\/projects(?:\/|$)/.test(path)
     && !projectRuntimeRoute
@@ -462,6 +463,8 @@ export function settingsPageForRequest(requestPath, method = 'GET') {
   if (/^\/git\/(?:identities|global-identity|discover-credentials|set-identity|commit-template)(?:\/|$)/.test(path)) return 'git';
   if (path === '/config/themes') return 'appearance';
   if (path === '/config/opencode-resolution') return 'about';
+  if (/^\/config\/claude-update(?:\/|$)/.test(path)) return 'about';
+  if (path === '/config/opencode-update-check' || path === '/config/claude-update-check' || path === '/config/claude-resolution') return 'about';
   return null;
 }
 
@@ -565,7 +568,7 @@ export function publicPrincipal(principal) {
     displayName: principal.displayName,
     role: principal.role,
     scope: principal.scope,
-    policy: principal.policy,
+    policy: { ...principal.policy },
     assignments: (principal.assignments || []).map(({
       repositoryPath: _repositoryPath,
       worktreeContainerPath: _worktreeContainerPath,

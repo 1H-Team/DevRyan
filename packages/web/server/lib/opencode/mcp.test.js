@@ -67,41 +67,6 @@ describe('MCP config helpers', () => {
     ].sort());
   });
 
-  it('resolves only an exact, URL-bound MCP OAuth access token for server-side Bot import', async () => {
-    writeJson(getMcpAuthPath(), {
-      buffer: {
-        serverUrl: 'https://mcp.buffer.com/mcp',
-        tokens: { accessToken: 'oauth-secret', expiresAt: 2_000_000_000 },
-      },
-    });
-    const { getMcpOAuthCredential } = await loadMcpModule();
-
-    expect(getMcpOAuthCredential('buffer', 'https://mcp.buffer.com/mcp', 1_000)).toEqual({
-      authorization: 'Bearer oauth-secret',
-      expired: false,
-    });
-    expect(getMcpOAuthCredential('buffer', 'https://other.example/mcp', 1_000)).toBeNull();
-    expect(getMcpOAuthCredential('missing', 'https://mcp.buffer.com/mcp', 1_000)).toBeNull();
-  });
-
-  it('marks an exact MCP OAuth credential expired without returning refresh material', async () => {
-    writeJson(getMcpAuthPath(), {
-      buffer: {
-        serverUrl: 'https://mcp.buffer.com/mcp',
-        tokens: {
-          accessToken: 'expired-secret',
-          refreshToken: 'must-not-be-returned',
-          expiresAt: 1,
-        },
-      },
-    });
-    const { getMcpOAuthCredential } = await loadMcpModule();
-
-    const credential = getMcpOAuthCredential('buffer', 'https://mcp.buffer.com/mcp', 2_000);
-    expect(credential).toEqual({ authorization: 'Bearer expired-secret', expired: true });
-    expect(JSON.stringify(credential)).not.toContain('must-not-be-returned');
-  });
-
   it('uses root project opencode.json before legacy .opencode config and user config', async () => {
     const configDir = path.join(tempHome, '.config', 'opencode');
     const projectDir = path.join(tempHome, 'project');
@@ -129,6 +94,49 @@ describe('MCP config helpers', () => {
       ['shared', ['project-shared'], 'project'],
       ['legacyProjectOnly', ['legacy-project'], 'project'],
     ].sort());
+  });
+
+  it('lists servers from parent folder configs in OpenCode order and edits the defining file', async () => {
+    const workspace = path.join(tempHome, 'workspace');
+    const projectDir = path.join(workspace, 'apps', 'project');
+    const parentPath = path.join(workspace, 'opencode.json');
+    const parentDotPath = path.join(workspace, '.opencode', 'opencode.jsonc');
+    const projectPath = path.join(projectDir, 'opencode.json');
+    const projectDotPath = path.join(projectDir, '.opencode', 'opencode.json');
+    writeJson(parentPath, {
+      mcp: {
+        parentOnly: { type: 'remote', url: 'https://parent.example.test/mcp' },
+        shadowed: { type: 'local', command: ['parent-shadowed'] },
+      },
+    });
+    writeJson(parentDotPath, { mcp: { dotOverridesDirect: { type: 'local', command: ['parent-dot'] } } });
+    writeJson(projectPath, {
+      mcp: {
+        shadowed: { type: 'local', command: ['project-shadowed'] },
+        dotOverridesDirect: { type: 'local', command: ['project-direct'] },
+      },
+    });
+    writeJson(projectDotPath, { mcp: { projectDot: { type: 'local', command: ['project-dot'] } } });
+    // A broken parent folder file is skipped, as OpenCode's other layers are.
+    fs.writeFileSync(path.join(tempHome, 'opencode.json'), '{"mcp": ', 'utf8');
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    const { listMcpConfigs, getMcpConfig, updateMcpConfig } = await loadMcpModule();
+
+    expect(listMcpConfigs(projectDir).map((entry) => [entry.name, entry.command ?? entry.url, entry.scope]).sort()).toEqual([
+      ['parentOnly', 'https://parent.example.test/mcp', 'user'],
+      ['shadowed', ['project-shadowed'], 'project'],
+      // Every .opencode file overrides every direct file, the project's included.
+      ['dotOverridesDirect', ['parent-dot'], 'user'],
+      ['projectDot', ['project-dot'], 'project'],
+    ].sort());
+    expect(getMcpConfig('parentOnly', projectDir)).toMatchObject({ scope: 'user', url: 'https://parent.example.test/mcp' });
+
+    updateMcpConfig('parentOnly', { url: 'https://parent.example.test/v2' }, projectDir);
+
+    expect(readJson(parentPath).mcp.parentOnly.url).toBe('https://parent.example.test/v2');
+    expect(readJson(projectPath).mcp.parentOnly).toBeUndefined();
   });
 
   it('creates project-scoped MCP configs in the project .opencode config by default', async () => {

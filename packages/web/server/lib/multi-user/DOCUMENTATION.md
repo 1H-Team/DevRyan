@@ -1,5 +1,14 @@
 # Multi-user control plane
 
+## Retired Bots
+
+Bots are removed. The runtime composes no Bot control plane, owner identity,
+routes or policy capability, and Supabase reconnect makes no schema RPC. Stored
+`bots` capability cells and settings permissions are ignored. The Bot
+migrations stay applied and untouched; nothing reads their tables. An existing
+vault or setup snapshot may still hold the retired `bots-local-owner` identity;
+it is accepted and ignored.
+
 ## Purpose
 
 This module provides the server-only Supabase identity and authorization layer
@@ -17,61 +26,17 @@ behavior without weakening managed-host checks. That compatibility principal is
 never eligible for Managed Remote, which requires separately attributable managed
 accounts before connector startup or public-host API access.
 
+Managed-task events normalize legacy `openchamber:*` types before both root-session
+ownership checks and malformed-event rejection. A legacy type cannot fall through
+to an otherwise authorized top-level session or directory.
+
 `supabase-client.js` bounds REST, RPC and Auth responses to 16 MiB of decoded
 body bytes before JSON parsing. It rejects oversized declared lengths and
 counts streamed chunks independently of compression or missing/incorrect
 length headers, cancelling an oversized body with `supabase_response_too_large`
-(502). Existing per-request deadlines, empty/plaintext error compatibility,
-traffic accounting, and the separate private Storage limits still apply.
-The Bot repository may retry oversized list reads using smaller keyset pages;
-the HTTP client never replays a request or mutation itself.
-
-## Production Bots persistence
-
-Migrations `20260822120000_production_bots.sql`,
-`20260823100000_bot_recovery_purge.sql`, and
-`20260823150227_bot_capability_bindings.sql`, followed by
-`20260823202400_bot_profiles_and_publish.sql` through
-`20260826130000_bot_two_phase_responses.sql` and
-`20260826140000_bot_environment_secrets.sql`, own the server-only Production
-Bots control plane. Their tables cover durable Bot profiles, encrypted profile
-avatars, immutable revisions,
-memberships and continuous-channel ACLs, messages and objects, queued runs and
-action approvals, credential and environment-secret metadata, routines, memory and Library versions,
-immutable Skill packages and MCP bindings, append-only audit history, and Test
-Lab cases/runs. All Bot relations force RLS,
-have no browser policies, and grant data access only to `service_role`; bulk
-object bytes remain in the private `devryan-bot-objects` Storage bucket and
-credential and environment-secret values remain in separate host-local vaults.
-
-State-changing concurrency contracts live in service-role-only, security-invoker
-RPCs: joined send context and channel audience reads, message sequence allocation,
-FIFO run claiming by computer scope, atomic safe same-run retry, idempotent routine
-occurrence claiming, extraction claim/deferral, idempotent terminal-run settlement,
-revision activation, bounded audit pruning, and Draft/Retired
-granular purge and server-retired one-shot full deletion.
-Activated revisions and all history/version/audit records are immutable. The Bot
-server layer must pass Supabase errors through
-`productionBotsMigrationFailurePayload()` before continuing: a missing Bot
-relation, column, or RPC fails closed as HTTP `503` with
-`code: "bot_schema_migration_required"` and
-`requiredMigration: "20260908182901"`. Runtime startup additionally verifies
-the service-role-only `devryan_bot_schema_version()` marker, and one route
-boundary blocks every Bot read or mutation while that marker is stale.
-
-`runtime.js` is only the composition owner for this feature: after creating the
-server-only Supabase transport and actor audit, it injects them into
-`../bots/runtime.js`, delegates `/api/bots/*` route registration, and drains the
-Bots runtime during authentication-runtime disposal. Bot repositories,
-authorization, encryption, object handling, capabilities, and retention remain
-in the focused `lib/bots/` module.
-
-Native Telegram jobs have no browser session. The injected Bot principal
-resolver freshly reads active profile, role policy and individual policy,
-rejects disabled effective `bots` access, and avoids unrelated project/worktree
-lookups. Existing Bot membership and exact channel authorization still run at
-admission and delivery. Optional Telegram schema readiness does not raise the
-global Bot schema marker or disable existing Bot chat.
+(502). Existing per-request deadlines, empty/plaintext error compatibility
+and traffic accounting still apply. The HTTP client never replays a request or
+mutation itself.
 
 ## Assigned branch targets
 
@@ -116,9 +81,9 @@ global Bot schema marker or disable existing Bot chat.
 
 ## Configuration
 
-Set `OPENCHAMBER_SUPABASE_URL`,
-`OPENCHAMBER_SUPABASE_PUBLISHABLE_KEY`, and
-`OPENCHAMBER_SUPABASE_SECRET_KEY`. The equivalent `SUPABASE_*` names are also
+Set `DEVRYAN_SUPABASE_URL`,
+`DEVRYAN_SUPABASE_PUBLISHABLE_KEY`, and
+`DEVRYAN_SUPABASE_SECRET_KEY`. The equivalent `SUPABASE_*` names are also
 accepted. A mode-`0600` `<data-dir>/supabase.json` file may be used instead.
 
 The secret key is sent only in Supabase's `apikey` header when it is a modern
@@ -130,6 +95,11 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
 - Managed account passwords require at least six characters and have no
   letter, number, case, or symbol composition requirement.
 - Refresh/access tokens are AES-256-GCM encrypted in the host vault.
+- Fresh native setup uses `vault.js`'s logical owner projection, invoked by
+  `opencode/runtime-host/native-setup-local-owners.js` before feature owners load.
+  It preserves the durable local administrator identity through the original
+  vault owner, excludes browser sessions and bearer grants, and restores only
+  matching identities. It does not copy or decrypt vault bytes outside that owner.
 - Every managed browser-origin `/api` request resolves one principal and runs
   in an AsyncLocalStorage request context. Electron's private browser discovery
   and lease routes are the narrow exception: they register before UI auth and
@@ -173,11 +143,6 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
   canonical Read/Edit matrix. Administrator access remains fixed at full; an
   administrator may explicitly delegate a host-global settings page to another
   role or user without granting unrelated terminal, file, Git, or GitHub access.
-- Bots access is a default-on canonical capability with sparse per-user
-  overrides. When disabled, core middleware rejects `/api/bots`,
-  `/api/bot-actions`, `/api/bot-channels`, and `/api/bot-runs` with the stable
-  `bots_access_disabled` code before the Production Bots control plane runs.
-  Memberships and Bot data remain intact so restoring access is non-destructive.
 - Managed Git mutations operate on the real checked-out branch. General branch
   grants remain a visibility filter, while operations that directly write a
   different branch (commit reintegration, worktree creation, and PR merge
@@ -252,8 +217,8 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
 - `managed-agent-defaults.js`: bounded single-model agent-default validation and
   personal-over-host execution resolution. Composite agents such as Council are
   deliberately host-managed.
-- `auth-compat.js`: mixed-schema policy reads, structured auth and Production
-  Bots migration dependency errors, and strict agent-test identity
+- `auth-compat.js`: mixed-schema policy reads, structured auth errors, and
+  strict agent-test identity
   discovery/selection.
 - `supabase-client.js`: Auth Admin, password/refresh, and PostgREST transport.
 - `vault.js`: encrypted atomic application-session token vault.
@@ -342,15 +307,9 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
   developers inherit enabled, and administrators remain fixed enabled. It
   gates direct branch creation, new-branch worktrees, and retries of durable
   operations whose receipt was created in new-branch mode.
-- `bots` is a policy-template capability that defaults enabled for every role
-  and is stored only when overridden in `user_policies.capabilities`.
-  Administrators remain fixed enabled. A disabled managed principal is denied
-  before any Bot route family executes, without changing memberships or data.
 - Settings Home is always readable. `behavior` resolves to the `agents` policy;
   Skills Catalog is independently controlled. Bug Reports defaults to Read/Edit
-  for all managed roles and retains normal role/user override behavior. Bots is
-  part of the canonical permission catalog: administrators are fixed at
-  Read/Edit while senior developers and developers default to denied. Stored
+  for all managed roles and retains normal role/user override behavior. Stored
   role matrices are projected onto the complete catalog, missing cells inherit
   the role default, malformed cells fail closed, and Edit always requires Read.
 - `featureOverrides.agents.hideGlobalBehaviorUi` defaults enabled for
@@ -366,7 +325,10 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
 - The read-only `/api/config/providers` model catalog is a chat bootstrap
   dependency and remains available when the Providers settings page is hidden.
   Provider credentials, authentication routes, and catalog mutations remain
-  protected by the Providers Read/Edit permission.
+  protected by the Providers Read/Edit permission. This includes the provider
+  account list (`/provider/:id/accounts`) and account switch, rename and
+  removal (`/credential/:id`), which are also host-global administrator routes
+  and unavailable during offline grace.
 - Project settings contain one stable server-owned project ID per repository.
   Assigned branches are nested beneath that project in deterministic order;
   clients may synthesize branch rows but must not replace the project UUID or
@@ -644,7 +606,7 @@ git branch --list 'devryan/*'
 ```
 
 The legacy directory is `<data-dir>/worktrees/` (normally
-`~/.config/openchamber/worktrees/`). Cleanup is deliberately manual; runtime
+`~/.config/devryan/worktrees/`). Cleanup is deliberately manual; runtime
 grant changes never delete shared or legacy worktrees.
 
 ## AI-agent test identities

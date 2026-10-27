@@ -1,0 +1,472 @@
+{
+ "vector": "12-steer-queue-switch",
+ "title": "D12: steer + queue prompts and switchModel while a tool is running",
+ "design": "D12 (+F12)",
+ "opencode": "2.0.20",
+ "capturedWith": "g2trace on the G1 embedded host (ServerFetch.make + Bun listener), simulation backend; see README.md",
+ "normalization": {
+  "ids": 42,
+  "timestamps": 31,
+  "sha256": 4,
+  "sha1": 0,
+  "slugs": 1,
+  "timestampBase": 1767225600000,
+  "timestampStep": 1000
+ },
+ "frames": [
+  "data: {\"id\":\"evt_000000000001normalized0000\",\"created\":1767225601000,\"type\":\"session.created\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"slug\":\"slug-1\",\"version\":\"0.0.0-spike\",\"projectID\":\"global\",\"location\":{\"directory\":\"<home>/workspace\"},\"subpath\":\"\",\"title\":\"Steer\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":0,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000002normalized0000\",\"created\":1767225602000,\"type\":\"session.inbox.enqueued\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"inboxID\":\"msg_000000000001normalized0000\",\"sessionID\":\"ses_fffffffffffenormalized0000\",\"item\":{\"type\":\"user\",\"payload\":{\"text\":\"Run a held tool\"},\"delivery\":\"steer\"}},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":1,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000003normalized0000\",\"created\":1767225603000,\"type\":\"session.execution.started\",\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":2,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000004normalized0000\",\"created\":1767225604000,\"metadata\":{\"instructions\":{\"initial\":true}},\"type\":\"session.instructions.updated\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"delta\":{\"core/codemode\":\"0000000000000000000000000000000000000000000000000000000000000001\",\"core/skill-guidance\":\"0000000000000000000000000000000000000000000000000000000000000002\",\"core/date\":\"0000000000000000000000000000000000000000000000000000000000000003\",\"core/environment\":\"0000000000000000000000000000000000000000000000000000000000000004\"}},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":3,\"version\":2}}\n\n",
+  "data: {\"id\":\"evt_000000000005normalized0000\",\"created\":1767225605000,\"type\":\"session.inbox.delivered\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"inboxID\":\"msg_000000000001normalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":4,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000006normalized0000\",\"created\":1767225607000,\"type\":\"session.step.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"agent\":\"build\",\"model\":{\"id\":\"m1\",\"providerID\":\"sim\"},\"assistantMessageID\":\"msg_000000000002normalized0000\",\"started\":1767225606000},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":5,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000007normalized0000\",\"created\":1767225608000,\"type\":\"session.tool.input.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"id\":\"call_s12_probe\",\"name\":\"sim_probe\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":6,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000008normalized0000\",\"created\":1767225609000,\"type\":\"session.tool.input.ended\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"id\":\"call_s12_probe\",\"text\":\"{\\\"n\\\":12}\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":7,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000009normalized0000\",\"created\":1767225609000,\"type\":\"session.tool.called\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"id\":\"call_s12_probe\",\"input\":{\"n\":12},\"executed\":false},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":8,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000000anormalized0000\",\"created\":1767225610000,\"type\":\"session.step.streamed\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":9,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000000bnormalized0000\",\"created\":1767225611000,\"type\":\"session.model.selected\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"model\":{\"id\":\"m2\",\"providerID\":\"sim\"}},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":10,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000000cnormalized0000\",\"created\":1767225612000,\"type\":\"session.inbox.enqueued\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"inboxID\":\"msg_000000000004normalized0000\",\"sessionID\":\"ses_fffffffffffenormalized0000\",\"item\":{\"type\":\"user\",\"payload\":{\"text\":\"Steer: also mention bananas\"},\"delivery\":\"steer\"}},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":11,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000000dnormalized0000\",\"created\":1767225613000,\"type\":\"session.inbox.enqueued\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"inboxID\":\"msg_000000000005normalized0000\",\"sessionID\":\"ses_fffffffffffenormalized0000\",\"item\":{\"type\":\"user\",\"payload\":{\"text\":\"Queued follow-up\"},\"delivery\":\"queue\"}},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":12,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000000enormalized0000\",\"created\":1767225614000,\"type\":\"session.tool.success\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"id\":\"call_s12_probe\",\"content\":[{\"type\":\"text\",\"text\":\"held-probe-ok\"}],\"metadata\":{\"truncated\":false},\"executed\":false},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":13,\"version\":2}}\n\n",
+  "data: {\"id\":\"evt_00000000000fnormalized0000\",\"created\":1767225615000,\"type\":\"session.step.ended\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"finish\":\"tool-calls\",\"rawFinish\":\"tool_calls\",\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":14,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000010normalized0000\",\"created\":1767225615000,\"type\":\"session.usage.updated\",\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}}}\n\n",
+  "data: {\"id\":\"evt_000000000011normalized0000\",\"created\":1767225616000,\"type\":\"session.inbox.delivered\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"inboxID\":\"msg_000000000004normalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":15,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000012normalized0000\",\"created\":1767225618000,\"type\":\"session.step.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"agent\":\"build\",\"model\":{\"id\":\"m2\",\"providerID\":\"sim\",\"variant\":\"default\"},\"assistantMessageID\":\"msg_000000000006normalized0000\",\"started\":1767225617000},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":16,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000013normalized0000\",\"created\":1767225619000,\"type\":\"session.text.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000006normalized0000\",\"ordinal\":0},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":17,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000014normalized0000\",\"created\":1767225620000,\"type\":\"session.text.delta\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000006normalized0000\",\"ordinal\":0,\"delta\":\"step two saw the steer\"}}\n\n",
+  "data: {\"id\":\"evt_000000000015normalized0000\",\"created\":1767225620000,\"type\":\"session.text.ended\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000006normalized0000\",\"ordinal\":0,\"text\":\"step two saw the steer\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":18,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000016normalized0000\",\"created\":1767225621000,\"type\":\"session.step.streamed\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000006normalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":19,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000017normalized0000\",\"created\":1767225622000,\"type\":\"session.step.ended\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000006normalized0000\",\"finish\":\"stop\",\"rawFinish\":\"stop\",\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":20,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000018normalized0000\",\"created\":1767225622000,\"type\":\"session.usage.updated\",\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}}}\n\n",
+  "data: {\"id\":\"evt_000000000019normalized0000\",\"created\":1767225623000,\"type\":\"session.inbox.delivered\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"inboxID\":\"msg_000000000005normalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":21,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000001anormalized0000\",\"created\":1767225625000,\"type\":\"session.step.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"agent\":\"build\",\"model\":{\"id\":\"m2\",\"providerID\":\"sim\",\"variant\":\"default\"},\"assistantMessageID\":\"msg_000000000007normalized0000\",\"started\":1767225624000},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":22,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000001bnormalized0000\",\"created\":1767225626000,\"type\":\"session.text.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000007normalized0000\",\"ordinal\":0},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":23,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000001cnormalized0000\",\"created\":1767225627000,\"type\":\"session.text.delta\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000007normalized0000\",\"ordinal\":0,\"delta\":\"answer to queued\"}}\n\n",
+  "data: {\"id\":\"evt_00000000001dnormalized0000\",\"created\":1767225627000,\"type\":\"session.text.ended\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000007normalized0000\",\"ordinal\":0,\"text\":\"answer to queued\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":24,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000001enormalized0000\",\"created\":1767225628000,\"type\":\"session.step.streamed\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000007normalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":25,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000001fnormalized0000\",\"created\":1767225629000,\"type\":\"session.step.ended\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000007normalized0000\",\"finish\":\"stop\",\"rawFinish\":\"stop\",\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":26,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000020normalized0000\",\"created\":1767225630000,\"type\":\"session.usage.updated\",\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}}}\n\n",
+  "data: {\"id\":\"evt_000000000021normalized0000\",\"created\":1767225631000,\"type\":\"session.execution.succeeded\",\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":27,\"version\":1}}\n\n"
+ ],
+ "rest": [
+  {
+   "label": "session.create",
+   "method": "POST",
+   "path": "/api/session",
+   "request": {
+    "location": {
+     "directory": "<home>/workspace"
+    },
+    "title": "Steer"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "ses_fffffffffffenormalized0000",
+     "projectID": "global",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "time": {
+      "created": 1767225601000,
+      "updated": 1767225601000
+     },
+     "title": "Steer",
+     "location": {
+      "directory": "<home>/workspace"
+     }
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "Run a held tool"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000001normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225602000
+     },
+     "type": "user",
+     "payload": {
+      "text": "Run a held tool"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.model.switch.busy",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/model",
+   "request": {
+    "model": {
+     "id": "m2",
+     "providerID": "sim"
+    }
+   },
+   "status": 204,
+   "contentType": null,
+   "body": null
+  },
+  {
+   "label": "session.prompt.steer",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "Steer: also mention bananas",
+    "delivery": "steer"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000004normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225612000
+     },
+     "type": "user",
+     "payload": {
+      "text": "Steer: also mention bananas"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt.queue",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "Queued follow-up",
+    "delivery": "queue"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000005normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225613000
+     },
+     "type": "user",
+     "payload": {
+      "text": "Queued follow-up"
+     },
+     "delivery": "queue"
+    }
+   }
+  },
+  {
+   "label": "held.session.inbox",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffffenormalized0000/inbox",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": [
+     {
+      "id": "msg_000000000004normalized0000",
+      "sessionID": "ses_fffffffffffenormalized0000",
+      "time": {
+       "created": 1767225612000
+      },
+      "type": "user",
+      "payload": {
+       "text": "Steer: also mention bananas"
+      },
+      "delivery": "steer"
+     },
+     {
+      "id": "msg_000000000005normalized0000",
+      "sessionID": "ses_fffffffffffenormalized0000",
+      "time": {
+       "created": 1767225613000
+      },
+      "type": "user",
+      "payload": {
+       "text": "Queued follow-up"
+      },
+      "delivery": "queue"
+     }
+    ]
+   }
+  },
+  {
+   "label": "held.session.active",
+   "method": "GET",
+   "path": "/api/session/active",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "ses_fffffffffffenormalized0000": {
+      "type": "running"
+     }
+    }
+   }
+  },
+  {
+   "label": "session.get",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffffenormalized0000",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "ses_fffffffffffenormalized0000",
+     "projectID": "global",
+     "model": {
+      "id": "m2",
+      "providerID": "sim",
+      "variant": "default"
+     },
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "outcome": "succeeded",
+     "time": {
+      "created": 1767225601000,
+      "updated": 1767225613000,
+      "idle": 1767225631000
+     },
+     "title": "Steer",
+     "location": {
+      "directory": "<home>/workspace"
+     }
+    }
+   }
+  },
+  {
+   "label": "session.messages.asc",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffffenormalized0000/message?limit=200&order=asc",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": [
+     {
+      "id": "msg_000000000001normalized0000",
+      "time": {
+       "created": 1767225605000
+      },
+      "text": "Run a held tool",
+      "type": "user"
+     },
+     {
+      "id": "msg_000000000002normalized0000",
+      "time": {
+       "created": 1767225606000,
+       "streamed": 1767225610000,
+       "completed": 1767225615000
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+       "id": "m1",
+       "providerID": "sim"
+      },
+      "content": [
+       {
+        "type": "tool",
+        "id": "call_s12_probe",
+        "name": "sim_probe",
+        "executed": false,
+        "state": {
+         "status": "completed",
+         "input": {
+          "n": 12
+         },
+         "content": [
+          {
+           "type": "text",
+           "text": "held-probe-ok"
+          }
+         ],
+         "metadata": {
+          "truncated": false
+         }
+        },
+        "time": {
+         "created": 1767225608000,
+         "ran": 1767225609000,
+         "completed": 1767225614000
+        }
+       }
+      ],
+      "finish": "tool-calls",
+      "rawFinish": "tool_calls",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      }
+     },
+     {
+      "id": "msg_000000000003normalized0000",
+      "time": {
+       "created": 1767225611000
+      },
+      "type": "model-switched",
+      "model": {
+       "id": "m2",
+       "providerID": "sim"
+      }
+     },
+     {
+      "id": "msg_000000000004normalized0000",
+      "time": {
+       "created": 1767225616000
+      },
+      "text": "Steer: also mention bananas",
+      "type": "user"
+     },
+     {
+      "id": "msg_000000000006normalized0000",
+      "time": {
+       "created": 1767225617000,
+       "streamed": 1767225621000,
+       "completed": 1767225622000
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+       "id": "m2",
+       "providerID": "sim",
+       "variant": "default"
+      },
+      "content": [
+       {
+        "type": "text",
+        "text": "step two saw the steer"
+       }
+      ],
+      "finish": "stop",
+      "rawFinish": "stop",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      }
+     },
+     {
+      "id": "msg_000000000005normalized0000",
+      "time": {
+       "created": 1767225623000
+      },
+      "text": "Queued follow-up",
+      "type": "user"
+     },
+     {
+      "id": "msg_000000000007normalized0000",
+      "time": {
+       "created": 1767225624000,
+       "streamed": 1767225628000,
+       "completed": 1767225629000
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+       "id": "m2",
+       "providerID": "sim",
+       "variant": "default"
+      },
+      "content": [
+       {
+        "type": "text",
+        "text": "answer to queued"
+       }
+      ],
+      "finish": "stop",
+      "rawFinish": "stop",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      }
+     },
+     {
+      "id": "msg_000000000008normalized0000",
+      "time": {
+       "created": 1767225631000
+      },
+      "type": "idle",
+      "outcome": "succeeded"
+     }
+    ],
+    "cursor": {
+     "previous": "eyJpZCI6Im1zZ18wMDAwMDAwMDAwMDFub3JtYWxpemVkMDAwMCIsIm9yZGVyIjoiYXNjIiwiZGlyZWN0aW9uIjoicHJldmlvdXMifQ",
+     "next": "eyJpZCI6Im1zZ18wMDAwMDAwMDAwMDhub3JtYWxpemVkMDAwMCIsIm9yZGVyIjoiYXNjIiwiZGlyZWN0aW9uIjoibmV4dCJ9"
+    }
+   }
+  }
+ ],
+ "llm": [
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 2,
+   "lastRole": "user",
+   "lastText": "Run a held tool"
+  },
+  {
+   "kind": "primary",
+   "model": "m2",
+   "messages": 5,
+   "lastRole": "user",
+   "lastText": "Steer: also mention bananas"
+  },
+  {
+   "kind": "primary",
+   "model": "m2",
+   "messages": 7,
+   "lastRole": "user",
+   "lastText": "Queued follow-up"
+  }
+ ],
+ "notes": {
+  "terminals": [
+   "session.execution.started",
+   "session.execution.succeeded"
+  ]
+ }
+}

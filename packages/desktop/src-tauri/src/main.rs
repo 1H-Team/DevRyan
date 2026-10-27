@@ -84,21 +84,19 @@ fn eval_in_focused_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>, script: 
 }
 
 fn dispatch_menu_action<R: tauri::Runtime>(app: &tauri::AppHandle<R>, action: &str) {
+    let _ = app.emit("devryan:menu-action", action);
     let _ = app.emit("openchamber:menu-action", action);
 
-    let event = serde_json::to_string("openchamber:menu-action")
-        .unwrap_or_else(|_| "\"openchamber:menu-action\"".into());
     let detail = serde_json::to_string(action).unwrap_or_else(|_| "\"\"".into());
-    let script = format!("window.dispatchEvent(new CustomEvent({event}, {{ detail: {detail} }}));");
+    let script = format!("for (const name of ['devryan:menu-action','openchamber:menu-action']) window.dispatchEvent(new CustomEvent(name, {{ detail: {detail} }}));");
     eval_in_focused_window(app, &script);
 }
 
 fn dispatch_check_for_updates<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    let _ = app.emit("devryan:check-for-updates", ());
     let _ = app.emit("openchamber:check-for-updates", ());
 
-    let event = serde_json::to_string("openchamber:check-for-updates")
-        .unwrap_or_else(|_| "\"openchamber:check-for-updates\"".into());
-    let script = format!("window.dispatchEvent(new Event({event}));");
+    let script = "for (const name of ['devryan:check-for-updates','openchamber:check-for-updates']) window.dispatchEvent(new Event(name));";
     eval_in_all_windows(app, &script);
 }
 use tauri_plugin_shell::{process::CommandChild, process::CommandEvent, ShellExt};
@@ -158,10 +156,10 @@ const MENU_ITEM_QUIT_ID: &str = "menu_quit";
 
 #[cfg(target_os = "macos")]
 const GITHUB_BUG_REPORT_URL: &str =
-    "https://github.com/btriapitsyn/openchamber/issues/new?template=bug_report.yml";
+    "https://github.com/1H-Team/DevRyan/issues/new?template=bug_report.yml";
 #[cfg(target_os = "macos")]
 const GITHUB_FEATURE_REQUEST_URL: &str =
-    "https://github.com/btriapitsyn/openchamber/issues/new?template=feature_request.yml";
+    "https://github.com/1H-Team/DevRyan/issues/new?template=feature_request.yml";
 #[cfg(target_os = "macos")]
 const DISCORD_INVITE_URL: &str = "https://discord.gg/ZYRSdnwwKA";
 
@@ -264,7 +262,7 @@ unsafe extern "C-unwind" fn application_should_terminate_with_confirmation(
     let message = quit_confirmation_message();
     let confirmed = matches!(
         rfd::MessageDialog::new()
-            .set_title("Quit OpenChamber?")
+            .set_title("Quit DevRyan?")
             .set_description(&message)
             .set_level(rfd::MessageLevel::Warning)
             .set_buttons(rfd::MessageButtons::OkCancel)
@@ -352,7 +350,7 @@ fn request_quit_with_confirmation(app: &tauri::AppHandle) {
     let handle = app.clone();
     app.dialog()
         .message(message)
-        .title("Quit OpenChamber?")
+        .title("Quit DevRyan?")
         .buttons(MessageDialogButtons::OkCancel)
         .kind(tauri_plugin_dialog::MessageDialogKind::Warning)
         .show(move |confirmed| {
@@ -1163,9 +1161,10 @@ fn installed_apps_cache_path() -> PathBuf {
     let home = env::var_os("HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("/"));
-    home.join(".config")
-        .join("openchamber")
-        .join(INSTALLED_APPS_CACHE_FILE)
+    let config = home.join(".config");
+    let canonical = config.join("devryan").join(INSTALLED_APPS_CACHE_FILE);
+    let legacy = config.join("openchamber").join(INSTALLED_APPS_CACHE_FILE);
+    if canonical.exists() || !legacy.exists() { canonical } else { legacy }
 }
 
 #[cfg(target_os = "macos")]
@@ -1219,10 +1218,8 @@ fn build_installed_apps(
 
 #[cfg(target_os = "macos")]
 fn dispatch_installed_apps_update(app: &tauri::AppHandle, apps: &[InstalledAppInfo]) {
-    let event = serde_json::to_string("openchamber:installed-apps-updated")
-        .unwrap_or_else(|_| "\"openchamber:installed-apps-updated\"".into());
     let detail = serde_json::to_string(apps).unwrap_or_else(|_| "[]".into());
-    let script = format!("window.dispatchEvent(new CustomEvent({event}, {{ detail: {detail} }}));");
+    let script = format!("for (const name of ['devryan:installed-apps-updated','openchamber:installed-apps-updated']) window.dispatchEvent(new CustomEvent(name, {{ detail: {detail} }}));");
     eval_in_all_windows(app, &script);
 }
 
@@ -1325,7 +1322,7 @@ fn icon_to_data_url(icon_path: &Path, app_name: &str) -> Option<String> {
         .duration_since(UNIX_EPOCH)
         .map(|value| value.as_millis())
         .unwrap_or(0);
-    let tmp_path = env::temp_dir().join(format!("openchamber-icon-{sanitized}-{timestamp}.png"));
+    let tmp_path = env::temp_dir().join(format!("devryan-icon-{sanitized}-{timestamp}.png"));
 
     let status = Command::new("sips")
         .args([
@@ -1391,8 +1388,9 @@ fn is_app_bundle_installed(bundle_name: &str) -> bool {
     false
 }
 
-const SIDECAR_NAME: &str = "openchamber-server";
-const SIDECAR_NOTIFY_PREFIX: &str = "[OpenChamberDesktopNotify] ";
+const SIDECAR_NAME: &str = "devryan-server";
+const SIDECAR_NOTIFY_PREFIX: &str = "[DevRyanDesktopNotify] ";
+const LEGACY_SIDECAR_NOTIFY_PREFIX: &str = "[OpenChamberDesktopNotify] ";
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(20);
 const HEALTH_POLL_INITIAL_INTERVAL: Duration = Duration::from_millis(250);
 const HEALTH_POLL_MAX_INTERVAL: Duration = Duration::from_millis(2000);
@@ -1615,16 +1613,16 @@ fn build_health_url(base_url: &str) -> Option<String> {
 }
 
 fn settings_file_path() -> PathBuf {
-    if let Ok(dir) = env::var("OPENCHAMBER_DATA_DIR") {
+    if let Ok(dir) = env::var("DEVRYAN_DATA_DIR").or_else(|_| env::var("OPENCHAMBER_DATA_DIR")) {
         if !dir.trim().is_empty() {
             return PathBuf::from(dir.trim()).join("settings.json");
         }
     }
     let home = env::var("HOME").unwrap_or_default();
-    PathBuf::from(home)
-        .join(".config")
-        .join("openchamber")
-        .join("settings.json")
+    let config = PathBuf::from(home).join(".config");
+    let canonical = config.join("devryan").join("settings.json");
+    let legacy = config.join("openchamber").join("settings.json");
+    if canonical.exists() || !legacy.exists() { canonical } else { legacy }
 }
 
 fn read_desktop_settings_json() -> Option<serde_json::Value> {
@@ -2176,11 +2174,18 @@ async fn refresh_quit_risk_flags(local_base_url: &str) {
         Err(_) => return,
     };
 
-    let scheduled_url = format!("{trimmed}/api/openchamber/scheduled-tasks/status");
-    let tunnel_url = format!("{trimmed}/api/openchamber/tunnel/status");
-
-    let scheduled_future = client.get(scheduled_url).send();
-    let tunnel_future = client.get(tunnel_url).send();
+    let scheduled_future = async {
+        let response = client.get(format!("{trimmed}/api/devryan/scheduled-tasks/status")).send().await;
+        if matches!(&response, Ok(value) if value.status() == reqwest::StatusCode::NOT_FOUND) {
+            client.get(format!("{trimmed}/api/openchamber/scheduled-tasks/status")).send().await
+        } else { response }
+    };
+    let tunnel_future = async {
+        let response = client.get(format!("{trimmed}/api/devryan/tunnel/status")).send().await;
+        if matches!(&response, Ok(value) if value.status() == reqwest::StatusCode::NOT_FOUND) {
+            client.get(format!("{trimmed}/api/openchamber/tunnel/status")).send().await
+        } else { response }
+    };
     let (scheduled_result, tunnel_result) = tokio::join!(scheduled_future, tunnel_future);
 
     let mut scheduled_verified = false;
@@ -2315,7 +2320,7 @@ fn maybe_show_sidecar_notification(app: &tauri::AppHandle, payload: SidecarNotif
     let title = payload
         .title
         .filter(|t| is_nonempty_string(t))
-        .unwrap_or_else(|| "OpenChamber".to_string());
+        .unwrap_or_else(|| "DevRyan".to_string());
     let body = payload.body.filter(|b| is_nonempty_string(b));
     let _tag = payload.tag;
 
@@ -2409,47 +2414,28 @@ fn build_local_url(port: u16) -> String {
     format!("http://127.0.0.1:{port}")
 }
 
-/// Kills any stale openchamber-server processes that may be lingering from
+/// Kills any stale sidecar processes that may be lingering from
 /// previous app sessions or incomplete shutdowns. This ensures a clean
 /// startup and prevents port conflicts.
 fn kill_stale_sidecar_processes() {
-    let process_name = if cfg!(windows) {
-        "openchamber-server.exe"
-    } else {
-        "openchamber-server"
-    };
-
-    let result = if cfg!(target_os = "macos") {
-        // macOS: use pkill to terminate by process name
-        std::process::Command::new("pkill")
-            .arg("-x") // exact match
-            .arg(process_name)
-            .output()
-    } else if cfg!(target_os = "linux") {
-        // Linux: use pkill
-        std::process::Command::new("pkill")
-            .arg("-x")
-            .arg(process_name)
-            .output()
-    } else if cfg!(windows) {
-        // Windows: use taskkill
-        std::process::Command::new("taskkill")
-            .arg("/F")
-            .arg("/IM")
-            .arg(process_name)
-            .output()
-    } else {
-        return;
-    };
-
-    // Log result for debugging (pkill returns 1 if no processes found, which is fine)
-    if let Ok(output) = result {
-        log::debug!(
-            "[sidecar] cleanup result: exit_code={:?}, stdout={}, stderr={}",
-            output.status.code(),
-            String::from_utf8_lossy(&output.stdout).trim(),
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
+    for base_name in [SIDECAR_NAME, "openchamber-server"] {
+        let process_name = if cfg!(windows) { format!("{base_name}.exe") } else { base_name.to_string() };
+        let result = if cfg!(target_os = "macos") || cfg!(target_os = "linux") {
+            std::process::Command::new("pkill").arg("-x").arg(&process_name).output()
+        } else if cfg!(windows) {
+            std::process::Command::new("taskkill").arg("/F").arg("/IM").arg(&process_name).output()
+        } else {
+            return;
+        };
+        if let Ok(output) = result {
+            log::debug!(
+                "[sidecar] cleanup result for {}: exit_code={:?}, stdout={}, stderr={}",
+                process_name,
+                output.status.code(),
+                String::from_utf8_lossy(&output.stdout).trim(),
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+        }
     }
 
     // Brief pause to let the OS clean up the processes
@@ -2542,6 +2528,8 @@ async fn spawn_local_server(app: &tauri::AppHandle) -> Result<String> {
     }
 
     for var in [
+        "DEVRYAN_OPENCODE_PATH",
+        "DEVRYAN_OPENCODE_BIN",
         "OPENCHAMBER_OPENCODE_PATH",
         "OPENCHAMBER_OPENCODE_BIN",
         "OPENCODE_PATH",
@@ -2596,11 +2584,16 @@ async fn spawn_local_server(app: &tauri::AppHandle) -> Result<String> {
             .sidecar(SIDECAR_NAME)
             .map_err(|err| anyhow!("Failed to resolve sidecar '{SIDECAR_NAME}': {err}"))?
             .args(["--port", &port.to_string()])
+            .env("DEVRYAN_HOST", sidecar_bind_host)
             .env("OPENCHAMBER_HOST", sidecar_bind_host)
+            .env("DEVRYAN_DIST_DIR", dist_dir.clone())
             .env("OPENCHAMBER_DIST_DIR", dist_dir.clone())
             .env("DEVRYAN_DEFAULT_CONFIG_ROOT", default_config_dir.clone())
+            .env("DEVRYAN_RUNTIME", "desktop")
             .env("OPENCHAMBER_RUNTIME", "desktop")
+            .env("DEVRYAN_DESKTOP_NOTIFY", "true")
             .env("OPENCHAMBER_DESKTOP_NOTIFY", "true")
+            .env("DEVRYAN_SKIP_API_COMPRESSION", "true")
             .env("OPENCHAMBER_SKIP_API_COMPRESSION", "true")
             .env("PATH", augmented_path.clone())
             .env("NO_PROXY", no_proxy)
@@ -2639,7 +2632,8 @@ async fn spawn_local_server(app: &tauri::AppHandle) -> Result<String> {
                 match event {
                     CommandEvent::Stdout(bytes) => {
                         let line = String::from_utf8_lossy(&bytes);
-                        if let Some(rest) = line.strip_prefix(SIDECAR_NOTIFY_PREFIX) {
+                        if let Some(rest) = line.strip_prefix(SIDECAR_NOTIFY_PREFIX)
+                            .or_else(|| line.strip_prefix(LEGACY_SIDECAR_NOTIFY_PREFIX)) {
                             if let Ok(parsed) =
                                 serde_json::from_str::<SidecarNotifyPayload>(rest.trim())
                             {
@@ -2754,7 +2748,7 @@ fn desktop_notify(
     let mut builder = app
         .notification()
         .builder()
-        .title(payload.title.unwrap_or_else(|| "OpenChamber".to_string()));
+        .title(payload.title.unwrap_or_else(|| "DevRyan".to_string()));
 
     if let Some(body) = payload.body {
         if is_nonempty_string(&body) {
@@ -2828,6 +2822,10 @@ async fn desktop_download_and_install_update(
                 if !started {
                     total = content_length;
                     let _ = app.emit(
+                        "devryan:update-progress",
+                        UpdateProgressEvent::Started { content_length },
+                    );
+                    let _ = app.emit(
                         "openchamber:update-progress",
                         UpdateProgressEvent::Started { content_length },
                     );
@@ -2835,6 +2833,14 @@ async fn desktop_download_and_install_update(
                 }
 
                 downloaded = downloaded.saturating_add(chunk_length as u64);
+                let _ = app.emit(
+                    "devryan:update-progress",
+                    UpdateProgressEvent::Progress {
+                        chunk_length,
+                        downloaded,
+                        total,
+                    },
+                );
                 let _ = app.emit(
                     "openchamber:update-progress",
                     UpdateProgressEvent::Progress {
@@ -2845,6 +2851,7 @@ async fn desktop_download_and_install_update(
                 );
             },
             || {
+                let _ = app.emit("devryan:update-progress", UpdateProgressEvent::Finished);
                 let _ = app.emit("openchamber:update-progress", UpdateProgressEvent::Finished);
             },
         )
@@ -3124,7 +3131,7 @@ fn build_init_script(local_origin: &str, boot_outcome: Option<&DesktopBootOutcom
         .unwrap_or_else(|| "undefined".to_string());
 
     let mut init_script = format!(
-        "(function(){{try{{window.__OPENCHAMBER_HOME__={home_json};window.__OPENCHAMBER_MACOS_MAJOR__={macos_major};window.__OPENCHAMBER_LOCAL_ORIGIN__={local_json};window.__OPENCHAMBER_DESKTOP_BOOT_OUTCOME__={boot_outcome_json};}}catch(_e){{}}}})();"
+        "(function(){{try{{window.__DEVRYAN_HOME__=window.__OPENCHAMBER_HOME__={home_json};window.__DEVRYAN_MACOS_MAJOR__=window.__OPENCHAMBER_MACOS_MAJOR__={macos_major};window.__DEVRYAN_LOCAL_ORIGIN__=window.__OPENCHAMBER_LOCAL_ORIGIN__={local_json};window.__DEVRYAN_DESKTOP_BOOT_OUTCOME__=window.__OPENCHAMBER_DESKTOP_BOOT_OUTCOME__={boot_outcome_json};}}catch(_e){{}}}})();"
     );
 
     // Cleanup: older builds injected a native-ish Instance switcher button into pages.
@@ -3380,7 +3387,7 @@ fn create_window(
     };
 
     let mut builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(parsed))
-        .title("OpenChamber")
+        .title("DevRyan")
         .inner_size(1280.0, 800.0)
         .min_inner_size(MIN_WINDOW_WIDTH as f64, MIN_WINDOW_HEIGHT as f64)
         .decorations(true)
@@ -3432,7 +3439,7 @@ fn create_startup_window(app: &tauri::AppHandle, restore_geometry: bool) -> Resu
     let splash_script = build_startup_splash_script();
 
     let mut builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
-        .title("OpenChamber")
+        .title("DevRyan")
         .inner_size(1280.0, 800.0)
         .min_inner_size(MIN_WINDOW_WIDTH as f64, MIN_WINDOW_HEIGHT as f64)
         .decorations(true)
@@ -3632,7 +3639,7 @@ fn open_new_window(app: &tauri::AppHandle) {
         local_url.clone()
     };
 
-    let env_target = std::env::var("OPENCHAMBER_SERVER_URL")
+    let env_target = std::env::var("DEVRYAN_SERVER_URL").or_else(|_| std::env::var("OPENCHAMBER_SERVER_URL"))
         .ok()
         .and_then(|raw| normalize_server_url(&raw))
         .filter(|url| !same_server_url(url, &local_ui_url));
@@ -4070,7 +4077,7 @@ fn main() {
                 // Selected host: env override first, then desktop default host, else local.
                 // If env override points to the local server, ignore it and use
                 // config-based resolution instead.
-                let env_target = std::env::var("OPENCHAMBER_SERVER_URL")
+                let env_target = std::env::var("DEVRYAN_SERVER_URL").or_else(|_| std::env::var("OPENCHAMBER_SERVER_URL"))
                     .ok()
                     .and_then(|raw| normalize_server_url(&raw))
                     .filter(|url| !same_server_url(url, &local_ui_url));

@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { DevRyanDocumentReaderPlugin, __test as documentTest } from './devryan-document-reader.mjs';
 import { DevRyanToolInputGuardPlugin } from './devryan-tool-input-guard.mjs';
 import { __test, DevRyanHarnessContextPlugin } from './devryan-harness-context.mjs';
 import { DevRyanSkillContextPlugin } from './devryan-skill-context.mjs';
-import { resolveHarnessPolicies } from '@openchamber/orchestration-runtime';
+import { resolveHarnessPolicies } from '@devryan/orchestration-runtime';
 
 const { projectObservations, pluginInventory } = __test();
 const body = '<skill_content>Unique instructions 世界 \\"\n'.repeat(80) + '</skill_content>';
@@ -193,8 +194,7 @@ describe('managed gating and native summary isolation', () => {
     expect(JSON.parse(out.output).headroom).toMatchObject({ previousRequestInputTokens: 500, estimatedHeadroomTokens: 250, sourceMessageID: 'usage' });
   });
   it('composes with the document-reader and input-guard mutations in either order', async () => {
-    const base = path.resolve('../../.cache/qa'); fs.mkdirSync(base, { recursive: true });
-    const root = fs.mkdtempSync(path.join(base, 'duplicate-composition-'));
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-duplicate-composition-'));
     vi.stubEnv('DEVRYAN_OPENCODE_USER_CONFIG_DIR', root);
     try {
       const document = await DevRyanDocumentReaderPlugin({ parseAttachment: documentTest.parseAttachmentPayload });

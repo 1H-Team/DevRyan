@@ -37,11 +37,11 @@ const defaultUsername = () => {
   try { return os.userInfo().username; } catch { return null; }
 };
 
-const readKeychainCredentials = async ({ account, home, username, execFile }) => {
+const readKeychainCredentials = async ({ account, home, username, execFile, keychainService }) => {
   if (!username) return null;
   try {
     const stdout = await execFile('/usr/bin/security',
-      ['find-generic-password', '-s', claudeKeychainService(account, home), '-a', username, '-w'],
+      ['find-generic-password', '-s', keychainService ?? claudeKeychainService(account, home), '-a', username, '-w'],
       { timeout: KEYCHAIN_TIMEOUT_MS, maxBuffer: 64 * 1024, windowsHide: true });
     return parseCredentials(stdout);
   } catch {
@@ -56,6 +56,7 @@ const readKeychainCredentials = async ({ account, home, username, execFile }) =>
  */
 export async function readClaudeAccessToken({
   account,
+  keychainService,
   platform = process.platform,
   now = Date.now(),
   execFile = defaultExecFile,
@@ -63,7 +64,8 @@ export async function readClaudeAccessToken({
   home = os.homedir(),
   username = defaultUsername(),
 }) {
-  let credentials = platform === 'darwin' ? await readKeychainCredentials({ account, home, username, execFile }) : null;
+  if (keychainService !== undefined && (typeof keychainService !== 'string' || !/^Claude Code-credentials(?:-[a-f0-9]{8})?$/.test(keychainService))) return { reason: CLAUDE_CREDENTIALS_UNREADABLE };
+  let credentials = platform === 'darwin' ? await readKeychainCredentials({ account, home, username, execFile, keychainService }) : null;
   if (!credentials?.claudeAiOauth) {
     try {
       credentials = parseCredentials(await readFile(path.join(account, '.credentials.json'), 'utf8'));

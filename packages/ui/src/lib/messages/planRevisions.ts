@@ -3,12 +3,12 @@ import type { Message, Part } from '@opencode-ai/sdk/v2/client';
 import {
     hasPlanImplementationRequestPart,
     isManagedPlanMaintenanceMessage,
-    isManagedPlanRecoveryMessage,
     resolveMessagePlanCard,
     resolvePlanTurnIntent,
     type PlanTurnIntent,
 } from './actionablePlan';
 import { isFullySyntheticMessage } from './synthetic';
+import type { SessionPlanSourceIdentity } from '@/lib/api/types';
 
 /**
  * A logical plan revision groups a user-authored turn with any follow-up
@@ -28,6 +28,7 @@ export interface PlanRevisionAssistantInput {
     parentMessageId: string | null;
     completedAt: number | null;
     hasError?: boolean;
+    finish?: string;
     parts: readonly Part[];
 }
 
@@ -106,16 +107,17 @@ interface TurnGroup {
     members: PlanRevisionTurnInput[];
 }
 
-const groupTurnsIntoRevisions = (turns: readonly PlanRevisionTurnInput[]): TurnGroup[] => {
+const groupTurnsIntoRevisions = (turns: readonly PlanRevisionTurnInput[], sourceIdentity?: SessionPlanSourceIdentity): TurnGroup[] => {
     const groups: TurnGroup[] = [];
     for (const turn of turns) {
         const openGroup = groups[groups.length - 1];
-        // Recovery resumes the originating human's Plan request. It does not
-        // open a new revision or borrow intent across a later human turn.
-        const resumesPlanning = openGroup
-            && isManagedPlanRecoveryMessage(turn.userParts)
-            && resolvePlanTurnIntent(openGroup.root.userInfo, openGroup.root.userParts, openGroup.root.isRecordedPlanMode) === 'plan';
-        if (openGroup && (resumesPlanning || isContinuationTurnUserMessage(turn.userParts, turn.isRecordedPlanMode))) {
+        const verifiedSuccessor = openGroup && !hasPlanImplementationRequestPart(turn.userParts)
+            && !isManagedPlanMaintenanceMessage(turn.userParts) && sourceIdentity?.successful === true && sourceIdentity.settled === true
+            && openGroup.root.userMessageId === sourceIdentity.rootUserMessageID
+            && sourceIdentity.memberUserMessageIDs.includes(turn.userMessageId)
+            && turn.assistants.every(assistant => sourceIdentity.memberAssistantMessageIDs.includes(assistant.id)
+                && assistant.parentMessageId === turn.userMessageId);
+        if (verifiedSuccessor) {
             openGroup.members.push(turn);
             continue;
         }
@@ -124,7 +126,7 @@ const groupTurnsIntoRevisions = (turns: readonly PlanRevisionTurnInput[]): TurnG
     return groups;
 };
 
-const projectGroup = (group: TurnGroup): PlanRevision | null => {
+const projectGroup = (group: TurnGroup, sourceIdentity?: SessionPlanSourceIdentity, canonicalContent?: string): PlanRevision | null => {
     const { root, members } = group;
     const intent = resolvePlanTurnIntent(
         root.userInfo,
@@ -143,11 +145,14 @@ const projectGroup = (group: TurnGroup): PlanRevision | null => {
     let source: PlanRevisionAssistantInput | null = null;
     let planText: string | null = null;
     let isSettled = true;
-    let lastAssistant: PlanRevisionAssistantInput | null = null;
+    let hasTerminalError = false;
 
     for (const member of members) {
         for (const assistant of member.assistants) {
-            lastAssistant = assistant;
+            const verifiedPrefix = sourceIdentity?.memberAssistantMessageIDs.includes(assistant.id)
+                && assistant.id !== sourceIdentity.currentSourceMessageID;
+            if (!verifiedPrefix && (assistant.hasError === true || assistant.finish !== undefined && !['stop', 'end_turn', 'complete', 'completed', 'tool-calls', 'tool_calls'].includes(assistant.finish))) hasTerminalError = true;
+            if (assistant.parts.some(part => part.type === 'tool' && !['completed', 'error'].includes(part.state.status))) isSettled = false;
             if (assistant.completedAt === null) {
                 isSettled = false;
             }
@@ -198,9 +203,9 @@ const projectGroup = (group: TurnGroup): PlanRevision | null => {
         sourceMessageId: source?.id ?? null,
         sourceParentMessageId: source?.parentMessageId ?? null,
         sourceCompletedAt: source?.completedAt ?? null,
-        planText,
+        planText: sourceIdentity?.sourceMessageID === source?.id && canonicalContent ? canonicalContent : planText,
         isSettled,
-        hasTerminalError: source?.hasError === true || lastAssistant?.hasError === true,
+        hasTerminalError,
         messageRoles,
         turnIdsAfterSource,
     };
@@ -212,10 +217,10 @@ const projectGroup = (group: TurnGroup): PlanRevision | null => {
  * are returned; other turn groups — including every Implement Plan group —
  * are not plan revisions.
  */
-export const projectPlanRevisions = (turns: readonly PlanRevisionTurnInput[]): PlanRevision[] => {
+export const projectPlanRevisions = (turns: readonly PlanRevisionTurnInput[], sourceIdentity?: SessionPlanSourceIdentity, canonicalContent?: string): PlanRevision[] => {
     const revisions: PlanRevision[] = [];
-    for (const group of groupTurnsIntoRevisions(turns)) {
-        const revision = projectGroup(group);
+    for (const group of groupTurnsIntoRevisions(turns, sourceIdentity)) {
+        const revision = projectGroup(group, sourceIdentity, canonicalContent);
         if (revision) {
             revisions.push(revision);
         }

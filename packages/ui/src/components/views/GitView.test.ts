@@ -8,6 +8,11 @@ const testDir = dirname(fileURLToPath(import.meta.url));
 const source = () => readFileSync(resolve(testDir, 'GitView.tsx'), 'utf8');
 
 describe('GitView revert actions', () => {
+  test('identifies a generated draft from the active chat model', () => {
+    const code = source();
+    expect(code).toContain("if (result.source === 'session_model')");
+    expect(code).toContain("toast.info(t('gitView.toast.activeModelFallback'), { description: result.model ?? undefined })");
+  });
   test('does not show a success toast after reverting a single file', () => {
     const code = source();
 
@@ -144,7 +149,7 @@ describe('GitView staged changes workflow', () => {
     const commitHandler = code.slice(commitStart, commitEnd);
 
     const createCommit = commitHandler.indexOf('await git.createGitCommit');
-    const refreshRepository = commitHandler.indexOf('await refreshStatusAndBranches();', createCommit);
+    const refreshRepository = commitHandler.indexOf('await refreshStatusAndBranches(false);', createCommit);
     const refreshHistory = commitHandler.indexOf('await refreshLog();', refreshRepository);
 
     expect(commitStart).toBeGreaterThan(-1);
@@ -152,6 +157,22 @@ describe('GitView staged changes workflow', () => {
     expect(createCommit).toBeGreaterThan(-1);
     expect(refreshRepository).toBeGreaterThan(createCommit);
     expect(refreshHistory).toBeGreaterThan(refreshRepository);
+  });
+
+  test('commit-and-push starts the push without waiting on the post-commit refresh', () => {
+    const code = source();
+    const commitStart = code.indexOf('const handleCommit = async');
+    const commitEnd = code.indexOf('const handleCreateBranch = async', commitStart);
+    const commitHandler = code.slice(commitStart, commitEnd);
+    const createCommit = commitHandler.indexOf('await git.createGitCommit');
+    const pushAfter = commitHandler.indexOf('if (options.pushAfter)', createCommit);
+    const between = commitHandler.slice(createCommit, pushAfter);
+
+    expect(between).not.toContain('await refreshStatusAndBranches();');
+    expect(commitHandler).toContain('void refreshStatusAndBranches();');
+    expect(code).toContain("gitErrorField(err, 'code') === 'GIT_PUSH_HOOK_FAILED'");
+    expect(code).toContain("t('gitView.toast.copyHookOutput')");
+    expect(commitHandler).toContain("showGitActionError(err, t('gitView.toast.createCommitFailed'));");
   });
 
   test('wires stage and unstage actions through the runtime git API', () => {
@@ -214,10 +235,17 @@ describe('GitView remote sync state refresh', () => {
     const commitEnd = code.indexOf('const handleCreateBranch = async', commitStart);
     const syncHandler = code.slice(syncStart, syncEnd);
     const commitHandler = code.slice(commitStart, commitEnd);
+    const catchStart = syncHandler.indexOf('} catch (err) {');
+    const finallyStart = syncHandler.indexOf('} finally {');
+    const catchBlock = syncHandler.slice(catchStart, finallyStart);
+    const finallyBlock = syncHandler.slice(finallyStart);
 
     expect(syncHandler).toContain("if (action === 'push' || action === 'sync')");
     expect(syncHandler).toContain('await refreshAfterRemoteMutation();');
-    expect(commitHandler.match(/await refreshAfterRemoteMutation\(\);/g)).toHaveLength(2);
+    expect(commitHandler.match(/await refreshAfterRemoteMutation\(\);/g)).toHaveLength(3);
+    expect(catchBlock).toContain('await refreshAfterRemoteMutation();');
+    expect(finallyBlock).not.toContain('refreshStatusAndBranches');
+    expect(finallyBlock).toContain('setSyncAction(null);');
   });
 });
 

@@ -47,6 +47,16 @@ describe('settings helpers', () => {
     })).toEqual({ autoDeleteEnabled: false });
   });
 
+  it('keeps an empty lastDirectory so removing the last project forgets it', () => {
+    const helpers = createTestHelpers();
+
+    expect(helpers.sanitizeSettingsUpdate({ lastDirectory: '' })).toEqual({ lastDirectory: '' });
+    expect(helpers.mergePersistedSettings({ lastDirectory: '/Users/tester/project' }, { lastDirectory: '' }))
+      .toMatchObject({ lastDirectory: '' });
+    expect(helpers.sanitizeSettingsUpdate({ lastDirectory: '/Users/tester/other' })).toEqual({ lastDirectory: '/Users/tester/other' });
+    expect(helpers.sanitizeSettingsUpdate({ lastDirectory: 42 })).toEqual({});
+  });
+
   it('accepts a non-negative theme catalog version', () => {
     const helpers = createTestHelpers();
 
@@ -220,6 +230,18 @@ describe('settings helpers', () => {
       favoriteModelsUpdatedAt: -1,
       hiddenModelsUpdatedAt: 1.5,
     })).toEqual({});
+  });
+
+  it('persists the typed helper tuple and revision independently of notification and legacy Git fields', () => {
+    const helpers = createTestHelpers();
+    const helperModelSelection = { providerID: 'anthropic', modelID: 'chosen', revision: 'saved-revision' };
+    expect(helpers.sanitizeSettingsUpdate({ helperModelSelection })).toEqual({ helperModelSelection });
+    expect(helpers.sanitizeSettingsUpdate({ helperModelSelection: { ...helperModelSelection, variant: 'low' } }))
+      .toEqual({ helperModelSelection: { ...helperModelSelection, variant: 'low' } });
+    for (const invalid of [{ ...helperModelSelection, variant: '' }, { ...helperModelSelection, variant: 'two words' },
+      { ...helperModelSelection, reasoning: 'low' }, { providerID: 'opencode', modelID: 'chosen' }]) {
+      expect(helpers.sanitizeSettingsUpdate({ helperModelSelection: invalid })).toEqual({});
+    }
   });
 
   it('accepts defaultPlanMode as a persisted shared setting', () => {

@@ -1,10 +1,93 @@
 {
-  "name": "@openchamber/shared-runtime",
-  "version": "1.2.22",
+  "name": "@devryan/shared-runtime",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
   "main": "./index.js",
   "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    },
+    "./package.json": "./package.json",
+    "./startup-diagnostics.js": {
+      "types": "./startup-diagnostics.d.ts",
+      "default": "./startup-diagnostics.js"
+    },
+    "./lib/assistant-image-sources.js": {
+      "types": "./lib/assistant-image-sources.d.ts",
+      "default": "./lib/assistant-image-sources.js"
+    },
+    "./lib/cache-efficiency-policy.js": {
+      "types": "./lib/cache-efficiency-policy.d.ts",
+      "default": "./lib/cache-efficiency-policy.js"
+    },
+    "./lib/event-types.js": {
+      "types": "./lib/event-types.d.ts",
+      "default": "./lib/event-types.js"
+    },
+    "./lib/free-tier-rejection.js": {
+      "types": "./lib/free-tier-rejection.d.ts",
+      "default": "./lib/free-tier-rejection.js"
+    },
+    "./lib/helper-model-selection.js": {
+      "types": "./lib/helper-model-selection.d.ts",
+      "default": "./lib/helper-model-selection.js"
+    },
+    "./lib/legacy-environment.js": {
+      "types": "./lib/legacy-environment.d.ts",
+      "default": "./lib/legacy-environment.js"
+    },
+    "./lib/model-selection-availability.js": {
+      "types": "./lib/model-selection-availability.d.ts",
+      "default": "./lib/model-selection-availability.js"
+    },
+    "./lib/native-message-status.js": {
+      "types": "./lib/native-message-status.d.ts",
+      "default": "./lib/native-message-status.js"
+    },
+    "./lib/native-observation.js": {
+      "types": "./lib/native-observation.d.ts",
+      "default": "./lib/native-observation.js"
+    },
+    "./lib/plan-storage-id.js": {
+      "types": "./lib/plan-storage-id.d.ts",
+      "default": "./lib/plan-storage-id.js"
+    },
+    "./lib/provider-error-details.js": {
+      "types": "./lib/provider-error-details.d.ts",
+      "default": "./lib/provider-error-details.js"
+    },
+    "./lib/upstream-stall.js": {
+      "types": "./lib/upstream-stall.d.ts",
+      "default": "./lib/upstream-stall.js"
+    },
+    "./lib/usage-observation.js": {
+      "types": "./lib/usage-observation.d.ts",
+      "default": "./lib/usage-observation.js"
+    },
+    "./node/adopt-legacy-environment.js": {
+      "types": "./lib/adopt-legacy-environment.d.ts",
+      "default": "./lib/adopt-legacy-environment.js"
+    },
+    "./node/data-root.js": {
+      "types": "./lib/data-root.d.ts",
+      "default": "./lib/data-root.js"
+    },
+    "./node/safe-archive.js": {
+      "types": "./lib/safe-archive.d.ts",
+      "default": "./lib/safe-archive.js"
+    },
+    "./testing/assistant-image-fixtures.js": {
+      "types": "./testing/assistant-image-fixtures.d.ts",
+      "default": "./testing/assistant-image-fixtures.js"
+    },
+    "./testing/jsonc-config-fixtures.js": {
+      "types": "./testing/jsonc-config-fixtures.d.ts",
+      "default": "./testing/jsonc-config-fixtures.js"
+    }
+  },
   "scripts": {
     "test": "bun test"
   },

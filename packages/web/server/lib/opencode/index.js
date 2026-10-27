@@ -37,13 +37,6 @@ export {
 } from './agents.js';
 
 export {
-  INVALID_AGENT_RUNTIME_SETTINGS_CODE,
-  normalizeAgentRuntimeSettings,
-  readAgentRuntimeSettings,
-  writeAgentRuntimeSettings,
-} from './agent-runtime-settings.js';
-
-export {
   listPackagedAgents,
 } from './packaged-agents.js';
 
@@ -110,11 +103,3 @@ export {
   createPluginReadModel,
   registerReadonlyPluginRoutes,
 } from './plugins-readonly.js';
-
-export {
-  DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE,
-  DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC,
-  SLIM_MANAGED_VERSION,
-  createSlimSetupRuntime,
-  registerSlimSetupRoutes,
-} from './slim-install.js';

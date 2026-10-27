@@ -12,7 +12,7 @@ import { cn } from '@/lib/utils';
 import { recordConfigMutationResponse, useConfigApplyStore } from '@/stores/useConfigApplyStore';
 import { useI18n } from '@/lib/i18n';
 import { getProviderDisplayName } from '@/lib/providers/display';
-import { getProviderModelsForDisplay, sortProvidersByDisplayName } from './providerSorting';
+import { sortProvidersByDisplayName } from './providerSorting';
 import {
   disconnectProvider,
   getProviderDisconnectOutcome,
@@ -259,7 +259,7 @@ export const ProvidersSidebar: React.FC<ProvidersSidebarProps> = ({ onItemSelect
 };
 
 const ProviderListItem: React.FC<{
-  provider: { id: string; name?: string; models?: unknown[] };
+  provider: { id: string; name?: string };
   selectedProviderId: string;
   sources?: ProviderSources;
   canDisconnect?: boolean;
@@ -269,12 +269,9 @@ const ProviderListItem: React.FC<{
   onDisconnect?: () => void;
 }> = ({ provider, selectedProviderId, sources, canDisconnect = false, isDisconnecting = false, isDisconnectPending = false, onSelect, onDisconnect }) => {
   const { t } = useI18n();
-  const modelCount = getProviderModelsForDisplay(
-    provider as { id?: string; models?: Array<{ id?: string; name?: string }> },
-    { hidePairedFastModels: true },
-  ).length;
   const isSelected = provider.id === selectedProviderId;
   const providerName = getProviderDisplayName(provider, sources);
+  const showDisconnect = canDisconnect && Boolean(onDisconnect);
 
   return (
     <div
@@ -297,25 +294,27 @@ const ProviderListItem: React.FC<{
           </span>
           <ProviderUsageMeter quotaProviderId={getQuotaProviderIdForProvider(provider.id)} className="mt-1" />
         </span>
-        <span className={cn(
-          'typography-micro flex-shrink-0 text-right tabular-nums text-muted-foreground/60',
-          isDisconnectPending ? 'w-auto' : 'w-7',
-        )}>
-          {isDisconnectPending ? t('settings.providers.page.state.disconnectPendingShort') : modelCount}
-        </span>
       </button>
-      <div className="h-6 w-6 flex-shrink-0">
-        {canDisconnect && onDisconnect ? (
+      <div className={cn(
+        'relative flex h-6 flex-shrink-0 items-center justify-end',
+        isDisconnectPending ? 'w-auto' : 'w-7',
+      )}>
+        {isDisconnectPending ? (
+          <span className="typography-micro text-right text-muted-foreground/60">
+            {t('settings.providers.page.state.disconnectPendingShort')}
+          </span>
+        ) : null}
+        {showDisconnect ? (
           <Button
             type="button"
             size="xs"
             variant="ghost"
-            className="h-6 w-6 px-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 hover:text-destructive focus-visible:opacity-100"
+            className="absolute inset-y-0 right-0 h-6 w-6 px-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 hover:text-destructive focus-visible:opacity-100"
             disabled={isDisconnecting}
             onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
-              onDisconnect();
+              onDisconnect?.();
             }}
             aria-label={t('settings.providers.page.actions.disconnect')}
             title={t('settings.providers.page.actions.disconnect')}
@@ -350,6 +349,5 @@ const UsageOnlyListItem: React.FC<{
         <ProviderUsageMeter quotaProviderId={provider.id} className="mt-1" />
       </span>
     </button>
-    <div className="h-6 w-6 flex-shrink-0" />
   </div>
 );

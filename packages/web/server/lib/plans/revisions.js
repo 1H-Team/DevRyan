@@ -2,9 +2,9 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import pathModule from 'node:path';
 import { constants } from 'node:fs';
-import { withCrossProcessFileLock } from '@openchamber/harness-runtime';
+import { withCrossProcessFileLock } from '@devryan/harness-runtime';
 import { createProjectIdFromPath } from '../projects/project-id.js';
-import { resolvePlanProjectStorageId } from '@openchamber/shared-runtime/lib/plan-storage-id.js';
+import { resolvePlanProjectStorageId } from '@devryan/shared-runtime/lib/plan-storage-id.js';
 
 const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
 

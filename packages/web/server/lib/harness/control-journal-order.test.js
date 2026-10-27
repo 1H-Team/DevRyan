@@ -7,11 +7,11 @@ import { describe, expect, it } from 'vitest';
 // Primary recovery answers a primary session's abort locally without calling
 // next(). The control journal (and its observer: aborted turns, managed Stop)
 // must therefore run first, in the same mount, and exactly once.
-const INDEX = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../index.js');
+const APPLICATION = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../application.js');
 
 describe('server control journal mount order', () => {
   it('journals session controls once, before primary recovery can answer them', () => {
-    const source = fs.readFileSync(INDEX, 'utf8');
+    const source = fs.readFileSync(APPLICATION, 'utf8');
     const mounts = source.split('harnessRuntime.controlJournalMiddleware').length - 1;
     expect(mounts).toBe(1);
     const journal = source.indexOf('harnessRuntime.controlJournalMiddleware');

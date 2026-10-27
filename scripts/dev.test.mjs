@@ -6,7 +6,7 @@ import { describe, test } from 'node:test';
 import { stopChildTree } from './dev-child-utils.mjs';
 import { resolveDevDataDirectory } from './dev-data-directory.mjs';
 import { shouldRestartDevChild } from './dev-restart-policy.mjs';
-import { buildPlan } from './validate.mjs';
+import { buildPlan, testUnitsForPlan } from './validate.mjs';
 
 function waitForOutput(child, expected) {
   return new Promise((resolve, reject) => {
@@ -59,7 +59,7 @@ describe('shouldRestartDevChild', () => {
 describe('resolveDevDataDirectory', () => {
   test('preserves an explicit data-directory override', () => {
     assert.equal(resolveDevDataDirectory({
-      env: { OPENCHAMBER_DATA_DIR: './explicit-dev-data' },
+      env: { DEVRYAN_DATA_DIR: './explicit-dev-data' },
       repoRoot: '/workspace/devryan',
       scope: 'electron',
     }), path.resolve('./explicit-dev-data'));
@@ -125,82 +125,28 @@ describe('stopChildTree', () => {
 });
 
 describe('affected validation planning', () => {
+  const labels = (files) => buildPlan('fast', files).commands.map((entry) => entry.label);
+
   test('runs Cursor tests and dependent host validation for Cursor runtime code', () => {
-    const plan = buildPlan('affected', [
-      'packages/cursor-sdk-runtime/persistent-worker.mjs',
-    ]);
-
-    assert.deepEqual(plan.commands.map((entry) => entry.label), [
-      'typeCheck:web',
-      'test:cursor',
-      'test:web',
-    ]);
-    assert.deepEqual(plan.commands.find((entry) => entry.label === 'test:cursor')?.args, [
-      'test',
-      'packages/cursor-sdk-runtime',
-    ]);
+    const plan = buildPlan('fast', ['packages/cursor-sdk-runtime/persistent-worker.mjs']);
+    assert.deepEqual(plan.commands.map((entry) => entry.label), ['typeCheck:web', 'import-boundaries', 'browser-graph', 'test:cursor', 'test:web', 'test:startup']);
+    const cursor = testUnitsForPlan([plan.commands.find((entry) => entry.label === 'test:cursor')]);
+    assert.deepEqual(cursor.map((unit) => [unit.command, unit.args]), [['bun', ['run', '--cwd', 'packages/cursor-sdk-runtime', 'test']]]);
   });
 
-  test('still runs the Cursor package suite in quick mode', () => {
-    const plan = buildPlan('quick', [
-      'packages/cursor-sdk-runtime/agent-cache.js',
-    ]);
-
-    assert.deepEqual(plan.commands.map((entry) => entry.label), ['test:cursor']);
+  test('runs the Electron suite for shell code', () => {
+    assert.deepEqual(labels(['packages/electron/scripts/native-module-paths.mjs']), ['typeCheck:electron', 'import-boundaries', 'browser-graph', 'test:electron', 'test:startup']);
   });
 
-  test('runs the Electron suite for affected shell code', () => {
-    const plan = buildPlan('affected', [
-      'packages/electron/scripts/native-module-paths.mjs',
-    ]);
-
-    assert.deepEqual(plan.commands.map((entry) => entry.label), [
-      'lint:electron',
-      'typeCheck:electron',
-      'test:electron',
-    ]);
-  });
-
-  test('runs the legacy Tauri suite for Rust compatibility code', () => {
-    const affected = buildPlan('affected', [
-      'packages/desktop/src-tauri/src/main.rs',
-    ]);
-    const quick = buildPlan('quick', [
-      'packages/desktop/src-tauri/Cargo.toml',
-    ]);
-
-    assert.deepEqual(affected.commands.map((entry) => entry.label), [
-      'lint:desktop',
-      'typeCheck:desktop',
-      'test:desktop',
-    ]);
-    assert.deepEqual(quick.commands.map((entry) => entry.label), [
-      'lint:full',
-      'type-check:full',
-      'docs:validate',
-      'test:full',
-    ]);
+  test('type-checks the frozen legacy Tauri package without running its cargo tests', () => {
+    assert.deepEqual(labels(['packages/desktop/src-tauri/src/main.rs']), ['typeCheck:desktop', 'test:startup']);
+    // Cargo.toml carries the release version, so it also re-runs the local release preflight.
+    assert.deepEqual(labels(['packages/desktop/src-tauri/Cargo.toml']), ['release-preflight', 'typeCheck:desktop', 'test:startup']);
   });
 
   test('runs orchestration tests and every dependent runtime for orchestration core changes', () => {
-    const plan = buildPlan('affected', [
-      'packages/orchestration-runtime/scheduler.js',
+    assert.deepEqual(labels(['packages/orchestration-runtime/scheduler.js']), [
+      'typeCheck:ui', 'typeCheck:web', 'import-boundaries', 'browser-graph', 'test:orchestration', 'test:ui', 'test:web', 'test:startup',
     ]);
-
-    assert.deepEqual(plan.commands.map((entry) => entry.label), [
-      'typeCheck:ui',
-      'typeCheck:web',
-      'test:orchestration',
-      'test:ui',
-      'test:web',
-    ]);
-  });
-
-  test('still runs the orchestration package suite in quick mode', () => {
-    const plan = buildPlan('quick', [
-      'packages/orchestration-runtime/contract.js',
-    ]);
-
-    assert.deepEqual(plan.commands.map((entry) => entry.label), ['test:orchestration']);
   });
 });

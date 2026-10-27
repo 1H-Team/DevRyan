@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   AUTH_ERROR_CODES,
-  PRODUCTION_BOTS_MIGRATION,
   authFailurePayload,
   buildAgentTestIdentities,
   createUserPolicyReader,
@@ -12,7 +11,6 @@ import {
   isMissingSettingsPermissionOverridesError,
   isMissingUserProfileGithubAccountError,
   isSettingsPermissionSchemaError,
-  productionBotsMigrationFailurePayload,
   selectAgentTestProfile,
 } from './auth-compat.js';
 import { SupabaseRequestError } from './supabase-client.js';
@@ -87,31 +85,16 @@ describe('multi-user authentication compatibility', () => {
     });
   });
 
-  it('keeps the Bot schema gate separate from identity compatibility', () => {
-    const missingBots = new SupabaseRequestError(
+  it('treats an unrelated missing table as an identity outage, not a migration', () => {
+    const missingTable = new SupabaseRequestError(
       "Could not find the table 'public.bot_channels' in the schema cache",
       { status: 404, payload: { code: 'PGRST205' } },
     );
 
-    expect(PRODUCTION_BOTS_MIGRATION).toBe('20260908182901');
-    expect(authFailurePayload(missingBots)).toEqual({
+    expect(authFailurePayload(missingTable)).toEqual({
       status: 503,
       error: 'Identity service unavailable',
       code: AUTH_ERROR_CODES.identityUnavailable,
-    });
-  });
-
-  it('maps an explicit Bot schema marker mismatch to the durable migration response', () => {
-    const mismatch = Object.assign(new Error('Production Bots database migration is required'), {
-      code: 'bot_schema_migration_required',
-      requiredMigration: '20260826140000',
-    });
-
-    expect(productionBotsMigrationFailurePayload(mismatch)).toEqual({
-      status: 503,
-      error: 'Database migration required',
-      code: 'bot_schema_migration_required',
-      requiredMigration: '20260826140000',
     });
   });
 

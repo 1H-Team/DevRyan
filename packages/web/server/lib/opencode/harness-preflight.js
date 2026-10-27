@@ -5,7 +5,7 @@ import {
   createHarnessWarning,
   withHarnessResult,
 } from './harness-result.js';
-import { resolveProviderPromptTools } from '@openchamber/orchestration-runtime';
+import { resolveProviderPromptTools } from '@devryan/orchestration-runtime';
 import {
   MANAGED_RUNTIME_TOOL_COUNT_WARNING_THRESHOLD,
   isBlockedManagedRuntimeMcpName,
@@ -13,6 +13,7 @@ import {
 } from './runtime-surface-policy.js';
 import { buildHarnessContextBudget } from './harness-context-budget.js';
 import { createHarnessToolManifestReader } from './harness-tool-manifest.js';
+import { resolveGen2OpenCodeClient } from './opencode-client-seam.js';
 
 const KNOWN_PERMISSION_KEYS = new Set([
   '*',
@@ -184,18 +185,20 @@ function resolveSafeMeridianOrigin(value) {
   }
 }
 
+async function readProviderConfigPayload({ context, signal, client }) {
+  const directory = normalizePath(context.directory);
+  return client.catalog.providers({ directory: directory || undefined }, { signal });
+}
+
 async function readMeridianTooling({
   context,
   dependencies,
   headers,
   signal,
+  client = null,
 }) {
-  const configUrl = new URL(dependencies.buildOpenCodeUrl('/config/providers'));
-  const directory = normalizePath(context.directory);
-  if (directory) configUrl.searchParams.set('directory', directory);
-  const configResponse = await dependencies.fetchImpl(configUrl, { headers, signal });
-  if (!configResponse.ok) return null;
-  const configPayload = await configResponse.json();
+  const configPayload = await readProviderConfigPayload({ context, dependencies, headers, signal, client });
+  if (configPayload === null) return null;
   const anthropic = asArray(configPayload?.providers)
     .find((provider) => provider?.id === 'anthropic');
   const origin = resolveSafeMeridianOrigin(
@@ -235,54 +238,46 @@ async function readMeridianTooling({
   };
 }
 
-function createHarnessAnthropicUsageReader(dependencies = {}) {
-  if (
-    typeof dependencies.fetchImpl !== 'function'
-    || typeof dependencies.buildOpenCodeUrl !== 'function'
-  ) {
+/**
+ * Gen 2 (DESIGN.md E item 13d): the session's latest 500 v1 message records
+ * through openCodeClient, plus the same Meridian tooling read. `fetchImpl`
+ * still reaches the loopback Meridian proxy, never OpenCode.
+ */
+async function readAnthropicUsageThroughClient({ client, context, dependencies, sessionID }) {
+  const directory = normalizePath(context.directory);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5_000);
+  timeout.unref?.();
+  try {
+    const [usage, tooling] = await Promise.all([
+      client.sessions.messages(sessionID, { limit: 500 }, { directory: directory || undefined, signal: controller.signal })
+        .then((page) => extractAnthropicUsageFromMessages(page?.records))
+        .catch(() => null),
+      readMeridianTooling({
+        context,
+        dependencies,
+        headers: {},
+        signal: controller.signal,
+        client,
+      }).catch(() => null),
+    ]);
+    if (!usage && !tooling) return null;
+    return { ...(usage || {}), tooling };
+  } catch {
     return null;
+  } finally {
+    clearTimeout(timeout);
   }
+}
+
+function createHarnessAnthropicUsageReader(dependencies = {}) {
+  if (typeof dependencies.fetchImpl !== 'function' || !dependencies.openCodeClient) return null;
   return async function readAnthropicUsage(context = {}) {
     const sessionID = normalizePath(context.sessionID);
     if (!sessionID) return null;
-    let headers = {};
-    try {
-      headers = typeof dependencies.getOpenCodeAuthHeaders === 'function'
-        ? await dependencies.getOpenCodeAuthHeaders()
-        : {};
-    } catch {
-      return null;
-    }
-    const url = new URL(dependencies.buildOpenCodeUrl(
-      `/session/${encodeURIComponent(sessionID)}/message`,
-    ));
-    const directory = normalizePath(context.directory);
-    if (directory) url.searchParams.set('directory', directory);
-    url.searchParams.set('limit', '500');
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5_000);
-    timeout.unref?.();
-    try {
-      const [usage, tooling] = await Promise.all([
-        dependencies.fetchImpl(url, { headers, signal: controller.signal })
-          .then(async (response) => (
-            response.ok ? extractAnthropicUsageFromMessages(await response.json()) : null
-          ))
-          .catch(() => null),
-        readMeridianTooling({
-          context,
-          dependencies,
-          headers,
-          signal: controller.signal,
-        }).catch(() => null),
-      ]);
-      if (!usage && !tooling) return null;
-      return { ...(usage || {}), tooling };
-    } catch {
-      return null;
-    } finally {
-      clearTimeout(timeout);
-    }
+    let client;
+    try { client = resolveGen2OpenCodeClient(dependencies.openCodeClient); } catch { return null; }
+    return readAnthropicUsageThroughClient({ client, context, dependencies, sessionID });
   };
 }
 
@@ -449,6 +444,45 @@ function lintPermissionKeys({ findings, permissionKeys, agent }) {
       artifact: { type: 'agent', name: getAgentName(agent), path: getAgentPath(agent) },
       suggestedNextAction: `Check whether "${key}" should be a runtime tool ID, alias, or removed permission`,
       stopCondition: `Stop relying on "${key}" until it appears in the tool manifest or documented permission keys`,
+    }));
+  }
+}
+
+// OpenCode maps `steps` (legacy alias `maxSteps`) to the native per-agent step cap.
+function lintAgentSteps({ findings, agent }) {
+  const frontmatter = getAgentFrontmatter(agent);
+  for (const key of ['steps', 'maxSteps']) {
+    const value = frontmatter[key];
+    if (value === undefined || (Number.isSafeInteger(value) && value > 0)) continue;
+    findings.push(createFinding({
+      ruleId: 'invalid-agent-steps',
+      severity: 'error',
+      summary: `Agent "${getAgentName(agent)}" sets "${key}" to a ${value === null ? 'null' : typeof value} value that is not a positive integer`,
+      artifact: { type: 'agent', name: getAgentName(agent), path: getAgentPath(agent) },
+      suggestedNextAction: `Set "${key}" to a positive integer step cap or remove it`,
+      stopCondition: `Stop relying on the "${getAgentName(agent)}" step cap until "${key}" is a positive integer`,
+    }));
+  }
+}
+
+// Native OpenCode sends agent sampling only to openai-compatible provider
+// packages (native-configured-instructions.ts); its built-in providers never
+// receive it, so a value set for them misstates what runs.
+const NATIVE_UNSAMPLED_PROVIDERS = new Set(['openai', 'anthropic', 'opencode', 'xai', 'github-copilot']);
+
+function lintAgentSampling({ findings, agent }) {
+  const frontmatter = getAgentFrontmatter(agent);
+  const providerID = typeof frontmatter.model === 'string' ? frontmatter.model.split('/')[0] : '';
+  if (!NATIVE_UNSAMPLED_PROVIDERS.has(providerID)) return;
+  for (const key of ['temperature', 'top_p']) {
+    if (frontmatter[key] === undefined) continue;
+    findings.push(createFinding({
+      ruleId: 'agent-sampling-not-applied',
+      severity: 'warning',
+      summary: `Agent "${getAgentName(agent)}" sets "${key}", which the native runtime does not send to provider "${providerID}"`,
+      artifact: { type: 'agent', name: getAgentName(agent), path: getAgentPath(agent) },
+      suggestedNextAction: `Remove "${key}" or use an openai-compatible provider that accepts it`,
+      stopCondition: `Stop expecting "${key}" to change "${getAgentName(agent)}" output on "${providerID}"`,
     }));
   }
 }
@@ -622,20 +656,6 @@ function lintWarmup({ findings, latestWarmup }) {
       stopCondition: `Stop relying on task "${error.name}" readiness until the next warmup succeeds`,
     }));
   }
-}
-
-function lintSlimRuntime({ findings, slimRuntime }) {
-  if (!isObject(slimRuntime)) return;
-  if (slimRuntime.expectedMode !== 'devryan-wrapper') return;
-  if (slimRuntime.rawPluginEnabled !== true || slimRuntime.wrapperPluginEnabled === true) return;
-  findings.push(createFinding({
-    ruleId: 'slim-raw-mode-active',
-    severity: 'warning',
-    summary: 'Raw oh-my-opencode-slim is active while DevRyan wrapper mode is expected',
-    artifact: { type: 'plugin', name: 'oh-my-opencode-slim' },
-    suggestedNextAction: 'Run the Slim runtime repair action so DevRyan registers its wrapper plugin',
-    stopCondition: 'Stop relying on DevRyan prompt preservation until the raw Slim plugin is replaced by the wrapper',
-  }));
 }
 
 function readToolManifestToolIds(toolManifest) {
@@ -850,13 +870,14 @@ function lintAgentHarness(options = {}) {
   for (const agent of agents) {
     lintDelegatedAgents({ findings, agentsByName, agent });
     lintPermissionKeys({ findings, permissionKeys, agent });
+    lintAgentSteps({ findings, agent });
+    lintAgentSampling({ findings, agent });
     lintHiddenSkillAllows({ findings, hiddenSkills, agent });
     lintSkillAnnouncementPolicy({ findings, skills, hiddenSkills, agent });
   }
   lintSkills({ findings, skills });
   lintStaleOverrides({ findings, staleOverrides });
   lintWarmup({ findings, latestWarmup: options.latestWarmup });
-  lintSlimRuntime({ findings, slimRuntime: options.slimRuntime });
   lintForbiddenRuntimeSurface({
     findings,
     toolManifest: options.toolManifest,
@@ -951,7 +972,6 @@ function buildPreflightResult({
   latestWarmup,
   toolManifest,
   packagedAgents,
-  slimRuntime,
   readSkillBody,
   runtimeMode,
   anthropicUsage,
@@ -966,7 +986,6 @@ function buildPreflightResult({
     staleOverrides,
     latestWarmup,
     toolManifest,
-    slimRuntime,
     promptTools: context.promptTools,
     runtimeMode,
     configCredentialScan,
@@ -1009,7 +1028,6 @@ function buildPreflightResult({
     findings,
     toolManifest,
     latestWarmup,
-    slimRuntime,
     runtimeMode,
     promptAudit,
     contextBudget: resolvedContextBudget,
@@ -1024,10 +1042,7 @@ function createHarnessPreflight(dependencies = {}) {
   const read = (name, context) => (
     typeof dependencies[name] === 'function' ? dependencies[name](context) : []
   );
-  const runtimeToolManifestReader = (
-    typeof dependencies.fetchImpl === 'function'
-    && typeof dependencies.buildOpenCodeUrl === 'function'
-  )
+  const runtimeToolManifestReader = dependencies.openCodeClient
     ? createHarnessToolManifestReader(dependencies)
     : null;
   const anthropicUsageReader = createHarnessAnthropicUsageReader(dependencies);
@@ -1120,7 +1135,6 @@ function createHarnessPreflight(dependencies = {}) {
                 },
               },
         packagedAgents: read('getPackagedAgents', resolvedContext),
-        slimRuntime: typeof dependencies.getSlimRuntime === 'function' ? dependencies.getSlimRuntime(resolvedContext) : null,
         runtimeMode: typeof dependencies.getRuntimeMode === 'function'
           ? dependencies.getRuntimeMode(resolvedContext)
           : 'managed',

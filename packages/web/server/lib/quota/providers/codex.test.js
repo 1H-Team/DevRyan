@@ -9,17 +9,8 @@ const readAuth = () => ({
   },
 });
 
-const okResponse = (payload) => ({
-  ok: true,
-  status: 200,
-  json: async () => payload,
-});
-
-const failedResponse = (status = 404) => ({
-  ok: false,
-  status,
-  json: async () => ({}),
-});
+const okResponse = (payload) => Response.json(payload);
+const failedResponse = (status = 404) => Response.json({}, { status });
 
 const fetchUsagePayload = (payload) => async (url) => {
   if (url.endsWith('/wham/usage')) {
@@ -132,7 +123,7 @@ describe('Codex quota provider reset credits', () => {
 
     expect(result.ok).toBe(true);
     expect(result.usage?.windows.credits).toBeUndefined();
-    expect(result.usage?.windows['extra-usage']).toMatchObject({ valueLabel: '$12.34 available' });
+    expect(result.usage?.windows['extra-usage']).toMatchObject({ valueLabel: '12 Credits' });
     expect(result.usage?.resetCredits).toMatchObject({
       availableCount: 2,
       totalEarnedCount: 3,
@@ -167,7 +158,7 @@ describe('Codex quota provider reset credits', () => {
 
     expect(result.ok).toBe(true);
     expect(result.usage?.windows.credits).toBeUndefined();
-    expect(result.usage?.windows['extra-usage']).toMatchObject({ valueLabel: '$12.34 available' });
+    expect(result.usage?.windows['extra-usage']).toMatchObject({ valueLabel: '12 Credits' });
     expect(result.usage?.resetCredits).toMatchObject({
       availableCount: 2,
       credits: [],
@@ -189,7 +180,7 @@ describe('Codex quota provider reset credits', () => {
     expect(result.usage?.resetCredits).toBeUndefined();
     expect(result.usage?.windows['extra-usage']).toMatchObject({
       usedPercent: null,
-      valueLabel: '$12.34 available',
+      valueLabel: '12 Credits',
     });
   });
 });

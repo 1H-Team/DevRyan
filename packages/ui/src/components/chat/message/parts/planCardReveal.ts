@@ -1,5 +1,14 @@
 import type { StreamPhase } from '../types';
 import { getPlanBlockId, getPlanImplementationKey } from '@/lib/messages/actionablePlan';
+import type { Notification } from '@/sync/notification-store';
+
+/** A persisted, identity-bound failed/stopped turn can restrict presentation
+ * even when native refused continuation before updating the assistant row. */
+export const hasPlanRevisionFailure = (notifications: readonly Notification[], sessionId: string, userMessageId: string | undefined, hasSuccessfulSavedSource = false): boolean => (
+  !hasSuccessfulSavedSource && Boolean(userMessageId) && notifications.some(notification => notification.type === 'error'
+    && notification.session === sessionId && !notification.resolvedByMessageId
+    && notification.failedUserMessageId === userMessageId)
+);
 
 const MIN_SKELETON_LINES = 8;
 const MAX_SKELETON_LINES = 48;
@@ -19,7 +28,6 @@ export const getPlanCardCollapsedMaxHeight = ({
 } = {}): number => (lineCount * lineHeightPx) + bodyVerticalPaddingPx;
 
 export const PLAN_CARD_COLLAPSED_MAX_HEIGHT_PX = getPlanCardCollapsedMaxHeight();
-export const PLAN_CARD_EXPAND_BUTTON_SIZE_PX = 28;
 
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
 
@@ -56,6 +64,7 @@ export const getPlanCardActionState = ({
   isLatestPlan,
   isRevisionSettled = true,
   isGenerationSuccessful = true,
+  hasTerminalFailure = false,
 }: {
   streamPhase: StreamPhase;
   hasPlanText: boolean;
@@ -64,19 +73,24 @@ export const getPlanCardActionState = ({
   /** False while any assistant sibling in the plan revision is still running. */
   isRevisionSettled?: boolean;
   isGenerationSuccessful?: boolean;
+  hasTerminalFailure?: boolean;
 }): PlanCardActionState => {
-  if (!isLatestPlan) {
-    return {
-      canImplement: false,
-      disabledReason: 'Superseded by a newer plan.',
-    };
-  }
-
   if (isImplementationRequested) {
     return {
       canImplement: false,
       disabledReason: 'Implementation already started.',
     };
+  }
+
+  if (!isLatestPlan) {
+    return {
+      canImplement: false,
+      disabledReason: 'This plan is no longer current.',
+    };
+  }
+
+  if (hasTerminalFailure) {
+    return { canImplement: false, disabledReason: 'The response did not finish successfully.' };
   }
 
   if (!isRevisionSettled) {

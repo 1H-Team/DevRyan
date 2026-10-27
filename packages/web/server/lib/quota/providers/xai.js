@@ -1,7 +1,7 @@
 import {
   fetchXaiQuotaAdapter,
   refreshXaiOAuthToken,
-} from '@openchamber/shared-runtime';
+} from '@devryan/shared-runtime';
 
 import { readAuthFile, writeAuthFile } from '../../opencode/auth.js';
 import { normalizeAuthEntry } from '../utils/index.js';

@@ -6,10 +6,9 @@ export const STARTUP_READINESS_PHASES = [
   "globalSync",
   "directorySync",
   "sessionList",
+  "eventStream",
   "responseStyle",
   "worktree",
-  "agentRuntime",
-  "chatRuntime",
 ] as const
 
 export type StartupReadinessPhase = typeof STARTUP_READINESS_PHASES[number]
@@ -22,6 +21,15 @@ export interface StartupPhaseSnapshot {
 }
 
 export type StartupReadinessSnapshot = Record<StartupReadinessPhase, StartupPhaseSnapshot>
+
+export const markStartupReadiness = (snapshot: StartupReadinessSnapshot, measured: Set<string>): void => {
+  for (const phase of STARTUP_READINESS_PHASES) {
+    const name = `devryan-startup-gate-${phase}-${snapshot[phase].status}`
+    if (measured.has(name)) continue
+    measured.add(name)
+    performance.mark(name)
+  }
+}
 
 export interface StartupReadinessOptions {
   route?: StartupRoute
@@ -53,6 +61,7 @@ export interface StartupBootstrapReadiness {
 }
 
 export interface StartupRecoveryDependencies {
+  cancelInitialization?: () => void
   loadHealth: () => Promise<StartupRecoveryHealth | null>
   restartOpenCode?: () => Promise<unknown>
   initializeApp: () => Promise<void>
@@ -97,6 +106,7 @@ export const withStartupBootstrapReadiness = (
 ): StartupReadinessSnapshot => {
   let next = snapshot
   const healthReady = readiness.desktopBootReady && readiness.isConnected
+    && !(readiness.retriesExhausted && readiness.openCodeError)
   next = withStartupReadinessPhase(next, "health", healthReady
     ? { status: "ready" }
     : readiness.desktopBootReady && readiness.retriesExhausted
@@ -154,6 +164,7 @@ export const shouldRestartOpenCodeForStartupRecovery = (
 export const recoverStartupInitialization = async (
   dependencies: StartupRecoveryDependencies,
 ): Promise<StartupRecoveryResult> => {
+  dependencies.cancelInitialization?.()
   let health: StartupRecoveryHealth | null = null
   try {
     health = await dependencies.loadHealth()

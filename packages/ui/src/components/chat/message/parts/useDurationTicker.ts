@@ -5,7 +5,7 @@ type Subscriber = (now: number) => void;
 
 type TickerChannel = {
     subscribers: Set<Subscriber>;
-    timerId: number | null;
+    timerId: ReturnType<typeof setInterval> | null;
 };
 
 const tickerChannels = new Map<number, TickerChannel>();
@@ -29,8 +29,8 @@ const subscribeToTicker = (intervalMs: number, subscriber: Subscriber): (() => v
     channel.subscribers.add(subscriber);
     subscriber(Date.now());
 
-    if (channel.timerId === null && typeof window !== 'undefined') {
-        channel.timerId = window.setInterval(() => {
+    if (channel.timerId === null) {
+        channel.timerId = setInterval(() => {
             const now = Date.now();
             channel.subscribers.forEach((listener) => {
                 listener(now);
@@ -49,8 +49,8 @@ const subscribeToTicker = (intervalMs: number, subscriber: Subscriber): (() => v
             return;
         }
 
-        if (tracked.timerId !== null && typeof window !== 'undefined') {
-            window.clearInterval(tracked.timerId);
+        if (tracked.timerId !== null) {
+            clearInterval(tracked.timerId);
         }
         tickerChannels.delete(intervalMs);
     };

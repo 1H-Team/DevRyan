@@ -1,4 +1,6 @@
-import { serializeWorkerPayload } from './worker-payload.js';
+import { serializeWorkerPayload, cursorReadOnlyOptions, cursorCatalogModels, assertWorkerPayloadBytes } from './worker-payload.js';
+import { cursorFinalText, cursorFinalTextTarget } from './final-result.js';
+import { cursorProviderFailure, cursorErrorDetails, cursorWorkerFailure } from './sdk-error.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
@@ -36,10 +38,15 @@ import {
   settleCursorNativeTaskPart,
   sanitizeCursorTaskResult,
 } from './cursor-native-task.js';
+import fsSync from 'node:fs';
 
 export { normalizeInteractionUpdateToSdkMessage } from './interaction-update-normalize.js';
 
 export const CURSOR_PROVIDER_ID = 'cursor-acp';
+
+const cursorAbortOutcomes = new WeakMap();
+/** Private host evidence; a provider error cannot forge a successful stop. */
+export const readCursorAbortOutcome = (error) => error instanceof Error ? cursorAbortOutcomes.get(error) ?? null : null;
 
 const FALLBACK_MODELS = [
   ['auto', 'Auto'],
@@ -63,6 +70,7 @@ const COMPATIBILITY_MODEL_PAIRS = [
 const CURSOR_MODEL_PARAM_FAST = 'fast';
 const CURSOR_MODEL_PARAM_THINKING = 'thinking';
 const CURSOR_MODEL_PARAM_REASONING = 'reasoning';
+const CURSOR_MODEL_PARAM_REASONING_EFFORT = 'reasoning_effort';
 const CURSOR_MODEL_PARAM_EFFORT = 'effort';
 const CURSOR_MODEL_PARAM_CONTEXT = 'context';
 const CURSOR_MODEL_TRUE_VALUE = 'true';
@@ -221,7 +229,7 @@ const normalizeToolCallStatus = (status) => {
 
 const isBunRuntime = () => typeof globalThis.Bun !== 'undefined';
 
-const isDesktopRuntimeEnv = (env) => trimString(env?.OPENCHAMBER_RUNTIME).toLowerCase() === 'desktop';
+const isDesktopRuntimeEnv = (env) => trimString(env?.DEVRYAN_RUNTIME).toLowerCase() === 'desktop';
 
 const normalizeWorkerEnv = (value) => {
   if (!isPlainObject(value)) return {};
@@ -321,10 +329,10 @@ const parseSettingSourcesFlag = (raw) => {
   return parsed.length ? parsed : undefined;
 };
 
-// DevRyan cursor context trim (default OFF). OPENCHAMBER_CURSOR_SETTING_SOURCES = comma
+// DevRyan cursor context trim (default OFF). DEVRYAN_CURSOR_SETTING_SOURCES = comma
 // list of cursor setting layers (project,user,team,mdm,plugins,all) or "none" to load
 // none — trims ambient rules/settings context the cursor-agent assembles per turn.
-const CURSOR_SETTING_SOURCES = parseSettingSourcesFlag(process.env.OPENCHAMBER_CURSOR_SETTING_SOURCES);
+const CURSOR_SETTING_SOURCES = parseSettingSourcesFlag(process.env.DEVRYAN_CURSOR_SETTING_SOURCES);
 
 const mergeToolDataIntoState = (part) => {
   if (!isPlainObject(part) || part.type !== 'tool') {
@@ -353,16 +361,6 @@ const mergeToolDataIntoState = (part) => {
   return changed ? { part: { ...part, state: nextState }, changed: true } : { part, changed: false };
 };
 
-const mergeTextDelta = (existing, incoming) => {
-  const previous = typeof existing === 'string' ? existing : '';
-  const next = typeof incoming === 'string' ? incoming : '';
-  if (!next) return previous;
-  if (!previous) return next;
-  if (next.startsWith(previous)) return next;
-  const needsSentenceBoundary = /[.!?)]$/.test(previous) && /^[A-Z0-9"`]/.test(next);
-  return `${previous}${needsSentenceBoundary ? ' ' : ''}${next}`;
-};
-
 export const computeIncrementalTextDelta = (previousText, nextText) => {
   const previous = typeof previousText === 'string' ? previousText : '';
   const next = typeof nextText === 'string' ? nextText : '';
@@ -373,92 +371,8 @@ export const computeIncrementalTextDelta = (previousText, nextText) => {
   return null;
 };
 
-const mergeFinalText = (existing, incoming) => {
-  const previous = typeof existing === 'string' ? existing : '';
-  const next = typeof incoming === 'string' ? incoming : '';
-  if (!next) return previous;
-  if (!previous) return next;
-  if (next === previous || previous.includes(next)) return previous;
-  if (next.startsWith(previous)) return next;
-  return mergeTextDelta(previous, next);
-};
-
-// Streamed deltas can lose fragments (the SDK delivers text via both the
-// delta callback and the stream, and cross-source dedupe occasionally drops a
-// legitimate repeat), leaving streamed text that is an in-order subset of the
-// final run result. Appending the final text on top of it would show the
-// message twice — once garbled, once clean — so that shape must be replaced.
-export const isLossyStreamedTextVariant = (streamedText, finalText) => {
-  const candidate = typeof streamedText === 'string' ? streamedText : '';
-  const full = typeof finalText === 'string' ? finalText : '';
-  if (!candidate || !full || candidate.length >= full.length) return false;
-  if (candidate.length < 16 || candidate.length * 2 < full.length) return false;
-  let index = 0;
-  for (const char of full) {
-    if (char === candidate[index]) index += 1;
-    if (index === candidate.length) return true;
-  }
-  return false;
-};
-
-const getSdkMessageTextFingerprint = (message) => {
-  if (!isPlainObject(message)) return '';
-  if (message.type === 'assistant') {
-    const content = Array.isArray(message.message?.content) ? message.message.content : [];
-    const text = content
-      .filter((block) => block?.type === 'text' && typeof block.text === 'string')
-      .map((block) => block.text)
-      .join('');
-    return text ? `assistant:${text}` : '';
-  }
-  if (message.type === 'thinking') {
-    const text = typeof message.text === 'string' ? message.text : '';
-    return text ? `thinking:${text}` : '';
-  }
-  return '';
-};
-
-const createCrossSourceMessageDedupe = (limit = 80) => {
-  const recent = [];
-  return (source, message) => {
-    const fingerprint = getSdkMessageTextFingerprint(message);
-    if (!fingerprint) return false;
-    const duplicate = recent.some((entry) => (
-      entry.fingerprint === fingerprint && entry.source !== source
-    ));
-    recent.push({ source, fingerprint });
-    if (recent.length > limit) {
-      recent.splice(0, recent.length - limit);
-    }
-    return duplicate;
-  };
-};
-
-const DANGLING_REASONING_LIST_MARKER_PATTERN = /(?:\n\s*)+(?:[-*]|\d+[.)])\s*$/;
-const SENTENCE_BOUNDARY_PATTERN = /[.!?][)"'\]]?(?=\s|$)/g;
 const TOOL_ONLY_COMPLETION_SUMMARY = 'Completed the requested work. See the tool activity above for details.';
 const POST_TASK_EMPTY_FINISH_DIAGNOSTIC = 'Cursor ended the parent run immediately after a subagent task completed, with no parent follow-up. DevRyan preserved the subagent output above.';
-
-const trimDanglingReasoningFragment = (value) => {
-  if (typeof value !== 'string' || value.trim().length === 0) {
-    return value;
-  }
-
-  const withoutDanglingMarker = value.replace(DANGLING_REASONING_LIST_MARKER_PATTERN, '').trimEnd();
-  if (withoutDanglingMarker === value) {
-    return value;
-  }
-
-  let lastBoundaryEnd = -1;
-  for (const match of withoutDanglingMarker.matchAll(SENTENCE_BOUNDARY_PATTERN)) {
-    lastBoundaryEnd = match.index + match[0].length;
-  }
-  if (lastBoundaryEnd > 0 && lastBoundaryEnd < withoutDanglingMarker.length) {
-    return withoutDanglingMarker.slice(0, lastBoundaryEnd).trim();
-  }
-
-  return withoutDanglingMarker;
-};
 
 const withTimeout = async (promise, timeoutMs) => {
   if (!promise) return null;
@@ -477,10 +391,16 @@ const withTimeout = async (promise, timeoutMs) => {
   }
 };
 
+const CURSOR_STREAM_PARTIAL_CODES = ['CURSOR_STREAM_DRAIN_TIMEOUT', 'CURSOR_STREAM_QUEUE_OVERFLOW', 'CURSOR_STREAM_DRAIN_FAILED', 'CURSOR_STREAM_FINAL_TIMEOUT', 'CURSOR_STREAM_STALE_GENERATION', 'CURSOR_STREAM_FINAL_ASSOCIATION_INVALID'];
+const cursorStreamError = (code) => Object.assign(new Error(`Cursor stream incomplete (${code}).`), { code });
+const cursorWorkerError = (message, code, details) => cursorWorkerFailure(message, { ...details, ...(code ? { code } : {}) });
+
 const createAsyncQueue = () => {
   const values = [];
   const waiters = [];
   let closed = false;
+  let bytes = 0;
+  let failure = null;
 
   return {
     push(value) {
@@ -490,7 +410,14 @@ const createAsyncQueue = () => {
         waiter({ done: false, value });
         return;
       }
-      values.push(value);
+      const size = Buffer.byteLength(JSON.stringify(value));
+      if (values.length >= 4096 || bytes + size > 8 * 1024 * 1024) {
+        failure = cursorStreamError('CURSOR_STREAM_QUEUE_OVERFLOW');
+        closed = true;
+        return;
+      }
+      bytes += size;
+      values.push({ value, size });
     },
     close() {
       if (closed) return;
@@ -502,8 +429,11 @@ const createAsyncQueue = () => {
     },
     next() {
       if (values.length > 0) {
-        return Promise.resolve({ done: false, value: values.shift() });
+        const entry = values.shift();
+        bytes -= entry.size;
+        return Promise.resolve({ done: false, value: entry.value });
       }
+      if (failure) return Promise.reject(failure);
       if (closed) {
         return Promise.resolve({ done: true, value: undefined });
       }
@@ -914,7 +844,8 @@ const cloneCursorMcpServers = (servers) => {
   }
 };
 
-const createAgentRuntimeFingerprint = ({ directory, model, agents, mcpServerIdentity, apiKey }) => stableJson({
+const createAgentRuntimeFingerprint = ({ directory, model, agents, mcpServerIdentity, apiKey, readOnly = false }) => stableJson({
+  readOnly,
   credentialIdentity: credentialCacheIdentity(apiKey),
   directory: trimString(directory),
   model: cloneCursorSdkModelSelection(model),
@@ -939,7 +870,8 @@ const normalizeCursorModelEffort = (value) => (
 const createCursorVariantKeyFromParams = (params) => {
   const thinkingEnabled = getModelParamValue(params, CURSOR_MODEL_PARAM_THINKING).toLowerCase() === CURSOR_MODEL_TRUE_VALUE;
   const effort = normalizeCursorModelEffort(
-    getModelParamValue(params, CURSOR_MODEL_PARAM_REASONING)
+    getModelParamValue(params, CURSOR_MODEL_PARAM_REASONING_EFFORT)
+    || getModelParamValue(params, CURSOR_MODEL_PARAM_REASONING)
     || getModelParamValue(params, CURSOR_MODEL_PARAM_EFFORT)
   );
 
@@ -967,7 +899,8 @@ const getCursorContextLimitFromParams = (params) => (
 const scoreCursorSdkVariant = (sdkVariant) => {
   const params = normalizeModelSelectionParams(sdkVariant?.params);
   const effort = normalizeCursorModelEffort(
-    getModelParamValue(params, CURSOR_MODEL_PARAM_REASONING)
+    getModelParamValue(params, CURSOR_MODEL_PARAM_REASONING_EFFORT)
+    || getModelParamValue(params, CURSOR_MODEL_PARAM_REASONING)
     || getModelParamValue(params, CURSOR_MODEL_PARAM_EFFORT)
   );
   return (
@@ -1068,7 +1001,7 @@ const addNativeUltraCursorVariants = (records) => {
     const ultraParams = normalizeModelSelectionParams(sourceSelection.params).map((param) => {
       if (
         !replacedEffort
-        && (param.id === CURSOR_MODEL_PARAM_REASONING || param.id === CURSOR_MODEL_PARAM_EFFORT)
+        && (param.id === CURSOR_MODEL_PARAM_REASONING_EFFORT || param.id === CURSOR_MODEL_PARAM_REASONING || param.id === CURSOR_MODEL_PARAM_EFFORT)
       ) {
         replacedEffort = true;
         return { ...param, value: 'ultra' };
@@ -1181,9 +1114,9 @@ const addCompatibilityModelPairs = (records) => {
   return nextRecords;
 };
 
-const normalizeSdkModelRecords = (models) => {
+const normalizeSdkModelRecords = (models, { declaredFallback = true } = {}) => {
   if (!Array.isArray(models) || models.length === 0) {
-    return fallbackModelRecords();
+    return declaredFallback ? fallbackModelRecords() : {};
   }
 
   const records = {};
@@ -1194,9 +1127,10 @@ const normalizeSdkModelRecords = (models) => {
     addSdkModelRecord(records, model);
   }
 
+  const paired = addCompatibilityModelPairs(records);
   return Object.keys(records).length > 0
-    ? stripInternalCursorSdkScores(addNativeUltraCursorVariants(addCompatibilityModelPairs(records)))
-    : fallbackModelRecords();
+    ? stripInternalCursorSdkScores(declaredFallback ? addNativeUltraCursorVariants(paired) : paired)
+    : declaredFallback ? fallbackModelRecords() : {};
 };
 
 const buildVirtualProvider = (models) => ({
@@ -1211,11 +1145,13 @@ const resolveVariantRecord = (variants, variant) => {
   if (!key) return null;
   const direct = variants[key];
   if (isPlainObject(direct)) return direct;
-  const normalizedKey = createCursorVariantKeyFromParams([
-    { id: CURSOR_MODEL_PARAM_THINKING, value: key.toLowerCase().includes(CURSOR_MODEL_PARAM_THINKING) ? CURSOR_MODEL_TRUE_VALUE : 'false' },
-    { id: CURSOR_MODEL_PARAM_EFFORT, value: key },
-  ]);
-  return normalizedKey && isPlainObject(variants[normalizedKey]) ? variants[normalizedKey] : null;
+  const normalized = key.toLowerCase();
+  const thinking = normalized.startsWith('thinking-');
+  const effort = normalizeCursorModelEffort(thinking ? normalized.slice('thinking-'.length) : normalized);
+  if (!effort) return null;
+  const canonical = thinking ? `thinking-${effort}` : effort;
+  if (isPlainObject(variants[canonical])) return variants[canonical];
+  return !thinking && isPlainObject(variants[`thinking-${effort}`]) ? variants[`thinking-${effort}`] : null;
 };
 
 const getCursorSdkSelectionFromModelRecord = (record, variant) => {
@@ -1223,6 +1159,7 @@ const getCursorSdkSelectionFromModelRecord = (record, variant) => {
   const variantRecord = resolveVariantRecord(record.variants, variant);
   const variantSelection = cloneCursorSdkModelSelection(variantRecord?.cursorSdkModel);
   if (variantSelection) return variantSelection;
+  if (trimString(variant) && variant !== 'default') return null;
   return cloneCursorSdkModelSelection(record.options?.cursorSdkModel);
 };
 
@@ -1619,24 +1556,51 @@ const normalizeStoredSessionState = (state) => {
   };
 };
 
+// The web host always passes its storage directory; this standalone default
+// follows packages/shared-runtime/lib/data-root.js without depending on it.
+const defaultDataRoot = () => {
+  const configured = process.env.DEVRYAN_DATA_DIR ?? process.env.OPENCHAMBER_DATA_DIR;
+  if (configured) return path.resolve(configured);
+  const legacy = path.join(os.homedir(), '.config', 'openchamber');
+  try { if (fsSync.lstatSync(legacy).isDirectory()) return legacy; } catch { /* No legacy folder. */ }
+  return path.join(os.homedir(), '.config', 'devryan');
+};
 const defaultStorageDir = () => path.join(
-  process.env.OPENCHAMBER_DATA_DIR ? path.resolve(process.env.OPENCHAMBER_DATA_DIR) : path.join(os.homedir(), '.config', 'openchamber'),
+  defaultDataRoot(),
   'cursor-sdk-sessions',
 );
 
 export function createCursorSdkRuntime(options = {}) {
+  const platform = options.platform ?? process.platform;
+  const arch = options.arch ?? process.arch;
+  const hostSupported = platform !== 'win32' || arch !== 'arm64';
+  const capabilities = Object.freeze({ supported: hostSupported, code: hostSupported ? null : 'cursor_platform_unsupported' });
+  const assertHostSupported = () => {
+    if (!hostSupported) throw Object.assign(new Error('Cursor is unavailable on Windows ARM64.'), { code: capabilities.code, statusCode: 503 });
+  };
   const readAuth = typeof options.readAuth === 'function' ? options.readAuth : () => ({});
   const env = isPlainObject(options.env) ? options.env : process.env;
+  const resolveApiKey = async (scope) => {
+    assertHostSupported();
+    return typeof options.resolveApiKey === 'function'
+      ? trimString(await options.resolveApiKey(scope)) || null : getCursorSdkApiKey({ env, readAuth });
+  };
+  const withReadOnly = async (scope, action) => {
+    assertHostSupported();
+    return typeof options.ownedReadOnly === 'function' ? options.ownedReadOnly(scope, action) : action();
+  };
   const storageDir = trimString(options.storageDir) || defaultStorageDir();
   const executionOutbox = typeof options.onSessionChangeExecution === 'function'
     ? createCursorChangeOutbox({ directory: path.join(storageDir, 'change-outbox'), deliver: options.onSessionChangeExecution }) : null;
   const hasInjectedLoadSdk = typeof options.loadSdk === 'function';
   const rawLoadSdk = hasInjectedLoadSdk ? options.loadSdk : () => importRuntimeModule('@cursor/sdk');
   const ripgrepPath = trimString(options.ripgrepPath);
-  const initialRipgrepResolution = resolveCursorRipgrepPath({
+  const initialRipgrepResolution = hostSupported ? resolveCursorRipgrepPath({
     explicitRipgrepPath: ripgrepPath,
     env,
-  });
+    platform,
+    arch,
+  }) : { path: '', source: 'unsupported' };
   let lastRipgrepStatus = {
     configured: Boolean(initialRipgrepResolution.path),
     source: initialRipgrepResolution.source,
@@ -1644,6 +1608,7 @@ export function createCursorSdkRuntime(options = {}) {
     resolvedSource: initialRipgrepResolution.source,
   };
   const loadSdk = async () => {
+    assertHostSupported();
     if (!hasInjectedLoadSdk) {
       assertCursorSdkNodeCompatibility();
     }
@@ -1657,7 +1622,7 @@ export function createCursorSdkRuntime(options = {}) {
   const workerPath = trimString(options.workerPath) || fileURLToPath(new URL('./node-worker.mjs', import.meta.url));
   const persistentWorkerPath = trimString(options.persistentWorkerPath)
     || workerPath.replace(/node-worker\.mjs$/, 'persistent-worker.mjs');
-  const workerConfig = resolveCursorSdkWorkerRuntimeConfig({
+  const workerConfig = hostSupported ? resolveCursorSdkWorkerRuntimeConfig({
     env,
     hasInjectedLoadSdk,
     requestedNodeBinary: options.nodeBinary,
@@ -1666,7 +1631,7 @@ export function createCursorSdkRuntime(options = {}) {
     requestedWorkerEnv: options.workerEnv,
     workerPath,
     ripgrepPath,
-  });
+  }) : { nodeBinary: '', useNodeWorkerForPrompts: false, workerCwd: '', workerEnv: {} };
   const {
     nodeBinary,
     useNodeWorkerForPrompts,
@@ -1690,13 +1655,31 @@ export function createCursorSdkRuntime(options = {}) {
   const resolveAgentDefinitions = typeof options.resolveAgentDefinitions === 'function' ? options.resolveAgentDefinitions : null;
   const streamIdleTimeoutMs = Math.max(0, Number(options.streamIdleTimeoutMs) || 45000);
   const finalResultWaitTimeoutMs = Math.max(0, Number(options.finalResultWaitTimeoutMs) || 1000);
-  const finalResultStreamDrainGraceMs = Math.max(0, Number(options.finalResultStreamDrainGraceMs) || 10);
   const modelDiscoveryTtlMs = Math.max(0, Number(options.modelDiscoveryTtlMs) || DEFAULT_MODEL_DISCOVERY_TTL_MS);
   const modelDiscoveryTimeoutMs = Math.max(0, Number(options.modelDiscoveryTimeoutMs) || DEFAULT_MODEL_DISCOVERY_TIMEOUT_MS);
   const recordTimingMark = typeof options.recordTimingMark === 'function' ? options.recordTimingMark : null;
   const MAX_CACHED_AGENTS = 32;
   const MAX_PERSISTENT_WORKERS = 3;
   const activeRuns = new Map();
+  const processSettlements = new WeakMap();
+  const presentationOwnerID = createId('cursor_presentation');
+  const presentationRuns = new Map();
+  let presentationSequence = 0, presentationRetired = false;
+  const observePresentation = (token, phase) => {
+    try {
+      void Promise.resolve(options.onPresentationProgress?.({ provider: 'cursor', ownerID: presentationOwnerID,
+        sessionID: token.sessionID, generation: token.generation, sequence: ++presentationSequence,
+        objectiveID: token.userMessageID, assistantID: token.assistantMessageID,
+        stepID: null, attemptID: null, phase, progress: token.progress })).catch(() => {});
+    } catch { /* Presentation cannot change execution or persistence. */ }
+  };
+  const clearPresentation = (token) => {
+    if (!token) return;
+    if (presentationRuns.get(token.sessionID) === token) presentationRuns.delete(token.sessionID);
+    if (token.cancelled) return;
+    token.cancelled = true;
+    if (token.presented) observePresentation(token, 'cleared');
+  };
   const sessionStatuses = new Map();
   const agentsBySession = new Map();
   let releaseSessionFromPersistentWorkers = () => false;
@@ -1733,23 +1716,56 @@ export function createCursorSdkRuntime(options = {}) {
   };
 
   const persistQueues = new Map();
+  const pendingStreamingPersists = new Map();
   const executionDirectories = new Map();
   const settlingRuns = new Map();
   const startingRuns = new Map();
 
-  const enqueuePersist = (sessionID, record, options = {}) => {
+  const enqueuePersist = (sessionID, record, persistOptions = {}) => {
+    const terminal = record.info.role === 'assistant' && Number.isFinite(record.info.time?.completed);
+    const replaceable = persistOptions.replaceable === true && record.info.role === 'assistant' && !terminal && !record.info.error;
+    const pending = pendingStreamingPersists.get(sessionID);
+    // Producers replace info/parts rather than mutating their published values.
+    // Retain those references cheaply; clone only a snapshot that actually writes.
+    const snapshot = { ...record };
+    if (replaceable && pending?.record.info.id === record.info.id) {
+      pending.record = snapshot;
+      return persistOptions.propagateError === true ? pending.writePromise : pending.handledPromise;
+    }
+    // Only the pending tail can be replaced: another message or awaited barrier
+    // must keep its original position in this session's persistence order.
+    pendingStreamingPersists.delete(sessionID);
+    const slot = { record: snapshot, writePromise: null, handledPromise: null };
+    if (replaceable) pendingStreamingPersists.set(sessionID, slot);
     const previous = persistQueues.get(sessionID) || Promise.resolve();
+    const startedAt = now();
+    const diagnostic = (phase, error) => {
+      if (!terminal) return;
+      try { options.recordDiagnostic?.({ type: 'lifecycle', event: 'cursor_persistence', sessionID,
+        directory: executionDirectories.get(sessionID), payload: { phase, startedAt, elapsedMs: Math.max(0, now() - startedAt),
+          userMessageID: record.info.parentID, assistantMessageID: record.info.id,
+          ...(error ? { reason: typeof error.code === 'string' && /^(native_[a-z_]{1,80}|execution_cancelled|execution_reverted)$/.test(error.code)
+            ? error.code : 'cursor_persistence_failed' } : {}) } }); }
+      catch { /* Diagnostics cannot change persistence. */ }
+    };
+    diagnostic('sdk_queued');
     const writePromise = previous
       .catch(() => {})
-      .then(() => appendOrReplaceRecord(sessionID, record));
+      .then(async () => {
+        if (pendingStreamingPersists.get(sessionID) === slot) pendingStreamingPersists.delete(sessionID);
+        diagnostic('sdk_started');
+        try { const result = await appendOrReplaceRecord(sessionID, structuredClone(slot.record), diagnostic); diagnostic('sdk_settled'); return result; }
+        catch (error) { diagnostic('sdk_failed', error); throw error; }
+      });
     const handledPromise = writePromise.catch((error) => {
       logger.error?.('[CursorSDK] persist failed:', error);
     });
+    slot.writePromise = writePromise; slot.handledPromise = handledPromise;
     persistQueues.set(sessionID, handledPromise);
-    return options.propagateError === true ? writePromise : handledPromise;
+    return persistOptions.propagateError === true ? writePromise : handledPromise;
   };
 
-  const appendOrReplaceRecord = async (sessionID, record) => {
+  const appendOrReplaceRecord = async (sessionID, record, diagnostic = () => {}) => {
     const state = await readSessionState(sessionID);
     const records = Array.isArray(state.records) ? state.records : [];
     const index = records.findIndex((entry) => entry?.info?.id === record.info.id);
@@ -1757,8 +1773,11 @@ export function createCursorSdkRuntime(options = {}) {
     if (index >= 0) nextRecords[index] = record;
     nextRecords.sort((left, right) => String(left?.info?.id || '').localeCompare(String(right?.info?.id || '')));
     const nextState = { ...state, records: nextRecords };
+    diagnostic('sdk_owner_started');
     await options.onPersistRecord?.({ sessionID, directory: executionDirectories.get(sessionID), record });
+    diagnostic('sdk_owner_returned');
     await writeSessionState(sessionID, nextState);
+    diagnostic('sdk_stored');
     return nextState;
   };
 
@@ -1771,6 +1790,7 @@ export function createCursorSdkRuntime(options = {}) {
   const deleteSessionState = async (sessionID) => {
     const id = trimString(sessionID);
     if (!id || deletedSessionIds.has(id)) return false;
+    clearPresentation(presentationRuns.get(id));
     deletedSessionIds.add(id);
     await questionRuntime.deleteSession(id);
     agentsBySession.delete(id);
@@ -1826,6 +1846,7 @@ export function createCursorSdkRuntime(options = {}) {
   // a slow or hung SDK cancel can never wedge the session.
   const releaseActiveRun = (sessionID, { source = 'user_abort', emitIdle = false } = {}) => {
     const active = activeRuns.get(sessionID);
+    if (source !== 'superseded') clearPresentation(presentationRuns.get(sessionID));
     if (!active?.run) return false;
     active.markAbortRequested?.(source);
     questionRuntime.revokeSessionScope(sessionID, {
@@ -1849,19 +1870,22 @@ export function createCursorSdkRuntime(options = {}) {
   };
 
   const getStatus = () => {
-    const auth = readAuth();
-    const sdkAuthConfigured = Boolean(getCursorSdkApiKey({ env, readAuth }));
+    const nativeCredential = typeof options.resolveApiKey === 'function';
+    const auth = !hostSupported || nativeCredential ? {} : readAuth();
+    const sdkAuthConfigured = hostSupported && !nativeCredential && Boolean(getCursorSdkApiKey({ env, readAuth }));
     return {
       providerId: CURSOR_PROVIDER_ID,
       bridge: { kind: 'cursor-sdk' },
+      capabilities,
       sdkAuthConfigured,
+      ...(nativeCredential ? { authSource: 'native-credential', authObservation: 'unknown' } : {}),
       usageAuthConfigured: isCursorUsageAuthConfigured(auth),
       ...(useNodeWorkerForPrompts && usePersistentWorkerForPrompts
         ? persistentWorkerRuntime.getStatus()
         : { workerMode: useNodeWorkerForPrompts ? 'node-worker' : 'direct', workerReady: false, workerRestarts: 0 }),
       activeRuns: activeRuns.size,
-      modelsSource: lastModelsSource,
-      modelCount: Object.keys(lastModelRecords).length,
+      modelsSource: hostSupported ? lastModelsSource : 'unavailable',
+      modelCount: hostSupported ? Object.keys(lastModelRecords).length : 0,
       modelsRefreshing: Boolean(modelRefreshInFlight),
       lastModelRefreshStartedAt,
       lastModelRefreshCompletedAt,
@@ -1898,14 +1922,82 @@ export function createCursorSdkRuntime(options = {}) {
     && (modelDiscoveryTtlMs === 0 || now() - lastModelRefreshCompletedAt < modelDiscoveryTtlMs)
   );
 
-  const refreshModels = async ({ force = false, reason = 'refresh' } = {}) => {
-    if (!force && isModelCacheFresh()) {
-      return lastModelRecords;
+  const nativeModelCatalogs = new Map();
+  const modelCatalogEvidence = new WeakMap();
+  const notifiedCatalogDirectories = new WeakMap();
+  const modelSelectionCredentials = new WeakMap();
+  const selectionError = (code, modelID, variant, statusCode = 409) => Object.assign(
+    new Error(`${code}: cursor-acp/${modelID}${variant ? ` (${variant})` : ''}`), { code, statusCode });
+  const emitCatalogCommitted = (directory, records) => {
+    const scope = trimString(directory);
+    let notified = notifiedCatalogDirectories.get(records);
+    if (!notified) notifiedCatalogDirectories.set(records, notified = new Set());
+    if (notified.has(scope)) return;
+    notified.add(scope);
+    try {
+      emit({ type: 'devryan:provider-catalog', properties: {
+        providerID: CURSOR_PROVIDER_ID, directory: scope, source: 'sdk',
+      } }, directory);
+    } catch { /* Catalog observers cannot change a successful cache commit. */ }
+  };
+  const assertSelectionCredential = (selection, apiKey) => {
+    const identity = modelSelectionCredentials.get(selection);
+    if (identity && identity !== credentialCacheIdentity(apiKey)) {
+      throw selectionError('cursor_model_account_changed', selection.id, undefined);
     }
-    if (modelRefreshInFlight) {
-      return modelRefreshInFlight;
+  };
+  const refreshModels = async ({ force = false, reason = 'refresh', directory, signal, onCatalogPhase } = {}) => {
+    assertHostSupported();
+    if (typeof options.resolveApiKey === 'function') {
+      signal?.throwIfAborted();
+      const workerCatalog = !hasInjectedLoadSdk && options.executionAdapter;
+      const sdk = workerCatalog ? null : await loadSdk();
+      signal?.throwIfAborted();
+      const apiKey = await resolveApiKey({ kind: 'catalog', directory });
+      onCatalogPhase?.('key_resolved');
+      signal?.throwIfAborted();
+      const identity = apiKey ? credentialCacheIdentity(apiKey) : null;
+      const cached = identity ? nativeModelCatalogs.get(identity) : null;
+      if (!force && cached && (modelDiscoveryTtlMs === 0 || now() - cached.completedAt < modelDiscoveryTtlMs)) {
+        lastModelRecords = cached.records;
+        lastModelsSource = 'sdk';
+        emitCatalogCommitted(directory, cached.records);
+        return cached.records;
+      }
+      const startedAt = now();
+      lastModelRefreshStartedAt = startedAt;
+      lastModelRefreshReason = reason;
+      lastModelRefreshTimedOut = false;
+      try {
+        if (!apiKey) throw new Error('Cursor SDK API key is not configured.');
+        const models = workerCatalog ? await generateReadOnlyWorker({ mode: 'catalog', keyKind: 'catalog',
+          text: '', directory, apiKey, signal, onCatalogPhase }) : await sdk.Cursor.models.list({ apiKey });
+        signal?.throwIfAborted();
+        if (!Array.isArray(models)) throw new Error('Cursor model catalog is unavailable.');
+        const records = normalizeSdkModelRecords(models, { declaredFallback: false });
+        modelCatalogEvidence.set(records, { identity });
+        nativeModelCatalogs.set(identity, { records, completedAt: now() });
+        if (nativeModelCatalogs.size > 32) nativeModelCatalogs.delete(nativeModelCatalogs.keys().next().value);
+        lastModelRecords = records;
+        lastModelsSource = 'sdk';
+        lastModelRefreshError = null;
+        emitCatalogCommitted(directory, records);
+        return records;
+      } catch (error) {
+        if (signal?.aborted || error?.nativeProcessUnsettled || /^native_[a-z_]{1,80}$/.test(error?.code ?? '')) throw error;
+        if (identity) nativeModelCatalogs.delete(identity);
+        lastModelRecords = fallbackModelRecords();
+        lastModelsSource = 'fallback';
+        lastModelRefreshError = error instanceof Error ? error.message : 'Cursor model catalog is unavailable.';
+        lastError = lastModelRefreshError;
+        return lastModelRecords;
+      } finally {
+        lastModelRefreshCompletedAt = now();
+        lastModelRefreshDurationMs = Math.max(0, lastModelRefreshCompletedAt - startedAt);
+      }
     }
-
+    if (!force && isModelCacheFresh()) return lastModelRecords;
+    if (modelRefreshInFlight) return modelRefreshInFlight;
     const apiKey = getCursorSdkApiKey({ env, readAuth });
     if (!apiKey) {
       lastModelRecords = fallbackModelRecords();
@@ -1935,6 +2027,9 @@ export function createCursorSdkRuntime(options = {}) {
         lastModelsSource = 'sdk';
         lastError = null;
         lastModelRefreshError = null;
+        if (Array.isArray(models) && models.some(model => isPlainObject(model) && trimString(model.id))) {
+          emitCatalogCommitted(directory, lastModelRecords);
+        }
         return lastModelRecords;
       } catch (error) {
         if (lastModelsSource !== 'sdk') {
@@ -1955,8 +2050,45 @@ export function createCursorSdkRuntime(options = {}) {
     return modelRefreshInFlight;
   };
 
-  const refreshVirtualProviderNow = async ({ force = false, reason = 'refresh', timeoutMs = 0 } = {}) => {
-    const refreshPromise = refreshModels({ force, reason });
+  const refreshVirtualProviderNow = async ({ force = false, reason = 'refresh', timeoutMs = 0, directory, signal } = {}) => {
+    if (typeof options.resolveApiKey === 'function') {
+      const startedAt = now();
+      let outcome = 'completed';
+      const onCatalogPhase = phase => {
+        try { options.recordDiagnostic?.({ type: 'lifecycle', event: 'cursor_catalog', directory,
+          payload: { phase, startedAt, elapsedMs: Math.max(0, now() - startedAt), ...(phase === 'settled' ? { outcome } : {}) } }); }
+        catch { /* Diagnostics cannot change admission or settlement. */ }
+      };
+      const deadline = AbortSignal.timeout(timeoutMs > 0 ? timeoutMs : 20_000);
+      const boundedSignal = signal ? AbortSignal.any([signal, deadline]) : deadline;
+      try {
+        const models = await withReadOnly({ kind: 'catalog', directory, signal: boundedSignal },
+          () => refreshModels({ force, reason, directory, signal: boundedSignal, onCatalogPhase }));
+        boundedSignal.throwIfAborted();
+        return buildVirtualProvider(models);
+      } catch (error) {
+        outcome = signal?.aborted ? 'cancelled' : deadline.aborted ? 'timeout' : 'failed';
+        if (boundedSignal.aborted) {
+          lastModelRefreshTimedOut = deadline.aborted && !signal?.aborted;
+          lastModelRefreshError = lastModelRefreshTimedOut ? 'native_cursor_catalog_timeout' : 'cursor_model_catalog_cancelled';
+          lastError = lastModelRefreshError;
+        }
+        if (error?.nativeProcessUnsettled || /^native_[a-z_]{1,80}$/.test(error?.code ?? '')) throw error;
+        signal?.throwIfAborted();
+        if (deadline.aborted) {
+          if (timeoutMs > 0 && !signal) {
+            lastModelRecords = fallbackModelRecords();
+            lastModelsSource = 'fallback';
+            return buildVirtualProvider(lastModelRecords);
+          }
+          throw Object.assign(new Error('native_cursor_catalog_timeout'), { code: 'native_cursor_catalog_timeout', statusCode: 503 });
+        }
+        throw error;
+      } finally {
+        onCatalogPhase('settled');
+      }
+    }
+    const refreshPromise = withReadOnly({ kind: 'catalog', directory }, () => refreshModels({ force, reason, directory }));
     const boundedTimeoutMs = Math.max(0, Number(timeoutMs) || 0);
     if (!boundedTimeoutMs) {
       const models = await refreshPromise;
@@ -1974,20 +2106,29 @@ export function createCursorSdkRuntime(options = {}) {
   };
 
   const refreshVirtualProviderInBackground = (options = {}) => {
-    if (!options.force && isModelCacheFresh()) return;
+    if (!options.force && isModelCacheFresh() && typeof options.resolveApiKey !== 'function') return;
     refreshModels(options).catch((error) => {
       lastError = error instanceof Error ? error.message : 'Failed to refresh Cursor models.';
       lastModelRefreshError = lastError;
     });
   };
 
-  const resolveCursorSdkModelSelection = async ({ modelID, variant }) => {
+  const resolveCursorSdkModelSelection = async ({ modelID, variant, directory, signal }) => {
+    assertHostSupported();
+    signal?.throwIfAborted();
     const normalizedModelID = normalizeModelId(modelID);
-    if (!lastModelRecords || !isPlainObject(lastModelRecords[normalizedModelID])) {
-      refreshVirtualProviderInBackground({ reason: 'model_selection_miss' });
+    let records = lastModelRecords;
+    if (typeof options.resolveApiKey === 'function') {
+      records = (await refreshVirtualProviderNow({ directory, reason: 'model_selection', signal })).models;
+      if (!modelCatalogEvidence.has(records)) throw selectionError('cursor_model_catalog_unavailable', normalizedModelID, variant, 503);
+    } else if (!records || !isPlainObject(records[normalizedModelID])) {
+      records = (await refreshVirtualProviderNow({ directory, reason: 'model_selection_miss' })).models;
     }
-    const selected = getCursorSdkSelectionFromModelRecord(lastModelRecords?.[normalizedModelID], variant);
-    return selected || createFallbackCursorSdkModelSelection(normalizedModelID);
+    const selected = getCursorSdkSelectionFromModelRecord(records?.[normalizedModelID], variant);
+    if (!selected) throw selectionError('cursor_model_unavailable', normalizedModelID, variant);
+    const evidence = modelCatalogEvidence.get(records);
+    if (evidence) modelSelectionCredentials.set(selected, evidence.identity);
+    return selected;
   };
 
   const getOrCreateAgentResult = async ({
@@ -1999,11 +2140,13 @@ export function createCursorSdkRuntime(options = {}) {
     agentDefinitions,
     mcpServers,
     mcpServerIdentity,
+    readOnly = false,
   }) => {
+    assertSelectionCredential(modelSelection, apiKey);
     const model = cloneCursorSdkModelSelection(modelSelection) || createFallbackCursorSdkModelSelection(modelID);
     const agents = pinCursorSdkSubagentModels(cloneCursorSdkAgentDefinitions(agentDefinitions), model);
     const normalizedMcpServers = cloneCursorMcpServers(mcpServers);
-    const fingerprint = createAgentRuntimeFingerprint({ directory, model, agents, mcpServerIdentity, apiKey });
+    const fingerprint = createAgentRuntimeFingerprint({ directory, model, agents, mcpServerIdentity, apiKey, readOnly });
     const cached = agentsBySession.get(sessionID);
     if (cached?.fingerprint === fingerprint && cached?.agent) {
       agentsBySession.delete(sessionID);
@@ -2021,6 +2164,7 @@ export function createCursorSdkRuntime(options = {}) {
       apiKey,
       model,
       local,
+      ...cursorReadOnlyOptions(readOnly),
       ...(trimString(directory) ? { platform: { workspaceRef: directory } } : {}),
       ...(agents ? { agents } : {}),
       ...(normalizedMcpServers ? { mcpServers: normalizedMcpServers } : {}),
@@ -2073,6 +2217,7 @@ export function createCursorSdkRuntime(options = {}) {
     agentDefinitions,
     mcpServers,
     mcpServerIdentity,
+    readOnly = false,
   }) => {
     const model = cloneCursorSdkModelSelection(modelSelection) || createFallbackCursorSdkModelSelection(modelID);
     const agent = await getOrCreateAgent({
@@ -2084,6 +2229,7 @@ export function createCursorSdkRuntime(options = {}) {
       agentDefinitions,
       mcpServers,
       mcpServerIdentity,
+      readOnly,
     });
     const message = Array.isArray(images) && images.length > 0
       ? { text: prompt, images }
@@ -2094,7 +2240,7 @@ export function createCursorSdkRuntime(options = {}) {
       model,
       onDelta: (event) => {
         const sdkMessage = normalizeInteractionUpdateToSdkMessage(event);
-        if (sdkMessage) {
+        if (sdkMessage && ['usage', 'task_activity', 'session_change'].includes(sdkMessage.type)) {
           deltaQueue.push(sdkMessage.type === 'usage'
             ? { type: 'usage', tokens: sdkMessage.tokens }
             : { type: 'message', message: sdkMessage });
@@ -2107,22 +2253,23 @@ export function createCursorSdkRuntime(options = {}) {
     deltaQueue.push({ type: 'usage-observation', observation: cursorRunUsageObservation(run) });
     const waitPromise = typeof run.wait === 'function'
       ? run.wait()
-        .then((result) => ({
+        .then(async (result) => ({
           ok: true,
           result,
           usageObservation: cursorRunUsageObservation(run, result),
           finalStatus: finalStatusFromSdkStatus(sdkStatusFromRunStatus(result?.status || run.status)),
-          finalText: trimString(result?.result),
+          ...await cursorFinalText(result, run),
         }))
         .catch((error) => ({
           ok: false,
-          error,
+          error: cursorWorkerFailure(error instanceof Error ? error.message : 'Cursor SDK run failed.', { ...cursorErrorDetails(error), ...(CURSOR_STREAM_PARTIAL_CODES.includes(error?.code) ? {} : { source: 'provider' }) }),
           usageObservation: cursorRunUsageObservation(run),
           finalStatus: 'error',
           finalText: '',
         }))
       : null;
     return {
+      finalResultAvailable: Boolean(waitPromise),
       getUsageObservation: () => cursorRunUsageObservation(run),
       async cancel() {
         if (typeof run.cancel === 'function') {
@@ -2135,105 +2282,45 @@ export function createCursorSdkRuntime(options = {}) {
       },
       async *stream() {
         const iterator = run.stream()[Symbol.asyncIterator]();
-        const shouldSkipDuplicateMessage = createCrossSourceMessageDedupe();
-        const waitEventPromise = waitPromise
-          ? waitPromise.then((result) => ({ source: 'wait', result }))
-          : null;
         let streamDone = false;
         let deltaDone = false;
-        let nextStreamPromise = iterator.next().then((next) => ({ source: 'stream', next }));
-        let nextDeltaPromise = deltaQueue.next().then((next) => ({ source: 'delta', next }));
-
-        async function* yieldSdkMessage(source, sdkMessage) {
-          if (shouldSkipDuplicateMessage(source, sdkMessage)) return;
-          yield { type: 'message', message: sdkMessage };
-        }
-
-        async function* yieldPromptEvent(source, promptEvent) {
-          if (promptEvent?.type !== 'message') {
-            yield promptEvent;
-            return;
-          }
-          yield* yieldSdkMessage(source, promptEvent.message);
-        }
-
-        async function* yieldWaitResult(result) {
-          if (!result) return;
-          if (result.usageObservation) {
-            yield { type: 'usage-observation', observation: result.usageObservation };
-          }
-          if (result.ok === false) {
-            throw result.error || new Error('Cursor SDK run failed.');
-          }
-          if (trimString(result.finalText)) {
-            yield* yieldSdkMessage('wait', {
-              type: 'assistant',
-              message: {
-                role: 'assistant',
-                content: [{ type: 'text', text: result.finalText }],
-              },
-            });
-          }
-          if (result.finalStatus) {
-            yield* yieldSdkMessage('wait', {
-              type: 'status',
-              status: sdkStatusFromRunStatus(result.result?.status || run.status),
-            });
-          }
-        }
-
-        for (;;) {
-          const pending = [];
-          if (!streamDone) pending.push(nextStreamPromise);
-          if (!deltaDone) pending.push(nextDeltaPromise);
-          if (waitEventPromise) pending.push(waitEventPromise);
-          if (pending.length === 0) {
-            break;
-          }
-          const event = await Promise.race(pending);
-
-          if (event.source === 'wait') {
-            nextStreamPromise.catch(() => {});
-            nextDeltaPromise.catch(() => {});
-            deltaQueue.close();
-            if (typeof iterator.return === 'function') {
-              iterator.return().catch(() => {});
+        let nextStreamPromise = iterator.next().then(next => ({ source: 'stream', next }));
+        let nextDeltaPromise = deltaQueue.next().then(next => ({ source: 'delta', next }));
+        try {
+          while (!streamDone || !deltaDone) {
+            const event = await Promise.race([
+              ...(!streamDone ? [nextStreamPromise] : []),
+              ...(!deltaDone ? [nextDeltaPromise] : []),
+            ]);
+            if (event.source === 'delta') {
+              deltaDone = event.next.done;
+              if (!deltaDone) {
+                nextDeltaPromise = deltaQueue.next().then(next => ({ source: 'delta', next }));
+                yield event.next.value;
+              }
+            } else {
+              streamDone = event.next.done;
+              if (streamDone) deltaQueue.close();
+              else {
+                nextStreamPromise = iterator.next().then(next => ({ source: 'stream', next }));
+                yield { type: 'message', message: event.next.value };
+              }
             }
-            yield* yieldWaitResult(event.result);
-            return;
           }
-
-          if (event.source === 'delta') {
-            if (event.next?.done) {
-              deltaDone = true;
-              continue;
-            }
-            nextDeltaPromise = deltaQueue.next().then((next) => ({ source: 'delta', next }));
-            yield* yieldPromptEvent('delta', event.next?.value);
-            continue;
-          }
-
-          if (event.next?.done) {
-            streamDone = true;
-            deltaQueue.close();
-            continue;
-          }
-          nextStreamPromise = iterator.next().then((next) => ({ source: 'stream', next }));
-          yield* yieldSdkMessage('stream', event.next?.value);
-        }
-
-        deltaQueue.close();
-        if (waitPromise) {
-          yield* yieldWaitResult(await withTimeout(waitPromise, finalResultWaitTimeoutMs));
+        } finally {
+          deltaQueue.close();
+          nextStreamPromise.catch(() => {});
+          nextDeltaPromise.catch(() => {});
+          if (!streamDone && typeof iterator.return === 'function') void iterator.return().catch(() => {});
         }
       },
     };
   };
 
-  const generateDirectTitle = async ({ text, directory, onUsage }) => {
+  const generateDirectTitle = async ({ text, directory, sessionID, apiKey: selectedKey, onUsage }) => {
     const promptText = trimString(text);
     if (!promptText) return null;
-    const apiKey = getCursorSdkApiKey({ env, readAuth });
+    const apiKey = selectedKey ?? await resolveApiKey({ kind: 'title', directory, sessionID });
     if (!apiKey) return null;
 
     const { Agent } = await loadSdk();
@@ -2246,18 +2333,21 @@ export function createCursorSdkRuntime(options = {}) {
     });
   };
 
-  const generateNodeWorkerTitle = async ({ text, directory, onUsage }) => {
-    const promptText = trimString(text);
-    if (!promptText) return null;
-    const apiKey = getCursorSdkApiKey({ env, readAuth });
+  const generateReadOnlyWorker = async ({ text, directory, sessionID, apiKey: selectedKey, onUsage, mode = 'title', keyKind = mode, modelSelection = { id: 'auto' }, signal, onCatalogPhase }) => {
+    signal?.throwIfAborted();
+    const promptText = mode === 'text' ? text : trimString(text);
+    if (!promptText && mode !== 'catalog') return null;
+    const apiKey = selectedKey ?? await resolveApiKey({ kind: keyKind, directory, sessionID });
     if (!apiKey) return null;
+    assertSelectionCredential(modelSelection, apiKey);
 
-    const frozen = { type: 'title', apiKey, text: promptText, directory: trimString(directory),
-      modelID: 'auto', modelSelection: { id: 'auto' } };
+    const frozen = { type: mode, apiKey, text: promptText, directory: trimString(directory),
+      modelID: modelSelection.id, modelSelection };
     const preflightWire = serializeWorkerPayload(frozen);
     const inputForLease = (lease) => serializeWorkerPayload({ ...frozen, directory: lease.workingDirectory });
     const owned = options.executionAdapter ? await options.executionAdapter.startReadOnly({
-      input: preflightWire, inputForLease, command: nodeBinary, args: [workerPath], env: { ...process.env, ...workerEnv } }) : null;
+      input: preflightWire, inputForLease, command: nodeBinary, args: [workerPath], env: { ...process.env, ...workerEnv },
+      ...(signal ? { signal } : {}) }) : null;
     const child = owned ? owned.child : spawnImpl(nodeBinary, [workerPath], {
       cwd: workerCwd,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -2266,6 +2356,7 @@ export function createCursorSdkRuntime(options = {}) {
         ...workerEnv,
       },
     });
+    onCatalogPhase?.('worker_started');
     let stderr = '';
     child.stderr.setEncoding('utf8');
     child.stderr.on('data', (chunk) => {
@@ -2278,10 +2369,16 @@ export function createCursorSdkRuntime(options = {}) {
       child.on('error', (error) => resolve({ code: 1, signal: null, error }));
       child.on('close', (code, signal) => resolve({ code, signal, error: null }));
     });
+    let cancellation;
+    const abort = () => { cancellation ??= owned ? Promise.resolve().then(() => owned.cancel()).catch(error => error) : Promise.resolve(child.kill('SIGTERM')); };
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) abort();
     let title = null;
     let workerError = null;
     const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
-    for await (const line of lines) {
+    let streamError;
+    try { for await (const line of lines) {
+      if (mode === 'catalog') assertWorkerPayloadBytes(Buffer.byteLength(line));
       if (!trimString(line)) continue;
       let payload = null;
       try {
@@ -2289,17 +2386,32 @@ export function createCursorSdkRuntime(options = {}) {
       } catch {
         continue;
       }
-      if (payload?.type === 'title-result') {
+      if (mode === 'catalog' && payload?.type === 'catalog-result') {
+        if (title === null) onCatalogPhase?.('worker_result');
+        title = cursorCatalogModels(payload.models);
+      } else if (mode === 'text' && payload?.type === 'text-result') {
+        if (typeof payload.text !== 'string' || Buffer.byteLength(payload.text) > 262144) workerError = 'Cursor helper output is invalid.';
+        else title = payload.text;
+      } else if (payload?.type === 'title-result') {
         title = normalizeCursorSessionTitle(payload.title);
       } else if (payload?.type === 'usage-observation') {
-        onUsage?.(payload.observation);
+        try { onUsage?.(payload.observation); } catch { /* Accounting cannot interrupt provider settlement. */ }
       } else if (payload?.type === 'error') {
         workerError = trimString(payload.error) || 'Cursor SDK title generation failed.';
       }
     }
 
+    } catch(error) { streamError=error;abort(); }
     const exit = await exitPromise;
-    if (owned) await owned.result;
+    signal?.removeEventListener('abort', abort);
+    const cancellationError = await cancellation;
+    if (cancellationError instanceof Error) throw cancellationError;
+    if (owned) {
+      const receipt = await owned.result;
+      if (receipt.cancelled) throw Object.assign(new Error('Cursor title execution was cancelled.'), { code: 'execution_cancelled' });
+    }
+    signal?.throwIfAborted();
+    if (streamError) throw streamError;
     if (workerError) throw new Error(workerError);
     if (exit.error) throw exit.error;
     if (exit.code && exit.code !== 0) {
@@ -2308,6 +2420,7 @@ export function createCursorSdkRuntime(options = {}) {
         ? `Cursor SDK title worker exited with code ${exit.code}: ${detail}`
         : `Cursor SDK title worker exited with code ${exit.code}.`);
     }
+    if (mode === 'catalog' && !Array.isArray(title)) throw new Error('cursor_model_catalog_invalid');
     return title;
   };
 
@@ -2324,11 +2437,12 @@ export function createCursorSdkRuntime(options = {}) {
     agentDefinitions,
     mcpServers,
     mcpServerIdentity,
+    readOnly = false,
     signal,
   }) => {
     // Freeze caller-owned objects before any preparation or filesystem await.
     const frozen = JSON.parse(serializeWorkerPayload({
-      apiKey, sessionID, modelID,
+      apiKey, sessionID, modelID, readOnly,
       modelSelection: cloneCursorSdkModelSelection(modelSelection) || createFallbackCursorSdkModelSelection(modelID),
       agents: cloneCursorSdkAgentDefinitions(agentDefinitions), mcpServers: cloneCursorMcpServers(mcpServers),
       mcpServerIdentity: trimString(mcpServerIdentity), prompt,
@@ -2457,11 +2571,13 @@ export function createCursorSdkRuntime(options = {}) {
             try {
               payload = JSON.parse(line);
             } catch {
-              continue;
+              throw cursorStreamError('CURSOR_STREAM_DRAIN_FAILED');
             }
             recordFirstWorkerEvent();
 
-            if (payload?.type === 'agent' && trimString(payload.agentID)) {
+            if (payload?.type === 'timing') {
+              recordTimingMark?.({ sessionId: sessionID, messageId: trimString(messageID), mark: trimString(payload.mark), directory: trimString(directory) || undefined, metadata: { ...markMetadata, ...(typeof payload.metadata?.cacheHit === 'boolean' ? { cacheHit: payload.metadata.cacheHit } : {}) } });
+            } else if (payload?.type === 'agent' && trimString(payload.agentID)) {
               eventQueue.push({ type: 'agent', agentID: trimString(payload.agentID) });
             } else if (payload?.type === 'usage') {
               eventQueue.push({ type: 'usage', tokens: payload.tokens });
@@ -2479,14 +2595,13 @@ export function createCursorSdkRuntime(options = {}) {
               settleFinalResult({
                 ok: true,
                 finalStatus: finalStatusFromSdkStatus(sdkStatusFromRunStatus(payload.status)),
-                finalText: '',
               });
-              break;
+              continue;
             } else if (payload?.type === 'error') {
-              workerError = trimString(payload.error) || 'Cursor SDK worker failed.';
+              workerError = cursorWorkerError(trimString(payload.error) || 'Cursor SDK worker failed.', payload.code, payload.errorDetails);
               settleFinalResult({
                 ok: false,
-                error: new Error(workerError),
+                error: workerError,
                 finalStatus: 'error',
                 finalText: '',
               });
@@ -2503,11 +2618,12 @@ export function createCursorSdkRuntime(options = {}) {
           const exit = await exitPromise;
           if (owned) await owned.result;
           if (workerError) {
-            throw new Error(workerError);
+            throw workerError;
           }
           if (exit.error) {
             throw exit.error;
           }
+          if (exit.signal) throw cursorStreamError('CURSOR_STREAM_DRAIN_FAILED');
           if (exit.code && exit.code !== 0) {
             const detail = trimString(stderr);
             throw new Error(detail ? `Cursor SDK worker exited with code ${exit.code}: ${detail}` : `Cursor SDK worker exited with code ${exit.code}.`);
@@ -2640,7 +2756,6 @@ export function createCursorSdkRuntime(options = {}) {
         setRequestFinalResult(request, {
           ok: true,
           finalStatus: 'success',
-          finalText: '',
         });
       }
       request.eventQueue.close();
@@ -2754,7 +2869,7 @@ export function createCursorSdkRuntime(options = {}) {
         if (result?.ok === false && !(result.error instanceof Error)) {
           setRequestFinalResult(request, {
             ...result,
-            error: new Error(trimString(result.error) || 'Cursor SDK persistent worker failed.'),
+            error: cursorWorkerError(trimString(result.error) || 'Cursor SDK persistent worker failed.', result.code, result.errorDetails),
           });
           return;
         }
@@ -2766,13 +2881,12 @@ export function createCursorSdkRuntime(options = {}) {
         closeRequest(requestID, {
           ok: true,
           finalStatus: finalStatusFromSdkStatus(sdkStatusFromRunStatus(payload.status)),
-          finalText: '',
         });
         return;
       }
 
       if (payload.type === 'error') {
-        failRequest(requestID, new Error(trimString(payload.error) || 'Cursor SDK worker failed.'));
+        failRequest(requestID, cursorWorkerError(trimString(payload.error) || 'Cursor SDK worker failed.', payload.code, payload.errorDetails));
       }
     };
 
@@ -2786,7 +2900,7 @@ export function createCursorSdkRuntime(options = {}) {
             try {
               payload = JSON.parse(line);
             } catch {
-              continue;
+              throw cursorStreamError('CURSOR_STREAM_DRAIN_FAILED');
             }
             if (!lastWorkerTiming?.firstEventAt) {
               const firstEventAt = now();
@@ -2952,6 +3066,7 @@ export function createCursorSdkRuntime(options = {}) {
             apiKey: input.apiKey,
             sessionID: input.sessionID,
             modelID: input.modelID,
+            readOnly: input.readOnly === true,
             modelSelection: cloneCursorSdkModelSelection(input.modelSelection) || createFallbackCursorSdkModelSelection(input.modelID),
             agents: cloneCursorSdkAgentDefinitions(input.agentDefinitions),
             mcpServers: cloneCursorMcpServers(input.mcpServers),
@@ -3068,6 +3183,7 @@ export function createCursorSdkRuntime(options = {}) {
             apiKey: input.apiKey,
             sessionID: input.sessionID,
             modelID: input.modelID,
+            readOnly: input.readOnly === true,
             modelSelection: cloneCursorSdkModelSelection(input.modelSelection) || createFallbackCursorSdkModelSelection(input.modelID),
             agents: cloneCursorSdkAgentDefinitions(input.agentDefinitions),
             mcpServers: cloneCursorMcpServers(input.mcpServers),
@@ -3214,18 +3330,19 @@ export function createCursorSdkRuntime(options = {}) {
       return await persistentWorkerRuntime.generateTitle(input);
     } catch (error) {
       logger.warn?.('[CursorSDK] persistent title worker unavailable, falling back to one-shot worker:', error);
-      return generateNodeWorkerTitle(input);
+      return generateReadOnlyWorker(input);
     }
   };
 
   const generateTitle = async (input = {}) => {
     const text = trimString(input.text);
     if (!text) return null;
-    const apiKey = getCursorSdkApiKey({ env, readAuth });
+    const apiKey = await resolveApiKey({ kind: 'title', directory: trimString(input.directory), sessionID: trimString(input.sessionID) });
     if (!apiKey) return null;
     const titleInput = {
       text,
       directory: trimString(input.directory),
+      sessionID: trimString(input.sessionID),
       apiKey,
       onUsage: (value) => {
         const observation = normalizeCursorUsageObservation(value);
@@ -3238,14 +3355,14 @@ export function createCursorSdkRuntime(options = {}) {
         }
       },
     };
-    if (options.executionAdapter) return generateNodeWorkerTitle(titleInput);
+    if (options.executionAdapter) return generateReadOnlyWorker(titleInput);
     if (!useNodeWorkerForPrompts) {
       return generateDirectTitle(titleInput);
     }
     if (usePersistentWorkerForPrompts) {
       return generatePersistentWorkerTitle(titleInput);
     }
-    return generateNodeWorkerTitle(titleInput);
+    return generateReadOnlyWorker(titleInput);
   };
 
   const createPromptRun = options.executionAdapter ? createNodeWorkerPromptRun : typeof options.createPromptRun === 'function'
@@ -3253,7 +3370,6 @@ export function createCursorSdkRuntime(options = {}) {
     : useNodeWorkerForPrompts
       ? (usePersistentWorkerForPrompts ? createPersistentWorkerPromptRun : createNodeWorkerPromptRun)
       : createDirectPromptRun;
-  const shouldRaceFinalResultBeforeStream = Boolean(options.executionAdapter) || typeof options.createPromptRun === 'function' || useNodeWorkerForPrompts;
 
   const recordCursorTimingMark = ({
     sessionID,
@@ -3291,6 +3407,7 @@ export function createCursorSdkRuntime(options = {}) {
     agentDefinitions,
     mcpServers,
     mcpServerIdentity,
+    readOnly = false,
   }) => {
     recordCursorTimingMark({
       sessionID,
@@ -3308,6 +3425,7 @@ export function createCursorSdkRuntime(options = {}) {
       agentDefinitions,
       mcpServers,
       mcpServerIdentity,
+      readOnly,
     });
     const agentID = trimString(prepared.agent?.agentId);
     recordCursorTimingMark({
@@ -3398,7 +3516,7 @@ export function createCursorSdkRuntime(options = {}) {
         modelID,
         modelSelection: cloneCursorSdkModelSelection(modelSelection),
         resolveModelSelection: async ({ modelID: nextModelID, variant: nextVariant } = {}) => (
-          resolveCursorSdkModelSelection({ modelID: nextModelID, variant: nextVariant })
+          resolveCursorSdkModelSelection({ modelID: nextModelID, variant: nextVariant, directory })
         ),
       }));
     } catch (error) {
@@ -3416,6 +3534,8 @@ export function createCursorSdkRuntime(options = {}) {
   };
 
   const prewarmCursorSession = async (input = {}) => {
+    assertHostSupported();
+    if (options.nativeWarming === false || options.ownedPrompt) return { ok: false, configured: false, disabled: true, reason: 'native_warming_disabled' };
     const sessionID = trimString(input.sessionID);
     const directory = trimString(input.directory);
     const modelID = normalizeModelId(input.modelID);
@@ -3426,7 +3546,7 @@ export function createCursorSdkRuntime(options = {}) {
       return { ok: false, error: 'Session ID is required.' };
     }
 
-    const apiKey = getCursorSdkApiKey({ env, readAuth });
+    const apiKey = await resolveApiKey({ kind: 'prewarm', sessionID, directory });
     if (!apiKey) {
       return { ok: false, error: 'Cursor SDK API key is not configured.' };
     }
@@ -3442,7 +3562,7 @@ export function createCursorSdkRuntime(options = {}) {
     });
 
     try {
-      const modelSelection = await resolveCursorSdkModelSelection({ modelID, variant });
+      const modelSelection = await resolveCursorSdkModelSelection({ modelID, variant, directory });
       const agentDefinitions = await resolveCursorSdkAgentDefinitionsForPrompt({
         requestedAgent,
         directory,
@@ -3506,14 +3626,38 @@ export function createCursorSdkRuntime(options = {}) {
   };
 
   const runPromptImpl = async ({ sessionID, body, directory, signal }) => {
-    const apiKey = getCursorSdkApiKey({ env, readAuth });
-    if (!apiKey) {
+    let apiKey = typeof options.resolveApiKey === 'function' ? null : getCursorSdkApiKey({ env, readAuth });
+    if (!apiKey && typeof options.resolveApiKey !== 'function') {
       return {
         handled: true,
         status: 401,
         body: { error: 'Cursor SDK API key is not configured.' },
       };
     }
+
+    const {
+      executionText: prompt,
+      visibleText,
+      isPlanModePrompt,
+      planInstructionParts,
+    } = extractPromptPayload(body);
+    if (!prompt) {
+      return {
+        handled: true,
+        status: 400,
+        body: { error: 'Cursor prompts require at least one text part.' },
+      };
+    }
+
+    clearPresentation(presentationRuns.get(sessionID));
+    const presentation = { sessionID, generation: createId('cursor_run'), progress: 0,
+      presented: false, cancelled: presentationRetired, userMessageID: '', assistantMessageID: '' };
+    if (!presentationRetired) presentationRuns.set(sessionID, presentation);
+    let lifetimeTransferred = false;
+    try {
+    const modelID = normalizeModelId(body?.model?.modelID);
+    const variant = trimString(body?.variant);
+    const modelSelection = await resolveCursorSdkModelSelection({ modelID, variant, directory, signal });
 
     // Defensive: if a prior run for this session is still active (e.g. a rapid
     // stop + model switch + resend before the previous run finished tearing
@@ -3536,25 +3680,10 @@ export function createCursorSdkRuntime(options = {}) {
     }
     executionDirectories.set(sessionID, directory);
 
-    const {
-      executionText: prompt,
-      visibleText,
-      isPlanModePrompt,
-      planInstructionParts,
-    } = extractPromptPayload(body);
-    if (!prompt) {
-      return {
-        handled: true,
-        status: 400,
-        body: { error: 'Cursor prompts require at least one text part.' },
-      };
-    }
-
-    const modelID = normalizeModelId(body?.model?.modelID);
-    const variant = trimString(body?.variant);
-    const modelSelection = await resolveCursorSdkModelSelection({ modelID, variant });
     const userMessageID = trimString(body?.messageID) || createId('msg');
     const assistantMessageID = createAssistantMessageId(userMessageID);
+    presentation.userMessageID = userMessageID;
+    presentation.assistantMessageID = assistantMessageID;
     let hasNativeChanges = false, changeCaptureFailed = false;
     const captureNativeChange = async (event) => {
       if (options.executionAdapter) return;
@@ -3634,6 +3763,7 @@ export function createCursorSdkRuntime(options = {}) {
       ]);
     }
     let partSequence = 0;
+    let terminalRecordPersisted = false;
     let cancellationSource = null;
     // Resolves the instant a host/user stop is requested (markAbortRequested).
     // The cursor-agent keeps emitting buffered deltas for up to the cancel bound
@@ -3700,7 +3830,7 @@ export function createCursorSdkRuntime(options = {}) {
         modelID,
         ...(variant ? { variant } : {}),
         ...(requestedAgent ? { agent: requestedAgent } : {}),
-        ...(isPlanModePrompt ? { metadata: { openchamberPlanMode: true } } : {}),
+        ...(isPlanModePrompt ? { metadata: { devryanPlanMode: true } } : {}),
       },
       parts: userParts,
     };
@@ -3723,6 +3853,10 @@ export function createCursorSdkRuntime(options = {}) {
     const emittedMessageInfo = new Map();
     const emittedParts = new Map();
     const rawAssistantTextByPartId = new Map();
+    const sdkAssistantPartIDs = [];
+    let providerFailureDetails = null;
+    let finalAssistantResultPresent = false;
+    let streamPartialCode = null;
     const planTextPartIdsByToolPartId = new Map();
     let emittedOpenCodeTextTiming = false;
 
@@ -3774,7 +3908,7 @@ export function createCursorSdkRuntime(options = {}) {
       const nextText = typeof part.text === 'string' ? part.text : '';
       const previousText = previousPart && typeof previousPart.text === 'string' ? previousPart.text : '';
       const markOpenCodeTextEmitted = () => {
-        if (emittedOpenCodeTextTiming || !nextText) return;
+        if (emittedOpenCodeTextTiming || !nextText || messageID !== assistantMessageID || part.type !== 'text') return;
         emittedOpenCodeTextTiming = true;
         recordTimingMark?.({
           sessionId: sessionID,
@@ -3863,7 +3997,7 @@ export function createCursorSdkRuntime(options = {}) {
       if (messageInfoAfterParts) emitMessageInfo();
 
       if (!persistBeforeEmit) {
-        const persistPromise = enqueuePersist(sessionID, record, { propagateError: propagatePersistError });
+        const persistPromise = enqueuePersist(sessionID, record, { propagateError: propagatePersistError, replaceable: !awaitPersist });
         if (awaitPersist) {
           await persistPromise;
         }
@@ -4001,99 +4135,35 @@ export function createCursorSdkRuntime(options = {}) {
       await syncWorkspacePatchPart(completed);
     };
 
-    const applyFinalAssistantText = (text) => {
-      const finalText = trimString(text);
-      if (!finalText) return false;
-
-      const textParts = assistantRecord.parts.filter((part) => part?.type === 'text');
-      const getComparableText = (part) => (
-        rawAssistantTextByPartId.get(part?.id) || (typeof part?.text === 'string' ? part.text : '')
-      );
-      const combinedText = textParts
-        .map((part) => getComparableText(part))
-        .join('');
-      const combinedTextWithBreaks = textParts
-        .map((part) => getComparableText(part))
-        .filter(Boolean)
-        .join('\n');
-      if (
-        combinedText === finalText
-        || combinedTextWithBreaks === finalText
-        || combinedText.includes(finalText)
-        || combinedTextWithBreaks.includes(finalText)
-      ) {
-        return false;
-      }
-
-      const textPart = textParts[textParts.length - 1] || null;
-      const textPartIndex = textPart
-        ? assistantRecord.parts.findIndex((part) => part?.id === textPart.id)
-        : -1;
-      const hasContentAfterTextPart = textPartIndex >= 0 && textPartIndex < assistantRecord.parts.length - 1;
-      if (hasContentAfterTextPart) {
-        const finalContainsExistingText =
-          (Boolean(combinedText) && finalText.startsWith(combinedText))
-          || (Boolean(combinedTextWithBreaks) && finalText.startsWith(combinedTextWithBreaks));
-        if (finalContainsExistingText) {
-          const textPartIds = new Set(textParts.map((part) => part.id).filter(Boolean));
-          assistantRecord.parts = assistantRecord.parts.filter((part) => {
-            if (!textPartIds.has(part?.id)) return true;
-            rawAssistantTextByPartId.delete(part.id);
-            return false;
-          });
-        }
-
-        const finalPartId = nextPartID('text', 'final_summary');
-        rawAssistantTextByPartId.set(finalPartId, finalText);
-        assistantRecord.parts = [
-          ...assistantRecord.parts,
-          {
-            id: finalPartId,
-            sessionID,
-            messageID: assistantMessageID,
-            type: 'text',
-            text: finalText,
-            time: { start: now() },
-          },
-        ];
-        normalizeAssistantPlanParts();
-        return true;
-      }
-
-      const existingText = getComparableText(textPart);
-      const enrichedFinalText = combinedText && finalText.startsWith(combinedText)
-        ? `${existingText}${finalText.slice(combinedText.length)}`
-        : combinedTextWithBreaks && finalText.startsWith(combinedTextWithBreaks)
-          ? `${existingText}${finalText.slice(combinedTextWithBreaks.length)}`
-          : finalText;
-      const nextText = isLossyStreamedTextVariant(existingText, enrichedFinalText)
-        ? enrichedFinalText
-        : mergeFinalText(existingText, enrichedFinalText);
-      if (nextText === existingText) return false;
-
-      const nextPartId = textPart?.id || nextPartID('text');
-      rawAssistantTextByPartId.set(nextPartId, nextText);
-      const partChanged = upsertAssistantPart({
-        ...(textPart || {
-          id: nextPartId,
-          sessionID,
-          messageID: assistantMessageID,
-          type: 'text',
-          time: { start: now() },
-        }),
-        text: nextText,
+    const applyLocalFailureText = text => upsertAssistantPart({ id: nextPartID('text', 'local_error'),
+      sessionID, messageID: assistantMessageID, type: 'text', text, time: { start: now() } });
+    const applyFinalAssistantText = (text, witness) => {
+      if (typeof text !== 'string') return false;
+      const index = cursorFinalTextTarget(witness, sdkAssistantPartIDs.length);
+      const partIDAtIndex = sdkAssistantPartIDs[index];
+      const part = partIDAtIndex ? assistantRecord.parts.find((entry) => entry.id === partIDAtIndex) : null;
+      if (partIDAtIndex && !part) throw cursorStreamError('CURSOR_STREAM_FINAL_ASSOCIATION_INVALID');
+      finalAssistantResultPresent = true;
+      try { void Promise.resolve(options.recordDiagnostic?.({ type: 'lifecycle', event: 'cursor_final_association', sessionID, directory,
+        payload: { assistantMessageID, ...(part ? { partID: part.id } : {}), assistantOrdinal: witness.assistantOrdinal,
+          streamedParts: sdkAssistantPartIDs.length, previousLength: part?.text?.length ?? 0, finalLength: text.length,
+          equal: part?.text === text, state: part ? 'matched' : 'final_only' } })).catch(()=>{}); } catch { /* Observer only. */ }
+      const partID = part?.id || nextPartID('text');
+      rawAssistantTextByPartId.set(partID, text);
+      return upsertAssistantPart({
+        ...(part || { id: partID, sessionID, messageID: assistantMessageID, type: 'text', time: { start: now() } }),
+        text,
       });
-      const normalizedChanged = normalizeAssistantPlanParts();
-      if (!partChanged && !normalizedChanged) {
-        return false;
-      }
-      return true;
     };
 
     const waitForFinalRunResult = async (timeoutMs = finalResultWaitTimeoutMs) => {
-      if (!run || typeof run.waitFinalResult !== 'function') return null;
-      const result = await run.waitFinalResult({ timeoutMs });
-      if (!result) return null;
+      if (!run || run.finalResultAvailable === false || typeof run.waitFinalResult !== 'function') return null;
+      let result;
+      try { result = await run.waitFinalResult({ timeoutMs }); } catch (error) {
+        if (CURSOR_STREAM_PARTIAL_CODES.includes(error?.code)) throw error;
+        throw cursorWorkerFailure(error instanceof Error ? error.message : 'Cursor SDK run failed.', {...cursorErrorDetails(error),source:'provider'});
+      }
+      if (!result) throw cursorStreamError('CURSOR_STREAM_FINAL_TIMEOUT');
       observeRunUsage(result.usageObservation);
       if (result.ok === false) {
         throw result.error || new Error('Cursor SDK run failed.');
@@ -4104,7 +4174,9 @@ export function createCursorSdkRuntime(options = {}) {
     const applyFinalRunResult = (result) => {
       if (!result) return null;
       observeRunUsage(result.usageObservation);
-      applyFinalAssistantText(result.finalText);
+      if (!cancellationSource && result.finalStatus !== 'cancelled' && result.finalStatus !== 'error' && activeRuns.get(sessionID)?.run === run) {
+        applyFinalAssistantText(result.finalText, result.finalTextWitness);
+      }
       if (result.publication?.outcome === 'partial') partialPublication = result.publication;
       return result.finalStatus || null;
     };
@@ -4126,6 +4198,7 @@ export function createCursorSdkRuntime(options = {}) {
       observeRunUsage(run?.getUsageObservation?.());
       // A final-result/stream-close race cannot undo an accepted Stop request.
       const finish = normalizeFinish(cancellationSource ? 'cancelled' : finalStatus);
+      if (finish !== 'stop') clearPresentation(presentation);
       if (finish === 'cancelled' || cancellationSource) {
         lastCancellation = {
           sessionID,
@@ -4146,7 +4219,7 @@ export function createCursorSdkRuntime(options = {}) {
       const hasTaskToolActivity = assistantRecord.parts.some((part) => (
         part?.type === 'tool' && isCursorTaskTool(part.tool)
       ));
-      if (finish === 'stop' && !hasAssistantText && hasToolActivity) {
+      if (finish === 'stop' && !hasAssistantText && hasToolActivity && !finalAssistantResultPresent) {
         const summaryText = hasTaskToolActivity
           ? POST_TASK_EMPTY_FINISH_DIAGNOSTIC
           : TOOL_ONLY_COMPLETION_SUMMARY;
@@ -4206,12 +4279,9 @@ export function createCursorSdkRuntime(options = {}) {
         }
 
         if (part?.type === 'reasoning') {
-          const text = typeof part.text === 'string' ? part.text : '';
-          const trimmedText = trimDanglingReasoningFragment(text);
-          if (trimmedText !== text || typeof part?.time?.end !== 'number') {
+          if (typeof part?.time?.end !== 'number') {
             return {
               ...part,
-              text: trimmedText,
               time: {
                 ...(part.time || {}),
                 end: completed,
@@ -4248,6 +4318,7 @@ export function createCursorSdkRuntime(options = {}) {
       assistantRecord.info = {
         ...assistantRecord.info,
         finish,
+        ...(streamPartialCode ? { error: { name: 'CursorStreamPartialError', message: `Cursor stream incomplete (${streamPartialCode}).` } } : finish === 'error' ? { error: { name: providerFailureDetails?.name || 'CursorProviderError', ...(providerFailureDetails?.code ? { code: providerFailureDetails.code } : {}), message: failureReason || 'Cursor SDK run failed.' } } : {}),
         ...(lastUsageTokens ? { tokens: lastUsageTokens } : {}),
         ...(lastUsageObservation ? { cursorUsage: lastUsageObservation } : {}),
         time: {
@@ -4263,11 +4334,22 @@ export function createCursorSdkRuntime(options = {}) {
           messageInfoAfterParts: true,
           propagatePersistError: true,
         });
+        terminalRecordPersisted = true;
+        if (presentation.presented && !presentation.cancelled && presentationRuns.get(sessionID) === presentation) {
+          presentation.progress++;
+          observePresentation(presentation, 'finalizing');
+        }
       } catch (error) {
+        clearPresentation(presentation);
         const persistenceMessage = error instanceof Error
           ? error.message
           : 'Cursor SDK could not persist the completed response.';
         lastError = persistenceMessage;
+        try { options.recordDiagnostic?.({ type: 'lifecycle', event: 'cursor_persistence', sessionID, directory,
+          payload: { phase: 'failed', userMessageID, assistantMessageID,
+            reason: typeof error?.code === 'string' && /^(native_[a-z_]{1,80}|execution_cancelled|execution_reverted)$/.test(error.code)
+              ? error.code : 'cursor_persistence_failed' } }); }
+        catch { /* Diagnostics cannot replace the persistence failure. */ }
         emit({
           type: 'session.error',
           properties: {
@@ -4280,16 +4362,19 @@ export function createCursorSdkRuntime(options = {}) {
         }, directory);
         sessionStatuses.set(sessionID, { type: 'idle' });
         emit({ type: 'session.status', properties: { sessionID, status: { type: 'idle' } } }, directory);
+        if (options.executionAdapter) throw error;
         return false;
       }
+      clearPresentation(presentation);
       if (finish === 'error') {
         emit({
           type: 'session.error',
           properties: {
             sessionID,
             error: {
-              name: 'CursorProviderError',
-              message: failureReason || 'Cursor SDK run failed.',
+              name: streamPartialCode ? 'CursorStreamPartialError' : providerFailureDetails?.name || 'CursorProviderError',
+              ...(providerFailureDetails?.code ? { code: providerFailureDetails.code } : {}),
+              message: streamPartialCode ? `Cursor stream incomplete (${streamPartialCode}).` : failureReason || 'Cursor SDK run failed.',
             },
           },
         }, directory);
@@ -4299,6 +4384,18 @@ export function createCursorSdkRuntime(options = {}) {
       return true;
     };
 
+    // The optional host owns the original caller beyond the early HTTP 204.
+    const ownedPrompt = await options.ownedPrompt?.({ sessionID, directory, userMessageID,
+      assistantMessageID, agent: requestedAgent || 'build', modelID,
+      ...(variant ? { variant } : {}), modelSelection });
+    const dispatch = async () => {
+    try {
+    if (typeof options.resolveApiKey === 'function') {
+      apiKey = await resolveApiKey({ kind: 'prompt', sessionID, directory, userMessageID,
+        assistantMessageID, agent: requestedAgent || 'build', modelID, ...(variant ? { variant } : {}) });
+      if (!apiKey) return { handled: true, status: 401, body: { error: 'Cursor SDK API key is not configured.' } };
+    }
+    assertSelectionCredential(modelSelection, apiKey);
     sessionStatuses.set(sessionID, { type: 'busy' });
     emit({ type: 'session.status', properties: { sessionID, status: { type: 'busy' } } }, directory);
     try {
@@ -4337,7 +4434,7 @@ export function createCursorSdkRuntime(options = {}) {
     }
 
     if (unsupportedMessage) {
-      applyFinalAssistantText(unsupportedMessage);
+      applyLocalFailureText(unsupportedMessage);
       await finalizeAssistantRun('error', now(), unsupportedMessage);
       return {
         handled: true,
@@ -4356,6 +4453,7 @@ export function createCursorSdkRuntime(options = {}) {
         apiKey,
         modelID,
         modelSelection,
+        readOnly: ownedPrompt?.readOnly === true,
         prompt: executionPrompt,
         directory,
         images,
@@ -4365,14 +4463,15 @@ export function createCursorSdkRuntime(options = {}) {
       });
     } catch (error) {
       const text = error instanceof Error ? error.message : 'Cursor SDK run failed.';
-      applyFinalAssistantText(`Cursor SDK error: ${text}`);
-      lastError = text;
+      const cancelled = signal?.aborted && error?.code === 'execution_cancelled';
+      if (cursorProviderFailure(error)) providerFailureDetails = cursorErrorDetails(error);
+      if (!cancelled) { applyLocalFailureText(`Cursor SDK error: ${text}`); lastError = text; }
       questionRuntime.revokeSessionScope(sessionID, {
         identity: trimString(questionMcp?.identity),
         messageID: userMessageID,
         reason: 'the Cursor provider failed to start',
       });
-      await finalizeAssistantRun('error', now(), text);
+      await finalizeAssistantRun(cancelled ? 'cancelled' : 'error', now(), cancelled ? '' : text);
       return {
         handled: true,
         status: 204,
@@ -4386,6 +4485,7 @@ export function createCursorSdkRuntime(options = {}) {
       assistantMessageID,
       directory,
       markAbortRequested: (source = 'user_abort') => {
+        clearPresentation(presentation);
         cancellationSource = source;
         resolveAbortRequested?.();
       },
@@ -4394,91 +4494,34 @@ export function createCursorSdkRuntime(options = {}) {
     const pump = (async () => {
       let finalStatus = 'success';
       let runFailureReason = '';
-      const finalResultPromise = shouldRaceFinalResultBeforeStream && typeof run.waitFinalResult === 'function'
-        ? waitForFinalRunResult(0)
-          .then((result) => ({ finalResult: result }))
-          .catch((error) => ({ finalError: error }))
+      let terminalObserved = false;
+      const terminalObservation = run.finalResultAvailable !== false && typeof run.waitFinalResult === 'function'
+        ? waitForFinalRunResult(0).then(() => { terminalObserved = true; return { terminal: true }; }, () => { terminalObserved = true; return { terminal: true }; })
         : null;
-      let finalResultConsumed = false;
-
-      const shouldFinishOnIdle = () => {
-        const assistantText = assistantRecord.parts
-          .filter((part) => part?.type === 'text' && typeof part.text === 'string')
-          .map((part) => part.text)
-          .join('\n')
-          .trim();
-        const hasRunningTool = assistantRecord.parts.some((part) => (
-          part?.type === 'tool' && (part?.state?.status === 'running' || part?.state?.status === 'pending')
-        ));
-        const hasCompletedTool = assistantRecord.parts.some((part) => (
-          part?.type === 'tool' && part?.state?.status && part.state.status !== 'running' && part.state.status !== 'pending'
-        ));
-        return !hasRunningTool && (assistantText.length > 0 || hasCompletedTool);
-      };
-
       const readNextStreamEvent = async (iterator) => {
-        const nextPromise = iterator.next();
-        const finalPromise = finalResultPromise && !finalResultConsumed ? finalResultPromise : null;
-        const preferReadyStreamEvent = async (result) => {
-          if (!('finalResult' in result) && !('finalError' in result)) {
-            return result;
+        const nextPromise = iterator.next().then(next => ({ next }));
+        let timer;
+        try {
+          const idleEligible = !terminalObserved && !assistantRecord.parts.some(part => part?.type === 'tool' && ['running', 'pending'].includes(part.state?.status))
+            && assistantRecord.parts.some(part => part?.type === 'text' || part?.type === 'tool');
+          if (!terminalObserved && !idleEligible) {
+            const event = await Promise.race([
+              nextPromise, abortRacePromise, ...(terminalObservation ? [terminalObservation] : []),
+            ]);
+            if (!event.terminal) return event;
           }
-
-          const next = await withTimeout(nextPromise, finalResultStreamDrainGraceMs);
-          if (next && !next.done) {
-            return { next, idle: false };
-          }
-
-          nextPromise.catch(() => {});
-          return result;
-        };
-        if (!streamIdleTimeoutMs || !shouldFinishOnIdle()) {
-          const racers = [nextPromise.then((next) => ({ next, idle: false })), abortRacePromise];
-          if (finalPromise) {
-            racers.push(finalPromise);
-          }
-          const result = await Promise.race(racers);
-          if (result.aborted) {
-            nextPromise.catch(() => {});
-            return result;
-          }
-          if ('finalResult' in result && !result.finalResult) {
-            finalResultConsumed = true;
-            return { next: await nextPromise, idle: false };
-          }
-          return preferReadyStreamEvent(result);
-        }
-
-        let timeout = null;
-        const idlePromise = new Promise((resolve) => {
-          timeout = setTimeout(() => resolve({ next: null, idle: true }), streamIdleTimeoutMs);
-          timeout.unref?.();
-        });
-        const pending = [
-          nextPromise.then((next) => ({ next, idle: false })),
-          idlePromise,
-          abortRacePromise,
-        ];
-        if (finalPromise) {
-          pending.push(finalPromise);
-        }
-        const result = await Promise.race(pending);
-        if (timeout) clearTimeout(timeout);
-        if (result.aborted) {
-          nextPromise.catch(() => {});
-          return result;
-        }
-        if ('finalResult' in result && !result.finalResult) {
-          finalResultConsumed = true;
-          return { next: await nextPromise, idle: false };
-        }
-        if ('finalResult' in result || 'finalError' in result) {
-          return preferReadyStreamEvent(result);
-        }
-        if (result.idle) {
+          return await Promise.race([
+            nextPromise,
+            abortRacePromise,
+            new Promise((_, reject) => {
+              timer = setTimeout(() => reject(cursorStreamError('CURSOR_STREAM_DRAIN_TIMEOUT')), streamIdleTimeoutMs);
+              timer.unref?.();
+            }),
+          ]);
+        } finally {
+          clearTimeout(timer);
           nextPromise.catch(() => {});
         }
-        return result;
       };
 
       try {
@@ -4524,7 +4567,7 @@ export function createCursorSdkRuntime(options = {}) {
         };
 
         const applyCursorTaskSummary = async (text) => {
-          const summary = trimString(text);
+          const summary = typeof text === 'string' ? text : '';
           if (!summary || !lastCursorTaskToolPartID) return false;
           const existing = assistantRecord.parts.find((part) => part.id === lastCursorTaskToolPartID);
           if (!existing || existing.type !== 'tool') return false;
@@ -4617,30 +4660,8 @@ export function createCursorSdkRuntime(options = {}) {
             finalStatus = 'cancelled';
             break;
           }
-          if ('finalError' in streamRead) {
-            finalResultConsumed = true;
-            throw streamRead.finalError || new Error('Cursor SDK run failed.');
-          }
-          if ('finalResult' in streamRead) {
-            finalResultConsumed = true;
-            if (!streamRead.finalResult) {
-              continue;
-            }
-            finalStatus = applyFinalRunResult(streamRead.finalResult) || 'success';
-            if (typeof iterator.return === 'function') {
-              iterator.return().catch(() => {});
-            }
-            break;
-          }
-          const { next, idle } = streamRead;
-          if (idle) {
-            const result = await waitForFinalRunResult(finalResultWaitTimeoutMs);
-            finalStatus = applyFinalRunResult(result) || 'success';
-            if (typeof iterator.return === 'function') {
-              iterator.return().catch(() => {});
-            }
-            break;
-          }
+          if (activeRuns.get(sessionID)?.run !== run && !cancellationSource) throw cursorStreamError('CURSOR_STREAM_STALE_GENERATION');
+          const { next } = streamRead;
           if (next?.done) break;
           const event = next?.value;
           if (event?.type === 'usage-observation') {
@@ -4669,10 +4690,11 @@ export function createCursorSdkRuntime(options = {}) {
             if (text) {
               if (previousContentKind !== 'assistant' || !activeTextPartID) {
                 activeTextPartID = nextPartID('text');
+                sdkAssistantPartIDs.push(activeTextPartID);
               }
               const existing = assistantRecord.parts.find((part) => part.id === activeTextPartID);
               const existingText = rawAssistantTextByPartId.get(activeTextPartID) || existing?.text || '';
-              const nextText = mergeTextDelta(existingText, text);
+              const nextText = existingText + text;
               rawAssistantTextByPartId.set(activeTextPartID, nextText);
               const partChanged = upsertAssistantPart({
                 ...(existing || {
@@ -4692,7 +4714,7 @@ export function createCursorSdkRuntime(options = {}) {
             }
           } else if (message.type === 'thinking') {
             const text = typeof message.text === 'string' ? message.text : '';
-            if (text) {
+            if (text || typeof message.thinking_duration_ms !== 'number') {
               if (previousContentKind !== 'thinking' || !activeReasoningPartID) {
                 activeReasoningPartID = nextPartID('reasoning');
               }
@@ -4715,13 +4737,16 @@ export function createCursorSdkRuntime(options = {}) {
                   providerID: CURSOR_PROVIDER_ID,
                   cursorSdk: true,
                 },
-                text: mergeTextDelta(existingText, text),
+                text: existingText + text,
               };
               const partChanged = upsertAssistantPart(reasoningPart);
               previousContentKind = 'thinking';
               if (partChanged) {
                 await emitRecordDelta(assistantRecord);
               }
+            }
+            if (!text && typeof message.thinking_duration_ms === 'number') {
+              await finalizeActiveReasoningPart();
             }
           } else if (message.type === 'thinking_completed') {
             await finalizeActiveReasoningPart();
@@ -4731,9 +4756,6 @@ export function createCursorSdkRuntime(options = {}) {
             await applyCursorTaskActivity(message);
           } else if (message.type === 'tool_call') {
             if (message.name === 'task') await captureNativeChange(cursorSessionChangeObservation(message));
-            if (previousContentKind === 'thinking') {
-              await finalizeActiveReasoningPart();
-            }
             const partID = getToolPartID(message.call_id);
             const existing = assistantRecord.parts.find((part) => part.id === partID);
             const existingState = isPlainObject(existing?.state) ? existing.state : {};
@@ -4745,6 +4767,7 @@ export function createCursorSdkRuntime(options = {}) {
             const existingStatus = trimString(existingState.status);
             const existingIsTerminal = existingStatus && existingStatus !== 'running' && existingStatus !== 'pending';
             const incomingIsTerminal = incomingStatus !== 'running' && incomingStatus !== 'pending';
+            if (incomingIsTerminal && previousContentKind === 'thinking') await finalizeActiveReasoningPart();
             const status = existingIsTerminal && !incomingIsTerminal ? existingStatus : incomingStatus;
             const existingTime = isPlainObject(existingState.time) ? existingState.time : {};
             const startedAt = existingTime.start || now();
@@ -4813,7 +4836,7 @@ export function createCursorSdkRuntime(options = {}) {
             const planTextChanged = isTerminalToolStatus
               ? upsertAssistantPlanTextFromToolPart(toolPart)
               : false;
-            previousContentKind = 'tool';
+            if (incomingIsTerminal) previousContentKind = 'tool';
             if (partChanged || planTextChanged) {
               cursorTaskActivityDirty = false;
               lastCursorTaskActivityEmitAt = now();
@@ -4831,48 +4854,82 @@ export function createCursorSdkRuntime(options = {}) {
               if (terminalStatus !== 'success') {
                 runFailureReason = trimString(message.message) || runFailureReason;
               }
-              const result = await waitForFinalRunResult(finalResultWaitTimeoutMs);
-              applyFinalRunResult(result);
+              terminalObserved = true;
               finalStatus = terminalStatus;
-              break;
             }
           }
         }
         await flushCursorTaskActivity();
-        const result = await waitForFinalRunResult(finalResultWaitTimeoutMs);
-        finalStatus = applyFinalRunResult(result) || finalStatus;
+        if (!cancellationSource || options.executionAdapter) {
+          const result = await waitForFinalRunResult(finalResultWaitTimeoutMs);
+          finalStatus = applyFinalRunResult(result) || finalStatus;
+          if (result?.finalStatus === 'success' && !cancellationSource && !signal?.aborted
+            && !presentation.cancelled && !presentationRetired && !deletedSessionIds.has(sessionID)
+            && presentationRuns.get(sessionID) === presentation && activeRuns.get(sessionID)?.run === run) {
+            presentation.presented = true;
+            observePresentation(presentation, 'finalizing');
+          }
+        }
       } catch (error) {
         finalStatus = 'error';
+        if (!cancellationSource) {
+          if (CURSOR_STREAM_PARTIAL_CODES.includes(error?.code)) {
+            streamPartialCode = error.code;
+            if (error.code === 'CURSOR_STREAM_FINAL_ASSOCIATION_INVALID') try {
+              void Promise.resolve(options.recordDiagnostic?.({type:'lifecycle',event:'cursor_final_association',sessionID,directory,
+                payload:{assistantMessageID,streamedParts:sdkAssistantPartIDs.length,state:'unavailable',reason:error.reason || 'mismatch',code:error.code}})).catch(()=>{});
+            } catch { /* Observer only. */ }
+          }
+          else if (cursorProviderFailure(error)) providerFailureDetails = cursorErrorDetails(error);
+          else streamPartialCode = 'CURSOR_STREAM_DRAIN_FAILED';
+        }
+        void Promise.resolve(run?.cancel?.()).catch(() => {});
         const text = error instanceof Error ? error.message : 'Cursor SDK run failed.';
         runFailureReason = text;
         const hasAssistantText = assistantRecord.parts.some((part) => (
           part?.type === 'text' && trimString(part.text)
         ));
         if (!hasAssistantText) {
-          applyFinalAssistantText(`Cursor SDK error: ${text}`);
+          upsertAssistantPart({ id: nextPartID('text', 'stream_error'), sessionID, messageID: assistantMessageID, type: 'text', text: `Cursor SDK error: ${text}`, time: { start: now() } });
         }
         lastError = text;
       } finally {
-        if (hasNativeChanges) await captureNativeChange({ phase: 'run-settled', captureFailed: changeCaptureFailed });
-        // releaseActiveRun already drops this entry on abort, and a fast resend may
-        // have installed a new run for the same session — only clear it when it
-        // still points at this run so we never evict a freshly-started one.
-        if (activeRuns.get(sessionID)?.run === run) {
-          activeRuns.delete(sessionID);
-        }
-        questionRuntime.revokeSessionScope(sessionID, {
-          identity: trimString(questionMcp?.identity),
-          messageID: userMessageID,
-          reason: 'the Cursor run ended before the question was answered',
-        });
-        await finalizeAssistantRun(finalStatus, now(), runFailureReason);
+        try {
+          if (hasNativeChanges) await captureNativeChange({ phase: 'run-settled', captureFailed: changeCaptureFailed });
+          // releaseActiveRun already drops this entry on abort, and a fast resend may
+          // have installed a new run for the same session — only clear it when it
+          // still points at this run so we never evict a freshly-started one.
+          if (activeRuns.get(sessionID)?.run === run) {
+            activeRuns.delete(sessionID);
+          }
+          questionRuntime.revokeSessionScope(sessionID, {
+            identity: trimString(questionMcp?.identity),
+            messageID: userMessageID,
+            reason: 'the Cursor run ended before the question was answered',
+          });
+          await finalizeAssistantRun(finalStatus, now(), runFailureReason);
+        } finally { clearPresentation(presentation); }
       }
     })();
 
     const pendingRuns = settlingRuns.get(sessionID) ?? new Set();
-    const settled = Promise.all([pump, run.settled]).finally(() => {
+    const completion = ownedPrompt ? Promise.allSettled([pump, run.settled]).then(async results => {
+      // A provider failure must not release authority while its process or final
+      // record is still settling. Both promises have completed at this point.
+      await persistQueues.get(sessionID);
+      const failures = results.filter(result => result.status === 'rejected').map(result => result.reason);
+      // Preserve the supervisor's expected cancellation classification only
+      // after the transcript pump has finished. The finally below still waits
+      // for the owned receipt/cleanup boundary before abortAndWait can accept it.
+      if (results[0].status === 'fulfilled' && results[1].status === 'rejected'
+        && ['execution_cancelled', 'execution_reverted'].includes(results[1].reason?.code)) throw results[1].reason;
+      if (failures.length) throw new AggregateError(failures, 'Cursor owned prompt did not settle cleanly');
+    }).finally(() => ownedPrompt.close()) : Promise.all([pump, run.settled]);
+    const settled = completion.finally(() => {
       pendingRuns.delete(settled); if (!pendingRuns.size) settlingRuns.delete(sessionID);
     });
+    processSettlements.set(settled, { receipt: run.settled, transcriptPersisted: () => terminalRecordPersisted });
+    lifetimeTransferred = true;
     pendingRuns.add(settled); settlingRuns.set(sessionID, pendingRuns);
     void settled.catch(() => {});
 
@@ -4886,9 +4943,20 @@ export function createCursorSdkRuntime(options = {}) {
       status: 204,
       body: null,
     };
+    } finally {
+      if (ownedPrompt && !lifetimeTransferred) {
+        try { await persistQueues.get(sessionID); } finally { await ownedPrompt.close(); }
+      }
+    }
+    };
+    return await (ownedPrompt ? ownedPrompt.run(dispatch) : dispatch());
+    } finally {
+      if (!lifetimeTransferred) clearPresentation(presentation);
+    }
   };
 
-  const runPrompt = (input) => {
+  const runPrompt = async (input) => {
+    assertHostSupported();
     if (!options.executionAdapter) return runPromptImpl(input);
     const releaseActivity = options.executionAdapter.reserveActivity?.(input) ?? (() => {});
     const runs = startingRuns.get(input.sessionID) ?? new Set();
@@ -4906,13 +4974,28 @@ export function createCursorSdkRuntime(options = {}) {
 
   const abortAndWait = async (sessionID) => {
     const starts = [...(startingRuns.get(sessionID) ?? [])];
+    const pending = new Set(settlingRuns.get(sessionID) ?? []);
     for (const start of starts) start.controller.abort(Object.assign(new Error('execution_cancelled'), { code: 'execution_cancelled' }));
-    releaseActiveRun(sessionID, { source: 'user_abort', emitIdle: true });
+    releaseActiveRun(sessionID, { source: 'user_abort', emitIdle: !options.executionAdapter });
     const started = await Promise.allSettled(starts.map((start) => start.settled));
-    releaseActiveRun(sessionID, { source: 'user_abort', emitIdle: true });
-    const results = await Promise.allSettled([...(settlingRuns.get(sessionID) ?? [])]);
+    releaseActiveRun(sessionID, { source: 'user_abort', emitIdle: !options.executionAdapter });
+    for (const run of settlingRuns.get(sessionID) ?? []) pending.add(run);
+    const results = await Promise.allSettled([...pending]);
     for (const result of [...started, ...results]) if (result.status === 'rejected'
-      && !['execution_cancelled', 'execution_reverted', 'session_reverting'].includes(result.reason?.code)) throw result.reason;
+      && !['execution_cancelled', 'execution_reverted', 'session_reverting'].includes(result.reason?.code)) {
+      const owned = [...pending].map(run => processSettlements.get(run));
+      const receipts = await Promise.allSettled(owned.map(run => run?.receipt));
+      const terminated = options.executionAdapter && result.reason?.nativeProcessUnsettled !== true && receipts.length > 0 && receipts.every(receipt => receipt.status === 'rejected'
+        ? receipt.reason?.nativeProcessUnsettled !== true && ['execution_cancelled', 'execution_reverted'].includes(receipt.reason?.code)
+        : receipt.value?.terminated === true && receipt.value?.confined === true);
+      const transcriptPersisted = owned.length > 0 && owned.every(run => run?.transcriptPersisted() === true);
+      if (result.reason instanceof Error) cursorAbortOutcomes.set(result.reason,
+        Object.freeze({ sessionID, terminated: Boolean(terminated), transcriptPersisted }));
+      try { options.recordDiagnostic?.({ type: 'lifecycle', event: 'cursor_abort', sessionID,
+        payload: { terminated: Boolean(terminated), transcriptPersisted } }); }
+      catch { /* Diagnostics cannot change the original stop failure. */ }
+      throw result.reason;
+    }
     await persistQueues.get(sessionID);
     return { terminated: true, sessions: [sessionID] };
   };
@@ -4938,8 +5021,10 @@ export function createCursorSdkRuntime(options = {}) {
     async rejectQuestion(requestID) {
       return questionRuntime.rejectQuestion(requestID);
     },
-    async verifyConnection() {
-      const apiKey = getCursorSdkApiKey({ env, readAuth });
+    async verifyConnection(scope = {}) {
+      return withReadOnly({ kind: 'verify', directory: scope.directory }, async () => {
+      const loadedSdk = typeof options.resolveApiKey === 'function' ? await loadSdk() : undefined;
+      const apiKey = await resolveApiKey({ kind: 'verify', directory: scope.directory });
       if (!apiKey) {
         return {
           ...getStatus(),
@@ -4950,14 +5035,17 @@ export function createCursorSdkRuntime(options = {}) {
       }
 
       try {
-        const { Cursor } = await loadSdk();
+        const { Cursor } = loadedSdk ?? await loadSdk();
         await Cursor.me({ apiKey });
         const provider = await refreshVirtualProviderNow({
           force: true,
           reason: 'verify_connection',
-          timeoutMs: modelDiscoveryTimeoutMs,
+          directory: scope.directory,
+          // Explicit native verification owns metadata-worker settlement; use
+          // its existing catalog budget rather than the quick public read cap.
+          ...(typeof options.resolveApiKey === 'function' ? {} : { timeoutMs: modelDiscoveryTimeoutMs }),
         });
-        if (useNodeWorkerForPrompts && usePersistentWorkerForPrompts) {
+        if (options.nativeWarming !== false && useNodeWorkerForPrompts && usePersistentWorkerForPrompts) {
           persistentWorkerRuntime.prewarm({ apiKey }).catch((error) => {
             lastError = error instanceof Error ? error.message : 'Cursor SDK persistent worker prewarm failed.';
             logger.warn?.('[CursorSDK] persistent worker prewarm failed:', error);
@@ -4978,9 +5066,12 @@ export function createCursorSdkRuntime(options = {}) {
           error: lastError,
         };
       }
+      });
     },
     async prewarm() {
-      const apiKey = getCursorSdkApiKey({ env, readAuth });
+      assertHostSupported();
+      if (options.nativeWarming === false || options.ownedPrompt) return { ...getStatus(), ok: false, disabled: true, reason: 'native_warming_disabled' };
+      const apiKey = await resolveApiKey({ kind: 'prewarm' });
       if (!apiKey) {
         return {
           ...getStatus(),
@@ -5001,20 +5092,57 @@ export function createCursorSdkRuntime(options = {}) {
     async prewarmSession(input) {
       return prewarmCursorSession(input);
     },
-    async getVirtualProvider() {
+    async getVirtualProvider(scope = {}) {
       return refreshVirtualProviderNow({
+        directory: scope.directory,
         reason: 'virtual_provider',
         timeoutMs: modelDiscoveryTimeoutMs,
       });
     },
     getCachedVirtualProvider() {
-      return buildVirtualProvider(lastModelRecords);
+      return buildVirtualProvider(hostSupported ? lastModelRecords : {});
+    },
+    // Offline capability metadata must not inherit another account's discovery
+    // cache. Reuse the original declarations, with fresh records on every read.
+    getDeclaredVirtualProvider() {
+      return buildVirtualProvider(hostSupported ? fallbackModelRecords() : {});
     },
     refreshVirtualProvider(options = {}) {
       return refreshVirtualProviderNow(options);
     },
+    async validateModelSelection(input) {
+      if (!hostSupported) return false;
+      try { await resolveCursorSdkModelSelection(input); return true; }
+      catch (error) {
+        if (error?.code === 'cursor_model_unavailable') return false;
+        const reason = typeof error?.code === 'string' && /^native_[a-z_]{1,80}$/.test(error.code)
+          ? error.code : 'cursor_model_catalog_unavailable';
+        try { input.onFailure?.({ reason }); } catch { /* Diagnostics cannot change admission. */ }
+        if (error?.nativeProcessUnsettled) throw error;
+        if (reason.startsWith('native_')) throw Object.assign(new Error(reason), { code: reason,
+          statusCode: Number.isSafeInteger(error.statusCode) ? error.statusCode : 503, cause: error });
+        input.signal?.throwIfAborted();
+        return null;
+      }
+    },
+    async generateText(input = {}) {
+      const directory = trimString(input.directory), sessionID = trimString(input.sessionID);
+      if (typeof input.text !== 'string' || !input.text.trim() || Buffer.byteLength(input.text) > 262144
+        || !trimString(input.modelID) || !Number.isSafeInteger(input.timeoutMs ?? 60000)
+        || (input.timeoutMs ?? 60000) < 1 || (input.timeoutMs ?? 60000) > 120000) throw new Error('cursor_helper_invalid');
+      const signal = input.signal ? AbortSignal.any([input.signal, AbortSignal.timeout(input.timeoutMs ?? 60000)]) : AbortSignal.timeout(input.timeoutMs ?? 60000);
+      signal.throwIfAborted();
+      // Resolve the catalog outside the text grant: credential grants remain exact by operation.
+      if (input.titleHelper && !sessionID) throw new Error('cursor_helper_title_session_required');
+      const modelSelection = await resolveCursorSdkModelSelection({ modelID: input.modelID, variant: input.variant, directory });
+      signal.throwIfAborted();
+      return withReadOnly({ kind: input.titleHelper ? 'title' : 'text', directory, ...(sessionID ? { sessionID } : {}), ...((input.titleHelper || input.helperAgent) ? { modelID: input.modelID, ...(input.variant ? { variant: input.variant } : {}), ...(input.helperAgent ? { helperAgent: input.helperAgent, selectionMode: input.selectionMode, selectionRevision: input.selectionRevision } : {}) } : {}) }, () => generateReadOnlyWorker({
+        text: input.text, directory, sessionID, mode: 'text', keyKind: input.titleHelper ? 'title' : 'text', modelSelection, signal,
+        onUsage: observation => options.onTitleUsageObservation?.({ sessionID: sessionID || null, directory, observation }),
+      }));
+    },
     async generateTitle(input = {}) {
-      return generateTitle(input);
+      return withReadOnly({ kind: 'title', sessionID: trimString(input.sessionID), directory: trimString(input.directory) }, () => generateTitle(input));
     },
     async handlePromptAsync(input) {
       const providerID = trimString(input?.body?.model?.providerID);
@@ -5024,6 +5152,11 @@ export function createCursorSdkRuntime(options = {}) {
       return runPrompt(input);
     },
     async abortSession(sessionID) {
+      if (options.executionAdapter) {
+        const running = startingRuns.has(sessionID) || settlingRuns.has(sessionID) || activeRuns.has(sessionID);
+        await abortAndWait(sessionID);
+        return running;
+      }
       // Free the session and return immediately; the underlying cancel runs in
       // the background (bounded) so the stop button never hangs and a follow-up
       // model switch / prompt cannot race a run that is still cancelling.
@@ -5038,6 +5171,12 @@ export function createCursorSdkRuntime(options = {}) {
       return deleteSessionState(sessionID);
     },
     async dispose() {
+      if (!presentationRetired) {
+        presentationRetired = true;
+        for (const token of presentationRuns.values()) clearPresentation(token);
+        try { void Promise.resolve(options.onPresentationOwnerRetired?.(presentationOwnerID)).catch(() => {}); }
+        catch { /* Presentation retirement cannot veto cleanup. */ }
+      }
       if (options.executionAdapter) await Promise.all([...new Set([...startingRuns.keys(), ...settlingRuns.keys(), ...activeRuns.keys()])].map(abortAndWait));
       await questionRuntime.dispose();
       await persistentWorkerRuntime.dispose();

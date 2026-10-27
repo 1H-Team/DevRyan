@@ -2,7 +2,7 @@ import type { Message, Part } from '@opencode-ai/sdk/v2';
 import type {
     ManagedTaskFailureKind,
     ProviderTransportFailureKind,
-} from '@openchamber/orchestration-runtime';
+} from '@devryan/orchestration-runtime';
 import type { ResponseStyleLevel } from '@/lib/responseStyle';
 import type { PlanTurnIntent } from '@/lib/messages/actionablePlan';
 import type { ManagedTaskTurnProjection } from '../../managedTaskDispatch';
@@ -15,7 +15,7 @@ export interface ManagedTransportRecoveryPresentation {
     state: ManagedTransportRecoveryState;
 }
 
-export type ManagedAbortRecoveryState = 'continuing' | 'recovered' | 'manual_recovery' | 'stopped';
+export type ManagedAbortRecoveryState = 'continuing' | 'recovered' | 'manual_recovery' | 'stopped' | 'user_stopped';
 
 export interface ManagedAbortRecoveryPresentation {
     state: ManagedAbortRecoveryState;
@@ -140,6 +140,7 @@ export interface PlanTurnTraceEntry {
     isSuperseded: boolean;
     /** True once every assistant sibling across member turns has completed. */
     isSettled: boolean;
+    hasTerminalError: boolean;
     isActionable: boolean;
 }
 

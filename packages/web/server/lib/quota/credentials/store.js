@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { resolveDevRyanDataRoot } from '@devryan/shared-runtime/node/data-root.js';
 
 export const MAX_QUOTA_CREDENTIAL_PAYLOAD_BYTES = 16 * 1024;
 export const MANAGED_QUOTA_PROVIDER_IDS = Object.freeze([
@@ -37,9 +38,7 @@ export const getQuotaCredentialsDirectory = ({
   homedir = os.homedir,
   pathImpl = path,
 } = {}) => pathImpl.join(
-  env.OPENCHAMBER_DATA_DIR
-    ? pathImpl.resolve(env.OPENCHAMBER_DATA_DIR)
-    : pathImpl.join(homedir(), '.config', 'openchamber'),
+  resolveDevRyanDataRoot({ env, home: homedir() }),
   'quota',
 );
 

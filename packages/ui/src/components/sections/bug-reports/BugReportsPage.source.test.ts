@@ -4,38 +4,17 @@ import { readFileSync } from 'node:fs';
 const readSource = (file: string): string => readFileSync(new URL(file, import.meta.url), 'utf8');
 
 describe('managed Bug Reports settings page', () => {
-  test('keeps the four page-local surfaces lazy and admin review exact-role-only', () => {
+  test('keeps the three page-local surfaces lazy and admin review exact-role-only', () => {
     const source = readSource('./BugReportsPage.tsx');
-    const botAudit = readSource('./BotAuditPanel.tsx');
 
-    expect(source).toContain("type BugReportsTab = 'submit' | 'reports' | 'agent-audit' | 'bot-audit'");
+    expect(source).toContain("type BugReportsTab = 'submit' | 'reports' | 'agent-audit'");
     expect(source).toContain('const LazySubmitBugReportPanel = /* @__PURE__ */ lazyWithChunkRecovery');
     expect(source).toContain('const LazyBugReportReviewPanel = /* @__PURE__ */ lazyWithChunkRecovery');
     expect(source).toContain('const LazyErrorLogsPanel = /* @__PURE__ */ lazyWithChunkRecovery');
-    expect(source).toContain('const LazyBotAuditPanel = /* @__PURE__ */ lazyWithChunkRecovery');
     expect(source).toContain("principal.scope === 'managed' && principal.role === 'admin'");
     expect(source).toContain("principal.scope !== 'managed'");
     expect(source).toContain("visitedTabs.has('reports')");
     expect(source).toContain("visitedTabs.has('agent-audit')");
-    expect(source).toContain("visitedTabs.has('bot-audit')");
-    expect(botAudit).toContain("const [resultFilter, setResultFilter] = React.useState<BotAuditResultFilter>('issues')");
-    expect(botAudit).toContain("const [botFilter, setBotFilter] = React.useState('all')");
-    expect(botAudit).toContain("const [actorFilter, setActorFilter] = React.useState('all')");
-    expect(botAudit).toContain("const [dateFilter, setDateFilter] = React.useState<DateFilter>('all')");
-    expect(botAudit).toContain('onClick={() => setSelectedEventId(log.eventId)}');
-    expect(botAudit).toContain('formatBotContext(detail)');
-    expect(botAudit).toContain("'DevRyan Bot audit context'");
-    expect(botAudit).toContain('listBotAuditOptions(controller.signal)');
-    expect(botAudit).toContain('listErrorLogActors(controller.signal)');
-    expect(botAudit).toContain('<DropdownMenuRadioGroup value={resultFilter}');
-    expect(botAudit).toContain('<DropdownMenuRadioGroup value={botFilter}');
-    expect(botAudit).toContain('<DropdownMenuRadioGroup value={actorFilter}');
-    expect(botAudit).toContain('<DropdownMenuRadioGroup value={dateFilter}');
-    expect(botAudit).toContain('<DropdownMenuRadioGroup value={String(pageSize)}');
-    expect(botAudit).toContain("sourceSurface: 'settings'");
-    expect(botAudit).not.toContain('clearErrorLogs');
-    expect(botAudit).not.toContain('diagnostics.export');
-    expect(botAudit).not.toContain('useRuntimeAPIs');
   });
 
   test('submits only title and description and clears the draft after confirmation', () => {

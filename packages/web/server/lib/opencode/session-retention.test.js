@@ -47,99 +47,44 @@ describe('retention admission and selection', () => {
   });
 });
 
-function fixture({ onRequest, ...overrides } = {}) {
-  const gate = createSessionActivityGate(); const calls = [];
-  const settings = { autoDeleteEnabled: true, autoDeleteAfterDays: 30, sessionRetentionAction: 'archive' };
-  const data = snapshot([row('root'), row('child', { parentID: 'root' })]);
-  const retention = createSessionRetention({ gate, readSettings: async () => settings, isExclusive: () => true,
-    buildOpenCodeUrl: (pathname) => `http://fixture${pathname}`, getOpenCodeAuthHeaders: () => ({}),
-    getControlToken: async () => 'private-test-token', getDirectory: () => '/fixture', protectedSessions: async () => [],
-    checkLedger: async () => {}, fetchImpl: async (url, options) => {
-      const body = options.body && JSON.parse(options.body); calls.push({ path: url.pathname, body });
-      const intercepted = await onRequest?.(url, body);
-      if (intercepted) return intercepted;
-      if (url.pathname.endsWith('revert-capabilities')) return Response.json({ sessionRetention: 1 });
-      if (url.pathname.endsWith('retention-control')) {
-        if (body.action === 'snapshot') return Response.json(data);
-        if (body.action === 'hold') return Response.json({ token: 'hold' });
-        if (body.action === 'release') return Response.json({ released: true });
-        expect(() => gate.enter(['child'])).toThrow('session_retention_in_progress');
-        return Response.json({ completed: body.ids, failed: [] });
-      }
-      return Response.json(url.pathname.endsWith('/status') ? {} : []);
-    }, ...overrides });
-  return { retention, calls, settings, data, gate };
+function fixture(overrides={}) {
+ const gate=createSessionActivityGate(),calls=[];
+ const settings={autoDeleteEnabled:true,autoDeleteAfterDays:30,sessionRetentionAction:'archive'};
+ const data=snapshot([row('root',{parentID:null}),row('child',{parentID:'root'})]);
+ const native={readRetentionSnapshot:async()=>data,retainSessions:async input=>{calls.push(input);await input.authorize(input.members);return true;}};
+ const retention=createSessionRetention({gate,readSettings:async()=>settings,isExclusive:()=>true,getDirectory:()=>'/fixture',
+   openCodeClient:{generation:()=>2},getNativeRuntime:()=>native,protectedSessions:async()=>[],checkLedger:async()=>{},...overrides});
+ return {retention,calls,settings,data,gate,native};
 }
-
-describe('server retention', () => {
-  test('rechecks under a tree hold and archives children before their parent', async () => {
-    const f = fixture(); const result = await f.retention.run();
-    expect(result.completed).toEqual(['child', 'root']);
-    expect(f.calls.filter((call) => call.body?.action === 'snapshot')).toHaveLength(2);
-    expect(f.calls.at(-1).body.action).toBe('release');
-  });
-  test('missing status and uncoordinated runtimes never mutate', async () => {
-    const missing = fixture({ fetchImpl: async () => new Response('', { status: 404 }) });
-    expect((await missing.retention.run()).completed).toEqual([]);
-    const external = fixture({ isExclusive: () => false });
-    expect((await external.retention.run()).skipped[0].reason).toBe('runtime_uncoordinated');
-    expect(external.calls).toEqual([]);
-  });
-  test('disabling during verification stops new mutations and releases the hold', async () => {
-    let f; f = fixture({ checkLedger: async () => { f.settings.autoDeleteEnabled = false; } });
-    const result = await f.retention.run();
-    expect(result.completed).toEqual([]);
-    expect(result.skipped.some((entry) => entry.reason === 'disabled')).toBe(true);
-    expect(f.calls.some((call) => call.body?.action === 'archive')).toBe(false);
-    expect(() => f.gate.enter(['root'])()).not.toThrow();
-  });
-  test('captured execution or recovery uncertainty is a skip with a reason', async () => {
-    const f = fixture({ checkLedger: async () => { throw Object.assign(new Error(), { code: 'captured_execution_active' }); } });
-    const result = await f.retention.run();
-    expect(result.completed).toEqual([]);
-    expect(result.skipped.some((entry) => entry.reason === 'captured_execution_active')).toBe(true);
-  });
-  test('disabling drains an accepted mutation and prevents a second batch', async () => {
-    let finish, accepted;
-    const started = new Promise((resolve) => { accepted = resolve; });
-    const f = fixture({ onRequest: async (_url, body) => {
-      if (body?.action === 'archive') {
-        accepted();
-        return new Promise((resolve) => { finish = () => resolve(Response.json({ completed: body.ids, failed: [] })); });
-      }
-    } });
-    const batch = f.retention.run(); await started;
-    f.settings.autoDeleteEnabled = false;
-    expect(() => f.gate.enter(['root'])).toThrow('session_retention_in_progress');
-    expect((await f.retention.run()).skipped[0].reason).toBe('running');
-    finish(); expect((await batch).completed).toEqual(['child', 'root']);
-    expect(() => f.gate.enter(['root'])()).not.toThrow();
-    expect((await f.retention.run()).skipped[0].reason).toBe('disabled');
-  });
-  test('a lost mutation response keeps the hold until native settlement is confirmed', async () => {
-    let confirm, draining;
-    const started = new Promise((resolve) => { draining = resolve; });
-    const f = fixture({ onRequest: async (_url, body) => {
-      if (body?.action === 'archive') throw new Error('lost response');
-      if (body?.action === 'release') {
-        draining();
-        return new Promise((resolve) => { confirm = () => resolve(Response.json({ released: true })); });
-      }
-    } });
-    const batch = f.retention.run(); await started;
-    expect(() => f.gate.enter(['child'])).toThrow('session_retention_in_progress');
-    confirm();
-    expect((await batch).failed).toContainEqual({ id: 'root', reason: 'mutation_unconfirmed' });
-    expect(() => f.gate.enter(['child'])()).not.toThrow();
-  });
-  test('runtime restart after a hold invalidates the tree and releases local admission', async () => {
-    let snapshots = 0;
-    const f = fixture({ onRequest: async (_url, body) => {
-      if (body?.action === 'snapshot' && ++snapshots > 1) return Response.json({ ...snapshot([]), instanceID: 'runtime-b' });
-      if (body?.action === 'release') return Response.json({ error: 'runtime_restarted' });
-    } });
-    expect((await f.retention.run()).skipped).toContainEqual({ id: 'root', reason: 'runtime_restarted' });
-    expect(f.calls.some((call) => call.body?.action === 'archive')).toBe(false);
-    expect(() => f.gate.enter(['root'])()).not.toThrow();
-  });
+describe('server native retention',()=>{
+ test('archives an eligible whole tree under host activity hold',async()=>{
+  const f=fixture();f.native.retainSessions=async input=>{expect(()=>f.gate.enter(['child'])).toThrow('session_retention_in_progress');await input.authorize(input.members);f.calls.push(input);return true;};
+  expect(await f.retention.run()).toMatchObject({completed:['root','child'],failed:[]});expect(f.calls[0]).toMatchObject({action:'archive',sessionID:'root'});
+  expect(()=>f.gate.enter(['child'])()).not.toThrow();
+ });
+ test('new activity, selection, managed ownership and policy changes skip without cancelling',async()=>{
+  const active=fixture(),settle=active.gate.enter(['child']);expect((await active.retention.run()).completed).toEqual([]);expect(active.calls).toEqual([]);settle();
+  const selected=fixture();selected.gate.select('client_1234','child',1,true);expect((await selected.retention.run()).skipped).toContainEqual({id:'root',reason:'protected_session'});
+  const managed=fixture({protectedSessions:async()=>['child']});expect((await managed.retention.run()).completed).toEqual([]);
+  const changed=fixture();changed.native.retainSessions=async input=>{changed.settings.autoDeleteEnabled=false;await input.authorize(input.members);throw Error('must not mutate');};
+  expect((await changed.retention.run()).skipped).toContainEqual({id:'root',reason:'retention_policy_changed'});
+ });
+ test('authoritative native member update and managed metadata block after the initial snapshot',async()=>{
+  for(const mutation of [member=>({...member,time:{...member.time,updated:Date.now()}}),member=>({...member,metadata:{managed:true}})]){
+   const f=fixture();f.native.retainSessions=async input=>{await input.authorize(input.members.map(member=>member.id==='child'?mutation(member):member));throw Error('must not mutate');};
+   expect((await f.retention.run()).completed).toEqual([]);
+  }
+ });
+ test('delete accepts only exact owned archival metadata and checks the ledger',async()=>{
+  let checked=0;const f=fixture({checkLedger:async()=>{checked++;}});f.settings.sessionRetentionAction='delete';f.settings.sessionRetentionArchivedOnly=true;
+  f.data.sessions=f.data.sessions.map(member=>['root','child'].includes(member.id)?{...member,time:{...member.time,archived:old},metadata:{devryan:{archive:{sessionID:member.id,at:old}}}}:member);
+  expect((await f.retention.run()).completed).toEqual(['root','child']);expect(checked).toBeGreaterThan(0);
+  const foreign=retentionTrees(snapshot([row('root',{metadata:{devryan:{archive:{sessionID:'foreign',at:old}}},time:{updated:old,archived:old}})]),{days:30,archivedOnly:true,now});
+  expect(foreign.at(-1).reason).toBe('managed_session');
+ });
+ test('disabled, uncoordinated, absent native capability and wrong generation are typed skips',async()=>{
+  for(const [overrides,reason]of [[{readSettings:async()=>({autoDeleteEnabled:false})},'disabled'],[{isExclusive:()=>false},'runtime_uncoordinated'],[{getNativeRuntime:()=>null},'capability_absent'],[{openCodeClient:{generation:()=>1}},'opencode_generation_invalid']]){
+   const f=fixture(overrides);expect((await f.retention.run()).skipped).toContainEqual({id:null,reason});expect(f.calls).toEqual([]);
+  }
+ });
 });

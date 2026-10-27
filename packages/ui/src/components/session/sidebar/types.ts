@@ -1,8 +1,5 @@
 import type { Session } from '@opencode-ai/sdk/v2';
-import type { SessionSummaryDiffStats } from '@/lib/sessionDiffStats';
 import type { WorktreeMetadata } from '@/types/worktree';
-
-export type SessionSummaryMeta = SessionSummaryDiffStats;
 
 export type SessionNode = {
   session: Session;

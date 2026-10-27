@@ -4,7 +4,7 @@ import { useSessionUIStore } from '@/sync/session-ui-store';
 import { devtools } from './utils/devtoolsGate';
 import type { CreateMultiRunParams, CreateMultiRunResult } from '@/types/multirun';
 import { opencodeClient } from '@/lib/opencode/client';
-import { saveWorktreeSetupCommands } from '@/lib/openchamberConfig';
+import { saveWorktreeSetupCommands } from '@/lib/devryanConfig';
 import type { ProjectRef } from '@/lib/worktrees/worktreeManager';
 import { createWorktreeWithDefaults, resolveRootTrackingRemote } from '@/lib/worktrees/worktreeCreate';
 import { getRootBranch } from '@/lib/worktrees/worktreeStatus';
@@ -12,6 +12,8 @@ import { checkIsGitRepository } from '@/lib/gitApi';
 // sessionStore removed — sync bootstrap handles session loading
 import { useDirectoryStore } from './useDirectoryStore';
 import { useProjectsStore } from './useProjectsStore';
+import { useConfigStore } from './useConfigStore';
+import { resolveChatThinkingVariant } from '@/lib/providers/chatThinking';
 import { assertCanCreateBranches } from '@/lib/authSession';
 
 /**
@@ -202,7 +204,12 @@ export const useMultiRunStore = create<MultiRunStore>()(
                 worktreePath: worktreeMetadata.path,
                 providerID: model.providerID,
                 modelID: model.modelID,
-                variant: model.variant,
+                // Chips display a concrete level when none was picked; send that same level.
+                variant: resolveChatThinkingVariant(
+                  useConfigStore.getState().providers.find((entry) => entry.id === model.providerID),
+                  model.modelID,
+                  model.variant,
+                ),
               });
 
             } catch (error) {

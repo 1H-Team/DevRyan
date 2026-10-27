@@ -1,16 +1,55 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import fsSync from 'node:fs';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 import {
   cleanupStaleAtomicFiles,
   readJsonGuarded,
   withCrossProcessFileLock,
   writeFileAtomic,
+  writeFileAtomicSync,
 } from './atomic-file.js';
 
 const temporaryDirectories = [];
+
+test('Windows persistence uses constructor owners, identity-bound quarantine and guarded deletion', () => {
+  const atomicModule = new URL('./atomic-file.js', import.meta.url).href;
+  const storeModule = new URL('./record-store.js', import.meta.url).href;
+  // Isolate the platform fixture: no Windows receipt or platform pass is
+  // inferred, and every accidental Node filesystem fallback fails this test.
+  const source = `
+    import assert from 'node:assert/strict';
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    const { readJsonGuarded, writeFileAtomic } = await import(${JSON.stringify(atomicModule)});
+    const { createRecordStore } = await import(${JSON.stringify(storeModule)});
+    const fs = new Proxy({}, { get: () => () => { throw new Error('Node filesystem fallback'); } });
+    const file = 'fixture.json';
+    await assert.rejects(writeFileAtomic(file, '{}', { fs }), { code: 'private_windows_publication_authority_unavailable' });
+    await assert.rejects(readJsonGuarded(file, { fs }), { code: 'private_windows_read_authority_unavailable' });
+    const record = { identity: { fileId: 'fixture' }, bytes: Buffer.from('{broken') };
+    let preserved = true, quarantined = 0, notified = 0;
+    const owner = { read: async () => record, ensureDirectory: async () => {},
+      write: async (target, bytes) => { assert.equal(target, file); assert.deepEqual(bytes, Buffer.from('{}')); return { receipt: true }; },
+      quarantine: async (target, expected) => { assert.equal(target, file); assert.equal(expected, record); preserved = false; quarantined++; return 'held-backup'; } };
+    await assert.rejects(readJsonGuarded(file, { fs, windowsOwner: { read: owner.read } }), { code: 'private_windows_quarantine_authority_unavailable' });
+    assert.equal(preserved, true);
+    assert.equal(await readJsonGuarded(file, { fs, windowsOwner: owner, onQuarantine: value => { assert.equal(value.quarantinedPath, 'held-backup'); notified++; } }), null);
+    assert.equal(quarantined, 1); assert.equal(notified, 1);
+    assert.deepEqual(await writeFileAtomic(file, '{}', { fs, windowsOwner: owner }), { receipt: true });
+    owner.read = async () => { throw Object.assign(new Error('private'), { code: 'private_windows_file_unverified' }); };
+    await assert.rejects(readJsonGuarded(file, { fs, windowsOwner: owner }), { code: 'private_windows_file_unverified' });
+    assert.equal(quarantined, 1);
+    owner.read = async () => { throw Object.assign(new Error('missing'), { code: 'ENOENT' }); };
+    assert.equal(await readJsonGuarded(file, { fs, windowsOwner: owner }), null);
+    let deleted = 0; owner.delete = async target => { assert.ok(target.endsWith('item.json')); deleted++; };
+    const store = createRecordStore({ directory: 'fixture-records', fs, windowsOwner: owner });
+    await store.deleteRecord('item'); await store.drain(); assert.equal(deleted, 1);
+  `;
+  expect(() => execFileSync('node', ['--input-type=module', '-e', source], { stdio: 'pipe' })).not.toThrow();
+});
 
 const temporaryDirectory = async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-harness-atomic-'));
@@ -36,6 +75,45 @@ describe('atomic file primitives', () => {
     expect((await fs.readdir(path.dirname(filePath))).filter((name) => name.includes('.tmp-'))).toEqual([]);
   });
 
+  test('replaces a user-owned file synchronously, keeping its mode and leaving no temporary file', async () => {
+    const directory = await temporaryDirectory();
+    const filePath = path.join(directory, 'opencode.json');
+    await fs.writeFile(filePath, '{"old":true}\n');
+    await fs.chmod(filePath, 0o640);
+
+    writeFileAtomicSync(filePath, '{"new":true}\n');
+
+    expect(await fs.readFile(filePath, 'utf8')).toBe('{"new":true}\n');
+    expect((await fs.stat(filePath)).mode & 0o777).toBe(0o640);
+    expect(await fs.readdir(directory)).toEqual(['opencode.json']);
+  });
+
+  test('keeps the old bytes and removes its temporary file when the synchronous replace fails', async () => {
+    const directory = await temporaryDirectory();
+    const filePath = path.join(directory, 'opencode.json');
+    await fs.writeFile(filePath, '{"old":true}\n');
+    const failure = Object.assign(new Error('fixture rename failed'), { code: 'ENOSPC' });
+    const fsApi = { ...fsSync, renameSync: () => { throw failure; } };
+
+    expect(() => writeFileAtomicSync(filePath, '{"new":true}\n', { fs: fsApi })).toThrow(failure);
+
+    expect(await fs.readFile(filePath, 'utf8')).toBe('{"old":true}\n');
+    expect(await fs.readdir(directory)).toEqual(['opencode.json']);
+  });
+
+  test.skipIf(process.platform === 'win32')('follows a symlink, even a dangling one, and keeps the link', async () => {
+    const directory = await temporaryDirectory();
+    const realPath = path.join(directory, 'dotfiles', 'opencode.json');
+    const linkPath = path.join(directory, 'opencode.json');
+    await fs.symlink(realPath, linkPath);
+
+    writeFileAtomicSync(linkPath, '{"a":1}\n');
+    writeFileAtomicSync(linkPath, '{"a":2}\n');
+
+    expect((await fs.lstat(linkPath)).isSymbolicLink()).toBe(true);
+    expect(await fs.readFile(realPath, 'utf8')).toBe('{"a":2}\n');
+  });
+
   test('cleans stale temporary files without touching fresh ones', async () => {
     const directory = await temporaryDirectory();
     const filePath = path.join(directory, 'record.json');
@@ -51,6 +129,19 @@ describe('atomic file primitives', () => {
     })).toBe(1);
     await expect(fs.stat(stale)).rejects.toMatchObject({ code: 'ENOENT' });
     await expect(fs.readFile(fresh, 'utf8')).resolves.toBe('new');
+  });
+
+  test('refuses unconfirmed replacement durability and preserves the published bytes', async () => {
+    const directory = await temporaryDirectory(), filePath = path.join(directory, 'record.json');
+    let closed = false;
+    const failure = Object.assign(new Error('fixture directory sync failed'), { code: 'EIO' });
+    const fsApi = { ...fs, open: async (file, ...arguments_) => file === directory ? {
+      sync: async () => { throw failure; }, close: async () => { closed = true; },
+    } : fs.open(file, ...arguments_) };
+    await expect(writeFileAtomic(filePath, '{"new":true}\n', { fs: fsApi })).rejects.toBe(failure);
+    expect(closed).toBe(true);
+    expect(await fs.readFile(filePath, 'utf8')).toBe('{"new":true}\n');
+    expect(await fs.readdir(directory)).toEqual(['record.json']);
   });
 
   test('quarantines partial JSON and continues with an empty read', async () => {
@@ -94,6 +185,58 @@ describe('atomic file primitives', () => {
       isProcessAlive: () => true,
     })).rejects.toMatchObject({ code: 'LOCK_TIMEOUT' });
     expect(JSON.parse(await fs.readFile(lockPath, 'utf8')).ownerToken).toBe('live');
+  });
+
+  test('publishes only a synced complete inode and cleans temporary files after contention', async () => {
+    const directory = await temporaryDirectory(), lockPath = path.join(directory, 'atomic.lock');
+    let synced = false, links = 0;
+    const fsApi = { ...fs,
+      open: async (...args) => {
+        const handle = await fs.open(...args);
+        const sync = handle.sync.bind(handle);
+        handle.sync = async () => { await sync(); synced = true; };
+        return handle;
+      },
+      link: async (source, destination) => {
+        links++;
+        expect(synced).toBe(true);
+        expect(JSON.parse(await fs.readFile(source, 'utf8')).ownerToken).toBe('atomic-owner');
+        await expect(fs.stat(destination)).rejects.toMatchObject({ code: 'ENOENT' });
+        return fs.link(source, destination);
+      },
+    };
+    await withCrossProcessFileLock(lockPath, async () => {
+      expect(JSON.parse(await fs.readFile(lockPath, 'utf8')).ownerToken).toBe('atomic-owner');
+    }, { fs: fsApi, randomToken: () => 'atomic-owner' });
+    expect(links).toBe(1); expect(await fs.readdir(directory)).toEqual([]);
+    await fs.writeFile(lockPath, JSON.stringify({ ownerToken: 'other', pid: process.pid, createdAt: 0 }));
+    await expect(withCrossProcessFileLock(lockPath, () => {}, { timeoutMs: 0 })).rejects.toMatchObject({ code: 'LOCK_TIMEOUT' });
+    expect(await fs.readdir(directory)).toEqual(['atomic.lock']);
+  });
+
+  test('only unsupported hard links allow exclusive-create fallback; permission and I/O errors propagate', async () => {
+    const directory = await temporaryDirectory(), lockPath = path.join(directory, 'fallback.lock');
+    for (const code of ['ENOSYS', 'ENOTSUP', 'EOPNOTSUPP', 'EPERM', 'EACCES', 'EIO', 'ENOSPC']) {
+      let entered = false;
+      const operation = withCrossProcessFileLock(lockPath, () => { entered = true; }, {
+        fs: { ...fs, link: async () => { throw Object.assign(Error(code), { code }); } },
+      });
+      if (['ENOSYS', 'ENOTSUP', 'EOPNOTSUPP'].includes(code)) {
+        await operation; expect(entered).toBe(true);
+      } else { await expect(operation).rejects.toMatchObject({ code }); expect(entered).toBe(false); }
+      expect(await fs.readdir(directory)).toEqual([]);
+    }
+  });
+
+  test('legacy malformed mutation locks keep the default thirty-second threshold', async () => {
+    const directory = await temporaryDirectory(), lockPath = path.join(directory, 'legacy.lock');
+    await fs.writeFile(lockPath, '{');
+    let now = (await fs.stat(lockPath)).mtimeMs;
+    const start = now;
+    await withCrossProcessFileLock(lockPath, () => { expect(now - start).toBe(30000); }, {
+      timeoutMs: 45000, retryMs: 1000, now: () => now, wait: async ms => { now += ms; },
+    });
+    expect(await fs.readdir(directory)).toEqual([]);
   });
 
   test('waits on fresh malformed locks and recovers stale malformed locks', async () => {

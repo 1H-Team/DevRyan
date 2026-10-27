@@ -1,43 +1,28 @@
 import { create } from 'zustand';
 import {
   canTransitionManagedTaskStatus,
-  classifyManagedTaskFailure,
+  decodeResultEnvelopePayload,
+  decodeSnapshotPayload,
+  decodeTaskEventRecord,
+  findManagedResultPayloadMismatch,
   isTerminalManagedTaskStatus,
+  selectRequiredCheckTasks,
   MAX_MANAGED_TASK_FAILURE_BYTES,
-  MAX_MANAGED_TASK_LABEL_BYTES,
-  MAX_MANAGED_TASK_PREVIEW_BYTES,
   truncateManagedText,
-  validateManagedTaskResultEnvelope,
-  validateManagedTransportRecovery,
-  type ManagedTaskEvent,
-  type ManagedTaskRemovalEvent,
   type ManagedTaskResultAction,
   type ManagedTaskStatus,
-} from '@openchamber/orchestration-runtime';
+} from '@devryan/orchestration-runtime';
 
+import { isRecord } from '@/lib/decoders/guards';
 import {
   managedOrchestrationApi,
   type ManagedOrchestrationApi,
   type ManagedOrchestrationSnapshot,
-  type ManagedTaskAutoResume,
-  type ManagedTaskAutoResumeReason,
-  type ManagedTaskAutoResumeResetSource,
-  type ManagedTaskAutoResumeState,
   type ManagedTaskProjectedEnvelope,
   type ManagedTaskProjectedRecord,
-  type ManagedTaskWaitingReason,
-  type ManagedTaskWaitingReasonKind,
 } from '@/lib/orchestrationApi';
+import { canonicalEventType } from '@/lib/eventTypes';
 
-const MANAGED_TASK_STATUSES = new Set<ManagedTaskStatus>([
-  'queued',
-  'starting',
-  'running',
-  'completed',
-  'failed',
-  'aborted',
-  'interrupted',
-]);
 const IMMUTABLE_PROJECTED_TASK_FIELDS = [
   'owner',
   'taskId',
@@ -61,47 +46,9 @@ const IMMUTABLE_PROJECTED_TASK_FIELDS = [
   'recoveryLineageId',
 ] as const satisfies readonly (keyof ManagedTaskProjectedRecord)[];
 const EMPTY_TASK_IDS: readonly string[] = Object.freeze([]);
-const MANAGED_TASK_AUTO_RESUME_STATES = new Set<ManagedTaskAutoResumeState>([
-  'planning',
-  'scheduled',
-  'attempting',
-  'superseded',
-  'succeeded',
-  'ended',
-  'cancelled',
-  'exhausted',
-  'acknowledged',
-]);
-const MANAGED_TASK_AUTO_RESUME_REASONS = new Set<ManagedTaskAutoResumeReason>([
-  'backup_unavailable',
-  'user',
-  'manual_retry',
-  'session_deleted',
-  'cancelled',
-  'attempt_cap',
-  'time_cap',
-  'host_failures',
-  'window_rejections',
-]);
-
-const MANAGED_TASK_AUTO_RESUME_RESET_SOURCES = new Set<ManagedTaskAutoResumeResetSource>([
-  'opencode_status',
-  'meridian_quota',
-  'backoff',
-]);
-const MANAGED_TASK_WAITING_REASON_KINDS = new Set<ManagedTaskWaitingReasonKind>([
-  'capacity',
-  'system_pressure',
-]);
-
 export type ManagedTaskPendingAction = 'cancel' | 'auto_resume' | ManagedTaskResultAction;
 
 export type ManagedRootDelegationPhase = 'starting' | 'waiting' | null;
-
-type ManagedOrchestrationWarningEvent = {
-  type: 'openchamber:managed-orchestration-warning';
-  properties: { message: string };
-};
 
 type ParsedManagedTaskProjection = {
   task: ManagedTaskProjectedRecord;
@@ -112,8 +59,6 @@ type ParsedManagedOrchestrationSnapshot = Omit<ManagedOrchestrationSnapshot, 'ta
   tasks: ManagedTaskProjectedRecord[];
   resultEnvelopes: ManagedTaskProjectedEnvelope[];
 };
-
-export type ManagedOrchestrationUiEvent = ManagedTaskEvent | ManagedTaskRemovalEvent | ManagedOrchestrationWarningEvent;
 
 export type ManagedOrchestrationStore = {
   tasksById: Readonly<Record<string, ManagedTaskProjectedRecord>>;
@@ -129,6 +74,8 @@ export type ManagedOrchestrationStore = {
   snapshotError: string | null;
   pendingActionByTaskId: Readonly<Record<string, ManagedTaskPendingAction>>;
   actionErrorByTaskId: Readonly<Record<string, string>>;
+  waitingForEventsByTaskId: Readonly<Record<string, boolean>>;
+  cancelRecoveryIntent(taskId: string): void;
   ingestEvent(event: unknown): void;
   loadSnapshot(options?: { rootSessionId?: string }): Promise<void>;
   cancelTask(taskId: string, options?: { cascade?: boolean; reason?: string }): Promise<void>;
@@ -155,402 +102,28 @@ const initialState = () => ({
   snapshotError: null as string | null,
   pendingActionByTaskId: {} as Readonly<Record<string, ManagedTaskPendingAction>>,
   actionErrorByTaskId: {} as Readonly<Record<string, string>>,
+  waitingForEventsByTaskId: {} as Readonly<Record<string, boolean>>,
 });
 
-const isRecord = (value: unknown): value is Record<string, unknown> => (
-  Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+// Host payloads decode through the orchestration codec in lenient mode: a
+// newer host's unknown auto-resume reason or malformed waiting reason degrades
+// to null instead of hiding the task or its result.
+const LENIENT = { mode: 'lenient' } as const;
+
+const parseManagedTaskEventRecord = (value: unknown): ManagedTaskProjectedRecord | null => (
+  decodeTaskEventRecord(value, LENIENT)
 );
 
-const isNullableString = (value: unknown): value is string | null => value === null || typeof value === 'string';
-const isOptionalNullableString = (value: unknown): value is string | null | undefined => (
-  value === undefined || isNullableString(value)
+const parseEnvelope = (value: unknown): ManagedTaskProjectedEnvelope | null => (
+  decodeResultEnvelopePayload(value, LENIENT)
 );
-const isTimestamp = (value: unknown): value is number => (
-  typeof value === 'number' && Number.isFinite(value) && value >= 0
-);
-const isNullableTimestamp = (value: unknown): value is number | null => value === null || isTimestamp(value);
-const isOptionalNullableTimestamp = (value: unknown): value is number | null | undefined => (
-  value === undefined || isNullableTimestamp(value)
-);
-const isCount = (value: unknown): value is number => Number.isSafeInteger(value) && Number(value) >= 0;
-
-const isCanonicalReference = (value: unknown) => (
-  isRecord(value)
-  && typeof value.type === 'string'
-  && Boolean(value.type.trim())
-  && typeof value.id === 'string'
-  && Boolean(value.id.trim())
-);
-
-/**
- * Why a queued task has not started. A malformed value degrades to "no
- * reason" instead of rejecting the task, and only a queued task carries one.
- */
-export const parseManagedTaskWaitingReason = (value: unknown): ManagedTaskWaitingReason | null => {
-  if (!isRecord(value)) return null;
-  if (!MANAGED_TASK_WAITING_REASON_KINDS.has(value.kind as ManagedTaskWaitingReasonKind)) return null;
-  if (!isCount(value.activeCount)) return null;
-  if (value.limit !== null && !isCount(value.limit)) return null;
-  if (!isTimestamp(value.since)) return null;
-  return {
-    kind: value.kind as ManagedTaskWaitingReasonKind,
-    activeCount: value.activeCount as number,
-    limit: value.limit as number | null,
-    since: value.since as number,
-  };
-};
-
-const parseManagedTaskEventRecord = (value: unknown): ManagedTaskProjectedRecord | null => {
-  if (!isRecord(value)) return null;
-  const valid = value.owner === 'devryan'
-    && typeof value.taskId === 'string'
-    && value.taskId.startsWith('dvr_task_')
-    && typeof value.rootSessionId === 'string'
-    && Boolean(value.rootSessionId.trim())
-    && isOptionalNullableString(value.dispatchCallId)
-    && (value.dispatchGrouped === undefined || typeof value.dispatchGrouped === 'boolean')
-    && isOptionalNullableString(value.dispatchWaveId)
-    && isNullableString(value.parentTaskId)
-    && isNullableString(value.childSessionId)
-    && typeof value.directory === 'string'
-    && Boolean(value.directory.trim())
-    && Number.isSafeInteger(value.sequence)
-    && Number(value.sequence) > 0
-    && (value.mode === 'builder' || value.mode === 'orchestrator')
-    && typeof value.providerId === 'string'
-    && Boolean(value.providerId.trim())
-    && typeof value.modelId === 'string'
-    && Boolean(value.modelId.trim())
-    && typeof value.agent === 'string'
-    && Boolean(value.agent.trim())
-    && isNullableString(value.variant)
-    && typeof value.label === 'string'
-    && MANAGED_TASK_STATUSES.has(value.status as ManagedTaskStatus)
-    && Number.isSafeInteger(value.attempt)
-    && Number(value.attempt) > 0
-    && isNullableString(value.priorTaskId)
-    && (value.executionKind === 'start' || value.executionKind === 'retry' || value.executionKind === 'resume' || value.executionKind === 'recover_in_place' || value.executionKind === 'retry_in_place')
-    && isTimestamp(value.createdAt)
-    && isNullableTimestamp(value.startedAt)
-    && isNullableTimestamp(value.finishedAt)
-    && isNullableTimestamp(value.timeoutAt)
-    && isNullableString(value.failureReason)
-    && (
-      value.failureKind === undefined
-      || value.failureKind === null
-      || value.failureKind === 'provider_usage_limit'
-      || value.failureKind === 'provider_authentication'
-      || value.failureKind === 'provider_configuration'
-      || value.failureKind === 'provider_prompt_rejected'
-      || value.failureKind === 'model_unavailable'
-      || value.failureKind === 'deadline_exceeded'
-      || value.failureKind === 'provider_transport'
-    )
-    && typeof value.partial === 'boolean'
-    && typeof value.recoverablePreview === 'string'
-    && Array.isArray(value.canonicalRefs)
-    && value.canonicalRefs.every(isCanonicalReference)
-    && typeof value.agentRetryAvailable === 'boolean'
-    // Automatic-recovery fields; absent on older hosts.
-    && isOptionalNullableString(value.recoveryLineageId)
-    && isOptionalNullableTimestamp(value.childPromptedAt)
-    && isOptionalNullableTimestamp(value.firstAssistantPartAt);
-  if (!valid) return null;
-  let transportRecovery: ReturnType<typeof validateManagedTransportRecovery>;
-  try {
-    transportRecovery = validateManagedTransportRecovery(value.transportRecovery);
-  } catch {
-    return null;
-  }
-  return {
-    owner: 'devryan',
-    taskId: value.taskId as string,
-    rootSessionId: value.rootSessionId as string,
-    dispatchCallId: value.dispatchCallId === null || value.dispatchCallId === undefined
-      ? null
-      : truncateManagedText(value.dispatchCallId, 1_024),
-    dispatchGrouped: value.dispatchGrouped === true,
-    // Display-only wave label; absent on hosts predating it. Only a well-formed
-    // `dvr_wave_` id is kept so the chat never groups cards by an arbitrary string.
-    dispatchWaveId: typeof value.dispatchWaveId === 'string' && value.dispatchWaveId.startsWith('dvr_wave_')
-      ? truncateManagedText(value.dispatchWaveId, 1_024)
-      : null,
-    parentTaskId: value.parentTaskId as string | null,
-    childSessionId: value.childSessionId as string | null,
-    directory: value.directory as string,
-    sequence: value.sequence as number,
-    mode: value.mode as ManagedTaskProjectedRecord['mode'],
-    providerId: truncateManagedText(value.providerId, 1_024),
-    modelId: truncateManagedText(value.modelId, 1_024),
-    agent: truncateManagedText(value.agent, 1_024),
-    variant: value.variant === null ? null : truncateManagedText(value.variant, 1_024),
-    label: truncateManagedText(value.label, MAX_MANAGED_TASK_LABEL_BYTES),
-    status: value.status as ManagedTaskStatus,
-    attempt: value.attempt as number,
-    priorTaskId: value.priorTaskId as string | null,
-    executionKind: value.executionKind as ManagedTaskProjectedRecord['executionKind'],
-    createdAt: value.createdAt as number,
-    startedAt: value.startedAt as number | null,
-    finishedAt: value.finishedAt as number | null,
-    timeoutAt: value.timeoutAt as number | null,
-    failureReason: value.failureReason === null
-      ? null
-      : truncateManagedText(value.failureReason, MAX_MANAGED_TASK_FAILURE_BYTES),
-    failureKind: value.failureKind === 'provider_usage_limit'
-      || value.failureKind === 'provider_authentication'
-      || value.failureKind === 'provider_configuration'
-      || value.failureKind === 'provider_transport'
-      || value.failureKind === 'provider_prompt_rejected'
-      || value.failureKind === 'model_unavailable'
-      || value.failureKind === 'deadline_exceeded'
-      ? value.failureKind
-      : classifyManagedTaskFailure(value.failureReason),
-    partial: value.partial as boolean,
-    recoverablePreview: truncateManagedText(value.recoverablePreview, MAX_MANAGED_TASK_PREVIEW_BYTES),
-    canonicalRefs: (value.canonicalRefs as Array<{ type: string; id: string }>)
-      .slice(0, 512)
-      .map((reference) => ({
-        type: truncateManagedText(reference.type, 1_024),
-        id: truncateManagedText(reference.id, 1_024),
-      })),
-    agentRetryAvailable: value.agentRetryAvailable as boolean,
-    recoveryLineageId: typeof value.recoveryLineageId === 'string'
-      ? truncateManagedText(value.recoveryLineageId, 1_024)
-      : null,
-    childPromptedAt: isTimestamp(value.childPromptedAt) ? value.childPromptedAt : null,
-    firstAssistantPartAt: isTimestamp(value.firstAssistantPartAt) ? value.firstAssistantPartAt : null,
-    transportRecovery,
-    // Queued-only scheduler state; a stale reason on a started task is dropped.
-    waitingReason: value.status === 'queued' ? parseManagedTaskWaitingReason(value.waitingReason) : null,
-  };
-};
-
-export const isManagedTaskEventRecord = (value: unknown): value is ManagedTaskProjectedRecord => (
-  parseManagedTaskEventRecord(value) !== null
-);
-
-const parseManagedTaskAutoResumeTarget = (
-  value: unknown,
-): ManagedTaskAutoResume['target'] | undefined => {
-  if (value === null) return null;
-  if (
-    !isRecord(value)
-    || (value.kind !== 'backup' && value.kind !== 'original')
-    || typeof value.providerId !== 'string'
-    || !value.providerId.trim()
-    || typeof value.modelId !== 'string'
-    || !value.modelId.trim()
-    || !isNullableString(value.variant)
-  ) return undefined;
-  return {
-    kind: value.kind as 'backup' | 'original',
-    providerId: truncateManagedText(value.providerId, 1_024),
-    modelId: truncateManagedText(value.modelId, 1_024),
-    variant: value.variant === null ? null : truncateManagedText(value.variant, 1_024),
-  };
-};
-
-const parseManagedTaskAutoResumeError = (
-  value: unknown,
-): ManagedTaskAutoResume['lastError'] | undefined => {
-  if (value === null) return null;
-  if (
-    !isRecord(value)
-    || typeof value.code !== 'string'
-    || !value.code.trim()
-    || typeof value.message !== 'string'
-    || !isTimestamp(value.at)
-  ) return undefined;
-  return {
-    code: truncateManagedText(value.code, 1_024),
-    message: truncateManagedText(value.message, MAX_MANAGED_TASK_FAILURE_BYTES),
-    at: value.at,
-  };
-};
-
-/**
- * Validates the host's auto-resume block on a result envelope. Returns null for
- * anything that is not a complete, well-typed block so a malformed host payload
- * degrades to "no automatic recovery" instead of dropping the envelope.
- */
-export const parseManagedTaskAutoResume = (value: unknown): ManagedTaskAutoResume | null => {
-  if (!isRecord(value)) return null;
-  const target = parseManagedTaskAutoResumeTarget(value.target);
-  const lastError = parseManagedTaskAutoResumeError(value.lastError);
-  if (target === undefined || lastError === undefined) return null;
-  const valid = isCount(value.revision)
-    && (value.trigger === undefined || value.trigger === 'provider_usage_limit' || value.trigger === 'provider_transport')
-    && typeof value.enabled === 'boolean'
-    && MANAGED_TASK_AUTO_RESUME_STATES.has(value.state as ManagedTaskAutoResumeState)
-    && isCount(value.cancelGeneration)
-    && isTimestamp(value.lineageStartedAt)
-    && isTimestamp(value.expiresAt)
-    && isCount(value.attemptCount)
-    && isCount(value.noSignalProbes)
-    && isCount(value.rejectionsInWindow)
-    && isNullableTimestamp(value.windowResetAt)
-    && isNullableTimestamp(value.nextAttemptAt)
-    && isNullableTimestamp(value.resetAt)
-    && (
-      value.resetSource === null
-      || MANAGED_TASK_AUTO_RESUME_RESET_SOURCES.has(value.resetSource as ManagedTaskAutoResumeResetSource)
-    )
-    && isNullableString(value.recoveryCycleTaskId ?? null)
-    && isNullableString(value.backupAttemptTaskId ?? null)
-    && isNullableString(value.lastAttemptTaskId)
-    && isNullableTimestamp(value.lastAttemptAt)
-    && isCount(value.hostFailures)
-    && isNullableString(value.reason);
-  if (!valid) return null;
-  return {
-    revision: value.revision as number,
-    ...(value.trigger === 'provider_usage_limit' || value.trigger === 'provider_transport' ? { trigger: value.trigger } : {}),
-    enabled: value.enabled as boolean,
-    state: value.state as ManagedTaskAutoResumeState,
-    cancelGeneration: value.cancelGeneration as number,
-    lineageStartedAt: value.lineageStartedAt as number,
-    expiresAt: value.expiresAt as number,
-    attemptCount: value.attemptCount as number,
-    noSignalProbes: value.noSignalProbes as number,
-    rejectionsInWindow: value.rejectionsInWindow as number,
-    windowResetAt: value.windowResetAt as number | null,
-    nextAttemptAt: value.nextAttemptAt as number | null,
-    resetAt: value.resetAt as number | null,
-    resetSource: value.resetSource as ManagedTaskAutoResumeResetSource | null,
-    target,
-    recoveryCycleTaskId: typeof value.recoveryCycleTaskId === 'string'
-      ? truncateManagedText(value.recoveryCycleTaskId, 1_024) : null,
-    backupAttemptTaskId: typeof value.backupAttemptTaskId === 'string'
-      ? truncateManagedText(value.backupAttemptTaskId, 1_024) : null,
-    lastAttemptTaskId: value.lastAttemptTaskId === null
-      ? null
-      : truncateManagedText(value.lastAttemptTaskId, 1_024),
-    lastAttemptAt: value.lastAttemptAt as number | null,
-    lastError,
-    hostFailures: value.hostFailures as number,
-    // Unknown reasons from a newer host degrade to null instead of dropping the state.
-    reason: MANAGED_TASK_AUTO_RESUME_REASONS.has(value.reason as ManagedTaskAutoResumeReason)
-      ? (value.reason as ManagedTaskAutoResumeReason)
-      : null,
-  };
-};
-
-const parseEnvelope = (value: unknown): ManagedTaskProjectedEnvelope | null => {
-  try {
-    const envelope = validateManagedTaskResultEnvelope(value);
-    if (!envelope.canonicalRefs.every(isCanonicalReference)) return null;
-    // The runtime validator ignores the automatic-recovery fields; read them off the raw payload.
-    const raw = envelope as unknown as Record<string, unknown>;
-    return {
-      owner: 'devryan',
-      envelopeId: envelope.envelopeId,
-      taskId: envelope.taskId,
-      rootSessionId: envelope.rootSessionId,
-      parentTaskId: envelope.parentTaskId,
-      childSessionId: envelope.childSessionId,
-      directory: envelope.directory,
-      sequence: envelope.sequence,
-      status: envelope.status,
-      partial: envelope.partial,
-      failureReason: envelope.failureReason === null
-        ? null
-        : truncateManagedText(envelope.failureReason, MAX_MANAGED_TASK_FAILURE_BYTES),
-      attempt: envelope.attempt,
-      priorTaskId: envelope.priorTaskId,
-      executionKind: envelope.executionKind,
-      recoverablePreview: truncateManagedText(envelope.recoverablePreview, MAX_MANAGED_TASK_PREVIEW_BYTES),
-      canonicalRefs: envelope.canonicalRefs
-        .filter(isCanonicalReference)
-        .slice(0, 512)
-        .map((reference) => ({
-          type: truncateManagedText(reference.type, 1_024),
-          id: truncateManagedText(reference.id, 1_024),
-        })),
-      resumable: envelope.resumable,
-      createdAt: envelope.createdAt,
-      acknowledgedAt: envelope.acknowledgedAt,
-      action: envelope.action,
-      followUpTaskId: envelope.followUpTaskId,
-      providerResetAt: isTimestamp(raw.providerResetAt) ? raw.providerResetAt : null,
-      autoResume: parseManagedTaskAutoResume(raw.autoResume),
-    };
-  } catch {
-    return null;
-  }
-};
 
 const envelopeMatchesTask = (
   task: ManagedTaskProjectedRecord,
   envelope: ManagedTaskProjectedEnvelope,
-) => (
-  envelope.taskId === task.taskId
-  && envelope.rootSessionId === task.rootSessionId
-  && envelope.parentTaskId === task.parentTaskId
-  && envelope.childSessionId === task.childSessionId
-  && envelope.directory === task.directory
-  && envelope.status === task.status
-  && envelope.partial === task.partial
-  && envelope.failureReason === task.failureReason
-  && envelope.attempt === task.attempt
-  && envelope.priorTaskId === task.priorTaskId
-  && envelope.executionKind === task.executionKind
-  && envelope.recoverablePreview === task.recoverablePreview
-  && JSON.stringify(envelope.canonicalRefs) === JSON.stringify(task.canonicalRefs)
-);
+) => findManagedResultPayloadMismatch({ ...task }, { ...envelope }) === null;
 
-const parseSnapshot = (value: unknown): ParsedManagedOrchestrationSnapshot => {
-  if (
-    !isRecord(value)
-    || typeof value.available !== 'boolean'
-    || typeof value.bridgeReady !== 'boolean'
-    || !isNullableString(value.recoveryWarning)
-    || !Array.isArray(value.tasks)
-    || !Array.isArray(value.resultEnvelopes)
-  ) {
-    throw new TypeError('Managed orchestration returned an invalid snapshot');
-  }
-
-  const tasks: ManagedTaskProjectedRecord[] = [];
-  const tasksById = new Map<string, ManagedTaskProjectedRecord>();
-  for (const candidate of value.tasks) {
-    const task = parseManagedTaskEventRecord(candidate);
-    if (!task || tasksById.has(task.taskId)) {
-      throw new TypeError('Managed orchestration returned an invalid snapshot');
-    }
-    tasks.push(task);
-    tasksById.set(task.taskId, task);
-  }
-
-  const resultEnvelopes: ManagedTaskProjectedEnvelope[] = [];
-  const envelopeTaskIds = new Set<string>();
-  for (const candidate of value.resultEnvelopes) {
-    const envelope = parseEnvelope(candidate);
-    const task = envelope ? tasksById.get(envelope.taskId) : null;
-    if (
-      !envelope
-      || !task
-      || envelopeTaskIds.has(envelope.taskId)
-      || !envelopeMatchesTask(task, envelope)
-    ) {
-      throw new TypeError('Managed orchestration returned an invalid snapshot');
-    }
-    resultEnvelopes.push(envelope);
-    envelopeTaskIds.add(envelope.taskId);
-  }
-  if (tasks.some((task) => isTerminalManagedTaskStatus(task.status) && !envelopeTaskIds.has(task.taskId))) {
-    throw new TypeError('Managed orchestration returned an invalid snapshot');
-  }
-
-  return {
-    available: value.available,
-    bridgeReady: value.bridgeReady,
-    recoveryWarning: value.recoveryWarning === null
-      ? null
-      : truncateManagedText(value.recoveryWarning, MAX_MANAGED_TASK_FAILURE_BYTES),
-    tasks,
-    resultEnvelopes,
-  };
-};
+const parseSnapshot = (value: unknown): ParsedManagedOrchestrationSnapshot => decodeSnapshotPayload(value, LENIENT);
 
 const sameRecord = (left: Record<string, unknown>, right: Record<string, unknown>) => {
   const leftKeys = Object.keys(left);
@@ -602,7 +175,14 @@ const mergeTask = (
 ): ManagedTaskProjectedRecord => {
   if (!current) return incoming;
   if (immutableTaskMetadataChanged(current, incoming)) return current;
-  if (isTerminalManagedTaskStatus(current.status)) return current;
+  if (isTerminalManagedTaskStatus(current.status)) {
+    // Execution is immutable after settlement; verification may be rerun or
+    // explicitly waived by the user against the current project contents.
+    if (incoming.verification && incoming.verification.observedAt > (current.verification?.observedAt ?? -1)) {
+      return { ...current, verification: incoming.verification };
+    }
+    return current;
+  }
   if (metadataRegressed(current, incoming)) return current;
   if ((incoming.transportRecovery?.revision ?? 0) < (current.transportRecovery?.revision ?? 0)) return current;
   if (!canTransitionManagedTaskStatus(current.status, incoming.status)) {
@@ -618,9 +198,11 @@ const mergeTask = (
   const timeoutAt = current.timeoutAt !== null && incoming.timeoutAt !== null
     ? Math.max(current.timeoutAt, incoming.timeoutAt)
     : incoming.timeoutAt;
+  const verification = (current.verification?.observedAt ?? -1) > (incoming.verification?.observedAt ?? -1)
+    ? current.verification : incoming.verification;
   const next = childPromptedAt !== incoming.childPromptedAt || firstAssistantPartAt !== incoming.firstAssistantPartAt
-    || timeoutAt !== incoming.timeoutAt
-    ? { ...incoming, childPromptedAt, firstAssistantPartAt, timeoutAt }
+    || timeoutAt !== incoming.timeoutAt || verification !== incoming.verification
+    ? { ...incoming, childPromptedAt, firstAssistantPartAt, timeoutAt, ...(verification ? { verification } : {}) }
     : incoming;
   return sameTask(current, next) ? current : next;
 };
@@ -630,7 +212,8 @@ const mergeEnvelope = (
   incoming: ManagedTaskProjectedEnvelope,
 ): ManagedTaskProjectedEnvelope => {
   if (!current) return incoming;
-  if (current.envelopeId !== incoming.envelopeId || current.sequence !== incoming.sequence) return current;
+  // Disposition advances the same envelope's durable collection sequence.
+  if (current.envelopeId !== incoming.envelopeId || incoming.sequence < current.sequence) return current;
   if (sameEnvelope(current, incoming)) return current;
   if (current.action !== null) return current;
   if (incoming.action === null) {
@@ -684,22 +267,8 @@ const withRootIds = (
 const isManualRecoveryTask = (
   task: ManagedTaskProjectedRecord,
   envelope: ManagedTaskProjectedEnvelope | undefined,
-) => Boolean(
-  task.childSessionId
-  && !task.agentRetryAvailable
-  && task.failureKind !== 'provider_prompt_rejected'
-  && (
-    task.failureKind === 'provider_usage_limit'
-    || task.failureKind === 'provider_authentication'
-    || task.failureKind === 'provider_configuration'
-    || task.failureKind === 'model_unavailable'
-    || Boolean(task.transportRecovery)
-    || (task.mode === 'orchestrator' && task.dispatchGrouped && task.attempt >= 2)
-  )
-  && (task.status === 'failed' || task.status === 'interrupted')
-  && envelope?.resumable
-  && envelope.action === null
-);
+) => Boolean(task.childSessionId && envelope?.resumable && envelope.action === null
+  && (task.manualRecoveryRequired === true || task.stoppedRecoveryAvailable === true || task.userStoppedRecoveryAvailable === true));
 
 const childIndexMembershipChanged = (
   current: ManagedTaskProjectedRecord | undefined,
@@ -788,8 +357,11 @@ export const createManagedOrchestrationStore = (options: {
     token: symbol;
     removed: boolean;
   }>();
+  const recoveryIntents = new Map<string, AbortController>();
   const actionKeys = new Map<string, Map<ManagedTaskResultAction, string>>();
   const markTaskRemoved = (taskId: string) => {
+    recoveryIntents.get(taskId)?.abort();
+    recoveryIntents.delete(taskId);
     actionKeys.delete(taskId);
     const action = actionPromises.get(taskId);
     if (action) action.removed = true;
@@ -876,6 +448,14 @@ export const createManagedOrchestrationStore = (options: {
       return { ...state, pendingActionByTaskId, actionErrorByTaskId };
     });
 
+    const setWaitingForEvents = (taskId: string, waiting: boolean) => set(state => {
+      if (Boolean(state.waitingForEventsByTaskId[taskId]) === waiting) return state;
+      const waitingForEventsByTaskId = { ...state.waitingForEventsByTaskId };
+      if (waiting) waitingForEventsByTaskId[taskId] = true;
+      else delete waitingForEventsByTaskId[taskId];
+      return { waitingForEventsByTaskId };
+    });
+
     const removeCompactedTask = (properties: Record<string, unknown>) => {
       const taskId = typeof properties.taskId === 'string' ? properties.taskId : '';
       const rootSessionId = typeof properties.rootSessionId === 'string' ? properties.rootSessionId : '';
@@ -911,6 +491,8 @@ export const createManagedOrchestrationStore = (options: {
         const tasksById = { ...state.tasksById };
         const resultEnvelopesByTaskId = { ...state.resultEnvelopesByTaskId };
         const pendingActionByTaskId = { ...state.pendingActionByTaskId };
+        const waitingForEventsByTaskId = { ...state.waitingForEventsByTaskId };
+        delete waitingForEventsByTaskId[taskId];
         const actionErrorByTaskId = { ...state.actionErrorByTaskId };
         delete tasksById[taskId];
         delete resultEnvelopesByTaskId[taskId];
@@ -927,6 +509,7 @@ export const createManagedOrchestrationStore = (options: {
           resultEnvelopesByTaskId,
           ...withChildTaskIndexes(state, tasksById, resultEnvelopesByTaskId, affectedChildSessionIds),
           pendingActionByTaskId,
+          waitingForEventsByTaskId,
           actionErrorByTaskId,
         };
       });
@@ -937,7 +520,9 @@ export const createManagedOrchestrationStore = (options: {
       ...initialState(),
       ingestEvent(event) {
         if (!isRecord(event) || typeof event.type !== 'string') return;
-        if (event.type === 'openchamber:managed-orchestration-warning') {
+        // Contract-built and older-host events carry the `openchamber:*` alias.
+        const type = canonicalEventType(event.type);
+        if (type === 'devryan:managed-orchestration-warning') {
           const properties = isRecord(event.properties) ? event.properties : null;
           const message = typeof properties?.message === 'string' ? properties.message.trim() : '';
           const boundedMessage = truncateManagedText(message, MAX_MANAGED_TASK_FAILURE_BYTES);
@@ -946,12 +531,12 @@ export const createManagedOrchestrationStore = (options: {
             : { ...state, recoveryWarning: boundedMessage });
           return;
         }
-        if (event.type === 'openchamber:managed-task-removed') {
+        if (type === 'devryan:managed-task-removed') {
           const properties = isRecord(event.properties) ? event.properties : null;
           if (properties) removeCompactedTask(properties);
           return;
         }
-        if (event.type !== 'openchamber:managed-task') return;
+        if (type !== 'devryan:managed-task') return;
         const properties = isRecord(event.properties) ? event.properties : null;
         if (properties?.owner !== 'devryan') return;
         const task = parseManagedTaskEventRecord(properties.task);
@@ -1053,7 +638,9 @@ export const createManagedOrchestrationStore = (options: {
 
               let mutablePendingActions: Record<string, ManagedTaskPendingAction> | null = null;
               let mutableActionErrors: Record<string, string> | null = null;
+              let mutableWaiting: Record<string, boolean> | null = null;
               for (const taskId of removedTaskIds) {
+                if (state.waitingForEventsByTaskId[taskId]) { mutableWaiting ??= { ...state.waitingForEventsByTaskId }; delete mutableWaiting[taskId]; }
                 if (Object.prototype.hasOwnProperty.call(state.pendingActionByTaskId, taskId)) {
                   mutablePendingActions ??= { ...state.pendingActionByTaskId };
                   delete mutablePendingActions[taskId];
@@ -1076,9 +663,10 @@ export const createManagedOrchestrationStore = (options: {
                 ...withChildTaskIndexes(state, tasksById, resultEnvelopesByTaskId, affectedChildSessionIds),
                 pendingActionByTaskId: mutablePendingActions ?? state.pendingActionByTaskId,
                 actionErrorByTaskId: mutableActionErrors ?? state.actionErrorByTaskId,
+                waitingForEventsByTaskId: mutableWaiting ?? state.waitingForEventsByTaskId,
                 snapshotStateByScope: state.snapshotStateByScope[scopeKey] === 'confirmed'
                   ? state.snapshotStateByScope
-                  : { ...state.snapshotStateByScope, [scopeKey]: snapshot.available && snapshot.bridgeReady && !snapshot.recoveryWarning ? 'confirmed' : 'unavailable' },
+                  : { ...state.snapshotStateByScope, [scopeKey]: snapshot.available && (snapshot.dispatchReady ?? snapshot.bridgeReady) && !snapshot.recoveryWarning ? 'confirmed' : 'unavailable' },
                 available: snapshot.available === true,
                 bridgeReady: snapshot.bridgeReady === true,
                 recoveryWarning: snapshot.recoveryWarning,
@@ -1105,6 +693,7 @@ export const createManagedOrchestrationStore = (options: {
         return operation;
       },
       cancelTask(taskId, actionOptions = {}) {
+        if (recoveryIntents.has(taskId)) { get().cancelRecoveryIntent(taskId); return Promise.resolve(); }
         const existing = actionPromises.get(taskId);
         if (existing) return existing.promise;
         const task = get().tasksById[taskId];
@@ -1132,7 +721,7 @@ export const createManagedOrchestrationStore = (options: {
             if (!isRecord(response)) {
               throw new TypeError('Managed orchestration response did not include a valid task');
             }
-            const responseRecord = response as unknown as Record<string, unknown>;
+            const responseRecord = response;
             const responseProjections = Object.prototype.hasOwnProperty.call(responseRecord, 'tasks')
               ? responseRecord.tasks
               : [responseRecord];
@@ -1164,6 +753,15 @@ export const createManagedOrchestrationStore = (options: {
         actionPromises.set(taskId, { promise: operation, token: actionToken, removed: false });
         return operation;
       },
+      cancelRecoveryIntent(taskId) {
+        const controller = recoveryIntents.get(taskId);
+        if (!controller) return;
+        controller.abort();
+        recoveryIntents.delete(taskId);
+        actionPromises.delete(taskId);
+        setActionState(taskId, null, null);
+        setWaitingForEvents(taskId, false);
+      },
       acknowledgeTask(taskId, action, selection) {
         const existing = actionPromises.get(taskId);
         if (existing) return existing.promise;
@@ -1179,6 +777,8 @@ export const createManagedOrchestrationStore = (options: {
         const idempotencyKey = taskActionKeys.get(action) ?? createIdempotencyKey();
         taskActionKeys.set(action, idempotencyKey);
         actionKeys.set(taskId, taskActionKeys);
+        const intent = new AbortController();
+        recoveryIntents.set(taskId, intent);
         setActionState(taskId, action, null);
         const operation = Promise.resolve().then(async () => {
           try {
@@ -1192,6 +792,22 @@ export const createManagedOrchestrationStore = (options: {
                 modelId: selection.modelId,
                 variant: selection.variant ?? null,
               } : {}),
+            }, {
+              signal: intent.signal,
+              onWaiting: () => setWaitingForEvents(taskId, true),
+              beforeSend: () => {
+                const current = get().resultEnvelopesByTaskId[taskId];
+                const currentTask = get().tasksById[taskId];
+                if (intent.signal.aborted || generation !== actionGeneration || current?.envelopeId !== envelope.envelopeId
+                  || current.sequence !== envelope.sequence || current.action !== null
+                  || current.autoResume?.revision !== envelope.autoResume?.revision
+                  || currentTask?.attempt !== task.attempt || currentTask.sequence !== task.sequence
+                  || currentTask.rootSessionId !== task.rootSessionId || currentTask.directory !== task.directory) {
+                  throw new Error('Managed task changed while waiting for live events. Review its current result.');
+                }
+                recoveryIntents.delete(taskId);
+                setWaitingForEvents(taskId, false);
+              },
             });
             const actionState = actionPromises.get(taskId);
             if (
@@ -1199,20 +815,21 @@ export const createManagedOrchestrationStore = (options: {
               || actionState?.token !== actionToken
               || actionState.removed
             ) return;
-            const nextEnvelope = parseEnvelope(response.resultEnvelope);
+            const acknowledgement = isRecord(response) ? response : {};
+            const nextEnvelope = parseEnvelope(acknowledgement.resultEnvelope);
             if (
               !nextEnvelope
               || !envelopeMatchesTask(task, nextEnvelope)
               || nextEnvelope.envelopeId !== envelope.envelopeId
-              || nextEnvelope.sequence !== envelope.sequence
+              || nextEnvelope.sequence < envelope.sequence
               || nextEnvelope.action !== action
               || nextEnvelope.acknowledgedAt === null
             ) {
               throw new TypeError('Managed orchestration response did not match the requested result action');
             }
-            const followUpProjection = response.followUpTask === null
+            const followUpProjection = acknowledgement.followUpTask === null
               ? null
-              : parseProjection(response.followUpTask);
+              : parseProjection(acknowledgement.followUpTask);
             const followUpTaskId = followUpProjection?.task.taskId ?? null;
             if (followUpTaskId !== nextEnvelope.followUpTaskId) {
               throw new TypeError('Managed orchestration response included an invalid follow-up task');
@@ -1237,6 +854,10 @@ export const createManagedOrchestrationStore = (options: {
               && !actionState.removed
             ) setActionState(taskId, null, errorMessage(error));
           } finally {
+            if (recoveryIntents.get(taskId) === intent || (!recoveryIntents.has(taskId) && actionPromises.get(taskId)?.token === actionToken)) {
+              recoveryIntents.delete(taskId);
+              setWaitingForEvents(taskId, false);
+            }
             if (actionPromises.get(taskId)?.token === actionToken) actionPromises.delete(taskId);
           }
         });
@@ -1295,6 +916,8 @@ export const createManagedOrchestrationStore = (options: {
         return operation;
       },
       reset() {
+        for (const controller of recoveryIntents.values()) controller.abort();
+        recoveryIntents.clear();
         generation += 1;
         snapshotLoads.clear();
         actionPromises.clear();
@@ -1433,6 +1056,15 @@ const selectDispatchWaveIndex = (state: ManagedOrchestrationStore): ManagedDispa
 
 export const managedOrchestrationSelectors = {
   emptyTaskIds: EMPTY_TASK_IDS,
+  hasIncompleteVerificationForObjective: (rootSessionId: string, objectiveId: string) => (
+    state: ManagedOrchestrationStore
+  ) => {
+    const tasks = (state.taskIdsByRootId[rootSessionId] ?? EMPTY_TASK_IDS)
+      .map((id) => state.tasksById[id]).filter((task) => task?.verification?.objectiveId === objectiveId)
+      .map((task) => ({ ...task, dispatchGroupId: task.verification?.objectiveId ?? null }));
+    // Use the core retry/declaration rule; dismissing a result is not a waiver.
+    return selectRequiredCheckTasks(tasks, objectiveId).some((task) => task.verification?.ready === false);
+  },
   dispatchWaveIndex: selectDispatchWaveIndex,
   taskIdsForRoot: (rootSessionId: string) => (state: ManagedOrchestrationStore) => (
     state.taskIdsByRootId[rootSessionId] ?? EMPTY_TASK_IDS

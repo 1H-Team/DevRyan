@@ -133,7 +133,7 @@ export const buildFixture = () => {
     assistantMessage('ses_other', 'msg_oa', { providerID: 'openai', modelID: 'gpt-5.6-sol', agent: 'build', created: 110, completed: 200, tokens: { input: 9999 } }),
   ];
   const parts = [
-    skillPart('ses_root', 'msg_a1', 'Superpowers'),
+    skillPart('ses_root', 'msg_a1', 'Checklist'),
     toolPart('ses_root', 'msg_a1', 'read', { input: { path: '/a' }, output: 'aaaa', durationMs: 10 }),
     toolPart('ses_root', 'msg_a1', 'read', { input: { path: '/b' }, output: 'bb', durationMs: 30 }),
     toolPart('ses_root', 'msg_a1', 'read', { input: { path: '/c' }, output: 'c', durationMs: 50 }),
@@ -151,16 +151,16 @@ export const buildFixture = () => {
     toolPart('ses_root', 'msg_a2', 'bash', { input: { command: 'npx eslint .' }, durationMs: 700 }),
     toolPart('ses_root', 'msg_a2', 'bash', { input: { command: 'npx playwright test' }, durationMs: 4000 }),
     toolPart('ses_root', 'msg_a2', 'bash', { input: { command: 'ls -la' }, durationMs: 20 }),
-    skillPart('ses_childA', 'msg_aa', 'Superpowers', { durationMs: 15 }),
+    skillPart('ses_childA', 'msg_aa', 'Checklist', { durationMs: 15 }),
     toolPart('ses_childA', 'msg_aa', 'grep', { input: { pattern: 'x' }, output: 'match', durationMs: 12 }),
     toolPart('ses_childA', 'msg_aa', 'ctx_search', { input: { queries: ['q'] }, status: 'error', output: 'boom', durationMs: 20 }),
-    skillPart('ses_childB', 'msg_ba1', 'Superpowers'),
-    skillPart('ses_childB', 'msg_ba1', 'Superpowers'),
+    skillPart('ses_childB', 'msg_ba1', 'Checklist'),
+    skillPart('ses_childB', 'msg_ba1', 'Checklist'),
     skillPart('ses_childB', 'msg_ba1', 'dataviz', { bytes: 2000, truncated: true }),
     toolPart('ses_childB', 'msg_ba1', 'edit', { input: { filePath: '/bad' }, status: 'error', error: `${GUARD_REJECTION_PREFIX} bad path`, durationMs: 3 }),
     toolPart('ses_childB', 'msg_ba1', 'edit', { input: { filePath: '/ok' }, output: 'edited', durationMs: 8 }),
     toolPart('ses_childB', 'msg_ba2', 'read', { input: { path: '/y.png' }, status: 'error', output: GUARD_TEXT, durationMs: 7 }),
-    skillPart('ses_other', 'msg_oa', 'Superpowers'),
+    skillPart('ses_other', 'msg_oa', 'Checklist'),
   ];
   return { sessions, messages, parts };
 };
@@ -256,10 +256,10 @@ const assertFixtureTree = (tree) => {
   assert.equal(totals.skills.loads, 5);
   assert.equal(totals.skills.bytes, 26_000);
   assert.equal(totals.skills.truncated, 1);
-  assert.deepEqual(totals.skills.byName.Superpowers, { count: 4, bytes: 24_000, truncated: 0, errors: 0, dir: '/skills/Superpowers' });
+  assert.deepEqual(totals.skills.byName.Checklist, { count: 4, bytes: 24_000, truncated: 0, errors: 0, dir: '/skills/Checklist' });
   assert.deepEqual(totals.skills.byName.dataviz, { count: 1, bytes: 2000, truncated: 1, errors: 0, dir: '/skills/dataviz' });
   assert.deepEqual(tree.skillReloads, [{
-    name: 'Superpowers',
+    name: 'Checklist',
     parentId: 'ses_root',
     totalLoads: 4,
     childLoads: 3,
@@ -301,7 +301,7 @@ const assertFixtureTree = (tree) => {
   assert.equal(childA.mcp.errors, 1);
   assert.deepEqual(childA.skills.repeated, []);
   assert.equal(childB.guardRejections.total, 2);
-  assert.deepEqual(childB.skills.repeated, [{ name: 'Superpowers', count: 2, bytes: 12_000 }]);
+  assert.deepEqual(childB.skills.repeated, [{ name: 'Checklist', count: 2, bytes: 12_000 }]);
   assert.equal(childB.wall.assistantActiveMs, 5000);
 };
 
@@ -512,7 +512,7 @@ describe('database round trip', () => {
     assertFixtureTree(profile.tree);
     const markdown = fs.readFileSync(paths.markdown, 'utf8');
     assert.match(markdown, /^# Session pipeline profile — Title ses_root/);
-    assert.match(markdown, /\| Superpowers \| ses_root \| 4 \| 3 \| 23\.4 KiB \| ses_root×1, ses_childA×1, ses_childB×2 \|/);
+    assert.match(markdown, /\| Checklist \| ses_root \| 4 \| 3 \| 23\.4 KiB \| ses_root×1, ses_childA×1, ses_childB×2 \|/);
     assert.match(markdown, /\| openai\/gpt-5\.6-sol \| 2 \| read×2 \|/);
     assert.match(markdown, /\| read \| 5 \| 2 \| 2 \| 10 ms \| 50 ms \|/);
     assert.match(markdown, /\| playwright \| 1 \| 0 \| 4\.00 s \|/);

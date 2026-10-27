@@ -12,12 +12,12 @@ Managed callers are additionally constrained by the multi-user layer: worktree c
   - `template-routes.js`: Conventional commit template and global `commit-msg` hook setup routes.
   - `operation-state.js`: Shared per-worktree Git operation and HEAD state reader, plus remote-operation preconditions.
   - `service.js`: Core Git operations (repository, branch, worktree, commit, merge/rebase, status/diff, log).
-  - `@openchamber/harness-runtime/lib/git-post-checkout-hook.js`: Shared bounded post-checkout hook execution used by web/Electron.
+  - `@devryan/harness-runtime/lib/git-post-checkout-hook.js`: Shared bounded post-checkout hook execution used by web/Electron.
   - `integrate.js`: Server-owned commit reintegration, temporary worktree lifecycle, conflict continuation, and the `isIntegrateTempPath` predicate that keeps those worktrees out of managed-project registration.
   - `commit-message.js`: Session-free commit-subject prompt, normalization, validation, and direct Zen utility-model generation.
   - `commit-message-context.js`: Bounded host-side status, history, and selected-file diff collection for commit-message drafts.
   - `credentials.js`: Git credentials management.
-  - `identity-storage.js`: Git identity storage under `OPENCHAMBER_DATA_DIR` with mode-`0600` atomic writes.
+  - `identity-storage.js`: Git identity storage under `DEVRYAN_DATA_DIR` with mode-`0600` atomic writes.
 
 ## Public API
 
@@ -75,7 +75,8 @@ The following functions are exported and used by the web server:
 ### Commit and Remote Operations
 - `commit(directory, message, options)`: Create a commit (supports addAll, specific files, amend, or staged-only commits).
 - `pull(directory, options)`: Pull changes from remote.
-- `push(directory, options)`: Push changes to remote (auto-sets upstream if needed).
+- `push(directory, options)`: Push directly to the remote (auto-sets upstream if needed) with `--porcelain --no-verify`. All app-issued pushes, including managed pushes, upstream retries and remote-branch deletion, skip local pre-push hooks per command; repository/global Git configuration and terminal Git behavior are unchanged. Porcelain `!` rows are collected into `rejected[]` (stdout is kept even when Git exits non-zero); any rejected ref throws HTTP 409 `GIT_PUSH_REJECTED` with `rejected` and `pushed`, while accepted refs of a multi-ref push still land. Non-ref failures use HTTP 500 `GIT_PUSH_FAILED` with bounded, credential-scrubbed message and `details` (last ~60 lines). Generic Git failures are never inferred to be local hook failures. Remote-resolution config lookups run concurrently. Server-side hooks and branch policies remain enforced.
+- Shared UI **Push** and **Commit & Push** call the direct push API without fetching, pulling/rebasing or reading synchronization status first. **Sync** and **Commit & Sync** retain fetch → pull/rebase when needed → push. Behind-branch rejections direct the user to Sync and resolve conflicts before retrying; no automatic force-push or rejected-push retry occurs. Status/history refresh after attempts, and a failed Commit & Push keeps the local commit for retry.
 - `fetch(directory, options)`: Fetch changes from remote.
 
 Managed multi-user requests take their author identity and exact GitHub token
@@ -98,20 +99,20 @@ authorized before Git runs.
 - Conflict registrations are count- and TTL-bounded; a server restart safely invalidates stale browser state.
 
 ### Commit Message Generation
-- `POST /api/git/commit-message/draft`: Accept `{ selectedFiles, stagedOnly, guidance?, zenModel? }`, collect authoritative Git context in the host, and return the shared workflow result `{ status, commits, message?, warnings? }`. Status and six recent subjects are loaded concurrently; history failure is disclosed without discarding readable changes. Up to 200 unique validated paths use batched tracked diffs and individual untracked-file diffs, with at most two concurrent Git reads and a 16,000-character combined patch budget. Untracked content is included only for unstaged scope, without staging files.
+- `POST /api/git/commit-message/draft`: Accept `{ selectedFiles, stagedOnly, guidance?, sessionID? }`, collect authoritative Git context in the host, and return the shared workflow result `{ status, commits, message?, warnings? }`. Status and six recent subjects are loaded concurrently; history failure is disclosed without discarding readable changes. Up to 200 unique validated paths use batched tracked diffs and individual untracked-file diffs, with at most two concurrent Git reads and a 16,000-character combined patch budget. Untracked content is included only for unstaged scope, without staging files.
 - `POST /api/git/commit-message`: Compatibility route that accepts bounded, pre-collected worktree context plus optional wording guidance and returns `{ message: { subject, highlights } }`.
-- Both routes send one pinned paid OpenCode Zen model, DeepSeek V4.1 Flash (`GIT_GENERATION_ZEN_MODEL = 'deepseek-v4.1-flash'` in `zen-text.js`), at its `low` reasoning variant; a client `zenModel` is ignored. The former free-catalog rotation routinely spent up to 45 seconds on timeouts before the local fallback. The commit attempt has a 15-second total timeout and aborts its transport on expiry. Production uses `zen-text.js` to call the native OpenCode `opencode` provider in temporary `devryan-commit` / `devryan-pr` helper sessions whose permission is a lone blanket deny, so every tool is hidden and denied; only Zen's free tier requires advertised OpenCode tool definitions (`advertiseDeniedTools`), which the paid model does not. Generation therefore needs a funded OpenCode Zen API key; provider failures such as `unauthorized` or `timeout` use the fallbacks below. Helpers are hidden from navigation and notifications and aborted/deleted after the attempt. The caller's chat session is never prompted or switched. The generators still accept a model list with shared rotation and free-tier classification for injected callers.
+- Both routes use `helperModelSelection` from Settings → Agents → Session Defaults (the Helper Model). The default is `opencode/deepseek-v4.1-flash` with Default reasoning (no native variant); a saved reasoning `variant` is forwarded. `zen-text.js` passes the resolved selection object to `generateTextWithSessionModel({ selection })`, which maps the exact tuple, variant and revision into native helper admission with the existing commit/PR purpose; it resolves/rechecks the effective setting within the owned scope. Tools remain empty and input/output bounded. The selected chat model is unchanged. The same Helper Model also drives always-on notification summaries through the hidden `devryan-notify` role (see `lib/notifications/DOCUMENTATION.md`).
 - The compact JSON response contains a Conventional Commit subject and two to four details. Native OpenCode owns provider-specific inference options; the retained injectable standalone transport uses 220 Chat Completions / 256 Responses output-token caps for compatibility tests.
-- Shared runtime policy repairs otherwise-valid overlong subjects at a word boundary. Only after the Zen attempt fails, generation produces a deterministic factual draft derived from selected paths, statuses, and line statistics. Responses disclose fallback (naming the failed model and failure category) or partial context through `warnings` while still returning a usable draft.
+- Shared runtime policy repairs otherwise-valid overlong subjects at a word boundary. Production disables local factual fallback. After a settled configured-helper failure, only the authorized canonical active session identified by `sessionID` may supply a fallback, with that session's own reasoning variant. Builder configuration and request model hints cannot select it. Missing active selection produces an actionable error directing the user to Session Defaults or an accessible chat; revoked access retains its authorization refusal. An unsettled helper stops rotation. A changed configured revision returns `HELPER_SELECTION_CHANGED` with refresh guidance and does not authorize fallback. Missing capture/recheck authority refuses admission; unavailable settings retain a 503 classification.
+- A failed helper draft attempt logs `[git] Helper draft attempt failed:` with only its agent, reason, HTTP status and bounded `native_*` refusal code.
 - Both routes are read-only for managed mutation-lock purposes, while authentication, CSRF, workspace containment, and Git policy checks still apply. Sanitized phase timings and per-model attempts (model, sequence, duration, HTTP status, and failure category) are written to the diagnostic journal, and web responses expose context/model/provider/parsing durations through `Server-Timing`.
 - Route registration accepts an injected direct generator for deterministic contract tests; production defaults to `generateCommitMessageDirect`.
 - Subjects must match the repository Conventional Commit types, remain at or below 72 characters, and omit trailing punctuation. Highlights are inserted as commit-body bullets. The route does not stage, commit, or otherwise mutate Git state.
 
 ### Pull Request Description Generation
-- `POST /api/git/pr-description` accepts the already-rendered Generate PR instructions plus base/head metadata and returns `{ title, body }`.
-- The route adds bounded base/head diff context to the rendered prompt and sends it to the same pinned Zen model as commit generation in one attempt of up to 45 seconds (a small live PR took about 15 seconds). It accepts normalized title/body JSON or a usable plain-text draft.
-- After the Zen attempt fails, the route tries the directory's Builder model, or the client's selected model if no Builder model is available, through an isolated hidden `devryan-pr` helper session with a 60-second budget. The UI HTTP request budget is 150 seconds to cover context, catalog, both tiers, bounded helper cleanup, and response delivery.
-- If neither tier produces a usable draft, the route returns a classified error (`FREE_ZEN_EXHAUSTED` when Zen fails and no session model resolves — the code name is kept for client compatibility — or `SESSION_MODEL_FAILED`) and sanitized attempts without changing the caller's existing draft fields. Journal attempts use tier `zen` and state `pinned`. Successful responses include the selected source and model. Generation does not publish a PR.
+- `POST /api/git/pr-description` accepts the already-rendered Generate PR instructions plus base/head metadata and returns `{ title, body, source, selectionMode, model, attempts }`. The HTTP client preserves these fields; both commit endpoints also return `source`, `selectionMode` and the provider/model tuple. Configured selections use `source: helper_model`; active-model fallbacks use `source: session_model` and surface their model in a draft toast.
+- The route adds bounded base/head diff context to the rendered prompt and tries the shared configured helper in a 45-second attempt. It accepts normalized title/body JSON or a usable plain-text draft.
+- After actual settlement, the authorized canonical active model may use the existing isolated `devryan-pr` purpose and 60-second bound with that session's own reasoning variant. The UI sends only the active session ID; the server resolves the model and current grants. Missing active selection returns `HELPER_ACTIVE_MODEL_REQUIRED`; revoked access retains its authorization refusal; an unusable authorized fallback returns `SESSION_MODEL_FAILED`. Sanitized model attempt evidence remains available. Generation does not publish a PR.
 - `removeRemote(directory, options)`: Remove a configured remote (except `origin`).
 - `deleteRemoteBranch(directory, options)`: Delete a remote branch.
 
@@ -255,7 +256,7 @@ mutation lock as Git operations so API-driven edits cannot race a merge.
 ### Worktree Naming
 - Worktree names are slugified via `slugWorktreeName`.
 - Random names use adjectives/nouns from `OPENCODE_ADJECTIVES` and `OPENCODE_NOUNS` lists.
-- Branches created for new worktrees use `openchamber/<worktree-name>` pattern.
+- Branches created for new worktrees use `devryan/<worktree-name>`; existing `openchamber/*` branches remain valid.
 
 ### Cross-Platform Considerations
 - Use `normalizeDirectoryPath` for all directory inputs to handle `~` and path separators.
@@ -283,6 +284,10 @@ to read per-worktree metadata, including linked worktrees whose `.git` is a file
 Both `rebase-merge` and `rebase-apply` count as active even when optional branch
 or target metadata is absent. Status adds `headState` (`branch`, `detached`, or
 `unborn`) without replacing `current`, `mergeInProgress`, or `rebaseInProgress`.
+
+`POST /api/git/push` still strips an optional body `progressID` so older clients
+keep working; it is never passed to Git and no longer broadcasts progress events.
+The route sets no deadline of its own; Git owns the transport operation. `sendGitError` forwards `details` the same way it forwards `rejected`.
 
 Push and pull reject an active rebase with HTTP 409 `GIT_REBASE_IN_PROGRESS`,
 and a detached HEAD without a rebase with HTTP 409 `GIT_DETACHED_HEAD`, before

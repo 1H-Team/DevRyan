@@ -65,6 +65,18 @@ const parkTask = async (h) => {
 };
 
 describe('managed wait any', () => {
+  test('settled wait returns immediately at complete selection or attention without intermediate timer ladders',async()=>{
+   const h=await createHarness(2);let resolved=false;
+   try{
+    const waiting=h.scheduler.waitForAnyTask({...h.request,until:'settled'}).then(result=>{resolved=true;return result;});
+    await h.finish(0);expect(resolved).toBe(false);await h.finish(1);
+    expect((await waiting).settled).toBe(true);expect(resolved).toBe(true);
+   }finally{await h.scheduler.shutdown();}
+   const attention=await createHarness(2);
+   try{const waiting=attention.scheduler.waitForAnyTask({...attention.request,until:'settled'});await parkTask(attention);
+    expect((await waiting).attention).toEqual([{taskId:attention.tasks[0].taskId,state:'attention'}]);
+   }finally{await attention.scheduler.shutdown();}
+  });
   test('resets a large prior selection when the requested set shrinks, while rejecting foreign roots', () => {
     const previousIds = Array.from({ length: 500 }, (_, index) => `dvr_task_cursor_${index}`);
     const envelope = { sequence: 10, envelopeId: 'dvr_result_cursor' };
@@ -79,12 +91,12 @@ describe('managed wait any', () => {
       .toThrow('must be a managed wait cursor');
   });
 
-  test('does not repeatedly deliver unchanged attention while another selected child runs', async () => {
+  test.each([undefined, 'settled'])('does not repeatedly deliver unchanged attention in %s mode while another selected child runs', async until => {
     const h = await createHarness(2);
     let next;
     try {
       const parked = await parkTask(h);
-      const request = { ...h.request, taskIds: [parked, h.tasks[1].taskId] };
+      const request = { ...h.request, until, taskIds: [parked, h.tasks[1].taskId] };
       const first = await h.scheduler.waitForAnyTask(request);
       expect(first.attention).toEqual([{ taskId: parked, state: 'attention' }]);
       next = h.scheduler.waitForAnyTask({ ...request, afterCursor: first.cursor });

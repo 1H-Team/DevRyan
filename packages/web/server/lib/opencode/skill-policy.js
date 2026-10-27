@@ -1,15 +1,26 @@
 import path from 'node:path';
 import fs from 'node:fs';
 
+// The Superpowers bootstrap made every first turn load a skill before answering;
+// writing/executing plans guidance now lives in the primary agent prompts, so a
+// user's copy of those two skills only duplicates it (2026-10-24 live QA: the
+// plan-mode Orchestrator loaded writing-plans).
 const RETIRED_DEVRYAN_SKILL_NAMES = Object.freeze([
   'test-driven-development',
   'subagent-driven-development',
+  'superpowers',
+  'using-superpowers',
+  'writing-plans',
+  'executing-plans',
 ]);
 const RETIRED_DEVRYAN_SKILL_NAME_SET = new Set(RETIRED_DEVRYAN_SKILL_NAMES);
 
+// Skill names are compared as slugs: a SKILL.md may name the skill in title
+// case ("Writing Plans", 2026-10-24 replay) while its directory is the slug.
+const skillSlug = (value) => value.trim().toLowerCase().replace(/[\s_]+/g, '-');
 const isRetiredDevRyanSkillName = (value) => (
   typeof value === 'string'
-  && RETIRED_DEVRYAN_SKILL_NAME_SET.has(value.trim().toLowerCase())
+  && RETIRED_DEVRYAN_SKILL_NAME_SET.has(skillSlug(value))
 );
 
 const isPlainObject = (value) => (

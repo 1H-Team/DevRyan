@@ -1,0 +1,1050 @@
+{
+ "vector": "01-two-step-tool-turn",
+ "title": "D1: reasoning+text, streamed tool input, tool progress, two steps",
+ "design": "D1 (+F11 usage)",
+ "opencode": "2.0.20",
+ "capturedWith": "g2trace on the G1 embedded host (ServerFetch.make + Bun listener), simulation backend; see README.md",
+ "normalization": {
+  "ids": 37,
+  "timestamps": 34,
+  "sha256": 4,
+  "sha1": 0,
+  "slugs": 1,
+  "timestampBase": 1767225600000,
+  "timestampStep": 1000
+ },
+ "frames": [
+  "data: {\"id\":\"evt_000000000001normalized0000\",\"created\":1767225601000,\"type\":\"session.created\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"slug\":\"slug-1\",\"version\":\"0.0.0-spike\",\"projectID\":\"global\",\"location\":{\"directory\":\"<home>/workspace\"},\"subpath\":\"\",\"title\":\"Two-step tool turn\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":0,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000002normalized0000\",\"created\":1767225602000,\"type\":\"session.inbox.enqueued\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"inboxID\":\"msg_000000000001normalized0000\",\"sessionID\":\"ses_fffffffffffenormalized0000\",\"item\":{\"type\":\"user\",\"payload\":{\"text\":\"Run the probe tool\"},\"delivery\":\"steer\"}},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":1,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000003normalized0000\",\"created\":1767225603000,\"type\":\"session.execution.started\",\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":2,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000004normalized0000\",\"created\":1767225604000,\"metadata\":{\"instructions\":{\"initial\":true}},\"type\":\"session.instructions.updated\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"delta\":{\"core/codemode\":\"0000000000000000000000000000000000000000000000000000000000000001\",\"core/skill-guidance\":\"0000000000000000000000000000000000000000000000000000000000000002\",\"core/date\":\"0000000000000000000000000000000000000000000000000000000000000003\",\"core/environment\":\"0000000000000000000000000000000000000000000000000000000000000004\"}},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":3,\"version\":2}}\n\n",
+  "data: {\"id\":\"evt_000000000005normalized0000\",\"created\":1767225605000,\"type\":\"session.inbox.delivered\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"inboxID\":\"msg_000000000001normalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":4,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000006normalized0000\",\"created\":1767225607000,\"type\":\"session.step.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"agent\":\"build\",\"model\":{\"id\":\"m1\",\"providerID\":\"sim\"},\"assistantMessageID\":\"msg_000000000002normalized0000\",\"started\":1767225606000},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":5,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000007normalized0000\",\"created\":1767225608000,\"type\":\"session.reasoning.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"ordinal\":0,\"state\":{\"reasoningField\":\"reasoning_content\"}},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":6,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000008normalized0000\",\"created\":1767225609000,\"type\":\"session.reasoning.delta\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"ordinal\":0,\"delta\":\"Let me \"}}\n\n",
+  "data: {\"id\":\"evt_000000000009normalized0000\",\"created\":1767225610000,\"type\":\"session.reasoning.delta\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"ordinal\":0,\"delta\":\"think.\"}}\n\n",
+  "data: {\"id\":\"evt_00000000000anormalized0000\",\"created\":1767225611000,\"type\":\"session.text.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"ordinal\":0},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":7,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000000bnormalized0000\",\"created\":1767225612000,\"type\":\"session.text.delta\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"ordinal\":0,\"delta\":\"I will \"}}\n\n",
+  "data: {\"id\":\"evt_00000000000cnormalized0000\",\"created\":1767225613000,\"type\":\"session.text.delta\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"ordinal\":0,\"delta\":\"probe.\"}}\n\n",
+  "data: {\"id\":\"evt_00000000000dnormalized0000\",\"created\":1767225614000,\"type\":\"session.tool.input.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"id\":\"call_s01_probe\",\"name\":\"sim_probe\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":8,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000000enormalized0000\",\"created\":1767225615000,\"type\":\"session.reasoning.ended\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"ordinal\":0,\"text\":\"Let me think.\",\"state\":{\"reasoningField\":\"reasoning_content\"}},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":9,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000000fnormalized0000\",\"created\":1767225616000,\"type\":\"session.tool.input.ended\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"id\":\"call_s01_probe\",\"text\":\"{\\\"n\\\":1}\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":10,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000010normalized0000\",\"created\":1767225617000,\"type\":\"session.tool.called\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"id\":\"call_s01_probe\",\"input\":{\"n\":1},\"executed\":false},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":11,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000011normalized0000\",\"created\":1767225618000,\"type\":\"session.text.ended\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"ordinal\":0,\"text\":\"I will probe.\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":12,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000012normalized0000\",\"created\":1767225619000,\"type\":\"session.step.streamed\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":13,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000013normalized0000\",\"created\":1767225620000,\"type\":\"session.tool.progress\",\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"id\":\"call_s01_probe\",\"metadata\":{\"phase\":\"start\"}}}\n\n",
+  "data: {\"id\":\"evt_000000000014normalized0000\",\"created\":1767225621000,\"type\":\"session.tool.progress\",\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"id\":\"call_s01_probe\",\"metadata\":{\"phase\":\"half\",\"sessionID\":\"ses_fffffffffffenormalized0000\"}}}\n\n",
+  "data: {\"id\":\"evt_000000000015normalized0000\",\"created\":1767225622000,\"type\":\"session.tool.success\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"id\":\"call_s01_probe\",\"content\":[{\"type\":\"text\",\"text\":\"probe-ok\"}],\"metadata\":{\"truncated\":false},\"executed\":false},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":14,\"version\":2}}\n\n",
+  "data: {\"id\":\"evt_000000000016normalized0000\",\"created\":1767225623000,\"type\":\"session.step.ended\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"finish\":\"tool-calls\",\"rawFinish\":\"tool_calls\",\"cost\":0,\"tokens\":{\"input\":600,\"output\":40,\"reasoning\":10,\"cache\":{\"read\":400,\"write\":0}}},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":15,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000017normalized0000\",\"created\":1767225624000,\"type\":\"session.usage.updated\",\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"cost\":0,\"tokens\":{\"input\":600,\"output\":40,\"reasoning\":10,\"cache\":{\"read\":400,\"write\":0}}}}\n\n",
+  "data: {\"id\":\"evt_000000000018normalized0000\",\"created\":1767225626000,\"type\":\"session.step.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"agent\":\"build\",\"model\":{\"id\":\"m1\",\"providerID\":\"sim\"},\"assistantMessageID\":\"msg_000000000003normalized0000\",\"started\":1767225625000},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":16,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000019normalized0000\",\"created\":1767225627000,\"type\":\"session.text.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000003normalized0000\",\"ordinal\":0},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":17,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000001anormalized0000\",\"created\":1767225628000,\"type\":\"session.text.delta\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000003normalized0000\",\"ordinal\":0,\"delta\":\"All \"}}\n\n",
+  "data: {\"id\":\"evt_00000000001bnormalized0000\",\"created\":1767225629000,\"type\":\"session.text.delta\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000003normalized0000\",\"ordinal\":0,\"delta\":\"done.\"}}\n\n",
+  "data: {\"id\":\"evt_00000000001cnormalized0000\",\"created\":1767225630000,\"type\":\"session.text.ended\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000003normalized0000\",\"ordinal\":0,\"text\":\"All done.\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":18,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000001dnormalized0000\",\"created\":1767225631000,\"type\":\"session.step.streamed\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000003normalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":19,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000001enormalized0000\",\"created\":1767225632000,\"type\":\"session.step.ended\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000003normalized0000\",\"finish\":\"stop\",\"rawFinish\":\"stop\",\"cost\":0,\"tokens\":{\"input\":200,\"output\":20,\"reasoning\":0,\"cache\":{\"read\":1000,\"write\":0}}},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":20,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000001fnormalized0000\",\"created\":1767225633000,\"type\":\"session.usage.updated\",\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"cost\":0,\"tokens\":{\"input\":800,\"output\":60,\"reasoning\":10,\"cache\":{\"read\":1400,\"write\":0}}}}\n\n",
+  "data: {\"id\":\"evt_000000000020normalized0000\",\"created\":1767225634000,\"type\":\"session.execution.succeeded\",\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":21,\"version\":1}}\n\n"
+ ],
+ "rest": [
+  {
+   "label": "session.create",
+   "method": "POST",
+   "path": "/api/session",
+   "request": {
+    "location": {
+     "directory": "<home>/workspace"
+    },
+    "title": "Two-step tool turn"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "ses_fffffffffffenormalized0000",
+     "projectID": "global",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "time": {
+      "created": 1767225601000,
+      "updated": 1767225601000
+     },
+     "title": "Two-step tool turn",
+     "location": {
+      "directory": "<home>/workspace"
+     }
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "Run the probe tool"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000001normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225602000
+     },
+     "type": "user",
+     "payload": {
+      "text": "Run the probe tool"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "mid.session.active",
+   "method": "GET",
+   "path": "/api/session/active",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "ses_fffffffffffenormalized0000": {
+      "type": "running"
+     }
+    }
+   }
+  },
+  {
+   "label": "mid.session.inbox",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffffenormalized0000/inbox",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": []
+   }
+  },
+  {
+   "label": "mid.session.messages.asc",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffffenormalized0000/message?limit=200&order=asc",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": [
+     {
+      "id": "msg_000000000001normalized0000",
+      "time": {
+       "created": 1767225605000
+      },
+      "text": "Run the probe tool",
+      "type": "user"
+     },
+     {
+      "id": "msg_000000000002normalized0000",
+      "time": {
+       "created": 1767225606000,
+       "streamed": 1767225619000
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+       "id": "m1",
+       "providerID": "sim"
+      },
+      "content": [
+       {
+        "type": "reasoning",
+        "text": "Let me think.",
+        "state": {
+         "reasoningField": "reasoning_content"
+        },
+        "time": {
+         "created": 1767225608000,
+         "completed": 1767225615000
+        }
+       },
+       {
+        "type": "text",
+        "text": "I will probe."
+       },
+       {
+        "type": "tool",
+        "id": "call_s01_probe",
+        "name": "sim_probe",
+        "executed": false,
+        "state": {
+         "status": "running",
+         "input": {
+          "n": 1
+         },
+         "metadata": {}
+        },
+        "time": {
+         "created": 1767225614000,
+         "ran": 1767225617000
+        }
+       }
+      ]
+     }
+    ],
+    "cursor": {
+     "previous": "eyJpZCI6Im1zZ18wMDAwMDAwMDAwMDFub3JtYWxpemVkMDAwMCIsIm9yZGVyIjoiYXNjIiwiZGlyZWN0aW9uIjoicHJldmlvdXMifQ",
+     "next": "eyJpZCI6Im1zZ18wMDAwMDAwMDAwMDJub3JtYWxpemVkMDAwMCIsIm9yZGVyIjoiYXNjIiwiZGlyZWN0aW9uIjoibmV4dCJ9"
+    }
+   }
+  },
+  {
+   "label": "mid.session.get",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffffenormalized0000",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "ses_fffffffffffenormalized0000",
+     "projectID": "global",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "time": {
+      "created": 1767225601000,
+      "updated": 1767225602000
+     },
+     "title": "Two-step tool turn",
+     "location": {
+      "directory": "<home>/workspace"
+     }
+    }
+   }
+  },
+  {
+   "label": "session.get",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffffenormalized0000",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "ses_fffffffffffenormalized0000",
+     "projectID": "global",
+     "cost": 0,
+     "tokens": {
+      "input": 800,
+      "output": 60,
+      "reasoning": 10,
+      "cache": {
+       "read": 1400,
+       "write": 0
+      }
+     },
+     "outcome": "succeeded",
+     "time": {
+      "created": 1767225601000,
+      "updated": 1767225602000,
+      "idle": 1767225634000
+     },
+     "title": "Two-step tool turn",
+     "location": {
+      "directory": "<home>/workspace"
+     }
+    }
+   }
+  },
+  {
+   "label": "session.messages.asc",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffffenormalized0000/message?limit=200&order=asc",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": [
+     {
+      "id": "msg_000000000001normalized0000",
+      "time": {
+       "created": 1767225605000
+      },
+      "text": "Run the probe tool",
+      "type": "user"
+     },
+     {
+      "id": "msg_000000000002normalized0000",
+      "time": {
+       "created": 1767225606000,
+       "streamed": 1767225619000,
+       "completed": 1767225623000
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+       "id": "m1",
+       "providerID": "sim"
+      },
+      "content": [
+       {
+        "type": "reasoning",
+        "text": "Let me think.",
+        "state": {
+         "reasoningField": "reasoning_content"
+        },
+        "time": {
+         "created": 1767225608000,
+         "completed": 1767225615000
+        }
+       },
+       {
+        "type": "text",
+        "text": "I will probe."
+       },
+       {
+        "type": "tool",
+        "id": "call_s01_probe",
+        "name": "sim_probe",
+        "executed": false,
+        "state": {
+         "status": "completed",
+         "input": {
+          "n": 1
+         },
+         "content": [
+          {
+           "type": "text",
+           "text": "probe-ok"
+          }
+         ],
+         "metadata": {
+          "truncated": false
+         }
+        },
+        "time": {
+         "created": 1767225614000,
+         "ran": 1767225617000,
+         "completed": 1767225622000
+        }
+       }
+      ],
+      "finish": "tool-calls",
+      "rawFinish": "tool_calls",
+      "cost": 0,
+      "tokens": {
+       "input": 600,
+       "output": 40,
+       "reasoning": 10,
+       "cache": {
+        "read": 400,
+        "write": 0
+       }
+      }
+     },
+     {
+      "id": "msg_000000000003normalized0000",
+      "time": {
+       "created": 1767225625000,
+       "streamed": 1767225631000,
+       "completed": 1767225632000
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+       "id": "m1",
+       "providerID": "sim"
+      },
+      "content": [
+       {
+        "type": "text",
+        "text": "All done."
+       }
+      ],
+      "finish": "stop",
+      "rawFinish": "stop",
+      "cost": 0,
+      "tokens": {
+       "input": 200,
+       "output": 20,
+       "reasoning": 0,
+       "cache": {
+        "read": 1000,
+        "write": 0
+       }
+      }
+     },
+     {
+      "id": "msg_000000000004normalized0000",
+      "time": {
+       "created": 1767225634000
+      },
+      "type": "idle",
+      "outcome": "succeeded"
+     }
+    ],
+    "cursor": {
+     "previous": "eyJpZCI6Im1zZ18wMDAwMDAwMDAwMDFub3JtYWxpemVkMDAwMCIsIm9yZGVyIjoiYXNjIiwiZGlyZWN0aW9uIjoicHJldmlvdXMifQ",
+     "next": "eyJpZCI6Im1zZ18wMDAwMDAwMDAwMDRub3JtYWxpemVkMDAwMCIsIm9yZGVyIjoiYXNjIiwiZGlyZWN0aW9uIjoibmV4dCJ9"
+    }
+   }
+  },
+  {
+   "label": "session.messages.desc.limit2",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffffenormalized0000/message?limit=2&order=desc",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": [
+     {
+      "id": "msg_000000000004normalized0000",
+      "time": {
+       "created": 1767225634000
+      },
+      "type": "idle",
+      "outcome": "succeeded"
+     },
+     {
+      "id": "msg_000000000003normalized0000",
+      "time": {
+       "created": 1767225625000,
+       "streamed": 1767225631000,
+       "completed": 1767225632000
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+       "id": "m1",
+       "providerID": "sim"
+      },
+      "content": [
+       {
+        "type": "text",
+        "text": "All done."
+       }
+      ],
+      "finish": "stop",
+      "rawFinish": "stop",
+      "cost": 0,
+      "tokens": {
+       "input": 200,
+       "output": 20,
+       "reasoning": 0,
+       "cache": {
+        "read": 1000,
+        "write": 0
+       }
+      }
+     }
+    ],
+    "cursor": {
+     "previous": "eyJpZCI6Im1zZ18wMDAwMDAwMDAwMDRub3JtYWxpemVkMDAwMCIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6InByZXZpb3VzIn0",
+     "next": "eyJpZCI6Im1zZ18wMDAwMDAwMDAwMDNub3JtYWxpemVkMDAwMCIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6Im5leHQifQ"
+    }
+   }
+  },
+  {
+   "label": "session.messages.cursor.next",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffffenormalized0000/message?limit=2&cursor=eyJpZCI6Im1zZ18wMDAwMDAwMDAwMDNub3JtYWxpemVkMDAwMCIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6Im5leHQifQ",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": [
+     {
+      "id": "msg_000000000002normalized0000",
+      "time": {
+       "created": 1767225606000,
+       "streamed": 1767225619000,
+       "completed": 1767225623000
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+       "id": "m1",
+       "providerID": "sim"
+      },
+      "content": [
+       {
+        "type": "reasoning",
+        "text": "Let me think.",
+        "state": {
+         "reasoningField": "reasoning_content"
+        },
+        "time": {
+         "created": 1767225608000,
+         "completed": 1767225615000
+        }
+       },
+       {
+        "type": "text",
+        "text": "I will probe."
+       },
+       {
+        "type": "tool",
+        "id": "call_s01_probe",
+        "name": "sim_probe",
+        "executed": false,
+        "state": {
+         "status": "completed",
+         "input": {
+          "n": 1
+         },
+         "content": [
+          {
+           "type": "text",
+           "text": "probe-ok"
+          }
+         ],
+         "metadata": {
+          "truncated": false
+         }
+        },
+        "time": {
+         "created": 1767225614000,
+         "ran": 1767225617000,
+         "completed": 1767225622000
+        }
+       }
+      ],
+      "finish": "tool-calls",
+      "rawFinish": "tool_calls",
+      "cost": 0,
+      "tokens": {
+       "input": 600,
+       "output": 40,
+       "reasoning": 10,
+       "cache": {
+        "read": 400,
+        "write": 0
+       }
+      }
+     },
+     {
+      "id": "msg_000000000001normalized0000",
+      "time": {
+       "created": 1767225605000
+      },
+      "text": "Run the probe tool",
+      "type": "user"
+     }
+    ],
+    "cursor": {
+     "previous": "eyJpZCI6Im1zZ18wMDAwMDAwMDAwMDJub3JtYWxpemVkMDAwMCIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6InByZXZpb3VzIn0",
+     "next": "eyJpZCI6Im1zZ18wMDAwMDAwMDAwMDFub3JtYWxpemVkMDAwMCIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6Im5leHQifQ"
+    }
+   }
+  },
+  {
+   "label": "session.messages.cursor+order",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffffenormalized0000/message?limit=2&order=desc&cursor=eyJpZCI6Im1zZ18wMDAwMDAwMDAwMDNub3JtYWxpemVkMDAwMCIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6Im5leHQifQ",
+   "status": 400,
+   "contentType": "application/json",
+   "body": {
+    "_tag": "InvalidCursorError",
+    "message": "Cursor cannot be combined with order"
+   }
+  },
+  {
+   "label": "session.messages.type.user",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffffenormalized0000/message?type=user",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": [
+     {
+      "id": "msg_000000000001normalized0000",
+      "time": {
+       "created": 1767225605000
+      },
+      "text": "Run the probe tool",
+      "type": "user"
+     }
+    ],
+    "cursor": {
+     "previous": "eyJpZCI6Im1zZ18wMDAwMDAwMDAwMDFub3JtYWxpemVkMDAwMCIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6InByZXZpb3VzIn0",
+     "next": "eyJpZCI6Im1zZ18wMDAwMDAwMDAwMDFub3JtYWxpemVkMDAwMCIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6Im5leHQifQ"
+    }
+   }
+  },
+  {
+   "label": "session.messages.type.assistant",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffffenormalized0000/message?type=assistant&order=asc",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": [
+     {
+      "id": "msg_000000000002normalized0000",
+      "time": {
+       "created": 1767225606000,
+       "streamed": 1767225619000,
+       "completed": 1767225623000
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+       "id": "m1",
+       "providerID": "sim"
+      },
+      "content": [
+       {
+        "type": "reasoning",
+        "text": "Let me think.",
+        "state": {
+         "reasoningField": "reasoning_content"
+        },
+        "time": {
+         "created": 1767225608000,
+         "completed": 1767225615000
+        }
+       },
+       {
+        "type": "text",
+        "text": "I will probe."
+       },
+       {
+        "type": "tool",
+        "id": "call_s01_probe",
+        "name": "sim_probe",
+        "executed": false,
+        "state": {
+         "status": "completed",
+         "input": {
+          "n": 1
+         },
+         "content": [
+          {
+           "type": "text",
+           "text": "probe-ok"
+          }
+         ],
+         "metadata": {
+          "truncated": false
+         }
+        },
+        "time": {
+         "created": 1767225614000,
+         "ran": 1767225617000,
+         "completed": 1767225622000
+        }
+       }
+      ],
+      "finish": "tool-calls",
+      "rawFinish": "tool_calls",
+      "cost": 0,
+      "tokens": {
+       "input": 600,
+       "output": 40,
+       "reasoning": 10,
+       "cache": {
+        "read": 400,
+        "write": 0
+       }
+      }
+     },
+     {
+      "id": "msg_000000000003normalized0000",
+      "time": {
+       "created": 1767225625000,
+       "streamed": 1767225631000,
+       "completed": 1767225632000
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+       "id": "m1",
+       "providerID": "sim"
+      },
+      "content": [
+       {
+        "type": "text",
+        "text": "All done."
+       }
+      ],
+      "finish": "stop",
+      "rawFinish": "stop",
+      "cost": 0,
+      "tokens": {
+       "input": 200,
+       "output": 20,
+       "reasoning": 0,
+       "cache": {
+        "read": 1000,
+        "write": 0
+       }
+      }
+     }
+    ],
+    "cursor": {
+     "previous": "eyJpZCI6Im1zZ18wMDAwMDAwMDAwMDJub3JtYWxpemVkMDAwMCIsIm9yZGVyIjoiYXNjIiwiZGlyZWN0aW9uIjoicHJldmlvdXMifQ",
+     "next": "eyJpZCI6Im1zZ18wMDAwMDAwMDAwMDNub3JtYWxpemVkMDAwMCIsIm9yZGVyIjoiYXNjIiwiZGlyZWN0aW9uIjoibmV4dCJ9"
+    }
+   }
+  },
+  {
+   "label": "session.messages.default",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffffenormalized0000/message",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": [
+     {
+      "id": "msg_000000000004normalized0000",
+      "time": {
+       "created": 1767225634000
+      },
+      "type": "idle",
+      "outcome": "succeeded"
+     },
+     {
+      "id": "msg_000000000003normalized0000",
+      "time": {
+       "created": 1767225625000,
+       "streamed": 1767225631000,
+       "completed": 1767225632000
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+       "id": "m1",
+       "providerID": "sim"
+      },
+      "content": [
+       {
+        "type": "text",
+        "text": "All done."
+       }
+      ],
+      "finish": "stop",
+      "rawFinish": "stop",
+      "cost": 0,
+      "tokens": {
+       "input": 200,
+       "output": 20,
+       "reasoning": 0,
+       "cache": {
+        "read": 1000,
+        "write": 0
+       }
+      }
+     },
+     {
+      "id": "msg_000000000002normalized0000",
+      "time": {
+       "created": 1767225606000,
+       "streamed": 1767225619000,
+       "completed": 1767225623000
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+       "id": "m1",
+       "providerID": "sim"
+      },
+      "content": [
+       {
+        "type": "reasoning",
+        "text": "Let me think.",
+        "state": {
+         "reasoningField": "reasoning_content"
+        },
+        "time": {
+         "created": 1767225608000,
+         "completed": 1767225615000
+        }
+       },
+       {
+        "type": "text",
+        "text": "I will probe."
+       },
+       {
+        "type": "tool",
+        "id": "call_s01_probe",
+        "name": "sim_probe",
+        "executed": false,
+        "state": {
+         "status": "completed",
+         "input": {
+          "n": 1
+         },
+         "content": [
+          {
+           "type": "text",
+           "text": "probe-ok"
+          }
+         ],
+         "metadata": {
+          "truncated": false
+         }
+        },
+        "time": {
+         "created": 1767225614000,
+         "ran": 1767225617000,
+         "completed": 1767225622000
+        }
+       }
+      ],
+      "finish": "tool-calls",
+      "rawFinish": "tool_calls",
+      "cost": 0,
+      "tokens": {
+       "input": 600,
+       "output": 40,
+       "reasoning": 10,
+       "cache": {
+        "read": 400,
+        "write": 0
+       }
+      }
+     },
+     {
+      "id": "msg_000000000001normalized0000",
+      "time": {
+       "created": 1767225605000
+      },
+      "text": "Run the probe tool",
+      "type": "user"
+     }
+    ],
+    "cursor": {
+     "previous": "eyJpZCI6Im1zZ18wMDAwMDAwMDAwMDRub3JtYWxpemVkMDAwMCIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6InByZXZpb3VzIn0",
+     "next": "eyJpZCI6Im1zZ18wMDAwMDAwMDAwMDFub3JtYWxpemVkMDAwMCIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6Im5leHQifQ"
+    }
+   }
+  },
+  {
+   "label": "session.message.get",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffffenormalized0000/message/msg_000000000003normalized0000",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000003normalized0000",
+     "time": {
+      "created": 1767225625000,
+      "streamed": 1767225631000,
+      "completed": 1767225632000
+     },
+     "type": "assistant",
+     "agent": "build",
+     "model": {
+      "id": "m1",
+      "providerID": "sim"
+     },
+     "content": [
+      {
+       "type": "text",
+       "text": "All done."
+      }
+     ],
+     "finish": "stop",
+     "rawFinish": "stop",
+     "cost": 0,
+     "tokens": {
+      "input": 200,
+      "output": 20,
+      "reasoning": 0,
+      "cache": {
+       "read": 1000,
+       "write": 0
+      }
+     }
+    }
+   }
+  },
+  {
+   "label": "session.diff",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffffenormalized0000/diff",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": []
+   }
+  },
+  {
+   "label": "session.inbox",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffffenormalized0000/inbox",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": []
+   }
+  },
+  {
+   "label": "session.active",
+   "method": "GET",
+   "path": "/api/session/active",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {}
+   }
+  },
+  {
+   "label": "session.context",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffffenormalized0000/context",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": [
+     {
+      "id": "msg_000000000001normalized0000",
+      "time": {
+       "created": 1767225605000
+      },
+      "text": "Run the probe tool",
+      "type": "user"
+     },
+     {
+      "id": "msg_000000000002normalized0000",
+      "time": {
+       "created": 1767225606000,
+       "streamed": 1767225619000,
+       "completed": 1767225623000
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+       "id": "m1",
+       "providerID": "sim"
+      },
+      "content": [
+       {
+        "type": "reasoning",
+        "text": "Let me think.",
+        "state": {
+         "reasoningField": "reasoning_content"
+        },
+        "time": {
+         "created": 1767225608000,
+         "completed": 1767225615000
+        }
+       },
+       {
+        "type": "text",
+        "text": "I will probe."
+       },
+       {
+        "type": "tool",
+        "id": "call_s01_probe",
+        "name": "sim_probe",
+        "executed": false,
+        "state": {
+         "status": "completed",
+         "input": {
+          "n": 1
+         },
+         "content": [
+          {
+           "type": "text",
+           "text": "probe-ok"
+          }
+         ],
+         "metadata": {
+          "truncated": false
+         }
+        },
+        "time": {
+         "created": 1767225614000,
+         "ran": 1767225617000,
+         "completed": 1767225622000
+        }
+       }
+      ],
+      "finish": "tool-calls",
+      "rawFinish": "tool_calls",
+      "cost": 0,
+      "tokens": {
+       "input": 600,
+       "output": 40,
+       "reasoning": 10,
+       "cache": {
+        "read": 400,
+        "write": 0
+       }
+      }
+     },
+     {
+      "id": "msg_000000000003normalized0000",
+      "time": {
+       "created": 1767225625000,
+       "streamed": 1767225631000,
+       "completed": 1767225632000
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+       "id": "m1",
+       "providerID": "sim"
+      },
+      "content": [
+       {
+        "type": "text",
+        "text": "All done."
+       }
+      ],
+      "finish": "stop",
+      "rawFinish": "stop",
+      "cost": 0,
+      "tokens": {
+       "input": 200,
+       "output": 20,
+       "reasoning": 0,
+       "cache": {
+        "read": 1000,
+        "write": 0
+       }
+      }
+     },
+     {
+      "id": "msg_000000000004normalized0000",
+      "time": {
+       "created": 1767225634000
+      },
+      "type": "idle",
+      "outcome": "succeeded"
+     }
+    ]
+   }
+  }
+ ],
+ "llm": [
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 2,
+   "lastRole": "user",
+   "lastText": "Run the probe tool"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 4,
+   "lastRole": "tool",
+   "lastText": "probe-ok"
+  }
+ ],
+ "notes": {
+  "terminal": "session.execution.succeeded"
+ }
+}

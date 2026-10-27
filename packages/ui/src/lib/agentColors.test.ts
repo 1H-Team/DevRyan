@@ -1,16 +1,19 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'bun:test';
+import type { Theme } from '@/types/theme';
 import { getAgentColor, getAgentIconColor } from './agentColors';
+import { CSSVariableGenerator } from './theme/cssGenerator';
 
 const designSystemSource = () => readFileSync(
   fileURLToPath(new URL('../styles/design-system.css', import.meta.url)),
   'utf8',
 );
-const cssGeneratorSource = () => readFileSync(
-  fileURLToPath(new URL('./theme/cssGenerator.ts', import.meta.url)),
-  'utf8',
-);
+const themesDirectory = fileURLToPath(new URL('./theme/themes/', import.meta.url));
+// Every bundled theme, run through the real generator: fixed colors must never be emitted per theme.
+const generatedThemeCss = () => readdirSync(themesDirectory)
+  .filter((name) => name.endsWith('.json'))
+  .map((name) => new CSSVariableGenerator().generate(JSON.parse(readFileSync(`${themesDirectory}${name}`, 'utf8')) as Theme));
 
 const FIXED_ICON_COLORS = {
   builder: { variable: '--agent-icon-builder-color', value: '#969DA9' },
@@ -41,24 +44,24 @@ describe('agent icon colors', () => {
 
   test('defines each fixed color once outside generated theme variables', () => {
     const designSystem = designSystemSource();
-    const cssGenerator = cssGeneratorSource();
+    const generated = generatedThemeCss();
+    expect(generated.length).toBeGreaterThan(0);
 
     for (const { variable, value } of Object.values(FIXED_ICON_COLORS)) {
       expect(designSystem).toContain(`${variable}: ${value};`);
       expect(designSystem.match(new RegExp(variable, 'g'))).toHaveLength(
         variable === '--agent-icon-orchestrator-color' ? 2 : 1,
       );
-      expect(cssGenerator).not.toContain(variable);
+      for (const css of generated) expect(css).not.toContain(variable);
     }
   });
 
   test('keeps the Plan-mode icon color fixed outside generated theme variables', () => {
     const designSystem = designSystemSource();
-    const cssGenerator = cssGeneratorSource();
 
     expect(designSystem).toContain('--plan-mode-icon-color: #F1C21B;');
     expect(designSystem.match(/--plan-mode-icon-color/g)).toHaveLength(1);
-    expect(cssGenerator).not.toContain('--plan-mode-icon-color');
+    for (const css of generatedThemeCss()) expect(css).not.toContain('--plan-mode-icon-color');
   });
 
   test('keeps the Orchestrator glyph pure white in every dark theme', () => {

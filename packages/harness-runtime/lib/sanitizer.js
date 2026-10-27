@@ -1,8 +1,31 @@
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { projectUsageObservation, runtimeUsageObservation } from '../../shared-runtime/lib/usage-observation.js';
+import { parseNativeObservation, parseNativeJournalObservation } from '../../shared-runtime/lib/native-observation.js';
+import { isSafeProviderCode, isSafeProviderParam, isSafeErrorType } from '../../shared-runtime/lib/provider-error-details.js';
+
+// Record keys may themselves be secrets. Only native schema field names and indices escape.
+const schemaFields = new Set(['data', 'location', 'directory', 'id', 'modelID', 'providerID', 'canonical', 'family', 'name',
+  'compatibility', 'reasoningField', 'requireReasoning', 'maxTokensField', 'requireFinishReason', 'requireAssistantAfterTool',
+  'supportsPromptCacheKey', 'supportsThinkingBlockBinding', 'supportsEffortUpdates', 'package', 'settings', 'headers', 'body',
+  'capabilities', 'tools', 'input', 'output', 'variants', 'time', 'released', 'cost', 'tier', 'type', 'size', 'cache', 'read',
+  'write', 'status', 'enabled', 'limit', 'context', 'compaction']);
+export const sanitizeNativeSchemaPath = value => typeof value === 'string' && value.length <= 256
+  && value.split('.').every(key => schemaFields.has(key) || key === '<key>' || /^\[\d{1,10}\]$/.test(key));
 
 const REDACTED = '[REDACTED]';
+const CLAUDE_PROCESS_CLUES = new Set(['http_401', 'http_403', 'auth', 'model', 'unsupported_option', 'argument', 'config',
+  'permission', 'launcher', 'module', 'syntax', 'spawn', 'connection', 'native_receipt']);
+
+
+const TITLE_DIAGNOSTIC_ENUMS = Object.freeze({
+  stage: new Set(['input','helper_create','session_model','outbox','projection','comparison','rename_refused','verification_comparison','persistence','manual_title','session_read','post_generation_read','status_read','idle_confirmation','pre_patch_read','verification']),
+  outcome: new Set(['complete','failed','equal','different','won','paused','retry_scheduled','corrupt_recovered','session_deleted']),
+  source: new Set(['derived','session_model','free_zen','local_fallback']),
+  selectionMode: new Set(['configured','active']),
+  reason: new Set(['timeout','cancelled','unsettled','unauthorized','model_unavailable','free_tier_rejected','capability_unavailable','empty_response','empty_output','validation_rejection','invalid_output','request_failure','request_failed','upstream_error','rate_limited','runtime_unavailable','selection_unavailable']),
+  refusalCode: new Set(['native_helper_title_conflict','native_managed_title_source_invalid','native_title_scope_invalid','native_session_access_revoked','native_helper_scope_revoked','native_runtime_not_ready','native_helper_unsettled','native_helper_expired','native_helper_deadline_expired','request_failure']),
+});
 
 const RECORD_FIELDS = Object.freeze({
   open_code_event: new Set(['type', 'at', 'runtime', 'actor', 'directory', 'sessionID', 'coalesced', 'payload']),
@@ -31,12 +54,12 @@ const NESTED_FIELDS = new Set([
   'type', 'properties', 'payload', 'actor', 'info', 'part', 'status', 'state', 'time',
   'id', 'helperSessionID', 'sessionID', 'sessionId', 'messageID', 'messageId', 'parentID', 'parentId',
   'requestID', 'requestId', 'transactionID', 'errorID',
-  'botID', 'botId', 'channelID', 'channelId', 'runID', 'runId',
+  'channelID', 'channelId', 'runID', 'runId',
   'role', 'scope', 'finish', 'completed', 'created', 'updated', 'started', 'ended',
   'version', 'phase', 'outcome', 'settledAt',
   'title', 'description', 'text', 'delta', 'reasoning', 'reasoningText',
   'tool', 'name', 'callID', 'callId', 'input', 'output', 'error', 'message',
-  'code', 'reason', 'action', 'permission', 'questions', 'answers', 'response',
+  'code', 'reason', 'action', 'permission', 'questions', 'answers', 'response', 'providerCode', 'providerParam', 'v2Type',
   'directory', 'path', 'file', 'filePath', 'url', 'mime', 'mimeType', 'size',
   'filename',
   'sha256', 'hash', 'source', 'runtime', 'providerID', 'providerId', 'modelID',
@@ -57,7 +80,7 @@ const NESTED_FIELDS = new Set([
   'toolOrigin', 'executionTier', 'fallbackReason',
   'schemaVersion', 'configurationHash', 'runtimeVersion', 'selection', 'catalog', 'contentHash', 'sourceHash', 'idsHash', 'providerHash', 'runtimeHash',
   'availability', 'bytes', 'plugins', 'configured', 'observed', 'observation', 'factoryCalls', 'ownership',
-  'policies', 'readOverlap', 'waitAny', 'compactResults', 'contextProjection', 'duplicateOutputs',
+  'policies', 'readOverlap', 'waitAny', 'compactResults', 'contextProjection', 'duplicateOutputs', 'adaptiveDelegation',
   'anchorUserMessageID', 'continuationMessageID', 'activeUserMessageID', 'todoContinuationCount',
   'owner', 'task', 'taskId', 'rootSessionId', 'parentTaskId', 'childSessionId', 'priorTaskId', 'envelopeId', 'resultEnvelope',
   'acknowledgedAt', 'resumable', 'partial', 'executionKind', 'failureKind', 'failureReason', 'dispatchGrouped',
@@ -67,18 +90,12 @@ const NESTED_FIELDS = new Set([
   'transformDurationMs', 'finalRequestBytes', 'inventory', 'entries', 'targetKind', 'lastAt', 'coalescedDiagnostics',
   'progressKind', 'progress', 'counts', 'lastUsefulAt', 'relevance', 'policy', 'slow', 'steps', 'fenceReason', 'retired', 'supported', 'transport',
   'tool-evidence', 'child-completed', 'artifact-changed', 'required-check',
-]);
-
-const MEMORY_EXTRACTION_COUNTS = new Set([
-  'attemptCount', 'acceptedCount', 'rejectedCount', 'activatedCount', 'idempotentCount',
-  'supersededCount', 'extractionVersion', 'recoveryVersion', 'delayMs',
-]);
-const MEMORY_EXTRACTION_STRINGS = new Set([
-  'botId', 'channelId', 'runId', 'phase', 'code', 'reason', 'validator', 'outcome', 'decision',
-]);
-const MEMORY_REJECTION_REASONS = new Set([
-  'schema_invalid', 'schema_statement_invalid', 'schema_key_invalid', 'provenance_invalid',
-  'cross_user_scope_rejected', 'transcript_quote_rejected', 'secret_rejected', 'too_many_candidates',
+  // Turn timing: per-turn bridge RPC and ledger lock aggregates (counts and
+  // milliseconds only) and native provider request timestamps.
+  'bridge', 'ledger', 'methods', 'operations', 'maxMs', 'reusedCount', 'failedCount',
+  'queueMs', 'waitMs', 'holdMs', 'maxWaitMs', 'maxHoldMs', 'requestPreparedAt', 'requestSentAt',
+  // Provider transport failures: target hostname/port and probe outcome only.
+  'host', 'port', 'sinceLastByteMs', 'probe',
 ]);
 
 const TOKEN_FIELDS = new Set(['total', 'input', 'output', 'reasoning', 'cache']);
@@ -88,7 +105,7 @@ const STABLE_IDENTIFIER_FIELDS = new Set([
   'requestID', 'requestId', 'transactionID', 'errorID',
   'observationID', 'attemptID', 'responseID', 'stepID', 'parentMessageID', 'rootTaskID', 'rootSessionID', 'counterScopeID',
   'id', 'helperSessionID', 'sessionID', 'sessionId', 'messageID', 'messageId', 'parentID', 'parentId',
-  'botID', 'botId', 'channelID', 'channelId', 'runID', 'runId',
+  'channelID', 'channelId', 'runID', 'runId',
   'callID', 'callId', 'providerID', 'providerId', 'modelID', 'modelId',
   'operationID', 'operationId', 'checkpointID', 'checkpointId', 'turnID', 'turnId',
   'userMessageID', 'assistantMessageID', 'idempotencyKey', 'fingerprint',
@@ -102,15 +119,6 @@ const STABLE_IDENTIFIER_FIELDS = new Set([
 
 const NON_NEGATIVE_NUMBER_FIELDS = new Set(['elapsedMs']);
 const REVERT_FIELDS = new Set(['requestID', 'transactionID', 'sessionID', 'messageID', 'phase', 'errorID', 'code']);
-
-const BROWSER_NETWORK_FIELDS = new Set([
-  'botId', 'streamId', 'sequence', 'generation', 'observedAt', 'kind', 'origin',
-  'path', 'requestType', 'statusCode', 'reason', 'failureCode',
-  'firstMissingSequence', 'lastMissingSequence',
-]);
-
-const BOT_EVENT_FIELDS = new Set(['subscriptionId', 'snapshotBytes', 'stage', 'elapsedMs', 'statusCode', 'headersSent', 'code', 'reason', 'name', 'status']);
-const BOT_EVENT_NUMBERS = new Set(['snapshotBytes', 'elapsedMs', 'statusCode', 'status']);
 
 const SECRET_PATTERNS = [
   { kind: 'pem', regex: /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY-----/gi },
@@ -148,6 +156,45 @@ const looksHighEntropyToken = (value) => (
 );
 
 const HIGH_ENTROPY_CANDIDATE = /(?<![A-Za-z0-9+/_=-])([A-Za-z0-9+/_=-]{32,512})(?![A-Za-z0-9+/_=-])/g;
+
+// Model-visible managed-task identifiers and result cursors are random by design
+// but are not credentials; redacting them made journals uncorrelatable. Session,
+// message and part identifiers stay redacted in free text (fields keep them).
+const NON_SECRET_IDENTIFIER = /^dvr_[a-z]+_[A-Za-z0-9_-]+$/;
+const NON_SECRET_CURSOR_PREFIX = 'dvr_result_cursor_v1.';
+// A file path such as `/tests/e2e/public-chat-positioning` matches the token
+// alphabet as one candidate. When every segment is either a readable name or
+// itself high-entropy, the candidate is a path: only its high-entropy segments
+// are redacted. Readable segments are `-`/`_`-separated parts that are digit
+// runs, lowercase names with short digit runs (`v2`, `e2e`, `h264`), or
+// camel/Pascal words and acronyms (`useSSE`, `XMLHttpRequest`, `OAuth`) with
+// digits only at the end. Random base64 chunks (`Cd34EfGh56`, `wJalrXUtnFEMI`) are not
+// readable, so a slash-bearing token made of them is still judged whole.
+const CAMEL_TOKEN = /^[A-Z](?=[A-Z][a-z])|[A-Z]{2,}(?![a-z])|[A-Z]?[a-z]+|\d+/g;
+const isReadablePart = (part) => {
+  if (!part || /^\d{1,14}$/.test(part)) return true;
+  if (/^[a-z][a-z0-9]*$|^\d{1,4}[a-z][a-z0-9]*$/.test(part)) {
+    return (part.match(/\d/g)?.length ?? 0) <= 4;
+  }
+  const tokens = part.match(CAMEL_TOKEN) ?? [];
+  if (tokens.join('') !== part) return false;
+  const digitIndex = tokens.findIndex((token) => /^\d/.test(token));
+  return digitIndex === -1 || (digitIndex > 0 && digitIndex === tokens.length - 1 && tokens[digitIndex].length <= 4);
+};
+const isReadablePathSegment = (segment) => /[A-Za-z0-9]/.test(segment) && segment.split(/[-_]/).every(isReadablePart);
+// Returns the path with high-entropy segments replaced, or null when the
+// candidate is not path-shaped and must be judged as one token.
+const redactPathSegments = (candidate, redactSegment) => {
+  if (!candidate.includes('/') || /[+=]/.test(candidate)) return null;
+  const segments = candidate.split('/');
+  const named = segments.filter(Boolean);
+  if (named.length < 2 || !named.every((segment) => looksHighEntropyToken(segment) || isReadablePathSegment(segment))) return null;
+  return segments.map((segment) => (
+    segment && looksHighEntropyToken(segment) && !NON_SECRET_IDENTIFIER.test(segment) ? redactSegment() : segment
+  )).join('/');
+};
+const isNonSecretCandidate = (candidate, offset, text) => NON_SECRET_IDENTIFIER.test(candidate)
+  || text.slice(Math.max(0, offset - NON_SECRET_CURSOR_PREFIX.length), offset) === NON_SECRET_CURSOR_PREFIX;
 
 export const createDiagnosticSanitizer = (options = {}) => {
   const inventory = new Set(
@@ -214,17 +261,21 @@ export const createDiagnosticSanitizer = (options = {}) => {
     }
     if (redactOptions.highEntropy === false) return value;
     HIGH_ENTROPY_CANDIDATE.lastIndex = 0;
-    return value.replace(HIGH_ENTROPY_CANDIDATE, (candidate) => {
-      if (!looksHighEntropyToken(candidate)) return candidate;
+    const redactHighEntropy = () => {
       increment('high_entropy');
       return `${REDACTED}:high_entropy`;
+    };
+    return value.replace(HIGH_ENTROPY_CANDIDATE, (candidate, _group, offset, text) => {
+      if (!looksHighEntropyToken(candidate) || isNonSecretCandidate(candidate, offset, text)) return candidate;
+      return redactPathSegments(candidate, redactHighEntropy) ?? redactHighEntropy();
     });
   };
 
   const sanitizeNested = (value, seen = new WeakSet(), field = '') => {
     if (value === null || typeof value === 'boolean' || typeof value === 'number') return value;
     if (typeof value === 'string') {
-      return redactString(value, { highEntropy: !STABLE_IDENTIFIER_FIELDS.has(field) });
+      return redactString(value, { highEntropy: !STABLE_IDENTIFIER_FIELDS.has(field)
+        && !['providerCode', 'providerParam', 'v2Type'].includes(field) });
     }
     if (Array.isArray(value)) return value.map((entry) => sanitizeNested(entry, seen, field));
     const object = asObject(value);
@@ -268,6 +319,12 @@ export const createDiagnosticSanitizer = (options = {}) => {
       ? TOKEN_FIELDS
       : (field === 'cache' ? TOKEN_CACHE_FIELDS : NESTED_FIELDS);
     for (const [key, nested] of Object.entries(object)) {
+      if ((key === 'providerCode' && !isSafeProviderCode(nested))
+        || (key === 'providerParam' && !isSafeProviderParam(nested))
+        || (key === 'v2Type' && !isSafeErrorType(nested))) {
+        report.droppedFields += 1;
+        continue;
+      }
       if (key === 'owner' && nested !== 'devryan') {
         report.droppedFields += 1;
         continue;
@@ -296,6 +353,94 @@ export const createDiagnosticSanitizer = (options = {}) => {
     return output;
   };
 
+  // The finite native schema contains identities, settings and counts only.
+  // Keep it separate from transcript fields, especially private reasoning text.
+  const redactNativeObservation = (observation) => {
+    const visit = value => {
+      if (typeof value === 'string') return redactString(value, { highEntropy: false, paths: false });
+      if (asObject(value)) return Object.fromEntries(Object.entries(value).map(([key, nested]) => [key, visit(nested)]));
+      return value;
+    };
+    return parseNativeJournalObservation(visit(observation));
+  };
+
+  const sanitizeClaudeCredentialCommand = candidate => {
+    const output = {};
+    for (const [field, value] of Object.entries(asObject(candidate) || {})) {
+      if ((field === 'phase' && ['probe', 'read', 'write', 'delete'].includes(value))
+        || (field === 'exitCode' && (value === null || Number.isSafeInteger(value) && value >= 0 && value <= 255))) output[field] = value;
+      else report.droppedFields += 1;
+    }
+    return output;
+  };
+
+  const sanitizeClaudeProcessPayload = (candidate) => {
+    const output = {};
+    for (const [field, value] of Object.entries(asObject(candidate) || {})) {
+      if ((field === 'code' && (value === null || Number.isSafeInteger(value) && value >= 0 && value <= 255))
+        || (['signalPresent', 'truncated'].includes(field) && typeof value === 'boolean')
+        || (field === 'stderrBytes' && Number.isSafeInteger(value) && value >= 0 && value <= 1048576)
+        || (field === 'scannedBytes' && Number.isSafeInteger(value) && value >= 0 && value <= 32768)) output[field] = value;
+      else if ((field === 'attemptID' && typeof value === 'string' && /^[a-f0-9]{64}$/.test(value))
+        || (field === 'providerInstanceID' && typeof value === 'string' && /^[a-f0-9-]{32,64}$/.test(value))) output[field] = redactString(value, { highEntropy: false });
+      else if (field === 'clues' && Array.isArray(value) && value.length <= CLAUDE_PROCESS_CLUES.size) {
+        output[field] = [...new Set(value.filter(clue => CLAUDE_PROCESS_CLUES.has(clue)))];
+        report.droppedFields += value.filter(clue => !CLAUDE_PROCESS_CLUES.has(clue)).length;
+      } else if (field === 'transportError' && typeof value === 'string'
+        && /^native_claude_transport_(?:invalid|expired|failed|overflow|unconfirmed|credential_failed|state_failed|launch_failed|identity_failed|attach_failed)$/.test(value)) {
+        output[field] = value;
+      } else report.droppedFields += 1;
+    }
+    return output;
+  };
+
+  const sanitizeClaudeCheckpointPayload = candidate => {
+    const output = {};
+    const events = new Set(['passthrough.checkpoint_settling', 'passthrough.checkpoint_settled', 'passthrough.checkpoint_rejected', 'passthrough.checkpoint_interrupt_failed', 'passthrough.checkpoint_retained', 'passthrough.checkpoint_replay', 'passthrough.checkpoint_aborted', 'passthrough.checkpoint_retry']);
+    const reasons = new Set(['tool_results_complete', 'invalid_boundary', 'control_failed', 'drain_timeout', 'client_abort', 'sdk_terminal',
+      'missing_terminal', 'unrecognized_sdk_exit', 'incomplete_boundary', 'persisted_boundary_unverified', 'persisted_tool_boundary', 'verified_handoff', 'incomplete_or_mismatched_results',
+      'noncanonical_session_evicted', 'upstream_idle']);
+    for (const [field, value] of Object.entries(asObject(candidate) || {})) {
+      if (field === 'event' && events.has(value) || field === 'reason' && reasons.has(value)
+        || field === 'toolCount' && Number.isSafeInteger(value) && value >= 0 && value <= 4096) output[field] = value;
+      else if (field === 'attemptID' && typeof value === 'string' && /^[a-f0-9]{64}$/.test(value)
+        || field === 'providerInstanceID' && typeof value === 'string' && /^[a-f0-9-]{32,64}$/.test(value)) output[field] = redactString(value, { highEntropy: false });
+      else report.droppedFields += 1;
+    }
+    return output;
+  };
+
+  const sanitizeTitleDiagnostic = candidate => {
+    const output = {};
+    for (const [field, value] of Object.entries(asObject(candidate) || {})) {
+      if (TITLE_DIAGNOSTIC_ENUMS[field]?.has(value)) output[field] = value;
+      else if (['nativeLength','expectedLength','candidateLength','attempt'].includes(field) && Number.isSafeInteger(value) && value >= 0 && value <= 1_048_576) output[field] = value;
+      else if (field === 'durationMs' && Number.isFinite(value) && value >= 0 && value <= 86_400_000) output[field] = value;
+      else if (field === 'status' && Number.isSafeInteger(value) && (value === 0 || value >= 100 && value <= 599)) output[field] = value;
+      else if (['nativeEqualsCandidate','nativeEqualsExpected','sourceIdentityPresent'].includes(field) && typeof value === 'boolean') output[field] = value;
+      else if (field === 'sourceMessageID' && typeof value === 'string' && /^msg[A-Za-z0-9_-]{1,128}$/.test(value)
+        || field === 'helperSessionID' && typeof value === 'string' && /^ses[A-Za-z0-9_-]{1,128}$/.test(value)
+        || ['providerID','modelID','titleModel'].includes(field) && typeof value === 'string' && /^[A-Za-z0-9_:/#@.+-]{1,256}$/.test(value)) output[field] = redactString(value, { highEntropy: false });
+      else report.droppedFields += 1;
+    }
+    return output;
+  };
+
+  const sanitizeCursorFinalAssociation = candidate => {
+    const output = {};
+    for (const [field, value] of Object.entries(asObject(candidate) || {})) {
+      if (['assistantMessageID', 'partID'].includes(field) && typeof value === 'string' && /^[A-Za-z0-9_-]{1,256}$/.test(value)) output[field] = redactString(value, { highEntropy: false });
+      else if (['assistantOrdinal', 'streamedParts'].includes(field) && Number.isSafeInteger(value) && value >= (field === 'assistantOrdinal' ? 1 : 0) && value <= 4096) output[field] = value;
+      else if (['previousLength', 'finalLength'].includes(field) && Number.isSafeInteger(value) && value >= 0 && value <= 16 * 1024 * 1024) output[field] = value;
+      else if (field === 'equal' && typeof value === 'boolean'
+        || field === 'state' && ['matched', 'final_only', 'unavailable'].includes(value)
+        || field === 'reason' && ['missing', 'unavailable', 'limit', 'shape', 'mismatch'].includes(value)
+        || field === 'code' && value === 'CURSOR_STREAM_FINAL_ASSOCIATION_INVALID') output[field] = value;
+      else report.droppedFields += 1;
+    }
+    return output;
+  };
+
   const sanitizeRecord = (candidate) => {
     const object = asObject(candidate);
     if (!object) throw new TypeError('diagnostic record must be an object');
@@ -304,11 +449,136 @@ export const createDiagnosticSanitizer = (options = {}) => {
     const allowed = RECORD_FIELDS[type];
     if (!allowed) throw new TypeError(`unsupported diagnostic record type: ${type || 'missing'}`);
     const output = {};
+    let nativeObservation;
+    if (type === 'lifecycle' && object.event === 'native_observation') {
+      const parsed = parseNativeObservation(object.payload);
+      if (object.directory !== parsed.directory || object.sessionID !== parsed.sessionID) throw new TypeError('native observation scope mismatch');
+      const suffix = crypto.createHash('sha256').update(path.resolve(parsed.directory)).digest('hex').slice(0, 12);
+      nativeObservation = redactNativeObservation({ ...parsed, directory: `<WORKTREE_${suffix}>` });
+    }
     for (const [key, value] of Object.entries(object)) {
       if (key === 'usageObservation') continue;
       if (!allowed.has(key)) {
         report.droppedFields += 1;
         continue;
+      }
+      if (nativeObservation && (key === 'payload' || key === 'directory')) {
+        output[key] = key === 'payload' ? nativeObservation : nativeObservation.directory;
+        continue;
+      }
+      if (key === 'payload' && type === 'lifecycle' && object.event === 'session_title_generation') {
+        output[key] = sanitizeTitleDiagnostic(value); continue;
+      }
+      if (key === 'payload' && type === 'lifecycle' && object.event === 'cursor_final_association') {
+        output[key] = sanitizeCursorFinalAssociation(value); continue;
+      }
+      if(key==='payload'&&type==='timing'&&['provider_body_end','turn.provider_body_end'].includes(object.mark)){
+        const metadata={};
+        for(const [field,nested] of Object.entries(asObject(value)||{})){
+          if(['bytes','chunks','maxGapMs'].includes(field)&&Number.isSafeInteger(nested)&&nested>=0
+            ||field==='elapsedMs'&&Number.isFinite(nested)&&nested>=0
+            ||field==='statusCode'&&Number.isSafeInteger(nested)&&nested>=100&&nested<=599)metadata[field]=nested;
+          else if(['assistantMessageID','requestID'].includes(field)&&typeof nested==='string'&&/^[A-Za-z0-9_:/.-]{1,256}$/.test(nested))metadata[field]=redactString(nested,{highEntropy:false});
+          else if(field==='transport'&&['http','ws'].includes(nested)||field==='kind'&&['primary','title','compaction','generate'].includes(nested))metadata[field]=nested;
+          else report.droppedFields+=1;
+        }
+        output[key]=metadata;continue;
+      }
+      if (key === 'payload' && (type === 'log' && object.event === 'session_changes_capture'
+        || type === 'lifecycle' && object.event === 'session_execution')) {
+        output[key] = sanitizeNested(value);
+        const diagnostic = asObject(value);
+        if (diagnostic?.code === 'exact_tool_receipt' && typeof diagnostic.hasChanges === 'boolean') {
+          output[key].hasChanges = diagnostic.hasChanges;
+        }
+        if (diagnostic?.phase === 'cursor_receipts') for (const field of ['calls', 'receipts']) {
+          if (Number.isSafeInteger(diagnostic[field]) && diagnostic[field] >= 0 && diagnostic[field] <= 1_000_000) output[key][field] = diagnostic[field];
+        }
+        continue;
+      }
+      if (key === 'payload' && type === 'lifecycle' && object.event === 'opencode_client'
+        && asObject(value)?.code === 'native_input_admission') {
+        const metadata = { code: 'native_input_admission' };
+        const enums = { delivery: ['queue', 'steer'], decision: ['requested', 'accepted', 'reconciled', 'refused'],
+          descendantSettlement: ['required', 'not_requested'], refusalReason: ['none', 'subtree_active_or_unavailable', 'admission_failed'] };
+        for (const [field, nested] of Object.entries(asObject(value))) {
+          if (enums[field]?.includes(nested)) metadata[field] = nested;
+          else if (['sessionID', 'messageID'].includes(field) && typeof nested === 'string' && /^[A-Za-z0-9_-]{1,256}$/.test(nested)) metadata[field] = nested;
+          else if (field !== 'code') report.droppedFields += 1;
+        }
+        output[key] = metadata;
+        continue;
+      }
+      if (key === 'payload' && type === 'lifecycle' && object.event === 'native_result_delivery') {
+        const metadata = {};
+        for (const [field, nested] of Object.entries(asObject(value) || {})) {
+          if (['serializedBytes', 'reportBytes', 'metadataBytes', 'framingBytes', 'repeatedBytes', 'startBytes', 'endBytes', 'contentBytes'].includes(field)
+            && Number.isSafeInteger(nested) && nested >= 0) metadata[field] = nested;
+          else if (['contentSha256', 'outputSha256'].includes(field) && typeof nested === 'string' && /^[a-f0-9]{64}$/.test(nested)) metadata[field] = nested;
+          else if (field === 'section' && ['publication', 'report', 'metadata'].includes(nested) || field === 'repeated' && typeof nested === 'boolean') metadata[field] = nested;
+          else if (field === 'taskId' && /^dvr_task_[A-Za-z0-9_-]{1,160}$/.test(nested ?? '')
+            || field === 'envelopeId' && /^dvr_result_[A-Za-z0-9_-]{1,160}$/.test(nested ?? '')) metadata[field] = nested;
+          else if (['messageID', 'callID'].includes(field) && typeof nested === 'string' && /^[A-Za-z0-9_:/.-]{1,256}$/.test(nested)) metadata[field] = nested;
+          else report.droppedFields += 1;
+        }
+        output[key] = metadata;
+        continue;
+      }
+      if (key === 'payload' && type === 'lifecycle' && object.event === 'managed_persistence') {
+        const metadata = {};
+        for (const [field, nested] of Object.entries(asObject(value) || {})) {
+          if (['at', 'elapsedMs', 'idleMs', 'taskCount'].includes(field) && Number.isSafeInteger(nested) && nested >= 0) metadata[field] = nested;
+          else if ((field === 'state' && ['needs_attention', 'settled'].includes(nested))
+            || (field === 'code' && nested === 'managed_persistence_stalled')
+            || (field === 'reason' && ['task_deadline', 'owner_progress_timeout'].includes(nested))
+            || (field === 'outcome' && ['committed', 'failed'].includes(nested))
+            || (field === 'phase' && ['queued', 'owner_verify', 'previous_read', 'backup', 'directory_create', 'temporary_cleanup', 'temporary_open',
+              'write', 'file_sync', 'file_close', 'rename', 'permissions', 'directory_sync', 'native_commit', 'commit_confirm'].includes(nested))
+            || (field === 'taskId' && /^dvr_task_[A-Za-z0-9_-]{1,160}$/.test(nested ?? ''))
+            || (field === 'ownerID' && /^dvr_save_[A-Za-z0-9_-]{1,160}$/.test(nested ?? ''))
+            || (field === 'rootSessionId' && /^ses_[A-Za-z0-9_-]{1,160}$/.test(nested ?? ''))) metadata[field] = nested;
+          else report.droppedFields += 1;
+        }
+        output[key] = metadata;
+        continue;
+      }
+      if (key === 'payload' && type === 'lifecycle' && object.event === 'native_observation_gap') {
+        const gap = asObject(value);
+        output[key] = { code: 'native_observation_unavailable',
+          ...(['accepted-user', 'controller'].includes(gap?.stage) ? { stage: gap.stage } : {}),
+          ...(typeof gap?.controllerInstanceID === 'string' && /^[a-zA-Z0-9_-]{1,64}$/.test(gap.controllerInstanceID)
+            ? { controllerInstanceID: redactString(gap.controllerInstanceID, { highEntropy: false }) } : {}) };
+        continue;
+      }
+      if (key === 'payload' && type === 'lifecycle' && object.event === 'native_startup') {
+        output[key] = sanitizeNested(value);
+        const code = asObject(value)?.code;
+        // These producer-validated fixed catalog codes resemble high-entropy tokens.
+        if (typeof code === 'string' && /^native_catalog_(?:construction_failed|read_failed_(?:agent|plugin|model)_(?:http_[45][0-9]{2}|refusal_(?:403|409|503)))_(?:helper_directory_denied|helper_denied|helper_timeout_invalid|controller_helper_denied|controller_helper_unavailable|mutation_runtime_unsupported|catalog_unavailable|catalog_file_invalid|model_build_failed|model_read_failed|model_account_failed|model_normalize_failed|provider_location_required|provider_location_expired|openai_method_unsupported|response_schema_invalid|schema_invalid|cause_unavailable)$/.test(code)) {
+          output[key].code = redactString(code, { highEntropy: false });
+        }
+        const diagnostics = asObject(value)?.diagnostics;
+        if (Array.isArray(diagnostics)) output[key].diagnostics = diagnostics.slice(-16).flatMap(row => {
+          const metadata = {};
+          for (const [field, nested] of Object.entries(asObject(row) || {})) {
+            if (field === 'level' && ['error', 'warn', 'ERROR', 'WARN'].includes(nested)
+              || ['name', '_tag'].includes(field) && ['HttpApiSchemaError', 'SchemaError', 'TypeError', 'Error'].includes(nested)
+              || field === 'msg' && ['response_schema_invalid', 'schema_invalid', 'model_response_schema_invalid'].includes(nested)
+              || field === 'schemaPath' && sanitizeNativeSchemaPath(nested)) metadata[field] = redactString(nested, { highEntropy: false });
+          }
+          return metadata.name || metadata._tag || metadata.msg ? [metadata] : [];
+        });
+        continue;
+      }
+      if (key === 'payload' && type === 'lifecycle' && object.event === 'native_claude_credential_command') {
+        output[key] = sanitizeClaudeCredentialCommand(value); continue;
+      }
+      if (key === 'payload' && type === 'lifecycle' && object.event === 'native_claude_process') {
+        output[key] = sanitizeClaudeProcessPayload(value);
+        continue;
+      }
+      if (key === 'payload' && type === 'lifecycle' && object.event === 'native_claude_checkpoint') {
+        output[key] = sanitizeClaudeCheckpointPayload(value); continue;
       }
       if (key === 'payload' && type === 'lifecycle' && object.event === 'opencode_process_exit') {
         const metadata = {};
@@ -332,47 +602,7 @@ export const createDiagnosticSanitizer = (options = {}) => {
         )).map(([field, nested]) => [field, redactString(nested, { highEntropy: false })]));
         continue;
       }
-      if (key === 'payload' && type === 'lifecycle'
-        && typeof object.event === 'string' && object.event.startsWith('bot.memory.extraction.')) {
-        const metadata = {};
-        for (const [field, nested] of Object.entries(asObject(value) || {})) {
-          if (MEMORY_EXTRACTION_COUNTS.has(field) && Number.isSafeInteger(nested) && nested >= 0) {
-            metadata[field] = nested;
-          } else if (MEMORY_EXTRACTION_STRINGS.has(field) && typeof nested === 'string'
-            && /^[A-Za-z0-9_:.-]{1,160}$/.test(nested)) {
-            metadata[field] = redactString(nested, { highEntropy: false });
-          } else if (['inline', 'hasPersistedCandidates'].includes(field) && typeof nested === 'boolean') {
-            metadata[field] = nested;
-          } else if (field === 'rejectionReasons' && asObject(nested)) {
-            metadata[field] = Object.fromEntries(Object.entries(nested).filter(([reason, count]) => (
-              MEMORY_REJECTION_REASONS.has(reason) && Number.isSafeInteger(count) && count >= 0 && count <= 999999
-            )));
-          } else report.droppedFields += 1;
-        }
-        output[key] = metadata;
-        continue;
-      }
-      const browserNetwork = key === 'payload'
-        && ['bot.computer.network', 'bot.computer.network_gap'].includes(object.event)
-        && ['connection', 'gap'].includes(type);
-      // Browser diagnostics have a narrower contract than ordinary execution
-      // records: even otherwise permitted headers/body/input fields are dropped.
-      const botEvents = key === 'payload' && type === 'connection'
-        && typeof object.event === 'string' && object.event.startsWith('bot.events.');
-      const projected = botEvents && asObject(value)
-        ? Object.fromEntries(Object.entries(value).filter(([field, nested]) => (
-          BOT_EVENT_FIELDS.has(field) && (BOT_EVENT_NUMBERS.has(field)
-            ? Number.isSafeInteger(nested) && nested >= 0
-            : field === 'headersSent' ? typeof nested === 'boolean'
-              : typeof nested === 'string' && /^[a-zA-Z0-9_.:-]{1,160}$/.test(nested))
-        )))
-        : browserNetwork && asObject(value)
-        ? Object.fromEntries(Object.entries(value).filter(([field, nested]) => (
-          BROWSER_NETWORK_FIELDS.has(field)
-          && (typeof nested === 'string' || (typeof nested === 'number' && Number.isFinite(nested)))
-        )))
-        : value;
-      output[key] = sanitizeNested(projected, new WeakSet(), key);
+      output[key] = sanitizeNested(value, new WeakSet(), key);
     }
     output.type = type;
     output.at = Number.isFinite(output.at) ? output.at : Date.now();
@@ -386,15 +616,44 @@ export const createDiagnosticSanitizer = (options = {}) => {
     const visit = (value, field = '', seen = new WeakSet()) => {
       if (value === null || typeof value === 'boolean' || typeof value === 'number') return value;
       if (typeof value === 'string') {
-        return redactString(value, { highEntropy: !STABLE_IDENTIFIER_FIELDS.has(field) });
+        return redactString(value, { highEntropy: !STABLE_IDENTIFIER_FIELDS.has(field)
+          && !['providerCode', 'providerParam', 'v2Type'].includes(field) });
       }
       if (Array.isArray(value)) return value.map((entry) => visit(entry, field, seen));
       const object = asObject(value);
       if (!object) return null;
+      if (object.type === 'lifecycle' && ['session_title_generation', 'cursor_final_association'].includes(object.event)) return sanitizeRecord(object);
       if (seen.has(object)) throw new TypeError('diagnostic export value contains a cycle');
       seen.add(object);
       const output = {};
       for (const [key, nested] of Object.entries(object)) {
+        if ((key === 'providerCode' && !isSafeProviderCode(nested))
+          || (key === 'providerParam' && !isSafeProviderParam(nested))
+          || (key === 'v2Type' && !isSafeErrorType(nested))) continue;
+        if (key === 'payload' && object.type === 'lifecycle' && object.event === 'native_observation') {
+          output[key] = redactNativeObservation(parseNativeJournalObservation(nested));
+          continue;
+        }
+        if (key === 'payload' && object.type === 'lifecycle' && object.event === 'native_claude_credential_command') {
+          output[key] = sanitizeClaudeCredentialCommand(nested); continue;
+        }
+        if (key === 'payload' && object.type === 'lifecycle' && object.event === 'native_claude_process') {
+          output[key] = sanitizeClaudeProcessPayload(nested);
+          continue;
+        }
+        if (key === 'payload' && object.type === 'lifecycle' && object.event === 'native_claude_checkpoint') {
+          output[key] = sanitizeClaudeCheckpointPayload(nested); continue;
+        }
+        if (key === 'payload' && object.type === 'lifecycle' && object.event === 'session_title_generation') {
+          output[key] = sanitizeTitleDiagnostic(nested); continue;
+        }
+        if(key==='payload'&&object.type==='timing'&&['provider_body_end','turn.provider_body_end'].includes(object.mark)){
+          output[key]=sanitizeRecord({type:'timing',mark:object.mark,payload:nested}).payload;continue;
+        }
+        if (key === 'payload' && object.type === 'lifecycle' && object.event === 'native_startup') {
+          output[key] = sanitizeRecord({ type: 'lifecycle', event: 'native_startup', payload: nested }).payload;
+          continue;
+        }
         if ((object.type === 'reasoning' && ['text', 'content', 'data'].includes(key))
           || (['reasoning', 'reasoningText'].includes(key) && typeof nested !== 'number')
           || ['providerMetadata', 'providerOptions', 'signature', 'encrypted_content'].includes(key)) continue;

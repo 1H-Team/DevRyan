@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
@@ -14,9 +15,7 @@ const anchors = `      pathToClaudeCodeExecutable: claudeExecutable,\nasync func
 const source = `${cwdAnchor}\n${anchors}`;
 const sha256 = text => crypto.createHash('sha256').update(text).digest('hex');
 const fixture = (version = '1.62.6') => {
-  const cache = path.resolve(import.meta.dirname, '../../../../../.cache/qa');
-  fs.mkdirSync(cache, { recursive: true });
-  const root = fs.mkdtempSync(path.join(cache, 'meridian-http-hotfix-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-meridian-http-hotfix-'));
   roots.push(root);
   const dist = path.join(root, 'node_modules/@rynfar/meridian/dist');
   fs.mkdirSync(dist, { recursive: true });
@@ -238,15 +237,15 @@ describe('Meridian requesting-session working directory', () => {
 });
 
 describe('Meridian upgrade source gates', () => {
-  it('supports the candidate without weakening current patch recovery or accepting partial candidates', () => {
-    const review = MERIDIAN_REVIEWED_PATCHES['1.68.0'];
-    const { root, dist } = fixture('1.68.0');
+  it.each(['1.68.0', '1.79.0'])('supports candidate %s without weakening patch recovery or accepting partial input', (version) => {
+    const review = MERIDIAN_REVIEWED_PATCHES[version];
+    const { root, dist } = fixture(version);
     const upstreamFork = '...isUndo || forkSession || resumeSessionId && forkSessionId || passthrough && resumeSessionAtUuid ? { forkSession: true } : {},';
-    const candidateSource = `${cwdAnchor}\n      pathToClaudeCodeExecutable: claudeExecutable,\nasync function start() {\n${MERIDIAN_HTTP_SERVER_ORIGINAL}\n    port: finalConfig.port\n  }, () => {\n  });\n  const idleMs = finalConfig.idleTimeoutSeconds * 1000;\n}\n${review.edits.map(([before]) => before).join('\n')}\n${upstreamFork}`;
+    const candidateSource = `${cwdAnchor}\n      pathToClaudeCodeExecutable: claudeExecutable,\nasync function start() {\n${review.httpOriginal ?? MERIDIAN_HTTP_SERVER_ORIGINAL}\n    port: finalConfig.port\n  }, () => {\n${review.endOriginal ?? '  });\n  const idleMs = finalConfig.idleTimeoutSeconds * 1000;'}\n}\n${review.edits.map(([before]) => before).join('\n')}\n${upstreamFork}`;
     const entry = path.join(dist, review.entry);
     fs.writeFileSync(entry, candidateSource);
     const options = { configDirectory: root, expectedOriginalSha256: sha256(candidateSource) };
-    expect(applyMeridianHttpHotfix(options)).toMatchObject({ ok: true, changed: true, version: '1.68.0', entry: review.entry });
+    expect(applyMeridianHttpHotfix(options)).toMatchObject({ ok: true, changed: true, version, entry: review.entry });
     const complete = fs.readFileSync(entry, 'utf8');
     expect(complete).toContain(upstreamFork);
     expect(complete).toContain('REPLAY_PROVENANCE_NOTE');
@@ -255,6 +254,11 @@ describe('Meridian upgrade source gates', () => {
     expect(complete).not.toContain('CLAUDE_CODE_SESSION_KIND: "bg"');
     expect(complete).toContain('resolveSessionWorkingDirectory(c.req.header("x-devryan-directory"))');
     expect(applyMeridianHttpHotfix(options)).toMatchObject({ ok: true, changed: false });
+    if (version === '1.79.0') {
+      const guard = review.edits.at(-1)[1].split('\n')[0].trim();
+      expect(() => new Function('process', guard)({ env: { DEVRYAN_EXECUTION_BOUNDARY: '1', MERIDIAN_TEST_DISABLE_SDK_PROCESS_GATE: '1' } })).toThrow('native_claude_process_gate_required');
+      expect(() => new Function('process', guard)({ env: {} })).not.toThrow();
+    }
     for (const [before, after] of review.edits) {
       const partial = complete.replace(after, before);
       fs.writeFileSync(entry, partial);

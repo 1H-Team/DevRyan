@@ -2,7 +2,7 @@ import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { CdpConnection, evaluate } from './cdp.mjs';
 import { createQaUiDriver } from './ui-driver.mjs';
-import { PERF_PARENT_SESSION_ID, PERF_CHILD_SESSION_IDS } from '../perf/loopback-opencode-fixture.mjs';
+import { PERF_PARENT_SESSION_ID, PERF_CHILD_SESSION_IDS } from '../perf/fixture-session-seeds.mjs';
 
 /** Disposable fixture diagnosis. CPU profiles contain fixture code/data only. */
 export async function runNavigationQa({ cdp, fixture, profilePort, output, check, screenshot }) {

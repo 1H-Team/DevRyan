@@ -20,10 +20,9 @@ import {
 } from '@remixicon/react';
 import type { ComponentType } from 'react';
 import {
-  OPENCHAMBER_AUTO_DISCOVER_ACTION_ID,
-  type OpenChamberProjectAction,
-  type OpenChamberProjectActionPlatform,
-} from '@/lib/openchamberConfig';
+  DEVRYAN_AUTO_DISCOVER_ACTION_ID,
+  type DevRyanProjectAction,
+} from '@/lib/devryanConfig';
 import type {
   DesktopSshInstance,
   DesktopSshPortForward,
@@ -78,7 +77,7 @@ export const PROJECT_ACTION_ICON_MAP = Object.fromEntries(
   PROJECT_ACTION_ICONS.map((entry) => [entry.key, entry.Icon])
 ) as Record<ProjectActionIconKey, ComponentType<{ className?: string }>>;
 
-export const PROJECT_ACTIONS_UPDATED_EVENT = 'openchamber:project-actions-updated';
+export const PROJECT_ACTIONS_UPDATED_EVENT = 'devryan:project-actions-updated';
 
 export const normalizeProjectActionDirectory = (value: string): string => {
   const trimmed = (value || '').trim().replace(/\\/g, '/');
@@ -91,30 +90,6 @@ export const normalizeProjectActionDirectory = (value: string): string => {
   return trimmed.length > 1 ? trimmed.replace(/\/+$/, '') : trimmed;
 };
 
-export const getCurrentProjectActionPlatform = (): OpenChamberProjectActionPlatform => {
-  if (typeof navigator === 'undefined') {
-    return 'macos';
-  }
-  const ua = (navigator.userAgent || '').toLowerCase();
-  if (ua.includes('windows')) {
-    return 'windows';
-  }
-  if (ua.includes('linux')) {
-    return 'linux';
-  }
-  return 'macos';
-};
-
-export const isProjectActionEnabledOnPlatform = (
-  action: OpenChamberProjectAction,
-  platform: OpenChamberProjectActionPlatform
-): boolean => {
-  if (!Array.isArray(action.platforms) || action.platforms.length === 0) {
-    return true;
-  }
-  return action.platforms.includes(platform);
-};
-
 export const toProjectActionRunKey = (directory: string, actionId: string): string => {
   return `${normalizeProjectActionDirectory(directory)}::${actionId}`;
 };
@@ -125,12 +100,12 @@ export const resolveProjectActionSelection = ({
   canUseAutoDiscover,
   selectedActionId,
 }: {
-  actions: OpenChamberProjectAction[];
-  autoDiscoverAction: OpenChamberProjectAction;
+  actions: DevRyanProjectAction[];
+  autoDiscoverAction: DevRyanProjectAction;
   canUseAutoDiscover: boolean;
   selectedActionId: string | null;
-}): OpenChamberProjectAction | null => {
-  if (selectedActionId === OPENCHAMBER_AUTO_DISCOVER_ACTION_ID && canUseAutoDiscover) {
+}): DevRyanProjectAction | null => {
+  if (selectedActionId === DEVRYAN_AUTO_DISCOVER_ACTION_ID && canUseAutoDiscover) {
     return autoDiscoverAction;
   }
 

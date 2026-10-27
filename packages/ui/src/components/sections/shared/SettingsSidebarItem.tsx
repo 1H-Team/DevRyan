@@ -8,6 +8,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { RiMore2Line } from '@remixicon/react';
 import { cn } from '@/lib/utils';
+import { typography } from '@/lib/typography';
 
 export interface SettingsSidebarItemAction {
   /** Label shown in dropdown menu */
@@ -35,6 +36,8 @@ interface SettingsSidebarItemProps {
   trailing?: React.ReactNode;
   /** Actions shown in dropdown menu. If empty/undefined, no dropdown is shown. */
   actions?: SettingsSidebarItemAction[];
+  /** Comfortable sizing for larger navigation rows; compact preserves existing sizing. */
+  size?: 'compact' | 'comfortable';
   /** Additional className for the outer container */
   className?: string;
 }
@@ -64,6 +67,7 @@ export const SettingsSidebarItem: React.FC<SettingsSidebarItemProps> = ({
   icon,
   trailing,
   actions,
+  size = 'compact',
   className,
 }) => {
   const hasActions = actions && actions.length > 0;
@@ -75,18 +79,25 @@ export const SettingsSidebarItem: React.FC<SettingsSidebarItemProps> = ({
         selected
           ? 'bg-interactive-selection'
           : 'hover:bg-interactive-hover',
+        size === 'comfortable' && 'py-0',
         className
       )}
     >
       <div className="flex min-w-0 flex-1 items-center">
         <button
           onClick={onSelect}
-          className="flex min-w-0 flex-1 flex-col gap-0 rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+          className={cn(
+            'flex min-w-0 flex-1 flex-col gap-0 rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50',
+            size === 'comfortable' && 'min-h-9 justify-center py-1.5',
+          )}
           tabIndex={0}
         >
-          <div className="flex items-center gap-1.5">
+          <div className={cn('flex items-center gap-1.5', size === 'comfortable' && 'min-w-0 max-w-full gap-2')}>
             {icon}
-            <span className="typography-ui-label font-normal truncate text-foreground">
+            <span
+              className="typography-ui-label font-normal truncate text-foreground"
+              style={size === 'comfortable' ? typography.uiHeader : undefined}
+            >
               {title}
             </span>
             {trailing}

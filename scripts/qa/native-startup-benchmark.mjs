@@ -1,0 +1,784 @@
+// Three fresh packaged app-bound starts against the actual native backend and a
+// local HTTP model fixture. No launchd, installed state, or external OpenCode.
+import assert from 'node:assert/strict';
+import { execFile, execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { promisify } from 'node:util';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { createDiagnosticSanitizer } from '../../packages/harness-runtime/lib/sanitizer.js';
+import { readRuntimeBundleBinding } from '../../packages/web/server/lib/opencode/runtime-host/runtime-bundle-binding.js';
+import { TARGET_OPENCODE_VERSION } from '../../packages/web/server/lib/opencode/version-policy.js';
+import { assertStartupMode, captureFirstDocumentStartup, observeStartupNavigation, parseStartupPhaseLogs } from '../perf/electron-lifecycle-benchmark.mjs';
+import { captureQaSourceIdentity } from './artifact-evidence.mjs';
+import { CdpConnection, discoverPageTarget, evaluate } from './cdp.mjs';
+import { prepareRuntimeUiProfile, runtimeUiTuple } from './native-backend-ui-diagnostic.mjs';
+import { loadQaPackagedArtifact } from './packaged-artifact.mjs';
+import { createQaUiDriver } from './ui-driver.mjs';
+import { reservePort, startOwnedProcess } from './process.mjs';
+import { createRunRoot, scratchParent } from './run-root.mjs';
+import { syntheticCursorProvider, syntheticAnthropicProvider } from './startup-catalog-reproduction.mjs';
+
+const execute = promisify(execFile);
+const repository = fileURLToPath(new URL('../../', import.meta.url)).replace(/\/$/, '');
+const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+const hash = bytes => createHash('sha256').update(bytes).digest('hex');
+export const NATIVE_STARTUP_DRAFT = 'DevRyan startup draft remains unsent.';
+
+/** The endpoint is a real pointer focus and browser text insertion, with no submit action. */
+export async function proveNativeStartupComposer({ read, click, insertText, providerRequestCount, checkAlive = () => {},
+  settle = () => pause(100), clock = () => performance.now(), startedAt, expectedTimeOrigin, draft = NATIVE_STARTUP_DRAFT }) {
+  const assertAccessible = snapshot => assert.ok(snapshot?.point && snapshot.hitOwned && snapshot.enabled
+    && snapshot.visibilityState === 'visible' && snapshot.splashAbsent === true,
+  'Startup composer must be enabled, visible, splash-free and unobstructed at the pointer target');
+  checkAlive();
+  const before = await read();
+  assertAccessible(before);
+  assert.equal(before.value, '', 'Startup composer must be empty before pointer focus');
+  assert.equal(before.timeOrigin, expectedTimeOrigin, 'Composer proof must use the ready document');
+  const initialRequests = providerRequestCount();
+  const clickedAtMs = clock() - startedAt;
+  await click(before.point);
+  checkAlive();
+  const focused = await read();
+  assertAccessible(focused);
+  assert.equal(focused?.focused, true, 'Trusted pointer click must focus the composer');
+  assert.equal(focused.timeOrigin, expectedTimeOrigin, 'Composer document changed after pointer focus');
+  assert.equal(focused.sessionID, before.sessionID, 'Pointer focus must not navigate to a session');
+  await insertText(draft);
+  await settle();
+  checkAlive();
+  const after = await read();
+  assertAccessible(after);
+  assert.equal(after?.timeOrigin, expectedTimeOrigin, 'Composer document changed during draft entry');
+  assert.equal(after.focused, true, 'Composer lost focus during draft entry');
+  assert.equal(after.value, draft, 'Composer must accept the exact fixed draft');
+  assert.equal(after.sessionID, before.sessionID, 'Draft entry must not navigate to a session');
+  assert.equal(providerRequestCount(), initialRequests, 'Draft entry must not submit a provider request');
+  return { outcome: 'passed', method: 'trusted CDP pointer click and Input.insertText',
+    clickedAtMs, acceptedAtMs: clock() - startedAt, draftSha256: hash(draft), draftBytes: Buffer.byteLength(draft),
+    unsent: true, providerRequestsBefore: initialRequests, providerRequestsAfter: providerRequestCount() };
+}
+
+export async function proveNativeStartupComposerWithCdp({ cdp, checkAlive, startedAt, expectedTimeOrigin, providerRequests }) {
+  const read = () => evaluate(cdp, `(() => {
+    const e=[...document.querySelectorAll('textarea')].find(node=>{const r=node.getBoundingClientRect();return r.width>0&&r.height>0});
+    if(!e)return null;
+    const r=e.getBoundingClientRect(),point={x:r.left+r.width/2,y:r.top+r.height/2};
+    const hit=document.elementFromPoint(point.x,point.y);
+    let visible=point.x>=0&&point.x<innerWidth&&point.y>=0&&point.y<innerHeight;
+    for(let node=e;node;node=node.parentElement){const s=getComputedStyle(node);if(s.display==='none'||s.visibility==='hidden'||Number(s.opacity)<=0)visible=false;}
+    return {point,hitOwned:visible&&Boolean(hit&&e.contains(hit)),enabled:!e.disabled&&!e.readOnly,
+      visibilityState:document.visibilityState,splashAbsent:!document.querySelector('#initial-loading,#startup-status,[data-runtime-loading-screen]'),
+      focused:document.activeElement===e,value:e.value,sessionID:new URL(location.href).searchParams.get('session'),timeOrigin:performance.timeOrigin};
+  })()`);
+  const ui = createQaUiDriver(cdp, { checkAlive, timeoutMs: 10000 });
+  return proveNativeStartupComposer({ read, click: point => ui.pointer(point),
+    insertText: text => cdp.send('Input.insertText', { text }), providerRequestCount: () => providerRequests.length,
+    checkAlive, startedAt, expectedTimeOrigin });
+}
+
+export function parseNativeStartupArgs(argv) {
+  if (![4, 6].includes(argv.length) || argv[0] !== '--package-evidence' || argv[2] !== '--artifact-root'
+    || !path.isAbsolute(argv[1]) || !path.isAbsolute(argv[3])
+    || argv.length === 6 && (argv[4] !== '--baseline-artifact-root' || !path.isAbsolute(argv[5]))) {
+    throw new Error('Usage: bun scripts/qa/native-startup-benchmark.mjs --package-evidence <absolute> --artifact-root <absolute> [--baseline-artifact-root <absolute>]');
+  }
+  return { packageEvidence: argv[1], artifactRoot: argv[3], ...(argv.length === 6 ? { baselineArtifactRoot: argv[5] } : {}) };
+}
+
+/** improvement: the reviewed startup optimisation (3 pairs, >= 5% faster). no-regression: refactor qualification. */
+export const STARTUP_COMPARISON_GATES = Object.freeze(['improvement', 'no-regression']);
+const COMPARISON_ORDERS = Object.freeze({
+  improvement: ['B1', 'C1', 'C2', 'B2', 'B3', 'C3'],
+  'no-regression': ['B1', 'C1', 'C2', 'B2', 'B3', 'C3', 'C4', 'B4', 'B5', 'C5'],
+});
+
+export function parseStartupComparisonArgs(argv) {
+  const flags = ['--baseline-package-evidence', '--candidate-package-evidence', '--artifact-root'];
+  assert.ok([6, 8, 10, 12].includes(argv.length), 'Comparison requires explicit baseline, candidate and native artifacts');
+  for (let index = 0; index < flags.length; index++) {
+    assert.equal(argv[index * 2], flags[index], 'Unexpected comparison option');
+    assert.ok(path.isAbsolute(argv[index * 2 + 1]), 'Comparison artifacts must be absolute');
+  }
+  let startupMode, baselineArtifactRoot, gate;
+  for (let index = 6; index < argv.length; index += 2) {
+    if (argv[index] === '--startup-mode' && startupMode === undefined) startupMode = argv[index + 1];
+    else if (argv[index] === '--gate' && gate === undefined) {
+      gate = argv[index + 1];
+      assert.ok(STARTUP_COMPARISON_GATES.includes(gate), 'Comparison gate must be improvement or no-regression');
+    }
+    else if (argv[index] === '--baseline-artifact-root' && baselineArtifactRoot === undefined) {
+      baselineArtifactRoot = argv[index + 1];
+      assert.ok(path.isAbsolute(baselineArtifactRoot), 'Upgrade baseline artifacts must be absolute');
+    } else throw new Error('Unexpected comparison option');
+  }
+  startupMode ??= 'natural';
+  assertStartupMode(startupMode);
+  return { baselinePackageEvidence: argv[1], candidatePackageEvidence: argv[3], artifactRoot: argv[5], startupMode,
+    gate: gate ?? 'improvement', ...(baselineArtifactRoot ? { baselineArtifactRoot } : {}) };
+}
+
+export function readNativeWindowObservation(raw, ownedPid) {
+  assert.ok(Number.isSafeInteger(ownedPid) && ownedPid > 0);
+  assert.ok(typeof raw === 'string' && Buffer.byteLength(raw) <= 4096);
+  const value = JSON.parse(raw);
+  assert.equal(value.protocol, 'devryan.owned-window-visibility/1');
+  assert.equal(value.ownerPID, ownedPid, 'OS observation must name the exact owned Electron child');
+  assert.ok(Array.isArray(value.windowIDs) && value.windowIDs.length <= 1
+    && value.windowIDs.every(id => Number.isSafeInteger(id) && id > 0));
+  return value.windowIDs.map(windowID => ({ windowID, visible: true }));
+}
+
+/** Native visibility is a parent-clock observation upper bound, not a pixel-paint timestamp. */
+export async function observeNativeStartupVisibility({ startedAt, readVisibility, checkAlive,
+  clock = () => performance.now(), wait = pause, timeoutMs = 45000, onObservationError = () => {} }) {
+  const deadline = clock() + timeoutMs;
+  while (clock() < deadline) {
+    checkAlive();
+    let windows;
+    try { windows = await readVisibility(); } catch (error) {
+      onObservationError({ code: typeof error.code === 'number' || typeof error.code === 'string' ? error.code : null,
+        signal: typeof error.signal === 'string' ? error.signal : null, killed: error.killed === true });
+      // A bounded invocation timeout is pending evidence; only eventual owned-window proof succeeds.
+      if (error.killed !== true || error.signal !== 'SIGTERM') throw error;
+    }
+    if (windows) {
+      assert.ok(Array.isArray(windows) && windows.length <= 1, 'Owned startup must have at most one native window');
+      if (windows[0]?.visible === true) return { firstVisibleObservedMs: clock() - startedAt,
+        windowID: windows[0].windowID, clock: 'parent-monotonic', measurement: 'CGWindowList on-screen normal-layer owned-PID metadata observation upper bound; includes helper invocation and polling latency; not first painted pixels' };
+    }
+    await wait(100);
+  }
+  throw new Error('qa_startup_native_visibility_timeout');
+}
+
+/** Same real UI submission and completed-assistant checks as final-DMG startup qualification. */
+export async function submitNativeStartupFixture({ ui, request, workspace, providerRequests, startedAt,
+  clock = () => performance.now() }) {
+  const route = '/api/session?directory=' + encodeURIComponent(workspace) + '&roots=true&limit=50';
+  const before = await request(route);
+  assert.equal(before.status, 200);
+  const beforeIds = new Set(before.body.map(row => row.id));
+  await ui.click({ label: 'New Chat' });
+  const calls = providerRequests.length, submittedAt = clock();
+  await ui.send('DevRyan live QA ready.');
+  const completed = await ui.waitFor('completed startup fixture response', async () => {
+    if (providerRequests.length <= calls) return null;
+    const sessions = await request(route); assert.equal(sessions.status, 200);
+    const session = sessions.body.find(row => !beforeIds.has(row.id));
+    if (!session) return null;
+    const messages = await request(`/api/session/${encodeURIComponent(session.id)}/message?directory=${encodeURIComponent(workspace)}`);
+    assert.equal(messages.status, 200);
+    const assistant = messages.body.find(row => row.info?.role === 'assistant' && row.info?.time?.completed
+      && row.parts?.some(part => part.type === 'text' && part.text?.includes('DevRyan live QA ready.')));
+    return assistant ? { sessionID: session.id, messageID: assistant.info.id } : null;
+  });
+  const completedAt = clock();
+  await ui.waitVisibleText('DevRyan live QA ready.', `[data-message-id=${JSON.stringify(completed.messageID)}]`);
+  return { ...completed, outcome: 'passed', completeResponseSinceSpawnMs: completedAt - startedAt,
+    completeResponseSinceSubmitMs: completedAt - submittedAt, renderedCompleteSinceSpawnMs: clock() - startedAt,
+    renderedCompleteSinceSubmitMs: clock() - submittedAt, submissionClockOrigin: 'before real UI send',
+    clock: 'parent-monotonic', providerRequestObserved: true };
+}
+
+export function assertNativeStartupUpgrade(initial, final, candidate) {
+  assertNativeUpgradeBaseline(initial.opencodeVersion, candidate.opencodeVersion, initial.artifactManifestSha256, candidate.artifactManifestSha256);
+  assert.equal(final.revision, initial.revision + 1, 'Startup must commit one selection transition');
+  assert.notEqual(final.bundleID, initial.bundleID, 'Startup must select a new bundle');
+  assert.equal(final.previousBundleID, initial.bundleID, 'The baseline must remain the rollback target');
+  assert.equal(final.opencodeVersion, candidate.opencodeVersion);
+  assert.equal(final.artifactManifestSha256, candidate.artifactManifestSha256);
+}
+
+export function assertNativeUpgradeBaseline(baselineVersion, candidateVersion, baselineDigest, candidateDigest) {
+  const [baseline, candidate] = [baselineVersion, candidateVersion].map(version => {
+    assert.match(version, /^2\.\d+\.\d+$/, 'Upgrade versions must be exact native releases');
+    return version.split('.').map(Number);
+  });
+  const repaired = baselineVersion === candidateVersion && /^[a-f0-9]{64}$/.test(baselineDigest ?? '')
+    && /^[a-f0-9]{64}$/.test(candidateDigest ?? '') && baselineDigest !== candidateDigest;
+  assert.ok(repaired || baseline[1] < candidate[1] || baseline[1] === candidate[1] && baseline[2] < candidate[2], 'An upgrade requires an older baseline or a distinct repaired artifact');
+}
+
+export const readBundleStartupState = controlRoot => {
+  const binding = readRuntimeBundleBinding({ DEVRYAN_RUNTIME_BUNDLE_ROOT: controlRoot });
+  const bytes = readFileSync(binding.descriptor.launch.artifactManifestPath);
+  assert.equal(hash(bytes), binding.descriptor.launch.artifactManifestSha256, 'Selected artifact manifest changed');
+  const manifest = JSON.parse(bytes);
+  return { bundleID: binding.descriptor.bundleID, revision: binding.selection.revision,
+    previousBundleID: binding.selection.previousBundleID, opencodeVersion: manifest.opencodeVersion,
+    artifactManifestSha256: binding.descriptor.launch.artifactManifestSha256 };
+};
+
+/** Observe the renderer's global ready ACK over its actual transport; retain no messages. */
+export function observeNativeStartupSubscription(cdp, startedAt, origin) {
+  const streams = new Map();
+  const sockets = new Set();
+  let readyRequestId = null;
+  let closed = false;
+  const evidence = { readyAcknowledgedAtMs: null, transport: null, error: null };
+  const markReady = (requestId, transport) => {
+    readyRequestId = requestId;
+    evidence.transport = transport;
+    evidence.readyAcknowledgedAtMs ??= performance.now() - startedAt;
+  };
+  const stopped = requestId => {
+    streams.delete(requestId); sockets.delete(requestId);
+    if (readyRequestId === requestId) {
+      readyRequestId = null; evidence.readyAcknowledgedAtMs = null; evidence.transport = null;
+    }
+  };
+  const ownedUrl = (candidate, protocol, paths) => {
+    try {
+      const url = new URL(candidate);
+      return url.protocol === protocol && url.hostname === '127.0.0.1' && paths.includes(url.pathname)
+        && (!origin || url.host === new URL(origin).host);
+    } catch { return false; }
+  };
+  const accept = (requestId, encoded) => {
+    const stream = streams.get(requestId);
+    if (!stream || typeof encoded !== 'string') return;
+    stream.buffer += stream.decoder.decode(Buffer.from(encoded, 'base64'), { stream: true });
+    stream.buffer = stream.buffer.replaceAll('\r\n', '\n');
+    if (stream.buffer.length > 512 * 1024) { evidence.error = 'qa_startup_sse_frame_overflow'; return; }
+    const frames = stream.buffer.split('\n\n');
+    stream.buffer = frames.pop();
+    for (const frame of frames) {
+      if (!frame.split('\n').some(line => line === 'event: devryan.subscription-ready')) continue;
+      const data = frame.split('\n').filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n');
+      let ready;
+      try { ready = JSON.parse(data); } catch { continue; }
+      if (ready?.type === 'ready' && ready.scope === 'global') markReady(requestId, 'fetch-sse');
+    }
+  };
+  const removers = [
+    cdp.on('Network.responseReceived', ({ requestId, response }) => {
+      if (!ownedUrl(response?.url, 'http:', ['/api/global/event', '/global/event'])
+        || response.status !== 200 || response.mimeType !== 'text/event-stream') return;
+      const stream = { decoder: new TextDecoder(), buffer: '', pending: [] };
+      streams.set(requestId, stream);
+      void cdp.send('Network.streamResourceContent', { requestId }).then(({ bufferedData }) => {
+        accept(requestId, bufferedData);
+        for (const data of stream.pending) accept(requestId, data);
+        stream.pending = null;
+      }).catch(() => { if (!closed) evidence.error = 'qa_startup_sse_capture_unavailable'; });
+    }),
+    cdp.on('Network.dataReceived', ({ requestId, data }) => {
+      const stream = streams.get(requestId);
+      if (stream?.pending && typeof data === 'string') stream.pending.push(data);
+      else accept(requestId, data);
+    }),
+    cdp.on('Network.webSocketCreated', ({ requestId, url }) => {
+      if (ownedUrl(url, 'ws:', ['/api/global/event/ws'])) sockets.add(requestId);
+    }),
+    cdp.on('Network.webSocketFrameReceived', ({ requestId, response }) => {
+      if (!sockets.has(requestId) || response?.opcode !== 1 || typeof response.payloadData !== 'string') return;
+      let frame;
+      try { frame = JSON.parse(response.payloadData); } catch { return; }
+      if (frame?.type === 'ready' && frame.scope === 'global') markReady(requestId, 'websocket');
+      else if (frame?.type === 'error') stopped(requestId);
+    }),
+    ...['Network.loadingFailed', 'Network.loadingFinished']
+      .map(event => cdp.on(event, ({ requestId }) => { if (streams.has(requestId)) stopped(requestId); })),
+    ...['Network.webSocketClosed', 'Network.webSocketFrameError']
+      .map(event => cdp.on(event, ({ requestId }) => { if (sockets.has(requestId)) stopped(requestId); })),
+  ];
+  return { evidence, isReady: () => evidence.readyAcknowledgedAtMs !== null && !evidence.error,
+    check: () => { if (evidence.error) throw new Error(evidence.error); },
+    close: () => { closed = true; removers.forEach(remove => remove()); streams.clear(); sockets.clear(); } };
+}
+
+/** Only fixed endpoint timings/counts are retained, never request bodies or URLs. */
+export function observeStartupBackgroundWork(cdp, startedAt, origin) {
+  const evidence = { agentWarmupAtMs: null, updateChecks: 0 };
+  const close = cdp.on('Network.requestWillBeSent', ({ request }) => {
+    let url;
+    try { url = new URL(request?.url); } catch { return; }
+    if (url.origin !== origin) return;
+    if (url.pathname === '/api/startup/agent-runtime-warmup') evidence.agentWarmupAtMs ??= performance.now() - startedAt;
+    if (url.pathname === '/api/devryan/update-check') evidence.updateChecks++;
+  });
+  return { evidence, close };
+}
+
+export function readNativeStartupLogs(app, qaHome, offset = 0) {
+  const logs = app ? [app.getLog()] : [];
+  // electron-log resolves its file beneath the isolated app home on this QA
+  // host. Never search the user's Library or infer it from an installed app.
+  try { logs.push(readFileSync(path.join(qaHome, 'Library/Logs/DevRyan/main.log'), 'utf8').slice(offset)); }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
+  return logs.join('\n');
+}
+
+export function summarizeNativeStartupRuns(runs, launches = 3) {
+  assert.equal(runs.length, launches, `Native startup measurements require ${launches === 3 ? 'three' : launches} fresh launches`);
+  assert.ok(runs.every(run => run.startup?.outcome === 'passed' && !run.cleanupErrors?.length), 'Every startup and cleanup must pass');
+  const values = runs.map(run => run.startup.uiReadyMs).sort((a, b) => a - b);
+  assert.ok(values.every(value => Number.isFinite(value) && value >= 0), 'Startup timings must use the parent clock');
+  return { launches, medianUiReadyMs: values[(launches - 1) / 2], minimumUiReadyMs: values[0], maximumUiReadyMs: values.at(-1) };
+}
+
+export function assertNativeStartupPackageSource(packaged, current, startupPolicy, baselineSourceSha256) {
+  if (baselineSourceSha256 !== undefined) {
+    assert.equal(startupPolicy, 'previous', 'Only a recorded baseline may use historical source');
+    assert.match(baselineSourceSha256, /^[a-f0-9]{64}$/);
+  }
+  assert.equal(packaged, baselineSourceSha256 ?? current, 'Package source differs from the reviewed cohort');
+}
+
+async function readStartupCatalogFixture() {
+  let catalogProviders;
+  if (process.env.DEVRYAN_QA_CATALOG_CONFIG) {
+    const file = await fs.realpath(process.env.DEVRYAN_QA_CATALOG_CONFIG);
+    assert.ok(file.startsWith(path.join(repository, '.cache/sessions') + path.sep));
+    const provider = JSON.parse(await fs.readFile(file, 'utf8'));
+    catalogProviders = { ...syntheticCursorProvider({ provider }), ...syntheticAnthropicProvider({ provider }) };
+  }
+  return catalogProviders;
+}
+
+export async function runNativeStartupBenchmark(options) {
+  return runStartupLaunches(options);
+}
+
+async function runStartupLaunches({ packageEvidence, artifactRoot, baselineArtifactRoot, startupMode = 'natural', startupPolicy = 'optimized', baselineSourceSha256, diagnosticSingle = false }, comparisonSource, comparisonCatalog) {
+  assertStartupMode(startupMode);
+  assert.equal(typeof diagnosticSingle, 'boolean');
+  assert.ok(['optimized','previous'].includes(startupPolicy), 'Explicit startup comparison policy required');
+  if (process.platform !== 'darwin' || process.arch !== 'arm64' || !globalThis.Bun) throw new Error('Native packaged startup measurement requires pinned Bun on Darwin ARM64');
+  const before = await captureQaSourceIdentity(repository);
+  const legacyOpenAiBrowser = process.env.DEVRYAN_QA_LEGACY_OPENAI_BROWSER === '1';
+  const catalogProviders = comparisonCatalog ?? await readStartupCatalogFixture();
+  const packaged = await loadQaPackagedArtifact({ root: repository, evidencePath: packageEvidence });
+  if (comparisonSource) assert.equal(packaged.evidence.source.sha256, comparisonSource, 'Comparison package source changed');
+  else assertNativeStartupPackageSource(packaged.evidence.source.sha256, before.sha256, startupPolicy, baselineSourceSha256);
+  let candidate;
+  if (baselineArtifactRoot) {
+    assert.ok(artifactRoot.startsWith(repository + path.sep) && await fs.realpath(artifactRoot) === artifactRoot, 'Candidate artifacts must be canonical repository-owned files');
+    const candidateBytes = await fs.readFile(path.join(artifactRoot, 'native-bundle.json'));
+    const packagedBytes = await fs.readFile(path.join(packaged.evidence.appPath, 'Contents/Resources/revert-runtime/darwin-arm64/native-bundle.json'));
+    const manifest = JSON.parse(candidateBytes);
+    assert.equal(hash(packagedBytes), hash(candidateBytes), 'Packaged startup upgrade must use the exact reviewed candidate');
+    assert.equal(manifest.opencodeVersion, TARGET_OPENCODE_VERSION, 'Upgrade candidate must match the host pin');
+    candidate = { opencodeVersion: manifest.opencodeVersion, artifactManifestSha256: hash(candidateBytes) };
+  }
+  let activeStop = async () => {};
+  const run = createRunRoot({ parent: scratchParent('qa'), prefix: 'native-startup-',
+    owner: 'scripts/qa/native-startup-benchmark.mjs', extraPayloads: ['native-visibility'], onInterrupt: () => activeStop() });
+  const fixtures = path.join(run.dir, 'test-fixtures');
+  await fs.mkdir(fixtures, { mode: 0o700 });
+  const launchScope = comparisonSource ? 'one fresh process/profile' : 'three fresh processes/profiles';
+  const evidence = { schemaVersion: 1, kind: candidate ? 'packaged-native-app-bound-startup-upgrade' : 'packaged-native-app-bound-startup', outcome: 'failed',
+    scope: candidate ? 'three fresh baseline profiles; production app-bound native startup upgrade; local HTTP model fixture; natural first usable renderer'
+      : `${launchScope}; prepared native bundle; local HTTP model fixture; natural first usable renderer`,
+    ...(candidate ? { candidate } : {}),
+    launches: comparisonSource || diagnosticSingle ? 1 : 3,
+    startupMode, ...(startupMode === 'foreground' ? { scope: candidate ? 'three fresh baseline profiles; production startup upgrade; local HTTP model fixture; foreground-controlled admission' : `${launchScope}; prepared native bundle; local HTTP model fixture; foreground-controlled admission`, timingQualification: 'foreground-controlled admission, not natural startup latency' } : {}),
+    sourceSha256: before.sha256, packageSourceSha256: packaged.evidence.source.sha256, archiveSha256: packaged.evidence.archiveSha256, startupPolicy, legacyOpenAiBrowser, runs: [],
+    catalogFixtureSha256: hash(JSON.stringify(catalogProviders ?? null)),
+    unavailable: ['foreground warm service', 'foreground cold service', 'foreground stale-owner recovery', 'foreground service upgrade'],
+    excluded: ['launchd/SMAppService registration', 'installed state', 'paid providers', 'first native-bundle provisioning', 'cold OS caches'] };
+  try {
+    const visibilityDirectory = path.join(run.dir, 'native-visibility');
+    await fs.mkdir(visibilityDirectory, { mode: 0o700 });
+    const visibilitySource = path.join(repository, 'scripts/qa/macos-gui-prerequisites.swift');
+    const visibilityBinary = path.join(visibilityDirectory, 'DevRyan-owned-window-visibility');
+    await execute('/usr/bin/xcrun', ['swiftc', visibilitySource, '-module-cache-path', path.join(visibilityDirectory, 'module-cache'), '-o', visibilityBinary],
+      { timeout: 60000, maxBuffer: 65536 });
+    evidence.nativeVisibilityHelper = { sourceSha256: hash(await fs.readFile(visibilitySource)), binarySha256: hash(await fs.readFile(visibilityBinary)) };
+    if (diagnosticSingle) {
+      evidence.kind = 'packaged-native-startup-single-diagnostic';
+      evidence.scope = 'single isolated native startup and reopen diagnostic; local HTTP model fixture';
+      evidence.qualification = 'single diagnostic only; not a three-trial comparison or release qualification';
+    }
+    for (let iteration = 0; iteration < (comparisonSource || diagnosticSingle ? 1 : 3); iteration++) {
+      const directory = path.join(run.dir, `run-${iteration + 1}`);
+      await fs.mkdir(directory, { mode: 0o700 });
+      const runtimeRoot = run.own(await fs.mkdtemp(path.join(fixtures, 'native-startup-')));
+      const workspace = path.join(runtimeRoot, 'workspace');
+      await fs.mkdir(workspace, { mode: 0o700 });
+      execFileSync('git', ['init', '--quiet', '--initial-branch=main', '--template=', workspace], { cwd: repository,
+        env: { PATH: process.env.PATH, HOME: runtimeRoot, GIT_CONFIG_GLOBAL: os.devNull, GIT_CONFIG_NOSYSTEM: '1', GIT_CEILING_DIRECTORIES: fixtures } });
+      const sanitize = createDiagnosticSanitizer({ homeDir: process.env.HOME,
+        pathMappings: [{ path: runtimeRoot, placeholder: '<QA_RUNTIME>' }, { path: repository, placeholder: '<REPOSITORY>' }] });
+      const record = { iteration, startup: null, cleanupErrors: [] };
+      evidence.runs.push(record);
+      let prepared, app, cdp, audit, subscription, background, removeRuntimeErrors;
+      let rendererExceptions = 0;
+      let stopping;
+      const stop = () => stopping ??= (async () => {
+        for (const [owner, close] of [['app', () => app?.stop()], ['provider', () => prepared?.close()]]) {
+          try { await close(); } catch { record.cleanupErrors.push(`${owner}_cleanup_failed`); }
+        }
+      })();
+      activeStop = stop;
+      try {
+        prepared = await prepareRuntimeUiProfile({ cell: { transport: 'runtime-fixture' }, runtimeRoot, workspace, targetGeneration: 2,
+          artifactRoot: baselineArtifactRoot ?? artifactRoot, runScope: run.scope,
+          startupUpgrade: Boolean(baselineArtifactRoot), catalogProviders, legacyOpenAiBrowser });
+        record.initialBundle = readBundleStartupState(prepared.controlRoot);
+        if (candidate) {
+          assert.equal(record.initialBundle.revision, 1);
+          assert.equal(record.initialBundle.previousBundleID, null);
+          assertNativeUpgradeBaseline(record.initialBundle.opencodeVersion, candidate.opencodeVersion, record.initialBundle.artifactManifestSha256, candidate.artifactManifestSha256);
+          assert.equal(prepared.env.DEVRYAN_RUNTIME_BUNDLE_ROOT, undefined);
+          assert.equal(prepared.env.XDG_STATE_HOME, path.join(runtimeRoot, 'state'));
+        }
+        const profile = path.join(runtimeRoot, 'profile'), port = await reservePort();
+        const settingsPath = path.join(prepared.env.DEVRYAN_DATA_DIR, 'settings.json');
+        const settings = JSON.parse(await fs.readFile(settingsPath, 'utf8'));
+        await fs.writeFile(settingsPath, JSON.stringify({ ...settings, desktopLocalPort: port,
+          desktopLanAccessEnabled: false }) + '\n', { mode: 0o600 });
+        const env = { ...prepared.env, DEVRYAN_QA_RUNTIME: 'electron', DEVRYAN_ELECTRON_USER_DATA_DIR: profile,
+          GIT_CEILING_DIRECTORIES: fixtures };
+        delete env.NODE_OPTIONS;
+        const captureLaunch = async launchRecord => {
+          const debugPort = await reservePort();
+          const logOffset = readNativeStartupLogs(null, prepared.env.DEVRYAN_QA_HOME).length;
+          const startedAt = performance.now();
+          app = startOwnedProcess(packaged.binary, [`--remote-debugging-port=${debugPort}`, `--user-data-dir=${profile}`], { cwd: workspace, env });
+          const visibility = observeNativeStartupVisibility({ startedAt, checkAlive: () => app.check(),
+            onObservationError: failure => {
+              launchRecord.nativeVisibilityInvocationErrors ??= [];
+              if (launchRecord.nativeVisibilityInvocationErrors.length < 24) launchRecord.nativeVisibilityInvocationErrors.push({ ...failure, observedAtMs: performance.now() - startedAt });
+            }, readVisibility: async () => {
+            const { stdout } = await execute(visibilityBinary, ['--observe-owned-window', String(app.child.pid)], { timeout: 2000, maxBuffer: 4096 });
+            return readNativeWindowObservation(stdout, app.child.pid);
+          } }).then(value => { launchRecord.nativeVisibility = value; return { value }; }, error => {
+            launchRecord.nativeVisibility = { outcome: 'failed', reason: 'native_visibility_unavailable' }; return { error };
+          });
+          const target = await discoverPageTarget(debugPort);
+          const cdpTargetMs = performance.now() - startedAt;
+          cdp = await CdpConnection.connect(target.webSocketDebuggerUrl);
+          removeRuntimeErrors = cdp.on('Runtime.exceptionThrown', () => { rendererExceptions++; });
+          audit = observeStartupNavigation(cdp, startedAt, target.url);
+          subscription = observeNativeStartupSubscription(cdp, startedAt, `http://127.0.0.1:${port}`);
+          background = observeStartupBackgroundWork(cdp, startedAt, `http://127.0.0.1:${port}`);
+          await Promise.all([cdp.send('Page.enable'), cdp.send('Runtime.enable'), cdp.send('Network.enable')]);
+          const checkAlive = () => { app.check(); subscription.check(); };
+          const deadline = performance.now() + 45_000;
+          launchRecord.visualObservations = [];
+          const prefix = launchRecord === record ? 'startup' : 'reopen';
+          const captureVisual = async (label, status) => {
+            try {
+              const screenshot = await cdp.send('Page.captureScreenshot', { format: 'png' });
+              const bytes = Buffer.from(screenshot.data, 'base64'), name = `${prefix}-${label}.png`;
+              await fs.writeFile(path.join(directory, name), bytes, { mode: 0o600 });
+              launchRecord.visualObservations.push({ name, sha256: hash(bytes), observedAtMs: performance.now() - startedAt,
+                status: sanitize.sanitizeText(String(status ?? '').slice(0, 200), { highEntropy: false }), outcome: 'captured' });
+            } catch { launchRecord.visualObservations.push({ stage: label, outcome: 'unavailable', reason: 'early_document_capture_unavailable' }); }
+          };
+          await captureVisual('early-document', await evaluate(cdp, 'document.getElementById("startup-status")?.textContent ?? document.getElementById("initial-loading")?.textContent ?? "early splash not observed"').catch(() => 'document changing'));
+          let lastProgress;
+          let origin;
+          while (!origin) {
+            checkAlive();
+            const href = await evaluate(cdp, 'location.href').catch(() => '');
+            if (/^http:\/\/127\.0\.0\.1:\d+\//.test(href)) origin = new URL(href).origin;
+            if (!origin && launchRecord.visualObservations.length < 4) {
+              const status = await evaluate(cdp, 'document.getElementById("startup-status")?.textContent').catch(() => null);
+              if (status && status !== lastProgress) { lastProgress = status; await captureVisual(`progress-${launchRecord.visualObservations.length}`, status); }
+            }
+            if (performance.now() > deadline) throw new Error('qa_startup_renderer_origin_timeout');
+            if (!origin) await pause(100);
+          }
+          const observed = await visibility;
+          if (observed.error) throw observed.error;
+          launchRecord.nativeVisibility = observed.value;
+          launchRecord.startup = await captureFirstDocumentStartup({ cdp, origin, startedAt, checkAlive, navigationAudit: audit, startupMode,
+            ...(startupMode === 'foreground' ? { foregroundWindow: { method: 'desktop_focus_main_window', activate: async () => {
+              const result = await evaluate(cdp, 'window.__TAURI__.core.invoke("desktop_focus_main_window", {})');
+              assert.equal(result?.focused, true, 'Owned Electron window must acknowledge focus');
+              return result;
+            } } } : {}),
+            runtimeUiTuple: { providerId: runtimeUiTuple.providerID, modelId: runtimeUiTuple.modelID, agent: 'builder' },
+            isEventStreamReady: subscription.isReady,
+            proveComposerUsable: proof => proveNativeStartupComposerWithCdp({ ...proof, providerRequests: prepared.evidence.providerRequests }),
+            readStartupPhases: () => parseStartupPhaseLogs(readNativeStartupLogs(app, prepared.env.DEVRYAN_QA_HOME, logOffset)),
+            milestones: { cdpTargetMs, firstVisibleObservedMs: observed.value.firstVisibleObservedMs, loopbackOriginMs: performance.now() - startedAt } });
+          launchRecord.subscription = subscription.evidence;
+          assert.equal(launchRecord.startup.outcome, 'passed', launchRecord.startup.error);
+          return { origin, checkAlive, startedAt };
+        };
+        const { origin, checkAlive, startedAt } = await captureLaunch(record);
+        const ui = createQaUiDriver(cdp, { checkAlive, timeoutMs: 45000 });
+        const request = route => evaluate(cdp, `(async()=>{const response=await fetch(${JSON.stringify(route)},{signal:AbortSignal.timeout(10000)});return {status:response.status,body:await response.json()};})()`);
+        // Prepare populated history before the measured submission so its completed session remains in the first page.
+        const historySize = 200;
+        for (let index = 0; index < historySize; index++) {
+          const response = await fetch(new URL('/api/session?directory=' + encodeURIComponent(workspace), origin), {
+            method: 'POST', headers: { 'content-type': 'application/json', 'X-DevRyan-CSRF': '1' },
+            body: JSON.stringify({ title: `Synthetic startup history ${index}` }), signal: AbortSignal.timeout(10_000),
+          });
+          assert.equal(response.status, 200, 'Synthetic history creation failed');
+          assert.ok((await response.json()).id, 'Synthetic session needs a stable ID');
+        }
+        record.response = await submitNativeStartupFixture({ ui, request, workspace,
+          providerRequests: prepared.evidence.providerRequests, startedAt });
+        record.response.spawnTimingIncludes = '200-session history fixture setup before submission; not earliest first-response latency';
+        if (catalogProviders) {
+          const response = await fetch(new URL('/api/provider?directory=' + encodeURIComponent(workspace), origin), { signal: AbortSignal.timeout(10000) });
+          assert.equal(response.status, 200);
+          const catalog = await response.json(), cursor = catalog.all.find(row => row.id === 'cursor-acp');
+          const expected = Object.keys(catalogProviders['cursor-acp'].models);
+          assert.ok(cursor); for (const id of expected) assert.ok(cursor.models[id], 'Packaged catalog must retain every supplied Cursor model');
+          record.catalog = { status: response.status, providerID: 'cursor-acp', expected: expected.length, matched: expected.filter(id => cursor.models[id]).length };
+        }
+        // Include the former three-second automatic-update window in acceptance.
+        await pause(4_000);
+        checkAlive();
+        record.background = background.evidence;
+        if (startupPolicy === 'optimized') {
+          assert.equal(record.background.updateChecks, 0, 'Startup must not check for updates');
+          assert.ok(record.background.agentWarmupAtMs >= record.startup.uiReadyMs,
+            'Optional project discovery must start after the app is usable');
+        } else {
+          assert.ok(record.background.agentWarmupAtMs <= record.startup.uiReadyMs,
+            'Previous policy must exercise foreground project discovery');
+        }
+        if (catalogProviders) {
+          const ui = createQaUiDriver(cdp, { checkAlive, timeoutMs: 10000 });
+          const ids = Object.keys(catalogProviders['cursor-acp'].models);
+          const modelID = ids.includes('composer-2.5') ? 'composer-2.5' : ids.find(id => id !== 'auto' && !id.startsWith('cursor-acp/')) ?? ids[0];
+          const label = await evaluate(cdp, `window.__zustand_config_store__?.getState().providers?.find(provider => provider.id === 'cursor-acp')?.models?.find(model => model.id === ${JSON.stringify(modelID)})?.name`);
+          assert.ok(typeof label === 'string' && label.length > 0, 'Supplied Cursor model must reach the UI catalog');
+          await ui.click({ selector: 'button:has(.model-controls__model-label)' });
+          await ui.type(label, 'input[placeholder="Search models"],input[placeholder="Search providers or models"]');
+          await ui.waitVisibleText(label);
+          record.catalog.pickerModelID = modelID;
+          record.catalog.pickerModelVisible = true;
+          const picker = await cdp.send('Page.captureScreenshot', { format: 'png' });
+          await fs.writeFile(path.join(directory, 'model-picker.png'), Buffer.from(picker.data, 'base64'), { mode: 0o600 });
+          await ui.key('Escape', { code: 'Escape' });
+        }
+        const diagnostics = await fetch(new URL('/api/diagnostics/status', origin), { signal: AbortSignal.timeout(10000) });
+        assert.equal(diagnostics.status, 200, 'Journal status must be available');
+        const journal = await diagnostics.json();
+        record.journal = { gapRecords: journal.gapRecords, lastError: journal.lastError ? 'journal_error' : null };
+        assert.equal(journal.gapRecords, 0, 'Startup journal has gaps');
+        assert.ok(!journal.lastError, 'Startup journal reported an error');
+        assert.equal(rendererExceptions, 0, 'Renderer threw during startup');
+        record.finalBundle = readBundleStartupState(prepared.controlRoot);
+        if (candidate) assertNativeStartupUpgrade(record.initialBundle, record.finalBundle, candidate);
+        await prepared.verifyInputs();
+        const screenshot = await cdp.send('Page.captureScreenshot', { format: 'png' });
+        await fs.writeFile(path.join(directory, 'startup.png'), Buffer.from(screenshot.data, 'base64'), { mode: 0o600 });
+        removeRuntimeErrors?.(); audit.complete(); subscription.close(); background.close(); cdp.close();
+        await app.stop();
+        record.firstCleanup = app.getCleanupEvidence();
+        assert.deepEqual(record.firstCleanup.remainingProcessIds, [], 'First process must exit before reopening');
+        record.reopen = { startup: null, cleanupErrors: [], historySize };
+        rendererExceptions = 0;
+        const reopened = await captureLaunch(record.reopen);
+        const reopenedBundle = readBundleStartupState(prepared.controlRoot);
+        assertNativeStartupReopen(record.finalBundle, reopenedBundle, record.reopen.startup.electronStartupPhases.records);
+        record.reopen.finalBundle = reopenedBundle;
+        const response = await fetch(new URL('/api/session?directory=' + encodeURIComponent(workspace) + '&roots=true&limit=50', reopened.origin), {
+          signal: AbortSignal.timeout(10_000),
+        });
+        assert.equal(response.status, 200);
+        const listed = await response.json();
+        assert.equal(listed.length, 50, 'Reopened app must load the first page of populated history');
+        record.reopen.listedSessions = listed.length;
+        const messages = await evaluate(cdp, `(async()=>{const response=await fetch(${JSON.stringify('/api/session/' + encodeURIComponent(record.response.sessionID) + '/message?directory=' + encodeURIComponent(workspace))},{signal:AbortSignal.timeout(10000)});return {status:response.status,body:await response.json()};})()`);
+        assert.equal(messages.status, 200);
+        assert.ok(messages.body.some(row => row.info?.id === record.response.messageID && row.info?.time?.completed
+          && row.parts?.some(part => part.type === 'text' && part.text?.includes('DevRyan live QA ready.'))), 'Completed startup response disappeared on reopen');
+        const reopenUi = createQaUiDriver(cdp, { checkAlive: reopened.checkAlive, timeoutMs: 15000 });
+        await reopenUi.click({ selector: `[data-session-row=${JSON.stringify(record.response.sessionID)}] [data-session-select]` });
+        await reopenUi.waitExpression('exact restored conversation selected', `new URL(location.href).searchParams.get('session') === ${JSON.stringify(record.response.sessionID)}`);
+        await reopenUi.waitVisibleText('DevRyan live QA ready.', `[data-message-id=${JSON.stringify(record.response.messageID)}]`);
+        record.reopen.restoredCompletedResponse = { sessionID: record.response.sessionID, messageID: record.response.messageID, outcome: 'passed' };
+        assert.equal(rendererExceptions, 0, 'Reopened renderer threw during startup');
+        const reopenScreenshot = await cdp.send('Page.captureScreenshot', { format: 'png' });
+        await fs.writeFile(path.join(directory, 'reopen.png'), Buffer.from(reopenScreenshot.data, 'base64'), { mode: 0o600 });
+      } catch (error) {
+        if (cdp) {
+          try {
+            const screenshot = await cdp.send('Page.captureScreenshot', { format: 'png' });
+            await fs.writeFile(path.join(directory, 'failure.png'), Buffer.from(screenshot.data, 'base64'), { mode: 0o600 });
+          } catch { /* A lost renderer cannot provide visual failure evidence. */ }
+        }
+        record.error = sanitize.sanitizeText(String(error.message), { highEntropy: false });
+        throw error;
+      } finally {
+        record.rendererExceptions = rendererExceptions;
+        removeRuntimeErrors?.(); audit?.complete(); subscription?.close(); background?.close(); cdp?.close();
+        await stop();
+        activeStop = async () => {};
+        if (app) record.cleanup = app.getCleanupEvidence();
+        record.subscription ??= subscription?.evidence ?? null;
+        let logs = app?.getLog() ?? '';
+        if (prepared) {
+          try { logs = readNativeStartupLogs(app, prepared.env.DEVRYAN_QA_HOME); }
+          catch { record.cleanupErrors.push('main_log_unreadable'); }
+        }
+        if (prepared) {
+          try {
+            const binding = readRuntimeBundleBinding({ DEVRYAN_RUNTIME_BUNDLE_ROOT: prepared.controlRoot });
+            const journalDirectory = path.join(binding.descriptor.launch.webDataDirectory, 'harness/journal');
+            const gaps = execFileSync(process.execPath, ['scripts/journal.mjs', 'gaps', '--dir', journalDirectory, '--verify'],
+              { cwd: repository, encoding: 'utf8', timeout: 10000 });
+            record.journalGapCheck = gaps.trim() ? 'failed' : 'passed';
+            if (gaps.trim()) record.cleanupErrors.push('journal_gaps');
+          } catch { record.journalGapCheck = 'unavailable'; record.cleanupErrors.push('journal_gap_check_failed'); }
+        }
+        await fs.writeFile(path.join(directory, 'startup.log'), sanitize.sanitizeText(logs, { highEntropy: false }), { mode: 0o600 });
+        await fs.writeFile(path.join(directory, 'evidence.json'), JSON.stringify(record, null, 2) + '\n', { mode: 0o600 });
+      }
+      assert.equal(record.cleanupErrors.length, 0, 'Native startup cleanup failed');
+    }
+    assert.equal((await captureQaSourceIdentity(repository)).sha256, before.sha256, 'Source changed during measurement');
+    assert.equal((await loadQaPackagedArtifact({ root: repository, evidencePath: packageEvidence })).evidence.archiveSha256, packaged.evidence.archiveSha256);
+    if (candidate) assert.equal(hash(await fs.readFile(path.join(packaged.evidence.appPath,
+      'Contents/Resources/revert-runtime/darwin-arm64/native-bundle.json'))), candidate.artifactManifestSha256, 'Packaged native candidate changed during measurement');
+    if (!comparisonSource && !diagnosticSingle) {
+      evidence.summary = summarizeNativeStartupRuns(evidence.runs);
+      evidence.reopenSummary = summarizeNativeStartupRuns(evidence.runs.map(record => record.reopen));
+    }
+    evidence.outcome = 'passed';
+  } catch (error) {
+    evidence.error = typeof error.code === 'string' ? error.code : 'qa_native_startup_failed';
+  } finally {
+    await fs.writeFile(path.join(run.dir, 'evidence.json'), JSON.stringify(evidence, null, 2) + '\n', { mode: 0o600 });
+    run.finish(evidence.outcome);
+  }
+  return { ...evidence, output: run.dir };
+}
+
+export function assertNativeStartupReopen(before, after, phases) {
+  assert.deepEqual(after, before, 'Unchanged reopen must preserve the selected bundle and revision');
+  assert.ok(Array.isArray(phases) && phases.some(row => row.phase === 'server_listen' && row.outcome === 'completed'), 'Reopen requires startup phase evidence');
+  const mutations = new Set(['bundle_upgrade', 'bundle_artifact_retention', 'bundle_data_copy', 'bundle_candidate_preparation', 'bundle_selection']);
+  assert.ok(phases.every(row => !mutations.has(row.phase)), 'Unchanged reopen must not upgrade or copy a bundle');
+}
+
+export function summarizeStartupComparison(baseline, candidate) {
+  const before = summarizeNativeStartupRuns(baseline), after = summarizeNativeStartupRuns(candidate);
+  const improvementPercent = 100 * (before.medianUiReadyMs - after.medianUiReadyMs) / before.medianUiReadyMs;
+  const pairedImprovements = baseline.map((run, index) => candidate[index].startup.uiReadyMs < run.startup.uiReadyMs);
+  return { baseline: before, candidate: after, improvementPercent, pairedImprovements,
+    accepted: improvementPercent >= 5 && pairedImprovements.every(Boolean) };
+}
+
+/** Five interleaved pairs: reject median time-to-usable-chat growth above max(5%, 50 ms). */
+export function summarizeStartupRegression(baseline, candidate) {
+  const before = summarizeNativeStartupRuns(baseline, 5), after = summarizeNativeStartupRuns(candidate, 5);
+  const growthMs = after.medianUiReadyMs - before.medianUiReadyMs;
+  const allowanceMs = Math.max(0.05 * before.medianUiReadyMs, 50);
+  return { baseline: before, candidate: after, growthMs, allowanceMs,
+    pairedGrowthMs: baseline.map((run, index) => candidate[index].startup.uiReadyMs - run.startup.uiReadyMs),
+    accepted: growthMs <= allowanceMs };
+}
+
+export function assertStartupComparisonSources(baseline, candidate, current, { anyChangedFiles = false } = {}) {
+  assert.equal(candidate.sha256, current, 'Candidate must match current reviewed source');
+  const previous = new Map(baseline.entries.map(entry => [entry.file, entry.sha256]));
+  const next = new Map(candidate.entries.map(entry => [entry.file, entry.sha256]));
+  const changed = [...new Set([...previous.keys(), ...next.keys()])].filter(file => previous.get(file) !== next.get(file));
+  assert.ok(changed.length > 0, 'Comparison requires an actual candidate');
+  const allowed = [
+    'packages/ui/src/App.tsx', 'packages/web/server/lib/opencode/feature-routes-runtime.js',
+    'packages/ui/src/stores/useConfigStore.ts', 'packages/ui/src/stores/useConfigStore.bootstrap-status.test.ts',
+    'packages/ui/src/stores/DOCUMENTATION.md',
+    'packages/electron/entry.mjs', 'packages/electron/early-startup.mjs', 'packages/electron/main.mjs',
+    'packages/electron/package.json', 'packages/electron/scripts/bundle-main.mjs',
+    'packages/electron/tests/early-startup.test.mjs',
+    'packages/ui/src/sync/bootstrap.ts', 'packages/ui/src/sync/bootstrap-session-list.test.ts',
+    'packages/ui/src/sync/child-store.ts', 'packages/ui/src/sync/child-store.status-subscription.test.ts',
+    'packages/ui/src/sync/directory-bootstrap-request.ts', 'packages/ui/src/sync/directory-bootstrap-request.test.ts',
+    'packages/ui/src/sync/sync-context.tsx', 'packages/ui/src/sync/types.ts', 'packages/ui/src/sync/DOCUMENTATION.md',
+    'packages/web/server/lib/opencode/startup-timing.js', 'packages/web/server/lib/opencode/startup-timing.test.js',
+    'packages/web/server/lib/opencode/runtime-host/retained-native-artifacts.js',
+    'packages/web/server/lib/opencode/runtime-host/retained-native-artifacts.test.js',
+    'packages/web/server/lib/opencode/runtime-host/runtime-bundle.js',
+    'packages/web/server/lib/opencode/runtime-host/runtime-bundle-lifecycle.js',
+    'packages/web/server/lib/opencode/runtime-host/DOCUMENTATION.md',
+    'packages/electron/runtime-service-startup.mjs', 'packages/electron/tests/runtime-service-startup.test.mjs',
+    'packages/electron/tests/runtime-service-source.test.mjs',
+    // Concurrent user edit removes a session-opening label; record it in comparison evidence.
+    'packages/ui/src/components/session/sidebar/SessionNodeItem.tsx',
+    // Reviewed concurrent archive fix; these operation handlers do not run during startup.
+    'packages/web/server/lib/opencode/runtime-host/native-admission-owner.js',
+    'packages/web/server/lib/opencode/runtime-host/native-recovered-input.js',
+    'packages/web/server/lib/opencode/runtime-host/native-authorization.test.js',
+    'packages/web/server/lib/opencode/runtime-host/native-recovered-input.test.js',
+  ];
+  // A no-regression gate qualifies arbitrary refactors; it records, not restricts, the changed files.
+  assert.ok(anyChangedFiles || changed.every(file => allowed.includes(file)), 'Comparison changed files outside the startup candidates');
+  for (const source of [baseline, candidate]) {
+    assert.equal(hash(JSON.stringify(source.entries)), source.sha256, 'Source receipt is invalid');
+  }
+  return changed;
+}
+
+export async function runNativeStartupComparison({ baselinePackageEvidence, candidatePackageEvidence, artifactRoot, baselineArtifactRoot, startupMode = 'natural', gate = 'improvement' }) {
+  assertStartupMode(startupMode);
+  assert.ok(STARTUP_COMPARISON_GATES.includes(gate), 'Comparison gate must be improvement or no-regression');
+  assert.ok(typeof artifactRoot === 'string' && artifactRoot.startsWith(path.join(repository, '.cache') + path.sep),
+    'Comparison native artifacts must stay in the repository cache');
+  assert.equal(await fs.realpath(artifactRoot), artifactRoot, 'Comparison native artifacts must be canonical');
+  const before = await captureQaSourceIdentity(repository);
+  const baseline = await loadQaPackagedArtifact({ root: repository, evidencePath: baselinePackageEvidence });
+  const candidate = await loadQaPackagedArtifact({ root: repository, evidencePath: candidatePackageEvidence });
+  const catalogProviders = await readStartupCatalogFixture();
+  const changed = assertStartupComparisonSources(baseline.evidence.source, candidate.evidence.source, before.sha256,
+    { anyChangedFiles: gate === 'no-regression' });
+  assert.equal(baseline.evidence.electronVersion, candidate.evidence.electronVersion);
+  assert.deepEqual(baseline.evidence.nativeArtifacts.map(({ relative, sha256 }) => ({ relative, sha256 })),
+    candidate.evidence.nativeArtifacts.map(({ relative, sha256 }) => ({ relative, sha256 })));
+  const nativeManifest = async packaged => hash(await fs.readFile(path.join(packaged.evidence.appPath, 'Contents/Resources/revert-runtime/darwin-arm64/native-bundle.json')));
+  const nativeDigest = await nativeManifest(baseline);
+  assert.equal(await nativeManifest(candidate), nativeDigest, 'Native runtime versions must match');
+  assert.equal(hash(await fs.readFile(path.join(artifactRoot, 'native-bundle.json'))), nativeDigest, 'Fixture must match packaged native runtime');
+  const run = createRunRoot({ parent: scratchParent('qa'), prefix: 'startup-comparison-', owner: 'scripts/qa/native-startup-benchmark.mjs' });
+  const evidence = { outcome: 'failed', startupMode, gate, changed, nativeDigest, catalogFixtureSha256: hash(JSON.stringify(catalogProviders ?? null)), order: COMPARISON_ORDERS[gate],
+    baselineSourceSha256: baseline.evidence.source.sha256, candidateSourceSha256: candidate.evidence.source.sha256,
+    baselineArchiveSha256: baseline.evidence.archiveSha256, candidateArchiveSha256: candidate.evidence.archiveSha256,
+    baseline: [], candidate: [] };
+  try {
+    for (const label of evidence.order) {
+      const packaged = label[0] === 'B' ? baseline : candidate;
+      const result = await runStartupLaunches({ packageEvidence: packaged.evidencePath, artifactRoot, baselineArtifactRoot, startupMode }, packaged.evidence.source.sha256, catalogProviders);
+      evidence[label[0] === 'B' ? 'baseline' : 'candidate'].push(...result.runs);
+      assert.equal(result.outcome, 'passed', `Launch ${label} failed: ${result.output}`);
+      assert.equal((await captureQaSourceIdentity(repository)).sha256, before.sha256, 'Source changed during comparison');
+    }
+    for (const packaged of [baseline, candidate]) {
+      const final = await loadQaPackagedArtifact({ root: repository, evidencePath: packaged.evidencePath });
+      assert.equal(final.evidence.archiveSha256, packaged.evidence.archiveSha256, 'Comparison archive changed');
+      assert.equal(final.evidence.source.sha256, packaged.evidence.source.sha256, 'Comparison source receipt changed');
+    }
+    assert.equal(await nativeManifest(baseline), nativeDigest);
+    assert.equal(await nativeManifest(candidate), nativeDigest);
+    const summarize = gate === 'no-regression' ? summarizeStartupRegression : summarizeStartupComparison;
+    evidence.summary = summarize(evidence.baseline, evidence.candidate);
+    evidence.reopenSummary = summarize(evidence.baseline.map(record => record.reopen), evidence.candidate.map(record => record.reopen));
+    // The improvement experiment reports acceptance descriptively; a no-regression gate fails the run.
+    evidence.outcome = gate === 'no-regression' && !evidence.summary.accepted ? 'regressed' : 'passed';
+  } catch (error) { evidence.error = error.message; }
+  finally {
+    await fs.writeFile(path.join(run.dir, 'evidence.json'), JSON.stringify(evidence, null, 2) + '\n', { mode: 0o600 });
+    run.finish(evidence.outcome);
+  }
+  return { ...evidence, output: run.dir };
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  // Finish exporting helpers before loading runners that import this module.
+  void (async () => {
+    const argv = process.argv.slice(2);
+    const result = argv[0] === '--baseline-package-evidence'
+      ? await runNativeStartupComparison(parseStartupComparisonArgs(argv))
+      : await runNativeStartupBenchmark(parseNativeStartupArgs(argv));
+    process.stdout.write(JSON.stringify({ outcome: result.outcome, output: result.output, summary: result.summary, error: result.error }) + '\n');
+    process.exitCode = result.outcome === 'passed' ? 0 : 1;
+  })().catch(error => {
+    console.error(error instanceof Error ? error.message : 'Native startup command failed');
+    process.exitCode = 1;
+  });
+}

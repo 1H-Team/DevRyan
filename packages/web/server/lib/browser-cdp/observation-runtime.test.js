@@ -62,6 +62,19 @@ const fixture = (overrides = {}) => {
 };
 
 describe('managed agent-browser observation runtime', () => {
+  test('checkpoint waits an admitted audit after closing its view and refuses replacement views', async () => {
+    let release, entered;
+    const auditStarted = new Promise(resolve => { entered = resolve; });
+    const auditPending = new Promise(resolve => { release = resolve; });
+    const { runtime } = fixture({ audit: async () => { entered(); await auditPending; } });
+    const starting = runtime.startView(developer(), 'lease-1'); await auditStarted;
+    let drained = false;
+    const drain = runtime.holdForCheckpoint().then(() => { drained = true; });
+    await Promise.resolve(); expect(drained).toBe(false); expect(runtime.getViewCount()).toBe(0);
+    await expect(runtime.startView(developer(), 'lease-1')).rejects.toMatchObject({ code: 'browser_observation_held' });
+    release(); await starting; await drain; expect(drained).toBe(true);
+  });
+
   test('returns only the owner-safe projection and never exposes host or capability fields', async () => {
     const { runtime } = fixture();
     const snapshot = await runtime.list(developer());

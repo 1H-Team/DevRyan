@@ -90,7 +90,34 @@ export function createTerminalRuntime({
   multiUserRuntime,
   onTerminalSessionClosed,
   killPtyProcess = killTerminalProcess,
+  platform = process.platform,
 }) {
+  const capabilities = Object.freeze(platform === 'win32'
+    ? { available: false, code: 'terminal_platform_unsupported' }
+    : { available: true, code: null });
+  app.get('/api/terminal/capabilities', (_req, res) => res.json(capabilities));
+  if (!capabilities.available) {
+    // No pinned Windows PTY or qualified descendant ownership contract exists.
+    // Refuse before loading a backend, resolving environment or touching files.
+    app.use('/api/terminal', (_req, res) => res.status(503).json({
+      ...capabilities, error: 'Persistent terminals are unavailable on this host.',
+    }));
+    const upgrade = (req, socket) => {
+      if (parseRequestPathname(req.url) === TERMINAL_INPUT_WS_PATH) {
+        rejectWebSocketUpgrade(socket, 503, 'Persistent terminals are unavailable');
+      }
+    };
+    server.on('upgrade', upgrade);
+    const terminateOwnerSessions = async () => 0;
+    multiUserRuntime?.setTerminalOwnerTerminator?.(terminateOwnerSessions);
+    return {
+      getCapabilities: () => capabilities,
+      shutdown: async () => { server.off('upgrade', upgrade); },
+      terminateOwnerSessions,
+      getSessionDescriptor: () => null,
+      touchSession: () => null,
+    };
+  }
   let ptyProviderPromise = null;
   const getPtyProvider = async () => {
     if (ptyProviderPromise) {
@@ -129,7 +156,7 @@ export function createTerminalRuntime({
   const getTerminalShellCandidates = () => {
     if (process.platform === 'win32') {
       const windowsCandidates = [
-        process.env.OPENCHAMBER_TERMINAL_SHELL,
+        process.env.DEVRYAN_TERMINAL_SHELL,
         process.env.SHELL,
         process.env.ComSpec,
         path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
@@ -156,7 +183,7 @@ export function createTerminalRuntime({
     }
 
     const unixCandidates = [
-      process.env.OPENCHAMBER_TERMINAL_SHELL,
+      process.env.DEVRYAN_TERMINAL_SHELL,
       process.env.SHELL,
       '/bin/zsh',
       '/bin/bash',
@@ -518,7 +545,7 @@ export function createTerminalRuntime({
 
     const handleUpgrade = async () => {
       try {
-        if (req.tunnelAccessDenied || socket.destroyed || req.principal?.scope === 'tunnel-bot') return;
+        if (req.tunnelAccessDenied || socket.destroyed) return;
         if (typeof uiAuthController?.ensureSessionToken === 'function') {
           // Must be awaited: this call performs async token verification.
           const sessionToken = await uiAuthController?.ensureSessionToken?.(req, null);
@@ -986,5 +1013,5 @@ export function createTerminalRuntime({
     };
   };
 
-  return { shutdown, terminateOwnerSessions, getSessionDescriptor, touchSession };
+  return { shutdown, terminateOwnerSessions, getSessionDescriptor, touchSession, getCapabilities: () => capabilities };
 }

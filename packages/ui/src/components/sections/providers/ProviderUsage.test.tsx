@@ -76,6 +76,60 @@ describe('provider usage in Settings → Providers', () => {
     expect(render(<ProviderUsageSection providerId="openai" />)).toBe('');
   });
 
+  test('renders Codex account identity, weekly limits, and unknown reset inventory', () => {
+    const codex: ProviderResult = { ...result('codex', { '7d': usageWindow(27) }), source: 'codex-app-server',
+      connectionId: 'usage-account', account: { email: 'usage@example.test', planType: 'pro' },
+      usage: { windows: { '7d': usageWindow(27) }, resetCredits: null } };
+    const state: Partial<ReturnType<typeof useQuotaStore.getState>> = { results: [codex], configuredProviderIds: ['codex'] };
+    useQuotaStore.setState(state); Object.assign(useQuotaStore.getInitialState(), state);
+    const markup = render(<ProviderUsageSection providerId="openai" connected />);
+    expect(markup).toContain('Usage source: Codex');
+    expect(markup).toContain('usage@example.test');
+    expect(markup).toContain('7-Day Limit');
+    expect(markup).toContain('Reset Bank');
+    expect(markup).toContain('Unavailable');
+    expect(markup).not.toContain('0 available');
+  });
+
+  test('renders native Codex allowance without a second login or inventing a missing weekly window', () => {
+    const codex: ProviderResult = { ...result('codex', { '5h': usageWindow(37) }), source: 'chatgpt-browser', connectionId: 'selected-native-account', account: null };
+    const state = { results: [codex], configuredProviderIds: ['codex'] as const };
+    useQuotaStore.setState({ ...state, configuredProviderIds: [...state.configuredProviderIds] });
+    Object.assign(useQuotaStore.getInitialState(), state);
+    const markup = render(<ProviderUsageSection providerId="openai" connected />);
+    expect(markup).toContain('Usage source: ChatGPT'); expect(markup).toContain('37%');
+    expect(markup).not.toContain('Weekly Limit'); expect(markup).not.toContain('7-Day Limit');
+    expect(markup).not.toContain('Sign in for Usage'); expect(markup).not.toContain('Account unavailable');
+  });
+
+  test('shows nothing for a connected provider that simply has no usage source', () => {
+    expect(render(<ProviderUsageSection providerId="openai" connected />)).toBe('');
+  });
+
+  test('shows the failure and a retry for a connected provider while usage discovery is failing', () => {
+    const state: Partial<ReturnType<typeof useQuotaStore.getState>> = {
+      configuredProviderIds: null,
+      error: 'native_runtime_not_ready',
+    };
+    useQuotaStore.setState(state);
+    Object.assign(useQuotaStore.getInitialState(), state);
+
+    const markup = render(<ProviderUsageSection providerId="openai" connected />);
+
+    expect(markup).toContain('No usage data available yet.');
+    expect(markup).toContain('native_runtime_not_ready');
+    expect(render(<ProviderUsageSection providerId="openai" connected={false} />)).toBe('');
+    expect(render(<ProviderUsageSection providerId="ollama" connected />)).toBe('');
+  });
+
+  test('stays hidden while discovery is merely pending', () => {
+    const state: Partial<ReturnType<typeof useQuotaStore.getState>> = { configuredProviderIds: null, error: null };
+    useQuotaStore.setState(state);
+    Object.assign(useQuotaStore.getInitialState(), state);
+
+    expect(render(<ProviderUsageSection providerId="openai" connected />)).toBe('');
+  });
+
   test('shows the most-used window as a sidebar meter', () => {
     const markup = render(<ProviderUsageMeter quotaProviderId="claude" />);
 

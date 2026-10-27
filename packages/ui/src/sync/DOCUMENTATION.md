@@ -1,8 +1,43 @@
 # Sync architecture, event handling & store update rules
 
+## Required verification and completion
+
+Plan and turn completion use the host's typed verification projection for the
+accepted user objective. A settled child is not enough when its declared checks
+remain pending, failed or blocked. Before presenting completion for an objective
+with checks, sync reloads the managed snapshot so later file edits invalidate old
+passing evidence. A failed refresh keeps completion pending. A verified rerun or
+explicit user waiver triggers completion detection again without another prompt.
+The managed store accepts newer verification observations on terminal tasks while
+keeping their execution status immutable.
+
+Root-only work uses the same completion gate. Sync reads current objective
+verification through `useObjectiveVerificationStore` and requires the host to
+attest the observed `originatingMessageId`; Implement Plan also supplies its
+expected implementation objective. Ordinary and synthetic continuation turns use
+the returned canonical objective for root and child requirements. An explicit
+assistant parent from an older turn, a newer human message, cancellation or a
+changed host generation prevents stale completion. Failed or malformed reads do
+not mean there are no requirements. Confirmed Standard Preview absence of native
+managed checks retains that runtime's existing completion behavior.
+
 ## Resource bounds and batch commits
 
+Native Cursor text and reasoning retain the constructor's existing part identity
+in provider state. Those exact parts bypass legacy string deduplication and
+diagnostic-text cleanup during live completion, fetched history and reload.
+Cumulative Cursor snapshots replace earlier values, including shorter prefix
+corrections. Rendering and copy concatenate their ordered bytes without invented
+separators, while preserving whitespace-only seams and distinct repeated parts.
+This uses existing provenance; text content never establishes replay authority.
+An unfinished history response cannot replace already-completed live Cursor
+content. Canonical history replacement does not reattach removed Cursor parts.
+
 `ChildStoreManager.historyBudget` caps estimated retained transcript bytes across all directory stores at 128 MiB, alongside the existing count/TTL caps. Immutable record sizes are weakly memoized; dirty directories are measured at most once per 500 ms accounting interval. Estimates include UTF-16 text and structural overhead, not browser RSS. Active, loading, optimistic, unfinished, busy, unresolved-question/permission and pending-revert sessions may exceed this soft cap. Evicted idle histories invalidate loader coverage and reload normally; disposing a directory releases its accounting and subscription.
+
+Streamed `text` deltas collapse provider-replayed adjacent repeats (`part-delta.ts`). Up to the 2,048-character jammed-scan limit the whole value is rescanned; past it only the last two lines plus the delta are, since the rest was collapsed as it streamed, so a long reply costs a few line probes per delta instead of a quadratic rescan. Tool `output` is program output: it keeps repeated lines byte for byte and drops only a replayed full frame.
+
+`buildSessionMessageRecordsSnapshot` runs for every `useSessionMessageRecords` subscriber on every directory-store commit. It confirms the previous snapshot without allocating before it builds a new list, and context-usage part filtering is cached per published part array, so another session's stream costs each subscriber an identity check per message. `streaming.ts` copies `messageStreamStates` only when a lifecycle changes, checks a session's status before scanning its messages, and keeps completed lifecycles for at most 5 minutes and the newest 32.
 
 The pipeline passes ordered batches to `event-batch.ts`. Contiguous materialized text/reasoning deltas for busy sessions reuse one private parts-map clone and publish once. Each still runs the production event handler's diagnostics and activity bookkeeping. All other events flush the private state first, preserving status, permission, notification, cancellation and recovery ordering. Previously published part arrays/records remain immutable.
 
@@ -11,6 +46,8 @@ The pipeline passes ordered batches to `event-batch.ts`. Contiguous materialized
 `useUserMessageHistory` binds `user-message-history.ts` to the selected directory's child store. The selector caches the session message array, relevant user-part arrays, and effective revert marker. Assistant part updates do not rebuild the history, and unchanged user text returns the same array even if user metadata changes. Each hook/store/session owns its cache; there is no persisted history or global selector store.
 
 History retains transcript order reversed (newest first), the first nonempty text part of each user message, and the effective local/server revert boundary. Late user parts, older pages, rollback, deletion, and store/session switches refresh the snapshot. The isolated `tests/visual-chat-improvements/` fixture measures committed history-consumer renders against a broad-subscription control.
+
+`useChatSearchDirectory` uses the existing `useSessionDirectory` leaf subscription rather than the whole session collection. Session title/activity updates leave its directory snapshot unchanged; actual session-directory changes still update attachment search. The same isolated fixture compares 120 session updates against a broad collection subscriber and verifies a real directory change afterward.
 
 ## Scope
 
@@ -70,6 +107,39 @@ shell does not erase the preceding completed measurement.
 
 ## Directory subscription bootstrap authority
 
+Initial global and directory bootstrap wait for config initialization's native
+health/catalog gate. Global bootstrap is owned by an AbortController and a
+120-second deadline; partial 502/503 failures remain unready and retry within
+that deadline. Cleanup aborts the owner before a replacement can publish.
+The global store's `eventStreamReady` comes only from the event pipeline's
+subscription acknowledgment and is revoked on disconnect/cleanup; native
+startup consumes it separately from connection health. Manual startup Retry
+advances the bootstrap epoch even without a global bootstrap error, replacing
+the stream and aborting its old callbacks while retaining loaded state references.
+
+Directory bootstrap starts its session list alongside project, provider, config,
+path and status requests. Every request carries its captured directory and a
+30-second deadline covering transient retries; a stalled transport cannot hold
+the startup screen indefinitely. Required path/status failures populate
+`bootstrapError`, which the startup screen exposes through Retry. Session-list
+failure retains its separate error. Neither failure establishes readiness.
+
+Bootstrap owners cancel on disposal, replacement and startup Retry. Deferred
+enrichment keeps the same owner after critical bootstrap finishes, so it can
+publish only into the original live store. Newer live statuses and session
+create/delete events win over older snapshots. Questions and permissions recover
+while the session list finishes; optional agent/LSP/VCS reads follow critical
+readiness. Bounded `devryan-directory-*` performance measures identify request
+durations and outcomes without directory names or response data.
+
+Reconnect REST recovery is fenced per child store and against the bounded
+directory lifecycle journal. An older overlapping read, deletion/recreation,
+or lifecycle change cannot publish stale sessions. Records whose live message
+or part references changed during the read retain that live state. Status
+baseline checks remain separate. Stream disconnect invalidates runtime
+capabilities; successful reconnect refreshes authoritative `/health` identity
+and flags without subscribing the provider root to capability state.
+
 Creating a directory store and bootstrapping its OpenCode runtime are separate
 operations. `useDirectoryStore()` and explicit-directory `useSession()` reads
 grant bootstrap authority only when the normalized requested directory equals
@@ -111,9 +181,10 @@ Promotion cannot select a session over another selected target or delete a draft
 edited during creation. Text/attachments remain in their existing local draft
 stores until authoritative creation; session sends and revert transactions retain
 their existing optimistic rollback behavior. `SessionCreationStatus` subscribes
-only to the current draft's attempt, stays hidden during ordinary preparation
-and creation, and renders retained-draft recovery controls only for unknown or
-late-created outcomes.
+to the current draft's attempt and a boolean pending-send selector for its draft
+or created session controller. It stays hidden during preparation, creation and
+the active send handoff, then renders retained-draft recovery controls for unknown
+or late-created outcomes.
 Flush raw composer text before taking the submission snapshot. Promotion compares
 that raw text and the attachment mutation revision, not the transformed prompt.
 Late persistence cannot recreate a deleted/promoted draft, and a failed first
@@ -180,6 +251,22 @@ a child terminal event therefore cannot regress the newer SSE state or remove
 older cached child activity when the response's fetch limit is smaller than the
 loaded history.
 
+## History pages without finished tool output
+
+`session-message-loader.ts` `fetchPage` requests every history page with
+`toolOutput=omit` (the SDK's `$query_` prefix carries the facade-only
+parameter), so a finished `read`/`list`/`webfetch`/`websearch`/`codesearch`
+part arrives with an empty `output` plus `outputOmitted: true` and
+`outputBytes` (`OmittedToolOutputState` in `tool-output.ts`). Those tools render
+as static rows that never show output; an expanded `ToolPart` row with omitted
+output renders `OmittedToolOutput`, which calls `loader.loadToolOutput` to
+re-read that one message through the full single-message route and merge only
+the omitted parts back (`mergeLoadedToolOutput`, other references kept;
+concurrent expands share one read). `materialization.ts` applies
+`keepFullToolOutput`, so a trimmed page snapshot never replaces a full part
+that live events or an expand delivered. Optimistic user parts are never
+trimmed. Copy-message text uses text parts only and is unaffected.
+
 ## Authoritative session-change attribution
 
 Per-session change badges must not use user-message `summary.diffs`,
@@ -194,8 +281,8 @@ tools are represented as `hasUnattributedMutations` because their commands may
 change files without providing a trustworthy bounded path set.
 
 `sync-context.tsx` reconciles that projection after relevant live events and
-reconnect materialization; `use-sync.ts` does the same after message-page
-materialization. The dedicated `useSessionChangeAttributionStore.ts` stays
+reconnect materialization; `session-message-loader.ts` does the same after
+message-page materialization. The dedicated `useSessionChangeAttributionStore.ts` stays
 outside high-frequency session/message state. The active badge intersects its
 attributed paths with current rich Git working-tree stats, so committed,
 reverted, or otherwise clean files disappear without transferring unrelated
@@ -366,7 +453,8 @@ stores.
 The ownership callback releases all ephemeral directory-scoped resources:
 
 - session prefetch data, in-flight markers, and generation revisions;
-- message-loading metadata and optimistic shadow entries owned by `useSync()`;
+- message-loading metadata, optimistic shadow entries, history LRU, background
+  trim timers, and materialization state owned by `SessionHistory`;
 - pending part deltas, materialization retries, child-session fetches, and
   archived-session offload timers;
 - event-pipeline queues and session/message routing-index entries;
@@ -389,13 +477,27 @@ flush timestamps, preserving frame pacing without retaining queue arrays.
 
 ## Managed orchestration event routing
 
-`openchamber:managed-task`, `openchamber:managed-task-removed`, and
-`openchamber:managed-orchestration-warning` are host-owned synthetic events.
+`devryan:managed-task`, `devryan:managed-task-removed`, and
+`devryan:managed-orchestration-warning` are host-owned synthetic events.
 `event-pipeline.ts` normalizes and routes them to
 `useManagedOrchestrationStore.ts` before resolving a directory, allocating a
 queue, coalescing, or invoking the session reducer. This guarantees that a
 managed status transition cannot clone session/message/part collections or be
 mistaken for provider-native task activity.
+
+## Session failure classification
+
+`session-failure.ts` persists only a bounded code and renders a fixed message.
+`provider_free_limit` (v2 `provider.free-limit`, or Zen's free-tier refusal
+matched by `@devryan/shared-runtime/lib/free-tier-rejection.js`) is checked
+before the auth and quota branches: Zen answers that refusal with 403, and a
+used-up free tier is not the account's paid quota.
+For rate-limit, quota and free-limit failures, `sessionFailureRetryAt` turns the
+provider's `retryAfterMs` (OpenCode 2.1.2) into an absolute reset time counted
+from the notification's time. The completion store persists it as `retryAt`
+next to the code, and `SessionFailureNotice` shows "Resets at …" while that time
+is in the future. `output-limit` (the step stopped after OpenCode's automatic
+continuations) is `output_limit`, with its own message.
 
 Removal events contain only DevRyan task/root/directory/sequence identity and
 mirror a successfully persisted host-ledger compaction. The projection store
@@ -661,6 +763,16 @@ Keep this in sync with `handleDirectoryEvent` in `sync-context.tsx`:
 | `question.asked/replied/rejected` | `question` |
 | `lsp.updated` | `lsp` |
 
+`question.asked` stores the projected request unchanged, including the optional
+typed hints (`input`, `required`, `minItems`/`maxItems`), `external` links and
+an MCP elicitation's `source`. An elicitation arrives under the session its MCP
+call belongs to, never `global`. `QuestionCard` validates typed answers with
+`questionCardInputs.ts` before submit. A link opens only on click through
+`openExternalUrl` (http/https only), and "I've Completed This" sends the
+acknowledgement. Skip becomes Decline for an elicitation and cancels it.
+`PermissionCard` shows an MCP tool approval's server, tool and bounded,
+collapsible input JSON (`getMcpPermissionDetails`).
+
 ## Adding a new event type
 
 1. Add the case to the event reducer (`event-reducer.ts`)
@@ -669,7 +781,7 @@ Keep this in sync with `handleDirectoryEvent` in `sync-context.tsx`:
 
 ## Synthetic status events
 
-Server compatibility events named `openchamber:session-status` are normalized in `event-pipeline.ts` before routing and coalescing. The normalized event uses the canonical `session.status` type with `properties.sessionID` and a `properties.status` object. This keeps reducers, routing keys, and coalescing on the same path as OpenCode-native status events.
+Server compatibility events named `devryan:session-status` are normalized in `event-pipeline.ts` before routing and coalescing. The normalized event uses the canonical `session.status` type with `properties.sessionID` and a `properties.status` object. This keeps reducers, routing keys, and coalescing on the same path as OpenCode-native status events.
 
 ## Completion vs active work
 
@@ -708,6 +820,25 @@ either async window therefore remains authoritative; unchanged candidates still
 receive the authoritative status snapshot without message-based settlement. All baselines stay
 scoped to the existing `directory + sessionID` candidates.
 
+## Finalization presentation
+
+`session-presentation.ts` holds only loaded directory/session presentation. The
+existing `devryan:session-activity` event and `/api/session-activity` snapshot
+carry a server epoch, monotonic presentation revision and a nullable Finalizing
+record bound to the original user and assistant. Native records require their
+actual step and attempt identities; Cursor records use their owned run generation
+and may have null native step/attempt identities. Snapshot hydration uses a
+captured baseline so newer live updates win, including explicit clears.
+Production reconnect callers also supply `resyncDirectoryAfterReconnect`'s
+`options.isCurrent` child-store ownership fence. Optional presentation hydration
+runs in the background and cannot delay canonical resync, Stop or recovery.
+
+The status row shows Finalizing only while authoritative status is busy and the
+record matches the current user turn. Retry, blockers and restoration retain
+their precedence. New user input, idle/error, deletion and directory disposal
+clear the projection. This state never changes Stop, queue, approval, recovery
+or watchdog authority and never derives completion from tool receipts or history.
+
 ## Manual provider recovery and stop-during-retry guard
 
 Subtask composer sends preserve the agent assigned by the child's original user
@@ -731,8 +862,8 @@ OpenCode ignores `session.abort` while a session sleeps between provider retry a
 - While active, `filterSessionStatusThroughAbortGuard` coerces incoming `retry` statuses to `idle` (live event reduction, reconnect status merge, and directory bootstrap snapshots all route through it) and schedules bounded, debounced re-aborts (max 3) so the server loop is cancelled when its next attempt creates an abortable in-flight request. Snapshot filtering preserves the original status-map reference when no guard changes a value.
 - Streaming derivation does not retain an incomplete assistant shell across that guarded `idle`; explicit idle is authoritative, so the composer unlocks without consulting historical message completion.
 - After a successful reconnect/bootstrap status snapshot, every listed session omitted from that snapshot is materialized as authoritative `idle`. Bootstrap explicitly settles any pre-existing streaming ownership for those sessions first, so a historical incomplete assistant shell cannot survive the snapshot as live activity or leave a plan card finishing forever.
-- The guard clears on authoritative idle (`session.idle`, `session.error`, idle `session.status`), on any new local send (`optimisticSend`, `usePromptSubmit`), and when an authoritative user message advances the cached user-turn boundary and proves that another connected surface started new work. Historical replay into an empty or newer cache cannot clear it.
-- `useProviderErrorRecovery` creates root-session recovery records after an authoritative active-to-idle transition ends with a matching retryable terminal assistant error. On first observation after reconnect, authoritative idle plus a trailing incomplete root response also becomes an explicit interrupted-response recovery instead of historical live activity. A definite provider usage limit is stopped on its first live retry; other transient stream retry loops remain capped after three attempts. DevRyan first receives a successful abort acknowledgement, then offers the same explicit recovery card. Manual recovery waits for guard settlement before sending the captured provider/model/agent/variant, preventing an explicitly stopped retry loop from overlapping the replacement turn; no recovery is resent automatically. A newer authoritative user turn clears an older recovery record, and the retry action performs the same final check so stale cards disappear without surfacing a misleading “failed turn is no longer available” error.
+- The guard clears on authoritative idle (`session.idle`, `session.error`, idle `session.status`), on any new local send (`optimisticSend`), and when an authoritative user message advances the cached user-turn boundary and proves that another connected surface started new work. Historical replay into an empty or newer cache cannot clear it.
+- `useProviderErrorRecovery` creates root-session recovery records after an authoritative active-to-idle transition ends with a matching retryable terminal assistant error. On first observation after reconnect, authoritative idle plus a trailing incomplete root response also becomes an explicit interrupted-response recovery instead of historical live activity. A definite provider usage limit is stopped on its first live retry; other transient stream retry loops are stopped only once they reach three attempts and have also run for five minutes (`MAX_TRANSIENT_PROVIDER_RETRY_WINDOW_MS`), because OpenCode 2 bounds its own transient retries; the loop is tracked per active user message by a non-decreasing attempt count, since OpenCode reports busy before each retried send. DevRyan first receives a successful abort acknowledgement, then offers the same explicit recovery card. Manual recovery waits for guard settlement before sending the captured provider/model/agent/variant, preventing an explicitly stopped retry loop from overlapping the replacement turn; no recovery is resent automatically. A newer authoritative user turn clears an older recovery record, and the retry action performs the same final check so stale cards disappear without surfacing a misleading “failed turn is no longer available” error.
 - When the current retry deadline plus its settlement window expires without idle, live server state wins again — the guard never permanently masks real activity.
 
 `abortCurrentOperation` first cancels the active top-level DevRyan-managed tasks for the parent session with scheduler cascade enabled, then aborts the parent OpenCode session. This stops queued and running managed descendants without emitting cancellation tool calls into chat. It additionally settles a local `retry` status to `idle` right after the abort request (narrow optimistic transition mirroring `revertToMessage`); guarded streaming derivation completes the stopped assistant shell so the input and model picker unlock immediately. If the abort started from `retry` and the provider races the next attempt to `busy` before acknowledging it, the same narrow transition settles that raced state. An abort that started from ordinary `busy` still waits for the authoritative idle event.
@@ -743,13 +874,17 @@ Plan mode reaches the model through the synthetic plan-mode preface. The prompt 
 
 If an auto-send fails while the transport disconnects, the claimed rows are restored with their dispatch identity intact. The queue hook never dispatches while disconnected and grants that restored idle queue exactly one new attempt on the authoritative disconnected-to-connected edge. A WS-to-SSE switch preserves the current connection state because selecting a fallback transport does not prove that it connected. The SSE SDK also constructs its stream wrapper before opening the response, so SSE publishes recovery only after its first parsed or yielded event; an error response cannot create a transient connected pulse. A steady connected state is not a retry signal, so persistent validation, authorization, or provider failures cannot create an automatic retry loop.
 
+## Cross-runtime handoff context
+
+`sendMessageToSession` (`session-ui-store.ts`, `buildCrossRuntimeHandoffPart`) prepends one synthetic text part only when a send crosses the OpenCode/Cursor boundary; same-backend model changes continue native session history. The part carries the newest contiguous source-backend user/assistant messages with visible text, bounded by `CROSS_RUNTIME_HANDOFF_MAX_MESSAGES` (8 messages), `CROSS_RUNTIME_HANDOFF_MAX_TEXT_CHARS` (1,400 characters per message, then `[truncated]`) and `CROSS_RUNTIME_HANDOFF_MAX_CHARS` (6,000 characters total).
+Budget goes to the newest messages first and the result is presented chronologically; dropped older context is flagged with `CROSS_RUNTIME_HANDOFF_OMISSION_MARKER`. Synthetic parts are never reused as source material for a later handoff. Regressions live in `session-ui-store.send.test.ts`.
+
 ## Session history loader
 
 `SessionMessageLoader` is created once by `SyncProvider` and owns first-page,
 older-page, stale-tail, prefetch, optimistic-shadow, and in-flight state for a
 normalized `(directory, session ID)` key. Metadata and the first message page
-start concurrently in `useSync`; metadata failure never blocks a valid message
-snapshot. The loader materializes a page once after any adaptive expansion, so
+start concurrently; metadata failure never blocks a valid message snapshot. The loader materializes a page once after any adaptive expansion, so
 catch-up never replays historical events through the live reducer.
 
 With `sessionFastLoadEnabled`, web/Electron starts at 50 records and expands to
@@ -765,10 +900,48 @@ accepting late results. Selected-session hydration does not invoke the broad
 focus/reconnect recovery path; only an actually incomplete trailing assistant
 turn may request that recovery.
 
+`SessionHistory` (`session-history.ts`) is the provider's single history owner
+around that loader, exposed through `useSessionHistory()`. It owns session
+metadata hydration, the two-level cache LRU (30 directories,
+`SESSION_CACHE_LIMIT` sessions), the debounced background trim, archived
+offload timers, and materialization state for every managed directory, keyed by
+exact `(directory, session ID)`. `useSync()` is a stateless view over it, and
+sidebar rows read the owner directly, so mounting or unmounting consumers in any
+order acquires and releases nothing. `session-materializer.ts` is the module
+entry point that session actions and live events use outside React.
+
+Only explicit loads (`ensureRenderable`, `loadMore`, `ensureFirstPage`) may
+create a passive child store. Archiving, unarchiving, offload, timers, cleanup
+and late responses read existing stores only, so a retired directory is never
+re-armed. The in-flight metadata request is the publication fence: offloading
+history drops transcript caches and fences pending metadata but keeps the
+session summary; retiring a deleted session also drops its LRU membership,
+materialization state and archive timer; directory disposal releases all of
+it. Sidebar export loads the root and every child through the row's directory,
+fails when a session cannot be made renderable instead of exporting partial
+history, and counts each failed child with its descendants as skipped.
+
 Intent prefetch is active-directory-only, one request at a time, and limited to
 six queued targets. Rows start exact-session work on pointer-down/click, hover
 after 180 ms, keyboard focus immediately, and settled neighbors after 600 ms.
 Only two non-active prefetched snapshots are retained on web/Electron. No directory-wide runtime bootstrap is performed by prefetch.
+
+The open session is bounded too. When its transcript has not changed for 3
+seconds while the reader is pinned to the end (`useChatTimelineController`),
+`SessionHistory.trimViewedSession` keeps the newest 10 prompts, fewer when they
+exceed 300 records, whole turns only and always the newest prompt. It refuses
+busy or retrying sessions, unanswered permissions or questions, an unfinished
+assistant (a stream gap), a revert marker or revert transaction, an optimistic
+send and any page load in flight. Native cursors are opaque and cannot point into
+history that arrived live, so `SessionMessageLoader.trimToTail` records the
+oldest retained message as `tailAnchorMessageID` instead of a cursor. The next
+Load Older walks pages from the newest (at most 10) to the page reaching below
+that anchor, prepends it (retained records are skipped) and resumes normal
+cursor paging. A forced first-page load clears the anchor. Independently, the
+mounted transcript window holds whole turns sized in rows (each prompt plus
+every tool call, text and reasoning part; `TURN_WINDOW_DEFAULTS` in
+`components/chat/lib/turns/constants.ts`), so one orchestrator turn with
+hundreds of tool rows no longer counts as one of ten.
 
 `useSessionMessageLoadState(sessionID, directory)` is the exact reactive leaf
 for status, loading kind, error, resolution, retained limit, cursor,
@@ -853,7 +1026,7 @@ const useInputStore = create(() => ({ pendingInput: "" }))
 
 ### Reducer lookup measurement
 
-Part snapshot and delta handlers reuse one owning-message lookup for assistant normalization. The exact-session presence check remains separate from legacy unscoped lookup so incomplete-snapshot recovery is unchanged. `bun run perf:reducer` measures this path without rendering; reviewed before/after measurements live in `docs/audits/2026-09-05-cleanup/performance.md`. The session-branch subscription test uses a real Zustand store to reject unrelated notifications and verify unsubscribe.
+Part snapshot and delta handlers reuse one owning-message lookup for assistant normalization. The exact-session presence check remains separate from legacy unscoped lookup so incomplete-snapshot recovery is unchanged. `bun run perf:reducer` measures this path without rendering. The session-branch subscription test uses a real Zustand store to reject unrelated notifications and verify unsubscribe.
 
 ## Captured thinking selection
 
@@ -888,9 +1061,121 @@ unavailable models are not marked restored. These imperative markers do not
 publish store updates, reset on full reload, and clear with permanent session
 selection deletion. Archive preserves them with the other reversible choices.
 
+Native flattened user `providerID`/`modelID` fields restore the same exact choice
+as nested SDK user models; nested tuples retain precedence without mixing
+fields. They preserve the recorded choice while catalog discovery completes
+rather than substituting a startup default. Authoritative
+`devryan:provider-catalog` events carry only the provider ID, accepted
+directory and `source: sdk`; `provider-catalog-recovery.ts` refreshes the matching
+visible configuration scope outside transcript stores. Concurrent invalidations
+coalesce. A forced read uses existing load tokens to fence any older fallback
+response still in flight. Fallback/error events, other directories and disposed
+pipelines cannot trigger this refresh; assistant deltas never poll catalogs.
+
 `ModelControls.hydration.test.tsx` mounts the real controls with real config,
 selection and directory stores. Native button events exercise delayed parts,
 session switching/remounts, explicit Default, model changes and the actual
 optimistic dispatch boundary with controlled transport promises.
 
 Session error notifications persist only bounded classifications and safe display text alongside completion read state. Raw exception stacks and provider bodies are never persisted. Viewing a session does not resolve its failure notice. A newer canonical user turn (including a Plan retry) supersedes proven older same-session failures; live user parts and canonical history pages provide this authority, while optimistic rows and synthetic maintenance wakes do not. Persisted owning user IDs/server timestamps avoid comparing server chronology with renderer receipt clocks. Legacy keyed failures can use canonical history order; uncorrelated legacy notices and uncorrelated delayed error events remain conservative until successful completion. A newer authoritative successful completion also resolves captured older failures.
+
+`native_slim_retry_primary_fenced` is the bounded `execution_recovery_unavailable`
+classification, retained across notification persistence. The notice and assistant
+error renderer explain that automatic recovery could not verify task execution;
+they do not attribute this ownership failure to provider authentication or offer
+an unverified retry. The original provider error remains a separate canonical
+failure when the host declines automatic fallback.
+
+## Stop confirmation
+
+Parent Stop dispatches the native abort and managed descendant cancellations
+concurrently, then awaits both within the existing eight-second confirmation
+budget. Managed store actions retain errors rather than rejecting; the action
+checks those errors before confirming the whole tree. A child failure or timeout
+reports a partial stop and retains the confirmed parent interrupt. Repeated Stop
+also includes tasks still cancelling. Failed archive operations continue to roll
+back their optimistic UI membership changes.
+
+## DevRyan names
+
+Every stream the UI opens asks for `devryan:*` event names; `lib/eventTypes.ts`
+`canonicalEventType` maps an older host's `openchamber:*` alias at the pipeline
+entry (`normalizeEventType`), the `/api/devryan/events` envelope parser and the
+managed-task store, so consumers compare only `devryan:*`. Browser storage keys
+are `devryan`-prefixed; `lib/legacyStorageMigration.ts` (imported first by every
+web entry, and mirrored by the inline script in `packages/web/index.html`)
+copies each `openchamber`-prefixed key once before stores hydrate and keeps the
+old key. IndexedDB names are unchanged.
+
+Session mutation failures retain native `code` and `retryable` fields alongside
+message and available HTTP status. Archived deletion restores only failed
+members after optimistic removal. Sidebar bulk selection and deletion dialogs
+retain failed targets after partial success; deletion feedback displays up to
+three distinct failure reasons so a mixed failure does not hide every cause.
+
+## Exact-session record notifications and child repair
+
+`session-record-subscription.ts` multiplexes mounted transcript listeners through
+one observer per directory store and one message-ID membership set per subscribed
+session. Status-only commits do not scan records. Canonical part events carry bounded weak hints tied to both immutable map
+identities (`part-change-hints.ts`), with a `WeakRef` predecessor so current maps
+never retain a chain of old part maps; single and batched deltas inspect only named
+message IDs. Unhinted hydration, pruning, session updates, identity mismatches and
+hint overflow use the conservative membership scan. They notify only owners of
+changed arrays and retain sibling snapshots.
+The last unsubscribe releases the directory observer and all membership state.
+
+Opened `TaskChildSessionSummary` cards use the existing history loader and SSE.
+Productive child snapshots reset a 20-second silence repair deadline. Repair and
+one terminal settlement read request only 30 records with `toolOutput=omit`;
+settlement waits 2.5 seconds, hidden documents postpone reads, closing cancels
+scheduled work and rejects late responses. Collapsed cards load no child history.
+
+Context capacity follows the producing message's catalog model and variant for
+all providers, including OpenAI OAuth. No model-name allowlist overrides the
+catalog input/context/output limits; missing metadata remains unavailable.
+
+## Synthetic resource fixture acceptance
+
+Run `DEVRYAN_UI_PERF=1 node tests/visual-chat-improvements/run.mjs` for the
+isolated Electron/Chromium fixture. The opt-in resource check alternates three
+broad-subscription controls and three current observers over the same production
+reducer: one parent, two children, 400 loaded records and 1,500 deltas (271,890
+serialized event bytes). The control models the previous `store.subscribe`
+snapshot dispatch; it is not a historical whole-app binary. The legacy child
+snapshot configuration is checked against repository commit
+`bb05829c41a3f131b32f0f4ff0145f467148acce` (available Git history is required).
+
+On 2026-10-26 macOS arm64, snapshot builds fell from 10,500 to 3,000, with parent
+builds falling from 4,500 to zero. A separate production omission-helper comparison
+measured 1,328,801 bytes for the former active 160-record full-output response
+versus 4,591 bytes for the current 30-record omitted-output repair. Those are
+serialized fixture responses at different declared repair limits, not measured
+network throughput. A proxy-based regression also verifies zero retained parent
+part reads for a hinted child delta; unhinted hydration still publishes changes.
+
+With weak predecessor hints, median renderer task CPU was 0.112 s (control) and
+0.094 s (current); median owned Chromium-process CPU was 0.148 s and
+0.138 s respectively. These short samples do not demonstrate a reliable whole-app
+CPU improvement. CPU/RSS values are descriptive and have no unstable pass/fail
+threshold. Explicit settlement/offload retained 20 parent records (77,885 bytes)
+from 400 records (1,700,355 bytes); current forced-GC heap samples stayed at
+58.310–58.316 MiB and summed owned-process RSS around 835.5–836.0 MiB across the
+repeated settlement samples. The three 200 ms-spaced samples verify only a short
+fixture plateau, not absence of a long-running leak.
+RSS sums include shared Chromium pages. This fixture has no DevRyan web backend,
+provider process, live inference, or real application data; separate whole-app
+resource acceptance is still required. The existing run owner deletes scratch
+on completion unless explicit artifact retention is requested for inspection.
+
+Steered queue dispatch now uses the same descendant cancellation owner as Stop,
+including when the root is already idle. A bounded gate requires positive parent
+acknowledgement and descendant settlement before transport; a partial stop keeps
+the confirmed parent interruption and restores unsent input with its dispatch ID.
+Ordinary flushes use queue delivery; only the first explicit Send now is steer.
+Clearing a queue invalidates in-flight rollback claims, preventing removal from
+resurrecting discarded input.
+Claimed input remains in persisted queue storage while hidden from live senders.
+Dispatch saves its canonical message ID and delivery intent before transport;
+acceptance removes the durable claim, while rejection restores the same row.
+Reload therefore recovers ambiguous sends for native idempotent reconciliation.

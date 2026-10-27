@@ -1,0 +1,167 @@
+{
+  "schemaVersion": 1,
+  "scenario": "idle",
+  "runIndex": 1,
+  "startupMode": "natural",
+  "fixtureGeneration": 2,
+  "diagnostics": {
+    "unavailable": true,
+    "error": "TypeError: Failed to execute 'fetch' on 'Window': Failed to parse URL from /api/diagnostics/status\n    at <anonymous>:1:1"
+  },
+  "browserErrors": {
+    "scope": "owned page from CDP attachment through pre-shutdown collection",
+    "entries": [],
+    "seen": 0,
+    "dropped": 0,
+    "textTruncated": 0,
+    "bytes": 0,
+    "maximumEntries": 100,
+    "maximumBytes": 262144,
+    "review": "required"
+  },
+  "fixture": {
+    "generation": 2,
+    "activeScenario": "idle",
+    "sseClientCount": 0,
+    "sseConnectionCount": 0,
+    "statusRequestCount": 0,
+    "suppressedEvents": [],
+    "suppressionRuns": [],
+    "messageRequestCounts": {},
+    "olderMessageRequestCounts": {},
+    "messagePageRequests": [],
+    "textLengths": {
+      "ses_perfparent": 0,
+      "ses_perfchild1": 0,
+      "ses_perfchild2": 0,
+      "ses_perfchild3": 0
+    },
+    "streamDeltaCounts": {},
+    "receivedPrompts": [],
+    "canonicalUserDelays": [],
+    "rejectedPrompts": [],
+    "replies": [],
+    "unknownRoutes": [],
+    "locationRequired": [],
+    "wireLosses": [],
+    "streamDrops": [],
+    "eventCounts": {
+      "session.created": 4,
+      "session.inbox.enqueued": 4,
+      "session.inbox.delivered": 4
+    },
+    "permissionCount": 0,
+    "questionCount": 0,
+    "executingSessions": [],
+    "abortedPrompts": 0,
+    "activePrompts": 0
+  },
+  "journal": {
+    "available": false,
+    "complete": false,
+    "error": "ENOENT: no such file or directory, stat '<OWNED_PERF_RUN>[REDACTED]:high_entropy'"
+  },
+  "cleanup": {
+    "errors": [],
+    "app": {
+      "stopped": true,
+      "pid": 43314,
+      "scope": "retained-os-process-ancestry-and-start-identities",
+      "exitCode": 0,
+      "signalCode": null,
+      "escalated": false,
+      "ownership": {
+        "source": "retained-os-process-ancestry-and-start-identities",
+        "rootPid": 43314,
+        "rootObserved": true,
+        "observationIntervalMs": 500,
+        "observationErrors": [],
+        "observedProcesses": [
+          {
+            "pid": 43314,
+            "parentPid": 43226,
+            "startIdentity": "Tue Oct 20 20:04:57 2026"
+          },
+          {
+            "pid": 43326,
+            "parentPid": 43314,
+            "startIdentity": "Tue Oct 20 20:04:58 2026"
+          },
+          {
+            "pid": 43327,
+            "parentPid": 43314,
+            "startIdentity": "Tue Oct 20 20:04:58 2026"
+          },
+          {
+            "pid": 43339,
+            "parentPid": 43314,
+            "startIdentity": "Tue Oct 20 20:04:58 2026"
+          },
+          {
+            "pid": 43369,
+            "parentPid": 43314,
+            "startIdentity": "Tue Oct 20 20:04:59 2026"
+          }
+        ],
+        "remainingProcessIds": [],
+        "signals": [],
+        "trackingClosed": true,
+        "exitCode": 0,
+        "exitSignal": null,
+        "exitAt": 1792512343931,
+        "shutdownStartedAt": 1792512343765,
+        "shutdownDurationMs": 196,
+        "parentSignals": [
+          {
+            "signal": "SIGINT",
+            "at": 1792512343780
+          }
+        ]
+      }
+    },
+    "fixture": {
+      "closed": true,
+      "finalState": {
+        "generation": 2,
+        "activeScenario": "idle",
+        "sseClientCount": 0,
+        "sseConnectionCount": 0,
+        "statusRequestCount": 0,
+        "suppressedEvents": [],
+        "suppressionRuns": [],
+        "messageRequestCounts": {},
+        "olderMessageRequestCounts": {},
+        "messagePageRequests": [],
+        "textLengths": {
+          "ses_perfparent": 0,
+          "ses_perfchild1": 0,
+          "ses_perfchild2": 0,
+          "ses_perfchild3": 0
+        },
+        "streamDeltaCounts": {},
+        "receivedPrompts": [],
+        "canonicalUserDelays": [],
+        "rejectedPrompts": [],
+        "replies": [],
+        "unknownRoutes": [],
+        "locationRequired": [],
+        "wireLosses": [],
+        "streamDrops": [],
+        "eventCounts": {
+          "session.created": 4,
+          "session.inbox.enqueued": 4,
+          "session.inbox.delivered": 4
+        },
+        "permissionCount": 0,
+        "questionCount": 0,
+        "executingSessions": [],
+        "abortedPrompts": 0,
+        "activePrompts": 0
+      }
+    },
+    "complete": true
+  },
+  "review": "required",
+  "workloadOutcome": "failed",
+  "workloadError": "DevRyan renderer did not navigate to its loopback origin"
+}

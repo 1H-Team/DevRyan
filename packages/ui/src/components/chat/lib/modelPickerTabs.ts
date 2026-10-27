@@ -1,5 +1,5 @@
 import { getProviderDisplayName } from '@/lib/providers/display';
-import { comparePickerLabels, sortProvidersByDisplayName } from '@/lib/providers/sorting';
+import { sortModelsByDisplayName, sortProvidersByDisplayName } from '@/lib/providers/sorting';
 
 /**
  * Pure data layer for the composer model picker: provider tabs, the
@@ -63,22 +63,6 @@ export const isModelLegacyCandidate = (
     return releaseTime !== null && now - releaseTime > LEGACY_MODEL_AGE_MS;
 };
 
-const compareRowsNewestFirst = <M extends ModelPickerModelLike>(
-    a: { row: ModelPickerRow<M>; releaseTime: number | null; label: string },
-    b: { row: ModelPickerRow<M>; releaseTime: number | null; label: string },
-): number => {
-    if (a.releaseTime !== b.releaseTime) {
-        if (a.releaseTime === null) return 1;
-        if (b.releaseTime === null) return -1;
-        return b.releaseTime - a.releaseTime;
-    }
-    const labelComparison = comparePickerLabels(a.label, b.label);
-    if (labelComparison !== 0) {
-        return labelComparison;
-    }
-    return a.row.modelID.localeCompare(b.row.modelID);
-};
-
 export const buildModelPickerRefKey = (providerID: string, modelID: string): string => `${providerID}/${modelID}`;
 
 export interface BuildModelPickerTabsInput<M extends ModelPickerModelLike> {
@@ -90,7 +74,6 @@ export interface BuildModelPickerTabsInput<M extends ModelPickerModelLike> {
     favoritesLabel: string;
     getExecutionProviderId: (providerID: string, model: M) => string;
     getProviderName: (providerID: string) => string;
-    getModelLabel: (model: M) => string;
     isCurrentModel: (providerID: string, modelID: string) => boolean;
     /** Fallback release date (e.g. models.dev metadata) when the model has none. */
     getFallbackReleaseDate?: (providerID: string, modelID: string) => string | undefined;
@@ -103,7 +86,6 @@ export const buildModelPickerTabs = <M extends ModelPickerModelLike>({
     favoritesLabel,
     getExecutionProviderId,
     getProviderName,
-    getModelLabel,
     isCurrentModel,
     getFallbackReleaseDate,
 }: BuildModelPickerTabsInput<M>): ModelPickerTab<M>[] => {
@@ -146,10 +128,10 @@ export const buildModelPickerTabs = <M extends ModelPickerModelLike>({
         if (!providerId) {
             continue;
         }
-        const models = Array.isArray(provider.models) ? provider.models : [];
+        const models = sortModelsByDisplayName(Array.isArray(provider.models) ? provider.models : []);
         const providerName = provider.name;
-        const primary: Array<{ row: ModelPickerRow<M>; releaseTime: number | null; label: string }> = [];
-        const legacy: Array<{ row: ModelPickerRow<M>; releaseTime: number | null; label: string }> = [];
+        const primary: ModelPickerRow<M>[] = [];
+        const legacy: ModelPickerRow<M>[] = [];
 
         for (const model of models) {
             const modelID = typeof model.id === 'string' ? model.id : '';
@@ -161,16 +143,12 @@ export const buildModelPickerTabs = <M extends ModelPickerModelLike>({
             const pinned = favoriteKeys.has(buildModelPickerRefKey(executionProviderId, modelID))
                 || isCurrentModel(executionProviderId, modelID);
             const isLegacy = !pinned && isModelLegacyCandidate(model, releaseTime, now);
-            const entry = {
-                row: {
-                    model,
-                    providerID: executionProviderId,
-                    modelID,
-                    providerName,
-                    isLegacy,
-                },
-                releaseTime,
-                label: getModelLabel(model),
+            const entry: ModelPickerRow<M> = {
+                model,
+                providerID: executionProviderId,
+                modelID,
+                providerName,
+                isLegacy,
             };
             (isLegacy ? legacy : primary).push(entry);
         }
@@ -189,8 +167,8 @@ export const buildModelPickerTabs = <M extends ModelPickerModelLike>({
             kind: 'provider',
             providerID: providerId,
             label: providerName,
-            primary: primaryEntries.sort(compareRowsNewestFirst).map(({ row }) => (allLegacy ? { ...row, isLegacy: false } : row)),
-            legacy: legacyEntries.sort(compareRowsNewestFirst).map(({ row }) => row),
+            primary: primaryEntries.map((row) => (allLegacy ? { ...row, isLegacy: false } : row)),
+            legacy: legacyEntries,
         });
     }
 

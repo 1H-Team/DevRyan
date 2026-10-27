@@ -3,7 +3,9 @@ import {
   canonicalizeAssistantImageSource,
   extractAssistantImageReferences,
   isSupportedAssistantImageSource,
-} from '@openchamber/shared-runtime';
+} from '@devryan/shared-runtime';
+
+import { openCodeClientErrorStatus, resolveGen2OpenCodeClient } from '../opencode/opencode-client-seam.js';
 
 const MAX_IMAGE_ASSETS = 12;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
@@ -225,25 +227,21 @@ export const createImageAssetsRuntime = ({
   path,
   os,
   crypto,
-  buildOpenCodeUrl,
-  getOpenCodeAuthHeaders,
   ownsSession,
-  fetchImpl = fetch,
   now = Date.now,
   grantOptions = {},
+  openCodeClient = null,
 }) => {
   const grants = createImageAssetGrantStore({ crypto, now, ...grantOptions });
 
   const fetchMessage = async (sessionId, messageId) => {
-    const response = await fetchImpl(buildOpenCodeUrl(
-      `/session/${encodeURIComponent(sessionId)}/message/${encodeURIComponent(messageId)}`,
-      '',
-    ), {
-      headers: { accept: 'application/json', ...getOpenCodeAuthHeaders() },
-      signal: AbortSignal.timeout(15_000),
-    });
-    if (!response.ok) return null;
-    return unwrapMessage(await response.json());
+    const client = resolveGen2OpenCodeClient(openCodeClient);
+    const message = await client.sessions.message(sessionId, messageId, { timeoutMs: 15_000, allowNotFound: true })
+      .catch((error) => {
+        if (openCodeClientErrorStatus(error)) return null;
+        throw error;
+      });
+    return unwrapMessage(message);
   };
 
   const prepareSource = async ({ source, authorization, message, principal, sessionId, messageId }) => {

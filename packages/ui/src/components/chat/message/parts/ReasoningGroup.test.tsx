@@ -1,18 +1,31 @@
 import { readFileSync } from 'node:fs';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, mock, test } from 'bun:test';
+import { afterAll, describe, expect, mock, test } from 'bun:test';
 import type { Part } from '@opencode-ai/sdk/v2';
+
+// Module mocks are process-wide in bun; keep the real modules so they can be restored for later files.
+const realMarkdown = { ...(await import('../../MarkdownRenderer')) };
+const realUIStore = { ...(await import('@/stores/useUIStore')) };
+const realI18n = { ...(await import('@/lib/i18n')) };
+afterAll(() => {
+    mock.module('../../MarkdownRenderer', () => realMarkdown);
+    mock.module('@/stores/useUIStore', () => realUIStore);
+    mock.module('@/lib/i18n', () => realI18n);
+});
 
 mock.module('../../MarkdownRenderer', () => ({
     MarkdownRenderer: ({ content }: { content: string }) => <p>{content}</p>,
+    SimpleMarkdownRenderer: ({ content }: { content: string }) => <p>{content}</p>,
 }));
 
 mock.module('@/stores/useUIStore', () => ({
     useUIStore: (selector: (state: { chatRenderMode: 'live' }) => unknown) => selector({ chatRenderMode: 'live' }),
 }));
 
+const { dict: englishMessages } = await import('@/lib/i18n/messages/en');
 mock.module('@/lib/i18n', () => ({
+    ...realI18n,
     useI18n: () => ({
         t: (key: string, variables?: Record<string, string>) => {
             const message = ({
@@ -21,7 +34,7 @@ mock.module('@/lib/i18n', () => ({
                 'chat.reasoning.thoughtFor': 'Thought for {duration}',
                 'chat.reasoning.expand': 'Expand reasoning',
                 'chat.reasoning.collapse': 'Collapse reasoning',
-            } as Record<string, string>)[key] ?? key;
+            } as Record<string, string>)[key] ?? (englishMessages as Record<string, string>)[key] ?? key;
             return message.replace(/\{(\w+)\}/g, (_, name: string) => variables?.[name] ?? '');
         },
     }),

@@ -13,6 +13,8 @@ export function createCompactOrchestrator(source) {
   for (const name of sections) {
     const pattern = new RegExp(`<${name}>\\n([\\s\\S]*?)\\n</${name}>`);
     const match = prompt.match(pattern);
+    // The packaged role dropped its Workflow recap on 2026-10-22; older sources still carry one.
+    if (!match && name === 'Workflow') continue;
     if (!match) throw new Error(`Missing source role section: ${name}`);
     guidance.push(`## ${name}\n\n${match[1]}`);
     // Keep admission and authority instructions in the persistent prefix.

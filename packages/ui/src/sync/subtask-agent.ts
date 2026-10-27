@@ -5,6 +5,8 @@ type SessionMessageWithAgent = {
   role?: unknown
   agent?: unknown
   mode?: unknown
+  providerID?: unknown
+  modelID?: unknown
   model?: {
     providerID?: unknown
     modelID?: unknown
@@ -70,13 +72,14 @@ export function resolveLatestUserChoiceFromMessages(
         || (part.type === "text" && part.synthetic === true && part.metadata?.compaction_continue === true))) continue
     }
 
-    const providerID = typeof message.model?.providerID === "string"
-      && message.model.providerID.trim().length > 0
-      ? message.model.providerID
+    const model = message.model ?? message
+    const providerID = typeof model.providerID === "string"
+      && model.providerID.trim().length > 0
+      ? model.providerID
       : undefined
-    const modelID = typeof message.model?.modelID === "string"
-      && message.model.modelID.trim().length > 0
-      ? message.model.modelID
+    const modelID = typeof model.modelID === "string"
+      && model.modelID.trim().length > 0
+      ? model.modelID
       : undefined
     const directAgent = typeof message.agent === "string" && message.agent.trim().length > 0
       ? message.agent

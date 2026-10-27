@@ -4,6 +4,7 @@ import {
   DEADLINE_EXCEEDED_FAILURE_KIND,
   MANAGED_TASK_TIMEOUT_REASON_PREFIX,
   classifyManagedTaskFailure,
+  formatManagedTaskFailureReason,
   classifyProviderRetryFailure,
   classifyProviderRetryStatus,
   classifyProviderTransportFailure,
@@ -17,6 +18,16 @@ import {
 } from './provider-retry-policy.js';
 
 describe('managed task deadline classification', () => {
+  it('does not treat generic process exits or login suggestions as authentication evidence', () => {
+    const message = "api_error: Claude Code process exited unexpectedly (code 125). Check proxy logs for details. If this persists, try 'claude login' to refresh authentication.";
+    expect(classifyManagedTaskFailure(message)).not.toBe('provider_authentication');
+    const internal = formatManagedTaskFailureReason({ name: 'APIError', data: { v2Type: 'provider.internal', message: 'authentication_error: connection failed' } });
+    expect(classifyManagedTaskFailure(internal)).not.toBe('provider_authentication');
+    const auth = formatManagedTaskFailureReason({ name: 'APIError', data: { v2Type: 'provider.auth', message: 'Connection timeout' } });
+    expect(classifyManagedTaskFailure(auth)).toBe('provider_authentication');
+    const capability=formatManagedTaskFailureReason({code:'capability_unavailable',message:'Authentication failed while inspecting an unavailable runtime'});
+    expect(classifyManagedTaskFailure(capability)).toBe('runtime_capability');
+  });
   it.each(['AuthenticationError: upstream request failed', 'Unauthorized: usage limit reached', 'Invalid API key: service temporarily unavailable', 'HTTP 401: connection reset'])('keeps authentication distinct from transient failures: %s', (reason) => {
     expect(classifyManagedTaskFailure(reason)).toBe('provider_authentication');
     expect(classifyProviderRetryFailure(reason)).toBeNull();
@@ -204,8 +215,44 @@ describe('provider queue failures', () => {
   });
 });
 
+ it('recognizes the OpenCode 2.x upstream stall text form', () => {
+   expect(classifyProviderTransportFailure('APIError', 'upstream_timeout: Upstream stalled: no data for 90005ms')).toBe('stream_idle_timeout');
+   expect(classifyProviderTransportFailure('APIError', 'upstream_timeout: request timeout')).toBeNull();
+   expect(classifyProviderTransportFailure('AbortError', 'upstream_timeout: Upstream stalled: no data for 90005ms')).toBeNull();
+ });
+
  it('recognizes only the complete upstream stall envelope', () => {
    expect(classifyProviderTransportFailure('UnknownError', '{"type":"upstream_timeout","message":"Upstream stalled: no data for 208771ms"}')).toBe('stream_idle_timeout');
    expect(classifyProviderTransportFailure('UnknownError', '{"type":"upstream_timeout","message":"request timeout"}')).toBeNull();
    expect(classifyProviderTransportFailure('AbortError', '{"type":"upstream_timeout","message":"Upstream stalled: no data for 208771ms"}')).toBeNull();
  });
+
+
+describe('structured managed failure categories', () => {
+  it.each([
+    { name: 'ProviderAuthError', data: { message: 'Upstream request failed: subscription required', v2Type: 'provider.auth', statusCode: 403 } },
+    { errorName: 'UnknownError', message: 'Upstream request failed', statusCode: 401 },
+    { errorName: 'UnknownError', message: 'Upstream request failed', statusCode: 403 },
+  ])('retains permanent authentication evidence instead of transport recovery', (error) => {
+    const reason = formatManagedTaskFailureReason(error);
+    expect(classifyManagedTaskFailure(reason)).toBe('provider_authentication');
+    expect(classifyProviderTransportFailure(null, reason)).toBeNull();
+  });
+  it('keeps native capability admission distinct from provider failures', () => {
+    for (const error of [
+      new Error('admission.prompt: the native permission action for tool todoread is unavailable'),
+      Object.assign(new Error('fetch failed while checking required action'), { code: 'capability_unavailable' }),
+    ]) {
+      const reason = formatManagedTaskFailureReason(error);
+      expect(classifyManagedTaskFailure(reason)).toBe('runtime_capability');
+      expect(classifyProviderTransportFailure(null, reason)).toBeNull();
+    }
+  });
+  it('retains actual connection failures and user aborts without inventing authentication', () => {
+    const network = formatManagedTaskFailureReason({ name: 'UnknownError', data: { v2Type: 'provider.transport', message: 'fetch failed' } });
+    expect(classifyManagedTaskFailure(network)).toBe('provider_transport');
+    const abort = formatManagedTaskFailureReason({ name: 'MessageAbortedError', data: { v2Type: 'aborted', message: 'fetch failed' } });
+    expect(classifyManagedTaskFailure(abort)).toBeNull();
+    expect(classifyProviderTransportFailure(null, abort)).toBeNull();
+  });
+});

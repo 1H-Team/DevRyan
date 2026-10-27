@@ -60,6 +60,26 @@ const submitInput = (index, overrides = {}) => ({
   ...overrides,
 });
 
+test('unverified prerequisites fail closed at launch without blocking independent queued work', async () => {
+  let ready = false, sequence = 0; const starts = [];
+  const scheduler = createManagedTaskScheduler({
+    createTaskId: () => `dvr_task_${++sequence}`,
+    verifyTaskPrerequisites: async () => ready,
+    executor: { start: task => { starts.push(task.taskId); return new Promise(() => {}); }, abort: async () => {} },
+  });
+  try {
+    const blocked = await scheduler.submit(submitInput('blocked', { taskPrerequisites: [{ taskId: 'dvr_task_producer',
+      checkName: 'interface', paths: ['src/api.js'], contentHash: 'a'.repeat(64) }] }));
+    const independent = await scheduler.submit(submitInput('independent'));
+    expect(scheduler.getTask(blocked.taskId)).toMatchObject({ status: 'queued', waitingReason: { kind: 'prerequisites', limit: null } });
+    expect(starts).toEqual([independent.taskId]);
+    ready = true;
+    await new Promise(resolve => setTimeout(resolve, 1100));
+    await scheduler.flush();
+    expect(starts).toEqual([independent.taskId, blocked.taskId]);
+  } finally { await scheduler.shutdown(); }
+});
+
 describe('managed scheduler admission', () => {
   test('rejects read-only Designer while accepting Explorer and writable Designer work', async () => {
     const { published, runs, scheduler } = await createHarness();

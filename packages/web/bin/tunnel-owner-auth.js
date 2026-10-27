@@ -7,7 +7,7 @@ export function createOwnerAuthenticatedTunnelFetch({ getDataDirectory, fetchImp
   return async (url, options = {}) => {
     const target = new URL(url);
     if (target.protocol !== 'http:' || target.hostname !== '127.0.0.1'
-      || !target.pathname.startsWith('/api/openchamber/tunnel/')) return fetchImpl(url, options);
+      || !target.pathname.startsWith('/api/devryan/tunnel/')) return fetchImpl(url, options);
     const request = () => fetchImpl(url, { ...options, headers: { ...options.headers,
       Origin: target.origin, 'X-DevRyan-CSRF': '1', ...(cookies.has(target.origin) ? { Cookie: cookies.get(target.origin) } : {}),
     } });
@@ -20,7 +20,7 @@ export function createOwnerAuthenticatedTunnelFetch({ getDataDirectory, fetchImp
       body: JSON.stringify({ token }),
     });
     const cookie = authenticated.headers.get('set-cookie')?.match(/(?:^|,\s*)devryan_local_owner=[A-Za-z0-9_-]{43}(?=;)/)?.[0].replace(/^,\s*/, '');
-    if (!authenticated.ok || !cookie) throw Object.assign(new Error('Local owner authentication required. Run openchamber enroll-owner on this host and open its local link, then retry.'), { code: 'local_owner_required' });
+    if (!authenticated.ok || !cookie) throw Object.assign(new Error('Local owner authentication required. Run devryan enroll-owner on this host and open its local link, then retry.'), { code: 'local_owner_required' });
     cookies.set(target.origin, cookie);
     return request();
   };

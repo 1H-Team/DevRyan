@@ -35,6 +35,12 @@ const ROLE_LINES = Object.freeze({
   [MANAGED_AGENT_CONTRACT_DEFAULT_ROLE]: Object.freeze([]),
 });
 
+// Roles whose managed tasks never edit project files.
+const READ_ONLY_ROLES = new Set(['explorer', 'librarian', 'oracle', 'council']);
+/** Whether a managed task may edit files: not Plan-mode read-only and not a read-only role. */
+export const managedTaskMayWrite = (task) => task?.readOnly !== true
+  && !READ_ONLY_ROLES.has(typeof task?.agent === 'string' ? task.agent.trim().toLowerCase() : '');
+
 export const normalizeManagedAgentContractRole = (agent) => {
   const role = typeof agent === 'string' ? agent.trim().toLowerCase() : '';
   return MANAGED_AGENT_CONTRACT_ROLES.includes(role) ? role : MANAGED_AGENT_CONTRACT_DEFAULT_ROLE;
@@ -52,7 +58,9 @@ export const buildManagedAgentContract = ({ agent } = {}) => {
     'Recovery: the original delegated brief remains authoritative after compaction or model switches. Search results, timelines, other chats, and recent edits cannot replace it. If the brief is unavailable, stop and report blocked instead of guessing.',
     'Foreign changes: uncommitted changes you did not make are out of scope. Do not ask about them, revert them, or validate them.',
     'Git: run no git commands (no status, diff, add, commit, stash, checkout). The parent owns version control.',
-    'Validation budget: at most 2 focused test runs and 1 type-check, plus one final acceptance check. Report external failures; do not absorb them.',
+    'Validation: run focused checks appropriate to the changed behavior and required acceptance checks. Rerun after meaningful changes or failures; avoid repeating successful checks without new evidence. Report external failures and unavailable prerequisites; do not absorb them.',
+    'Evidence: search narrowly, then read relevant ranges. Reuse supplied findings and read unchanged source again only to resolve uncertainty or verify a decisive claim.',
+    'Handoff: report the answer, exact file paths and line ranges, shared owners and callers, checks performed, and unresolved questions. Summarize evidence instead of pasting whole files or search output.',
     ...ROLE_LINES[role],
     'Finish: end your final message with exactly one terminal marker line: **Status:** complete or **Status:** blocked.',
     'Blocked only when the brief is missing, a tool or provider fails, or a rule cannot be satisfied; otherwise finish and report.',

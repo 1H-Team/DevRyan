@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { normalizeClearRange, registerDiagnosticsRoutes } from './routes.js';
+import { createEventLoopDelaySampler, normalizeClearRange, registerDiagnosticsRoutes } from './routes.js';
 
 describe('diagnostics clear ranges', () => {
   test('exports a bounded Chrome Trace through the existing scoped export route after flushing', async () => {
@@ -98,14 +98,45 @@ describe('diagnostics clear ranges', () => {
       lastError: 'Other sessions are active',
       updatedAt: 123,
     };
+    const eventLoop = { windowMs: 1000, p50Ms: 10.5, p99Ms: 40, maxMs: 52.25 };
+    const ledgerWorker = { running: true, pendingCalls: 0, heapUsedMB: 120, heapTotalMB: 160 };
     registerDiagnosticsRoutes(app, {
       runtime: { async getStatus() { return { enabled: true, sessionCount: 1 }; } },
       getCommandDeadlineRecoveryStatus: () => commandDeadlineRecovery,
+      eventLoopSampler: { read: () => eventLoop },
+      getLedgerWorkerStatus: async () => ledgerWorker,
     });
     const response = { json(payload) { this.payload = payload; return this; } };
 
     await statusHandler({}, response);
 
-    expect(response.payload).toEqual({ enabled: true, sessionCount: 1, commandDeadlineRecovery });
+    expect(response.payload).toEqual({ enabled: true, sessionCount: 1, commandDeadlineRecovery, eventLoop, ledgerWorker });
+  });
+});
+
+describe('event-loop delay sampler', () => {
+  test('reports milliseconds since the previous read and starts a new window', () => {
+    let at = 1_000;
+    const calls = [];
+    const histogram = {
+      enable: () => calls.push('enable'),
+      disable: () => calls.push('disable'),
+      reset: () => calls.push('reset'),
+      percentile: (p) => (p === 50 ? 12_345_678 : 48_000_000),
+      max: 61_234_567,
+    };
+    const sampler = createEventLoopDelaySampler({ now: () => at, monitor: () => histogram });
+    at = 31_000;
+    expect(sampler.read()).toEqual({ windowMs: 30_000, p50Ms: 12.35, p99Ms: 48, maxMs: 61.23 });
+    at = 32_000;
+    expect(sampler.read().windowMs).toBe(1_000);
+    sampler.stop();
+    expect(calls).toEqual(['enable', 'reset', 'reset', 'disable']);
+  });
+
+  test('reports zero for an empty histogram', () => {
+    const histogram = { enable() {}, disable() {}, reset() {}, percentile: () => Number.NaN, max: 0 };
+    const sampler = createEventLoopDelaySampler({ now: () => 0, monitor: () => histogram });
+    expect(sampler.read()).toEqual({ windowMs: 0, p50Ms: 0, p99Ms: 0, maxMs: 0 });
   });
 });

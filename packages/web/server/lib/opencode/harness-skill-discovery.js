@@ -1,6 +1,6 @@
 import path from 'node:path';
 
-export function createHarnessSkillDiscovery({ fs, os, yaml, discoverSkills, findWorktreeRoot, getAncestors, resolveSkillSearchDirectories, walkSkillMdFiles }) {
+export function createHarnessSkillDiscovery({ fs, os, homeDirectory = os.homedir(), yaml, discoverSkills, findWorktreeRoot, getAncestors, resolveSkillSearchDirectories, walkSkillMdFiles }) {
   function parseSkillFrontmatterForHarness(skillMdPath) {
     try {
       const content = fs.readFileSync(skillMdPath, 'utf8');
@@ -42,7 +42,7 @@ export function createHarnessSkillDiscovery({ fs, os, yaml, discoverSkills, find
     }
 
     const roots = [
-      path.join(os.homedir(), '.agents', 'skills'),
+      path.join(homeDirectory, '.agents', 'skills'),
     ];
 
     if (directory) {

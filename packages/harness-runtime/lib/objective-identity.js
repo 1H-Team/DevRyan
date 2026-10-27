@@ -1,3 +1,4 @@
+import { isNativeStatusRecord } from '../../shared-runtime/lib/native-message-status.js';
 // Native history stays authoritative. Only these typed maintenance records
 // preserve an existing objective; ordinary synthetic user requests do not.
 export const isNativeCompactionRecord = (record) => record?.info?.role === 'user'
@@ -9,18 +10,19 @@ export const currentObjectiveUser = (record) => record.activeUserID ?? record.re
 export const isManagedMaintenancePrompt = (body) => {
   if (!Array.isArray(body?.parts)) return false;
   if (body.parts.some((part) => part?.type === 'text' && part.synthetic === true
-    && part.text?.startsWith('[openchamber-plan-action:v1] '))) return false;
+    && (part.text?.startsWith('[devryan-plan-action:v1] ') || part.text?.startsWith('[openchamber-plan-action:v1] ')))) return false;
   return isNativeCompactionRecord({ info: { role: 'user' }, parts: body.parts })
     || body.parts.some((part) => part?.type === 'text' && part.synthetic === true && typeof part.text === 'string'
       && (/^\[devryan-provider-recovery:v1:[^\]\r\n]+\]/.test(part.text)
-        || part.text.startsWith('[devryan-open-todo-continuation:v1]\n')));
+        || part.text.startsWith('[devryan-open-todo-continuation:v1]\n')
+        || part.text.startsWith('[devryan-managed-result-ready:v1]\n')));
 };
 
 export const observesNativeContinuation = (record, observation, userMessageID) => {
   if (!observation?.complete || observation.session?.id !== record.sessionID
     || observation.session.directory !== record.directory || observation.session.parentID
     || observation.session.time?.archived || !Array.isArray(observation.messages)) return false;
-  const users = observation.messages.filter((message) => message.info?.role === 'user');
+  const users = observation.messages.filter((message) => message.info?.role === 'user' && !isNativeStatusRecord(message));
   const previous = users.findIndex((message) => message.info.id === currentObjectiveUser(record));
   if (previous < 0 || !users.some((message) => message.info.id === record.anchorID)
     || users.at(-1)?.info.id !== userMessageID || previous === users.length - 1) return false;

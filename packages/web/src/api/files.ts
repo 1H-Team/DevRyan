@@ -7,7 +7,7 @@ import type {
   FileReadResult,
   FileWriteOptions,
   FileWriteResult,
-} from '@openchamber/ui/lib/api/types';
+} from '@devryan/ui/lib/api/types';
 
 const normalizePath = (path: string): string => path.replace(/\\/g, '/');
 

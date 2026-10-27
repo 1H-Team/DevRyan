@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { readFileSync } from "node:fs"
+import { buildPlanModeSyntheticInstruction } from "@/sync/session-ui-store"
 import { MAGIC_PROMPT_DEFINITIONS } from "./magicPrompts"
 
 // Regression guard: when the legacy plan-card markdown parser was removed,
@@ -28,7 +28,8 @@ describe("plan-mode prompts no longer require ```plan.md fences", () => {
   })
 
   test("session-ui-store synthetic plan prompt does not instruct fenced plan output", () => {
-    const source = readFileSync(new URL("../sync/session-ui-store.ts", import.meta.url), "utf8")
+    const source = buildPlanModeSyntheticInstruction()
+    expect(source).toContain("plan mode")
     for (const pattern of FORBIDDEN_FENCE_PATTERNS) {
       expect(pattern.test(source)).toBe(false)
     }
@@ -101,6 +102,18 @@ describe("plan task tracking prompts", () => {
     expect(def.template).toContain("is a deviation to classify, not a blocker")
     expect(def.template).not.toContain("low-risk related adjustment")
     expect(def.template).not.toContain("plan-gap rules")
+  })
+
+  test("implementation reuses gathered context, starts independent phases together and matches the system-prompt deviation classes", () => {
+    const def = MAGIC_PROMPT_DEFINITIONS.find((entry) => entry.id === "plan.implement.instructions")
+    if (!def) throw new Error("plan.implement.instructions definition missing")
+
+    expect(def.template).not.toContain("build a deep understanding of the project")
+    expect(def.template).toContain("read further only what a step needs")
+    expect(def.template).toContain("parallel sub-agent starts in the same assistant message")
+    expect(def.template).toContain("small reversible frontend corrections")
+    expect(def.template).toContain("correcting existing user-visible behavior does not by itself make a change Class 2")
+    expect(def.template).not.toContain("Class 2 (ask first): changes to user-visible behaviour")
   })
 
   test("Class 2 deviations route through a resumable, explained structured question", () => {

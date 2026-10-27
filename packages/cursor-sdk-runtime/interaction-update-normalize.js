@@ -144,8 +144,9 @@ export const normalizeInteractionUpdateToSdkMessage = (input) => {
   }
 
   if (update.type === 'thinking-delta') {
+    if (typeof update.text !== 'string' && typeof update.delta !== 'string') return null;
     const text = firstStringValue(update.text, update.delta);
-    return text ? { type: 'thinking', text } : null;
+    return { type: 'thinking', text };
   }
 
   if (
@@ -206,7 +207,7 @@ export const normalizeInteractionUpdateToSdkMessage = (input) => {
   }
 
   if (update.type === 'summary') {
-    const text = trimString(update.summary ?? update.text);
+    const text = firstStringValue(update.summary, update.text);
     return text ? { type: 'task', text } : null;
   }
 

@@ -1,11 +1,39 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { createSkill, deleteSkill, discoverSkills, getSkillSources } from './skills.js';
+import { readSkillSupportingFile, writeSkillSupportingFile, deleteSkillSupportingFile } from './shared.js';
 
 describe('skill discovery', () => {
+  it('rejects retired and invalid names before creating config directories', () => {
+    const mkdir = vi.spyOn(fs, 'mkdirSync');
+    try {
+      for (const name of ['test-driven-development', 'subagent-driven-development', '../invalid']) {
+        expect(() => createSkill(name, {}, null, 'user')).toThrow();
+      }
+      expect(mkdir).not.toHaveBeenCalled();
+    } finally {
+      mkdir.mockRestore();
+    }
+  });
+  it('refuses final and parent symlink escapes for supporting file reads, writes and deletes', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-skill-symlink-'));
+    try {
+      const skill = path.join(root, 'skill'), outside = path.join(root, 'outside');
+      fs.mkdirSync(skill); fs.mkdirSync(outside);
+      const secret = path.join(outside, 'resource.txt'); fs.writeFileSync(secret, 'outside');
+      fs.symlinkSync(secret, path.join(skill, 'resource.txt'));
+      fs.symlinkSync(outside, path.join(skill, 'linked-directory'));
+      for (const action of [() => readSkillSupportingFile(skill, 'resource.txt'),
+        () => writeSkillSupportingFile(skill, 'resource.txt', 'changed'),
+        () => deleteSkillSupportingFile(skill, 'resource.txt'),
+        () => writeSkillSupportingFile(skill, 'linked-directory/new.txt', 'changed')]) expect(action).toThrow('Access to file denied');
+      expect(fs.readFileSync(secret, 'utf8')).toBe('outside');
+      expect(fs.existsSync(path.join(outside, 'new.txt'))).toBe(false);
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
   it('does not treat non-file discovered skill paths as editable markdown sources', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-runtime-skill-'));
 
@@ -76,13 +104,17 @@ describe('skill discovery', () => {
   it('discovers nested user skills from a config skills directory without an active project', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-user-skills-'));
     const originalConfigDir = process.env.OPENCODE_CONFIG_DIR;
-    const skillDir = path.join(root, 'skills', 'superpowers', 'writing-plans');
+    const skillDir = path.join(root, 'skills', 'toolkit', 'diagnosing-bugs');
     fs.mkdirSync(skillDir, { recursive: true });
     fs.writeFileSync(
       path.join(skillDir, 'SKILL.md'),
-      '---\nname: writing-plans\ndescription: Plan work\n---\n',
+      '---\nname: diagnosing-bugs\ndescription: Diagnose bugs\n---\n',
       'utf8',
     );
+    // A retired Superpowers skill beside it stays hidden.
+    const retiredDir = path.join(root, 'skills', 'toolkit', 'writing-plans');
+    fs.mkdirSync(retiredDir, { recursive: true });
+    fs.writeFileSync(path.join(retiredDir, 'SKILL.md'), '---\nname: writing-plans\ndescription: Plan work\n---\n', 'utf8');
 
     try {
       process.env.OPENCODE_CONFIG_DIR = root;
@@ -91,8 +123,8 @@ describe('skill discovery', () => {
 
       expect(skills).toEqual([
         {
-          name: 'writing-plans',
-          description: 'Plan work',
+          name: 'diagnosing-bugs',
+          description: 'Diagnose bugs',
           path: path.join(skillDir, 'SKILL.md'),
           scope: 'user',
           source: 'opencode',
@@ -159,7 +191,7 @@ describe('skill discovery', () => {
     }
   });
 
-  it('does not discover or create retired Superpowers skills from project harness directories', () => {
+  it('does not discover or create retired skills from project harness directories', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-retired-skills-'));
     const controlSkill = path.join(root, '.agents', 'skills', 'control-skill');
     const retiredNames = ['test-driven-development', 'subagent-driven-development'];

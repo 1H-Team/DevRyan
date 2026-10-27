@@ -44,21 +44,6 @@ export type ContextUsageProviderLike = {
     models?: ContextUsageProviderModelLike[];
 };
 
-const OPENAI_OAUTH_OFFICIAL_CONTEXT_MODEL_IDS = new Set([
-    "gpt-5.4",
-    "gpt-5.4-fast",
-    "gpt-5.4-mini",
-    "gpt-5.4-mini-fast",
-    "gpt-5.5",
-    "gpt-5.5-fast",
-    "gpt-5.6-sol",
-    "gpt-5.6-sol-fast",
-    "gpt-5.6-terra",
-    "gpt-5.6-terra-fast",
-    "gpt-5.6-luna",
-    "gpt-5.6-luna-fast",
-]);
-
 const getMessageInfo = (message: ContextUsageMessage): Message => {
     return "info" in message ? message.info : message;
 };
@@ -135,12 +120,7 @@ const resolveMessageContextCapacity = (
     const model = provider?.models?.find((entry) => entry.id === info.modelID);
     if (!model) return UNAVAILABLE_MODEL_CONTEXT_CAPACITY;
     const variant = typeof info.variant === "string" ? info.variant : undefined;
-    const preferOfficialOpenAIContext = info.providerID === "openai"
-        && provider?.authType === "oauth"
-        && OPENAI_OAUTH_OFFICIAL_CONTEXT_MODEL_IDS.has(info.modelID);
-    return resolveModelContextCapacity(model, variant, {
-        preferContext: preferOfficialOpenAIContext,
-    });
+    return resolveModelContextCapacity(model, variant);
 };
 
 const buildTokenBreakdown = (breakdown: ExtractedTokenBreakdown): ContextUsageTokenBreakdown => ({

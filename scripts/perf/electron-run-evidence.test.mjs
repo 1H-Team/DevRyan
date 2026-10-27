@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import { assertPerfCleanupComplete, capturePerfJournal, observePerfBrowserErrors } from './electron-run-evidence.mjs';
 
@@ -38,9 +38,7 @@ test('browser diagnostics retain startup/runtime errors, redact credentials, bou
 });
 
 test('post-shutdown journal verification counts both compressed errors and malformed active records as evidence', async () => {
-  const root = fileURLToPath(new URL('../../.cache/perf/', import.meta.url));
-  await mkdir(root, { recursive: true });
-  const directory = await mkdtemp(path.join(root, 'run-evidence-test-'));
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'devryan-run-evidence-test-'));
   try {
     await mkdir(path.join(directory, 'runtime'));
     await writeFile(path.join(directory, 'runtime/000001.ndjson.gz'), gzipSync(JSON.stringify({ type: 'log', level: 'error', at: 1, message: 'Fixture runtime error' }) + '\n'));
@@ -54,4 +52,28 @@ test('post-shutdown journal verification counts both compressed errors and malfo
     assert.equal(journal.errors[0].message, 'Fixture runtime error');
     await assert.rejects(capturePerfJournal(path.join(directory, 'missing')), /ENOENT/);
   } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test('journal capture observes cancellation before reads and closes its iterator on cancellation during records', async t => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'devryan-journal-abort-')); t.after(() => rm(directory, { recursive: true, force: true }));
+  const reason = Object.assign(Error('fixture scan cancelled'), { code: 'ABORT_ERR' });
+  const stopped = new AbortController(); stopped.abort(reason);
+  await assert.rejects(capturePerfJournal(path.join(directory, 'missing'), { signal: stopped.signal }), error => error === reason);
+  await mkdir(path.join(directory, 'runtime'));
+  await writeFile(path.join(directory, 'runtime/000001.ndjson.open'), Array.from({ length: 3 }, () => JSON.stringify({ type: 'lifecycle' })).join('\n') + '\n');
+  const controller = new AbortController(), original = controller.signal.throwIfAborted.bind(controller.signal);
+  let checks = 0;
+  controller.signal.throwIfAborted = () => { if (++checks === 6) controller.abort(reason); original(); };
+  await assert.rejects(capturePerfJournal(directory, { signal: controller.signal }), error => error === reason);
+  assert.equal(checks, 6, 'Cancellation must be checked during streamed records, not only before startup');
+  assert.equal((await capturePerfJournal(directory)).records, 3, 'Optional cancellation must not alter ordinary callers');
+});
+
+test('native observation gap events also make journal coverage incomplete evidence', async t => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'devryan-journal-native-gap-')); t.after(() => rm(directory, { recursive: true, force: true }));
+  await mkdir(path.join(directory, 'runtime'));
+  await writeFile(path.join(directory, 'runtime/000001.ndjson.open'), JSON.stringify({ type: 'lifecycle', event: 'native_observation_gap', at: 1 }) + '\n');
+  const journal = await capturePerfJournal(directory);
+  assert.equal(journal.records, 1); assert.equal(journal.gapRecords, 1);
+  assert.equal(journal.gaps[0].reason, 'native_observation_gap');
 });

@@ -12,11 +12,21 @@ import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
 import { resolveProjectDisplayName } from '@/lib/projectDisplayName';
 
-export const SettingsProjectSelector: React.FC<{ className?: string }> = ({ className }) => {
+/**
+ * Project picker for settings pages. Uncontrolled it switches the active
+ * project; with `projectId` and `onProjectChange` it only reports the choice.
+ */
+export const SettingsProjectSelector: React.FC<{
+  className?: string;
+  projectId?: string | null;
+  onProjectChange?: (projectId: string) => void;
+}> = ({ className, projectId, onProjectChange }) => {
   const { t } = useI18n();
   const projects = useProjectsStore((state) => state.projects);
-  const activeProjectId = useProjectsStore((state) => state.activeProjectId);
-  const setActiveProject = useProjectsStore((state) => state.setActiveProject);
+  const storeActiveProjectId = useProjectsStore((state) => state.activeProjectId);
+  const setStoreActiveProject = useProjectsStore((state) => state.setActiveProject);
+  const activeProjectId = onProjectChange ? projectId ?? null : storeActiveProjectId;
+  const setActiveProject = onProjectChange ?? setStoreActiveProject;
 
   const sortedProjects = React.useMemo(() => {
     return sortProjectsAlphabetically(projects);

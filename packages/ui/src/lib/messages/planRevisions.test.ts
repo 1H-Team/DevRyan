@@ -34,6 +34,7 @@ const assistant = (id: string, text: string, completedAt: number | null = 10): P
     id,
     parentMessageId: null,
     completedAt,
+    finish: 'stop',
     parts: [textPart(id, text)],
 });
 
@@ -74,16 +75,12 @@ describe('isContinuationTurnUserMessage', () => {
 });
 
 describe('projectPlanRevisions', () => {
-    test('recovery completes the original planning revision across repeated wakes and reload', () => {
-        const turns = [
-            turn('u1', [textPart('u1', 'Plan the fix'), textPart('u1', 'User has requested to enter plan mode.', true)], [assistant('a1', 'Waiting for discovery.')]),
-            turn('wake1', [textPart('wake1', '[devryan-provider-recovery:v1:task_1]\nCollect result.', true)], [assistant('a2', 'Still recovering.')]),
-            turn('wake2', [textPart('wake2', '[devryan-provider-recovery:v1:task_2]\nCollect result.', true)], [assistant('a3', planText('Recovered Plan'))]),
-        ];
+    test('managed replacement wakes cannot inherit the original Plan revision', () => {
+        const turns = [turn('u1', [textPart('u1', 'Plan it')], [assistant('a1', planText('Original'))], { recordedPlanMode: true }),
+          turn('wake', [textPart('wake', '[devryan-provider-recovery:v1:task_1]\nCollect result.', true)], [assistant('a2', planText('Replacement'))])];
         for (const history of [turns, structuredClone(turns)]) {
-            const revisions = projectPlanRevisions(history);
-            expect(revisions).toHaveLength(1);
-            expect(revisions[0]).toMatchObject({ rootUserMessageId: 'u1', memberTurnIds: ['u1', 'wake1', 'wake2'], sourceMessageId: 'a3', isSettled: true, isPlanModeRevision: true });
+          const revisions = projectPlanRevisions(history);
+          expect(revisions).toHaveLength(1); expect(revisions[0]?.memberTurnIds).toEqual(['u1']);
         }
     });
 
@@ -98,23 +95,17 @@ describe('projectPlanRevisions', () => {
             expect(revisions[0]?.memberTurnIds).toEqual(['u1']);
         }
     });
-    test('recovered split text excludes reasoning and stays unsettled until the final sibling completes', () => {
-        const recovered = assistant('a2', '', null);
-        recovered.parts = [
-            textPart('a2', 'Recovered investigation.\n<!--plan-->\n# Recovered Plan\n\n'),
-            { id: 'reasoning', messageID: 'a2', sessionID: 'session-1', type: 'reasoning', text: 'Private intermediate reasoning.', time: { start: 1, end: 2 } },
-            textPart('a2', '## Implementation\n\n1. Restore the card.\n\n## Verification\n\nReload.'),
-        ];
-        const turns = [
-            turn('u1', [textPart('u1', 'Plan the fix')], [assistant('a1', 'Waiting.')], { recordedPlanMode: true }),
-            turn('wake', [textPart('wake', '[devryan-provider-recovery:v1:task_1]\nCollect result.', true)], [recovered]),
-        ];
-        expect(projectPlanRevisions(turns)[0]).toMatchObject({ isSettled: false, sourceMessageId: 'a2' });
-        recovered.completedAt = 20;
-        const [revision] = projectPlanRevisions(structuredClone(turns));
-        expect(revision).toMatchObject({ isSettled: true, rootUserMessageId: 'u1' });
-        expect(revision?.planText).toBe('# Recovered Plan\n## Implementation\n\n1. Restore the card.\n\n## Verification\n\nReload.');
+    test('verified native tail joins a failed prefix without requiring its own headings', () => {
+        const prefix = { ...assistant('a1', '<!--plan-->\n# Partial '), parentMessageId: 'u1', hasError: true, finish: 'error' };
+        const tail = { ...assistant('a2', 'tail without heading 😀', null), parentMessageId: 'native' };
+        const turns = [turn('u1', [textPart('u1', 'Plan it')], [prefix], { recordedPlanMode: true }), turn('native', [textPart('native', 'Resume', true)], [tail])];
+        const proof = { sessionID: 'session-1', sourceMessageID: 'a1', rootUserMessageID: 'u1', memberUserMessageIDs: ['u1', 'native'], memberAssistantMessageIDs: ['a1', 'a2'], currentSourceMessageID: 'a2', successful: true as const, settled: true as const, current: true };
+        expect(projectPlanRevisions(turns)[0]?.hasTerminalError).toBe(true);
+        expect(projectPlanRevisions(turns, proof, '# Partial tail without heading 😀')[0]?.isSettled).toBe(false);
+        tail.completedAt = 20;
+        expect(projectPlanRevisions(structuredClone(turns), proof, '# Partial tail without heading 😀')[0]).toMatchObject({ sourceMessageId: 'a1', memberTurnIds: ['u1', 'native'], planText: '# Partial tail without heading 😀', isSettled: true, hasTerminalError: false });
     });
+
     test('a plan turn followed by an implementation turn yields one plan revision, and the implementation turn opens its own group', () => {
         const revisions = projectPlanRevisions([
             turn('u1', [textPart('u1', 'Plan the fix')], [assistant('a1', planText('Plan'))], { recordedPlanMode: true }),
@@ -149,22 +140,12 @@ describe('projectPlanRevisions', () => {
         expect(revisions).toEqual([]);
     });
 
-    test('compaction and fully synthetic continuation turns still fold into the open plan revision', () => {
-        const revisions = projectPlanRevisions([
-            turn('u1', [textPart('u1', 'Plan the fix')], [assistant('a1', 'Exploring.')], { recordedPlanMode: true }),
-            turn('u2', [textPart('u2', '/compact')], [assistant('a2', 'Summary.')]),
-            turn('u3', [textPart('u3', 'Continue from where you left off.', true)], [assistant('a3', planText('Plan'))]),
-            turn('u4', [textPart('u4', 'Continue.', true)], [assistant('a4', 'Epilogue.')]),
-        ]);
-
-        expect(revisions).toHaveLength(1);
-        const revision = revisions[0]!;
-        expect(revision.memberTurnIds).toEqual(['u1', 'u2', 'u3', 'u4']);
-        expect(revision.sourceTurnId).toBe('u3');
-        expect(revision.sourceMessageId).toBe('a3');
-        expect(revision.turnIdsAfterSource).toEqual(['u4']);
-        expect(revision.messageRoles.get('a1')).toBe('before-source');
-        expect(revision.messageRoles.get('a4')).toBe('after-source');
+    test('compaction and arbitrary synthetic turns stay separate without native source proof', () => {
+        const revisions = projectPlanRevisions([turn('u1', [textPart('u1', 'Plan it')], [assistant('a1', planText('Original'))], { recordedPlanMode: true }),
+          turn('u2', [textPart('u2', '/compact')], [assistant('a2', 'Summary')]),
+          turn('u3', [textPart('u3', 'Continue', true)], [assistant('a3', 'Tail')])]);
+        expect(revisions).toHaveLength(1); expect(revisions[0]?.memberTurnIds).toEqual(['u1']);
+        expect(revisions[0]?.messageRoles.has('a3')).toBe(false);
     });
 
     test('a continuation after an implementation turn folds into the implementation group, not the plan', () => {

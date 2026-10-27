@@ -29,4 +29,4 @@ This repo owns docs content.
 
 Website rendering and deployment are separate from this source repository. An optional destination must be configured explicitly; see [DEPLOYMENT.md](DEPLOYMENT.md).
 
-Use `.github/workflows/docs-source.yml` to package docs source on release or manual trigger.
+CI validates the docs source with `bun run docs:validate`.

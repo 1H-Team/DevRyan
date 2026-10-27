@@ -19,11 +19,10 @@ import {
   PreparedAgentsPage,
   PreparedAgentsSettingsPicker,
   PreparedAgentsSidebar,
-  PreparedBotsPage,
   PreparedBugReportsPage,
   PreparedMcpPage,
   PreparedMcpSidebar,
-  PreparedOpenChamberPage,
+  PreparedDevRyanPage,
   PreparedPluginsPage,
   PreparedPluginsSidebar,
   PreparedProvidersPage,
@@ -43,7 +42,6 @@ type ManagedSettingsPage =
   | 'shortcuts'
   | 'sessions'
   | 'notifications'
-  | 'bots'
   | 'agents'
   | 'providers'
   | 'usage'
@@ -125,13 +123,12 @@ export const ManagedSettingsFrame: React.FC<ManagedSettingsFrameProps> = ({ onCl
       { slug: 'shortcuts', title: t('settings.page.shortcuts.title'), description: 'Review and customize keyboard shortcuts.', group: 'Preferences' },
       { slug: 'sessions', title: t('settings.page.sessions.title'), description: t('settings.view.home.cards.agents.description'), group: 'Workspace' },
       { slug: 'notifications', title: t('settings.page.notifications.title'), description: 'Choose when and how DevRyan notifies you.', group: 'Preferences' },
-      { slug: 'bots', title: t('settings.page.bots.title'), description: t('settings.page.bots.description'), group: 'Workspace' },
       { slug: 'agents', title: t('settings.page.agents.title'), description: t('settings.view.home.cards.agents.description'), group: 'Workspace' },
+      { slug: 'providers', title: t('settings.page.providers.title'), description: 'Review provider access, models, and usage.', group: 'Workspace' },
+      { slug: 'usage', title: t('settings.page.usage.title'), description: 'Inspect provider usage and limits.', group: 'Workspace' },
       { slug: 'plugins', title: t('settings.page.plugins.title'), description: 'Review installed OpenCode plugins.', group: 'Workspace' },
       { slug: 'skills.installed', title: t('settings.page.skills.title'), description: 'Manage reusable Coding Agent skills.', group: 'Workspace' },
       { slug: 'mcp', title: t('settings.page.mcp.title'), description: 'Review Coding Agent servers.', group: 'Workspace' },
-      { slug: 'providers', title: t('settings.page.providers.title'), description: 'Review provider access, models, and usage.', group: 'Workspace' },
-      { slug: 'usage', title: t('settings.page.usage.title'), description: 'Inspect provider usage and limits.', group: 'Workspace' },
       {
         slug: 'bug-reports',
         title: t('settings.page.bugReports.title'),
@@ -315,9 +312,6 @@ export const ManagedSettingsFrame: React.FC<ManagedSettingsFrameProps> = ({ onCl
     return (
       <CapabilitySettingsWorkspace
         slug={slug}
-        audience="coding-agents"
-        onAudienceChange={() => {}}
-        idPrefix={`managed-${slug.replace('.', '-')}-audience`}
       >
         <div className="flex h-full min-h-0 overflow-hidden">
             <div className="hidden min-h-0 w-56 shrink-0 border-r border-border bg-sidebar md:block">
@@ -374,7 +368,7 @@ export const ManagedSettingsFrame: React.FC<ManagedSettingsFrameProps> = ({ onCl
       const section = activeSlug === 'appearance' ? 'visual' : activeSlug;
       return (
         <SettingsPagePermissionBoundary slug={activeSlug}>
-          <SectionBoundary><PreparedOpenChamberPage section={section} /></SectionBoundary>
+          <SectionBoundary><PreparedDevRyanPage section={section} /></SectionBoundary>
         </SettingsPagePermissionBoundary>
       );
     }
@@ -389,13 +383,6 @@ export const ManagedSettingsFrame: React.FC<ManagedSettingsFrameProps> = ({ onCl
         );
       }
       return renderSplitPage(activeSlug, <PreparedAgentsSidebar />, content, <PreparedAgentsSettingsPicker />);
-    }
-    if (activeSlug === 'bots') {
-      return (
-        <SettingsPagePermissionBoundary slug={activeSlug}>
-          <SectionBoundary><PreparedBotsPage /></SectionBoundary>
-        </SettingsPagePermissionBoundary>
-      );
     }
     if (activeSlug === 'providers') {
       return renderSplitPage(activeSlug, <PreparedProvidersSidebar />, <PreparedProvidersPage />);

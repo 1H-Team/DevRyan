@@ -1,7 +1,7 @@
 import React, { act } from 'react';
 import { afterEach, beforeEach, expect, mock, test } from 'bun:test';
 import { create } from 'zustand';
-import { withDom } from '@/components/bots/chat/botMountedDom';
+import { withDom } from '@/test/mountedDom';
 import { getAuthPrincipal, setAuthPrincipal } from '@/lib/authSession';
 import type { SettingsDataBoundaryProps } from './SettingsDataBoundary';
 
@@ -13,7 +13,7 @@ mock.module('@/stores/useUIStore', () => ({ useUIStore: { getState: () => ({ set
 for (const [store, actions] of Object.entries({
   useAgentsStore: ['setSelectedGlobalView', 'loadAgents'], useCommandsStore: ['loadCommands'],
   useMcpConfigStore: ['loadMcpConfigs'], useSkillsStore: ['loadSkills'],
-  useSkillsCatalogStore: ['loadCatalog'], usePluginsStore: ['loadPlugins', 'loadSlimStatus'],
+  useSkillsCatalogStore: ['loadCatalog'], usePluginsStore: ['loadPlugins'],
 })) {
   mock.module(`@/stores/${store}`, () => ({ [store]: { getState: () => Object.fromEntries(
     actions.map(action => [action, () => { calls.push(action); return Promise.resolve(); }]),
@@ -39,9 +39,9 @@ test('imports do not fetch data; mounting activates only the requested stores', 
   expect(importCalls).toEqual([]);
   await mounted(async (render) => {
     await render(SettingsDataBoundary, { slug: 'plugins' });
-    expect(calls).toEqual(['loadPlugins', 'loadSlimStatus']);
+    expect(calls).toEqual(['loadPlugins']);
     await render(SettingsDataBoundary, { slug: 'plugins' });
-    expect(calls).toEqual(['loadPlugins', 'loadSlimStatus']);
+    expect(calls).toEqual(['loadPlugins']);
   });
 });
 
@@ -61,6 +61,6 @@ test('managed effects require current page permission and never run administrato
     await render(ManagedSettingsDataBoundary, { slug: 'skills.installed' });
     expect(calls).toEqual([]);
     await render(ManagedSettingsDataBoundary, { slug: 'plugins' });
-    expect(calls).toEqual(['loadPlugins', 'loadSlimStatus']);
+    expect(calls).toEqual(['loadPlugins']);
   });
 });

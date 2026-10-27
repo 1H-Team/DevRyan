@@ -17,7 +17,7 @@ const MAX_LOG_LINES_PER_INSTANCE = 1200;
 const MONITOR_INITIAL_POLL_MS = 2000;
 const MONITOR_STEADY_POLL_MS = 10000;
 const MONITOR_STABILIZE_TICKS = 5;
-const SSH_STATUS_EVENT = 'openchamber:ssh-instance-status';
+const SSH_STATUS_EVENT = 'devryan:ssh-instance-status';
 
 const nowMillis = () => Date.now();
 
@@ -290,9 +290,9 @@ const stopControlMasterBestEffort = async (parsed, controlPath) => {
 const askpassScriptContent = () => `#!/bin/bash
 PROMPT="$1"
 
-if [[ -n "$OPENCHAMBER_SSH_ASKPASS_VALUE" ]]; then
+if [[ -n "$DEVRYAN_SSH_ASKPASS_VALUE" ]]; then
   if [[ "$PROMPT" == *"assword"* || "$PROMPT" == *"passphrase"* ]]; then
-    printf '%s\\n' "$OPENCHAMBER_SSH_ASKPASS_VALUE"
+    printf '%s\\n' "$DEVRYAN_SSH_ASKPASS_VALUE"
     exit 0
   fi
 fi
@@ -395,7 +395,7 @@ const waitLocalForwardReady = async (localPort) => {
     await new Promise((resolve) => setTimeout(resolve, pollMs));
     pollMs = Math.min(pollMs * 2, 2000);
   }
-  throw new Error('Timed out waiting for forwarded OpenChamber health');
+  throw new Error('Timed out waiting for forwarded DevRyan health');
 };
 
 const parseVersionToken = (raw) => {
@@ -421,7 +421,13 @@ const isLivenessHttpStatus = (status) => (status >= 200 && status <= 299) || isA
 
 export class ElectronSshManager {
   constructor(options) {
-    this.settingsFilePath = options.settingsFilePath;
+    this.resolveSettingsFilePath = typeof options.settingsFilePath === 'function' ? options.settingsFilePath : () => options.settingsFilePath;
+    this.mutateSettingsRoot = options.mutateSettingsRoot ?? (async (mutator) => {
+      const filePath = this.resolveSettingsFilePath();
+      const root = readJsonRoot(filePath);
+      const result = await mutator(root);
+      await writeJsonRoot(filePath, result ?? root);
+    });
     this.appVersion = options.appVersion;
     this.emit = options.emit;
     this.logs = new Map();
@@ -579,47 +585,47 @@ export class ElectronSshManager {
   }
 
   readInstances() {
-    const root = readJsonRoot(this.settingsFilePath);
+    const root = readJsonRoot(this.resolveSettingsFilePath());
     return { instances: Array.isArray(root.desktopSshInstances) ? root.desktopSshInstances : [] };
   }
 
   async setInstances(config) {
-    const root = readJsonRoot(this.settingsFilePath);
-    const previousSshIds = new Set(
-      (Array.isArray(root.desktopSshInstances) ? root.desktopSshInstances : [])
-        .map((entry) => String(entry?.id || '').trim())
-        .filter((id) => id && id !== LOCAL_HOST_ID)
-    );
-    const instances = Array.isArray(config?.instances) ? config.instances.map((instance) => this.sanitizeInstance(instance)) : [];
-    root.desktopSshInstances = instances;
+    await this.mutateSettingsRoot((root) => {
+      const previousSshIds = new Set(
+        (Array.isArray(root.desktopSshInstances) ? root.desktopSshInstances : [])
+          .map((entry) => String(entry?.id || '').trim())
+          .filter((id) => id && id !== LOCAL_HOST_ID)
+      );
+      const instances = Array.isArray(config?.instances) ? config.instances.map((instance) => this.sanitizeInstance(instance)) : [];
+      root.desktopSshInstances = instances;
 
-    const hosts = Array.isArray(root.desktopHosts) ? root.desktopHosts.filter(Boolean) : [];
-    const nextIds = new Set(instances.map((instance) => instance.id));
+      const hosts = Array.isArray(root.desktopHosts) ? root.desktopHosts.filter(Boolean) : [];
+      const nextIds = new Set(instances.map((instance) => instance.id));
 
-    const filteredHosts = hosts.filter((entry) => {
-      const id = String(entry?.id || '').trim();
-      return id && id !== LOCAL_HOST_ID && !(previousSshIds.has(id) && !nextIds.has(id));
-    });
+      const filteredHosts = hosts.filter((entry) => {
+        const id = String(entry?.id || '').trim();
+        return id && id !== LOCAL_HOST_ID && !(previousSshIds.has(id) && !nextIds.has(id));
+      });
 
-    for (const instance of instances) {
-      const label = instance.nickname?.trim() || instance.sshParsed?.destination || instance.id;
-      const existing = filteredHosts.find((entry) => entry?.id === instance.id);
-      if (existing) {
-        existing.label = label;
-        if (!existing.url || !String(existing.url).trim()) {
-          existing.url = 'http://127.0.0.1/';
+      for (const instance of instances) {
+        const label = instance.nickname?.trim() || instance.sshParsed?.destination || instance.id;
+        const existing = filteredHosts.find((entry) => entry?.id === instance.id);
+        if (existing) {
+          existing.label = label;
+          if (!existing.url || !String(existing.url).trim()) {
+            existing.url = 'http://127.0.0.1/';
+          }
+        } else {
+          filteredHosts.push({ id: instance.id, label, url: 'http://127.0.0.1/' });
         }
-      } else {
-        filteredHosts.push({ id: instance.id, label, url: 'http://127.0.0.1/' });
       }
-    }
 
-    root.desktopHosts = filteredHosts;
-    if (typeof root.desktopDefaultHostId === 'string' && previousSshIds.has(root.desktopDefaultHostId) && !nextIds.has(root.desktopDefaultHostId)) {
-      root.desktopDefaultHostId = LOCAL_HOST_ID;
-    }
+      root.desktopHosts = filteredHosts;
+      if (typeof root.desktopDefaultHostId === 'string' && previousSshIds.has(root.desktopDefaultHostId) && !nextIds.has(root.desktopDefaultHostId)) {
+        root.desktopDefaultHostId = LOCAL_HOST_ID;
+      }
 
-    await writeJsonRoot(this.settingsFilePath, root);
+    });
   }
 
   sanitizeStoredSecret(secret) {
@@ -667,6 +673,8 @@ export class ElectronSshManager {
     }
 
     const parsed = parseSshCommand(sshCommand);
+    const remote = instance?.remoteDevRyan ?? instance?.remoteOpenchamber ?? instance?.remote_openchamber;
+    const rawPassword = instance?.auth?.devryanPassword ?? instance?.auth?.openchamberPassword ?? instance?.auth?.openchamber_password;
     const seen = new Set();
     const portForwards = Array.isArray(instance?.portForwards)
       ? instance.portForwards
@@ -682,14 +690,14 @@ export class ElectronSshManager {
       connectionTimeoutSec: Number.isFinite(instance?.connectionTimeoutSec) && Number(instance.connectionTimeoutSec) > 0
         ? Number(instance.connectionTimeoutSec)
         : DEFAULT_CONNECTION_TIMEOUT_SEC,
-      remoteOpenchamber: {
-        mode: instance?.remoteOpenchamber?.mode === 'external' ? 'external' : 'managed',
-        keepRunning: instance?.remoteOpenchamber?.keepRunning !== false,
-        ...(Number.isFinite(instance?.remoteOpenchamber?.preferredPort) ? { preferredPort: Number(instance.remoteOpenchamber.preferredPort) } : {}),
-        installMethod: ['npm', 'bun', 'download_release', 'upload_bundle'].includes(instance?.remoteOpenchamber?.installMethod)
-          ? instance.remoteOpenchamber.installMethod
+      remoteDevRyan: {
+        mode: remote?.mode === 'external' ? 'external' : 'managed',
+        keepRunning: remote?.keepRunning !== false && remote?.keep_running !== false,
+        ...(Number.isFinite(remote?.preferredPort ?? remote?.preferred_port) ? { preferredPort: Number(remote.preferredPort ?? remote.preferred_port) } : {}),
+        installMethod: ['npm', 'bun', 'download_release', 'upload_bundle'].includes(remote?.installMethod ?? remote?.install_method)
+          ? remote.installMethod ?? remote.install_method
           : 'bun',
-        uploadBundleOverSsh: Boolean(instance?.remoteOpenchamber?.uploadBundleOverSsh),
+        uploadBundleOverSsh: Boolean(remote?.uploadBundleOverSsh ?? remote?.upload_bundle_over_ssh),
       },
       localForward: {
         bindHost: sanitizeBindHost(instance?.localForward?.bindHost),
@@ -697,36 +705,36 @@ export class ElectronSshManager {
       },
       auth: {
         ...(this.sanitizeStoredSecret(instance?.auth?.sshPassword) ? { sshPassword: this.sanitizeStoredSecret(instance.auth.sshPassword) } : {}),
-        ...(this.sanitizeStoredSecret(instance?.auth?.openchamberPassword) ? { openchamberPassword: this.sanitizeStoredSecret(instance.auth.openchamberPassword) } : {}),
+        ...(this.sanitizeStoredSecret(rawPassword) ? { devryanPassword: this.sanitizeStoredSecret(rawPassword) } : {}),
       },
       portForwards,
     };
   }
 
   async updateHostUrl(instanceId, label, localUrl) {
-    const root = readJsonRoot(this.settingsFilePath);
-    const hosts = Array.isArray(root.desktopHosts) ? root.desktopHosts : [];
-    const existing = hosts.find((entry) => entry?.id === instanceId);
-    if (existing) {
-      existing.label = label;
-      existing.url = localUrl;
-    } else {
-      hosts.push({ id: instanceId, label, url: localUrl });
-    }
-    root.desktopHosts = hosts;
-    await writeJsonRoot(this.settingsFilePath, root);
+    await this.mutateSettingsRoot((root) => {
+      const hosts = Array.isArray(root.desktopHosts) ? root.desktopHosts : [];
+      const existing = hosts.find((entry) => entry?.id === instanceId);
+      if (existing) {
+        existing.label = label;
+        existing.url = localUrl;
+      } else {
+        hosts.push({ id: instanceId, label, url: localUrl });
+      }
+      root.desktopHosts = hosts;
+    });
   }
 
   async persistLocalPort(instanceId, localPort) {
-    const root = readJsonRoot(this.settingsFilePath);
-    const instances = Array.isArray(root.desktopSshInstances) ? root.desktopSshInstances : [];
-    for (const instance of instances) {
-      if (instance?.id !== instanceId) continue;
-      instance.localForward = instance.localForward && typeof instance.localForward === 'object' ? instance.localForward : {};
-      instance.localForward.preferredLocalPort = localPort;
-    }
-    root.desktopSshInstances = instances;
-    await writeJsonRoot(this.settingsFilePath, root);
+    await this.mutateSettingsRoot((root) => {
+      const instances = Array.isArray(root.desktopSshInstances) ? root.desktopSshInstances : [];
+      for (const instance of instances) {
+        if (instance?.id !== instanceId) continue;
+        instance.localForward = instance.localForward && typeof instance.localForward === 'object' ? instance.localForward : {};
+        instance.localForward.preferredLocalPort = localPort;
+      }
+      root.desktopSshInstances = instances;
+    });
   }
 
   async resolveSshConfig(parsed) {
@@ -746,7 +754,7 @@ export class ElectronSshManager {
   }
 
   ensureSessionDir(id) {
-    const base = path.join(path.dirname(this.settingsFilePath), 'ssh', id);
+    const base = path.join(path.dirname(this.resolveSettingsFilePath()), 'ssh', id);
     fs.mkdirSync(base, { recursive: true });
     return base;
   }
@@ -772,7 +780,7 @@ export class ElectronSshManager {
         SSH_ASKPASS_REQUIRE: 'force',
         SSH_ASKPASS: askpassPath,
         DISPLAY: '1',
-        ...(sshPassword ? { OPENCHAMBER_SSH_ASKPASS_VALUE: sshPassword.trim() } : {}),
+        ...(sshPassword ? { DEVRYAN_SSH_ASKPASS_VALUE: sshPassword.trim() } : {}),
       },
     });
     return child;
@@ -799,8 +807,8 @@ export class ElectronSshManager {
     throw new Error('SSH ControlMaster connection timed out');
   }
 
-  configuredOpenChamberPassword(instance) {
-    const secret = instance?.auth?.openchamberPassword;
+  configuredDevRyanPassword(instance) {
+    const secret = instance?.auth?.devryanPassword ?? instance?.auth?.openchamberPassword ?? instance?.auth?.openchamber_password;
     return secret?.enabled && typeof secret.value === 'string' && secret.value.trim() ? secret.value.trim() : null;
   }
 
@@ -813,29 +821,29 @@ export class ElectronSshManager {
     }
   }
 
-  async currentRemoteOpenChamberVersion(parsed, controlPath) {
+  async currentRemoteDevRyanVersion(parsed, controlPath) {
     try {
-      const output = await runRemoteCommand(parsed, controlPath, 'openchamber --version 2>/dev/null || true');
+      const output = await runRemoteCommand(parsed, controlPath, 'devryan --version 2>/dev/null || openchamber --version 2>/dev/null || true');
       return parseVersionToken(output);
     } catch {
       return null;
     }
   }
 
-  async installOpenChamberManaged(parsed, controlPath, version, preferred) {
+  async installDevRyanManaged(parsed, controlPath, version, preferred) {
     const hasBun = await this.remoteCommandExists(parsed, controlPath, 'bun');
     const hasNpm = await this.remoteCommandExists(parsed, controlPath, 'npm');
     const commands = [];
 
     if (preferred === 'bun') {
-      if (hasBun) commands.push(`bun add -g @openchamber/web@${version}`);
-      if (hasNpm) commands.push(`npm install -g @openchamber/web@${version}`);
+      if (hasBun) commands.push(`bun add -g @devryan/web@${version}`);
+      if (hasNpm) commands.push(`npm install -g @devryan/web@${version}`);
     } else if (preferred === 'npm') {
-      if (hasNpm) commands.push(`npm install -g @openchamber/web@${version}`);
-      if (hasBun) commands.push(`bun add -g @openchamber/web@${version}`);
+      if (hasNpm) commands.push(`npm install -g @devryan/web@${version}`);
+      if (hasBun) commands.push(`bun add -g @devryan/web@${version}`);
     } else {
-      if (hasBun) commands.push(`bun add -g @openchamber/web@${version}`);
-      if (hasNpm) commands.push(`npm install -g @openchamber/web@${version}`);
+      if (hasBun) commands.push(`bun add -g @devryan/web@${version}`);
+      if (hasNpm) commands.push(`npm install -g @devryan/web@${version}`);
     }
 
     if (commands.length === 0) {
@@ -851,12 +859,12 @@ export class ElectronSshManager {
         lastError = error;
       }
     }
-    throw lastError || new Error('Failed to install OpenChamber on remote host');
+    throw lastError || new Error('Failed to install DevRyan on remote host');
   }
 
-  async probeRemoteSystemInfo(parsed, controlPath, port, openchamberPassword) {
-    const authPayload = openchamberPassword ? JSON.stringify({ password: openchamberPassword }) : '{}';
-    const authEnabled = openchamberPassword ? '1' : '0';
+  async probeRemoteSystemInfo(parsed, controlPath, port, uiPassword) {
+    const authPayload = uiPassword ? JSON.stringify({ password: uiPassword }) : '{}';
+    const authEnabled = uiPassword ? '1' : '0';
     const script = `AUTH_STATUS=0; INFO_STATUS=0; HEALTH_STATUS=0; BODY_FILE="$(mktemp)"; COOKIE_FILE="$(mktemp)"; cleanup(){ rm -f "$BODY_FILE" "$COOKIE_FILE"; }; trap cleanup EXIT; if command -v curl >/dev/null 2>&1; then if [ "${authEnabled}" = "1" ]; then AUTH_STATUS="$(curl -sS --max-time 3 -o /dev/null -w '%{http_code}' -c "$COOKIE_FILE" -H 'content-type: application/json' --data ${shellQuote(authPayload)} http://127.0.0.1:${port}/auth/session || true)"; if [ "$AUTH_STATUS" = "200" ]; then INFO_STATUS="$(curl -sS --max-time 3 -b "$COOKIE_FILE" -o "$BODY_FILE" -w '%{http_code}' http://127.0.0.1:${port}/api/system/info || true)"; else INFO_STATUS="$(curl -sS --max-time 3 -o "$BODY_FILE" -w '%{http_code}' http://127.0.0.1:${port}/api/system/info || true)"; fi; else INFO_STATUS="$(curl -sS --max-time 3 -o "$BODY_FILE" -w '%{http_code}' http://127.0.0.1:${port}/api/system/info || true)"; fi; HEALTH_STATUS="$(curl -sS --max-time 3 -o /dev/null -w '%{http_code}' http://127.0.0.1:${port}/health || true)"; elif command -v wget >/dev/null 2>&1; then wget -qO "$BODY_FILE" http://127.0.0.1:${port}/api/system/info >/dev/null 2>&1; if [ $? -eq 0 ]; then INFO_STATUS=200; fi; wget -qO- http://127.0.0.1:${port}/health >/dev/null 2>&1; if [ $? -eq 0 ]; then HEALTH_STATUS=200; fi; else exit 127; fi; printf 'INFO_STATUS=%s\\nAUTH_STATUS=%s\\nHEALTH_STATUS=%s\\n' "$INFO_STATUS" "$AUTH_STATUS" "$HEALTH_STATUS"; cat "$BODY_FILE" 2>/dev/null || true`;
     const output = await runRemoteCommand(parsed, controlPath, script);
     const lines = output.split(/\r?\n/);
@@ -867,16 +875,16 @@ export class ElectronSshManager {
 
     if (isLivenessHttpStatus(infoStatus)) {
       if (isAuthHttpStatus(infoStatus)) {
-        if (openchamberPassword && authStatus !== 200) {
-          throw new Error(`Remote OpenChamber requires UI authentication and configured password was rejected (auth status ${authStatus})`);
+        if (uiPassword && authStatus !== 200) {
+          throw new Error(`Remote DevRyan requires UI authentication and configured password was rejected (auth status ${authStatus})`);
         }
         if (isLivenessHttpStatus(healthStatus)) return {};
-        throw new Error('Remote OpenChamber requires UI authentication on /api/system/info; configure OpenChamber UI password');
+        throw new Error('Remote DevRyan requires UI authentication on /api/system/info; configure the DevRyan UI password');
       }
     } else if (isLivenessHttpStatus(healthStatus)) {
       return {};
     } else {
-      throw new Error(`Remote OpenChamber probe failed (info status ${infoStatus}, health status ${healthStatus})`);
+      throw new Error(`Remote DevRyan probe failed (info status ${infoStatus}, health status ${healthStatus})`);
     }
 
     try {
@@ -886,9 +894,9 @@ export class ElectronSshManager {
     }
   }
 
-  async remoteServerRunning(parsed, controlPath, port, openchamberPassword) {
+  async remoteServerRunning(parsed, controlPath, port, uiPassword) {
     try {
-      await this.probeRemoteSystemInfo(parsed, controlPath, port, openchamberPassword);
+      await this.probeRemoteSystemInfo(parsed, controlPath, port, uiPassword);
       return true;
     } catch {
       return false;
@@ -906,7 +914,7 @@ export class ElectronSshManager {
 
   async startRemoteServerManaged(parsed, controlPath, instance, desiredPort) {
     await this.managedRemoteOperation(parsed, controlPath, { action: 'start', id: instance.id, port: desiredPort,
-      version: this.appVersion, password: this.configuredOpenChamberPassword(instance) });
+      version: this.appVersion, password: this.configuredDevRyanPassword(instance) });
     return desiredPort;
   }
 
@@ -948,17 +956,18 @@ export class ElectronSshManager {
   }
 
   async ensureRemoteServer(instance, parsed, controlPath) {
-    if (instance.remoteOpenchamber.mode === 'external') {
-      if (!instance.remoteOpenchamber.preferredPort) {
-        throw new Error('External mode requires a preferred remote OpenChamber port');
+    const remote = instance.remoteDevRyan ?? instance.remoteOpenchamber ?? instance.remote_openchamber;
+    if (remote.mode === 'external') {
+      if (!remote.preferredPort) {
+        throw new Error('External mode requires a preferred remote DevRyan port');
       }
-      const port = instance.remoteOpenchamber.preferredPort;
-      this.setStatus(instance.id, 'server_detecting', 'Probing external OpenChamber server', null, null, port, false, 0, false);
-      await this.probeRemoteSystemInfo(parsed, controlPath, port, this.configuredOpenChamberPassword(instance));
+      const port = remote.preferredPort;
+      this.setStatus(instance.id, 'server_detecting', 'Probing external DevRyan server', null, null, port, false, 0, false);
+      await this.probeRemoteSystemInfo(parsed, controlPath, port, this.configuredDevRyanPassword(instance));
       return { remotePort: port, startedByUs: false };
     }
 
-    const remotePort = instance.remoteOpenchamber.preferredPort || randomPortCandidate(instance.id);
+    const remotePort = remote.preferredPort || randomPortCandidate(instance.id);
     this.setStatus(instance.id, 'server_detecting', 'Verifying managed DevRyan server');
     const identity = { action: 'probe', id: instance.id, port: remotePort, version: this.appVersion };
     const existing = await this.managedRemoteOperation(parsed, controlPath, identity);
@@ -979,10 +988,10 @@ export class ElectronSshManager {
       throw new Error('The remote port could not be verified as this managed DevRyan instance. Choose another port or stop the existing listener.');
     }
     this.setStatus(instance.id, 'remote_probe', 'Checking remote DevRyan installation');
-    const installedVersion = await this.currentRemoteOpenChamberVersion(parsed, controlPath);
+    const installedVersion = await this.currentRemoteDevRyanVersion(parsed, controlPath);
     if (installedVersion !== this.appVersion) {
       this.setStatus(instance.id, installedVersion ? 'updating' : 'installing', 'Preparing remote DevRyan installation');
-      await this.installOpenChamberManaged(parsed, controlPath, this.appVersion, instance.remoteOpenchamber.installMethod);
+      await this.installDevRyanManaged(parsed, controlPath, this.appVersion, remote.installMethod);
     }
     this.setStatus(instance.id, 'server_starting', 'Starting managed DevRyan server');
     await this.startRemoteServerManaged(parsed, controlPath, instance, remotePort);
@@ -1002,7 +1011,8 @@ export class ElectronSshManager {
     this.sessions.delete(id);
 
     if (session) {
-      if (session.startedByUs && session.instance.remoteOpenchamber.mode === 'managed' && !session.instance.remoteOpenchamber.keepRunning) {
+      const remote = session.instance.remoteDevRyan ?? session.instance.remoteOpenchamber ?? session.instance.remote_openchamber;
+      if (session.startedByUs && remote.mode === 'managed' && !remote.keepRunning) {
         await this.stopRemoteServerBestEffort(session.parsed, session.controlPath, session.remotePort, session.instance.id);
       }
       await stopControlMasterBestEffort(session.parsed, session.controlPath);

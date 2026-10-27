@@ -11,6 +11,7 @@ import { applyDirectoryEvent } from "./event-reducer"
 import { createLatestUserChoiceSelector } from "./subtask-agent"
 import { useManagedOrchestrationStore } from "@/stores/useManagedOrchestrationStore"
 import { ABORT_GUARD_TTL_MS, isAbortGuardActive, resetAbortGuardState } from "./abort-retry-guard"
+import { createManagedTaskRecord, toManagedTaskEvent } from "@devryan/orchestration-runtime"
 
 const actualOpencodeClientModule = await import("@/lib/opencode/client")
 const actualSyncRefsModule = await import("./sync-refs")
@@ -21,7 +22,6 @@ const bunTestHooks = (await import("bun:test")) as unknown as {
 // Mock SDK client that records permission.reply / question.reply calls
 const replyCalls: Array<{ method: string; params: Record<string, unknown> }> = []
 let questionSettlementConfirmed = true
-beforeEach(() => { questionSettlementConfirmed = true })
 const sessionCreateCalls: Array<Record<string, unknown>> = []
 const sessionUpdateCalls: Array<Record<string, unknown>> = []
 const sessionDeleteCalls: Array<Record<string, unknown>> = []
@@ -33,6 +33,7 @@ const mockQuestionCounts: Record<string, number> = {}
 const sessionMessageCalls: Array<Record<string, unknown>> = []
 const sessionUnrevertCalls: Array<Record<string, unknown>> = []
 const sessionForkCalls: Array<Record<string, unknown>> = []
+const sessionShareCalls: Array<{ method: "share" | "unshare"; params: Record<string, unknown> }> = []
 type ScopedRevertOptions = { scope?: "tree" | "session"; rootSessionId?: string }
 const scopedRevertCalls: Array<{ sessionId: string; messageId: string; directory?: string; options?: ScopedRevertOptions }> = []
 const scopedUnrevertCalls: Array<{ sessionId: string; directory?: string }> = []
@@ -90,6 +91,28 @@ let nextMembershipMutationVersion = 0
 let mockGlobalActiveSessions: Session[] = []
 let mockGlobalArchivedSessions: Session[] = []
 let mockConfigStoreState: Record<string, unknown> = {}
+const defaultHandlers = {
+  sessionCreateHandler, sessionUpdateHandler, sessionDeleteHandler, sessionAbortHandler, sessionMessagesHandler,
+  sessionUnrevertHandler, sessionForkHandler, scopedRevertHandler, scopedUnrevertHandler, treeChangesHandler,
+}
+const initialOrchestrationState = useManagedOrchestrationStore.getState()
+
+// Reset shared mock state so no test depends on what an earlier one left behind
+// (a leaked disconnected config store makes every later send wait out its 2s probe).
+beforeEach(() => {
+  useManagedOrchestrationStore.setState(initialOrchestrationState, true)
+  questionSettlementConfirmed = true
+  mockConfigStoreState = {}
+  ;({
+    sessionCreateHandler, sessionUpdateHandler, sessionDeleteHandler, sessionAbortHandler, sessionMessagesHandler,
+    sessionUnrevertHandler, sessionForkHandler, scopedRevertHandler, scopedUnrevertHandler, treeChangesHandler,
+  } = defaultHandlers)
+  mockCurrentSessionId = null
+  mockSessionAbortFlags = new Map()
+  mockAbortControllers = new Map()
+  mockSessionCompletionIndicator = new Map()
+  mockPendingCompletionIndicatorSessions = new Set()
+})
 
 const applyThrowOnErrorOption = async (
   resultPromise: Promise<unknown>,
@@ -169,6 +192,14 @@ const mockSdk = {
     fork: mock((params: Record<string, unknown>) => {
       sessionForkCalls.push(params)
       return sessionForkHandler(params)
+    }),
+    share: mock((params: Record<string, unknown>) => {
+      sessionShareCalls.push({ method: "share", params })
+      return Promise.resolve({ data: { ...makeSession(String(params.sessionID)), share: { url: "https://share.test/s" } } })
+    }),
+    unshare: mock((params: Record<string, unknown>) => {
+      sessionShareCalls.push({ method: "unshare", params })
+      return Promise.resolve({ data: makeSession(String(params.sessionID)) })
     }),
   },
   permission: {
@@ -271,7 +302,7 @@ const sessionActionsSessionUIStore = {
     setSessionDirectory: (sessionId: string, directory: string | null) => {
       sessionDirectories[sessionId] = directory
     },
-    markSessionAsOpenChamberCreated: () => {},
+    markSessionAsDevRyanCreated: () => {},
     getDirectoryForSession: (sessionId: string) => sessionDirectories[sessionId] ?? null,
     abortPendingSend: (key: string) => {
       const controller = mockAbortControllers.get(key)
@@ -656,12 +687,13 @@ describe("waitForConnectionOrThrow", () => {
     const startedAt = Date.now()
     let thrown: unknown = null
     try {
-      await waitForConnectionOrThrow()
+      await waitForConnectionOrThrow(100)
     } catch (error) {
       thrown = error
     }
 
-    expect(Date.now() - startedAt).toBeGreaterThan(1900)
+    // The whole (shortened) grace window is spent probing before the error is raised.
+    expect(Date.now() - startedAt).toBeGreaterThan(94)
     expect(thrown instanceof Error ? thrown.message : "").toContain("ws_closed_before_ready")
   })
 })
@@ -1970,6 +2002,33 @@ describe("deleteSessions archived behavior", () => {
     expect(globalRemoveCalls[0].ids).toEqual(["archived-parent", "archived-child", "archived-grandchild"])
   })
 
+  test("retries only the failed archived parent after its child was deleted", async () => {
+    const parentSession = makeSession("archived-parent")
+    const parent = { ...parentSession, directory: "/archived/project", time: { ...parentSession.time, archived: 100 } } as Session
+    const childSession = makeSession("archived-child", parent.id)
+    const child = { ...childSession, directory: parent.directory, time: { ...childSession.time, archived: 100 } } as Session
+    mockGlobalArchivedSessions = [parent, child]
+    let failParent = true
+    sessionDeleteHandler = (params) => {
+      if (params.sessionID === parent.id && failParent) {
+        failParent = false
+        return Promise.reject(new Error("Native removal is still settling"))
+      }
+      return Promise.resolve({ data: true })
+    }
+    const { setActionRefs, deleteSessions } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([]), () => "/current/project")
+
+    expect(await withMutedConsoleError(() => deleteSessions([parent.id]))).toEqual({
+      deletedIds: [child.id], failedIds: [parent.id],
+      failures: [{ sessionId: parent.id, message: "Native removal is still settling" }],
+    })
+    expect(mockGlobalArchivedSessions.map((session) => session.id)).toEqual([parent.id])
+    expect(await deleteSessions([parent.id])).toEqual({ deletedIds: [parent.id], failedIds: [], failures: [] })
+    expect(sessionDeleteCalls.map((params) => params.sessionID)).toEqual([child.id, parent.id, parent.id])
+    expect(mockGlobalArchivedSessions).toEqual([])
+  })
+
   test("waits for archived descendants to delete before starting ancestor deletes", async () => {
     const parent = {
       ...makeSession("archived-parent"),
@@ -2233,6 +2292,20 @@ describe("deleteSessions archived behavior", () => {
     expect(store.getState().session.map((item) => item.id)).toEqual(["archived-session"])
   })
 
+  test("preserves native deletion status, code and retryability for mixed bulk failures", async () => {
+    mockGlobalArchivedSessions = ["archived-a", "archived-b"].map(id => ({ ...makeSession(id), directory: "/archived/project", time: { created: 1, updated: 1, archived: 10 } }))
+    sessionDeleteHandler = params => Promise.reject({ status: 409, code: params.sessionID === "archived-a" ? "native_session_held" : "native_recovered_input_fenced", retryable: false, error: "Recovery required" })
+    const { setActionRefs, deleteSessions } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([]), () => "/current/project")
+    const result = await withMutedConsoleError(() => deleteSessions(["archived-a", "archived-b"]))
+    expect(result.failedIds).toEqual(["archived-a", "archived-b"])
+    expect(result.failures).toEqual([
+      { sessionId: "archived-a", message: "Recovery required", status: 409, code: "native_session_held", retryable: false },
+      { sessionId: "archived-b", message: "Recovery required", status: 409, code: "native_recovered_input_fenced", retryable: false },
+    ])
+    expect(new Set(mockGlobalArchivedSessions.map(session => session.id))).toEqual(new Set(["archived-a", "archived-b"]))
+  })
+
   test("keeps successful deletes removed and returns structured details only for real failures", async () => {
     const archivedA = {
       ...makeSession("archived-a"),
@@ -2314,7 +2387,7 @@ describe("revertToMessage scoped revert", () => {
     sessionMessagesHandler = () => Promise.resolve({ data: [] })
   })
 
-  test("calls the OpenChamber scoped revert endpoint with session, message, and directory", async () => {
+  test("calls the DevRyan scoped revert endpoint with session, message, and directory", async () => {
     const session = makeSession("session-a")
     const before = { id: "msg_10", sessionID: "session-a", role: "assistant", time: { created: 1 } } as unknown as import("@opencode-ai/sdk/v2/client").Message
     const target = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as unknown as import("@opencode-ai/sdk/v2/client").Message
@@ -3916,6 +3989,7 @@ describe("revertToMessage recovery behavior", () => {
     clearSessionTurnCompletionCalls.length = 0
     mockSessionAbortFlags = new Map()
     mockAbortControllers = new Map()
+    toastCalls.length = 0
     mockSessionCompletionIndicator = new Map()
     mockPendingCompletionIndicatorSessions = new Set()
     sessionDirectories["session-a"] = "/test/project"
@@ -4195,6 +4269,11 @@ describe("revertToMessage recovery behavior", () => {
     store.setState({
       session_status: { "session-a": { type: "busy" } as SessionStatus },
     })
+    // The server acknowledges the abort by going idle, so the post-abort idle wait resolves at once.
+    sessionAbortHandler = () => {
+      store.setState({ session_status: { "session-a": { type: "idle" } as SessionStatus } })
+      return Promise.resolve({ data: true })
+    }
     const childStores = createChildStores([["/test/project", store]])
 
     const { interruptCurrentOperationForQueuedSend, setActionRefs } = await import("./session-actions")
@@ -4223,6 +4302,11 @@ describe("revertToMessage recovery behavior", () => {
       message: { "session-a": [userMessage, assistantMessage] },
       session_status: { "session-a": { type: "busy" } as SessionStatus },
     })
+    // The server acknowledges the abort by going idle, so the post-abort idle wait resolves at once.
+    sessionAbortHandler = () => {
+      store.setState({ session_status: { "session-a": { type: "idle" } as SessionStatus } })
+      return Promise.resolve({ data: true })
+    }
     const childStores = createChildStores([["/test/project", store]])
 
     const { interruptCurrentOperationForQueuedSend, setActionRefs } = await import("./session-actions")
@@ -4255,6 +4339,11 @@ describe("revertToMessage recovery behavior", () => {
       message: { "session-a": [userMessage, assistantMessage] },
       session_status: { "session-a": { type: "busy" } as SessionStatus },
     })
+    // The server acknowledges the abort by going idle, so the post-abort idle wait resolves at once.
+    sessionAbortHandler = () => {
+      store.setState({ session_status: { "session-a": { type: "idle" } as SessionStatus } })
+      return Promise.resolve({ data: true })
+    }
     const childStores = createChildStores([["/test/project", store]])
 
     const { interruptCurrentOperationForSteeredSend, setActionRefs } = await import("./session-actions")
@@ -4482,6 +4571,13 @@ describe("revertToMessage recovery behavior", () => {
 })
 
 describe("abortCurrentOperationConfirmed stop reliability", () => {
+  const runningTask = () => toManagedTaskEvent({ ...createManagedTaskRecord({
+    taskId: "dvr_task_stop_fixture", idempotencyKey: "stop-fixture", rootSessionId: "session-a", parentTaskId: null,
+    directory: "/test/project", sequence: 1, mode: "orchestrator", dispatchGroupId: "msg_parent",
+    providerId: "cursor-acp", modelId: "fixture", agent: "explorer", variant: null,
+    label: "Inspect", prompt: "Inspect fixture", attempt: 1, priorTaskId: null,
+    executionKind: "start", createdAt: 1, timeoutAt: null,
+  }), status: "running", startedAt: 2, childSessionId: "ses_child" }).properties.task
   beforeEach(() => {
     resetAbortGuardState()
     sessionAbortCalls.length = 0
@@ -4491,19 +4587,23 @@ describe("abortCurrentOperationConfirmed stop reliability", () => {
     mockAbortControllers = new Map()
     sessionDirectories["session-a"] = "/test/project"
     sessionAbortHandler = () => Promise.resolve({ data: true })
-    useManagedOrchestrationStore.setState({ taskIdsByRootId: {}, tasksById: {} })
+    useManagedOrchestrationStore.setState({ taskIdsByRootId: {}, tasksById: {}, actionErrorByTaskId: {} })
   })
 
-  test("issues the abort request without waiting for managed subtask cancellation", async () => {
+  test("issues parent abort immediately but confirms only after managed subtask cancellation", async () => {
     const cancelDeferred = createDeferred<void>()
     const cancelCalls: string[] = []
     useManagedOrchestrationStore.setState({
-      taskIdsByRootId: { "session-a": ["task-1"] },
-      tasksById: { "task-1": { taskId: "task-1", status: "running" } as never },
-      cancelTask: ((taskId: string) => {
+      taskIdsByRootId: { "session-a": ["dvr_task_stop_fixture"] },
+      tasksById: { "dvr_task_stop_fixture": runningTask() },
+      cancelTask: (taskId: string) => {
         cancelCalls.push(taskId)
-        return cancelDeferred.promise
-      }) as never,
+        return cancelDeferred.promise.then(() => {
+          useManagedOrchestrationStore.setState(state => ({ tasksById: {
+            ...state.tasksById, [taskId]: { ...state.tasksById[taskId], status: "aborted" },
+          } }))
+        })
+      },
     })
 
     const store = createStore({}, [makeSession("session-a")])
@@ -4511,14 +4611,52 @@ describe("abortCurrentOperationConfirmed stop reliability", () => {
     const { abortCurrentOperationConfirmed, setActionRefs } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
 
-    // The subtask cancellation never resolves inside this test — the abort
-    // must still reach the server and confirm.
-    const result = await abortCurrentOperationConfirmed("session-a")
-
-    expect(result).toBe(true)
-    expect(cancelCalls).toEqual(["task-1"])
+    let confirmed = false
+    const stopping = abortCurrentOperationConfirmed("session-a").then(result => { confirmed = result; return result })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(confirmed).toBe(false)
+    expect(cancelCalls).toEqual(["dvr_task_stop_fixture"])
     expect(sessionAbortCalls).toEqual([{ sessionID: "session-a", directory: "/test/project" }])
     cancelDeferred.resolve()
+    expect(await stopping).toBe(true)
+  })
+
+  test("reports a partial stop when the task store retains a cancellation error", async () => {
+    useManagedOrchestrationStore.setState({
+      taskIdsByRootId: { "session-a": ["dvr_task_stop_fixture"] },
+      tasksById: { "dvr_task_stop_fixture": runningTask() },
+      actionErrorByTaskId: {},
+      cancelTask: async () => {
+        useManagedOrchestrationStore.setState({ actionErrorByTaskId: { "dvr_task_stop_fixture": "Cancellation failed" } })
+      },
+    })
+    const store = createStore({}, [makeSession("session-a")])
+    const { abortCurrentOperationConfirmed, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([["/test/project", store]]), () => "/test/project")
+    expect(await withMutedConsoleError(() => abortCurrentOperationConfirmed("session-a"))).toBe(false)
+    expect(mockSessionAbortFlags.get("session-a")).toBeDefined()
+    expect(useManagedOrchestrationStore.getState().actionErrorByTaskId["dvr_task_stop_fixture"]).toBe("Cancellation failed")
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(toastCalls).toContainEqual({ kind: "error", message:
+      "The parent session stopped, but some subtasks could not be confirmed stopped. Try Stop again." })
+  })
+
+  test("bounds a hung subtask cancellation after the parent has stopped", async () => {
+    const cancellation = createDeferred<void>()
+    useManagedOrchestrationStore.setState({
+      taskIdsByRootId: { "session-a": ["dvr_task_stop_fixture"] },
+      tasksById: { "dvr_task_stop_fixture": runningTask() },
+      pendingActionByTaskId: { "dvr_task_stop_fixture": "cancel" },
+      actionErrorByTaskId: {},
+      cancelTask: () => cancellation.promise,
+    })
+    const store = createStore({}, [makeSession("session-a")])
+    const { abortCurrentOperationConfirmed, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([["/test/project", store]]), () => "/test/project")
+    try {
+      expect(await withMutedConsoleError(() => abortCurrentOperationConfirmed("session-a", undefined, 20))).toBe(false)
+      expect(mockSessionAbortFlags.get("session-a")).toBeDefined()
+    } finally { cancellation.resolve() }
   })
 
   test("returns false when the abort request hangs past the watchdog", async () => {
@@ -4920,3 +5058,82 @@ describe("session tree revert", () => {
     expect(thrown instanceof Error ? thrown.message : "").toBe("server rejected revert")
   })
 })
+
+describe("share actions follow the runtime share capability", () => {
+  const ALL_ON = { share: true, mcpOAuth: true, sessionShell: true, lsp: true, messageEdit: true }
+  const ALL_OFF = { share: false, mcpOAuth: false, sessionShell: false, lsp: false, messageEdit: false }
+
+  const setHealth = async (health: unknown) => {
+    const capabilities = await import("@/lib/opencode/runtime-capabilities")
+    capabilities.resetRuntimeCapabilitiesForTests()
+    capabilities.useRuntimeCapabilityStore.setState({
+      snapshot: capabilities.parseRuntimeCapabilitySnapshot(health),
+      status: "loaded",
+    })
+    return capabilities
+  }
+
+  beforeEach(() => {
+    sessionShareCalls.length = 0
+    globalUpsertCalls.length = 0
+  })
+
+  test("an explicit gen 2 share grant uses the app API", async () => {
+    const capabilities = await setHealth({ openCode: { generation: 2, capabilities: ALL_ON } })
+    const { setActionRefs, shareSession, unshareSession } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([]), () => "/test/project")
+
+    const shared = await shareSession("session-a")
+    const unshared = await unshareSession("session-a")
+
+    expect(shared?.share?.url).toBe("https://share.test/s")
+    expect(unshared?.id).toBe("session-a")
+    expect(sessionShareCalls.map((call) => call.method)).toEqual(["share", "unshare"])
+    expect(globalUpsertCalls).toHaveLength(2)
+    capabilities.resetRuntimeCapabilitiesForTests()
+  })
+
+  test("gen 2 reports failure without a share request", async () => {
+    const capabilities = await setHealth({ openCode: { generation: 2, capabilities: ALL_OFF } })
+    const { setActionRefs, shareSession, unshareSession } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([]), () => "/test/project")
+
+    expect(await shareSession("session-a")).toBeNull()
+    expect(await unshareSession("session-a")).toBeNull()
+    expect(sessionShareCalls).toEqual([])
+    expect(globalUpsertCalls).toEqual([])
+    capabilities.resetRuntimeCapabilitiesForTests()
+  })
+})
+
+for (const knownBeforeTransport of [true, false]) {
+  test(`subscription refusal ${knownBeforeTransport ? 'preserves pre-click retry' : 'keeps earlier POST uncertainty busy'} and restores optimistic input`, async () => {
+    mockConfigStoreState = {};
+    const retryStatus: SessionStatus = { type: 'retry', attempt: 1, message: 'retrying', next: 100 };
+    const store = createStore({}, [makeSession('session-a')]);
+    store.setState({ session_status: { 'session-a': retryStatus } });
+    const childStores = createChildStores([['/test/project', store]]);
+    const { setActionRefs, setOptimisticRefs, optimisticSend } = await import('./session-actions');
+    const { applyOptimisticAdd, applyOptimisticRemove } = await import('./optimistic');
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => '/test/project');
+    setOptimisticRefs(
+      input => store.setState(state => {
+        const draft = { message: { ...state.message }, part: { ...state.part } };
+        applyOptimisticAdd(draft, input); return draft;
+      }),
+      input => store.setState(state => {
+        const draft = { message: { ...state.message }, part: { ...state.part } };
+        applyOptimisticRemove(draft, input); return draft;
+      }),
+    );
+    let rollbackID: string | undefined;
+    await expect(optimisticSend({ sessionId: 'session-a', directory: '/test/project', content: 'retained draft',
+      providerID: 'fixture', modelID: 'exact', variant: 'high',
+      onMessageRollback: id => { rollbackID = id; },
+      send: async () => { throw new actualOpencodeClientModule.InputSubscriptionUnavailableError('Not ready', false, knownBeforeTransport); },
+    })).rejects.toMatchObject({ code: 'EVENT_SUBSCRIPTION_UNAVAILABLE', knownBeforeTransport });
+    expect(rollbackID).toBeDefined();
+    expect(store.getState().message['session-a'] ?? []).toEqual([]);
+    expect(store.getState().session_status['session-a']).toEqual(knownBeforeTransport ? retryStatus : { type: 'busy' });
+  });
+}

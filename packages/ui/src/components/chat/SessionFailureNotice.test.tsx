@@ -3,13 +3,37 @@ import React, { act } from 'react';
 import { beforeEach, expect, test } from 'bun:test';
 import { useNotificationStore } from '@/sync/notification-store';
 import { getSafeStorage } from '@/stores/utils/safeStorage';
-import { withDom } from '../bots/chat/botMountedDom';
+import { withDom } from '@/test/mountedDom';
 import { SessionFailureNotice } from './SessionFailureNotice';
 import { PROVIDER_TOKEN_EXPIRED_MESSAGE } from '@/lib/messages/providerTokenExpired';
 
 beforeEach(() => {
   useNotificationStore.setState({ list: [] });
   usePrimaryRecoveryStore.setState({ snapshots: {} });
+});
+
+test('a recovery ownership failure stays actionable after bounded persistence', async () => {
+  await withDom(async (container) => {
+    const { createRoot } = await import('react-dom/client');
+    const root = createRoot(container as unknown as Element);
+    try {
+      await act(async () => {
+        useNotificationStore.getState().append({ type: 'error', session: 's', time: Date.now(), viewed: true,
+          error: { name: 'UnknownError', data: { message: 'native_slim_retry_primary_fenced\nprivate stack' } } });
+        root.render(<SessionFailureNotice sessionId="s" />);
+      });
+      expect(container.textContent).toContain('Automatic recovery stopped');
+      expect(container.textContent).toContain('Review the task and its recovery options');
+      expect(container.textContent).not.toContain('Request failed');
+      const persisted = getSafeStorage().getItem('devryan:notification-completions:v1') ?? '';
+      expect(persisted).toContain('execution_recovery_unavailable');
+      expect(persisted).not.toContain('native_slim_retry_primary_fenced');
+      expect(persisted).not.toContain('private stack');
+      await act(async () => useNotificationStore.setState({ list: [{ type: 'error', session: 's', time: Date.now(), viewed: true,
+        error: { code: 'execution_recovery_unavailable' } }] }));
+      expect(container.textContent).toContain('Automatic recovery stopped');
+    } finally { await act(async () => root.unmount()); }
+  });
 });
 
 test('a viewed failure without an assistant stays visible, persists safely, and clears only on newer completion', async () => {
@@ -23,7 +47,7 @@ test('a viewed failure without an assistant stays visible, persists safely, and 
       root.render(<SessionFailureNotice sessionId="s" />);
     });
     expect(container.find((node) => node.getAttribute('role') === 'alert')).not.toBeNull();
-    const persisted = getSafeStorage().getItem('openchamber:notification-completions:v1') ?? '';
+    const persisted = getSafeStorage().getItem('devryan:notification-completions:v1') ?? '';
     expect(persisted).toContain('session_timeout');
     expect(persisted).not.toContain('private stack');
     const errors = useNotificationStore.getState().list;
@@ -73,7 +97,7 @@ test('explicit user cancellation is not presented as a failed request', async ()
         root.render(<SessionFailureNotice sessionId="s" />);
       });
       expect(container.find((node) => node.getAttribute('role') === 'alert')).toBeNull();
-      expect(getSafeStorage().getItem('openchamber:notification-completions:v1')).toContain('session_cancelled');
+      expect(getSafeStorage().getItem('devryan:notification-completions:v1')).toContain('session_cancelled');
     } finally { await act(async () => root.unmount()); }
   });
 });
@@ -89,9 +113,33 @@ test('an expired provider sign-in says how to fix it and persists only its code'
         root.render(<SessionFailureNotice sessionId="s" />);
       });
       expect(container.textContent).toContain(PROVIDER_TOKEN_EXPIRED_MESSAGE);
-      const persisted = getSafeStorage().getItem('openchamber:notification-completions:v1') ?? '';
+      const persisted = getSafeStorage().getItem('devryan:notification-completions:v1') ?? '';
       expect(persisted).toContain('provider_token_expired');
       expect(persisted).not.toContain('claude login');
+    } finally { await act(async () => root.unmount()); }
+  });
+});
+
+test('a rate-limited failure shows the provider reset time and persists it without the raw message', async () => {
+  await withDom(async (container) => {
+    const { createRoot } = await import('react-dom/client');
+    const root = createRoot(container as unknown as Element);
+    const now = Date.now();
+    try {
+      await act(async () => {
+        useNotificationStore.getState().append({ type: 'error', session: 's', time: now, viewed: true,
+          error: { name: 'APIError', data: { message: 'private provider text', v2Type: 'provider.rate-limit', retryAfterMs: 10 * 60_000 } } });
+        root.render(<SessionFailureNotice sessionId="s" />);
+      });
+      expect(container.textContent).toContain('The provider is limiting requests');
+      expect(container.textContent).toContain('Resets at');
+      const persisted = JSON.parse(getSafeStorage().getItem('devryan:notification-completions:v1') ?? '[]') as Array<{ error?: { code?: string; retryAt?: number } }>;
+      expect(persisted.at(-1)?.error).toMatchObject({ code: 'provider_rate_limited', retryAt: now + 10 * 60_000 });
+      expect(JSON.stringify(persisted)).not.toContain('private provider text');
+      // A reset time already in the past is not shown.
+      await act(async () => useNotificationStore.setState({ list: [{ type: 'error', session: 's', time: now, viewed: true,
+        error: { code: 'provider_rate_limited', retryAt: now - 1 } }] }));
+      expect(container.textContent).not.toContain('Resets');
     } finally { await act(async () => root.unmount()); }
   });
 });

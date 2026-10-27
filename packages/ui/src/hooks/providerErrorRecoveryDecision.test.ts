@@ -4,6 +4,9 @@ import type { Message } from '@opencode-ai/sdk/v2/client';
 import {
   decideProviderErrorRecovery,
   decideProviderRetryLoopRecovery,
+  MAX_TRANSIENT_PROVIDER_RETRY_WINDOW_MS,
+  trackProviderRetryLoop,
+  type ProviderRetryLoopStart,
   decideInterruptedProviderRecovery,
   INTERRUPTED_PROVIDER_RESPONSE_REASON,
   isPrimaryProviderRecoverySession,
@@ -19,6 +22,19 @@ const assistant = (detail: string, name = 'UnknownError') => ({
 }) as unknown as Message;
 
 describe('decideProviderErrorRecovery', () => {
+  test('an empty data.message falls through to the error message', () => {
+    const withEmptyData = {
+      ...assistant(''),
+      error: { name: 'UnknownError', message: 'Streaming response failed', data: { message: '' } },
+    } as unknown as Message;
+    expect(decideProviderErrorRecovery({
+      messages: [user, withEmptyData],
+      observedActiveUserMessageId: 'user-1',
+      queuedMessageCount: 0,
+      blockingRequestCount: 0,
+    })).toEqual({ reason: 'Streaming response failed' });
+  });
+
   test('offers manual recovery for transient and model-not-found provider errors', () => {
     expect(decideProviderErrorRecovery({
       messages: [user, assistant('Streaming response failed')],
@@ -152,19 +168,20 @@ describe('decideProviderRetryLoopRecovery', () => {
     })).toEqual({ reason });
   });
 
-  test('stops a transient provider retry loop at the bounded attempt limit', () => {
+  test('stops a transient provider retry loop only past both the attempt and time bounds', () => {
+    const window = MAX_TRANSIENT_PROVIDER_RETRY_WINDOW_MS;
     expect(decideProviderRetryLoopRecovery({
       type: 'retry',
       attempt: 2,
       message: 'Stream idle timeout',
       next: 10,
-    })).toBeNull();
+    }, window)).toBeNull();
     expect(decideProviderRetryLoopRecovery({
       type: 'retry',
       attempt: 3,
       message: 'Stream idle timeout',
       next: 10,
-    })).toEqual({ reason: 'Stream idle timeout' });
+    }, window)).toEqual({ reason: 'Stream idle timeout' });
 
     const overloaded = 'Our servers are currently overloaded. Please try again later.';
     expect(decideProviderRetryLoopRecovery({
@@ -172,13 +189,26 @@ describe('decideProviderRetryLoopRecovery', () => {
       attempt: 2,
       message: overloaded,
       next: 10,
-    })).toBeNull();
+    }, window)).toBeNull();
     expect(decideProviderRetryLoopRecovery({
       type: 'retry',
       attempt: 3,
       message: overloaded,
       next: 10,
-    })).toEqual({ reason: overloaded });
+    }, window)).toEqual({ reason: overloaded });
+  });
+
+  // Live QA 2026-10-23: a plan turn was aborted at attempt 3, 95 s into
+  // OpenCode's own bounded retry loop, discarding 11 minutes of work.
+  test('lets the runtime keep retrying transient failures inside the time window', () => {
+    for (const message of [
+      'ECONNREFUSED: Unable to connect. Is the computer able to access the url?',
+      'ECONNRESET: The socket connection was closed unexpectedly. For more information, pass `verbose: true` in the second argument to fetch()',
+    ]) {
+      expect(decideProviderRetryLoopRecovery({ type: 'retry', attempt: 3, message, next: 10 }, 95_000)).toBeNull();
+      expect(decideProviderRetryLoopRecovery({ type: 'retry', attempt: 8, message, next: 10 }, MAX_TRANSIENT_PROVIDER_RETRY_WINDOW_MS - 1)).toBeNull();
+      expect(decideProviderRetryLoopRecovery({ type: 'retry', attempt: 8, message, next: 10 }, MAX_TRANSIENT_PROVIDER_RETRY_WINDOW_MS)).toEqual({ reason: message });
+    }
   });
 
   test('does not stop authentication or unrelated retries', () => {
@@ -203,5 +233,25 @@ describe('isPrimaryProviderRecoverySession', () => {
     expect(isPrimaryProviderRecoverySession({})).toBe(true);
     expect(isPrimaryProviderRecoverySession({ parentID: 'ses_parent' })).toBe(false);
     expect(isPrimaryProviderRecoverySession(undefined)).toBe(false);
+  });
+});
+
+describe('trackProviderRetryLoop', () => {
+  const retry = (attempt: number) => ({ type: 'retry' as const, attempt, message: 'ECONNRESET', next: 10 });
+
+  test('keeps one window across busy re-sends and repeated snapshots of the same loop', () => {
+    const starts = new Map<string, ProviderRetryLoopStart>();
+    expect(trackProviderRetryLoop(starts, 'ses', 'msg', retry(2), 1_000)).toBe(0);
+    expect(trackProviderRetryLoop(starts, 'ses', 'msg', { type: 'busy' }, 5_000)).toBe(0);
+    expect(trackProviderRetryLoop(starts, 'ses', 'msg', retry(2), 6_000)).toBe(5_000);
+    expect(trackProviderRetryLoop(starts, 'ses', 'msg', retry(3), 96_000)).toBe(95_000);
+  });
+
+  test('restarts the window for a new loop or a new user message', () => {
+    const starts = new Map<string, ProviderRetryLoopStart>();
+    trackProviderRetryLoop(starts, 'ses', 'msg', retry(4), 1_000);
+    expect(trackProviderRetryLoop(starts, 'ses', 'msg', retry(1), 400_000)).toBe(0);
+    expect(trackProviderRetryLoop(starts, 'ses', 'msg-2', retry(5), 500_000)).toBe(0);
+    expect(trackProviderRetryLoop(starts, 'ses', undefined, retry(6), 600_000)).toBe(0);
   });
 });

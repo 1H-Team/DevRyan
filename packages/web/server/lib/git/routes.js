@@ -1,17 +1,17 @@
+import { DEFAULT_HELPER_MODEL_SELECTION } from '@devryan/shared-runtime';
 import { registerCommitTemplateRoutes } from './template-routes.js';
 import { generateCommitMessageDirect } from './commit-message.js';
 import { collectCommitMessageContext, validateCommitMessageSelectedFiles } from './commit-message-context.js';
 import { generatePullRequestDescriptionDirect } from './pr-description.js';
-import { GIT_GENERATION_ZEN_MODEL, createGitZenTextTransport } from './zen-text.js';
+import { createGitZenTextTransport } from './zen-text.js';
 import { requireManagedAssignedBranch } from '../multi-user/branch-authorization.js';
 import { getRequestPrincipal } from '../multi-user/request-context.js';
-import { executionFromManagedAgent, findManagedAgent } from '../multi-user/managed-agent-defaults.js';
 import { generateTextWithSessionModel as generateTextWithSessionModelDefault } from '../opencode/session-model-text.js';
 import {
   PULL_REQUEST_DIFF_MAX_CHARS,
   buildPullRequestDiffContext,
   normalizePullRequestDraft,
-} from '@openchamber/shared-runtime';
+} from '@devryan/shared-runtime';
 
 const extractGitErrorText = (error) => {
   const message = typeof error?.message === 'string' ? error.message : '';
@@ -34,7 +34,9 @@ const nonRepositoryStatus = () => ({
 const sendGitError = (res, error, fallback) => res.status(error?.statusCode || 500).json({
   error: error?.message || fallback,
   ...(error?.code ? { code: error.code } : {}),
+  ...(typeof error?.details === 'string' && error.details ? { details: error.details } : {}),
   ...(Array.isArray(error?.conflictFiles) ? { conflictFiles: error.conflictFiles } : {}),
+  ...(Array.isArray(error?.rejected) ? { rejected: error.rejected } : {}),
 });
 
 const COMMIT_CONTEXT_DEADLINE_MS = 1_500;
@@ -51,8 +53,13 @@ const PR_SESSION_REPAIR_PROMPT = 'Your previous response was not a valid pull re
 const PR_ERROR_STATUS = {
   // The code name predates the pinned paid model; clients map it to copy.
   FREE_ZEN_EXHAUSTED: 502,
+  HELPER_ACTIVE_MODEL_REQUIRED: 502,
   SESSION_MODEL_FAILED: 502,
+  HELPER_SELECTION_CHANGED: 409,
 };
+const helperRefusal = error => error?.code === 'native_helper_selection_changed'
+  ? Object.assign(new Error('The helper model selection changed. Refresh and try again.'), { code: 'HELPER_SELECTION_CHANGED', statusCode: 409 })
+  : error?.reason === 'authorization_revoked' ? Object.assign(new Error('Helper access was revoked. Refresh and try again.'), { code: error.code, statusCode: 403 }) : null;
 
 const emptyPullRequestDiffContext = () => ({
   text: '',
@@ -109,16 +116,30 @@ const collectCommitContextWithinDeadline = async ({ promise, selectedFiles, stag
 };
 
 export function registerGitRoutes(app, {
+  // Global UI event broadcaster (`devryan:*` events, filtered per directory).
+  broadcastEvent = null,
   generateCommitMessage = generateCommitMessageDirect,
   generatePullRequestDescription = generatePullRequestDescriptionDirect,
   generateTextWithSessionModel = generateTextWithSessionModelDefault,
-  listConfigAgents,
+  generateHelperText,
+  resolveHelperSelection,
+  cursorRuntime,
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
+  // The client or a getter; forwarded so OpenCode helpers pick the runtime generation.
+  openCodeClient = null,
   recordCommitTiming = () => {},
+  // Admits a new worktree as a native location (restarts OpenCode when idle).
+  prepareNativeDirectory,
   loadGitLibraries,
 } = {}) {
   registerCommitTemplateRoutes(app);
+
+  const resolveOpenCodeClient = () => (typeof openCodeClient === 'function' ? openCodeClient() : openCodeClient) ?? null;
+  const openCodeClientArgs = () => {
+    const client = resolveOpenCodeClient();
+    return client ? { openCodeClient: client } : {};
+  };
 
   let gitLibraries = null;
   const getGitLibraries = async () => {
@@ -204,24 +225,47 @@ export function registerGitRoutes(app, {
     }
   };
 
+  const chooseHelper = async (directory, body, agent, selectionMode) => {
+    const sessionID = typeof body?.sessionID === 'string' && /^ses[a-zA-Z0-9_-]{1,128}$/.test(body.sessionID) ? body.sessionID : undefined;
+    if (selectionMode === 'active' && !sessionID) return null;
+    if (typeof resolveHelperSelection !== 'function') return selectionMode === 'configured'
+      ? { ...DEFAULT_HELPER_MODEL_SELECTION, selectionMode, selectionRevision: DEFAULT_HELPER_MODEL_SELECTION.revision } : null;
+    try { return await resolveHelperSelection({ directory, ...(sessionID ? { sessionID } : {}), agent, selectionMode }); }
+    catch (error) {
+      if ((error?.statusCode ?? error?.status) === 503 || error?.code === 'native_helper_active_selection_required') return null;
+      throw helperRefusal(error) ?? error;
+    }
+  };
+
   const runCommitMessageGeneration = async ({ req, directory, context, guidance, timings }) => {
     timings.catalogState = GIT_GENERATION_MODEL_STATE;
     let generatorTiming = null;
     const providerStartedAt = Date.now();
-    let message;
+    let message, usedSelection;
     try {
-      message = await generateCommitMessage({
-        context,
-        guidance,
-        ...createGitZenTextTransport({ buildOpenCodeUrl, getOpenCodeAuthHeaders, directory, agent: 'devryan-commit' }),
-        models: [GIT_GENERATION_ZEN_MODEL],
-        catalogState: GIT_GENERATION_MODEL_STATE,
-        cooldowns: null,
-        onAttempt: (attempt) => recordGenerationAttempt(req, 'git_commit_message_model_attempt', 'zen', attempt, GIT_GENERATION_MODEL_STATE),
-        onTiming: (value) => {
-          generatorTiming = value;
-        },
-      });
+      for (const selectionMode of ['configured', 'active']) {
+        const selection = await chooseHelper(directory, req.body, 'devryan-commit', selectionMode);
+        if (!selection) {
+          if (selectionMode === 'configured') continue;
+          throw Object.assign(new Error('Select an accessible active chat with a model, or change the helper model in Settings → Agents → Session Defaults.'), { code: 'HELPER_ACTIVE_MODEL_REQUIRED', statusCode: 502 });
+        }
+        try {
+          message = await generateCommitMessage({ context, guidance, allowLocalFallback: false,
+            ...createGitZenTextTransport({ generateHelperText, cursorRuntime, buildOpenCodeUrl, getOpenCodeAuthHeaders, ...openCodeClientArgs(), directory,
+              sessionID: req.body?.sessionID, selection, agent: 'devryan-commit' }),
+            models: [selection.modelID], catalogState: selectionMode, cooldowns: null,
+            onAttempt: attempt => recordGenerationAttempt(req, 'git_commit_message_model_attempt', selectionMode, attempt, selectionMode),
+            onTiming: value => { generatorTiming = value; },
+          });
+          if (message?._generation?.source === 'local_fallback') throw Object.assign(new Error('Local Git drafts cannot substitute for an authorized model response'), { code: 'HELPER_MODEL_FAILED' });
+          usedSelection = selection;
+          break;
+        } catch (error) {
+          const refusal = helperRefusal(error); if (refusal) throw refusal;
+          if (error?.reason === 'unsettled' || error?.code === 'native_helper_unsettled' || selectionMode === 'active') throw error;
+        }
+      }
+      if (!message) throw Object.assign(new Error('The helper model could not generate a commit draft. Check the helper model in Session Defaults.'), { statusCode: 502 });
     } finally {
       timings.providerMs = generatorTiming?.providerMs ?? Date.now() - providerStartedAt;
       timings.parseMs = generatorTiming?.parseMs ?? 0;
@@ -235,9 +279,10 @@ export function registerGitRoutes(app, {
         highlights: Array.isArray(message.highlights) ? message.highlights : [],
       },
       warning: typeof generation.warning === 'string' ? generation.warning : null,
-      source: generation.source || 'ai',
+      source: usedSelection?.selectionMode === 'active' ? 'session_model' : 'helper_model',
+      selectionMode: usedSelection?.selectionMode,
       providerOutcome: generation.providerOutcome || 'complete',
-      model: generation.model ?? null,
+      model: usedSelection ? `${usedSelection.providerID}/${usedSelection.modelID}` : generation.model ?? null,
       catalogState: GIT_GENERATION_MODEL_STATE,
       retried: (generation.attempts ?? 0) > 1,
     };
@@ -619,10 +664,15 @@ export function registerGitRoutes(app, {
         return res.status(400).json({ error: 'directory parameter is required' });
       }
 
-      const result = await push(directory, req.body);
-      res.json(result);
+      const options = { ...(req.body && typeof req.body === 'object' ? req.body : {}) };
+      // Older clients still send progressID; strip it so it never reaches Git.
+      delete options.progressID;
+      // Push owns its Git command; do not impose an HTTP-only deadline.
+      res.json(await push(directory, options));
     } catch (error) {
-      console.error('Failed to push:', error);
+      if (error?.code !== 'GIT_PUSH_REJECTED' && error?.code !== 'GIT_PUSH_HOOK_FAILED' && error?.code !== 'GIT_PUSH_FAILED') {
+        console.error('Failed to push:', error);
+      }
       sendGitError(res, error, 'Failed to push to remote');
     }
   });
@@ -997,7 +1047,7 @@ export function registerGitRoutes(app, {
       };
       setCommitServerTiming(res, timings);
       recordCommitGenerationTiming(req, timings, timingDetails);
-      res.json({ message: generated.message, ...(generated.warning ? { warnings: [generated.warning] } : {}) });
+      res.json({ message: generated.message, source: generated.source, selectionMode: generated.selectionMode, model: generated.model, ...(generated.warning ? { warnings: [generated.warning] } : {}) });
     } catch (error) {
       timings.totalMs = Date.now() - startedAt;
       timingDetails = {
@@ -1008,8 +1058,8 @@ export function registerGitRoutes(app, {
       };
       setCommitServerTiming(res, timings);
       recordCommitGenerationTiming(req, timings, timingDetails);
-      console.error('Failed to generate commit message:', error);
-      res.status(500).json({ error: error.message || 'Failed to generate commit message' });
+      console.error('Failed to generate commit message:', error?.code || 'HELPER_MODEL_FAILED');
+      res.status(error?.statusCode || 502).json({ error: error.message || 'Failed to generate commit message', ...(error?.code ? { code: error.code } : {}) });
     }
   });
 
@@ -1081,6 +1131,9 @@ export function registerGitRoutes(app, {
       return res.json({
         status: 'complete',
         commits: [generated.message],
+        source: generated.source,
+        selectionMode: generated.selectionMode,
+        model: generated.model,
         ...((generated.warning || contextResult.context.contextWarning) ? {
           warnings: [generated.warning, contextResult.context.contextWarning].filter(Boolean),
         } : {}),
@@ -1095,32 +1148,10 @@ export function registerGitRoutes(app, {
       };
       setCommitServerTiming(res, timings);
       recordCommitGenerationTiming(req, timings, timingDetails);
-      console.error('Failed to generate commit message draft:', error);
+      console.error('Failed to generate commit message draft:', error?.code || 'HELPER_MODEL_FAILED');
       return sendGitError(res, error, 'Failed to generate commit message');
     }
   });
-
-  const listAgentsForDirectory = async (directory) => {
-    if (typeof listConfigAgents === 'function') return listConfigAgents(directory);
-    const agents = await import('../opencode/agents.js');
-    return agents.listConfigAgents(directory);
-  };
-
-  // Tier 2 model: the Builder agent's configured model for this directory,
-  // else the model the client sent along (its own Builder/session resolution).
-  const resolvePullRequestSessionModel = async (directory, body) => {
-    if (typeof buildOpenCodeUrl !== 'function') return null;
-    try {
-      const builder = executionFromManagedAgent(findManagedAgent(await listAgentsForDirectory(directory), 'builder'));
-      if (builder) return { ...builder, source: 'builder' };
-    } catch (error) {
-      console.warn('[git] Failed to resolve the Builder model for PR generation:', error?.message || error);
-    }
-    const providerId = typeof body?.providerId === 'string' ? body.providerId.trim() : '';
-    const modelId = typeof body?.modelId === 'string' ? body.modelId.trim() : '';
-    if (providerId && modelId) return { providerId, modelId, variant: null, source: 'request' };
-    return null;
-  };
 
   const collectPullRequestDiffContext = async (directory, base, head) => {
     try {
@@ -1183,13 +1214,15 @@ export function registerGitRoutes(app, {
       const diffContext = await collectPullRequestDiffContext(directory, base, head);
       const fullPrompt = diffContext.text ? `${prompt}\n\n${diffContext.text}` : prompt;
 
-      // Tier 1: the pinned Zen model.
-      let tierOneError;
+      // The configured tuple is checked again inside native admission.
+
+      const configured = await chooseHelper(directory, req.body, PR_SESSION_HELPER_AGENT, 'configured');
       try {
+        if (!configured) throw Object.assign(new Error('Helper selection unavailable'), { code: 'HELPER_MODEL_FAILED' });
         const generated = await generatePullRequestDescription({
-          ...createGitZenTextTransport({ buildOpenCodeUrl, getOpenCodeAuthHeaders, directory, agent: PR_SESSION_HELPER_AGENT }),
+          ...createGitZenTextTransport({ generateHelperText, cursorRuntime, buildOpenCodeUrl, getOpenCodeAuthHeaders, ...openCodeClientArgs(), directory, sessionID: req.body?.sessionID, selection: configured, agent: PR_SESSION_HELPER_AGENT }),
           prompt: fullPrompt,
-          models: [GIT_GENERATION_ZEN_MODEL],
+          models: [configured.modelID],
           cooldowns: null,
           onAttempt: (attempt) => journalAttempt('zen', attempt, GIT_GENERATION_MODEL_STATE),
         });
@@ -1197,33 +1230,38 @@ export function registerGitRoutes(app, {
         return res.json({
           title: generated.title,
           body: generated.body,
-          source: 'zen',
-          model: generated?._generation?.model ?? null,
+          source: 'helper_model',
+          selectionMode: 'configured',
+          model: `${configured.providerID}/${configured.modelID}`,
           attempts,
         });
       } catch (error) {
-        tierOneError = error;
+        const refusal = helperRefusal(error); if (refusal) throw refusal;
+
         for (const skipped of Array.isArray(error?.skipped) ? error.skipped : []) {
           attempts.push({ tier: 'zen', model: skipped.model, reason: skipped.reason });
         }
         if (!attempts.some((attempt) => attempt.tier === 'zen')) {
           attempts.push({ tier: 'zen', model: null, reason: error?.code === 'FREE_ZEN_EXHAUSTED' ? 'exhausted' : 'request_failed' });
         }
-        console.warn('[git] Zen PR generation failed; trying the session model:', error?.message || error);
+        if (error?.reason === 'unsettled' || error?.code === 'native_helper_unsettled') return fail('SESSION_MODEL_FAILED', 'Helper cancellation is still settling. Try again after it stops.');
       }
 
-      // Tier 2: the Builder agent's configured model through a hidden helper session.
-      const selection = await resolvePullRequestSessionModel(directory, req.body);
+      // Only the authorized, canonical active session may supply the fallback.
+      const selection = await chooseHelper(directory, req.body, PR_SESSION_HELPER_AGENT, 'active');
       if (!selection) {
-        return fail('FREE_ZEN_EXHAUSTED', tierOneError?.message || 'Zen could not generate a pull request description');
+        return fail('HELPER_ACTIVE_MODEL_REQUIRED', 'Select an accessible active chat with a model, or change the helper model in Settings → Agents → Session Defaults.');
       }
-      const sessionModel = `${selection.providerId}/${selection.modelId}`;
+      const sessionModel = `${selection.providerID}/${selection.modelID}`;
       const sessionResult = await generateTextWithSessionModel({
+        generateHelperText,
+        cursorRuntime,
         buildOpenCodeUrl,
         getOpenCodeAuthHeaders,
+        ...openCodeClientArgs(),
         directory,
-        providerID: selection.providerId,
-        modelID: selection.modelId,
+        selection,
+        sessionID: req.body?.sessionID,
         agent: PR_SESSION_HELPER_AGENT,
         prompt: fullPrompt,
         repairPrompt: PR_SESSION_REPAIR_PROMPT,
@@ -1237,26 +1275,28 @@ export function registerGitRoutes(app, {
         durationMs: sessionResult?.durationMs,
         outcome: sessionResult?.ok ? 'complete' : 'failed',
         reason: sessionResult?.ok ? undefined : (sessionResult?.reason || 'request_failed'),
-      }, selection.source);
+      }, selection.selectionMode);
       if (sessionResult?.ok && sessionResult.value) {
         finishTiming();
         return res.json({
           title: sessionResult.value.title,
           body: sessionResult.value.body,
           source: 'session_model',
+          selectionMode: 'active',
           model: sessionModel,
           attempts,
         });
       }
+      const refusal = helperRefusal(sessionResult); if (refusal) throw refusal;
       return fail(
         'SESSION_MODEL_FAILED',
-        `The ${selection.source === 'builder' ? 'Builder' : 'selected'} model (${sessionModel}) did not return a usable pull request draft (${sessionResult?.reason || 'request_failed'})`,
+        `The active session model (${sessionModel}) did not return a usable pull request draft (${sessionResult?.reason || 'request_failed'})`,
       );
     } catch (error) {
       finishTiming();
       console.error('Failed to generate pull request description:', error?.message || error);
-      const code = typeof error?.code === 'string' && PR_ERROR_STATUS[error.code] ? error.code : undefined;
-      return res.status(code ? PR_ERROR_STATUS[code] : 500).json({
+      const code = typeof error?.code === 'string' ? error.code : undefined;
+      return res.status(PR_ERROR_STATUS[code] ?? error?.statusCode ?? error?.status ?? 500).json({
         error: error?.message || 'Failed to generate pull request description',
         ...(code ? { code } : {}),
         attempts,
@@ -1404,6 +1444,8 @@ export function registerGitRoutes(app, {
     } catch (error) {
       // Unavailable discovery must not look like an authoritative empty list.
       console.warn('Failed to discover worktrees:', error?.message || error);
+      res.setHeader('X-DevRyan-Warning', 'git worktrees unavailable');
+      // Accepted alias read by an older UI.
       res.setHeader('X-OpenChamber-Warning', 'git worktrees unavailable');
       res.status(503).json({ error: 'Worktree discovery unavailable' });
     }
@@ -1458,7 +1500,15 @@ export function registerGitRoutes(app, {
       }
 
       const created = await createWorktree(directory, req.body || {});
-      res.json(created);
+      if (typeof prepareNativeDirectory !== 'function' || typeof created?.path !== 'string') return res.json(created);
+      try {
+        await prepareNativeDirectory(created.path);
+        res.json(created);
+      } catch (cause) {
+        // The worktree exists; sessions in it wait for the next native restart.
+        console.warn(`Failed to prepare native location for worktree: ${cause?.code || cause?.message || cause}`);
+        res.json({ ...created, nativeLocation: { status: 'pending', code: cause?.code || 'native_location_pending' } });
+      }
     } catch (error) {
       console.error('Failed to create worktree:', error);
       res.status(error?.statusCode || 500).json({

@@ -6,7 +6,7 @@ import { createProjectIdFromPath } from '../projects/project-id.js';
 import { createSettingsRuntime } from './settings-runtime.js';
 
 const createRuntime = (initialSettings, { projectIconStore } = {}) => {
-  const settingsPath = '/tmp/openchamber/settings.json';
+  const settingsPath = '/tmp/devryan/settings.json';
   const writtenFiles = new Map();
   let settings = { ...initialSettings };
 
@@ -77,6 +77,55 @@ const createRuntime = (initialSettings, { projectIconStore } = {}) => {
 };
 
 describe('settings runtime', () => {
+  it('holds new operations while an admitted migrating read finishes all writes', async () => {
+    const { runtime, fsPromises } = createRuntime({});
+    const read = fsPromises.readFile.getMockImplementation();
+    const started = Promise.withResolvers(), release = Promise.withResolvers();
+    fsPromises.readFile.mockImplementationOnce(async (...args) => {
+      started.resolve(); await release.promise; return read(...args);
+    });
+    const reading = runtime.readSettingsFromDiskMigrated();
+    await started.promise;
+    const draining = runtime.holdForCheckpoint();
+    expect(runtime.holdForCheckpoint()).toBe(draining);
+    let drained = false; void draining.then(() => { drained = true; });
+    await expect(runtime.readSettingsFromDiskMigrated()).rejects.toMatchObject({ code: 'settings_checkpoint_held' });
+    await expect(runtime.persistSettings({ chatWidth: 500 })).rejects.toMatchObject({ code: 'settings_checkpoint_held' });
+    await expect(runtime.writeSettingsToDisk({})).rejects.toMatchObject({ code: 'settings_checkpoint_held' });
+    expect(drained).toBe(false);
+    release.resolve(); await reading; await draining;
+    expect(fsPromises.rename).toHaveBeenCalled();
+    expect(drained).toBe(true);
+  });
+
+  it('keeps checkpoint held when an admitted durable write fails', async () => {
+    const { runtime, fsPromises } = createRuntime({});
+    const started = Promise.withResolvers(), release = Promise.withResolvers();
+    fsPromises.rename.mockImplementationOnce(async () => {
+      started.resolve(); await release.promise;
+      throw Object.assign(new Error('disk full'), { code: 'ENOSPC' });
+    });
+    const writing = runtime.persistSettings({ chatWidth: 500 });
+    await started.promise;
+    const draining = runtime.holdForCheckpoint();
+    const checks = [expect(writing).rejects.toMatchObject({ code: 'ENOSPC' }),
+      expect(draining).rejects.toMatchObject({ code: 'ENOSPC' })];
+    release.resolve(); await Promise.all(checks);
+    await expect(runtime.persistSettings({ chatWidth: 700 })).rejects.toMatchObject({ code: 'settings_checkpoint_held' });
+    expect(runtime.holdForCheckpoint()).toBe(draining);
+  });
+
+  it('recovers its write chain after a failed save so later saves still persist', async () => {
+    const { runtime, fsPromises } = createRuntime({});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    fsPromises.rename.mockRejectedValueOnce(Object.assign(new Error('disk full'), { code: 'ENOSPC' }));
+
+    await expect(runtime.persistSettings({ chatWidth: 500 })).rejects.toMatchObject({ code: 'ENOSPC' });
+    await expect(runtime.persistSettings({ chatWidth: 700 })).resolves.toMatchObject({ chatWidth: 700 });
+    expect(await runtime.readSettingsFromDisk()).toMatchObject({ chatWidth: 700 });
+    await expect(runtime.holdForCheckpoint()).resolves.toBeUndefined();
+  });
+
   it('removes its temporary file when a settings write fails', async () => {
     const { runtime, fsPromises } = createRuntime({});
     fsPromises.rename.mockRejectedValueOnce(Object.assign(new Error('disk full'), { code: 'ENOSPC' }));
@@ -85,14 +134,14 @@ describe('settings runtime', () => {
     await expect(runtime.writeSettingsToDisk({ themeId: 'x' })).rejects.toMatchObject({ code: 'ENOSPC' });
 
     const temporary = fsPromises.writeFile.mock.calls.at(-1)[0];
-    expect(temporary).toMatch(/^\/tmp\/openchamber\/settings\.json\.tmp-\d+-\d+-[a-z0-9]+$/);
+    expect(temporary).toMatch(/^\/tmp\/devryan\/settings\.json\.tmp-\d+-\d+-[a-z0-9]+$/);
     expect(fsPromises.rm).toHaveBeenCalledWith(temporary, { force: true });
   });
 
   it('sweeps only stale leaked settings temporary files, once per runtime', async () => {
     const { runtime, fsPromises } = createRuntime({});
     const entry = (name, isFile = true) => ({ name, isFile: () => isFile });
-    const directory = '/tmp/openchamber';
+    const directory = '/tmp/devryan';
     fsPromises.readdir.mockImplementation(async (target) => {
       if (target !== directory) throw Object.assign(new Error('missing directory'), { code: 'ENOENT' });
       return [
@@ -204,6 +253,15 @@ describe('settings runtime', () => {
     ]);
     expect(updated.activeProjectId).toBe(projectId);
     expect(fsPromises.stat).not.toHaveBeenCalled();
+  });
+
+  it('does not turn a forgotten (empty) lastDirectory back into a project', async () => {
+    const { runtime } = createRuntime({ lastDirectory: '', projects: [] });
+
+    const updated = await runtime.readSettingsFromDiskMigrated();
+
+    expect(updated.projects).toEqual([]);
+    expect(updated.activeProjectId).toBeUndefined();
   });
 
   it('does not stat existing project paths when saving unrelated settings', async () => {

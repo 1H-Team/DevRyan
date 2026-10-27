@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 import yaml from 'yaml';
 import { normalizeManagedRemoteTunnelToken } from './tunnels/managed-token.js';
 import { startLoopbackOriginRelay } from './tunnels/origin-relay.js';
+import { startCommandParentDeathWatchdog } from './opencode/parent-death-watchdog.js';
 import {
   ManagedRemotePublicReachabilityError,
   verifyManagedRemotePublicReachability,
@@ -218,16 +219,35 @@ Or visit: https://developers.cloudflare.com/cloudflare-one/networks/connectors/c
 `);
 }
 
-const spawnCloudflared = (args, envOverrides = {}, resolvedBinaryPath = 'cloudflared') => spawn(resolvedBinaryPath, args, {
-  stdio: ['ignore', 'pipe', 'pipe'],
-  windowsHide: true,
-  env: {
-    ...process.env,
-    CF_TELEMETRY_DISABLE: '1',
-    ...envOverrides,
-  },
-  killSignal: 'SIGINT',
-});
+// On POSIX, cloudflared runs in its own process group and a parent-death
+// watchdog stops it if this host exits without stopping the tunnel (crash,
+// SIGKILL or a shutdown step that threw). Normal stop disposes the watchdog.
+export const spawnCloudflared = (args, envOverrides = {}, resolvedBinaryPath = 'cloudflared', {
+  platform = process.platform,
+  spawnImpl = spawn,
+  startWatchdog = startCommandParentDeathWatchdog,
+} = {}) => {
+  const posix = platform !== 'win32';
+  const child = spawnImpl(resolvedBinaryPath, args, {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
+    detached: posix,
+    env: {
+      ...process.env,
+      CF_TELEMETRY_DISABLE: '1',
+      ...envOverrides,
+    },
+    killSignal: 'SIGINT',
+  });
+  if (!posix || !Number.isSafeInteger(child?.pid)) return child;
+  const watchdog = startWatchdog({ childPid: child.pid, argv: [resolvedBinaryPath, ...args], code: 'cloudflared_watchdog_unavailable', platform });
+  if (watchdog?.error) {
+    console.warn(`[Tunnel] cloudflared parent-death watchdog unavailable (${watchdog.error.cause ?? watchdog.error.code}); the tunnel stops only on a clean shutdown`);
+  }
+  if (hasCloudflaredExited(child)) watchdog?.dispose?.();
+  else child.once('exit', () => watchdog?.dispose?.());
+  return child;
+};
 
 const normalizeHostname = (value) => {
   if (typeof value !== 'string') {
@@ -523,7 +543,7 @@ export async function startCloudflareQuickTunnel({ originUrl }) {
 
   console.log(`Using cloudflared: ${cfCheck.path} (${cfCheck.version})`);
 
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-cf-'));
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-cf-'));
 
   const child = spawnCloudflared(['tunnel', '--url', originUrl], { HOME: tempDir }, cfCheck.path);
   const outputBuffer = createCloudflaredOutputBuffer();
@@ -695,7 +715,7 @@ export async function startCloudflareManagedRemoteTunnel({
   let tempTokenFile = null;
 
   if (!effectiveTokenFilePath) {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-cf-token-'));
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-cf-token-'));
     effectiveTokenFilePath = path.join(tempDir, 'token');
     fs.writeFileSync(effectiveTokenFilePath, normalizedToken, { encoding: 'utf8', mode: 0o600 });
     tempTokenFile = { dir: tempDir, path: effectiveTokenFilePath };
@@ -1065,11 +1085,6 @@ export async function startCloudflareManagedLocalTunnel({ configPath, hostname }
     getResolvedHostname: () => resolvedHost,
     getEffectiveConfigPath: () => effectiveConfigPath,
   };
-}
-
-export async function startCloudflareTunnel({ originUrl, port }) {
-  void port;
-  return startCloudflareQuickTunnel({ originUrl });
 }
 
 export function printTunnelWarning() {

@@ -41,6 +41,19 @@ session directory identify exactly one existing revision. Managed hosts use
 the current ownership-derived repository root. Compaction uses the same
 resolver and reads the current saved outline; files are not migrated.
 
+`canonical-source.js` accepts automatic compaction only from the private native
+ordered sequence: the original user, completed `auto` compaction and successor
+assistant must form one canonical parent chain. Compaction summaries are never
+Plan content. Manual, pending or failed compaction, synthetic anchor text,
+client parts/metadata and later human turns cannot supply that proof. Existing
+owned native-stream continuation receipts remain independently required for
+interrupted-stream successors, including mixed compaction/stream chains.
+The private reader scans at most 2,000 native rows and 8 MiB, rejects repeated
+cursors/IDs, and projects once over their canonical paging order so a page
+boundary cannot supply a guessed parent. Its ordinals describe that order;
+they are not bus event sequence numbers. Only sanitized verified membership
+reaches the UI's existing Plan grouping contract.
+
 Writes publish `session.plan.updated` with revision identity and version only,
 and record content-free write/refusal diagnostics. Plan View skips load echoes,
 serializes saves against its acknowledged version, refreshes a clean matching
@@ -81,3 +94,46 @@ through the authorized registered root, preserving saved revision access after
 that worktree disappears.
 If the canonical source session or message is unavailable, access fails closed;
 stored Markdown alone does not establish its ownership.
+
+## Successful source and implementation authority
+
+`canonical-source.js` derives source identity from bounded, ordered canonical
+message pages. A standalone plan must be the successful final assistant content
+source. Native stream continuation prefixes join only through durable exact
+continuation receipts; unrelated replacement assistants stay separate. The
+receipt IDs, ordered parents and synthetic-content fingerprint must agree.
+The successor attempt uses the original native trace/span witness schema;
+receipt ordinal and canonical event sequence establish its order. The consumer
+test drives the original recovery owner and accepts its unchanged durable
+receipt, rather than substituting a numeric attempt fixture.
+Public `sourceIdentity` contains message membership and current/success/settled
+flags; private permit and configuration hashes never enter responses.
+
+A current source also requires the native owner's controller/configuration pin,
+primary cancellation generation, idle status, empty execution leases and settled
+managed descendants/envelope barrier. Missing evidence fails closed. Historical
+owned revisions remain readable, but cannot authorize a new Implement action.
+Creation stores canonical content; editor updates return the actual saved bytes.
+Observer failures after atomic publication do not turn a committed save into a
+refusal. Fresh Implement admission requires the exact saved SHA-256 version and
+a current successful settled canonical source.
+
+The web Session Plans API reconciles the V2 creation-event display slug with
+the current scoped session metadata only after `plan_identity_mismatch` (409).
+It requires the exact session ID, requested directory and unchanged creation timestamp, updates only
+the slug alias, and retries once. Directory, source, submitted content and
+expected saved version stay fixed. Foreign/recreated sessions and version
+conflicts remain refusals. The server checks identity before any save, so this
+retry cannot reinterpret a committed write as an uncommitted operation.
+
+Private `plan_read` must fit its constructor-owned reviewed output budget; large
+plans return an actionable refusal directing the user to Plan View. When the plan
+was written in this same session, `plan_read` returns
+`{unchanged:true, version, sourceMessageID}` instead of the text, but only if
+four things hold: the saved version matches the Implement marker, the saved
+version matches the canonical source text, no compaction followed the source
+message, and the source session is this session. Otherwise it returns the full
+text, for example after a compaction, a later update, or a Plan View edit made
+before Implement.
+`plan_update` preflights a lean saved/path/version/sourceIdentity receipt before
+publication and never echoes the submitted full plan after commit.

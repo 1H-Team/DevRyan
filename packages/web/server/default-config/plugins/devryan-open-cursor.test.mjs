@@ -1,6 +1,6 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { DevRyanOpenCursorPlugin } from './devryan-open-cursor.mjs';
@@ -9,24 +9,23 @@ const originalConfigDirectory = process.env.DEVRYAN_OPENCODE_USER_CONFIG_DIR;
 const originalLocalTools = process.env.DEVRYAN_OPEN_CURSOR_LOCAL_TOOLS;
 const originalBridge = process.env.CURSOR_ACP_MCP_BRIDGE;
 const originalBridgeSwitch = process.env.DEVRYAN_OPEN_CURSOR_MCP_BRIDGE;
-const testCache = fileURLToPath(new URL('../../../../../.cache/open-cursor-wrapper-tests/', import.meta.url));
+const testCache = os.tmpdir();
 let temporaryRoot = null;
 
-// Mirrors open-cursor 2.5.8: a descriptor whose server factory returns local
+// Mirrors open-cursor 2.5.17: a descriptor whose server factory returns local
 // tool hooks (native names, oc_ aliases, shell), a namespaced MCP tool, and
 // provider hooks.
 const installOpenCursor = () => {
-  fs.mkdirSync(testCache, { recursive: true });
-  temporaryRoot = fs.mkdtempSync(path.join(testCache, 'installed-'));
+  temporaryRoot = fs.mkdtempSync(path.join(testCache, 'devryan-open-cursor-wrapper-installed-'));
   process.env.DEVRYAN_OPENCODE_USER_CONFIG_DIR = temporaryRoot;
   const packageRoot = path.join(temporaryRoot, 'node_modules', '@rama_nigg', 'open-cursor');
   fs.mkdirSync(path.join(packageRoot, 'dist'), { recursive: true });
-  fs.writeFileSync(path.join(packageRoot, 'package.json'), JSON.stringify({ name: '@rama_nigg/open-cursor', version: '2.5.8', type: 'module' }));
+  fs.writeFileSync(path.join(packageRoot, 'package.json'), JSON.stringify({ name: '@rama_nigg/open-cursor', version: '2.5.17', type: 'module' }));
   fs.writeFileSync(path.join(packageRoot, 'dist', 'plugin-entry.js'), `
-    const local = ['bash', 'read', 'glob', 'ls', 'mkdir', 'rm', 'stat'];
+    const local = ['bash', 'read', 'glob', 'grep', 'edit', 'write', 'ls', 'mkdir', 'rm', 'stat'];
     const entry = (name) => ({ description: name, args: {}, execute: async () => name });
     export default { id: 'open-cursor', setup: () => { throw new Error('setup must not run'); }, server: async (input) => ({
-      tool: Object.fromEntries([...local, ...local.map((name) => 'oc_' + name), 'oc_edit', 'oc_write', 'shell', 'mcp__docs__search']
+      tool: Object.fromEntries([...local, ...local.map((name) => 'oc_' + name), 'shell', 'mcp__docs__search']
         .map((name) => [name, entry(name)])),
       auth: { provider: 'cursor-acp', directory: input.directory, bridge: process.env.CURSOR_ACP_MCP_BRIDGE ?? null },
       'chat.params': async () => {},
@@ -73,8 +72,7 @@ describe('DevRyan Open Cursor wrapper', () => {
   });
 
   it('fails with a repair message when the installed package is missing', async () => {
-    fs.mkdirSync(testCache, { recursive: true });
-    temporaryRoot = fs.mkdtempSync(path.join(testCache, 'missing-'));
+    temporaryRoot = fs.mkdtempSync(path.join(testCache, 'devryan-open-cursor-wrapper-missing-'));
     process.env.DEVRYAN_OPENCODE_USER_CONFIG_DIR = temporaryRoot;
     await expect(DevRyanOpenCursorPlugin({})).rejects.toThrow('Installed Open Cursor entrypoint is missing');
   });

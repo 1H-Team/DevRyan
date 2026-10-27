@@ -1,5 +1,5 @@
 import React from 'react';
-import { RiCheckLine, RiCloseLine, RiFileEditLine, RiGlobalLine, RiPencilAiLine, RiQuestionLine, RiTerminalBoxLine, RiTimeLine, RiToolsLine } from '@remixicon/react';
+import { RiArrowDownSLine, RiCheckLine, RiCloseLine, RiFileEditLine, RiGlobalLine, RiPencilAiLine, RiPlugLine, RiQuestionLine, RiTerminalBoxLine, RiTimeLine, RiToolsLine } from '@remixicon/react';
 import { cn } from '@/lib/utils';
 import type { PermissionRequest, PermissionResponse } from '@/types/permission';
 import { useSessionUIStore } from '@/sync/session-ui-store';
@@ -9,9 +9,10 @@ import { LazySyntaxHighlighter as SyntaxHighlighter } from '@/components/chat/La
 import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { generateSyntaxTheme } from '@/lib/theme/syntaxThemeGenerator';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { DiffPreview, WritePreview } from './DiffPreview';
 import { useI18n } from '@/lib/i18n';
-import { filterPermissionCardPatterns, isShellPermissionTool } from './permissionCardPatterns';
+import { filterPermissionCardPatterns, getMcpPermissionDetails, getSkillPermissionName, isShellPermissionTool } from './permissionCardPatterns';
 
 const PERMISSION_BASH_CUSTOM_STYLE: React.CSSProperties = {
   margin: 0,
@@ -145,13 +146,55 @@ export const PermissionCard: React.FC<PermissionCardProps> = ({
   const shellCommand = isShellPermissionTool(toolName)
     ? getMeta('command') || getMeta('cmd') || getMeta('script')
     : '';
-  const visiblePermissionPatterns = filterPermissionCardPatterns({
+  const skillName = getSkillPermissionName(toolName, permission.metadata);
+  const mcp = skillName ? null : getMcpPermissionDetails(toolName, permission.metadata);
+  const filteredPermissionPatterns = filterPermissionCardPatterns({
     toolName,
     patterns: permission.patterns,
     command: shellCommand,
+    metadata: permission.metadata,
   });
+  // An MCP tool is asked for every resource (`*`); the call input is the detail.
+  const visiblePermissionPatterns = mcp && filteredPermissionPatterns.every((pattern) => pattern === '*')
+    ? [] : filteredPermissionPatterns;
 
   const renderToolContent = () => {
+    // The skill name is already shown in place of its hashed resource.
+    if (skillName) return null;
+
+    if (mcp) {
+      return (
+        <div data-permission-mcp="true">
+          <div className="typography-meta text-muted-foreground mb-2 flex flex-wrap gap-x-3 gap-y-1">
+            {mcp.server ? (
+              <span><span className="font-semibold">{t('chat.permissionCard.mcpServer')}</span> <code className="px-1 py-0.5 bg-muted/30 rounded">{mcp.server}</code></span>
+            ) : null}
+            <span><span className="font-semibold">{t('chat.permissionCard.mcpTool')}</span> <code className="px-1 py-0.5 bg-muted/30 rounded break-all">{mcp.tool}</code></span>
+          </div>
+          <Collapsible defaultOpen>
+            <CollapsibleTrigger className="group/mcp-input px-0 py-0.5 hover:bg-transparent typography-meta text-muted-foreground">
+              <span>{t('chat.permissionCard.input')}</span>
+              <RiArrowDownSLine aria-hidden="true" className="h-3.5 w-3.5 transition-transform group-data-[panel-open]/mcp-input:rotate-180" />
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <ScrollableOverlay outerClassName="max-h-60" className="p-0">
+                <SyntaxHighlighter
+                  language="json"
+                  style={syntaxTheme}
+                  customStyle={PERMISSION_JSON_CUSTOM_STYLE}
+                  wrapLongLines={true}
+                >
+                  {mcp.input}
+                </SyntaxHighlighter>
+              </ScrollableOverlay>
+              {mcp.truncated ? (
+                <div className="typography-micro text-muted-foreground mt-1">{t('chat.permissionCard.inputTruncated')}</div>
+              ) : null}
+            </CollapsibleContent>
+          </Collapsible>
+        </div>
+      );
+    }
 
     if (isShellPermissionTool(toolName)) {
       const description = getMeta('description');
@@ -344,8 +387,8 @@ export const PermissionCard: React.FC<PermissionCardProps> = ({
                 ) : null}
               </div>
               <div className="flex items-center gap-1.5">
-                {getToolIcon(toolName)}
-                <span className="typography-meta text-muted-foreground font-medium">{displayToolName}</span>
+                {mcp ? <RiPlugLine className="h-3 w-3" /> : getToolIcon(toolName)}
+                <span className="typography-meta text-muted-foreground font-medium">{mcp?.server ? `${mcp.server} · ${mcp.tool}` : displayToolName}</span>
               </div>
             </div>
           </div>
@@ -409,6 +452,8 @@ export const PermissionCard: React.FC<PermissionCardProps> = ({
               >
                 <RiTimeLine className="h-3.5 w-3.5 sm:h-3 sm:w-3 flex-shrink-0" />
                 {(() => {
+                  // MCP saves `*` for the tool: name the scope instead of a bare pattern.
+                  if (mcp) return t('chat.permissionCard.alwaysAllowTool');
                   const always = (permission.always as string[]) || (permission.metadata.always as string[]) || [];
                   if (always.length === 0) return "Always Allow";
                   const displayPatterns = always.slice(0, 2);

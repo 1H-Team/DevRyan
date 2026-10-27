@@ -8,6 +8,7 @@ const explanations: Record<string, string> = {
   execution_owner_unavailable: 'The execution host is unavailable. Reconnect and retry.',
   payload_too_large: 'This request exceeds the execution input limit. Reduce attached context or start a new task.',
   skill_source_mismatch: 'The selected skill changed during preparation. Retry to load its current version.',
+  native_skill_unreviewed: 'This skill isn\'t available in this workspace.',
   storage_unavailable: 'There is not enough available storage to prepare or save this work. Free space and retry.',
   mutation_runtime_missing: 'The paired execution runtime is missing. Repair or update the installation before retrying.',
   mutation_runtime_unsupported: 'This runtime cannot provide the required execution protection. Use a supported runtime.',
@@ -15,6 +16,14 @@ const explanations: Record<string, string> = {
   mutation_history_captured: 'This conversation\'s changes are owned by the DevRyan companion, which is unavailable. Restore it to Revert or Redo.',
   mutation_recovery_pending: 'An interrupted Revert in this project is waiting for the DevRyan companion to finish recovery. Restore it before reverting.',
 };
+
+export function describeExecutionRecoveryFailure(value: string): { code: 'execution_recovery_unavailable'; message: string } | undefined {
+  if (!/\b(?:native_slim_retry_primary_fenced|execution_recovery_unavailable)\b/.test(value)) return undefined;
+  return {
+    code: 'execution_recovery_unavailable',
+    message: 'Automatic recovery could not verify this task\'s execution. Review the task and its recovery options before continuing.',
+  };
+}
 
 /** Add actionable detail for known execution codes without exposing inputs or stacks. */
 export function describeExecutionFailure(value: string): string | undefined {

@@ -5,6 +5,20 @@ import crypto from 'node:crypto';
 export const hash = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
 export const WEB_BUILD_OPTIONS = Object.freeze({ mode: 'production', reactScan: false });
 
+export const CANONICAL_RELEASE_REPOSITORY = '1H-Team/DevRyan';
+
+/**
+ * Dry runs never publish or tag. A `repository` names the GitHub repository a
+ * write targets; no repository but the canonical one accepts release writes.
+ */
+export function assertReleaseWritesAllowed(environment = process.env, { repository } = {}) {
+  const forbidden = message => Object.assign(new Error(message), { code: 'release_dry_run_write_forbidden' });
+  if (repository !== undefined && repository !== CANONICAL_RELEASE_REPOSITORY) throw forbidden(`Release writes to ${repository} are not allowed`);
+  if (![undefined, 'false'].includes(environment.RELEASE_DRY_RUN)) {
+    throw forbidden('Release dry runs prohibit external publication and tagging');
+  }
+}
+
 export async function releaseIdentity(root, revision) {
   if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(revision || '')) throw new Error('Release revision required');
   return {
@@ -38,6 +52,7 @@ export async function verifyWebArtifact(directory, metadata, identity) {
   if (metadata?.version !== actual.version || metadata.kind !== 'web'
     || metadata.revision !== actual.revision || metadata.release !== actual.release
     || metadata.lockfile !== actual.lockfile
+    || metadata.runID !== actual.runID
     || JSON.stringify(metadata.options) !== JSON.stringify(actual.options)
     || JSON.stringify(metadata.files) !== JSON.stringify(actual.files)) {
     throw new Error('Web artifact identity or content mismatch');
@@ -65,3 +80,4 @@ export function verifyPreparedMetadata(metadata, identity, arch, archiveHash) {
     || metadata.release !== identity.release || metadata.lockfile !== identity.lockfile
     || metadata.archiveHash !== archiveHash) throw new Error('Prepared Electron artifact mismatch');
 }
+

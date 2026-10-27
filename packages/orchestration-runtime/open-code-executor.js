@@ -1,3 +1,6 @@
+import { waitForSharedOperation } from './single-flight.js';
+import { readManagedResultReport } from './compact-result-header.js';
+import { managedTaskMayWrite } from './agent-contracts.js';
 import { resolveProviderPromptTools } from './provider-prompt-tools.js';
 import { appendManagedAssignment, stripManagedAssignment } from './continuation-assignment.js';
 import { isManagedAssistantActivityPart } from './assistant-activity.js';
@@ -10,9 +13,10 @@ import {
   supportsManagedReadOnlyAgent,
   supportsManagedReadOnlyProvider,
 } from './provider-capabilities.js';
-import { formatManagedTaskDisplayName, MAX_MANAGED_TASK_PREVIEW_BYTES, truncateManagedText } from './contract.js';
+import { MANAGED_OPERATOR_STOP_UNCERTAIN_REASON, hasAcceptedUserStop, hasPendingOperatorStop, formatManagedTaskDisplayName, MAX_MANAGED_TASK_PREVIEW_BYTES, truncateManagedText } from './contract.js';
 import {
   PROVIDER_USAGE_LIMIT_FAILURE_KIND,
+  formatManagedTaskFailureReason,
   classifyProviderRetryStatus,
   classifyProviderTransportFailure,
   isDefiniteProviderUsageLimit,
@@ -122,8 +126,8 @@ const getProviderUsageLimitFailureReason = (status) => {
     : 'Provider usage limit reached';
 };
 
-const assertReadOnlyProviderSupport = (task) => {
-  if (!task.readOnly || supportsManagedReadOnlyProvider(task.providerId)) return;
+const assertReadOnlyProviderSupport = (task, cursorReadOnly) => {
+  if (!task.readOnly || supportsManagedReadOnlyProvider(task.providerId, { cursorReadOnly })) return;
   const error = new Error(MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED_MESSAGE);
   error.code = MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED;
   error.statusCode = 409;
@@ -167,6 +171,10 @@ const resolveTaskPromptTools = (task) => ({
   // Managed tasks are already child sessions. Keep all further delegation
   // root-owned even when project agent permissions expose OpenCode's task tool.
   task: false,
+  devryan_plan_read: Boolean(task.approvedPlanRef),
+  // The parent owns task tracking; child-only todo schemas add no authority.
+  todoread: false,
+  todowrite: false,
 });
 
 const normalizeToolStatus = (value) => trimString(value)
@@ -219,7 +227,7 @@ const extractFailureReason = (error) => {
   ];
   for (const candidate of candidates) {
     const value = trimString(candidate);
-    if (value) return value;
+    if (value) return formatManagedTaskFailureReason(error);
   }
   try {
     const serialized = JSON.stringify(error);
@@ -476,13 +484,13 @@ const analyzeMessages = (inputRecords, childSessionId, recovery = null) => {
         && isManagedAttemptContinuationPrompt(part.text)
       )),
   );
+  const continuationPending = lastContinuationIndex > lastAssistantIndex;
   const currentAttemptAssistants = (
     lastAttemptContinuationIndex >= 0
       ? records.slice(lastAttemptContinuationIndex + 1)
       : records
   ).filter((record) => record?.info?.role === 'assistant');
   const resumeContinuationPending = lastResumeContinuationIndex > lastAssistantIndex;
-  const continuationPending = lastContinuationIndex > lastAssistantIndex;
   const latestAssistantMessageId = trimString(latest?.info?.id) || null;
   const lastUser = records.findLast((record) => record?.info?.role === 'user');
   const recoveryObservation = {
@@ -508,6 +516,10 @@ const analyzeMessages = (inputRecords, childSessionId, recovery = null) => {
   const assistantActivityIds = currentAttemptAssistants
     .filter((record) => record.parts?.some(isManagedAssistantActivityPart))
     .map((record) => record.info.id);
+  const assistantActivityBindings = currentAttemptAssistants.map(record => ({
+    messageId: record.info.id, createdAt: record.info.time?.created,
+    ...(Number.isFinite(record.info.time?.completed) ? { completedAt: record.info.time.completed } : {}),
+  }));
   if (!latest) {
     return {
       assistantCount: assistants.length,
@@ -522,6 +534,7 @@ const analyzeMessages = (inputRecords, childSessionId, recovery = null) => {
       hasUsefulWork: false,
       latestAssistantMessageId,
       assistantActivityIds,
+      assistantActivityBindings,
       assistantMessageIds: assistants.map((record) => record.info.id),
       recoverablePreview: '',
       progressSignature,
@@ -591,6 +604,7 @@ const analyzeMessages = (inputRecords, childSessionId, recovery = null) => {
     hasUsefulWork: usefulWork.hasUsefulWork,
     latestAssistantMessageId,
     assistantActivityIds,
+    assistantActivityBindings,
     assistantMessageIds: assistants.map((record) => record.info.id),
     recoverablePreview: previewWork?.recoverablePreview ?? '',
     progressSignature,
@@ -654,6 +668,12 @@ const toStoppedHandoffResult = (observation) => ({
   resumable: Boolean(observation.childSessionId),
 });
 
+const isIncompleteApprovedObservation = observation => observation.requiresCompletionMarker
+  && observation.terminal && observation.hasFinalUsefulWork && !observation.failureReason
+  && !observation.hasInFlightTool && !LIVE_STATUS_TYPES.has(observation.statusType)
+  && !ABORT_FINISH_REASONS.has(observation.finish)
+  && !['complete', 'blocked'].includes(readManagedResultReport(observation.recoverablePreview).terminalMarker);
+
 const toTerminalResult = (observation) => {
   if (LIVE_STATUS_TYPES.has(observation.statusType)) return null;
   const hasUsefulOutput = observation.hasUsefulWork === true;
@@ -691,6 +711,14 @@ const toTerminalResult = (observation) => {
       resumable: Boolean(observation.childSessionId),
     };
   }
+  if (observation.terminal && observation.hasFinalUsefulWork && !observation.hasInFlightTool
+    && (isIncompleteApprovedObservation(observation) || readManagedResultReport(observation.recoverablePreview).terminalMarker === 'blocked')) {
+    return { status: 'failed', failureReason: isIncompleteApprovedObservation(observation)
+      ? 'Managed approved-plan work remains incomplete after continuation; review remaining work'
+      : 'Managed child reports blocked; review retained evidence before continuing',
+      partial: true, recoverablePreview: observation.recoverablePreview, canonicalRefs: observation.canonicalRefs,
+      resumable: Boolean(observation.childSessionId) };
+  }
   if (
     observation.terminal
     && observation.hasFinalUsefulWork
@@ -710,6 +738,7 @@ const toTerminalResult = (observation) => {
 
 export const createManagedOpenCodeExecutor = (options = {}) => {
   const transport = options.transport;
+  const cursorReadOnly = options.cursorReadOnly === true;
   const requiredMethods = [
     'createSession',
     'promptSession',
@@ -725,6 +754,12 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     }
   }
   const pollIntervalMs = options.pollIntervalMs ?? 750;
+  // Preserve the existing reconciliation ceiling unless a measured cohort
+  // explicitly selects another bound. Events improve latency independently.
+  const eventReconcileIntervalMs = options.eventReconcileIntervalMs ?? pollIntervalMs;
+  // Event-driven waits (decided per observed child): status and idle events
+  // wake observation, and the reconcile poll only backs up a missed event.
+  const eventFallbackIntervalMs = options.eventFallbackIntervalMs ?? 3_000;
   const idleStablePolls = options.idleStablePolls ?? 2;
   const stoppedHandoffMs = options.stoppedHandoffMs ?? MANAGED_STOPPED_HANDOFF_MS;
   const now = options.now ?? Date.now;
@@ -750,6 +785,12 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
   if (!Number.isSafeInteger(pollIntervalMs) || pollIntervalMs < 0) {
     throw new RangeError('pollIntervalMs must be a non-negative safe integer');
   }
+  if (!Number.isSafeInteger(eventReconcileIntervalMs) || eventReconcileIntervalMs < 0) {
+    throw new RangeError('eventReconcileIntervalMs must be a non-negative safe integer');
+  }
+  if (!Number.isSafeInteger(eventFallbackIntervalMs) || eventFallbackIntervalMs < 0) {
+    throw new RangeError('eventFallbackIntervalMs must be a non-negative safe integer');
+  }
   if (!Number.isSafeInteger(idleStablePolls) || idleStablePolls < 1) {
     throw new RangeError('idleStablePolls must be a positive safe integer');
   }
@@ -773,6 +814,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
   const retryStops = new Map();
   const activeExecutions = new Map();
   const attemptContext = Symbol('managedExecutionAttempt');
+  const settlementRead = Symbol('cancelledAttemptSettlementRead');
   const attemptFor = (task) => {
     if (task[attemptContext]) return task[attemptContext];
     const attempt = activeExecutions.get(task.taskId);
@@ -840,20 +882,25 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     && left.userCreatedAt === right.userCreatedAt && left.completedAt === right.completedAt
     && left.failureReason === right.failureReason);
 
+  const observationSignal = (task) => AbortSignal.any([shutdownController.signal,
+    ...(!task[settlementRead] && attemptFor(task)?.controller.signal ? [attemptFor(task).controller.signal] : [])]);
+
   // Liveness only. Deliberately does NOT read messages: the transcript can run to
   // tens of megabytes, and while the child is live it cannot be terminal anyway.
   const readLiveStatus = async (task) => {
     assertRunning();
     const attempt = attemptFor(task);
+    const signal = observationSignal(task);
+    signal.throwIfAborted();
     let status;
     try {
-      status = await transport.readStatus({
+      status = await waitForSharedOperation(transport.readStatus({
         sessionId: task.childSessionId,
         directory: task.directory,
-        providerId: task.providerId,
-      });
+        providerId: task.providerId, signal,
+      }), { signal });
     } catch (error) {
-      if (attempt && isTransientObservationError(error)) {
+      if (attempt && !signal.aborted && isTransientObservationError(error)) {
         attempt.statusFailure = { firstAt: attempt.statusFailure?.firstAt ?? now(), error };
       }
       throw error;
@@ -867,10 +914,12 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
   // iteration still costs exactly one status read.
   const readObservation = async (task, knownStatus, { fresh = false } = {}) => {
     assertRunning();
+    const signal = observationSignal(task);
+    signal.throwIfAborted();
     const input = {
       sessionId: task.childSessionId,
       directory: task.directory,
-      providerId: task.providerId,
+      providerId: task.providerId, signal,
     };
     const status = knownStatus !== undefined
       ? knownStatus
@@ -879,9 +928,9 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     const failure = attempt?.transcriptFailure;
     if (!fresh && failure && now() < failure.nextReadAt) throw failure.error;
     let messages;
-    try { messages = await transport.readMessages(input); }
+    try { messages = await waitForSharedOperation(transport.readMessages(input), { signal }); }
     catch (error) {
-      if (attempt) {
+      if (attempt && !signal.aborted) {
         const previous = attempt.transcriptFailure;
         const delayMs = Math.min(MAX_TRANSCRIPT_FAILURE_BACKOFF_MS,
           previous ? previous.delayMs * 2 : Math.max(1, pollIntervalMs));
@@ -896,7 +945,11 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     const observation = {
       ...analyzeMessages(messages, task.childSessionId, task.transportRecovery),
       ...normalizeStatusFields(status),
+      requiresCompletionMarker: Boolean(task.approvedPlanRef),
     };
+    if (task.approvedPlanRef && observation.hasNewerUserInput && observation.emptyOutputContinuationCount > 0) {
+      observation.continuationPending = true;
+    }
     if (attempt) {
       attempt.recovery = recoveryFrom(observation);
       const identity = authenticationFailureIdentity(task, observation);
@@ -913,9 +966,10 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
   // user message after Stop is deliberate steering, not automatic recovery.
   const readApplicableOperatorAbort = async (task, after) => {
     if (typeof transport.readOperatorAbort !== 'function') return null;
-    const input = { sessionId: task.childSessionId, directory: task.directory, providerId: task.providerId, after };
+    const input = { sessionId: task.childSessionId, directory: task.directory, providerId: task.providerId, taskId: task.taskId, leaseToken: task.leaseToken, after };
     const request = await transport.readOperatorAbort(input);
     if (!request) return null;
+    if (request.state === 'pending' || request.state === 'uncertain') return { request, observation: null };
     const attempt = attemptFor(task);
     if (request.requestedAt === attempt?.steeredAbortAt) return null;
     let observation;
@@ -928,7 +982,10 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     }
     const current = await transport.readOperatorAbort(input);
     if (!current) return null;
-    if (Number.isFinite(observation.latestUserCreatedAt) && observation.latestUserCreatedAt > current.requestedAt) {
+    if (current.durable && Number.isFinite(observation.latestUserCreatedAt) && observation.latestUserCreatedAt > current.requestedAt) {
+      return { request: current, observation, independent: true };
+    }
+    if (!current.durable && Number.isFinite(observation.latestUserCreatedAt) && observation.latestUserCreatedAt > current.requestedAt) {
       if (attempt) {
         attempt.steeredAbortAt = current.requestedAt;
         attempt.steeringUserId = observation.latestUserMessageId;
@@ -952,8 +1009,13 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     }
     attempt?.controller.signal.throwIfAborted();
     if (stopped) return false;
+    if (task.taskPrerequisites?.length) await attempt?.control?.assertPrerequisites?.();
+    assertRunning();
+    attempt?.controller.signal.throwIfAborted();
+    if (attempt && activeExecutions.get(task.taskId) !== attempt) throw new Error('Managed task execution lease changed before provider prompt');
     // No asynchronous work between the last guard and the transport call.
-    await transport.promptSession({ ...input, signal: attempt?.controller.signal });
+    await transport.promptSession({ ...input, taskId: task.taskId, leaseToken: task.leaseToken,
+      signal: attempt?.controller.signal });
     return true;
   };
 
@@ -975,7 +1037,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       // The terminal event is authoritative even if the final transcript/status
       // snapshot is no longer readable. Preserve the last successful snapshot.
     }
-    const message = trimString(error.message) || 'Managed child session failed';
+    const message = formatManagedTaskFailureReason(error);
     const classifiedFailure = [error.errorName, error.code, message]
       .map(trimString)
       .filter(Boolean)
@@ -1099,6 +1161,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       }
       assertRunning();
       signal?.throwIfAborted();
+      watchActivity(task, control, reservedAt, observation.latestAssistantMessageId);
       const submitted = await promptTask(task, {
         sessionId: task.childSessionId,
         directory: task.directory,
@@ -1380,18 +1443,22 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
   const watchActivity = (task, control, after = task.startedAt ?? task.childPromptedAt ?? now(), excludedMessageId = null) => {
     const attempt = attemptFor(task);
     const existing = activityWatches.get(activityKey(task));
-    if (existing && existing.attempt === attempt) return existing;
+    if (existing && existing.attempt === attempt && after <= existing.after
+      && (!excludedMessageId || excludedMessageId === existing.excludedMessageId)) return existing;
+    const firstOutput = existing?.attempt === attempt ? existing.firstOutput : {
+      settled: task.firstAssistantPartAt != null, pending: false,
+    };
+    after = Math.max(after, existing?.attempt === attempt ? existing.after : after);
     existing?.dispose();
-    let settled = task.firstAssistantPartAt != null;
-    let pending = false;
+    let disposed = false;
+    let lastProgressAt = null;
     let unsubscribe = () => {};
     const stamp = async ({ messageId, observedAt }, source) => {
-      if (settled || pending || typeof control?.recordProgress !== 'function') return;
-      pending = true;
+      if (disposed || firstOutput.settled || firstOutput.pending || typeof control?.recordProgress !== 'function') return;
+      firstOutput.pending = true;
       try {
         const accepted = await control.recordProgress({ firstAssistantPartAt: observedAt });
-        settled = true;
-        unsubscribe();
+        firstOutput.settled = true;
         if (accepted !== false) {
           try {
             await options.onFirstAssistantActivity?.({
@@ -1401,15 +1468,22 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
           } catch { /* Diagnostics cannot affect execution. */ }
         }
       } catch { /* A later event or transcript observation can retry persistence. */ }
-      finally { pending = false; }
+      finally { firstOutput.pending = false; }
     };
-    const watch = { taskId: task.taskId, attempt, stamp, dispose: () => { settled = true; unsubscribe(); } };
+    const watch = { taskId: task.taskId, attempt, after, excludedMessageId, stamp,
+      firstOutput, progressAt: () => !disposed && activeExecutions.get(task.taskId) === attempt ? lastProgressAt : null,
+      dispose: () => { disposed = true; lastProgressAt = null; unsubscribe(); } };
     activityWatches.set(activityKey(task), watch);
-    if (!settled && typeof control?.recordProgress === 'function' && options.subscribeAssistantActivity) {
+    if (options.subscribeAssistantActivity) {
       unsubscribe = options.subscribeAssistantActivity({
         sessionId: task.childSessionId, directory: task.directory, after, excludedMessageId,
-      }, (activity) => { void stamp(activity, 'event'); });
-      if (settled) unsubscribe();
+      }, (activity) => { void stamp(activity, 'event'); }, ({ observedAt }) => {
+        if (!disposed && activeExecutions.get(task.taskId) === attempt && !attempt?.controller.signal.aborted
+          && Number.isFinite(observedAt) && observedAt >= after && observedAt <= now()) {
+          lastProgressAt = Math.max(lastProgressAt ?? observedAt, observedAt);
+        }
+      });
+      if (disposed) unsubscribe();
     }
     return watch;
   };
@@ -1426,7 +1500,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       controller: new AbortController(), recovery: null, abortConfirmed: false,
       childSessionId: task.childSessionId,
       transportRecovery: task.transportRecovery,
-      sourceTask: task,
+      sourceTask: task, control,
     };
     const runningTask = { ...task, [attemptContext]: attempt };
     activeExecutions.set(task.taskId, attempt);
@@ -1446,6 +1520,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
   };
 
   const observeCancelledAttempt = async (task) => {
+    task = { ...task, [settlementRead]: true };
     const attempt = attemptFor(task);
     // A cancelled recovery retains its ambiguous receipt and resumable outcome;
     // stopping the child does not prove whether that continuation was accepted.
@@ -1486,6 +1561,34 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
   };
 
   const waitForTerminal = async (task, waitOptions = {}) => {
+    if (typeof options.subscribeSessionChanges !== 'function') return observeTerminal(task, waitOptions);
+    let revision = 0;
+    let wake;
+    const eventDriven = options.eventDrivenWait?.() === true;
+    const reconcileMs = eventDriven && options.eventReconcileIntervalMs === undefined ? eventFallbackIntervalMs : eventReconcileIntervalMs;
+    const dispose = options.subscribeSessionChanges({ sessionId: task.childSessionId, directory: task.directory }, () => {
+      revision += 1; wake?.();
+    });
+    const changes = {
+      eventDriven,
+      revision: () => revision,
+      async wait(after) {
+        if (revision !== after) return;
+        const timer = new AbortController();
+        const attemptSignal = attemptFor(task)?.controller.signal;
+        const signal = AbortSignal.any([shutdownController.signal, timer.signal, ...attemptSignal ? [attemptSignal] : []]);
+        const notified = new Promise(resolve => { wake = resolve; });
+        const elapsed = defaultSleep(reconcileMs, { signal });
+        try { await Promise.race([notified, elapsed]); }
+        finally { wake = undefined; timer.abort(); await elapsed.catch(() => {}); }
+        assertRunning();
+      },
+    };
+    try { return await observeTerminal(task, { ...waitOptions, changes }); }
+    finally { wake = undefined; dispose(); }
+  };
+
+  const observeTerminal = async (task, waitOptions = {}) => {
     if (!task.childSessionId) {
       throw new Error(`Managed task ${task.taskId} has no child session`);
     }
@@ -1508,11 +1611,16 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     // First assistant output of THIS attempt: the inherited stale tail never counts.
     const activityWatch = watchActivity(task, waitOptions.control);
     const stampFirstAssistantPart = async (observation) => {
+      const currentWatch = activityWatches.get(activityKey(task)) ?? activityWatch;
+      options.bindAssistantActivity?.({
+        sessionId: task.childSessionId, directory: task.directory,
+        after: currentWatch.after, excludedMessageId: currentWatch.excludedMessageId,
+      }, observation.assistantActivityBindings ?? []);
       const messageId = observation.assistantActivityIds?.at(-1);
       if (!messageId || messageId === staleTailAnchorId) return;
       if (staleTailAnchorId && observation.assistantMessageIds.indexOf(messageId)
         <= observation.assistantMessageIds.indexOf(staleTailAnchorId)) return;
-      await activityWatch.stamp({ messageId, observedAt: now() }, 'transcript');
+      await currentWatch.stamp({ messageId, observedAt: now() }, 'transcript');
     };
     // Turn-budget backstop. Turns are counted from this wait's baseline: 0 for a
     // fresh child, the inherited tail for resume/retry (a deliberately resumed
@@ -1577,11 +1685,15 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
         return null;
       }
       const { observation } = stopped;
+      if (stopped.request.state === 'uncertain') return { ...copyRecovery(attemptFor(task)?.recovery),
+        status: 'interrupted', failureReason: MANAGED_OPERATOR_STOP_UNCERTAIN_REASON, resumable: true };
+      if (stopped.independent) return { ...copyRecovery(attemptFor(task)?.recovery), status: 'aborted',
+        failureReason: 'Stopped by the user', resumable: true, terminationIntent: 'user_stopped' };
       if (!observation) return 'pending';
       if (!LIVE_STATUS_TYPES.has(observation.statusType)) {
         const terminal = toTerminalResult(observation);
         if (terminal?.status === 'completed') return terminal;
-        return transportRecoveryResult(observation, 'Stopped by the user', 'aborted');
+        return { ...transportRecoveryResult(observation, 'Stopped by the user', 'aborted'), terminationIntent: 'user_stopped' };
       }
       // Still live: never continue, recover or re-prompt on the user's behalf.
       operatorAbortSeenAt ??= now();
@@ -1600,6 +1712,9 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     let recoveryAssistantSeen = false;
     let steeringAccepted = false;
     while (true) {
+      // Subscribe before observation and retain changes across awaited reads;
+      // a completion between readStatus and wait registration cannot be lost.
+      const eventRevision = waitOptions.changes?.revision();
       let observation;
       try {
         attemptFor(task)?.controller.signal.throwIfAborted();
@@ -1706,7 +1821,8 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
               && !attemptFor(task)?.steeringUserId
               && !liveObservation.hasBlockingInFlightTool
               && lastLiveProgressAt !== null
-              && observedAt - lastLiveProgressAt >= liveProgressTimeoutMs
+              && observedAt - Math.max(lastLiveProgressAt,
+                (activityWatches.get(activityKey(task)) ?? activityWatch).progressAt() ?? lastLiveProgressAt) >= liveProgressTimeoutMs
             ) {
               const continuationAlreadyUsed = transientTransportContinuations
                   >= MAX_TRANSIENT_TRANSPORT_CONTINUATIONS
@@ -1767,7 +1883,8 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
               continue;
             }
           }
-          await sleep(pollIntervalMs, { signal: shutdownController.signal });
+          if (waitOptions.changes) await waitOptions.changes.wait(eventRevision);
+          else await sleep(pollIntervalMs, { signal: shutdownController.signal });
           assertRunning();
           continue;
         }
@@ -1937,6 +2054,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
         }
         if (staleTailReprompts < MAX_STALE_TAIL_REPROMPTS && staleTailPrompt) {
           // The continuation never reached the child (the abort tore the POST down).
+          watchActivity(task, waitOptions.control, now(), staleTailAnchorId);
           const submitted = await promptTask(task, {
             sessionId: task.childSessionId,
             directory: task.directory,
@@ -1982,11 +2100,12 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
         continue;
       }
       if (
-        isEmptyTerminalObservation(observation)
+        (isEmptyTerminalObservation(observation) || isIncompleteApprovedObservation(observation))
         && !task.transportRecovery
         && observation.emptyOutputContinuationCount < MAX_EMPTY_OUTPUT_CONTINUATIONS
         && emptyOutputContinuations < MAX_EMPTY_OUTPUT_CONTINUATIONS
       ) {
+        watchActivity(task, waitOptions.control, now(), observation.latestAssistantMessageId);
         const submitted = await promptTask(task, {
           sessionId: task.childSessionId,
           directory: task.directory,
@@ -2030,7 +2149,8 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
         emptyTerminalPolls = 0;
       }
 
-      await sleep(pollIntervalMs, { signal: shutdownController.signal });
+      if (waitOptions.changes?.eventDriven) await waitOptions.changes.wait(eventRevision);
+      else await sleep(pollIntervalMs, { signal: shutdownController.signal });
       assertRunning();
     }
   };
@@ -2038,16 +2158,22 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
   const start = async (task, control) => {
     assertRunning();
     assertReadOnlyAgentSupport(task);
-    assertReadOnlyProviderSupport(task);
+    assertReadOnlyProviderSupport(task, cursorReadOnly);
     // Resolved before the child exists so a failing host hook cannot orphan a session.
     const promptPreamble = resolveTaskPromptPreamble
       ? await resolveTaskPromptPreamble(task)
       : null;
     const child = await transport.createSession({
+      taskId: task.taskId,
+      leaseToken: task.leaseToken,
       directory: task.directory,
       parentSessionId: task.rootSessionId,
       ...(task.dispatchCallId ? { parentCallID: task.dispatchCallId } : {}),
       title: formatManagedTaskDisplayName(task.label),
+      // Cursor's confined worker needs a private view even for inspection.
+      // This host hint does not grant workspace write permissions.
+      mayWrite: managedTaskMayWrite(task),
+      prewarmExecutionView: task.providerId === 'cursor-acp' || managedTaskMayWrite(task),
     });
     const childSessionId = trimString(child?.id);
     if (!childSessionId) {
@@ -2103,7 +2229,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       throw new Error(`Managed task ${task.taskId} has no child session`);
     }
     assertReadOnlyAgentSupport(task);
-    assertReadOnlyProviderSupport(task);
+    assertReadOnlyProviderSupport(task, cursorReadOnly);
 
     let status;
     let observation;
@@ -2199,7 +2325,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       throw new Error(`Managed task ${task.taskId} has no child session`);
     }
     assertReadOnlyAgentSupport(task);
-    assertReadOnlyProviderSupport(task);
+    assertReadOnlyProviderSupport(task, cursorReadOnly);
     if (task.transportRecovery?.phase === 'backup_pending') {
       // Automatic fallback never aborts a newer turn to make room for itself.
       const observation = await readObservation(task);
@@ -2287,6 +2413,10 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
   };
 
   const reconcile = async (task) => {
+    if (hasPendingOperatorStop(task)) return { state: 'live' };
+    if (task.operatorStop?.state === 'uncertain') return { state: 'terminal', result: { status: 'interrupted',
+      failureReason: MANAGED_OPERATOR_STOP_UNCERTAIN_REASON, partial: task.partial, recoverablePreview: task.recoverablePreview,
+      canonicalRefs: task.canonicalRefs, resumable: Boolean(task.childSessionId) } };
     if (!task.childSessionId) {
       return {
         state: 'unavailable',
@@ -2312,6 +2442,10 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
         };
       }
       const observation = await readObservation(task);
+      if (hasAcceptedUserStop(task)) {
+        if (LIVE_STATUS_TYPES.has(observation.statusType)) return { state: 'live' };
+        return { state: 'terminal', result: { ...transportRecoveryResult(observation, 'Stopped by the user', 'aborted'), terminationIntent: 'user_stopped' } };
+      }
       if (task.transportRecovery?.phase === 'backup_pending') return { state: 'relaunch' };
       if (task.transportRecovery) return { state: 'live' };
       const providerUsageLimit = settleProviderUsageLimit(task, observation);
@@ -2339,7 +2473,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
         return { state: 'live' };
       }
       if (
-        isEmptyTerminalObservation(observation)
+        (isEmptyTerminalObservation(observation) || isIncompleteApprovedObservation(observation))
         && observation.emptyOutputContinuationCount < MAX_EMPTY_OUTPUT_CONTINUATIONS
       ) {
         return { state: 'live' };
@@ -2374,6 +2508,12 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       const attempt = attemptFor(task);
       attempt?.controller.abort(new Error('Managed task cancelled'));
       releaseActivity(task);
+      // The native removal owner already awaited the actual runner, process
+      // receipts and publication fence. Still close this executor's observer.
+      if (options.nativeSettled === true) {
+        if (attempt) attempt.abortConfirmed = true;
+        return { aborted: true };
+      }
       if (!task.childSessionId) return { aborted: false, failureReason: 'Managed task has no child session' };
       const aborted = await transport.abortSession({
         sessionId: task.childSessionId,

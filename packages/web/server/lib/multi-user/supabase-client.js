@@ -2,13 +2,8 @@ import { createSupabaseTraffic, supabaseTrafficOperation } from './supabase-traf
 
 const isLegacyJwtKey = (value) => typeof value === 'string' && value.split('.').length === 3;
 
-const DEFAULT_STORAGE_TIMEOUT_MS = 30_000;
-const MAX_STORAGE_TIMEOUT_MS = 60_000;
-const DEFAULT_STORAGE_RESPONSE_LIMIT = 64 * 1024;
-const MAX_STORAGE_OBJECT_BYTES = 25 * 1024 * 1024;
 const MAX_JSON_RESPONSE_BYTES = 16 * 1024 * 1024;
 const responseDecoder = new TextDecoder();
-const STORAGE_BUCKET_PATTERN = /^[a-z0-9][a-z0-9._-]{0,62}$/;
 
 export class SupabaseRequestError extends Error {
   constructor(message, { status = 500, payload = null } = {}) {
@@ -32,23 +27,8 @@ const errorMessage = (payload, fallback) => {
   return typeof payload === 'string' && payload.trim() ? payload.trim() : fallback;
 };
 
-const storagePath = (bucket, objectName = '') => {
-  if (typeof bucket !== 'string' || !STORAGE_BUCKET_PATTERN.test(bucket)) {
-    throw new SupabaseRequestError('Supabase Storage bucket is invalid', { status: 400 });
-  }
-  if (!objectName) return encodeURIComponent(bucket);
-  if (typeof objectName !== 'string' || objectName.length > 512 || objectName.includes('\0')) {
-    throw new SupabaseRequestError('Supabase Storage object name is invalid', { status: 400 });
-  }
-  const segments = objectName.split('/');
-  if (segments.some((segment) => !segment || segment === '.' || segment === '..')) {
-    throw new SupabaseRequestError('Supabase Storage object name is invalid', { status: 400 });
-  }
-  return `${encodeURIComponent(bucket)}/${segments.map(encodeURIComponent).join('/')}`;
-};
-
 const readBoundedBody = async (response, maximumBytes, {
-  label = 'Supabase Storage', onBody = () => {},
+  label = 'Supabase', onBody = () => {},
 } = {}) => {
   if (!Number.isSafeInteger(maximumBytes) || maximumBytes < 0) {
     throw new SupabaseRequestError('Supabase response limit is invalid', { status: 500 });
@@ -96,22 +76,6 @@ const parseBoundedJson = (body) => {
   } catch {
     return text;
   }
-};
-
-const validateStorageTimeout = (timeoutMs) => {
-  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > MAX_STORAGE_TIMEOUT_MS) {
-    throw new SupabaseRequestError('Supabase Storage timeout is invalid', { status: 400 });
-  }
-  return timeoutMs;
-};
-
-const validateStorageObjectLimit = (maximumBytes) => {
-  if (!Number.isSafeInteger(maximumBytes)
-    || maximumBytes < 1
-    || maximumBytes > MAX_STORAGE_OBJECT_BYTES) {
-    throw new SupabaseRequestError('Supabase Storage size limit is invalid', { status: 400 });
-  }
-  return maximumBytes;
 };
 
 export function createSupabaseServerClient({
@@ -210,94 +174,10 @@ export function createSupabaseServerClient({
     { method: 'POST', body: args },
   );
 
-  const storageRequest = async (pathname, {
-    method = 'GET',
-    body,
-    contentType,
-    timeoutMs = DEFAULT_STORAGE_TIMEOUT_MS,
-    maximumResponseBytes = DEFAULT_STORAGE_RESPONSE_LIMIT,
-  } = {}) => {
-    const headers = {
-      Accept: 'application/json',
-      apikey: secretKey,
-      ...(contentType ? { 'Content-Type': contentType } : {}),
-    };
-    if (isLegacyJwtKey(secretKey)) headers.Authorization = `Bearer ${secretKey}`;
-    const operation = beginRequest(pathname, method);
-    const response = await fetchImpl(`${url}${pathname}`, {
-      method,
-      headers,
-      body,
-      signal: AbortSignal.timeout(validateStorageTimeout(timeoutMs)),
-    }).catch((error) => {
-      traffic.received(operation, 0, 0);
-      throw error;
-    });
-    const responseBody = await readBoundedBody(response, maximumResponseBytes, {
-      onBody: (bytes) => traffic.received(operation, bytes, response.status),
-    });
-    if (!response.ok) {
-      const payload = parseBoundedJson(responseBody);
-      throw new SupabaseRequestError(
-        errorMessage(payload, `Supabase Storage request failed (${response.status})`),
-        { status: response.status, payload },
-      );
-    }
-    return responseBody;
-  };
-
   return {
     traffic,
     rest,
     rpc,
-    async storageUpload(bucket, objectName, bytes, {
-      contentType = 'application/octet-stream',
-      timeoutMs = DEFAULT_STORAGE_TIMEOUT_MS,
-      maximumBytes = MAX_STORAGE_OBJECT_BYTES,
-    } = {}) {
-      const body = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes || []);
-      const boundedMaximum = validateStorageObjectLimit(maximumBytes);
-      if (body.byteLength > boundedMaximum) {
-        throw new SupabaseRequestError('Supabase Storage upload is too large', { status: 413 });
-      }
-      const responseBody = await storageRequest(
-        `/storage/v1/object/${storagePath(bucket, objectName)}`,
-        {
-          method: 'POST',
-          body,
-          contentType,
-          timeoutMs,
-        },
-      );
-      return parseBoundedJson(responseBody);
-    },
-    async storageDownload(bucket, objectName, {
-      timeoutMs = DEFAULT_STORAGE_TIMEOUT_MS,
-      maximumBytes = MAX_STORAGE_OBJECT_BYTES,
-    } = {}) {
-      return storageRequest(`/storage/v1/object/${storagePath(bucket, objectName)}`, {
-        timeoutMs,
-        maximumResponseBytes: validateStorageObjectLimit(maximumBytes),
-      });
-    },
-    async storageDelete(bucket, objectNames, {
-      timeoutMs = DEFAULT_STORAGE_TIMEOUT_MS,
-    } = {}) {
-      if (!Array.isArray(objectNames) || objectNames.length < 1 || objectNames.length > 100) {
-        throw new SupabaseRequestError('Supabase Storage delete list is invalid', { status: 400 });
-      }
-      const prefixes = objectNames.map((objectName) => {
-        storagePath(bucket, objectName);
-        return objectName;
-      });
-      const responseBody = await storageRequest(`/storage/v1/object/${storagePath(bucket)}`, {
-        method: 'DELETE',
-        body: JSON.stringify({ prefixes }),
-        contentType: 'application/json',
-        timeoutMs,
-      });
-      return parseBoundedJson(responseBody);
-    },
     async signInWithPassword({ email, password }) {
       return request('/auth/v1/token?grant_type=password', {
         method: 'POST',

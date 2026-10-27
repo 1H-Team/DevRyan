@@ -23,7 +23,6 @@ const lazyViewNames = [
   'PlanView',
   'TerminalView',
   'MultiRunWindow',
-  'AgentManagerView',
 ] as const;
 
 describe('shared lazy view boundaries', () => {
@@ -79,9 +78,7 @@ describe('shared lazy view boundaries', () => {
     expect(statusRow).toContain('void preloadPlanView().catch(() => undefined);');
 
     for (const viewName of lazyViewNames) {
-      const modulePath = viewName === 'AgentManagerView'
-        ? '@/components/views/agent-manager/AgentManagerView'
-        : `@/components/views/${viewName}`;
+      const modulePath = `@/components/views/${viewName}`;
 
       expect(source).toContain(`export const Lazy${viewName} = /* @__PURE__ */ lazyWithChunkRecovery`);
       const moduleOwner = viewName === 'PlanView' ? planViewLoader : source;
@@ -149,7 +146,7 @@ describe('shared lazy view boundaries', () => {
     expect(sectionLoaders).toContain('createPreparedSettingsComponent');
     expect(resource).toContain('if (loadedModule)');
     expect(resource).toContain('return React.createElement(loadedModule.default, props)');
-    expect(settingsView).toContain('PreparedOpenChamberPage');
+    expect(settingsView).toContain('PreparedDevRyanPage');
     expect(settingsView).toContain('PreparedUserManagementPage');
     expect(settingsView).toContain('PreparedBugReportsPage');
     expect(settingsView).toContain('<React.Suspense fallback={<SettingsLoadFallback />}>');
@@ -161,13 +158,13 @@ describe('shared lazy view boundaries', () => {
     expect(settingsView).toContain('visiblePages.map((page) => page.slug)');
     expect(sectionLoaders).toContain('preloadSettingsSectionsWhenIdle');
     expect(sectionLoaders).toContain('resourcesFor(slug).every((resource) => resource.isReady())');
-    const preferences = readSource('components/sections/openchamber/openChamberSectionResources.ts');
+    const preferences = readSource('components/sections/devryan/devRyanSectionResources.ts');
     expect(preferences).toContain("import('./VisualSectionContent')");
     expect(preferences).toContain("import('./KeyboardShortcutsSettings')");
     expect(preferences).toContain("import('./VoiceSettings')");
     expect(sectionLoaders).toContain('const sectionPreloads = new Map');
     expect(settingsView).toContain('<SettingsSectionBoundary>{renderPageContent(settingsSlug)}</SettingsSectionBoundary>');
-    expect(settingsView).not.toContain("import { OpenChamberPage } from '@/components/sections/openchamber/OpenChamberPage'");
+    expect(settingsView).not.toContain("import { DevRyanPage } from '@/components/sections/devryan/DevRyanPage'");
     expect(settingsView).not.toContain("import { UserManagementPage } from '@/components/sections/users/UserManagementPage'");
   });
 
@@ -207,8 +204,8 @@ describe('shared lazy view boundaries', () => {
       }
       expect(source).toContain('PreparedSettingsDataBoundary');
     }
-    const page = readSource('components/sections/openchamber/OpenChamberPage.tsx');
-    for (const section of ['VoiceSettings', 'TunnelSettings', 'OpenChamberVisualSettings']) {
+    const page = readSource('components/sections/devryan/DevRyanPage.tsx');
+    for (const section of ['VoiceSettings', 'TunnelSettings', 'DevRyanVisualSettings']) {
       expect(page).not.toContain(`from './${section}'`);
     }
   });

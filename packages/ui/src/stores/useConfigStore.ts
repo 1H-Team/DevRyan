@@ -1,3 +1,5 @@
+import { DEFAULT_HELPER_MODEL_SELECTION, parseHelperModelSelection, type HelperModelSelection } from '@/lib/helperModelSelection';
+import { startupDiagnosticSummary } from '@devryan/shared-runtime/startup-diagnostics.js';
 import { getChatThinkingState, resolveChatThinkingVariant } from '@/lib/providers/chatThinking';
 import { getCursorAcpVariantState, resolveCursorAcpVariantSelection } from '@/lib/providers/cursorThinking';
 import { useMemo } from "react";
@@ -7,6 +9,7 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import { devtools } from './utils/devtoolsGate';
 import type { Provider, Agent } from "@opencode-ai/sdk/v2";
 import { opencodeClient } from "@/lib/opencode/client";
+import { waitForStartupHealth } from "@/lib/startup/health";
 import { primeWorktreeBootstrap } from "@/lib/worktrees/worktreeBootstrap";
 import { scopeMatches, subscribeToConfigChanges } from "@/lib/configSync";
 import type { ModelMetadata } from "@/types";
@@ -38,10 +41,10 @@ import {
 } from "@/lib/agentSelection";
 import { cacheResponseStyleInstructionFromSettings } from "@/lib/responseStyle";
 import { getOrderedThinkingVariants, resolveProviderModelVariant } from "@/lib/providers/variantControls";
-import { isProviderModelAvailable, resolveAvailableProviderModel } from "@/lib/providers/modelAvailability";
+import { isProviderModelAvailable, resolveAvailableProviderModel, type ProviderAccountModelFields } from "@/lib/providers/modelAvailability";
 
 const MODELS_DEV_API_URL = "https://models.dev/api.json";
-const MODELS_DEV_PROXY_URL = "/api/openchamber/models-metadata";
+const MODELS_DEV_PROXY_URL = "/api/devryan/models-metadata";
 
 const GIT_UTILITY_PROVIDER_ID = "zen";
 const GIT_UTILITY_PREFERRED_MODEL_ID = "big-pickle";
@@ -50,17 +53,18 @@ export type ConfigLoadStatus = "idle" | "loading" | "ready" | "error";
 
 const isElectronMacHost = (): boolean => {
     if (typeof window === 'undefined') return false;
-    const electron = (window as unknown as { __OPENCHAMBER_ELECTRON__?: { runtime?: string } }).__OPENCHAMBER_ELECTRON__;
-    const macosMajor = (window as unknown as { __OPENCHAMBER_MACOS_MAJOR__?: unknown }).__OPENCHAMBER_MACOS_MAJOR__;
+    const electron = (window as unknown as { __DEVRYAN_ELECTRON__?: { runtime?: string } }).__DEVRYAN_ELECTRON__;
+    const macosMajor = (window as unknown as { __DEVRYAN_MACOS_MAJOR__?: unknown }).__DEVRYAN_MACOS_MAJOR__;
     if (electron?.runtime === 'electron' && typeof macosMajor === 'number' && macosMajor > 0) return true;
     return electron?.runtime === 'electron' && /mac/i.test(window.navigator?.platform ?? '');
 };
 
-interface OpenChamberDefaults {
+interface DevRyanDefaults {
     defaultModel?: string;
     defaultVariant?: string;
     defaultAgent?: string;
     defaultPlanMode?: boolean;
+    helperModelSelection?: HelperModelSelection;
     autoCreateWorktree?: boolean;
     gitmojiEnabled?: boolean;
     defaultFileViewerPreview?: boolean;
@@ -77,7 +81,7 @@ const parseSettingsOverrideKeys = (value: unknown): string[] => (
         : []
 );
 
-const fetchOpenChamberDefaults = async (): Promise<OpenChamberDefaults> => {
+const fetchDevRyanDefaults = async (): Promise<DevRyanDefaults> => {
     try {
         // 1. Runtime settings API
         const runtimeSettings = getRegisteredRuntimeAPIs()?.settings;
@@ -104,6 +108,7 @@ const fetchOpenChamberDefaults = async (): Promise<OpenChamberDefaults> => {
                         defaultVariant: defaultVariant.length > 0 ? defaultVariant : undefined,
                         defaultAgent: defaultAgent.length > 0 ? defaultAgent : undefined,
                         defaultPlanMode,
+                        helperModelSelection: parseHelperModelSelection(data?.helperModelSelection),
                         autoCreateWorktree: typeof data?.autoCreateWorktree === 'boolean' ? data.autoCreateWorktree : undefined,
                         gitmojiEnabled,
                         defaultFileViewerPreview,
@@ -149,6 +154,7 @@ const fetchOpenChamberDefaults = async (): Promise<OpenChamberDefaults> => {
             defaultVariant: defaultVariant.length > 0 ? defaultVariant : undefined,
             defaultAgent: defaultAgent.length > 0 ? defaultAgent : undefined,
             defaultPlanMode,
+            helperModelSelection: parseHelperModelSelection(data?.helperModelSelection),
             autoCreateWorktree: typeof data?.autoCreateWorktree === 'boolean' ? data.autoCreateWorktree : undefined,
             gitmojiEnabled,
             defaultFileViewerPreview,
@@ -198,7 +204,7 @@ const normalizeProviderDisplayName = (name: string) => (
 );
 
 type ProviderModel = Provider["models"][string];
-type ProviderWithModelList = Omit<Provider, "models"> & { models: ProviderModel[] };
+type ProviderWithModelList = Omit<Provider, "models"> & ProviderAccountModelFields & { models: ProviderModel[] };
 
 type GitModelSelection = { providerId: string; modelId: string };
 
@@ -629,6 +635,8 @@ interface ConfigStore {
     isInitialized: boolean;
     initializationLoadStatus: ConfigLoadStatus;
     initializationLoadError: string | undefined;
+    initializationDiagnostics: string | undefined;
+    initializationRetryable: boolean;
     providersLoadStatus: ConfigLoadStatus;
     providersLoadError: string | undefined;
     agentsLoadStatus: ConfigLoadStatus;
@@ -641,6 +649,7 @@ interface ConfigStore {
     settingsDefaultVariant: string | undefined;
     settingsDefaultAgent: string | undefined;
     settingsDefaultPlanMode: boolean;
+    settingsHelperModelSelection: HelperModelSelection;
     settingsAutoCreateWorktree: boolean;
     settingsGitmojiEnabled: boolean;
     settingsDefaultFileViewerPreview: boolean;
@@ -704,7 +713,7 @@ interface ConfigStore {
     activateDirectory: (directory: string | null | undefined) => Promise<void>;
 
     loadProviders: (options?: { directory?: string | null; force?: boolean }) => Promise<void>;
-    loadAgents: (options?: { directory?: string | null }) => Promise<boolean>;
+    loadAgents: (options?: { directory?: string | null; providersReady?: Promise<boolean>; signal?: AbortSignal }) => Promise<boolean>;
     invalidateModelMetadataCache: () => void;
     setProvider: (providerId: string) => void;
     setProviderModel: (
@@ -738,11 +747,11 @@ interface ConfigStore {
     saveAgentModelSelection: (agentName: string, providerId: string, modelId: string, variant?: string) => void;
     persistAgentModelSelection: (agentName: string, providerId: string, modelId: string, variant?: string) => Promise<void>;
     resetAgentModelSelection: (agentName: string) => Promise<void>;
-    resetPersonalSettingsOverride: (field: 'defaultAgent' | 'defaultPlanMode') => Promise<void>;
+    resetPersonalSettingsOverride: (field: 'defaultAgent' | 'defaultPlanMode' | 'helperModelSelection') => Promise<void>;
     getAgentModelSelection: (agentName: string) => AgentModelSelection | null;
     probeConnection: (options?: { timeoutMs?: number }) => Promise<boolean>;
     checkConnection: () => Promise<boolean>;
-    initializeApp: () => Promise<void>;
+    initializeApp: (options?: { startup?: boolean; signal?: AbortSignal; startupTimeoutMs?: number }) => Promise<void>;
     getCurrentProvider: () => ProviderWithModelList | undefined;
     getCurrentModel: () => ProviderModel | undefined;
     getCurrentAgent: () => Agent | undefined;
@@ -793,8 +802,9 @@ declare global {
 const _inFlightProviders = new Map<string, Promise<void>>();
 const _providerLoadTokens = new Map<string, object>();
 const PROVIDER_CATALOG_INCOMPLETE_ERROR = "OpenCode provider catalog unavailable";
-const _inFlightAgents = new Map<string, Promise<boolean>>();
+const _inFlightAgents = new Map<string, { promise: Promise<boolean>; signal?: AbortSignal; providersReady?: Promise<boolean> }>();
 let _initializeAppInFlight: Promise<void> | null = null;
+let _initializeAppSignal: AbortSignal | undefined;
 
 export const useConfigStore = create<ConfigStore>()(
     devtools(
@@ -821,6 +831,8 @@ export const useConfigStore = create<ConfigStore>()(
                 isInitialized: false,
                 initializationLoadStatus: "idle",
                 initializationLoadError: undefined,
+                initializationDiagnostics: undefined,
+                initializationRetryable: true,
                 providersLoadStatus: "idle",
                 providersLoadError: undefined,
                 agentsLoadStatus: "idle",
@@ -831,6 +843,7 @@ export const useConfigStore = create<ConfigStore>()(
                 settingsDefaultVariant: undefined,
                 settingsDefaultAgent: undefined,
                 settingsDefaultPlanMode: false,
+                settingsHelperModelSelection: DEFAULT_HELPER_MODEL_SELECTION,
                 settingsAutoCreateWorktree: false,
                 settingsGitmojiEnabled: false,
                 settingsDefaultFileViewerPreview: false,
@@ -1170,16 +1183,9 @@ export const useConfigStore = create<ConfigStore>()(
                                 nextState.providersLoadStatus = commitOptions?.incomplete ? "error" : "ready";
                                 nextState.providersLoadError = commitOptions?.incomplete ? PROVIDER_CATALOG_INCOMPLETE_ERROR : undefined;
 
-                                // Ensure a valid model stays selected after (re)loading providers.
-                                // Otherwise switching to an uncached directory (which blanks the
-                                // selection in activateDirectory) leaves the composer stuck on
-                                // "Not selected" even though a model is available. Only resolve a
-                                // default when the current selection is missing/unavailable — never
-                                // override a still-valid explicit choice.
-                                const selectionIsValid = Boolean(state.currentProviderId)
-                                    && Boolean(state.currentModelId)
-                                    && processedProviders.some((p) => p.id === state.currentProviderId
-                                        && p.models.some((m) => m.id === state.currentModelId && isProviderModelAvailable(m)));
+                                // Catalog refresh must preserve a captured selection, including one
+                                // currently unavailable. Choose a default only before any model is set.
+                                const selectionIsValid = Boolean(state.currentProviderId) && Boolean(state.currentModelId);
                                 if (!selectionIsValid) {
                                     let resolved: { providerId: string; modelId: string } | null = null;
                                     const agentDefault = resolveAgentDefaultSelection({
@@ -1352,11 +1358,7 @@ export const useConfigStore = create<ConfigStore>()(
                 },
 
                 setProviderModel: (providerId, modelId, variant, options) => {
-                    const { providers } = get();
-                    const provider = providers.find((p) => p.id === providerId);
-                    if (!provider?.models.some((model) => model.id === modelId && isProviderModelAvailable(model))) {
-                        return;
-                    }
+                    if (!providerId || !modelId) return;
 
                     set((state) => {
                         const directoryKey = state.activeDirectoryKey;
@@ -1522,6 +1524,7 @@ export const useConfigStore = create<ConfigStore>()(
                         ? payload.defaultAgent.trim()
                         : undefined;
                     set({
+                        ...(field === 'helperModelSelection' ? { settingsHelperModelSelection: parseHelperModelSelection(payload.helperModelSelection) ?? DEFAULT_HELPER_MODEL_SELECTION } : {}),
                         ...(field === 'defaultAgent' ? { settingsDefaultAgent: nextAgent } : {}),
                         ...(field === 'defaultPlanMode' ? { settingsDefaultPlanMode: payload.defaultPlanMode === true } : {}),
                         settingsOverrideKeys: parseSettingsOverrideKeys(payload.multiUser?.settingsOverrideKeys),
@@ -1567,11 +1570,13 @@ export const useConfigStore = create<ConfigStore>()(
 
                     // Dedup: if a load is already in-flight for this directory, reuse it
                     const existing = _inFlightAgents.get(directoryKey);
-                    if (existing) return existing;
+                    if (existing && !existing.signal?.aborted
+                        && (!options?.providersReady || existing.providersReady === options.providersReady)) return existing.promise;
                     if (get().activeDirectoryKey === directoryKey) {
                         set({ agentsLoadStatus: "loading", agentsLoadError: undefined });
                     }
 
+                    const request: { promise?: Promise<boolean> } = {};
                     const promise = (async (): Promise<boolean> => {
                     const existingSnapshot = get().directoryScoped[directoryKey];
                     const previousAgents = existingSnapshot?.agents ?? (get().activeDirectoryKey === directoryKey ? get().agents : []);
@@ -1579,13 +1584,21 @@ export const useConfigStore = create<ConfigStore>()(
 
                     for (let attempt = 0; attempt < 3; attempt++) {
                         try {
-                            // Fetch agents and OpenChamber settings in parallel
+                            // Fetch agents and DevRyan settings in parallel
                             const directory = fromDirectoryKey(directoryKey);
-                            const [agents, configAgents, openChamberDefaults] = await Promise.all([
+                            const [agents, configAgents, devRyanDefaults] = await Promise.all([
                                 opencodeClient.withDirectory(fromDirectoryKey(directoryKey), () => opencodeClient.listAgentsStrict()),
                                 fetchConfigAgentsSnapshot(directory),
-                                fetchOpenChamberDefaults(),
+                                fetchDevRyanDefaults(),
                             ]);
+
+                            // Startup overlaps HTTP reads, but model/default resolution needs the committed catalog.
+                            if (options?.providersReady && (!await options.providersReady || get().activeDirectoryKey !== directoryKey)) {
+                                return false;
+                            }
+                            if (options?.signal?.aborted || _inFlightAgents.get(directoryKey)?.promise !== request.promise) {
+                                return false;
+                            }
 
                             const safeAgents = mergeRuntimeAgentsWithConfigOverrides(
                                 Array.isArray(agents) ? agents : [],
@@ -1598,7 +1611,7 @@ export const useConfigStore = create<ConfigStore>()(
 
                             const existingZenModel = normalizeOptionalString(get().settingsZenModel);
 
-                            const defaultZenModel = normalizeOptionalString(openChamberDefaults.zenModel);
+                            const defaultZenModel = normalizeOptionalString(devRyanDefaults.zenModel);
 
                             const resolvedExistingGitSelection = resolveGitGenerationModelSelection({
                                 providers,
@@ -1613,7 +1626,7 @@ export const useConfigStore = create<ConfigStore>()(
                             const resolvedGitSelection = resolvedExistingGitSelection || resolvedDefaultGitSelection;
                             const resolvedGitModelId = resolvedGitSelection?.modelId;
                             const resolvedZenModel = resolvedGitModelId || defaultZenModel || existingZenModel;
-                            const resolvedDefaultPlanMode = openChamberDefaults.defaultPlanMode ?? false;
+                            const resolvedDefaultPlanMode = devRyanDefaults.defaultPlanMode ?? false;
 
                             set((state) => {
                                 const baseSnapshot = getDirectoryScopedConfigBase(state, directoryKey);
@@ -1625,17 +1638,18 @@ export const useConfigStore = create<ConfigStore>()(
                                 };
 
                                 const nextState: Partial<ConfigStore> = {
-                                    settingsDefaultModel: openChamberDefaults.defaultModel,
-                                    settingsDefaultVariant: openChamberDefaults.defaultVariant,
-                                    settingsDefaultAgent: openChamberDefaults.defaultAgent,
+                                    settingsDefaultModel: devRyanDefaults.defaultModel,
+                                    settingsDefaultVariant: devRyanDefaults.defaultVariant,
+                                    settingsDefaultAgent: devRyanDefaults.defaultAgent,
                                     settingsDefaultPlanMode: resolvedDefaultPlanMode,
-                                    settingsOverrideKeys: openChamberDefaults.settingsOverrideKeys ?? [],
-                                    settingsAutoCreateWorktree: openChamberDefaults.autoCreateWorktree ?? false,
-                                    settingsGitmojiEnabled: openChamberDefaults.gitmojiEnabled ?? false,
-                                    settingsDefaultFileViewerPreview: openChamberDefaults.defaultFileViewerPreview ?? false,
+                                    settingsHelperModelSelection: devRyanDefaults.helperModelSelection ?? DEFAULT_HELPER_MODEL_SELECTION,
+                                    settingsOverrideKeys: devRyanDefaults.settingsOverrideKeys ?? [],
+                                    settingsAutoCreateWorktree: devRyanDefaults.autoCreateWorktree ?? false,
+                                    settingsGitmojiEnabled: devRyanDefaults.gitmojiEnabled ?? false,
+                                    settingsDefaultFileViewerPreview: devRyanDefaults.defaultFileViewerPreview ?? false,
                                     settingsZenModel: resolvedZenModel,
                                     settingsMessageStreamTransport: 'auto',
-                                    responseStyleInstructionLoaded: openChamberDefaults.responseStyleInstructionLoaded ?? state.responseStyleInstructionLoaded,
+                                    responseStyleInstructionLoaded: devRyanDefaults.responseStyleInstructionLoaded ?? state.responseStyleInstructionLoaded,
                                     directoryScoped: {
                                         ...state.directoryScoped,
                                         [directoryKey]: nextSnapshot,
@@ -1651,7 +1665,7 @@ export const useConfigStore = create<ConfigStore>()(
                                 if (isManagedNonAdminUser()) {
                                     // Server-persisted per-agent picks are the durable copy
                                     // for managed users; the local cache follows them.
-                                    nextState.agentModelSelections = openChamberDefaults.agentModelSelections ?? {};
+                                    nextState.agentModelSelections = devRyanDefaults.agentModelSelections ?? {};
                                 }
 
                                 return nextState;
@@ -1702,10 +1716,10 @@ export const useConfigStore = create<ConfigStore>()(
 
                             const selectableSafeAgents = resolveSelectableAgentOptions(safeAgents, []);
                             const invalidSettings: { defaultAgent?: string } = {};
-                            const settingsAgent = openChamberDefaults.defaultAgent
-                                ? findSelectableAgentByName(selectableSafeAgents, openChamberDefaults.defaultAgent)
+                            const settingsAgent = devRyanDefaults.defaultAgent
+                                ? findSelectableAgentByName(selectableSafeAgents, devRyanDefaults.defaultAgent)
                                 : undefined;
-                            if (openChamberDefaults.defaultAgent && !settingsAgent) {
+                            if (devRyanDefaults.defaultAgent && !settingsAgent) {
                                 // Agent no longer exists, is hidden/internal, or is not primary-selectable.
                                 invalidSettings.defaultAgent = '';
                             }
@@ -1734,12 +1748,14 @@ export const useConfigStore = create<ConfigStore>()(
 
                             return true;
                         } catch (error) {
+                            if (options?.signal?.aborted || _inFlightAgents.get(directoryKey)?.promise !== request.promise) return false;
                             lastError = error;
                             const waitMs = 200 * (attempt + 1);
                             await new Promise((resolve) => setTimeout(resolve, waitMs));
                         }
                     }
 
+                    if (options?.signal?.aborted || _inFlightAgents.get(directoryKey)?.promise !== request.promise) return false;
                     console.error("Failed to load agents:", lastError);
                     const errorMessage = getErrorMessage(lastError, "Failed to load agents");
 
@@ -1773,9 +1789,12 @@ export const useConfigStore = create<ConfigStore>()(
                     });
 
                     return false;
-                    })().finally(() => _inFlightAgents.delete(directoryKey));
+                    })().finally(() => {
+                        if (_inFlightAgents.get(directoryKey)?.promise === promise) _inFlightAgents.delete(directoryKey);
+                    });
 
-                    _inFlightAgents.set(directoryKey, promise);
+                    request.promise = promise;
+                    _inFlightAgents.set(directoryKey, { promise, signal: options?.signal, providersReady: options?.providersReady });
                     return promise;
                 },
 
@@ -1801,7 +1820,7 @@ export const useConfigStore = create<ConfigStore>()(
                     if (agentName && options?.preserveCurrentModel !== true) {
                         if (currentSessionId) {
                             const existingAgentModel = useSelectionStore.getState().getAgentModelForSession(currentSessionId, agentName);
-                            if (existingAgentModel && hasProviderModel(providers, existingAgentModel.providerId, existingAgentModel.modelId)) {
+                            if (existingAgentModel) {
                                 resolvedModel = {
                                     providerId: existingAgentModel.providerId,
                                     modelId: existingAgentModel.modelId,
@@ -1827,7 +1846,7 @@ export const useConfigStore = create<ConfigStore>()(
                             if (accountDefault) resolvedModel = accountDefault;
                         }
 
-                        if (!resolvedModel && !hasProviderModel(providers, currentProviderId, currentModelId)) {
+                        if (!resolvedModel && (!currentProviderId || !currentModelId)) {
                             const fallback = resolveAvailableProviderModel(providers, currentProviderId, currentModelId);
                             if (fallback) resolvedModel = fallback;
                         }
@@ -1906,10 +1925,10 @@ export const useConfigStore = create<ConfigStore>()(
                             selState.saveSessionAgentSelection(currentSessionId, agentName);
                         }
 
-                        if (currentSessionId && useSessionUIStore.getState().isOpenChamberCreatedSession(currentSessionId)) {
+                        if (currentSessionId && useSessionUIStore.getState().isDevRyanCreatedSession(currentSessionId)) {
                             const existingAgentModel = selState.getAgentModelForSession(currentSessionId, agentName);
                             if (!existingAgentModel) {
-                                useSessionUIStore.getState().initializeNewOpenChamberSession(currentSessionId, agents);
+                                useSessionUIStore.getState().initializeNewDevRyanSession(currentSessionId, agents);
                             }
                         }
                     }
@@ -2206,10 +2225,13 @@ export const useConfigStore = create<ConfigStore>()(
                     return false;
                 },
 
-                initializeApp: async () => {
-                    if (_initializeAppInFlight) {
+                initializeApp: async (options) => {
+                    if (_initializeAppInFlight && !_initializeAppSignal?.aborted) {
                         return _initializeAppInFlight;
                     }
+
+                    const signal = options?.signal;
+                    _initializeAppSignal = signal;
 
                     const run = (async () => {
                         let connectionConfirmed = false;
@@ -2218,11 +2240,24 @@ export const useConfigStore = create<ConfigStore>()(
                                 isInitialized: false,
                                 initializationLoadStatus: "loading",
                                 initializationLoadError: undefined,
+                                initializationDiagnostics: undefined,
+                                initializationRetryable: true,
                             });
                             const debug = streamDebugEnabled();
                             if (debug) console.log("Starting app initialization...");
 
-                            const isConnected = await get().checkConnection();
+                            let isConnected: boolean;
+                            if (options?.startup) {
+                                await waitForStartupHealth(
+                                    (requestSignal) => opencodeClient.readHealth({ signal: requestSignal }),
+                                    { signal: signal ?? new AbortController().signal, timeoutMs: options.startupTimeoutMs },
+                                );
+                                signal?.throwIfAborted();
+                                set({ isConnected: true, hasEverConnected: true, connectionPhase: "connected" });
+                                isConnected = true;
+                            } else {
+                                isConnected = await get().checkConnection();
+                            }
                             if (debug) console.log("Connection check result:", isConnected);
 
                             if (!isConnected) {
@@ -2236,14 +2271,21 @@ export const useConfigStore = create<ConfigStore>()(
                             }
                             connectionConfirmed = true;
 
-                            if (debug) console.log("Loading providers...");
-                            await get().loadProviders();
+                            const directoryKey = get().activeDirectoryKey;
+                            const directory = fromDirectoryKey(directoryKey);
+                            if (debug) console.log("Loading providers and agents...");
+                            const providersReady = get().loadProviders({ directory }).then(() => (
+                                !signal?.aborted && get().activeDirectoryKey === directoryKey && get().providersLoadStatus === "ready"
+                            ));
+                            const [, agentsReady] = await Promise.all([
+                                providersReady,
+                                get().loadAgents({ directory, providersReady, signal }),
+                            ]);
+                            signal?.throwIfAborted();
+                            if (get().activeDirectoryKey !== directoryKey) return;
                             if (get().providersLoadStatus === "error") {
                                 throw new Error(get().providersLoadError || "Failed to load providers");
                             }
-
-                            if (debug) console.log("Loading agents...");
-                            const agentsReady = await get().loadAgents();
                             if (!agentsReady || get().agentsLoadStatus === "error") {
                                 throw new Error(get().agentsLoadError || "Failed to load agents");
                             }
@@ -2252,6 +2294,7 @@ export const useConfigStore = create<ConfigStore>()(
                                 isInitialized: true,
                                 initializationLoadStatus: "ready",
                                 initializationLoadError: undefined,
+                                initializationDiagnostics: undefined,
                                 isConnected: true,
                                 hasEverConnected: true,
                                 connectionPhase: "connected",
@@ -2259,12 +2302,17 @@ export const useConfigStore = create<ConfigStore>()(
                             });
                             if (debug) console.log("App initialized successfully");
                         } catch (error) {
+                            if (signal?.aborted) return;
                             console.error("Failed to initialize app:", error);
-                            const message = error instanceof Error ? error.message : String(error);
+                            const message = error instanceof Error && error.name === 'TimeoutError'
+                                ? 'OpenCode did not finish starting in time.'
+                                : error instanceof Error ? error.message : String(error);
                             set({
                                 isInitialized: false,
                                 initializationLoadStatus: "error",
                                 initializationLoadError: message || "Failed to initialize DevRyan",
+                                initializationDiagnostics: startupDiagnosticSummary(error),
+                                initializationRetryable: !options?.startup || connectionConfirmed,
                                 isConnected: connectionConfirmed,
                                 connectionPhase: connectionConfirmed
                                     ? "connected"
@@ -2273,7 +2321,10 @@ export const useConfigStore = create<ConfigStore>()(
                             });
                         }
                     })().finally(() => {
-                        _initializeAppInFlight = null;
+                        if (_initializeAppInFlight === run) {
+                            _initializeAppInFlight = null;
+                            _initializeAppSignal = undefined;
+                        }
                     });
 
                     _initializeAppInFlight = run;
@@ -2344,6 +2395,7 @@ export const useConfigStore = create<ConfigStore>()(
                     settingsDefaultVariant: state.settingsDefaultVariant,
                     settingsDefaultAgent: state.settingsDefaultAgent,
                     settingsDefaultPlanMode: state.settingsDefaultPlanMode,
+                    settingsHelperModelSelection: state.settingsHelperModelSelection,
                     settingsAutoCreateWorktree: state.settingsAutoCreateWorktree,
                     settingsGitmojiEnabled: state.settingsGitmojiEnabled,
                     settingsDefaultFileViewerPreview: state.settingsDefaultFileViewerPreview,

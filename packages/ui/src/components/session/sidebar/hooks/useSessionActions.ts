@@ -4,6 +4,7 @@ import type { Session } from '@opencode-ai/sdk/v2';
 import { toast } from '@/components/ui';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { useI18n } from '@/lib/i18n';
+import { useRuntimeCapability } from '@/lib/opencode/runtime-capabilities';
 import type { MainTab } from '@/stores/useUIStore';
 import type { ArchiveSessionsResult, DeleteSessionsResult, UnarchiveSessionsResult } from '@/sync/session-actions';
 import { resolveSessionDeleteFailureDescription } from '../../sessionDeleteFeedback';
@@ -35,7 +36,6 @@ type Args = {
   unshareSession: (id: string) => Promise<Session | null>;
   deleteSession: (id: string) => Promise<boolean>;
   deleteSessions: (ids: string[]) => Promise<DeleteSessionsResult>;
-  archiveSession: (id: string) => Promise<boolean>;
   archiveSessions: (ids: string[]) => Promise<ArchiveSessionsResult>;
   unarchiveSession: (id: string) => Promise<boolean>;
   unarchiveSessions: (ids: string[]) => Promise<UnarchiveSessionsResult>;
@@ -54,6 +54,7 @@ type Args = {
 
 export const useSessionActions = (args: Args) => {
   const { t } = useI18n();
+  const shareAvailable = useRuntimeCapability('share');
   const [copiedSessionId, setCopiedSessionId] = React.useState<string | null>(null);
   const copyTimeout = React.useRef<number | null>(null);
 
@@ -115,6 +116,10 @@ export const useSessionActions = (args: Args) => {
   }, [args]);
 
   const handleShareSession = React.useCallback(async (session: Session) => {
+    if (!shareAvailable) {
+      toast.error(t('sessions.sidebar.session.share.error'));
+      return;
+    }
     const result = await args.shareSession(session.id);
     if (result && result.share?.url) {
       toast.success(t('sessions.sidebar.session.share.successTitle'), {
@@ -123,7 +128,7 @@ export const useSessionActions = (args: Args) => {
     } else {
       toast.error(t('sessions.sidebar.session.share.error'));
     }
-  }, [args, t]);
+  }, [args, shareAvailable, t]);
 
   const handleCopyShareUrl = React.useCallback((url: string, sessionId: string) => {
     void copyTextToClipboard(url)
@@ -147,13 +152,17 @@ export const useSessionActions = (args: Args) => {
   }, [t]);
 
   const handleUnshareSession = React.useCallback(async (sessionId: string) => {
+    if (!shareAvailable) {
+      toast.error(t('sessions.sidebar.session.unshare.error'));
+      return;
+    }
     const result = await args.unshareSession(sessionId);
     if (result) {
       toast.success(t('sessions.sidebar.session.unshare.success'));
     } else {
       toast.error(t('sessions.sidebar.session.unshare.error'));
     }
-  }, [args, t]);
+  }, [args, shareAvailable, t]);
 
   const collectDescendants = React.useCallback((sessionId: string): Session[] => {
     const collected: Session[] = [];
@@ -176,9 +185,11 @@ export const useSessionActions = (args: Args) => {
         if (!shouldHardDelete) {
           args.onArchiveRequested?.([session.id]);
         }
-        const success = shouldHardDelete
-          ? await args.deleteSession(session.id)
-          : await args.archiveSession(session.id);
+        const archiveResult = shouldHardDelete ? null : await args.archiveSessions([session.id]);
+        const deleteResult = shouldHardDelete ? await args.deleteSessions([session.id]) : null;
+        const success = archiveResult
+          ? archiveResult.archivedIds.includes(session.id)
+          : deleteResult?.deletedIds.includes(session.id) === true;
         if (success) {
           if (!shouldHardDelete) {
             args.onArchiveSucceeded?.([session.id]);
@@ -190,18 +201,25 @@ export const useSessionActions = (args: Args) => {
           }
           toast.error(shouldHardDelete
             ? t('sessions.sidebar.session.delete.error')
-            : t('sessions.sidebar.session.archive.error'));
+            : t('sessions.sidebar.session.archive.error'), {
+            description: resolveSessionDeleteFailureDescription(
+              archiveResult?.failures ?? deleteResult?.failures ?? [],
+              t('sessions.sidebar.dialogs.deleteResult.tryAgain'),
+            ),
+          });
         }
         return;
       }
 
       const ids = [session.id, ...descendants.map((s) => s.id)];
       if (shouldHardDelete) {
-        const { failedIds } = await args.deleteSessions(ids);
+        const { failedIds, failures } = await args.deleteSessions(ids);
         if (failedIds.length > 0) {
           toast.error(failedIds.length === 1
             ? t('sessions.sidebar.bulkActions.failedDeleteSingle', { count: failedIds.length })
-            : t('sessions.sidebar.bulkActions.failedDeletePlural', { count: failedIds.length }));
+            : t('sessions.sidebar.bulkActions.failedDeletePlural', { count: failedIds.length }), {
+            description: resolveSessionDeleteFailureDescription(failures, t('sessions.sidebar.dialogs.deleteResult.tryAgain')),
+          });
         }
         return;
       }
@@ -278,6 +296,7 @@ export const useSessionActions = (args: Args) => {
 
   return {
     copiedSessionId,
+    shareAvailable,
     handleSessionSelect,
     handleSessionDoubleClick,
     handleSaveEdit,

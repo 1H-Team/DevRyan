@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-export const MANUAL_BROWSER_PARTITION_PREFIX = 'persist:openchamber-browser-user-';
+export const MANUAL_BROWSER_PARTITION_PREFIX = 'persist:devryan-browser-user-';
 
 const normalizeHttpOrigin = (rawOrigin) => {
   try {
@@ -21,7 +21,7 @@ export const readAuthorizedBrowserPrincipal = (payload) => {
   return { id };
 };
 
-export const createManualBrowserContext = ({ origin, principalId } = {}) => {
+export const createManualBrowserContext = ({ origin, principalId, partitionPrefix = MANUAL_BROWSER_PARTITION_PREFIX } = {}) => {
   const normalizedOrigin = normalizeHttpOrigin(origin);
   const normalizedPrincipalId = typeof principalId === 'string' ? principalId.trim() : '';
   if (!normalizedOrigin || !normalizedPrincipalId) {
@@ -35,6 +35,6 @@ export const createManualBrowserContext = ({ origin, principalId } = {}) => {
   return {
     contextKey,
     origin: normalizedOrigin,
-    partition: `${MANUAL_BROWSER_PARTITION_PREFIX}${contextKey}`,
+    partition: `${partitionPrefix}${contextKey}`,
   };
 };

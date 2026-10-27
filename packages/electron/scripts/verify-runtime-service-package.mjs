@@ -59,7 +59,7 @@ const verifyApp = (candidateAppPath, label) => {
     'Contents',
     'Library',
     'LaunchAgents',
-    'dev.openchamber.desktop.runtime-service.plist',
+    'dev.devryan.desktop.runtime-service.plist',
   );
   if (!fs.statSync(bridgePath).isFile()) throw new Error(`${label} native bridge is missing: ${bridgePath}`);
   if (!fs.statSync(plistPath).isFile()) throw new Error(`${label} LaunchAgent is missing: ${plistPath}`);
@@ -77,7 +77,7 @@ const verifyApp = (candidateAppPath, label) => {
   run('/usr/bin/plutil', ['-lint', plistPath]);
   const plistResult = run('/usr/bin/plutil', ['-convert', 'json', '-o', '-', plistPath], { output: true });
   const plist = JSON.parse(plistResult.stdout);
-  if (plist.Label !== 'dev.openchamber.desktop.runtime-service'
+  if (plist.Label !== 'dev.devryan.desktop.runtime-service'
     || plist.BundleProgram !== 'Contents/MacOS/DevRyan'
     || !Array.isArray(plist.ProgramArguments)
     || plist.ProgramArguments[0] !== 'DevRyan'
@@ -119,18 +119,11 @@ const verifyApp = (candidateAppPath, label) => {
 verifyApp(appPath, 'unpacked');
 
 const artifactPrefix = `DevRyan-${packageManifest.version}-${requestedArchitecture}`;
-const zipPath = path.join(electronDirectory, 'dist', `${artifactPrefix}.zip`);
 const dmgPath = path.join(electronDirectory, 'dist', `${artifactPrefix}.dmg`);
-if (!fs.statSync(zipPath).isFile()) throw new Error(`Runtime-service ZIP is missing: ${zipPath}`);
 if (!fs.statSync(dmgPath).isFile()) throw new Error(`Runtime-service DMG is missing: ${dmgPath}`);
 
 const temporaryRoot = fs.mkdtempSync(path.join(process.env.RUNNER_TEMP || '/tmp', 'devryan-runtime-package-'));
 try {
-  const zipRoot = path.join(temporaryRoot, 'zip');
-  fs.mkdirSync(zipRoot);
-  run('/usr/bin/ditto', ['-x', '-k', zipPath, zipRoot]);
-  verifyApp(path.join(zipRoot, 'DevRyan.app'), 'ZIP');
-
   const mountPoint = path.join(temporaryRoot, 'dmg');
   fs.mkdirSync(mountPoint);
   run('/usr/bin/hdiutil', ['attach', '-nobrowse', '-readonly', '-mountpoint', mountPoint, dmgPath]);
@@ -144,5 +137,5 @@ try {
 }
 
 console.log(
-  `[electron] verified packaged runtime service archives (${expectedArchitecture}) -> ${artifactPrefix}`,
+  `[electron] verified packaged runtime service DMG (${expectedArchitecture}) -> ${artifactPrefix}`,
 );

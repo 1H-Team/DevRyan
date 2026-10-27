@@ -3,9 +3,37 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
+import { constants } from 'node:fs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_CHECKPOINT_BYTES = 4 * 1024 * 1024;
+// Meridian's UPSTREAM_IDLE_MS (DevRyan sets 90 s) bounds silence within one SDK
+// attempt. High-effort reasoning can stream nothing for longer than that.
+export const HIGH_EFFORT_UPSTREAM_IDLE_MS = 180_000;
+const HIGH_EFFORTS = new Set(['high', 'xhigh', 'max']);
+// The response-level guard is only a backstop: the attempt guard must fire
+// first so a stalled step can be retried before the response fails.
+const UPSTREAM_IDLE_BACKSTOP_GRACE_MS = 5_000;
+export const STALL_RETRY_MARKER = Object.freeze({ type: 'devryan_stall_retry' });
+
+/** Zero (or less) keeps Meridian's guard disabled. */
+export function upstreamIdleBudget(baseMs, effort) {
+  if (!(baseMs > 0)) return baseMs;
+  return HIGH_EFFORTS.has(effort) ? Math.max(baseMs, HIGH_EFFORT_UPSTREAM_IDLE_MS) : baseMs;
+}
+
+export function upstreamIdleBackstop(baseMs, effort) {
+  const budget = upstreamIdleBudget(baseMs, effort);
+  return budget > 0 ? budget + UPSTREAM_IDLE_BACKSTOP_GRACE_MS : budget;
+}
+
+function reportCheckpoint(queryOptions, diagnostic, event, detail) {
+  const observe = Reflect.get(globalThis, '__DEVRYAN_CLAUDE_CHECKPOINT_DIAGNOSTIC');
+  if (typeof observe === 'function') {
+    try { observe(queryOptions?.env?.DEVRYAN_CLAUDE_DIAGNOSTIC_SCOPE, event, detail); } catch { /* Observation only. */ }
+  }
+  diagnostic(event, detail);
+}
 
 // Claude Agent SDK 0.2.141's project path encoding (including long paths).
 // This is paired with the managed SDK/version tuple and the bundle hash gate.
@@ -56,9 +84,27 @@ export async function verifyPersistedCheckpoint(boundary, options = {}) {
   let file;
   try {
     const cwd = (await fs.realpath(options.cwd)).normalize('NFC');
-    const configDirectory = options.env?.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), '.claude');
-    file = await fs.open(path.join(configDirectory, 'projects', sdkProjectDirectory(cwd), `${boundary.sessionId}.jsonl`), 'r');
+    const nativeScope = options.env?.DEVRYAN_CLAUDE_DIAGNOSTIC_SCOPE;
+    const resolveNative = Reflect.get(globalThis, '__DEVRYAN_CLAUDE_CHECKPOINT_DIRECTORY');
+    if (nativeScope !== undefined && typeof resolveNative !== 'function') return false;
+    const configDirectory = nativeScope === undefined
+      ? options.env?.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), '.claude')
+      : await resolveNative(nativeScope, cwd);
+    if (typeof configDirectory !== 'string' || !path.isAbsolute(configDirectory)) return false;
+    const projects = path.join(configDirectory, 'projects');
+    const project = path.join(projects, sdkProjectDirectory(cwd));
+    const canonical = async () => {
+      for (const directory of [configDirectory, projects, project]) {
+        if (await fs.realpath(directory) !== directory || !(await fs.lstat(directory)).isDirectory()) return false;
+      }
+      return true;
+    };
+    if (!await canonical()) return false;
+    const transcript = path.join(project, `${boundary.sessionId}.jsonl`);
+    if (await fs.realpath(transcript) !== transcript || !(await fs.lstat(transcript)).isFile()) return false;
+    file = await fs.open(transcript, constants.O_RDONLY | constants.O_NOFOLLOW);
     const { size } = await file.stat();
+    if (!(await file.stat()).isFile()) return false;
     const offset = Math.max(0, size - MAX_CHECKPOINT_BYTES);
     const buffer = Buffer.alloc(Math.min(size, MAX_CHECKPOINT_BYTES));
     const { bytesRead } = await file.read(buffer, 0, buffer.length, offset);
@@ -66,7 +112,8 @@ export async function verifyPersistedCheckpoint(boundary, options = {}) {
     if (offset > 0) lines.shift();
     if (lines.at(-1) !== '' || lines.length > 4096) return false;
     const records = lines.filter(Boolean).map(line => JSON.parse(line));
-    return validatePersistedCheckpoint(records, { ...boundary, cwd });
+    if (nativeScope !== undefined && await resolveNative(nativeScope, cwd) !== configDirectory) return false;
+    return await canonical() && await fs.realpath(transcript) === transcript && validatePersistedCheckpoint(records, { ...boundary, cwd });
   } catch {
     return false;
   } finally {
@@ -82,9 +129,13 @@ export async function* settlePassthroughQuery(query, {
   verified = () => {},
   verify = verifyPersistedCheckpoint,
   drainTimeoutMs = 10_000,
+  // Meridian's own guard ({ guard, error, ms, onStall }). It wraps the SDK
+  // query inside this generator so a stall is observed, not just closed.
+  idle,
 } = {}) {
+  const source = idle ? idle.guard(query, idle.ms, idle.onStall) : query;
   if (typeof checkpoint !== 'function') {
-    yield* query;
+    yield* source;
     return;
   }
 
@@ -95,13 +146,13 @@ export async function* settlePassthroughQuery(query, {
   let interrupt;
   let sessionId;
   let boundary;
-  const report = (event, reason) => diagnostic(event, {
+  const report = (event, reason) => reportCheckpoint(queryOptions, diagnostic, event, {
     reason,
     toolCount: boundary?.toolCallIds.length ?? 0,
   });
 
   try {
-    for await (const message of query) {
+    for await (const message of source) {
       if (timedOut) throw new Error('Meridian checkpoint drain timed out');
       if (typeof message.session_id === 'string') sessionId = message.session_id;
       if (message.type === 'result') terminal = true;
@@ -145,6 +196,10 @@ export async function* settlePassthroughQuery(query, {
       signal?.aborted ? 'client_abort' : terminal ? 'sdk_terminal' : 'missing_terminal',
     );
   } catch (error) {
+    if (idle && error instanceof idle.error) {
+      report('passthrough.checkpoint_aborted', 'upstream_idle');
+      throw error;
+    }
     // SDK 0.2.141 may discard its buffered result when Claude exits with the
     // tool-boundary interrupt diagnostic or max_turns. A durable, exact native
     // assistant + complete result set is an alternative checkpoint proof; it
@@ -174,5 +229,38 @@ export async function* settlePassthroughQuery(query, {
     // The SDK owns the control request lifetime. Its rejection is observed
     // above even when cancellation closes the generator before the reply.
     void interrupt;
+  }
+}
+
+/**
+ * Retry a step once when Meridian's idle guard stalls it, resuming the same
+ * retained, verified checkpoint. `attempt` builds a fresh SDK attempt (and
+ * prompt) per call. A retry is refused once anything but reasoning reached the
+ * client (text or a tool call would be duplicated) and after a client abort;
+ * then, and on a second stall, the original error reaches Meridian unchanged.
+ */
+export async function* retryStalledCheckpoint(attempt, {
+  retained = false,
+  isStall = () => false,
+  forwarded = () => true,
+  close = () => {},
+  signal,
+  queryOptions,
+  diagnostic = () => {},
+} = {}) {
+  let retried = false;
+  while (true) {
+    try {
+      yield* attempt();
+      return;
+    } catch (error) {
+      if (retried || !retained || !isStall(error) || signal?.aborted || forwarded()) throw error;
+      retried = true;
+      // Close the partial reasoning block; the new attempt opens its own blocks.
+      close();
+      reportCheckpoint(queryOptions, diagnostic, 'passthrough.checkpoint_retry', { reason: 'upstream_idle', toolCount: 0 });
+      // Restarts the response-level idle backstop before the next SDK attempt.
+      yield STALL_RETRY_MARKER;
+    }
   }
 }

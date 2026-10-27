@@ -30,4 +30,4 @@ Do not rely on prompts to enforce policy.
 - `--quiet` suppresses non-essential output only; it does not weaken validation.
 - `--json` changes output shape only; it does not weaken validation.
 
-For terminal CLI work, use the existing command implementations and [CLI codemap](../packages/web/bin/codemap.md). If the `clack-cli-patterns` skill is available in the current environment, consult it for prompt presentation. The core parity requirements above do not depend on skill availability.
+For terminal CLI work, use the existing command implementations in [packages/web/bin](../packages/web/bin/cli.js). If the `clack-cli-patterns` skill is available in the current environment, consult it for prompt presentation. The core parity requirements above do not depend on skill availability.

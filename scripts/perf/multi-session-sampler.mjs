@@ -5,7 +5,7 @@
 // discovers the running DevRyan.app process tree (Electron main with the
 // in-process web server, renderer/GPU/utility helpers, the managed
 // `opencode serve`, and every descendant those spawn), samples it on a fixed
-// cadence together with Docker bot containers and macOS-wide memory pressure,
+// cadence together with macOS-wide memory pressure,
 // and appends JSONL under .cache/perf/multi-session/<label>/.
 //
 //   node scripts/perf/multi-session-sampler.mjs --label dozen --interval 5
@@ -76,7 +76,6 @@ export const parseSamplerArguments = (argv, env = process.env) => {
     label: new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19),
     intervalMs: 5000,
     durationMs: null,
-    dockerEvery: 6,
     fdsEvery: 12,
     categoriesEvery: 12,
     server: 'http://127.0.0.1:3000',
@@ -102,7 +101,6 @@ export const parseSamplerArguments = (argv, env = process.env) => {
       case '--label': options.label = takeValue(); break;
       case '--interval': options.intervalMs = Math.max(1, Number(takeValue()) || 5) * 1000; break;
       case '--duration': options.durationMs = parseDuration(takeValue()); break;
-      case '--docker-every': options.dockerEvery = takeCount(); break;
       case '--fds-every': options.fdsEvery = takeCount(); break;
       case '--categories-every': options.categoriesEvery = takeCount(); break;
       case '--server': options.server = takeValue().replace(/\/+$/, ''); break;
@@ -154,7 +152,6 @@ const HELP = `Usage: node scripts/perf/multi-session-sampler.mjs [options]
   --label <name>          run directory name under .cache/perf/multi-session (default: timestamp)
   --interval <seconds>    sample cadence (default 5; a tick costs ~2.5s because top takes two samples)
   --duration <10m|2h|90s> stop automatically (default: run until Ctrl+C)
-  --docker-every <n>      docker stats every n ticks (default 6, 0 disables)
   --fds-every <n>         lsof fd counts for main + opencode every n ticks (default 12, 0 disables)
   --categories-every <n>  footprint category breakdown every n ticks (default 12, 0 disables)
   --server <origin>       DevRyan web server origin (default http://127.0.0.1:3000)
@@ -274,21 +271,6 @@ export const parseMemoryPressure = (text) => {
   const match = /System-wide memory free percentage:\s*(\d+)%/.exec(text);
   return match ? Number(match[1]) : null;
 };
-
-export const parseDockerStats = (text) => text
-  .split('\n')
-  .map((line) => line.trim())
-  .filter(Boolean)
-  .map((line) => {
-    const [name, memUsage = '', cpuPerc = ''] = line.split('\t');
-    const [used, limit] = memUsage.split('/').map((part) => part.trim());
-    return {
-      name,
-      memBytes: parseSize(used),
-      limitBytes: parseSize(limit),
-      cpuPct: Number(cpuPerc.replace('%', '')) || 0,
-    };
-  });
 
 export const parseFootprintJson = (json) => {
   const processes = new Map();
@@ -496,7 +478,7 @@ const run = async (file, args = [], { timeoutMs = 15_000 } = {}) => {
 
 const runOptional = (file, args, options) => run(file, args, options).catch(() => '');
 
-const collectFootprint = async (pids, jsonPath) => {
+export const collectFootprint = async (pids, jsonPath) => {
   if (pids.length === 0) return new Map();
   const args = ['-j', jsonPath];
   for (const pid of pids.slice(0, MAX_FOOTPRINT_PIDS)) args.push('-p', String(pid));
@@ -666,18 +648,14 @@ const systemTopConsumers = (topRows) => {
 const collectTick = async (options, state, paths) => {
   const tick = state.tick;
   const startedAt = Date.now();
-  const dockerDue = options.dockerEvery > 0 && tick % options.dockerEvery === 0;
   const fdsDue = options.fdsEvery > 0 && tick % options.fdsEvery === 0;
 
-  const [psText, topText, vmText, sysctlText, pressureText, dockerText, server] = await Promise.all([
+  const [psText, topText, vmText, sysctlText, pressureText, server] = await Promise.all([
     run('ps', ['-axww', '-o', 'pid,ppid,pcpu,rss,etime,command']),
     run('top', ['-l', '2', '-s', '1', '-stats', 'pid,ppid,cpu,mem,cmprs,threads,pageins,command', '-o', 'mem', '-n', '900'], { timeoutMs: 30_000 }),
     run('vm_stat'),
     run('sysctl', ['vm.swapusage', 'vm.loadavg']),
     runOptional('memory_pressure', [], { timeoutMs: 8000 }),
-    dockerDue
-      ? runOptional('docker', ['stats', '--no-stream', '--format', '{{.Name}}\t{{.MemUsage}}\t{{.CPUPerc}}'], { timeoutMs: 12_000 })
-      : Promise.resolve(null),
     collectServer(options, state),
   ]);
 
@@ -700,18 +678,6 @@ const collectTick = async (options, state, paths) => {
 
   const vm = parseVmStat(vmText);
   const sysctl = parseSysctl(sysctlText);
-  const docker = dockerText === null ? null : (() => {
-    const containers = parseDockerStats(dockerText);
-    const devryan = containers.filter((container) => /devryan/i.test(container.name));
-    const others = containers.filter((container) => !/devryan/i.test(container.name));
-    return {
-      devryan,
-      otherContainerCount: others.length,
-      otherContainersMemBytes: others.reduce((sum, container) => sum + (container.memBytes || 0), 0),
-      otherContainersCpuPct: others.reduce((sum, container) => sum + (container.cpuPct || 0), 0),
-    };
-  })();
-
   const marks = await readMarks(paths.marks, state);
   const now = new Date();
   const byRole = summarizeRoles(procs);
@@ -735,7 +701,6 @@ const collectTick = async (options, state, paths) => {
     procs,
     orphans,
     lsp: describeLspProcesses(procs),
-    docker,
     fds: fdsDue ? fds : null,
     logs: {
       opencodeLogBytes: await fileSize(options.opencodeLog),
@@ -824,16 +789,6 @@ const liveLine = (sample) => {
 // Main
 // ---------------------------------------------------------------------------
 
-const readDockerSettings = async () => {
-  try {
-    const raw = await fsp.readFile(path.join(os.homedir(), 'Library/Group Containers/group.com.docker/settings-store.json'), 'utf8');
-    const json = JSON.parse(raw);
-    return { memoryMiB: json.MemoryMiB ?? null, cpus: json.Cpus ?? null, swapMiB: json.SwapMiB ?? null };
-  } catch {
-    return null;
-  }
-};
-
 const collectMeta = async (options, { target, initialRows }) => {
   // A --pid or --runtime-root target reports the version of the bundle its
   // root runs from, never the separately installed app.
@@ -843,14 +798,13 @@ const collectMeta = async (options, { target, initialRows }) => {
     : [...initialTree.rootPids]
       .map((pid) => appInfoPlistFromCommand(initialTree.byPid.get(pid)?.command))
       .find(Boolean) ?? null;
-  const [productVersion, memsize, ncpu, brand, appVersion, health, dockerSettings] = await Promise.all([
+  const [productVersion, memsize, ncpu, brand, appVersion, health] = await Promise.all([
     runOptional('sw_vers', ['-productVersion']),
     runOptional('sysctl', ['-n', 'hw.memsize']),
     runOptional('sysctl', ['-n', 'hw.ncpu']),
     runOptional('sysctl', ['-n', 'machdep.cpu.brand_string']),
     infoPlist ? runOptional('defaults', ['read', infoPlist, 'CFBundleShortVersionString']) : Promise.resolve(''),
     fetchJson(`${options.server}/api/health`),
-    readDockerSettings(),
   ]);
   return {
     label: options.label,
@@ -875,7 +829,6 @@ const collectMeta = async (options, { target, initialRows }) => {
     devryanVersion: appVersion.trim() || null,
     opencodeVersion: health.body?.openCodeVersion ?? null,
     opencodeLaunch: health.body?.lastOpenCodeLaunchDiagnostics ?? null,
-    dockerSettings,
   };
 };
 
@@ -930,8 +883,8 @@ const main = async () => {
   const state = { tick: 0, startedAt: Date.now(), known: new Map(), marksOffset: 0, cookieRejected: false, stopping: false, target };
   console.log(`[sampler] run dir: ${runDir}`);
   console.log(`[sampler] target: ${describeTarget(target)}`);
-  console.log(`[sampler] DevRyan ${meta.devryanVersion ?? '?'} / opencode ${meta.opencodeVersion ?? '?'} / ${meta.machine.cpu ?? '?'} ${formatBytes(meta.machine.memoryBytes)} / Docker VM ${meta.dockerSettings?.memoryMiB ?? '?'} MiB`);
-  console.log(`[sampler] interval ${options.intervalMs / 1000}s, docker every ${options.dockerEvery} ticks, fds every ${options.fdsEvery} ticks, auth ${options.cookie ? 'cookie' : 'none (health only)'}`);
+  console.log(`[sampler] DevRyan ${meta.devryanVersion ?? '?'} / opencode ${meta.opencodeVersion ?? '?'} / ${meta.machine.cpu ?? '?'} ${formatBytes(meta.machine.memoryBytes)}`);
+  console.log(`[sampler] interval ${options.intervalMs / 1000}s, fds every ${options.fdsEvery} ticks, auth ${options.cookie ? 'cookie' : 'none (health only)'}`);
   console.log(`[sampler] add a marker with: echo "text" >> ${paths.marks}`);
   console.log(`[sampler] stop with: kill -INT ${process.pid}   (pid also in ${paths.pid})`);
 

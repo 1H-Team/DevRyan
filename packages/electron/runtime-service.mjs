@@ -4,17 +4,11 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { withCrossProcessFileLock } from '../harness-runtime/lib/atomic-file.js';
 
-export const RUNTIME_SERVICE_PROTOCOL_VERSION = 2;
-export const RUNTIME_SERVICE_SUPPORTED_PROTOCOLS = Object.freeze([1, 2]);
-export const RUNTIME_SERVICE_COOKIE = 'devryan_runtime_service';
-export const RUNTIME_SERVICE_SESSION_TTL_MS = 12 * 60 * 60 * 1_000;
-export const DESKTOP_HOST_LEASE_TTL_MS = 30_000;
-
-const DESCRIPTOR_VERSION = 1;
-const TOKEN_BYTES = 32;
+// One owner per data root: the app-bound runtime of the running app. The
+// background runtime service that also claimed it existed only for the removed
+// Bots feature; 'service' owners written by earlier versions are still read so a
+// leftover one can be proved stopped and reclaimed.
 const MAX_DESCRIPTOR_BYTES = 32 * 1_024;
-const HEALTH_STATES = new Set(['starting', 'healthy', 'degraded', 'updating', 'disabled']);
-const BASE64URL_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
 export class RuntimeServiceError extends Error {
   constructor(message, code) {
@@ -29,9 +23,8 @@ const fail = (message, code) => {
 };
 
 const serviceDirectory = (dataDirectory) => path.join(dataDirectory, 'runtime-service');
-export const runtimeServiceDescriptorPath = (dataDirectory) => (
-  path.join(serviceDirectory(dataDirectory), 'handshake.v1.json')
-);
+// Written by the retired background runtime; it held an OS-sealed token.
+const retiredDescriptorPath = (dataDirectory) => path.join(serviceDirectory(dataDirectory), 'handshake.v1.json');
 export const runtimeServiceOwnerPath = (dataDirectory) => (
   path.join(serviceDirectory(dataDirectory), 'owner.v1.lock')
 );
@@ -52,15 +45,6 @@ const isUuid = (value) => (
 const validateAbsoluteDirectory = (value) => {
   if (typeof value !== 'string' || !path.isAbsolute(value)) {
     fail('Runtime service requires an absolute data directory', 'runtime_service_config_invalid');
-  }
-};
-
-const validateSafeStorage = (safeStorage) => {
-  if (!safeStorage
-    || safeStorage.isEncryptionAvailable?.() !== true
-    || typeof safeStorage.encryptString !== 'function'
-    || typeof safeStorage.decryptString !== 'function') {
-    fail('Runtime service OS-sealed storage is unavailable', 'runtime_service_sealing_unavailable');
   }
 };
 
@@ -154,8 +138,8 @@ const reportBlockedRecovery = (reason, onDiagnostic) => {
 
 // Both observation/proof writes and lifetime-owner mutations share this guard.
 // Callers must not nest it; the stopped-owner polling delay stays outside it.
-const withOwnerMutation = (dataDirectory, fsPromises, callback) => withCrossProcessFileLock(
-  `${runtimeServiceOwnerPath(dataDirectory)}.mutation`, callback, { fs: fsPromises },
+const withOwnerMutation = (dataDirectory, fsPromises, callback, timeoutMs) => withCrossProcessFileLock(
+  `${runtimeServiceOwnerPath(dataDirectory)}.mutation`, callback, { fs: fsPromises, timeoutMs },
 ).catch((error) => {
   if (error?.code === 'LOCK_TIMEOUT') {
     fail('Runtime ownership is busy. Wait briefly and retry.', 'runtime_service_owner_busy');
@@ -193,7 +177,7 @@ export const readRuntimeProcessStartIdentity = async (pid, {
   if (!Number.isSafeInteger(pid) || pid <= 0) return null;
   try {
     if (platform === 'darwin') {
-      // ponytail: ps has second precision; same-second PID reuse stays blocked.
+      // Known limit: ps has second precision; same-second PID reuse stays blocked.
       // Use native microsecond start metadata if that conservative limit matters.
       const stdout = await new Promise((resolve, reject) => {
         execute('/bin/ps', ['-p', String(pid), '-o', 'lstart='], {
@@ -396,88 +380,6 @@ export const waitForRuntimeServiceOwnerStopped = async ({
   }
 };
 
-// A stale handshake must not bootstrap against another generation's listener.
-export const assertRuntimeServiceDescriptorOwner = async ({
-  dataDirectory, descriptor, fsPromises = fs, isProcessAlive = isProcessAliveDefault,
-  getBootSessionId = readBootSessionId, getProcessStartIdentity = readRuntimeProcessStartIdentity,
-  platform = process.platform,
-}) => {
-  const result = await readRuntimeServiceOwner({ dataDirectory, fsPromises });
-  if (result.state === 'unreadable' || result.state === 'malformed') throw ownerStateError(result.state);
-  const owner = result.owner;
-  if (!owner || owner.mode !== 'service' || owner.pid !== descriptor.pid
-    || owner.instanceId !== descriptor.instanceId || owner.generation !== descriptor.ownerGeneration) {
-    fail('The background runtime descriptor no longer matches its owner', 'runtime_service_owner_stale');
-  }
-  const processState = await inspectOwnerProcess({
-    dataDirectory, result, fsPromises, isProcessAlive, getBootSessionId, getProcessStartIdentity, platform,
-    recordLegacyProof: false,
-  });
-  if (processState.state === 'stopped') {
-    fail('The background runtime owner is no longer running', 'runtime_service_owner_stale');
-  }
-  // Legacy services can still authenticate; unknown identity never authorizes
-  // reclamation. The authenticated lease response independently fences generation.
-};
-
-const validateDesktopHost = (value) => {
-  if (!exactObject(value, ['state', 'leaseId', 'expiresAt', 'capabilities'])
-    || !['unavailable', 'connected'].includes(value.state)
-    || (value.leaseId !== null && !isUuid(value.leaseId))
-    || (value.expiresAt !== null && typeof value.expiresAt !== 'string')
-    || !Array.isArray(value.capabilities)
-    || value.capabilities.some((item) => ![
-      'focus',
-      'notifications',
-      'browser_cdp',
-      'browser_observation',
-    ].includes(item))) {
-    fail('Runtime service descriptor is invalid', 'runtime_service_descriptor_invalid');
-  }
-  return Object.freeze({
-    state: value.state,
-    leaseId: value.leaseId,
-    expiresAt: value.expiresAt,
-    capabilities: Object.freeze([...value.capabilities]),
-  });
-};
-
-export const validateRuntimeServiceDescriptor = (value) => {
-  if (!exactObject(value, [
-    'version',
-    'instanceId',
-    'pid',
-    'port',
-    'protocolVersion',
-    'health',
-    'ownerGeneration',
-    'desktopHost',
-    'sealedBootstrapToken',
-    'updatedAt',
-  ])
-    || value.version !== DESCRIPTOR_VERSION
-    || !isUuid(value.instanceId)
-    || !Number.isSafeInteger(value.pid)
-    || value.pid <= 0
-    || !Number.isSafeInteger(value.port)
-    || value.port < 1
-    || value.port > 65_535
-    || !RUNTIME_SERVICE_SUPPORTED_PROTOCOLS.includes(value.protocolVersion)
-    || !HEALTH_STATES.has(value.health)
-    || !Number.isSafeInteger(value.ownerGeneration)
-    || value.ownerGeneration <= 0
-    || typeof value.sealedBootstrapToken !== 'string'
-    || value.sealedBootstrapToken.length < 16
-    || value.sealedBootstrapToken.length > 8_192
-    || typeof value.updatedAt !== 'string') {
-    fail('Runtime service descriptor is invalid', 'runtime_service_descriptor_invalid');
-  }
-  return Object.freeze({
-    ...value,
-    desktopHost: validateDesktopHost(value.desktopHost),
-  });
-};
-
 const fsyncDirectory = async (directory, fsPromises) => {
   const handle = await fsPromises.open(directory, 'r').catch(() => null);
   try {
@@ -509,38 +411,11 @@ const atomicWritePrivateJson = async (filePath, value, fsPromises) => {
   }
 };
 
-export const readRuntimeServiceDescriptor = async ({ dataDirectory, fsPromises = fs } = {}) => {
-  validateAbsoluteDirectory(dataDirectory);
-  const bytes = await fsPromises.readFile(runtimeServiceDescriptorPath(dataDirectory));
-  return validateRuntimeServiceDescriptor(parseBoundedJson(bytes, 'runtime_service_descriptor_invalid'));
-};
-
-export const unsealRuntimeServiceBootstrapToken = ({ descriptor, safeStorage }) => {
-  validateSafeStorage(safeStorage);
-  const validated = validateRuntimeServiceDescriptor(descriptor);
-  let token;
-  try {
-    token = safeStorage.decryptString(Buffer.from(validated.sealedBootstrapToken, 'base64'));
-  } catch {
-    fail('Runtime service bootstrap token cannot be unsealed', 'runtime_service_bootstrap_unseal_failed');
-  }
-  if (!BASE64URL_PATTERN.test(token)) {
-    fail('Runtime service bootstrap token is invalid', 'runtime_service_bootstrap_invalid');
-  }
-  return token;
-};
-
-export const isRuntimeServiceProtocolSupported = (protocolVersion) => (
-  RUNTIME_SERVICE_SUPPORTED_PROTOCOLS.includes(protocolVersion)
-);
-
 export async function createRuntimeServiceCoordinator({
   dataDirectory,
-  safeStorage,
   fsPromises = fs,
   pid = process.pid,
   isProcessAlive = isProcessAliveDefault,
-  randomBytes = crypto.randomBytes,
   randomUUID = crypto.randomUUID,
   now = () => new Date(),
   wait = delay,
@@ -550,48 +425,21 @@ export async function createRuntimeServiceCoordinator({
   onDiagnostic = () => undefined,
 } = {}) {
   validateAbsoluteDirectory(dataDirectory);
-  validateSafeStorage(safeStorage);
   if (!Number.isSafeInteger(pid) || pid <= 0 || typeof isProcessAlive !== 'function') {
     fail('Runtime service process identity is invalid', 'runtime_service_config_invalid');
   }
 
   const directory = serviceDirectory(dataDirectory);
   const ownerPath = runtimeServiceOwnerPath(dataDirectory);
-  const descriptorPath = runtimeServiceDescriptorPath(dataDirectory);
   const instanceId = randomUUID();
   let owner = null;
-  let descriptor = null;
-  let bootstrapToken = null;
-  let sessionToken = null;
-  let sessionExpiresAt = 0;
-
-  const nextToken = () => {
-    const token = Buffer.from(randomBytes(TOKEN_BYTES)).toString('base64url');
-    if (!BASE64URL_PATTERN.test(token)) {
-      fail('Runtime service token generator failed', 'runtime_service_token_invalid');
-    }
-    return token;
-  };
-
-  const sealToken = (token) => {
-    try {
-      return Buffer.from(safeStorage.encryptString(token)).toString('base64');
-    } catch {
-      fail('Runtime service bootstrap token cannot be sealed', 'runtime_service_bootstrap_seal_failed');
-    }
-  };
-
-  const persistDescriptor = async () => {
-    if (!descriptor) fail('Runtime service has not started', 'runtime_service_not_started');
-    await atomicWritePrivateJson(descriptorPath, descriptor, fsPromises);
-  };
 
   // Use the shared cross-process mutation guard, separately from the lifetime
   // owner. It serializes reclamation and release as well as acquisition.
-  const mutateOwner = (callback) => withOwnerMutation(dataDirectory, fsPromises, callback);
-  const acquire = async ({ mode = 'service' } = {}) => mutateOwner(async () => {
+  const mutateOwner = (callback, timeoutMs) => withOwnerMutation(dataDirectory, fsPromises, callback, timeoutMs);
+  const acquire = async ({ mode = 'app_bound', timeoutMs } = {}) => mutateOwner(async () => {
     if (owner) return owner;
-    if (!['app_bound', 'service'].includes(mode)) {
+    if (mode !== 'app_bound') {
       fail('Runtime service owner mode is invalid', 'runtime_service_config_invalid');
     }
     await fsPromises.mkdir(directory, { recursive: true, mode: 0o700 });
@@ -665,6 +513,7 @@ export async function createRuntimeServiceCoordinator({
       published = true;
       await fsyncDirectory(directory, fsPromises);
       owner = Object.freeze(candidate);
+      await fsPromises.unlink(retiredDescriptorPath(dataDirectory)).catch(() => undefined);
       return owner;
     } catch (error) {
       if (published) await fsPromises.unlink(ownerPath);
@@ -676,98 +525,9 @@ export async function createRuntimeServiceCoordinator({
       await handle?.close().catch(() => undefined);
       await fsPromises.unlink(temporary).catch(() => undefined);
     }
-  });
-
-  const start = async ({ port, health = 'starting' } = {}) => {
-    if (!owner) fail('Runtime service owner must be acquired first', 'runtime_service_owner_required');
-    if (!Number.isSafeInteger(port) || port < 1 || port > 65_535 || !HEALTH_STATES.has(health)) {
-      fail('Runtime service descriptor input is invalid', 'runtime_service_config_invalid');
-    }
-    bootstrapToken = nextToken();
-    sessionToken = null;
-    sessionExpiresAt = 0;
-    descriptor = validateRuntimeServiceDescriptor({
-      version: DESCRIPTOR_VERSION,
-      instanceId,
-      pid,
-      port,
-      protocolVersion: RUNTIME_SERVICE_PROTOCOL_VERSION,
-      health,
-      ownerGeneration: owner.generation,
-      desktopHost: {
-        state: 'unavailable',
-        leaseId: null,
-        expiresAt: null,
-        capabilities: [],
-      },
-      sealedBootstrapToken: sealToken(bootstrapToken),
-      updatedAt: now().toISOString(),
-    });
-    await persistDescriptor();
-    return descriptor;
-  };
-
-  const update = async ({ health, desktopHost } = {}) => {
-    if (!descriptor) fail('Runtime service has not started', 'runtime_service_not_started');
-    const nextHealth = health ?? descriptor.health;
-    const nextDesktopHost = desktopHost ?? descriptor.desktopHost;
-    descriptor = validateRuntimeServiceDescriptor({
-      ...descriptor,
-      health: nextHealth,
-      desktopHost: nextDesktopHost,
-      updatedAt: now().toISOString(),
-    });
-    await persistDescriptor();
-    return descriptor;
-  };
-
-  const consumeBootstrap = async (candidate) => {
-    if (typeof candidate !== 'string'
-      || !bootstrapToken
-      || candidate.length !== bootstrapToken.length
-      || !crypto.timingSafeEqual(Buffer.from(candidate), Buffer.from(bootstrapToken))) {
-      fail('Runtime service bootstrap token is invalid or already used', 'runtime_service_bootstrap_rejected');
-    }
-    sessionToken = nextToken();
-    sessionExpiresAt = now().getTime() + RUNTIME_SERVICE_SESSION_TTL_MS;
-    bootstrapToken = nextToken();
-    descriptor = validateRuntimeServiceDescriptor({
-      ...descriptor,
-      sealedBootstrapToken: sealToken(bootstrapToken),
-      updatedAt: now().toISOString(),
-    });
-    await persistDescriptor();
-    return Object.freeze({ token: sessionToken, expiresAt: new Date(sessionExpiresAt).toISOString() });
-  };
-
-  const authorizeSession = (candidate) => {
-    if (typeof candidate !== 'string'
-      || !sessionToken
-      || now().getTime() >= sessionExpiresAt
-      || candidate.length !== sessionToken.length) return false;
-    return crypto.timingSafeEqual(Buffer.from(candidate), Buffer.from(sessionToken));
-  };
-
-  const publicStatus = () => {
-    if (!descriptor) return null;
-    const desktopHost = descriptor.desktopHost.expiresAt
-      && Date.parse(descriptor.desktopHost.expiresAt) <= now().getTime()
-      ? { state: 'unavailable', leaseId: null, expiresAt: null, capabilities: [] }
-      : descriptor.desktopHost;
-    return Object.freeze({
-      instanceId: descriptor.instanceId,
-      port: descriptor.port,
-      protocolVersion: descriptor.protocolVersion,
-      health: descriptor.health,
-      ownerGeneration: descriptor.ownerGeneration,
-      desktopHost,
-      updatedAt: descriptor.updatedAt,
-    });
-  };
+  }, timeoutMs);
 
   const release = async () => mutateOwner(async () => {
-    sessionToken = null;
-    bootstrapToken = null;
     if (owner) {
       const current = await readRuntimeServiceOwner({ dataDirectory, fsPromises });
       if (current.state === 'unreadable' || current.state === 'malformed') {
@@ -784,13 +544,7 @@ export async function createRuntimeServiceCoordinator({
 
   return Object.freeze({
     acquire,
-    start,
-    update,
-    consumeBootstrap,
-    authorizeSession,
-    publicStatus,
     release,
     getOwner: () => owner,
-    getDescriptor: () => descriptor,
   });
 }

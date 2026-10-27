@@ -1,3 +1,4 @@
+import { useSessionPlanFileStore } from '@/stores/useSessionPlanFileStore';
 import React from 'react';
 import { projectTurnRecords } from '../lib/turns/projectTurnRecords';
 import type { ChatMessageEntry, TurnProjectionResult, TurnRecord } from '../lib/turns/types';
@@ -18,6 +19,10 @@ export const useTurnRecords = (
     messages: ChatMessageEntry[],
     options: UseTurnRecordsOptions,
 ): TurnRecordsResult => {
+    const sessionId = messages[0]?.info.sessionID;
+    const planRecord = useSessionPlanFileStore(state => sessionId ? state.recordsBySession[sessionId] : undefined);
+    const sourceIdentity = planRecord?.sourceIdentity;
+    const canonicalContent = planRecord?.canonicalContent;
     const previousProjectionRef = React.useRef<TurnProjectionResult | null>(null);
     const staticTurnsRef = React.useRef<TurnRecord[]>([]);
     const streamingTurnRef = React.useRef<TurnRecord | undefined>(undefined);
@@ -39,13 +44,14 @@ export const useTurnRecords = (
     const projection = React.useMemo(() => {
         return streamPerfMeasure('ui.turns.projection_ms', () => {
             const nextProjection = projectTurnRecords(messages, {
+                sourceIdentity, canonicalContent,
                 previousProjection: previousProjectionRef.current,
                 recordedPlanModeMessageIds: options.recordedPlanModeMessageIds,
             });
             previousProjectionRef.current = nextProjection;
             return nextProjection;
         });
-    }, [messages, options.recordedPlanModeMessageIds]);
+    }, [messages, options.recordedPlanModeMessageIds, sourceIdentity, canonicalContent]);
 
     const staticTurns = React.useMemo(() => {
         const nextStatic = projection.turns.length <= 1

@@ -18,6 +18,7 @@ import {
   gradeManagedTaskOutcome,
   gradeRoutingOutcome,
   gradeManagedIndependentFacts,
+  gradeInitialAssessment,
   gradeOracleReviewOutcome,
   gradeToolRequirements,
 } from './graders.mjs';
@@ -447,6 +448,7 @@ export const executeEvaluationCase = async (options = {}) => {
       }),
     ];
     if (caseId === 'managed-change' || caseId === 'managed-independent' || (isRoutingCase(caseId) && ROUTING_CASES[caseId].agent)) {
+      if (selection.agent === 'orchestrator') graders.push(gradeInitialAssessment(sessionResult ?? {}));
       graders.push(gradeManagedTaskOutcome({
         rootSessionId: sessionResult?.rootSessionId,
         childSessionIds: sessionResult?.childSessionIds,

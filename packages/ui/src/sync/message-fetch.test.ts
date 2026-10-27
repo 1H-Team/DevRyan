@@ -30,7 +30,7 @@ describe("normalizeFetchedMessageRecords", () => {
       { info: message("msg_1"), parts: [textPart("msg_1", `${line}\n${line}\n`)] },
     ])
 
-    expect((records[0]?.parts?.[0] as { text?: string }).text).toBe(`${line}\n`)
+    expect((records[0]!.parts![0] as { text?: string }).text).toBe(`${line}\n`)
   })
 
   test("strips internal tool-runner diagnostics from persisted assistant text", () => {
@@ -40,7 +40,7 @@ describe("normalizeFetchedMessageRecords", () => {
       { info: message("msg_1"), parts: [textPart("msg_1", `${line}\n${line}\n${diagnostic}`)] },
     ])
 
-    expect((records[0]?.parts?.[0] as { text?: string }).text).toBe(line)
+    expect((records[0]!.parts![0] as { text?: string }).text).toBe(line)
   })
 
   test("does not strip Cursor meta-looking prose from persisted assistant text", () => {
@@ -50,7 +50,7 @@ describe("normalizeFetchedMessageRecords", () => {
       { info: message("msg_1"), parts: [textPart("msg_1", `${meta}\n\n${line}`)] },
     ])
 
-    expect((records[0]?.parts?.[0] as { text?: string }).text).toBe(`${meta}\n\n${line}`)
+    expect((records[0]!.parts![0] as { text?: string }).text).toBe(`${meta}\n\n${line}`)
   })
 
   test("preserves intent restatements in persisted assistant reasoning", () => {
@@ -60,7 +60,7 @@ describe("normalizeFetchedMessageRecords", () => {
       { info: message("msg_1"), parts: [reasoningPart("msg_1", `${meta}\n\n${reasoning}`)] },
     ])
 
-    expect((records[0]?.parts?.[0] as { text?: string }).text).toBe(`${meta}\n\n${reasoning}`)
+    expect((records[0]!.parts![0] as { text?: string }).text).toBe(`${meta}\n\n${reasoning}`)
   })
 
   test("preserves skill/action prose in persisted assistant reasoning", () => {
@@ -70,7 +70,7 @@ describe("normalizeFetchedMessageRecords", () => {
       { info: message("msg_1"), parts: [reasoningPart("msg_1", `${noisy}\n\n${reasoning}`)] },
     ])
 
-    expect((records[0]?.parts?.[0] as { text?: string }).text).toBe(`${noisy}\n\n${reasoning}`)
+    expect((records[0]!.parts![0] as { text?: string }).text).toBe(`${noisy}\n\n${reasoning}`)
   })
 
   test("preserves skill-conflict prose in persisted assistant reasoning", () => {
@@ -80,7 +80,7 @@ describe("normalizeFetchedMessageRecords", () => {
       { info: message("msg_1"), parts: [reasoningPart("msg_1", `${noisy}\n\n${reasoning}`)] },
     ])
 
-    expect((records[0]?.parts?.[0] as { text?: string }).text).toBe(`${noisy}\n\n${reasoning}`)
+    expect((records[0]!.parts![0] as { text?: string }).text).toBe(`${noisy}\n\n${reasoning}`)
   })
 
   test("preserves headings and skill-announcement prose in persisted assistant reasoning", () => {
@@ -90,7 +90,7 @@ describe("normalizeFetchedMessageRecords", () => {
       { info: message("msg_1"), parts: [reasoningPart("msg_1", `${noisy}\n\n${reasoning}`)] },
     ])
 
-    expect((records[0]?.parts?.[0] as { text?: string }).text).toBe(`${noisy}\n\n${reasoning}`)
+    expect((records[0]!.parts![0] as { text?: string }).text).toBe(`${noisy}\n\n${reasoning}`)
   })
 
   test("does not strip repeated skill/action-looking prose from persisted assistant text", () => {
@@ -99,7 +99,7 @@ describe("normalizeFetchedMessageRecords", () => {
       { info: message("msg_1"), parts: [textPart("msg_1", text)] },
     ])
 
-    expect((records[0]?.parts?.[0] as { text?: string }).text).toBe(text)
+    expect((records[0]!.parts![0] as { text?: string }).text).toBe(text)
   })
 
   test("does not strip skill-conflict-looking prose from persisted assistant text", () => {
@@ -108,7 +108,7 @@ describe("normalizeFetchedMessageRecords", () => {
       { info: message("msg_1"), parts: [textPart("msg_1", text)] },
     ])
 
-    expect((records[0]?.parts?.[0] as { text?: string }).text).toBe(text)
+    expect((records[0]!.parts![0] as { text?: string }).text).toBe(text)
   })
 
   test("does not strip skill-announcement-looking prose from persisted assistant text", () => {
@@ -117,7 +117,7 @@ describe("normalizeFetchedMessageRecords", () => {
       { info: message("msg_1"), parts: [textPart("msg_1", text)] },
     ])
 
-    expect((records[0]?.parts?.[0] as { text?: string }).text).toBe(text)
+    expect((records[0]!.parts![0] as { text?: string }).text).toBe(text)
   })
 
   test("does not strip diagnostics from persisted user text", () => {
@@ -125,7 +125,7 @@ describe("normalizeFetchedMessageRecords", () => {
     const text = 'Skipped malformed tool call "edit": Invalid arguments for tool "edit": missing required: old_string.'
     const records = normalizeFetchedMessageRecords([{ info, parts: [textPart("msg_user", text)] }])
 
-    expect((records[0]?.parts?.[0] as { text?: string }).text).toBe(text)
+    expect((records[0]!.parts![0] as { text?: string }).text).toBe(text)
   })
 
   test("does not strip meta-restatement-looking persisted user text", () => {
@@ -133,7 +133,7 @@ describe("normalizeFetchedMessageRecords", () => {
     const text = "The user wants to continue implementing the calendar redesign."
     const records = normalizeFetchedMessageRecords([{ info, parts: [textPart("msg_user", text)] }])
 
-    expect((records[0]?.parts?.[0] as { text?: string }).text).toBe(text)
+    expect((records[0]!.parts![0] as { text?: string }).text).toBe(text)
   })
 
   test("preserves non-text parts and message info identity where parts do not change", () => {

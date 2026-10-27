@@ -1,4 +1,8 @@
+import {inspectClaudeRequest,isClaudeAccountAbsent,isClaudeInspectionUnavailable,unavailableClaudeInspection,sendClaudeInspectionError} from '../opencode/runtime-host/native-claude-inspection.js';
 import express from 'express';
+
+import { createNativeQuotaCredentials } from './native-credentials.js';
+import { buildResult } from './utils/formatters.js';
 
 import { importCursorManagedCredential } from './credentials/cursor-import.js';
 import {
@@ -32,10 +36,31 @@ import {
   createMeridianClaudeContextUsageClient,
 } from './providers/claude-meridian.js';
 import { isAnthropicProviderId } from '../opencode/anthropic-provider-ids.js';
+import { OPENCODE_GENERATION_INVALID } from '../opencode/opencode-generation.js';
 import { resolveClaudeCodeLaunch as resolveClaudeCodeLaunchDefault } from '../opencode/claude-cli-runtime.js';
 
 const jsonParser = express.json({ limit: MAX_QUOTA_CREDENTIAL_PAYLOAD_BYTES });
 const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
+// Matches the proxy readiness hold: the native runtime identity is unknown until
+// its first readiness probe, so early UI reads wait briefly instead of failing.
+const RUNTIME_READINESS_HOLD_MS = 6_000;
+const RUNTIME_READINESS_POLL_MS = 75;
+
+// Providers whose credentials live in the native controller (no auth.json there).
+const NATIVE_QUOTA_PROVIDER_NAMES = Object.freeze({ codex: 'ChatGPT', xai: 'xAI', 'opencode-go': 'OpenCode Go' });
+const NATIVE_GATED_LIST_IDS = new Set(['claude', ...Object.keys(NATIVE_QUOTA_PROVIDER_NAMES)]);
+// The runtime is between states; discovery answers 503 so the client retries shortly.
+const NATIVE_TRANSIENT_CODES = new Set(['native_runtime_not_ready', 'native_provider_owner_expired', 'native_provider_configuration_changed']);
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const nativeQuotaFailure = (providerId, errorCode, error) => buildResult({
+  providerId,
+  providerName: NATIVE_QUOTA_PROVIDER_NAMES[providerId] ?? providerId,
+  ok: false,
+  configured: true,
+  errorCode,
+  error,
+});
 
 const unavailableContextUsage = (sessionID) => ({
   sessionID,
@@ -146,11 +171,16 @@ export function registerQuotaRoutes(app, {
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders = () => ({}),
   isExternalOpenCode = () => false,
+  openCodeClient = null,
+  getNativeRuntimeOwner = () => null,
   buildAugmentedPath,
+  devryanDataDir,
   resolveClaudeCodeLaunch = resolveClaudeCodeLaunchDefault,
   ownsSession,
   claudeContextUsageClient: claudeContextUsageClientOverride,
   credentialRuntime: credentialRuntimeOverrides,
+  runtimeReadinessHoldMs = RUNTIME_READINESS_HOLD_MS,
+  runtimeReadinessPollMs = RUNTIME_READINESS_POLL_MS,
 }) {
   const credentialRuntime = {
     ...defaultCredentialRuntime,
@@ -158,6 +188,106 @@ export function registerQuotaRoutes(app, {
   };
   const claudeContextUsageClient = claudeContextUsageClientOverride
     || createMeridianClaudeContextUsageClient();
+  const nativeCredentials = createNativeQuotaCredentials({ getNativeRuntimeOwner, isExternalOpenCode });
+
+  // Waits out a native runtime that has not published its first configuration snapshot.
+  const awaitNativeMode = async () => {
+    const deadline = Date.now() + runtimeReadinessHoldMs;
+    for (;;) {
+      const mode = nativeCredentials.mode();
+      if (mode !== 'native-pending' || Date.now() >= deadline) return mode;
+      await sleep(Math.min(runtimeReadinessPollMs, Math.max(0, deadline - Date.now())));
+    }
+  };
+
+  // Claude accounts are global: an unreviewed project directory reads the default location.
+  const inspectClaudeUsage = async ({ req, res, kind, directory }) => {
+    try {
+      return await inspectClaudeRequest({ req, res, kind, directory, getNativeRuntimeOwner, isExternalOpenCode });
+    } catch (error) {
+      if (!directory || error?.code !== 'native_provider_configuration_location_unreviewed') throw error;
+      return inspectClaudeRequest({ req, res, kind, directory: null, getNativeRuntimeOwner, isExternalOpenCode });
+    }
+  };
+
+  // Native discovery. Returns null when the runtime is still not ready.
+  const listNativeQuotaProviders = async ({ req, res, listConfiguredQuotaProviders, workingDirectory }) => {
+    let base = [];
+    try {
+      base = listConfiguredQuotaProviders({
+        workingDirectory,
+        isExternalRuntime: false,
+        claudeProxyBaseUrl: null,
+      }).filter((id) => !NATIVE_GATED_LIST_IDS.has(id));
+    } catch (error) {
+      console.error('Failed to list quota providers:', error);
+    }
+    let configured = new Set();
+    try {
+      configured = await nativeCredentials.listConfigured();
+    } catch {
+      // A failed credential lookup leaves those providers out; it never fails the list.
+    }
+    let claudeListed = false;
+    try {
+      await inspectClaudeUsage({ req, res, kind: 'status', directory: workingDirectory });
+      claudeListed = true;
+    } catch (error) {
+      if (NATIVE_TRANSIENT_CODES.has(error?.code)) return null;
+      // An account that exists but cannot be read stays listed so its reason is shown;
+      // an authorization refusal or an absent account is not listed.
+      claudeListed = isClaudeInspectionUnavailable(error?.code) && !isClaudeAccountAbsent(error?.code);
+    }
+    // Registry order: claude, codex, xai lead; opencode-go closes the list.
+    return [
+      ...(claudeListed ? ['claude'] : []),
+      ...['codex', 'xai'].filter((id) => configured.has(id)),
+      ...base,
+      ...(configured.has('opencode-go') ? ['opencode-go'] : []),
+    ];
+  };
+
+  // Injects the privately held credential into the existing fetchers. Never reads auth.json.
+  const fetchNativeQuota = async ({ fetchQuotaForProvider, providerId, options }) => {
+    let auth;
+    try {
+      auth = await nativeCredentials.readAuth(providerId);
+    } catch (error) {
+      if (error?.code === 'native_runtime_not_ready') {
+        return nativeQuotaFailure(providerId, 'native_runtime_not_ready', 'The runtime is still starting. Usage will load shortly.');
+      }
+      return { ...nativeQuotaFailure(providerId, 'native_credential_unreadable', 'Usage could not be read from the selected account.'),
+        ...(providerId === 'codex' ? { source: null, connectionId: null, account: null } : {}) };
+    }
+    const readAuth = () => auth ?? {};
+    if (providerId === 'opencode-go') {
+      // No-op cleanup hooks keep the legacy auth-file mutation from running natively.
+      return fetchQuotaForProvider(providerId, { ...options, readAuth, mutateAuth: () => {}, deleteManagedCredential: () => {} });
+    }
+    if (providerId === 'xai') {
+      let result = await fetchQuotaForProvider(providerId, { ...options, readAuth, writeAuth: () => {} });
+      if (result?.errorCode !== 'REAUTHENTICATION_REQUIRED') return result;
+      try {
+        auth = await nativeCredentials.refreshXai(auth);
+      } catch (error) {
+        return error?.code === 'native_xai_reauthentication_required'
+          ? nativeQuotaFailure(providerId, 'REAUTHENTICATION_REQUIRED', 'Reconnect xAI to load usage.')
+          : nativeQuotaFailure(providerId, 'native_xai_usage_unavailable', 'xAI usage is temporarily unavailable. Try refreshing again.');
+      }
+      result = await fetchQuotaForProvider(providerId, { ...options, readAuth, writeAuth: () => {} });
+      return result?.errorCode === 'REAUTHENTICATION_REQUIRED'
+        ? nativeQuotaFailure(providerId, 'REAUTHENTICATION_REQUIRED', 'Reconnect xAI to load usage.') : result;
+    }
+    if (auth?.openai?.type === 'oauth' && auth.openai.methodID !== 'chatgpt-browser') return {
+      ...nativeQuotaFailure(providerId, 'siwc_usage_unavailable', 'Sign in again with Codex browser (legacy) to read ChatGPT plan usage.'),
+      source: auth.openai.methodID, connectionId: auth.openai.connectionId ?? null, account: null,
+    };
+    const result = await fetchQuotaForProvider(providerId, { ...options, readAuth });
+    const codexResult = providerId === 'codex' && result?.errorCode === 'REAUTHENTICATION_REQUIRED'
+      ? nativeQuotaFailure(providerId, 'native_openai_token_renewal_pending', 'ChatGPT usage updates after your next OpenAI request.') : result;
+    return providerId === 'codex' ? { ...codexResult, source: auth?.openai?.methodID ?? null,
+      connectionId: auth?.openai?.connectionId ?? null, account: null } : result;
+  };
 
   const resolveQuotaDirectory = async (req) => {
     const headerDirectory = typeof req.get === 'function' ? req.get('x-opencode-directory') : null;
@@ -184,14 +314,38 @@ export function registerQuotaRoutes(app, {
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
     isExternalOpenCode,
+    openCodeClient,
     ttlMs: 0,
   });
-  const resolveClaudeProxyBaseUrl = (workingDirectory) => claudeProxyBaseUrls.resolve(workingDirectory);
+  // Only an unknown runtime identity is retried, within a bounded hold; any
+  // other failure, or one that outlasts the hold, still reaches the caller.
+  const resolveClaudeProxyBaseUrl = async (workingDirectory) => {
+    const deadline = Date.now() + runtimeReadinessHoldMs;
+    for (;;) {
+      try {
+        return await claudeProxyBaseUrls.resolve(workingDirectory);
+      } catch (error) {
+        if (error?.code !== OPENCODE_GENERATION_INVALID || Date.now() >= deadline) throw error;
+        await new Promise((resolve) => setTimeout(resolve, Math.min(runtimeReadinessPollMs, Math.max(0, deadline - Date.now()))));
+      }
+    }
+  };
 
   app.get('/api/quota/providers', async (req, res) => {
     try {
       const { listConfiguredQuotaProviders } = await getQuotaProviders();
       const workingDirectory = await resolveQuotaDirectory(req);
+      if (nativeCredentials.mode() !== 'legacy') {
+        const providers = await awaitNativeMode() === 'native-ready'
+          ? await listNativeQuotaProviders({ req, res, listConfiguredQuotaProviders, workingDirectory })
+          : null;
+        if (!providers) {
+          res.status(503).json({ error: 'native_runtime_not_ready', code: 'native_runtime_not_ready' });
+          return;
+        }
+        res.json({ providers });
+        return;
+      }
       const claudeProxyBaseUrl = await resolveClaudeProxyBaseUrl(workingDirectory);
       res.json({
         providers: listConfiguredQuotaProviders({
@@ -351,9 +505,29 @@ export function registerQuotaRoutes(app, {
     try {
       const { providerId } = req.params;
       if (!providerId) return res.status(400).json({ error: 'Provider ID is required' });
-      const { fetchQuotaForProvider } = await getQuotaProviders();
+      if(isAnthropicProviderId(providerId)){
+        try{
+          const directory=await resolveQuotaDirectory(req);
+          return res.json(await inspectClaudeUsage({req,res,kind:'quota',directory}));
+        }catch(error){
+          if(isClaudeInspectionUnavailable(error?.code))return res.json(unavailableClaudeInspection('quota',error.code));
+          return sendClaudeInspectionError(res,error);
+        }
+      }
+      const { fetchQuotaForProvider, resolveProviderId } = await getQuotaProviders();
       const forceRefresh = req.query.refresh === 'true';
       const workingDirectory = await resolveQuotaDirectory(req);
+      const nativeProviderId = resolveProviderId?.(providerId);
+      if (Object.hasOwn(NATIVE_QUOTA_PROVIDER_NAMES, nativeProviderId ?? '') && nativeCredentials.mode() !== 'legacy') {
+        if (nativeCredentials.mode() === 'native-pending') {
+          return res.json(nativeQuotaFailure(nativeProviderId, 'native_runtime_not_ready', 'The runtime is still starting. Usage will load shortly.'));
+        }
+        return res.json(await fetchNativeQuota({
+          fetchQuotaForProvider,
+          providerId: nativeProviderId,
+          options: { forceRefresh, workingDirectory, isExternalRuntime: false, claudeProxyBaseUrl: null },
+        }));
+      }
       const claudeProxyBaseUrl = isAnthropicProviderId(providerId)
         ? await resolveClaudeProxyBaseUrl(workingDirectory)
         : null;

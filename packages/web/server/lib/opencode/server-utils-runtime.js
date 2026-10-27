@@ -1,11 +1,12 @@
 import { registerOpenCodeProxy } from './proxy.js';
-import { openCodeFetch } from './opencode-routes.js';
 import { pathLooksUserConfigured, mergePathValues } from './path-utils.js';
+import { resolveGen2OpenCodeClient } from './opencode-client-seam.js';
 
 export const createServerUtilsRuntime = (dependencies) => {
   const {
     fs,
     os,
+    homeDirectory = os.homedir(),
     path,
     process,
     openCodeReadyGraceMs,
@@ -67,7 +68,7 @@ export const createServerUtilsRuntime = (dependencies) => {
   const buildAugmentedPath = () => {
     const currentPath = process.env.PATH || '';
     const loginShellPath = getLoginShellPath();
-    const home = os.homedir();
+    const home = homeDirectory;
     const localBinPath = path.join(home, '.local', 'bin');
     const currentPathLooksUserConfigured = pathLooksUserConfigured(currentPath, home, path.delimiter);
     const primaryPath = currentPathLooksUserConfigured ? currentPath : loginShellPath;
@@ -79,7 +80,7 @@ export const createServerUtilsRuntime = (dependencies) => {
   const buildManagedOpenCodePath = () => {
     const currentPath = process.env.PATH || '';
     const loginShellPath = getLoginShellPath();
-    const localBinPath = path.join(os.homedir(), '.local', 'bin');
+    const localBinPath = path.join(homeDirectory, '.local', 'bin');
 
     return mergePathValues(mergePathValues(loginShellPath || '', localBinPath, path.delimiter), currentPath, path.delimiter);
   };
@@ -118,29 +119,18 @@ export const createServerUtilsRuntime = (dependencies) => {
     }
   };
 
-  const fetchArraySnapshot = async (route, invalidMessage) => {
-    if (!getOpenCodePort()) {
-      throw new Error('OpenCode port is not available');
-    }
-
-    const response = await openCodeFetch(buildOpenCodeUrl(route), {
-      method: 'GET',
-      headers: { Accept: 'application/json', ...getOpenCodeAuthHeaders() },
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to fetch ${invalidMessage} (status ${response.status})`);
-    }
-
-    const payload = await response.json().catch(() => null);
-    if (!Array.isArray(payload)) {
-      throw new Error(`Invalid ${invalidMessage} payload from OpenCode`);
-    }
+  const fetchArraySnapshot = async (invalidMessage, readThroughClient, options = {}) => {
+    if (!getOpenCodePort()) throw new Error('OpenCode port is not available');
+    const client = resolveGen2OpenCodeClient(dependencies.openCodeClient);
+    const payload = await readThroughClient(client, { directory: options.directory });
+    if (!Array.isArray(payload)) throw new Error(`Invalid ${invalidMessage} payload from OpenCode`);
     return payload;
   };
 
-  const fetchAgentsSnapshot = () => fetchArraySnapshot('/agent', 'agents snapshot');
-  const fetchProvidersSnapshot = () => fetchArraySnapshot('/provider', 'providers snapshot');
+  const fetchAgentsSnapshot = (options) => fetchArraySnapshot('agents snapshot',
+    (client, query) => client.catalog.agents(query), options);
+  const fetchProvidersSnapshot = (options) => fetchArraySnapshot('providers snapshot',
+    (client, query) => client.catalog.providerList(query), options);
 
   const setupProxy = (app) => {
     registerOpenCodeProxy(app, {
@@ -150,6 +140,14 @@ export const createServerUtilsRuntime = (dependencies) => {
       OPEN_CODE_READY_GRACE_MS: openCodeReadyGraceMs,
       LONG_REQUEST_TIMEOUT_MS: longRequestTimeoutMs,
       getRuntime,
+      openCodeClient: dependencies.openCodeClient,
+      getOpenCodeRuntime: dependencies.getOpenCodeRuntime,
+      getNativeRuntimeOwner: dependencies.getNativeRuntimeOwner,
+      globalMessageStreamHub: dependencies.globalMessageStreamHub,
+      resolveRequestDirectory: dependencies.resolveRequestDirectory,
+      messageStreamEventFilter: dependencies.messageStreamEventFilter,
+      getMessageStreamPrincipal: dependencies.getMessageStreamPrincipal,
+      registerMessageStreamConnection: dependencies.registerMessageStreamConnection,
       getOpenCodeAuthHeaders,
       buildOpenCodeUrl,
       ensureOpenCodeApiPrefix,

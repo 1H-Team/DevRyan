@@ -1,7 +1,10 @@
+import { resolveGen2OpenCodeClient } from './opencode-client-seam.js';
+import { createOpenCodeV2SseHandler } from './v2/sse-routes.js';
+import { sendOpenCodeFacadeError } from './v2/facade-routes.js';
+
 export const createStartupPipelineRuntime = (dependencies) => {
   const {
     createTerminalRuntime,
-    createGlobalMessageStreamSseHandler,
     createMessageStreamWsRuntime,
     createServerStartupRuntime,
   } = dependencies;
@@ -22,6 +25,7 @@ export const createStartupPipelineRuntime = (dependencies) => {
       buildOpenCodeUrl,
       getOpenCodeAuthHeaders,
       globalEventHub,
+      openCodeClient,
       messageStreamWsClients,
       registerRetentionConnection,
       triggerHealthCheck,
@@ -90,12 +94,18 @@ export const createStartupPipelineRuntime = (dependencies) => {
       eventFilter: multiUserRuntime?.filterEventForPrincipal,
     });
 
-    if (globalEventHub && typeof createGlobalMessageStreamSseHandler === 'function') {
-      app.get('/api/global/event', createGlobalMessageStreamSseHandler({
-        globalHub: globalEventHub,
+    if (globalEventHub) {
+      const v2SseHandler = createOpenCodeV2SseHandler({
+        globalMessageStreamHub: globalEventHub,
         eventFilter: multiUserRuntime?.filterEventForPrincipal,
         registerConnection: multiUserRuntime?.registerConnection,
-      }));
+      });
+      app.get('/api/global/event', async (req, res) => {
+        try {
+          resolveGen2OpenCodeClient(openCodeClient);
+          await v2SseHandler(req, res);
+        } catch (error) { sendOpenCodeFacadeError(res, error); }
+      });
     }
 
     setupProxy(app);

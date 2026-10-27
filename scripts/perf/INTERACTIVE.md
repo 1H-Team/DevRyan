@@ -129,3 +129,25 @@ cells, then freeze the entire script tree. Performance measurements have their
 own final protocol freeze after all live diagnostic workloads stop. No drift is
 silently waived; rebuilding package provenance after a later production change
 is a separate required step.
+
+`receipt-ui-settlement.mjs` adds the final durable boundary to the existing
+two-frame renderer owner. The attended QA1 profile driver arms it before Plan
+and Implement submission, then joins the exact canonical objective and assistant
+IDs to one controller scope, completed tool receipts, explicit canonical idle,
+restored composer/Send controls and two animation frames. Its opt-in finite
+journal projection retains no tool input, output, paths or transcript content.
+The owned QA child enables the existing zero-minimum execution summaries;
+ordinary runtime diagnostics keep their normal threshold.
+
+Host monotonic brackets calibrate renderer `performance.now()` to the journal's
+`Date.now()` before and after each observation. Results retain transport and
+clock uncertainty, the canonical idle request interval and receipt commit bounds.
+Finish boundaries include receipt recording and may include cleanup after the
+commit, so their entire duration bounds the commit rather than supplying an
+invented exact timestamp. Missing receipts,
+clock steps, controller changes and incomplete canonical inventories remain
+explicit gaps. Five distinct matched objectives with identical workload,
+selection, source, native artifact, runner and UI hashes are required for a
+threshold summary. Only the lower latency bounds exceeding 1s median or 3s worst
+can establish the Finalizing prerequisite. A single profile exercise supplies
+observations, not a five-sample comparison or resource-regression clearance.

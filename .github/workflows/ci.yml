@@ -1,0 +1,149 @@
+name: CI
+
+# Every job starts at once: static checks, one Ubuntu build that also tests what
+# it built, two portable test workers and three native macOS workers that build
+# the native runtime themselves (the Free plan runs five macOS jobs at a time;
+# a release holds two). validate:full remains the equivalent local gate.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  static:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.4'
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Install dependencies
+        env:
+          DEVRYAN_SKIP_INSTALL_PREPARE: '1'
+        run: bun install --frozen-lockfile
+      - name: Lint, import boundaries, types and docs
+        run: node scripts/validate.mjs static
+
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.4'
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Install dependencies
+        env:
+          DEVRYAN_SKIP_INSTALL_PREPARE: '1'
+        run: bun install --frozen-lockfile
+      - name: Restore reviewed Claude executable
+        run: node scripts/hydrate-reviewed-claude.mjs
+      - name: Build, bundle budgets and built-asset tests
+        run: node scripts/validate.mjs build
+
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - lane: portable-1
+            runner: ubuntu-latest
+            concurrency: '2'
+          - lane: portable-2
+            runner: ubuntu-latest
+            concurrency: '2'
+    env:
+      DEVRYAN_TEST_CONCURRENCY: ${{ matrix.concurrency }}
+      DEVRYAN_TEST_SEED: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.4'
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Install dependencies
+        env:
+          DEVRYAN_SKIP_INSTALL_PREPARE: '1'
+        run: bun install --frozen-lockfile
+      - name: Restore reviewed Claude executable
+        run: node scripts/hydrate-reviewed-claude.mjs
+      - name: Run every suite assigned to this lane and check scratch cleanup
+        env:
+          DEVRYAN_TEST_TIMINGS: ${{ runner.temp }}/test-timings/${{ matrix.lane }}.json
+        run: node scripts/validate.mjs ci:${{ matrix.lane }}
+      - name: Upload unit timings for lane balancing
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-timings-${{ matrix.lane }}
+          path: ${{ runner.temp }}/test-timings/
+          if-no-files-found: ignore
+          retention-days: 30
+
+  native-tests:
+    # macOS-only suites build the native runtime in-lane (cheaper than shipping it).
+    runs-on: macos-26
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - lane: native-1
+            runner: macos-26
+            concurrency: '2'
+          - lane: native-2
+            runner: macos-26
+            concurrency: '2'
+          - lane: native-3
+            runner: macos-26
+            concurrency: '2'
+    env:
+      DEVRYAN_TEST_CONCURRENCY: ${{ matrix.concurrency }}
+      DEVRYAN_TEST_SEED: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.4'
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Install dependencies
+        env:
+          DEVRYAN_SKIP_INSTALL_PREPARE: '1'
+        run: bun install --frozen-lockfile
+      - name: Restore reviewed Claude executable
+        run: node scripts/hydrate-reviewed-claude.mjs
+      - name: Build and verify native v2 runtime
+        timeout-minutes: 20
+        run: bun scripts/build-native-runtime.mjs
+      - name: Run every suite assigned to this lane and check scratch cleanup
+        env:
+          DEVRYAN_TEST_TIMINGS: ${{ runner.temp }}/test-timings/${{ matrix.lane }}.json
+        run: node scripts/validate.mjs ci:${{ matrix.lane }}
+      - name: Upload unit timings for lane balancing
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-timings-${{ matrix.lane }}
+          path: ${{ runner.temp }}/test-timings/
+          if-no-files-found: ignore
+          retention-days: 30

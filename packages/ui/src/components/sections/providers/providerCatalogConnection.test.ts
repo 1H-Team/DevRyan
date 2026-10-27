@@ -3,6 +3,39 @@ import { useProviderConnectionStore, waitForProviderCatalogReady } from './provi
 
 describe('post-auth provider catalog readiness', () => {
   beforeEach(() => useProviderConnectionStore.setState({ pending: {} }));
+  test('scope cancellation stops model discovery before the next refresh', async () => {
+    const controller = new AbortController();
+    let refreshes = 0;
+    expect(await waitForProviderCatalogReady({
+      signal: controller.signal,
+      refresh: async () => { refreshes++; },
+      isReady: () => false,
+      sleep: async () => { controller.abort(); },
+    })).toBe(false);
+    expect(refreshes).toBe(1);
+  });
+  test('cancellation during stalled apply skips the next refresh', async () => {
+    const controller = new AbortController();
+    let refreshes = 0;
+    expect(await waitForProviderCatalogReady({
+      signal: controller.signal,
+      refresh: async () => { refreshes++; },
+      isReady: () => false,
+      sleep: async () => {},
+      onStalled: async () => { controller.abort(); return true; },
+    })).toBe(false);
+    expect(refreshes).toBe(3);
+  });
+  test('cancellation during refresh cannot report a ready stale catalog', async () => {
+    const controller = new AbortController();
+    let checks = 0;
+    expect(await waitForProviderCatalogReady({
+      signal: controller.signal,
+      refresh: async () => { controller.abort(); },
+      isReady: () => { checks++; return true; },
+    })).toBe(false);
+    expect(checks).toBe(0);
+  });
 
   test('returns immediately for ready catalogs without applying config', async () => {
     let refreshes = 0;

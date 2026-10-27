@@ -86,7 +86,7 @@ export interface UseBrowserVoiceReturn {
 // Storage key for persisting Browser provider language preference.
 // Keep the existing key so users retain their previous browser STT language selection.
 const LANGUAGE_STORAGE_KEY = 'browserVoiceLanguage';
-const LANGUAGE_CHANGE_EVENT = 'openchamber:voice-language-changed';
+const LANGUAGE_CHANGE_EVENT = 'devryan:voice-language-changed';
 const DEVICE_CHANGE_RESTART_DELAY_MS = 700;
 const BLOCKED_SPEECH_LANGUAGES = new Set(['ru', 'ru-RU']);
 const SERVER_STT_AUTO_LANGUAGE = 'auto';

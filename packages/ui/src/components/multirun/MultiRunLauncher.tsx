@@ -14,8 +14,8 @@ import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useMultiRunStore } from '@/stores/useMultiRunStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useProjectsStore } from '@/stores/useProjectsStore';
-import { getWorktreeSetupCommands } from '@/lib/openchamberConfig';
-import type { ProjectRef } from '@/lib/openchamberConfig';
+import { getWorktreeSetupCommands } from '@/lib/devryanConfig';
+import type { ProjectRef } from '@/lib/devryanConfig';
 import type { CreateMultiRunParams, MultiRunModelSelection } from '@/types/multirun';
 import { ModelMultiSelect, generateInstanceId, type ModelSelectionWithId } from './ModelMultiSelect';
 import { BranchSelector, useBranchOptions } from './BranchSelector';
@@ -225,7 +225,7 @@ export const MultiRunLauncher: React.FC<MultiRunLauncherProps> = ({
       return null;
     }
 
-    const injected = (window as unknown as { __OPENCHAMBER_MACOS_MAJOR__?: unknown }).__OPENCHAMBER_MACOS_MAJOR__;
+    const injected = (window as unknown as { __DEVRYAN_MACOS_MAJOR__?: unknown }).__DEVRYAN_MACOS_MAJOR__;
     if (typeof injected === 'number' && Number.isFinite(injected) && injected > 0) {
       return injected;
     }

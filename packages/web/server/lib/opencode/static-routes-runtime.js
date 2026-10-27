@@ -15,13 +15,14 @@ export const createStaticRoutesRuntime = (dependencies) => {
     resolveProjectDirectory,
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
+    openCodeClient,
     readSettingsFromDiskMigrated,
     normalizePwaAppName,
     normalizePwaOrientation,
   } = dependencies;
 
   const resolveDistPath = () => {
-    const env = typeof process.env.OPENCHAMBER_DIST_DIR === 'string' ? process.env.OPENCHAMBER_DIST_DIR.trim() : '';
+    const env = typeof process.env.DEVRYAN_DIST_DIR === 'string' ? process.env.DEVRYAN_DIST_DIR.trim() : '';
     if (env) {
       return path.resolve(env);
     }
@@ -58,6 +59,7 @@ export const createStaticRoutesRuntime = (dependencies) => {
       }));
 
       registerPwaManifestRoute(app, {
+        openCodeClient,
         process,
         resolveProjectDirectory,
         buildOpenCodeUrl,

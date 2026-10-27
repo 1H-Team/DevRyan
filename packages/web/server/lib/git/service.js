@@ -1,6 +1,6 @@
 import simpleGit from 'simple-git';
 import { backgroundGitSignal, createGitReadCoordinator } from './read-coordinator.js';
-import { parsePushResult, pushOptionArgs } from './push-result.js';
+import { parsePushResult, pushHookFailureDetails, pushHookFailureSummary, pushOptionArgs, pushRejectedMessage, scrubGitOutput } from './push-result.js';
 import { currentHunkPatch } from './hunk-validation.js';
 import { withGitIndexQueue } from './index-queue.js';
 import { boundedUntracked, fileStatusVersion, parseNumstat } from './status-details.js';
@@ -16,12 +16,12 @@ import { createRequire } from 'module';
 import {
   createPostCheckoutHookRunner,
   createWorktreeBootstrapRuntime,
-} from '@openchamber/harness-runtime';
+} from '@devryan/harness-runtime';
 import { populateWorktreeWithLockRecovery } from './worktree-lock-recovery.js';
 import { withIndexLockRetry, withIndexLockRetryResult } from './index-lock-retry.js';
 import { getRequestPrincipal } from '../multi-user/request-context.js';
 import { getGitHubAuthById } from '../github/auth.js';
-import { resolveOpenCodeDbPath } from '../opencode/opencode-db-path.js';
+import { resolveDevRyanDataRoot } from '@devryan/shared-runtime/node/data-root.js';
 
 const fsp = fs.promises;
 const require = createRequire(import.meta.url);
@@ -115,7 +115,7 @@ const resolveGitBinary = () => {
     return resolvedGitBinary;
   }
 
-  const explicit = [process.env.GIT_BINARY, process.env.OPENCHAMBER_GIT_BINARY]
+  const explicit = [process.env.GIT_BINARY, process.env.DEVRYAN_GIT_BINARY]
     .map((value) => (typeof value === 'string' ? value.trim() : ''))
     .filter(Boolean);
   for (const candidate of explicit) {
@@ -339,9 +339,7 @@ const assertManagedFetchBranchAllowed = async ({ directory, principal, assignmen
 const ensureGitAskPassHelper = async () => {
   if (gitAskPassHelperPromise) return gitAskPassHelperPromise;
   gitAskPassHelperPromise = (async () => {
-    const dataDirectory = process.env.OPENCHAMBER_DATA_DIR
-      ? path.resolve(process.env.OPENCHAMBER_DATA_DIR)
-      : path.join(os.homedir(), '.config', 'openchamber');
+    const dataDirectory = resolveDevRyanDataRoot();
     const runtimeDirectory = path.join(dataDirectory, 'runtime');
     await fsp.mkdir(runtimeDirectory, { recursive: true, mode: 0o700 });
     if (process.platform === 'win32') {
@@ -906,7 +904,7 @@ const resolveCandidateDirectory = async (worktreeRoot, preferredName, explicitBr
       return { name, directory, branch: explicitBranchName };
     }
 
-    const branch = `openchamber/${name}`;
+    const branch = `devryan/${name}`;
     const branchRef = `refs/heads/${branch}`;
     const branchExists = await runGitCommand(primaryWorktree, ['show-ref', '--verify', '--quiet', branchRef]);
     if (branchExists.success) {
@@ -1028,25 +1026,6 @@ const getProjectStoragePath = (projectID) => {
   return path.join(getOpenCodeDataPath(), 'storage', 'project', `${projectID}.json`);
 };
 
-const syncSandboxesToOpenCodeDb = (projectID, sandboxes) => {
-  try {
-    const Database = require('better-sqlite3');
-    const dbPath = resolveOpenCodeDbPath(getOpenCodeDataPath());
-    if (!fs.existsSync(dbPath)) return;
-    const db = new Database(dbPath);
-    try {
-      const row = db.prepare('SELECT sandboxes FROM project WHERE id = ?').get(projectID);
-      if (!row) return;
-      const json = JSON.stringify(sandboxes);
-      db.prepare('UPDATE project SET sandboxes = ?, time_updated = ? WHERE id = ?').run(json, Date.now(), projectID);
-    } finally {
-      db.close();
-    }
-  } catch (error) {
-    console.warn('Failed to sync sandboxes to OpenCode DB:', error instanceof Error ? error.message : String(error));
-  }
-};
-
 const updateProjectSandboxes = async (projectID, primaryWorktree, updater) => {
   const storagePath = getProjectStoragePath(projectID);
   await fsp.mkdir(path.dirname(storagePath), { recursive: true });
@@ -1087,8 +1066,6 @@ const updateProjectSandboxes = async (projectID, primaryWorktree, updater) => {
 
   await fsp.writeFile(storagePath, `${JSON.stringify(current, null, 2)}\n`, 'utf8');
 
-  // Sync to OpenCode's SQLite database so project.sandboxes is visible via the SDK
-  syncSandboxesToOpenCodeDb(projectID, current.sandboxes);
 };
 
 const syncProjectSandboxAdd = async (projectID, primaryWorktree, sandboxPath) => {
@@ -1240,8 +1217,6 @@ export const configureWorktreeBootstrapRuntime = (options = {}) => {
     .initialize();
   return worktreeBootstrapRuntime;
 };
-
-export const getConfiguredWorktreeBootstrapRuntime = () => worktreeBootstrapRuntime;
 
 const ensureRemoteWithUrl = async (primaryWorktree, remoteName, remoteUrl) => {
   const name = String(remoteName || '').trim();
@@ -2131,7 +2106,7 @@ const HUNK_ACTION_FLAGS = {
 };
 
 const writeTempPatchFile = async (patch) => {
-  const tmpPath = path.join(os.tmpdir(), `openchamber-hunk-${Date.now()}-${Math.random().toString(36).slice(2)}.patch`);
+  const tmpPath = path.join(os.tmpdir(), `devryan-hunk-${Date.now()}-${Math.random().toString(36).slice(2)}.patch`);
   await fsp.writeFile(tmpPath, patch, 'utf8');
   return tmpPath;
 };
@@ -2303,7 +2278,7 @@ async function stashPushUnlocked(directory, options = {}) {
   const git = await createGit(directory);
   const message = typeof options.message === 'string' && options.message.trim()
     ? options.message.trim()
-    : `OpenChamber stash ${new Date().toISOString()}`;
+    : `DevRyan stash ${new Date().toISOString()}`;
   try {
     const output = await withIndexLockRetry(
       () => git.raw(['stash', 'push', '--include-untracked', '-m', message]),
@@ -2349,6 +2324,49 @@ async function stashPopUnlocked(directory, options = {}) {
   return { success: true, ref };
 }
 
+const PUSH_STDOUT_MAX = 1024 * 1024;
+
+const pushRejectedError = (result) => Object.assign(
+  gitStateError('GIT_PUSH_REJECTED', pushRejectedMessage(result.rejected)),
+  { rejected: result.rejected, pushed: result.pushed },
+);
+
+const pushFailedError = (log) => {
+  const details = pushHookFailureDetails(log);
+  const summary = pushHookFailureSummary(log) || details.split('\n')[0] || 'Unable to contact the remote';
+  return Object.assign(
+    new Error(`Push failed: ${scrubGitOutput(summary).slice(0, 160)}`),
+    { code: 'GIT_PUSH_FAILED', statusCode: 500, details },
+  );
+};
+
+// Keep porcelain stdout on failure so rejected refs remain distinguishable
+// from transport errors. All app pushes skip local pre-push hooks.
+async function runPush(git, args, directory) {
+  let stdout = '';
+  let stderr = '';
+  git.outputHandler((_command, out, err, commandArgs) => {
+    if (!commandArgs.includes('--porcelain')) return;
+    out.on('data', (chunk) => { if (stdout.length < PUSH_STDOUT_MAX) stdout += String(chunk); });
+    err.on('data', (chunk) => { if (stderr.length < PUSH_STDOUT_MAX) stderr += String(chunk); });
+  });
+  let output;
+  try {
+    output = await git.raw(['push', '--porcelain', ...args, '--no-verify']);
+  } catch (error) {
+    const partial = parsePushResult(stdout, directory);
+    if (partial.rejected.length) throw pushRejectedError(partial);
+    const captured = [stderr, stdout].filter(Boolean).join('\n');
+    const log = captured || parseGitErrorText(error);
+    throw pushFailedError(log);
+  } finally {
+    git.outputHandler(undefined);
+  }
+  const result = parsePushResult(output, directory);
+  if (!result.success) throw pushRejectedError(result);
+  return result;
+}
+
 export async function push(directory, options = {}) {
   const git = await createGit(directory, { includeCredentials: true });
   await assertGitRemoteReady(git);
@@ -2363,11 +2381,10 @@ export async function push(directory, options = {}) {
     if (options.branch && cleanBranchName(options.branch) !== currentBranch) {
       throw new Error('Managed workspaces may only push the checked-out branch');
     }
-    const output = await git.raw([
-      'push', '--porcelain',
+    const result = await runPush(git, [
       assignment.remoteUrl || 'origin',
       `refs/heads/${currentBranch}:refs/heads/${currentBranch}`,
-    ]);
+    ], directory);
     // Pushing to a URL does not update the remote-tracking ref; sync it so
     // status/log reflect the push without requiring a fetch.
     try {
@@ -2379,16 +2396,20 @@ export async function push(directory, options = {}) {
       // Best effort: a failed tracking-ref update only delays UI freshness.
     }
     // Keep the managed API's branch label; pushed[] retains exact porcelain refs.
-    return { ...parsePushResult(output, directory), ref: currentBranch };
+    return { ...result, ref: currentBranch };
   }
 
   const branch = await getCheckedOutBranch(git);
   const config = async (key) => String(await git.raw(['config', '--get', key]).catch(() => '')).trim();
-  const upstreamRemote = branch ? await config(`branch.${branch}.remote`) : '';
-  const remotes = await git.getRemotes();
+  const [upstreamRemote, pushRemote, pushDefault, remotes] = await Promise.all([
+    branch ? config(`branch.${branch}.remote`) : '',
+    branch ? config(`branch.${branch}.pushRemote`) : '',
+    config('remote.pushDefault'),
+    git.getRemotes(),
+  ]);
   const remote = String(options.remote || '').trim()
-    || (branch && await config(`branch.${branch}.pushRemote`))
-    || await config('remote.pushDefault')
+    || pushRemote
+    || pushDefault
     || upstreamRemote
     || remotes.find((entry) => entry.name === 'origin')?.name
     || (remotes.length === 1 ? remotes[0].name : '');
@@ -2396,14 +2417,13 @@ export async function push(directory, options = {}) {
   if (remote.startsWith('-') || /[\r\n\0]/.test(remote)) throw new Error('Invalid push remote');
   const flags = pushOptionArgs(options.options);
   try {
-    const output = await git.raw(['push', '--porcelain', ...flags, remote, ...(options.branch ? [options.branch] : [])]);
-    return parsePushResult(output, directory);
+    return await runPush(git, [...flags, remote, ...(options.branch ? [options.branch] : [])], directory);
   } catch (error) {
     // Only the first publication of a branch may add upstream configuration.
     // Other failures retain their original error and never select a new remote.
-    if (options.branch || !branch || !/has no upstream|no upstream branch/i.test(parseGitErrorText(error))) throw error;
-    const output = await git.raw(['push', '--porcelain', ...flags, '--set-upstream', remote, branch]);
-    return parsePushResult(output, directory);
+    if (error?.code === 'GIT_PUSH_REJECTED' || options.branch || !branch
+      || !/has no upstream|no upstream branch/i.test(parseGitErrorText(error))) throw error;
+    return runPush(git, [...flags, '--set-upstream', remote, branch], directory);
   }
 }
 
@@ -2420,7 +2440,7 @@ export async function deleteRemoteBranch(directory, options = {}) {
   const remoteName = remote || 'origin';
 
   try {
-    await git.push(remoteName, `:${targetBranch}`);
+    await runPush(git, [remoteName, `:${targetBranch}`], directory);
     return { success: true };
   } catch (error) {
     console.error('Failed to delete remote branch:', error);
@@ -2683,6 +2703,13 @@ export async function getWorktrees(directory, { strict = false } = {}) {
     console.warn('Failed to list worktrees, returning empty list:', error?.message || error);
     return [];
   }
+}
+
+/** Linked worktrees this app created (under OpenCode's worktree root); the
+ * native runtime admits these as locations of their registered project. */
+export async function listManagedWorktrees(directory) {
+  const root = path.join(getOpenCodeDataPath(), 'worktree') + path.sep;
+  return (await getWorktrees(directory)).map((entry) => entry.path).filter((worktree) => worktree.startsWith(root));
 }
 
 export async function getPrimaryWorktreeRoot(directory) {

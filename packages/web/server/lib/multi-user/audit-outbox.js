@@ -1,7 +1,7 @@
 import os from 'node:os';
 import path from 'node:path';
 
-import { createDiagnosticSanitizer, createRecordStore } from '@openchamber/harness-runtime';
+import { createDiagnosticSanitizer, createRecordStore } from '@devryan/harness-runtime';
 
 import { DIAGNOSTIC_IMPACTS, DIAGNOSTIC_SOURCES } from './error-diagnostics.js';
 

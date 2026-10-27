@@ -11,14 +11,13 @@ export type SessionIndicator = {
     | 'sessions.sidebar.session.status.error';
 };
 
-export type MobileSessionIndicatorPresentation =
+type SessionWorkingLabelKey =
+  | 'sessions.sidebar.session.status.active'
+  | 'sessions.sidebar.session.status.planExecuting';
+
+export type SessionLeadingIndicatorPresentation =
   | { kind: 'status'; indicator: SessionIndicator }
-  | {
-      kind: 'working';
-      labelKey:
-        | 'sessions.sidebar.session.status.active'
-        | 'sessions.sidebar.session.status.planExecuting';
-    }
+  | { kind: 'working'; labelKey: SessionWorkingLabelKey }
   | { kind: 'idle' };
 
 type ResolveSidebarIndicatorOptions = {
@@ -50,16 +49,17 @@ type ResolveSubtaskSidebarIndicatorOptions = {
 
 type ResolveLeadingRailLayoutOptions = {
   hasChildren: boolean;
-  showLeadingStatus: boolean;
   isPinnedSession: boolean;
 };
 
 export type LeadingRailLayout = {
   slots: [
-    'status' | null,
-    'status' | 'pin' | null,
-    'pin' | 'chevron' | null,
+    'pin' | null,
+    'status',
   ];
+  hasChildren: boolean;
+  /** Pinned parents show the pin after the title: the rail only fits chevron + status. */
+  pinAfterTitle: boolean;
 };
 
 type SessionChildIdentity = {
@@ -179,15 +179,17 @@ export function resolveSidebarIndicator({
   return null;
 }
 
-export function resolveMobileSessionIndicatorPresentation({
+// One leading slot per row: attention color first, then the working blink,
+// otherwise the idle placeholder ring.
+export function resolveSessionLeadingIndicatorPresentation({
   indicator,
   isWorking,
-  planState,
+  isImplementingPlan,
 }: {
   indicator: SessionIndicator | null;
   isWorking: boolean;
-  planState: PlanIndicatorState | null;
-}): MobileSessionIndicatorPresentation {
+  isImplementingPlan: boolean;
+}): SessionLeadingIndicatorPresentation {
   if (indicator) {
     return { kind: 'status', indicator };
   }
@@ -195,13 +197,21 @@ export function resolveMobileSessionIndicatorPresentation({
   if (isWorking) {
     return {
       kind: 'working',
-      labelKey: planState === 'implementing'
+      labelKey: isImplementingPlan
         ? 'sessions.sidebar.session.status.planExecuting'
         : 'sessions.sidebar.session.status.active',
     };
   }
 
   return { kind: 'idle' };
+}
+
+export function resolveSessionLeadingIndicatorLabelKey(
+  presentation: SessionLeadingIndicatorPresentation,
+): SessionIndicator['labelKey'] | SessionWorkingLabelKey | null {
+  if (presentation.kind === 'status') return presentation.indicator.labelKey;
+  if (presentation.kind === 'working') return presentation.labelKey;
+  return null;
 }
 
 export function resolveSubtaskSidebarIndicator({
@@ -220,33 +230,18 @@ export function resolveSubtaskSidebarIndicator({
   return null;
 }
 
+// The status slot is always occupied (colored dot, working blink, or idle
+// ring), so it sits directly next to the title on every row. Parent rows
+// always draw the expand chevron directly left of status; the leading gutter
+// cannot also hold a pin there, so a pinned parent's pin moves after the title.
+// On leaf rows the pin, when present, goes left of status.
 export function resolveLeadingRailLayout({
   hasChildren,
-  showLeadingStatus,
   isPinnedSession,
 }: ResolveLeadingRailLayoutOptions): LeadingRailLayout {
-  const slots: LeadingRailLayout['slots'] = [null, null, null];
-
-  if (hasChildren) {
-    slots[2] = 'chevron';
-  }
-
-  if (showLeadingStatus && isPinnedSession) {
-    slots[0] = 'status';
-    slots[1] = 'pin';
-    return { slots };
-  }
-
-  if (showLeadingStatus) {
-    slots[1] = 'status';
-    return { slots };
-  }
-
-  if (isPinnedSession) {
-    slots[hasChildren ? 1 : 2] = 'pin';
-  }
-
   return {
-    slots,
+    slots: [isPinnedSession && !hasChildren ? 'pin' : null, 'status'],
+    hasChildren,
+    pinAfterTitle: isPinnedSession && hasChildren,
   };
 }

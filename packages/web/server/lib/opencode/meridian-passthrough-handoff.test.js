@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
-import { settlePassthroughQuery, validatePersistedCheckpoint, verifyPersistedCheckpoint, sdkProjectDirectory } from './meridian-passthrough-handoff.js';
+import { readFileSync } from 'node:fs';
+import {
+  HIGH_EFFORT_UPSTREAM_IDLE_MS, STALL_RETRY_MARKER, retryStalledCheckpoint, settlePassthroughQuery, upstreamIdleBackstop, upstreamIdleBudget,
+  validatePersistedCheckpoint, verifyPersistedCheckpoint, sdkProjectDirectory,
+} from './meridian-passthrough-handoff.js';
 
 const assistant = { type: 'assistant', uuid: 'assistant-1', session_id: 'sdk-session', message: { content: [
   { type: 'tool_use', id: 'call-1', name: 'mcp__oc__read' },
@@ -196,9 +201,7 @@ describe('durable native checkpoint proof', () => {
 });
 
 it('verifies the exact native file and rejects torn or missing persistence', async () => {
-  const cache = path.resolve(import.meta.dirname, '../../../../../.cache/qa');
-  await fs.mkdir(cache, { recursive: true });
-  const root = await fs.mkdtemp(path.join(cache, 'native-checkpoint-'));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-native-checkpoint-')));
   try {
     const cwd = (await fs.realpath(root)).normalize('NFC');
     const sessionId = '11111111-1111-4111-8111-111111111111';
@@ -238,4 +241,189 @@ it('does not retain a terminal that arrives after the drain deadline', async () 
   await expect(run()).rejects.toThrow('drain timed out');
   expect(received.some(event => event.type === 'result')).toBe(false);
   expect(query.close).toHaveBeenCalledTimes(1);
+});
+
+it('reads native checkpoints from the transport-owned directory rather than the SDK profile directory', async () => {
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-checkpoint-transport-')));
+  const hook = '__DEVRYAN_CLAUDE_CHECKPOINT_DIRECTORY';
+  const previous = Reflect.get(globalThis, hook);
+  try {
+    const state = path.join(root, 'transport-state');
+    const sessionId = '11111111-1111-4111-8111-111111111111';
+    const assistantUuid = '22222222-2222-4222-8222-222222222222';
+    const directory = path.join(state, 'projects', sdkProjectDirectory(root));
+    await fs.mkdir(directory, { recursive: true });
+    await fs.writeFile(path.join(directory, `${sessionId}.jsonl`), [
+      { uuid: assistantUuid, type: 'assistant', sessionId, cwd: root, message: { id: 'message', content: [{ type: 'tool_use', id: 'call' }] } },
+      { uuid: 'result', parentUuid: assistantUuid, type: 'user', sessionId, cwd: root, message: { content: [{ type: 'tool_result', tool_use_id: 'call' }] } },
+    ].map(row => JSON.stringify(row)).join('\n') + '\n');
+    const resolve = vi.fn(() => state);
+    Reflect.set(globalThis, hook, resolve);
+    expect(await verifyPersistedCheckpoint({ sessionId, assistantUuid, toolCallIds: ['call'] }, {
+      cwd: root, env: { CLAUDE_CONFIG_DIR: path.join(root, 'profile'), DEVRYAN_CLAUDE_DIAGNOSTIC_SCOPE: 'owned-scope' },
+    })).toBe(true);
+    expect(resolve).toHaveBeenCalledWith('owned-scope', root);
+  } finally {
+    if (previous === undefined) Reflect.deleteProperty(globalThis, hook); else Reflect.set(globalThis, hook, previous);
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+it.each(['config', 'projects', 'project', 'transcript'])('refuses a symlinked %s checkpoint path', async level => {
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-checkpoint-symlink-')));
+  try {
+    const config = path.join(root, 'config'), projects = path.join(config, 'projects'), project = path.join(projects, sdkProjectDirectory(root));
+    const sessionId = '11111111-1111-4111-8111-111111111111', assistantUuid = '22222222-2222-4222-8222-222222222222';
+    await fs.mkdir(project, { recursive: true }); const transcript = path.join(project, sessionId + '.jsonl');
+    await fs.writeFile(transcript, [
+      { uuid: assistantUuid, type: 'assistant', sessionId, cwd: root, message: { id: 'message', content: [{ type: 'tool_use', id: 'call' }] } },
+      { uuid: 'result', parentUuid: assistantUuid, type: 'user', sessionId, cwd: root, message: { content: [{ type: 'tool_result', tool_use_id: 'call' }] } },
+    ].map(row => JSON.stringify(row)).join('\n') + '\n');
+    const boundary = { sessionId, assistantUuid, toolCallIds: ['call'] }, options = { cwd: root, env: { CLAUDE_CONFIG_DIR: config } };
+    expect(await verifyPersistedCheckpoint(boundary, options)).toBe(true);
+    const target = { config, projects, project, transcript }[level], moved = path.join(root, 'moved');
+    await fs.rename(target, moved); await fs.symlink(moved, target);
+    expect(await verifyPersistedCheckpoint(boundary, options)).toBe(false);
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
+it('rechecks native attempt authority after reading a persisted checkpoint', async () => {
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-checkpoint-retired-')));
+  const hook = '__DEVRYAN_CLAUDE_CHECKPOINT_DIRECTORY', previous = Reflect.get(globalThis, hook);
+  try {
+    const sessionId = '11111111-1111-4111-8111-111111111111', assistantUuid = '22222222-2222-4222-8222-222222222222';
+    const project = path.join(root, 'projects', sdkProjectDirectory(root)); await fs.mkdir(project, { recursive: true });
+    await fs.writeFile(path.join(project, sessionId + '.jsonl'), [
+      { uuid: assistantUuid, type: 'assistant', sessionId, cwd: root, message: { id: 'message', content: [{ type: 'tool_use', id: 'call' }] } },
+      { uuid: 'result', parentUuid: assistantUuid, type: 'user', sessionId, cwd: root, message: { content: [{ type: 'tool_result', tool_use_id: 'call' }] } },
+    ].map(row => JSON.stringify(row)).join('\n') + '\n');
+    let reads = 0; Reflect.set(globalThis, hook, () => { if (reads++) throw new Error('attempt retired'); return root; });
+    expect(await verifyPersistedCheckpoint({ sessionId, assistantUuid, toolCallIds: ['call'] }, {
+      cwd: root, env: { DEVRYAN_CLAUDE_DIAGNOSTIC_SCOPE: 'owned' },
+    })).toBe(false);
+    expect(reads).toBe(2);
+  } finally {
+    if (previous === undefined) Reflect.deleteProperty(globalThis, hook); else Reflect.set(globalThis, hook, previous);
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+// The exact idle guard of the reviewed Meridian 1.62.6 bundle.
+const meridianBundle = readFileSync(new URL('../../../runtime/reviewed-inputs/claude-1.8.0/node_modules/@rynfar/meridian/dist/cli-wxk8xvd3.js', import.meta.url), 'utf8');
+const guardSource = meridianBundle.slice(meridianBundle.indexOf('// src/proxy/streamIdleGuard.ts'), meridianBundle.indexOf('// src/proxy/requestAbort.ts'));
+const { UpstreamIdleError, guardUpstreamIdle } = new Function(`${guardSource}; return { UpstreamIdleError, guardUpstreamIdle };`)();
+
+describe('stalled checkpoint step', () => {
+  const thinking = { type: 'stream_event', session_id: 'sdk-session', event: { type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '' } } };
+  const text = { type: 'stream_event', session_id: 'sdk-session', event: { type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text: 'done' } } };
+  const toolUse = { type: 'stream_event', session_id: 'sdk-session', event: { type: 'content_block_start', index: 1, content_block: { type: 'tool_use', id: 'call-3', name: 'read' } } };
+  const sdkQuery = (messages, { stall = false } = {}) => {
+    const query = (async function* () {
+      yield* messages;
+      if (stall) await new Promise(() => {});
+    })();
+    query.interrupt = vi.fn();
+    query.close = vi.fn();
+    return query;
+  };
+  // Mirrors the reviewed stream handler: a fresh SDK attempt per call, the
+  // settler owning Meridian's attempt guard, and client-forwarded state.
+  async function runStep(queries, { retained = true, signal } = {}) {
+    const diagnostic = vi.fn(), close = vi.fn(), received = [];
+    const idle = { guard: guardUpstreamIdle, error: UpstreamIdleError, ms: 20, onStall: vi.fn() };
+    let forwardedText = false, forwardedTool = false;
+    const attempt = () => settlePassthroughQuery(queries.shift(), { signal, checkpoint: () => null, diagnostic, idle });
+    let failure;
+    try {
+      for await (const message of retryStalledCheckpoint(attempt, {
+        retained, signal, diagnostic, close,
+        isStall: error => error instanceof UpstreamIdleError,
+        forwarded: () => forwardedText || forwardedTool,
+      })) {
+        received.push(message);
+        if (message === text) forwardedText = true;
+        if (message === toolUse) forwardedTool = true;
+      }
+    } catch (error) {
+      failure = error;
+    }
+    return { diagnostic, close, received, failure, idle };
+  }
+
+  it('closes the partial reasoning and retries once from the retained checkpoint', async () => {
+    const first = sdkQuery([thinking], { stall: true }), second = sdkQuery([thinking, text, terminal]);
+    const { diagnostic, close, received, failure, idle } = await runStep([first, second]);
+    expect(failure).toBeUndefined();
+    expect(received).toEqual([thinking, STALL_RETRY_MARKER, thinking, text, terminal]);
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(idle.onStall).toHaveBeenCalledTimes(1);
+    expect(diagnostic.mock.calls).toEqual([
+      ['passthrough.checkpoint_aborted', { reason: 'upstream_idle', toolCount: 0 }],
+      ['passthrough.checkpoint_retry', { reason: 'upstream_idle', toolCount: 0 }],
+    ]);
+  });
+
+  it('fails the step with the original stall error when the retry also stalls', async () => {
+    const { diagnostic, close, received, failure } = await runStep([sdkQuery([thinking], { stall: true }), sdkQuery([], { stall: true })]);
+    expect(failure).toBeInstanceOf(UpstreamIdleError);
+    expect(received).toEqual([thinking, STALL_RETRY_MARKER]);
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(diagnostic.mock.calls.map(([event]) => event)).toEqual([
+      'passthrough.checkpoint_aborted', 'passthrough.checkpoint_retry', 'passthrough.checkpoint_aborted',
+    ]);
+  });
+
+  it('does not retry once a tool call or text reached the client', async () => {
+    for (const forwarded of [toolUse, text]) {
+      const queries = [sdkQuery([thinking, forwarded], { stall: true }), sdkQuery([terminal])];
+      const { diagnostic, close, received, failure } = await runStep(queries);
+      expect(failure).toBeInstanceOf(UpstreamIdleError);
+      expect(received).toEqual([thinking, forwarded]);
+      expect(close).not.toHaveBeenCalled();
+      expect(queries).toHaveLength(1);
+      expect(diagnostic.mock.calls).toEqual([['passthrough.checkpoint_aborted', { reason: 'upstream_idle', toolCount: 0 }]]);
+    }
+  });
+
+  it('does not retry without a retained checkpoint, after a client abort, or for other errors', async () => {
+    const unretained = await runStep([sdkQuery([thinking], { stall: true }), sdkQuery([terminal])], { retained: false });
+    expect(unretained.failure).toBeInstanceOf(UpstreamIdleError);
+    const controller = new AbortController(); controller.abort();
+    const aborted = await runStep([sdkQuery([thinking], { stall: true }), sdkQuery([terminal])], { signal: controller.signal });
+    expect(aborted.failure).toBeInstanceOf(UpstreamIdleError);
+    for (const run of [unretained, aborted]) expect(run.diagnostic.mock.calls.map(([event]) => event)).not.toContain('passthrough.checkpoint_retry');
+    const transport = new Error('socket hang up');
+    const failing = (async function* () { yield thinking; throw transport; })();
+    const retried = vi.fn();
+    await expect((async () => {
+      for await (const message of retryStalledCheckpoint(() => failing, { retained: true, isStall: error => error instanceof UpstreamIdleError, forwarded: () => false, close: retried })) void message;
+    })()).rejects.toBe(transport);
+    expect(retried).not.toHaveBeenCalled();
+  });
+
+  it('reports the stall through the native checkpoint observer', async () => {
+    const hook = '__DEVRYAN_CLAUDE_CHECKPOINT_DIAGNOSTIC', previous = Reflect.get(globalThis, hook), observed = [];
+    Reflect.set(globalThis, hook, (...args) => observed.push(args));
+    try {
+      const query = sdkQuery([thinking], { stall: true });
+      await expect((async () => {
+        for await (const message of settlePassthroughQuery(query, { checkpoint: () => null, queryOptions: { env: { DEVRYAN_CLAUDE_DIAGNOSTIC_SCOPE: 'owned' } },
+          idle: { guard: guardUpstreamIdle, error: UpstreamIdleError, ms: 20 } })) void message;
+      })()).rejects.toBeInstanceOf(UpstreamIdleError);
+      expect(observed).toEqual([['owned', 'passthrough.checkpoint_aborted', { reason: 'upstream_idle', toolCount: 0 }]]);
+    } finally {
+      if (previous === undefined) Reflect.deleteProperty(globalThis, hook); else Reflect.set(globalThis, hook, previous);
+    }
+  });
+
+  it('extends the idle budget only for high-effort reasoning and keeps a disabled guard disabled', () => {
+    expect(upstreamIdleBudget(90_000, undefined)).toBe(90_000);
+    expect(upstreamIdleBudget(90_000, 'medium')).toBe(90_000);
+    for (const effort of ['high', 'xhigh', 'max']) expect(upstreamIdleBudget(90_000, effort)).toBe(HIGH_EFFORT_UPSTREAM_IDLE_MS);
+    expect(upstreamIdleBudget(240_000, 'max')).toBe(240_000);
+    expect(upstreamIdleBudget(0, 'max')).toBe(0);
+    expect(upstreamIdleBackstop(90_000, 'low')).toBeGreaterThan(90_000);
+    expect(upstreamIdleBackstop(90_000, 'max')).toBeGreaterThan(HIGH_EFFORT_UPSTREAM_IDLE_MS);
+    expect(upstreamIdleBackstop(0, 'max')).toBe(0);
+  });
 });

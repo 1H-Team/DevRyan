@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { useQuotaStore } from '@/stores/useQuotaStore';
+import type { ProviderResult } from '@/types';
 
 import {
   disconnectProvider,
@@ -136,6 +138,25 @@ describe('provider connection state', () => {
       expect(useProviderDisconnectStore.getState().pendingRevisionByProvider).toEqual({});
     } finally {
       globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('clears OpenAI usage only after a successful disconnect', async () => {
+    const originalFetch = globalThis.fetch;
+    const originalQuota = useQuotaStore.getState();
+    const previous: ProviderResult = { providerId: 'codex', providerName: 'Codex', configured: true, ok: true, usage: { windows: {} }, fetchedAt: 1,
+      source: 'chatgpt-siwc', connectionId: 'old-account', account: { email: 'old@example.test', planType: 'plus' } };
+    useQuotaStore.setState({ results: [previous] });
+    try {
+      globalThis.fetch = async () => new Response(JSON.stringify({ error: 'Unable to disconnect' }), { status: 500 });
+      await expect(disconnectProvider('openai', null)).rejects.toThrow('Unable to disconnect');
+      expect(useQuotaStore.getState().results[0]).toBe(previous);
+      globalThis.fetch = async () => new Response(JSON.stringify({ success: true, removed: true }));
+      await disconnectProvider('openai', null);
+      expect(useQuotaStore.getState().results).toEqual([]);
+    } finally {
+      globalThis.fetch = originalFetch;
+      useQuotaStore.setState(originalQuota, true);
     }
   });
 });

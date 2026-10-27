@@ -1,11 +1,11 @@
 [package]
-name = "openchamber-desktop"
-version = "1.2.22"
+name = "devryan-desktop"
+version = "2.0.0"
 edition = "2021"
 publish = false
 
 [[bin]]
-name = "openchamber-desktop"
+name = "devryan-desktop"
 path = "src/main.rs"
 
 [features]

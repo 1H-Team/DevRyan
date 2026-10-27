@@ -6,6 +6,7 @@ import {
   MANAGED_AGENT_CONTRACT_ROLES,
   MANAGED_AGENT_CONTRACT_TAG,
   buildManagedAgentContract,
+  managedTaskMayWrite,
   normalizeManagedAgentContractRole,
 } from './agent-contracts.js';
 
@@ -16,9 +17,15 @@ const SHARED_RULES = [
   'the original delegated brief remains authoritative after compaction or model switches',
   'stop and report blocked instead of guessing',
   'no git commands (no status, diff, add, commit, stash, checkout)',
-  'at most 2 focused test runs and 1 type-check',
-  'one final acceptance check',
-  'Report external failures',
+  'focused checks appropriate to the changed behavior',
+  'Rerun after meaningful changes or failures',
+  'avoid repeating successful checks without new evidence',
+  'search narrowly, then read relevant ranges',
+  'Reuse supplied findings',
+  'exact file paths and line ranges',
+  'Summarize evidence instead of pasting whole files',
+  'required acceptance checks',
+  'Report external failures and unavailable prerequisites',
   'uncommitted changes you did not make are out of scope',
   'Do not ask about them, revert them, or validate them',
   'Blocked only when the brief is missing, a tool or provider fails, or a rule cannot be satisfied',
@@ -78,4 +85,13 @@ describe('managed agent contracts', () => {
     expect(generic).not.toContain('Fixer:');
     expect(buildManagedAgentContract()).toBe(generic);
   });
+});
+
+test('only writing roles outside Plan Mode may edit files', () => {
+  expect(managedTaskMayWrite({ agent: 'designer' })).toBe(true);
+  expect(managedTaskMayWrite({ agent: ' Fixer ' })).toBe(true);
+  expect(managedTaskMayWrite({ agent: 'builder' })).toBe(true);
+  for (const agent of ['explorer', 'librarian', 'oracle', 'council']) expect(managedTaskMayWrite({ agent })).toBe(false);
+  expect(managedTaskMayWrite({ agent: 'fixer', readOnly: true })).toBe(false);
+  expect(managedTaskMayWrite(undefined)).toBe(true);
 });

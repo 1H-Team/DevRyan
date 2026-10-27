@@ -1,6 +1,8 @@
 import type { AttachedFile } from "@/stores/types/sessionTypes"
 import { isLikelyTransientStreamFailure } from "@/lib/messages/transientStreamError"
+import { decodeAssistantMessageError } from "@/lib/decoders/assistantMessageError"
 import { planManualRecovery, planTransientRecovery } from "@/lib/messages/transientRecovery"
+import { latestUserMessageId } from "@/lib/messages/providerRecovery"
 import { resolveSessionSendConfig } from "./send-config"
 import {
   getSyncMessages,
@@ -13,13 +15,6 @@ import {
   useProviderRecoveryStore,
   type ProviderRecoveryRecord,
 } from "@/stores/useProviderRecoveryStore"
-
-const latestUserMessageId = (messages: ReturnType<typeof getSyncMessages>): string | undefined => {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    if (messages[index]?.role === "user") return messages[index].id
-  }
-  return undefined
-}
 
 async function sendRecovery(
   sessionId: string,
@@ -102,17 +97,8 @@ export async function executeTransientRetry(
     return false
   }
 
-  const error = latestMessage.error as {
-    name?: unknown
-    data?: { message?: unknown }
-    message?: unknown
-  }
-  const detail = typeof error.data?.message === "string"
-    ? error.data.message
-    : typeof error.message === "string"
-      ? error.message
-      : error.name
-  if (!isLikelyTransientStreamFailure(error.name, detail)) {
+  const error = decodeAssistantMessageError(latestMessage.error)
+  if (!isLikelyTransientStreamFailure(error?.name, error?.detail)) {
     return false
   }
 

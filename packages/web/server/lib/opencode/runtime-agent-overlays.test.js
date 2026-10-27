@@ -8,11 +8,12 @@ import yaml from 'yaml';
 
 import { deleteAgentModelOverride, writeAgentModelOverride } from './agents.js';
 import * as authModule from './auth.js';
-import * as agentRuntimeSettingsModule from './agent-runtime-settings.js';
 import { GITHUB_COPILOT_AUTO_MODEL } from './github-copilot-models.js';
 import { syncRuntimeAgentOverlays } from './runtime-agent-overlays.js';
 import { listRuntimePluginAssets } from './default-config-assets.js';
-import { DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE, DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC } from './slim-config.js';
+// A packaged local plugin; any bundled-file adapter behaves the same.
+const LOCAL_PLUGIN_FILE = 'devryan-example-adapter.mjs';
+const LOCAL_PLUGIN_SPEC = `./plugins/${LOCAL_PLUGIN_FILE}`;
 
 const writeAgent = async (agentDirectory, name, frontmatterLines, prompt) => {
   await fs.mkdir(agentDirectory, { recursive: true });
@@ -67,7 +68,7 @@ const runtimeDirectoryAllows = (...directories) => Object.fromEntries(
 );
 
 const managedRuntimeDirectoryAllows = (...directories) => {
-  const dataDirectory = process.env.OPENCHAMBER_DATA_DIR;
+  const dataDirectory = process.env.DEVRYAN_DATA_DIR;
   return runtimeDirectoryAllows(
     ...(process.platform === 'win32' ? [] : ['/tmp']),
     ...(dataDirectory ? [dataDirectory] : []),
@@ -106,6 +107,14 @@ const TITLE_AGENT_OVERLAY = {
     permission: { '*': 'deny' },
     prompt: expect.any(String),
   },
+  'devryan-notify': {
+    description: 'Internal no-tools notification summary generator',
+    mode: 'subagent',
+    hidden: true,
+    temperature: 0,
+    permission: { '*': 'deny' },
+    prompt: expect.any(String),
+  },
 };
 
 describe('syncRuntimeAgentOverlays', () => {
@@ -117,39 +126,31 @@ describe('syncRuntimeAgentOverlays', () => {
   let manifestPath;
   let targetConfigDirectory;
   let readAuthSpy;
-  let readAgentRuntimeSettingsSpy;
   let originalOpenAIApiKey;
   let originalDataDirectory;
 
   beforeEach(async () => {
-    tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-runtime-agent-overlays-'));
+    tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-runtime-agent-overlays-'));
     projectDirectory = path.join(tempRoot, 'project');
+    // Give this fixture its own repository boundary even when TMPDIR is inside a checkout.
+    await fs.mkdir(path.join(projectDirectory, '.git'), { recursive: true });
     packagedAgentDirectory = path.join(tempRoot, 'packaged-agents');
     packagedPluginDirectory = path.join(tempRoot, 'packaged-plugins');
     overlayRoot = path.join(tempRoot, 'runtime-overlays');
     manifestPath = path.join(overlayRoot, 'manifest.json');
     targetConfigDirectory = path.join(overlayRoot, crypto.createHash('sha256').update(projectDirectory).digest('hex'));
     originalOpenAIApiKey = process.env.OPENAI_API_KEY;
-    originalDataDirectory = process.env.OPENCHAMBER_DATA_DIR;
-    process.env.OPENCHAMBER_DATA_DIR = path.join(tempRoot, 'openchamber-data');
-    await fs.mkdir(process.env.OPENCHAMBER_DATA_DIR, { recursive: true });
+    originalDataDirectory = process.env.DEVRYAN_DATA_DIR;
+    process.env.DEVRYAN_DATA_DIR = path.join(tempRoot, 'devryan-data');
+    await fs.mkdir(process.env.DEVRYAN_DATA_DIR, { recursive: true });
     delete process.env.OPENAI_API_KEY;
     // Keep suite hermetic: real machine Copilot auth must not leak into overlay expectations.
     readAuthSpy = vi.spyOn(authModule, 'readAuthFile').mockReturnValue({});
-    // Same reason: the real machine sidecar must not decide whether `lsp: false`
-    // lands in overlay expectations. Tests that exercise the sidecar path restore this.
-    readAgentRuntimeSettingsSpy = vi
-      .spyOn(agentRuntimeSettingsModule, 'readAgentRuntimeSettings')
-      .mockReturnValue({ lsp: true });
-    agentRuntimeSettingsModule.clearAgentRuntimeSettingsCache();
   });
 
   afterEach(async () => {
     readAuthSpy?.mockRestore();
     readAuthSpy = undefined;
-    readAgentRuntimeSettingsSpy?.mockRestore();
-    readAgentRuntimeSettingsSpy = undefined;
-    agentRuntimeSettingsModule.clearAgentRuntimeSettingsCache();
     if (originalOpenAIApiKey === undefined) {
       delete process.env.OPENAI_API_KEY;
     } else {
@@ -157,9 +158,9 @@ describe('syncRuntimeAgentOverlays', () => {
     }
     originalOpenAIApiKey = undefined;
     if (originalDataDirectory === undefined) {
-      delete process.env.OPENCHAMBER_DATA_DIR;
+      delete process.env.DEVRYAN_DATA_DIR;
     } else {
-      process.env.OPENCHAMBER_DATA_DIR = originalDataDirectory;
+      process.env.DEVRYAN_DATA_DIR = originalDataDirectory;
     }
     originalDataDirectory = undefined;
     if (tempRoot) {
@@ -526,7 +527,7 @@ describe('syncRuntimeAgentOverlays', () => {
 
   it('copies the active Slim config into the managed overlay config directory', async () => {
     const opencodeConfigDirectory = path.join(tempRoot, 'opencode-config');
-    const slimConfigPath = path.join(opencodeConfigDirectory, 'oh-my-opencode-slim.json');
+    const slimConfigPath = path.join(opencodeConfigDirectory, 'devryan-agents.json');
     const slimConfig = {
       preset: 'openai',
       presets: {
@@ -549,7 +550,7 @@ describe('syncRuntimeAgentOverlays', () => {
       readOpenCodeConfig: () => ({ plugin: ['oh-my-opencode-slim'] }),
     });
 
-    await expect(fs.readFile(path.join(result.targetConfigDirectory, 'oh-my-opencode-slim.json'), 'utf8'))
+    await expect(fs.readFile(path.join(result.targetConfigDirectory, 'devryan-agents.json'), 'utf8'))
       .resolves.toBe(`${JSON.stringify({ ...slimConfig, fallback: { enabled: false } }, null, 2)}\n`);
     await expect(fs.readFile(path.join(result.targetConfigDirectory, 'opencode.json'), 'utf8'))
       .resolves.not.toContain('oh-my-opencode-slim');
@@ -558,7 +559,7 @@ describe('syncRuntimeAgentOverlays', () => {
 
   it('disables Slim foreground fallback in the managed overlay while preserving model chains', async () => {
     const opencodeConfigDirectory = path.join(tempRoot, 'opencode-config');
-    const slimConfigPath = path.join(opencodeConfigDirectory, 'oh-my-opencode-slim.jsonc');
+    const slimConfigPath = path.join(opencodeConfigDirectory, 'devryan-agents.jsonc');
     const slimConfig = {
       agents: {
         fixer: { model: ['openai/gpt-5.5', { id: 'opencode-go/glm-5.1', variant: 'high' }] },
@@ -577,12 +578,12 @@ describe('syncRuntimeAgentOverlays', () => {
       overlayRoot,
       manifestPath,
       slimConfigDirectory: opencodeConfigDirectory,
-      readConfig: () => ({ plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC] }),
-      readOpenCodeConfig: () => ({ plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC] }),
+      readConfig: () => ({ plugin: [LOCAL_PLUGIN_SPEC] }),
+      readOpenCodeConfig: () => ({ plugin: [LOCAL_PLUGIN_SPEC] }),
     };
 
     const result = await syncRuntimeAgentOverlays(syncOptions);
-    const overlayPath = path.join(result.targetConfigDirectory, 'oh-my-opencode-slim.jsonc');
+    const overlayPath = path.join(result.targetConfigDirectory, 'devryan-agents.json');
     const overlay = JSON.parse(await fs.readFile(overlayPath, 'utf8'));
 
     expect(result.slimConfigPath).toBe(overlayPath);
@@ -608,50 +609,42 @@ describe('syncRuntimeAgentOverlays', () => {
       overlayRoot,
       manifestPath,
       slimConfigDirectory: opencodeConfigDirectory,
-      readConfig: () => ({ plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC] }),
-      readOpenCodeConfig: () => ({ plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC] }),
+      readConfig: () => ({ plugin: [LOCAL_PLUGIN_SPEC] }),
+      readOpenCodeConfig: () => ({ plugin: [LOCAL_PLUGIN_SPEC] }),
     });
 
-    const overlayPath = path.join(result.targetConfigDirectory, 'oh-my-opencode-slim.json');
+    const overlayPath = path.join(result.targetConfigDirectory, 'devryan-agents.json');
     expect(result.slimConfigWritten).toBe(true);
     expect(result.slimConfigPath).toBe(overlayPath);
     await expect(fs.readFile(overlayPath, 'utf8'))
       .resolves.toBe(`${JSON.stringify({ fallback: { enabled: false } }, null, 2)}\n`);
   });
 
-  it('removes the Slim overlay when Slim is not active', async () => {
+  it('writes the Slim overlay with no plugin registration because the orchestration is built in', async () => {
     const opencodeConfigDirectory = path.join(tempRoot, 'opencode-config');
-    await writeJson(path.join(opencodeConfigDirectory, 'oh-my-opencode-slim.json'), { preset: 'openai' });
-    const syncOptions = {
+    await writeJson(path.join(opencodeConfigDirectory, 'devryan-agents.json'), { preset: 'openai' });
+    const result = await syncRuntimeAgentOverlays({
       workingDirectory: projectDirectory,
       packagedAgentDirectory,
       packagedPluginDirectory,
       overlayRoot,
       manifestPath,
       slimConfigDirectory: opencodeConfigDirectory,
-      readConfig: () => ({ plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC] }),
-      readOpenCodeConfig: () => ({ plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC] }),
-    };
-    const active = await syncRuntimeAgentOverlays(syncOptions);
-    expect(active.slimConfigWritten).toBe(true);
-
-    const inactive = await syncRuntimeAgentOverlays({
-      ...syncOptions,
       readConfig: () => ({ plugin: [] }),
       readOpenCodeConfig: () => ({ plugin: [] }),
     });
-    expect(inactive.slimConfigRemoved).toBe(true);
-    expect(inactive.slimConfigPath).toBeNull();
-    expect(fsSync.existsSync(path.join(inactive.targetConfigDirectory, 'oh-my-opencode-slim.json'))).toBe(false);
+    expect(result.slimConfigWritten).toBe(true);
+    await expect(fs.readFile(path.join(result.targetConfigDirectory, 'devryan-agents.json'), 'utf8'))
+      .resolves.toBe(`${JSON.stringify({ preset: 'openai', fallback: { enabled: false } }, null, 2)}\n`);
   });
 
   it('materializes wrapper-mode Slim model saves into managed agent overlays', async () => {
     const opencodeConfigDirectory = path.join(tempRoot, 'opencode-config');
     const userConfigPath = path.join(opencodeConfigDirectory, 'opencode.json');
-    const slimConfigPath = path.join(opencodeConfigDirectory, 'oh-my-opencode-slim.json');
+    const slimConfigPath = path.join(opencodeConfigDirectory, 'devryan-agents.json');
     const wrapperSource = 'export default async function wrapper() { return {}; }\n';
     await writeJson(userConfigPath, {
-      plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC],
+      plugin: [LOCAL_PLUGIN_SPEC],
     });
     await writeJson(slimConfigPath, {
       preset: 'openai',
@@ -669,7 +662,7 @@ describe('syncRuntimeAgentOverlays', () => {
       'variant: medium',
     ], 'Packaged DevRyan fixer prompt');
     await fs.mkdir(packagedPluginDirectory, { recursive: true });
-    await fs.writeFile(path.join(packagedPluginDirectory, DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE), wrapperSource, 'utf8');
+    await fs.writeFile(path.join(packagedPluginDirectory, LOCAL_PLUGIN_FILE), wrapperSource, 'utf8');
 
     writeAgentModelOverride(
       'fixer',
@@ -689,8 +682,8 @@ describe('syncRuntimeAgentOverlays', () => {
       manifestPath,
       userConfigPath,
       slimConfigDirectory: opencodeConfigDirectory,
-      readConfig: () => ({ plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC] }),
-      readOpenCodeConfig: () => ({ plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC] }),
+      readConfig: () => ({ plugin: [LOCAL_PLUGIN_SPEC] }),
+      readOpenCodeConfig: () => ({ plugin: [LOCAL_PLUGIN_SPEC] }),
       skillPolicy: {
         skillNames: [],
         skillDirectories: [],
@@ -700,9 +693,9 @@ describe('syncRuntimeAgentOverlays', () => {
 
     const overlayConfig = JSON.parse(await fs.readFile(path.join(result.targetConfigDirectory, 'opencode.json'), 'utf8'));
     const overlay = await readOverlayAgent(result.targetConfigDirectory, 'fixer');
-    await expect(fs.readFile(path.join(result.targetConfigDirectory, 'oh-my-opencode-slim.json'), 'utf8'))
+    await expect(fs.readFile(path.join(result.targetConfigDirectory, 'devryan-agents.json'), 'utf8'))
       .resolves.toContain('"preset": "openai"');
-    await expect(fs.readFile(path.join(result.targetConfigDirectory, 'plugins', DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE), 'utf8'))
+    await expect(fs.readFile(path.join(result.targetConfigDirectory, 'plugins', LOCAL_PLUGIN_FILE), 'utf8'))
       .resolves.toBe(wrapperSource);
     expect(overlayConfig.plugin).toBeUndefined();
     expect(overlay.prompt).toBe('Packaged DevRyan fixer prompt');
@@ -715,9 +708,9 @@ describe('syncRuntimeAgentOverlays', () => {
     const opencodeConfigDirectory = path.join(tempRoot, 'opencode-config');
     const userConfigPath = path.join(opencodeConfigDirectory, 'opencode.json');
     await writeJson(userConfigPath, {
-      plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC],
+      plugin: [LOCAL_PLUGIN_SPEC],
     });
-    await writeJson(path.join(opencodeConfigDirectory, 'oh-my-opencode-slim.json'), {
+    await writeJson(path.join(opencodeConfigDirectory, 'devryan-agents.json'), {
       preset: 'openai',
       presets: {
         openai: {
@@ -743,8 +736,8 @@ describe('syncRuntimeAgentOverlays', () => {
       manifestPath,
       userConfigPath,
       slimConfigDirectory: opencodeConfigDirectory,
-      readConfig: () => ({ plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC] }),
-      readOpenCodeConfig: () => ({ plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC] }),
+      readConfig: () => ({ plugin: [LOCAL_PLUGIN_SPEC] }),
+      readOpenCodeConfig: () => ({ plugin: [LOCAL_PLUGIN_SPEC] }),
       skillPolicy: {
         skillNames: [],
         skillDirectories: [],
@@ -778,9 +771,9 @@ describe('syncRuntimeAgentOverlays', () => {
     const opencodeConfigDirectory = path.join(tempRoot, 'opencode-config');
     const userConfigPath = path.join(opencodeConfigDirectory, 'opencode.json');
     await writeJson(userConfigPath, {
-      plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC],
+      plugin: [LOCAL_PLUGIN_SPEC],
     });
-    await writeJson(path.join(opencodeConfigDirectory, 'oh-my-opencode-slim.json'), {
+    await writeJson(path.join(opencodeConfigDirectory, 'devryan-agents.json'), {
       preset: 'openai',
       presets: {
         openai: {
@@ -812,8 +805,8 @@ describe('syncRuntimeAgentOverlays', () => {
       manifestPath,
       userConfigPath,
       slimConfigDirectory: opencodeConfigDirectory,
-      readConfig: () => ({ plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC] }),
-      readOpenCodeConfig: () => ({ plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC] }),
+      readConfig: () => ({ plugin: [LOCAL_PLUGIN_SPEC] }),
+      readOpenCodeConfig: () => ({ plugin: [LOCAL_PLUGIN_SPEC] }),
       skillPolicy: {
         skillNames: [],
         skillDirectories: [],
@@ -863,6 +856,8 @@ describe('syncRuntimeAgentOverlays', () => {
   it('updates stale project-directory allows when the working directory changes', async () => {
     const firstDirectory = path.join(tempRoot, 'project-one');
     const secondDirectory = path.join(tempRoot, 'project-two');
+    await fs.mkdir(path.join(firstDirectory, '.git'), { recursive: true });
+    await fs.mkdir(path.join(secondDirectory, '.git'), { recursive: true });
     const targetConfigDirectoryOverride = path.join(overlayRoot, 'stable-project-key');
     await writeAgent(packagedAgentDirectory, 'explorer', [
       'mode: subagent',
@@ -1058,15 +1053,15 @@ describe('syncRuntimeAgentOverlays', () => {
       '*': 'ask',
       ...managedRuntimeDirectoryAllows(projectDirectory),
     });
-    const dataDirectoryPattern = `${path.resolve(process.env.OPENCHAMBER_DATA_DIR)}/*`;
+    const dataDirectoryPattern = `${path.resolve(process.env.DEVRYAN_DATA_DIR)}/*`;
     expect(overlay.frontmatter.permission.external_directory[dataDirectoryPattern]).toBe('allow');
     expect(path.join(
-      process.env.OPENCHAMBER_DATA_DIR,
+      process.env.DEVRYAN_DATA_DIR,
       'projects',
       'another-project',
       'plans',
       'revision.md',
-    ).startsWith(`${path.resolve(process.env.OPENCHAMBER_DATA_DIR)}${path.sep}`)).toBe(true);
+    ).startsWith(`${path.resolve(process.env.DEVRYAN_DATA_DIR)}${path.sep}`)).toBe(true);
     expect(overlay.frontmatter.permission.read).toEqual({
       '*': 'allow',
       '*.env': 'ask',
@@ -1195,6 +1190,7 @@ describe('syncRuntimeAgentOverlays', () => {
             timeout: 60_000,
           },
         },
+        lsp: false,
       });
     expect(result.configWritten).toBe(true);
   });
@@ -1258,6 +1254,7 @@ describe('syncRuntimeAgentOverlays', () => {
             },
           },
         },
+        lsp: false,
       });
     expect(result.configWritten).toBe(true);
   });
@@ -1306,6 +1303,7 @@ describe('syncRuntimeAgentOverlays', () => {
             timeout: 60_000,
           },
         },
+        lsp: false,
       });
   });
 
@@ -1352,6 +1350,7 @@ describe('syncRuntimeAgentOverlays', () => {
       .resolves.toEqual({
         agent: TITLE_AGENT_OVERLAY,
         mcp: BLOCKED_MCP_TOMBSTONES,
+        lsp: false,
       });
     expect(result.configUpdated).toBe(true);
   });
@@ -1385,6 +1384,7 @@ describe('syncRuntimeAgentOverlays', () => {
             Object.entries(BLOCKED_MCP_TOMBSTONES).filter(([name]) => name !== 'ghgrep'),
           ),
         },
+        lsp: false,
       });
     expect(result.configWritten).toBe(true);
   });
@@ -1486,6 +1486,7 @@ describe('syncRuntimeAgentOverlays', () => {
             },
           },
         },
+        lsp: false,
       });
     expect(result.pluginsWritten).toEqual([
       'council-session.js',
@@ -1532,6 +1533,7 @@ describe('syncRuntimeAgentOverlays', () => {
         plugin: [
           './plugins/council-session.js',
         ],
+        lsp: false,
       });
   });
 
@@ -1539,13 +1541,13 @@ describe('syncRuntimeAgentOverlays', () => {
     const wrapperSource = 'export default async function wrapper() { return {}; }\n';
     await fs.mkdir(packagedPluginDirectory, { recursive: true });
     await fs.writeFile(
-      path.join(packagedPluginDirectory, DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE),
+      path.join(packagedPluginDirectory, LOCAL_PLUGIN_FILE),
       wrapperSource,
       'utf8',
     );
 
     let activeConfig = {
-      plugin: ['cursor-acp', DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC],
+      plugin: ['cursor-acp', LOCAL_PLUGIN_SPEC],
     };
     const syncOptions = {
       workingDirectory: projectDirectory,
@@ -1564,7 +1566,7 @@ describe('syncRuntimeAgentOverlays', () => {
     );
     expect(sourceOwnedConfig.plugin).toBeUndefined();
     await expect(fs.readFile(
-      path.join(sourceOwned.targetPluginDirectory, DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE),
+      path.join(sourceOwned.targetPluginDirectory, LOCAL_PLUGIN_FILE),
       'utf8',
     )).resolves.toBe(wrapperSource);
 
@@ -1574,7 +1576,7 @@ describe('syncRuntimeAgentOverlays', () => {
       await fs.readFile(path.join(packagedFallback.targetConfigDirectory, 'opencode.json'), 'utf8'),
     );
     expect(packagedFallbackConfig.plugin).toEqual([
-      DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC,
+      LOCAL_PLUGIN_SPEC,
     ]);
   });
 
@@ -1582,7 +1584,7 @@ describe('syncRuntimeAgentOverlays', () => {
     const wrapperSource = 'export default async function wrapper() { return {}; }\n';
     await fs.mkdir(packagedPluginDirectory, { recursive: true });
     await fs.writeFile(
-      path.join(packagedPluginDirectory, DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE),
+      path.join(packagedPluginDirectory, LOCAL_PLUGIN_FILE),
       wrapperSource,
       'utf8',
     );
@@ -1595,7 +1597,7 @@ describe('syncRuntimeAgentOverlays', () => {
       manifestPath,
       readConfig: () => ({ plugin: ['context-mode@1.0.169'] }),
       readSourcePluginConfigs: () => [{
-        plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC],
+        plugin: [LOCAL_PLUGIN_SPEC],
       }],
       readOpenCodeConfig: () => ({}),
       listMcpConfigs: () => [],
@@ -1606,7 +1608,7 @@ describe('syncRuntimeAgentOverlays', () => {
 
     expect(runtimeConfig.plugin).toBeUndefined();
     await expect(fs.readFile(
-      path.join(result.targetPluginDirectory, DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE),
+      path.join(result.targetPluginDirectory, LOCAL_PLUGIN_FILE),
       'utf8',
     )).resolves.toBe(wrapperSource);
   });
@@ -1700,8 +1702,9 @@ describe('syncRuntimeAgentOverlays', () => {
     expect(Object.keys(runtimeConfig.agent).filter((name) => runtimeConfig.agent[name]?.disable === true)).toEqual(['title']);
   });
 
-  it('adds bounded OpenAI connection and total-request liveness timeouts for OAuth auth', async () => {
-    const result = await syncRuntimeAgentOverlays({
+  it('leaves OpenAI transport deadlines to the native configuration snapshot', async () => {
+    process.env.OPENAI_API_KEY = 'test-api-key';
+    const syncOptions = {
       workingDirectory: projectDirectory,
       packagedAgentDirectory,
       packagedPluginDirectory,
@@ -1718,6 +1721,9 @@ describe('syncRuntimeAgentOverlays', () => {
               baseURL: 'http://127.0.0.1:3456',
             },
           },
+          openai: {
+            options: { baseURL: 'https://api.openai.com/v1' },
+          },
         },
       }),
       listMcpConfigs: () => ([{
@@ -1727,176 +1733,27 @@ describe('syncRuntimeAgentOverlays', () => {
         url: 'https://example.com/mcp',
         enabled: true,
       }]),
-    });
-
-    const runtimeConfig = JSON.parse(await fs.readFile(
-      path.join(result.targetConfigDirectory, 'opencode.json'),
-      'utf8',
-    ));
-    expect(runtimeConfig.provider?.openai).toEqual({
-      options: {
-        headerTimeout: 120_000,
-        chunkTimeout: 300_000,
-        timeout: 900_000,
-      },
-    });
-    expect(runtimeConfig.provider.openai.models).toBeUndefined();
-    expect(runtimeConfig.provider.anthropic.options.baseURL).toBe('http://127.0.0.1:3456');
-    expect(runtimeConfig.plugin || []).not.toContain('opencode-antigravity-auth@latest');
-    expect(runtimeConfig.mcp['remote-tools']).toMatchObject({
-      type: 'remote',
-      url: 'https://example.com/mcp',
-      timeout: 60_000,
-    });
-  });
-
-  it('adds OpenAI connection-liveness timeouts for an API-key environment', async () => {
-    process.env.OPENAI_API_KEY = 'test-api-key';
-
-    const result = await syncRuntimeAgentOverlays({
-      workingDirectory: projectDirectory,
-      packagedAgentDirectory,
-      packagedPluginDirectory,
-      overlayRoot,
-      manifestPath,
-      readAuthFile: () => ({}),
-      writeAuthFile: () => {},
-      readConfig: () => ({}),
-      listMcpConfigs: () => [],
-    });
-
-    const runtimeConfig = JSON.parse(await fs.readFile(
-      path.join(result.targetConfigDirectory, 'opencode.json'),
-      'utf8',
-    ));
-    expect(runtimeConfig.provider?.openai?.options).toEqual({
-      headerTimeout: 120_000,
-      chunkTimeout: 300_000,
-      timeout: 900_000,
-    });
-  });
-
-  it('adds OpenAI connection-liveness timeouts for an existing provider configuration', async () => {
-    const result = await syncRuntimeAgentOverlays({
-      workingDirectory: projectDirectory,
-      packagedAgentDirectory,
-      packagedPluginDirectory,
-      overlayRoot,
-      manifestPath,
-      readAuthFile: () => ({}),
-      writeAuthFile: () => {},
-      readConfig: () => ({
-        provider: {
-          openai: {
-            options: { baseURL: 'https://api.openai.com/v1' },
-          },
-        },
-      }),
-      listMcpConfigs: () => [],
-    });
-
-    const runtimeConfig = JSON.parse(await fs.readFile(
-      path.join(result.targetConfigDirectory, 'opencode.json'),
-      'utf8',
-    ));
-    expect(runtimeConfig.provider?.openai).toEqual({
-      options: {
-        headerTimeout: 120_000,
-        chunkTimeout: 300_000,
-        timeout: 900_000,
-      },
-    });
-  });
-
-  it.each([
-    { headerTimeout: 30_000, chunkTimeout: 45_000, timeout: 90_000 },
-    { headerTimeout: false, chunkTimeout: false, timeout: false },
-  ])('preserves explicit OpenAI timeout options: %j', async (providerOptions) => {
-    const result = await syncRuntimeAgentOverlays({
-      workingDirectory: projectDirectory,
-      packagedAgentDirectory,
-      packagedPluginDirectory,
-      overlayRoot,
-      manifestPath,
-      readAuthFile: () => ({}),
-      writeAuthFile: () => {},
-      readConfig: () => ({
-        provider: {
-          openai: {
-            options: providerOptions,
-          },
-        },
-      }),
-      listMcpConfigs: () => [],
-    });
-
-    const runtimeConfig = JSON.parse(await fs.readFile(
-      path.join(result.targetConfigDirectory, 'opencode.json'),
-      'utf8',
-    ));
-    expect(runtimeConfig.provider?.openai?.options).toEqual(providerOptions);
-  });
-
-  it('removes a stale generated OpenAI timeout after auth is removed', async () => {
-    let auth = { openai: { type: 'oauth', access: 'oauth-token' } };
-    const syncOptions = {
-      workingDirectory: projectDirectory,
-      packagedAgentDirectory,
-      packagedPluginDirectory,
-      overlayRoot,
-      manifestPath,
-      readAuthFile: () => auth,
-      writeAuthFile: () => {},
-      readConfig: () => ({}),
-      listMcpConfigs: () => [],
-    };
-
-    const initial = await syncRuntimeAgentOverlays(syncOptions);
-    expect(JSON.parse(await fs.readFile(
-      path.join(initial.targetConfigDirectory, 'opencode.json'),
-      'utf8',
-    )).provider?.openai?.options?.headerTimeout).toBe(120_000);
-
-    auth = {};
-    const updated = await syncRuntimeAgentOverlays(syncOptions);
-    const runtimeConfig = JSON.parse(await fs.readFile(
-      path.join(updated.targetConfigDirectory, 'opencode.json'),
-      'utf8',
-    ));
-    expect(updated.configUpdated).toBe(true);
-    expect(runtimeConfig.provider?.openai).toBeUndefined();
-  });
-
-  it('replaces a stale generated OpenAI total deadline on the next startup sync', async () => {
-    const syncOptions = {
-      workingDirectory: projectDirectory,
-      packagedAgentDirectory,
-      packagedPluginDirectory,
-      overlayRoot,
-      manifestPath,
-      readAuthFile: () => ({ openai: { type: 'oauth', access: 'oauth-token' } }),
-      writeAuthFile: () => {},
-      readConfig: () => ({}),
-      listMcpConfigs: () => [],
     };
 
     const initial = await syncRuntimeAgentOverlays(syncOptions);
     const generatedConfigPath = path.join(initial.targetConfigDirectory, 'opencode.json');
     const staleConfig = JSON.parse(await fs.readFile(generatedConfigPath, 'utf8'));
-    staleConfig.provider.openai.options = {
-      headerTimeout: 60_000,
-      chunkTimeout: 120_000,
-      timeout: 600_000,
+    expect(staleConfig.provider?.openai).toBeUndefined();
+    staleConfig.provider.openai = {
+      options: { headerTimeout: 120_000, chunkTimeout: 300_000, timeout: 900_000 },
     };
     await fs.writeFile(generatedConfigPath, `${JSON.stringify(staleConfig, null, 2)}\n`, 'utf8');
 
     const refreshed = await syncRuntimeAgentOverlays(syncOptions);
     const runtimeConfig = JSON.parse(await fs.readFile(generatedConfigPath, 'utf8'));
     expect(refreshed.configUpdated).toBe(true);
-    expect(runtimeConfig.provider.openai.options).toEqual({
-      headerTimeout: 120_000,
-      chunkTimeout: 300_000,
-      timeout: 900_000,
+    expect(runtimeConfig.provider?.openai).toBeUndefined();
+    expect(runtimeConfig.provider.anthropic.options.baseURL).toBe('http://127.0.0.1:3456');
+    expect(runtimeConfig.plugin || []).not.toContain('opencode-antigravity-auth@latest');
+    expect(runtimeConfig.mcp['remote-tools']).toMatchObject({
+      type: 'remote',
+      url: 'https://example.com/mcp',
+      timeout: 60_000,
     });
   });
 
@@ -1983,88 +1840,24 @@ describe('syncRuntimeAgentOverlays', () => {
       .rejects.toMatchObject({ code: 'ENOENT' });
   });
 
-  describe('agent runtime language server setting', () => {
-    const buildSyncOptions = () => ({
+  it('always writes lsp:false into the runtime config', async () => {
+    const result = await syncRuntimeAgentOverlays({
       workingDirectory: projectDirectory,
       packagedAgentDirectory,
       packagedPluginDirectory,
       overlayRoot,
       manifestPath,
-      readConfig: () => ({}),
+      readConfig: () => ({ lsp: true }),
       listMcpConfigs: () => [],
     });
-
-    it('leaves the runtime config byte-identical while the language server is enabled', async () => {
-      const syncOptions = buildSyncOptions();
-      const initial = await syncRuntimeAgentOverlays({ ...syncOptions, agentRuntimeSettings: { lsp: true } });
-      const configPath = path.join(initial.targetConfigDirectory, 'opencode.json');
-      const content = await fs.readFile(configPath, 'utf8');
-
-      expect(initial.configWritten).toBe(true);
-      expect(content).not.toContain('"lsp"');
-      expect(JSON.parse(content)).toEqual({
-        agent: TITLE_AGENT_OVERLAY,
-        mcp: BLOCKED_MCP_TOMBSTONES,
-      });
-
-      const repeated = await syncRuntimeAgentOverlays({ ...syncOptions, agentRuntimeSettings: { lsp: true } });
-      expect(repeated.configWritten).toBe(false);
-      expect(repeated.configUpdated).toBe(false);
-      expect(repeated.configRemoved).toBe(false);
-      await expect(fs.readFile(configPath, 'utf8')).resolves.toBe(content);
-    });
-
-    it('writes lsp:false into the runtime config when the setting is off and removes it when re-enabled', async () => {
-      const syncOptions = buildSyncOptions();
-      const disabled = await syncRuntimeAgentOverlays({ ...syncOptions, agentRuntimeSettings: { lsp: false } });
-      const configPath = path.join(disabled.targetConfigDirectory, 'opencode.json');
-
-      expect(disabled.configWritten).toBe(true);
-      await expect(fs.readFile(configPath, 'utf8').then((content) => JSON.parse(content)))
-        .resolves.toEqual({
-          agent: TITLE_AGENT_OVERLAY,
-          mcp: BLOCKED_MCP_TOMBSTONES,
-          lsp: false,
-        });
-
-      const enabled = await syncRuntimeAgentOverlays({ ...syncOptions, agentRuntimeSettings: { lsp: true } });
-      expect(enabled.configUpdated).toBe(true);
-      expect(enabled.configRemoved).toBe(false);
-      const content = await fs.readFile(configPath, 'utf8');
-      expect(content).not.toContain('"lsp"');
-      expect(JSON.parse(content)).toEqual({
-        agent: TITLE_AGENT_OVERLAY,
-        mcp: BLOCKED_MCP_TOMBSTONES,
-      });
-    });
-
-    it('keeps the default (off) for malformed injected settings', async () => {
-      const syncOptions = buildSyncOptions();
-      const result = await syncRuntimeAgentOverlays({ ...syncOptions, agentRuntimeSettings: { lsp: 'true' } });
-      const runtimeConfig = JSON.parse(await fs.readFile(
-        path.join(result.targetConfigDirectory, 'opencode.json'),
-        'utf8',
-      ));
-      expect(runtimeConfig.lsp).toBe(false);
-    });
-
-    it('reads the setting from the DevRyan sidecar when it is not injected', async () => {
-      readAgentRuntimeSettingsSpy.mockRestore();
-      const userConfigPath = path.join(tempRoot, 'opencode-config', 'opencode.json');
-      agentRuntimeSettingsModule.writeAgentRuntimeSettings({ lsp: false }, { userConfigPath });
-
-      const syncOptions = { ...buildSyncOptions(), userConfigPath };
-      const disabled = await syncRuntimeAgentOverlays(syncOptions);
-      const configPath = path.join(disabled.targetConfigDirectory, 'opencode.json');
-      expect(JSON.parse(await fs.readFile(configPath, 'utf8')).lsp).toBe(false);
-      // The overlay only ever writes OpenCode's own key; the sidecar and the
-      // user's opencode config stay untouched by the sync.
-      await expect(fs.stat(userConfigPath)).rejects.toMatchObject({ code: 'ENOENT' });
-
-      agentRuntimeSettingsModule.writeAgentRuntimeSettings({ lsp: true }, { userConfigPath });
-      const enabled = await syncRuntimeAgentOverlays(syncOptions);
-      expect(enabled.configUpdated).toBe(true);
-      expect(JSON.parse(await fs.readFile(configPath, 'utf8'))).not.toHaveProperty('lsp');
+    const runtimeConfig = JSON.parse(await fs.readFile(
+      path.join(result.targetConfigDirectory, 'opencode.json'),
+      'utf8',
+    ));
+    expect(runtimeConfig).toEqual({
+      agent: TITLE_AGENT_OVERLAY,
+      mcp: BLOCKED_MCP_TOMBSTONES,
+      lsp: false,
     });
   });
 });

@@ -1,3 +1,5 @@
+import type { TerminalCapabilities } from './api/types';
+
 export interface TerminalWebSocketDescriptor {
   path: string;
   v?: number;
@@ -80,7 +82,7 @@ const WS_SEND_WAIT_MS = 1200;
 const WS_RECONNECT_JITTER_MS = 250;
 const WS_KEEPALIVE_INTERVAL_MS = 20000;
 const WS_CONNECT_TIMEOUT_MS = 5000;
-const GLOBAL_TERMINAL_TRANSPORT_STATE_KEY = '__openchamberTerminalTransportState';
+const GLOBAL_TERMINAL_TRANSPORT_STATE_KEY = '__devryanTerminalTransportState';
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
@@ -105,7 +107,7 @@ const normalizeWebSocketPath = (pathValue: string): string => {
   return `${protocol}//${window.location.host}${normalizedPath}`;
 };
 
-const encodeControlFrame = (payload: TerminalControlMessage): Uint8Array => {
+const encodeControlFrame = (payload: TerminalControlMessage): Uint8Array<ArrayBuffer> => {
   const jsonBytes = textEncoder.encode(JSON.stringify(payload));
   const bytes = new Uint8Array(jsonBytes.length + 1);
   bytes[0] = CONTROL_TAG_JSON;
@@ -762,6 +764,22 @@ const sendTerminalInputHttp = async (sessionId: string, data: string): Promise<v
     throw new Error(error.error || 'Failed to send terminal input');
   }
 };
+
+export async function getTerminalCapabilities(): Promise<TerminalCapabilities> {
+  const response = await fetch('/api/terminal/capabilities', { cache: 'no-store', signal: AbortSignal.timeout(4000) });
+  if (!response.ok) throw new Error('Terminal availability could not be checked.');
+  const value: unknown = await response.json();
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error('Invalid terminal capabilities.');
+  }
+  if ('available' in value && 'code' in value) {
+    if (value.available === true && value.code === null) return { available: true, code: null };
+    if (value.available === false && value.code === 'terminal_platform_unsupported') {
+      return { available: false, code: 'terminal_platform_unsupported' };
+    }
+  }
+  throw new Error('Invalid terminal capabilities.');
+}
 
 export async function createTerminalSession(options: CreateTerminalOptions): Promise<TerminalSession> {
   const response = await fetch('/api/terminal/create', {

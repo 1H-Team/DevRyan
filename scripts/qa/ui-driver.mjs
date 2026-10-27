@@ -1,7 +1,8 @@
 import { evaluate } from './cdp.mjs';
+import { readThroughNavigation } from './navigation-tolerant.mjs';
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-const visible = `e => { const r=e.getBoundingClientRect(); if(r.width<=0||r.height<=0)return false;for(let p=e;p;p=p.parentElement){const s=getComputedStyle(p);if(s.display==='none'||s.visibility==='hidden'||Number(s.opacity)<0.95)return false;}return true; }`;
+const visible = `e => { const r=e.getBoundingClientRect(); if(r.width<=0||r.height<=0)return false;for(let p=e;p;p=p.parentElement){const s=getComputedStyle(p);if(s.display==='none'||s.visibility==='hidden'||Number(s.opacity)<=0)return false;}return true; }`;
 
 export const isQaReadOnlyRevealHit = (target, hit, allowDisabled, pointerEvents) => Boolean(target && hit
   && (target.contains(hit) || (allowDisabled && target.disabled === true && pointerEvents === 'none' && hit === target.parentElement)));
@@ -11,26 +12,34 @@ export const isQaRevealRectVisible = (rect, bounds, fullyVisible) => Boolean(rec
   && rect.left+rect.width/2>=bounds.left && rect.left+rect.width/2<=bounds.right
   && (!fullyVisible || (rect.top>=bounds.top && rect.bottom<=bounds.bottom && rect.left>=bounds.left && rect.right<=bounds.right)));
 
-export function createQaUiDriver(cdp, { timeoutMs = 30000, checkAlive = () => {} } = {}) {
+export function createQaUiDriver(connection, { timeoutMs = 30000, checkAlive: alive = () => {}, navigationReads = false, deadline: phaseDeadline, signal } = {}) {
+  const checkAlive = () => { alive(); signal?.throwIfAborted(); if (phaseDeadline !== undefined && performance.now() >= phaseDeadline) throw Error('QA UI phase deadline expired'); };
+  const cdp = phaseDeadline === undefined && !signal ? connection : { send: (method, params, options = {}) => {
+    checkAlive(); return connection.send(method, params, { ...options, timeoutMs: Math.min(options.timeoutMs ?? 30000, phaseDeadline === undefined ? 30000 : phaseDeadline - performance.now()) });
+  }, waitFor: (method, timeout = 30000) => { checkAlive(); return connection.waitFor(method, Math.min(timeout, phaseDeadline === undefined ? timeout : phaseDeadline - performance.now())); } };
   const waitFor = async (label, predicate, timeout = timeoutMs) => {
-    const deadline = performance.now() + timeout;
+    const deadline = Math.min(performance.now() + timeout, phaseDeadline ?? Infinity);
     while (true) {
       checkAlive();
-      const result = await predicate();
+      const result = await predicate(deadline);
+      checkAlive();
+      if (phaseDeadline !== undefined && performance.now() > deadline) throw new Error(`Timed out: ${label}`);
       if (result) return result;
       if (performance.now() > deadline) throw new Error(`Timed out: ${label}`);
       await delay(100);
     }
   };
   const waitExpression = (label, expression, timeout) => waitFor(label, () => evaluate(cdp, expression), timeout);
-  const waitVisibleText = (text, selector = 'body') => waitExpression(`visible text ${text}`, `(() => {
+  const waitReadExpression = (label, expression, timeout) => waitFor(label,
+    deadline => readThroughNavigation(cdp, expression, { deadline, check: checkAlive }), timeout);
+  const waitVisibleText = (text, selector = 'body') => (navigationReads ? waitReadExpression : waitExpression)(`visible text ${text}`, `(() => {
     const root=document.querySelector(${JSON.stringify(selector)}); if(!root) return false;
     const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
     for(let node=walker.nextNode();node;node=walker.nextNode()) {
       if(!node.textContent.includes(${JSON.stringify(text)})) continue;
       let visible=true;
       for(let e=node.parentElement;e;e=e.parentElement) {
-        const style=getComputedStyle(e);if(style.display==='none'||style.visibility==='hidden'||Number(style.opacity)<0.95){visible=false;break;}
+        const style=getComputedStyle(e);if(style.display==='none'||style.visibility==='hidden'||Number(style.opacity)<=0){visible=false;break;}
       }
       if(!visible)continue; const range=document.createRange();range.selectNodeContents(node);
       for(const r of range.getClientRects()) {
@@ -157,5 +166,5 @@ export function createQaUiDriver(cdp, { timeoutMs = 30000, checkAlive = () => {}
     await cdp.send('DOM.setFileInputFiles', { nodeId, files });
   };
   const inspectControls = () => evaluate(cdp, `[...document.querySelectorAll('button,[role="button"],[role="menuitem"],input')].filter(${visible}).map(e=>({role:e.getAttribute('role'),label:e.getAttribute('aria-label'),text:e.innerText?.slice(0,120),placeholder:e.getAttribute('placeholder')})).slice(-100)`);
-  return { waitFor, waitExpression, waitVisibleText, click, key, type, send, reveal, revealText, reload, attach, inspectControls, pointer };
+  return { waitFor, waitExpression, waitReadExpression, waitVisibleText, click, key, type, send, reveal, revealText, reload, attach, inspectControls, pointer };
 }

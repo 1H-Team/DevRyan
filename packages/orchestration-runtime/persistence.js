@@ -84,8 +84,19 @@ const collectProtectedTaskIds = (tasks, envelopes, { now, maxAgeMs, expireUnackn
     && (isUnacknowledged(task.taskId) || isAutoResumeActive(envelopeByTask.get(task.taskId)))
   );
   for (const task of tasks) {
-    if (!isTerminalManagedTaskStatus(task.status)) hardProtectedIds.add(task.taskId);
+    if (!isTerminalManagedTaskStatus(task.status)) {
+      hardProtectedIds.add(task.taskId);
+      // A queued or running dependent needs the producer's authoritative check.
+      for (const ref of task.taskPrerequisites ?? []) if (taskById.has(ref.taskId)) hardProtectedIds.add(ref.taskId);
+    }
     if (task.dispatchGroupId !== null && isUnacknowledged(task.taskId)) {
+      hardProtectedIds.add(task.taskId);
+    }
+    // Collecting execution output does not retire its verification requirement.
+    // Compaction cannot rehash current sources, so even a cached pass must stay
+    // attached until normal disposition or the conversation's retention expiry.
+    if (task.dispatchGroupId !== null && envelopeByTask.get(task.taskId)?.action === 'collect'
+      && task.requiredChecks?.length > 0 && (activeRoots === null || activeRoots.has(task.rootSessionId))) {
       hardProtectedIds.add(task.taskId);
     }
     if (isAutoResumeActive(envelopeByTask.get(task.taskId))) hardProtectedIds.add(task.taskId);
@@ -156,6 +167,7 @@ export const compactManagedOrchestrationState = (input, options = {}) => {
 
   const buildState = () => ({
     version: 1,
+    ...(input.objectiveChecks?.length ? { objectiveChecks: input.objectiveChecks.map(cloneRecord) } : {}),
     tasks: tasks.filter((task) => !removed.has(task.taskId)),
     resultEnvelopes: envelopes.filter((envelope) => !removed.has(envelope.taskId)),
   });
@@ -200,7 +212,7 @@ export const compactManagedOrchestrationState = (input, options = {}) => {
   let taskCount = compacted.tasks.length;
   let envelopeCount = compacted.resultEnvelopes.length;
   const separators = count => Math.max(0, count - 1);
-  let serializedBytes = serializedByteLength({ version: 1, tasks: [], resultEnvelopes: [] })
+  let serializedBytes = serializedByteLength({ version: 1, ...(input.objectiveChecks?.length ? { objectiveChecks: input.objectiveChecks } : {}), tasks: [], resultEnvelopes: [] })
     + [...taskBytes.values()].reduce((total, bytes) => total + bytes, 0)
     + [...envelopeBytes.values()].reduce((total, entry) => total + entry.bytes, 0)
     + separators(taskCount) + separators(envelopeCount);

@@ -274,18 +274,3 @@ export interface ValidationResult {
   errors: ValidationIssue[];
   warnings: ValidationIssue[];
 }
-
-export interface AccessibilityIssue {
-  foreground: string;
-  background: string;
-  ratio: number;
-  requirement: number;
-  pass: boolean;
-  context: string;
-}
-
-export interface AccessibilityReport {
-  wcagAA: boolean;
-  wcagAAA: boolean;
-  issues: AccessibilityIssue[];
-}

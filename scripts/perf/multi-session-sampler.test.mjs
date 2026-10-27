@@ -13,7 +13,6 @@ import {
   commandPreview,
   commandReferencesDirectory,
   describeLspProcesses,
-  parseDockerStats,
   parseDuration,
   parseFootprintJson,
   parseMemoryPressure,
@@ -82,7 +81,7 @@ Swapouts:                                   71112060.
 `;
 
 describe('size and duration parsing', () => {
-  it('parses top, docker, and plain byte units including trend suffixes', () => {
+  it('parses top and plain byte units including trend suffixes', () => {
     assert.equal(parseSize('694M+'), 694 * 1024 ** 2);
     assert.equal(parseSize('11G+'), 11 * 1024 ** 3);
     assert.equal(parseSize('340MiB'), 340 * 1024 ** 2);
@@ -100,11 +99,10 @@ describe('size and duration parsing', () => {
   });
 
   it('parses sampler flags and rejects unsafe labels', () => {
-    const options = parseSamplerArguments(['--label', 'dozen', '--interval', '10', '--duration', '30m', '--docker-every', '0', '--cookie', 'oc_ui_session_3000=fixture'], {});
+    const options = parseSamplerArguments(['--label', 'dozen', '--interval', '10', '--duration', '30m', '--cookie', 'oc_ui_session_3000=fixture'], {});
     assert.equal(options.label, 'dozen');
     assert.equal(options.intervalMs, 10_000);
     assert.equal(options.durationMs, 1_800_000);
-    assert.equal(options.dockerEvery, 0);
     assert.equal(options.cookie, 'oc_ui_session_3000=fixture');
     assert.throws(() => parseSamplerArguments(['--label', '../escape'], {}));
     assert.throws(() => parseSamplerArguments(['--bogus'], {}));
@@ -176,7 +174,7 @@ describe('macOS collectors', () => {
     assert.equal(rows.get(32218).name, 'DevRyan Helper (');
   });
 
-  it('parses vm_stat, sysctl, memory_pressure, and docker stats', () => {
+  it('parses vm_stat, sysctl and memory_pressure', () => {
     const vm = parseVmStat(VM_STAT_FIXTURE);
     assert.equal(vm.freeBytes, 3758 * 16384);
     assert.equal(vm.compressorBytes, 475560 * 16384);
@@ -185,11 +183,6 @@ describe('macOS collectors', () => {
     assert.equal(sysctl.swapUsedBytes, Math.round(12703.56 * 1024 ** 2));
     assert.equal(sysctl.load1, 6.39);
     assert.equal(parseMemoryPressure('...\nSystem-wide memory free percentage: 33%\n'), 33);
-    const docker = parseDockerStats('devryan-bots-indexer-1\t160.1MiB / 1GiB\t26.45%\nsupabase_db\t223.8MiB / 6.768GiB\t10.06%\n');
-    assert.equal(docker.length, 2);
-    assert.equal(docker[0].memBytes, Math.round(160.1 * 1024 ** 2));
-    assert.equal(docker[0].limitBytes, 1024 ** 3);
-    assert.equal(docker[0].cpuPct, 26.45);
   });
 
   it('parses footprint json into per-pid footprint, swapped, and dirty categories', () => {
@@ -511,7 +504,6 @@ describe('report analysis', () => {
         ...extraProcs,
       ],
       orphans: [],
-      docker: index % 2 === 0 ? { devryan: [{ name: 'devryan-bots-indexer-1', memBytes: 100 + index, limitBytes: 1024, cpuPct: 1 }], otherContainerCount: 1, otherContainersMemBytes: 50 } : null,
       fds: index === 0 ? { 1: { role: 'electron-main+server', fds: 200 } } : null,
       logs: { opencodeLogBytes: 1000 + index * 10, mainLogBytes: 500 },
       server: { healthStatus: 200, healthMs: 10 + index, openCodeReady: true, openCodeProbeMs: 2, authenticated: false, debugMemory: null, appMetrics: null, sessions: null },
@@ -528,7 +520,7 @@ describe('report analysis', () => {
       { t: samples[2].t, elapsedS: 10, type: 'exit', pid: 3, role: 'git', family: 'git status', kind: 'tree', cmd: 'git status', lifetimeS: 5, peakFootprint: 10 },
       { t: samples[1].t, elapsedS: 5, type: 'mark', text: 'sent drafts' },
     ];
-    const analysis = analyzeRun({ meta: { label: 'unit', machine: {}, dockerSettings: {} }, samples, events });
+    const analysis = analyzeRun({ meta: { label: 'unit', machine: {} }, samples, events });
     assert.equal(analysis.total.first, 600);
     assert.equal(analysis.total.last, 800);
     assert.equal(analysis.roles['opencode-serve'].footprint.max, 700);
@@ -537,7 +529,6 @@ describe('report analysis', () => {
     assert.equal(analysis.spawnEvents.length, 1);
     assert.equal(analysis.shortLived.length, 1);
     assert.equal(analysis.system.swapoutsDelta, 20);
-    assert.equal(analysis.docker['devryan-bots-indexer-1'].peak, 102);
     assert.equal(analysis.logs.opencodeLogDelta, 20);
     assert.equal(analysis.marks.length, 1);
     assert.equal(analysis.server.authenticated, false);

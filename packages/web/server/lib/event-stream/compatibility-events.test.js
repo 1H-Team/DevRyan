@@ -12,7 +12,7 @@ describe('deriveDirectoryCompatibilityEvents', () => {
       },
     }, 456)).toEqual([
       {
-        type: 'openchamber:session-status',
+        type: 'devryan:session-status',
         properties: {
           sessionId: 'ses_1',
           sessionID: 'ses_1',
@@ -23,7 +23,7 @@ describe('deriveDirectoryCompatibilityEvents', () => {
         },
       },
       {
-        type: 'openchamber:session-activity',
+        type: 'devryan:session-activity',
         properties: { sessionId: 'ses_1', sessionID: 'ses_1', phase: 'busy' },
       },
     ]);

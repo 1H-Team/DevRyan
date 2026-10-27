@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
+import { constants, lstatSync } from 'node:fs';
 import path from 'node:path';
 import { gitTokens, changeError } from './session-changes-git.js';
 import { writeFileAtomic } from './atomic-file.js';
@@ -24,6 +25,26 @@ export async function hasDirectoryAncestors(directory, file, verified) {
   while (parent !== directory) {
     if (verified?.has(parent)) break;
     const stat = await fs.lstat(parent).catch((error) => { if (['ENOENT', 'ENOTDIR'].includes(error.code)) return null; throw error; });
+    if (stat && (!stat.isDirectory() || stat.isSymbolicLink())) return false;
+    if (stat) confirmed.push(parent); else complete = false;
+    parent = path.dirname(parent);
+  }
+  if (verified && complete) for (const entry of confirmed) verified.add(entry);
+  return true;
+}
+
+// hasDirectoryAncestors for a caller that may block its thread (the ledger
+// worker's walks): the same checks with synchronous lstat.
+export function hasDirectoryAncestorsSync(directory, file, verified) {
+  if (!safeChangePath(file)) throw changeError('unsupported_path');
+  let parent = path.dirname(path.join(directory, file));
+  const confirmed = [];
+  let complete = true;
+  while (parent !== directory) {
+    if (verified?.has(parent)) break;
+    let stat = null;
+    try { stat = lstatSync(parent); }
+    catch (error) { if (!['ENOENT', 'ENOTDIR'].includes(error.code)) throw error; }
     if (stat && (!stat.isDirectory() || stat.isSymbolicLink())) return false;
     if (stat) confirmed.push(parent); else complete = false;
     parent = path.dirname(parent);
@@ -198,4 +219,39 @@ export async function captureSnapshot(repo, { paths = null, maxCaptureBytes = In
   await cache.flush();
   if (Date.now() >= deadline) throw changeError('capture_timeout');
   return tree;
+}
+
+// Read only: live reconciliation must never capture a new tree or write objects.
+export async function observeChangeEntry(directory, file, budget) {
+  if (!await hasDirectoryAncestors(directory, file)) throw changeError('current_path_unavailable');
+  const target = path.join(directory, file);
+  const before = await fs.lstat(target, { bigint: true }).catch((error) => {
+    if (['ENOENT', 'ENOTDIR'].includes(error.code)) return null;
+    throw error;
+  });
+  if (!before) return null;
+  if (before.size > BigInt(Math.min(8 * 1024 * 1024, budget.bytes))) throw changeError('current_read_limit');
+  let data, mode;
+  if (before.isSymbolicLink()) {
+    data = Buffer.from(await fs.readlink(target)); mode = '120000';
+  } else if (before.isFile()) {
+    const handle = await fs.open(target, constants.O_RDONLY | constants.O_NOFOLLOW);
+    try {
+      if (signature(before) !== signature(await handle.stat({ bigint: true }))) throw changeError('current_file_changed');
+      data = Buffer.alloc(Number(before.size));
+      let offset = 0;
+      while (offset < data.length) {
+        const { bytesRead } = await handle.read(data, offset, data.length - offset, offset);
+        if (!bytesRead) throw changeError('current_file_changed');
+        offset += bytesRead;
+      }
+      if (signature(before) !== signature(await handle.stat({ bigint: true }))) throw changeError('current_file_changed');
+    } finally { await handle.close(); }
+    mode = before.mode & 0o111n ? '100755' : '100644';
+  } else throw changeError('unsupported_file_type');
+  const after = await fs.lstat(target, { bigint: true });
+  if (signature(before) !== signature(after)) throw changeError('current_file_changed');
+  budget.bytes -= data.length;
+  if (budget.bytes < 0) throw changeError('current_read_limit');
+  return { mode, oid: crypto.createHash(budget.algorithm ?? 'sha1').update(`blob ${data.length}\0`).update(data).digest('hex') };
 }

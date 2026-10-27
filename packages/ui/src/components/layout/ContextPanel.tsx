@@ -587,8 +587,8 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({
     try {
       const location = frameWindow.location;
       const bridgeInstalled = Boolean((frameWindow as Window & {
-        __openchamberPreviewBridgeInstalled?: boolean;
-      }).__openchamberPreviewBridgeInstalled);
+        __devryanPreviewBridgeInstalled?: boolean;
+      }).__devryanPreviewBridgeInstalled);
       if (!shouldRestorePreviewProxyPath({
         frameOrigin: location.origin,
         parentOrigin: window.location.origin,
@@ -1079,8 +1079,8 @@ export const ContextPanel: React.FC = () => {
       }
 
       const directThemeSync = (frameWindow as unknown as {
-        __openchamberApplyThemeSync?: (themePayload: typeof payload) => void;
-      }).__openchamberApplyThemeSync;
+        __devryanApplyThemeSync?: (themePayload: typeof payload) => void;
+      }).__devryanApplyThemeSync;
 
       if (typeof directThemeSync === 'function') {
         try {
@@ -1093,7 +1093,7 @@ export const ContextPanel: React.FC = () => {
 
       frameWindow.postMessage(
         {
-          type: 'openchamber:theme-sync',
+          type: 'devryan:theme-sync',
           payload,
         },
         window.location.origin,
@@ -1114,8 +1114,8 @@ export const ContextPanel: React.FC = () => {
 
       const payload = { visible: activeChatTabID === tabID };
       const directVisibilitySync = (frameWindow as unknown as {
-        __openchamberSetEmbeddedVisibility?: (visibilityPayload: typeof payload) => void;
-      }).__openchamberSetEmbeddedVisibility;
+        __devryanSetEmbeddedVisibility?: (visibilityPayload: typeof payload) => void;
+      }).__devryanSetEmbeddedVisibility;
 
       if (typeof directVisibilitySync === 'function') {
         try {
@@ -1128,7 +1128,7 @@ export const ContextPanel: React.FC = () => {
 
       frameWindow.postMessage(
         {
-          type: 'openchamber:embedded-visibility',
+          type: 'devryan:embedded-visibility',
           payload,
         },
         window.location.origin,

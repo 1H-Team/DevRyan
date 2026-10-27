@@ -17,6 +17,7 @@ const assistantMessage = (id: string, extra: Partial<Message> = {}): Message => 
   id,
   sessionID: SESSION_ID,
   role: "assistant",
+  finish: "stop",
   time: { created: 2, completed: 3 },
   ...extra,
 } as Message)
@@ -80,7 +81,7 @@ describe("detectPlanProposedCandidate", () => {
     expect(detect(structuredClone(state))).toBeNull()
     state.message[SESSION_ID].push(assistantMessage("recovered", { parentID: "human" }))
     state.part.recovered = [textPart("recovered", "<!--plan-->\n# Recovered final plan")]
-    expect(detect(state)?.sourceMessageId).toBe("recovered")
+    expect(detect(state)).toBeNull()
   })
 
   test("persists the recovered plan under its original human request only after the recovery settles", () => {
@@ -96,7 +97,7 @@ describe("detectPlanProposedCandidate", () => {
     })
     expect(detect(state)).toBeNull()
     state.message[SESSION_ID][3] = assistantMessage("recovered")
-    expect(detect(structuredClone(state))).toMatchObject({ sourceMessageId: "recovered", originatingUserMessageId: "human", markdown })
+    expect(detect(structuredClone(state))).toBeNull()
   })
   test("managed collection with inherited Plan instructions cannot propose a replacement Plan", () => {
     const state = buildState({
@@ -183,7 +184,7 @@ describe("detectPlanProposedCandidate", () => {
         ],
       },
       part: {
-        msg_1_user: [textPart("msg_1_user", "User has requested to enter plan mode.", true)],
+        msg_1_user: [textPart("msg_1_user", "Plan the feature."), textPart("msg_1_user", "User has requested to enter plan mode.", true)],
         msg_2_assistant: [textPart("msg_2_assistant", "<!--plan-->\n# Plan")],
       },
     })
@@ -452,7 +453,7 @@ describe("detectPlanProposedCandidate", () => {
     expect(detect(state, { recorded: new Set(["msg_1_user"]) })).toBeNull()
   })
 
-  test("selects the canonical plan when the latest assistant sibling is plain epilogue text", () => {
+  test("a separate final epilogue cannot make an earlier plan the current source", () => {
     const state = buildState({
       message: {
         [SESSION_ID]: [
@@ -467,13 +468,7 @@ describe("detectPlanProposedCandidate", () => {
       },
     })
 
-    expect(detect(state, { recorded: new Set(["msg_1_user"]) })).toEqual({
-      sessionID: SESSION_ID,
-      sourceMessageId: "msg_2_assistant",
-      originatingUserMessageId: "msg_1_user",
-      implementationKey: `${SESSION_ID}:msg_2_assistant:plan:0`,
-      markdown: "# Plan\n\nDo the work.",
-    })
+    expect(detect(state, { recorded: new Set(["msg_1_user"]) })).toBeNull()
   })
 
   test("selects the last plan across synthetic continuation turns and keeps the user-authored origin", () => {
@@ -495,13 +490,7 @@ describe("detectPlanProposedCandidate", () => {
       },
     })
 
-    expect(detect(state, { recorded: new Set(["msg_1_user"]) })).toEqual({
-      sessionID: SESSION_ID,
-      sourceMessageId: "msg_4_assistant",
-      originatingUserMessageId: "msg_1_user",
-      implementationKey: `${SESSION_ID}:msg_4_assistant:plan:0`,
-      markdown: "# Plan v2",
-    })
+    expect(detect(state, { recorded: new Set(["msg_1_user"]) })).toBeNull()
   })
 
   test("does not propose while a sibling assistant in the revision is still incomplete", () => {
@@ -571,3 +560,16 @@ describe("detectPlanProposedCandidate", () => {
     })?.sourceMessageId).toBe("msg_2_assistant")
   })
 })
+
+test('a failed prefix plus heading-free synthetic tail reaches authoritative validation before it can be saved', () => {
+  const state = buildState({ message: { [SESSION_ID]: [userMessage('human', { metadata: { openchamberPlanMode: true } } as Partial<Message>),
+    assistantMessage('prefix', { parentID: 'human', finish: 'error', error: { name: 'APIError', data: { message: 'interrupted', isRetryable: false } } }),
+    userMessage('native'), assistantMessage('tail', { parentID: 'native' })] }, part: {
+      human: [textPart('human', 'Plan a feature')], prefix: [textPart('prefix', '<!--plan-->\n# Partial ')],
+      native: [textPart('native', 'Resume the interrupted stream', true)], tail: [textPart('tail', 'heading-free tail 😀')],
+    } });
+  expect(detect(state)).toMatchObject({ sourceMessageId: 'prefix', originatingUserMessageId: 'human', markdown: '# Partial' });
+  const replacement = structuredClone(state);
+  replacement.part.tail = [textPart('tail', '<!--plan-->\n# A separate replacement')];
+  expect(detect(replacement)).toBeNull();
+});

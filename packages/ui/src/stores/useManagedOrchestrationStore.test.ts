@@ -2,13 +2,16 @@ import { describe, expect, test } from 'bun:test';
 import {
   createManagedTaskRecord,
   createManagedTaskResultEnvelope,
+  createManagedTaskScheduler,
   toManagedTaskEvent,
+  projectRequiredCheckEvidence,
+  projectRequiredCheckCompletion,
   type ManagedTaskEvent,
   type ManagedTaskEventRecord,
   type ManagedTaskRemovalEvent,
   type ManagedTaskStatus,
   type ManagedTransportRecovery,
-} from '@openchamber/orchestration-runtime';
+} from '@devryan/orchestration-runtime';
 
 import type {
   ManagedOrchestrationApi,
@@ -61,6 +64,63 @@ const projectedTask = (...args: Parameters<typeof taskRecord>) => (
   toManagedTaskEvent(taskRecord(...args)).properties.task
 );
 
+test('real scheduler acknowledgement advances envelope sequence and stale snapshots cannot undo disposition', async () => {
+  const scheduler = createManagedTaskScheduler({
+    executor: {
+      async start(_task, control) { await control.setChildSessionId('ses_child'); await control.markAccepted(); return { status: 'completed', recoverablePreview: 'Done' }; },
+      async abort() { return { aborted: true }; },
+      async reconcile() { return { state: 'unavailable' }; },
+      async readRecoverableResult() { return {}; },
+    },
+  });
+  try {
+    const task = await scheduler.submit({ idempotencyKey: 'sequence', rootSessionId: 'ses_root', directory: '/workspace', mode: 'orchestrator', providerId: 'fixture', modelId: 'model', agent: 'explorer', variant: null, label: 'Exact task', prompt: 'Inspect fixture', timeoutAt: null });
+    await scheduler.waitForTask(task.taskId);
+    const finished = scheduler.getTask(task.taskId), original = scheduler.getResultEnvelope(task.taskId);
+    if (!finished || !original) throw new Error('Missing terminal fixture');
+    const projected = toManagedTaskEvent(finished, original).properties.task;
+    const store = createManagedOrchestrationStore({ api: fakeApi({
+      getSnapshot: async () => emptySnapshot({ tasks: [projected], resultEnvelopes: [original] }),
+      acknowledgeTask: async (taskId, body) => {
+        const result = await scheduler.acknowledgeResult(taskId, body);
+        return { resultEnvelope: result.envelope, followUpTask: null };
+      },
+    }) });
+    store.getState().ingestEvent(toManagedTaskEvent(finished, original));
+    await store.getState().acknowledgeTask(task.taskId, 'continue');
+    const saved = store.getState().resultEnvelopesByTaskId[task.taskId];
+    expect(saved.sequence).toBeGreaterThan(original.sequence);
+    expect(saved.action).toBe('continue');
+    expect(store.getState().actionErrorByTaskId[task.taskId]).toBeUndefined();
+    expect(managedOrchestrationSelectors.hasUndispositionedTasksForRoot(task.rootSessionId)(store.getState())).toBe(false);
+    await store.getState().loadSnapshot();
+    for (const envelope of [original, { ...saved, action: 'abandon' as const }, { ...saved, sequence: saved.sequence + 1, action: 'abandon' as const }]) {
+      store.getState().ingestEvent(toManagedTaskEvent(finished, envelope));
+    }
+    expect(store.getState().resultEnvelopesByTaskId[task.taskId]).toBe(saved);
+    expect(managedOrchestrationSelectors.hasUndispositionedTasksForRoot(task.rootSessionId)(store.getState())).toBe(false);
+  } finally { await scheduler.shutdown(); }
+});
+
+test('older disposition and conflicting equal-sequence actions cannot replace the retained envelope', async () => {
+  const failed = taskRecord(1, 'failed', { childSessionId: 'ses_child', failureReason: 'model not found' });
+  const original = createManagedTaskResultEnvelope(failed, { sequence: 8, createdAt: 4_000, resumable: true });
+  const store = createManagedOrchestrationStore({ api: fakeApi({ acknowledgeTask: async () => ({
+    resultEnvelope: { ...original, sequence: 7, acknowledgedAt: 5_000, action: 'abandon', followUpTaskId: null }, followUpTask: null,
+  }) }) });
+  store.getState().ingestEvent(toManagedTaskEvent(failed, original));
+  const retained = store.getState().resultEnvelopesByTaskId[failed.taskId];
+  await store.getState().acknowledgeTask(failed.taskId, 'abandon');
+  expect(store.getState().actionErrorByTaskId[failed.taskId]).toContain('did not match');
+  store.getState().ingestEvent(toManagedTaskEvent(failed, { ...original, sequence: 7, acknowledgedAt: 5_000, action: 'abandon' }));
+  expect(store.getState().resultEnvelopesByTaskId[failed.taskId]).toBe(retained);
+  store.getState().ingestEvent(toManagedTaskEvent(failed, { ...original, sequence: 9, acknowledgedAt: 5_000, action: 'abandon' }));
+  const disposed = store.getState().resultEnvelopesByTaskId[failed.taskId];
+  expect(disposed.action).toBe('abandon'); expect(disposed.sequence).toBe(9);
+  store.getState().ingestEvent(toManagedTaskEvent(failed, { ...original, sequence: 9, acknowledgedAt: 5_000, action: 'continue' }));
+  expect(store.getState().resultEnvelopesByTaskId[failed.taskId]).toBe(disposed);
+});
+
 test('configuration rejection survives snapshot hydration and keeps recovery actions available', async () => {
   const failed = taskRecord(1, 'failed', { childSessionId: 'ses_configuration',
     failureReason: 'Upstream request failed: This Go model requires Global regions. Select Global in your workspace\'s Privacy settings to use it.',
@@ -106,7 +166,7 @@ const withRecoveryDefaults = (task: ManagedTaskEventRecord): ManagedTaskProjecte
 });
 
 const taskEvent = (task: ManagedTaskProjectedRecord, resultEnvelope?: ManagedTaskEvent['properties']['resultEnvelope']): ManagedTaskEvent => ({
-  type: 'openchamber:managed-task',
+  type: 'devryan:managed-task',
   properties: {
     owner: 'devryan',
     directory: task.directory,
@@ -116,7 +176,7 @@ const taskEvent = (task: ManagedTaskProjectedRecord, resultEnvelope?: ManagedTas
 });
 
 const removalEvent = (task: ManagedTaskEventRecord, sequence = task.sequence): ManagedTaskRemovalEvent => ({
-  type: 'openchamber:managed-task-removed',
+  type: 'devryan:managed-task-removed',
   properties: {
     owner: 'devryan',
     taskId: task.taskId,
@@ -133,6 +193,45 @@ const emptySnapshot = (overrides: Partial<ManagedOrchestrationSnapshot> = {}): M
   tasks: [],
   resultEnvelopes: [],
   ...overrides,
+});
+
+test('verification can settle after execution without stale snapshots regressing it or crossing objectives', () => {
+  const requiredChecks = [{ name: 'Cards', command: 'bun test cards.test.ts', paths: ['src/cards.tsx'] }];
+  const hash = 'a'.repeat(64);
+  const verification = (passed: boolean, observedAt: number) => {
+    const checks = projectRequiredCheckEvidence(requiredChecks, passed ? [{ name: 'Cards', callId: 'call_check',
+      messageId: 'msg_check', exitCode: 0, observedAt, status: 'passed', contentHash: hash }] : [], { Cards: hash });
+    return { ...projectRequiredCheckCompletion(checks), checks, observedAt, objectiveId: 'implementation' };
+  };
+  const store = createManagedOrchestrationStore({ api: fakeApi() });
+  const completed = { ...projectedTask(1, 'completed', { requiredChecks }), verification: verification(false, 10) };
+  store.getState().ingestEvent(taskEvent(completed));
+  const incomplete = managedOrchestrationSelectors.hasIncompleteVerificationForObjective('ses_root', 'implementation');
+  expect(incomplete(store.getState())).toBe(true);
+  expect(managedOrchestrationSelectors.hasIncompleteVerificationForObjective('ses_root', 'other-objective')(store.getState())).toBe(false);
+  store.getState().ingestEvent(taskEvent({ ...completed, verification: verification(true, 20) }));
+  expect(incomplete(store.getState())).toBe(false);
+  store.getState().ingestEvent(taskEvent(completed));
+  expect(incomplete(store.getState())).toBe(false);
+  expect(store.getState().tasksById[completed.taskId].status).toBe('completed');
+  store.getState().ingestEvent(taskEvent({ ...completed, verification: verification(false, 30) }));
+  expect(incomplete(store.getState())).toBe(true);
+});
+
+test('host-backed skipped checks survive event decoding without becoming passed or blocking closeout', () => {
+  const requiredChecks = [{ name: 'Integration', command: 'bun test integration.test.ts', paths: ['src/service.ts'] }];
+  const hash = 'a'.repeat(64);
+  const checks = projectRequiredCheckEvidence(requiredChecks, [{ name: 'Integration', callId: 'call_check',
+    messageId: 'msg_check', exitCode: 1, observedAt: 20, status: 'skipped', contentHash: hash,
+    environmentUnavailable: { reason: 'docker_daemon_unavailable', hint: 'Start Docker and retry.' } }], { Integration: hash });
+  const verification = { ...projectRequiredCheckCompletion(checks), checks, observedAt: 20, objectiveId: 'implementation' };
+  const store = createManagedOrchestrationStore({ api: fakeApi() });
+  const completed = { ...projectedTask(1, 'completed', { requiredChecks }), verification };
+  store.getState().ingestEvent(taskEvent(completed));
+  expect(store.getState().tasksById[completed.taskId].verification).toMatchObject({ ready: true, status: 'skipped',
+    remaining: [], checks: [{ status: 'skipped', reason: 'environment_unavailable', evidence: { exitCode: 1 },
+      environmentUnavailable: { reason: 'docker_daemon_unavailable', hint: 'Start Docker and retry.' } }] });
+  expect(managedOrchestrationSelectors.hasIncompleteVerificationForObjective('ses_root', 'implementation')(store.getState())).toBe(false);
 });
 
 describe('dispatch recovery identity', () => {
@@ -1742,7 +1841,7 @@ describe('managed orchestration store', () => {
     for (const stale of [legacy, { ...running, childPromptedAt: null, firstAssistantPartAt: null },
       { ...running, childPromptedAt: 3_000, firstAssistantPartAt: 4_000 }]) {
       store.getState().ingestEvent({
-        type: 'openchamber:managed-task', properties: { owner: 'devryan', directory: running.directory, task: stale },
+        type: 'devryan:managed-task', properties: { owner: 'devryan', directory: running.directory, task: stale },
       });
       expect(store.getState().tasksById[running.taskId]).toBe(current);
     }
@@ -1833,6 +1932,28 @@ describe('managed orchestration store', () => {
       withAutoResume({ ...autoResumeBlock({ revision: 3 }), state: 'later' as never }),
     ));
     expect(managedOrchestrationSelectors.autoResume(projected.taskId)(store.getState())?.revision).toBe(2);
+  });
+
+  test('a newer host\'s unknown auto-resume reason keeps the envelope, with the reason read as null', async () => {
+    const { projected, envelope } = usageLimitFailure();
+    const newer = {
+      ...envelope,
+      providerResetAt: 9_000,
+      autoResume: { ...autoResumeBlock({ state: 'ended', enabled: false }), reason: 'future_reason' as never },
+    } satisfies ManagedTaskProjectedEnvelope;
+
+    const live = createManagedOrchestrationStore({ api: fakeApi() });
+    live.getState().ingestEvent(taskEvent(projected, newer));
+    expect(live.getState().resultEnvelopesByTaskId[projected.taskId]?.envelopeId).toBe(envelope.envelopeId);
+    expect(managedOrchestrationSelectors.autoResume(projected.taskId)(live.getState())).toMatchObject({ state: 'ended', reason: null });
+
+    const loaded = createManagedOrchestrationStore({ api: fakeApi({
+      getSnapshot: async () => emptySnapshot({ tasks: [projected], resultEnvelopes: [newer] }),
+    }) });
+    await loaded.getState().loadSnapshot();
+    expect(loaded.getState().snapshotError).toBeNull();
+    expect(loaded.getState().resultEnvelopesByTaskId[projected.taskId]?.envelopeId).toBe(envelope.envelopeId);
+    expect(managedOrchestrationSelectors.autoResume(projected.taskId)(loaded.getState())).toMatchObject({ reason: null });
   });
 
   test('setAutoResume posts the toggle, holds a pending action, and upserts the returned envelope', async () => {
@@ -2017,4 +2138,46 @@ describe('renewed implementation deadlines', () => {
       expect(store.getState().tasksById[running.taskId]).toBe(original);
     }
   });
+});
+
+test('native dispatch readiness confirms a snapshot without starting the legacy bridge', async () => {
+ const store=createManagedOrchestrationStore({api:fakeApi({getSnapshot:async()=>emptySnapshot({bridgeReady:false,dispatchReady:true})})});
+ await store.getState().loadSnapshot();
+ expect(managedOrchestrationSelectors.hasConfirmedSnapshotForRoot('ses_root')(store.getState())).toBe(true);
+});
+
+test('one queued recovery keeps its selection/key until ready and can be cancelled without a POST', async () => {
+  const failed = taskRecord(1, 'failed', { childSessionId: 'ses_child', failureReason: 'Provider failed' });
+  const envelope = createManagedTaskResultEnvelope(failed, { sequence: 1, createdAt: 4000, resumable: true });
+  for (const cancel of [true, false]) {
+    const ready = deferred<void>();
+    let posts = 0;
+    const keys: string[] = [];
+    const store = createManagedOrchestrationStore({ createIdempotencyKey: () => 'one-choice', api: fakeApi({
+      acknowledgeTask: async (_id, body, intent) => {
+        keys.push(body.idempotencyKey);
+        intent?.onWaiting?.();
+        await ready.promise;
+        if (intent?.signal?.aborted) throw new Error('cancelled');
+        intent?.beforeSend?.();
+        posts++;
+        throw new Error('response lost after POST');
+      },
+    }) });
+    store.getState().ingestEvent(taskEvent(toManagedTaskEvent(failed, envelope).properties.task, envelope));
+    const selection = { providerId: 'fixture', modelId: 'selected', variant: 'medium' };
+    const operation = store.getState().acknowledgeTask(failed.taskId, 'retry_in_place', selection);
+    const duplicate = store.getState().acknowledgeTask(failed.taskId, 'retry_in_place', selection);
+    expect(duplicate).toBe(operation);
+    await Promise.resolve();
+    expect(store.getState().waitingForEventsByTaskId[failed.taskId]).toBe(true);
+    if (cancel) store.getState().cancelRecoveryIntent(failed.taskId);
+    ready.resolve();
+    await operation;
+    expect(posts).toBe(cancel ? 0 : 1);
+    expect(keys).toEqual(['one-choice']);
+    expect(store.getState().waitingForEventsByTaskId[failed.taskId]).toBeUndefined();
+    expect(store.getState().pendingActionByTaskId[failed.taskId]).toBeUndefined();
+    if (!cancel) expect(store.getState().actionErrorByTaskId[failed.taskId]).toBe('response lost after POST');
+  }
 });

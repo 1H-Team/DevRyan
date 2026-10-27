@@ -1,3 +1,5 @@
+// Intentional divergence from upstream: trimming an oversized replay chunk walks code points from the
+// end so it never splits a UTF-8 sequence, trading constant-time byte slicing for correctness.
 export const TERMINAL_OUTPUT_REPLAY_MAX_BYTES = 64 * 1024;
 
 const trimTerminalOutputChunkToMaxBytes = (data, maxBytes) => {

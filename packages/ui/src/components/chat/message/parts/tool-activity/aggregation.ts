@@ -411,6 +411,10 @@ export const collectToolActivityRows = <T>(
     });
 };
 
+// Each agent step is its own assistant message, so live rendering bridges these
+// kinds across messages instead of showing one row per step.
+const CROSS_MESSAGE_GROUP_KINDS = new Set<ToolActivityGroupKind>(['edit', 'read', 'search', 'fetch', 'browser']);
+
 export const collectCrossMessageFileActivityGroups = <T>(
     items: readonly T[],
     options: {
@@ -423,7 +427,7 @@ export const collectCrossMessageFileActivityGroups = <T>(
 ): Array<{ groupInfo: ToolActivityGroupInfo; items: T[] }> => {
     return collectToolActivityRows(items, options).flatMap((row) => {
         if (row.type !== 'group'
-            || (row.groupInfo.kind !== 'edit' && row.groupInfo.kind !== 'read' && row.groupInfo.kind !== 'browser')) {
+            || !CROSS_MESSAGE_GROUP_KINDS.has(row.groupInfo.kind)) {
             return [];
         }
 

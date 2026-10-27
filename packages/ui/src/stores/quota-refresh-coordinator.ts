@@ -1,5 +1,8 @@
 export const BASELINE_QUOTA_REFRESH_MS = 30 * 60 * 1000;
 
+export const DISCOVERY_RETRY_MS = 15_000;
+const MAX_PROMPT_RETRIES = 8;
+
 export interface QuotaRefreshOptions {
   forceRefresh?: boolean;
   rediscover?: boolean;
@@ -21,6 +24,7 @@ interface QuotaRefreshCoordinatorDependencies {
   loadSettings: () => Promise<void>;
   refresh: (options: QuotaRefreshOptions) => Promise<void>;
   getRefreshIntervalMs: () => number;
+  needsPromptRetry?: () => boolean;
   clock?: QuotaRefreshClock;
 }
 
@@ -53,12 +57,14 @@ export const createQuotaRefreshCoordinator = ({
   loadSettings,
   refresh,
   getRefreshIntervalMs,
+  needsPromptRetry,
   clock = systemClock,
 }: QuotaRefreshCoordinatorDependencies): QuotaRefreshCoordinator => {
   let started = false;
   let lifecycle = 0;
   let stopEpoch = 0;
   let timer: unknown = null;
+  let promptRetries = 0;
   let settingsLoad: Promise<void> | null = null;
   let inFlight: Promise<void> | null = null;
   let queuedRefresh: { options: QuotaRefreshOptions; stopEpoch: number } | null = null;
@@ -73,12 +79,22 @@ export const createQuotaRefreshCoordinator = ({
     clearTimer();
     if (!started) return;
 
+    let delayMs = normalizeInterval(getRefreshIntervalMs());
+    if (needsPromptRetry?.()) {
+      if (promptRetries < MAX_PROMPT_RETRIES) {
+        promptRetries += 1;
+        delayMs = Math.min(delayMs, DISCOVERY_RETRY_MS);
+      }
+    } else {
+      promptRetries = 0;
+    }
+
     timer = clock.setTimeout(() => {
       timer = null;
       void refreshNow().catch(() => {
         // Store state owns user-visible refresh failures.
       });
-    }, normalizeInterval(getRefreshIntervalMs()));
+    }, delayMs);
   };
 
   const refreshNow = (options: QuotaRefreshOptions = {}): Promise<void> => {
@@ -163,6 +179,7 @@ export const createQuotaRefreshCoordinator = ({
     lifecycle += 1;
     stopEpoch += 1;
     queuedRefresh = null;
+    promptRetries = 0;
     clearTimer();
   };
 

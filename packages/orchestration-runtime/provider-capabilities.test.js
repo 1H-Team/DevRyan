@@ -13,6 +13,15 @@ describe('managed provider capabilities', () => {
     expect(supportsManagedReadOnlyProvider('  CURSOR-ACP  ')).toBe(false);
   });
 
+  test('accepts Cursor only with an explicit enforced host capability', () => {
+    expect(supportsManagedReadOnlyProvider('cursor-acp', { cursorReadOnly: true })).toBe(true);
+    expect(supportsManagedReadOnlyProvider('  CURSOR-ACP  ', { cursorReadOnly: true })).toBe(true);
+    expect(supportsManagedReadOnlyProvider('cursor-acp', { cursorReadOnly: false })).toBe(false);
+    expect(supportsManagedReadOnlyProvider('cursor-acp', { cursorReadOnly: 'true' })).toBe(false);
+    expect(supportsManagedReadOnlyProvider(null, { cursorReadOnly: true })).toBe(false);
+    expect(supportsManagedReadOnlyProvider('openai', { cursorReadOnly: false })).toBe(true);
+  });
+
   test('accepts configured non-Cursor providers and rejects missing identities', () => {
     expect(supportsManagedReadOnlyProvider('openai')).toBe(true);
     expect(supportsManagedReadOnlyProvider('github-copilot')).toBe(true);

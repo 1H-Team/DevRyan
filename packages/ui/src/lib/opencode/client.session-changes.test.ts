@@ -9,7 +9,7 @@ const originalFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = originalFetch; });
 
 const summary = { rootSessionID: 'root', directory: '/fixture', revision: 'revision', attributionVersion: 2,
-  coverage: 'complete', reasons: [], restoreAvailable: true, restoreReasons: [], totalsMode: 'net',
+  coverage: 'complete', reasons: [], restoreAvailable: true, restoreReasons: [], totalsMode: 'net', restoreProof: { version: 1, digest: 'a'.repeat(64) },
   files: [{ path: 'a.txt', status: 'modified', additions: 1, deletions: 1, sessions: ['root'], reviewMode: 'net', segmentCount: 0 }] };
 
 test('review mode survives parsing and legacy/incomplete summaries cannot authorize restore', () => {
@@ -32,6 +32,28 @@ test('reconciliation status supports pending and settled responses and older ser
   expect(parseSessionTreeChanges(summary).reconciliationState).toBe('settled');
 });
 
+test('version 4 exact receipts preserve host restore authority and all safety gates', () => {
+  const exact = { ...summary, attributionVersion: 4, reconciliationState: 'settled' };
+  expect(parseSessionTreeChanges(exact)).toMatchObject({ attributionVersion: 4, restoreAvailable: true });
+  for (const overrides of [
+    { restoreAvailable: false }, { coverage: 'partial' }, { reconciliationState: 'pending' },
+    { attributionVersion: 5 }, { attributionVersion: '4' }, { restoreProof: undefined }, { restoreProof: { version: 1, digest: 'bad' } },
+  ]) {
+    expect(parseSessionTreeChanges({ ...exact, ...overrides }).restoreAvailable).toBe(false);
+  }
+});
+
+test('per-file verification preserves observed reasons and rejects unknown states', () => {
+  const parse = (verification: unknown) => parseSessionTreeChanges({ ...summary,
+    files: [{ ...summary.files[0], verification }] }).files[0].verification;
+  expect(parse({ state: 'uncertain', reason: 'content_differs' }))
+    .toEqual({ state: 'uncertain', reason: 'content_differs' });
+  expect(parse({ state: 'restored', reason: 'matches_captured_before' }))
+    .toEqual({ state: 'restored', reason: 'matches_captured_before' });
+  expect(parse(undefined)).toBeUndefined();
+  expect(parse({ state: 'safe', reason: 'matches_captured_after' })).toBeUndefined();
+});
+
 test('diff requests retain cursor and segment identity and reject mismatched server responses', async () => {
   const urls: URL[] = [];
   const body = { rootSessionID: 'root', revision: 'revision', path: 'a.txt', patch: '+own edit\n', pageIndex: 0,
@@ -51,5 +73,35 @@ test('diff requests retain cursor and segment identity and reject mismatched ser
     await expect(opencodeClient.getSessionChangesDiffPage('root', '/fixture', 'revision', 'a.txt', null, undefined, 1)).rejects.toThrow('Invalid session diff segment');
     body.segmentCount = 2; body.rootSessionID = 'unrelated';
     await expect(opencodeClient.getSessionChangesDiffPage('root', '/fixture', 'revision', 'a.txt', null, undefined, 1)).rejects.toThrow('Session diff identity mismatch');
+  } finally { fetch.mockRestore(); }
+});
+
+
+test('current observations and per-session capture gaps remain separate from captured revision totals', () => {
+  const current = { state: 'restored', verifiedFileCount: 0, restoredFileCount: 1, uncertainFileCount: 0,
+    foreignModifiedCount: 0, checkedFileCount: 1, observedAt: 1000, reasons: [] };
+  const parsed = parseSessionTreeChanges({ ...summary, current, fileCount: 1,
+    coverageBySession: [{ sessionID: 'child', reasons: ['execution_receipt_unavailable'] }] });
+  expect(parsed.current).toEqual(current);
+  expect(parsed.revision).toBe('revision'); expect(parsed.fileCount).toBe(1);
+  expect(parsed.coverageBySession).toEqual([{ sessionID: 'child', reasons: ['execution_receipt_unavailable'] }]);
+  expect(parseSessionTreeChanges({ ...summary, current: { ...current, checkedFileCount: -1 } }).current).toBeUndefined();
+  const foreign = { ...current, state: 'uncertain', restoredFileCount: 0, uncertainFileCount: 1, foreignModifiedCount: 1 };
+  expect(parseSessionTreeChanges({ ...summary, current: foreign }).current).toEqual(foreign);
+  // Runtimes from before foreignModifiedCount report none.
+  const { foreignModifiedCount: _omitted, ...older } = foreign;
+  expect(parseSessionTreeChanges({ ...summary, current: older }).current?.foreignModifiedCount).toBe(0);
+});
+
+test('undo submits the exact reviewed proof with its revision', async () => {
+  let body: unknown;
+  const fetch = spyOn(globalThis, 'fetch').mockImplementation(async (_input, init) => {
+    body = typeof init?.body === 'string' ? JSON.parse(init.body) : null;
+    return Response.json({ undone: true });
+  });
+  try {
+    const proof = { version: 1 as const, digest: 'b'.repeat(64) };
+    await opencodeClient.sessionChangesAction('root', '/fixture', 'revision', 'undo', proof);
+    expect(body).toEqual({ revision: 'revision', restoreProof: proof });
   } finally { fetch.mockRestore(); }
 });

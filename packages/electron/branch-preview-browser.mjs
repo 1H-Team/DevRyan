@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 
-export const AGENT_PREVIEW_PARTITION_PREFIX = 'persist:openchamber-browser-agent-';
+export const AGENT_PREVIEW_PARTITION_PREFIX = 'persist:devryan-browser-agent-';
 
 const safeString = (value, maxLength) => (
   typeof value === 'string' ? value.trim().slice(0, maxLength) : ''
@@ -18,12 +18,12 @@ export const normalizeAgentPreviewOrigin = (value) => {
   }
 };
 
-export const createAgentPreviewPartition = ({ ownerUserId, previewOrigin } = {}) => {
+export const createAgentPreviewPartition = ({ ownerUserId, previewOrigin, partitionPrefix = AGENT_PREVIEW_PARTITION_PREFIX } = {}) => {
   const owner = safeString(ownerUserId, 256);
   const origin = normalizeAgentPreviewOrigin(previewOrigin);
   if (!owner || !origin || owner.includes('\u0000')) return null;
   const identity = crypto.createHash('sha256').update(`${owner}\u0000${origin}`).digest('hex').slice(0, 40);
-  return `${AGENT_PREVIEW_PARTITION_PREFIX}${identity}`;
+  return `${partitionPrefix}${identity}`;
 };
 
 const comparableRequestOrigin = (value) => {

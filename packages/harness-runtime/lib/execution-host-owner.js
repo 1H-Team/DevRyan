@@ -3,16 +3,20 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { changeError } from './session-changes-git.js';
+import { ensureWindowsPrivateDirectory } from './windows-private-files.js';
 
 /** A pipe keeps the native lock attached to this host's lifetime. Losing the
  * keeper permanently invalidates this instance, even if its JS host survives. */
 export async function createExecutionHostOwner({ directory, launcher, spawnImpl = spawn,
-  startupTimeoutMs = 5000, terminationTimeoutMs = 1000 }) {
-  await fs.mkdir(directory, { recursive: true, mode: 0o700 });
-  const id = randomUUID(), file = path.join(directory, `${id}.lock`), controller = new AbortController();
-  const child = spawnImpl(launcher, ['--owner-lock', file], { stdio: ['pipe', 'pipe', 'ignore'] });
-  let closed = false;
-  const reaped = new Promise((resolve) => child.once('close', () => { closed = true; resolve(); }));
+  startupTimeoutMs = 5000, terminationTimeoutMs = 1000, lockFile }) {
+  if (lockFile !== undefined && (process.platform !== 'win32' || path.dirname(lockFile) !== directory
+    || path.resolve(lockFile) !== lockFile)) throw changeError('execution_owner_unavailable', 503);
+  if (process.platform === 'win32') await ensureWindowsPrivateDirectory(launcher, directory);
+  else await fs.mkdir(directory, { recursive: true, mode: 0o700 });
+  const id = randomUUID(), file = lockFile ?? path.join(directory, `${id}.lock`), controller = new AbortController();
+  const child = spawnImpl(launcher, [lockFile ? '--private-file-lock' : '--owner-lock', file], { stdio: ['pipe', 'pipe', 'ignore'] });
+  let closed = false, exitCode;
+  const reaped = new Promise((resolve) => child.once('close', (code) => { closed = true; exitCode = code; resolve(); }));
   const lost = () => controller.abort(changeError('execution_owner_lost', 503));
   child.once('error', lost); child.once('close', lost);
   child.stdin.on('error', lost);
@@ -25,7 +29,20 @@ export async function createExecutionHostOwner({ directory, launcher, spawnImpl 
   let closing;
   const close = () => closing ??= (async () => {
     if (closed) return;
-    child.stdin.end(); child.kill('SIGTERM');
+    child.stdin.end();
+    if (lockFile) {
+      if (await waitForClose()) {
+        if (exitCode !== 0) throw changeError('execution_owner_termination_unconfirmed', 503);
+        return;
+      }
+      child.kill('SIGTERM');
+      if (!await waitForClose()) {
+        child.kill('SIGKILL');
+        await waitForClose();
+      }
+      throw changeError('execution_owner_termination_unconfirmed', 503);
+    }
+    child.kill('SIGTERM');
     if (await waitForClose()) return;
     child.kill('SIGKILL');
     if (!await waitForClose()) throw changeError('execution_owner_termination_unconfirmed', 503);
@@ -38,7 +55,9 @@ export async function createExecutionHostOwner({ directory, launcher, spawnImpl 
         child.stdout.removeListener('data', data);
         if (error) reject(error); else resolve();
       };
-      const fail = () => finish(changeError('execution_owner_unavailable', 503));
+      const fail = () => finish(lockFile && exitCode === 73
+        ? Object.assign(changeError('execution_owner_unavailable', 503), { code: 'LOCK_BUSY' })
+        : changeError('execution_owner_unavailable', 503));
       const data = (bytes) => {
         received += bytes.toString();
         if (!'owned\n'.startsWith(received)) fail();

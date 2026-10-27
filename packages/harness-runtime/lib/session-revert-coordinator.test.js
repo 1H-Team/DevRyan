@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { git } from './session-changes-git.js';
 import { createSessionMutationRuntime } from './session-mutations.js';
+import { changeKey } from './session-changes-store.js';
 import { createSessionRevertCoordinator } from './session-revert-coordinator.js';
 
 const roots = [];
@@ -16,7 +17,7 @@ async function fixture() {
   const sessions = new Map(['a', 'b'].map((id) => [id, { id, directory: project }]));
   const calls = [], events = [];
   const conversation = {
-    capabilities: async () => ({ legacyConversationRevert: 1 }),
+    capabilities: async () => ({ conversationOnlyRevert: 1 }),
     get: async ({ sessionID }) => sessions.get(sessionID),
     revert: async (input) => { calls.push(input); const session = { ...sessions.get(input.sessionID),
       revert: { messageID: input.messageID, fileRestore: input.files !== false } }; sessions.set(input.sessionID, session); return session; },
@@ -33,6 +34,18 @@ async function fixture() {
   return { directory: project, runtime, conversation, executions, sessions, calls, events, cancellations, begin, create,
     read: () => fs.readFile(path.join(project, 'x'), 'utf8'), write: (value) => fs.writeFile(path.join(project, 'x'), value) };
 }
+
+test('a stale file proof after writer termination cancels the fence without overwriting foreign edits', async () => {
+  const f = await fixture(); await f.write('before');
+  const lease = await f.begin('a'); await fs.writeFile(path.join(lease.viewDirectory, 'x'), 'after');
+  await f.runtime.finish({ directory: f.directory, token: lease.token });
+  const selection = { directory: f.directory, sessionID: 'a', revision: 'review', calls: [{ sessionID: 'a', messageID: 'ma', callID: 'ca' }] };
+  const proof = await f.runtime.previewFileRestore(selection);
+  f.executions.cancelAndWait = async ({ sessions }) => { await f.write('foreign'); return { terminated: true, sessions }; };
+  await expect(f.create().restoreFiles({ ...selection, proof })).rejects.toMatchObject({ code: 'restore_proof_stale' });
+  expect(await f.read()).toBe('foreign');
+  expect(await f.runtime.pendingTransactions({ directory: f.directory })).toEqual([]);
+}, 60_000);
 
 test('revert leaves a foreign execution running and merges its late result from its immutable base', async () => {
   const f = await fixture(); await f.write('a=1; b=2');
@@ -67,6 +80,22 @@ test('Revert and Redo preserve explicit partial publication conflicts in the hos
   expect(await coordinator.redo({ directory: f.directory, sessionID: 'b' }))
     .toMatchObject({ outcome: 'partial', conflicts: [{ path: 'x' }] });
   expect(await fs.readFile(path.join(f.directory, 'x'))).toEqual(Buffer.from([0, 2]));
+}, 60_000);
+
+test('native conversation holds release only after durable settlement and receive its exact transaction', async () => {
+  const f = await fixture(); await f.write('before');
+  const lease = await f.begin('a'); await fs.writeFile(path.join(lease.viewDirectory, 'x'), 'after');
+  await f.runtime.finish({ directory: f.directory, token: lease.token });
+  const releases = [];
+  f.conversation.capabilities = async () => ({ conversationOnlyRevert: 1 });
+  f.conversation.releaseHolds = async input => {
+    const transaction = await f.runtime.transaction(input);
+    expect(transaction.state).toBe('committed'); releases.push(input);
+  };
+  const result = await f.create().revert({ directory: f.directory, sessionID: 'a', messageID: 'pa' });
+  expect(f.calls[0].transactionID).toBe(result.verification.transactionID);
+  expect(releases).toEqual([{ directory: f.directory, sessions: ['a'], transactionID: result.verification.transactionID }]);
+  expect(await f.read()).toBe('before');
 }, 60_000);
 
 test('cancellation acceptance without authoritative termination cannot change files or conversation', async () => {
@@ -141,3 +170,21 @@ test('startup recovery and a subdirectory retry share the same transaction owner
   expect(f.calls).toHaveLength(1);
   expect(f.sessions.get('a').revert.messageID).toBe('pa');
 }, 60_000);
+
+test('Windows Revert prepares its protected storage and exact lock parent before acquiring native authority', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-revert-authority-')); roots.push(root);
+  const directory = await fs.realpath(root), storage = path.join(directory, 'coordinator');
+  const lockDirectory = path.join(storage, changeKey(directory));
+  const calls = [], refusal = Object.assign(new Error('private parent refused'), { code: 'private_windows_file_unverified' });
+  const runtime = { projectDirectory: async () => directory, pendingTransactions: async () => [{ id: 'fixture-transaction' }] };
+  const coordinator = createSessionRevertCoordinator({ runtime, directory: storage,
+    conversation: { capabilities: async () => ({ conversationOnlyRevert: 1 }) }, executions: { isConfined: async () => true },
+    windowsOwner: { ensureDirectory: async target => { calls.push(target); if (target === lockDirectory) throw refusal; } } });
+  const descriptor = Object.getOwnPropertyDescriptor(process, 'platform');
+  try {
+    Object.defineProperty(process, 'platform', { ...descriptor, value: 'win32' });
+    await expect(coordinator.recover({ directory })).rejects.toBe(refusal);
+    expect(calls).toEqual([storage, lockDirectory]);
+    await expect(fs.access(storage)).rejects.toMatchObject({ code: 'ENOENT' });
+  } finally { Object.defineProperty(process, 'platform', descriptor); }
+});

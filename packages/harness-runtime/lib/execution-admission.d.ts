@@ -39,6 +39,8 @@ export function withExecutionAdmission<T>(input: {
   /** Journal one record per admission (with per-phase `steps`) when it failed or took at least `minMs`;
    * phases are journaled individually only when they fail or run for `slowMs` (default 2 s). */
   summary?: { minMs?: number; slowMs?: number };
+  /** Root phase of the record (default `admission`). */
+  phase?: string;
 }): Promise<T>;
 /** Observation only: journals one `phase` record (with per-step `steps`) when the action failed or took at least
  * `minMs`, like an admission summary, without adding a signal, deadline or progress meter. */
@@ -48,10 +50,27 @@ export function withExecutionSummary<T>(input: {
 }, action: () => T | Promise<T>, options: {
   phase: string; onDiagnostic?: (record: ExecutionDiagnostic) => void; minMs?: number; slowMs?: number;
 }): Promise<T>;
-/** Records a timing step into the active summary, if any. Never checks the admission signal. */
-export function executionStep(phase: string, elapsedMs: number): void;
+/** Like withExecutionSummary for work that had no execution context: failures keep their original error and code. */
+export function withExecutionObservation<T>(input: {
+  sessionID?: string; userMessageID?: string; messageID?: string; callID?: string;
+  toolOrigin?: string; action?: string; kind?: string; fallbackReason?: string;
+}, action: () => T | Promise<T>, options: {
+  phase: string; onDiagnostic?: (record: ExecutionDiagnostic) => void; minMs?: number; slowMs?: number;
+}): Promise<T>;
+/** Timing-only root: preserves inherited authority and the action's result/error without admission checks or error mapping. */
+export function withExecutionTiming<T>(input: {
+  sessionID?: string; userMessageID?: string; messageID?: string; callID?: string;
+  toolOrigin?: string; action?: string; kind?: string; fallbackReason?: string;
+}, action: () => T | Promise<T>, options: {
+  phase: string; onDiagnostic?: (record: ExecutionDiagnostic) => void; minMs?: number; slowMs?: number;
+}): Promise<T>;
+/** True while an admission, summary or observation journals the current work. */
+export function executionReporting(): boolean;
+/** Records a timing step into the active summary, if any; `count` (default 1) units at once. Never checks the admission signal. */
+export function executionStep(phase: string, elapsedMs: number, count?: number): void;
 /** Times `action` as a summary step when a summary is active. Never checks the admission signal. */
 export function timedExecutionStep<T>(phase: string, action: () => T | Promise<T>): Promise<T>;
+/** An admission whose root phase is `preparation` (its summary record), never nested in an `admission` record. */
 export function withExecutionPreparation<T>(input: {
   sessionID?: string; userMessageID?: string; messageID?: string; callID?: string;
   toolOrigin?: string; action?: string; kind?: string; fallbackReason?: string;

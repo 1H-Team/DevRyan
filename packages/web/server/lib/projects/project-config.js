@@ -1,6 +1,6 @@
 import { DateTime, IANAZone } from 'luxon';
 import parser from 'cron-parser';
-import { withCrossProcessFileLock, writeFileAtomic } from '@openchamber/harness-runtime';
+import { withCrossProcessFileLock, writeFileAtomic } from '@devryan/harness-runtime';
 
 const PROJECT_CONFIG_VERSION = 2;
 const MAX_TASK_NAME_LENGTH = 80;

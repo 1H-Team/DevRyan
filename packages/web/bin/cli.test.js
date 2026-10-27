@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { EventEmitter } from 'events';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import path from 'path';
 import { pathToFileURL } from 'url';
 
@@ -34,15 +38,15 @@ describe('network-exposed auth validation', () => {
   });
 
   it('allows explicit unsafe LAN override from process env only', () => {
-    const previous = process.env.OPENCHAMBER_ALLOW_UNAUTHENTICATED_LAN;
-    process.env.OPENCHAMBER_ALLOW_UNAUTHENTICATED_LAN = 'true';
+    const previous = process.env.DEVRYAN_ALLOW_UNAUTHENTICATED_LAN;
+    process.env.DEVRYAN_ALLOW_UNAUTHENTICATED_LAN = 'true';
     try {
       expect(() => assertAuthenticatedNetworkExposure({ host: '0.0.0.0' })).not.toThrow();
     } finally {
       if (typeof previous === 'string') {
-        process.env.OPENCHAMBER_ALLOW_UNAUTHENTICATED_LAN = previous;
+        process.env.DEVRYAN_ALLOW_UNAUTHENTICATED_LAN = previous;
       } else {
-        delete process.env.OPENCHAMBER_ALLOW_UNAUTHENTICATED_LAN;
+        delete process.env.DEVRYAN_ALLOW_UNAUTHENTICATED_LAN;
       }
     }
   });
@@ -108,6 +112,15 @@ describe('cli entry detection', () => {
     };
 
     expect(isModuleCliExecution(symlinkPath, moduleUrl, realpath)).toBe(true);
+  });
+
+  it('accepts the devryan bin and its openchamber alias by name', () => {
+    const realpath = (filePath) => filePath;
+    for (const name of ['devryan', 'openchamber']) {
+      expect(isModuleCliExecution(`/opt/bin/${name}`, moduleUrl, realpath, ['devryan', 'openchamber'])).toBe(true);
+    }
+    expect(isModuleCliExecution('/opt/bin/other', moduleUrl, realpath, ['devryan', 'openchamber'])).toBe(false);
+    expect(isModuleCliExecution('/opt/bin/openchamber', moduleUrl, realpath, 'openchamber')).toBe(true);
   });
 
   it('falls back to resolved paths when realpath fails', () => {
@@ -321,5 +334,23 @@ describe('CLI PID lifecycle validation', () => {
       '/usr/local/bin/openchamber tunnel status',
       { launchMode: 'foreground' },
     )).toBe(false);
+  });
+});
+
+
+describe('bundled runtime help', () => {
+  it('describes the bundled runtime without unsupported external runtime controls', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-cli-help-'));
+    try {
+      const { stdout } = await promisify(execFile)(process.execPath, [path.join(import.meta.dirname, 'cli.js'), 'serve', '--help'], {
+        cwd: root, env: { PATH: process.env.PATH, HOME: root, XDG_CONFIG_HOME: path.join(root, 'config'),
+          XDG_DATA_HOME: path.join(root, 'data'), DEVRYAN_DATA_DIR: path.join(root, 'web-data'), NO_COLOR: '1' },
+        timeout: 15000, maxBuffer: 256 * 1024,
+      });
+      expect(stdout).toContain('bundled native OpenCode 2.1.4');
+      expect(stdout).toContain('Update DevRyan');
+      for (const flag of ['--foreground', '--host', '--port']) expect(stdout).toContain(flag);
+      expect(stdout).not.toMatch(/OPENCODE_HOST|OPENCODE_PORT|OPENCODE_SKIP_START|DEVRYAN_OPENCODE_HOSTNAME/);
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
   });
 });

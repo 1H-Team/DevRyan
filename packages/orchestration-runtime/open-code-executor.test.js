@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { appendManagedAssignment, stripManagedAssignment } from './continuation-assignment.js';
+import { createManagedAssistantActivityRegistry } from './assistant-activity.js';
+import { classifyManagedTaskFailure } from './provider-retry-policy.js';
+import { createManagedTerminalErrorRegistry } from './terminal-error-registry.js';
 
 import {
   createManagedOpenCodeExecutor,
@@ -123,6 +126,41 @@ const recoveryControl = () => {
 
 
 describe('managed OpenCode executor', () => {
+  test('rechecks prerequisite evidence immediately before the initial provider prompt', async () => {
+    let prompts = 0;
+    const executor = createManagedOpenCodeExecutor({ transport: {
+      async createSession() { return { id: 'ses_child' }; }, async promptSession() { prompts++; },
+      async readSession() { return { id: 'ses_child' }; }, async readStatus() { return { type: 'idle' }; },
+      async readMessages() { return []; }, async abortSession() {}, deleteSession,
+    } });
+    try {
+      await expect(executor.start(task({ taskPrerequisites: [{ taskId: 'dvr_task_producer', checkName: 'interface', paths: ['api.js'], contentHash: 'a'.repeat(64) }] }), { setChildSessionId: async () => true, markAccepted: async () => true,
+        assertPrerequisites: async () => { throw Error('producer evidence changed'); } })).rejects.toThrow('producer evidence changed');
+      expect(prompts).toBe(0);
+    } finally { await executor.shutdown(); }
+  });
+  test('native removal settlement closes its observer without a second provider interrupt', async () => {
+    let observing;
+    const started = new Promise(resolve => { observing = resolve; });
+    let providerAborts = 0;
+    const current = task({ childSessionId: 'ses_child', status: 'running' });
+    const executor = createManagedOpenCodeExecutor({ pollIntervalMs: 1, transport: {
+      async readSession() { return { id: 'ses_child' }; },
+      async readStatus() { observing(); return { type: 'busy' }; },
+      async readMessages() { return []; },
+      async promptSession() { throw new Error('must not prompt'); },
+      async createSession() { throw new Error('must not create'); },
+      async abortSession() { providerAborts++; throw new Error('native session is already held and stopped'); },
+      deleteSession,
+    } });
+    try {
+      const observation = executor.observe(current, recoveryControl());
+      await started;
+      await expect(executor.abort(current, { nativeSettled: true })).resolves.toEqual({ aborted: true });
+      await expect(observation).resolves.toMatchObject({ status: 'aborted' });
+      expect(providerAborts).toBe(0);
+    } finally { await executor.shutdown(); }
+  });
   test('parks the Go region rejection for one configured backup without resending to that model', async () => {
     const reason = "Upstream request failed: This Go model requires Global regions. Select Global in your workspace's Privacy settings to use it.";
     const prompts = [];
@@ -165,7 +203,11 @@ describe('managed OpenCode executor', () => {
     } finally { await executor.shutdown(); }
   });
 
-  test('settles an authoritative model error without waiting for an assistant message', async () => {
+  test.each([
+    ['Model not found: opencode/retired-model', null],
+    ['Free usage exceeded, subscribe to Go', 429],
+    ['Invalid API key', 401],
+  ])('settles an authoritative first-request error without an assistant: %s', async (message, statusCode) => {
     const terminalReads = [];
     const transport = {
       async createSession() { return { id: 'ses_child' }; },
@@ -180,9 +222,9 @@ describe('managed OpenCode executor', () => {
           observedAt: 2_100,
           eventId: 'evt_model',
           errorName: 'UnknownError',
-          message: 'Model not found: opencode/retired-model',
+          message,
           code: null,
-          statusCode: null,
+          statusCode,
           retryable: null,
         };
       },
@@ -203,11 +245,12 @@ describe('managed OpenCode executor', () => {
 
     expect(result).toMatchObject({
       status: 'failed',
-      failureReason: 'Model not found: opencode/retired-model',
+      failureReason: message,
       resumable: true,
     });
     expect(terminalReads).toHaveLength(1);
     expect(terminalReads[0].after).toBe(2_000);
+    await executor.shutdown();
   });
 
   test('ignores a terminal error recorded before the current prompt attempt', async () => {
@@ -278,7 +321,7 @@ describe('managed OpenCode executor', () => {
       'Inspect the authentication flow.',
     );
     expect(prompts[0].tools).toEqual({
-      task: false,
+      task: false, devryan_plan_read: false, todoread: false, todowrite: false,
     });
   });
 
@@ -312,11 +355,10 @@ describe('managed OpenCode executor', () => {
     ].join('\n\n'));
     expect(prompts[0].tools).toMatchObject({
       '*': false,
-      task: false,
+      task: false, devryan_plan_read: false, todoread: false, todowrite: false,
       read: true,
       glob: true,
       grep: true,
-      ast_grep_search: true,
       webfetch: true,
     });
   });
@@ -339,13 +381,68 @@ describe('managed OpenCode executor', () => {
       modelId: 'composer-2.5',
       readOnly: true,
     }), {});
-    await expect(operation).rejects.toThrow('does not expose enforceable per-prompt write restrictions');
+    await expect(operation).rejects.toThrow('this host cannot enforce read-only tool restrictions');
     await expect(operation).rejects.toMatchObject({
       code: 'MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED',
       statusCode: 409,
     });
     expect(created).toBe(false);
   });
+
+  for (const method of ['start', 'resume', 'retryInPlace']) {
+    for (const capability of [undefined, false, true]) {
+      test(`Cursor read-only ${method} requires the captured host capability (${capability})`, async () => {
+        const prompts = [];
+        let created = 0;
+        let createdInput;
+        let reads = 0;
+        const transport = {
+          async createSession(input) { created += 1; createdInput = input; return { id: 'ses_child' }; },
+          async promptSession(input) { prompts.push(input); },
+          async readSession() { reads += 1; return { id: 'ses_child' }; },
+          async readStatus() { reads += 1; return { type: 'idle' }; },
+          async readMessages() {
+            reads += 1;
+            return prompts.length ? [assistant({ info: { id: 'msg_new' } })] : [assistant({
+              info: { id: 'msg_old', error: { name: 'MessageAbortedError', data: { message: 'Stopped' } } },
+              parts: [],
+            })];
+          },
+          async abortSession() { return true; },
+          deleteSession,
+        };
+        const options = { transport, cursorReadOnly: capability, now: () => 1_000,
+          sleep: async () => undefined, idleStablePolls: 1 };
+        const executor = createManagedOpenCodeExecutor(options);
+        // A mutable composition object or task payload cannot enable a constructed executor.
+        options.cursorReadOnly = capability !== true;
+        const operation = executor[method](task({
+          providerId: 'cursor-acp', modelId: 'composer-2.5', readOnly: true,
+          cursorReadOnly: true,
+          ...(method === 'start' ? {} : { childSessionId: 'ses_child', attempt: 2 }),
+        }), {
+          async setChildSessionId() { return true; },
+          async markAccepted() { return true; },
+        });
+        if (capability !== true) {
+          await expect(operation).rejects.toMatchObject({
+            code: 'MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED', statusCode: 409,
+          });
+          expect(created).toBe(0);
+          expect(reads).toBe(0);
+          expect(prompts).toHaveLength(0);
+          return;
+        }
+        expect((await operation).status).toBe('completed');
+        expect(created).toBe(method === 'start' ? 1 : 0);
+        if (method === 'start') expect(createdInput).toMatchObject({ mayWrite: false, prewarmExecutionView: true });
+        expect(prompts).toHaveLength(1);
+        expect(prompts[0].providerId).toBe('cursor-acp');
+        expect(prompts[0].prompt).toStartWith(`${MANAGED_READ_ONLY_PROMPT}\n\n`);
+        expect(prompts[0].tools).toMatchObject({ '*': false, task: false, devryan_plan_read: false, todoread: false, todowrite: false, read: true });
+      });
+    }
+  }
 
   test('fails closed before child creation for a historical read-only Designer task', async () => {
     let created = false;
@@ -844,6 +941,8 @@ describe('managed OpenCode executor', () => {
       recoverablePreview: 'Completed after timeout recovery',
     });
     expect(prompts).toEqual([{
+      taskId: 'dvr_task_1',
+      leaseToken: 'dvr_lease_1',
       sessionId: 'ses_child',
       directory: '/workspace',
       providerId: 'github-copilot',
@@ -857,9 +956,37 @@ describe('managed OpenCode executor', () => {
       tools: {
         'resend_*': false,
         'mcp__resend__*': false,
-        task: false,
+        task: false, devryan_plan_read: false, todoread: false, todowrite: false,
       },
     }]);
+  });
+
+  test('fails a finalized timeout without a continuation when the task has no original assignment', async () => {
+    const prompts = [];
+    const timeoutMessage = assistant({
+      info: { id: 'msg_timeout', finish: 'error', error: { message: 'The operation timed out.' } },
+      parts: [{ type: 'text', text: 'partial' }],
+    });
+    const transport = {
+      async createSession() { throw new Error('must not create'); },
+      async promptSession(input) { prompts.push(input); },
+      async readSession() { return { id: 'ses_child' }; },
+      async readStatus() { return { type: 'idle' }; },
+      async readMessages() { return [timeoutMessage]; },
+      async abortSession() { throw new Error('must not abort'); },
+      deleteSession,
+    };
+    const executor = createManagedOpenCodeExecutor({ transport, sleep: async () => undefined });
+
+    const result = await executor.observe(task({ childSessionId: 'ses_child', status: 'running', prompt: '' }), recoveryControl());
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      resumable: false,
+      failureReason: 'Managed continuation requires the original task identity and assignment',
+      recoverablePreview: 'partial',
+    });
+    expect(prompts).toHaveLength(0);
   });
 
   test('continues once in the same child after the Claude connection closes mid-response', async () => {
@@ -912,6 +1039,8 @@ describe('managed OpenCode executor', () => {
       recoverablePreview: 'Completed after connection recovery',
     });
     expect(prompts).toEqual([{
+      taskId: 'dvr_task_1',
+      leaseToken: 'dvr_lease_1',
       sessionId: 'ses_child',
       directory: '/workspace',
       providerId: 'github-copilot',
@@ -924,7 +1053,7 @@ describe('managed OpenCode executor', () => {
       tools: {
         'resend_*': false,
         'mcp__resend__*': false,
-        task: false,
+        task: false, devryan_plan_read: false, todoread: false, todowrite: false,
       },
     }]);
   });
@@ -1028,6 +1157,8 @@ describe('managed OpenCode executor', () => {
     });
     expect(accepted).toBe(1);
     expect(prompts).toEqual([{
+      taskId: 'dvr_task_1',
+      leaseToken: 'dvr_lease_1',
       sessionId: 'ses_child',
       directory: '/workspace',
       providerId: 'github-copilot',
@@ -1039,7 +1170,7 @@ describe('managed OpenCode executor', () => {
       tools: {
         'resend_*': false,
         'mcp__resend__*': false,
-        task: false,
+        task: false, devryan_plan_read: false, todoread: false, todowrite: false,
       },
     }]);
   });
@@ -1433,7 +1564,7 @@ describe('managed OpenCode executor', () => {
     expect(prompts[0]).toMatchObject({
       sessionId: 'ses_child',
       prompt: appendManagedAssignment(task(), MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT),
-      tools: { task: false },
+      tools: { task: false, todoread: false, todowrite: false },
     });
   });
 
@@ -2052,6 +2183,8 @@ describe('managed OpenCode executor', () => {
       recoverablePreview: 'Completed after empty-output recovery',
     });
     expect(prompts).toEqual([{
+      taskId: 'dvr_task_1',
+      leaseToken: 'dvr_lease_1',
       sessionId: 'ses_child',
       directory: '/workspace',
       providerId: 'github-copilot',
@@ -2063,7 +2196,7 @@ describe('managed OpenCode executor', () => {
       tools: {
         'resend_*': false,
         'mcp__resend__*': false,
-        task: false,
+        task: false, devryan_plan_read: false, todoread: false, todowrite: false,
       },
     }]);
   });
@@ -2367,11 +2500,18 @@ describe('managed OpenCode executor', () => {
 
     expect(calls.map(([name]) => name)).toEqual(['create', 'child', 'prompt', 'accepted']);
     expect(calls[0][1]).toEqual({
+      taskId: 'dvr_task_1',
+      leaseToken: 'dvr_lease_1',
       directory: '/workspace',
       parentSessionId: 'ses_root',
       title: 'Locate Chat UI',
+      // The fixture task is Explorer: no view is prepared for it.
+      mayWrite: false,
+      prewarmExecutionView: false,
     });
     expect(calls[2][1]).toMatchObject({
+      taskId: 'dvr_task_1',
+      leaseToken: 'dvr_lease_1',
       sessionId: 'ses_child',
       directory: '/workspace',
       providerId: 'github-copilot',
@@ -2382,7 +2522,7 @@ describe('managed OpenCode executor', () => {
       tools: {
         'resend_*': false,
         'mcp__resend__*': false,
-        task: false,
+        task: false, devryan_plan_read: false, todoread: false, todowrite: false,
       },
     });
     expect(result).toEqual({
@@ -3117,7 +3257,7 @@ describe('managed task prompt preamble', () => {
     expect(created).toBe(0);
   });
 
-  test('never carries the preamble on resume or retry-in-place continuations', async () => {
+  test.each([false, true])('never carries the preamble on resume or retry-in-place continuations (readOnly=%s)', async readOnly => {
     const prompts = [];
     let hookCalls = 0;
     const statuses = [{ type: 'idle' }, { type: 'busy' }, { type: 'idle' }];
@@ -3159,21 +3299,25 @@ describe('managed task prompt preamble', () => {
     const acceptOnly = { async markAccepted() { return true; } };
 
     const resumed = await executor.resume(
-      task({ childSessionId: 'ses_child', executionKind: 'resume' }),
+      task({ childSessionId: 'ses_child', executionKind: 'resume', readOnly }),
       acceptOnly,
     );
     expect(resumed.status).toBe('completed');
-    expect(prompts.map((entry) => stripManagedAssignment(entry.prompt))).toEqual([MANAGED_RESUME_CONTINUATION_PROMPT]);
+    const prefix = readOnly ? `${MANAGED_READ_ONLY_PROMPT}\n\n` : '';
+    expect(prompts.map((entry) => stripManagedAssignment(entry.prompt))).toEqual([`${prefix}${MANAGED_RESUME_CONTINUATION_PROMPT}`]);
 
     const retried = await executor.retryInPlace(
-      task({ childSessionId: 'ses_child', executionKind: 'retry_in_place', attempt: 2 }),
+      task({ childSessionId: 'ses_child', executionKind: 'retry_in_place', attempt: 2, readOnly }),
       acceptOnly,
     );
     expect(retried.status).toBe('completed');
     expect(prompts.map((entry) => stripManagedAssignment(entry.prompt))).toEqual([
-      MANAGED_RESUME_CONTINUATION_PROMPT,
-      `${MANAGED_RETRY_IN_PLACE_PROMPT}\n\n${MANAGED_MODEL_CONTINUATION_NOTICE_PREFIX}github-copilot/gpt-4.1 · fast to continue the previous task.`,
+      `${prefix}${MANAGED_RESUME_CONTINUATION_PROMPT}`,
+      `${prefix}${MANAGED_RETRY_IN_PLACE_PROMPT}\n\n${MANAGED_MODEL_CONTINUATION_NOTICE_PREFIX}github-copilot/gpt-4.1 · fast to continue the previous task.`,
     ]);
+    if (readOnly) for (const entry of prompts) expect(entry.tools).toEqual({
+      '*': false, read: true, glob: true, grep: true, webfetch: true, devryan_plan_read: false, task: false, todoread: false, todowrite: false,
+    });
     expect(hookCalls).toBe(0);
   });
 });
@@ -3396,7 +3540,7 @@ describe('managed task turn budget', () => {
       sessionId: 'ses_child',
       agent: 'designer',
       atRead: 3,
-      tools: { task: false },
+      tools: { task: false, todoread: false, todowrite: false },
     });
     expect(state.reads).toBeGreaterThan(5);
   });
@@ -3616,6 +3760,39 @@ const cancellationDeferred = () => {
   const promise = new Promise((done) => { resolve = done; });
   return { promise, resolve };
 };
+
+test.each(['status', 'transcript'])('cancelling one task detaches its stalled %s read without releasing the other task', async (boundary) => {
+  const gate = cancellationDeferred(), started = cancellationDeferred();
+  let creates = 0, prompts = 0, readers = 0;
+  const executor = createManagedOpenCodeExecutor({ pollIntervalMs: 0, idleStablePolls: 1,
+    transport: {
+      async createSession() { return { id: `ses_${++creates}` }; },
+      async promptSession() { prompts++; }, async readSession() { return {}; },
+      async readStatus() {
+        if (boundary === 'status') { if (++readers === 2) started.resolve(); await gate.promise; }
+        return { type: 'idle' };
+      },
+      async readMessages() {
+        if (boundary === 'transcript') { if (++readers === 2) started.resolve(); await gate.promise; }
+        return [assistant()];
+      },
+      async abortSession() { return true; }, deleteSession,
+    },
+  });
+  const control = { async setChildSessionId() { return true; }, async markAccepted() { return true; } };
+  const firstTask = task({ taskId: 'dvr_task_first' }), secondTask = task({ taskId: 'dvr_task_second' });
+  const first = executor.start(firstTask, control), second = executor.start(secondTask, control);
+  try {
+    await started.promise;
+    await executor.abort({ ...firstTask, childSessionId: 'ses_1' });
+    // No release of the shared stalled IO: confirmed Stop lets only this waiter finish.
+    await expect(first).resolves.toMatchObject({ status: 'aborted' });
+    expect(prompts).toBe(2);
+    gate.resolve();
+    await expect(second).resolves.toMatchObject({ status: 'completed' });
+    expect(prompts).toBe(2);
+  } finally { gate.resolve(); await executor.shutdown(); }
+});
 
 test('a cancelled POST keeps unconfirmed remote work observed, without transcript polling or further prompts', async () => {
   const submitted = cancellationDeferred(), polling = cancellationDeferred(), releasePoll = cancellationDeferred();
@@ -4057,4 +4234,213 @@ describe('canonical authentication retry cleanup', () => {
       expect(aborts).toBe(0);
     });
   }
+});
+
+test.each([true, false])('real current-assistant deltas keep the idle watchdog live while native REST text remains unsealed (durable callback %p)', async durableCallback => {
+  let clock = 1000, reads = 0, aborts = 0, transcriptReads = 0;
+  const registry = createManagedAssistantActivityRegistry({ now: () => clock });
+  const progress = [];
+  const executor = createManagedOpenCodeExecutor({
+    transport: {
+      async createSession() { throw Error('unexpected create'); },
+      async promptSession() { throw Error('unexpected prompt'); },
+      async readSession() { return { id: 'ses_child' }; },
+      async readStatus() { return { type: ++reads <= 6 ? 'busy' : 'idle' }; },
+      async readMessages() {
+        transcriptReads++;
+        return [assistant({ info: { id: 'msg_live', time: reads <= 6 ? { created: 1000 } : { created: 1000, completed: clock },
+          finish: reads <= 6 ? undefined : 'stop' }, parts: [{ type: 'text', text: reads <= 6 ? '' : 'Completed' }] })];
+      },
+      async abortSession() { aborts++; throw Error('Real semantic stream must not be stopped'); },
+      deleteSession,
+    },
+    now: () => clock,
+    sleep: async () => {
+      clock += 100;
+      registry.observe({ type: 'message.updated', properties: { info: {
+        id: 'msg_live', sessionID: 'ses_child', role: 'assistant', time: { created: 1000 },
+      } } }, '/repo');
+      registry.observe({ id: `evt_${clock}`, type: 'message.part.delta', properties: {
+        sessionID: 'ses_child', messageID: 'msg_live', partID: 'part_live', field: 'text', delta: '.',
+      } }, '/repo');
+    },
+    subscribeAssistantActivity: registry.subscribe,
+    pollIntervalMs: 0, liveTranscriptRefreshMs: 0, liveProgressTimeoutMs: 150, idleStablePolls: 1,
+  });
+  try {
+    const result = await executor.observe(task({ childSessionId: 'ses_child', status: 'running', startedAt: 1000, directory: '/repo' }), durableCallback ? {
+      async recordProgress(value) { progress.push(value); return true; },
+    } : {});
+    expect(result.status).toBe('completed'); expect(aborts).toBe(0);
+    expect(progress.filter(value => 'firstAssistantPartAt' in value)).toEqual(durableCallback ? [{ firstAssistantPartAt: 1100 }] : []);
+    expect(progress.filter(value => 'assistantProgressAt' in value)).toEqual([]);
+    expect(transcriptReads).toBe(reads);
+  } finally { await executor.shutdown(); }
+});
+
+test('replayed deltas and busy heartbeats cannot keep a silent unchanged native transcript alive', async () => {
+  let clock = 1000, aborts = 0;
+  const registry = createManagedAssistantActivityRegistry({ now: () => clock });
+  const executor = createManagedOpenCodeExecutor({
+    transport: {
+      async createSession() { throw Error('unexpected create'); }, async promptSession() { throw Error('unexpected prompt'); },
+      async readSession() { return { id: 'ses_child' }; }, async readStatus() { return { type: 'busy' }; },
+      async readMessages() { return [assistant({ info: { id: 'msg_live', finish: undefined, time: { created: 1000 } },
+        parts: [{ type: 'text', text: '' }] })]; },
+      async abortSession() { aborts++; throw Error('Original silent-child abort'); }, deleteSession,
+    }, now: () => clock, sleep: async () => {
+      clock += 100;
+      registry.observe({ type: 'message.updated', properties: { info: {
+        id: 'msg_live', sessionID: 'ses_child', role: 'assistant', time: { created: 1000 },
+      } } }, '/repo');
+      registry.observe({ id: 'evt_repeated', type: 'message.part.delta', properties: {
+        sessionID: 'ses_child', messageID: 'msg_live', partID: 'part_live', field: 'text', delta: '.',
+      } }, '/repo');
+      registry.observe({ type: 'session.status', properties: { sessionID: 'ses_child', status: { type: 'busy' } } }, '/repo');
+    }, subscribeAssistantActivity: registry.subscribe,
+    pollIntervalMs: 0, liveTranscriptRefreshMs: 0, liveProgressTimeoutMs: 150,
+  });
+  try {
+    // No durable progress callback is required for watchdog observation.
+    const result = await executor.observe(task({ childSessionId: 'ses_child', status: 'running', startedAt: 1000, directory: '/repo' }), {});
+    expect(result.status).toBe('interrupted'); expect(result.failureReason).toContain('Stream idle timeout');
+    expect(aborts).toBeGreaterThan(0);
+  } finally { await executor.shutdown(); }
+});
+
+test('same-child continuation replaces progress scope so delayed prior-turn deltas cannot sustain its watchdog', async () => {
+  let clock = 1000, continued = false, aborts = 0;
+  const subscriptions = [], registry = createManagedAssistantActivityRegistry({ now: () => clock });
+  const executor = createManagedOpenCodeExecutor({
+    transport: {
+      async createSession() { throw Error('unexpected create'); },
+      async promptSession(input) { expect(input.prompt).toContain(MANAGED_EMPTY_OUTPUT_CONTINUATION_PROMPT); continued = true; },
+      async readSession() { return { id: 'ses_child' }; },
+      async readStatus() { return { type: continued ? 'busy' : 'idle' }; },
+      async readMessages() { return [assistant({ info: { id: continued ? 'msg_current' : 'msg_prior',
+        finish: continued ? undefined : 'stop', time: continued ? { created: 1000 } : { created: 950, completed: 990 } },
+        parts: [{ type: 'text', text: '' }] })]; },
+      async abortSession() { aborts++; throw Error('Original silent-child abort'); }, deleteSession,
+    }, now: () => clock, sleep: async () => {
+      clock += 100;
+      // Delayed old metadata lacks its later completion, as can happen across a
+      // disconnected stream. Fresh IDs do not make this prior turn current.
+      registry.observe({ type: 'message.updated', properties: { info: {
+        id: 'msg_prior', sessionID: 'ses_child', role: 'assistant', time: { created: 950 },
+      } } }, '/repo');
+      registry.observe({ id: `evt_prior_${clock}`, type: 'message.part.delta', properties: {
+        sessionID: 'ses_child', messageID: 'msg_prior', partID: 'part_prior', field: 'text', delta: '.',
+      } }, '/repo');
+    }, subscribeAssistantActivity: (input, ...callbacks) => { subscriptions.push(input); return registry.subscribe(input, ...callbacks); },
+    pollIntervalMs: 0, liveTranscriptRefreshMs: 0, liveProgressTimeoutMs: 150, idleStablePolls: 1,
+  });
+  try {
+    const result = await executor.observe(task({ childSessionId: 'ses_child', status: 'running', startedAt: 900, directory: '/repo' }), {});
+    expect(continued).toBe(true); expect(result.status).toBe('interrupted');
+    expect(aborts).toBeGreaterThan(0);
+    expect(subscriptions).toHaveLength(2);
+    expect(subscriptions[1]).toMatchObject({ after: 1000, excludedMessageId: 'msg_prior' });
+  } finally { await executor.shutdown(); }
+});
+
+test('semantic progress arriving during an awaited transcript read fences the silent-stream decision', async () => {
+  let clock = 1000, reads = 0, aborts = 0;
+  const registry = createManagedAssistantActivityRegistry({ now: () => clock });
+  const executor = createManagedOpenCodeExecutor({
+    transport: {
+      async createSession() { throw Error('unexpected create'); }, async promptSession() { throw Error('unexpected prompt'); },
+      async readSession() { return { id: 'ses_child' }; },
+      async readStatus() { return { type: ++reads <= 2 ? 'busy' : 'idle' }; },
+      async readMessages() {
+        if (reads === 2) {
+          // The decision's pre-read timestamp is already beyond the idle limit.
+          clock += 10;
+          registry.observe({ type: 'message.updated', properties: { info: {
+            id: 'msg_live', sessionID: 'ses_child', role: 'assistant', time: { created: 1000 },
+          } } }, '/repo');
+          registry.observe({ id: 'evt_during_read', type: 'message.part.delta', properties: {
+            sessionID: 'ses_child', messageID: 'msg_live', partID: 'part_live', field: 'text', delta: '.',
+          } }, '/repo');
+          await Promise.resolve();
+        }
+        return [assistant({ info: { id: 'msg_live', finish: reads <= 2 ? undefined : 'stop',
+          time: reads <= 2 ? { created: 1000 } : { created: 1000, completed: clock } },
+          parts: [{ type: 'text', text: reads <= 2 ? '' : 'Complete' }] })];
+      }, async abortSession() { aborts++; throw Error('must not stop fresh progress'); }, deleteSession,
+    }, now: () => clock, sleep: async () => { clock += 200; },
+    subscribeAssistantActivity: registry.subscribe,
+    pollIntervalMs: 0, liveTranscriptRefreshMs: 0, liveProgressTimeoutMs: 150, idleStablePolls: 1,
+  });
+  try {
+    const result = await executor.observe(task({ childSessionId: 'ses_child', status: 'running', startedAt: 1000, directory: '/repo' }), {});
+    expect(result.status).toBe('completed'); expect(aborts).toBe(0);
+  } finally { await executor.shutdown(); }
+});
+
+
+test('restart reconciliation honors persisted user stop before transport relaunch or provider recovery', async () => {
+  let prompts = 0;
+  const executor = createManagedOpenCodeExecutor({ transport: {
+    async createSession() { throw new Error('must not create'); }, async promptSession() { prompts++; },
+    async readSession() { return { id: 'ses_child' }; }, async readStatus() { return { type: 'idle' }; },
+    async readMessages() { return []; }, async abortSession() { return true; }, deleteSession,
+  } });
+  try {
+    const result = await executor.reconcile(task({ childSessionId: 'ses_child', status: 'running',
+      terminationIntent: 'user_stopped', transportRecovery: { phase: 'backup_pending' } }));
+    expect(result).toMatchObject({ state: 'terminal', result: { status: 'aborted', terminationIntent: 'user_stopped', resumable: true } });
+    expect(prompts).toBe(0);
+  } finally { await executor.shutdown(); }
+});
+
+
+test('a pending idle Stop never settles before delayed HTTP rejection is withdrawn', async () => {
+  let release, entered, request = { sessionId: 'ses_child', requestedAt: 0, state: 'pending', durable: true };
+  const waiting = new Promise(resolve => { entered = resolve; });
+  const blocked = new Promise(resolve => { release = resolve; });
+  let ready = false, prompts = 0, aborts = 0, settled = false;
+  const executor = createManagedOpenCodeExecutor({ idleStablePolls: 1,
+    sleep: async () => { entered(); await blocked; },
+    transport: {
+      async createSession() { throw new Error('must not create'); }, async promptSession() { prompts++; },
+      async readSession() { return { id: 'ses_child' }; }, async readStatus() { return { type: 'idle' }; },
+      async readMessages() { return ready ? [assistant({ info: { finish: 'stop' }, parts: [{ type: 'text', text: 'ordinary result' }] })] : []; },
+      async readOperatorAbort() { return request; }, async abortSession() { aborts++; return true; }, deleteSession,
+    },
+  });
+  try {
+    const result = executor.observe(task({ childSessionId: 'ses_child', status: 'running', startedAt: 0 }), {}).then(value => { settled = true; return value; });
+    await waiting;
+    expect(settled).toBe(false); expect(prompts).toBe(0); expect(aborts).toBe(0);
+    request = null; ready = true; release();
+    const completed = await result;
+    expect(completed.status).toBe('completed'); expect(completed.terminationIntent).toBeUndefined();
+    expect(prompts).toBe(0); expect(aborts).toBe(0);
+  } finally { release(); await executor.shutdown(); }
+});
+
+
+test.each(['event', 'transcript'])('preserves structured auth before transport recovery via %s', async (source) => {
+  const registry = createManagedTerminalErrorRegistry({ now: () => 2100 });
+  registry.observe({ type: 'session.error', properties: { sessionID: 'ses_child', error: {
+    name: 'ProviderAuthError', data: { v2Type: 'provider.auth', statusCode: 403, message: 'Upstream request failed: account is inactive' },
+  } } });
+  let prompts = 0;
+  const executor = createManagedOpenCodeExecutor({ now: () => 2000, idleStablePolls: 1, transport: {
+    async createSession() { return { id: 'ses_child' }; },
+    async promptSession() { prompts++; },
+    async readSession() { return { id: 'ses_child' }; },
+    async readStatus() { return { type: 'idle' }; },
+    async readTerminalError(input) { return source === 'event' ? registry.read(input) : null; },
+    async readMessages() { return source === 'event' ? [] : [assistant({ info: { error: {
+      name: 'ProviderAuthError', data: { v2Type: 'provider.auth', statusCode: 403, message: 'Upstream request failed: account is inactive' },
+    } } })]; },
+    async abortSession() { throw new Error('must not abort a settled authentication failure'); }, deleteSession,
+  } });
+  try {
+    const result = await executor.start(task(), { async setChildSessionId() { return true; }, async markAccepted() { return true; } });
+    expect(result.status).toBe('failed');
+    expect(classifyManagedTaskFailure(result.failureReason)).toBe('provider_authentication');
+    expect(prompts).toBe(1);
+  } finally { await executor.shutdown(); }
 });

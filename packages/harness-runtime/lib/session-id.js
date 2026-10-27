@@ -1,3 +1,4 @@
+import { canonicalDevRyanEventType } from '@devryan/shared-runtime/lib/event-types.js';
 const asString = (value) => (
   typeof value === 'string' && value.trim().length > 0 ? value.trim() : ''
 );
@@ -9,7 +10,7 @@ const explicitSessionID = (record) => asString(record?.sessionID)
 
 const managedTask = (record) => {
   const event = record?.payload, properties = event?.properties, task = properties?.task;
-  if (event?.type !== 'openchamber:managed-task' || properties?.owner !== 'devryan'
+  if (canonicalDevRyanEventType(event?.type) !== 'devryan:managed-task' || properties?.owner !== 'devryan'
     || task?.owner !== 'devryan') return null;
   const root = asString(task.rootSessionId), explicit = explicitSessionID(record);
   return root && (!explicit || explicit === root) ? task : null;
@@ -24,7 +25,7 @@ export const resolveRecordSessionID = (record) => {
   const task = managedTask(record);
   if (task) return asString(task.rootSessionId);
   const eventType = asString(record?.payload?.type);
-  if (eventType === 'openchamber:managed-task-removed' && record.payload.properties?.owner === 'devryan') {
+  if (canonicalDevRyanEventType(eventType) === 'devryan:managed-task-removed' && record.payload.properties?.owner === 'devryan') {
     return asString(record.payload.properties.rootSessionId);
   }
   return eventType.startsWith('session.')

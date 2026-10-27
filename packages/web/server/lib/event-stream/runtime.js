@@ -8,14 +8,15 @@ import {
   sendMessageStreamWsEvent,
 } from './protocol.js';
 import { createGlobalMessageStreamHub } from './global-hub.js';
-import { stripEventDiffContent } from '../opencode/diff-summary.js';
+import { stripBrowserEventPayload } from '../opencode/tool-attachment-summary.js';
 import { createGlobalMessageStreamWsBridge } from './global-ws-bridge.js';
 import { createBoundedEventQueue } from './bounded-event-queue.js';
 import { serializeEventPayload } from './payload-serialization.js';
+import { resolveEventDialect } from './event-dialect.js';
 import { acceptDirectoryMessageStreamWsConnection } from './directory-ws-bridge.js';
 import {
   DEFAULT_UPSTREAM_RECONNECT_DELAY_MS,
-  DEFAULT_UPSTREAM_STALL_TIMEOUT_MS,
+  GEN2_UPSTREAM_STALL_TIMEOUT_MS,
 } from './upstream-reader.js';
 
 function getRequestLastEventId(req) {
@@ -34,7 +35,7 @@ function getRequestLastEventId(req) {
   return '';
 }
 
-export function serializeMessageStreamSseEvent({ payload, directory, eventId }) {
+export function serializeMessageStreamSseEvent({ payload, directory, eventId }, dialect = null) {
   const lines = [];
   if (typeof eventId === 'string' && eventId.length > 0) {
     lines.push(`id: ${eventId}`);
@@ -42,7 +43,7 @@ export function serializeMessageStreamSseEvent({ payload, directory, eventId }) 
   const hasDirectory = typeof directory === 'string' && directory.length > 0;
   // Byte-identical to stringifying `{ directory?, payload }`, reusing the
   // payload serialization shared by every client.
-  const payloadJson = serializeEventPayload(payload);
+  const payloadJson = serializeEventPayload(payload, dialect);
   lines.push(`data: ${payloadJson === undefined
     ? JSON.stringify(hasDirectory ? { directory } : {})
     : `{${hasDirectory ? `"directory":${JSON.stringify(directory)},` : ''}"payload":${payloadJson}}`}`);
@@ -64,7 +65,7 @@ export function createGlobalMessageStreamSseHandler({
 
     res.status?.(200);
     res.setHeader?.('Content-Type', 'text/event-stream');
-    res.setHeader?.('Cache-Control', 'no-cache');
+    res.setHeader?.('Cache-Control', 'no-cache, no-transform');
     res.setHeader?.('Connection', 'keep-alive');
     res.setHeader?.('X-Accel-Buffering', 'no');
     res.flushHeaders?.();
@@ -178,6 +179,8 @@ export function createGlobalUiEventBroadcaster({
   wsClients,
   writeSseEvent,
   globalEventHub = null,
+  openCodeClient = null,
+  getOpenCodeRuntime = null,
   registerRetentionConnection = null,
 }) {
   const filteredQueues = new WeakMap();
@@ -249,15 +252,16 @@ export function createMessageStreamWsRuntime({
   uiAuthController,
   isRequestOriginAllowed,
   rejectWebSocketUpgrade,
-  buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
   wsClients,
   triggerHealthCheck,
   heartbeatIntervalMs = MESSAGE_STREAM_WS_HEARTBEAT_INTERVAL_MS,
-  upstreamStallTimeoutMs = DEFAULT_UPSTREAM_STALL_TIMEOUT_MS,
+  generation2StallTimeoutMs = GEN2_UPSTREAM_STALL_TIMEOUT_MS,
   upstreamReconnectDelayMs = DEFAULT_UPSTREAM_RECONNECT_DELAY_MS,
   fetchImpl = fetch,
   globalEventHub = null,
+  openCodeClient = null,
+  getOpenCodeRuntime = null,
   registerRetentionConnection = null,
   eventFilter = null,
 }) {
@@ -267,25 +271,33 @@ export function createMessageStreamWsRuntime({
 
   const ownsGlobalHub = !globalEventHub;
   const globalHub = globalEventHub ?? createGlobalMessageStreamHub({
-    buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
     fetchImpl,
-    upstreamStallTimeoutMs,
+    generation2StallTimeoutMs,
+    openCodeClient,
+    getOpenCodeRuntime,
     upstreamReconnectDelayMs,
-    // Same trim the server-owned hub applies: diff patch bodies never fan out.
-    transformEventPayload: stripEventDiffContent,
+    // Same trim the server-owned hub applies: diff patch bodies and large tool
+    // media never fan out.
+    transformEventPayload: stripBrowserEventPayload,
   });
 
   const globalBridge = createGlobalMessageStreamWsBridge({
     globalHub,
-    ownsGlobalHub,
+    ownsGlobalHub: false,
     wsClients,
     triggerHealthCheck,
     heartbeatIntervalMs,
     eventFilter,
   });
 
+  let connectedClients = 0;
   wsServer.on('connection', (socket, req) => {
+    connectedClients += 1;
+    socket.once('close', () => {
+      connectedClients -= 1;
+      if (ownsGlobalHub && connectedClients === 0) globalHub.stop();
+    });
     const releaseRetention = registerRetentionConnection?.(req);
     if (releaseRetention) socket.once('close', releaseRetention);
     const unregisterConnection = typeof uiAuthController?.registerConnection === 'function'
@@ -298,10 +310,12 @@ export function createMessageStreamWsRuntime({
     const isGlobalStream = pathname === MESSAGE_STREAM_GLOBAL_WS_PATH;
     const requestedLastEventId = requestUrl.searchParams.get('lastEventId')?.trim() || '';
     const requestedDirectory = requestUrl.searchParams.get('directory')?.trim() || '';
+    socket.devryanEventDialect = resolveEventDialect({ url: rawUrl, headers: req.headers });
 
     if (isGlobalStream) {
       globalBridge.accept(socket, {
         requestedLastEventId,
+        unanchoredReplay: !requestedLastEventId && requestUrl.searchParams.get('replayUnanchored') === '1',
         principal: req.principal,
       });
       return;
@@ -311,14 +325,10 @@ export function createMessageStreamWsRuntime({
       socket,
       requestedLastEventId,
       requestedDirectory,
-      buildOpenCodeUrl,
-      getOpenCodeAuthHeaders,
+      globalHub,
       wsClients,
       triggerHealthCheck,
       heartbeatIntervalMs,
-      upstreamStallTimeoutMs,
-      upstreamReconnectDelayMs,
-      fetchImpl,
       eventFilter,
       principal: req.principal,
     });
@@ -332,7 +342,7 @@ export function createMessageStreamWsRuntime({
 
     const handleUpgrade = async () => {
       try {
-        if (req.tunnelAccessDenied || socket.destroyed || req.principal?.scope === 'tunnel-bot') return;
+        if (req.tunnelAccessDenied || socket.destroyed) return;
         if (typeof uiAuthController?.ensureSessionToken === 'function') {
           const sessionToken = await uiAuthController?.ensureSessionToken?.(req, null);
           if (!sessionToken) {
@@ -365,6 +375,7 @@ export function createMessageStreamWsRuntime({
     async close() {
       server.off('upgrade', upgradeHandler);
       globalBridge.close();
+      if (ownsGlobalHub) globalHub.stop();
 
       try {
         for (const client of wsServer.clients) {

@@ -16,6 +16,7 @@ import {
     RiShieldUserLine,
     RiGithubLine,
 } from '@remixicon/react';
+import { useRuntimeFeature } from '@/lib/opencode/runtime-capabilities';
 import { BrowserVoiceButton } from '@/components/voice';
 // sessionStore removed — currentSessionId comes from useSessionUIStore
 import { useConfigStore, useVisibleConfigAgents } from '@/stores/useConfigStore';
@@ -119,6 +120,7 @@ import {
     shouldAttachResponseStyleReminder,
     wrapResponseStyleReminder,
 } from '@/lib/responseStyle';
+import { FILE_PATH_DRAG_TYPE, LEGACY_FILE_PATH_DRAG_TYPE } from '@/lib/fileDragTypes';
 import { getSyncMessages } from '@/sync/sync-refs';
 import { ComposerContextUsageControl } from './ComposerContextUsageControl';
 import { resolveSelectableAgentOptions } from './modelControlAgentOptions';
@@ -642,6 +644,7 @@ type PendingTextareaSelectionRestore = {
 const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBottom }) => {
     const { t } = useI18n();
     const principal = useAuthPrincipal();
+    const mediaAvailable = useRuntimeFeature('media');
     const canCreateWorktrees = principal.scope !== 'managed' || principal.policy.createWorktrees;
     const { guardBuilderSend, requestAgentChange } = useAgentHandoffGuard();
     const draftStorage = React.useMemo(() => getSafeStorage(), []);
@@ -1578,7 +1581,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             await dispatchQueuedMessageForSession({
                 sessionId,
                 queuedMessageId: queuedMessage.id,
-                dispatch: async (dispatchedMessage) => {
+                dispatch: async (dispatchedMessage, assertCurrent) => {
                     const shouldInterruptCurrentTurn = shouldInterruptBeforeSubmit({
                         currentSessionId: sessionId,
                         sessionPhase,
@@ -1589,9 +1592,13 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                     // Start the bounded interrupt without awaiting it: the
                     // message is inserted at click time and its POST waits on
                     // the gate for the abort to settle.
-                    const awaitTransportGate = shouldInterruptCurrentTurn
+                    const interruptGate = shouldInterruptCurrentTurn
                         ? sessionActions.beginQueuedSendInterrupt(sessionId)
                         : undefined;
+                    const awaitTransportGate = async () => {
+                        await interruptGate?.();
+                        assertCurrent();
+                    };
 
                     const messageID = dispatchedMessage.messageId;
                     const directory = dispatchedMessage.directory;
@@ -1607,9 +1614,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                         variant,
                         'normal',
                         planMode,
-                        (messageID || directory || awaitTransportGate)
-                            ? { messageID, directory, awaitTransportGate }
-                            : undefined,
+                        { messageID, directory, awaitTransportGate, delivery: dispatchedMessage.dispatchDelivery ?? 'steer' },
                     );
                 },
             });
@@ -1634,7 +1639,8 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
 
     const runCompactCommand = React.useCallback(async (sessionId: string) => {
         try {
-            await sessionActions.waitForConnectionOrThrow();
+            const assertSubscription = await opencodeClient.awaitInputSubscription();
+            assertSubscription();
             const sdk = opencodeClient.getSdkClient();
             const configState = useConfigStore.getState();
             await sdk.session.summarize({
@@ -3124,7 +3130,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             if (lowerTypes.includes('files')) return true;
             if (lowerTypes.includes('text/uri-list')) return true;
             if (lowerTypes.includes('codefiles')) return true;
-            if (lowerTypes.includes('application/x-openchamber-file-path')) return true;
+            if (lowerTypes.includes(FILE_PATH_DRAG_TYPE) || lowerTypes.includes(LEGACY_FILE_PATH_DRAG_TYPE)) return true;
             if (lowerTypes.some((type) => type.includes('vnd.code.tree'))) return true;
         }
 
@@ -3204,7 +3210,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         e.preventDefault();
         e.stopPropagation();
         dragEnterCountRef.current++;
-        const isInternal = e.dataTransfer.types?.includes('application/x-openchamber-file-path') ?? false;
+        const isInternal = (e.dataTransfer.types?.includes(FILE_PATH_DRAG_TYPE) || e.dataTransfer.types?.includes(LEGACY_FILE_PATH_DRAG_TYPE)) ?? false;
         if (isInternal !== isInternalDrag) {
             setIsInternalDrag(isInternal);
         }
@@ -3255,7 +3261,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         if (!currentSessionId && !newSessionDraftOpen) return;
 
         // Internal drag: file tree → chat input (relative path as @mention)
-        const internalPath = e.dataTransfer.getData('application/x-openchamber-file-path');
+        const internalPath = e.dataTransfer.getData(FILE_PATH_DRAG_TYPE) || e.dataTransfer.getData(LEGACY_FILE_PATH_DRAG_TYPE);
         if (internalPath && internalPath !== '.') {
             confirmedMentionsRef.current.add(internalPath);
             const mention = `@${internalPath}`;
@@ -4568,7 +4574,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                                             <MemoMobileModelButton onOpenModel={() => handleOpenMobilePanel('model')} className="min-w-0 flex-1" />
                                         </div>
                                         <div className="flex shrink-0 items-center gap-x-1">
-                                            <MemoBrowserVoiceButton />
+                                            {mediaAvailable ? <MemoBrowserVoiceButton /> : null}
                                             <ComposerActionButtons
                                                 isMobile={isMobile}
 
@@ -4625,7 +4631,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                                 </div>
                                 <div className={cn('flex items-center flex-1 justify-end', footerGapClass, 'md:gap-x-3')}>
                                     <MemoModelControls className={cn('flex-1 min-w-0 justify-end')} />
-                                    <MemoBrowserVoiceButton />
+                                    {mediaAvailable ? <MemoBrowserVoiceButton /> : null}
                                     <ComposerActionButtons
                                         isMobile={isMobile}
 

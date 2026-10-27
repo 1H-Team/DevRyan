@@ -1,0 +1,122 @@
+import { type ToolDefinition, tool } from '@opencode-ai/plugin';
+import { runSg } from './cli';
+import type { CliLanguage } from './types';
+import { CLI_LANGUAGES } from './types';
+import {
+  formatReplaceResult,
+  formatSearchResult,
+  getEmptyResultHint,
+} from './utils';
+
+function showOutputToUser(context: unknown, output: string): void {
+  const ctx = context as {
+    metadata?: (input: { metadata: { output: string } }) => void;
+  };
+  ctx.metadata?.({ metadata: { output } });
+}
+
+// DevRyan: the precise argument schemas stay visible so the host can parse
+// input with them (ToolDefinition widens them to zod core types).
+export const ast_grep_search = tool({
+  description:
+    'Search code patterns across filesystem using AST-aware matching. ' +
+    'Use meta-variables: $VAR (single node), $$$ (multiple nodes). ' +
+    'IMPORTANT: Patterns must be complete AST nodes (valid code) — ' +
+    "for functions, include params and body: 'export async function $NAME($$$) { $$$ }', not 'export async function $NAME'. " +
+    "More examples: 'console.log($MSG)', 'def $FUNC($$$):'",
+  args: {
+    pattern: tool.schema
+      .string()
+      .describe(
+        'AST pattern with meta-variables ($VAR, $$$). Must be complete AST node.',
+      ),
+    lang: tool.schema.enum(CLI_LANGUAGES).describe('Target language'),
+    paths: tool.schema
+      .array(tool.schema.string())
+      .optional()
+      .describe("Paths to search (default: ['.'])"),
+    globs: tool.schema
+      .array(tool.schema.string())
+      .optional()
+      .describe('Include/exclude globs (prefix ! to exclude)'),
+    context: tool.schema
+      .number()
+      .optional()
+      .describe('Context lines around match'),
+  },
+  execute: async (args, context) => {
+    try {
+      const result = await runSg({
+        pattern: args.pattern,
+        lang: args.lang as CliLanguage,
+        paths: args.paths,
+        globs: args.globs,
+        context: args.context,
+      });
+
+      let output = formatSearchResult(result);
+
+      if (result.matches.length === 0 && !result.error) {
+        const hint = getEmptyResultHint(args.pattern, args.lang as CliLanguage);
+        if (hint) {
+          output += `\n\n${hint}`;
+        }
+      }
+
+      showOutputToUser(context, output);
+      return output;
+    } catch (e) {
+      const output = `Error: ${e instanceof Error ? e.message : String(e)}`;
+      showOutputToUser(context, output);
+      return output;
+    }
+  },
+});
+
+export const ast_grep_replace = tool({
+  description:
+    'Replace code patterns across filesystem with AST-aware rewriting. ' +
+    'Dry-run by default. Use meta-variables in rewrite to preserve matched content. ' +
+    "Example: pattern='console.log($MSG)' rewrite='logger.info($MSG)'",
+  args: {
+    pattern: tool.schema.string().describe('AST pattern to match'),
+    rewrite: tool.schema
+      .string()
+      .describe('Replacement pattern (can use $VAR from pattern)'),
+    lang: tool.schema.enum(CLI_LANGUAGES).describe('Target language'),
+    paths: tool.schema
+      .array(tool.schema.string())
+      .optional()
+      .describe('Paths to search'),
+    globs: tool.schema
+      .array(tool.schema.string())
+      .optional()
+      .describe('Include/exclude globs'),
+    dryRun: tool.schema
+      .boolean()
+      .optional()
+      .describe('Preview changes without applying (default: true)'),
+  },
+  execute: async (args, context) => {
+    try {
+      const result = await runSg({
+        pattern: args.pattern,
+        rewrite: args.rewrite,
+        lang: args.lang as CliLanguage,
+        paths: args.paths,
+        globs: args.globs,
+        updateAll: args.dryRun === false,
+      });
+      const output = formatReplaceResult(result, args.dryRun !== false);
+      showOutputToUser(context, output);
+      return output;
+    } catch (e) {
+      const output = `Error: ${e instanceof Error ? e.message : String(e)}`;
+      showOutputToUser(context, output);
+      return output;
+    }
+  },
+});
+
+ast_grep_search satisfies ToolDefinition;
+ast_grep_replace satisfies ToolDefinition;

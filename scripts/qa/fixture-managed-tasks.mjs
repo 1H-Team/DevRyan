@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { evaluate } from './cdp.mjs';
-import { createManagedTaskRecord, toManagedTaskEvent } from '../../packages/orchestration-runtime/contract.js';
+import { createManagedTaskRecord, toManagedTaskEvent, toManagedTaskRemovalEvent } from '../../packages/orchestration-runtime/contract.js';
 import { createManagedTaskResultEnvelope, assertManagedTaskResultEnvelopeMatchesTask } from '../../packages/orchestration-runtime/result-envelope.js';
 
 export function createQaManagedTaskReadModel({ transport, directory, rootSessionID, children, agent = 'builder', now = Date.now() }) {
@@ -40,6 +40,21 @@ export function resolveQaManagedTaskRead({ model, origin, request }) {
   const body = request.postData ?? null;
   const reject = reason => ({ accepted: false, reason, status: 501, body: { error: { code: 'unsupported_visual_fixture_request', message: reason } } });
   if (url.origin !== origin || request.method !== 'GET' || body !== null) return reject('Only same-origin GET task read models are supported');
+  if (url.pathname === '/api/orchestration/objective/verification') {
+    const allowed = ['rootSessionId', 'directory', 'expectedObjectiveId', 'originatingMessageId'];
+    if ([...url.searchParams.keys()].some(key => !allowed.includes(key)) || allowed.some(key => url.searchParams.getAll(key).length > 1)
+      || url.searchParams.get('directory') !== model.directory) return reject('Objective read is outside the visual fixture');
+    const sessionID = url.searchParams.get('rootSessionId');
+    if (sessionID !== model.rootSessionID) {
+      if (model.records.some(record => record.task.childSessionId === sessionID) || model.fixtureChildSessionIDs?.includes(sessionID)) return { accepted: true, status: 404, body: { error: { code: 'objective_unavailable' } } };
+      return reject('Objective read is outside the visual fixture');
+    }
+    if (!model.objectiveId) return { accepted: true, status: 404, body: { error: { code: 'objective_unavailable' } } };
+    const expected = url.searchParams.get('expectedObjectiveId');
+    const originating = url.searchParams.get('originatingMessageId');
+    if (expected && expected !== model.objectiveId || originating && originating !== model.originatingMessageId) return { accepted: true, status: 409, body: { error: { code: 'objective_changed' } } };
+    return { accepted: true, status: 200, body: { objectiveId: model.objectiveId, verification: structuredClone(model.objectiveVerification ?? null), ...(originating ? { originatingMessageId: originating } : {}) } };
+  }
   if (url.pathname === '/api/orchestration/snapshot') {
     if ([...url.searchParams.keys()].some(key => key !== 'rootSessionId')
       || url.searchParams.getAll('rootSessionId').length > 1
@@ -53,6 +68,22 @@ export function resolveQaManagedTaskRead({ model, origin, request }) {
     || (url.searchParams.has('directory') && url.searchParams.get('directory') !== model.directory)) return reject('Task read is outside the visual fixture');
   return { accepted: true, status: 200, body: { task: structuredClone(record.event.properties.task),
     ...(record.resultEnvelope ? { resultEnvelope: structuredClone(record.resultEnvelope) } : {}) } };
+}
+
+// DevRyan-owned task events do not belong to the native OpenCode event manifest.
+// Relay visual records at the app wire boundary, never through native projection.
+export function projectQaManagedTaskUpdates(previous, next) {
+  assert.equal(previous.rootSessionID, next.rootSessionID, 'Visual update must retain its root');
+  const directories = new Set(previous.records.map(({ task }) => task.directory));
+  assert.ok(next.records.every(({ task }) => task.rootSessionId === next.rootSessionID && directories.has(task.directory)), 'Visual update must retain its directory and root');
+  const events = next.records.map(({ task, resultEnvelope, verification }) => {
+    const event = toManagedTaskEvent(task, resultEnvelope ?? undefined);
+    if (verification) event.properties.task.verification = structuredClone(verification);
+    return event;
+  });
+  const retained = new Set(next.records.map(({ task }) => task.taskId));
+  for (const { task } of previous.records) if (!retained.has(task.taskId)) events.push(toManagedTaskRemovalEvent(task));
+  return events.map(payload => ({ directory: payload.properties.directory, payload }));
 }
 
 const FETCH_EVIDENCE_KEY = '__devryanQaManagedReadFixture';
@@ -72,10 +103,34 @@ export function createQaManagedTaskFetchScript({ transport, origin, model }) {
     if(globalThis[key])throw new Error('Managed visual read fixture is already installed');
     const originalFetch=globalThis.fetch.bind(globalThis),model=${JSON.stringify(model)};
     const resolve=${resolveQaManagedTaskRead.toString()};
-    const state={source:'fixture-only scoped fetch transport; no scheduler execution',model,requests:[],failures:[],closed:false};
+    const state={source:'fixture-only app-wire visual replay; no scheduler execution or native event qualification',model,requests:[],failures:[],closed:false,wsSockets:new Set(),sseSinks:new Set(),relayedFrames:0};
+    const NativeWebSocket=globalThis.WebSocket;
+    const exactEventSocket=url=>{const parsed=new URL(String(url),location.href);return parsed.origin.replace(/^ws/,'http')===origin&&parsed.pathname==='/api/global/event/ws';};
+    const FixtureWebSocket=typeof NativeWebSocket==='function'?class extends NativeWebSocket {
+      constructor(url,protocols){super(url,...(protocols===undefined?[]:[protocols]));if(!state.closed&&exactEventSocket(url)){state.wsSockets.add(this);this.addEventListener('close',()=>state.wsSockets.delete(this),{once:true});}}
+    }:null;
+    if(FixtureWebSocket)globalThis.WebSocket=FixtureWebSocket;
+    state.publish=events=>{if(state.closed)return;for(const frame of events){
+      for(const socket of state.wsSockets)if(socket.readyState===1){socket.dispatchEvent(new MessageEvent('message',{data:JSON.stringify({type:'event',...frame})}));state.relayedFrames++;}
+      for(const send of state.sseSinks){send(frame);state.relayedFrames++;}
+    }};
+    const relaySse=async(input,init)=>{
+      const response=await originalFetch(input,init);
+      if(!response.ok||!response.body||!response.headers.get('content-type')?.includes('text/event-stream'))return response;
+      const reader=response.body.getReader(),encoder=new TextEncoder(),decoder=new TextDecoder();let active=true,pending='',sink;
+      const body=new ReadableStream({
+        start(controller){
+          sink=frame=>{if(active&&!state.closed)controller.enqueue(encoder.encode('data: '+JSON.stringify(frame)+'\\n\\n'));};state.sseSinks.add(sink);
+          void(async()=>{try{while(active){const chunk=await reader.read();if(chunk.done)break;pending+=decoder.decode(chunk.value,{stream:true});let boundary;while((boundary=/\\r?\\n\\r?\\n/.exec(pending))){const end=boundary.index+boundary[0].length;controller.enqueue(encoder.encode(pending.slice(0,end)));pending=pending.slice(end);}}if(active){pending+=decoder.decode();if(pending)controller.enqueue(encoder.encode(pending));controller.close();}}catch(error){if(active)controller.error(error);}finally{state.sseSinks.delete(sink);}})();
+        },
+        cancel(reason){active=false;state.sseSinks.delete(sink);return reader.cancel(reason);}
+      });
+      return new Response(body,{status:response.status,statusText:response.statusText,headers:response.headers});
+    };
     const wrapper=async(input,init) => {
       const isRequest=typeof Request!=='undefined'&&input instanceof Request;
       const url=new URL(isRequest?input.url:String(input),location.href);
+      if(!state.closed&&url.origin===origin&&url.pathname==='/api/global/event'&&String(init?.method??(isRequest?input.method:'GET')).toUpperCase()==='GET')return relaySse(input,init);
       if(state.closed||!(url.pathname==='/api/orchestration'||url.pathname.startsWith('/api/orchestration/')))return originalFetch(input,init);
       const method=String(init?.method??(isRequest?input.method:'GET')).toUpperCase();
       const hasBody=init?.body!=null||(init?.body===undefined&&isRequest&&input.body!==null);
@@ -88,7 +143,7 @@ export function createQaManagedTaskFetchScript({ transport, origin, model }) {
       if(!response.accepted&&state.failures.length<128)state.failures.push(response.reason);
       return new Response(JSON.stringify(response.body),{status:response.status,headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});
     };
-    state.restore=()=>{state.closed=true;if(globalThis.fetch===wrapper)globalThis.fetch=originalFetch;};
+    state.restore=()=>{state.closed=true;state.wsSockets.clear();state.sseSinks.clear();if(globalThis.fetch===wrapper)globalThis.fetch=originalFetch;if(FixtureWebSocket&&globalThis.WebSocket===FixtureWebSocket)globalThis.WebSocket=NativeWebSocket;};
     Object.defineProperty(globalThis,key,{value:state,configurable:true});
     globalThis.fetch=wrapper;
   })();`;
@@ -97,27 +152,32 @@ export function createQaManagedTaskFetchScript({ transport, origin, model }) {
 export async function installQaManagedTaskReadModel({ transport, cdp, origin, model }) {
   assertFixtureOrigin({ transport, origin });
   assert.equal(await evaluate(cdp, 'location.origin'), origin, 'Task read fixture must target the known isolated page');
-  const evidence = { source: 'fixture-only scoped fetch transport installed before the real reload; no scheduler execution',
-    requests: [], failures: [], installedAfterReload: false, closed: false };
+  const evidence = { source: 'fixture-only scoped snapshot reads and app-wire WS/SSE visual replay installed before real reload; no scheduler execution or native event qualification',
+    requests: [], failures: [], relayedFrames: 0, installedAfterReload: false, closed: false };
+  let currentModel = model;
   let { identifier } = await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
     source: createQaManagedTaskFetchScript({ transport, origin, model }),
   });
   const readEvidence = async () => {
-    const value = await evaluate(cdp, `(() => {const state=globalThis[${JSON.stringify(FETCH_EVIDENCE_KEY)}];return state?{requests:state.requests,failures:state.failures}:null;})()`);
+    const value = await evaluate(cdp, `(() => {const state=globalThis[${JSON.stringify(FETCH_EVIDENCE_KEY)}];return state?{requests:state.requests,failures:state.failures,relayedFrames:state.relayedFrames}:null;})()`);
     if (value) {
       evidence.installedAfterReload = true;
+      evidence.relayedFrames = value.relayedFrames;
       evidence.requests.splice(0, evidence.requests.length, ...value.requests);
       evidence.failures.splice(0, evidence.failures.length, ...value.failures);
     }
     return value;
   };
   return { evidence, readEvidence,
+    publish: async events => evaluate(cdp, `globalThis[${JSON.stringify(FETCH_EVIDENCE_KEY)}].publish(${JSON.stringify(events)})`),
     updateModel: async nextModel => {
       await cdp.send('Page.removeScriptToEvaluateOnNewDocument', { identifier });
       ({ identifier } = await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
         source: createQaManagedTaskFetchScript({ transport, origin, model: nextModel }),
       }));
-      await evaluate(cdp, `globalThis[${JSON.stringify(FETCH_EVIDENCE_KEY)}].model=${JSON.stringify(nextModel)}`);
+      const events = projectQaManagedTaskUpdates(currentModel, nextModel);
+      await evaluate(cdp, `(() => {const state=globalThis[${JSON.stringify(FETCH_EVIDENCE_KEY)}];state.model=${JSON.stringify(nextModel)};state.publish(${JSON.stringify(events)});})()`);
+      currentModel = nextModel;
     },
     assertHealthy: async () => {
       await readEvidence();

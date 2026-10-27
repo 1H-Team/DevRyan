@@ -82,6 +82,21 @@ describe("detectTurnCompletedCandidate", () => {
     })).toBeNull()
   })
 
+  test("does not complete an older answer after a newer user turn arrives", () => {
+    const state = stateWithMessages([userMessage("msg_user", 1), assistantMessage("msg_assistant", 2, 3), userMessage("msg_new", 4)])
+    expect(detectTurnCompletedCandidate({ sessionID: "ses_1", state, isRecordedPlanModeUserMessage: () => false })).toBeNull()
+  })
+
+  test("does not attribute an old answer to a later synthetic wake", () => {
+    const oldAnswer = { ...assistantMessage("msg_assistant", 3, 4), parentID: "msg_user" } as Message
+    const parts = { msg_assistant: [textPart("msg_assistant", "Done.")] }
+    const state = stateWithMessages([userMessage("msg_user", 1), userMessage("msg_wake", 2), oldAnswer], parts)
+    expect(detectTurnCompletedCandidate({ sessionID: "ses_1", state, isRecordedPlanModeUserMessage: () => false })).toBeNull()
+    const current = { ...oldAnswer, parentID: "msg_wake" } as Message
+    expect(detectTurnCompletedCandidate({ sessionID: "ses_1", state: stateWithMessages([userMessage("msg_user", 1), userMessage("msg_wake", 2), current], parts), isRecordedPlanModeUserMessage: () => false }))
+      .toMatchObject({ originatingUserMessageId: "msg_wake", completedMessageId: "msg_assistant" })
+  })
+
   const openTodoState = (agent: string) => ({
     ...stateWithMessages([
       userMessage("msg_user", 1),

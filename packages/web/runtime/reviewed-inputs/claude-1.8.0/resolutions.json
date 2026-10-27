@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "edges": [
+    {
+      "importer": "node_modules/opencode-with-claude/dist/index.js",
+      "specifier": "@rynfar/meridian-plugin-opencode-scrub",
+      "target": "node_modules/@rynfar/meridian-plugin-opencode-scrub/dist/index.js"
+    },
+    {
+      "importer": "node_modules/opencode-with-claude/dist/index.js",
+      "specifier": "@rynfar/meridian",
+      "target": "node_modules/@rynfar/meridian/dist/server.js"
+    },
+    {
+      "importer": "node_modules/@rynfar/meridian/dist/cli-pc0mtjjv.js",
+      "specifier": "jsonc-parser",
+      "target": "node_modules/jsonc-parser/lib/esm/main.js"
+    },
+    {
+      "importer": "node_modules/@rynfar/meridian/dist/cli-wxk8xvd3.js",
+      "specifier": "@anthropic-ai/claude-agent-sdk",
+      "target": "node_modules/@anthropic-ai/claude-agent-sdk/sdk.mjs"
+    }
+  ]
+}

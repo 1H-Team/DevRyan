@@ -24,40 +24,46 @@ This explicit desktop acceptance command is separate from the platform-neutral
 `*.test.*` gate; plugin tests cover lease transport, cancellation, output limits,
 and error classification. No fixture source or profile is packaged for release.
 
-## agent-browser 0.38.1 acceptance
+## agent-browser 0.39.2 acceptance
 
-The opt-in `upgrade-install.mjs` uses the real npm registry and pinned FFmpeg
-release downloads. Stage an isolated `.cache/browser-upgrade/baseline` package
-with `agent-browser` exactly `0.33.2` using `bun install --ignore-scripts` first
-(no workspace dependency change). Then run:
+The opt-in installer uses the real npm registry and pinned FFmpeg downloads. It
+stages its own 0.38.1 baseline and returns a private `installRoot`:
 
 ```bash
 node packages/electron/tests/browser-inspection/upgrade-install.mjs /absolute/path/to/bun
-node packages/electron/tests/browser-inspection/upgrade-run.mjs /absolute/repository-local/install/root
-node packages/electron/tests/browser-inspection/upgrade-run.mjs .cache/browser-upgrade/baseline
+node packages/electron/tests/browser-inspection/upgrade-run.mjs /absolute/installRoot --keep-artifacts
+bun scripts/build-native-runtime.mjs --output-root .cache/browser-upgrade-native
+bun run --cwd packages/electron build:web-assets
+bun scripts/qa/browser-live.mjs "$PWD/.cache/browser-upgrade-native" /absolute/installRoot --keep-artifacts
 ```
 
-Use the `installRoot` printed by the installer fixture for the second command.
-Installation covers fresh/ensure/repair/upgrade, every published platform filename,
-and direct native `--version` with no Node executable on PATH. Only the current
-host binary is executed. Runtime acceptance currently requires macOS and its
-verified, built native confinement launcher under `packages/web/runtime`.
+Install checks include fresh/ensure/repair/upgrade, every published platform
+filename, and native `--version` without Node on PATH. Only the host binary is
+executed. Runtime acceptance requires macOS and its verified confinement launcher
+under `packages/web/runtime`.
 
-`upgrade-main.mjs` loads the actual plugin, surface manager, bridge and native
-CLI against a deterministic loopback page, with an ephemeral partition and
-private repository-local home. It starts hidden, denies external page requests,
-and covers core commands, stable/invalidation refs, delta refresh, conditional
-screenshots, human clicks/drags, navigation during WebM/MP4 recording, cursor and
-contact sheets, simultaneous observation and capture detach. `upgrade-worker.mjs`
-executes real bounded sequences under the production native supervisor/profile,
-including cooperative cancellation and a denied write outside the private view.
-The fixture keeps a test-only scoped loopback lease endpoint; it does not claim
-live OpenCode/provider or production file-publication acceptance.
+The CLI fixture uses the actual plugin, surface manager, bridge and native CLI
+against a deterministic loopback page. It covers core commands, refs, delta
+snapshots, conditional screenshots, human clicks/drags, a blue click pulse at the
+dispatched coordinates, pulse expiry, navigation recovery, hidden/disabled click
+failures, WebM/MP4 recording and contact sheets, concurrent observation, capture
+detach, confinement, cancellation, reconnect and persistent pathless screenshots.
+It checks descendant cleanup and fully decodes the recorded videos. A real
+Chromium web viewer consumes the production observation stream and verifies
+click feedback, cross-owner rejection, and lease survival after closing a view.
 
-The runner reuses QA process ownership tracking and verifies no descendant needs
-rescue termination, fully decodes all four videos with managed FFmpeg, and keeps
-results/screenshots/videos/contact sheets/termination receipts under
-`.cache/browser-upgrade/acceptance-*`. It never starts the installed DevRyan app.
-Hard termination before cooperative cleanup can leave an incomplete recording;
-the process supervisor still terminates descendants. This fixture is source
-Electron acceptance, separate from signed release-package checks.
+The full UI runner uses a private native runtime and a deterministic HTTP model
+fixture that calls the real browser tool. It checks the activity dot, no automatic
+panel opening, direct click-to-view, unrelated-chat isolation, close/reopen,
+resize, click feedback, cleanup after completion, and a gap-free session journal.
+Renderer screenshots capture the app chrome; `native-click.png` separately
+captures the native child view, which CDP's renderer screenshot excludes.
+This is not paid-provider, authenticated remote-web, or signed release-package
+qualification.
+
+Runs use the OS temporary QA directory and clean up on every outcome unless
+`--keep-artifacts` or `DEVRYAN_KEEP_ARTIFACTS=1` is set. The install directory is a
+deliverable retained on success for subsequent runs; remove that owned directory
+when finished. Native build artifacts stay repository-local for bundle admission.
+Retained acceptance evidence includes `result.json`, screenshots, videos, contact
+sheets and process cleanup receipts. No test changes the installed app or profile.

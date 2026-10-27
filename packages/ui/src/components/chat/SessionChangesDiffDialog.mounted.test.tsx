@@ -1,6 +1,6 @@
 import React, { act } from 'react';
 import { expect, mock, spyOn, test } from 'bun:test';
-import { withDom } from '../bots/chat/botMountedDom';
+import { withDom } from '@/test/mountedDom';
 import { opencodeClient, type SessionChangesDiffPage } from '@/lib/opencode/client';
 import { I18nProvider } from '@/lib/i18n';
 

@@ -17,6 +17,9 @@ function createProjectPrewarmRuntime(dependencies = {}) {
     ? dependencies.logger
     : console;
   let generation = 0;
+  let held = false;
+  let drainPromise;
+  const pendingRuns = new Set();
 
   const log = (level, message) => {
     try {
@@ -29,10 +32,12 @@ function createProjectPrewarmRuntime(dependencies = {}) {
     }
   };
 
-  const hasStopped = (runGeneration) => runGeneration !== generation || shouldAbort();
+  const hasStopped = (runGeneration) => held || runGeneration !== generation || shouldAbort();
 
   return {
-    async run(reason = 'manual') {
+    run(reason = 'manual') {
+      if (held) return Promise.reject(Object.assign(new Error('bundle_prewarm_held'), { code: 'bundle_prewarm_held', status: 503 }));
+      const pending = (async () => {
       const runGeneration = ++generation;
       const label = typeof reason === 'string' && reason.trim() ? reason.trim() : 'manual';
 
@@ -71,6 +76,16 @@ function createProjectPrewarmRuntime(dependencies = {}) {
       } catch (error) {
         log('warn', `[Prewarm] project discovery failed (${label}): ${formatError(error)}`);
       }
+      })();
+      pendingRuns.add(pending);
+      pending.then(() => pendingRuns.delete(pending), () => pendingRuns.delete(pending));
+      return pending;
+    },
+    holdForCheckpoint() {
+      held = true;
+      generation++;
+      drainPromise ??= Promise.allSettled([...pendingRuns]).then(() => undefined);
+      return drainPromise;
     },
   };
 }

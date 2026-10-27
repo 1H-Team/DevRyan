@@ -1,3 +1,4 @@
+import { parseHelperModelSelection } from '@devryan/shared-runtime';
 // Each hidden model stores up to three alias refs (see ui modelVisibility.ts),
 // so 64 refs dropped toggles after roughly 20 models. Keep in sync with
 // HIDDEN_MODEL_REFS_LIMIT in packages/ui/src/lib/persistence.ts.
@@ -98,7 +99,11 @@ export const createSettingsHelpers = (dependencies) => {
     if (typeof candidate.splashFgDark === 'string' && candidate.splashFgDark.trim().length > 0) {
       result.splashFgDark = candidate.splashFgDark.trim();
     }
-    if (typeof candidate.lastDirectory === 'string' && candidate.lastDirectory.length > 0) {
+    // '' is kept: the UI sends it to forget the last directory once the last
+    // project is removed, and every reader treats it as unset.
+    if (candidate.lastDirectory === '') {
+      result.lastDirectory = '';
+    } else if (typeof candidate.lastDirectory === 'string') {
       const normalized = normalizePathForPersistence(candidate.lastDirectory);
       if (typeof normalized === 'string' && normalized.length > 0) {
         result.lastDirectory = normalized;
@@ -179,17 +184,6 @@ export const createSettingsHelpers = (dependencies) => {
     }
     if (typeof candidate.showReasoningTraces === 'boolean') {
       result.showReasoningTraces = candidate.showReasoningTraces;
-    }
-    if (candidate.opencodeDbMaintenance && typeof candidate.opencodeDbMaintenance === 'object' && !Array.isArray(candidate.opencodeDbMaintenance)) {
-      // Pre-launch OpenCode database maintenance (see lib/opencode/db-maintenance.js).
-      const source = candidate.opencodeDbMaintenance;
-      const maintenance = {};
-      if (typeof source.enabled === 'boolean') maintenance.enabled = source.enabled;
-      if (typeof source.idleHours === 'number' && Number.isFinite(source.idleHours)) maintenance.idleHours = source.idleHours;
-      if (typeof source.keepSeqPerAggregate === 'number' && Number.isFinite(source.keepSeqPerAggregate)) {
-        maintenance.keepSeqPerAggregate = source.keepSeqPerAggregate;
-      }
-      if (Object.keys(maintenance).length > 0) result.opencodeDbMaintenance = maintenance;
     }
     if (typeof candidate.showTextJustificationActivity === 'boolean') {
       result.showTextJustificationActivity = candidate.showTextJustificationActivity;
@@ -323,6 +317,9 @@ export const createSettingsHelpers = (dependencies) => {
     if (typography) {
       result.typographySizes = typography;
     }
+
+    const helperSelection = parseHelperModelSelection(candidate.helperModelSelection);
+    if (helperSelection) result.helperModelSelection = helperSelection;
 
     if (typeof candidate.defaultModel === 'string') {
       const trimmed = candidate.defaultModel.trim();

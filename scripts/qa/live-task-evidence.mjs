@@ -220,7 +220,7 @@ function snapshotProjection(value, rootSessionID) {
     tasks, resultEnvelopes: value.resultEnvelopes.filter(envelope => envelope.rootSessionId === rootSessionID || taskIds.has(envelope.taskId)).map(envelope => pick(envelope, envelopeFields)) };
 }
 
-const planUser = row => row?.info?.role === 'user' && (row.info.mode === 'plan' || row.info.metadata?.openchamberPlanMode === true
+const planUser = row => row?.info?.role === 'user' && (row.info.mode === 'plan' || row.info.metadata?.devryanPlanMode === true || row.info.metadata?.openchamberPlanMode === true
   || row.parts.some(part => part.type === 'text' && part.synthetic === true && typeof part.text === 'string' && part.text.trim().startsWith('User has requested to enter plan mode')));
 
 export function projectQaPlanChildPolicy(tree, rootSessionID, tasks) {

@@ -13,7 +13,7 @@ describe('quota refresh runtime ownership', () => {
     expect(appEffects).toContain('const QuotaRefreshOwner');
     expect(appEffects).toContain('quotaRefreshCoordinator.start()');
     expect(appEffects).toContain('quotaRefreshCoordinator.stop()');
-    expect(appEffects).toContain('<QuotaRefreshOwner enabled={embeddedBackgroundWorkEnabled} />');
+    expect(appEffects).toContain('<QuotaRefreshOwner enabled={embeddedBackgroundWorkEnabled && nativeExecution} />');
   });
 
   test('keeps quota intervals out of rendering surfaces', () => {

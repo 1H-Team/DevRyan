@@ -4,6 +4,7 @@ import { useI18n } from '@/lib/i18n';
 import { selectAssistantStatusRecord, getAssistantActivePartStatus } from '@/hooks/useAssistantStatus';
 import { resolveManagedDelegationStatusPhase } from '@/components/chat/StatusRowContainer';
 import { WorkingPlaceholder } from '@/components/chat/message/parts/WorkingPlaceholder';
+import { isAssistantFinalizing, type SessionPresentationEnvelope } from '@/sync/session-presentation';
 
 const user = (id: string, created: number): Message => ({
     id, role: 'user', sessionID: 'fixture', time: { created },
@@ -19,22 +20,36 @@ const wait: Part = {
     id: 'wait', messageID: assistant.id, sessionID: 'fixture', type: 'tool', tool: 'devryan_task', callID: 'wait-call',
     state: { status: 'running', input: { action: 'wait' }, time: { start: 2 }, title: 'Wait', metadata: {} },
 };
-const stages = ['old-wait', 'send', 'empty-assistant', 'running', 'completed', 'loading-wait', 'confirmed-empty'] as const;
+const stages = ['old-wait', 'wait-any', 'send', 'empty-assistant', 'running', 'completed', 'loading-wait', 'confirmed-empty', 'finalizing'] as const;
 type Stage = typeof stages[number];
+const finalizingEnvelope: SessionPresentationEnvelope = {
+    presentationEpoch: 'fixture-epoch', presentationRevision: 1,
+    presentation: {
+        provider: 'native', phase: 'finalizing', generation: 'fixture-generation',
+        objectiveID: 'new-user', assistantID: 'new-assistant', stepID: 'fixture-step',
+        attemptID: 'fixture-attempt', progress: 1,
+    },
+};
 
 /** Real status selection and label component; all lifecycle input is disposable. */
 export function StatusFixture() {
     const { t } = useI18n();
     const [stage, setStage] = React.useState<Stage>('old-wait');
-    const currentPromptId = stage === 'old-wait' ? 'old-user' : 'new-user';
+    const oldPrompt = stage === 'old-wait' || stage === 'wait-any';
+    const currentPromptId = oldPrompt ? 'old-user' : 'new-user';
+    const currentWait: Part = stage === 'wait-any' ? { ...wait, state: { status: 'running', input: { action: 'wait_any' },
+        time: { start: 2 }, title: 'Wait for any child', metadata: {} } } : wait;
     const records: { info: Message; parts: Part[] }[] = [
-        { info: user('old-user', 1), parts: [] }, { info: assistant, parts: [wait] },
+        { info: user('old-user', 1), parts: [] }, { info: assistant, parts: [currentWait] },
     ];
-    if (stage !== 'old-wait') records.push({ info: user('new-user', 3), parts: [] });
-    if (stage === 'empty-assistant' || stage === 'loading-wait' || stage === 'confirmed-empty') {
+    if (!oldPrompt) records.push({ info: user('new-user', 3), parts: [] });
+    if (stage === 'empty-assistant' || stage === 'loading-wait' || stage === 'confirmed-empty' || stage === 'finalizing') {
         records.push({
-            info: { ...assistant, id: 'new-assistant', parentID: 'new-user', time: { created: 4 } },
-            parts: stage === 'empty-assistant' ? [] : [{ ...wait, messageID: 'new-assistant' }],
+            info: { ...assistant, id: 'new-assistant', parentID: 'new-user',
+                time: { created: 4, ...(stage === 'finalizing' ? { completed: 5 } : {}) },
+                ...(stage === 'finalizing' ? { finish: 'stop' } : {}),
+            },
+            parts: stage === 'empty-assistant' || stage === 'finalizing' ? [] : [{ ...wait, messageID: 'new-assistant' }],
         });
     }
     const selected = selectAssistantStatusRecord(records);
@@ -43,10 +58,11 @@ export function StatusFixture() {
         rootPhase: stage === 'running' ? 'waiting' : null,
         activeToolName: active.activeToolName,
         activeToolAction: active.activeToolAction,
-        isLoadingSnapshot: stage === 'loading-wait' || stage === 'old-wait',
-        hasConfirmedSnapshot: stage !== 'loading-wait' && stage !== 'old-wait',
+        isLoadingSnapshot: stage === 'loading-wait' || oldPrompt,
+        hasConfirmedSnapshot: stage !== 'loading-wait' && !oldPrompt,
     });
-    const statusText = phase === 'waiting' ? t('chat.statusRow.managedTasks.waiting')
+    const isFinalizing = isAssistantFinalizing(stage === 'finalizing' ? finalizingEnvelope : null, 'busy', currentPromptId);
+    const statusText = isFinalizing ? 'finalizing' : phase === 'waiting' ? t('chat.statusRow.managedTasks.waiting')
         : phase === 'starting' ? t('chat.statusRow.managedTasks.starting')
             : phase === 'managing' ? t('chat.statusRow.managedTasks.managing') : 'Working';
     return <main>
@@ -54,8 +70,9 @@ export function StatusFixture() {
         <p>Production status selector and animated label with synthetic events. No runtime requests.</p>
         <nav aria-label="Status controls">{stages.map((value) => <button key={value} onClick={() => setStage(value)}>{value}</button>)}</nav>
         <section aria-label="Live status" style={{ minHeight: 64, padding: 16 }}>
-            <WorkingPlaceholder key={`${currentPromptId}:${phase ?? ''}`} isWorking statusText={statusText} isGenericStatus={phase === null} />
+            <WorkingPlaceholder key={`${currentPromptId}:${phase ?? ''}:${isFinalizing ? 'finalizing' : ''}`}
+                isWorking statusText={statusText} isGenericStatus={phase === null && !isFinalizing} />
         </section>
-        <output data-stage={stage}>{stage}</output>
+        <output data-stage={stage} data-finalizing={String(isFinalizing)}>{stage}</output>
     </main>;
 }

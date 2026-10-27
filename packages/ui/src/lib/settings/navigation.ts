@@ -81,14 +81,14 @@ export const SETTINGS_NAV_SECTIONS: readonly SettingsNavSection[] = [
     labelKey: 'settings.view.nav.group.workflow',
     destinations: [
       AGENTS_SETTINGS_DESTINATION,
-      ...singlePageDestinations('bots', 'magic-prompts'),
+      ...singlePageDestinations('magic-prompts'),
     ],
   },
   {
     labelKey: 'settings.view.nav.group.connections',
     destinations: [
-      PLUGINS_SETTINGS_DESTINATION,
       PROVIDERS_SETTINGS_DESTINATION,
+      PLUGINS_SETTINGS_DESTINATION,
       REMOTE_CONNECTIONS_SETTINGS_DESTINATION,
     ],
   },

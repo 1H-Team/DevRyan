@@ -9,6 +9,7 @@ import { getAntigravityPluginGoogleModelKeyPaths } from './antigravity-retiremen
 import { listDefaultConfigAssets } from './default-config-assets.js';
 import { retireLegacyCursorPlugin } from './legacy-cursor-plugin.js';
 import { removeJsoncKeyPaths, removeKeyPathsFromObject } from './jsonc-config.js';
+import { migrateLegacyAgentsConfig } from './slim-config.js';
 import {
   DEVRYAN_MANAGED_PROFILE_DEPENDENCIES,
   DEVRYAN_MANAGED_PROFILE_PLUGIN_FILES,
@@ -20,6 +21,7 @@ import {
 import { applyManagedMeridianSdkFeaturePolicy } from './meridian-sdk-features.js';
 import { applyMeridianHttpHotfix } from './meridian-http-hotfix.js';
 import { applyImagegenModelHotfix } from './imagegen-model-hotfix.js';
+import { migrateDevRyanSidecarDirectory } from './devryan-sidecar.js';
 import {
   CLAUDE_RUNTIME_MANAGED_OVERRIDES,
   CLAUDE_RUNTIME_SELECTION,
@@ -33,9 +35,9 @@ import {
 
 const DEFAULT_CONFIG_ROOT = path.resolve(process.cwd(), 'server', 'default-config');
 const DEFAULT_PROFILE_ROOT = path.join(DEFAULT_CONFIG_ROOT, 'user-profile');
-const MANIFEST_RELATIVE_PATH = path.join('.openchamber', 'user-profile-manifest.json');
+const MANIFEST_RELATIVE_PATH = path.join('.devryan', 'user-profile-manifest.json');
 const MERIDIAN_POLICY_MARKER_RELATIVE_PATH = path.join(
-  '.openchamber',
+  '.devryan',
   'meridian-sdk-features-policy.json',
 );
 
@@ -177,6 +179,7 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
     || pathApi.join(configDirectory, MERIDIAN_POLICY_MARKER_RELATIVE_PATH);
 
   const provision = async () => {
+    migrateDevRyanSidecarDirectory(configDirectory);
     const manifestPath = pathApi.join(configDirectory, MANIFEST_RELATIVE_PATH);
     const previousManifest = readJson(fsApi, manifestPath, { version: 1, files: {} });
     const previousFiles = isRecord(previousManifest.files) ? previousManifest.files : {};
@@ -338,7 +341,10 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
     const desiredPackage = packageMerge.packageJson;
     const dependenciesChanged = JSON.stringify(currentPackage.dependencies || {}) !== JSON.stringify(desiredPackage.dependencies || {});
     const overridesChanged = JSON.stringify(currentPackage.overrides || {}) !== JSON.stringify(desiredPackage.overrides || {});
-    syncContent('oh-my-opencode-slim.json', fsApi.readFileSync(pathApi.join(profileRoot, 'oh-my-opencode-slim.json'), 'utf8'));
+    // A personal legacy agent config becomes the new-name file first, so the
+    // shipped default never shadows it.
+    migrateLegacyAgentsConfig({ configDirectory });
+    syncContent('devryan-agents.jsonc', fsApi.readFileSync(pathApi.join(profileRoot, 'devryan-agents.jsonc'), 'utf8'));
 
     const canonicalAssets = await listDefaultConfigAssets(configRoot);
     for (const sourceRelativePath of canonicalAssets) {
@@ -355,15 +361,7 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
         syncContent(targetRelativePath, fsApi.readFileSync(pathApi.join(configRoot, sourceRelativePath), 'utf8'));
       }
     }
-    // The new Slim runtime retains host agent state. Do not install its package
-    // alongside a user-owned adapter whose restoration contract is unknown.
-    if (result.conflicts.includes(pathApi.join(configDirectory, 'plugins/devryan-oh-my-opencode-slim.mjs'))) {
-      result.ok = false;
-      result.error = 'DEVRYAN_SLIM_ADAPTER_CONFLICT: preserve and reconcile the user-owned Slim adapter before upgrading managed plugins';
-      return result;
-    }
-    // This merge retains unrelated user fields. Write it only after checking
-    // that the required Slim adapter can be upgraded safely.
+    // This merge retains unrelated user fields.
     syncContent('package.json', `${JSON.stringify(desiredPackage, null, 2)}\n`, { mergeSafe: true });
     const retiredSkillPaths = Object.keys(previousFiles)
       .filter((relativePath) => relativePath.startsWith('skills/'));
@@ -411,19 +409,6 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
       } catch {
         // Retirement cleanup is best-effort. Non-empty and user-owned directories stay intact.
       }
-    }
-
-    const superpowersBootstrapPath = pathApi.join(
-      configDirectory,
-      'skills',
-      'superpowers',
-      'using-superpowers',
-      'SKILL.md',
-    );
-    if (!fsApi.existsSync(superpowersBootstrapPath)) {
-      result.warnings.push(
-        'Superpowers skills are not installed; the optional adapter will remain disabled.',
-      );
     }
 
     for (const [relativePath, previousEntry] of Object.entries(previousFiles)) {

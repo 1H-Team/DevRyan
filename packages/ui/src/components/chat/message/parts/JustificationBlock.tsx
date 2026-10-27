@@ -2,7 +2,7 @@ import React from 'react';
 import type { Part } from '@opencode-ai/sdk/v2';
 import type { ContentChangeReason } from '@/hooks/useChatAutoFollow';
 import { useUIStore } from '@/stores/useUIStore';
-import { useStreamingTextThrottle } from '../../hooks/useStreamingTextThrottle';
+import { useStreamingTextReveal } from '../../hooks/useStreamingTextReveal';
 import { ReasoningTimelineBlock } from './ReasoningPart';
 
 type PartWithText = Part & { text?: string; content?: string };
@@ -39,7 +39,7 @@ const JustificationBlock: React.FC<JustificationBlockProps> = ({
     const rawText = partWithText.text || partWithText.content || '';
     const textContent = React.useMemo(() => formatJustificationText(rawText), [rawText]);
     const isStreaming = chatRenderMode === 'live' && !isMessageCompleted;
-    const throttledText = useStreamingTextThrottle({
+    const throttledText = useStreamingTextReveal({
         text: textContent,
         phase: isStreaming ? 'streaming' : 'terminal',
         identityKey: `${messageId}:${part.id ?? 'justification'}`,

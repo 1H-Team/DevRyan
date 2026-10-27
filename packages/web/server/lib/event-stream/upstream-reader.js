@@ -3,6 +3,10 @@ import { parseSseEventEnvelope } from './protocol.js';
 export const DEFAULT_UPSTREAM_STALL_TIMEOUT_MS = 20_000;
 export const UPSTREAM_STALL_TIMEOUT_CONCURRENT_MS = DEFAULT_UPSTREAM_STALL_TIMEOUT_MS * 3;
 export const DEFAULT_UPSTREAM_RECONNECT_DELAY_MS = 250;
+export const MAX_UPSTREAM_RECONNECT_DELAY_MS = 10_000;
+// Gen 2 (OpenCode 2.x) heartbeats every 15 s with comment frames, so a 20 s
+// window would trip on one late heartbeat (DESIGN.md B.7).
+export const GEN2_UPSTREAM_STALL_TIMEOUT_MS = 45_000;
 // Hard cap for the partial-frame accumulator (a legitimate SSE frame stays far
 // below this; see the drop logic in the read loop).
 export const MAX_UPSTREAM_FRAME_BYTES = 32 * 1024 * 1024;
@@ -34,6 +38,11 @@ function waitForReconnectDelay(ms, signal) {
   });
 }
 
+function resolveFlag(value, fallback) {
+  const resolved = typeof value === 'function' ? value() : value;
+  return typeof resolved === 'boolean' ? resolved : fallback;
+}
+
 function normalizeHeaders(headers) {
   if (!headers || typeof headers !== 'object') {
     return {};
@@ -57,15 +66,26 @@ export function createUpstreamSseReader({
   signal,
   stallTimeoutMs = DEFAULT_UPSTREAM_STALL_TIMEOUT_MS,
   reconnectDelayMs = DEFAULT_UPSTREAM_RECONNECT_DELAY_MS,
+  maxFrameBytes = MAX_UPSTREAM_FRAME_BYTES,
+  // Gen 1 resumes with `Last-Event-ID`; gen 2 has no replay, so a connection
+  // that resolves this to false neither sends nor records event ids.
+  resumeWithLastEventId = true,
   onEvent,
+  onKeepalive,
   onConnect,
   onDisconnect,
   onError,
 }) {
+  if (!Number.isSafeInteger(maxFrameBytes) || maxFrameBytes < 1 || maxFrameBytes > MAX_UPSTREAM_FRAME_BYTES) {
+    throw new RangeError('Invalid upstream frame byte limit');
+  }
   let running = null;
   let stopped = false;
   let activeController = null;
   let lastEventId = typeof initialLastEventId === 'string' ? initialLastEventId : '';
+  let reconnectFailures = 0;
+  const reconnect = () => waitForReconnectDelay(Math.min(MAX_UPSTREAM_RECONNECT_DELAY_MS,
+    reconnectDelayMs * 2 ** Math.min(reconnectFailures++, 16)), signal);
 
   const stop = () => {
     stopped = true;
@@ -112,13 +132,18 @@ export function createUpstreamSseReader({
 
         try {
           const url = buildUrl();
+          // Resolved after buildUrl, which may select the connection's generation.
+          const resume = resolveFlag(resumeWithLastEventId, true);
+          if (!resume) {
+            lastEventId = '';
+          }
           const headers = {
             Accept: 'text/event-stream',
             'Cache-Control': 'no-cache',
             Connection: 'keep-alive',
             ...normalizeHeaders(getHeaders()),
           };
-          if (lastEventId) {
+          if (resume && lastEventId) {
             headers['Last-Event-ID'] = lastEventId;
           }
 
@@ -134,7 +159,7 @@ export function createUpstreamSseReader({
               response,
             });
             await cancelResponseBody(response);
-            await waitForReconnectDelay(reconnectDelayMs, signal);
+            await reconnect();
             continue;
           }
 
@@ -143,64 +168,77 @@ export function createUpstreamSseReader({
           const decoder = new TextDecoder();
           const reader = response.body.getReader();
           let buffer = '';
+          let bufferBytes = 0;
+          let discardingFrame = false;
+          let pendingCarriageReturn = false;
+          const handleBlock = (block) => {
+            const envelope = parseBlock(block);
+            if (envelope?.keepalive === true) {
+              onKeepalive?.();
+              return;
+            }
+            if (!envelope?.payload) {
+              return;
+            }
+            if (resume && typeof envelope.eventId === 'string' && envelope.eventId.length > 0) {
+              lastEventId = envelope.eventId;
+            }
+            onEvent?.({
+              block,
+              envelope,
+              payload: envelope.payload,
+              eventId: envelope.eventId,
+              directory: envelope.directory,
+            });
+          };
+
+          const append = (decoded, final = false) => {
+            let text = (pendingCarriageReturn ? '\r' : '') + decoded;
+            pendingCarriageReturn = !final && text.endsWith('\r');
+            if (pendingCarriageReturn) text = text.slice(0, -1);
+            text = text.replace(/\r\n|\r/g, '\n');
+            buffer += text;
+            bufferBytes += Buffer.byteLength(text);
+            let separatorIndex = buffer.indexOf('\n\n');
+            while (separatorIndex !== -1 && !stopped && !signal?.aborted) {
+              const block = buffer.slice(0, separatorIndex);
+              const bytes = Buffer.byteLength(block);
+              buffer = buffer.slice(separatorIndex + 2);
+              bufferBytes -= bytes + 2;
+              if (discardingFrame) discardingFrame = false;
+              else if (bytes > maxFrameBytes) onError?.({ type: 'frame_too_large', bytes });
+              else handleBlock(block);
+              separatorIndex = buffer.indexOf('\n\n');
+            }
+            // One trailing newline may be the first byte of the separator;
+            // it is not part of the frame until more content follows it.
+            const partialFrameBytes = bufferBytes - (buffer.endsWith('\n') ? 1 : 0);
+            if (partialFrameBytes > maxFrameBytes || discardingFrame) {
+              if (!discardingFrame) onError?.({ type: 'frame_too_large', bytes: partialFrameBytes });
+              discardingFrame = true;
+              // Keep only the possible first half of the delimiter. The rest
+              // belongs to the rejected frame, never a new parseable event.
+              buffer = buffer.endsWith('\n') ? '\n' : '';
+              bufferBytes = buffer.length;
+            }
+          };
 
           resetStallTimer();
 
           while (!stopped && !signal?.aborted) {
             const { value, done } = await reader.read();
             if (done) {
+              append(decoder.decode(), true);
               break;
             }
 
             resetStallTimer();
-            buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
-
-            // A single frame should never approach this; a runaway upstream
-            // (or a missing separator) must not grow the accumulator without
-            // bound. Drop the partial frame and keep reading — the client-side
-            // gap handling recovers the stream.
-            if (buffer.length > MAX_UPSTREAM_FRAME_BYTES && buffer.indexOf('\n\n') === -1) {
-              onError?.({ type: 'frame_too_large', bytes: buffer.length });
-              buffer = '';
-              continue;
-            }
-
-            let separatorIndex = buffer.indexOf('\n\n');
-            while (separatorIndex !== -1 && !stopped && !signal?.aborted) {
-              const block = buffer.slice(0, separatorIndex);
-              buffer = buffer.slice(separatorIndex + 2);
-              const envelope = parseBlock(block);
-              if (envelope?.payload) {
-                if (typeof envelope.eventId === 'string' && envelope.eventId.length > 0) {
-                  lastEventId = envelope.eventId;
-                }
-                onEvent?.({
-                  block,
-                  envelope,
-                  payload: envelope.payload,
-                  eventId: envelope.eventId,
-                  directory: envelope.directory,
-                });
-              }
-              separatorIndex = buffer.indexOf('\n\n');
-            }
+            reconnectFailures = 0;
+            append(decoder.decode(value, { stream: true }));
           }
 
-          if (!stopped && !signal?.aborted && buffer.trim().length > 0) {
-            const block = buffer.trim();
-            const envelope = parseBlock(block);
-            if (envelope?.payload) {
-              if (typeof envelope.eventId === 'string' && envelope.eventId.length > 0) {
-                lastEventId = envelope.eventId;
-              }
-              onEvent?.({
-                block,
-                envelope,
-                payload: envelope.payload,
-                eventId: envelope.eventId,
-                directory: envelope.directory,
-              });
-            }
+          if (!stopped && !signal?.aborted && !discardingFrame && buffer.trim().length > 0) {
+            onError?.({ type: 'frame_truncated', bytes: bufferBytes });
           }
         } catch (error) {
           if (!stopped && !signal?.aborted && abortReason !== 'upstream_stalled') {
@@ -219,7 +257,7 @@ export function createUpstreamSseReader({
         }
 
         if (!stopped && !signal?.aborted) {
-          await waitForReconnectDelay(reconnectDelayMs, signal);
+          await reconnect();
         }
       }
     })().finally(() => {

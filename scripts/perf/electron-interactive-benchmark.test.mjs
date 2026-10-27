@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import vm from 'node:vm';
-import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gunzipSync } from 'node:zlib';
@@ -21,11 +22,42 @@ import {
   INTERACTIVE_TYPING_PROTOCOL,
   INTERACTIVE_DISCLOSURE_TEXT,
   prepareInteractiveControl,
+  prepareInteractiveSessions,
+  projectInteractiveMessages,
   runInteractiveScenario,
   saveInteractiveTrace,
   summarizeInteractiveActions,
 } from './electron-interactive-benchmark.mjs';
 import { createQaUiDriver } from '../qa/ui-driver.mjs';
+import { createLoopbackOpenCodeV2Fixture } from './loopback-opencode-v2-fixture.mjs';
+
+test('interactive setup uses the fixture Basic auth and v2 pages for all 180 history turns', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'devryan-interactive-setup-'));
+  const fixture = await createLoopbackOpenCodeV2Fixture({ directory });
+  try {
+    const unauthenticated = await fetch(`${fixture.origin}/api/session`, { method: 'POST',
+      headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: 'Rejected', location: { directory } }) });
+    assert.equal(unauthenticated.status, 401);
+    const setup = await prepareInteractiveSessions(fixture);
+    assert.equal(setup.histories.length, INTERACTIVE_PROTOCOL.historySessions);
+    assert.match(setup.control.id, /^ses_[a-zA-Z0-9]+$/);
+    for (const history of setup.histories) {
+      assert.equal(history.assistants.length, INTERACTIVE_PROTOCOL.historyTurns);
+      assert.equal(history.expectedMessages, INTERACTIVE_PROTOCOL.historyTurns * 2);
+      assert.equal(history.firstAssistantID, history.assistants[0].messageID);
+      assert.equal(history.lastAssistantID, history.assistants.at(-1).messageID);
+      assert.match(history.assistants.at(-1).text, /History response 180/);
+    }
+    assert.equal(setup.messagePageRequestOffset, fixture.getState().messagePageRequests.length);
+    const response = await fetch(`${fixture.origin}/api/session/${setup.histories[0].id}/message?limit=360&order=asc`,
+      { headers: fixture.authHeaders });
+    assert.equal(response.status, 200);
+    const projected = projectInteractiveMessages((await response.json()).data);
+    assert.equal(projected.filter(row => row.info.role === 'assistant').length, 180);
+    assert.equal(projected.filter(row => row.info.role === 'assistant').at(-1).info.id, setup.histories[0].lastAssistantID);
+    assert.equal(projected.filter(row => row.info.role === 'assistant').at(-1).parts[0].text, setup.histories[0].assistants.at(-1).text);
+  } finally { await fixture.close(); await rm(directory, { recursive: true, force: true }); }
+});
 
 test('typing control uses one ordinary same-origin navigation and requires the selected session plus ready composer', async t => {
   for (const failure of [undefined, 'wrong session', 'wrong origin', 'disabled composer', 'absent composer', 'stale document']) {
@@ -258,9 +290,7 @@ test('fixed-cadence inputs may overlap pending frames while retaining every obse
 });
 
 test('trace streaming preserves mixed-encoding chunks and closes the handle even when its byte bound fails', async () => {
-  const cache = fileURLToPath(new URL('../../.cache/perf/', import.meta.url));
-  await mkdir(cache, { recursive: true });
-  const directory = await mkdtemp(path.join(cache, 'interactive-trace-test-'));
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'devryan-interactive-trace-test-'));
   const makeCdp = () => {
     const calls = [];
     const responses = [{ data: '{"traceEvents":[' },
@@ -367,9 +397,7 @@ const typingScenarioHarness = (failure) => {
 test('typing scope completes trace/probe cleanup and propagates every finalization failure', async t => {
   let clock = 0;
   t.mock.method(performance, 'now', () => { clock += 100; return clock; });
-  const cache = fileURLToPath(new URL('../../.cache/perf/', import.meta.url));
-  await mkdir(cache, { recursive: true });
-  const directory = await mkdtemp(path.join(cache, 'interactive-typing-test-'));
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'devryan-interactive-typing-test-'));
   try {
     for (const failure of [undefined, 'trace loss', 'trace overflow', 'pending probe', 'probe overflow', 'probe cleanup',
       'long tasks unavailable', 'selection before inputs', 'selection after inputs']) {

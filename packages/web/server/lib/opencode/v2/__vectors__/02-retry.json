@@ -1,0 +1,274 @@
+{
+ "vector": "02-retry",
+ "title": "D2: retryable provider error before output, then success",
+ "design": "D2 (+F2)",
+ "opencode": "2.0.20",
+ "capturedWith": "g2trace on the G1 embedded host (ServerFetch.make + Bun listener), simulation backend; see README.md",
+ "normalization": {
+  "ids": 19,
+  "timestamps": 17,
+  "sha256": 4,
+  "sha1": 0,
+  "slugs": 1,
+  "timestampBase": 1767225600000,
+  "timestampStep": 1000
+ },
+ "frames": [
+  "data: {\"id\":\"evt_000000000001normalized0000\",\"created\":1767225601000,\"type\":\"session.created\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"slug\":\"slug-1\",\"version\":\"0.0.0-spike\",\"projectID\":\"global\",\"location\":{\"directory\":\"<home>/workspace\"},\"subpath\":\"\",\"title\":\"Retry\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":0,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000002normalized0000\",\"created\":1767225602000,\"type\":\"session.inbox.enqueued\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"inboxID\":\"msg_000000000001normalized0000\",\"sessionID\":\"ses_fffffffffffenormalized0000\",\"item\":{\"type\":\"user\",\"payload\":{\"text\":\"Retry please\"},\"delivery\":\"steer\"}},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":1,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000003normalized0000\",\"created\":1767225603000,\"type\":\"session.execution.started\",\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":2,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000004normalized0000\",\"created\":1767225604000,\"metadata\":{\"instructions\":{\"initial\":true}},\"type\":\"session.instructions.updated\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"delta\":{\"core/codemode\":\"0000000000000000000000000000000000000000000000000000000000000001\",\"core/skill-guidance\":\"0000000000000000000000000000000000000000000000000000000000000002\",\"core/date\":\"0000000000000000000000000000000000000000000000000000000000000003\",\"core/environment\":\"0000000000000000000000000000000000000000000000000000000000000004\"}},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":3,\"version\":2}}\n\n",
+  "data: {\"id\":\"evt_000000000005normalized0000\",\"created\":1767225605000,\"type\":\"session.inbox.delivered\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"inboxID\":\"msg_000000000001normalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":4,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000006normalized0000\",\"created\":1767225607000,\"type\":\"session.step.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"agent\":\"build\",\"model\":{\"id\":\"m1\",\"providerID\":\"sim\"},\"assistantMessageID\":\"msg_000000000002normalized0000\",\"started\":1767225606000},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":5,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000007normalized0000\",\"created\":1767225608000,\"type\":\"session.retry.scheduled\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"attempt\":2,\"at\":1767225609000,\"error\":{\"type\":\"provider.rate-limit\",\"message\":\"Rate limit exceeded, please retry\",\"status\":200,\"response\":{\"body\":\"{\\\"error\\\":{\\\"message\\\":\\\"Rate limit exceeded, please retry\\\",\\\"code\\\":429}}\"}}},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":6,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000008normalized0000\",\"created\":1767225611000,\"type\":\"session.step.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"agent\":\"build\",\"model\":{\"id\":\"m1\",\"providerID\":\"sim\"},\"assistantMessageID\":\"msg_000000000002normalized0000\",\"started\":1767225610000},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":7,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000009normalized0000\",\"created\":1767225612000,\"type\":\"session.text.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"ordinal\":0},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":8,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000000anormalized0000\",\"created\":1767225613000,\"type\":\"session.text.delta\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"ordinal\":0,\"delta\":\"recovered\"}}\n\n",
+  "data: {\"id\":\"evt_00000000000bnormalized0000\",\"created\":1767225614000,\"type\":\"session.text.ended\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"ordinal\":0,\"text\":\"recovered\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":9,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000000cnormalized0000\",\"created\":1767225615000,\"type\":\"session.step.streamed\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":10,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000000dnormalized0000\",\"created\":1767225616000,\"type\":\"session.step.ended\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"finish\":\"stop\",\"rawFinish\":\"stop\",\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":11,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000000enormalized0000\",\"created\":1767225617000,\"type\":\"session.usage.updated\",\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}}}\n\n",
+  "data: {\"id\":\"evt_00000000000fnormalized0000\",\"created\":1767225617000,\"type\":\"session.execution.succeeded\",\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":12,\"version\":1}}\n\n"
+ ],
+ "rest": [
+  {
+   "label": "session.create",
+   "method": "POST",
+   "path": "/api/session",
+   "request": {
+    "location": {
+     "directory": "<home>/workspace"
+    },
+    "title": "Retry"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "ses_fffffffffffenormalized0000",
+     "projectID": "global",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "time": {
+      "created": 1767225601000,
+      "updated": 1767225601000
+     },
+     "title": "Retry",
+     "location": {
+      "directory": "<home>/workspace"
+     }
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "Retry please"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000001normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225602000
+     },
+     "type": "user",
+     "payload": {
+      "text": "Retry please"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "retrying.session.active",
+   "method": "GET",
+   "path": "/api/session/active",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "ses_fffffffffffenormalized0000": {
+      "type": "running"
+     }
+    }
+   }
+  },
+  {
+   "label": "retrying.session.messages.asc",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffffenormalized0000/message?order=asc",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": [
+     {
+      "id": "msg_000000000001normalized0000",
+      "time": {
+       "created": 1767225605000
+      },
+      "text": "Retry please",
+      "type": "user"
+     },
+     {
+      "id": "msg_000000000002normalized0000",
+      "time": {
+       "created": 1767225606000
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+       "id": "m1",
+       "providerID": "sim"
+      },
+      "content": [],
+      "retry": {
+       "attempt": 2,
+       "at": 1767225609000,
+       "error": {
+        "type": "provider.rate-limit",
+        "message": "Rate limit exceeded, please retry",
+        "status": 200,
+        "response": {
+         "body": "{\"error\":{\"message\":\"Rate limit exceeded, please retry\",\"code\":429}}"
+        }
+       }
+      }
+     }
+    ],
+    "cursor": {
+     "previous": "eyJpZCI6Im1zZ18wMDAwMDAwMDAwMDFub3JtYWxpemVkMDAwMCIsIm9yZGVyIjoiYXNjIiwiZGlyZWN0aW9uIjoicHJldmlvdXMifQ",
+     "next": "eyJpZCI6Im1zZ18wMDAwMDAwMDAwMDJub3JtYWxpemVkMDAwMCIsIm9yZGVyIjoiYXNjIiwiZGlyZWN0aW9uIjoibmV4dCJ9"
+    }
+   }
+  },
+  {
+   "label": "session.get",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffffenormalized0000",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "ses_fffffffffffenormalized0000",
+     "projectID": "global",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "outcome": "succeeded",
+     "time": {
+      "created": 1767225601000,
+      "updated": 1767225602000,
+      "idle": 1767225617000
+     },
+     "title": "Retry",
+     "location": {
+      "directory": "<home>/workspace"
+     }
+    }
+   }
+  },
+  {
+   "label": "session.messages.asc",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffffenormalized0000/message?limit=200&order=asc",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": [
+     {
+      "id": "msg_000000000001normalized0000",
+      "time": {
+       "created": 1767225605000
+      },
+      "text": "Retry please",
+      "type": "user"
+     },
+     {
+      "id": "msg_000000000002normalized0000",
+      "time": {
+       "created": 1767225610000,
+       "streamed": 1767225615000,
+       "completed": 1767225616000
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+       "id": "m1",
+       "providerID": "sim"
+      },
+      "content": [
+       {
+        "type": "text",
+        "text": "recovered"
+       }
+      ],
+      "finish": "stop",
+      "rawFinish": "stop",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      }
+     },
+     {
+      "id": "msg_000000000003normalized0000",
+      "time": {
+       "created": 1767225617000
+      },
+      "type": "idle",
+      "outcome": "succeeded"
+     }
+    ],
+    "cursor": {
+     "previous": "eyJpZCI6Im1zZ18wMDAwMDAwMDAwMDFub3JtYWxpemVkMDAwMCIsIm9yZGVyIjoiYXNjIiwiZGlyZWN0aW9uIjoicHJldmlvdXMifQ",
+     "next": "eyJpZCI6Im1zZ18wMDAwMDAwMDAwMDNub3JtYWxpemVkMDAwMCIsIm9yZGVyIjoiYXNjIiwiZGlyZWN0aW9uIjoibmV4dCJ9"
+    }
+   }
+  }
+ ],
+ "llm": [
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 2,
+   "lastRole": "user",
+   "lastText": "Retry please"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 2,
+   "lastRole": "user",
+   "lastText": "Retry please"
+  }
+ ],
+ "notes": {
+  "terminal": "session.execution.succeeded",
+  "heartbeatFramesDropped": 1
+ }
+}

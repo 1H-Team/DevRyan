@@ -28,7 +28,7 @@ const createApp = ({ workspace, configRoot, spawn = vi.fn(), authorizeImageAsset
     resolveProjectDirectory: async () => ({ directory: workspace }),
     buildAugmentedPath: () => process.env.PATH || '',
     resolveGitBinaryForSpawn: () => 'git',
-    openchamberUserConfigRoot: configRoot,
+    devryanUserConfigRoot: configRoot,
     authorizeImageAssetGrant,
   });
   return app;
@@ -55,7 +55,7 @@ const createDirectoryAwareApp = ({ workspace, configRoot, alternateWorkspace }) 
     },
     buildAugmentedPath: () => process.env.PATH || '',
     resolveGitBinaryForSpawn: () => 'git',
-    openchamberUserConfigRoot: configRoot,
+    devryanUserConfigRoot: configRoot,
   });
   return app;
 };
@@ -87,8 +87,8 @@ describe('fs mutation routes', () => {
   let originalGitReadCacheTtl;
 
   beforeEach(async () => {
-    originalGitReadCacheTtl = process.env.OPENCHAMBER_GIT_READ_CACHE_TTL_MS;
-    delete process.env.OPENCHAMBER_GIT_READ_CACHE_TTL_MS;
+    originalGitReadCacheTtl = process.env.DEVRYAN_GIT_READ_CACHE_TTL_MS;
+    delete process.env.DEVRYAN_GIT_READ_CACHE_TTL_MS;
     workspace = await mkdtemp(path.join(os.tmpdir(), 'devryan-fs-workspace-'));
     outsideDir = await mkdtemp(path.join(os.tmpdir(), 'devryan-fs-outside-'));
     configRoot = await mkdtemp(path.join(os.tmpdir(), 'devryan-fs-config-'));
@@ -97,9 +97,9 @@ describe('fs mutation routes', () => {
 
   afterEach(async () => {
     if (originalGitReadCacheTtl === undefined) {
-      delete process.env.OPENCHAMBER_GIT_READ_CACHE_TTL_MS;
+      delete process.env.DEVRYAN_GIT_READ_CACHE_TTL_MS;
     } else {
-      process.env.OPENCHAMBER_GIT_READ_CACHE_TTL_MS = originalGitReadCacheTtl;
+      process.env.DEVRYAN_GIT_READ_CACHE_TTL_MS = originalGitReadCacheTtl;
     }
     await Promise.all(cleanup.map((dir) => rm(dir, { recursive: true, force: true })));
   });
@@ -215,6 +215,36 @@ describe('fs mutation routes', () => {
 
     expect(response.status).toBe(200);
     expect(await readFile(configFile, 'utf8')).toBe(content);
+  });
+
+  it('reports the runtime config root for project config creation, writes and reads', async () => {
+    const app = createApp({ workspace, configRoot });
+    const homeResponse = await request(app).get('/api/fs/home');
+    expect(homeResponse.status).toBe(200);
+    expect(homeResponse.body).toEqual({ home: os.homedir(), configDirectory: configRoot });
+
+    const projectsDirectory = path.join(homeResponse.body.configDirectory, 'projects');
+    const configFile = path.join(projectsDirectory, 'project-actions.json');
+    const content = JSON.stringify({ projectActions: [{ id: 'run', name: 'Run', command: 'bun run dev' }] });
+    const mkdirResponse = await request(app).post('/api/fs/mkdir').send({ path: projectsDirectory });
+    expect(mkdirResponse.status).toBe(200);
+    const writeResponse = await request(app).post('/api/fs/write').send({ path: configFile, content });
+    expect(writeResponse.status).toBe(200);
+    const readResponse = await request(app).get('/api/fs/read').query({ path: configFile });
+    expect(readResponse.status).toBe(200);
+    expect(readResponse.text).toBe(content);
+    expect(await readFile(configFile, 'utf8')).toBe(content);
+  });
+
+  it('rejects writes through config-root symlinks to outside', async () => {
+    const linkPath = path.join(configRoot, 'projects');
+    await symlink(outsideDir, linkPath);
+    const response = await request(createApp({ workspace, configRoot }))
+      .post('/api/fs/write')
+      .send({ path: path.join(linkPath, 'actions.json'), content: '{}' });
+
+    expect(response.status).toBe(403);
+    await expect(access(path.join(outsideDir, 'actions.json'))).rejects.toThrow();
   });
 
   it('returns an optional stat miss without logging failed-resource statuses', async () => {
@@ -400,7 +430,7 @@ describe('fs mutation routes', () => {
   });
 
   it('disables git read caching when the TTL is zero', async () => {
-    process.env.OPENCHAMBER_GIT_READ_CACHE_TTL_MS = '0';
+    process.env.DEVRYAN_GIT_READ_CACHE_TTL_MS = '0';
     const spawn = createExecSpawn({ stdout: path.join(workspace, '.git') });
     const app = createApp({ workspace, configRoot, spawn });
 

@@ -2,6 +2,7 @@ import {
   isTerminalManagedTaskStatus,
   validateManagedTaskRecord,
 } from './contract.js';
+import { isCheckCorrectionTransition } from './check-correction.js';
 
 const ALLOWED_TRANSITIONS = Object.freeze({
   queued: new Set(['starting', 'aborted']),
@@ -19,6 +20,7 @@ const IMMUTABLE_FIELDS = Object.freeze([
   'idempotencyKey',
   'rootSessionId',
   'dispatchGroupId',
+  'dispatchObjectiveId',
   'dispatchCallId',
   'dispatchWaveId',
   'parentTaskId',
@@ -32,6 +34,8 @@ const IMMUTABLE_FIELDS = Object.freeze([
   'variant',
   'label',
   'prompt',
+  'approvedPlanRef',
+  'taskPrerequisites',
   'attempt',
   'priorTaskId',
   'executionKind',
@@ -40,8 +44,12 @@ const IMMUTABLE_FIELDS = Object.freeze([
 ]);
 
 const terminalRecordChanged = (previous, next) => {
+  const correction = isCheckCorrectionTransition(previous, next);
   const keys = new Set([...Object.keys(previous), ...Object.keys(next)]);
   for (const key of keys) {
+    if (key === 'operatorStop') continue; // Private control receipt may resolve after terminal settlement.
+    if (key === 'requiredCheckReceipts') continue; // Verification may be rerun or explicitly waived after execution settles.
+    if (correction && ['requiredChecks', 'requiredCheckCorrections'].includes(key)) continue;
     if (!Object.is(previous[key], next[key])) return true;
   }
   return false;
@@ -53,6 +61,9 @@ export const canTransitionManagedTaskStatus = (from, to) => (
 
 export const assertManagedTaskTransition = (previous, next) => {
   validateManagedTaskRecord(previous);
+  if ((JSON.stringify(previous.requiredChecks) !== JSON.stringify(next.requiredChecks)
+    || JSON.stringify(previous.requiredCheckCorrections) !== JSON.stringify(next.requiredCheckCorrections))
+    && !isCheckCorrectionTransition(previous, next)) throw new Error('Required check definitions are immutable outside an audited runner correction');
 
   if (isTerminalManagedTaskStatus(previous.status) && terminalRecordChanged(previous, next)) {
     throw new Error(`terminal task ${previous.taskId} is immutable`);

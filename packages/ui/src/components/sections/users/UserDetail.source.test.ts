@@ -1,8 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, test } from 'bun:test';
 
+import { capabilityLabels } from './types';
+
 const source = readFileSync(new URL('./UserDetail.tsx', import.meta.url), 'utf8');
-const typesSource = readFileSync(new URL('./types.ts', import.meta.url), 'utf8');
 const rolesSource = readFileSync(new URL('./RolePoliciesSection.tsx', import.meta.url), 'utf8');
 
 describe('user profile editing source contract', () => {
@@ -44,7 +45,7 @@ describe('user profile editing source contract', () => {
   });
 
   test('exposes Browser as both a role capability and a per-user tri-state override', () => {
-    expect(typesSource).toContain("['browser', 'Browser']");
+    expect(capabilityLabels.some(([key, label]) => `${key}:${label}` === ['browser', 'Browser'].join(':'))).toBe(true);
     expect(rolesSource).toContain("['can_use_browser', 'Browser']");
     expect(rolesSource).toContain('browser: draft.can_use_browser');
     expect(source).toContain('capabilityLabels.map(([key, label]) =>');
@@ -53,31 +54,20 @@ describe('user profile editing source contract', () => {
   });
 
   test('exposes branch creation as a per-user tri-state capability override', () => {
-    expect(typesSource).toContain("['createBranches', 'Create branches']");
-    expect(typesSource).toContain("['createWorktrees', 'Create worktrees']");
+    expect(capabilityLabels.some(([key, label]) => `${key}:${label}` === ['createBranches', 'Create branches'].join(':'))).toBe(true);
+    expect(capabilityLabels.some(([key, label]) => `${key}:${label}` === ['createWorktrees', 'Create worktrees'].join(':'))).toBe(true);
     expect(source).toContain('capabilityLabels.map(([key, label]) =>');
     expect(source).toContain('value={policyDraft.capabilities[key]}');
   });
 
-  test('renders Bots access as a standalone inherited toggle before core capabilities', () => {
-    expect(typesSource).toContain("export type CapabilityKey = 'bots'");
-    expect(source).toContain('ariaLabel="Allow Bots Access"');
-    expect(source).toContain('checked={botsAccessAllowed}');
-    expect(source).toContain("bots: checked === current.inheritedCapabilities.bots");
-    expect(source.indexOf('ariaLabel="Allow Bots Access"')).toBeLessThan(
-      source.indexOf('Core Capability Overrides'),
-    );
-  });
 
   test('supports an inherited global Agent Behavior visibility override', () => {
-    expect(typesSource).toContain('hideGlobalBehaviorUi?: boolean');
     expect(source).toContain('ariaLabel="Hide Global Agent Behavior"');
     expect(source).toContain('inheritedAgentsHideGlobalBehaviorUi');
     expect(source).toContain("{ hideGlobalBehaviorUi: policyDraft.agentsHideGlobalBehaviorUi }");
   });
 
   test('exposes a sparse Source Update-tab visibility override', () => {
-    expect(typesSource).toContain('source?: { hideUpdateTab?: boolean }');
     expect(source).toContain('ariaLabel="Hide Source Update Tab"');
     expect(source).toContain('inheritedSourceHideUpdateTab');
     expect(source).toContain("{ hideUpdateTab: policyDraft.sourceHideUpdateTab }");

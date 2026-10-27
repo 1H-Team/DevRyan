@@ -93,7 +93,6 @@ describe('tunnel request scope classification', () => {
     ['192.168.1.5:57123', '192.168.1.20'],
     ['10.0.0.4:57123', 'fd00::1'],
     ['[::1]:57123', '::1'],
-    ['host.docker.internal:57123', '172.20.0.2'],
   ])('accepts local host %s from private socket peer %s', (host, remoteAddress) => {
     const controller = createActiveTunnel();
     expect(controller.classifyRequestScope(requestFor({ host, remoteAddress }))).toBe('local');

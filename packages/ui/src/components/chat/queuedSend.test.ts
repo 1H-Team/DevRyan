@@ -43,7 +43,125 @@ const assistantMessage = (
 
 describe("queued message flushing", () => {
   beforeEach(() => {
+    useMessageQueueStore.getState().clearAllQueues()
     useMessageQueueStore.setState({ queuedMessages: {}, queueModeEnabled: true })
+  })
+
+  test("in-flight input remains persisted with its dispatch identity until accepted", async () => {
+    useMessageQueueStore.getState().addToQueue("durable", { content: "keep across reload" })
+    await flushQueuedMessagesForSession({ sessionId: "durable",
+      fallbackSendConfig: { providerID: "fixture", modelID: "exact" }, createMessageId: () => "msg_durable",
+      prepareQueuedMessage: message => ({ content: message.content, providerID: "fixture", modelID: "exact" }),
+      sendMessageToSession: async () => {
+        expect(useMessageQueueStore.getState().getQueueForSession("durable")).toEqual([])
+        const saved = JSON.parse(getSafeStorage().getItem("message-queue-store") ?? "{}")
+        expect(saved.state.queuedMessages.durable).toMatchObject([{ content: "keep across reload", messageId: "msg_durable", messageIdScope: "dispatch", dispatchDelivery: "queue" }])
+      },
+    })
+    const saved = JSON.parse(getSafeStorage().getItem("message-queue-store") ?? "{}")
+    expect(saved.state.queuedMessages.durable).toBeUndefined()
+  })
+
+  test("persisted pending tail stays ahead of newer input after partial acceptance", async () => {
+    const queue = useMessageQueueStore.getState()
+    queue.addToQueue("durable", { content: "first" })
+    queue.addToQueue("durable", { content: "second" })
+    await flushQueuedMessagesForSession({ sessionId: "durable",
+      fallbackSendConfig: { providerID: "fixture", modelID: "exact" },
+      prepareQueuedMessage: message => ({ content: message.content, providerID: "fixture", modelID: "exact" }),
+      sendMessageToSession: async () => {},
+      waitForReadyToSendNext: async () => {
+        queue.addToQueue("durable", { content: "newer" })
+        const saved = JSON.parse(getSafeStorage().getItem("message-queue-store") ?? "{}")
+        expect(saved.state.queuedMessages.durable.map((message: { content: string }) => message.content)).toEqual(["second", "newer"])
+      },
+    })
+  })
+
+  test("concurrent individual claims preserve persisted FIFO and restore positions", () => {
+    const queue = useMessageQueueStore.getState()
+    for (const content of ["A", "B", "C", "D"]) queue.addToQueue("durable", { content })
+    const rows = queue.getQueueForSession("durable")
+    const second = queue.claimMessageForSession("durable", rows[1].id)!
+    const third = queue.claimMessageForSession("durable", rows[2].id)!
+    const saved = JSON.parse(getSafeStorage().getItem("message-queue-store") ?? "{}")
+    expect(saved.state.queuedMessages.durable.map((message: { content: string }) => message.content)).toEqual(["A", "B", "C", "D"])
+    queue.restoreClaimedMessage("durable", third)
+    expect(queue.getQueueForSession("durable").map(message => message.content)).toEqual(["A", "C", "D"])
+    queue.restoreClaimedMessage("durable", second)
+    expect(queue.getQueueForSession("durable").map(message => message.content)).toEqual(["A", "B", "C", "D"])
+  })
+
+  test("removing an earlier visible row preserves a hidden claim's recovery position", () => {
+    const queue = useMessageQueueStore.getState()
+    for (const content of ["A", "B", "C"]) queue.addToQueue("durable", { content })
+    const rows = queue.getQueueForSession("durable")
+    const claim = { ...queue.claimMessageForSession("durable", rows[1].id)! }
+    queue.removeFromQueue("durable", rows[0].id)
+    const saved = JSON.parse(getSafeStorage().getItem("message-queue-store") ?? "{}")
+    expect(saved.state.queuedMessages.durable.map((message: { content: string }) => message.content)).toEqual(["B", "C"])
+    queue.restoreClaimedMessage("durable", claim)
+    expect(queue.getQueueForSession("durable").map(message => message.content)).toEqual(["B", "C"])
+  })
+
+  test("clearing during authorization prevents the pending send", async () => {
+    const queue = useMessageQueueStore.getState()
+    queue.addToQueue("removed", { content: "discard" })
+    let sends = 0
+    await expect(flushQueuedMessagesForSession({ sessionId: "removed",
+      fallbackSendConfig: { providerID: "fixture", modelID: "exact" },
+      prepareQueuedMessage: message => ({ content: message.content, providerID: "fixture", modelID: "exact" }),
+      authorizeSend: async () => { queue.clearQueue("removed"); return true },
+      sendMessageToSession: async () => { sends++ },
+    })).rejects.toThrow("Queued messages were cleared")
+    expect(sends).toBe(0)
+    expect(queue.getQueueForSession("removed")).toEqual([])
+  })
+
+  test("clearing during the interrupt gate prevents transport and rollback", async () => {
+    const queue = useMessageQueueStore.getState()
+    queue.addToQueue("removed", { content: "discard" })
+    let transported = false
+    await expect(flushQueuedMessagesForSession({ sessionId: "removed",
+      fallbackSendConfig: { providerID: "fixture", modelID: "exact" },
+      prepareQueuedMessage: message => ({ content: message.content, providerID: "fixture", modelID: "exact" }),
+      firstSendTransportGate: async () => { queue.clearQueue("removed") },
+      sendMessageToSession: async (...args) => { await args[11]?.awaitTransportGate?.(); transported = true },
+    })).rejects.toThrow("Queued messages were cleared")
+    expect(transported).toBe(false)
+    expect(queue.getQueueForSession("removed")).toEqual([])
+  })
+
+  test("clearing a session during rejection cannot restore its claimed queue", async () => {
+    useMessageQueueStore.getState().addToQueue("removed", { content: "do not resurrect" })
+    await expect(flushQueuedMessagesForSession({
+      sessionId: "removed", fallbackSendConfig: { providerID: "fixture", modelID: "exact" },
+      prepareQueuedMessage: message => ({ content: message.content, providerID: "fixture", modelID: "exact" }),
+      sendMessageToSession: async () => {
+        useMessageQueueStore.getState().clearQueue("removed")
+        throw new Error("session removed")
+      },
+    })).rejects.toThrow("session removed")
+    expect(useMessageQueueStore.getState().getQueueForSession("removed")).toEqual([])
+  })
+
+  test("clearing a manually dispatched message prevents rollback resurrection", async () => {
+    useMessageQueueStore.getState().addToQueue("removed", { content: "do not resurrect" })
+    const message = useMessageQueueStore.getState().getQueueForSession("removed")[0]
+    await expect(dispatchQueuedMessageForSession({ sessionId: "removed", queuedMessageId: message.id,
+      dispatch: async () => { useMessageQueueStore.getState().clearAllQueues(); throw new Error("removed") },
+    })).rejects.toThrow("removed")
+    expect(useMessageQueueStore.getState().getQueueForSession("removed")).toEqual([])
+  })
+
+  test("natural FIFO opts into child-safe queue delivery while explicit send-now stays steer",async()=>{
+    const deliveries:Array<string|undefined>=[]
+    const options={sessionId:"queue-delivery",fallbackSendConfig:{providerID:"fixture",modelID:"exact"},prepareQueuedMessage:(message:{content:string})=>({content:message.content,providerID:'fixture',modelID:'exact'}),sendMessageToSession:async(...args:Parameters<NonNullable<Parameters<typeof flushQueuedMessagesForSession>[0]["sendMessageToSession"]>>)=>{deliveries.push(args[11]?.delivery)},waitForReadyToSendNext:async()=>{}}
+    useMessageQueueStore.getState().addToQueue("queue-delivery",{content:"Natural"})
+    await flushQueuedMessagesForSession({...options,waitForCurrentTurnBeforeFirstSend:true})
+    useMessageQueueStore.getState().addToQueue("queue-delivery",{content:"Manual"})
+    await sendQueuedMessagesNowForSession({...options,interruptBeforeFlush:false,beginInterrupt:()=>async()=>{}})
+    expect(deliveries).toEqual(["queue","steer"])
   })
 
   test("keeps canonical provider default through queue persistence, reload, failure, and retry against a High fallback", async () => {
@@ -637,8 +755,8 @@ describe("queued message flushing", () => {
       "insert:second queued",
       "post:second queued",
     ])
-    // Only the first message posts through the gate; later ones wait on idle only.
-    expect(gateSeenBy).toEqual(["first queued"])
+    // Every send checks retirement at transport; only the first gate awaits interruption.
+    expect(gateSeenBy).toEqual(["first queued", "second queued"])
     expect(useMessageQueueStore.getState().getQueueForSession("session-a")).toEqual([])
   })
 
@@ -705,7 +823,9 @@ describe("queued message flushing", () => {
     })
 
     expect(interruptStarted).toBe(false)
-    expect(lifecycleSeen?.awaitTransportGate).toBe(undefined)
+    expect(typeof lifecycleSeen?.awaitTransportGate).toBe("function")
+    await lifecycleSeen?.awaitTransportGate?.()
+    expect(interruptStarted).toBe(false)
   })
 
   test("waitForQueuedTurnIdle returns at once for an idle session instead of pre-waiting for busy", async () => {

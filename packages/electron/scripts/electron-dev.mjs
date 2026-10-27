@@ -16,9 +16,9 @@ const devDataDirectory = resolveDevDataDirectory({
 });
 const baseDevEnvironment = {
   ...process.env,
-  OPENCHAMBER_ELECTRON_DEV: '1',
-  OPENCHAMBER_DATA_DIR: devDataDirectory,
-  OPENCHAMBER_ELECTRON_USER_DATA_DIR: path.join(devDataDirectory, 'electron-user-data'),
+  DEVRYAN_ELECTRON_DEV: '1',
+  DEVRYAN_DATA_DIR: devDataDirectory,
+  DEVRYAN_ELECTRON_USER_DATA_DIR: path.join(devDataDirectory, 'electron-user-data'),
 };
 
 // On macOS, prefer launching via the built & signed DevRyan.app binary so
@@ -26,7 +26,7 @@ const baseDevEnvironment = {
 // restarts. The packaged app has a stable code-signing identity; raw
 // `npx electron` does not, so it re-prompts for protected-folder access.
 function resolveDevElectronCommand() {
-  if (process.env.OPENCHAMBER_DEV_FORCE_NPX_ELECTRON === '1') {
+  if (process.env.DEVRYAN_DEV_FORCE_NPX_ELECTRON === '1') {
     return { command: 'npx', args: ['electron', './main.mjs'] };
   }
 
@@ -141,9 +141,9 @@ async function main() {
 
   const devServer = spawnProcess('node', ['./scripts/dev-web-hmr.mjs'], {
     env: {
-      OPENCHAMBER_HMR_UI_PORT: '5173',
-      OPENCHAMBER_HMR_API_PORT: '3901',
-      OPENCHAMBER_DISABLE_PWA_DEV: '1',
+      DEVRYAN_HMR_UI_PORT: '5173',
+      DEVRYAN_HMR_API_PORT: '3901',
+      DEVRYAN_DISABLE_PWA_DEV: '1',
     },
   });
   const { command: electronCmd, args: electronArgs } = resolveDevElectronCommand();

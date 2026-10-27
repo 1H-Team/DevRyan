@@ -26,7 +26,7 @@ test('resolves a workspace dependency without a workspace-local node_modules lin
   const betterSqliteDirectory = path.join(repoRoot, 'node_modules', 'better-sqlite3');
   await mkdir(webDirectory, { recursive: true });
   await mkdir(betterSqliteDirectory, { recursive: true });
-  await writeFile(path.join(webDirectory, 'package.json'), '{"name":"@openchamber/web"}');
+  await writeFile(path.join(webDirectory, 'package.json'), '{"name":"@devryan/web"}');
   await writeFile(path.join(betterSqliteDirectory, 'package.json'), '{"name":"better-sqlite3"}');
 
   assert.equal(

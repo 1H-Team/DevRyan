@@ -1,8 +1,8 @@
-import { ABORT_SOURCE_HEADER, type AbortSource } from "@openchamber/orchestration-runtime"
+import { ABORT_SOURCE_HEADER, type AbortSource } from "@devryan/orchestration-runtime"
 
 /**
  * Which UI path asked for a session abort. The shared contract lives in
- * @openchamber/orchestration-runtime (abort-sources.js); the server journals it
+ * @devryan/orchestration-runtime (abort-sources.js); the server journals it
  * so an unexpected "Tool execution aborted" can be attributed after the fact.
  */
 export type { AbortSource }

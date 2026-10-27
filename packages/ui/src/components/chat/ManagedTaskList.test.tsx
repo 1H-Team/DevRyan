@@ -9,7 +9,7 @@ import {
   toManagedTaskEvent,
   type ManagedTaskRecord,
   type ManagedTaskStatus,
-} from '@openchamber/orchestration-runtime';
+} from '@devryan/orchestration-runtime';
 
 import { I18nProvider } from '@/lib/i18n';
 import { dict } from '@/lib/i18n/messages/en';
@@ -77,13 +77,11 @@ const terminalTask = (status: ManagedTaskStatus) => ({
 
 describe('managed task presentation', () => {
   test('renders Agent Dispatch inside the assistant turn instead of at the root timeline boundary', () => {
-    const messageListSource = readFileSync(fileURLToPath(new URL('./MessageList.tsx', import.meta.url)), 'utf8');
     const messageBodySource = readFileSync(fileURLToPath(new URL('./message/MessageBody.tsx', import.meta.url)), 'utf8');
     const renderedPartsIndex = messageBodySource.lastIndexOf('{renderedParts}');
     const footerIndex = messageBodySource.lastIndexOf('{shouldShowTurnFooter');
     const managedTaskListIndex = messageBodySource.lastIndexOf('<ManagedTaskList');
 
-    expect(messageListSource).not.toContain('<ManagedTaskList');
     expect(messageBodySource).toContain('<ManagedTaskList');
     expect(managedTaskListIndex).toBeGreaterThan(renderedPartsIndex);
     expect(managedTaskListIndex).toBeGreaterThan(footerIndex);
@@ -102,7 +100,7 @@ describe('managed task presentation', () => {
     expect(dict['chat.managedTasks.child.open']).toBe('Open Subtask');
     expect(dict['chat.managedTasks.summary.queued']).toBe('Queued...');
     expect(dict['chat.managedTasks.summary.running']).toBe('Running...');
-    expect(dict['chat.statusRow.managedTasks.starting']).toBe('Starting subagent delegation');
+    expect(dict['chat.statusRow.managedTasks.starting']).toBe('Starting subagent tasks');
     expect(dict['chat.statusRow.managedTasks.waiting']).toBe('Waiting for subagent output');
   });
 
@@ -216,7 +214,7 @@ describe('managed task presentation', () => {
     expect(html).not.toContain('Abandon');
   });
 
-  test('shows a resumed child as running instead of the stale terminal error', () => {
+  test('preserves terminal task status while its child continues independently', () => {
     const task = terminalTask('failed');
     const projected = toManagedTaskEvent(task).properties.task;
 
@@ -230,8 +228,10 @@ describe('managed task presentation', () => {
       </I18nProvider>,
     );
 
-    expect(html).toContain('Running');
-    expect(html).not.toContain('Error');
+    expect(html).toContain('Error');
+    expect(html).not.toContain('Running');
+    expect(html).toContain('Open Subtask');
+    expect(projected.status).toBe('failed');
   });
 
   test('explains automatic recovery without promising Try Again while the grouped retry remains', () => {
@@ -385,7 +385,7 @@ describe('managed task presentation', () => {
     expect(html).toContain('This subtask ran out of time. Choose a model to continue it:');
     expect(html.match(/at least the original time window/g)).toHaveLength(1);
     expect(html).toContain('model-controls__model-trigger');
-    expect(html).toContain('model-controls__variant-trigger');
+    expect(html).toContain('model-controls__variant-label');
     expect(html).toContain('Try Again');
   });
 
@@ -671,7 +671,7 @@ describe('managed task presentation', () => {
     expect(html).not.toContain('Provider connection ended');
     expect(html).toContain('GitHub Copilot / GPT 4.1');
     expect(html).toContain('model-controls__model-trigger');
-    expect(html).toContain('model-controls__variant-trigger');
+    expect(html).toContain('model-controls__variant-label');
     expect(html).not.toContain('disabled=""');
     expect(html).toContain('Try Again');
   });
@@ -711,17 +711,32 @@ describe('managed task presentation', () => {
     )).toEqual(['dvr_task_2']);
   });
 
-  test('capitalizes the Agent Dispatch heading while preserving its task row', () => {
+  test('capitalizes the Agent Dispatch heading while preserving its task row', async () => {
     const taskIds = ['dvr_task_explorer'];
     const window = getManagedTaskWindow(taskIds, 24, () => 'explorer');
-    const source = readFileSync(fileURLToPath(new URL('./ManagedTaskList.tsx', import.meta.url)), 'utf8');
 
     expect(window.agentGroups).toEqual([{ agent: 'explorer', taskIds }]);
     expect(formatAgentLabel(window.agentGroups?.[0]?.agent ?? '')).toBe('Explorer');
-    expect(source).toContain('const agentLabel = formatAgentLabel(group.agent);');
-    expect(source).toContain('aria-label={agentLabel}');
-    expect(source).toContain('{agentLabel}</span>');
-    expect(source).toContain('<ManagedTaskRow key={candidate.key} taskId={presentation.taskId}');
+
+    const fallbacks = [{
+      partId: 'explorer-start',
+      taskId: 'dvr_task_explorer',
+      dispatchCallId: 'call_explorer',
+      agent: 'explorer',
+      label: 'inspect-runtime',
+      status: 'running' as const,
+      childSessionId: 'ses_explorer',
+      directory: '/workspace',
+    }];
+    const html = await renderManagedTaskMarkup(
+      <I18nProvider>
+        <ManagedTaskList taskIds={taskIds} fallbackTasks={fallbacks} />
+      </I18nProvider>, fallbacks,
+    );
+
+    expect(html).toContain('<section aria-label="Explorer">');
+    expect(html).toMatch(/<span class="truncate">Explorer<\/span>/);
+    expect(html).toContain('data-managed-task-fallback-id=');
   });
 
   test('collects fresh-child dispatches while omitting same-child resume and wait controls', () => {
@@ -1508,6 +1523,7 @@ describe('managed task presentation', () => {
 
     expect(html.match(/data-managed-task-card="true"/g)).toHaveLength(1);
     expect(html).toContain('relative isolate overflow-hidden rounded-xl border border-[color:var(--managed-task-card-border)]');
+    // The host DOM serializer drops inline style, so the colour token stays a text contract.
     expect(readFileSync(fileURLToPath(new URL('./ManagedTaskList.tsx', import.meta.url)), 'utf8'))
       .toContain("'--managed-task-card-border': 'color-mix(in srgb, var(--primary-base) 16%, var(--border))'");
     // The card border must be a real box-model border, not an inset-shadow overlay: overflow:hidden
@@ -1871,30 +1887,65 @@ describe('managed task presentation', () => {
     expect(html).toContain('sm:w-auto');
   });
 
-  test('keeps the mobile dispatch card aligned with the assistant output width and clips its rounded surface', () => {
-    const source = readFileSync(fileURLToPath(new URL('./ManagedTaskList.tsx', import.meta.url)), 'utf8');
+  test('keeps the mobile dispatch card aligned with the assistant output width and clips its rounded surface', async () => {
     const mobileStyles = readFileSync(fileURLToPath(new URL('../../styles/mobile.css', import.meta.url)), 'utf8');
+    const fallbacks = [{
+      partId: 'fixer-start',
+      taskId: 'dvr_task_fixer',
+      dispatchCallId: 'call_fixer',
+      agent: 'fixer',
+      label: 'normalize-text',
+      status: 'running' as const,
+      childSessionId: 'ses_fixer',
+      directory: '/workspace',
+    }];
+    const renderList = (isMobile: boolean) => renderManagedTaskMarkup(
+      <I18nProvider>
+        <ManagedTaskList taskIds={['dvr_task_fixer']} fallbackTasks={fallbacks} isMobile={isMobile} />
+      </I18nProvider>, fallbacks,
+    );
+    const mobile = await renderList(true);
+    const desktop = await renderList(false);
 
-    expect(source).toContain('isMobile?: boolean');
-    expect(source).toContain("isMobile ? 'w-full px-0' : 'chat-message-column px-4'");
-    expect(source).not.toContain('pb-1 pt-1');
-    expect(source).not.toContain('pb-2 pt-3');
-    expect(source).toContain('data-managed-task-card="true"');
+    expect(mobile).toContain('class="w-full px-0"');
+    expect(mobile).not.toContain('chat-message-column');
+    expect(desktop).toContain('class="chat-message-column px-4"');
+    expect(mobile).toContain('data-managed-task-card="true"');
+    expect(mobile).not.toContain('pb-1 pt-1');
+    expect(mobile).not.toContain('pb-2 pt-3');
     // The multi-agent rendered-card test above owns the actual border classes,
     // serialized color and absence of the clipped inset-shadow border.
-    expect(source).not.toContain("after:content-['']");
+    expect(mobile).not.toContain("after:content-['']");
+    // CSS text contract: the mobile stylesheet is not executable in this environment.
     expect(mobileStyles).toContain('[data-managed-task-card="true"]');
     expect(mobileStyles).toContain('overflow: hidden !important;');
   });
 
-  test('centers the agent icon and name without clipping text descenders', () => {
-    const source = readFileSync(fileURLToPath(new URL('./ManagedTaskList.tsx', import.meta.url)), 'utf8');
+  test('centers the agent icon and name between the divider and the title without clipping text descenders', async () => {
+    const fallbacks = [{
+      partId: 'fixer-start',
+      taskId: 'dvr_task_fixer',
+      dispatchCallId: 'call_fixer',
+      agent: 'fixer',
+      label: 'normalize-text',
+      status: 'running' as const,
+      childSessionId: 'ses_fixer',
+      directory: '/workspace',
+    }];
+    const html = await renderManagedTaskMarkup(
+      <I18nProvider>
+        <ManagedTaskList taskIds={['dvr_task_fixer']} fallbackTasks={fallbacks} />
+      </I18nProvider>, fallbacks,
+    );
 
-    expect(source).toContain('flex h-7 items-center');
-    expect(source).toContain('inline-flex min-w-0 items-center gap-1.5');
-    expect(source).not.toContain('translate-y-1');
-    expect(source).not.toContain('leading-none');
-    expect(source).not.toContain('bg-muted/25 px-3 py-1.5');
+    // The label row's top padding equals the row's top padding, and no fixed height can clip it.
+    expect(html).toContain('<div class="flex items-center px-3 pt-2.5 typography-meta text-muted-foreground">');
+    expect(html).toContain('flex min-w-0 flex-col items-start gap-2 px-3 py-2.5');
+    expect(html).not.toContain('h-7');
+    expect(html).toContain('inline-flex min-w-0 items-center gap-1.5');
+    expect(html).not.toContain('translate-y-1');
+    expect(html).not.toContain('leading-none');
+    expect(html).not.toContain('bg-muted/25 px-3 py-1.5');
   });
 
   test('navigates to the canonical child session with its directory hint', () => {

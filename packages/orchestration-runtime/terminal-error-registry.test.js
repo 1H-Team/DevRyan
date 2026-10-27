@@ -10,12 +10,13 @@ describe('managed terminal error registry', () => {
       type: 'session.error',
       properties: {
         sessionID: 'ses_child',
-        error: { name: 'UnknownError', data: { message: 'Model not found: provider/model' } },
+        error: { name: 'UnknownError', data: { message: 'Model not found: provider/model', v2Type: 'provider.model-not-found' } },
       },
     })).toBe(true);
     expect(registry.read({ sessionId: 'ses_child', after: 2_001 })).toBeNull();
     expect(registry.read({ sessionId: 'ses_child', after: 2_000 })).toMatchObject({
       eventId: 'evt_1',
+      v2Type: 'provider.model-not-found',
       message: 'Model not found: provider/model',
     });
   });

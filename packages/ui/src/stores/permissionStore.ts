@@ -11,15 +11,20 @@ import { getAllSyncSessions, getSyncChildStores } from "@/sync/sync-refs";
 import { opencodeClient } from "@/lib/opencode/client";
 import { respondToPermission } from "@/sync/session-actions";
 import { useSessionUIStore } from "@/sync/session-ui-store";
+import { sessionEvents } from "@/lib/sessionEvents";
 
 interface PermissionState {
     autoAccept: PermissionAutoAcceptMap;
+    /** Auto-accept state a new root session starts with (device-local). */
+    defaultAutoAccept: boolean;
 }
 
 interface PermissionActions {
     isSessionAutoAccepting: (sessionId: string) => boolean;
     setSessionAutoAccept: (sessionId: string, enabled: boolean) => Promise<void>;
     clearSessionAutoAccept: (sessionId: string) => Promise<void>;
+    setDefaultAutoAccept: (enabled: boolean) => void;
+    applyDefaultAutoAccept: (sessionId: string) => Promise<void>;
 }
 
 type PermissionStore = PermissionState & PermissionActions;
@@ -177,6 +182,18 @@ export const usePermissionStore = create<PermissionStore>()(
         persist(
             (set, get) => ({
                 autoAccept: {},
+                defaultAutoAccept: false,
+
+                setDefaultAutoAccept: (enabled: boolean) => {
+                    set((state) => (state.defaultAutoAccept === enabled ? state : { defaultAutoAccept: enabled }));
+                },
+
+                applyDefaultAutoAccept: (sessionId: string) => {
+                    if (!sessionId || !get().defaultAutoAccept) {
+                        return Promise.resolve();
+                    }
+                    return get().setSessionAutoAccept(sessionId, true);
+                },
 
                 isSessionAutoAccepting: (sessionId: string) => {
                     if (!sessionId) {
@@ -281,7 +298,7 @@ export const usePermissionStore = create<PermissionStore>()(
             {
                 name: "permission-store",
                 storage: getStorage(),
-                partialize: (state) => ({ autoAccept: state.autoAccept }),
+                partialize: (state) => ({ autoAccept: state.autoAccept, defaultAutoAccept: state.defaultAutoAccept }),
                 merge: (persistedState, currentState) => {
                     const merged = {
                         ...currentState,
@@ -322,6 +339,7 @@ export const usePermissionStore = create<PermissionStore>()(
                     return {
                         ...merged,
                         autoAccept: nextAutoAccept,
+                        defaultAutoAccept: coerceAutoAcceptValue(merged.defaultAutoAccept),
                     };
                 },
                 onRehydrateStorage: () => (state) => {
@@ -340,3 +358,9 @@ export const usePermissionStore = create<PermissionStore>()(
         { name: "permission-store" }
     )
 );
+
+// Child sessions inherit auto-accept through their lineage, so only new root
+// sessions receive the default.
+sessionEvents.onRootSessionCreated((sessionId) => {
+    void usePermissionStore.getState().applyDefaultAutoAccept(sessionId).catch(() => undefined);
+});

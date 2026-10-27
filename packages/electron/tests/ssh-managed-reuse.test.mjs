@@ -15,8 +15,8 @@ test('reuses an owned matching server before any installation or credential acce
   const manager = Object.create(ElectronSshManager.prototype);
   manager.appVersion = '1.0.0'; manager.setStatus = () => {};
   manager.managedRemoteOperation = async () => ({ state: 'ready' });
-  manager.configuredOpenChamberPassword = () => { throw new Error('Credentials were accessed'); };
-  manager.currentRemoteOpenChamberVersion = () => { throw new Error('Installation was probed'); };
+  manager.configuredDevRyanPassword = () => { throw new Error('Credentials were accessed'); };
+  manager.currentRemoteDevRyanVersion = () => { throw new Error('Installation was probed'); };
   assert.deepEqual(await manager.ensureRemoteServer({ id: 'fixture', remoteOpenchamber: { mode: 'managed', preferredPort: 12345 } }, {}, ''), {
     remotePort: 12345, startedByUs: false,
   });
@@ -89,8 +89,8 @@ test('owned older version shuts down and proves absence before installation or r
     if (input.action === 'stop') return { state: 'stopped' };
     return { state: ['version_mismatch', 'absent', 'ready'][probes++] };
   };
-  manager.currentRemoteOpenChamberVersion = async () => { order.push('version'); return '1.0.0'; };
-  manager.installOpenChamberManaged = async () => { order.push('install'); };
+  manager.currentRemoteDevRyanVersion = async () => { order.push('version'); return '1.0.0'; };
+  manager.installDevRyanManaged = async () => { order.push('install'); };
   manager.startRemoteServerManaged = async () => { order.push('start'); };
   assert.deepEqual(await manager.ensureRemoteServer({ id: 'fixture', remoteOpenchamber: { mode: 'managed', preferredPort: 12345 } }, {}, ''), { remotePort: 12345, startedByUs: true });
   assert.deepEqual(order, ['probe', 'stop', 'probe', 'version', 'install', 'start', 'probe']);

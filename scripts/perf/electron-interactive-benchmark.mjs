@@ -7,7 +7,7 @@ import { createGzip } from 'node:zlib';
 import { evaluate } from '../qa/cdp.mjs';
 import { createQaUiDriver } from '../qa/ui-driver.mjs';
 import { assertStartupMode, historyCoverage, projectRendererMemory } from './electron-lifecycle-benchmark.mjs';
-import { PERF_PARENT_SESSION_ID } from './loopback-opencode-fixture.mjs';
+import { PERF_PARENT_SESSION_ID } from './fixture-session-seeds.mjs';
 
 export const INTERACTIVE_PROTOCOL = Object.freeze({
   version: 2,
@@ -322,16 +322,20 @@ export async function prepareInteractiveSessions(fixture) {
   let control;
   for (let index = 0; index < INTERACTIVE_PROTOCOL.historySessions + 1; index++) {
     const title = index < INTERACTIVE_PROTOCOL.historySessions ? `Interactive history ${index + 1}` : 'Interactive controls';
-    const response = await fetch(`${fixture.origin}/session`, { method: 'POST',
-      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title }), signal: AbortSignal.timeout(5000) });
+    const response = await fetch(`${fixture.origin}/api/session`, { method: 'POST',
+      headers: { ...fixture.authHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, location: { directory: fixture.directory } }), signal: AbortSignal.timeout(5000) });
     assert.equal(response.status, 200);
-    const session = await response.json();
+    const session = (await response.json()).data;
     assert.match(session.id, /^ses_[a-zA-Z0-9]+$/);
     if (index === INTERACTIVE_PROTOCOL.historySessions) { control = { id: session.id, title }; break; }
     fixture.seedHistory(session.id, { turns: INTERACTIVE_PROTOCOL.historyTurns, textBytes: INTERACTIVE_PROTOCOL.historyTextBytes });
-    const rows = await (await fetch(`${fixture.origin}/session/${session.id}/message`, { signal: AbortSignal.timeout(5000) })).json();
-    const assistants = rows.filter(row => row.info.role === 'assistant').map(row => ({ messageID: row.info.id,
-      text: row.parts.filter(part => part.type === 'text').map(part => part.text).join('\n') }));
+    const historyResponse = await fetch(`${fixture.origin}/api/session/${session.id}/message?limit=${INTERACTIVE_PROTOCOL.historyTurns * 2}&order=asc`,
+      { headers: fixture.authHeaders, signal: AbortSignal.timeout(5000) });
+    assert.equal(historyResponse.status, 200);
+    const rows = (await historyResponse.json()).data;
+    const assistants = rows.filter(row => row.type === 'assistant').map(row => ({ messageID: row.id,
+      text: row.content.filter(part => part.type === 'text').map(part => part.text).join('\n') }));
     assert.equal(assistants.length, INTERACTIVE_PROTOCOL.historyTurns);
     histories.push({ id: session.id, title, expectedMessages: INTERACTIVE_PROTOCOL.historyTurns * 2,
       assistants, firstAssistantID: assistants[0].messageID, lastAssistantID: assistants.at(-1).messageID });
@@ -339,6 +343,17 @@ export async function prepareInteractiveSessions(fixture) {
   // The preceding direct reads establish canonical IDs only. They must never
   // count as evidence that the UI fetched or paginated those histories.
   return { histories, control, messagePageRequestOffset: fixture.getState().messagePageRequests.length };
+}
+
+export function projectInteractiveMessages(records) {
+  let parentID = null;
+  return records.map(row => {
+    if (row.type === 'user') parentID = row.id;
+    return { info: { id: row.id, role: row.type, parentID: row.type === 'assistant' ? parentID : null,
+      time: row.time, error: row.error },
+    parts: (row.content ?? []).map((part, index) => ({ id: `${row.id}:${part.type}:${index}`, type: part.type, text: part.text,
+      time: part.time ? { start: part.time.created, end: part.time.completed } : undefined })) };
+  });
 }
 
 const median = values => {
@@ -436,9 +451,10 @@ export async function runInteractiveScenario({ cdp, fixture, sessions, origin, r
     if (Number.isFinite(usage)) maximumTraceBufferUsage = Math.max(maximumTraceBufferUsage, usage);
   });
   const api = async route => {
-    const response = await fetch(`${fixture.origin}${route}`, { signal: AbortSignal.timeout(5000) });
+    const response = await fetch(`${fixture.origin}${route}`, { headers: fixture.authHeaders, signal: AbortSignal.timeout(5000) });
     assert.equal(response.status, 200, `Fixture canonical endpoint failed: ${route}`);
-    return response.json();
+    const data = (await response.json()).data;
+    return route.includes('/message') ? Array.isArray(data) ? projectInteractiveMessages(data) : projectInteractiveMessages([data])[0] : data;
   };
   const phase = async name => {
     evidence.phase = name;
@@ -481,7 +497,7 @@ export async function runInteractiveScenario({ cdp, fixture, sessions, origin, r
       })()`).catch(diagnosticError => ({ captureError: diagnosticError.message, originalError: error.message }));
       const visibleIDs = new Set(evidence.historySwitchFailure.rendered?.filter(item => item.visible).map(item => item.messageID));
       evidence.historySwitchFailure.canonicalReads = await Promise.all(session.assistants.filter(item => visibleIDs.has(item.messageID)).slice(-2).map(async item => {
-        const route = `/session/${session.id}/message/${item.messageID}`;
+        const route = `/api/session/${session.id}/message/${item.messageID}`;
         const fixtureRow = await api(route);
         const app = await evaluate(cdp, `fetch(${JSON.stringify(`/api${route}`)}).then(async r=>({status:r.status,row:await r.json()}))`);
         const project = row => ({ messageID: row?.info?.id ?? null, texts: row?.parts?.filter(part => part.type === 'text').map(part => part.text) ?? [] });
@@ -643,8 +659,8 @@ export async function runInteractiveScenario({ cdp, fixture, sessions, origin, r
       fixture.configureNextPrompt(sessions.control.id, { reasoning: 'text', reasoningText: INTERACTIVE_DISCLOSURE_TEXT,
         tool: 'completed', chunks: INTERACTIVE_PROTOCOL.disclosureChunks, intervalMs: INTERACTIVE_PROTOCOL.disclosureIntervalMs });
       const disclosureSent = await acceptedSend('Interactive fixture disclosure turn.');
-      await ui.waitFor('interactive disclosure turn idle', async () => (await api('/session/status'))[sessions.control.id]?.type === 'idle');
-      const disclosureRows = await api(`/session/${sessions.control.id}/message`);
+      await ui.waitFor('interactive disclosure turn idle', async () => !Object.hasOwn(await api('/api/session/active'), sessions.control.id));
+      const disclosureRows = await api(`/api/session/${sessions.control.id}/message?limit=10000&order=asc`);
       const disclosureTurn = assertInteractiveDisclosureTurn(disclosureRows, disclosureSent.messageID);
       const disclosureAssistant = disclosureTurn.assistant;
       evidence.correctness.disclosure = disclosureTurn.evidence;
@@ -668,10 +684,10 @@ export async function runInteractiveScenario({ cdp, fixture, sessions, origin, r
       await phase('SSE reconnect and canonical cancellation');
       fixture.configureNextPrompt(sessions.control.id, { chunks: 1000, intervalMs: INTERACTIVE_PROTOCOL.streamIntervalMs });
       const sent = await acceptedSend('Interactive fixture reconnect and cancel turn.');
-      const streamAssistant = (await api(`/session/${sessions.control.id}/message`)).at(-1);
+      const streamAssistant = (await api(`/api/session/${sessions.control.id}/message?limit=10000&order=asc`)).filter(row => row.info.role === 'assistant').at(-1);
       const assistantSelector = rowSelector(streamAssistant.info.id);
       await ui.waitVisibleText('QA response chunk 1.', assistantSelector);
-      const beforeDisconnect = (await api(`/session/${sessions.control.id}/message`)).at(-1);
+      const beforeDisconnect = (await api(`/api/session/${sessions.control.id}/message?limit=10000&order=asc`)).filter(row => row.info.role === 'assistant').at(-1);
       assert.equal(beforeDisconnect.info.id, streamAssistant.info.id);
       const beforeText = beforeDisconnect.parts.find(part => part.type === 'text').text;
       const targetChunk = assertNumberedChunks(beforeText) + INTERACTIVE_PROTOCOL.reconnectAdvanceChunks;
@@ -684,7 +700,7 @@ export async function runInteractiveScenario({ cdp, fixture, sessions, origin, r
           if(!response.ok)throw Error('Canonical status request failed');const states=await response.json();
           return states[${JSON.stringify(sessions.control.id)}]?.type==='idle' && !document.querySelector('button[aria-label="Stop Generating"]')
             && Boolean(document.querySelector('textarea'));})()` }, () => ui.click({ label: 'Stop Generating' }));
-      const finalRows = await api(`/session/${sessions.control.id}/message`);
+      const finalRows = await api(`/api/session/${sessions.control.id}/message?limit=10000&order=asc`);
       const saved = finalRows.find(row => row.info.id === beforeDisconnect.info.id);
       const finalText = saved.parts.find(part => part.type === 'text').text;
       evidence.correctness.reconnectChunks = assertNumberedChunks(finalText);
@@ -726,7 +742,7 @@ export async function runInteractiveScenario({ cdp, fixture, sessions, origin, r
         && sample.rendererCreatedAt === memorySamples[0].rendererCreatedAt), 'Renderer changed during repeated navigation');
       evidence.correctness.finalDraft = await evaluate(cdp, textValue(INTERACTIVE_PROTOCOL.typingText));
       assert.equal(evidence.correctness.finalDraft, true);
-      evidence.correctness.finalTurnCounts = await turnCounts(await api(`/session/${sessions.control.id}/message`));
+      evidence.correctness.finalTurnCounts = await turnCounts(await api(`/api/session/${sessions.control.id}/message?limit=10000&order=asc`));
       evidence.correctness.finalTurnUnique = assertUniqueTurnCounts(evidence.correctness.finalTurnCounts);
       assert.equal(assertNumberedChunks(await evaluate(cdp, `document.querySelector(${JSON.stringify(assistantSelector)}).innerText`)),
         evidence.correctness.reconnectChunks, 'Navigation changed or duplicated the rendered stream');

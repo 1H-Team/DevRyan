@@ -1,3 +1,4 @@
+import { parseHelperModelSelection } from '@/lib/helperModelSelection';
 import { getSafeStorage } from '@/stores/utils/safeStorage';
 import type { DesktopSettings } from '@/lib/desktop';
 import { createProjectIdFromPath } from '@/lib/projectId';
@@ -53,12 +54,12 @@ const persistToLocalStorage = (settings: DesktopSettings) => {
   }
   if (settings.homeDirectory) {
     getSafeStorage().setItem('homeDirectory', settings.homeDirectory);
-    // Electron's preload exposes __OPENCHAMBER_HOME__ as a read-only
+    // Electron's preload exposes __DEVRYAN_HOME__ as a read-only
     // contextBridge property; assignment throws TypeError there. In the
     // plain web runtime the property is writable. Swallow the
     // error in Electron — preload already seeded the value correctly.
     try {
-      window.__OPENCHAMBER_HOME__ = settings.homeDirectory;
+      window.__DEVRYAN_HOME__ = settings.homeDirectory;
     } catch {
       /* read-only contextBridge property — leave preload-seeded value */
     }
@@ -107,9 +108,9 @@ const persistToLocalStorage = (settings: DesktopSettings) => {
   if (typeof settings.pwaAppName === 'string') {
     const normalized = settings.pwaAppName.trim().replace(/\s+/g, ' ').slice(0, 64);
     if (normalized.length > 0) {
-      getSafeStorage().setItem('openchamber.pwaName', normalized);
+      getSafeStorage().setItem('devryan.pwaName', normalized);
     } else {
-      getSafeStorage().removeItem('openchamber.pwaName');
+      getSafeStorage().removeItem('devryan.pwaName');
     }
   }
   if (typeof settings.mobileKeyboardMode === 'string') {
@@ -810,6 +811,9 @@ export const sanitizeWebSettings = (payload: unknown): DesktopSettings | null =>
   if (managedRemoteTunnelPresetTokens) {
     result.managedRemoteTunnelPresetTokens = managedRemoteTunnelPresetTokens;
   }
+  const helperSelection = parseHelperModelSelection(candidate.helperModelSelection);
+  if (helperSelection) result.helperModelSelection = helperSelection;
+
   if (typeof candidate.defaultModel === 'string' && candidate.defaultModel.length > 0) {
     result.defaultModel = candidate.defaultModel;
   }
@@ -1271,7 +1275,7 @@ export const syncDesktopSettings = async (): Promise<void> => {
     }
 
     if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent<DesktopSettings>('openchamber:settings-synced', { detail: settings }));
+      window.dispatchEvent(new CustomEvent<DesktopSettings>('devryan:settings-synced', { detail: settings }));
     }
 
     if (migration.changed && canEditSettingsPage(getAuthPrincipal(), 'appearance')) {

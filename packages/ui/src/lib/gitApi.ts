@@ -50,13 +50,13 @@ export type {
 
 declare global {
   interface Window {
-    __OPENCHAMBER_RUNTIME_APIS__?: RuntimeAPIs;
+    __DEVRYAN_RUNTIME_APIS__?: RuntimeAPIs;
   }
 }
 
 const getRuntimeGit = () => {
-  if (typeof window !== 'undefined' && window.__OPENCHAMBER_RUNTIME_APIS__?.git) {
-    return window.__OPENCHAMBER_RUNTIME_APIS__.git;
+  if (typeof window !== 'undefined' && window.__DEVRYAN_RUNTIME_APIS__?.git) {
+    return window.__DEVRYAN_RUNTIME_APIS__.git;
   }
   return null;
 };
@@ -444,6 +444,7 @@ export async function generateCommitMessageDraft(
   const startedAt = Date.now();
   const request: import('./api/types').GenerateGitCommitMessageDraftRequest = {
     selectedFiles: files,
+    ...(useSessionUIStore.getState().currentSessionId ? { sessionID: useSessionUIStore.getState().currentSessionId ?? undefined } : {}),
     stagedOnly: options?.stagedOnly === true,
     ...(options?.commitMessageGuidance?.trim()
       ? { guidance: options.commitMessageGuidance.trim() }
@@ -485,68 +486,8 @@ export async function generateCommitPlanPreview(
   });
 }
 
-export async function executeApprovedCommitPlan(
-  directory: string,
-  commits: import('./api/types').GeneratedCommitMessage[],
-  options: { selectedFiles: string[]; stagedOnly?: boolean } = { selectedFiles: [] },
-): Promise<import('./api/types').GeneratedCommitWorkflowResult> {
-  const normalizePath = (value: string): string => value.replace(/\\/g, '/').replace(/^\.\/+/, '').trim();
-  const allowlist = new Set(options.selectedFiles.map(normalizePath).filter(Boolean));
-  const used = new Set<string>();
-  const groups: Array<{ subject: string; files: string[] }> = [];
-
-  for (const commit of commits) {
-    const subject = typeof commit.subject === 'string' ? commit.subject.trim() : '';
-    if (!subject) continue;
-    const requested = Array.isArray(commit.files) ? commit.files.map(normalizePath) : [];
-    const files = requested
-      .filter((file) => file.length > 0)
-      .filter((file) => allowlist.size === 0 || allowlist.has(file))
-      .filter((file) => !used.has(file));
-    files.forEach((file) => used.add(file));
-    groups.push({ subject, files });
-  }
-
-  const leftover = Array.from(allowlist).filter((file) => !used.has(file));
-  if (leftover.length > 0 && groups.length > 0) {
-    groups[groups.length - 1].files.push(...leftover);
-  }
-
-  const executable = groups.filter((group) => group.files.length > 0 || options.stagedOnly);
-  if (executable.length === 0) {
-    return { status: 'blocked', commits: [], message: 'No commit groups had files to commit' };
-  }
-
-  for (const group of executable) {
-    await createGitCommit(directory, group.subject, {
-      files: group.files,
-      stagedOnly: options.stagedOnly ?? false,
-    });
-  }
-
-  try {
-    await gitPush(directory);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Failed to push';
-    if (/no upstream|set-upstream/i.test(message)) {
-      const branch = (await getGitStatus(directory)).current;
-      if (typeof branch === 'string' && branch.length > 0) {
-        await gitPush(directory, { options: ['--set-upstream', 'origin', branch] });
-      } else {
-        throw error;
-      }
-    } else {
-      throw error;
-    }
-  }
-
-  return {
-    status: 'complete',
-    commits: executable.map((group) => ({ subject: group.subject, highlights: [], files: group.files })),
-  };
-}
-
 type PullRequestGenerationRequest = {
+  sessionID?: string;
   base: string;
   head: string;
   context?: string;
@@ -560,9 +501,7 @@ export async function generatePullRequestDescription(
   payload: { base: string; head: string; context?: string }
 ): Promise<import('./api/types').GeneratedPullRequestDescription> {
   const startedAt = Date.now();
-  // Hint for the server's session-model fallback tier (it prefers its own
-  // Builder resolution, so this only matters for hosts without one).
-  const fallbackModel = resolveGenerationModel(useSessionUIStore.getState().currentSessionId, 'builder');
+  const activeSessionID = useSessionUIStore.getState().currentSessionId;
 
   const commitLog = await getGitLog(directory, {
     from: payload.base,
@@ -607,7 +546,7 @@ export async function generatePullRequestDescription(
     head: payload.head,
     commits: commits.length,
     changedFiles: changedFiles.length,
-    fallbackModel: fallbackModel ? `${fallbackModel.providerId}/${fallbackModel.modelId}` : null,
+    activeSessionID,
   });
 
   const hiddenPrompt = await renderMagicPrompt('git.pr.generate.instructions', {
@@ -623,7 +562,7 @@ export async function generatePullRequestDescription(
     head: payload.head,
     ...(payload.context?.trim() ? { context: payload.context.trim() } : {}),
     prompt: hiddenPrompt,
-    ...(fallbackModel ? { providerId: fallbackModel.providerId, modelId: fallbackModel.modelId } : {}),
+    ...(activeSessionID ? { sessionID: activeSessionID } : {}),
   };
 
   try {
@@ -924,6 +863,8 @@ const runJsonGenerationInActiveSession = async ({
   }
 
   const response = await opencodeClient.withDirectory(directory, async () => {
+    const assertSubscription = await opencodeClient.awaitInputSubscription();
+    assertSubscription();
     return opencodeClient.getApiClient().session.prompt({
       sessionID: generationSession.sessionId,
       ...(trimmedDirectory.length > 0 ? { directory: trimmedDirectory } : {}),
@@ -1118,7 +1059,7 @@ export async function createGitCommit(
 
 export async function gitPush(
   directory: string,
-  options: { remote?: string; branch?: string; options?: string[] | Record<string, unknown> } = {}
+  options: import('./api/types').GitPushOptions = {}
 ): Promise<import('./api/types').GitPushResult> {
   const runtime = getRuntimeGit();
   if (runtime) return runtime.gitPush(directory, options);
@@ -1217,8 +1158,13 @@ export async function syncGitBranchForPush(
   assertGitSyncReady(initialStatus);
   const remoteName = getRemoteNameForPushSync(options.remote, initialStatus, remotes);
   const branch = getTrackedBranchForRemote(initialStatus, remoteName, options.branch);
+  const trackingPrefix = `${remoteName}/`;
+  const hasTracking = typeof initialStatus.tracking === 'string' && initialStatus.tracking.startsWith(trackingPrefix);
 
-  await gitDeps.gitFetch(directory, { remote: remoteName });
+  await gitDeps.gitFetch(directory, {
+    remote: remoteName,
+    ...(hasTracking && branch ? { branch } : {}),
+  });
   const statusAfterFetch = await gitDeps.getGitStatus(directory);
   assertGitSyncReady(statusAfterFetch);
 

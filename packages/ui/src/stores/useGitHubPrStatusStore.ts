@@ -12,7 +12,7 @@ const PR_OPEN_DEFAULT_INTERVAL_MS = 2 * 60_000;
 const PR_OPEN_STABLE_INTERVAL_MS = 5 * 60_000;
 export const PR_TERMINAL_DISCOVERY_INTERVAL_MS = 5 * 60_000;
 const PR_PERSIST_TTL_MS = 12 * 60 * 60_000;
-const PR_STATUS_STORAGE_KEY = 'openchamber.github-pr-status';
+const PR_STATUS_STORAGE_KEY = 'devryan.github-pr-status';
 export const PR_STATUS_REFRESH_CONCURRENCY = 4;
 
 export const mapWithConcurrency = async <Input, Output>(
@@ -678,14 +678,6 @@ export const useGitHubPrStatusStore = create<GitHubPrStatusStore>()(
     },
   ),
 );
-
-export const usePrStatusForDirectoryBranch = (directory: string | null, branch: string | null) => {
-  return useGitHubPrStatusStore((state) => {
-    if (!directory || !branch) return null;
-    const key = getGitHubPrStatusKey(directory, branch);
-    return state.entries[key] ?? null;
-  });
-};
 
 export type PrVisualSummary = {
   number: number;

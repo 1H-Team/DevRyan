@@ -1,0 +1,302 @@
+{
+ "vector": "05b-question-dismissed",
+ "title": "D5 variant: question tool form cancelled while the turn waits",
+ "design": "D5 (dismissed)",
+ "opencode": "2.0.20",
+ "capturedWith": "g2trace on the G1 embedded host (ServerFetch.make + Bun listener), simulation backend; see README.md",
+ "normalization": {
+  "ids": 33,
+  "timestamps": 25,
+  "sha256": 4,
+  "sha1": 0,
+  "slugs": 1,
+  "timestampBase": 1767225600000,
+  "timestampStep": 1000
+ },
+ "frames": [
+  "data: {\"id\":\"evt_000000000001normalized0000\",\"created\":1767225601000,\"type\":\"session.created\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"slug\":\"slug-1\",\"version\":\"0.0.0-spike\",\"projectID\":\"global\",\"location\":{\"directory\":\"<home>/workspace\"},\"subpath\":\"\",\"title\":\"Question dismissed\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":0,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000002normalized0000\",\"created\":1767225602000,\"type\":\"session.inbox.enqueued\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"inboxID\":\"msg_000000000001normalized0000\",\"sessionID\":\"ses_fffffffffffenormalized0000\",\"item\":{\"type\":\"user\",\"payload\":{\"text\":\"Ask then dismiss\"},\"delivery\":\"steer\"}},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":1,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000003normalized0000\",\"created\":1767225603000,\"type\":\"session.execution.started\",\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":2,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000004normalized0000\",\"created\":1767225604000,\"metadata\":{\"instructions\":{\"initial\":true}},\"type\":\"session.instructions.updated\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"delta\":{\"core/codemode\":\"0000000000000000000000000000000000000000000000000000000000000001\",\"core/skill-guidance\":\"0000000000000000000000000000000000000000000000000000000000000002\",\"core/date\":\"0000000000000000000000000000000000000000000000000000000000000003\",\"core/environment\":\"0000000000000000000000000000000000000000000000000000000000000004\"}},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":3,\"version\":2}}\n\n",
+  "data: {\"id\":\"evt_000000000005normalized0000\",\"created\":1767225605000,\"type\":\"session.inbox.delivered\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"inboxID\":\"msg_000000000001normalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":4,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000006normalized0000\",\"created\":1767225607000,\"type\":\"session.step.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"agent\":\"build\",\"model\":{\"id\":\"m1\",\"providerID\":\"sim\"},\"assistantMessageID\":\"msg_000000000002normalized0000\",\"started\":1767225606000},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":5,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000007normalized0000\",\"created\":1767225608000,\"type\":\"session.tool.input.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"id\":\"call_s05b_question\",\"name\":\"question\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":6,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000008normalized0000\",\"created\":1767225609000,\"type\":\"session.tool.input.ended\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"id\":\"call_s05b_question\",\"text\":\"{\\\"questions\\\":[{\\\"question\\\":\\\"Proceed?\\\",\\\"header\\\":\\\"Go\\\",\\\"options\\\":[{\\\"label\\\":\\\"Yes\\\",\\\"description\\\":\\\"go on\\\"},{\\\"label\\\":\\\"No\\\",\\\"description\\\":\\\"stop\\\"}]}]}\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":7,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000009normalized0000\",\"created\":1767225610000,\"type\":\"session.tool.called\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"id\":\"call_s05b_question\",\"input\":{\"questions\":[{\"question\":\"Proceed?\",\"header\":\"Go\",\"options\":[{\"label\":\"Yes\",\"description\":\"go on\"},{\"label\":\"No\",\"description\":\"stop\"}]}]},\"executed\":false},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":8,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000000anormalized0000\",\"created\":1767225611000,\"type\":\"session.step.streamed\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":9,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000000bnormalized0000\",\"created\":1767225612000,\"type\":\"form.created\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"form\":{\"id\":\"frm_000000000001normalized0000\",\"sessionID\":\"ses_fffffffffffenormalized0000\",\"title\":\"Questions\",\"metadata\":{\"kind\":\"question\",\"tool\":{\"messageID\":\"msg_000000000002normalized0000\",\"id\":\"call_s05b_question\"}},\"fields\":[{\"key\":\"q0\",\"title\":\"Go\",\"description\":\"Proceed?\",\"type\":\"string\",\"options\":[{\"value\":\"Yes\",\"label\":\"Yes\",\"description\":\"go on\"},{\"value\":\"No\",\"label\":\"No\",\"description\":\"stop\"}],\"custom\":true}]}}}\n\n",
+  "data: {\"id\":\"evt_00000000000cnormalized0000\",\"created\":1767225613000,\"type\":\"form.cancelled\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"id\":\"frm_000000000001normalized0000\",\"sessionID\":\"ses_fffffffffffenormalized0000\"}}\n\n",
+  "data: {\"id\":\"evt_00000000000dnormalized0000\",\"created\":1767225613000,\"type\":\"session.tool.failed\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"id\":\"call_s05b_question\",\"error\":{\"type\":\"aborted\",\"message\":\"The user dismissed this question\"},\"executed\":false},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":10,\"version\":2}}\n\n",
+  "data: {\"id\":\"evt_00000000000enormalized0000\",\"created\":1767225614000,\"type\":\"session.step.failed\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"error\":{\"type\":\"aborted\",\"message\":\"Step interrupted\"},\"rawFinish\":\"tool_calls\",\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":11,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000000fnormalized0000\",\"created\":1767225615000,\"type\":\"session.usage.updated\",\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}}}\n\n",
+  "data: {\"id\":\"evt_000000000010normalized0000\",\"created\":1767225615000,\"type\":\"session.execution.interrupted\",\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"reason\":\"shutdown\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":12,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000011normalized0000\",\"created\":1767225616000,\"type\":\"session.inbox.enqueued\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"inboxID\":\"msg_000000000003normalized0000\",\"sessionID\":\"ses_fffffffffffenormalized0000\",\"item\":{\"type\":\"user\",\"payload\":{\"text\":\"Are you still there?\"},\"delivery\":\"steer\"}},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":13,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000012normalized0000\",\"created\":1767225617000,\"type\":\"session.execution.started\",\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":14,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000013normalized0000\",\"created\":1767225618000,\"type\":\"session.inbox.delivered\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"inboxID\":\"msg_000000000003normalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":15,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000014normalized0000\",\"created\":1767225620000,\"type\":\"session.step.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"agent\":\"build\",\"model\":{\"id\":\"m1\",\"providerID\":\"sim\"},\"assistantMessageID\":\"msg_000000000004normalized0000\",\"started\":1767225619000},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":16,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000015normalized0000\",\"created\":1767225621000,\"type\":\"session.text.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000004normalized0000\",\"ordinal\":0},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":17,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000016normalized0000\",\"created\":1767225622000,\"type\":\"session.text.delta\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000004normalized0000\",\"ordinal\":0,\"delta\":\"still usable\"}}\n\n",
+  "data: {\"id\":\"evt_000000000017normalized0000\",\"created\":1767225622000,\"type\":\"session.text.ended\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000004normalized0000\",\"ordinal\":0,\"text\":\"still usable\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":18,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000018normalized0000\",\"created\":1767225623000,\"type\":\"session.step.streamed\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000004normalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":19,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000019normalized0000\",\"created\":1767225624000,\"type\":\"session.step.ended\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000004normalized0000\",\"finish\":\"stop\",\"rawFinish\":\"stop\",\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":20,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000001anormalized0000\",\"created\":1767225624000,\"type\":\"session.usage.updated\",\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}}}\n\n",
+  "data: {\"id\":\"evt_00000000001bnormalized0000\",\"created\":1767225625000,\"type\":\"session.execution.succeeded\",\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":21,\"version\":1}}\n\n"
+ ],
+ "rest": [
+  {
+   "label": "session.create",
+   "method": "POST",
+   "path": "/api/session",
+   "request": {
+    "location": {
+     "directory": "<home>/workspace"
+    },
+    "title": "Question dismissed"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "ses_fffffffffffenormalized0000",
+     "projectID": "global",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "time": {
+      "created": 1767225601000,
+      "updated": 1767225601000
+     },
+     "title": "Question dismissed",
+     "location": {
+      "directory": "<home>/workspace"
+     }
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "Ask then dismiss"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000001normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225602000
+     },
+     "type": "user",
+     "payload": {
+      "text": "Ask then dismiss"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.form.cancel",
+   "method": "DELETE",
+   "path": "/api/session/ses_fffffffffffenormalized0000/form/frm_000000000001normalized0000",
+   "status": 204,
+   "contentType": null,
+   "body": null
+  },
+  {
+   "label": "session.get",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffffenormalized0000",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "ses_fffffffffffenormalized0000",
+     "projectID": "global",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "time": {
+      "created": 1767225601000,
+      "updated": 1767225602000
+     },
+     "title": "Question dismissed",
+     "location": {
+      "directory": "<home>/workspace"
+     }
+    }
+   }
+  },
+  {
+   "label": "session.messages.asc",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffffenormalized0000/message?limit=200&order=asc",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": [
+     {
+      "id": "msg_000000000001normalized0000",
+      "time": {
+       "created": 1767225605000
+      },
+      "text": "Ask then dismiss",
+      "type": "user"
+     },
+     {
+      "id": "msg_000000000002normalized0000",
+      "time": {
+       "created": 1767225606000,
+       "streamed": 1767225611000,
+       "completed": 1767225614000
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+       "id": "m1",
+       "providerID": "sim"
+      },
+      "content": [
+       {
+        "type": "tool",
+        "id": "call_s05b_question",
+        "name": "question",
+        "executed": false,
+        "state": {
+         "status": "error",
+         "input": {
+          "questions": [
+           {
+            "question": "Proceed?",
+            "header": "Go",
+            "options": [
+             {
+              "label": "Yes",
+              "description": "go on"
+             },
+             {
+              "label": "No",
+              "description": "stop"
+             }
+            ]
+           }
+          ]
+         },
+         "error": {
+          "type": "aborted",
+          "message": "The user dismissed this question"
+         }
+        },
+        "time": {
+         "created": 1767225608000,
+         "ran": 1767225610000,
+         "completed": 1767225613000
+        }
+       }
+      ],
+      "finish": "error",
+      "rawFinish": "tool_calls",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      },
+      "error": {
+       "type": "aborted",
+       "message": "Step interrupted"
+      }
+     }
+    ],
+    "cursor": {
+     "previous": "eyJpZCI6Im1zZ18wMDAwMDAwMDAwMDFub3JtYWxpemVkMDAwMCIsIm9yZGVyIjoiYXNjIiwiZGlyZWN0aW9uIjoicHJldmlvdXMifQ",
+     "next": "eyJpZCI6Im1zZ18wMDAwMDAwMDAwMDJub3JtYWxpemVkMDAwMCIsIm9yZGVyIjoiYXNjIiwiZGlyZWN0aW9uIjoibmV4dCJ9"
+    }
+   }
+  },
+  {
+   "label": "after.session.active",
+   "method": "GET",
+   "path": "/api/session/active",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {}
+   }
+  },
+  {
+   "label": "after.session.inbox",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffffenormalized0000/inbox",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": []
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "Are you still there?"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000003normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225616000
+     },
+     "type": "user",
+     "payload": {
+      "text": "Are you still there?"
+     },
+     "delivery": "steer"
+    }
+   }
+  }
+ ],
+ "llm": [
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 2,
+   "lastRole": "user",
+   "lastText": "Ask then dismiss"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 5,
+   "lastRole": "user",
+   "lastText": "Are you still there?"
+  }
+ ],
+ "notes": {
+  "terminal": "session.execution.interrupted",
+  "nextTurnTerminal": "session.execution.succeeded"
+ }
+}

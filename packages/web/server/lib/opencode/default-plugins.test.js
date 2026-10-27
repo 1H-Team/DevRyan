@@ -12,6 +12,23 @@ import {
 } from './default-plugins.js';
 
 describe('DevRyan default plugin catalog', () => {
+  it('hides retired registrations an upgraded setup still lists', () => {
+    const inventory = buildDevRyanDefaultPluginInventory({
+      entries: [
+        { spec: './plugins/devryan-oh-my-opencode-slim.mjs', sourcePath: '/tmp/opencode.json' },
+        { spec: 'oh-my-opencode-slim@2.2.25', sourcePath: '/tmp/opencode.json' },
+        { spec: 'user-plugin@1.0.0', sourcePath: '/tmp/opencode.json' },
+      ],
+      files: [
+        { fileName: 'devryan-oh-my-opencode-slim.mjs', absolutePath: '/tmp/plugins/devryan-oh-my-opencode-slim.mjs' },
+        { fileName: 'local.mjs', absolutePath: '/tmp/plugins/local.mjs' },
+      ],
+    });
+    expect(inventory.entries.map((entry) => entry.spec)).toEqual(['user-plugin@1.0.0']);
+    expect(inventory.files.map((file) => file.fileName)).toEqual(['local.mjs']);
+    expect(inventory.defaults.some((plugin) => plugin.pluginId === 'oh-my-opencode-slim')).toBe(false);
+  });
+
   it('exposes every public managed plugin with local-only registrations', () => {
     expect(DEVRYAN_DEFAULT_PLUGINS.map((plugin) => ({
       pluginId: plugin.pluginId,
@@ -22,13 +39,13 @@ describe('DevRyan default plugin catalog', () => {
       {
         pluginId: '@rama_nigg/open-cursor',
         shippedSpec: './plugins/devryan-open-cursor.mjs',
-        version: '2.5.8',
+        version: '2.5.17',
         delivery: 'installed-local',
       },
       {
         pluginId: 'opencode-with-claude',
         shippedSpec: './node_modules/opencode-with-claude/dist/index.js',
-        version: '1.8.0',
+        version: '1.11.2',
         delivery: 'installed-local',
       },
       {
@@ -36,18 +53,6 @@ describe('DevRyan default plugin catalog', () => {
         shippedSpec: './node_modules/opencode-gpt-imagegen/dist/index.js',
         version: '0.1.12',
         delivery: 'installed-local',
-      },
-      {
-        pluginId: 'oh-my-opencode-slim',
-        shippedSpec: './plugins/devryan-oh-my-opencode-slim.mjs',
-        version: '2.2.25',
-        delivery: 'installed-local',
-      },
-      {
-        pluginId: 'superpowers',
-        shippedSpec: './plugins/devryan-superpowers.mjs',
-        version: null,
-        delivery: 'bundled-file',
       },
       {
         pluginId: 'devryan-skill-context',
@@ -71,11 +76,11 @@ describe('DevRyan default plugin catalog', () => {
   });
 
   it('classifies default registrations and files without exposing internal helpers', () => {
-    expect(getDevRyanDefaultPluginIdForSpec('./plugins/devryan-oh-my-opencode-slim.mjs')).toBe('oh-my-opencode-slim');
+    expect(getDevRyanDefaultPluginIdForSpec('./plugins/devryan-oh-my-opencode-slim.mjs')).toBeNull();
     expect(getDevRyanDefaultPluginIdForSpec('opencode-with-claude@1.6.17')).toBe('opencode-with-claude');
     expect(getDevRyanDefaultPluginIdForSpec('opencode-gpt-imagegen@0.1.10')).toBe('opencode-gpt-imagegen');
     expect(getDevRyanDefaultPluginIdForSpec('context-mode@1.0.169')).toBeNull();
-    expect(getDevRyanDefaultPluginIdForSpec('./plugins/devryan-superpowers.mjs')).toBe('superpowers');
+    expect(getDevRyanDefaultPluginIdForSpec('./plugins/devryan-superpowers.mjs')).toBeNull();
     expect(getDevRyanDefaultPluginIdForSpec('./plugins/devryan-skill-context.mjs')).toBe('devryan-skill-context');
     expect(getDevRyanDefaultPluginIdForSpec('./plugins/devryan-document-reader.mjs')).toBe('devryan-document-reader');
     expect(getDevRyanDefaultPluginIdForSpec('./node_modules/@rama_nigg/open-cursor/dist/plugin-entry.js'))
@@ -91,15 +96,15 @@ describe('DevRyan default plugin catalog', () => {
       entries: [
         { spec: 'opencode-with-claude@1.6.17', sourcePath: '/tmp/opencode.json' },
         { spec: 'opencode-gpt-imagegen@0.1.10', sourcePath: '/tmp/imagegen.json' },
-        { spec: './plugins/devryan-oh-my-opencode-slim.mjs', sourcePath: '/tmp/project/opencode.json' },
+        { spec: './plugins/devryan-open-cursor.mjs', sourcePath: '/tmp/project/opencode.json' },
       ],
       files: [
         { fileName: 'openai-tool-schema-sanitizer.mjs', absolutePath: '/tmp/plugins/openai-tool-schema-sanitizer.mjs' },
       ],
     });
 
-    expect(inventory.defaults.find((plugin) => plugin.pluginId === 'oh-my-opencode-slim')).toMatchObject({
-      effectiveSpec: './plugins/devryan-oh-my-opencode-slim.mjs',
+    expect(inventory.defaults.find((plugin) => plugin.pluginId === '@rama_nigg/open-cursor')).toMatchObject({
+      effectiveSpec: './plugins/devryan-open-cursor.mjs',
       configuredSourcePath: '/tmp/project/opencode.json',
     });
     expect(inventory.defaults.find((plugin) => plugin.pluginId === 'opencode-with-claude')).toMatchObject({

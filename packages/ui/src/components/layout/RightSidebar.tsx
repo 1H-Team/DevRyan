@@ -13,10 +13,9 @@ interface RightSidebarProps {
   isOpen: boolean;
   children: React.ReactNode;
   className?: string;
-  botMode?: boolean;
 }
 
-export const RightSidebar: React.FC<RightSidebarProps> = ({ isOpen, children, className, botMode = false }) => {
+export const RightSidebar: React.FC<RightSidebarProps> = ({ isOpen, children, className }) => {
   const { t } = useI18n();
   const rightSidebarWidth = useUIStore((state) => state.rightSidebarWidth);
   const setRightSidebarWidth = useUIStore((state) => state.setRightSidebarWidth);
@@ -71,9 +70,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ isOpen, children, cl
     RIGHT_SIDEBAR_MAX_WIDTH,
     Math.max(RIGHT_SIDEBAR_MIN_WIDTH, rightSidebarWidth || RIGHT_SIDEBAR_CONTENT_WIDTH)
   );
-  const topInset = botMode
-    ? 'var(--oc-bot-chrome-height, 48px)'
-    : 'var(--oc-header-height, 56px)';
+  const topInset = 'var(--oc-header-height, 56px)';
 
   const handlePointerDown = (event: React.PointerEvent) => {
     if (!isOpen) {

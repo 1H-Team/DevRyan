@@ -1,11 +1,3 @@
-export const resolveAssistantDisplayText = (input: {
-    textContent: string;
-    throttledTextContent: string;
-    isStreaming: boolean;
-}): string => {
-    return input.isStreaming ? input.throttledTextContent : input.textContent;
-};
-
 export const shouldRenderAssistantText = (input: {
     displayTextContent: string;
     isFinalized: boolean;

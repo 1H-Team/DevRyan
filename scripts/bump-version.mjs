@@ -8,13 +8,7 @@ const ROOT = path.resolve(__dirname, '..');
 
 const PACKAGES = [
   'package.json',
-  'packages/bot-computer/package.json',
-  'packages/bot-db/package.json',
-  'packages/bot-engine-proxy/package.json',
-  'packages/bot-egress/package.json',
-  'packages/bot-indexer/package.json',
-  'packages/bot-supervisor/package.json',
-  'packages/bots-runtime/package.json',
+  'packages/agents-core/package.json',
   'packages/cursor-sdk-runtime/package.json',
   'packages/harness-runtime/package.json',
   'packages/orchestration-runtime/package.json',
@@ -69,12 +63,12 @@ cargoContent = cargoContent.replace(
 fs.writeFileSync(cargoPath, cargoContent);
 console.log(`  ${CARGO_TOML}: ${oldCargoVersion} -> ${newVersion}`);
 
-// Update Cargo.lock for openchamber-desktop, if present
+// Update Cargo.lock for devryan-desktop, if present
 const cargoLockPath = path.join(ROOT, CARGO_LOCK);
 if (fs.existsSync(cargoLockPath)) {
   try {
     let lockContent = fs.readFileSync(cargoLockPath, 'utf8');
-    const anchor = 'name = "openchamber-desktop"';
+    const anchor = 'name = "devryan-desktop"';
     const anchorIndex = lockContent.indexOf(anchor);
     if (anchorIndex !== -1) {
       // find the next version line after the anchor
@@ -90,7 +84,7 @@ if (fs.existsSync(cargoLockPath)) {
         console.warn(`Warning: could not locate version line in ${CARGO_LOCK}`);
       }
     } else {
-      console.warn(`Warning: could not find openchamber-desktop entry in ${CARGO_LOCK}`);
+      console.warn(`Warning: could not find devryan-desktop entry in ${CARGO_LOCK}`);
     }
   } catch (e) {
     console.error(`Failed to update ${CARGO_LOCK}:`, e);
@@ -100,9 +94,26 @@ if (fs.existsSync(cargoLockPath)) {
   console.log(`Cargo.lock not found at ${CARGO_LOCK}, skipping lock update`);
 }
 
+// Update the workspace versions recorded in bun.lock so `bun install --frozen-lockfile` passes.
+const BUN_LOCK = 'bun.lock';
+const bunLockPath = path.join(ROOT, BUN_LOCK);
+let bunLock = fs.readFileSync(bunLockPath, 'utf8');
+let bunLockUpdates = 0;
+for (const pkgPath of PACKAGES) {
+  const workspace = path.dirname(pkgPath) === '.' ? '' : path.dirname(pkgPath);
+  const pattern = new RegExp(`("${workspace.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}": \\{\\s*"name": "[^"]+",\\s*"version": ")[^"]+(")`);
+  if (pattern.test(bunLock)) {
+    bunLock = bunLock.replace(pattern, `$1${newVersion}$2`);
+    bunLockUpdates++;
+  }
+}
+fs.writeFileSync(bunLockPath, bunLock);
+console.log(`  ${BUN_LOCK}: ${bunLockUpdates} workspace versions -> ${newVersion}`);
+
 console.log(`\nVersion bumped to ${newVersion}`);
-console.log('\nNext steps:');
-console.log(`  git add -A`);
+console.log('\nNext steps (see docs/RELEASE_PIPELINE.md):');
+console.log('  add a "## [' + newVersion + ']" section to CHANGELOG.md');
+console.log('  git add <the version files above> CHANGELOG.md bun.lock');
 console.log(`  git commit -m "release v${newVersion}"`);
-console.log(`  git tag v${newVersion}`);
-console.log(`  git push origin main --tags`);
+console.log('  git push origin main');
+console.log(`  git tag v${newVersion} && git push origin v${newVersion}`);

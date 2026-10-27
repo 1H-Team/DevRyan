@@ -9,14 +9,10 @@ import {
 } from './managed-process-registry.js';
 
 /**
- * OpenCode's "ChatGPT Pro/Plus (browser)" sign-in binds this fixed loopback port to receive the
- * OAuth callback. Its helper assigns the server handle *before* `listen()` resolves and never
- * clears it when the listen fails, so a single EADDRINUSE poisons that OpenCode process for good:
- * every later browser sign-in short-circuits on the cached handle, hands the browser a redirect
- * URI nobody is listening on, and dies five minutes later on an opaque callback timeout.
- *
- * We cannot fix the vendored binary, but we can refuse to start a flow that is already doomed —
- * turning a silent five-minute hang into an actionable error naming the process in the way.
+ * Historical helper for OpenCode's fixed-port ChatGPT browser OAuth (1455).
+ * Managed ChatGPT subscription login is now DevRyan-owned Sign in with ChatGPT
+ * on an ephemeral loopback port; this module is retained only for tests and any
+ * residual callers that still inspect the legacy poison port.
  */
 export const OPENAI_OAUTH_LOOPBACK_PORT = 1455;
 

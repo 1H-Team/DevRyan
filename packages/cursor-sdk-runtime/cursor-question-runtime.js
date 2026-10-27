@@ -297,6 +297,10 @@ export function createCursorQuestionRuntime(options = {}) {
   };
 
   const handleRequest = (req, res) => {
+    // A call revoked by dispose() still answers; then its keep-alive connection
+    // must end, or close() waits on it (Bun 1.4 does not end it like Node does).
+    const socket = req.socket;
+    res.once('finish', () => { if (disposed) socket.end(); });
     res.setHeader('cache-control', 'no-store');
     let pathname = '';
     try {
@@ -494,7 +498,9 @@ export function createCursorQuestionRuntime(options = {}) {
       origin = '';
       expectedHost = '';
       if (activeServer) {
-        await new Promise((resolve) => activeServer.close(() => resolve()));
+        const closing = new Promise((resolve) => activeServer.close(() => resolve()));
+        activeServer.closeIdleConnections?.();
+        await closing;
       }
     },
   };

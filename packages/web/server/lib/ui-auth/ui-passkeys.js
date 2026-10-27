@@ -1,19 +1,18 @@
 import crypto from 'crypto';
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
+import { resolveDevRyanDataRoot } from '@devryan/shared-runtime/node/data-root.js';
 let webAuthn;
 const loadWebAuthn = () => webAuthn ??= import('@simplewebauthn/server');
 
 const DEFAULT_STORE_VERSION = 1;
 const DEFAULT_CHALLENGE_TTL_MS = 5 * 60 * 1000;
-const DEFAULT_RP_NAME = 'OpenChamber';
+// Display name only; the passkey binding is the rpID, which is unchanged.
+const DEFAULT_RP_NAME = 'DevRyan';
 
-const OPENCHAMBER_DATA_DIR = process.env.OPENCHAMBER_DATA_DIR
-  ? path.resolve(process.env.OPENCHAMBER_DATA_DIR)
-  : path.join(os.homedir(), '.config', 'openchamber');
+const DEVRYAN_DATA_DIR = resolveDevRyanDataRoot();
 
-const PASSKEY_STORE_FILE = path.join(OPENCHAMBER_DATA_DIR, 'ui-passkeys.json');
+const PASSKEY_STORE_FILE = path.join(DEVRYAN_DATA_DIR, 'ui-passkeys.json');
 
 const createUserId = () => crypto.randomBytes(32).toString('base64url');
 
@@ -326,8 +325,8 @@ export const createUiPasskeys = ({
       rpName,
       rpID,
       userID,
-      userName: 'openchamber-ui',
-      userDisplayName: 'OpenChamber UI',
+      userName: 'devryan-ui',
+      userDisplayName: 'DevRyan UI',
       attestationType: 'none',
       excludeCredentials: getPasskeysForRpId(store, rpID).map((passkey) => ({
         id: passkey.id,
@@ -467,7 +466,7 @@ export const createUiPasskeys = ({
     const passkey = store.passkeys.find((item) => item.id === response?.id);
 
     if (!passkey) {
-      const error = new Error('That passkey is not registered for this OpenChamber instance');
+      const error = new Error('That passkey is not registered for this DevRyan instance');
       error.statusCode = 404;
       throw error;
     }

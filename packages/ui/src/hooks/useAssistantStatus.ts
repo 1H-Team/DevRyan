@@ -3,7 +3,8 @@ import type { AssistantMessage, Message, Part, ReasoningPart, TextPart, ToolPart
 
 import type { MessageStreamPhase } from '@/stores/types/sessionTypes';
 import { useSessionUIStore } from '@/sync/session-ui-store';
-import { useDirectorySync, useSessionPermissions, useSessionStatus } from '@/sync/sync-context';
+import { useDirectorySync, useSessionPermissions, useSessionStatus, useSyncDirectory } from '@/sync/sync-context';
+import { isAssistantFinalizing, useSessionPresentationStore } from '@/sync/session-presentation';
 import { readCompactionPart, type CompactionKind } from '@/components/chat/lib/compactionDisplay';
 import { isTerminalAssistantMessage as isTerminalSyncAssistantMessage } from '@/sync/session-working';
 import { isFullySyntheticMessage } from '@/lib/messages/synthetic';
@@ -24,6 +25,7 @@ interface WorkingSummary {
     isWorking: boolean;
     isStreaming: boolean;
     isCooldown: boolean;
+    isFinalizing: boolean;
     lifecyclePhase: MessageStreamPhase | null;
     statusText: string | null;
     isGenericStatus: boolean;
@@ -89,6 +91,7 @@ const DEFAULT_WORKING: WorkingSummary = {
     isWorking: false,
     isStreaming: false,
     isCooldown: false,
+    isFinalizing: false,
     lifecyclePhase: null,
     statusText: null,
     isGenericStatus: true,
@@ -349,6 +352,8 @@ export function useAssistantStatus(sessionId?: string | null, directoryOverride?
         ),
     );
     const effectiveDirectory = directoryOverride ?? storedDirectory;
+    const syncDirectory = useSyncDirectory();
+    const presentationDirectory = effectiveDirectory ?? syncDirectory;
     const warmingDirectory = useAgentRuntimeWarmupStore((state) => state.warmingDirectory);
 
     const rawSessionMessages = useDirectorySync(
@@ -443,6 +448,14 @@ export function useAssistantStatus(sessionId?: string | null, directoryOverride?
     const { phase: activityPhase, isWorking: isPhaseWorking } = useSessionActivity(effectiveSessionId, effectiveDirectory ?? undefined);
 
     const currentSessionStatus = useSessionStatus(effectiveSessionId ?? '', effectiveDirectory ?? undefined);
+    const finalizing = useSessionPresentationStore(React.useCallback(
+        (state) => isAssistantFinalizing(
+            state.directories[presentationDirectory]?.[effectiveSessionId ?? ''],
+            currentSessionStatus?.type,
+            currentPromptId,
+        ),
+        [presentationDirectory, effectiveSessionId, currentSessionStatus?.type, currentPromptId],
+    ));
 
     const sessionRetryAttempt = currentSessionStatus?.type === 'retry'
         ? (currentSessionStatus as { type: 'retry'; attempt?: number }).attempt
@@ -564,6 +577,7 @@ export function useAssistantStatus(sessionId?: string | null, directoryOverride?
         const isStreaming = activityPhase === 'busy';
         const isCooldown = false;
         const isRetry = activityPhase === 'retry';
+        const isFinalizing = isWorking && !isRetry && finalizing;
         const isPreparingProject = isWorking
             && parsedStatus.isGenericStatus
             && Boolean(effectiveDirectory)
@@ -589,11 +603,12 @@ export function useAssistantStatus(sessionId?: string | null, directoryOverride?
             isWorking,
             isStreaming,
             isCooldown,
+            isFinalizing,
             lifecyclePhase: isStreaming ? 'streaming' : isCooldown ? 'cooldown' : null,
             statusText: isWorking
-                ? (isPreparingProject ? 'preparing project' : parsedStatus.statusText)
+                ? (isFinalizing ? 'finalizing' : isPreparingProject ? 'preparing project' : parsedStatus.statusText)
                 : null,
-            isGenericStatus: isWorking ? parsedStatus.isGenericStatus : true,
+            isGenericStatus: isWorking ? !isFinalizing && parsedStatus.isGenericStatus : true,
             isWaitingForPermission: false,
             canAbort: isWorking,
             compaction: isWorking ? compactionKind : null,
@@ -608,7 +623,7 @@ export function useAssistantStatus(sessionId?: string | null, directoryOverride?
             providerID: isWorking ? parsedStatus.providerID : undefined,
             hasStreamedActivity: isWorking ? parsedStatus.hasStreamedActivity : false,
         };
-    }, [activityPhase, isPhaseWorking, parsedStatus, abortState, sessionRetryAttempt, sessionRetryNext, sessionRetryMessage, visibleRetryStatus, effectiveDirectory, warmingDirectory, compactionKind]);
+    }, [activityPhase, isPhaseWorking, parsedStatus, abortState, sessionRetryAttempt, sessionRetryNext, sessionRetryMessage, visibleRetryStatus, effectiveDirectory, warmingDirectory, compactionKind, finalizing]);
 
     const forming = React.useMemo<FormingSummary>(() => {
 
@@ -652,6 +667,7 @@ export function useAssistantStatus(sessionId?: string | null, directoryOverride?
             return {
                 ...baseWorking,
                 statusText: null,
+                isFinalizing: false,
                 isWorking: false,
                 hasWorkingContext: false,
                 hasActiveTools: false,
@@ -665,6 +681,7 @@ export function useAssistantStatus(sessionId?: string | null, directoryOverride?
         return {
             ...baseWorking,
             statusText: 'waiting for permission',
+            isFinalizing: false,
             isWaitingForPermission: true,
             canAbort: false,
             retryInfo: null,

@@ -1,3 +1,4 @@
+import { PLAN_MODE_SYSTEM_INSTRUCTIONS } from "@devryan/orchestration-runtime"
 import { beforeEach, describe, expect, mock, test } from "bun:test"
 
 const bunTestHooks = (await import("bun:test")) as unknown as {
@@ -594,41 +595,77 @@ const { useSessionPlanFileStore } = await import("@/stores/useSessionPlanFileSto
 const { setAuthPrincipal } = await import("@/lib/authSession")
 
 const SESSION_COMPLETION_INDICATOR_SETTLE_MS = 250
-const CURSOR_DRAFT_PREWARM_STORAGE_KEY = "openchamber.cursorDraftPrewarmSessions.v1"
-const PLAN_MESSAGE_STATE_STORAGE_KEY = "openchamber_plan_message_state"
+const CURSOR_DRAFT_PREWARM_STORAGE_KEY = "devryan.cursorDraftPrewarmSessions.v1"
+const PLAN_MESSAGE_STATE_STORAGE_KEY = "devryan_plan_message_state"
 
 bunTestHooks.afterEach(() => {
   restoreOpencodeClientMock()
+  restoreSettleTimers()
 })
 
+// The completion indicator settles on a 250 ms module timer. Capture exactly that timer and
+// fire it on demand instead of sleeping real time; all other timers stay real.
+const settleTimers = new Map<number, () => void>()
+const realSetTimeout = globalThis.setTimeout
+const realClearTimeout = globalThis.clearTimeout
+let nextSettleTimer = 1_000_000
+const installSettleTimers = () => {
+  settleTimers.clear()
+  globalThis.setTimeout = ((handler: TimerHandler, delay?: number, ...args: unknown[]) => {
+    if (typeof handler === "function" && delay === SESSION_COMPLETION_INDICATOR_SETTLE_MS) {
+      const id = nextSettleTimer++
+      settleTimers.set(id, () => handler(...args))
+      return id
+    }
+    return realSetTimeout(handler, delay, ...args)
+  }) as unknown as typeof setTimeout
+  globalThis.clearTimeout = ((id?: number) => {
+    if (typeof id === "number" && settleTimers.delete(id)) return
+    realClearTimeout(id)
+  }) as unknown as typeof clearTimeout
+}
+const restoreSettleTimers = () => {
+  globalThis.setTimeout = realSetTimeout
+  globalThis.clearTimeout = realClearTimeout
+  settleTimers.clear()
+}
+
+beforeEach(installSettleTimers)
+
 const waitForCompletionIndicatorSettlement = async () => {
-  await new Promise((resolve) => setTimeout(resolve, SESSION_COMPLETION_INDICATOR_SETTLE_MS + 20))
+  await new Promise((resolve) => realSetTimeout(resolve, 0))
+  const due = [...settleTimers.values()]
+  settleTimers.clear()
+  for (const fire of due) fire()
 }
 
 const expectPlanModeInstructionContract = (text: string) => {
   expect(text.startsWith("User has requested to enter plan mode.")).toBe(true)
   expect(text).toContain("<!--plan-->")
-  expect(text).toContain("Plan output format")
-  expect(text).toContain("# <Plan title — short noun phrase, no \"Implementation Plan:\" prefix>")
-  expect(text).toContain("## Context")
-  expect(text).toContain("## Critical files")
-  expect(text).toContain("**Files modified**")
-  expect(text).toContain("**Files read (no edit) for behavior reuse**")
-  expect(text).toContain("## Implementation")
-  expect(text).toContain("### Phase 1: <name>")
+  expect(new TextEncoder().encode(text).byteLength).toBeLessThan(256)
+  expect(text).toContain("[devryan-plan-turn:v1] planMode=true")
+  const instructions = PLAN_MODE_SYSTEM_INSTRUCTIONS
+  expect(instructions).toContain("Plan output format")
+  expect(instructions).toContain("# <Plan title — short noun phrase, no \"Implementation Plan:\" prefix>")
+  expect(instructions).toContain("## Context")
+  expect(instructions).toContain("## Critical files")
+  expect(instructions).toContain("**Files modified**")
+  expect(instructions).toContain("**Files read (no edit) for behavior reuse**")
+  expect(instructions).toContain("## Implementation")
+  expect(instructions).toContain("### Phase 1: <name>")
   // Lets the implementer dispatch independent phases together.
-  expect(text).toContain("write one line `Owner: <specialist>; Depends on: <Phase N | none>`")
-  expect(text).toContain("Each phase must contain multiple related tasks")
-  expect(text).toContain("Count only actionable implementation tasks as tasks")
-  expect(text).toContain("## Verification")
-  expect(text).toContain("The plan card provides the implementation action")
-  expect(text).not.toContain("End the message with a single approval question")
-  expect(text).toContain("Do not wrap it in a code fence")
-  expect(text).toContain("same-session planning history")
-  expect(text).toContain("Treat the latest visible user prompt as a revision")
-  expect(text).toContain("Preserve every prior requirement, decision, constraint, and file reference")
-  expect(text).toContain("complete, self-contained replacement plan")
-  expect(text).toContain("Never return only a patch, diff, addendum, or abbreviated delta")
+  expect(instructions).toContain("write one line `Owner: <specialist>; Depends on: <Phase N | none>`")
+  expect(instructions).toContain("Each phase must contain multiple related tasks")
+  expect(instructions).toContain("Count only actionable implementation tasks as tasks")
+  expect(instructions).toContain("## Verification")
+  expect(instructions).toContain("The plan card provides the implementation action")
+  expect(instructions).not.toContain("End the message with a single approval question")
+  expect(instructions).toContain("Do not wrap it in a code fence")
+  expect(instructions).toContain("same-session planning history")
+  expect(instructions).toContain("Treat the latest visible user prompt as a revision")
+  expect(instructions).toContain("Preserve every prior requirement, decision, constraint, and file reference")
+  expect(instructions).toContain("complete, self-contained replacement plan")
+  expect(instructions).toContain("Never return only a patch, diff, addendum, or abbreviated delta")
 }
 
 const createPdfAttachment = () => ({
@@ -649,7 +686,6 @@ const setManagedDeveloper = () => setAuthPrincipal({
   scope: "managed",
   policy: {
     settingsPages: [],
-    bots: true,
     files: true,
     terminal: true,
     browser: true,
@@ -674,6 +710,7 @@ const setManagedDeveloper = () => setAuthPrincipal({
 
 describe("session-ui-store send routing", () => {
   beforeEach(async () => {
+    testOpencodeClient.registerInputSubscriptionGate(async () => () => {});
     const { useSessionCreationStore } = await import('./session-creation')
     useSessionCreationStore.setState({ attempts: {} })
     restoreOpencodeClientMock()
@@ -2790,6 +2827,44 @@ describe("session-ui-store send routing", () => {
     expect(String(additionalParts?.[0]?.text)).toContain("Assistant: Cursor changed the reviews page.")
   })
 
+  test("does not re-attach Cursor context once OpenCode has already replied after it", async () => {
+    mockSyncMessages = [
+      { id: "msg_1", role: "user", providerID: "cursor-acp", modelID: "composer-2.5", time: { created: 1 } },
+      { id: "msg_1_assistant", role: "assistant", providerID: "cursor-acp", modelID: "composer-2.5", time: { created: 2 } },
+      { id: "msg_2", role: "user", providerID: "anthropic", modelID: "claude-sonnet-4-5", time: { created: 3 } },
+      { id: "msg_2_assistant", role: "assistant", providerID: "anthropic", modelID: "claude-sonnet-4-5", time: { created: 4 } },
+    ]
+    mockPartsByMessage = new Map([
+      ["msg_1", [{ id: "prt_1", messageID: "msg_1", type: "text", text: "What did Cursor do?" }]],
+      ["msg_1_assistant", [{ id: "prt_2", messageID: "msg_1_assistant", type: "text", text: "Cursor changed the reviews page." }]],
+      ["msg_2", [{ id: "prt_3", messageID: "msg_2", type: "text", text: "Continue with OpenCode" }]],
+      ["msg_2_assistant", [{ id: "prt_4", messageID: "msg_2_assistant", type: "text", text: "OpenCode continued." }]],
+    ])
+
+    await useSessionUIStore.getState().sendMessageToSession("session-a", "And the tests?", "anthropic", "claude-sonnet-4-5", "builder")
+
+    const additionalParts = sendMessageCalls[0]?.additionalParts as Array<Record<string, unknown>> | undefined
+    expect((additionalParts ?? []).some((part) => String(part.text).includes("Conversation context from"))).toBe(false)
+  })
+
+  test("keeps the Cursor handoff when the first OpenCode send has no reply yet", async () => {
+    mockSyncMessages = [
+      { id: "msg_1", role: "user", providerID: "cursor-acp", modelID: "composer-2.5", time: { created: 1 } },
+      { id: "msg_1_assistant", role: "assistant", providerID: "cursor-acp", modelID: "composer-2.5", time: { created: 2 } },
+      { id: "msg_2", role: "user", providerID: "anthropic", modelID: "claude-sonnet-4-5", time: { created: 3 } },
+    ]
+    mockPartsByMessage = new Map([
+      ["msg_1", [{ id: "prt_1", messageID: "msg_1", type: "text", text: "What did Cursor do?" }]],
+      ["msg_1_assistant", [{ id: "prt_2", messageID: "msg_1_assistant", type: "text", text: "Cursor changed the reviews page." }]],
+      ["msg_2", [{ id: "prt_3", messageID: "msg_2", type: "text", text: "Continue with OpenCode" }]],
+    ])
+
+    await useSessionUIStore.getState().sendMessageToSession("session-a", "Retry", "anthropic", "claude-sonnet-4-5", "builder")
+
+    const additionalParts = sendMessageCalls[0]?.additionalParts as Array<Record<string, unknown>> | undefined
+    expect(String(additionalParts?.[0]?.text)).toContain("Assistant: Cursor changed the reviews page.")
+  })
+
   test("adds synthetic handoff context when switching from OpenCode to Cursor SDK", async () => {
     mockSyncMessages = [{
       id: "msg_open_assistant",
@@ -4662,7 +4737,7 @@ describe("session-ui-store send routing", () => {
     expect(state.draftOrder).not.toContain("draft-send")
   })
 
-  test("draft sends preserve the selected agent and scalar model without inheriting stale thinking", async () => {
+  test("draft sends preserve the selected agent and scalar model with its explicitly selected effort", async () => {
     mockCreatedSession = { id: "session-new", directory: "/repo" }
     mockConfigState = {
       currentAgentName: "builder",
@@ -4704,7 +4779,7 @@ describe("session-ui-store send routing", () => {
     expect(sendMessageCalls[0]?.agent).toBe("builder")
     expect(sendMessageCalls[0]?.providerID).toBe("provider-selected")
     expect(sendMessageCalls[0]?.modelID).toBe("model-selected")
-    expect(sendMessageCalls[0]?.variant).toBeNull()
+    expect(sendMessageCalls[0]?.variant).toBe("fast")
     expect(savedSessionAgents.some((entry) =>
       entry.sessionId === "session-new"
       && entry.agent === "builder"
@@ -4726,7 +4801,7 @@ describe("session-ui-store send routing", () => {
       && entry.agent === "builder"
       && entry.providerID === "provider-selected"
       && entry.modelID === "model-selected"
-      && entry.variant === null
+      && entry.variant === "fast"
     )).toBe(true)
   })
 
@@ -4782,7 +4857,7 @@ describe("session-ui-store send routing", () => {
     expect(sendMessageCalls[0]?.agent).toBe("builder")
     expect(sendMessageCalls[0]?.providerID).toBe("provider-selected")
     expect(sendMessageCalls[0]?.modelID).toBe("model-selected")
-    expect(sendMessageCalls[0]?.variant).toBeNull()
+    expect(sendMessageCalls[0]?.variant).toBe("fast")
     expect(savedSessionModels.some((entry) =>
       entry.sessionId === "session-new"
       && entry.providerID === "provider-selected"

@@ -6,7 +6,7 @@ export const createBootstrapRuntime = (dependencies) => {
     registerAuthAndAccessRoutes,
     registerTtsRoutes,
     registerNotificationRoutes,
-    registerOpenChamberRoutes,
+    registerDevRyanRoutes,
     express,
   } = dependencies;
 
@@ -19,6 +19,7 @@ export const createBootstrapRuntime = (dependencies) => {
       runtimeInstanceId,
       gracefulShutdown,
       getHealthSnapshot,
+      getNativeRuntimeOwner,
       verboseRequestLogs,
       uiPassword,
       tunnelAuthController,
@@ -45,7 +46,7 @@ export const createBootstrapRuntime = (dependencies) => {
       path,
       server,
       __dirname,
-      openchamberDataDir,
+      devryanDataDir,
       modelsDevApiUrl,
       modelsMetadataCacheTtl,
       fetchFreeZenModels,
@@ -78,6 +79,7 @@ export const createBootstrapRuntime = (dependencies) => {
       runtimeInstanceId,
       gracefulShutdown,
       getHealthSnapshot,
+      getNativeRuntimeOwner,
       uiAuthController,
     });
     if (uiAuthController.enabled) {
@@ -90,7 +92,6 @@ export const createBootstrapRuntime = (dependencies) => {
       readSettingsFromDiskMigrated,
       normalizeTunnelSessionTtlMs,
       getRuntimeReady,
-      getBotOwner: () => multiUserRuntime?.botOwner || null,
     });
 
     registerTtsRoutes(app, { resolveZenModel, sayTTSCapability });
@@ -122,14 +123,14 @@ export const createBootstrapRuntime = (dependencies) => {
       setAutoAcceptSession,
     });
 
-    registerOpenChamberRoutes(app, {
+    registerDevRyanRoutes(app, {
       fs,
       os,
       path,
       process,
       server,
       __dirname,
-      openchamberDataDir,
+      devryanDataDir,
       modelsDevApiUrl,
       modelsMetadataCacheTtl,
       readSettingsFromDiskMigrated,

@@ -10,16 +10,16 @@ import {
   stripWrappedJsonQuotes,
 } from "@/lib/messages/transientStreamError"
 import { isClaudeThirdPartyUsageClassificationError } from "@/lib/messages/claudeThirdPartyUsage"
+import { decodeAssistantMessageError } from "@/lib/decoders/assistantMessageError"
+import type { AbortSource } from "@/sync/abort-source"
+import { describeExecutionRecoveryFailure } from "@/lib/executionFailure"
 import type {
   ManagedAbortRecoveryPresentation,
   ManagedTransportRecoveryPresentation,
 } from "../lib/turns/types"
 
-export type AssistantErrorInfo = {
-  data?: { message?: unknown }
-  message?: unknown
-  name?: unknown
-}
+/** An assistant message's `info.error`, decoded by `decodeAssistantMessageError`. */
+export type AssistantErrorInfo = unknown
 
 export type AssistantErrorClassification = {
   text: string
@@ -58,6 +58,21 @@ const getTransportFailureCopy = (
   }
 }
 
+// Aborts DevRyan made on its own, not at the user's request. Operator stops
+// (Stop, double Escape, status row) keep the existing stop presentation.
+const getAutomaticAbortCopy = (source: AbortSource | undefined): string | undefined => {
+  switch (source) {
+    case "provider_retry":
+      return "Stopped after repeated provider connection failures."
+    case "stall_watchdog":
+      return "Stopped because the model provider stopped responding."
+    case "abort_guard":
+      return "Stopped a provider retry that started after this turn was stopped."
+    default:
+      return undefined
+  }
+}
+
 type SteeredAbortOptions = {
   steeredAbortMessageId?: string | null
   messageId?: string | null
@@ -89,18 +104,37 @@ export function classifyAssistantError(
     managedTransportRecovery?: ManagedTransportRecoveryPresentation
   } = {},
 ): AssistantErrorClassification | undefined {
-  if (!errorInfo) {
-    return undefined
-  }
-
-  const dataMessage = typeof errorInfo.data?.message === "string" ? errorInfo.data.message : undefined
-  const errorMessage = typeof errorInfo.message === "string" ? errorInfo.message : undefined
-  const errorName = typeof errorInfo.name === "string" ? errorInfo.name : undefined
-  const rawDetail = dataMessage || errorMessage || errorName
+  const decoded = decodeAssistantMessageError(errorInfo)
+  const errorName = decoded?.name
+  const rawDetail = decoded?.detail
   if (!rawDetail) {
     return undefined
   }
   const detail = stripWrappedJsonQuotes(rawDetail)
+  if (options.managedAbortRecovery?.state === 'user_stopped') return {
+    text: "Stopped by you. Use Resume as Task to continue with a selected model, or continue this chat independently.",
+    variant: "info",
+    abortKind: "manual",
+  }
+
+  if (/\bnative_queued_input_blocked\b/.test(detail)) return {
+    text: "The message could not be admitted while this session or a subtask was still active. Retry the queued message after the tasks settle.",
+    variant: "error",
+    retryable: true,
+  }
+  if (/\b(?:native_task_disposition_conflict|native_execution_settlement_uncertain)\b/.test(detail)) return {
+    text: "Task execution has not settled. Review the task status before continuing.",
+    variant: "error",
+  }
+
+  const recoveryFailure = describeExecutionRecoveryFailure(detail)
+  if (recoveryFailure) return { text: recoveryFailure.message, variant: "error" }
+
+  // Checked before the manual-abort match: every UI abort marks the message as
+  // manually stopped, but these were not the user's.
+  const automaticAbortCopy = getAutomaticAbortCopy(decoded?.abortSource)
+  if (automaticAbortCopy) return { text: automaticAbortCopy, variant: "info" }
+
 
   if (errorName === "SessionRetry") {
     // Retrying cannot restore an expired sign-in; say so instead of "retrying automatically".

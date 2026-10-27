@@ -21,6 +21,7 @@ type ResolveToolExpandedDetailsInput = {
     error?: unknown;
     status?: unknown;
     isFinalized?: boolean;
+    exitCode?: unknown;
 };
 
 const FAILURE_STATUSES = new Set([
@@ -65,6 +66,10 @@ const readFailureReason = (error: unknown): string | undefined => {
 
 const hasText = (value: unknown): boolean => typeof value === 'string' && value.trim().length > 0;
 
+export const isFailedCommandExitCode = (exitCode: unknown): exitCode is number => (
+    typeof exitCode === 'number' && Number.isInteger(exitCode) && exitCode !== 0
+);
+
 export const resolveToolExpandedDetails = ({
     hasStructuredDetails,
     inputText,
@@ -72,11 +77,14 @@ export const resolveToolExpandedDetails = ({
     error,
     status,
     isFinalized = false,
+    exitCode,
 }: ResolveToolExpandedDetailsInput): ToolExpandedDetails => {
     const hasInput = hasText(inputText);
     const hasOutput = hasText(output);
     const rawFailure = readFailureReason(error);
-    const failureReason = rawFailure ? describeExecutionFailure(rawFailure) ?? rawFailure : undefined;
+    const commandFailure = isFinalized && isFailedCommandExitCode(exitCode)
+        ? `Command exited with code ${exitCode}` : undefined;
+    const failureReason = rawFailure ? describeExecutionFailure(rawFailure) ?? rawFailure : commandFailure;
     const normalizedStatus = normalizeStatus(status);
     const failureStatus = normalizedStatus && FAILURE_STATUSES.has(normalizedStatus)
         ? normalizedStatus

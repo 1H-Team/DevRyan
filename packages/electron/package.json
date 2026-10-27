@@ -1,30 +1,26 @@
 {
-  "name": "@openchamber/electron",
-  "version": "1.2.22",
+  "name": "@devryan/electron",
+  "version": "2.0.0",
   "private": true,
   "description": "Electron desktop runtime for DevRyan",
   "author": "DevRyan",
   "type": "module",
-  "main": "./dist-bundle/main.mjs",
+  "main": "./dist-bundle/entry.mjs",
   "dependencies": {
-    "@openchamber/bot-egress": "workspace:*",
-    "@openchamber/bot-db": "workspace:*",
-    "@openchamber/web": "workspace:*",
-    "electron-context-menu": "^4.1.2",
+    "@devryan/web": "workspace:*",
+    "electron-context-menu": "^5.1.0",
     "electron-log": "^5.4.4",
-    "electron-updater": "^6.8.9",
     "ws": "^8.21.3"
   },
   "devDependencies": {
-    "@electron/rebuild": "^3.7.2",
-    "electron": "41.2.1",
-    "electron-builder": "^26.15.3",
-    "vitest": "^4.1.11"
+    "@electron/rebuild": "^4.2.1",
+    "electron": "44.9.3",
+    "electron-builder": "^26.15.3"
   },
   "desktopPrerequisites": [
     "Electron runtime dependencies installed via bun install",
     "Bun available for sidecar compilation",
-    "macOS build tools installed for notarized packaging"
+    "macOS build tools installed for ad-hoc packaging"
   ],
   "scripts": {
     "postinstall": "node ./scripts/sign-dev-electron.mjs",
@@ -39,70 +35,52 @@
     "verify:runtime-service-package": "node ./scripts/verify-runtime-service-package.mjs",
     "package": "bun run prepare && bun run package:prepared",
     "test": "node ../../scripts/test-electron.mjs",
-    "smoke:native-bot-create": "bun run build:web-assets && node ./scripts/bot-catalog-native-pointer-smoke.mjs",
-    "smoke:native-bot-create:packaged": "node ./scripts/bot-catalog-native-pointer-smoke.mjs --electron-mode packaged",
-    "finalize:latest-yml": "node ./scripts/finalize-latest-yml.mjs",
-    "type-check": "node --check ./origin-policy.mjs && node --check ./browser-webview-policy.mjs && node --check ./browser-devtools-controller.mjs && node --check ./browser-surface-manager.mjs && node --check ./browser-cdp-bridge.mjs && node --check ./bot-secret-store.mjs && node --check ./bot-recovery-dialog.mjs && node --check ./bot-runtime-manifest.mjs && node --check ./bot-database-manager.mjs && node --check ./bot-catalog-backup.mjs && node --check ./bot-runtime-manager.mjs && node --check ./runtime-service.mjs && node --check ./runtime-service-native.mjs && node --check ./runtime-service-registration.mjs && node --check ./runtime-service-startup.mjs && node --check ./desktop-host-broker.mjs && node --check ./scripts/build-web-assets.mjs && node --check ./scripts/build-speech-helper.mjs && node --check ./scripts/build-runtime-service-control.mjs && node --check ./scripts/verify-runtime-service-package.mjs && node --check ./scripts/bundle-main.mjs && node --check ./scripts/electron-cdp-smoke.mjs && node --check ./scripts/bot-catalog-native-pointer-smoke.mjs && node --check ../../scripts/capture-production-bots-visuals.mjs && node --check ../../scripts/package-production-bots-visual-shell.mjs && node --check ../../tests/visual-production-bots/electron-shell.cjs && node --check ../../scripts/build-bot-runtime-images.mjs && node --check ../../scripts/verify-bot-runtime-images.mjs && node --check ./main.mjs && node --check ./preload.mjs",
+    "type-check": "node --check ./origin-policy.mjs && node --check ./browser-webview-policy.mjs && node --check ./browser-devtools-controller.mjs && node --check ./browser-surface-manager.mjs && node --check ./browser-cdp-bridge.mjs && node --check ./runtime-service.mjs && node --check ./runtime-service-native.mjs && node --check ./runtime-service-registration.mjs && node --check ./runtime-service-startup.mjs && node --check ./scripts/build-web-assets.mjs && node --check ./scripts/build-speech-helper.mjs && node --check ./scripts/build-runtime-service-control.mjs && node --check ./scripts/verify-runtime-service-package.mjs && node --check ./scripts/bundle-main.mjs && node --check ./scripts/electron-cdp-smoke.mjs && node --check ./main.mjs && node --check ./preload.mjs",
     "lint": "node -e \"process.exit(0)\"",
     "prepare:native": "bun run build:native-helpers && bun run bundle:main && bun run rebuild:native",
     "prepare": "node ./scripts/prepare.mjs",
     "package:prepared": "node ./scripts/package-prepared.mjs"
   },
   "build": {
-    "appId": "dev.openchamber.desktop",
+    "appId": "dev.devryan.desktop",
     "productName": "DevRyan",
     "files": [
+      "dist-bundle/entry.mjs",
+      "dist-bundle/early-startup.mjs",
+      "dist-bundle/startup-splash.mjs",
       "dist-bundle/main.mjs",
+      "dist-bundle/desktop-update-install.mjs",
+      "dist-bundle/desktop-update-install-windows.mjs",
       "preload.mjs",
       "origin-policy.mjs",
       "browser-webview-policy.mjs",
       "browser-cdp-bridge.mjs",
-      "!node_modules/@openchamber/web/server/default-config/agents/*.test.*",
-      "!node_modules/@openchamber/web/server/default-config/agents/*.spec.*",
-      "!node_modules/@openchamber/web/server/default-config/plugins/*.test.*",
-      "!node_modules/@openchamber/web/server/default-config/plugins/*.spec.*",
-      "!node_modules/@openchamber/web/server/default-config/user-profile/**/test-*.md"
+      "!node_modules/@devryan/web/server/default-config/agents/*.test.*",
+      "!node_modules/@devryan/web/server/default-config/agents/*.spec.*",
+      "!node_modules/@devryan/web/server/default-config/plugins/*.test.*",
+      "!node_modules/@devryan/web/server/default-config/plugins/*.spec.*",
+      "!node_modules/@devryan/web/server/default-config/user-profile/**/test-*.md",
+      "!node_modules/@devryan/web/runtime/darwin-*{,/**}",
+      "!node_modules/@devryan/web/runtime/win32-*{,/**}",
+      "!node_modules/@devryan/web/runtime/linux-*{,/**}",
+      "!node_modules/@devryan/web/runtime/reviewed-inputs{,/**}",
+      "!node_modules/@devryan/web/dist{,/**}",
+      "!**/*.map",
+      "!**/*.{test,spec}.*",
+      "!**/__tests__{,/**}",
+      "!**/*.{ts,tsx,mts,cts}",
+      "!**/*.{c,cc,cpp,h,hpp}",
+      "!**/build/Release/obj{,/**}",
+      "!**/prebuilds/linux-*{,/**}",
+      "!**/node_modules/{,@*/}?(*-){[!${os}]in32,d[!${os}]rwin}-*{,/**}",
+      "!**/{prebuilds,bin}/{[!${os}]in32,d[!${os}]rwin}-*{,/**}",
+      "!**/node_modules/{,@*/}?(*-)@(darwin|win32)-!(${arch}*){,/**}",
+      "!**/{prebuilds,bin}/@(darwin|win32)-!(${arch}*){,/**}"
     ],
     "extraResources": [
       {
         "from": "resources/web-dist",
         "to": "web-dist"
-      },
-      {
-        "from": "resources/native",
-        "to": "native"
-      },
-      {
-        "from": "../../docker/bots/compose.yml",
-        "to": "bot-runtime/compose.yml"
-      },
-      {
-        "from": "resources/bot-runtime/images.release.json",
-        "to": "bot-runtime/images.release.json"
-      },
-      {
-        "from": "../../supabase/migrations",
-        "to": "bot-db/supabase-migrations",
-        "filter": [
-          "*.sql"
-        ]
-      },
-      {
-        "from": "../bot-db/sql",
-        "to": "bot-db/sql",
-        "filter": [
-          "**/*.sql"
-        ]
-      },
-      {
-        "from": "../web/runtime",
-        "to": "revert-runtime"
-      }
-    ],
-    "extraFiles": [
-      {
-        "from": "resources/runtime-service/dev.openchamber.desktop.runtime-service.plist",
-        "to": "Library/LaunchAgents/dev.openchamber.desktop.runtime-service.plist"
       }
     ],
     "directories": {
@@ -112,6 +90,34 @@
     "artifactName": "${productName}-${version}-${arch}.${ext}",
     "afterPack": "./scripts/adhoc-sign-macos-app.mjs",
     "npmRebuild": false,
+    "win": {
+      "appId": "dev.devryan.desktop",
+      "target": [
+        "nsis"
+      ],
+      "artifactName": "DevRyan-${version}-win-${arch}.exe",
+      "signExecutable": false,
+      "extraResources": [
+        {
+          "from": "../web/runtime",
+          "to": "revert-runtime",
+          "filter": [
+            "win32-${arch}/native-bundle.json",
+            "win32-${arch}/DevRyan-*",
+            "!**/DevRyan-opencode*",
+            "!**/companion.json"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "guid": "f8140f18-5574-54bc-8df6-bf218619bfba",
+      "oneClick": true,
+      "perMachine": false,
+      "allowElevation": false,
+      "runAfterFinish": false,
+      "artifactName": "DevRyan-${version}-win-${arch}.exe"
+    },
     "mac": {
       "category": "public.app-category.developer-tools",
       "icon": "resources/icons/icon.icns",
@@ -127,14 +133,39 @@
       "gatekeeperAssess": false,
       "entitlements": "resources/entitlements.mac.plist",
       "entitlementsInherit": "resources/entitlements.mac.plist",
-      "notarize": true,
+      "notarize": false,
       "target": [
-        "dmg",
-        "zip"
+        "dmg"
+      ],
+      "extraResources": [
+        {
+          "from": "resources/native",
+          "to": "native"
+        },
+        {
+          "from": "../web/runtime",
+          "to": "revert-runtime",
+          "filter": [
+            "darwin-arm64/native-bundle.json",
+            "darwin-arm64/DevRyan-*",
+            "!**/DevRyan-opencode*",
+            "!**/companion.json"
+          ]
+        }
+      ],
+      "extraFiles": [
+        {
+          "from": "resources/runtime-service/dev.devryan.desktop.runtime-service.plist",
+          "to": "Library/LaunchAgents/dev.devryan.desktop.runtime-service.plist"
+        },
+        {
+          "from": "resources/runtime-service/dev.openchamber.desktop.runtime-service.plist",
+          "to": "Library/LaunchAgents/dev.openchamber.desktop.runtime-service.plist"
+        }
       ]
     },
     "dmg": {
-      "sign": true,
+      "sign": false,
       "title": "${productName} ${version}",
       "backgroundColor": "#FFFCF0",
       "iconSize": 100,
@@ -157,15 +188,9 @@
         }
       ]
     },
-    "publish": {
-      "provider": "github",
-      "owner": "1H-Team",
-      "repo": "DevRyan"
-    },
     "asarUnpack": [
-      "node_modules/@openchamber/harness-runtime/**",
-      "node_modules/@openchamber/web/server/lib/opencode/session-provider-worker.mjs",
-      "node_modules/@openchamber/web/server/lib/opencode/claude-credential-projection.js"
+      "node_modules/@devryan/harness-runtime/**",
+      "node_modules/@devryan/web/**"
     ]
   }
 }

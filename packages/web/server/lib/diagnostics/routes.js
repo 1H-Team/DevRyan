@@ -1,9 +1,11 @@
+import { monitorEventLoopDelay } from 'node:perf_hooks';
+
 import yazl from 'yazl';
 
 import {
   createDiagnosticsExport,
   writeDiagnosticsZip,
-} from '@openchamber/harness-runtime';
+} from '@devryan/harness-runtime';
 
 const CLEAR_RANGE_MS = Object.freeze({
   '24h': 24 * 60 * 60 * 1000,
@@ -40,9 +42,35 @@ const normalizeScope = (body) => {
   return { scope: 'runtime' };
 };
 
+// Event-loop delay of the host process (in Electron, the window's main
+// thread) since the previous status read. Numbers only: it shows whether
+// harness work starves UI IPC and SSE.
+export const createEventLoopDelaySampler = ({ now = Date.now, monitor = monitorEventLoopDelay } = {}) => {
+  const histogram = monitor({ resolution: 10 });
+  histogram.enable();
+  let since = now();
+  const ms = (value) => (Number.isFinite(value) && value > 0 ? Math.round(value / 1e4) / 100 : 0);
+  return {
+    read() {
+      const at = now();
+      const sample = {
+        windowMs: Math.max(0, at - since),
+        p50Ms: ms(histogram.percentile(50)),
+        p99Ms: ms(histogram.percentile(99)),
+        maxMs: ms(histogram.max),
+      };
+      histogram.reset();
+      since = at;
+      return sample;
+    },
+    stop() { histogram.disable(); },
+  };
+};
+
 export const registerDiagnosticsRoutes = (app, options = {}) => {
   const runtime = options.runtime;
   if (!runtime) throw new TypeError('diagnostics runtime is required');
+  const eventLoop = options.eventLoopSampler === undefined ? createEventLoopDelaySampler() : options.eventLoopSampler;
 
   app.get('/api/diagnostics/status', async (_req, res) => {
     try {
@@ -50,6 +78,8 @@ export const registerDiagnosticsRoutes = (app, options = {}) => {
       res.json({
         ...status,
         commandDeadlineRecovery: options.getCommandDeadlineRecoveryStatus?.() ?? null,
+        eventLoop: eventLoop?.read() ?? null,
+        ledgerWorker: await Promise.resolve(options.getLedgerWorkerStatus?.()).catch(() => null) ?? null,
       });
     } catch (error) {
       res.status(500).json({ error: error?.message || 'Failed to read diagnostic status' });

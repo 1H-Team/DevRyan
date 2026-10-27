@@ -6,8 +6,8 @@ vi.mock('node:child_process', () => ({
   execFile: vi.fn((_command, _args, _options, callback) => callback(null, '/usr/local/bin', '')),
 }));
 
-const previousUpdateApiUrl = process.env.OPENCHAMBER_UPDATE_API_URL;
-delete process.env.OPENCHAMBER_UPDATE_API_URL;
+const previousUpdateApiUrl = process.env.DEVRYAN_UPDATE_API_URL;
+delete process.env.DEVRYAN_UPDATE_API_URL;
 const { checkForUpdates } = await import('./package-manager.js');
 
 function createFetchMock() {
@@ -52,9 +52,9 @@ describe('checkForUpdates', () => {
 
   afterAll(() => {
     if (previousUpdateApiUrl === undefined) {
-      delete process.env.OPENCHAMBER_UPDATE_API_URL;
+      delete process.env.DEVRYAN_UPDATE_API_URL;
     } else {
-      process.env.OPENCHAMBER_UPDATE_API_URL = previousUpdateApiUrl;
+      process.env.DEVRYAN_UPDATE_API_URL = previousUpdateApiUrl;
     }
   });
 

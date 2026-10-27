@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
 import request from '../../test-supertest.js';
@@ -11,8 +12,7 @@ import { createOwnerAuthenticatedTunnelFetch } from '../../../bin/tunnel-owner-a
 const roots = []; const connections = [];
 afterEach(async () => { for (const connection of connections.splice(0)) await connection.dispose(); for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true }); });
 const fixture = async () => {
-  const base = path.resolve('../../.cache/owner-bootstrap-tests'); await fs.mkdir(base, { recursive: true });
-  const root = await fs.mkdtemp(path.join(base, 'fixture-')); roots.push(root);
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-owner-bootstrap-')); roots.push(root);
   const connection = await createSupabaseConnection({ config: { dataDirectory: root, configured: false, enabled: false } }); connections.push(connection);
   const app = express(); app.set('trust proxy', true);
   registerLocalOwnerBootstrap(app, { dataDirectory: root, connection });
@@ -50,7 +50,7 @@ it('rejects expired proofs and fails closed if either half of durable authorizat
 
 it('keeps CLI tunnel operations usable with filesystem proof without enrolling an owner implicitly', async () => {
   const { root, connection, app } = await fixture();
-  app.post('/api/openchamber/tunnel/start', (req, res) => {
+  app.post('/api/devryan/tunnel/start', (req, res) => {
     if (!connection.authenticateLocalOwner(req)) return res.status(403).json({ code: 'local_owner_required' });
     if (req.headers['x-devryan-csrf'] !== '1') return res.sendStatus(403);
     return res.json({ ok: true });
@@ -59,7 +59,7 @@ it('keeps CLI tunnel operations usable with filesystem proof without enrolling a
   await new Promise((resolve) => server.once('listening', resolve));
   try {
     const fetchTunnel = createOwnerAuthenticatedTunnelFetch({ getDataDirectory: () => root });
-    const url = `http://127.0.0.1:${server.address().port}/api/openchamber/tunnel/start`;
+    const url = `http://127.0.0.1:${server.address().port}/api/devryan/tunnel/start`;
     await expect(fetchTunnel(url, { method: 'POST' })).rejects.toMatchObject({ code: 'local_owner_required' });
     expect(connection.ownerPrincipal()).toBeNull();
     await connection.bootstrapLocalOwner();

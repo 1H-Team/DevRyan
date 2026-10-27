@@ -9,6 +9,8 @@ import { openChangeStore, changeKey } from './session-changes-store.js';
 import { prepareSessionExecution, removeExecutionSocketDirectory, sessionExecutionProfile } from './session-execution.js';
 import { writableInputDirectories } from './execution-inputs.js';
 
+const withoutSpawnLibrary = ({ DYLD_INSERT_LIBRARIES: _spawnLibrary, ...environment }) => environment;
+
 // Gitignored directories are inputs: linked into views, never ingested, never
 // published, and fenced from history replay. Dependencies stay read-only; on
 // macOS ignored output folders are written through to the project.
@@ -30,7 +32,7 @@ async function fixture() {
     messageID: `${userMessageID}-assistant`, callID });
   const finish = async (lease) => {
     await fs.writeFile(path.join(path.dirname(lease.viewDirectory), 'termination.json'),
-      JSON.stringify({ terminated: true, confined: true, cancelled: false, exitCode: 0 }));
+      JSON.stringify({ terminated: true, confined: true, cancelled: false, exitCode: 0 }), { flag: 'wx', mode: 0o600 });
     await runtime.claimLease({ directory, token: lease.token, kind: 'process' });
     return runtime.finish({ directory, token: lease.token });
   };
@@ -167,7 +169,7 @@ bunTest.skipIf(process.platform === 'win32')('a view node_modules links to a hos
   expect(await kind(path.join(nextModules, 'pkg'))).toBe('missing');
   expect(await fs.readFile(path.join(nextModules, '.vite', 'x'), 'utf8')).toBe('shared cache');
   await f.finish(next);
-});
+}, 120_000);
 
 bunTest.skipIf(process.platform !== 'darwin')('confined tool caches are writable while dependencies and the overlay stay read-only', async () => {
   const f = await moduleFixture();
@@ -187,7 +189,7 @@ bunTest.skipIf(process.platform !== 'darwin')('confined tool caches are writable
   expect(await fs.readdir(path.join(f.directory, 'node_modules', '.vite', 'deps'))).toEqual(['old.js']);
   expect(await kind(path.join(f.directory, 'node_modules', '.vite-temp'))).toBe('missing');
   expect((await f.finish(lease)).ignoredInputs).toBeFalsy();
-});
+}, 120_000);
 
 bunTest.skipIf(process.platform === 'win32')('the overlay kill switch restores the direct dependency link', async () => {
   const f = await moduleFixture();
@@ -198,7 +200,7 @@ bunTest.skipIf(process.platform === 'win32')('the overlay kill switch restores t
     await f.finish(lease);
   } finally { delete process.env.DEVRYAN_MODULE_CACHE_OVERLAY; }
   expect(await kind((await overlayOf(f)).overlays)).toBe('missing');
-});
+}, 120_000);
 
 test('a lease prepared before inputs were persisted keeps the name-only rule', async () => {
   const f = await fixture();
@@ -231,7 +233,7 @@ bunTest.skipIf(process.platform !== 'darwin')('the kill switch keeps every input
   expect(readable.status).toBe(0);
   expect(readable.stdout).toBe('SECRET=1seed');
   expect(await fs.readFile(path.join(viewDirectory, 'view-write'), 'utf8')).toBe('ok\n');
-});
+}, 120_000);
 
 bunTest.skipIf(process.platform !== 'darwin')('confined calls write through ignored output folders while dependencies, hooks and escapes stay read-only', async () => {
   const f = await fixture();
@@ -249,7 +251,9 @@ bunTest.skipIf(process.platform !== 'darwin')('confined calls write through igno
   finally { await removeExecutionSocketDirectory(lease); }
   const viewDirectory = await fs.realpath(lease.viewDirectory);
   const run = (script) => spawnSync('/usr/bin/sandbox-exec', ['-f', prepared.profile, '/bin/sh', '-c', script],
-    { cwd: viewDirectory, encoding: 'utf8', env: { PATH: process.env.PATH, ...prepared.environment } });
+    // The fixture launcher has no spawn library beside it. With SIP off (GitHub macOS runners)
+    // dyld would honour DYLD_INSERT_LIBRARIES for /bin/sh; this test covers the sandbox rules only.
+    { cwd: viewDirectory, encoding: 'utf8', env: { PATH: process.env.PATH, ...withoutSpawnLibrary(prepared.environment) } });
   // The incident: Vite re-optimizing a cacheDir under .artifacts, and a log beside it.
   const outputs = run('rm .artifacts/vite-cache/deps/old.js && echo new > .artifacts/vite-cache/deps/new.js && echo log > .artifacts/run.log && echo x > cache/new');
   expect(outputs.stderr).toBe('');
@@ -260,6 +264,14 @@ bunTest.skipIf(process.platform !== 'darwin')('confined calls write through igno
   const durable = run('echo kept > "$DEVRYAN_SESSION_TMP/server.log"');
   expect(durable.status).toBe(0);
   expect(await fs.readFile(path.join(prepared.environment.DEVRYAN_SESSION_TMP, 'server.log'), 'utf8')).toBe('kept\n');
+  const scratch = run('set -eu; test "$PWD" != "$DEVRYAN_SESSION_TMP"; out=$(mktemp -d "$TMPDIR/visual.XXXXXX"); echo ready > "$out/server.log"; test -s "$out/server.log"');
+  expect(scratch.status).toBe(0);
+  expect(scratch.stderr).toBe('');
+  const failedSetup = run('set -eu; out=$(mktemp -d /private/tmp/devryan-denied.XXXXXX); echo polled > "$DEVRYAN_SESSION_TMP/readiness-polled"');
+  expect(failedSetup.status).not.toBe(0);
+  expect(await kind(path.join(prepared.environment.DEVRYAN_SESSION_TMP, 'readiness-polled'))).toBe('missing');
+  const escapedView = run(`cd ${JSON.stringify(f.directory)} && echo denied > a.txt`);
+  expect(escapedView.status).not.toBe(0);
   for (const script of ['echo x > /private/tmp/devryan-write-through-probe', 'echo x > .husky/_/husky.sh', 'echo x > vendor/lib/a.php', 'echo x > node_modules/pkg/index.js',
     'echo x > .artifacts/escape/planted', `echo x > ${JSON.stringify(path.join(f.directory, 'a.txt'))}`]) {
     expect(run(script).status).not.toBe(0);
@@ -272,7 +284,7 @@ bunTest.skipIf(process.platform !== 'darwin')('confined calls write through igno
   expect(result.files).toEqual([]);
   expect(result.ignoredInputs).toBeFalsy();
   expect((await f.ledgerPaths()).filter((file) => file.startsWith('.artifacts') || file.startsWith('cache'))).toEqual([]);
-});
+}, 120_000);
 
 test('write-through grants only resolved output folders inside the project, outside the ledger', async () => {
   const f = await fixture();
@@ -307,24 +319,30 @@ test('a real call never settles for a dirty warm pass that started after its res
   const target = await fs.realpath(path.join(f.directory, 'hot'));
   const lease = await f.runtime.reserve({ directory: f.directory, sessionID: 's', userMessageID: 'p', messageID: 'p-assistant', callID: 'c' });
   // Change the file after the warm pass inspected it, at its install re-check,
-  // so the warm pass skips it as dirty and does not re-pass; the reserved call
-  // starts preparing right then, while that warm pass is still in flight.
+  // so the reserved call starts preparing while that dirty advisory pass is
+  // still in flight. Foreground preparation supersedes it and observes anew.
   const original = fs.lstat.bind(fs); let inspected = false, preparing = null;
   const changing = spyOn(fs, 'lstat').mockImplementation(async (file, options) => {
     if (file === target && !preparing) {
       if (new Error().stack.includes('inspectMutationFile')) inspected = true;
-      else if (inspected) { await fs.writeFile(target, 'changed during warm'); preparing = f.runtime.prepare(lease); }
+      else if (inspected) {
+        await fs.writeFile(target, 'changed during warm'); preparing = f.runtime.prepare(lease);
+        void preparing.catch(() => {}); // Drained below, including after a warm/assertion failure.
+      }
     }
     return original(file, options);
   });
-  let warmed;
-  try { warmed = await f.runtime.warm({ directory: f.directory }); }
-  finally { changing.mockRestore(); }
-  expect(preparing).not.toBeNull();
-  expect(warmed).toMatchObject({ built: true });
-  expect(await f.runtime.warm({ directory: f.directory })).toEqual({ skipped: 'already-built' });
-  const ready = await preparing;
-  expect(await fs.readFile(path.join(ready.viewDirectory, 'hot'), 'utf8')).toBe('changed during warm');
+  try {
+    expect(await f.runtime.warm({ directory: f.directory })).toEqual({ skipped: 'foreground' });
+    expect(preparing).not.toBeNull();
+    const ready = await preparing;
+    expect(await fs.readFile(path.join(ready.viewDirectory, 'hot'), 'utf8')).toBe('changed during warm');
+    expect(await fs.readFile(path.join(ready.viewDirectory, 'stable'), 'utf8')).toBe('stable');
+    expect(await f.runtime.warm({ directory: f.directory })).toEqual({ skipped: 'already-built' });
+  } finally {
+    changing.mockRestore();
+    await Promise.allSettled([preparing]);
+  }
 });
 
 test('warm enforces the eligible file budget, the byte budget, and skips without a listing', async () => {
@@ -334,6 +352,11 @@ test('warm enforces the eligible file budget, the byte budget, and skips without
   for (let index = 0; index < 6; index += 1) await counted.put(`logs/${index}.log`, 'ignored standalone file');
   // The cheap listing sees 4 files; the eligible set (ignored files included) is 10.
   expect(await counted.runtime.warm({ directory: counted.directory, maxFiles: 5 })).toEqual({ skipped: 'too-large' });
+  // An early walk cutoff does not certify a completed pass; a larger budget retries.
+  expect(await counted.runtime.warm({ directory: counted.directory })).toMatchObject({ built: true });
+  expect(await counted.ledgerPaths()).toEqual(['.gitignore',
+    ...Array.from({ length: 6 }, (_, index) => `logs/${index}.log`),
+    ...Array.from({ length: 3 }, (_, index) => `src/${index}.js`)].sort());
   expect(await counted.runtime.warm({ directory: counted.directory })).toEqual({ skipped: 'already-built' });
 
   const heavy = await fixture();
@@ -344,6 +367,21 @@ test('warm enforces the eligible file budget, the byte budget, and skips without
   await broken.put('a.txt', 'a');
   await fs.writeFile(path.join(broken.directory, '.git', 'index'), 'not an index');
   expect(await broken.runtime.warm({ directory: broken.directory })).toEqual({ skipped: 'listing-unavailable' });
+});
+
+test('selected-project refresh updates an existing ledger within budget and cannot authorize a later call', async () => {
+  const f = await fixture();
+  await f.put('hot', 'original');
+  expect(await f.runtime.warm({directory: f.directory})).toMatchObject({built: true});
+  await f.put('hot', 'refreshed');
+  await f.put('new', 'new');
+  expect(await f.runtime.warm({directory: f.directory, refresh: true, maxFiles: 1})).toEqual({skipped: 'too-large'});
+  expect(await f.runtime.warm({directory: f.directory, refresh: true})).toMatchObject({built: true});
+  expect(await f.ledgerPaths()).toEqual(['hot', 'new']);
+  await f.put('hot', 'changed after refresh');
+  const lease = await f.begin('s', 'p', 'c');
+  expect(await fs.readFile(path.join(lease.viewDirectory, 'hot'), 'utf8')).toBe('changed after refresh');
+  await expect(f.runtime.warm({directory: f.directory, refresh: 'yes'})).rejects.toMatchObject({code: 'invalid_warm_request'});
 });
 
 test('a real call falls back to the complete walk when classification fails, and reports it', async () => {

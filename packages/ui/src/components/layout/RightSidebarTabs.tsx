@@ -2,7 +2,7 @@ import React from 'react';
 import { RiFolder3Line, RiGitBranchLine } from '@remixicon/react';
 
 import { SortableTabsStrip } from '@/components/ui/sortable-tabs-strip';
-import { LazyBotOperationsRail, LazyGitView, LazyViewBoundary } from '@/components/views/lazyViews';
+import { LazyGitView, LazyViewBoundary } from '@/components/views/lazyViews';
 import { useGitStore } from '@/stores/useGitStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
@@ -10,10 +10,6 @@ import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useI18n } from '@/lib/i18n';
 import { SidebarFilesTree } from './SidebarFilesTree';
 import { hasAuthCapability, useAuthPrincipal } from '@/lib/authSession';
-import { botViewerId } from '@/lib/botViewer';
-import { botChannelSelectors, useBotChannelStore } from '@/stores/useBotChannelStore';
-import { useBotsStore } from '@/stores/useBotsStore';
-import { useMainSidebarAudienceStore } from '@/stores/useMainSidebarAudienceStore';
 
 type RightTab = 'git' | 'files';
 
@@ -46,24 +42,12 @@ export const RightSidebarTabs: React.FC = () => {
   const { t } = useI18n();
   const principal = useAuthPrincipal();
   const canUseFiles = hasAuthCapability(principal, 'files');
-  const canUseBots = hasAuthCapability(principal, 'bots');
   const canUseGit = hasAuthCapability(principal, 'manageGit');
   const rightSidebarTab = useUIStore((state) => state.rightSidebarTab);
   const setRightSidebarTab = useUIStore((state) => state.setRightSidebarTab);
   const isRightSidebarOpen = useUIStore((state) => state.isRightSidebarOpen);
   const directory = useEffectiveDirectory();
-  const requestedBotMode = useMainSidebarAudienceStore((state) => state.audience === 'bots');
-  const botMode = canUseBots && requestedBotMode;
-  const selectedBotId = useBotsStore((state) => state.selectedBotId);
-  const botViewer = useBotsStore((state) => botViewerId(
-    selectedBotId ? state.botsById[selectedBotId] : null,
-    state.principalId,
-  ));
-  const botChannelId = useBotChannelStore(
-    botChannelSelectors.ownerChannelId(selectedBotId ?? '', botViewer),
-  );
-
-  useRightSidebarGitSync(directory, isRightSidebarOpen && canUseGit && !botMode);
+  useRightSidebarGitSync(directory, isRightSidebarOpen && canUseGit);
 
   React.useEffect(() => {
     if (rightSidebarTab === 'files' && !canUseFiles && canUseGit) {
@@ -89,23 +73,6 @@ export const RightSidebarTabs: React.FC = () => {
   // effects that should exist only while the panel is actually visible.
   if (!isRightSidebarOpen) {
     return null;
-  }
-
-  if (botMode && selectedBotId) {
-    return <LazyViewBoundary><LazyBotOperationsRail botId={selectedBotId} channelId={botChannelId} /></LazyViewBoundary>;
-  }
-
-  if (botMode) {
-    return (
-      <div className="flex h-full min-h-0 flex-col bg-sidebar" data-bot-operations-rail>
-        <div className="flex h-10 items-center border-b border-border/50 px-3 typography-ui-label font-medium text-foreground">
-          {t('bots.operations.title')}
-        </div>
-        <div className="flex flex-1 items-center justify-center px-5 text-center typography-meta text-muted-foreground">
-          {t('bots.sidebar.selectPrompt.description')}
-        </div>
-      </div>
-    );
   }
 
   return (

@@ -1,12 +1,14 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { createSessionMutationRuntime } from '@openchamber/harness-runtime';
-import { changeKey } from '@openchamber/harness-runtime/lib/session-changes-store.js';
-import { withCrossProcessFileLock } from '@openchamber/harness-runtime/lib/atomic-file.js';
-import { test, expect } from 'vitest';
+import { createSessionMutationRuntime } from '@devryan/harness-runtime';
+import { changeKey } from '@devryan/harness-runtime/lib/session-changes-store.js';
+import { withCrossProcessFileLock } from '@devryan/harness-runtime/lib/atomic-file.js';
+import { test, expect, vi, afterEach } from 'vitest';
 import { createExecutionPreparations, recoverExecutionLeases } from './execution-preparations.js';
-import { executionSignal, withExecutionAdmission } from '@openchamber/harness-runtime/lib/execution-admission.js';
+import { executionSignal, withExecutionAdmission } from '@devryan/harness-runtime/lib/execution-admission.js';
+
+afterEach(() => { vi.useRealTimers(); });
 
 test('authenticated polling remains available while reconciliation owns the ledger', async () => {
   let complete, launches = 0;
@@ -74,8 +76,9 @@ test('a lost authenticated poller cancels preparation without launching a writer
   const runtime = { prepare: () => { signal = executionSignal(); return new Promise((resolve) => { complete = resolve; }); },
     cleanupLease: async () => true, cancelLease: async () => { cancelled++; } };
   const jobs = createExecutionPreparations({ runtime, owner: { signal: new AbortController().signal, assert() {} }, ownerTimeoutMs: 10 });
+  vi.useFakeTimers();
   jobs.start(lease);
-  await new Promise((resolve) => setTimeout(resolve, 30));
+  await vi.advanceTimersByTimeAsync(30);
   expect(signal.aborted).toBe(true);
   complete(lease);
   await jobs.drain();
@@ -88,9 +91,10 @@ test('lost ready poller cleans after settlement and cannot race an accepted clai
     const lease = { token: 'ready', directory: '/fixture', scope: {} };
     const runtime = { prepare: async () => lease, cancelLease: async () => { cancelled++; }, cleanupLease: async () => { cleaned++; return true; } };
     const jobs = createExecutionPreparations({ runtime, owner: { signal: new AbortController().signal, assert() {} }, ownerTimeoutMs: 15 });
+    vi.useFakeTimers();
     jobs.start(lease); await jobs.poll(lease);
-    if (claimed) await jobs.claim(lease, async () => { await new Promise(resolve => setTimeout(resolve, 40)); });
-    else await new Promise(resolve => setTimeout(resolve, 45));
+    if (claimed) await jobs.claim(lease, async () => { await vi.advanceTimersByTimeAsync(40); });
+    else await vi.advanceTimersByTimeAsync(45);
     await jobs.drain();
     expect(cancelled).toBe(claimed ? 0 : 1); expect(cleaned).toBe(claimed ? 0 : 1);
   }
@@ -108,6 +112,22 @@ test('an uncertain lease cannot block unrelated recovery or cleanup', async () =
   expect(cancelled).toEqual(['safe']); expect(cleaned).toEqual(['safe']); expect(failures).toHaveLength(2);
 });
 
+test('an owner-less control lease from an earlier host is settled; an owner-less process lease is still reported', async () => {
+  const cancelled = [], cleaned = [], failures = [], probed = [];
+  const control = { token: 'control', directory: '/fixture', state: 'ready', preparation: 'none', executionKind: 'control' };
+  const unclaimed = { token: 'unclaimed', directory: '/fixture', state: 'preparing', preparation: 'none' };
+  const spawned = { token: 'process', directory: '/fixture', state: 'ready', executionKind: 'process' };
+  const runtime = { activeLeases: async () => [control, unclaimed, spawned],
+    pendingCleanup: async () => [{ ...control, state: 'cancelled' }, { ...spawned, state: 'cancelled' }],
+    cancelLease: async (lease) => { cancelled.push(lease.token); },
+    cleanupLease: async (lease) => { cleaned.push(lease.token); return true; } };
+  await recoverExecutionLeases({ runtime, directory: '/fixture', ownerLost: async (lease) => { probed.push(lease.token); return false; },
+    onFailure: (error) => failures.push(error.code) });
+  expect(cancelled).toEqual(['control', 'unclaimed']); expect(cleaned).toEqual(['control']);
+  expect(probed).toEqual([]);
+  expect(failures).toEqual(['mutation_termination_unconfirmed', 'mutation_termination_unconfirmed']);
+});
+
 
 test('slow identity and lease lookup consume the poll budget without cancelling preparation', async () => {
   let complete, launches = 0, cancelled = 0;
@@ -117,13 +137,16 @@ test('slow identity and lease lookup consume the poll budget without cancelling 
     cleanupLease: async () => true, cancelLease: async () => { cancelled++; } };
   const jobs = createExecutionPreparations({ runtime, owner });
   const diagnostics = [];
+  vi.useFakeTimers();
   jobs.start(lease);
   try {
     for (let i = 0; i < 2; i++) {
       const result = await withExecutionAdmission({}, async () => {
         // Scaled-down request budget leaves less than the response headroom.
-        await new Promise(resolve => setTimeout(resolve, 120));
-        return jobs.poll(lease);
+        await vi.advanceTimersByTimeAsync(120);
+        const polling = jobs.poll(lease);
+        await vi.advanceTimersByTimeAsync(1); // the remaining budget leaves a zero-length poll wait
+        return polling;
       }, { timeoutMs: 1100, onDiagnostic: event => diagnostics.push(event) });
       expect(result.state).toBe('preparing');
     }
@@ -216,7 +239,7 @@ test('a transient cancellation failure stays retryable instead of pinning the jo
 // A stalled host (its event loop blocked for 30, 61 or 110 s, as on
 // 2026-09-29) cannot answer a poll. That time must not make the poller "lost".
 import { afterEach, describe, vi } from 'vitest';
-import { resetHostStallClock } from '@openchamber/harness-runtime/lib/host-stall-clock.js';
+import { resetHostStallClock } from '@devryan/harness-runtime/lib/host-stall-clock.js';
 
 describe('a lost poller is measured in time the host could run', () => {
   afterEach(() => { vi.useRealTimers(); resetHostStallClock(); delete process.env.DEVRYAN_STALL_AWARE_DEADLINES; });

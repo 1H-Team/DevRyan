@@ -69,7 +69,7 @@ export const isConfigured = ({
   );
 };
 
-const buildOAuthUsage = (payload) => {
+export const buildOAuthUsage = (payload) => {
   const windows = {};
   for (const [key, value] of Object.entries(payload ?? {})) {
     if (key !== 'five_hour' && key !== 'seven_day' && !key.startsWith('seven_day_')) continue;

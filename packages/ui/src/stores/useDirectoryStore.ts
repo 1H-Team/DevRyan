@@ -128,8 +128,8 @@ const getHomeDirectory = () => {
     if (cachedHomeDirectory) return cachedHomeDirectory;
 
     const desktopHome =
-      (typeof window.__OPENCHAMBER_HOME__ === 'string' && window.__OPENCHAMBER_HOME__.length > 0
-        ? window.__OPENCHAMBER_HOME__
+      (typeof window.__DEVRYAN_HOME__ === 'string' && window.__DEVRYAN_HOME__.length > 0
+        ? window.__DEVRYAN_HOME__
         : null);
 
     if (desktopHome && desktopHome.length > 0) {
@@ -380,12 +380,32 @@ export const useDirectoryStore = create<DirectoryStore>()(
         }
       },
 
+      // Where the app goes once the last project is removed. The removed
+      // project stops being the last directory, and the home is not stored in
+      // its place: the server turns a stored last directory into a project
+      // when there is none and warms it on every start, which put the home (or
+      // the project just removed) back in the sidebar and started OpenCode there.
       goHome: async () => {
         const homeDir =
           cachedHomeDirectory ||
           get().homeDirectory ||
           (await initializeHomeDirectory());
-        get().setDirectory(homeDir);
+        opencodeClient.setDirectory(homeDir);
+        invalidateFileSearchCache();
+        safeStorage.removeItem('lastDirectory');
+        persistDirectorySettings({ lastDirectory: '' });
+        set((state) => {
+          const alreadyCurrent = state.directoryHistory[state.historyIndex] === homeDir;
+          const newHistory = alreadyCurrent ? state.directoryHistory : [...state.directoryHistory.slice(0, state.historyIndex + 1), homeDir];
+          return {
+            currentDirectory: homeDir,
+            directoryHistory: newHistory,
+            historyIndex: alreadyCurrent ? state.historyIndex : newHistory.length - 1,
+            hasPersistedDirectory: false,
+            isHomeReady: true,
+            isSwitchingDirectory: false,
+          };
+        });
       },
 
       refreshHomeDirectory: async () => {
@@ -448,9 +468,12 @@ export const useDirectoryStore = create<DirectoryStore>()(
           const nextDirectory = shouldReplaceCurrent ? resolvedHome : (resolvedCurrent as string);
           opencodeClient.setDirectory(nextDirectory);
           invalidateFileSearchCache();
-          safeStorage.setItem('lastDirectory', nextDirectory);
-          persistDirectorySettings({ lastDirectory: nextDirectory });
-
+          // Falling back to the home is not the user opening it, so it is not
+          // stored as the last directory (see goHome).
+          if (!shouldReplaceCurrent) {
+            safeStorage.setItem('lastDirectory', nextDirectory);
+            persistDirectorySettings({ lastDirectory: nextDirectory });
+          }
         }
 
         persistDirectorySettings({ homeDirectory: resolvedHome });

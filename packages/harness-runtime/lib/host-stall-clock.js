@@ -74,5 +74,4 @@ export const hostStallClock = () => {
 export const resetHostStallClock = () => { shared?.stop(); shared = null; };
 /** Observes every stall of this process; returns the function that stops observing. */
 export const onHostStall = (listener) => { hostStallClock(); listeners.add(listener); return () => listeners.delete(listener); };
-export const hostActiveMsSince = (since) => hostStallClock().activeMsSince(since);
 export const hostDeadlineExpired = (since, limitMs, capMs) => hostStallClock().expired(since, limitMs, capMs);

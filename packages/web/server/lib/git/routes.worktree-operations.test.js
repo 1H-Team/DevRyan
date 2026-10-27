@@ -17,7 +17,7 @@ const receipt = {
   updatedAt: 1,
 };
 
-const makeApp = (overrides = {}, principal = null) => {
+const makeApp = (overrides = {}, principal = null, routeOptions = {}) => {
   const libraries = {
     createWorktree: vi.fn(async () => ({
       head: 'abc',
@@ -69,11 +69,35 @@ const makeApp = (overrides = {}, principal = null) => {
   });
   registerGitRoutes(app, {
     loadGitLibraries: async () => libraries,
+    ...routeOptions,
   });
   return { app, libraries, requestWitness };
 };
 
 describe('durable worktree operation routes', () => {
+  it('admits a created worktree as a native location before answering', async () => {
+    const prepareNativeDirectory = vi.fn(async () => {});
+    const { app } = makeApp({}, null, { prepareNativeDirectory });
+    const created = await request(app).post('/api/git/worktrees?directory=/repo').send({ mode: 'new' }).expect(200);
+    expect(prepareNativeDirectory).toHaveBeenCalledWith(receipt.directory);
+    expect(created.body.nativeLocation).toBeUndefined();
+  });
+
+  it('keeps a created worktree when native preparation must wait for idle sessions', async () => {
+    const prepareNativeDirectory = vi.fn(async () => {
+      throw Object.assign(new Error('Native project preparation requires idle sessions'), { code: 'config_runtime_busy', statusCode: 409 });
+    });
+    const { app } = makeApp({}, null, { prepareNativeDirectory });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const created = await request(app).post('/api/git/worktrees?directory=/repo').send({ mode: 'new' }).expect(200);
+      expect(created.body).toMatchObject({ path: receipt.directory, nativeLocation: { status: 'pending', code: 'config_runtime_busy' } });
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+
   it('returns operation receipts from create, lookup, active-list, retry, and legacy status routes', async () => {
     const { app, libraries, requestWitness } = makeApp();
     const recordUnexpectedStatus = (response) => {

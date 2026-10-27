@@ -2,7 +2,7 @@ import React from 'react';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { Message, Session, SessionStatus } from '@opencode-ai/sdk/v2/client';
 
@@ -41,6 +41,8 @@ let sources: SessionChangesFooterSources = {
   isImplementationSettled: true,
 };
 let rootMessages: Record<string, Message[]> = { ses_root: [userMessage('msg_1', 'ses_root')] };
+const initialSources = sources;
+const initialRootMessages = rootMessages;
 
 mock.module('./sessionChangesFooterSources', () => ({
   useSessionChangesFooterSources: () => sources,
@@ -59,6 +61,13 @@ mock.module('@/stores/useSessionTreeChangesStore', () => ({
     storeModule.useSessionTreeChangesStore,
   ),
 }));
+
+// Every test starts from the same sources, messages and store, whatever ran before it.
+beforeEach(() => {
+  sources = initialSources;
+  rootMessages = initialRootMessages;
+  storeModule.resetSessionTreeChangesForTests();
+});
 
 const {
   useSessionChangesController,
@@ -93,6 +102,7 @@ const seedEntry = (rootSessionID: string, overrides: Partial<SeededEntry> = {}) 
       revision: 'rev_1',
       coverage: 'complete',
       restoreAvailable: true,
+      restoreProof: { version: 1, digest: 'a'.repeat(64) },
       fetchedAt: 10,
       loading: false,
       error: null,
@@ -114,7 +124,7 @@ const renderConnected = (isMobile = false) => render(React.createElement(Session
 const DISABLED_UNDO = /<button[^>]*disabled=""[^>]*data-session-changes-action="undo"/;
 const hasDisabledUndo = (markup: string): boolean => DISABLED_UNDO.test(markup);
 const countRows = (markup: string): number => (markup.match(/title="Open [^"]+"/g) ?? []).length;
-/** A stand-alone "Review" control (as opposed to the "Review changes" subtitle) must never render. */
+/** A stand-alone "Review" control (as opposed to the "View changes" subtitle) must never render. */
 const REVIEW_BUTTON = /<button[^>]*>(?:<[^>]+>)*\s*Review\s*(?:<[^>]+>)*<\/button>/;
 
 const busy: SessionStatus = { type: 'busy' } as SessionStatus;
@@ -197,8 +207,8 @@ describe('resolveVisibleChangedFiles', () => {
     expect(resolveVisibleChangedFiles([], false, 3)).toEqual({ visibleFiles: [], hiddenCount: 0 });
   });
 
-  test('the card defaults to three visible rows', () => {
-    expect(SESSION_CHANGES_INITIAL_VISIBLE_FILES).toBe(3);
+  test('the card defaults to five visible rows', () => {
+    expect(SESSION_CHANGES_INITIAL_VISIBLE_FILES).toBe(5);
   });
 });
 
@@ -217,13 +227,52 @@ describe('SessionChangesCardView', () => {
     onOpenFile: () => {},
   };
 
-  test('renders the card header with the edit count, the Review changes subtitle and an enabled Undo', () => {
+  test('current uncertainty stays in review details while the compact card keeps its files visible', () => {
+    const markup = render(React.createElement(SessionChangesCardView, { ...viewProps,
+      current: { state: 'uncertain', verifiedFileCount: 0, restoredFileCount: 0, uncertainFileCount: 2, foreignModifiedCount: 1,
+        checkedFileCount: 2, observedAt: 1000, reasons: ['current_content_diverged'] },
+      coverageBySession: [{ sessionID: 'child', reasons: ['execution_receipt_unavailable'] }],
+      undoDisabled: true, disabledReason: dict['chat.sessionChanges.current.uncertain'],
+    }));
+    expect(countRows(markup)).toBe(2);
+    expect(hasDisabledUndo(markup)).toBe(true);
+    expect(markup).not.toContain('data-session-changes-current=');
+    expect(markup).not.toContain('data-session-changes-foreign=');
+    expect(markup).not.toContain('author is unknown');
+    expect(markup).not.toContain('Capture gaps');
+    expect(markup).not.toContain('data-session-changes-undo-reason');
+  });
+
+  test('compact rows omit verification text but retain a focusable disabled Undo explanation', () => {
+    const markup = render(React.createElement(SessionChangesCardView, { ...viewProps,
+      files: [{ path: 'a.ts', relativePath: 'a.ts', status: 'modified', insertions: 1, deletions: 0,
+        verification: { state: 'uncertain', reason: 'current_content_diverged' } }],
+      undoDisabled: true, disabledReason: 'Segmented edits require individual review.' }));
+    expect(countRows(markup)).toBe(1);
+    expect(markup).not.toContain('data-file-verification=');
+    expect(markup).not.toContain('Content differs');
+    expect(markup).toContain('tabindex="0" title="Segmented edits require individual review."');
+    expect(hasDisabledUndo(markup)).toBe(true);
+  });
+
+  test('restored content keeps captured rows available without expanding a history section', () => {
+    const markup = render(React.createElement(SessionChangesCardView, { ...viewProps,
+      current: { state: 'restored', verifiedFileCount: 0, restoredFileCount: 2, uncertainFileCount: 0, foreignModifiedCount: 0,
+        checkedFileCount: 2, observedAt: 1000, reasons: [] },
+    }));
+    expect(markup).toContain('Edited 2 files');
+    expect(countRows(markup)).toBe(2);
+    expect(markup).not.toContain('data-session-changes-action="show-more"');
+    expect(markup).not.toContain('Captured History');
+  });
+
+  test('renders the card header with the edit count, the View changes subtitle and an enabled Undo', () => {
     const markup = render(React.createElement(SessionChangesCardView, viewProps));
     expect(markup).toContain('data-session-changes-card="changes"');
     expect(markup).toContain('<h3 class="truncate typography-ui-label font-semibold text-foreground">Edited 2 files</h3>');
     expect(markup).toContain('data-session-changes-action="review"');
     expect(markup).toContain(dict['chat.sessionChanges.card.reviewChanges']);
-    expect(dict['chat.sessionChanges.card.reviewChanges']).toBe('Review changes');
+    expect(dict['chat.sessionChanges.card.reviewChanges']).toBe('View changes');
     expect(markup).toContain('data-session-changes-action="undo"');
     expect(hasDisabledUndo(markup)).toBe(false);
     expect(markup).toContain(dict['chat.sessionChanges.footer.actions.undo']);
@@ -264,14 +313,14 @@ describe('SessionChangesCardView', () => {
     expect(markup).not.toContain('data-session-changes-action="show-more"');
   });
 
-  test('shows three rows and a "Show N more files" strip for six files', () => {
+  test('shows five rows and a "Show more" strip for six files', () => {
     const files = ['a', 'b', 'c', 'd', 'e', 'f'].map((name) => gitFile(`${name}.ts`, 1, 0));
     const markup = render(React.createElement(SessionChangesCardView, { ...viewProps, files }));
     expect(markup).toContain('Edited 6 files');
-    expect(countRows(markup)).toBe(3);
+    expect(countRows(markup)).toBe(5);
     expect(markup).toContain('data-session-changes-action="show-more"');
     expect(markup).toContain('aria-expanded="false"');
-    expect(markup).toContain('Show 3 more files');
+    expect(markup).toContain('Show more');
     expect(markup).not.toContain('Show less');
   });
 
@@ -284,7 +333,7 @@ describe('SessionChangesCardView', () => {
     expect(expanded).not.toContain('data-session-changes-action="show-more"');
     expect(resolveVisibleChangedFiles(files, true, 3).visibleFiles).toHaveLength(6);
     expect(dict['chat.sessionChanges.card.showLess']).toBe('Show less');
-    expect(dict['chat.sessionChanges.card.showMore']).toBe('Show {count} more files');
+    expect(dict['chat.sessionChanges.card.showMore']).toBe('Show more');
   });
 
   test('disables Undo while another session works in the project', () => {
@@ -302,11 +351,17 @@ describe('SessionChangesCardView', () => {
     const partial = { loading: false, error: null, coverage: 'partial' as const, reasons: ['unverified_tool_changes'] };
     expect(resolveSessionChangesStatusKey(partial)).toBe('chat.sessionChanges.executionUnavailable');
     const markup = render(React.createElement(SessionChangesCardView, { ...viewProps, statusMessage: dict['chat.sessionChanges.executionUnavailable'] }));
-    expect(markup).toContain(dict['chat.sessionChanges.executionUnavailable']);
+    expect(markup).not.toContain(dict['chat.sessionChanges.executionUnavailable']);
+    expect(markup).toContain('data-session-changes-action="review"');
     expect(resolveSessionChangesStatusKey({ ...partial, reconciliationState: 'pending' })).toBe('chat.sessionChanges.loading');
     expect(resolveSessionChangesStatusKey({ ...partial, coverage: 'complete', reasons: [], reconciliationState: 'settled' })).toBeNull();
     expect(resolveSessionChangesStatusKey({ ...partial, reasons: ['receipt_conflict'] })).toBe('chat.sessionChanges.receiptConflict');
     expect(resolveSessionChangesStatusKey({ ...partial, reasons: ['storage_unavailable'] })).toBe('chat.sessionChanges.storageUnavailable');
+    // A still-running background command is not a missing record, unless another call's record is missing.
+    expect(resolveSessionChangesStatusKey({ ...partial, reasons: ['background_running'] })).toBe('chat.sessionChanges.backgroundRunning');
+    expect(resolveSessionChangesStatusKey({ ...partial, reasons: ['background_running', 'missing_capture'] })).toBe('chat.sessionChanges.executionUnavailable');
+    expect(canRetrySessionChanges({ ...partial, reasons: ['background_running'] })).toBe(false);
+    expect(dict['chat.sessionChanges.backgroundRunning']).toMatch(/still running in the background/);
     expect(canRetrySessionChanges({ ...partial, reasons: ['capture_interrupted'] })).toBe(true);
     expect(canRetrySessionChanges({ ...partial, reasons: ['receipt_conflict'] })).toBe(false);
     const failedRetry = { ...partial, reconciliationState: 'pending' as const, error: 'offline' };
@@ -389,7 +444,7 @@ describe('SessionChangesCard (connected)', () => {
     expect(markup).not.toContain('src/a.ts');
   });
 
-  test('folds a long tree list behind Show N more files', () => {
+  test('folds a long tree list behind Show more', () => {
     seedEntry('ses_root', {
       files: ['a', 'b', 'c', 'd', 'e', 'f'].map((name) => ({
         path: `src/${name}.ts`, status: 'modified' as const, additions: 1, deletions: 0, sessions: ['ses_root'],
@@ -397,8 +452,8 @@ describe('SessionChangesCard (connected)', () => {
     });
     const markup = renderConnected();
     expect(markup).toContain('Edited 6 files');
-    expect(countRows(markup)).toBe(3);
-    expect(markup).toContain('Show 3 more files');
+    expect(countRows(markup)).toBe(5);
+    expect(markup).toContain('Show more');
   });
 
   test('hides outside git repos', () => {
@@ -421,9 +476,10 @@ describe('SessionChangesCard (connected)', () => {
       expect(renderConnected()).toBe('');
       seedEntry('ses_root', overrides);
       const markup = renderConnected();
-      expect(markup).toContain(dict[label]);
+      expect(markup).not.toContain(`>${dict[label]}<`);
+      expect(markup).toContain('data-session-changes-action="review"');
       expect(hasDisabledUndo(markup)).toBe(true);
-      expect(markup.includes('data-session-changes-action="retry"')).toBe('error' in overrides);
+      expect(markup).not.toContain('data-session-changes-action="retry"');
     }
   });
 
@@ -450,7 +506,7 @@ describe('SessionChangesCard (connected)', () => {
   const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 20));
   const result = (overrides: Partial<SessionTreeChanges> = {}): SessionTreeChanges => ({
     rootSessionID: 'ses_root', directory: '/repo', revision: 'rev_2',
-    coverage: 'complete', restoreAvailable: true, files: [], sessionCount: 2,
+    coverage: 'complete', restoreAvailable: true, restoreProof: { version: 1, digest: 'a'.repeat(64) }, files: [], sessionCount: 2,
     hasUnattributedMutations: false, firstUserMessageID: 'msg_1', ...overrides,
   });
 
@@ -487,7 +543,7 @@ describe('SessionChangesCard (connected)', () => {
     });
     controller().retry?.();
     expect(calls).toEqual(['/repo:ses_child']);
-    expect(renderConnected()).toContain(dict['chat.sessionChanges.loading']);
+    expect(controller().statusMessage).toBe(dict['chat.sessionChanges.loading']);
     expect(controller().retry).toBeUndefined();
     finish(result({ rootSessionID: 'ses_child', files: [{ path: 'recovered.ts', status: 'added', additions: 1, deletions: 0, sessions: ['ses_root'] }] }));
     await settle();
@@ -497,10 +553,10 @@ describe('SessionChangesCard (connected)', () => {
 
   test('Undo and Redo refresh the revision and keep the empty undone card actionable', async () => {
     const original = opencodeClient.sessionChangesAction;
-    const actions: string[] = [];
+    const actions: Array<{ action: string; proof: { version: 1; digest: string } | undefined }> = [];
     let undone = false;
-    opencodeClient.sessionChangesAction = async (_root, _directory, _revision, action) => {
-      actions.push(action);
+    opencodeClient.sessionChangesAction = async (_root, _directory, _revision, action, proof) => {
+      actions.push({ action, proof });
       undone = action === 'undo';
     };
     storeModule.setSessionTreeChangesFetcher(async () => result({ undone, files: undone ? [] : [
@@ -514,7 +570,7 @@ describe('SessionChangesCard (connected)', () => {
       controller().redo();
       await settle();
       expect(renderConnected()).toContain('restored.ts');
-      expect(actions).toEqual(['undo', 'redo']);
+      expect(actions).toEqual(['undo', 'redo'].map(action => ({ action, proof: { version: 1, digest: 'a'.repeat(64) } })));
     } finally { opencodeClient.sessionChangesAction = original; }
   });
 
@@ -569,10 +625,23 @@ describe('mount points', () => {
   });
 
   test('the card reports structural changes to the auto-follow controller', () => {
-    // Static rendering never runs layout effects, so pin the contract at the source.
-    const source = readSource('./SessionChangesCard.tsx');
-    expect(source).toContain("onContentChange?.('structural');");
-    expect(source).toContain('React.useLayoutEffect(() => {\n        onContentChange?.(\'structural\');');
+    // Static rendering never runs layout effects, so capture them and run them as React would on commit.
+    const effects: Array<() => unknown> = [];
+    const spy = spyOn(React, 'useLayoutEffect').mockImplementation(((effect: () => unknown) => {
+      effects.push(effect);
+    }) as unknown as typeof React.useLayoutEffect);
+    const reasons: Array<string | undefined> = [];
+    seedEntry('ses_root');
+    try {
+      render(React.createElement(SessionChangesCard, {
+        isMobile: false,
+        onContentChange: (reason?: string) => { reasons.push(reason); },
+      }));
+      for (const effect of effects) effect();
+    } finally {
+      spy.mockRestore();
+    }
+    expect(reasons).toContain('structural');
   });
 });
 
@@ -582,5 +651,5 @@ test('large summaries retain the total count while the card renders a bounded pa
   expect(markup).toContain('513');
   expect(markup).toContain('Changed file pages');
   expect(markup).toContain('Next');
-  expect(countRows(markup) <= 3).toBe(true);
+  expect(countRows(markup) <= 5).toBe(true);
 });

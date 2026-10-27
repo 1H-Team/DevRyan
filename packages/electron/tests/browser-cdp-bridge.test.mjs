@@ -296,11 +296,16 @@ describe('bridge policy helpers', () => {
       .toEqual({ kind: 'move', x: 10, y: 20, button: null, clickCount: 0 });
     expect(describeAgentInput('Input.dispatchMouseEvent', { type: 'mousePressed', x: 1, y: 2, button: 'left', clickCount: 1 }))
       .toEqual({ kind: 'down', x: 1, y: 2, button: 'left', clickCount: 1 });
-    expect(describeAgentInput('Input.dispatchMouseEvent', { type: 'mouseReleased' }).kind).toBe('up');
+    expect(describeAgentInput('Input.dispatchMouseEvent', { type: 'mouseReleased', x: 1, y: 2 }).kind).toBe('up');
     expect(describeAgentInput('Input.insertText', { text: 'hello' })).toEqual({ kind: 'text', length: 5 });
     expect(describeAgentInput('Input.dispatchKeyEvent', { type: 'keyDown', key: 'a' }).kind).toBe('key');
     expect(describeAgentInput('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 3, y: 4 }] }))
       .toEqual({ kind: 'touch', x: 3, y: 4, touchType: 'touchStart' });
+    expect(describeAgentInput('Input.dispatchMouseEvent', { x: Infinity, y: 2 })).toBeNull();
+    expect(describeAgentInput('Input.dispatchMouseEvent', { x: '1', y: 2 })).toBeNull();
+    expect(describeAgentInput('Input.dispatchTouchEvent', { touchPoints: [] })).toBeNull();
+    expect(describeAgentInput('Input.dispatchKeyEvent', { type: 'keyDown', key: 'secret' }))
+      .toEqual({ kind: 'key', keyType: 'keyDown' });
     expect(describeAgentInput('Page.navigate', {})).toBeNull();
   });
 });
@@ -914,7 +919,8 @@ test('capture admission respects command budgets and detaches late native attach
 test('a late compositor readiness hook cannot dispatch an expired pointer action', async () => {
   const clock = createFakeClock();
   let ready;
-  const harness = createHarness({ ...clock, commandTimeoutMs: 10,
+  const inputs = [];
+  const harness = createHarness({ ...clock, commandTimeoutMs: 10, onAgentInput: input => inputs.push(input),
     onBeforeCommand: () => new Promise(resolve => { ready = resolve; }) });
   const guest = createFakeGuest();
   const socket = harness.connect(await harness.createLease('paint', {}, guest));
@@ -924,5 +930,6 @@ test('a late compositor readiness hook cannot dispatch an expired pointer action
   for (let i = 0; i < 5; i++) await flushPromises();
   expect(socket.sent.find(frame => frame.id === 2).error.message).toContain('timed out');
   expect(guest.debugger.commands).toHaveLength(0);
+  expect(inputs).toHaveLength(0);
   harness.bridge.closeAll();
 });

@@ -2,6 +2,8 @@
 
 This folder contains renderers for chat message parts (text, tools, reasoning, placeholders) and shared tool presentation helpers.
 
+`PlanCard` keeps its unfinished-response and already-started disabled reasons available through the button's accessible description and tooltip, but hides these duplicate status labels visually. Completion, saved-source validation, duplicate-start protection, and actionable failure messages are unchanged. The isolated chat fixture checks both states with the real component.
+
 Use this doc when you ask an agent to change tool/header/description behavior.
 
 ## Tool diff preview budget
@@ -20,6 +22,15 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   - **Expandable tools** -> `ToolPart.tsx`
 - Shared tool icon mapping is centralized in `toolPresentation.tsx` (`getToolIcon`).
 
+Turn headers prefer the first substantive assistant output over leading
+error-only rows; an error-only turn retains its header and all errors remain
+visible. Header effort uses the owning assistant's recorded variant, then its
+own parent's variant, before the original turn fallback. Explicit default
+effort does not inherit an earlier attempt's level.
+Headers retain the recorded model ID while its catalog entry is unavailable
+and subscribe only to that provider's catalog record, so a later catalog name
+updates an existing header without replaying messages or changing the model.
+
 ## Which file controls what
 
 - `ProgressiveGroup.tsx`
@@ -32,6 +43,9 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   - Renders expandable tool rows (bash/edit/write/question/task + fallback).
   - Controls expandable header title/description/diff stats/timer and expanded output body.
   - If you want to change expandable tool layout, edit here.
+
+- `OmittedToolOutput.tsx`
+  - Expanded body of a history row whose output the page omitted (`outputOmitted`): shows a loading line with the omitted size, loads the message through `SessionMessageLoader.loadToolOutput`, and offers Retry on failure. It never renders stand-in output.
 
 - `terminalTranscript.ts`
   - Incrementally renders Bash output as terminal state instead of raw escape text.
@@ -48,7 +62,8 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   - Precedence is structured diff/diagnostics, formatted input, provider output, provider failure, then an explicit no-details state.
   - Empty-state copy is terminal-only; partial output may render while a tool is still running.
 
-- `TaskToolSummary.tsx` + `taskToolUtils.ts`
+- `TaskToolSummary.tsx` + `taskToolUtils.ts` + `TaskChildSessionSummary.tsx`
+  - A collapsed sub-agent (`task`) card renders from its tool part alone: prompt, status, duration, the summary entries in its metadata, the result and the Open Subtask link. It subscribes to no child messages, so running sub-agents never re-render or retain the parent transcript's cards. Opening the card mounts `TaskChildSessionSummary`, which follows SSE and uses bounded HTTP repair only after silence or settlement; see the sync module contract. Managed dispatch rows (`ManagedTaskList`) render from the managed-task projection and never load child messages.
   - Preserve provider-native subagent output across failure and cancellation.
   - Failed or cancelled output is labelled as partial, retains its provider status/reason, and never receives a success check.
   - The observed Cursor-native Agent Dispatch row reuses this bounded summary renderer for nested activity and terminal output. `MessageBody.tsx` suppresses the ordinary raw task row only when the runtime-owned, versioned Cursor projection is valid; malformed or unprojected task tools keep the standard expandable renderer.
@@ -62,6 +77,12 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   - `AssistantTextPart` strips image-loading Markdown so only the final assistant sibling owns one responsive gallery; tool rows never render a second preview.
   - The gallery is recovery-aware lazy code, observes a 640 px viewport margin, then prepares local web/Electron files through the message-scoped authorization route. Remote/data images load directly in the renderer.
   - Every image is fetched into an abortable object URL and revoked on cleanup. Ready buttons reuse the existing single-image popup without carousel state; failed local files can open in the editor and failed remote images retain a no-referrer external link.
+
+- `toolImageLoading.ts` + `ToolImageAttachments.tsx`
+  - Render the image media a tool (usually an MCP tool since OpenCode 2.1.3) returned in `state.attachments` as up to six thumbnails under its `StaticToolRow` or `ToolPart` row; clicking one opens the existing image popup (`ToolOutputDialog`), with a gallery when the row has several ready images.
+  - Only PNG, JPEG, GIF and WebP render: the declared MIME, the data URI header and the decoded byte signature must agree, so SVG, HTML and disguised payloads never reach an `<img>`; remote and file URLs never load from a tool row. Images over 10 MiB are refused.
+  - Parsing is cached per `state` object and returns a shared empty array for the many parts without images, so streaming renders do no extra work and mount no subscriptions. Decoding waits until the row nears the viewport and lands in a 48-entry LRU of object URLs (evicted URLs are revoked), so a virtualized row scrolled back into view reuses its decoded image.
+  - Large data URIs arrive omitted (`url: ''` + `devryanOmitted`, see `packages/web/server/lib/opencode/tool-attachment-summary.js`). The first thumbnail of a message fetches `GET /api/session/:sessionID/message/:messageID?attachments=inline` once, shared by every thumbnail of that message.
 
 - `toolRenderUtils.ts`
   - Core classification helpers:
@@ -96,30 +117,55 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   - Turn projection classifies non-final `text` from tool/non-stop assistant steps as justification in both Live and Sorted modes; final `stop` text remains normal assistant Markdown.
   - Preserves natural Markdown and streaming updates. A leading bold activity title that is directly joined to prose receives render-only paragraph separation; persisted and copied message text remain unchanged.
 
+Native Cursor text uses its existing provider-state part identity for exact
+render/copy preservation. Adjacent distinct Cursor parts are neither collapsed
+by string similarity nor joined with fabricated whitespace; whitespace-only
+seams survive. Content-based legacy status/orphan narration cleanup does not
+discard those published parts. Typed tool/reasoning structure remains separate.
+
 ## Current important behavior
 
 ### Streaming paint ownership
 
 Canonical SSE reduction and the 24 ms event pipeline remain unthrottled by the
-part renderers. `useStreamingTextThrottle` owns only the visible projection for
+part renderers. `useStreamingTextReveal` owns only the visible projection for
 assistant text, reasoning, justification, and plan Markdown. Each identity
-renders its first non-empty text synchronously, trailing-coalesces intermediate
-growth to the latest value at most once per 32 ms, and renders terminal text
-immediately after canceling pending work. Temporary shorter streaming snapshots
-cannot truncate visible text; terminal text is authoritative. Copy/export,
+renders its first word synchronously, then reveals the backlog word by word on
+one shared animation-frame loop at the stream's measured arrival rate, catching
+up within about 250 ms, so bursty provider chunks do not paint as jumps. When
+the stream ends the backlog drains within 150 ms and the text settles exactly on
+the terminal value. Text present at mount, a new identity, a rewritten prefix,
+a backlog over 4000 characters, a hidden document and reduced motion all show
+the latest text at once. Temporary shorter streaming snapshots cannot truncate
+visible text; terminal text is authoritative.
+
+`MarkdownRenderer` renders that text as top-level sections
+(`markdownStreamingBlocks.ts`) keyed by position, so only the section whose
+source changed re-parses while earlier sections keep their subtree. The split
+happens only at blank lines CommonMark also treats as block boundaries; text
+with reference or footnote definitions or raw HTML outside code stays one
+section. Copy/export,
 notifications, status, tool state, scrolling, and persisted sync text always
 read canonical state rather than the paint projection.
 
 ### Presentation animation ownership
 
-`PlanCardSkeleton.tsx` keeps the existing 8–48 line layout reservation, but the
-line group owns one opacity animation instead of every line owning pulse and
-sweep animations. `useDocumentAnimationState()` is a module-level external
-store with one shared document-visibility listener and one shared
-reduced-motion listener. It is not Zustand state. The bottom status keeps its
-accessible label in flow while the proven foreground-gradient text layer
-supplies the shimmer sweep; status changes update that stable node without a
-keyed vertical transition. The plan skeleton, bottom status shimmer, retry
+Always-visible working chrome animates only `opacity` and `transform`, which
+the compositor runs without main-thread style, layout or paint. The bottom status
+shimmer is a masked window (`.oc-text-shimmer-sweep`) that slides across the
+label while its generated-content copy of the text slides back by the same
+distance, so the highlight sweeps without repainting text; the label itself is
+the only text node. Sidebar and mobile working dots fade with
+`.animate-session-working-blink`, the plan skeleton's line group owns one
+opacity animation, the active reasoning header pulses and the context-usage and
+mobile sub-session loaders spin. Do not animate `background-position`, colors or
+other painted properties in always-visible working chrome: they repaint every
+frame. `PlanCardSkeleton.tsx` keeps the existing 8–48 line layout reservation.
+`useDocumentAnimationState()` is a module-level external store with one shared
+document-visibility listener and one shared reduced-motion listener. It is not
+Zustand state. The bottom status keeps one accessible label in flow; status
+changes update that stable node without a keyed vertical transition. The plan
+skeleton, bottom status shimmer, retry
 countdown, and active duration labels pause while hidden; labels recompute on
 foreground. Reduced-motion presentation remains readable without a long-lived
 animation; the reasoning disclosure also disables both its panel animation and
@@ -128,6 +174,7 @@ chevron transition while preserving the same user-controlled open state.
 and is outside this performance contract.
 
 - `read` and most search/fetch tools are treated as **static tools** and passive lookup activity rolls up across reasoning text into one dropdown per kind until a hard tool boundary such as shell/question/task.
+- Skill calls keep individual part identities in both render modes. Their names use static text throughout loading and completion; an unknown pending name leaves only the loading status until the runtime supplies a human name. Completing a call updates the existing status node rather than remounting it. Sorted mode retains its normal seven-row collapsed preview.
 - `bash/edit/write/question/task` are **expandable tools** and render via `ToolPart`.
 - Bash rows show the bounded terminal transcript and a shared elapsed duration (`0.1s`, `m s`, or `h m s`). Active duration ticks are isolated to their narrow leaves; completed durations use stable start/end timestamps and invalid timing renders `Unavailable`.
 - Output-only `write/create/file_write` aliases remain expandable even when no structured diff is available.
@@ -166,8 +213,29 @@ Why: in current pipeline Perplexity is static/grouped, so `StaticToolRow` is the
 
 ## Quick map of files in this folder
 
+`PlanCard` keeps approval disabled until the saved current source is verified.
+An explicit terminal error or unresolved persisted error/stopped notice bound
+to the exact revision user, plus authoritative session idle, displays a failed
+response explanation even when the failed native message lacks a completion
+stamp. Busy/retry continuation still displays the pending explanation; neither
+presentation grants implementation authority.
+
 - Text: `AssistantTextPart.tsx`, `UserTextPart.tsx`
 - Tools: `ToolPart.tsx`, `ProgressiveGroup.tsx`, `toolPresentation.tsx`, `toolRenderUtils.ts`, `ToolRevealOnMount.tsx`
 - Reasoning/justification: `ReasoningPart.tsx`, `ReasoningGroup.tsx`, `reasoningGrouping.ts`, `reasoningDuration.ts`, `reasoningDisclosureKeyboard.ts`, `reasoningDisclosureStatus.ts`, `JustificationBlock.tsx`
 - Status/placeholders: `WorkingPlaceholder.tsx`, `SessionActiveSpinner.tsx`, `MigratingPart.tsx`
 - Utility renderers: `VirtualizedCodeBlock.tsx`, `MinDurationShineText.tsx`, `useNearViewport.ts`
+
+Managed stopped tasks retain their canonical terminal status even while a user continues the child chat independently. A server-advertised stopped-recovery capability shows Resume as task with an explicit model/effort selection in the parent row and opened child. It also allows explicit dismissal, but never offers auto-resume for user cancellation. Canonical stop presentation takes precedence over the provider fallback for a `Step interrupted` assistant error. A `MessageAbortedError` whose `data.source` names an automatic DevRyan abort (`provider_retry`, `stall_watchdog`, `abort_guard`) renders that cause as an info line instead of the manual-stop presentation; operator sources keep the existing copy.
+
+Collapsed search groups show only their localized searched-file count; patterns
+and paths remain available after expansion. Managed dispatch argument preparation
+uses the startup phase until authoritative work begins. Completed shell transport
+with a verified nonzero numeric `metadata.exitCode` renders a failed command with
+retained output, independently of provider/tool transport status. Missing, string
+or nonfinite exit codes never infer command failure.
+
+Pending TODO dependency reasons (`blockedBy`) render beneath their task without
+inventing a blocked terminal status; the status row prefers runnable pending work.
+Managed verification cards retain each check's implementation/integration/
+deployment purpose and named prerequisites without changing pass/waiver rules.

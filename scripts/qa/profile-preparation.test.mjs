@@ -1,16 +1,17 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, readlink, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { test } from 'node:test';
-import { assertQaLaunchEnvironmentOwned, assertQaSelectedProviderAccess, assertQaSelectedProviderDuration, createQaLaunchEnvironment, pinQaAgents, qaMeridianClaudePaths, preserveQaOrchestration, prepareQaPluginHomeWrapper, prepareQaProfile, projectQaAuth, provisionQaRipgrep } from './profile-preparation.mjs';
+import { assertQaLaunchEnvironmentOwned, assertQaSelectedProviderAccess, assertQaSelectedProviderDuration, createQaLaunchEnvironment, pinQaAgents, qaMeridianClaudePaths, preserveQaOrchestration, prepareQaPluginHomeWrapper, prepareQaProfile, projectQaAuth, provisionQaRipgrep,
+    buildQaMirroredMcp, classifyQaPersonalPluginEntries,  mirrorQaPersonalSetup, normalizeQaMirrorPersonalSetup, orderQaMirroredPlugins, selectQaPersonalPluginDirectoryEntries, wrapQaPackagePluginEntries } from './profile-preparation.mjs';
 
-const root = fileURLToPath(new URL('../../', import.meta.url));
 
 test('reusing a private QA dependency tree does not recursively replace plugin originals', async () => {
-    const directory = await mkdtemp(path.join(root, '.cache/qa/wrapper-reuse-'));
+    const directory = await realpath(await mkdtemp(path.join(os.tmpdir(), 'devryan-wrapper-reuse-')));
     try {
         const entry = path.join(directory, 'index.mjs');
         const source = 'export default () => ({});\n';
@@ -157,11 +158,6 @@ test('test agent pinning keeps instructions while capturing default versus expli
     assert.equal(pinQaAgents(source, { providerId: 'xai', modelId: 'grok-4.6', variant: 'xhigh' }).agents.builder.variant, 'xhigh');
 });
 
-test('profile preparation rejects outside paths or unsupported providers before writing', async () => {
-    await assert.rejects(prepareQaProfile({ runtimeRoot: '/tmp/not-owned', workspace: path.join(root, '.cache/qa/workspace'), providerId: 'openai', modelId: 'test' }), /repository cache/);
-    await assert.rejects(prepareQaProfile({ runtimeRoot: path.join(root, '.cache/qa/test'), workspace: path.join(root, '.cache/qa/workspace'), providerId: 'google', modelId: 'test' }), /OpenAI, Anthropic, or xAI/);
-});
-
 test('isolated specialist assignments preserve parent selection and remove stale effort without changing the source', () => {
     const source = { agents: { explorer: { model: 'opencode/old', variant: 'medium', skills: ['read-only'], prompt: 'inspect' } } };
     const selection = { providerId: 'openai', modelId: 'gpt-5.6-sol', variant: 'high', agentAssignments: {
@@ -195,51 +191,8 @@ test('explicit specialist assignments reject disabled roles instead of reporting
     assert.deepEqual(source.disabled_agents, ['explorer', 'librarian']);
 });
 
-test('specialist assignment validation rejects ambiguous roles, cross-provider access, and missing effort before profile writes', async () => {
-    const selection = { providerId: 'openai', modelId: 'gpt-5.6-sol', variant: 'high' };
-    const explorer = { providerId: 'openai', modelId: 'gpt-5.3-codex-spark', variant: 'high' };
-    for (const agentAssignments of [null, [], { orchestrator: explorer }, { missing: explorer },
-        { explorer: { ...explorer, providerId: 'xai' } }, { explorer: { ...explorer, modelId: 'openai/spark' } },
-        { explorer: { ...explorer, variant: undefined } }, { explorer: { ...explorer, variant: '' } },
-        { explorer: { ...explorer, variant: ' high ' } }, { explorer: { ...explorer, modelId: ' spark' } },
-        { explorer: { ...explorer, extra: true } }]) {
-        assert.throws(() => pinQaAgents({}, { ...selection, agentAssignments }), /specialist assignments/);
-        await assert.rejects(prepareQaProfile({ ...selection, agentAssignments,
-            runtimeRoot: path.join(root, '.cache/qa/assignment-not-created'),
-            workspace: path.join(root, '.cache/qa/assignment-no-workspace') }), /specialist assignments/);
-    }
-    await assert.rejects(access(path.join(root, '.cache/qa/assignment-not-created')), { code: 'ENOENT' });
-});
-
-test('profile preparation rejects symlink escapes before creating a private home', async () => {
-    const cache = path.join(root, '.cache/qa');
-    await mkdir(cache, { recursive: true });
-    const fixture = await mkdtemp(path.join(cache, 'profile-path-test-'));
-    try {
-        const linkedRuntime = path.join(fixture, 'linked-runtime');
-        await symlink(root, linkedRuntime);
-        await assert.rejects(prepareQaProfile({ runtimeRoot: path.join(linkedRuntime, 'uncreated-profile'), workspace: fixture,
-            providerId: 'openai', modelId: 'test' }), /resolve inside this repository cache/);
-        await assert.rejects(access(path.join(root, 'uncreated-profile')), { code: 'ENOENT' });
-    } finally { await rm(fixture, { recursive: true, force: true }); }
-});
-
-test('profile preparation rejects a workspace that would inherit the parent project config', async () => {
-    const cache = path.join(root, '.cache/qa');
-    await mkdir(cache, { recursive: true });
-    const fixture = await mkdtemp(path.join(cache, 'profile-git-test-'));
-    try {
-        const runtimeRoot = path.join(fixture, 'runtime');
-        await assert.rejects(prepareQaProfile({ runtimeRoot, workspace: fixture,
-            providerId: 'openai', modelId: 'test' }), /its own Git repository root/);
-        await assert.rejects(access(runtimeRoot), { code: 'ENOENT' });
-    } finally { await rm(fixture, { recursive: true, force: true }); }
-});
-
 test('home shim affects only its child and leaves HOME unchanged', async () => {
-    const cache = path.join(root, '.cache/qa');
-    await mkdir(cache, { recursive: true });
-    const home = await mkdtemp(path.join(cache, 'home-shim-test-'));
+    const home = await realpath(await mkdtemp(path.join(os.tmpdir(), 'devryan-home-shim-test-')));
     const originalHome = process.env.HOME;
     try {
         await writeFile(path.join(home, '.devryan-qa-home'), 'owned test\n');
@@ -253,14 +206,21 @@ test('home shim affects only its child and leaves HOME unchanged', async () => {
             `await import(${JSON.stringify(new URL('./isolated-home.mjs', import.meta.url).href)}); const os = await import('node:os'); console.log(JSON.stringify({home:os.homedir(),environment:process.env.HOME}));`],
         { env: { ...process.env, HOME: scratch, DEVRYAN_QA_HOME: home, DEVRYAN_EXECUTION_WORKER: '1' } });
         assert.deepEqual(JSON.parse(worker.stdout), { home: scratch, environment: scratch });
+        const scopedEnvironment = { ...process.env, HOME: scratch, DEVRYAN_EXECUTION_WORKER: '1' };
+        delete scopedEnvironment.DEVRYAN_QA_HOME;
+        const runScoped = (env) => promisify(execFile)(process.execPath, ['--input-type=module', '--eval',
+            `await import(${JSON.stringify(new URL('./isolated-home.mjs', import.meta.url).href)}); const os = await import('node:os'); console.log(JSON.stringify({home:os.homedir(),environment:process.env.HOME}));`], { env });
+        const scopedWorker = await runScoped(scopedEnvironment);
+        assert.deepEqual(JSON.parse(scopedWorker.stdout), { home: scratch, environment: scratch });
+        await assert.rejects(runScoped({ ...scopedEnvironment, HOME: 'relative' }), /Execution home must be absolute/);
+        await assert.rejects(runScoped({ ...scopedEnvironment, DEVRYAN_EXECUTION_WORKER: undefined }), /QA home must be an absolute owned directory/);
+        await assert.rejects(runScoped({ ...scopedEnvironment, DEVRYAN_EXECUTION_WORKER: undefined, DEVRYAN_QA_HOME: scratch }), /ENOENT/);
         assert.equal(process.env.HOME, originalHome);
     } finally { await rm(home, { recursive: true, force: true }); }
 });
 
 test('private home preload preserves descriptor and named server exports', async () => {
-    const cache = path.join(root, '.cache/qa');
-    await mkdir(cache, { recursive: true });
-    const home = await mkdtemp(path.join(cache, 'plugin-home-test-'));
+    const home = await realpath(await mkdtemp(path.join(os.tmpdir(), 'devryan-plugin-home-test-')));
     try {
         await writeFile(path.join(home, '.devryan-qa-home'), 'owned QA home\n');
         const entry = path.join(home, 'plugin.mjs');
@@ -300,7 +260,7 @@ test('preserved orchestration retains presets, efforts, model refs and backups w
 });
 
 test('private profiles reuse the installed ripgrep so read/grep/skill tools work without a download', async () => {
-    const scratch = await mkdtemp(path.join(root, '.cache/qa-ripgrep-'));
+    const scratch = await realpath(await mkdtemp(path.join(os.tmpdir(), 'devryan-qa-ripgrep-')));
     try {
         const sourceHome = path.join(scratch, 'source-home');
         const cacheHome = path.join(scratch, 'private-home/.cache');
@@ -325,9 +285,9 @@ const hostileBaseEnvironment = (realHome) => ({ PATH: process.env.PATH, HOME: re
     MERIDIAN_PROFILES: '[{"id":"qa","type":"claude-max"}]', MERIDIAN_DEFAULT_PROFILE: 'qa', CLAUDE_CODE_OAUTH_TOKEN: 'owner-token' });
 
 test('prepared launch env resolves every Meridian/Claude config path under the owned QA home', () => {
-    const runtimeRoot = path.join(root, '.cache/qa/synthetic-launch-env/runtime');
+    const runtimeRoot = path.join(os.tmpdir(), 'devryan-synthetic-launch-env/runtime');
     const home = path.join(runtimeRoot, 'home');
-    const realHome = path.join(root, '.cache/qa/synthetic-launch-env/real-home');
+    const realHome = path.join(os.tmpdir(), 'devryan-synthetic-launch-env/real-home');
     const base = hostileBaseEnvironment(realHome);
     const prepared = createQaLaunchEnvironment({ runtimeRoot, home, opencodeBinary: '/synthetic/opencode', baseEnvironment: base });
     const launch = { ...prepared, ...qaCredentialsEnvironment };
@@ -338,7 +298,7 @@ test('prepared launch env resolves every Meridian/Claude config path under the o
     for (const key of ['MERIDIAN_PLUGIN_DIR', 'MERIDIAN_DESIGN_TOKEN_PATH', 'CLAUDE_PROXY_SESSION_DIR', 'MERIDIAN_TELEMETRY_DB', 'CLAUDE_CODE_OAUTH_TOKEN']) {
         assert.equal(Object.hasOwn(launch, key), false, key);
     }
-    assert.equal(launch.MERIDIAN_DEBUG, '1');
+    assert.equal(launch.MERIDIAN_DEBUG, undefined);
     const paths = qaMeridianClaudePaths(launch);
     assert.equal(paths['homedir:meridian-profile'], path.join(home, '.config/meridian/profiles/qa'));
     for (const [name, value] of Object.entries(paths)) {
@@ -357,7 +317,7 @@ test('prepared launch env resolves every Meridian/Claude config path under the o
 });
 
 test('Meridian profile paths stay owned inside the Bun host where the home shim cannot rebind named imports', async () => {
-    const scratch = await mkdtemp(path.join(root, '.cache/qa/meridian-bun-home-'));
+    const scratch = await realpath(await mkdtemp(path.join(os.tmpdir(), 'devryan-meridian-bun-home-')));
     try {
         const runtimeRoot = path.join(scratch, 'runtime');
         const home = path.join(runtimeRoot, 'home');
@@ -380,4 +340,277 @@ test('Meridian profile paths stay owned inside the Bun host where the home shim 
         assert.deepEqual(JSON.parse(stdout), { legacyProfile: path.join(home, '.config/meridian/profiles/qa'),
             configDir: path.join(home, '.config/meridian'), claudeDefault: path.join(home, '.claude') });
     } finally { await rm(scratch, { recursive: true, force: true }); }
+});
+
+test('personal setup mirroring normalizes explicit options and requires preserved orchestration', () => {
+    const preserved = { preserveOrchestration: true };
+    assert.equal(normalizeQaMirrorPersonalSetup(false, preserved), false);
+    assert.equal(normalizeQaMirrorPersonalSetup(false), false);
+    assert.deepEqual(normalizeQaMirrorPersonalSetup(true, preserved), { plugins: true, skills: true, mcp: 'definitions' });
+    assert.deepEqual(normalizeQaMirrorPersonalSetup({ skills: true }, preserved), { plugins: false, skills: true, mcp: 'off' });
+    assert.deepEqual(normalizeQaMirrorPersonalSetup({ plugins: true, skills: false, mcp: 'live' }, preserved), { plugins: true, skills: false, mcp: 'live' });
+    for (const value of [undefined, null, 'true', 1, [], { plugins: 'yes' }, { skills: 1 }, { mcp: 'on' }, { mcp: true }, { lsp: true }]) {
+        assert.throws(() => normalizeQaMirrorPersonalSetup(value, preserved), /must be a boolean or/, JSON.stringify(value));
+    }
+    for (const preserveOrchestration of [false, undefined, 'true']) {
+        assert.throws(() => normalizeQaMirrorPersonalSetup(true, { preserveOrchestration }), /requires preserved orchestration/);
+        assert.throws(() => normalizeQaMirrorPersonalSetup({ mcp: 'off' }, { preserveOrchestration }), /requires preserved orchestration/);
+    }
+});
+
+test('personal plugin classification keeps only entries provisioning does not own', () => {
+    const sourceConfig = '/synthetic-home/.config/opencode';
+    const provisioned = ['./plugins/devryan-open-cursor.mjs', './node_modules/opencode-with-claude/dist/index.js'];
+    const { personal, managed } = classifyQaPersonalPluginEntries([
+        './node_modules/@synthetic/packaged-plugin/.opencode/plugins/packaged-plugin.mjs',
+        './plugins/devryan-open-cursor.mjs', 'opencode-with-claude', 'oh-my-opencode-slim@2.2.25',
+        `file://${sourceConfig}/plugins/devryan-skill-context.mjs`,
+        'opencode-antigravity-auth@1.6.0', 'cursor-acp',
+        `${sourceConfig}/plugins/personal.mjs`, './plugins/personal.mjs',
+        ['@synthetic/tuple', { apiKey: 'synthetic-option' }], 'synthetic-package@1.0.0',
+        ' ./node_modules/@synthetic/packaged-plugin/.opencode/plugins/packaged-plugin.mjs ',
+    ], { provisioned, sourceConfig });
+    assert.deepEqual(personal.map(({ spec, kind, hasOptions }) => ({ spec, kind, hasOptions })), [
+        { spec: './node_modules/@synthetic/packaged-plugin/.opencode/plugins/packaged-plugin.mjs', kind: 'node-modules', hasOptions: false },
+        { spec: './plugins/personal.mjs', kind: 'config-path', hasOptions: false },
+        { spec: '@synthetic/tuple', kind: 'package', hasOptions: true },
+        { spec: 'synthetic-package@1.0.0', kind: 'package', hasOptions: false },
+    ]);
+    assert.deepEqual(personal[2].entry, ['@synthetic/tuple', { apiKey: 'synthetic-option' }]);
+    assert.deepEqual(managed, ['./plugins/devryan-open-cursor.mjs', 'opencode-with-claude', 'oh-my-opencode-slim@2.2.25',
+        './plugins/devryan-skill-context.mjs', 'opencode-antigravity-auth@1.6.0', 'cursor-acp']);
+    assert.deepEqual(classifyQaPersonalPluginEntries(provisioned, { provisioned, sourceConfig }).personal, []);
+    // A registration outside the owner's configuration cannot be isolated.
+    for (const outside of ['/elsewhere/plugin.mjs', 'file:///elsewhere/plugin.mjs']) {
+        assert.throws(() => classifyQaPersonalPluginEntries([outside], { provisioned, sourceConfig }), /outside the owner's OpenCode configuration/);
+    }
+    for (const entry of [42, null, '', [], [7], ['a', {}, 'extra']]) {
+        assert.throws(() => classifyQaPersonalPluginEntries([entry], { provisioned, sourceConfig }), /specs or \[spec, options\] tuples/);
+    }
+    assert.throws(() => classifyQaPersonalPluginEntries('packaged-plugin', { provisioned, sourceConfig }), /must be arrays/);
+});
+
+test('mirrored plugin order follows the owner\'s registration order', () => {
+    const provisioned = ['./plugins/devryan-open-cursor.mjs', './node_modules/opencode-with-claude/dist/index.js'];
+    const sourceConfig = '/synthetic-home/.config/opencode';
+    const { ordered } = classifyQaPersonalPluginEntries(['./node_modules/@synthetic/packaged-plugin/index.mjs', 'oh-my-opencode-slim@2.2.25',
+        './plugins/devryan-open-cursor.mjs', './plugins/personal.mjs', './plugins/devryan-open-cursor.mjs'], { provisioned, sourceConfig });
+    // The retired Slim registration is owned by DevRyan but no longer provisioned.
+    assert.deepEqual(orderQaMirroredPlugins(provisioned, ordered), ['./node_modules/@synthetic/packaged-plugin/index.mjs',
+        './plugins/devryan-open-cursor.mjs', './plugins/personal.mjs',
+        './node_modules/opencode-with-claude/dist/index.js']);
+    assert.deepEqual(orderQaMirroredPlugins(provisioned, []), provisioned);
+});
+
+test('personal plugin directory selection skips managed, retired, backup and Finder files', () => {
+    assert.deepEqual(selectQaPersonalPluginDirectoryEntries(['.DS_Store', 'ECC', 'devryan-open-cursor.mjs', 'devryan-skill-context.mjs',
+        'devryan-oh-my-opencode-slim.mjs.devryan-slim-backup-20260628T031536466Z', 'openai-tool-schema-sanitizer.mjs', 'cursor-acp.js',
+        'personal.mjs', 'devryan-personal-experiment.mjs']), ['ECC', 'personal.mjs', 'devryan-personal-experiment.mjs']);
+});
+
+test('mirrored MCP definitions are inert by default and evidence carries no endpoints or auth', () => {
+    const source = { remote: { type: 'remote', url: 'https://mcp.invalid/synthetic', enabled: true, oauth: { clientId: 'synthetic-client' } },
+        local: { type: 'local', command: ['synthetic-mcp'], enabled: false }, implicit: { type: 'remote', url: 'https://implicit.invalid' } };
+    const snapshot = structuredClone(source);
+    assert.deepEqual(buildQaMirroredMcp(source, 'off'), { config: {}, evidence: [] });
+    const definitions = buildQaMirroredMcp(source, 'definitions');
+    assert.deepEqual(Object.values(definitions.config).map(entry => entry.enabled), [false, false, false]);
+    assert.deepEqual(definitions.config.remote.oauth, { clientId: 'synthetic-client' });
+    assert.deepEqual(definitions.evidence, [
+        { id: 'remote', type: 'remote', sourceEnabled: true, enabled: false },
+        { id: 'local', type: 'local', sourceEnabled: false, enabled: false },
+        { id: 'implicit', type: 'remote', sourceEnabled: true, enabled: false },
+    ]);
+    assert.equal(/synthetic-client|mcp\.invalid|synthetic-mcp/.test(JSON.stringify(definitions.evidence)), false);
+    const live = buildQaMirroredMcp(source, 'live');
+    assert.deepEqual(live.config, source);
+    assert.notEqual(live.config.remote, source.remote);
+    assert.deepEqual(live.evidence.map(entry => entry.enabled), [true, false, true]);
+    definitions.config.remote.oauth.clientId = 'changed';
+    assert.deepEqual(source, snapshot);
+    assert.deepEqual(buildQaMirroredMcp(undefined, 'definitions'), { config: {}, evidence: [] });
+    assert.throws(() => buildQaMirroredMcp(source, 'on'), /mode must be/);
+    assert.throws(() => buildQaMirroredMcp([], 'live'), /must be an object/);
+    assert.throws(() => buildQaMirroredMcp({ broken: 'remote' }, 'live'), /definitions must be objects/);
+});
+
+test('personal setup mirroring copies personal plugins, skills, MCP definitions, agents and commands without touching the source', async () => {
+    const scratch = await realpath(await mkdtemp(path.join(os.tmpdir(), 'devryan-mirror-personal-')));
+    try {
+        const sourceHome = path.join(scratch, 'source-home');
+        const sourceConfig = path.join(sourceHome, '.config/opencode');
+        const home = path.join(scratch, 'private-home');
+        const config = path.join(home, '.config/opencode');
+        const write = async (file, content = 'export default () => ({});\n') => {
+            await mkdir(path.dirname(file), { recursive: true });
+            await writeFile(file, content);
+        };
+        const packagedPlugin = './node_modules/@synthetic/packaged-plugin/.opencode/plugins/packaged-plugin.mjs';
+        const sourceOpencode = { plugin: [packagedPlugin, './plugins/devryan-open-cursor.mjs', './node_modules/opencode-with-claude/dist/index.js',
+            'opencode-antigravity-auth@1.6.0', pathToFileURL(path.join(sourceConfig, 'plugins/personal.mjs')).href,
+            ['@synthetic/tuple', { apiKey: 'synthetic-option' }]],
+        mcp: { remote: { type: 'remote', url: 'https://mcp.invalid/synthetic', enabled: true, oauth: { clientId: 'synthetic-client' } },
+            local: { type: 'local', command: ['synthetic-mcp'], enabled: false } },
+        agent: { explore: { model: 'personal/explore' }, build: { model: 'openai/synthetic' } }, lsp: { synthetic: { command: ['lsp'] } } };
+        const sourceLegacy = { plugin: ['./plugins/personal.mjs'], agent: { plan: { model: 'openai/plan' } } };
+        await write(path.join(sourceConfig, 'opencode.json'), JSON.stringify(sourceOpencode));
+        await write(path.join(sourceConfig, 'config.json'), JSON.stringify(sourceLegacy));
+        await write(path.join(sourceConfig, 'plugins/devryan-open-cursor.mjs'), 'owner copy\n');
+        await write(path.join(sourceConfig, 'plugins/devryan-oh-my-opencode-slim.mjs.devryan-slim-backup-20260628T031536466Z'), 'backup\n');
+        await write(path.join(sourceConfig, 'plugins/.DS_Store'), 'finder\n');
+        await write(path.join(sourceConfig, 'plugins/cursor-acp.js'), 'retired\n');
+        await write(path.join(sourceConfig, 'plugins/personal.mjs'));
+        await write(path.join(sourceConfig, 'plugins/ECC/index.ts'), 'export {};\n');
+        await write(path.join(sourceConfig, 'plugins/ECC/.DS_Store'), 'finder\n');
+        await write(path.join(sourceConfig, 'plugins/ECC/lib/hooks.ts'), 'export {};\n');
+        await write(path.join(sourceConfig, 'plugin/openai-tool-schema-sanitizer.mjs'), 'managed\n');
+        await write(path.join(sourceConfig, 'plugin/extra.mjs'));
+        await write(path.join(sourceConfig, 'skills/personal/SKILL.md'), '# personal\n');
+        await write(path.join(sourceConfig, 'skills/.DS_Store'), 'finder\n');
+        await mkdir(path.join(sourceConfig, 'commands'), { recursive: true });
+        await write(path.join(sourceHome, '.claude/skills/synced/SKILL.md'), '# synced\n');
+        await symlink('synced', path.join(sourceHome, '.claude/skills/alias'));
+        await write(path.join(config, 'plugins/devryan-open-cursor.mjs'), 'provisioned\n');
+        await write(path.join(config, packagedPlugin));
+        const provisioned = { plugin: ['./plugins/devryan-open-cursor.mjs', './node_modules/opencode-with-claude/dist/index.js'],
+            agent: { explore: { disable: true }, general: { disable: true } }, lsp: true };
+        const sourceConfigs = [sourceOpencode, sourceLegacy, {}];
+        const sourceBefore = await readFile(path.join(sourceConfig, 'opencode.json'), 'utf8');
+
+        const options = normalizeQaMirrorPersonalSetup(true, { preserveOrchestration: true });
+        const result = await mirrorQaPersonalSetup({ options, sourceHome, home, config, sourceConfigs, provisioned });
+
+        // Source order is kept: the packaged plugin loads first, as in the owner's profile; provisioned
+        // entries the owner never listed come last.
+        assert.deepEqual(result.plugin, [packagedPlugin, './plugins/devryan-open-cursor.mjs', './node_modules/opencode-with-claude/dist/index.js',
+            './plugins/personal.mjs', ['@synthetic/tuple', { apiKey: 'synthetic-option' }]]);
+        assert.deepEqual(result.evidence.pluginOrder, [packagedPlugin, './plugins/devryan-open-cursor.mjs', './node_modules/opencode-with-claude/dist/index.js',
+            './plugins/personal.mjs', '@synthetic/tuple']);
+        assert.deepEqual(result.evidence.plugins, [
+            { entry: packagedPlugin, kind: 'node-modules', hasOptions: false },
+            { entry: './plugins/personal.mjs', kind: 'config-path', hasOptions: false },
+            { entry: '@synthetic/tuple', kind: 'package', hasOptions: true },
+        ]);
+        assert.deepEqual(result.evidence.pluginDirectories, [
+            { directory: 'plugins', name: 'ECC', type: 'directory' },
+            { directory: 'plugins', name: 'personal.mjs', type: 'file' },
+            { directory: 'plugin', name: 'extra.mjs', type: 'file' },
+        ]);
+        assert.equal(await readFile(path.join(config, 'plugins/devryan-open-cursor.mjs'), 'utf8'), 'provisioned\n');
+        await access(path.join(config, 'plugins/ECC/lib/hooks.ts'));
+        for (const absent of ['plugins/ECC/.DS_Store', 'plugins/.DS_Store', 'plugins/cursor-acp.js',
+            'plugins/devryan-oh-my-opencode-slim.mjs.devryan-slim-backup-20260628T031536466Z', 'plugin/openai-tool-schema-sanitizer.mjs', 'skills/.DS_Store']) {
+            await assert.rejects(access(path.join(config, absent)), { code: 'ENOENT' }, absent);
+        }
+        assert.deepEqual(result.evidence.skills, { '.config/opencode/skills': 1, '.claude/skills': 2, '.agents/skills': null });
+        assert.equal(await readFile(path.join(config, 'skills/personal/SKILL.md'), 'utf8'), '# personal\n');
+        assert.equal(await readlink(path.join(home, '.claude/skills/alias')), 'synced');
+        assert.deepEqual(result.mcp, {
+            remote: { type: 'remote', url: 'https://mcp.invalid/synthetic', enabled: false, oauth: { clientId: 'synthetic-client' } },
+            local: { type: 'local', command: ['synthetic-mcp'], enabled: false } });
+        assert.deepEqual(result.evidence.mcp, [
+            { id: 'remote', type: 'remote', sourceEnabled: true, enabled: false },
+            { id: 'local', type: 'local', sourceEnabled: false, enabled: false }]);
+        assert.deepEqual(result.agent, { explore: { disable: true }, general: { disable: true },
+            build: { model: 'openai/synthetic' }, plan: { model: 'openai/plan' } });
+        assert.equal(result.evidence.commands, 0);
+        assert.deepEqual(result.evidence.configKeys, ['plugin', 'mcp', 'agent', 'commands']);
+        assert.equal(Object.hasOwn(result, 'lsp'), false);
+        assert.deepEqual(result.evidence.requested, { plugins: true, skills: true, mcp: 'definitions' });
+        assert.equal(/synthetic-option|synthetic-client|mcp\.invalid/.test(JSON.stringify(result.evidence)), false);
+        assert.equal(await readFile(path.join(sourceConfig, 'opencode.json'), 'utf8'), sourceBefore);
+        await access(path.join(sourceConfig, 'plugins/.DS_Store'));
+
+        // Mirrored package entries are wrapped exactly like provisioned ones.
+        await write(path.join(config, 'node_modules/opencode-with-claude/dist/index.js'));
+        await write(path.join(config, packagedPlugin));
+        await wrapQaPackagePluginEntries(config, result.plugin);
+        assert.equal(await readFile(path.join(config, packagedPlugin.replace(/\.mjs$/, '.qa-original.mjs')), 'utf8'), 'export default () => ({});\n');
+        assert.match(await readFile(path.join(config, packagedPlugin), 'utf8'), /isolated-home\.mjs/);
+        await write(path.join(scratch, 'outside.mjs'));
+        await mkdir(path.join(config, 'node_modules/escape'), { recursive: true });
+        await symlink(path.join(scratch, 'outside.mjs'), path.join(config, 'node_modules/escape/index.mjs'));
+        await assert.rejects(wrapQaPackagePluginEntries(config, ['./node_modules/escape/index.mjs']), /escaped the copied installation/);
+        await mkdir(path.join(config, 'node_modules/opencode-gpt-imagegen'), { recursive: true });
+        await assert.rejects(wrapQaPackagePluginEntries(config, ['./node_modules/opencode-gpt-imagegen/../../plugins/personal.mjs']), /escaped the copied installation/);
+
+        // Partial options mirror only the named parts; config and commands follow any request.
+        const partialHome = path.join(scratch, 'partial-home');
+        const partialConfig = path.join(partialHome, '.config/opencode');
+        const partial = await mirrorQaPersonalSetup({ options: normalizeQaMirrorPersonalSetup({ mcp: 'off' }, { preserveOrchestration: true }),
+            sourceHome, home: partialHome, config: partialConfig, sourceConfigs, provisioned });
+        assert.deepEqual(partial.plugin, provisioned.plugin);
+        assert.deepEqual(partial.mcp, {});
+        assert.deepEqual(partial.evidence.skills, {});
+        assert.deepEqual(partial.evidence.configKeys, ['agent', 'commands']);
+        await assert.rejects(access(path.join(partialConfig, 'plugins/ECC')), { code: 'ENOENT' });
+        await assert.rejects(access(path.join(partialHome, '.claude/skills')), { code: 'ENOENT' });
+
+        // A local registration outside the copied plugin directories fails closed.
+        await assert.rejects(mirrorQaPersonalSetup({ options, sourceHome, home: path.join(scratch, 'loose-home'),
+            config: path.join(scratch, 'loose-home/.config/opencode'), sourceConfigs: [{ plugin: ['./loose.mjs'] }], provisioned }),
+        /outside the copied plugin directories/);
+    } finally { await rm(scratch, { recursive: true, force: true }); }
+});
+
+test('mirroring refuses escaping and unresolved links in plugins, skill resources and commands before publishing registrations', async () => {
+    const scratch = await realpath(await mkdtemp(path.join(os.tmpdir(), 'devryan-mirror-links-')));
+    try {
+        const outside = path.join(scratch, 'owner-resource');
+        await mkdir(outside);
+        await writeFile(path.join(outside, 'index.mjs'), 'owner bytes\n');
+        const cases = [
+            { name: 'plugin-file', entry: '.config/opencode/plugins/entry.mjs', target: path.join(outside, 'index.mjs') },
+            { name: 'plugin-directory', entry: '.config/opencode/plugins/personal', target: outside },
+            { name: 'plugin-descendant', entry: '.config/opencode/plugins/personal/lib/resource', target: outside },
+            { name: 'skill-resource', entry: '.claude/skills/personal/scripts/resource', target: outside },
+            { name: 'agent-skill-resource', entry: '.agents/skills/personal/scripts/resource', target: path.join(outside, 'index.mjs') },
+            { name: 'command-resource', entry: '.config/opencode/commands/resources/resource', target: outside },
+            { name: 'broken', entry: '.config/opencode/skills/personal/broken', target: './missing' },
+            { name: 'ancestor', entry: '.config/opencode/plugins/ancestor', target: '../../../../../owner-resource' },
+        ];
+        for (const scenario of cases) {
+            const sourceHome = path.join(scratch, scenario.name, 'source');
+            const home = path.join(scratch, scenario.name, 'private');
+            const entry = path.join(sourceHome, scenario.entry);
+            await mkdir(path.dirname(entry), { recursive: true });
+            await symlink(scenario.target, entry);
+            await assert.rejects(mirrorQaPersonalSetup({
+                options: normalizeQaMirrorPersonalSetup(true, { preserveOrchestration: true }), sourceHome, home,
+                config: path.join(home, '.config/opencode'), sourceConfigs: [{}], provisioned: {},
+            }), /personal setup copy contains (a symlink outside|an unresolved symlink)/, scenario.name);
+            assert.equal(await readlink(entry), scenario.target);
+            assert.equal(await readFile(path.join(outside, 'index.mjs'), 'utf8'), 'owner bytes\n');
+        }
+    } finally { await rm(scratch, { recursive: true, force: true }); }
+});
+
+test('mirrored local registrations must resolve within copied plugin directories, including parent traversal and symlinks', async () => {
+    const scratch = await realpath(await mkdtemp(path.join(os.tmpdir(), 'devryan-mirror-registration-')));
+    try {
+        const sourceHome = path.join(scratch, 'source');
+        await mkdir(path.join(sourceHome, '.config/opencode/plugins'), { recursive: true });
+        await writeFile(path.join(sourceHome, '.config/opencode/plugins/valid.mjs'), 'export {};\n');
+        const options = normalizeQaMirrorPersonalSetup({ plugins: true }, { preserveOrchestration: true });
+        for (const [index, spec] of ['./plugins/../../escape.mjs', './plugins/../escape.mjs', './node_modules/opencode-gpt-imagegen/../../../escape.mjs'].entries()) {
+            const home = path.join(scratch, `private-${index}`);
+            const config = path.join(home, '.config/opencode');
+            await mkdir(config, { recursive: true });
+            const target = path.resolve(config, spec);
+            await writeFile(target, 'outside copied plugin roots\n');
+            await assert.rejects(mirrorQaPersonalSetup({ options, sourceHome, home, config,
+                sourceConfigs: [{ plugin: [spec] }], provisioned: {} }), /outside the copied plugin directories/);
+            assert.equal(await readFile(target, 'utf8'), 'outside copied plugin roots\n');
+        }
+        const home = path.join(scratch, 'linked-private');
+        const config = path.join(home, '.config/opencode');
+        await symlink(path.join(sourceHome, '.config/opencode/plugins/valid.mjs'), path.join(sourceHome, '.config/opencode/plugins/linked.mjs'));
+        await assert.rejects(mirrorQaPersonalSetup({ options, sourceHome, home, config,
+            sourceConfigs: [{ plugin: ['./plugins/linked.mjs'] }], provisioned: {} }), /outside the copied plugin directories/);
+        assert.equal(await readFile(path.join(sourceHome, '.config/opencode/plugins/valid.mjs'), 'utf8'), 'export {};\n');
+    } finally { await rm(scratch, { recursive: true, force: true }); }
+});
+
+test('retired QA profile entry refuses before reading home, credentials or binary paths', async () => {
+  await assert.rejects(prepareQaProfile({ runtimeRoot: '/unowned/not-to-be-read', sourceHome: '/unowned/not-to-be-read' }), /retired/);
 });

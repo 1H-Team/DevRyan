@@ -3,6 +3,21 @@ import { describe, expect, it, vi } from 'vitest';
 import { createProjectPrewarmRuntime } from './project-prewarm-runtime.js';
 
 describe('project prewarm runtime', () => {
+  it('checkpoint waits the active warm and prevents later project starts', async () => {
+    let release, started;
+    const entered = new Promise(resolve => { started = resolve; });
+    const warming = new Promise(resolve => { release = resolve; });
+    const warm = vi.fn(async () => { started(); await warming; });
+    const runtime = createProjectPrewarmRuntime({ waitForOpenCodeReady: async () => {},
+      listProjectDirectories: async () => ['/first', '/later'], warm, logger: { log() {}, warn() {} } });
+    const run = runtime.run(); await entered;
+    let drained = false; const drain = runtime.holdForCheckpoint().then(() => { drained = true; });
+    await Promise.resolve(); expect(drained).toBe(false);
+    await expect(runtime.run()).rejects.toMatchObject({ code: 'bundle_prewarm_held' });
+    release(); await run; await drain;
+    expect(warm).toHaveBeenCalledTimes(1);
+  });
+
   it('waits for readiness and warms project directories sequentially', async () => {
     const order = [];
     const runtime = createProjectPrewarmRuntime({

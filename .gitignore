@@ -30,10 +30,9 @@ local-dev*
 .opencode/plans/*
 .hive
 .cache/
-packages/web/runtime/
+packages/web/runtime/*
 /.tmp/
 docs/personal/*
-packages/electron/resources/bot-runtime/images.release.json
 
 # Build outputs
 build/
@@ -58,8 +57,15 @@ packages/intellij/
 # OS
 Thumbs.db
 
-# Local runtime state (docker/dev)
-data/
-workspaces/
+# Local runtime state
 .worktrees/
 *.pid
+
+# Exact reviewed build inputs override generic dependency/data exclusions.
+!packages/web/runtime/reviewed-inputs/
+!packages/web/runtime/reviewed-inputs/**
+packages/web/runtime/reviewed-inputs/claude-1.8.0/assets/DevRyan-Claude-darwin-arm64
+packages/web/runtime/reviewed-inputs/claude-1.11.2/assets/DevRyan-Claude-darwin-arm64
+
+# Sanitized evidence for the 2026-10-20 performance audit.
+/.artifacts/performance-audit-2026-10-20/

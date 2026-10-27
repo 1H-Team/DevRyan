@@ -1,7 +1,10 @@
-import { requiresManualModelRecovery } from './contract.js';
+import { requiresManualModelRecovery, hasAcceptedUserStop } from './contract.js';
 import { supportsManagedReadOnlyProvider } from './provider-capabilities.js';
 import { isDefiniteProviderUsageLimit } from './provider-retry-policy.js';
 import { isManagedTransportBackupEligible } from './transport-recovery.js';
+import { AUTO_RESUME_ACTIVE_STATES, MANAGED_TASK_ID_PREFIX, isAutoResumeActiveState } from './codec-primitives.js';
+
+export { AUTO_RESUME_ACTIVE_STATES };
 
 /**
  * Pure planning policy for automatically resuming a managed task that parked on
@@ -20,11 +23,7 @@ export const AUTO_RESUME_MAX_HOST_FAILURES = 5;
 export const AUTO_RESUME_RESET_JITTER_MS = 15_000;
 export const AUTO_RESUME_MIN_DELAY_MS = 5_000;
 export const AUTO_RESUME_HOST_RETRY_MS = 60_000;
-export const AUTO_RESUME_ACTIVE_STATES = Object.freeze(['planning', 'scheduled', 'attempting']);
 export const MANAGED_LINEAGE_ID_PREFIX = 'dvr_lineage_';
-
-const ACTIVE_STATES = new Set(AUTO_RESUME_ACTIVE_STATES);
-const TASK_ID_PREFIX = 'dvr_task_';
 
 const futureTimestamp = (value, now) => (
   Number.isFinite(value) && value > now ? value : null
@@ -39,14 +38,15 @@ const nonNegativeTimestamp = (value) => (
  * keeps `recoveryLineageId: null`; derive its lineage with this function.
  */
 export const createLineageId = (rootTaskId) => {
-  if (typeof rootTaskId !== 'string' || !rootTaskId.startsWith(TASK_ID_PREFIX)) {
+  if (typeof rootTaskId !== 'string' || !rootTaskId.startsWith(MANAGED_TASK_ID_PREFIX)) {
     throw new TypeError('rootTaskId must be a managed task id');
   }
-  return `${MANAGED_LINEAGE_ID_PREFIX}${rootTaskId.slice(TASK_ID_PREFIX.length)}`;
+  return `${MANAGED_LINEAGE_ID_PREFIX}${rootTaskId.slice(MANAGED_TASK_ID_PREFIX.length)}`;
 };
 
 export const isAutoResumeEligible = (task, envelope) => Boolean(
   envelope
+  && !hasAcceptedUserStop(task) && !task?.operatorStop
   && envelope.action === null
   && task?.transportRecovery?.backupAttempts !== 1
   && (isDefiniteProviderUsageLimit(task?.failureReason) || isManagedTransportBackupEligible(task))
@@ -55,7 +55,7 @@ export const isAutoResumeEligible = (task, envelope) => Boolean(
 
 export const isAutoResumeActive = (envelope) => {
   const state = envelope?.autoResume;
-  return Boolean(state && state.enabled === true && ACTIVE_STATES.has(state.state));
+  return Boolean(state && state.enabled === true && isAutoResumeActiveState(state.state));
 };
 
 /**
@@ -149,6 +149,7 @@ export const planAutoResumeAttempt = ({
   breakerUntil = null,
   providerReset = null,
   origin = null,
+  cursorReadOnly = false,
 }) => {
   const originExecution = {
     providerId: origin?.providerId ?? task.providerId,
@@ -160,7 +161,7 @@ export const planAutoResumeAttempt = ({
     if (state.attemptCount >= 1 || task.transportRecovery?.backupAttempts === 1) return exhausted('attempt_cap');
     if (now >= state.expiresAt) return exhausted('time_cap');
     const distinct = backup && (backup.providerId !== task.providerId || backup.modelId !== task.modelId);
-    if (!distinct || (task.readOnly && !supportsManagedReadOnlyProvider(backup.providerId))
+    if (!distinct || (task.readOnly && !supportsManagedReadOnlyProvider(backup.providerId, { cursorReadOnly }))
       || readBreaker(breakerUntil, backup.providerId, now).until !== null) {
       return exhausted('backup_unavailable');
     }
@@ -202,7 +203,7 @@ export const planAutoResumeAttempt = ({
   if (
     backupDiffers
     && !state.backupAttemptTaskId
-    && (!task.readOnly || supportsManagedReadOnlyProvider(backup.providerId))
+    && (!task.readOnly || supportsManagedReadOnlyProvider(backup.providerId, { cursorReadOnly }))
     && readBreaker(breakerUntil, backup.providerId, now).until === null
   ) {
     return {

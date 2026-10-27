@@ -205,6 +205,24 @@ describe('managed scheduler restart recovery', () => {
     });
   });
 
+  test('restart relaunch refuses stale prerequisite evidence while observing existing live children', async () => {
+    const reference = [{ taskId: 'dvr_task_producer', checkName: 'interface', paths: ['api.js'], contentHash: 'a'.repeat(64) }];
+    for (const state of ['relaunch', 'live']) {
+      const starts = [], observations = [];
+      const task = record(1, { status: 'starting', childSessionId: 'ses_child', leaseToken: 'dvr_lease_1', startedAt: 1100, taskPrerequisites: reference });
+      const scheduler = createManagedTaskScheduler({ persistence: { load: async () => ({ version: 1, tasks: [task], resultEnvelopes: [] }), save: async () => {} },
+        verifyTaskPrerequisites: async () => false, now: () => 2000,
+        executor: { reconcile: async () => ({ state }), start: async () => { starts.push(true); return { status: 'completed' }; },
+          observe: async () => { observations.push(true); return { status: 'completed' }; }, readRecoverableResult: async () => ({}) } });
+      try {
+        await scheduler.initialize(); const result = await scheduler.waitForTask(task.taskId);
+        expect(starts).toEqual([]);
+        if (state === 'relaunch') expect(result).toMatchObject({ status: 'failed', failureReason: expect.stringContaining('Producer interface evidence') });
+        else { expect(observations).toEqual([true]); expect(result.status).toBe('completed'); }
+      } finally { await scheduler.shutdown(); }
+    }
+  });
+
   test('marks an unavailable child interrupted while retaining recovery output', async () => {
     const scheduler = createManagedTaskScheduler({
       persistence: {
@@ -480,7 +498,7 @@ describe('managed scheduler restart recovery', () => {
     expect(saves.at(-1).tasks.map((task) => task.taskId)).toEqual(['dvr_task_2', 'dvr_task_3']);
     expect(scheduler.getDiagnostics().compactedTaskCount).toBe(1);
     expect(events).toContainEqual({
-      type: 'openchamber:managed-task-removed',
+      type: 'devryan:managed-task-removed',
       properties: {
         owner: 'devryan',
         taskId: 'dvr_task_1',
@@ -538,9 +556,9 @@ describe('managed scheduler restart recovery', () => {
     await scheduler.waitForTask(second.taskId);
     await scheduler.flush();
 
-    const removalIndex = events.findIndex((event) => event.type === 'openchamber:managed-task-removed');
+    const removalIndex = events.findIndex((event) => event.type === 'devryan:managed-task-removed');
     const secondTerminalIndex = events.findIndex((event) => (
-      event.type === 'openchamber:managed-task'
+      event.type === 'devryan:managed-task'
       && event.properties.task.taskId === second.taskId
       && event.properties.task.status === 'completed'
     ));
@@ -589,7 +607,7 @@ describe('managed scheduler restart recovery', () => {
     });
     await scheduler.flush();
 
-    const removalIndex = events.findIndex((event) => event.type === 'openchamber:managed-task-removed');
+    const removalIndex = events.findIndex((event) => event.type === 'devryan:managed-task-removed');
     expect(removalIndex).toBeGreaterThanOrEqual(0);
     expect(events.slice(removalIndex + 1)).toEqual([]);
     expect(scheduler.getTask(task.taskId)).toBeNull();
@@ -629,4 +647,128 @@ describe('managed scheduler restart recovery', () => {
     })).rejects.toThrow('managed orchestration ledger cannot fit within 128 bytes');
     expect(scheduler.listTasks()).toEqual([]);
   });
+});
+
+describe('terminal-only runtime replacement', () => {
+  const fixture = ({ status = 'running', operatorStop, failSave = () => false, reconcile = async () => ({ state: 'relaunch' }) } = {}) => {
+    let snapshot = { version: 1, tasks: [record(1, { status, childSessionId: 'ses_child', leaseToken: 'dvr_lease_1',
+      startedAt: 1100, partial: true, recoverablePreview: 'kept output', canonicalRefs: [{ type: 'message', id: 'msg_kept' }],
+      ...(operatorStop ? { operatorStop } : {}) })], resultEnvelopes: [] };
+    let dispatches = 0, reconciliations = 0;
+    const scheduler = createManagedTaskScheduler({
+      persistence: { load: async () => structuredClone(snapshot), save: async value => {
+        if (failSave(value)) throw Error('save refused'); snapshot = structuredClone(value);
+      } },
+      executor: { start: async () => { dispatches += 1; throw Error('unexpected dispatch'); },
+        resume: async () => { dispatches += 1; throw Error('unexpected resume'); },
+        reconcile: async task => { reconciliations += 1; return reconcile(task); }, abort: async () => ({ aborted: true }) },
+    });
+    return { scheduler, snapshot: () => snapshot, dispatches: () => dispatches, reconciliations: () => reconciliations };
+  };
+  test('requires fresh stopped-owner proof and leaves active history untouched on refusal', async () => {
+    const f = fixture(); let proofs = 0;
+    await expect(f.scheduler.recoverStoppedRuntime(async () => { if (++proofs === 2) throw Error('epoch changed'); })).rejects.toThrow('epoch changed');
+    expect(f.snapshot().tasks[0].status).toBe('running'); expect(f.dispatches()).toBe(0);
+    await f.scheduler.shutdown();
+  });
+  test('stopped resume recovery preserves output and creates one durable interrupted result without replay', async () => {
+    const f = fixture();
+    await f.scheduler.recoverStoppedRuntime(async () => {});
+    await f.scheduler.recoverStoppedRuntime(async () => {});
+    expect(f.snapshot().tasks[0]).toMatchObject({ status: 'interrupted', partial: true,
+      recoverablePreview: 'kept output', canonicalRefs: [{ type: 'message', id: 'msg_kept' }] });
+    expect(f.snapshot().resultEnvelopes).toHaveLength(1);
+    expect(f.reconciliations()).toBe(0); expect(f.dispatches()).toBe(0);
+    await f.scheduler.shutdown();
+  });
+  test('a failed terminal save retains the original task and is retryable with the same owner proof', async () => {
+    let refused = true; const f = fixture({ failSave: snapshot => refused && snapshot.tasks[0].status === 'interrupted' });
+    await expect(f.scheduler.recoverStoppedRuntime(async () => {})).rejects.toThrow('save refused');
+    expect(f.scheduler.getTask('dvr_task_1').status).toBe('running'); expect(f.snapshot().resultEnvelopes).toHaveLength(0);
+    refused = false; await f.scheduler.recoverStoppedRuntime(async () => {});
+    expect(f.snapshot().tasks[0].status).toBe('interrupted'); expect(f.snapshot().resultEnvelopes).toHaveLength(1);
+    await f.scheduler.shutdown();
+  });
+  test.each(['starting', 'running'])('stopped recovery settles %s while preserving uncertain stop identity', async status => {
+    const stop = { state: 'uncertain', requestId: 'stop_1', requestedAt: 1200, leaseToken: 'dvr_lease_1' };
+    const f = fixture({ status, operatorStop: stop });
+    await f.scheduler.recoverStoppedRuntime(async () => {});
+    expect(f.snapshot().tasks[0]).toMatchObject({ status: 'interrupted', operatorStop: stop });
+    expect(f.snapshot().resultEnvelopes).toHaveLength(1); expect(f.dispatches()).toBe(0);
+    await f.scheduler.shutdown();
+  });
+  test('accepted user stop survives recovery and cannot be resumed by an automatic acknowledgement', async () => {
+    const f = fixture({ operatorStop: { state: 'accepted', requestId: 'stop_1', requestedAt: 1200, leaseToken: 'dvr_lease_1' } });
+    await f.scheduler.recoverStoppedRuntime(async () => {});
+    expect(f.snapshot().tasks[0]).toMatchObject({ status: 'aborted', terminationIntent: 'user_stopped' });
+    await expect(f.scheduler.acknowledgeResult('dvr_task_1', { action: 'resume', idempotencyKey: 'resume' })).rejects.toMatchObject({ code: 'user_stopped_recovery_required' });
+    expect(f.dispatches()).toBe(0); await f.scheduler.shutdown();
+  });
+  test('accepted stop wins over an older completed observation during preflight', async () => {
+    const f = fixture({ operatorStop: { state: 'accepted', requestId: 'stop_1', requestedAt: 1200, leaseToken: 'dvr_lease_1' },
+      reconcile: async () => ({ state: 'terminal', result: { status: 'completed' } }) });
+    await f.scheduler.withRuntimeRestart(async () => {
+      expect(f.snapshot().tasks[0]).toMatchObject({ status: 'aborted', terminationIntent: 'user_stopped' });
+    });
+    await f.scheduler.shutdown();
+  });
+  test('preflight refuses a resume relaunch before calling the runtime replacement', async () => {
+    const f = fixture(); let replacements = 0;
+    await expect(f.scheduler.withRuntimeRestart(async () => { replacements += 1; })).rejects.toMatchObject({ code: 'bundle_task_unsettled' });
+    expect(replacements).toBe(0); expect(f.dispatches()).toBe(0); expect(f.snapshot().tasks[0].status).toBe('running');
+    await f.scheduler.shutdown();
+  });
+  test('terminal preflight commits before replacement and holds new dispatch throughout it', async () => {
+    const f = fixture({ reconcile: async () => ({ state: 'terminal', result: { status: 'failed', failureReason: 'Aborted', partial: true } }) });
+    await f.scheduler.withRuntimeRestart(async () => {
+      expect(f.snapshot().tasks[0].status).toBe('failed'); expect(f.snapshot().resultEnvelopes).toHaveLength(1);
+      await expect(f.scheduler.acknowledgeResult('dvr_task_1', { action: 'resume', idempotencyKey: 'held' })).rejects.toMatchObject({ code: 'managed_runtime_restarting' });
+    });
+    expect(f.dispatches()).toBe(0); await f.scheduler.shutdown();
+  });
+});
+
+test('refused preflight resumes an admission committed while dispatch became held', async () => {
+ const blocked=Promise.withResolvers(),release=Promise.withResolvers(),started=Promise.withResolvers();let first=true,replaced=false;
+ const scheduler=createManagedTaskScheduler({persistence:{load:async()=>({version:1,tasks:[record(1)],resultEnvelopes:[]}),
+  save:async snapshot=>{if(first&&snapshot.tasks[0].status==='starting'){first=false;blocked.resolve();await release.promise;}}},
+  executor:{reconcile:async()=>({state:'unavailable'}),abort:async()=>({aborted:true}),start:async(_task,control)=>{
+   await control.markAccepted();started.resolve();return {status:'completed'};
+  }}});
+ const initialization=scheduler.initialize();await blocked.promise;
+ const restart=scheduler.withRuntimeRestart(async()=>{replaced=true;});
+ release.resolve();await expect(restart).rejects.toMatchObject({code:'bundle_task_unsettled'});
+ await initialization;await started.promise;expect(replaced).toBe(false);await scheduler.shutdown();
+});
+
+test('deferred dispatch rechecks prerequisites after a refused runtime restart', async () => {
+ const blocked=Promise.withResolvers(),release=Promise.withResolvers();let first=true,ready=true,starts=0;
+ const dependency=[{taskId:'dvr_task_producer',checkName:'interface',paths:['api.js'],contentHash:'a'.repeat(64)}];
+ const scheduler=createManagedTaskScheduler({persistence:{load:async()=>({version:1,tasks:[record(1,{taskPrerequisites:dependency})],resultEnvelopes:[]}),
+  save:async snapshot=>{if(first&&snapshot.tasks[0].status==='starting'){first=false;blocked.resolve();await release.promise;}}},
+  verifyTaskPrerequisites:async()=>ready,executor:{reconcile:async()=>({state:'unavailable'}),abort:async()=>({aborted:true}),start:async()=>{starts++;return {status:'completed'};}}});
+ try {const initialization=scheduler.initialize();await blocked.promise;const restart=scheduler.withRuntimeRestart(async()=>{});ready=false;release.resolve();
+  await expect(restart).rejects.toMatchObject({code:'bundle_task_unsettled'});await initialization;
+  const result=await scheduler.waitForTask('dvr_task_1');expect(starts).toBe(0);expect(result).toMatchObject({status:'failed',failureReason:expect.stringContaining('Producer interface evidence')});
+ }finally{await scheduler.shutdown();}
+});
+
+test('replacement failure keeps dispatch closed until a successful retry', async () => {
+ const scheduler=createManagedTaskScheduler({persistence:{load:async()=>({version:1,tasks:[],resultEnvelopes:[]}),save:async()=>{}},
+  executor:{start:async()=>{throw Error('must not launch');},reconcile:async()=>({state:'unavailable'}),abort:async()=>({aborted:true})}});
+ await expect(scheduler.withRuntimeRestart(async()=>{throw Error('launch refused');})).rejects.toThrow('launch refused');
+ await expect(scheduler.submit({})).rejects.toMatchObject({code:'managed_runtime_restarting'});
+ await scheduler.withRuntimeRestart(async()=>{});await scheduler.initialize();await scheduler.shutdown();
+});
+
+test('operator stop acceptance remains durable while restart preflight is waiting', async () => {
+ const observing=Promise.withResolvers(),release=Promise.withResolvers();let snapshot={version:1,tasks:[record(1,{status:'running',childSessionId:'ses_child',leaseToken:'dvr_lease_1',startedAt:1100})],resultEnvelopes:[]};
+ const scheduler=createManagedTaskScheduler({persistence:{load:async()=>snapshot,save:async value=>{snapshot=structuredClone(value);}},
+  executor:{start:async()=>{throw Error('must not launch');},abort:async()=>({aborted:true}),reconcile:async()=>{observing.resolve();await release.promise;return {state:'live'};}}});
+ const restart=scheduler.withRuntimeRestart(async()=>{throw Error('must not replace');});await observing.promise;
+ const stop=await scheduler.recordOperatorStop({sessionId:'ses_child',requestedAt:1200,requestId:'stop_1'});
+ expect(await scheduler.acceptOperatorStop(stop)).toBe(true);release.resolve();
+ await expect(restart).rejects.toMatchObject({code:'bundle_task_unsettled'});
+ expect(snapshot.tasks[0]).toMatchObject({terminationIntent:'user_stopped',operatorStop:{state:'accepted',requestId:'stop_1'}});
+ await scheduler.shutdown();
 });

@@ -1,0 +1,527 @@
+{
+ "vector": "10-child",
+ "title": "D10: subagent tool creates a child session; parent metadata set before",
+ "design": "D10 (+F4 child inheritance)",
+ "opencode": "2.0.20",
+ "capturedWith": "g2trace on the G1 embedded host (ServerFetch.make + Bun listener), simulation backend; see README.md",
+ "normalization": {
+  "ids": 44,
+  "timestamps": 30,
+  "sha256": 4,
+  "sha1": 0,
+  "slugs": 2,
+  "timestampBase": 1767225600000,
+  "timestampStep": 1000
+ },
+ "frames": [
+  "data: {\"id\":\"evt_000000000001normalized0000\",\"created\":1767225601000,\"type\":\"session.created\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"slug\":\"slug-1\",\"version\":\"0.0.0-spike\",\"projectID\":\"global\",\"location\":{\"directory\":\"<home>/workspace\"},\"subpath\":\"\",\"title\":\"Parent\",\"metadata\":{\"inherit\":\"yes\",\"devryan\":{\"todo\":{\"sessionID\":\"owner-check\",\"items\":[],\"rev\":1}}}},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":0,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000002normalized0000\",\"created\":1767225602000,\"type\":\"session.inbox.enqueued\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"inboxID\":\"msg_000000000001normalized0000\",\"sessionID\":\"ses_fffffffffffenormalized0000\",\"item\":{\"type\":\"user\",\"payload\":{\"text\":\"delegate to a child\"},\"delivery\":\"steer\"}},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":1,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000003normalized0000\",\"created\":1767225603000,\"type\":\"session.execution.started\",\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":2,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000004normalized0000\",\"created\":1767225604000,\"metadata\":{\"instructions\":{\"initial\":true}},\"type\":\"session.instructions.updated\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"delta\":{\"core/codemode\":\"0000000000000000000000000000000000000000000000000000000000000001\",\"core/skill-guidance\":\"0000000000000000000000000000000000000000000000000000000000000002\",\"core/date\":\"0000000000000000000000000000000000000000000000000000000000000003\",\"core/environment\":\"0000000000000000000000000000000000000000000000000000000000000004\"}},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":3,\"version\":2}}\n\n",
+  "data: {\"id\":\"evt_000000000005normalized0000\",\"created\":1767225604000,\"type\":\"session.inbox.delivered\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"inboxID\":\"msg_000000000001normalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":4,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000006normalized0000\",\"created\":1767225606000,\"type\":\"session.step.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"agent\":\"build\",\"model\":{\"id\":\"m1\",\"providerID\":\"sim\"},\"assistantMessageID\":\"msg_000000000002normalized0000\",\"started\":1767225605000},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":5,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000007normalized0000\",\"created\":1767225607000,\"type\":\"session.tool.input.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"id\":\"call_s10_subagent\",\"name\":\"subagent\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":6,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000008normalized0000\",\"created\":1767225608000,\"type\":\"session.tool.input.ended\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"id\":\"call_s10_subagent\",\"text\":\"{\\\"agent\\\":\\\"general\\\",\\\"description\\\":\\\"probe child\\\",\\\"prompt\\\":\\\"CHILD-TASK-MARKER do the child task\\\"}\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":7,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000009normalized0000\",\"created\":1767225609000,\"type\":\"session.tool.called\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"id\":\"call_s10_subagent\",\"input\":{\"agent\":\"general\",\"description\":\"probe child\",\"prompt\":\"CHILD-TASK-MARKER do the child task\"},\"executed\":false},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":8,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000000anormalized0000\",\"created\":1767225610000,\"type\":\"session.step.streamed\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":9,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000000bnormalized0000\",\"created\":1767225611000,\"type\":\"session.created\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffdnormalized0000\",\"slug\":\"slug-2\",\"version\":\"0.0.0-spike\",\"projectID\":\"global\",\"parentID\":\"ses_fffffffffffenormalized0000\",\"location\":{\"directory\":\"<home>/workspace\"},\"subpath\":\"\",\"title\":\"probe child\",\"agent\":\"general\",\"metadata\":{\"inherit\":\"yes\",\"devryan\":{\"todo\":{\"sessionID\":\"owner-check\",\"items\":[],\"rev\":1}}}},\"durable\":{\"aggregateID\":\"ses_fffffffffffdnormalized0000\",\"seq\":0,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000000cnormalized0000\",\"created\":1767225612000,\"type\":\"session.tool.progress\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"id\":\"call_s10_subagent\",\"metadata\":{\"sessionID\":\"ses_fffffffffffdnormalized0000\",\"status\":\"running\"}}}\n\n",
+  "data: {\"id\":\"evt_00000000000dnormalized0000\",\"created\":1767225613000,\"type\":\"session.inbox.enqueued\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"inboxID\":\"msg_000000000003normalized0000\",\"sessionID\":\"ses_fffffffffffdnormalized0000\",\"item\":{\"type\":\"user\",\"payload\":{\"text\":\"You are a subagent spawned by another session.\\nCHILD-TASK-MARKER do the child task\"},\"delivery\":\"steer\"}},\"durable\":{\"aggregateID\":\"ses_fffffffffffdnormalized0000\",\"seq\":1,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000000enormalized0000\",\"created\":1767225614000,\"type\":\"session.execution.started\",\"data\":{\"sessionID\":\"ses_fffffffffffdnormalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffdnormalized0000\",\"seq\":2,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000000fnormalized0000\",\"created\":1767225615000,\"metadata\":{\"instructions\":{\"initial\":true}},\"type\":\"session.instructions.updated\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffdnormalized0000\",\"delta\":{\"core/codemode\":\"0000000000000000000000000000000000000000000000000000000000000001\",\"core/skill-guidance\":\"0000000000000000000000000000000000000000000000000000000000000002\",\"core/date\":\"0000000000000000000000000000000000000000000000000000000000000003\",\"core/environment\":\"0000000000000000000000000000000000000000000000000000000000000004\"}},\"durable\":{\"aggregateID\":\"ses_fffffffffffdnormalized0000\",\"seq\":3,\"version\":2}}\n\n",
+  "data: {\"id\":\"evt_000000000010normalized0000\",\"created\":1767225615000,\"type\":\"session.inbox.delivered\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffdnormalized0000\",\"inboxID\":\"msg_000000000003normalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffdnormalized0000\",\"seq\":4,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000011normalized0000\",\"created\":1767225617000,\"type\":\"session.step.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffdnormalized0000\",\"agent\":\"general\",\"model\":{\"id\":\"m1\",\"providerID\":\"sim\"},\"assistantMessageID\":\"msg_000000000004normalized0000\",\"started\":1767225616000},\"durable\":{\"aggregateID\":\"ses_fffffffffffdnormalized0000\",\"seq\":5,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000012normalized0000\",\"created\":1767225618000,\"type\":\"session.text.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffdnormalized0000\",\"assistantMessageID\":\"msg_000000000004normalized0000\",\"ordinal\":0},\"durable\":{\"aggregateID\":\"ses_fffffffffffdnormalized0000\",\"seq\":6,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000013normalized0000\",\"created\":1767225619000,\"type\":\"session.text.delta\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffdnormalized0000\",\"assistantMessageID\":\"msg_000000000004normalized0000\",\"ordinal\":0,\"delta\":\"child done\"}}\n\n",
+  "data: {\"id\":\"evt_000000000014normalized0000\",\"created\":1767225619000,\"type\":\"session.text.ended\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffdnormalized0000\",\"assistantMessageID\":\"msg_000000000004normalized0000\",\"ordinal\":0,\"text\":\"child done\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffdnormalized0000\",\"seq\":7,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000015normalized0000\",\"created\":1767225620000,\"type\":\"session.step.streamed\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffdnormalized0000\",\"assistantMessageID\":\"msg_000000000004normalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffdnormalized0000\",\"seq\":8,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000016normalized0000\",\"created\":1767225620000,\"type\":\"session.step.ended\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffdnormalized0000\",\"assistantMessageID\":\"msg_000000000004normalized0000\",\"finish\":\"stop\",\"rawFinish\":\"stop\",\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}},\"durable\":{\"aggregateID\":\"ses_fffffffffffdnormalized0000\",\"seq\":9,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000017normalized0000\",\"created\":1767225621000,\"type\":\"session.usage.updated\",\"data\":{\"sessionID\":\"ses_fffffffffffdnormalized0000\",\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}}}\n\n",
+  "data: {\"id\":\"evt_000000000018normalized0000\",\"created\":1767225621000,\"type\":\"session.execution.succeeded\",\"data\":{\"sessionID\":\"ses_fffffffffffdnormalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffdnormalized0000\",\"seq\":10,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000019normalized0000\",\"created\":1767225622000,\"type\":\"session.tool.success\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"id\":\"call_s10_subagent\",\"content\":[{\"type\":\"text\",\"text\":\"<subagent sessionID=\\\"ses_fffffffffffdnormalized0000\\\" state=\\\"completed\\\">\\nchild done\\n</subagent>\"}],\"metadata\":{\"sessionID\":\"ses_fffffffffffdnormalized0000\",\"status\":\"completed\",\"truncated\":false},\"executed\":false},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":10,\"version\":2}}\n\n",
+  "data: {\"id\":\"evt_00000000001anormalized0000\",\"created\":1767225623000,\"type\":\"session.step.ended\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"finish\":\"tool-calls\",\"rawFinish\":\"tool_calls\",\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":11,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000001bnormalized0000\",\"created\":1767225623000,\"type\":\"session.usage.updated\",\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}}}\n\n",
+  "data: {\"id\":\"evt_00000000001cnormalized0000\",\"created\":1767225625000,\"type\":\"session.step.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"agent\":\"build\",\"model\":{\"id\":\"m1\",\"providerID\":\"sim\"},\"assistantMessageID\":\"msg_000000000006normalized0000\",\"started\":1767225624000},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":12,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000001dnormalized0000\",\"created\":1767225626000,\"type\":\"session.text.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000006normalized0000\",\"ordinal\":0},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":13,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000001enormalized0000\",\"created\":1767225627000,\"type\":\"session.text.delta\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000006normalized0000\",\"ordinal\":0,\"delta\":\"parent done\"}}\n\n",
+  "data: {\"id\":\"evt_00000000001fnormalized0000\",\"created\":1767225627000,\"type\":\"session.text.ended\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000006normalized0000\",\"ordinal\":0,\"text\":\"parent done\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":14,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000020normalized0000\",\"created\":1767225628000,\"type\":\"session.step.streamed\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000006normalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":15,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000021normalized0000\",\"created\":1767225629000,\"type\":\"session.step.ended\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000006normalized0000\",\"finish\":\"stop\",\"rawFinish\":\"stop\",\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":16,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000022normalized0000\",\"created\":1767225629000,\"type\":\"session.usage.updated\",\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}}}\n\n",
+  "data: {\"id\":\"evt_000000000023normalized0000\",\"created\":1767225630000,\"type\":\"session.execution.succeeded\",\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":17,\"version\":1}}\n\n"
+ ],
+ "rest": [
+  {
+   "label": "session.create",
+   "method": "POST",
+   "path": "/api/session",
+   "request": {
+    "location": {
+     "directory": "<home>/workspace"
+    },
+    "title": "Parent",
+    "metadata": {
+     "inherit": "yes",
+     "devryan": {
+      "todo": {
+       "sessionID": "owner-check",
+       "items": [],
+       "rev": 1
+      }
+     }
+    }
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "ses_fffffffffffenormalized0000",
+     "projectID": "global",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "time": {
+      "created": 1767225601000,
+      "updated": 1767225601000
+     },
+     "title": "Parent",
+     "metadata": {
+      "inherit": "yes",
+      "devryan": {
+       "todo": {
+        "sessionID": "owner-check",
+        "items": [],
+        "rev": 1
+       }
+      }
+     },
+     "location": {
+      "directory": "<home>/workspace"
+     }
+    }
+   }
+  },
+  {
+   "label": "parent.session.get",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffffenormalized0000",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "ses_fffffffffffenormalized0000",
+     "projectID": "global",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "time": {
+      "created": 1767225601000,
+      "updated": 1767225601000
+     },
+     "title": "Parent",
+     "metadata": {
+      "inherit": "yes",
+      "devryan": {
+       "todo": {
+        "sessionID": "owner-check",
+        "items": [],
+        "rev": 1
+       }
+      }
+     },
+     "location": {
+      "directory": "<home>/workspace"
+     }
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "delegate to a child"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000001normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225602000
+     },
+     "type": "user",
+     "payload": {
+      "text": "delegate to a child"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "parent.session.get",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffffenormalized0000",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "ses_fffffffffffenormalized0000",
+     "projectID": "global",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "outcome": "succeeded",
+     "time": {
+      "created": 1767225601000,
+      "updated": 1767225602000,
+      "idle": 1767225630000
+     },
+     "title": "Parent",
+     "metadata": {
+      "inherit": "yes",
+      "devryan": {
+       "todo": {
+        "sessionID": "owner-check",
+        "items": [],
+        "rev": 1
+       }
+      }
+     },
+     "location": {
+      "directory": "<home>/workspace"
+     }
+    }
+   }
+  },
+  {
+   "label": "parent.session.messages.asc",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffffenormalized0000/message?limit=200&order=asc",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": [
+     {
+      "id": "msg_000000000001normalized0000",
+      "time": {
+       "created": 1767225604000
+      },
+      "text": "delegate to a child",
+      "type": "user"
+     },
+     {
+      "id": "msg_000000000002normalized0000",
+      "time": {
+       "created": 1767225605000,
+       "streamed": 1767225610000,
+       "completed": 1767225623000
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+       "id": "m1",
+       "providerID": "sim"
+      },
+      "content": [
+       {
+        "type": "tool",
+        "id": "call_s10_subagent",
+        "name": "subagent",
+        "executed": false,
+        "state": {
+         "status": "completed",
+         "input": {
+          "agent": "general",
+          "description": "probe child",
+          "prompt": "CHILD-TASK-MARKER do the child task"
+         },
+         "content": [
+          {
+           "type": "text",
+           "text": "<subagent sessionID=\"ses_fffffffffffdnormalized0000\" state=\"completed\">\nchild done\n</subagent>"
+          }
+         ],
+         "metadata": {
+          "sessionID": "ses_fffffffffffdnormalized0000",
+          "status": "completed",
+          "truncated": false
+         }
+        },
+        "time": {
+         "created": 1767225607000,
+         "ran": 1767225609000,
+         "completed": 1767225622000
+        }
+       }
+      ],
+      "finish": "tool-calls",
+      "rawFinish": "tool_calls",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      }
+     },
+     {
+      "id": "msg_000000000006normalized0000",
+      "time": {
+       "created": 1767225624000,
+       "streamed": 1767225628000,
+       "completed": 1767225629000
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+       "id": "m1",
+       "providerID": "sim"
+      },
+      "content": [
+       {
+        "type": "text",
+        "text": "parent done"
+       }
+      ],
+      "finish": "stop",
+      "rawFinish": "stop",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      }
+     },
+     {
+      "id": "msg_000000000007normalized0000",
+      "time": {
+       "created": 1767225630000
+      },
+      "type": "idle",
+      "outcome": "succeeded"
+     }
+    ],
+    "cursor": {
+     "previous": "eyJpZCI6Im1zZ18wMDAwMDAwMDAwMDFub3JtYWxpemVkMDAwMCIsIm9yZGVyIjoiYXNjIiwiZGlyZWN0aW9uIjoicHJldmlvdXMifQ",
+     "next": "eyJpZCI6Im1zZ18wMDAwMDAwMDAwMDdub3JtYWxpemVkMDAwMCIsIm9yZGVyIjoiYXNjIiwiZGlyZWN0aW9uIjoibmV4dCJ9"
+    }
+   }
+  },
+  {
+   "label": "session.list.parentID",
+   "method": "GET",
+   "path": "/api/session?parentID=ses_fffffffffffenormalized0000",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": [
+     {
+      "id": "ses_fffffffffffdnormalized0000",
+      "parentID": "ses_fffffffffffenormalized0000",
+      "projectID": "global",
+      "agent": "general",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      },
+      "outcome": "succeeded",
+      "time": {
+       "created": 1767225611000,
+       "updated": 1767225613000,
+       "idle": 1767225621000
+      },
+      "title": "probe child",
+      "metadata": {
+       "inherit": "yes",
+       "devryan": {
+        "todo": {
+         "sessionID": "owner-check",
+         "items": [],
+         "rev": 1
+        }
+       }
+      },
+      "location": {
+       "directory": "<home>/workspace"
+      }
+     }
+    ],
+    "cursor": {
+     "previous": "eyJwYXJlbnRJRCI6InNlc19mZmZmZmZmZmZmZmVub3JtYWxpemVkMDAwMCIsImFuY2hvciI6eyJpZCI6InNlc19mZmZmZmZmZmZmZmRub3JtYWxpemVkMDAwMCIsInRpbWUiOjE3NjcyMjU2MTMwMDAsImRpcmVjdGlvbiI6InByZXZpb3VzIn19",
+     "next": "eyJwYXJlbnRJRCI6InNlc19mZmZmZmZmZmZmZmVub3JtYWxpemVkMDAwMCIsImFuY2hvciI6eyJpZCI6InNlc19mZmZmZmZmZmZmZmRub3JtYWxpemVkMDAwMCIsInRpbWUiOjE3NjcyMjU2MTMwMDAsImRpcmVjdGlvbiI6Im5leHQifX0"
+    }
+   }
+  },
+  {
+   "label": "child.session.get",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffffdnormalized0000",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "ses_fffffffffffdnormalized0000",
+     "parentID": "ses_fffffffffffenormalized0000",
+     "projectID": "global",
+     "agent": "general",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "outcome": "succeeded",
+     "time": {
+      "created": 1767225611000,
+      "updated": 1767225613000,
+      "idle": 1767225621000
+     },
+     "title": "probe child",
+     "metadata": {
+      "inherit": "yes",
+      "devryan": {
+       "todo": {
+        "sessionID": "owner-check",
+        "items": [],
+        "rev": 1
+       }
+      }
+     },
+     "location": {
+      "directory": "<home>/workspace"
+     }
+    }
+   }
+  },
+  {
+   "label": "child.session.messages.asc",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffffdnormalized0000/message?limit=200&order=asc",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": [
+     {
+      "id": "msg_000000000003normalized0000",
+      "time": {
+       "created": 1767225615000
+      },
+      "text": "You are a subagent spawned by another session.\nCHILD-TASK-MARKER do the child task",
+      "type": "user"
+     },
+     {
+      "id": "msg_000000000004normalized0000",
+      "time": {
+       "created": 1767225616000,
+       "streamed": 1767225620000,
+       "completed": 1767225620000
+      },
+      "type": "assistant",
+      "agent": "general",
+      "model": {
+       "id": "m1",
+       "providerID": "sim"
+      },
+      "content": [
+       {
+        "type": "text",
+        "text": "child done"
+       }
+      ],
+      "finish": "stop",
+      "rawFinish": "stop",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      }
+     },
+     {
+      "id": "msg_000000000005normalized0000",
+      "time": {
+       "created": 1767225621000
+      },
+      "type": "idle",
+      "outcome": "succeeded"
+     }
+    ],
+    "cursor": {
+     "previous": "eyJpZCI6Im1zZ18wMDAwMDAwMDAwMDNub3JtYWxpemVkMDAwMCIsIm9yZGVyIjoiYXNjIiwiZGlyZWN0aW9uIjoicHJldmlvdXMifQ",
+     "next": "eyJpZCI6Im1zZ18wMDAwMDAwMDAwMDVub3JtYWxpemVkMDAwMCIsIm9yZGVyIjoiYXNjIiwiZGlyZWN0aW9uIjoibmV4dCJ9"
+    }
+   }
+  }
+ ],
+ "llm": [
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 2,
+   "lastRole": "user",
+   "lastText": "delegate to a child"
+  },
+  {
+   "kind": "child",
+   "model": "m1",
+   "messages": 2,
+   "lastRole": "user",
+   "lastText": "You are a subagent spawned by another session.\nCHILD-TASK-MARKER do the child task"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 4,
+   "lastRole": "tool",
+   "lastText": "<subagent sessionID=\"ses_fffffffffffdnormalized0000\" state=\"completed\">\nchild done\n</subagent>"
+  }
+ ],
+ "notes": {
+  "terminal": "session.execution.succeeded",
+  "childCreated": true
+ }
+}

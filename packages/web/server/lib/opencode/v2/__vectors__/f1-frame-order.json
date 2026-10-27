@@ -1,0 +1,2391 @@
+{
+ "vector": "f1-frame-order",
+ "title": "F1: 50 reasoning+text turns, recording ephemeral vs durable frame order",
+ "design": "F1 (D1 deltaFirst)",
+ "opencode": "2.0.20",
+ "capturedWith": "g2trace on the G1 embedded host (ServerFetch.make + Bun listener), simulation backend; see README.md",
+ "normalization": {
+  "ids": 68,
+  "timestamps": 63,
+  "sha256": 4,
+  "sha1": 0,
+  "slugs": 1,
+  "timestampBase": 1767225600000,
+  "timestampStep": 1000
+ },
+ "frames": [
+  "data: {\"id\":\"evt_000000000001normalized0000\",\"created\":1767225601000,\"type\":\"session.created\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"slug\":\"slug-1\",\"version\":\"0.0.0-spike\",\"projectID\":\"global\",\"location\":{\"directory\":\"<home>/workspace\"},\"subpath\":\"\",\"title\":\"Frame order\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":0,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000002normalized0000\",\"created\":1767225602000,\"type\":\"session.inbox.enqueued\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"inboxID\":\"msg_000000000001normalized0000\",\"sessionID\":\"ses_fffffffffffenormalized0000\",\"item\":{\"type\":\"user\",\"payload\":{\"text\":\"turn 0\"},\"delivery\":\"steer\"}},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":1,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000003normalized0000\",\"created\":1767225603000,\"type\":\"session.execution.started\",\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":2,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000004normalized0000\",\"created\":1767225604000,\"metadata\":{\"instructions\":{\"initial\":true}},\"type\":\"session.instructions.updated\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"delta\":{\"core/codemode\":\"0000000000000000000000000000000000000000000000000000000000000001\",\"core/skill-guidance\":\"0000000000000000000000000000000000000000000000000000000000000002\",\"core/date\":\"0000000000000000000000000000000000000000000000000000000000000003\",\"core/environment\":\"0000000000000000000000000000000000000000000000000000000000000004\"}},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":3,\"version\":2}}\n\n",
+  "data: {\"id\":\"evt_000000000005normalized0000\",\"created\":1767225605000,\"type\":\"session.inbox.delivered\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"inboxID\":\"msg_000000000001normalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":4,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000006normalized0000\",\"created\":1767225607000,\"type\":\"session.step.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"agent\":\"build\",\"model\":{\"id\":\"m1\",\"providerID\":\"sim\"},\"assistantMessageID\":\"msg_000000000002normalized0000\",\"started\":1767225606000},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":5,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000007normalized0000\",\"created\":1767225608000,\"type\":\"session.reasoning.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"ordinal\":0,\"state\":{\"reasoningField\":\"reasoning_content\"}},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":6,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000008normalized0000\",\"created\":1767225609000,\"type\":\"session.reasoning.delta\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"ordinal\":0,\"delta\":\"r1 r2\"}}\n\n",
+  "data: {\"id\":\"evt_000000000009normalized0000\",\"created\":1767225609000,\"type\":\"session.text.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"ordinal\":0},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":7,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000000anormalized0000\",\"created\":1767225610000,\"type\":\"session.reasoning.ended\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"ordinal\":0,\"text\":\"r1 r2\",\"state\":{\"reasoningField\":\"reasoning_content\"}},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":8,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000000bnormalized0000\",\"created\":1767225611000,\"type\":\"session.text.delta\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"ordinal\":0,\"delta\":\"t1 t2\"}}\n\n",
+  "data: {\"id\":\"evt_00000000000cnormalized0000\",\"created\":1767225611000,\"type\":\"session.text.ended\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"ordinal\":0,\"text\":\"t1 t2\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":9,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000000dnormalized0000\",\"created\":1767225612000,\"type\":\"session.step.streamed\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":10,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000000enormalized0000\",\"created\":1767225612000,\"type\":\"session.step.ended\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"finish\":\"stop\",\"rawFinish\":\"stop\",\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":11,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000000fnormalized0000\",\"created\":1767225613000,\"type\":\"session.usage.updated\",\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}}}\n\n",
+  "data: {\"id\":\"evt_000000000010normalized0000\",\"created\":1767225614000,\"type\":\"session.execution.succeeded\",\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":12,\"version\":1}}\n\n"
+ ],
+ "rest": [
+  {
+   "label": "session.create",
+   "method": "POST",
+   "path": "/api/session",
+   "request": {
+    "location": {
+     "directory": "<home>/workspace"
+    },
+    "title": "Frame order"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "ses_fffffffffffenormalized0000",
+     "projectID": "global",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "time": {
+      "created": 1767225601000,
+      "updated": 1767225601000
+     },
+     "title": "Frame order",
+     "location": {
+      "directory": "<home>/workspace"
+     }
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 0"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000001normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225602000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 0"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 1"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000003normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225615000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 1"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 2"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000004normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225616000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 2"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 3"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000005normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225617000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 3"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 4"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000006normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225618000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 4"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 5"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000007normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225619000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 5"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 6"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000008normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225620000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 6"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 7"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000009normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225621000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 7"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 8"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_00000000000anormalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225622000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 8"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 9"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_00000000000bnormalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225623000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 9"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 10"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_00000000000cnormalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225624000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 10"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 11"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_00000000000dnormalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225625000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 11"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 12"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_00000000000enormalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225626000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 12"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 13"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_00000000000fnormalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225627000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 13"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 14"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000010normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225628000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 14"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 15"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000011normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225629000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 15"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 16"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000012normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225630000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 16"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 17"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000013normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225631000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 17"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 18"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000014normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225632000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 18"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 19"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000015normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225633000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 19"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 20"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000016normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225634000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 20"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 21"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000017normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225635000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 21"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 22"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000018normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225636000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 22"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 23"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000019normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225637000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 23"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 24"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_00000000001anormalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225638000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 24"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 25"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_00000000001bnormalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225639000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 25"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 26"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_00000000001cnormalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225640000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 26"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 27"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_00000000001dnormalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225641000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 27"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 28"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_00000000001enormalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225642000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 28"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 29"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_00000000001fnormalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225643000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 29"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 30"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000020normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225644000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 30"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 31"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000021normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225645000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 31"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 32"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000022normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225646000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 32"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 33"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000023normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225647000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 33"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 34"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000024normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225648000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 34"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 35"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000025normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225649000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 35"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 36"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000026normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225650000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 36"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 37"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000027normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225651000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 37"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 38"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000028normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225652000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 38"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 39"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000029normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225653000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 39"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 40"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_00000000002anormalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225654000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 40"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 41"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_00000000002bnormalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225655000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 41"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 42"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_00000000002cnormalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225656000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 42"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 43"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_00000000002dnormalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225657000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 43"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 44"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_00000000002enormalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225658000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 44"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 45"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_00000000002fnormalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225659000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 45"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 46"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000030normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225660000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 46"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 47"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000031normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225661000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 47"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 48"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000032normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225662000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 48"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "turn 49"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000033normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225663000
+     },
+     "type": "user",
+     "payload": {
+      "text": "turn 49"
+     },
+     "delivery": "steer"
+    }
+   }
+  }
+ ],
+ "llm": [
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 2,
+   "lastRole": "user",
+   "lastText": "turn 0"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 4,
+   "lastRole": "user",
+   "lastText": "turn 1"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 6,
+   "lastRole": "user",
+   "lastText": "turn 2"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 8,
+   "lastRole": "user",
+   "lastText": "turn 3"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 10,
+   "lastRole": "user",
+   "lastText": "turn 4"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 12,
+   "lastRole": "user",
+   "lastText": "turn 5"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 14,
+   "lastRole": "user",
+   "lastText": "turn 6"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 16,
+   "lastRole": "user",
+   "lastText": "turn 7"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 18,
+   "lastRole": "user",
+   "lastText": "turn 8"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 20,
+   "lastRole": "user",
+   "lastText": "turn 9"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 22,
+   "lastRole": "user",
+   "lastText": "turn 10"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 24,
+   "lastRole": "user",
+   "lastText": "turn 11"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 26,
+   "lastRole": "user",
+   "lastText": "turn 12"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 28,
+   "lastRole": "user",
+   "lastText": "turn 13"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 30,
+   "lastRole": "user",
+   "lastText": "turn 14"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 32,
+   "lastRole": "user",
+   "lastText": "turn 15"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 34,
+   "lastRole": "user",
+   "lastText": "turn 16"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 36,
+   "lastRole": "user",
+   "lastText": "turn 17"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 38,
+   "lastRole": "user",
+   "lastText": "turn 18"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 40,
+   "lastRole": "user",
+   "lastText": "turn 19"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 42,
+   "lastRole": "user",
+   "lastText": "turn 20"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 44,
+   "lastRole": "user",
+   "lastText": "turn 21"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 46,
+   "lastRole": "user",
+   "lastText": "turn 22"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 48,
+   "lastRole": "user",
+   "lastText": "turn 23"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 50,
+   "lastRole": "user",
+   "lastText": "turn 24"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 52,
+   "lastRole": "user",
+   "lastText": "turn 25"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 54,
+   "lastRole": "user",
+   "lastText": "turn 26"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 56,
+   "lastRole": "user",
+   "lastText": "turn 27"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 58,
+   "lastRole": "user",
+   "lastText": "turn 28"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 60,
+   "lastRole": "user",
+   "lastText": "turn 29"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 62,
+   "lastRole": "user",
+   "lastText": "turn 30"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 64,
+   "lastRole": "user",
+   "lastText": "turn 31"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 66,
+   "lastRole": "user",
+   "lastText": "turn 32"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 68,
+   "lastRole": "user",
+   "lastText": "turn 33"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 70,
+   "lastRole": "user",
+   "lastText": "turn 34"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 72,
+   "lastRole": "user",
+   "lastText": "turn 35"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 74,
+   "lastRole": "user",
+   "lastText": "turn 36"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 76,
+   "lastRole": "user",
+   "lastText": "turn 37"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 78,
+   "lastRole": "user",
+   "lastText": "turn 38"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 80,
+   "lastRole": "user",
+   "lastText": "turn 39"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 82,
+   "lastRole": "user",
+   "lastText": "turn 40"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 84,
+   "lastRole": "user",
+   "lastText": "turn 41"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 86,
+   "lastRole": "user",
+   "lastText": "turn 42"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 88,
+   "lastRole": "user",
+   "lastText": "turn 43"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 90,
+   "lastRole": "user",
+   "lastText": "turn 44"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 92,
+   "lastRole": "user",
+   "lastText": "turn 45"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 94,
+   "lastRole": "user",
+   "lastText": "turn 46"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 96,
+   "lastRole": "user",
+   "lastText": "turn 47"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 98,
+   "lastRole": "user",
+   "lastText": "turn 48"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 100,
+   "lastRole": "user",
+   "lastText": "turn 49"
+  }
+ ],
+ "notes": {
+  "stats": {
+   "turns": 50,
+   "textDeltaBeforeTextStarted": 0,
+   "reasoningDeltaBeforeReasoningStarted": 0,
+   "deltaBeforeStepStarted": 0,
+   "textEndedBeforeLastTextDelta": 0,
+   "textDeltaFrames": 50,
+   "reasoningDeltaFrames": 50
+  },
+  "perTurnTypes": [
+   [
+    "session.created",
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.instructions.updated",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ],
+   [
+    "session.inbox.enqueued",
+    "session.execution.started",
+    "session.inbox.delivered",
+    "session.step.started",
+    "session.reasoning.started",
+    "session.reasoning.delta",
+    "session.text.started",
+    "session.reasoning.ended",
+    "session.text.delta",
+    "session.text.ended",
+    "session.step.streamed",
+    "session.step.ended",
+    "session.execution.succeeded"
+   ]
+  ],
+  "framesTrimmed": true
+ }
+}

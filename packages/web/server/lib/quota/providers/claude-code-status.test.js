@@ -1,9 +1,11 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
+  CLAUDE_CODE_LEGACY_STATUS_PATH,
+  CLAUDE_CODE_STATUS_PATH,
   CLAUDE_CODE_USAGE_UNAVAILABLE_CODE,
   readClaudeCodeStatusUsage,
 } from './claude-code-status.js';
@@ -11,7 +13,7 @@ import {
 let tempDir = null;
 
 const createTempDir = () => {
-  tempDir = mkdtempSync(join(tmpdir(), 'openchamber-claude-status-'));
+  tempDir = mkdtempSync(join(tmpdir(), 'devryan-claude-status-'));
   return tempDir;
 };
 
@@ -29,6 +31,20 @@ const writeStatusFile = (payload) => {
 };
 
 describe('readClaudeCodeStatusUsage', () => {
+  it('prefers DevRyan status and reads the historical file only when it is absent', () => {
+    expect(CLAUDE_CODE_STATUS_PATH).toMatch(/\.cache\/devryan\/claude-code-status\.json$/);
+    expect(CLAUDE_CODE_LEGACY_STATUS_PATH).toMatch(/\.cache\/openchamber\/claude-code-status\.json$/);
+    const root = createTempDir();
+    const statusPath = join(root, '.cache', 'devryan', 'claude-code-status.json');
+    const legacyStatusPath = join(root, '.cache', 'openchamber', 'claude-code-status.json');
+    const now = Date.UTC(2026, 0, 1);
+    mkdirSync(join(root, '.cache', 'openchamber'), { recursive: true });
+    writeFileSync(legacyStatusPath, JSON.stringify({ updated_at: now, rate_limits: { five_hour: { used_percentage: 21 } } }));
+    expect(readClaudeCodeStatusUsage({ statusPath, legacyStatusPath, now }).usage.windows['5h'].usedPercent).toBe(21);
+    mkdirSync(join(root, '.cache', 'devryan'), { recursive: true });
+    writeFileSync(statusPath, JSON.stringify({ updated_at: now, rate_limits: { five_hour: { used_percentage: 42 } } }));
+    expect(readClaudeCodeStatusUsage({ statusPath, legacyStatusPath, now }).usage.windows['5h'].usedPercent).toBe(42);
+  });
   it('returns five-hour and seven-day windows from Claude Code status JSON', () => {
     const now = Date.UTC(2026, 0, 1);
     const statusPath = writeStatusFile({

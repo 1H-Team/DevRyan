@@ -1,0 +1,4 @@
+# Reviewed resources are byte-pinned; checkout must not rewrite their line endings.
+/packages/web/runtime/reviewed-inputs/** -text
+/packages/web/server/default-config/plugins/devryan-document-reader.* -text
+/packages/web/server/default-config/plugins/devryan-browser.* -text

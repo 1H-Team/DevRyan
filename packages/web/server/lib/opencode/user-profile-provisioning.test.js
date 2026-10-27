@@ -119,7 +119,7 @@ describe('user profile provisioning', () => {
     const configDir = path.join(home, '.config', 'opencode');
     const config = readJson(path.join(configDir, 'opencode.json'));
     const packageJson = readJson(path.join(configDir, 'package.json'));
-    const slim = readJson(path.join(configDir, 'oh-my-opencode-slim.json'));
+    const slim = readJson(path.join(configDir, 'devryan-agents.jsonc'));
     const meridianFeatures = readJson(path.join(home, '.config', 'meridian', 'sdk-features.json'));
 
     expect(result.ok).toBe(true);
@@ -127,8 +127,6 @@ describe('user profile provisioning', () => {
       './plugins/devryan-open-cursor.mjs',
       './node_modules/opencode-with-claude/dist/index.js',
       './node_modules/opencode-gpt-imagegen/dist/index.js',
-      './plugins/devryan-oh-my-opencode-slim.mjs',
-      './plugins/devryan-superpowers.mjs',
       './plugins/devryan-skill-context.mjs',
       './plugins/devryan-document-reader.mjs',
     ]);
@@ -136,26 +134,26 @@ describe('user profile provisioning', () => {
     expect(packageJson.dependencies).toMatchObject({
       '@ai-sdk/openai-compatible': '^2.0.47',
       '@opencode-ai/plugin': '1.18.33',
-      '@rama_nigg/open-cursor': '2.5.8',
-      '@rynfar/meridian': '1.62.6',
+      '@rama_nigg/open-cursor': '2.5.17',
+      '@rynfar/meridian': '1.79.0',
       'adm-zip': '0.6.0',
       'mammoth': '1.12.1',
-      'oh-my-opencode-slim': '2.2.25',
       'opencode-gpt-imagegen': '0.1.12',
-      'opencode-with-claude': '1.8.0',
+      'opencode-with-claude': '1.11.2',
       'unpdf': '1.8.0',
     });
     expect(packageJson.overrides).toEqual({
       '@anthropic-ai/claude-agent-sdk': '0.2.141',
-      '@anthropic-ai/claude-code': '2.1.281',
+      '@anthropic-ai/claude-code': '2.1.302',
     });
     expect(JSON.stringify(slim)).not.toContain('"mcps"');
     expect(fs.existsSync(path.join(configDir, 'agents', 'orchestrator.md'))).toBe(true);
-    expect(fs.existsSync(path.join(configDir, 'plugins', 'devryan-oh-my-opencode-slim.mjs'))).toBe(true);
-    expect(fs.existsSync(path.join(configDir, 'plugins', 'devryan-superpowers.mjs'))).toBe(true);
+    expect(packageJson.dependencies).not.toHaveProperty('oh-my-opencode-slim');
+    expect(fs.existsSync(path.join(configDir, 'plugins', 'devryan-oh-my-opencode-slim.mjs'))).toBe(false);
+    expect(fs.existsSync(path.join(configDir, 'plugins', 'devryan-superpowers.mjs'))).toBe(false);
     expect(fs.existsSync(path.join(configDir, 'plugins', 'devryan-skill-context.mjs'))).toBe(true);
     expect(fs.existsSync(path.join(configDir, 'plugins', 'devryan-document-reader.mjs'))).toBe(true);
-    expect(fs.existsSync(path.join(configDir, 'node_modules', 'oh-my-opencode-slim'))).toBe(true);
+    expect(fs.existsSync(path.join(configDir, 'node_modules', 'oh-my-opencode-slim'))).toBe(false);
     expect(fs.existsSync(path.join(configDir, 'node_modules', 'opencode-with-claude'))).toBe(true);
     expect(fs.existsSync(path.join(configDir, 'node_modules', 'opencode-gpt-imagegen'))).toBe(true);
     expect(packageJson.dependencies).not.toHaveProperty('context-mode');
@@ -163,8 +161,8 @@ describe('user profile provisioning', () => {
     expect(packageJson.dependencies).not.toHaveProperty('opencode-antigravity-auth');
     expect(fs.existsSync(path.join(configDir, 'node_modules', '@rynfar', 'meridian'))).toBe(true);
     expect(fs.existsSync(path.join(configDir, 'skills'))).toBe(false);
-    expect(fs.existsSync(path.join(configDir, '.openchamber', 'user-profile-manifest.json'))).toBe(true);
-    expect(fs.existsSync(path.join(configDir, '.openchamber', 'meridian-sdk-features-policy.json'))).toBe(true);
+    expect(fs.existsSync(path.join(configDir, '.devryan', 'user-profile-manifest.json'))).toBe(true);
+    expect(fs.existsSync(path.join(configDir, '.devryan', 'meridian-sdk-features-policy.json'))).toBe(true);
     expect(meridianFeatures.opencode).toEqual({
       codeSystemPrompt: true,
       clientSystemPrompt: true,
@@ -180,10 +178,10 @@ describe('user profile provisioning', () => {
       compatibilityStatus: 'upstream_blocked',
       runtimeStatus: 'ready',
       installed: {
-        opencodeWithClaude: '1.8.0',
-        meridian: '1.62.6',
+        opencodeWithClaude: '1.11.2',
+        meridian: '1.79.0',
         agentSdk: '0.2.141',
-        claudeCode: '2.1.281',
+        claudeCode: '2.1.302',
       },
       managementSources: {
         opencodeWithClaude: 'managed',
@@ -192,11 +190,9 @@ describe('user profile provisioning', () => {
         claudeCode: 'managed',
       },
     });
+    expect(result.warnings.join('\n')).not.toMatch(/superpowers/i);
     expect(result.warnings).toContain(
-      'Superpowers skills are not installed; the optional adapter will remain disabled.',
-    );
-    expect(result.warnings).toContain(
-      'Claude Code 2.1.281 is selected for Meridian compatibility; the broader cross-provider context target remains upstream-blocked.',
+      'Claude Code 2.1.302 is selected for Meridian compatibility; the broader cross-provider context target remains upstream-blocked.',
     );
     expect(commands).toEqual([{
       command: 'bun',
@@ -228,7 +224,7 @@ describe('user profile provisioning', () => {
         .replace(/^user-profile\//, '')
         .replace(/^plugins\//, 'plugins/'))
       .sort();
-    const manifest = readJson(path.join(configDir, '.openchamber', 'user-profile-manifest.json'));
+    const manifest = readJson(path.join(configDir, '.devryan', 'user-profile-manifest.json'));
 
     expect(Object.keys(manifest.files).sort()).toEqual(expectedManagedFiles);
     expect(Object.keys(manifest.files).some((relativePath) => relativePath.startsWith('skills/')))
@@ -266,7 +262,7 @@ describe('user profile provisioning', () => {
     const runtime = createRuntime();
     expect((await runtime.provision()).ok).toBe(true);
     const configDir = path.join(home, '.config', 'opencode');
-    const manifestPath = path.join(configDir, '.openchamber', 'user-profile-manifest.json');
+    const manifestPath = path.join(configDir, '.devryan', 'user-profile-manifest.json');
     const manifest = readJson(manifestPath);
     const roles = ['orchestrator', 'designer', 'fixer'];
     for (const role of roles) {
@@ -285,41 +281,43 @@ describe('user profile provisioning', () => {
     expect((await runtime.provision()).changed).toBe(false);
   });
 
-  it('preserves untracked personal Slim JSON, higher-precedence JSONC and prompt overrides', async () => {
+  it('migrates personal legacy agent config ahead of the shipped default and preserves prompt overrides', async () => {
     const configDir = path.join(home, '.config', 'opencode');
-    const slimPath = path.join(configDir, 'oh-my-opencode-slim.json');
-    const jsoncPath = path.join(configDir, 'oh-my-opencode-slim.jsonc');
+    const legacyJsonPath = path.join(configDir, 'oh-my-opencode-slim.json');
+    const legacyJsoncPath = path.join(configDir, 'oh-my-opencode-slim.jsonc');
+    const agentsPath = path.join(configDir, 'devryan-agents.jsonc');
     const promptPath = path.join(configDir, 'agents', 'builder.md');
     const personal = { preset: 'openai', disabled_mcps: ['context7', 'websearch', 'gh_grep'],
       agents: { builder: { model: 'xai/grok-4.6', variant: 'high' }, designer: { model: 'anthropic/claude-opus-5', variant: 'medium' } } };
-    writeJson(slimPath, personal);
-    fs.writeFileSync(jsoncPath, '// personal precedence\n{"agents":{"oracle":{"model":"openai/gpt-6-astra"}}}\n');
+    writeJson(legacyJsonPath, personal);
+    // JSONC outranks JSON, so it is the file that becomes the new configuration.
+    fs.writeFileSync(legacyJsoncPath, '// personal precedence\n{"agents":{"oracle":{"model":"openai/gpt-6-astra"}}}\n');
     fs.mkdirSync(path.dirname(promptPath), { recursive: true });
     fs.writeFileSync(promptPath, 'My primary agent instructions\n');
-    const before = [slimPath, jsoncPath, promptPath].map(file => fs.readFileSync(file, 'utf8'));
+    const before = [legacyJsonPath, legacyJsoncPath, promptPath].map(file => fs.readFileSync(file, 'utf8'));
     const runtime = createRuntime();
     for (let attempt = 0; attempt < 2; attempt++) {
       const result = await runtime.provision();
       expect(result.ok).toBe(true);
-      expect(result.conflicts).toEqual(expect.arrayContaining([slimPath, promptPath]));
-      expect([slimPath, jsoncPath, promptPath].map(file => fs.readFileSync(file, 'utf8'))).toEqual(before);
+      expect(result.conflicts).toEqual(expect.arrayContaining([agentsPath, promptPath]));
+      expect([legacyJsonPath, legacyJsoncPath, promptPath].map(file => fs.readFileSync(file, 'utf8'))).toEqual(before);
+      expect(fs.readFileSync(agentsPath, 'utf8')).toBe(before[1]);
     }
   });
 
-  it('does not replace a user-owned Slim adapter or install a new package against it', async () => {
+  it('keeps a user-owned Slim adapter but no longer registers or installs Slim', async () => {
     const configDir = path.join(home, '.config', 'opencode');
     const adapter = path.join(configDir, 'plugins', 'devryan-oh-my-opencode-slim.mjs');
     fs.mkdirSync(path.dirname(adapter), { recursive: true });
     fs.writeFileSync(adapter, 'export default async () => ({ custom: true });\n');
-    const packagePath = path.join(configDir, 'package.json');
-    writeJson(packagePath, { dependencies: { 'oh-my-opencode-slim': '2.2.15' } });
-    const before = fs.readFileSync(packagePath, 'utf8');
+    writeJson(path.join(configDir, 'package.json'), { dependencies: { 'oh-my-opencode-slim': '2.2.15' } });
     const result = await createRuntime().provision();
-    expect(result.ok).toBe(false);
-    expect(result.error).toContain('DEVRYAN_SLIM_ADAPTER_CONFLICT');
+    expect(result.ok).toBe(true);
+    // An untracked file is user data: it stays, but nothing loads it.
     expect(fs.readFileSync(adapter, 'utf8')).toContain('custom: true');
-    expect(fs.readFileSync(packagePath, 'utf8')).toBe(before);
-    expect(commands).toHaveLength(0);
+    expect(readJson(path.join(configDir, 'opencode.json')).plugin).not.toContain('./plugins/devryan-oh-my-opencode-slim.mjs');
+    // A pin other than DevRyan's own 2.2.25 is user-owned and left alone.
+    expect(readJson(path.join(configDir, 'package.json')).dependencies['oh-my-opencode-slim']).toBe('2.2.15');
   });
 
   it('reconciles legacy managed specs in a previously managed config without discarding later user edits', async () => {
@@ -338,6 +336,7 @@ describe('user profile provisioning', () => {
       'context-mode@1.0.169',
       'superpowers@git+https://github.com/obra/superpowers.git',
       './plugins/devryan-oh-my-opencode-slim.mjs',
+      'oh-my-opencode-slim@2.2.25',
     ];
     writeJson(configPath, staleConfig);
 
@@ -352,8 +351,6 @@ describe('user profile provisioning', () => {
       './plugins/devryan-open-cursor.mjs',
       './node_modules/opencode-with-claude/dist/index.js',
       './node_modules/opencode-gpt-imagegen/dist/index.js',
-      './plugins/devryan-superpowers.mjs',
-      './plugins/devryan-oh-my-opencode-slim.mjs',
       './plugins/devryan-skill-context.mjs',
       './plugins/devryan-document-reader.mjs',
     ]);
@@ -437,9 +434,6 @@ describe('user profile provisioning', () => {
       promptMode: 'combined',
       preservedFields: ['codeSystemPrompt', 'clientSystemPrompt'],
     });
-    expect(preserved.warnings).toContain(
-      'Superpowers skills are not installed; the optional adapter will remain disabled.',
-    );
     expect(preserved.warnings.join('\n')).not.toContain('both the Claude Code and client system prompts');
     expect(readJson(explicitFeaturesPath).opencode.codeSystemPrompt).toBe(true);
   });
@@ -497,7 +491,7 @@ describe('user profile provisioning', () => {
     expect(result.ok).toBe(true);
     expect(dependencies['@rynfar/meridian']).toBe('1.56.0');
     expect(dependencies['user-plugin']).toBe('3.2.1');
-    expect(dependencies['opencode-with-claude']).toBe('1.8.0');
+    expect(dependencies['opencode-with-claude']).toBe('1.11.2');
     expect(result.claudeRuntime).toMatchObject({
       source: 'user-managed',
       compatibilityStatus: 'user_managed',
@@ -559,7 +553,7 @@ describe('user profile provisioning', () => {
       home,
       '.config',
       'opencode',
-      '.openchamber',
+      '.devryan',
       'claude-runtime-compatibility.json',
     );
     const packageJson = readJson(packagePath);
@@ -571,7 +565,7 @@ describe('user profile provisioning', () => {
 
     const result = await runtime.provision();
 
-    expect(readJson(packagePath).overrides['@anthropic-ai/claude-code']).toBe('2.1.281');
+    expect(readJson(packagePath).overrides['@anthropic-ai/claude-code']).toBe('2.1.302');
     expect(result.claudeRuntime).toMatchObject({
       source: 'managed',
       runtimeStatus: 'ready',
@@ -596,7 +590,7 @@ describe('user profile provisioning', () => {
       return {
         configDirectory,
         packagePath: path.join(configDirectory, 'package.json'),
-        markerPath: path.join(configDirectory, '.openchamber', 'claude-runtime-compatibility.json'),
+        markerPath: path.join(configDirectory, '.devryan', 'claude-runtime-compatibility.json'),
         installedClaudeCodePath: path.join(configDirectory, 'node_modules', '@anthropic-ai', 'claude-code', 'package.json'),
       };
     };
@@ -722,7 +716,7 @@ describe('user profile provisioning', () => {
     expect(result.claudeRuntime).toMatchObject({
       source: 'managed',
       runtimeStatus: 'ready',
-      installed: { claudeCode: '2.1.281' },
+      installed: { claudeCode: '2.1.302' },
     });
     expect(commands).toEqual([{
       command: 'bun',
@@ -765,7 +759,10 @@ describe('user profile provisioning', () => {
     }]);
   });
 
-  it('upgrades a manifest-owned pre-marker Claude tuple to the selected runtime', async () => {
+  it.each([
+    ['1.6.18', '1.57.0', '2.1.215'],
+    ['1.8.0', '1.62.6', '2.1.281'],
+  ])('upgrades a manifest-owned pre-marker Claude %s tuple to the selected runtime', async (plugin, meridian, claudeCode) => {
     const runtime = createRuntime();
     await runtime.provision();
     commands = [];
@@ -774,18 +771,18 @@ describe('user profile provisioning', () => {
     const packagePath = path.join(configDirectory, 'package.json');
     const manifestPath = path.join(
       configDirectory,
-      '.openchamber',
+      '.devryan',
       'user-profile-manifest.json',
     );
     const markerPath = path.join(
       configDirectory,
-      '.openchamber',
+      '.devryan',
       'claude-runtime-compatibility.json',
     );
     const packageJson = readJson(packagePath);
-    packageJson.dependencies['opencode-with-claude'] = '1.6.18';
-    packageJson.dependencies['@rynfar/meridian'] = '1.57.0';
-    packageJson.overrides['@anthropic-ai/claude-code'] = '2.1.215';
+    packageJson.dependencies['opencode-with-claude'] = plugin;
+    packageJson.dependencies['@rynfar/meridian'] = meridian;
+    packageJson.overrides['@anthropic-ai/claude-code'] = claudeCode;
     writeJson(packagePath, packageJson);
     const packageContent = fs.readFileSync(packagePath, 'utf8');
     const manifest = readJson(manifestPath);
@@ -798,12 +795,12 @@ describe('user profile provisioning', () => {
 
     expect(result.ok).toBe(true);
     expect(upgraded.dependencies).toMatchObject({
-      'opencode-with-claude': '1.8.0',
-      '@rynfar/meridian': '1.62.6',
+      'opencode-with-claude': '1.11.2',
+      '@rynfar/meridian': '1.79.0',
     });
     expect(upgraded.overrides).toMatchObject({
       '@anthropic-ai/claude-agent-sdk': '0.2.141',
-      '@anthropic-ai/claude-code': '2.1.281',
+      '@anthropic-ai/claude-code': '2.1.302',
     });
     expect(result.claudeRuntime).toMatchObject({
       source: 'managed',
@@ -834,7 +831,7 @@ describe('user profile provisioning', () => {
     userPackage.dependencies['user-plugin'] = '3.2.1';
     writeJson(packagePath, userPackage);
 
-    profilePackage.dependencies['@rynfar/meridian'] = '1.62.6';
+    profilePackage.dependencies['@rynfar/meridian'] = '1.79.0';
     writeJson(profilePackagePath, profilePackage);
     const result = await runtime.provision();
     const upgraded = readJson(packagePath);
@@ -843,7 +840,7 @@ describe('user profile provisioning', () => {
     expect(result.conflicts).not.toContain(packagePath);
     expect(upgraded.private).toBe(false);
     expect(upgraded.dependencies['user-plugin']).toBe('3.2.1');
-    expect(upgraded.dependencies['@rynfar/meridian']).toBe('1.62.6');
+    expect(upgraded.dependencies['@rynfar/meridian']).toBe('1.79.0');
   });
 
   it('preserves and reports a user-modified managed file', async () => {
@@ -858,78 +855,77 @@ describe('user profile provisioning', () => {
     expect(result.conflicts).toContain(agentPath);
   });
 
-  it.each(['2.0.5', '2.2.18', '2.2.24'])('upgrades Slim from %s without changing user-owned config or primary prompt', async (staleVersion) => {
+  it('retires the Slim adapter and its pinned package from a profile provisioned by an earlier release', async () => {
     const runtime = createRuntime();
     await runtime.provision();
     const configDir = path.join(home, '.config', 'opencode');
+    const configPath = path.join(configDir, 'opencode.json');
     const packagePath = path.join(configDir, 'package.json');
-    const installedPackagePath = path.join(
-      configDir,
-      'node_modules',
-      'oh-my-opencode-slim',
-      'package.json',
-    );
-    const slimConfigPath = path.join(configDir, 'oh-my-opencode-slim.json');
-    const orchestratorPath = path.join(configDir, 'agents', 'orchestrator.md');
-
+    const manifestPath = path.join(configDir, '.devryan', 'user-profile-manifest.json');
+    const adapterPath = path.join(configDir, 'plugins', 'devryan-oh-my-opencode-slim.mjs');
+    const slimConfigPath = path.join(configDir, 'devryan-agents.jsonc');
+    // DevRyan <= 2.1.1 wrote and tracked the adapter, pinned the package and registered it.
+    const adapterContent = 'export default async () => ({});\n';
+    fs.mkdirSync(path.dirname(adapterPath), { recursive: true });
+    fs.writeFileSync(adapterPath, adapterContent, 'utf8');
+    const manifest = readJson(manifestPath);
+    manifest.files['plugins/devryan-oh-my-opencode-slim.mjs'] = { hash: hashContent(adapterContent) };
+    writeJson(manifestPath, manifest);
+    const config = readJson(configPath);
+    config.plugin = [...config.plugin.slice(0, 3), './plugins/devryan-oh-my-opencode-slim.mjs', ...config.plugin.slice(3)];
+    writeJson(configPath, config);
     const stalePackage = readJson(packagePath);
-    stalePackage.dependencies['oh-my-opencode-slim'] = staleVersion;
+    stalePackage.dependencies['oh-my-opencode-slim'] = '2.2.25';
     writeJson(packagePath, stalePackage);
-    writeJson(installedPackagePath, {
-      name: 'oh-my-opencode-slim',
-      version: staleVersion,
-    });
-
+    // The agent model routing stays with the user.
     const userSlimConfig = readJson(slimConfigPath);
-    userSlimConfig.agents.orchestrator = {
-      model: 'openai/gpt-5.6-sol',
-      variant: 'high',
-    };
+    userSlimConfig.agents.orchestrator = { model: 'openai/gpt-5.6-sol', variant: 'high' };
     writeJson(slimConfigPath, userSlimConfig);
-    fs.writeFileSync(orchestratorPath, 'user-owned primary prompt\n', 'utf8');
     const expectedSlimConfig = fs.readFileSync(slimConfigPath, 'utf8');
-    const expectedOrchestrator = fs.readFileSync(orchestratorPath, 'utf8');
 
     const result = await runtime.provision();
 
     expect(result.ok).toBe(true);
-    expect(readJson(packagePath).dependencies['oh-my-opencode-slim']).toBe('2.2.25');
-    expect(readJson(installedPackagePath).version).toBe('2.2.25');
+    expect(readJson(configPath).plugin).not.toContain('./plugins/devryan-oh-my-opencode-slim.mjs');
+    expect(readJson(packagePath).dependencies).not.toHaveProperty('oh-my-opencode-slim');
+    expect(fs.existsSync(adapterPath)).toBe(false);
+    expect(result.removed).toContain(adapterPath);
+    expect(readJson(manifestPath).files).not.toHaveProperty('plugins/devryan-oh-my-opencode-slim.mjs');
     expect(fs.readFileSync(slimConfigPath, 'utf8')).toBe(expectedSlimConfig);
-    expect(fs.readFileSync(orchestratorPath, 'utf8')).toBe(expectedOrchestrator);
-    expect(result.conflicts).toEqual(expect.arrayContaining([
-      slimConfigPath,
-      orchestratorPath,
-    ]));
-    expect(commands).toHaveLength(2);
-
-    const repeated = await runtime.provision();
-    expect(repeated.ok).toBe(true);
-    expect(readJson(installedPackagePath).version).toBe('2.2.25');
-    expect(fs.readFileSync(slimConfigPath, 'utf8')).toBe(expectedSlimConfig);
-    expect(commands).toHaveLength(2);
   });
 
-  it('keeps a user-installed Superpowers bootstrap active without warning', async () => {
-    const bootstrapPath = path.join(
-      home,
-      '.config',
-      'opencode',
-      'skills',
-      'superpowers',
-      'using-superpowers',
-      'SKILL.md',
-    );
-    fs.mkdirSync(path.dirname(bootstrapPath), { recursive: true });
-    fs.writeFileSync(bootstrapPath, '---\nname: using-superpowers\n---\nUser-installed skill.\n', 'utf8');
+  it('retires the Superpowers adapter from a profile provisioned by an earlier release', async () => {
+    const runtime = createRuntime();
+    await runtime.provision();
+    const configDir = path.join(home, '.config', 'opencode');
+    const configPath = path.join(configDir, 'opencode.json');
+    const manifestPath = path.join(configDir, '.devryan', 'user-profile-manifest.json');
+    const adapterPath = path.join(configDir, 'plugins', 'devryan-superpowers.mjs');
+    const ownedSkillPath = path.join(configDir, 'skills', 'Superpowers', 'SKILL.md');
+    // DevRyan <= 2.0.1 wrote and tracked the adapter and registered it in the profile.
+    const adapterContent = 'export default async () => ({});\n';
+    fs.mkdirSync(path.dirname(adapterPath), { recursive: true });
+    fs.writeFileSync(adapterPath, adapterContent, 'utf8');
+    const manifest = readJson(manifestPath);
+    manifest.files['plugins/devryan-superpowers.mjs'] = { hash: hashContent(adapterContent) };
+    writeJson(manifestPath, manifest);
+    const config = readJson(configPath);
+    config.plugin = [...config.plugin.slice(0, 4), './plugins/devryan-superpowers.mjs', ...config.plugin.slice(4)];
+    writeJson(configPath, config);
+    fs.mkdirSync(path.dirname(ownedSkillPath), { recursive: true });
+    fs.writeFileSync(ownedSkillPath, '---\nname: Superpowers\n---\nUser-owned skill.\n', 'utf8');
 
-    const result = await createRuntime().provision();
+    const result = await runtime.provision();
 
     expect(result.ok).toBe(true);
-    expect(fs.readFileSync(bootstrapPath, 'utf8')).toContain('User-installed skill.');
-    expect(result.warnings).not.toContain(
-      'Superpowers skills are not installed; the optional adapter will remain disabled.',
-    );
+    expect(result.conflicts).toEqual([]);
+    expect(readJson(configPath).plugin).not.toContain('./plugins/devryan-superpowers.mjs');
+    expect(fs.existsSync(adapterPath)).toBe(false);
+    expect(result.removed).toContain(adapterPath);
+    expect(readJson(manifestPath).files).not.toHaveProperty('plugins/devryan-superpowers.mjs');
+    // The owner's skill folder is user data; DevRyan never removes it.
+    expect(fs.readFileSync(ownedSkillPath, 'utf8')).toContain('User-owned skill.');
+    expect(result.warnings.join('\n')).not.toMatch(/superpowers/i);
   });
 
   it('retires previously managed skills without claiming user-modified files', async () => {
@@ -957,7 +953,7 @@ describe('user profile provisioning', () => {
     const runtime = createRuntime();
     const result = await runtime.provision();
     const repeated = await runtime.provision();
-    const manifest = readJson(path.join(configDir, '.openchamber', 'user-profile-manifest.json'));
+    const manifest = readJson(path.join(configDir, '.devryan', 'user-profile-manifest.json'));
 
     expect(result.removed).toEqual(expect.arrayContaining([
       legacySkillPath,

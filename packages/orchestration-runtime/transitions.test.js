@@ -114,6 +114,15 @@ describe('managed task transitions', () => {
     }
   });
 
+  test('permits only verification receipt metadata to update after execution settles', () => {
+    const previous = { ...task('completed'), finishedAt: 2000,
+      requiredChecks: [{ name: 'unit', command: 'bun test', paths: ['source.js'] }] };
+    const receipt = { name: 'unit', callId: 'root_check', messageId: 'msg_root', exitCode: 0, observedAt: 3000, status: 'passed', contentHash: 'a'.repeat(64) };
+    expect(assertManagedTaskTransition(previous, { ...previous, requiredCheckReceipts: [receipt] }).status).toBe('completed');
+    expect(() => assertManagedTaskTransition(previous, { ...previous, requiredChecks: [] })).toThrow('immutable');
+    expect(() => assertManagedTaskTransition(previous, { ...previous, recoverablePreview: 'Different outcome' })).toThrow('immutable');
+  });
+
   test('rejects identity and queue-snapshot mutation at every lifecycle stage', () => {
     const previous = task('starting');
     for (const [field, value] of [

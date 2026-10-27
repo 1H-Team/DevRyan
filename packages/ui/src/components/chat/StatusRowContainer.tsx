@@ -1,5 +1,5 @@
 import React from 'react';
-import type { ManagedTaskEventRecord } from '@openchamber/orchestration-runtime';
+import type { ManagedTaskEventRecord } from '@devryan/orchestration-runtime';
 
 import { useAssistantStatus } from '@/hooks/useAssistantStatus';
 import { useConfigStore } from '@/stores/useConfigStore';
@@ -37,6 +37,10 @@ import { stopLongRunningTool } from '@/sync/long-running-tool-recovery';
 import { formatElapsedDuration } from '@/lib/duration';
 import { useDocumentAnimationState } from '@/hooks/useDocumentAnimationState';
 import { useHasActiveReasoningDisclosure } from './message/parts/reasoningDisclosureStatus';
+import { loadRuntimeCapabilities, useRuntimeCapabilityStore } from '@/lib/opencode/runtime-capabilities';
+import { useConfigApplyStore } from '@/stores/useConfigApplyStore';
+import { Button } from '@/components/ui/button';
+import { TYPOGRAPHY_CLASSES } from '@/lib/typography';
 
 type ManagedDelegationStatusPhase = 'starting' | 'waiting' | 'managing' | null;
 
@@ -58,10 +62,12 @@ export const resolveManagedDelegationStatusPhase = ({
 }): ManagedDelegationStatusPhase => {
     if (!isManagedTaskToolName(activeToolName ?? '')) return rootPhase;
     const action = activeToolAction?.trim().toLowerCase();
-    if (action && MANAGED_START_ACTIONS.has(action)) return rootPhase === 'waiting' ? 'waiting' : 'starting';
-    if (action === 'wait') {
+    if (!action || MANAGED_START_ACTIONS.has(action)) return rootPhase === 'waiting' ? 'waiting' : 'starting';
+    if (action === 'wait' || action === 'wait_any') {
         if (rootPhase) return rootPhase;
-        return !hasConfirmedSnapshot && isLoadingSnapshot ? 'waiting' : 'managing';
+        // A settled/empty snapshot ends waiting; it does not turn the wait
+        // operation into task management while the tool result is arriving.
+        return !hasConfirmedSnapshot && isLoadingSnapshot ? 'waiting' : null;
     }
     return 'managing';
 };
@@ -269,6 +275,24 @@ export const StatusRowContainer: React.FC = React.memo(() => {
         [currentSessionId],
     ));
 
+    const nativeReady = useRuntimeCapabilityStore(state => state.snapshot.nativeReady);
+    const applyStatus = useConfigApplyStore(state => state.status);
+    const applyPending = useConfigApplyStore(state => state.isRequesting);
+    const applyError = useConfigApplyStore(state => state.requestError);
+    const watchNativeHealth = Boolean(currentSessionId && (working.isWorking || managedChildActive
+        || nativeReady === false || applyStatus?.state === 'failed' || applyStatus?.state === 'applying'));
+    React.useEffect(() => {
+        if (!watchNativeHealth) return;
+        let disposed = false;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const poll = async () => {
+            await loadRuntimeCapabilities({ force: true, timeoutMs: 3_000 });
+            if (!disposed) timer = setTimeout(poll, 5_000);
+        };
+        void poll();
+        return () => { disposed = true; if (timer) clearTimeout(timer); };
+    }, [watchNativeHealth]);
+
     const wasAborted = Boolean(abortRecord && !abortRecord.acknowledged);
     // Only speak for the row once the parent turn has nothing of its own to say,
     // so a builder that legitimately keeps working alongside a managed child
@@ -313,7 +337,7 @@ export const StatusRowContainer: React.FC = React.memo(() => {
         assistantStatusText = managedChildGenericStatusText;
         assistantIsGenericStatus = false;
     }
-    if (managedDelegationOwnsStatus) {
+    if (managedDelegationOwnsStatus && managedDelegationPhase) {
         assistantStatusText = managedDelegationPhase === 'starting'
             ? t('chat.statusRow.managedTasks.starting')
             : managedDelegationPhase === 'waiting'
@@ -332,6 +356,10 @@ export const StatusRowContainer: React.FC = React.memo(() => {
     });
     if (compactionStatusText) {
         assistantStatusText = compactionStatusText;
+        assistantIsGenericStatus = false;
+    }
+    if (working.isFinalizing) {
+        assistantStatusText = working.statusText;
         assistantIsGenericStatus = false;
     }
     const display = resolveStatusRowAssistantDisplay({
@@ -406,9 +434,24 @@ export const StatusRowContainer: React.FC = React.memo(() => {
             );
         }
     }, [childStores, currentSessionId, resyncSession]);
+    if (currentSessionId && nativeReady === false) {
+        return (
+            <div className={`flex flex-wrap items-center gap-2 px-3 py-1 text-muted-foreground ${TYPOGRAPHY_CLASSES.meta}`} role="status">
+                <span>{applyError ?? t('chat.statusRow.runtimeUnavailable')}</span>
+                {applyStatus?.pending && applyStatus.canApplyWhenIdle && (
+                    <Button variant="ghost" size="sm" disabled={applyPending || applyStatus.state === 'applying'}
+                        onClick={() => { void useConfigApplyStore.getState().applyWhenIdle().catch(() => {
+                            // The apply store retains the actionable host error.
+                        }); }}>
+                        {t('chat.statusRow.retryApply')}
+                    </Button>
+                )}
+            </div>
+        );
+    }
     return (
         <StatusRow
-            assistantStatusKey={`${currentPromptId ?? ''}:${managedDelegationPhase ?? ''}:${working.compaction ?? ''}`}
+            assistantStatusKey={`${currentPromptId ?? ''}:${managedDelegationPhase ?? ''}:${working.compaction ?? ''}:${working.isFinalizing ? 'finalizing' : ''}`}
             isWorking={display.isWorking}
             statusText={display.statusText}
             isGenericStatus={display.isGenericStatus}
@@ -434,7 +477,7 @@ export const StatusRowContainer: React.FC = React.memo(() => {
             longRunningToolError={longRunningTool?.actionError ?? null}
             onStopLongRunningTool={longRunningPresentation?.actionable ? stopCurrentLongRunningTool : undefined}
             showAssistantStatus
-            suppressAssistantStatusText={activeReasoningDisclosure && !working.compaction}
+            suppressAssistantStatusText={activeReasoningDisclosure && !working.compaction && !working.isFinalizing}
             showTodos={false}
             agentName={currentAgentName}
         />

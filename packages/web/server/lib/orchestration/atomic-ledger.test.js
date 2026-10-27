@@ -3,8 +3,9 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
+import { fileURLToPath } from 'node:url';
 
-import { createManagedTaskRecord } from '@openchamber/orchestration-runtime';
+import { createManagedTaskRecord } from '@devryan/orchestration-runtime';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { createAtomicManagedOrchestrationLedger } from './atomic-ledger.js';
@@ -60,7 +61,112 @@ afterEach(async () => {
   )));
 });
 
+const windowsFixture = () => {
+  const records = new Map(), writes = [], state = { active: true, closed: 0 }, controller = new AbortController();
+  const files = { maxBytes: 64 * 1024 * 1024, ensureDirectory: async () => {},
+    read: async file => { const value = records.get(file); if (!value) throw Object.assign(new Error('missing'), { code: 'ENOENT' }); return value; },
+    write: async (file, bytes, { expected } = {}) => {
+      expect(expected).toBe(records.get(file) ?? null); writes.push({ file, bytes: Buffer.from(bytes), expected });
+      records.set(file, { identity: { fileId: String(writes.length) }, bytes: Buffer.from(bytes) });
+    },
+    quarantine: async (file, previous) => { expect(previous).toBe(records.get(file)); records.delete(file); return `${file}.native-backup`; },
+  };
+  const keeper = { signal: controller.signal, assert: () => { if (!state.active) throw Object.assign(new Error('lost'), { code: 'execution_owner_lost' }); },
+    close: async () => { state.closed++; state.active = false; } };
+  const create = (options = {}) => createAtomicManagedOrchestrationLedger({ platform: 'win32', dataDirectory: '/fixture/private',
+    windowsLedgerOwner: files, windowsLauncher: 'constructor-only', createWindowsKeeper: async () => keeper, logger: { warn: () => {} },
+    fs: new Proxy({}, { get: () => () => { throw new Error('Node filesystem fallback'); } }), ...options });
+  return { records, writes, state, files, keeper, create };
+};
+
+describe('Windows native managed ledger constructor', () => {
+  it('uses kernel ownership and exact native CAS without Node filesystem, PID probes or heartbeat recovery', async () => {
+    const fixture = windowsFixture(), ledger = fixture.create({ isProcessAlive: () => { throw new Error('PID fallback'); } });
+    await ledger.acquireOwnership(); await ledger.save(snapshot([queuedTask(1)]));
+    expect(await ledger.load()).toEqual(snapshot([queuedTask(1)])); expect(fixture.writes).toHaveLength(1);
+    expect(await ledger.releaseOwnership()).toBe(true); expect(fixture.state.closed).toBe(1);
+    await expect(ledger.save(snapshot())).rejects.toMatchObject({ code: 'managed_orchestration_owner_conflict' });
+  });
+  it('compacts a ledger larger than 16 MiB and keeps its first exact native backup', async () => {
+    const fixture = windowsFixture(), ledger = fixture.create(); await ledger.acquireOwnership();
+    const old = Buffer.from(JSON.stringify(snapshot(Array.from({ length: 68 }, (_, index) => ({ ...queuedTask(index + 1), prompt: 'x'.repeat(256 * 1024) })))));
+    fixture.records.set(ledger.filePath, { identity: { fileId: 'legacy64-bound' }, bytes: old });
+    expect((await ledger.load()).tasks).toHaveLength(68);
+    await ledger.save(snapshot());
+    const backup = fixture.records.get(ledger.filePath + '.before-compaction'); expect(backup.bytes.equals(old)).toBe(true);
+    await ledger.save(snapshot([queuedTask(2)])); expect(fixture.records.get(ledger.filePath + '.before-compaction')).toBe(backup);
+    await ledger.releaseOwnership();
+  });
+  it('quarantines only the exact malformed snapshot captured by the retained owner', async () => {
+    const fixture = windowsFixture(), ledger = fixture.create(); await ledger.acquireOwnership();
+    fixture.records.set(ledger.filePath, { identity: { fileId: 'corrupt' }, bytes: Buffer.from('{broken') });
+    expect(await ledger.load()).toBeNull(); expect(fixture.records.has(ledger.filePath)).toBe(false);
+    expect(ledger.getDiagnostics().quarantinedPath).toBe(`${ledger.filePath}.native-backup`);
+    await ledger.releaseOwnership();
+  });
+  it('lost keepers fence the old instance before writes and after in-flight publication', async () => {
+    const fixture = windowsFixture(), ledger = fixture.create(); await ledger.acquireOwnership();
+    const write = fixture.files.write; fixture.files.write = async (...args) => { await write(...args); fixture.state.active = false; };
+    await expect(ledger.save(snapshot())).rejects.toMatchObject({ code: 'managed_orchestration_ownership_lost' });
+    expect(ledger.getDiagnostics().writeCount).toBe(0);
+    await expect(ledger.save(snapshot())).rejects.toMatchObject({ code: 'managed_orchestration_ownership_lost' });
+    expect(fixture.writes).toHaveLength(1);
+    await expect(ledger.releaseOwnership()).rejects.toMatchObject({ code: 'managed_orchestration_ownership_lost' });
+    expect(fixture.state.closed).toBe(1);
+  });
+  it('drains admitted native writes before releasing the keeper and rejects new writes during release', async () => {
+    const fixture = windowsFixture(), ledger = fixture.create(); await ledger.acquireOwnership();
+    let releaseWrite, started; const writing = new Promise(resolve => { started = resolve; });
+    const waiting = new Promise(resolve => { releaseWrite = resolve; }), write = fixture.files.write;
+    fixture.files.write = async (...args) => { started(); await waiting; await write(...args); };
+    const save = ledger.save(snapshot()); await writing; const release = ledger.releaseOwnership();
+    await expect(ledger.save(snapshot([queuedTask(2)]))).rejects.toMatchObject({ code: 'managed_orchestration_owner_conflict' });
+    expect(fixture.state.closed).toBe(0); releaseWrite(); await save; expect(await release).toBe(true); expect(fixture.state.closed).toBe(1);
+  });
+  it('refuses missing, ordinary16MiB or oversized constructor owners and unknown kernel lock settlement', async () => {
+    const fixture = windowsFixture();
+    for (const windowsLedgerOwner of [undefined, { ...fixture.files, maxBytes: 16 * 1024 * 1024 }]) {
+      expect(() => fixture.create({ windowsLedgerOwner })).toThrow('managed_orchestration_windows_authority_unavailable');
+    }
+    expect(() => fixture.create({ maxReadBytes: 64 * 1024 * 1024 + 1 })).toThrow('managed_orchestration_windows_authority_unavailable');
+    const ledger = fixture.create({ createWindowsKeeper: async () => { throw Object.assign(new Error('uncertain'), { code: 'execution_owner_termination_unconfirmed' }); } });
+    await expect(ledger.acquireOwnership()).rejects.toMatchObject({ code: 'execution_owner_termination_unconfirmed' }); expect(fixture.writes).toHaveLength(0);
+  });
+});
+
 describe('atomic managed orchestration ledger', () => {
+  it('reports real write/sync/rename boundaries without confirming a blocked mandatory file sync', async () => {
+    const dataDirectory = await createTemporaryDirectory();
+    let started, release;
+    const entered = new Promise(resolve => { started = resolve; }), blocked = new Promise(resolve => { release = resolve; });
+    const progress = [];
+    const fsApi = { ...fs, open: async (file, ...args) => {
+      const handle = await fs.open(file, ...args);
+      if (!String(file).includes('ledger.json.tmp-')) return handle;
+      return new Proxy(handle, { get(target, field) {
+        if (field === 'sync') return async () => { started(); await blocked; return target.sync(); };
+        const value = target[field]; return typeof value === 'function' ? value.bind(target) : value;
+      } });
+    } };
+    const ledger = await createOwnedLedger({ dataDirectory, fs: fsApi });
+    let completed = false;
+    const saving = ledger.save(snapshot([queuedTask(1)]), { onProgress: event => {
+      progress.push(event); if (event.phase === 'rename') throw Error('diagnostic-only failure');
+    } }).then(() => { completed = true; });
+    await entered;
+    expect(progress.at(-1)).toEqual({ phase: 'file_sync', state: 'started' });
+    expect(progress).toContainEqual({ phase: 'write', state: 'completed' });
+    expect(progress.some(event => event.phase === 'rename')).toBe(false);
+    expect(ledger.getDiagnostics().writeCount).toBe(0); expect(completed).toBe(false);
+    release(); await saving;
+    expect(progress.filter(event => event.state === 'completed').map(event => event.phase)).toEqual([
+      'owner_verify', 'backup', 'directory_create', 'temporary_cleanup', 'temporary_open', 'write', 'file_sync', 'file_close',
+      'rename', 'permissions', 'directory_sync', 'commit_confirm',
+    ]);
+    expect(ledger.getDiagnostics().writeCount).toBe(1);
+    expect((await ledger.load()).tasks[0].taskId).toBe('dvr_task_1');
+    await ledger.releaseOwnership();
+  });
   it('atomically persists and restores a private JSON snapshot', async () => {
     const dataDirectory = await createTemporaryDirectory();
     const ledger = await createOwnedLedger({ dataDirectory });
@@ -478,5 +584,50 @@ describe('atomic managed orchestration ledger', () => {
     fakeProcess.emit('exit');
 
     await expect(fs.stat(ownerPath)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+});
+
+// The orchestration-runtime golden fixtures, saved through this writer. The
+// package test owns the scheduler's bytes; each writer has its own expected file.
+const goldenFixtures = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../orchestration-runtime/fixtures');
+const goldenFixture = name => fs.readFile(path.join(goldenFixtures, name), 'utf8');
+
+const goldenRoundTripPosix = async (bytes) => {
+  const dataDirectory = await createTemporaryDirectory();
+  const filePath = path.join(dataDirectory, 'ledger.json');
+  await fs.writeFile(filePath, bytes);
+  const ledger = await createOwnedLedger({ dataDirectory, filePath });
+  try {
+    const loaded = await ledger.load();
+    expect(ledger.getDiagnostics().quarantinedPath).toBeNull();
+    await ledger.save(loaded);
+    return await fs.readFile(filePath, 'utf8');
+  } finally { await ledger.releaseOwnership(); }
+};
+
+const goldenRoundTripWindows = async (bytes) => {
+  const fixture = windowsFixture(), ledger = fixture.create();
+  await ledger.acquireOwnership();
+  try {
+    fixture.records.set(ledger.filePath, { identity: { fileId: '0' }, bytes: Buffer.from(bytes) });
+    const loaded = await ledger.load();
+    expect(ledger.getDiagnostics().quarantinedPath).toBeNull();
+    await ledger.save(loaded);
+    return fixture.records.get(ledger.filePath).bytes.toString('utf8');
+  } finally { await ledger.releaseOwnership(); }
+};
+
+describe('golden ledger fixtures through the atomic ledger', () => {
+  const writers = [['POSIX', goldenRoundTripPosix], ['Windows', goldenRoundTripWindows]];
+
+  it.each(writers)('%s: a current ledger saves byte-identical', async (_name, roundTrip) => {
+    const current = await goldenFixture('ledger-current.json');
+    expect(await roundTrip(current)).toBe(current);
+  });
+
+  it.each(writers)('%s: a legacy ledger gains its defaults in the pinned key order, then stays stable', async (_name, roundTrip) => {
+    const saved = await goldenFixture('ledger-legacy.atomic-saved.json');
+    expect(await roundTrip(await goldenFixture('ledger-legacy.json'))).toBe(saved);
+    expect(await roundTrip(saved)).toBe(saved);
   });
 });

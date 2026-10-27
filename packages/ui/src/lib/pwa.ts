@@ -8,8 +8,7 @@ export type PWADisplayMode =
 
 const DISPLAY_MODES: Array<Exclude<PWADisplayMode, 'browser' | 'twa'>> = ['standalone', 'minimal-ui', 'fullscreen', 'window-controls-overlay'];
 
-export const PWA_INSTALL_NAME_STORAGE_KEY = 'openchamber.pwaName';
-export const PWA_RECENT_SESSIONS_STORAGE_KEY = 'openchamber.pwaRecentSessions';
+export const PWA_RECENT_SESSIONS_STORAGE_KEY = 'devryan.pwaRecentSessions';
 
 const matchesDisplayMode = (mode: Exclude<PWADisplayMode, 'browser' | 'twa'>): boolean => {
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
@@ -34,8 +33,4 @@ export const getPWADisplayMode = (): PWADisplayMode => {
 
   const matched = DISPLAY_MODES.find((mode) => matchesDisplayMode(mode));
   return matched ?? 'browser';
-};
-
-export const isInstalledPWARuntime = (): boolean => {
-  return getPWADisplayMode() !== 'browser';
 };

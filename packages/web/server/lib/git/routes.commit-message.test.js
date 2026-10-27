@@ -18,6 +18,7 @@ const makeApp = ({
     body: '## Summary\n- Avoid chat sessions',
   })),
   recordCommitTiming = vi.fn(),
+  resolveHelperSelection,
   loadGitLibraries = async () => ({
     getStatus: vi.fn(async () => ({
       current: 'main',
@@ -38,6 +39,7 @@ const makeApp = ({
     generateCommitMessage,
     generatePullRequestDescription,
     recordCommitTiming,
+    resolveHelperSelection,
     loadGitLibraries,
   });
   return {
@@ -76,6 +78,7 @@ describe('POST /api/git/commit-message', () => {
 
     expect(response.body).toEqual({
       message: { subject: 'feat: add generated source file', highlights: [] },
+      source: 'helper_model', selectionMode: 'configured', model: `opencode/${PINNED_MODEL}`,
     });
     expect(resolveZenModel).not.toHaveBeenCalled();
     expect(generateCommitMessage).toHaveBeenCalledWith(expect.objectContaining({
@@ -106,29 +109,50 @@ describe('POST /api/git/commit-message', () => {
     expect(requestText.mock.calls.map(([input]) => input.zenModel)).toEqual([PINNED_MODEL]);
     const attempts = recordCommitTiming.mock.calls.map(([, payload]) => payload).filter(({ event }) => event === 'git_commit_message_model_attempt');
     expect(attempts.map(({ tier, attempt, model, providerOutcome }) => [tier, attempt, model, providerOutcome])).toEqual([
-      ['zen', 1, PINNED_MODEL, 'complete'],
+      ['configured', 1, PINNED_MODEL, 'complete'],
     ]);
     expect(recordCommitTiming).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({
-      source: 'ai', retried: false, model: PINNED_MODEL, catalogState: 'pinned',
+      source: 'helper_model', retried: false, model: `opencode/${PINNED_MODEL}`, catalogState: 'pinned',
     }));
   });
 
-  it('returns a disclosed local draft when the pinned model fails', async () => {
-    const requestText = vi.fn(async () => {
-      throw Object.assign(new Error('Zen generation timed out'), { reason: 'timeout' });
+  it('refuses a model failure without an authorized active session instead of inventing a draft', async () => {
+    const requestText = vi.fn(async () => { throw Object.assign(new Error('private provider detail'), { reason: 'timeout' }); });
+    const { app } = makeApp({ generateCommitMessage: options => generateCommitMessageDirect({ ...options, requestText }) });
+    const response = await request(app).post('/api/git/commit-message/draft?directory=/repo').send({ selectedFiles: ['new-file.ts'] }).expect(502);
+    expect(response.body.error).toContain('accessible active chat');
+    expect(response.body.error).not.toContain('private');
+    expect(response.body.commits).toBeUndefined();
+    expect(requestText).toHaveBeenCalledOnce();
+  });
+
+  it('falls back to the authorized active selection after the configured helper settles', async () => {
+    let settled = false;
+    const resolver = vi.fn(async ({ selectionMode, sessionID }) => {
+      expect(sessionID).toBe('ses_active');
+      if (selectionMode === 'active') expect(settled).toBe(true);
+      return { providerID: selectionMode === 'configured' ? 'opencode' : 'anthropic', modelID: selectionMode === 'configured' ? PINNED_MODEL : 'current', selectionMode, selectionRevision: 'owned-revision' };
     });
-    const { app, recordCommitTiming } = makeApp({
-      generateCommitMessage: (options) => generateCommitMessageDirect({ ...options, requestText }),
+    const generator = vi.fn(async options => {
+      expect(options.allowLocalFallback).toBe(false);
+      if (options.models[0] === PINNED_MODEL) { settled = true; throw Object.assign(new Error('provider failed'), { reason: 'unauthorized' }); }
+      return { subject: 'fix: use authorized active fallback', highlights: [] };
     });
-    const response = await request(app).post('/api/git/commit-message/draft?directory=/repo')
-      .send({ selectedFiles: ['new-file.ts'] }).expect(200);
-    expect(response.body.status).toBe('complete');
-    expect(response.body.commits[0].subject).toBeTruthy();
-    expect(response.body.warnings).toEqual(['Zen generation failed (deepseek-v4.1-flash: timeout); created a local commit draft']);
-    expect(requestText).toHaveBeenCalledTimes(1);
-    expect(recordCommitTiming).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({
-      source: 'local_fallback', providerOutcome: 'exhausted', catalogState: 'pinned',
-    }));
+    const { app } = makeApp({ resolveHelperSelection: resolver, generateCommitMessage: generator });
+    const response = await request(app).post('/api/git/commit-message/draft?directory=/repo').send({ selectedFiles: ['new-file.ts'], sessionID: 'ses_active' }).expect(200);
+    expect(response.body.commits[0].subject).toBe('fix: use authorized active fallback');
+    expect(response.body).toMatchObject({source:'session_model',selectionMode:'active',model:'anthropic/current'});
+    expect(resolver.mock.calls.map(([row]) => row.selectionMode)).toEqual(['configured', 'active']);
+    expect(generator).toHaveBeenCalledTimes(2);
+  });
+  it.each(['/commit-message','/commit-message/draft'])('refuses changed selection with refresh guidance instead of fallback for %s',async route=>{
+    const resolver=vi.fn(async()=>({providerID:'opencode',modelID:PINNED_MODEL,selectionMode:'configured',selectionRevision:'old'}));
+    const generator=vi.fn(async()=>{throw Object.assign(Error('private detail'),{code:'native_helper_selection_changed',reason:'selection_changed'});});
+    const {app}=makeApp({resolveHelperSelection:resolver,generateCommitMessage:generator});
+    const response=await request(app).post(`/api/git${route}?directory=/repo`)
+      .send(route.endsWith('/draft')?{selectedFiles:['new-file.ts'],sessionID:'ses_active'}:{...requestBody,sessionID:'ses_active'}).expect(409);
+    expect(response.body.code).toBe('HELPER_SELECTION_CHANGED');expect(response.body.error).toContain('Refresh');
+    expect(resolver).toHaveBeenCalledTimes(1);expect(generator).toHaveBeenCalledTimes(1);
   });
 
   it('rejects missing directory and worktree context', async () => {
@@ -153,9 +177,9 @@ describe('POST /api/git/commit-message', () => {
     const response = await request(app)
       .post('/api/git/commit-message?directory=/repo')
       .send(requestBody)
-      .expect(500);
+      .expect(502);
 
-    expect(response.body.error).toMatch(/valid conventional commit/);
+    expect(response.body.error).toContain('accessible active chat');
   });
 
   it('collects commit context in the host and returns the workflow result', async () => {
@@ -173,6 +197,7 @@ describe('POST /api/git/commit-message', () => {
     expect(response.body).toEqual({
       status: 'complete',
       commits: [{ subject: 'feat: add generated source file', highlights: [] }],
+      source: 'helper_model', selectionMode: 'configured', model: `opencode/${PINNED_MODEL}`,
     });
     expect(generateCommitMessage).toHaveBeenCalledWith(expect.objectContaining({
       guidance: 'Prefer a source scope',
@@ -287,7 +312,7 @@ describe('POST /api/git/pr-description', () => {
     expect(response.body).toMatchObject({
       title: 'Use direct Zen PR generation',
       body: '## Summary\n- Avoid chat sessions',
-      source: 'zen',
+      source: 'helper_model',
     });
     expect(generatePullRequestDescription).toHaveBeenCalledWith(expect.objectContaining({
       prompt: 'Return the Generate PR JSON',

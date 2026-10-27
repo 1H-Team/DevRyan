@@ -47,4 +47,11 @@ describe('host managed-task journal identities', () => {
     expect(resolveRecordSessionID({ payload: { type: 'openchamber:managed-task-removed',
       properties: { owner: 'unknown', rootSessionId: 'root' } } })).toBe('');
   });
+  test('resolves new canonical events using the same ownership and relation checks', () => {
+    const canonical = record(); canonical.payload.type = 'devryan:managed-task';
+    expect(resolveRecordSessionID(canonical)).toBe('root');
+    expect(resolveSessionRelation(canonical)).toEqual({ sessionID: 'child', parentID: 'root' });
+    canonical.payload.properties.owner = 'foreign';
+    expect(resolveRecordSessionID(canonical)).toBe('');
+  });
 });

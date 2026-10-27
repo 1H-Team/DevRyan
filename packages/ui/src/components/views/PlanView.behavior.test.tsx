@@ -2,7 +2,7 @@ import React, { act } from 'react';
 import { describe, expect, mock, test } from 'bun:test';
 import type { SessionPlanRevisionIdentity, SessionPlansAPI } from '@/lib/api/types';
 import type { SessionPlanFileRecord } from '@/stores/useSessionPlanFileStore';
-import { withDom } from '@/components/bots/chat/botMountedDom';
+import { withDom } from '@/test/mountedDom';
 import { notifyPlanUpdated } from '@/lib/sessionEvents';
 
 let fixtureCount = 0;
@@ -20,7 +20,14 @@ const comments = { drafts: [], commentText: '', editingDraftId: null, setSelecti
 
 mock.module('@/sync/session-ui-store', () => ({ useSessionUIStore: (select: (state: { currentSessionId: string }) => unknown) => select({ currentSessionId }) }));
 mock.module('@/sync/sync-context', () => ({ useSessions: () => fixtureSessions }));
-mock.module('@/stores/useSessionPlanFileStore', () => ({ useSessionPlanFileStore: (select: (state: { recordsBySession: typeof records }) => unknown) => select({ recordsBySession: records }) }));
+mock.module('@/stores/useSessionPlanFileStore', () => ({ useSessionPlanFileStore: Object.assign(
+  (select: (state: { recordsBySession: typeof records }) => unknown) => select({ recordsBySession: records }),
+  { getState: () => ({ markSaved: (sessionId: string, source: string, savedPath: string, savedIdentity: SessionPlanRevisionIdentity,
+      sourceIdentity?: SessionPlanFileRecord['sourceIdentity'], canonicalContent?: string, version?: string) => {
+    if (records[sessionId]?.sourceMessageId === source) records[sessionId] = { ...records[sessionId], path: savedPath,
+      revisionIdentity: savedIdentity, sourceIdentity, canonicalContent, version, status: 'saved', error: null };
+  } }) },
+) }));
 mock.module('@/stores/useDirectoryStore', () => ({ useDirectoryStore: (select: (state: { homeDirectory: string }) => unknown) => select({ homeDirectory: '/home/test' }) }));
 mock.module('@/stores/useFeatureFlagsStore', () => ({ useFeatureFlagsStore: (select: (state: { planModeEnabled: boolean }) => unknown) => select({ planModeEnabled: true }) }));
 mock.module('@/stores/useUIStore', () => ({ useUIStore: (select: (state: { setActiveMainTab: typeof noop; setSessionSwitcherOpen: typeof noop }) => unknown) => select({ setActiveMainTab: noop, setSessionSwitcherOpen: noop }) }));

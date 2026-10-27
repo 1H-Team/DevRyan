@@ -75,7 +75,7 @@ export function buildHarnessComparison({ baseline, candidate, agentPairs, factor
   let agent = { verdict: 'unavailable', metrics: compareMetrics(null, null) };
   if (agentPairs !== undefined) {
     if (!Array.isArray(agentPairs) || ![3, 10].includes(agentPairs.length)
-      || !['readOverlap', 'waitAny', 'compactResults', 'contextProjection', 'role'].includes(factor)
+      || !['readOverlap', 'waitAny', 'compactResults', 'contextProjection', 'adaptiveDelegation', 'role'].includes(factor)
       || !['objectiveDurationMs', 'input', 'workspaceBarrierMs', 'resultConsumptionMs', 'toolExecutionMs', 'toolVolumeBytes'].includes(targetMetric)) {
       throw new Error('comparison_pairing_invalid');
     }

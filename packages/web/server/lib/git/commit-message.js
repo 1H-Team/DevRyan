@@ -4,7 +4,7 @@ import {
   runFreeZenModelRotation,
   sharedFreeZenCooldowns,
   normalizeGeneratedCommitDraft,
-} from '@openchamber/shared-runtime';
+} from '@devryan/shared-runtime';
 import { generateZenText, resolveZenSessionID } from '../text/summarization.js';
 
 export const COMMIT_SUBJECT_MAX_LENGTH = 72;
@@ -52,6 +52,7 @@ export async function generateCommitMessageDirect({
   onAttempt,
   afterAttempt,
   requestText = generateZenText,
+  allowLocalFallback = true,
 }) {
   const providerStartedAt = Date.now();
   const prompt = buildCommitDraftPrompt(context, guidance);
@@ -79,6 +80,7 @@ export async function generateCommitMessageDirect({
     onAttempt,
     afterAttempt,
   });
+  if (!result.ok && !allowLocalFallback) throw Object.assign(new Error('The helper model could not generate a commit draft'), { code: 'HELPER_MODEL_FAILED', reason: result.failures.at(-1)?.reason ?? 'request_failed', failures: result.failures });
   const source = result.ok ? result.value.source : 'local_fallback';
   const freeTierRejected = !result.ok && result.failures.some((failure) => failure.reason === 'free_tier_rejected');
   const providerOutcome = result.ok ? 'complete'

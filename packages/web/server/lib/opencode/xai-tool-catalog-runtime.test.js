@@ -1,6 +1,25 @@
+import { createNativeConsumerFixture } from './test-native-consumer-client.js';
+const createXaiToolCatalogRuntime = (options = {}) => {
+  const client = options.openCodeClient ?? createNativeConsumerFixture({
+    readFixture: options.fetchImpl ?? ((...args) => globalThis.fetch(...args)), headers: options.getOpenCodeAuthHeaders,
+  });
+  if (!options.openCodeClient) {
+    const read = options.fetchImpl ?? ((...args) => globalThis.fetch(...args));
+    const headers = options.getOpenCodeAuthHeaders ?? (() => ({}));
+    client.catalog.tools = async (query, options = {}) => {
+      const auth = await headers();
+      options.signal.throwIfAborted();
+      const response = await read(`http://opencode.test/experimental/tool?directory=${encodeURIComponent(query.directory)}&provider=${query.providerID}&model=${query.modelID}`,
+        { method: 'GET', headers: { Accept: 'application/json', ...auth }, signal: options.signal });
+      if (!response?.ok) throw Object.assign(new Error('Native fixture refused'), { statusCode: response?.status ?? 503 });
+      return { definitions: await response.json() };
+    };
+  }
+  return createXaiToolCatalogRuntimeNative({ ...options, openCodeClient: client });
+};
 import { describe, expect, it, vi } from 'vitest';
 
-import { createXaiToolCatalogRuntime } from './xai-tool-catalog-runtime.js';
+import { createXaiToolCatalogRuntime as createXaiToolCatalogRuntimeNative } from './xai-tool-catalog-runtime.js';
 
 const response = (payload) => ({
   ok: true,
@@ -282,5 +301,70 @@ describe('xAI tool catalog runtime', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('xAI tool catalog runtime on OpenCode 2', () => {
+  const gen2Client = ({ providers, tools, generation = 2 } = {}) => ({
+    generation: () => generation,
+    catalog: {
+      providers: vi.fn(providers ?? (async () => ({ providers: [{ id: 'xai', models: { 'grok-4.6': { id: 'grok-4.6' } } }], default: {} }))),
+      tools: vi.fn(tools ?? (async () => ({
+        ids: ['ctx_search', 'mcp__context_mode__ctx_search'],
+        definitions: [
+          { id: 'ctx_search', description: 'Search context', parameters: { type: 'object' } },
+          { id: 'mcp__context_mode__ctx_search', description: 'Search context', parameters: { type: 'object' } },
+        ],
+      }))),
+    },
+  });
+
+  it('discovers Grok models and reads tool definitions from the host snapshot', async () => {
+    const client = gen2Client();
+    const fetchImpl = vi.fn();
+    const runtime = createXaiToolCatalogRuntime({
+      fetchImpl,
+      buildOpenCodeUrl: (requestPath) => `http://opencode.test${requestPath}`,
+      openCodeClient: () => client,
+      logger: { warn: vi.fn() },
+    });
+
+    expect(await runtime.refreshDirectory({ directory: '/repo' })).toBe(true);
+
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(client.catalog.providers.mock.calls[0][0]).toEqual({ directory: '/repo' });
+    expect(client.catalog.tools.mock.calls[0][0]).toEqual({ directory: '/repo', providerID: 'xai', modelID: 'grok-4.6' });
+    expect(client.catalog.tools.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal);
+    expect(runtime.getPromptToolOverrides(modelInput)).toEqual({ mcp__context_mode__ctx_search: false });
+  });
+
+  it('caches nothing when the snapshot fails and logs the failure', async () => {
+    const warn = vi.fn();
+    const client = gen2Client({ tools: async () => { throw Object.assign(new Error('catalog.tools failed (503)'), { statusCode: 503 }); } });
+    const runtime = createXaiToolCatalogRuntime({ openCodeClient: client, logger: { warn } });
+
+    expect(await runtime.refreshModel(modelInput)).toBeNull();
+    expect(runtime.getPromptToolOverrides(modelInput)).toBeNull();
+    expect(warn).toHaveBeenCalledWith('[XAI] Failed to refresh the Grok tool catalog:', 'catalog.tools failed (503)');
+  });
+
+  it('fails closed on unknown or generation 1 identities', async () => {
+    const unknown = { generation: () => { throw new Error('unknown generation'); }, catalog: { tools: vi.fn(), providers: vi.fn() } };
+    const fetchImpl = vi.fn();
+    const failing = createXaiToolCatalogRuntime({
+      fetchImpl, buildOpenCodeUrl: (requestPath) => `http://opencode.test${requestPath}`, openCodeClient: unknown, logger: { warn: vi.fn() },
+    });
+    expect(await failing.refreshModel(modelInput)).toBeNull();
+    expect(await failing.refreshDirectory({ directory: '/repo' })).toBe(false);
+    expect(fetchImpl).not.toHaveBeenCalled();
+
+    const gen1 = gen2Client({ generation: 1 });
+    const legacyFetch = vi.fn(async () => response(duplicateCatalog));
+    const legacy = createXaiToolCatalogRuntime({
+      fetchImpl: legacyFetch, buildOpenCodeUrl: (requestPath) => `http://opencode.test${requestPath}`, openCodeClient: gen1, logger: { warn: vi.fn() },
+    });
+    await legacy.refreshModel(modelInput);
+    expect(gen1.catalog.tools).not.toHaveBeenCalled();
+    expect(legacyFetch).not.toHaveBeenCalled();
   });
 });

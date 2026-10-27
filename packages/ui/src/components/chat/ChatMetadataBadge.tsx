@@ -2,6 +2,7 @@ import React from 'react';
 import { RiAiAgentLine, RiBrainAi3Line } from '@remixicon/react';
 import { getAgentColor } from '@/lib/agentColors';
 import { cn } from '@/lib/utils';
+import { MODEL_BADGE_STYLE } from './chatBadgeStyles';
 
 type ChatMetadataBadgeKind = 'model' | 'agent' | 'thinking';
 
@@ -19,11 +20,6 @@ interface ChatMetadataBadgeProps {
     style?: React.CSSProperties;
     title?: string;
 }
-
-const MODEL_BADGE_STYLE = {
-    '--agent-color': 'var(--surface-foreground)',
-    '--agent-color-bg': 'var(--surface-foreground)',
-} as React.CSSProperties;
 
 const DEFAULT_THINKING_BADGE_STYLE = {
     '--agent-color': 'var(--surface-muted-foreground)',

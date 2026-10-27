@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 
 const clearSessionAutoAcceptCalls: string[] = []
 
@@ -23,6 +23,7 @@ mock.module("@/components/ui", () => ({
 }))
 
 import type { Event, Message, Part, Session, SessionStatus } from "@opencode-ai/sdk/v2/client"
+import { createManagedTaskRecord, toManagedTaskEvent, projectRequiredCheckEvidence, projectRequiredCheckCompletion } from "@devryan/orchestration-runtime"
 import { ChildStoreManager } from "./child-store"
 import { INITIAL_STATE } from "./types"
 import { opencodeClient } from "@/lib/opencode/client"
@@ -36,6 +37,7 @@ import {
   resetDirectorySessionLifecycleOverlaysForTest,
   resetSessionMaterializationStateForTest,
   restorePersistedSessionIndicatorsForDirectory,
+  resyncDirectoryAfterReconnect,
   setActiveSession,
   setExternallyViewedSession,
 } from "./sync-context"
@@ -43,6 +45,7 @@ import { sessionEvents, type SessionPlanUpdated } from "@/lib/sessionEvents"
 import { useNotificationStore } from "./notification-store"
 import { useProviderRecoveryStore } from "@/stores/useProviderRecoveryStore"
 import { usePrimaryRecoveryStore } from "@/stores/usePrimaryRecoveryStore"
+import { parseRuntimeCapabilitySnapshot, resetRuntimeCapabilitiesForTests, useRuntimeCapabilityStore } from "@/lib/opencode/runtime-capabilities"
 import { useManagedOrchestrationStore } from "@/stores/useManagedOrchestrationStore"
 import { isAbortGuardActive, registerManualAbortGuard, resetAbortGuardState } from "./abort-retry-guard"
 import { useSelectionStore } from "./selection-store"
@@ -67,6 +70,26 @@ import * as sessionActions from "./session-actions"
 import { registerRuntimeAPIs } from "@/contexts/runtimeAPIRegistry"
 import type { RuntimeAPIs } from "@/lib/api/types"
 import { useStreamingStore } from "./streaming"
+import { useSessionPresentationStore } from "./session-presentation"
+
+const deferred = <T>() => {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>(next => { resolve = next; });
+  return { promise, resolve };
+};
+
+const originalFetch = globalThis.fetch
+beforeEach(() => {
+  useSessionPresentationStore.setState({ directories: {} })
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input), 'http://localhost');
+    if (url.pathname === '/api/orchestration/objective/verification')
+      return Response.json({ objectiveId: url.searchParams.get('expectedObjectiveId') ?? url.searchParams.get('originatingMessageId'), originatingMessageId: url.searchParams.get('originatingMessageId'), verification: null });
+    return Response.json({});
+  }
+  installSettleTimers()
+})
+afterEach(() => { globalThis.fetch = originalFetch; restoreSettleTimers(); resetRuntimeCapabilitiesForTests() })
 
 const DIRECTORY = "/repo"
 const SESSION_ID = "ses_1"
@@ -93,6 +116,13 @@ const structuredPlanBody = [
   "1. Run tests.",
 ].join("\n")
 
+const savedPlanResponse = () => ({
+  path: '/plans/plan.md', created: true, version: 'a'.repeat(64), content: structuredPlanBody,
+  sourceIdentity: { sessionID: SESSION_ID, sourceMessageID: ASSISTANT_MESSAGE_ID, rootUserMessageID: USER_MESSAGE_ID,
+    memberUserMessageIDs: [USER_MESSAGE_ID], memberAssistantMessageIDs: [ASSISTANT_MESSAGE_ID],
+    currentSourceMessageID: ASSISTANT_MESSAGE_ID, successful: true as const, settled: true as const, current: true },
+})
+
 const userMessage = (): Message => ({
   id: USER_MESSAGE_ID,
   sessionID: SESSION_ID,
@@ -105,6 +135,7 @@ const assistantMessage = (): Message => ({
   sessionID: SESSION_ID,
   role: "assistant",
   providerID: "cursor-acp",
+  finish: "stop",
   time: { created: 2, completed: 3 },
 } as Message)
 
@@ -233,8 +264,38 @@ const flushAsync = async () => {
 
 const SESSION_COMPLETION_INDICATOR_SETTLE_MS = 250
 
+// The completion indicator settles on a 250 ms module timer. Capture exactly that timer and
+// fire it on demand instead of sleeping real time; all other timers stay real.
+const settleTimers = new Map<number, () => void>()
+const realSetTimeout = globalThis.setTimeout
+const realClearTimeout = globalThis.clearTimeout
+let nextSettleTimer = 1_000_000
+const installSettleTimers = () => {
+  settleTimers.clear()
+  globalThis.setTimeout = ((handler: TimerHandler, delay?: number, ...args: unknown[]) => {
+    if (typeof handler === "function" && delay === SESSION_COMPLETION_INDICATOR_SETTLE_MS) {
+      const id = nextSettleTimer++
+      settleTimers.set(id, () => handler(...args))
+      return id
+    }
+    return realSetTimeout(handler, delay, ...args)
+  }) as unknown as typeof setTimeout
+  globalThis.clearTimeout = ((id?: number) => {
+    if (typeof id === "number" && settleTimers.delete(id)) return
+    realClearTimeout(id)
+  }) as unknown as typeof clearTimeout
+}
+const restoreSettleTimers = () => {
+  globalThis.setTimeout = realSetTimeout
+  globalThis.clearTimeout = realClearTimeout
+  settleTimers.clear()
+}
+
 const waitForCompletionIndicatorSettlement = async () => {
-  await new Promise((resolve) => setTimeout(resolve, SESSION_COMPLETION_INDICATOR_SETTLE_MS + 20))
+  await new Promise((resolve) => realSetTimeout(resolve, 0))
+  const due = [...settleTimers.values()]
+  settleTimers.clear()
+  for (const fire of due) fire()
 }
 
 const contextUsage = (activeInputTokens: number): SessionContextUsage => ({
@@ -260,10 +321,20 @@ const contextUsage = (activeInputTokens: number): SessionContextUsage => ({
 })
 
 describe("sync plan lifecycle on message.part.delta", () => {
+  // Completion indicators settle on a module-level timer; a test that ends before it fires
+  // would otherwise write its indicator into whichever test runs next.
+  const cancelPendingCompletionTimers = () => {
+    useSessionUIStore.getState().clearSessionTurnCompletion(SESSION_ID)
+  }
+
+  afterEach(cancelPendingCompletionTimers)
+
   beforeEach(() => {
+    cancelPendingCompletionTimers()
     useProviderRecoveryStore.getState().reset()
     usePrimaryRecoveryStore.setState({ snapshots: {} })
-    registerRuntimeAPIs(null)
+    registerRuntimeAPIs({ sessionPlans: { ensureRevision: async () => savedPlanResponse() } } as unknown as RuntimeAPIs)
+    useProjectsStore.setState({ projects: [{ id: "repo", path: DIRECTORY, label: "Repo" }] })
     resetGlobalSessionLifecycleOverlayForTest()
     resetDirectorySessionLifecycleOverlaysForTest()
     resetSessionMaterializationStateForTest()
@@ -1283,9 +1354,9 @@ describe("sync plan lifecycle on message.part.delta", () => {
   test("removes only the deleted session's persisted composer text and mentions", () => {
     const deletedSessionID = "ses_composer_delete"
     const retainedSessionID = "ses_composer_keep"
-    const deletedDraftKey = `openchamber_chat_input_draft_${deletedSessionID}`
-    const deletedMentionsKey = `openchamber_chat_confirmed_mentions_${deletedSessionID}`
-    const retainedDraftKey = `openchamber_chat_input_draft_${retainedSessionID}`
+    const deletedDraftKey = `devryan_chat_input_draft_${deletedSessionID}`
+    const deletedMentionsKey = `devryan_chat_confirmed_mentions_${deletedSessionID}`
+    const retainedDraftKey = `devryan_chat_input_draft_${retainedSessionID}`
     const storage = getSafeStorage()
     const childStores = new ChildStoreManager()
     const store = childStores.ensureChild(DIRECTORY)
@@ -1488,6 +1559,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
     const session = {
       id: SESSION_ID,
       title: "Plan session",
+      slug: "plan-session", directory: DIRECTORY,
       time: { created: 1, updated: 2 },
     } as Session
 
@@ -1526,7 +1598,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
       sessionPlans: {
         ensureRevision: async () => {
           writes += 1
-          return { path: '/plans/plan.md', created: true, version: 'fixture-version' }
+          return savedPlanResponse()
         },
       },
     } as unknown as RuntimeAPIs)
@@ -1580,7 +1652,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
     const store = childStores.ensureChild(DIRECTORY)
     store.setState({
       ...INITIAL_STATE,
-      session: [{ id: SESSION_ID, title: "Plan session", time: { created: 1, updated: 3 } } as Session],
+      session: [{ id: SESSION_ID, title: "Plan session", slug: "plan-session", directory: DIRECTORY, time: { created: 1, updated: 3 } } as Session],
       message: {
         [SESSION_ID]: [userMessage(), assistantMessage()],
       },
@@ -1717,7 +1789,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
     const originalProjects = useProjectsStore.getState().projects
     registerRuntimeAPIs({
       sessionPlans: {
-        ensureRevision: async () => ({ path: '/plans/plan.md', created: false, version: 'fixture-version' }),
+        ensureRevision: async () => ({ ...savedPlanResponse(), created: false }),
       },
     } as unknown as RuntimeAPIs)
     useProjectsStore.setState({
@@ -1804,7 +1876,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
 
     store.setState({
       ...INITIAL_STATE,
-      session: [{ id: SESSION_ID, title: "Plan session", time: { created: 1, updated: 2 } } as Session],
+      session: [{ id: SESSION_ID, title: "Plan session", slug: "plan-session", directory: DIRECTORY, time: { created: 1, updated: 2 } } as Session],
       message: {
         [SESSION_ID]: [userMessage(), assistantMessage()],
       },
@@ -1842,6 +1914,33 @@ describe("sync plan lifecycle on message.part.delta", () => {
     expect(store.getState().session_status[SESSION_ID]).toEqual({ type: "idle" })
   })
 
+  test("revalidates a transient settlement refusal on a new authoritative idle transition", async () => {
+    let attempts = 0
+    registerRuntimeAPIs({ sessionPlans: { ensureRevision: async () => {
+      if (++attempts === 1) throw new Error('plan_source_unsettled')
+      return savedPlanResponse()
+    } } } as unknown as RuntimeAPIs)
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(DIRECTORY)
+    store.setState({ ...INITIAL_STATE,
+      session: [{ id: SESSION_ID, title: 'Plan', slug: 'plan-session', directory: DIRECTORY, time: { created: 1, updated: 2 } } as Session],
+      message: { [SESSION_ID]: [userMessage(), assistantMessage()] },
+      part: { [USER_MESSAGE_ID]: [planModePart()], [ASSISTANT_MESSAGE_ID]: [textPart(structuredPlanBody)] },
+      session_status: { [SESSION_ID]: { type: 'idle' } as SessionStatus },
+    })
+    useSessionUIStore.getState().recordUserMessagePlanMode(SESSION_ID, USER_MESSAGE_ID, true)
+    await restorePersistedSessionIndicatorsForDirectory(DIRECTORY, store)
+    expect(useSessionPlanFileStore.getState().recordsBySession[SESSION_ID]?.status).toBe('error')
+    expect(useSessionUIStore.getState().sessionPlanIndicator.get(SESSION_ID)).toBeUndefined()
+    await restorePersistedSessionIndicatorsForDirectory(DIRECTORY, store)
+    expect(attempts).toBe(1)
+    applySyncEventForTest(DIRECTORY, sessionStatusEvent({ type: 'busy' } as SessionStatus), childStores, routingIndexFor())
+    applySyncEventForTest(DIRECTORY, sessionStatusEvent({ type: 'idle' } as SessionStatus), childStores, routingIndexFor())
+    await flushAsync()
+    expect(attempts).toBe(2)
+    expect(useSessionUIStore.getState().sessionPlanIndicator.get(SESSION_ID)).toEqual({ state: 'proposed', sourceMessageId: ASSISTANT_MESSAGE_ID })
+  })
+
   test("renders plan-ready yellow only after part, message, and authoritative idle updates settle the plan", async () => {
     const childStores = new ChildStoreManager()
     const store = childStores.ensureChild(DIRECTORY)
@@ -1853,7 +1952,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
 
     store.setState({
       ...INITIAL_STATE,
-      session: [{ id: SESSION_ID, title: "Plan session", time: { created: 1, updated: 2 } } as Session],
+      session: [{ id: SESSION_ID, title: "Plan session", slug: "plan-session", directory: DIRECTORY, time: { created: 1, updated: 2 } } as Session],
       message: {
         [SESSION_ID]: [userMessage(), incompleteAssistantMessage],
       },
@@ -1932,7 +2031,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
     const nativeNotifications: Array<{ title?: string; body?: string; tag?: string }> = []
 
     handleUserNotificationEvent({
-      type: "openchamber:notification",
+      type: "devryan:notification",
       properties: {
         kind: "plan-ready",
         sessionId: SESSION_ID,
@@ -1963,7 +2062,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
     const staleAssistantPart = textPart("Still preparing the plan.")
     store.setState({
       ...INITIAL_STATE,
-      session: [{ id: SESSION_ID, title: "Background plan", time: { created: 1, updated: 2 } } as Session],
+      session: [{ id: SESSION_ID, title: "Background plan", slug: "background-plan", directory: backgroundDirectory, time: { created: 1, updated: 2 } } as Session],
       message: {
         [SESSION_ID]: [userMessage(), assistantMessage()],
       },
@@ -2375,7 +2474,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
 
     store.setState({
       ...INITIAL_STATE,
-      session: [{ id: SESSION_ID, title: "Plan session", time: { created: 1, updated: 2 } } as Session],
+      session: [{ id: SESSION_ID, title: "Plan session", slug: "plan-session", directory: DIRECTORY, time: { created: 1, updated: 2 } } as Session],
       message: {
         [SESSION_ID]: [
           userMessage(),
@@ -2547,6 +2646,167 @@ describe("sync plan lifecycle on message.part.delta", () => {
       messageId: ASSISTANT_MESSAGE_ID,
       completedAt: 3,
     })
+  })
+
+  for (const scenario of ['pending', 'stale', 'failed', 'passed', 'skipped', 'changed', 'unknown', 'none'] as const) {
+    test(`root-only ${scenario} proof gates ordinary completion`, async () => {
+      const childStores = new ChildStoreManager()
+      const store = childStores.ensureChild(DIRECTORY)
+      const completedPart = textPart('Finished the requested work.')
+      seedOpenTodoBackgroundTurn(store, completedPart)
+      const hash = 'a'.repeat(64)
+      const checks = [{ name: 'root check', command: 'bun test', paths: ['src/app.ts'] }]
+      const receipt = scenario === 'pending' || scenario === 'none' || scenario === 'changed' || scenario === 'unknown' ? [] : [{
+        name: 'root check', callId: 'call_root', messageId: 'msg_check', observedAt: 2,
+        exitCode: scenario === 'failed' || scenario === 'skipped' ? 1 : 0,
+        status: scenario === 'failed' ? 'failed' as const : scenario === 'skipped' ? 'skipped' as const : 'passed' as const,
+        contentHash: hash, ...(scenario === 'skipped' ? { environmentUnavailable: { reason: 'docker_daemon_unavailable' as const, hint: 'Start Docker' } } : {}),
+      }]
+      const projected = projectRequiredCheckEvidence(checks, receipt, { 'root check': scenario === 'stale' ? 'b'.repeat(64) : hash })
+      globalThis.fetch = async input => {
+        const url = new URL(String(input), 'http://localhost')
+        if (url.pathname !== '/api/orchestration/objective/verification') return Response.json({})
+        if (scenario === 'unknown') return Response.json({ error: { code: 'unavailable', message: 'offline' } }, { status: 503 })
+        if (scenario === 'changed') return Response.json({ error: { code: 'objective_changed' } }, { status: 409 })
+        const objectiveId = USER_MESSAGE_ID
+        return Response.json({ objectiveId, originatingMessageId: url.searchParams.get('originatingMessageId'), verification: scenario === 'none' ? null
+          : { ...projectRequiredCheckCompletion(projected), objectiveId, checks: projected, observedAt: 3 } })
+      }
+      applySyncEventForTest(DIRECTORY, partUpdatedEvent(completedPart), childStores, routingIndexFor())
+      await flushAsync(); await waitForCompletionIndicatorSettlement()
+      const shouldComplete = ['passed', 'skipped', 'none'].includes(scenario)
+      expect(useNotificationStore.getState().sessionHasCompletion(SESSION_ID)).toBe(shouldComplete)
+      expect(useSessionUIStore.getState().sessionCompletionIndicator.has(SESSION_ID)).toBe(shouldComplete)
+    })
+  }
+
+  test('root-only pending verification is freshly rechecked for the same objective before completion', async () => {
+    const childStores = new ChildStoreManager(), store = childStores.ensureChild(DIRECTORY)
+    const completedPart = textPart('Finished work.')
+    seedOpenTodoBackgroundTurn(store, completedPart)
+    const check = [{ name: 'unit', command: 'bun test', paths: ['src/app.ts'] }], hash = 'a'.repeat(64)
+    let passed = false, requests = 0
+    globalThis.fetch = async input => {
+      const url = new URL(String(input), 'http://localhost')
+      if (url.pathname !== '/api/orchestration/objective/verification') return Response.json({})
+      requests++
+      const receipts = passed ? [{ name: 'unit', callId: 'call_check', messageId: 'msg_check', exitCode: 0, contentHash: hash, status: 'passed' as const, observedAt: 3 }] : []
+      const checks = projectRequiredCheckEvidence(check, receipts, { unit: hash })
+      return Response.json({ objectiveId: USER_MESSAGE_ID, originatingMessageId: url.searchParams.get('originatingMessageId'), verification: { ...projectRequiredCheckCompletion(checks), objectiveId: USER_MESSAGE_ID, checks, observedAt: 3 } })
+    }
+    applySyncEventForTest(DIRECTORY, partUpdatedEvent(completedPart), childStores, routingIndexFor())
+    await flushAsync(); await waitForCompletionIndicatorSettlement()
+    expect(useNotificationStore.getState().sessionHasCompletion(SESSION_ID)).toBe(false)
+    passed = true
+    applySyncEventForTest(DIRECTORY, partUpdatedEvent(completedPart), childStores, routingIndexFor())
+    await flushAsync(); await waitForCompletionIndicatorSettlement()
+    expect(requests).toBeGreaterThan(1)
+    expect(useNotificationStore.getState().sessionHasCompletion(SESSION_ID)).toBe(true)
+  })
+
+  for (const kind of ['native', 'managed', 'todo', 'verification', 'shell'] as const) {
+    test(`owned ${kind} continuation uses the canonical objective for completion`, async () => {
+      const childStores = new ChildStoreManager(), store = childStores.ensureChild(DIRECTORY)
+      const completedPart = textPart('Finished the work.')
+      seedOpenTodoBackgroundTurn(store, completedPart)
+      const wake = { id: 'msg_wake', sessionID: SESSION_ID, role: 'user', time: { created: 2 } } as Message
+      store.setState(state => ({ message: { ...state.message, [SESSION_ID]: [userMessage(), wake, { ...assistantMessage(), parentID: wake.id, agent: 'orchestrator' } as Message] },
+        part: { ...state.part, [wake.id]: [{ id: 'part_wake', sessionID: SESSION_ID, messageID: wake.id, type: 'text', text: kind, synthetic: true } as Part] } }))
+      globalThis.fetch = async input => {
+        const url = new URL(String(input), 'http://localhost')
+        if (url.pathname !== '/api/orchestration/objective/verification') return Response.json({})
+        expect(url.searchParams.get('originatingMessageId')).toBe('msg_wake')
+        return Response.json({ objectiveId: USER_MESSAGE_ID, originatingMessageId: 'msg_wake', verification: null })
+      }
+      applySyncEventForTest(DIRECTORY, partUpdatedEvent(completedPart), childStores, routingIndexFor())
+      await flushAsync(); await waitForCompletionIndicatorSettlement()
+      expect(useSessionUIStore.getState().sessionCompletionIndicator.get(SESSION_ID)?.messageId).toBe(ASSISTANT_MESSAGE_ID)
+    })
+  }
+
+  test('a forged or old continuation cannot complete another objective', async () => {
+    const childStores = new ChildStoreManager(), store = childStores.ensureChild(DIRECTORY)
+    const completedPart = textPart('Finished the work.')
+    seedOpenTodoBackgroundTurn(store, completedPart)
+    const wake = { id: 'msg_forged', sessionID: SESSION_ID, role: 'user', time: { created: 2 } } as Message
+    store.setState(state => ({ message: { ...state.message, [SESSION_ID]: [userMessage(), wake, assistantMessage()] } }))
+    globalThis.fetch = async () => Response.json({ error: { code: 'objective_changed' } }, { status: 409 })
+    applySyncEventForTest(DIRECTORY, partUpdatedEvent(completedPart), childStores, routingIndexFor())
+    await flushAsync(); await waitForCompletionIndicatorSettlement()
+    expect(useNotificationStore.getState().sessionHasCompletion(SESSION_ID)).toBe(false)
+  })
+
+  test('an outstanding root proof never blocks or completes a newer human turn', async () => {
+    const childStores = new ChildStoreManager(), store = childStores.ensureChild(DIRECTORY)
+    const completedPart = textPart('Finished old objective.')
+    seedOpenTodoBackgroundTurn(store, completedPart)
+    const pending = deferred<Response>()
+    globalThis.fetch = async input => new URL(String(input), 'http://localhost').pathname === '/api/orchestration/objective/verification'
+      ? pending.promise : Response.json({})
+    applySyncEventForTest(DIRECTORY, partUpdatedEvent(completedPart), childStores, routingIndexFor())
+    await flushAsync()
+    const newUser = { id: 'msg_new_user', sessionID: SESSION_ID, role: 'user', time: { created: 4 } } as Message
+    store.setState(state => ({ message: { ...state.message, [SESSION_ID]: [...(state.message[SESSION_ID] ?? []), newUser] } }))
+    pending.resolve(Response.json({ objectiveId: USER_MESSAGE_ID, originatingMessageId: USER_MESSAGE_ID, verification: null }))
+    await flushAsync(); await waitForCompletionIndicatorSettlement()
+    expect(store.getState().message[SESSION_ID]?.at(-1)?.id).toBe('msg_new_user')
+    expect(useNotificationStore.getState().sessionHasCompletion(SESSION_ID)).toBe(false)
+  })
+
+  test('explicit Standard Preview absence permits ordinary completion; unknown capability does not', async () => {
+    const snapshot = parseRuntimeCapabilitySnapshot({ isOpenCodeReady: true, openCode: { generation: 2, runtimeMode: 'standard-preview', ordinaryUserPermissions: true, capabilities: {} } })
+    useRuntimeCapabilityStore.setState({ snapshot, status: 'loaded' })
+    const childStores = new ChildStoreManager(), store = childStores.ensureChild(DIRECTORY)
+    const completedPart = textPart('Preview response.')
+    seedOpenTodoBackgroundTurn(store, completedPart)
+    globalThis.fetch = async () => { throw Error('No native checker in preview') }
+    applySyncEventForTest(DIRECTORY, partUpdatedEvent(completedPart), childStores, routingIndexFor())
+    await flushAsync(); await waitForCompletionIndicatorSettlement()
+    expect(useNotificationStore.getState().sessionHasCompletion(SESSION_ID)).toBe(true)
+    useNotificationStore.getState().removeSession(SESSION_ID)
+    useSessionUIStore.getState().clearSessionTurnCompletion(SESSION_ID)
+    useRuntimeCapabilityStore.setState({ status: 'failed' })
+    applySyncEventForTest(DIRECTORY, partUpdatedEvent(completedPart), childStores, routingIndexFor())
+    await flushAsync(); await waitForCompletionIndicatorSettlement()
+    expect(useNotificationStore.getState().sessionHasCompletion(SESSION_ID)).toBe(false)
+  })
+
+  test("requires current verification evidence despite completed child execution and confident final prose", async () => {
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(DIRECTORY)
+    const completedPart = textPart("All work and visual verification are complete.")
+    seedOpenTodoBackgroundTurn(store, completedPart)
+    const originalManagedState = useManagedOrchestrationStore.getState()
+    const requiredChecks = [{ name: "Populated cards", command: "bun test cards.test.ts", paths: ["src/cards.tsx"] }]
+    const hash = "a".repeat(64)
+    const makeVerification = (passed: boolean, observedAt: number) => {
+      const checks = projectRequiredCheckEvidence(requiredChecks, passed ? [{ name: "Populated cards", callId: "call_check",
+        messageId: "msg_check", exitCode: 0, contentHash: hash, status: "passed", observedAt }] : [], { "Populated cards": hash })
+      return { ...projectRequiredCheckCompletion(checks), checks, observedAt, objectiveId: USER_MESSAGE_ID }
+    }
+    const task = { ...toManagedTaskEvent(createManagedTaskRecord({ taskId: "dvr_task_verify", idempotencyKey: "verification",
+      rootSessionId: SESSION_ID, parentTaskId: null, directory: DIRECTORY, sequence: 1, mode: "orchestrator",
+      providerId: "fixture", modelId: "fixture", agent: "designer", variant: null, label: "Verify cards", prompt: "Verify cards",
+      attempt: 1, priorTaskId: null, executionKind: "start", createdAt: 1, timeoutAt: null, requiredChecks })).properties.task,
+      status: "completed" as const, finishedAt: 2, verification: makeVerification(false, 2) }
+    let passed = false
+    useManagedOrchestrationStore.setState({ taskIdsByRootId: { [SESSION_ID]: [task.taskId] }, tasksById: { [task.taskId]: task },
+      loadSnapshot: async () => {
+        useManagedOrchestrationStore.setState({ tasksById: { [task.taskId]: { ...task, verification: makeVerification(passed, 3) } },
+          snapshotStateByScope: { [SESSION_ID]: "confirmed" } })
+      } })
+    try {
+      applySyncEventForTest(DIRECTORY, partUpdatedEvent(completedPart), childStores, routingIndexFor())
+      await flushAsync()
+      await waitForCompletionIndicatorSettlement()
+      expect(useNotificationStore.getState().sessionHasCompletion(SESSION_ID)).toBe(false)
+      expect(useSessionUIStore.getState().sessionCompletionIndicator.has(SESSION_ID)).toBe(false)
+      passed = true
+      applySyncEventForTest(DIRECTORY, partUpdatedEvent(completedPart), childStores, routingIndexFor())
+      await flushAsync()
+      await waitForCompletionIndicatorSettlement()
+      expect(useSessionUIStore.getState().sessionCompletionIndicator.has(SESSION_ID)).toBe(true)
+    } finally { useManagedOrchestrationStore.setState(originalManagedState, true) }
   })
 
   test("defers completion while a managed child runs and re-detects after the idle snapshot settles it", async () => {
@@ -3071,6 +3331,74 @@ describe("sync plan lifecycle on message.part.delta", () => {
     expect(useSessionUIStore.getState().sessionCompletionIndicator.has(SESSION_ID)).toBe(false)
   })
 
+  test('root objective proof gates plan completion and is refreshed for the same implementation', async () => {
+    const childStores = new ChildStoreManager(), store = childStores.ensureChild(DIRECTORY)
+    const completedPart = implementTextPart('Implemented the plan.')
+    const check = [{ name: 'unit', command: 'bun test', paths: ['src/app.ts'] }], hash = 'a'.repeat(64)
+    let passed = false
+    globalThis.fetch = async input => {
+      const url = new URL(String(input), 'http://localhost')
+      if (url.pathname !== '/api/orchestration/objective/verification') return Response.json({})
+      const receipts = passed ? [{ name: 'unit', callId: 'call_check', messageId: 'msg_check', exitCode: 0, contentHash: hash, status: 'passed' as const, observedAt: 3 }] : []
+      const checks = projectRequiredCheckEvidence(check, receipts, { unit: hash })
+      return Response.json({ objectiveId: IMPLEMENT_USER_MESSAGE_ID, originatingMessageId: url.searchParams.get('originatingMessageId'), verification: { ...projectRequiredCheckCompletion(checks), objectiveId: IMPLEMENT_USER_MESSAGE_ID, checks, observedAt: 3 } })
+    }
+    store.setState({ ...INITIAL_STATE,
+      session: [{ id: SESSION_ID, title: 'Plan session', slug: 'plan-session', directory: DIRECTORY, time: { created: 1, updated: 2 } } as Session],
+      message: { [SESSION_ID]: [userMessage(), assistantMessage(), implementingUserMessage(), implementingAssistantMessage()] },
+      part: { [USER_MESSAGE_ID]: [planModePart()], [ASSISTANT_MESSAGE_ID]: [textPart(`<!--plan-->\n${structuredPlanBody}`)],
+        [IMPLEMENT_USER_MESSAGE_ID]: [], [IMPLEMENT_ASSISTANT_MESSAGE_ID]: [completedPart] },
+      session_status: { [SESSION_ID]: { type: 'idle' } as SessionStatus } })
+    useSessionUIStore.getState().recordUserMessagePlanMode(SESSION_ID, USER_MESSAGE_ID, true)
+    useSessionUIStore.getState().markPlanProposed(SESSION_ID, ASSISTANT_MESSAGE_ID)
+    useSessionUIStore.getState().markPlanImplementationRequested(`${SESSION_ID}:${ASSISTANT_MESSAGE_ID}:plan:0`)
+    useSessionUIStore.getState().markPlanImplementing(SESSION_ID, ASSISTANT_MESSAGE_ID, IMPLEMENT_USER_MESSAGE_ID)
+    const routing = routingIndexFor([USER_MESSAGE_ID, ASSISTANT_MESSAGE_ID, IMPLEMENT_USER_MESSAGE_ID, IMPLEMENT_ASSISTANT_MESSAGE_ID])
+    applySyncEventForTest(DIRECTORY, partUpdatedEvent(completedPart), childStores, routing)
+    await flushAsync(); await waitForCompletionIndicatorSettlement()
+    expect(useSessionUIStore.getState().sessionPlanIndicator.get(SESSION_ID)?.state).toBe('implementing')
+    expect(useNotificationStore.getState().sessionHasCompletion(SESSION_ID)).toBe(false)
+    passed = true
+    applySyncEventForTest(DIRECTORY, partUpdatedEvent(completedPart), childStores, routing)
+    await flushAsync(); await waitForCompletionIndicatorSettlement()
+    expect(useSessionUIStore.getState().sessionPlanIndicator.get(SESSION_ID)?.state).toBe('completed')
+  })
+
+  for (const scenario of ['direct', 'synthetic', 'cancelled', 'wrong-parent'] as const) {
+    test(`plan completion requires its implementation objective and owned ${scenario} turn`, async () => {
+      const childStores = new ChildStoreManager(), store = childStores.ensureChild(DIRECTORY)
+      const completedPart = implementTextPart('Implemented the plan.')
+      const wake = { id: 'msg_plan_wake', sessionID: SESSION_ID, role: 'user', time: { created: 5 } } as Message
+      const currentUserId = scenario === 'synthetic' || scenario === 'wrong-parent' ? wake.id : IMPLEMENT_USER_MESSAGE_ID
+      const messages = [userMessage(), assistantMessage(), implementingUserMessage(),
+        ...(scenario === 'synthetic' || scenario === 'wrong-parent' ? [wake] : []),
+        { ...implementingAssistantMessage(), parentID: scenario === 'wrong-parent' ? IMPLEMENT_USER_MESSAGE_ID : currentUserId } as Message]
+      store.setState({ ...INITIAL_STATE,
+        session: [{ id: SESSION_ID, title: 'Plan session', slug: 'plan-session', directory: DIRECTORY, time: { created: 1, updated: 6 } } as Session],
+        message: { [SESSION_ID]: messages },
+        part: { [USER_MESSAGE_ID]: [planModePart()], [ASSISTANT_MESSAGE_ID]: [textPart(`<!--plan-->\n${structuredPlanBody}`)],
+          [IMPLEMENT_USER_MESSAGE_ID]: [], [wake.id]: [{ id: 'wake_part', sessionID: SESSION_ID, messageID: wake.id, type: 'text', text: 'Continue', synthetic: true } as Part],
+          [IMPLEMENT_ASSISTANT_MESSAGE_ID]: [completedPart] },
+        session_status: { [SESSION_ID]: { type: 'idle' } as SessionStatus } })
+      useSessionUIStore.getState().recordUserMessagePlanMode(SESSION_ID, USER_MESSAGE_ID, true)
+      useSessionUIStore.getState().markPlanProposed(SESSION_ID, ASSISTANT_MESSAGE_ID)
+      useSessionUIStore.getState().markPlanImplementationRequested(`${SESSION_ID}:${ASSISTANT_MESSAGE_ID}:plan:0`)
+      useSessionUIStore.getState().markPlanImplementing(SESSION_ID, ASSISTANT_MESSAGE_ID, IMPLEMENT_USER_MESSAGE_ID)
+      globalThis.fetch = async input => {
+        const url = new URL(String(input), 'http://localhost')
+        if (url.pathname !== '/api/orchestration/objective/verification') return Response.json({})
+        expect(url.searchParams.get('expectedObjectiveId')).toBe(IMPLEMENT_USER_MESSAGE_ID)
+        expect(url.searchParams.get('originatingMessageId')).toBe(currentUserId)
+        return scenario === 'cancelled' ? Response.json({ error: { code: 'objective_changed' } }, { status: 409 })
+          : Response.json({ objectiveId: IMPLEMENT_USER_MESSAGE_ID, originatingMessageId: currentUserId, verification: null })
+      }
+      applySyncEventForTest(DIRECTORY, partUpdatedEvent(completedPart), childStores, routingIndexFor(messages.map(message => message.id)))
+      await flushAsync(); await waitForCompletionIndicatorSettlement()
+      expect(useSessionUIStore.getState().sessionPlanIndicator.get(SESSION_ID)?.state).toBe(['cancelled', 'wrong-parent'].includes(scenario) ? 'implementing' : 'completed')
+      expect(useNotificationStore.getState().sessionHasCompletion(SESSION_ID)).toBe(!['cancelled', 'wrong-parent'].includes(scenario))
+    })
+  }
+
   test("marks implemented plan completed and records unread completion from part update", async () => {
     const childStores = new ChildStoreManager()
     const store = childStores.ensureChild(DIRECTORY)
@@ -3079,7 +3407,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
 
     store.setState({
       ...INITIAL_STATE,
-      session: [{ id: SESSION_ID, title: "Plan session", time: { created: 1, updated: 2 } } as Session],
+      session: [{ id: SESSION_ID, title: "Plan session", slug: "plan-session", directory: DIRECTORY, time: { created: 1, updated: 2 } } as Session],
       message: {
         [SESSION_ID]: [
           userMessage(),
@@ -3147,7 +3475,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
 
     store.setState({
       ...INITIAL_STATE,
-      session: [{ id: SESSION_ID, title: "Plan session", time: { created: 1, updated: 2 } } as Session],
+      session: [{ id: SESSION_ID, title: "Plan session", slug: "plan-session", directory: DIRECTORY, time: { created: 1, updated: 2 } } as Session],
       message: {
         [SESSION_ID]: [
           userMessage(),
@@ -3201,7 +3529,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
 
     store.setState({
       ...INITIAL_STATE,
-      session: [{ id: SESSION_ID, title: "Plan session", time: { created: 1, updated: 2 } } as Session],
+      session: [{ id: SESSION_ID, title: "Plan session", slug: "plan-session", directory: DIRECTORY, time: { created: 1, updated: 2 } } as Session],
       message: {
         [SESSION_ID]: [
           userMessage(),
@@ -3269,7 +3597,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
 
     store.setState({
       ...INITIAL_STATE,
-      session: [{ id: SESSION_ID, title: "Plan session", time: { created: 1, updated: 2 } } as Session],
+      session: [{ id: SESSION_ID, title: "Plan session", slug: "plan-session", directory: DIRECTORY, time: { created: 1, updated: 2 } } as Session],
       message: {
         [SESSION_ID]: [
           userMessage(),
@@ -3325,7 +3653,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
 
     store.setState({
       ...INITIAL_STATE,
-      session: [{ id: SESSION_ID, title: "Plan session", time: { created: 1, updated: 2 } } as Session],
+      session: [{ id: SESSION_ID, title: "Plan session", slug: "plan-session", directory: DIRECTORY, time: { created: 1, updated: 2 } } as Session],
       message: {
         [SESSION_ID]: [
           userMessage(),
@@ -3451,7 +3779,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
 
     store.setState({
       ...INITIAL_STATE,
-      session: [{ id: SESSION_ID, title: "Plan session", time: { created: 1, updated: 2 } } as Session],
+      session: [{ id: SESSION_ID, title: "Plan session", slug: "plan-session", directory: DIRECTORY, time: { created: 1, updated: 2 } } as Session],
       message: {
         [SESSION_ID]: [
           userMessage(),
@@ -3580,7 +3908,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
 
     store.setState({
       ...INITIAL_STATE,
-      session: [{ id: SESSION_ID, title: "Plan session", time: { created: 1, updated: 2 } } as Session],
+      session: [{ id: SESSION_ID, title: "Plan session", slug: "plan-session", directory: DIRECTORY, time: { created: 1, updated: 2 } } as Session],
       message: {
         [SESSION_ID]: [
           userMessage(),
@@ -3641,7 +3969,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
 
     store.setState({
       ...INITIAL_STATE,
-      session: [{ id: SESSION_ID, title: "Plan session", time: { created: 1, updated: 2 } } as Session],
+      session: [{ id: SESSION_ID, title: "Plan session", slug: "plan-session", directory: DIRECTORY, time: { created: 1, updated: 2 } } as Session],
       message: {
         [SESSION_ID]: [userMessage(), assistantMessage()],
       },
@@ -3679,7 +4007,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
 
     store.setState({
       ...INITIAL_STATE,
-      session: [{ id: SESSION_ID, title: "Plan session", time: { created: 1, updated: 2 } } as Session],
+      session: [{ id: SESSION_ID, title: "Plan session", slug: "plan-session", directory: DIRECTORY, time: { created: 1, updated: 2 } } as Session],
       message: {
         [SESSION_ID]: [userMessage(), assistantMessage()],
       },
@@ -3722,7 +4050,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
 
     store.setState({
       ...INITIAL_STATE,
-      session: [{ id: SESSION_ID, title: "Plan session", time: { created: 1, updated: 2 } } as Session],
+      session: [{ id: SESSION_ID, title: "Plan session", slug: "plan-session", directory: DIRECTORY, time: { created: 1, updated: 2 } } as Session],
       message: {
         [SESSION_ID]: [
           userMessage(),
@@ -3776,7 +4104,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
 
     store.setState({
       ...INITIAL_STATE,
-      session: [{ id: SESSION_ID, title: "Plan session", time: { created: 1, updated: 2 } } as Session],
+      session: [{ id: SESSION_ID, title: "Plan session", slug: "plan-session", directory: DIRECTORY, time: { created: 1, updated: 2 } } as Session],
       message: {
         [SESSION_ID]: [
           userMessage(),
@@ -4079,4 +4407,190 @@ describe("sync plan lifecycle on message.part.delta", () => {
     expect(childStores.getChild(remoteDirectory)).toBe(undefined)
     expect(useGlobalSessionsStore.getState().archivedSessions).toEqual([])
   })
+})
+
+
+describe("reconnect snapshot lifetime", () => {
+  for (const scenario of ["omitted idle", "malformed map", "new busy during status", "same busy during status", "new busy during history", "same idle during status", "evicted observation"] as const) {
+    test(`active-only status snapshot respects live recovery fences: ${scenario}`, async () => {
+      resetDirectorySessionLifecycleOverlaysForTest()
+      const childStores = new ChildStoreManager()
+      const store = childStores.ensureChild(DIRECTORY)
+      const session = { id: `ses_status_snapshot_${scenario}`, title: "status", time: { created: 1, updated: 2 } } as Session
+      store.setState({ ...INITIAL_STATE, session: [session], sessionTotal: 1,
+        session_status: { [session.id]: { type: scenario === "new busy during status" || scenario === "same idle during status" ? "idle" : "busy" } } })
+      const initialStatuses = store.getState().session_status
+      const originalNow = Date.now
+      if (scenario === "same busy during status" || scenario === "same idle during status") Date.now = () => 100
+      const routingIndex = { sessionDirectoryById: new Map([[session.id, DIRECTORY]]),
+        messageSessionById: new Map<string, string>(), sessionMessageIdsById: new Map<string, Set<string>>() }
+      if (scenario === "same busy during status") {
+        applySyncEventForTest(DIRECTORY, { type: "session.status", properties: {
+          sessionID: session.id, status: { type: "busy" },
+        } } as Event, childStores, routingIndex)
+      }
+      let finish!: () => void
+      let started!: () => void
+      const begun = new Promise<void>(resolve => { started = resolve })
+      const held = new Promise<void>(resolve => { finish = resolve })
+      const original = opencodeClient.getScopedSdkClient
+      const questions = opencodeClient.listPendingQuestions
+      const permissions = opencodeClient.listPendingPermissions
+      Object.defineProperty(opencodeClient, "getScopedSdkClient", { configurable: true, value: () => ({ session: {
+        status: async () => {
+          if (scenario.endsWith("during status") || scenario === "evicted observation") { started(); await held }
+          return { data: scenario === "malformed map" ? { unrelated: { type: "unknown" } }
+            : scenario === "same idle during status" ? { [session.id]: { type: "busy" } } : {} }
+        },
+        get: async () => {
+          if (scenario === "new busy during history") { started(); await held }
+          return { data: session }
+        },
+        messages: async () => ({ data: [] }),
+      } }) })
+      opencodeClient.listPendingQuestions = async () => []
+      opencodeClient.listPendingPermissions = async () => []
+      try {
+        const request = resyncDirectoryAfterReconnect(DIRECTORY, store, routingIndex, { candidateSessionIds: [session.id] })
+        if (scenario.startsWith("new busy") || scenario.endsWith("during status") || scenario === "evicted observation") {
+          await begun
+          if (scenario === "same idle during status") {
+            applySyncEventForTest(DIRECTORY, { type: "session.idle", properties: { sessionID: session.id } } as Event, childStores, routingIndex)
+          } else applySyncEventForTest(DIRECTORY, { type: "session.status", properties: {
+            sessionID: session.id, status: { type: "busy" },
+          } } as Event, childStores, routingIndex)
+          if (scenario === "evicted observation") {
+            for (let index = 0; index < 501; index += 1) {
+              applySyncEventForTest(DIRECTORY, { type: "session.status", properties: {
+                sessionID: `ses_unrelated_status_${index}`, status: { type: "busy" },
+              } } as Event, childStores, routingIndex)
+            }
+          }
+          finish()
+        }
+        await request
+        expect(store.getState().session_status[session.id]).toEqual({ type: scenario === "omitted idle" || scenario === "same idle during status" ? "idle" : "busy" })
+        if (scenario === "malformed map") expect(store.getState().session_status).toBe(initialStatuses)
+      } finally {
+        Date.now = originalNow
+        finish?.()
+        Object.defineProperty(opencodeClient, "getScopedSdkClient", { configurable: true, value: original })
+        opencodeClient.listPendingQuestions = questions
+        opencodeClient.listPendingPermissions = permissions
+      }
+    })
+  }
+
+  for (const recreated of [false, true]) {
+  test(`late reconnect cannot restore deleted or recreated session (recreated=${recreated})`, async () => {
+    resetDirectorySessionLifecycleOverlaysForTest()
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(DIRECTORY)
+    const session = { id: "ses_reseed_deleted", title: "old", time: { created: 1, updated: 2 } } as Session
+    store.setState({ ...INITIAL_STATE, session: [session], sessionTotal: 1 })
+    const routingIndex = { sessionDirectoryById: new Map([[session.id, DIRECTORY]]),
+      messageSessionById: new Map<string, string>(), sessionMessageIdsById: new Map<string, Set<string>>() }
+    let finish!: (result: { data: Session }) => void
+    let started!: () => void
+    const begun = new Promise<void>(resolve => { started = resolve })
+    const pending = new Promise<{ data: Session }>(resolve => { finish = resolve })
+    const original = opencodeClient.getScopedSdkClient
+    Object.defineProperty(opencodeClient, "getScopedSdkClient", { configurable: true, value: () => ({ session: {
+      status: async () => ({ data: {} }), get: () => { started(); return pending }, messages: async () => ({ data: [] }),
+    } }) })
+    try {
+      const request = resyncDirectoryAfterReconnect(DIRECTORY, store, routingIndex, { candidateSessionIds: [session.id] })
+      await begun
+      applySyncEventForTest(DIRECTORY, { type: "session.deleted", properties: { sessionID: session.id, info: session } } as Event, childStores, routingIndex)
+      const replacement = { ...session, title: "new lifetime", time: { created: 3, updated: 4 } }
+      if (recreated) applySyncEventForTest(DIRECTORY, { type: "session.created", properties: { info: replacement } } as Event, childStores, routingIndex)
+      finish({ data: session })
+      await request
+      expect(store.getState().session.find(item => item.id === session.id)?.title).toBe(recreated ? "new lifetime" : undefined)
+      expect(store.getState().message[session.id]).toBeUndefined()
+    } finally {
+      Object.defineProperty(opencodeClient, "getScopedSdkClient", { configurable: true, value: original })
+    }
+  })
+  }
+
+  test("overlapping reconnect reads keep the newer snapshot", async () => {
+    resetDirectorySessionLifecycleOverlaysForTest()
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(DIRECTORY)
+    const session = { id: "ses_reseed_overlap", title: "before", time: { created: 1, updated: 2 } } as Session
+    store.setState({ ...INITIAL_STATE, session: [session], sessionTotal: 1 })
+    const routingIndex = { sessionDirectoryById: new Map([[session.id, DIRECTORY]]),
+      messageSessionById: new Map<string, string>(), sessionMessageIdsById: new Map<string, Set<string>>() }
+    let finishOld!: (result: { data: Session }) => void
+    let started!: () => void
+    const begun = new Promise<void>(resolve => { started = resolve })
+    const oldResult = new Promise<{ data: Session }>(resolve => { finishOld = resolve })
+    const original = opencodeClient.getScopedSdkClient
+    const questions = opencodeClient.listPendingQuestions
+    const permissions = opencodeClient.listPendingPermissions
+    let reads = 0
+    Object.defineProperty(opencodeClient, "getScopedSdkClient", { configurable: true, value: () => ({ session: {
+      status: async () => ({ data: {} }), get: () => ++reads === 1 ? (started(), oldResult)
+        : Promise.resolve({ data: { ...session, title: "new snapshot", time: { created: 1, updated: 4 } } }),
+      messages: async () => ({ data: [] }),
+    } }) })
+    opencodeClient.listPendingQuestions = async () => []
+    opencodeClient.listPendingPermissions = async () => []
+    try {
+      const old = resyncDirectoryAfterReconnect(DIRECTORY, store, routingIndex, { candidateSessionIds: [session.id] })
+      await begun
+      await resyncDirectoryAfterReconnect(DIRECTORY, store, routingIndex, { candidateSessionIds: [session.id] })
+      finishOld({ data: session })
+      await old
+      expect(store.getState().session[0].title).toBe("new snapshot")
+    } finally {
+      Object.defineProperty(opencodeClient, "getScopedSdkClient", { configurable: true, value: original })
+      opencodeClient.listPendingQuestions = questions
+      opencodeClient.listPendingPermissions = permissions
+    }
+  })
+})
+
+
+test("reconnect snapshots preserve message and part updates delivered while REST is pending", async () => {
+  resetDirectorySessionLifecycleOverlaysForTest()
+  const childStores = new ChildStoreManager()
+  const store = childStores.ensureChild(DIRECTORY)
+  const session = { id: SESSION_ID, title: "stream", time: { created: 1, updated: 2 } } as Session
+  const message = assistantMessage()
+  const part = { id: PART_ID, sessionID: SESSION_ID, messageID: ASSISTANT_MESSAGE_ID, type: "text", text: "before" } as Part
+  store.setState({ ...INITIAL_STATE, session: [session], sessionTotal: 1,
+    message: { [SESSION_ID]: [message] }, part: { [ASSISTANT_MESSAGE_ID]: [part] } })
+  const routingIndex = { sessionDirectoryById: new Map([[SESSION_ID, DIRECTORY]]),
+    messageSessionById: new Map([[ASSISTANT_MESSAGE_ID, SESSION_ID]]), sessionMessageIdsById: new Map([[SESSION_ID, new Set([ASSISTANT_MESSAGE_ID])]]) }
+  let finish!: (result: { data: Array<{ info: Message; parts: Part[] }> }) => void
+  let started!: () => void
+  const begun = new Promise<void>(resolve => { started = resolve })
+  const pending = new Promise<{ data: Array<{ info: Message; parts: Part[] }> }>(resolve => { finish = resolve })
+  const original = opencodeClient.getScopedSdkClient
+  const questions = opencodeClient.listPendingQuestions
+  const permissions = opencodeClient.listPendingPermissions
+  Object.defineProperty(opencodeClient, "getScopedSdkClient", { configurable: true, value: () => ({ session: {
+    status: async () => ({ data: {} }), get: async () => ({ data: session }), messages: () => { started(); return pending },
+  } }) })
+  opencodeClient.listPendingQuestions = async () => []
+  opencodeClient.listPendingPermissions = async () => []
+  try {
+    const request = resyncDirectoryAfterReconnect(DIRECTORY, store, routingIndex, { candidateSessionIds: [SESSION_ID] })
+    await begun
+    applySyncEventForTest(DIRECTORY, { type: "message.updated", properties: { info: { ...message, time: { created: 2, completed: 9 } } } } as Event, childStores, routingIndex)
+    applySyncEventForTest(DIRECTORY, { type: "message.part.updated", properties: { part: { ...part, text: "live completed text" } } } as Event, childStores, routingIndex)
+    const liveMessage = store.getState().message[SESSION_ID][0]
+    const liveParts = store.getState().part[ASSISTANT_MESSAGE_ID]
+    finish({ data: [{ info: message, parts: [part] }] })
+    await request
+    expect(store.getState().message[SESSION_ID][0]).toBe(liveMessage)
+    expect(store.getState().part[ASSISTANT_MESSAGE_ID]).toBe(liveParts)
+    expect((liveParts[0] as Part & { text: string }).text).toBe("live completed text")
+  } finally {
+    Object.defineProperty(opencodeClient, "getScopedSdkClient", { configurable: true, value: original })
+    opencodeClient.listPendingQuestions = questions
+    opencodeClient.listPendingPermissions = permissions
+  }
 })

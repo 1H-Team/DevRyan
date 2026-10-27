@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { PERF_PARENT_SESSION_ID } from '../perf/loopback-opencode-fixture.mjs';
+import { PERF_PARENT_SESSION_ID } from '../perf/fixture-session-seeds.mjs';
 import { evaluate } from './cdp.mjs';
 import { createQaUiDriver } from './ui-driver.mjs';
 

@@ -14,16 +14,17 @@
 
 import { retentionClientID, retentionConnectionChanged } from "@/lib/sessionRetention"
 import type { Event, OpencodeClient } from "@opencode-ai/sdk/v2/client"
-import { opencodeClient } from "@/lib/opencode/client"
+import { InputSubscriptionUnavailableError, opencodeClient } from "@/lib/opencode/client"
 import { syncDebug } from "./debug"
 import {
   postRendererTurnTimingMark,
   responsivenessPerfCount,
   responsivenessPerfObserve,
 } from "@/stores/utils/streamDebug"
-import { appendStreamingTextDelta } from "./part-delta"
+import { appendStreamingFieldDelta } from "./part-delta"
 import { sessionEvents } from "@/lib/sessionEvents"
 import { usePrimaryRecoveryStore } from "@/stores/usePrimaryRecoveryStore"
+import { canonicalEventType, DEVRYAN_EVENT_DIALECT } from "@/lib/eventTypes"
 
 export type QueuedEvent = {
   directory: string
@@ -60,6 +61,8 @@ export type EventPipelineInput = {
   routeDirectory?: (directory: string, payload: Event) => string
   /** Called after stream reconnects (visibility restore or heartbeat timeout). */
   onReconnect?: () => void
+  /** Acknowledged subscription readiness, independent of HTTP/heartbeat connectivity. */
+  onSubscriptionReady?: (ready: boolean) => void
   /** Called when the stream disconnects (heartbeat timeout, network error, or transport failure). */
   onDisconnect?: (reason: string) => void
   /** Called when transport switches (e.g. WS timeout → SSE fallback) without actual disconnection. */
@@ -74,6 +77,10 @@ export type EventPipelineInput = {
   onManagedOrchestrationEvent?: (payload: unknown) => void
   /** Routes server-owned native notification events outside directory sync stores. */
   onUserNotificationEvent?: (payload: unknown) => void
+  /** Routes finite authenticated integration UI effects outside transcript stores. */
+  onIntegrationEvent?: (directory: string, payload: unknown) => void
+  /** Routes authoritative provider catalog invalidation outside transcript stores. */
+  onProviderCatalogEvent?: (directory: string, payload: unknown) => void
   transport?: "auto" | "ws" | "sse"
   heartbeatTimeoutMs?: number
   reconnectDelayMs?: number
@@ -91,14 +98,16 @@ type MessageStreamWsFrame = {
 }
 
 const normalizeEventType = (payload: Event): Event => {
-  const type = (payload as { type?: unknown }).type
-  if (typeof type !== "string") {
+  const rawType = (payload as { type?: unknown }).type
+  if (typeof rawType !== "string") {
     return payload
   }
 
+  // An older host sends the `openchamber:*` alias of a `devryan:*` host event.
+  const type = canonicalEventType(rawType)
   const match = /^(.*)\.(\d+)$/.exec(type)
   if (!match || !match[1]) {
-    return payload
+    return type === rawType ? payload : { ...payload, type: type as Event["type"] } as unknown as Event
   }
 
   return {
@@ -109,7 +118,7 @@ const normalizeEventType = (payload: Event): Event => {
 
 const normalizeSyntheticSessionStatus = (payload: Event): Event => {
   const type = (payload as { type?: unknown }).type
-  if (type !== "openchamber:session-status") {
+  if (type !== "devryan:session-status") {
     return payload
   }
 
@@ -230,7 +239,7 @@ function toWebSocketUrl(candidate: string): string {
   return url.toString()
 }
 
-function buildGlobalEventWsUrl(lastEventId?: string): string {
+function buildGlobalEventWsUrl(lastEventId?: string, replayUnanchored = false): string {
   let baseUrl = "/api"
   try {
     const client = opencodeClient as { getBaseUrl?: () => string }
@@ -243,8 +252,11 @@ function buildGlobalEventWsUrl(lastEventId?: string): string {
   const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`
   const httpUrl = new URL("global/event/ws", resolveAbsoluteUrl(normalizedBase))
   httpUrl.searchParams.set("clientID", retentionClientID)
+  httpUrl.searchParams.set("events", DEVRYAN_EVENT_DIALECT)
   if (lastEventId && lastEventId.length > 0) {
     httpUrl.searchParams.set("lastEventId", lastEventId)
+  } else if (replayUnanchored) {
+    httpUrl.searchParams.set("replayUnanchored", "1")
   }
   return toWebSocketUrl(httpUrl.toString())
 }
@@ -255,14 +267,14 @@ function getRendererRuntimeLabel(): string {
   }
 
   const runtimeApis = (window as unknown as {
-    __OPENCHAMBER_DESKTOP_SERVER__?: unknown
-    __OPENCHAMBER_ELECTRON__?: unknown
-    __OPENCHAMBER_RUNTIME_APIS__?: { runtime?: { isDesktop?: boolean;  } }
-  }).__OPENCHAMBER_RUNTIME_APIS__
+    __DEVRYAN_DESKTOP_SERVER__?: unknown
+    __DEVRYAN_ELECTRON__?: unknown
+    __DEVRYAN_RUNTIME_APIS__?: { runtime?: { isDesktop?: boolean;  } }
+  }).__DEVRYAN_RUNTIME_APIS__
 
   if (
-    (window as unknown as { __OPENCHAMBER_DESKTOP_SERVER__?: unknown }).__OPENCHAMBER_DESKTOP_SERVER__
-    || (window as unknown as { __OPENCHAMBER_ELECTRON__?: unknown }).__OPENCHAMBER_ELECTRON__
+    (window as unknown as { __DEVRYAN_DESKTOP_SERVER__?: unknown }).__DEVRYAN_DESKTOP_SERVER__
+    || (window as unknown as { __DEVRYAN_ELECTRON__?: unknown }).__DEVRYAN_ELECTRON__
     || runtimeApis?.runtime?.isDesktop === true
   ) {
     return "desktop"
@@ -363,7 +375,7 @@ function isPermanentClientErrorStatus(status: number | undefined): boolean {
 
 export function coalescePartDeltaValue(field: string, previousDelta: string, incomingDelta: string): string {
   if (field === "text" || field === "output") {
-    return appendStreamingTextDelta(previousDelta, incomingDelta)
+    return appendStreamingFieldDelta(field, previousDelta, incomingDelta)
   }
 
   return previousDelta + incomingDelta
@@ -386,11 +398,14 @@ export function createEventPipeline(input: EventPipelineInput) {
     onEvent,
     onBatch,
     onReconnect,
+    onSubscriptionReady,
     onDisconnect,
     onTransportSwitch,
     onReplayGap,
     onManagedOrchestrationEvent,
     onUserNotificationEvent,
+    onIntegrationEvent,
+    onProviderCatalogEvent,
     routeDirectory,
     transport = "auto",
     heartbeatTimeoutMs = DEFAULT_HEARTBEAT_TIMEOUT_MS,
@@ -399,6 +414,50 @@ export function createEventPipeline(input: EventPipelineInput) {
   } = input
   const abort = new AbortController()
   let disconnected = false
+  let hadSubscriptionReady = false
+  let subscriptionReady = false
+  const subscriptionWaiters = new Set<() => void>()
+  const setSubscriptionReady = (ready: boolean) => {
+    if (subscriptionReady !== ready) onSubscriptionReady?.(ready)
+    subscriptionReady = ready
+    if (ready) hadSubscriptionReady = true
+    for (const wake of subscriptionWaiters) wake()
+  }
+  const unregisterInputGate = opencodeClient.registerInputSubscriptionGate((signal, timeoutMs = 10_000) => {
+    let readyAttempt: AbortController | undefined
+    const verify = () => {
+      if (signal?.aborted) throw new InputSubscriptionUnavailableError('Send cancelled before transport.', true)
+      if (abort.signal.aborted || !subscriptionReady || attempt !== readyAttempt || attempt?.signal.aborted) throw new InputSubscriptionUnavailableError()
+    }
+    if (subscriptionReady) {
+      readyAttempt = attempt
+      verify()
+      return Promise.resolve(verify)
+    }
+    if (subscriptionWaiters.size >= 64) return Promise.reject(new InputSubscriptionUnavailableError())
+    return new Promise<() => void>((resolve, reject) => {
+      const finish = (error?: Error) => {
+        if (timer) clearTimeout(timer)
+        subscriptionWaiters.delete(wake)
+        signal?.removeEventListener('abort', wake)
+        abort.signal.removeEventListener('abort', wake)
+        if (error) reject(error)
+        else { readyAttempt = attempt; resolve(verify) }
+      }
+      const wake = () => {
+        if (signal?.aborted || abort.signal.aborted) {
+          finish(new InputSubscriptionUnavailableError('Send cancelled before transport.', true))
+        } else if (subscriptionReady) finish()
+      }
+      subscriptionWaiters.add(wake)
+      signal?.addEventListener('abort', wake, { once: true })
+      abort.signal.addEventListener('abort', wake, { once: true })
+      // Explicit user recovery intent may wait across a reconnect until cancelled.
+      // Ordinary sends retain their bounded readiness deadline.
+      const timer = timeoutMs === Infinity ? undefined : setTimeout(() => finish(new InputSubscriptionUnavailableError()), Number.isFinite(timeoutMs) ? Math.min(10_000, Math.max(0, timeoutMs)) : 10_000)
+      wake()
+    })
+  })
   let lastEventId: string | undefined
   let wsFallbackUntil = 0
 
@@ -614,6 +673,7 @@ export function createEventPipeline(input: EventPipelineInput) {
   const RECONNECT_BACKOFF_MAX_MS = 5_000
 
   const notifyDisconnected = (reason: string) => {
+    setSubscriptionReady(false)
     if (disconnected) {
       return
     }
@@ -633,7 +693,7 @@ export function createEventPipeline(input: EventPipelineInput) {
     // "Connection lost" until something else (HTTP health check) happens
     // to race a setState({isConnected: true}) through.
     onReconnect?.()
-    globalThis.window?.dispatchEvent(new globalThis.Event("openchamber:primary-recovery-reconnect"))
+    globalThis.window?.dispatchEvent(new globalThis.Event("devryan:primary-recovery-reconnect"))
   }
 
   const enqueueEvent = (directory: string, payload: Event) => {
@@ -646,7 +706,7 @@ export function createEventPipeline(input: EventPipelineInput) {
       sessionEvents.requestGitRefresh({ directory: routeDirectory?.(directory, normalizedPayload) || directory, sessionChanges: true, sessionID })
       return
     }
-    if (normalizedType === "openchamber:primary-recovery") {
+    if (normalizedType === "devryan:primary-recovery") {
       const data = normalizedPayload as unknown as { properties?: { sessionID?: unknown; recovery?: unknown } }
       if (typeof data.properties?.sessionID === "string") {
         usePrimaryRecoveryStore.getState().accept(data.properties.sessionID, data.properties.recovery)
@@ -654,14 +714,22 @@ export function createEventPipeline(input: EventPipelineInput) {
       return
     }
     if (
-      normalizedType === "openchamber:managed-task"
-      || normalizedType === "openchamber:managed-task-removed"
-      || normalizedType === "openchamber:managed-orchestration-warning"
+      normalizedType === "devryan:managed-task"
+      || normalizedType === "devryan:managed-task-removed"
+      || normalizedType === "devryan:managed-orchestration-warning"
     ) {
       onManagedOrchestrationEvent?.(normalizedPayload)
       return
     }
-    if (normalizedType === "openchamber:notification") {
+    if (normalizedType === "devryan:integration") {
+      onIntegrationEvent?.(directory, normalizedPayload)
+      return
+    }
+    if (normalizedType === "devryan:provider-catalog") {
+      onProviderCatalogEvent?.(directory, normalizedPayload)
+      return
+    }
+    if (normalizedType === "devryan:notification") {
       onUserNotificationEvent?.(normalizedPayload)
       return
     }
@@ -753,8 +821,19 @@ export function createEventPipeline(input: EventPipelineInput) {
     }
     const events = await sdk.global.event({
       signal,
-      headers: { "X-DevRyan-Replay-Gap": "1", "X-DevRyan-Client-ID": retentionClientID, ...(lastEventId && lastEventId.length > 0 ? { "Last-Event-ID": lastEventId } : {}) },
-      onSseEvent: (event: { id?: unknown; event?: unknown }) => {
+      headers: { "X-DevRyan-Events": DEVRYAN_EVENT_DIALECT, "X-DevRyan-Subscription-Ready": "1", "X-DevRyan-Replay-Gap": "1", "X-DevRyan-Client-ID": retentionClientID, ...(hadSubscriptionReady && !lastEventId ? { "X-DevRyan-Replay-Unanchored": "1" } : {}), ...(lastEventId && lastEventId.length > 0 ? { "Last-Event-ID": lastEventId } : {}) },
+      onSseEvent: (event: { id?: unknown; event?: unknown; data?: unknown }) => {
+        if (signal.aborted) return
+        if (event.event === "devryan.subscription-ready") {
+          const data = event.data
+          if (data && typeof data === "object" && "type" in data && data.type === "ready" && "scope" in data && data.scope === "global") {
+            if (connected && !subscriptionReady) markConnected()
+            else markSseConnected()
+            setSubscriptionReady(true)
+            resetHeartbeat()
+          }
+          return
+        }
         markSseConnected()
         resetHeartbeat()
         // The SDK can inherit the preceding id for an id-less named event.
@@ -768,7 +847,9 @@ export function createEventPipeline(input: EventPipelineInput) {
         }
       },
       onSseError: (error: unknown) => {
+        setSubscriptionReady(false)
         if (isAbortError(error)) return
+        notifyDisconnected("sse_error")
         if (streamErrorLogged) return
         streamErrorLogged = true
         console.error("[event-pipeline] SSE stream error", error)
@@ -783,6 +864,8 @@ export function createEventPipeline(input: EventPipelineInput) {
       resetHeartbeat()
       streamErrorLogged = false
 
+      // Named subscription controls have no application activity or cursor.
+      if (event && typeof event === "object" && "type" in event && event.type === "ready" && "scope" in event && event.scope === "global") continue
       const payload = resolveEventPayload((event as { payload?: Event }).payload ?? event)
       if (!payload) {
         continue
@@ -802,7 +885,7 @@ export function createEventPipeline(input: EventPipelineInput) {
       let opened = false
       let readyAt = 0
       let lastWsErrorReason: string | undefined
-      const socket = new WebSocket(buildGlobalEventWsUrl(lastEventId))
+      const socket = new WebSocket(buildGlobalEventWsUrl(lastEventId, hadSubscriptionReady && !lastEventId))
       const setFallbackCode = (error: Error, force = false) => {
         if ((force || !opened) && transport === "auto") {
           wsFallbackUntil = Date.now() + WS_FALLBACK_WINDOW_MS
@@ -882,6 +965,7 @@ export function createEventPipeline(input: EventPipelineInput) {
         }
 
         if (frame.type === "ready") {
+          setSubscriptionReady(true)
           opened = true
           readyAt = Date.now()
           if (readyTimer) {
@@ -894,6 +978,7 @@ export function createEventPipeline(input: EventPipelineInput) {
         }
 
         if (frame.type === "error") {
+          setSubscriptionReady(false)
           const error = new Error(frame.message || "Message stream WebSocket error")
           ;(error as Error & { reason?: string }).reason = `ws_error_frame:${frame.message || "unknown"}`
           setFallbackCode(error)
@@ -952,6 +1037,7 @@ export function createEventPipeline(input: EventPipelineInput) {
       }
 
       socket.onclose = (event) => {
+        setSubscriptionReady(false)
         if (signal.aborted) {
           settleResolve()
           return
@@ -990,7 +1076,9 @@ export function createEventPipeline(input: EventPipelineInput) {
 
   void (async () => {
     while (!abort.signal.aborted) {
+      setSubscriptionReady(false)
       attempt = new AbortController()
+      attempt.signal.addEventListener("abort", () => setSubscriptionReady(false), { once: true })
       lastEventAt = Date.now()
       attemptAbortReason = null
       // Default to the current backoff. Specific error paths below reset it
@@ -1057,6 +1145,7 @@ export function createEventPipeline(input: EventPipelineInput) {
           retryDelayMs = backoffMs
         }
       } finally {
+        setSubscriptionReady(false)
         abort.signal.removeEventListener("abort", onAbort)
         attempt = undefined
         clearHeartbeat()
@@ -1108,16 +1197,18 @@ export function createEventPipeline(input: EventPipelineInput) {
   // Use globalThis (not window) for the system-resume listener so that
   // test environments can replace globalThis.window with a stub.
   if (typeof globalThis.window !== "undefined") {
-    globalThis.window.addEventListener("openchamber:system-resume", onSystemResume)
+    globalThis.window.addEventListener("devryan:system-resume", onSystemResume)
   }
 
   const cleanup = () => {
+    setSubscriptionReady(false)
+    unregisterInputGate()
     if (typeof document !== "undefined") {
       document.removeEventListener("visibilitychange", onVisibility)
       window.removeEventListener("pageshow", onPageShow)
     }
     if (typeof globalThis.window !== "undefined") {
-      globalThis.window.removeEventListener("openchamber:system-resume", onSystemResume)
+      globalThis.window.removeEventListener("devryan:system-resume", onSystemResume)
     }
     abort.abort()
     flushAll()

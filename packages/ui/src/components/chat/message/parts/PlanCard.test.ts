@@ -9,6 +9,7 @@ import {
   getStableSkeletonLineCount,
   getPlanCardCollapsedMaxHeight,
   getPlanCardActionState,
+  hasPlanRevisionFailure,
   getPlanCardDataState,
   shouldPersistPlanCard,
   resolvePlanCardDisplayText,
@@ -114,6 +115,26 @@ describe('getPlanCardImplementationKey', () => {
 });
 
 describe('getPlanCardActionState', () => {
+  test('persisted turn failure restricts only its exact unresolved revision, including stopped outcomes', () => {
+    const failure = { type: 'error' as const, session: 'session', failedUserMessageId: 'user',
+      time: 1, viewed: true, error: { code: 'session_cancelled' } };
+    expect(hasPlanRevisionFailure([failure], 'session', 'user')).toBe(true);
+    expect(hasPlanRevisionFailure([failure], 'other-session', 'user')).toBe(false);
+    expect(hasPlanRevisionFailure([failure], 'session', 'later-user')).toBe(false);
+    expect(hasPlanRevisionFailure([{ ...failure, failedUserMessageId: undefined }], 'session', 'user')).toBe(false);
+    expect(hasPlanRevisionFailure([{ ...failure, resolvedByMessageId: 'success' }], 'session', 'user')).toBe(false);
+    expect(hasPlanRevisionFailure([failure], 'session', 'user', true)).toBe(false);
+  });
+  test('an authoritative idle failure stays blocked without claiming its missing completion stamp is still finishing', () => {
+    expect(getPlanCardActionState({ streamPhase: 'completed', hasPlanText: true,
+      isLatestPlan: true, isImplementationRequested: false, isRevisionSettled: false,
+      isGenerationSuccessful: false, hasTerminalFailure: true })).toEqual({
+        canImplement: false, disabledReason: 'The response did not finish successfully.',
+      });
+    expect(getPlanCardActionState({ streamPhase: 'streaming', hasPlanText: true,
+      isLatestPlan: true, isImplementationRequested: false, isRevisionSettled: false,
+      isGenerationSuccessful: false, hasTerminalFailure: false }).disabledReason).toBe('The response is still finishing.');
+  });
   test('an aborted completed draft can neither save nor enable implementation', () => {
     const state = { streamPhase: 'completed' as const, hasPlanText: true, isLatestPlan: true,
       isRevisionSettled: true, isGenerationSuccessful: false };
@@ -150,7 +171,7 @@ describe('getPlanCardActionState', () => {
       isLatestPlan: false,
     })).toEqual({
       canImplement: false,
-      disabledReason: 'Superseded by a newer plan.',
+      disabledReason: 'This plan is no longer current.',
     });
   });
 
@@ -169,6 +190,18 @@ describe('getPlanCardActionState', () => {
       hasPlanText: true,
       isImplementationRequested: true,
       isLatestPlan: true,
+    })).toEqual({
+      canImplement: false,
+      disabledReason: 'Implementation already started.',
+    });
+  });
+
+  test('keeps implementation wording when the implementation request supersedes the plan', () => {
+    expect(getPlanCardActionState({
+      streamPhase: 'completed',
+      hasPlanText: true,
+      isImplementationRequested: true,
+      isLatestPlan: false,
     })).toEqual({
       canImplement: false,
       disabledReason: 'Implementation already started.',

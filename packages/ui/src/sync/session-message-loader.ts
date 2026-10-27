@@ -21,6 +21,8 @@ import { reconcileSessionFailureNotifications } from "./notification-store"
 import { createSessionPlanSelectionSelector } from "./session-plan-selection"
 import { useSelectionStore } from "./selection-store"
 import { getSessionUIStoreIfInitialized } from "./sync-refs"
+import { unwrapSdkResult } from "./sdk-result"
+import { isToolOutputOmitted, mergeLoadedToolOutput } from "./tool-output"
 
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
 const FAST_INITIAL_PAGE_SIZE = 50
@@ -31,6 +33,8 @@ const TAIL_REFRESH_LIMIT = 30
 const FRESHNESS_TTL_MS = 15_000
 const PLAN_SELECTION_MAX_PAGES = 10
 const PLAN_SELECTION_MAX_RECORDS = 1_000
+// Pages walked from the newest to find a tail-trim anchor (see trimToTail).
+const TAIL_ANCHOR_MAX_PAGES = 10
 const PLAN_SELECTION_MAX_BYTES = 8 * 1024 * 1024
 const PLAN_SELECTION_PENDING_MESSAGE = "The session's Plan choice is still loading. Wait or choose Plan explicitly before sending."
 const PLAN_SELECTION_ERROR_MESSAGE = "The session's Plan choice could not be restored. Retry or choose Plan explicitly before sending."
@@ -46,6 +50,8 @@ export type SessionMessageLoadState = {
   limit: number
   cursor: string | undefined
   complete: boolean
+  /** Oldest retained message after a tail trim; older loads resume below it. */
+  tailAnchorMessageID: string | undefined
   generation: number
   updatedAt: number | undefined
   planSelectionStatus: "unresolved" | "loading" | "ready" | "error"
@@ -91,6 +97,7 @@ const createDefaultState = (): SessionMessageLoadState => ({
   limit: getInitialPageSize(),
   cursor: undefined,
   complete: false,
+  tailAnchorMessageID: undefined,
   generation: 0,
   updatedAt: undefined,
   planSelectionStatus: "unresolved",
@@ -111,6 +118,7 @@ export const EMPTY_SESSION_MESSAGE_LOAD_STATE: SessionMessageLoadState = Object.
 export class SessionMessageLoader {
   private readonly entries = new Map<string, LoaderEntry>()
   private readonly prefetched = new Map<string, SessionMessageTarget>()
+  private readonly toolOutputLoads = new Map<string, Promise<void>>()
   private activeKey: string | null = null
   private selectionRevision = 0
   private activePrefetchDirectory: string | null = null
@@ -207,7 +215,10 @@ export class SessionMessageLoader {
     const entry = this.getEntry(normalized)
     if (entry.planSelectionOwner) return entry.planSelectionOwner.promise.then(() => this.loadOlder(normalized))
     if (entry.inflight) return entry.inflight.then(() => this.loadOlder(normalized))
-    if (entry.snapshot.complete || !entry.snapshot.cursor) return Promise.resolve()
+    if (entry.snapshot.complete) return Promise.resolve()
+    const anchor = entry.snapshot.tailAnchorMessageID
+    if (!entry.snapshot.cursor && anchor) return this.loadBelowTailAnchor(normalized, entry, anchor)
+    if (!entry.snapshot.cursor) return Promise.resolve()
     const store = this.childStores.ensureChild(normalized.directory, { bootstrap: false })
     const cursor = entry.snapshot.cursor
     return this.startLoad(normalized, entry, store, "older", async (isCurrent) => {
@@ -227,6 +238,34 @@ export class SessionMessageLoader {
       })
       this.persistCoverage(normalized, entry.snapshot)
     })
+  }
+
+  /**
+   * Records that the viewed transcript was trimmed to start at
+   * `anchorMessageID`. Native cursors are opaque, so none can point into
+   * history that arrived live; the next older load walks pages from the newest
+   * down to the anchor and resumes paging from there. Refused unless the first
+   * page resolved and no load, plan-selection read or optimistic send is in
+   * flight, so a trim never races a page commit.
+   */
+  trimToTail(target: SessionMessageTarget, anchorMessageID: string): boolean {
+    const normalized = this.normalizeTarget(target)
+    if (!normalized || this.disposed || !anchorMessageID) return false
+    const entry = this.entries.get(this.keyFor(normalized))
+    if (
+      !entry
+      || !entry.snapshot.resolved
+      || entry.snapshot.status !== "ready"
+      || entry.inflight
+      || entry.queuedRefresh
+      || entry.planSelectionOwner
+      || entry.optimistic.size > 0
+    ) {
+      return false
+    }
+    this.patchEntry(normalized, entry, { cursor: undefined, complete: false, tailAnchorMessageID: anchorMessageID })
+    this.persistCoverage(normalized, entry.snapshot)
+    return true
   }
 
   refreshTail(target: SessionMessageTarget): Promise<void> {
@@ -336,6 +375,36 @@ export class SessionMessageLoader {
     const draft = { ...current, message, part, session_user_activity: current.session_user_activity }
     const activityChanged = updateSessionUserActivityFromMessages(draft, target.sessionID)
     store.setState({ message, part, ...(activityChanged ? { session_user_activity: draft.session_user_activity } : {}) })
+  }
+
+  /**
+   * Restore the output that a history page omitted, by re-reading the one
+   * message through the full single-message route. Concurrent expands of the
+   * same message share one read; parts that are already full are untouched.
+   */
+  loadToolOutput(input: { sessionID: string; messageID: string }): Promise<void> {
+    const owner = this.findOmittedToolOutputOwner(input.messageID)
+    if (!owner || this.disposed) return Promise.resolve()
+    const key = `${owner.directory}\n${input.messageID}`
+    const pending = this.toolOutputLoads.get(key)
+    if (pending) return pending
+    const load = (async () => {
+      const sdk = opencodeClient.getScopedSdkClient(owner.directory)
+      const record = await retry(async () => unwrapSdkResult(
+        await sdk.session.message({ sessionID: input.sessionID, messageID: input.messageID }),
+        "session.message",
+      ))
+      if (this.disposed) return
+      const current = owner.store.getState()
+      const parts = current.part[input.messageID]
+      if (!parts) return
+      const merged = mergeLoadedToolOutput(parts, record.parts ?? [])
+      if (merged !== parts) owner.store.setState({ part: { ...current.part, [input.messageID]: merged } })
+    })().finally(() => {
+      this.toolOutputLoads.delete(key)
+    })
+    this.toolOutputLoads.set(key, load)
+    return load
   }
 
   invalidateSession(target: SessionMessageTarget): void {
@@ -633,9 +702,54 @@ export class SessionMessageLoader {
       limit: Math.max(page.session.length, getInitialPageSize()),
       cursor: page.cursor,
       complete: page.complete,
+      tailAnchorMessageID: undefined,
       updatedAt: Date.now(),
     })
     this.persistCoverage(target, entry.snapshot)
+  }
+
+  private loadBelowTailAnchor(target: SessionMessageTarget, entry: LoaderEntry, anchorMessageID: string): Promise<void> {
+    const store = this.childStores.ensureChild(target.directory, { bootstrap: false })
+    return this.startLoad(target, entry, store, "older", async (isCurrent) => {
+      const page = await this.fetchPageBelowAnchor(target, anchorMessageID, isCurrent)
+      if (!page || !isCurrent()) return
+      const committed = this.commitPage(target, entry, store, page, "prepend", isCurrent)
+      if (!committed) return
+      this.patchEntry(target, entry, {
+        status: "ready",
+        loadingKind: null,
+        error: null,
+        resolved: true,
+        limit: Math.max(entry.snapshot.limit, committed.length),
+        cursor: page.cursor,
+        complete: page.complete,
+        tailAnchorMessageID: undefined,
+        updatedAt: Date.now(),
+      })
+      this.persistCoverage(target, entry.snapshot)
+    })
+  }
+
+  // Newest-first pages until one reaches below the anchor. Pages newer than the
+  // anchor are already retained, so only the page holding older history is
+  // returned; prepend materialization skips the retained records it repeats.
+  private async fetchPageBelowAnchor(
+    target: SessionMessageTarget,
+    anchorMessageID: string,
+    isCurrent: () => boolean,
+  ): Promise<FetchedPage | null> {
+    let before: string | undefined
+    let anchorWasOldest = false
+    for (let pages = 1; ; pages += 1) {
+      const page = await this.fetchPage(target, DEFAULT_MESSAGE_LIMIT, before, "older")
+      if (!isCurrent()) return null
+      // The previous page ended exactly at the anchor: this one is all older.
+      if (anchorWasOldest) return page
+      const anchorIndex = page.session.findIndex((message) => message.id === anchorMessageID)
+      if (anchorIndex > 0 || page.complete || pages >= TAIL_ANCHOR_MAX_PAGES) return page
+      anchorWasOldest = anchorIndex === 0
+      before = page.cursor
+    }
   }
 
   private async fetchPage(
@@ -655,9 +769,13 @@ export class SessionMessageLoader {
     let recordCount = 0
     try {
       const sdk = opencodeClient.getScopedSdkClient(target.directory)
+      // History pages leave out finished display-only tool output (the SDK's
+      // `$query_` prefix carries the facade-only parameter); loadToolOutput
+      // restores it when a row is expanded.
+      const query = { sessionID: target.sessionID, limit: requestLimit, before, $query_toolOutput: "omit" }
       const result = await retry(async () => {
         attempts += 1
-        return sdk.session.messages({ sessionID: target.sessionID, limit: requestLimit, before })
+        return sdk.session.messages(query)
       })
       const records = unwrapMessageRecordsResult(result).filter(hasMessageRecordInfo)
       if (records.some(record => isUserMessage(record.info) && !Array.isArray(record.parts))) {
@@ -672,7 +790,13 @@ export class SessionMessageLoader {
         partsByMessageID.set(record.info.id, (record.parts ?? []).filter((part) => Boolean(part?.id)))
       }
       const cursor = result.response?.headers?.get?.("x-next-cursor") ?? undefined
-      const complete = !cursor || records.length < requestLimit
+      // Gen 2 scans a bounded number of native rows; discarded switch/idle
+      // rows can leave a short or empty page with older history still present.
+      const nativeCursor = cursor?.startsWith("v2:") === true
+      if (nativeCursor && cursor === before) {
+        throw new Error("Session message history cursor did not advance")
+      }
+      const complete = !cursor || (!nativeCursor && records.length < requestLimit)
       finish("complete", { retryCount: Math.max(0, attempts - 1), recordCount })
       return { session: orderedSession, partsByMessageID, cursor: complete ? undefined : cursor, complete }
     } catch (error) {
@@ -729,6 +853,13 @@ export class SessionMessageLoader {
     streamPerfObserve("session.load.messages.materialize.duration_ms", Math.max(0, endedAt - startedAt))
     streamPerfObserve("session.load.messages.materialize.record_count", merged.session.length)
     return materialized.messages
+  }
+
+  private findOmittedToolOutputOwner(messageID: string): { directory: string; store: StoreApi<DirectoryStore> } | null {
+    for (const [directory, store] of this.childStores.children) {
+      if (store.getState().part[messageID]?.some(isToolOutputOmitted)) return { directory, store }
+    }
+    return null
   }
 
   private persistCoverage(target: SessionMessageTarget, state: SessionMessageLoadState): void {

@@ -212,7 +212,6 @@ describe('managed project projection', () => {
       scope: 'managed',
       policy: {
         settingsPages: ['appearance'],
-        bots: true,
         files: true,
         terminal: false,
         browser: true,

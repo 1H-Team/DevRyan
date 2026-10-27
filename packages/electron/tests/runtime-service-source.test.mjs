@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { describe, test } from 'node:test';
 
+const earlySource = fs.readFileSync(new URL('../early-startup.mjs', import.meta.url), 'utf8');
 const mainSource = fs.readFileSync(new URL('../main.mjs', import.meta.url), 'utf8');
 const packageManifest = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 const releaseWorkflow = fs.readFileSync(new URL('../../../.github/workflows/release.yml', import.meta.url), 'utf8');
@@ -17,79 +18,38 @@ const packageVerifierSource = fs.readFileSync(
   new URL('../scripts/verify-runtime-service-package.mjs', import.meta.url),
   'utf8',
 );
+const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 
-describe('runtime-service desktop bootstrap source contract', () => {
-  test('post-update registration and connection failures share guarded startup recovery', () => {
+describe('retired background runtime source contract', () => {
+  test('desktop startup never touches OS-sealed storage and never starts a background service', () => {
+    assert.doesNotMatch(mainSource, /safeStorage/);
+    assert.doesNotMatch(mainSource, /acquireRuntimeOwner\('service'\)|runtimeServiceCoordinator\.start\(|setActivationPolicy\(/);
+    assert.doesNotMatch(mainSource, /runtime-service-connection|desktop-host-broker|bot-secret-store|bot-recovery-dialog/);
+    assert.match(mainSource, /acquireRuntimeOwner\('app_bound'\)/);
+    assert.match(mainSource, /deferOpenCodeStartup: true/);
+    assert.doesNotMatch(mainSource, /productionBotsExecution|BotRuns|BotDispatcher|BotIndexer|stopRetiredBots|bot-retirement/);
+  });
+
+  test('a launchd start of the retired service exits successfully before any startup work', () => {
+    const exit = earlySource.indexOf('if (isRuntimeServiceMode) {\n    app.exit(0);\n    return false;\n  }');
+    assert.notEqual(exit, -1);
+    assert.ok(exit < earlySource.indexOf('app.requestSingleInstanceLock()'));
+    assert.match(earlySource.slice(0, exit), /if \(isRuntimeServiceMode \|\| isRuntimeServiceControlProbe\) \{\s+hideHeadlessProcessFromDock\(\);/);
+    assert.equal(earlySource.match(/app\.dock\?\.hide\(\)/g)?.length, 1);
+  });
+
+  test('the leftover registration is retired before the first local server start', () => {
     const preparation = mainSource.slice(
       mainSource.indexOf('const prepareForegroundRuntime = async () => {'),
       mainSource.indexOf('const startDesktopRuntime = () => {'),
     );
-    assert.match(preparation, /try \{\s+await resumeBackgroundRuntimeAfterAppUpdate\(\);\s+await ensureRuntimeServiceRegistered\(\{ registration: getRuntimeServiceRegistration\(\), log \}\);\s+await waitForRuntimeServiceConnection\(\);\s+\} catch \(error\) \{\s+await recoverStartupToAppBound\(error\);/);
+    assert.match(preparation, /await retireBackgroundRuntime\(\);/);
+    const startup = mainSource.slice(mainSource.indexOf('const startDesktopRuntime = () => {'));
+    assert.ok(startup.indexOf("runStartupPhase('foreground_preparation'") < startup.indexOf("runStartupPhase('initial_url'"));
   });
 
-  test('background mode owns the server and returns before creating a window', () => {
-    const readyBranch = mainSource.slice(
-      mainSource.indexOf('app.whenReady().then(async () => {'),
-      mainSource.indexOf('nativeTheme.themeSource = readThemeSource();'),
-    );
-
-    assert.match(readyBranch, /if \(isRuntimeServiceMode\)/);
-    assert.match(readyBranch, /acquireRuntimeOwner\('service'\)/);
-    assert.match(readyBranch, /await spawnLocalServer\(\)/);
-    assert.match(readyBranch, /prepareBotRuntimeInBackground\(\)/);
-    assert.match(readyBranch, /return;/);
-    assert.doesNotMatch(readyBranch, /createBrowserWindow\(/);
-  });
-
-  test('headless service processes stay out of the macOS Dock; the foreground app does not', () => {
-    const lockIndex = mainSource.indexOf('app.requestSingleInstanceLock()');
-    const preReady = mainSource.slice(0, lockIndex);
-    assert.match(preReady, /if \(isRuntimeServiceMode \|\| isRuntimeServiceControlProbe\) \{\s+hideHeadlessProcessFromDock\(\);/);
-    assert.match(preReady, /app\.dock\?\.hide\(\)/);
-
-    const readyStart = mainSource.indexOf('app.whenReady().then(async () => {');
-    const serviceBranch = mainSource.slice(
-      mainSource.indexOf('if (isRuntimeServiceMode) {', readyStart),
-      mainSource.indexOf('nativeTheme.themeSource = readThemeSource();'),
-    );
-    const policy = serviceBranch.indexOf("app.setActivationPolicy('accessory')");
-    assert.notEqual(policy, -1);
-    assert.ok(policy < serviceBranch.indexOf("acquireRuntimeOwner('service')"));
-
-    const foregroundPath = mainSource.slice(mainSource.indexOf('nativeTheme.themeSource = readThemeSource();'));
-    assert.doesNotMatch(foregroundPath, /setActivationPolicy\(|dock\?\.hide\(|dock\.hide\(/);
-    assert.equal(mainSource.match(/app\.dock\?\.hide\(\)/g)?.length, 1);
-    assert.equal(mainSource.match(/setActivationPolicy\(/g)?.length, 1);
-  });
-
-  test('ordinary desktop activation precedes non-blocking Docker preparation', () => {
-    const startup = mainSource.slice(
-      mainSource.indexOf('const startDesktopRuntime = () => {'),
-      mainSource.indexOf("app.on('before-quit'"),
-    );
-    const activation = startup.indexOf('await activateMainWindow(initialUrl, localOrigin, bootOutcome);');
-    const openCodeResume = startup.indexOf('state.serverHandle?.resumeDeferredOpenCodeStartup?.()');
-    const preparation = startup.indexOf('prepareBotRuntimeInBackground()');
-
-    assert.notEqual(activation, -1);
-    assert.notEqual(openCodeResume, -1);
-    assert.notEqual(preparation, -1);
-    assert.ok(activation < openCodeResume, 'the renderer must activate before OpenCode startup resumes');
-    assert.ok(openCodeResume < preparation, 'Bot preparation must wait for deferred OpenCode startup');
-    assert.ok(activation < preparation, 'the renderer must activate before Docker preparation begins');
-    assert.doesNotMatch(startup, /await requirePreparedBotRuntime\(\);[\s\S]*activateMainWindow\(initialUrl/);
-  });
-
-  test('uses the automatic preflight result directly and leaves startup cache clearing manual', () => {
-    const readyBranch = mainSource.slice(
-      mainSource.indexOf('app.whenReady().then(async () => {'),
-    );
-    assert.match(mainSource, /const automaticRuntime = await autoEnableBackgroundRuntimeOnFirstLaunch\(\)/);
-    assert.match(mainSource, /if \(automaticRuntime\.mode === 'service'\)/);
-    assert.doesNotMatch(readyBranch, /await clearElectronRuntimeCaches\(/);
-    assert.match(mainSource, /deferOpenCodeStartup: true/);
-  });
-
+  // Installed 2.1.x updaters verify that an update bundle still carries the
+  // service LaunchAgent and the native bridge, which also performs the swap.
   test('packages the in-process service bridge and LaunchAgent template for unsigned releases', () => {
     assert.match(packageManifest.scripts['build:native-helpers'], /build:runtime-service-control/);
     assert.match(packageManifest.scripts['prepare:native'], /build:native-helpers/);
@@ -98,7 +58,7 @@ describe('runtime-service desktop bootstrap source contract', () => {
     assert.match(releaseWorkflow, /bun run build:native-helpers/);
     assert.match(
       releaseWorkflow,
-      /node scripts\/package-prepared\.mjs --mac --\$\{\{ matrix\.arch \}\}/,
+      /node scripts\/package-prepared\.mjs --mac --arm64 /,
     );
     assert.match(releaseWorkflow, /-c\.mac\.identity=null -c\.mac\.notarize=false -c\.dmg\.sign=false/);
     assert.doesNotMatch(releaseWorkflow, /--require-developer-id/);
@@ -113,19 +73,63 @@ describe('runtime-service desktop bootstrap source contract', () => {
       adhocSignSource,
       /run\("codesign", \["--force", "--sign", "-", runtimeServiceBridgePath\]\)/,
     );
-    assert.ok(packageManifest.build.extraResources.some((resource) => (
+    assert.ok(packageManifest.build.mac.extraResources.some((resource) => (
       resource.from === 'resources/native' && resource.to === 'native'
     )));
-    assert.ok(packageManifest.build.extraFiles.some((resource) => (
+    assert.ok(packageManifest.build.mac.extraFiles.some((resource) => (
+      resource.to === 'Library/LaunchAgents/dev.devryan.desktop.runtime-service.plist'
+    )));
+    assert.ok(packageManifest.build.mac.extraFiles.some((resource) => (
       resource.to === 'Library/LaunchAgents/dev.openchamber.desktop.runtime-service.plist'
     )));
     assert.match(packageVerifierSource, /DevRyan-\$\{packageManifest\.version\}-\$\{requestedArchitecture\}/);
     assert.match(packageVerifierSource, /runtime-service-control=status/);
     assert.match(packageVerifierSource, /allowedStatuses: \[0\]/);
     assert.match(packageVerifierSource, /status\?\.state === 'not_found'/);
-    assert.match(packageVerifierSource, /ditto', \['-x', '-k'/);
+    assert.doesNotMatch(packageVerifierSource, /\.zip|ditto', \['-x', '-k'/);
     assert.match(packageVerifierSource, /hdiutil', \['attach'/);
+    assert.match(packageVerifierSource, /\['attach', '-nobrowse', '-readonly'/);
     assert.match(packageVerifierSource, /must be signed with a Developer ID identity/);
     assert.match(packageVerifierSource, /native bridge is not executable/);
   });
+});
+
+test('local publication holds settings for recovery and mints only the local owner cookie', async () => {
+  const start = mainSource.indexOf('  state.serverHandle = handle;');
+  assert.notEqual(start, -1);
+  const end = mainSource.indexOf('\n  // Managed startup', start);
+  assert.ok(end > start);
+  const publish = new AsyncFunction('state', 'handle', 'url', 'holdDesktopSettingsForCheckpoint', 'session',
+    mainSource.slice(start, end));
+  for (const bundleStatus of [{ reconciliationRequired: false }, { reconciliationRequired: true },
+    { state: 'held', reconciliationRequired: false }]) {
+    const held = bundleStatus.state === 'held' || bundleStatus.reconciliationRequired;
+    const ordering = [], cookies = [], state = {};
+    await publish(state, {
+      runtimeBundle: { inspect: async () => { ordering.push('inspected'); return bundleStatus; } },
+      issueLocalOwnerSession: async () => { ordering.push('owner-cookie'); return { name: 'owner', value: 'v', maxAge: 60 }; },
+    }, 'http://127.0.0.1:41234', async () => ordering.push('settings-held'),
+    { defaultSession: { cookies: { set: async value => cookies.push(value.name) } } });
+    assert.deepEqual(ordering, held ? ['inspected', 'settings-held'] : ['inspected', 'owner-cookie']);
+    assert.deepEqual(cookies, held ? [] : ['owner']);
+    assert.equal(state.sidecarUrl, 'http://127.0.0.1:41234');
+  }
+});
+
+test('bundle checkpoint awaits the desktop settings writer', async () => {
+  const start = mainSource.indexOf('    onRuntimeBundleCheckpoint: async () => {');
+  const end = mainSource.indexOf('\n    onRestartHost:', start);
+  assert.notEqual(start, -1);
+  const factory = new Function('holdDesktopSettingsForCheckpoint',
+    `return ({${mainSource.slice(start, end)}}).onRuntimeBundleCheckpoint;`);
+  let calls = 0;
+  const release = Promise.withResolvers();
+  let settled = false;
+  const draining = factory(() => { calls++; return release.promise; })().then(() => { settled = true; });
+  await Promise.resolve();
+  assert.equal(calls, 1);
+  assert.equal(settled, false);
+  release.resolve();
+  await draining;
+  assert.equal(settled, true);
 });

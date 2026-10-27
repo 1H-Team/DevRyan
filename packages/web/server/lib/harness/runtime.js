@@ -7,14 +7,41 @@ import {
   createHarnessPaths,
   createPromptAdmissionController,
   createRecordStore,
-  createWorktreeBootstrapRuntime,
   validateCommandDeadlineRecord,
   validateWorktreeBootstrapReceipt,
-} from '@openchamber/harness-runtime';
-import { ABORT_SOURCE_HEADER, normalizeAbortSource } from '@openchamber/orchestration-runtime';
+} from '@devryan/harness-runtime';
+import { ABORT_SOURCE_HEADER, createAbortSourceRegistry, normalizeAbortSource } from '@devryan/orchestration-runtime';
 
 // Node lower-cases incoming header names.
 const ABORT_SOURCE_REQUEST_HEADER = ABORT_SOURCE_HEADER.toLowerCase();
+
+/** Persist Stop intent before forwarding; a failed final write cannot undo termination. */
+export const createManagedOperatorStopPreparation = ({ getRuntime, record, operatorSources }) => async ({ action, sessionID, directory, source, res }) => {
+  if (action !== 'abort' || !operatorSources.has(source)) return;
+  const operatorStop = await getRuntime()?.recordOperatorAbort?.({ sessionId: sessionID, directory, requestedAt: Date.now() });
+  if (!operatorStop) return;
+  const diagnostic = (phase, outcome) => {
+    try { record({ type: 'lifecycle', event: 'managed_operator_stop', sessionID, directory,
+      payload: { phase, requestId: operatorStop.requestId, ...(operatorStop.taskId ? { taskId: operatorStop.taskId } : {}),
+        ...(outcome ? { terminated: outcome.terminated, transcriptPersisted: outcome.transcriptPersisted } : {}) } }); }
+    catch { /* Diagnostics cannot change durable Stop authority. */ }
+  };
+  diagnostic('prepared');
+  res.once('finish', () => {
+    const outcome = res.locals.devryanAbortOutcome?.sessionID === sessionID ? res.locals.devryanAbortOutcome : null;
+    if (res.statusCode >= 200 && res.statusCode < 300 || outcome?.terminated === true) {
+      void getRuntime()?.acceptOperatorAbort?.(operatorStop).then(accepted => diagnostic(accepted === true ? 'accepted' : 'superseded', outcome)).catch(() => {
+        console.warn('[orchestration] Unable to confirm accepted operator stop');
+      });
+      return;
+    }
+    // Leave the pending receipt to expire as uncertain when physical Stop is unproved.
+    if (outcome) { diagnostic('uncertain', outcome); return; }
+    void getRuntime()?.withdrawOperatorAbort?.(operatorStop).then(withdrawn => diagnostic(withdrawn === true ? 'rejected' : 'superseded')).catch(() => {
+      console.warn('[orchestration] Unable to withdraw rejected operator stop');
+    });
+  });
+};
 
 export const createWebHarnessRuntime = (options = {}) => {
   const paths = createHarnessPaths({ rootDir: options.dataDirectory });
@@ -25,28 +52,34 @@ export const createWebHarnessRuntime = (options = {}) => {
   });
   const journal = createDiagnosticJournal({
     directory: paths.journalDir,
+    windowsOwner:options.windowsOwner,
     sanitizer,
     runtime: options.runtime ?? 'web',
     maxBytes: options.maxJournalBytes,
   });
   const worktreeStore = createRecordStore({
     directory: paths.worktreeOpsDir,
+    windowsOwner: options.windowsOwner,
     validateRecord: validateWorktreeBootstrapReceipt,
     logger: options.logger ?? console,
   });
   const commandDeadlineStore = createRecordStore({
     directory: paths.commandDeadlineDir,
+    windowsOwner: options.windowsOwner,
     validateRecord: validateCommandDeadlineRecord,
     logger: options.logger ?? console,
   });
   const promptAdmission = createPromptAdmissionController();
+  const abortSources = createAbortSourceRegistry(options.abortSourceRegistry);
   let initialization = null;
   let worktreeRuntime = null;
   let evidenceRuntime = null;
   let commandDeadlineRuntime = null;
   let primaryRecoveryRuntime = null;
+  let nativeSessionIdleObserver = null;
   let sessionChangeHost = null;
   let controlObserver = null;
+  let controlPreparation = null;
   let taskContextRuntime = null;
 
   const initialize = () => {
@@ -81,6 +114,19 @@ export const createWebHarnessRuntime = (options = {}) => {
     runtime: options.runtime ?? 'web',
     ...entry,
   });
+  // Observational journal writes never throw into the event path. A failure is
+  // reported to the console, not back through the journal that failed.
+  const recordObservation = (entry) => {
+    try {
+      return record(entry);
+    } catch (error) {
+      console.warn('[harness] journal record failed', {
+        type: typeof entry?.type === 'string' ? entry.type : null,
+        code: /^[a-z][a-z0-9_]{1,100}$/i.test(error?.code ?? '') ? error.code : 'journal_record_failed',
+      });
+      return false;
+    }
+  };
 
   const requestActor = (req) => {
     const principal = req?.principal;
@@ -115,9 +161,8 @@ export const createWebHarnessRuntime = (options = {}) => {
 
     const sessionID = typeof req.params?.sessionID === 'string' ? req.params.sessionID : '';
     const directory = typeof req.query?.directory === 'string' ? req.query.directory : null;
-    const messageID = typeof req.headers?.['x-openchamber-message-id'] === 'string'
-      ? req.headers['x-openchamber-message-id']
-      : null;
+    const headerMessageID = req.headers?.['x-devryan-message-id'] ?? req.headers?.['x-openchamber-message-id'];
+    const messageID = typeof headerMessageID === 'string' ? headerMessageID : null;
     record({
       type: 'prompt',
       actor: requestActor(req),
@@ -131,6 +176,8 @@ export const createWebHarnessRuntime = (options = {}) => {
     });
     res.once('finish', () => {
       if (res.statusCode < 200 || res.statusCode >= 300) return;
+      // The next turn starts clean: an older abort source never labels its interrupt.
+      abortSources.clear(sessionID);
       turnTimingRuntime?.recordPromptAccepted?.({
         sessionID,
         messageID,
@@ -164,19 +211,27 @@ export const createWebHarnessRuntime = (options = {}) => {
           ...(action === 'abort' ? { source: readAbortSource(req) } : {}),
         },
       });
-      if (controlObserver && typeof req.params?.sessionID === 'string') {
-        try {
-          controlObserver({
-            action,
-            sessionID: req.params.sessionID,
-            directory: typeof req.query?.directory === 'string' ? req.query.directory : null,
-            source: action === 'abort' ? readAbortSource(req) : null,
-            res,
+      const input = { action, sessionID: req.params?.sessionID,
+        directory: typeof req.query?.directory === 'string' ? req.query.directory : null,
+        source: action === 'abort' ? readAbortSource(req) : null, res };
+      if (action === 'abort') {
+        const abortSource = abortSources.record({ sessionId: input.sessionID, source: input.source });
+        if (abortSource) {
+          res.once('finish', () => {
+            if (res.statusCode < 200 || res.statusCode >= 300) abortSources.withdraw(abortSource);
           });
-        } catch {
-          // Observers are advisory; a failure must never block the control request.
         }
       }
+      const notify = () => {
+        if (!controlObserver || typeof input.sessionID !== 'string') return;
+        try { controlObserver(input); } catch { /* Advisory observers never block control. */ }
+      };
+      if (controlPreparation && typeof input.sessionID === 'string') {
+        return Promise.resolve().then(() => controlPreparation(input)).then(() => {
+          notify(); next();
+        }, () => res.status(503).json({ code: 'control_preparation_failed', error: 'Control request could not be prepared' }));
+      }
+      notify();
     }
     next();
   };
@@ -191,7 +246,7 @@ export const createWebHarnessRuntime = (options = {}) => {
 
   const drain = async () => {
     beginDrain();
-    await Promise.allSettled([
+    const results = await Promise.allSettled([
       journal.close(),
       worktreeRuntime?.drain?.(),
       evidenceRuntime?.drain?.(),
@@ -202,6 +257,8 @@ export const createWebHarnessRuntime = (options = {}) => {
       worktreeStore.drain(),
       commandDeadlineStore.drain(),
     ]);
+    const failures = results.filter(result => result.status === 'rejected').map(result => result.reason);
+    if (failures.length) throw new AggregateError(failures, 'Harness stores did not finish draining');
   };
 
   return {
@@ -219,13 +276,28 @@ export const createWebHarnessRuntime = (options = {}) => {
     promptAdmissionMiddleware,
     controlJournalMiddleware,
     record,
+    // Order: primary recovery (authority-bearing, may throw as before), native
+    // idle continuation (deferred), session-change observation, journal record.
+    // The last two are observational: an immediate try/catch plus rejection
+    // handling keeps a sync throw or a failing journal from skipping the rest.
     recordOpenCodeEvent(payload, directory = null) {
       primaryRecoveryRuntime?.observe(payload);
-      void sessionChangeHost?.observe(payload, directory).catch((error) => record({ type: 'log', event: 'session_changes_observation_failed',
+      if (nativeSessionIdleObserver && payload?.type === 'session.status' && payload.properties?.status?.type === 'idle'
+        && typeof payload.properties.sessionID === 'string' && typeof directory === 'string') {
+        void Promise.resolve().then(() => nativeSessionIdleObserver?.({ sessionID: payload.properties.sessionID, directory }))
+          .catch(error => recordObservation({ type: 'log', event: 'native_todo_continuation_failed', sessionID: payload.properties.sessionID,
+            payload: { code: typeof error?.code === 'string' ? error.code : 'native_continuation_unavailable' } }));
+      }
+      const changeObservationFailed = (error) => recordObservation({ type: 'log', event: 'session_changes_observation_failed',
         sessionID: payload?.properties?.part?.sessionID ?? payload?.properties?.sessionID ?? null,
         payload: { callID: payload?.properties?.part?.callID ?? null, code: typeof error?.code === 'string' ? error.code : 'capture_unavailable' },
-      }));
-      return record({
+      });
+      try {
+        void sessionChangeHost?.observe(payload, directory)?.catch(changeObservationFailed);
+      } catch (error) {
+        changeObservationFailed(error);
+      }
+      return recordObservation({
         type: 'open_code_event',
         directory,
         sessionID: payload?.properties?.sessionID
@@ -234,6 +306,20 @@ export const createWebHarnessRuntime = (options = {}) => {
           ?? null,
         payload,
       });
+    },
+    // Session execution host diagnostics (execution and revert phases).
+    recordSessionExecution(event) {
+      return record({ type: 'lifecycle', event: event.event === 'session_execution' ? 'session_execution' : 'session_revert',
+        sessionID: event.sessionID, payload: event });
+    },
+    // Turn timing marks and per-turn summaries (`turn.<mark>`, `turn.summary`):
+    // timings, identities and model selection only, never prompt text.
+    recordTurnTiming(entry) {
+      if (typeof entry?.mark !== 'string' || !/^[a-z][a-z0-9_]{0,63}$/.test(entry.mark) || typeof entry.sessionId !== 'string') return false;
+      return record({ type: 'timing', mark: `turn.${entry.mark}`, sessionID: entry.sessionId,
+        ...(typeof entry.userMessageId === 'string' ? { messageID: entry.userMessageId } : {}),
+        ...(typeof entry.directory === 'string' ? { directory: entry.directory } : {}),
+        payload: entry.payload ?? {} });
     },
     recordLifecycleEvent(event) {
       return record({
@@ -251,10 +337,14 @@ export const createWebHarnessRuntime = (options = {}) => {
     setEvidenceRuntime,
     setCommandDeadlineRuntime,
     setPrimaryRecoveryRuntime(runtime) { primaryRecoveryRuntime = runtime; },
+    setNativeSessionIdleObserver(observer) { nativeSessionIdleObserver = observer; },
     // Receives journaled session controls (with the response, so a rejected
     // request can be withdrawn). Wired by the server, never by a request.
+    setControlPreparation(prepare) { controlPreparation = typeof prepare === 'function' ? prepare : null; },
     setControlObserver(observer) { controlObserver = typeof observer === 'function' ? observer : null; },
     setSessionChangeHost(runtime) { sessionChangeHost = runtime; },
+    // The source of the latest accepted abort, for the projected interrupt error.
+    readAbortSource: (sessionID) => abortSources.read(sessionID),
     getWorktreeRuntime: () => worktreeRuntime,
     getWorktreeReceipts,
     getCommandDeadlineRecoveryStatus: () => commandDeadlineRuntime?.getStatus?.() ?? null,
@@ -263,5 +353,3 @@ export const createWebHarnessRuntime = (options = {}) => {
     getStatus: () => journal.getStatus(),
   };
 };
-
-export const createConfiguredWorktreeRuntime = (options = {}) => createWorktreeBootstrapRuntime(options);

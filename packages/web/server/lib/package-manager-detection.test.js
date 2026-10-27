@@ -31,7 +31,7 @@ beforeEach(async () => {
   vi.resetModules();
   vi.clearAllMocks();
   settings = { available: [], visible: [] };
-  for (const key of ['OPENCHAMBER_RUNTIME', 'OPENCHAMBER_PACKAGE_MANAGER', 'npm_config_user_agent', 'npm_execpath', 'BUN_INSTALL']) vi.stubEnv(key, '');
+  for (const key of ['DEVRYAN_RUNTIME', 'DEVRYAN_PACKAGE_MANAGER', 'npm_config_user_agent', 'npm_execpath', 'BUN_INSTALL']) vi.stubEnv(key, '');
   await fs.rm(fixture, { recursive: true, force: true });
   await fs.mkdir(fixture, { recursive: true });
   probes.spawnSync.mockImplementation(commandResult);
@@ -42,10 +42,10 @@ beforeEach(async () => {
 });
 afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 
-const ownWithRoot = async (pm) => {
+const ownWithRoot = async (pm, scope = 'devryan') => {
   const root = pm === 'bun' ? path.join(fixture, pm, 'install/global/node_modules') : path.join(fixture, pm, 'node_modules');
-  await fs.mkdir(path.join(root, '@openchamber'), { recursive: true });
-  await fs.symlink(packagePath, path.join(root, '@openchamber/web'), 'junction');
+  await fs.mkdir(path.join(root, `@${scope}`), { recursive: true });
+  await fs.symlink(packagePath, path.join(root, `@${scope}/web`), 'junction');
 };
 
 describe('async package manager selection matches synchronous CLI selection', () => {
@@ -60,7 +60,7 @@ describe('async package manager selection matches synchronous CLI selection', ()
     { name: 'no available manager uses npm fallback', available: [], expected: 'npm' },
   ])('$name', async (scenario) => {
     settings = { available: scenario.available, visible: scenario.visible ?? [] };
-    vi.stubEnv('OPENCHAMBER_PACKAGE_MANAGER', scenario.forced ?? '');
+    vi.stubEnv('DEVRYAN_PACKAGE_MANAGER', scenario.forced ?? '');
     vi.stubEnv('npm_config_user_agent', scenario.hint ?? '');
     if (scenario.owner) await ownWithRoot(scenario.owner);
     const sync = await import('./package-manager.js');
@@ -74,10 +74,10 @@ describe('async package manager selection matches synchronous CLI selection', ()
       && options.maxBuffer === 1024 * 1024 && options.killSignal === 'SIGKILL')).toBe(true);
   });
 
-  it('resolves installation ownership through the global executable symlink', async () => {
+  it.each(['devryan', 'openchamber'])('resolves %s installation ownership through the global executable symlink', async (bin) => {
     settings.available = ['yarn', 'npm'];
     await fs.mkdir(path.join(fixture, 'yarn/bin'), { recursive: true });
-    const name = process.platform === 'win32' ? 'openchamber.cmd' : 'openchamber';
+    const name = process.platform === 'win32' ? `${bin}.cmd` : bin;
     await fs.symlink(path.join(packagePath, 'bin/cli.js'), path.join(fixture, 'yarn/bin', name));
     const sync = await import('./package-manager.js');
     expect(sync.detectPackageManager()).toBe('yarn');
@@ -86,8 +86,15 @@ describe('async package manager selection matches synchronous CLI selection', ()
     expect(await asynchronous.detectPackageManagerAsync()).toBe('yarn');
   });
 
+  it('recognises ownership through the legacy global package root', async () => {
+    settings.available = ['yarn', 'npm'];
+    await ownWithRoot('yarn', 'openchamber');
+    const { detectPackageManagerAsync } = await import('./package-manager.js');
+    expect(await detectPackageManagerAsync()).toBe('yarn');
+  });
+
   it('keeps desktop update ownership and skips every subprocess', async () => {
-    vi.stubEnv('OPENCHAMBER_RUNTIME', 'desktop');
+    vi.stubEnv('DEVRYAN_RUNTIME', 'desktop');
     const { detectPackageManager, detectPackageManagerAsync } = await import('./package-manager.js');
     expect(detectPackageManager()).toBe('electron');
     expect(await detectPackageManagerAsync()).toBe('electron');
@@ -97,7 +104,7 @@ describe('async package manager selection matches synchronous CLI selection', ()
 
   it('shares one in-flight lookup and retains cached selection without more probes', async () => {
     settings.available = ['npm'];
-    vi.stubEnv('OPENCHAMBER_PACKAGE_MANAGER', 'npm');
+    vi.stubEnv('DEVRYAN_PACKAGE_MANAGER', 'npm');
     const { detectPackageManagerAsync } = await import('./package-manager.js');
     expect(await Promise.all([detectPackageManagerAsync(), detectPackageManagerAsync()])).toEqual(['npm', 'npm']);
     const count = probes.execFile.mock.calls.length;
@@ -108,7 +115,7 @@ describe('async package manager selection matches synchronous CLI selection', ()
   });
 
   it('treats failed or timed-out probes as unavailable without promoting the forced manager', async () => {
-    vi.stubEnv('OPENCHAMBER_PACKAGE_MANAGER', 'yarn');
+    vi.stubEnv('DEVRYAN_PACKAGE_MANAGER', 'yarn');
     probes.execFile.mockImplementation((_command, _args, _options, callback) => {
       queueMicrotask(() => callback(Object.assign(new Error('probe stopped'), { killed: true, code: 'ETIMEDOUT' }), '@openchamber/web', ''));
     });
@@ -117,7 +124,7 @@ describe('async package manager selection matches synchronous CLI selection', ()
   });
 
   it('retains fallback semantics when a probe cannot be launched', async () => {
-    vi.stubEnv('OPENCHAMBER_PACKAGE_MANAGER', 'yarn');
+    vi.stubEnv('DEVRYAN_PACKAGE_MANAGER', 'yarn');
     probes.execFile.mockImplementation(() => { throw new TypeError('invalid command path'); });
     const { detectPackageManagerAsync } = await import('./package-manager.js');
     expect(await detectPackageManagerAsync()).toBe('npm');
@@ -125,7 +132,7 @@ describe('async package manager selection matches synchronous CLI selection', ()
 });
 
 it('serves another HTTP request while update checking waits for real slow subprocess probes', async () => {
-  vi.stubEnv('OPENCHAMBER_PACKAGE_MANAGER', 'npm');
+  vi.stubEnv('DEVRYAN_PACKAGE_MANAGER', 'npm');
   const { execFile: nativeExecFile } = await vi.importActual('node:child_process');
   let probeStarted;
   const started = new Promise((resolve) => { probeStarted = resolve; });
@@ -152,7 +159,7 @@ it('serves another HTTP request while update checking waits for real slow subpro
     const health = await nativeFetch(`${origin}/health`, { signal: AbortSignal.timeout(1000) });
     expect(await health.text()).toBe('responsive');
     expect(updateCompleted).toBe(false);
-    expect(await (await update).json()).toMatchObject({ available: false, packageManager: 'npm', updateCommand: 'openchamber update' });
+    expect(await (await update).json()).toMatchObject({ available: false, packageManager: 'npm', updateCommand: 'devryan update' });
     expect(probes.spawnSync).not.toHaveBeenCalled();
   } finally {
     server.closeAllConnections();

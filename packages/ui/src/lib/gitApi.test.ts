@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { GitAPI, GitStatus } from "./api/types"
-import { getGitStatus, syncGitBranchForPush } from "./gitApi"
+import { getGitStatus, gitPush, syncGitBranchForPush } from "./gitApi"
 
 const status: GitStatus = {
   current: "main",
@@ -11,12 +11,12 @@ const status: GitStatus = {
   isClean: true,
 }
 
-const withRuntimeGit = async (git: GitAPI, callback: () => Promise<void>) => {
+const withRuntimeGit = async (git: Partial<GitAPI>, callback: () => Promise<void>) => {
   const previousWindowDescriptor = Object.getOwnPropertyDescriptor(globalThis, "window")
   Object.defineProperty(globalThis, "window", {
     configurable: true,
     value: {
-      __OPENCHAMBER_RUNTIME_APIS__: { git },
+      __DEVRYAN_RUNTIME_APIS__: { git },
     },
   })
 
@@ -49,6 +49,27 @@ describe("getGitStatus", () => {
   })
 })
 
+describe("gitPush", () => {
+  test("sends directly without reading status, fetching or pulling", async () => {
+    const calls: string[] = []
+    const unexpected = async (): Promise<never> => { throw new Error("Push must not synchronize first") }
+    await withRuntimeGit({
+      getGitStatus: unexpected,
+      getRemotes: unexpected,
+      gitFetch: unexpected,
+      gitPull: unexpected,
+      gitPush: async (directory, options) => {
+        calls.push(directory)
+        expect(options).toEqual({})
+        return { success: true, pushed: [], repo: directory, ref: null }
+      },
+    }, async () => {
+      expect(await gitPush("/repo")).toMatchObject({ success: true })
+    })
+    expect(calls).toEqual(["/repo"])
+  })
+})
+
 describe("syncGitBranchForPush", () => {
   test("fetches, pulls a clean behind branch, then pushes ahead commits", async () => {
     const calls: string[] = []
@@ -60,8 +81,8 @@ describe("syncGitBranchForPush", () => {
     const runtimeGit = {
       getRemotes: async () => [{ name: "origin", fetchUrl: "git@example.com:repo.git", pushUrl: "git@example.com:repo.git" }],
       getGitStatus: async () => statuses.shift() ?? status,
-      gitFetch: async (_directory: string, options?: { remote?: string }) => {
-        calls.push(`fetch:${options?.remote ?? ""}`)
+      gitFetch: async (_directory: string, options?: { remote?: string; branch?: string }) => {
+        calls.push(`fetch:${options?.remote ?? ""}:${options?.branch ?? ""}`)
         return { success: true }
       },
       gitPull: async (_directory: string, options?: { remote?: string; branch?: string; rebase?: boolean }) => {
@@ -80,7 +101,35 @@ describe("syncGitBranchForPush", () => {
       expect(result.pushedChanges).toBe(true)
     })
 
-    expect(calls).toEqual(["fetch:origin", "pull:origin:main:true", "push:origin"])
+    expect(calls).toEqual(["fetch:origin:main", "pull:origin:main:true", "push:origin"])
+  })
+
+  test("fetches only the tracked branch when tracking exists", async () => {
+    const fetched: Array<{ remote?: string; branch?: string }> = []
+    await syncGitBranchForPush("/repo", {}, {
+      getGitStatus: async () => ({ ...status, current: "main", tracking: "origin/main", ahead: 1 }),
+      getRemotes: async () => [{ name: "origin", fetchUrl: "git@example.com:repo.git", pushUrl: "git@example.com:repo.git" }],
+      gitFetch: async (_directory, options) => {
+        fetched.push(options ?? {})
+        return { success: true }
+      },
+      gitPush: async () => ({ success: true, pushed: [], repo: "/repo", ref: null }),
+    })
+    expect(fetched).toEqual([{ remote: "origin", branch: "main" }])
+  })
+
+  test("fetches the remote without a branch on first publish", async () => {
+    const fetched: Array<{ remote?: string; branch?: string }> = []
+    await syncGitBranchForPush("/repo", {}, {
+      getGitStatus: async () => ({ ...status, current: "main", tracking: null, ahead: 1 }),
+      getRemotes: async () => [{ name: "origin", fetchUrl: "git@example.com:repo.git", pushUrl: "git@example.com:repo.git" }],
+      gitFetch: async (_directory, options) => {
+        fetched.push(options ?? {})
+        return { success: true }
+      },
+      gitPush: async () => ({ success: true, pushed: [], repo: "/repo", ref: null }),
+    })
+    expect(fetched).toEqual([{ remote: "origin" }])
   })
 
   test("stops before pulling when the branch is behind and the worktree is dirty", async () => {

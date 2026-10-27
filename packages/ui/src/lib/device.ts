@@ -14,12 +14,6 @@ export interface DeviceInfo {
   hasTouchOnlyPointer: boolean;
 }
 
-export const CSS_DEVICE_VARIABLES = {
-  IS_MOBILE: 'var(--is-mobile)',
-  DEVICE_TYPE: 'var(--device-type)',
-  HAS_TOUCH_INPUT: 'var(--has-touch-input)',
-} as const;
-
 export const BREAKPOINTS = {
   xs: 0,
   sm: 640,

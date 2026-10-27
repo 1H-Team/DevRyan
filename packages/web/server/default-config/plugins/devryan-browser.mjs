@@ -561,7 +561,8 @@ const managedFfmpegDirectory = (binaryPath) => {
     const receipt = JSON.parse(fs.readFileSync(path.join(directory, 'ready.json'), 'utf8'));
     const stat = fs.lstatSync(path.join(directory, process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'));
     if (!stat.isFile() || (process.platform !== 'win32' && !(stat.mode & 0o111))) return null;
-    const identity = [stat.dev, stat.ino, stat.size, stat.mtimeMs, stat.ctimeMs].join(':');
+    // Match the installer receipt; APFS device numbers change across reboots.
+    const identity = [stat.ino, stat.size, stat.mtimeMs, stat.ctimeMs].join(':');
     return receipt.release === 'b6.1.1' && /^[a-f0-9]{64}$/.test(receipt.sha256)
       && receipt.identity === identity ? directory : null;
   } catch { return null; }

@@ -12,6 +12,40 @@ const callRpc = (environment, body, options = {}) => fetch(environment.DEVRYAN_O
 });
 
 describe('managed orchestration private host', () => {
+  it('preserves only safe model refusal details across the tool bridge', async () => {
+    const host = createManagedOrchestrationPrivateHost({ handleRpc: async () => {
+      throw Object.assign(new Error('foreign diagnostic text'), { code: 'managed_agent_model_unavailable', statusCode: 409,
+        details: { reason: 'variant_missing', providerId: 'opencode-go', modelId: 'flash', variant: 'medium', token: 'private-token' } });
+    } });
+    const environment = await host.start();
+    try {
+      const response = await callRpc(environment, { method: 'submit', params: {} });
+      expect(response.status).toBe(409);
+      const body = await response.json();
+      expect(body.error.details).toEqual({ reason: 'variant_missing', providerId: 'opencode-go', modelId: 'flash', variant: 'medium' });
+      expect(body.error.message).toContain('or Provider default in Agents settings');
+      expect(JSON.stringify(body)).not.toContain('private-token');
+      expect(JSON.stringify(body)).not.toContain('foreign diagnostic text');
+    } finally { await host.stop(); }
+  });
+  it('attributes credential resolution timing through its nested binding without exposing it', async () => {
+    const onRequestTiming = vi.fn();
+    const host = createManagedOrchestrationPrivateHost({ handleRpc: async () => null, onRequestTiming });
+    const environment = await host.start();
+    try {
+      const response = await callRpc(environment, {
+        method: 'credential.resolution.commit',
+        params: { binding: { sessionID: 'ses_resolution', credentialID: 'fixture-private', expectedFingerprint: 'a'.repeat(64) } },
+      });
+      expect(response.status).toBe(200);
+      await response.json();
+      await vi.waitFor(() => expect(onRequestTiming).toHaveBeenCalledOnce());
+      expect(onRequestTiming.mock.calls[0][0]).toMatchObject({ method: 'credential.resolution.commit', sessionID: 'ses_resolution', statusCode: 200 });
+      expect(JSON.stringify(onRequestTiming.mock.calls)).not.toContain('fixture-private');
+      expect(JSON.stringify(onRequestTiming.mock.calls)).not.toContain('expectedFingerprint');
+    } finally { await host.stop(); }
+  });
+
   it('runs native action authority after bearer admission and before dispatch', async () => {
     const handleRpc = vi.fn(async () => 'dispatched');
     const authorizeRpc = vi.fn(async ({ params }) => {

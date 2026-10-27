@@ -378,13 +378,6 @@ export function getReconnectCandidateSessionIds(state: ReconnectMaterializationS
   return Array.from(ids)
 }
 
-type RawSessionStatus = {
-  type?: unknown
-  attempt?: unknown
-  message?: unknown
-  next?: unknown
-}
-
 export type SessionStatusBaseline = ReadonlyMap<string, SessionStatus | undefined>
 
 const cloneSessionStatus = (status: SessionStatus | undefined): SessionStatus | undefined => (
@@ -428,23 +421,24 @@ export function filterUnchangedSessionStatusCandidates(input: {
   return [...eligible]
 }
 
-export function toAuthoritativeSessionStatus(status: RawSessionStatus | undefined): SessionStatus | undefined {
-  if (!status) return undefined
+export function toAuthoritativeSessionStatus(status: unknown): SessionStatus | undefined {
+  if (!status || typeof status !== "object" || Array.isArray(status) || !("type" in status)) return undefined
   if (status.type === "idle" || status.type === "busy") {
     return { type: status.type }
   }
   if (
     status.type === "retry"
-    && typeof status.attempt === "number"
+    && "attempt" in status && "message" in status && "next" in status
+    && typeof status.attempt === "number" && Number.isSafeInteger(status.attempt) && status.attempt >= 0
     && typeof status.message === "string"
-    && typeof status.next === "number"
+    && typeof status.next === "number" && Number.isFinite(status.next) && status.next >= 0
   ) {
     return {
       type: "retry",
       attempt: status.attempt,
       message: status.message,
       next: status.next,
-    } as SessionStatus
+    }
   }
   return undefined
 }
@@ -452,12 +446,24 @@ export function toAuthoritativeSessionStatus(status: RawSessionStatus | undefine
 export function mergeAuthoritativeSessionStatuses(input: {
   current: Record<string, SessionStatus>
   candidateSessionIds: Iterable<string>
-  authoritative: Record<string, RawSessionStatus | undefined>
+  authoritative: unknown
 }): Record<string, SessionStatus> {
+  // Native status is a complete active-only map: omitted sessions are idle.
+  // Reject malformed/unavailable responses as a whole before settling candidates.
+  const snapshot = input.authoritative
+  if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)
+    || (Object.getPrototypeOf(snapshot) !== Object.prototype && Object.getPrototypeOf(snapshot) !== null)) {
+    return input.current
+  }
+  const statuses = new Map<string, SessionStatus>()
+  for (const [sessionId, rawStatus] of Object.entries(snapshot)) {
+    const status = toAuthoritativeSessionStatus(rawStatus)
+    if (!status) return input.current
+    statuses.set(sessionId, status)
+  }
   let next: Record<string, SessionStatus> | undefined
   for (const sessionId of input.candidateSessionIds) {
-    const rawStatus = toAuthoritativeSessionStatus(input.authoritative[sessionId])
-    if (!rawStatus) continue
+    const rawStatus = statuses.get(sessionId) ?? { type: "idle" as const }
     // Reconnect snapshots go through the same stop-during-retry guard as live
     // events so a user-stopped retry loop cannot resurrect via resync.
     const status = filterSessionStatusThroughAbortGuard(sessionId, rawStatus)
@@ -481,7 +487,7 @@ export function mergeAuthoritativeSessionStatuses(input: {
 export function mergeRecoveredSessionStatuses(input: {
   current: Record<string, SessionStatus>
   candidateSessionIds: Iterable<string>
-  authoritative: Record<string, RawSessionStatus | undefined>
+  authoritative: unknown
   state: RecoveredSessionStatusState
 }): Record<string, SessionStatus> {
   return mergeAuthoritativeSessionStatuses(input)

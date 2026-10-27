@@ -3,10 +3,10 @@ import express from 'express';
 import { isDirectLocalRequest } from '../security/direct-local-request.js';
 import { runWithRequestPrincipal } from '../multi-user/request-context.js';
 import { publicPrincipal, ROLE_POLICY_DEFAULTS } from '../multi-user/policy.js';
-import { isBotTunnelRoute } from './bot-grants.js';
 
 export const TUNNEL_LINK_TTL_MS = 15 * 60 * 1000;
 export const TUNNEL_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+// The vault key predates the retirement of Bot-only links; saved state keeps it.
 const STATE_KEY = 'bot-tunnel-authorization-v1';
 const COOKIE = 'oc_tunnel_session';
 const authorizedRequests = new WeakSet();
@@ -16,11 +16,12 @@ export const getTunnelOwnerPrincipal = (req) => ownerRequests.get(req) || null;
 const digest = (value) => crypto.createHash('sha256').update(value).digest('hex');
 const failure = (code, message, statusCode = 403) => Object.assign(new Error(message), { code, statusCode });
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
-const validBotIds = (ids) => Array.isArray(ids) && ids.length > 0 && ids.length <= 100
-  && ids.every((id) => typeof id === 'string' && uuid.test(id)) && new Set(ids).size === ids.length;
-const validGrant = (row, saved) => row.access === 'owner'
-  ? saved.authMode === 'local-owner' && saved.profile?.mode === 'managed-remote' && Array.isArray(row.botIds) && row.botIds.length === 0
-  : (row.access === undefined || row.access === 'bots') && validBotIds(row.botIds);
+// Links and sessions grant the local owner only. Grants saved by the retired
+// Bot-only link mode still parse, and initialize drops them.
+const isOwnerGrant = (row) => row.access === 'owner';
+const validGrant = (row, saved) => isOwnerGrant(row)
+  ? saved.authMode === 'local-owner' && saved.profile?.mode === 'managed-remote'
+  : row.access === undefined || row.access === 'bots';
 const validHash = (value) => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 const validHostname = (value) => typeof value === 'string' && /^[a-z0-9.-]+$/.test(value)
   && value.length <= 253 && !value.startsWith('.') && !value.endsWith('.') && !value.includes('..');
@@ -66,10 +67,10 @@ export function createTunnelAccessControl({ now = Date.now } = {}) {
   let localUiAuthMode = 'passwordless';
   let blocked = true;
   let unsubscribe = () => {};
-  let validateBots = async () => { throw failure('bots_unavailable', 'Bots are unavailable on this host', 503); };
   let mutation = Promise.resolve();
   const connections = new Set();
   const attempts = new Map();
+  const ownerAuthorizations = new WeakMap();
   const currentOwner = () => connection?.ownerPrincipal()?.id || null;
   const currentMode = () => connection?.authenticationMode || (connection?.enabled ? 'managed-accounts' : 'local-owner');
   const bound = () => !blocked && state && state.ownerId === currentOwner() && state.authMode === currentMode()
@@ -100,7 +101,7 @@ export function createTunnelAccessControl({ now = Date.now } = {}) {
     if (!bound() || !state.ownerId) throw failure('local_owner_required', 'Enroll and authenticate the local owner before issuing a tunnel link');
   };
   const initialize = async (options) => {
-    connection = options.connection; vault = connection.vault; validateBots = options.validateBots || validateBots;
+    connection = options.connection; vault = connection.vault;
     localUiAuthMode = options.passwordProtected === true ? 'password' : 'passwordless';
     if (!vault) throw failure('tunnel_auth_unavailable', 'Private authorization storage is unavailable', 503);
     const saved = vault.get(STATE_KEY);
@@ -113,8 +114,8 @@ export function createTunnelAccessControl({ now = Date.now } = {}) {
       if (!saved || next.ownerId !== currentOwner() || next.authMode !== currentMode() || next.localUiAuthMode !== localUiAuthMode) {
         invalidate(next); next.ownerId = currentOwner(); next.authMode = currentMode(); next.localUiAuthMode = localUiAuthMode;
       }
-      next.links = next.links.filter((link) => link.expiresAt > now() && !link.usedAt);
-      next.sessions = next.sessions.filter((session) => session.expiresAt > now());
+      next.links = next.links.filter((link) => isOwnerGrant(link) && link.expiresAt > now() && !link.usedAt);
+      next.sessions = next.sessions.filter((session) => isOwnerGrant(session) && session.expiresAt > now());
     });
     unsubscribe = connection.onAuthorizationChange?.(async () => {
       await revokeTunnelArtifacts();
@@ -150,32 +151,21 @@ export function createTunnelAccessControl({ now = Date.now } = {}) {
     return update((next) => { invalidate(next); if (next.profile) next.profile.resume = false; });
   };
   const suspendActiveTunnel = () => { active = false; closeConnections(); };
-  const validateSelection = async (botIds) => {
-    assertBound();
-    if (!Array.isArray(botIds) || !botIds.length || botIds.length > 100 || !botIds.every((id) => typeof id === 'string' && uuid.test(id))) {
-      throw failure('tunnel_bots_required', 'Select the Bot workspaces this link may access', 400);
-    }
-    const ids = [...new Set(botIds)];
-    await validateBots(connection.ownerPrincipal(), ids);
-    return ids;
-  };
-  const issueBootstrapToken = async ({ botIds, access = 'bots', ttlMs = TUNNEL_LINK_TTL_MS } = {}) => {
+  const issueBootstrapToken = async ({ ttlMs = TUNNEL_LINK_TTL_MS } = {}) => {
     if (!active) throw failure('tunnel_inactive', 'Start the tunnel before creating a link', 409);
     if (!Number.isFinite(ttlMs) || ttlMs <= 0 || ttlMs > TUNNEL_LINK_TTL_MS) throw failure('tunnel_link_expiry_invalid', 'Tunnel links expire within 15 minutes', 400);
-    if (!['bots', 'owner'].includes(access)) throw failure('tunnel_access_invalid', 'Invalid tunnel access', 400);
-    if (access === 'owner' && (!canUseOwnerLogin() || state.profile?.mode !== 'managed-remote'
-      || (botIds !== undefined && (!Array.isArray(botIds) || botIds.length !== 0)))) {
+    assertBound();
+    if (!canUseOwnerLogin() || state.profile?.mode !== 'managed-remote') {
       throw failure('tunnel_owner_unavailable', 'Owner links require a managed tunnel with Supabase Off');
     }
     const generation = state.generation;
-    const ids = access === 'owner' ? [] : await validateSelection(botIds);
     const token = crypto.randomBytes(32).toString('base64url');
     return update((next) => {
       assertBound();
       if (next.generation !== generation) throw failure('tunnel_auth_changed', 'Tunnel authorization changed; create a new link');
       const expiresAt = now() + ttlMs;
       next.links = next.links.filter((link) => link.expiresAt > now() && !link.usedAt).slice(-31);
-      next.links.push({ id: crypto.randomUUID(), tokenHash: digest(token), access, botIds: ids, expiresAt, usedAt: null });
+      next.links.push({ id: crypto.randomUUID(), tokenHash: digest(token), access: 'owner', expiresAt, usedAt: null });
       return { token, expiresAt };
     });
   };
@@ -192,22 +182,28 @@ export function createTunnelAccessControl({ now = Date.now } = {}) {
     const token = cookieToken(req);
     if (!token) return null;
     const tokenHash = digest(token);
-    return state.sessions.find((session) => session.tokenHash === tokenHash && session.expiresAt > now()
+    return state.sessions.find((session) => isOwnerGrant(session) && session.tokenHash === tokenHash && session.expiresAt > now()
       && session.generation === state.generation && session.ownerId === state.ownerId
       && session.profileId === state.profile.id && session.hostname === state.profile.hostname) || null;
   };
-  const principalFor = (session) => session.access === 'owner' ? Object.freeze({
-    ...connection.ownerPrincipal(), localOwner: false, policy: ROLE_POLICY_DEFAULTS.admin,
-    tunnelGrant: Object.freeze({ id: session.grantId, sessionId: session.sessionId, expiresAt: session.expiresAt }),
-  }) : Object.freeze({
-    id: session.ownerId, role: 'developer', scope: 'tunnel-bot', localOwner: false,
-    displayName: 'Bot workspace guest', email: null, assignments: [],
-    policy: { bots: true, settingsPages: [], files: false, terminal: false, browser: false,
-      createWorktrees: false, createBranches: false, manageProjects: false, manageUsers: false,
-      manageGlobalSettings: false, manageGit: false, push: false, github: false },
-    tunnelGrant: Object.freeze({ id: session.grantId, sessionId: session.sessionId, ownerId: session.ownerId,
-      profileId: session.profileId, generation: session.generation, botIds: Object.freeze([...session.botIds]), expiresAt: session.expiresAt }),
-  });
+  const principalFor = (session) => {
+    if (!isOwnerGrant(session)) return null;
+    const principal = Object.freeze({
+      ...connection.ownerPrincipal(), localOwner: false, policy: ROLE_POLICY_DEFAULTS.admin,
+      tunnelGrant: Object.freeze({ id: session.grantId, sessionId: session.sessionId, expiresAt: session.expiresAt }),
+    });
+    if (state?.sessions.includes(session)) {
+      const identity = { sessionId: session.sessionId, grantId: session.grantId, generation: session.generation,
+        ownerId: session.ownerId, profileId: session.profileId, hostname: session.hostname, expiresAt: session.expiresAt };
+      ownerAuthorizations.set(principal, () => Boolean(canUseOwnerLogin() && active && connection.isLocalAccessActive()
+        && principal.id === currentOwner() && state.profile?.mode === 'managed-remote'
+        && state.sessions.some(row => row.access === 'owner' && row.expiresAt > now()
+          && Object.entries(identity).every(([key, value]) => row[key] === value)
+          && row.generation === state.generation && row.ownerId === state.ownerId
+          && row.profileId === state.profile.id && row.hostname === state.profile.hostname)));
+    }
+    return principal;
+  };
   const requireTunnelSession = (req, res, next) => {
     const session = getTunnelSessionFromRequest(req);
     if (!session) { setCookie(res, '', 0); return res.status(401).json({ error: 'Tunnel authentication required', tunnelLocked: true }); }
@@ -240,9 +236,7 @@ export function createTunnelAccessControl({ now = Date.now } = {}) {
       if (!link) return { ok: false, reason: 'expired' };
       try {
         await beforeCommit?.();
-        if (link.access === 'owner') {
-          if (!canUseOwnerLogin()) throw failure('tunnel_owner_unavailable', 'Owner authentication is unavailable');
-        } else await validateBots(connection.ownerPrincipal(), link.botIds);
+        if (!isOwnerGrant(link) || !canUseOwnerLogin()) throw failure('tunnel_owner_unavailable', 'Owner authentication is unavailable');
       }
       catch { return { ok: false, reason: 'precondition-failed' }; }
       if (!bound() || !active) return { ok: false, reason: 'inactive' };
@@ -252,10 +246,10 @@ export function createTunnelAccessControl({ now = Date.now } = {}) {
       link.usedAt = now();
       next.sessions = next.sessions.filter((session) => session.expiresAt > now()).slice(-127);
       next.sessions.push({ sessionId: crypto.randomUUID(), tokenHash: digest(credential), grantId: link.id,
-        access: link.access || 'bots', botIds: link.botIds, ownerId: next.ownerId, profileId: next.profile.id, hostname: next.profile.hostname,
+        access: 'owner', ownerId: next.ownerId, profileId: next.profile.id, hostname: next.profile.hostname,
         generation: next.generation, expiresAt, createdAt });
       // The cookie is added only after the enclosing persistence operation.
-      return { ok: true, sessionExpiresAt: expiresAt, credential, redirectUrl: link.access === 'owner' ? '/' : '/?view=bots' };
+      return { ok: true, sessionExpiresAt: expiresAt, credential, redirectUrl: '/' };
     }).then((result) => {
       if (result.ok) setCookie(res, result.credential, TUNNEL_SESSION_TTL_MS / 1000);
       return { ok: result.ok, reason: result.reason, sessionExpiresAt: result.sessionExpiresAt, redirectUrl: result.redirectUrl };
@@ -270,8 +264,9 @@ export function createTunnelAccessControl({ now = Date.now } = {}) {
   };
   return {
     initialize, refreshOwner, classifyRequestScope, setActiveTunnel, clearActiveTunnel, suspendActiveTunnel,
-    revokeTunnelArtifacts, revokeGrant, validateSelection, issueBootstrapToken, exchangeBootstrapToken, getTunnelSessionFromRequest, requireTunnelSession,
+    revokeTunnelArtifacts, revokeGrant, issueBootstrapToken, exchangeBootstrapToken, getTunnelSessionFromRequest, requireTunnelSession,
     registerConnection, principalFor, isDirectLocalRequest, canUseOwnerLogin,
+    captureAuthorization: principal => ownerAuthorizations.get(principal) ?? null,
     getActiveTunnelId: () => active ? state?.profile?.id : null,
     getActiveTunnelHost: () => active ? state?.profile?.hostname : null,
     getActiveTunnelMode: () => active ? state?.profile?.mode : null,
@@ -303,7 +298,7 @@ export function registerTunnelAccessBoundary(app, server, { controller, connecti
     && controller.classifyRequestScope(req) === 'tunnel';
   app.use(async (req, res, next) => {
     if (isDirectLocalRequest(req)) {
-      if (/^\/api\/openchamber\/tunnel(?:\/|$)/.test(req.path)) {
+      if (/^\/api\/devryan\/tunnel(?:\/|$)/.test(req.path)) {
         if (!['GET', 'HEAD'].includes(req.method) && req.headers['x-devryan-csrf'] !== '1') return res.sendStatus(403);
         try {
           if (!await authenticateOwner(req, res)) return res.status(403).json({ code: 'local_owner_required', error: 'Authenticate the local owner to control tunnels' });
@@ -331,8 +326,7 @@ export function registerTunnelAccessBoundary(app, server, { controller, connecti
       if (req.method === 'GET') {
         const nonce = crypto.randomBytes(16).toString('base64');
         res.setHeader('Content-Security-Policy', `default-src 'none'; script-src 'nonce-${nonce}'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'`);
-        const ownerLink = controller.canUseOwnerLogin() && controller.getActiveTunnelMode() === 'managed-remote';
-        return res.type('html').send(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Connect to DevRyan</title><h1>${ownerLink ? 'Connect to your DevRyan workspace' : 'Connect to Bot workspaces'}</h1><p>${ownerLink ? 'An owner link grants full access to this DevRyan workspace. Keep it private.' : 'This link grants access to selected Bots.'} Links expire after 15 minutes.</p><button id="connect">Connect</button><p id="status" role="status"></p><script nonce="${nonce}">let token=new URLSearchParams(location.hash.slice(1)).get('t');history.replaceState(null,'',location.pathname);document.getElementById('connect').onclick=async()=>{const button=document.getElementById('connect');button.disabled=true;try{const response=await fetch('/tunnel/connect',{method:'POST',headers:{'Content-Type':'application/json','X-DevRyan-CSRF':'1'},body:JSON.stringify({token})});if(!response.ok)throw new Error('Connection failed. The link may have expired or already been used.');const result=await response.json();token=null;location.replace(result.redirectUrl);}catch(error){document.getElementById('status').textContent=error.message;button.disabled=false;}};</script></html>`);
+        return res.type('html').send(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Connect to DevRyan</title><h1>Connect to your DevRyan workspace</h1><p>An owner link grants full access to this DevRyan workspace. Keep it private. Links expire after 15 minutes.</p><button id="connect">Connect</button><p id="status" role="status"></p><script nonce="${nonce}">let token=new URLSearchParams(location.hash.slice(1)).get('t');history.replaceState(null,'',location.pathname);document.getElementById('connect').onclick=async()=>{const button=document.getElementById('connect');button.disabled=true;try{const response=await fetch('/tunnel/connect',{method:'POST',headers:{'Content-Type':'application/json','X-DevRyan-CSRF':'1'},body:JSON.stringify({token})});if(!response.ok)throw new Error('Connection failed. The link may have expired or already been used.');const result=await response.json();token=null;location.replace(result.redirectUrl);}catch(error){document.getElementById('status').textContent=error.message;button.disabled=false;}};</script></html>`);
       }
       if (req.method !== 'POST') return res.sendStatus(405);
       return json(req, res, async (error) => {
@@ -346,7 +340,7 @@ export function registerTunnelAccessBoundary(app, server, { controller, connecti
       });
     }
     if (remoteSession?.access === 'owner') {
-      if (/^\/(?:api\/(?:openchamber\/tunnel|system\/supabase-connection|passkeys|auth\/reset|admin|bots|bot-actions|bot-channels|bot-runs|bug-reports|user-analytics)(?:\/|$)|auth\/(?:local-owner|passkey|agent-test-session|claim|invite)(?:\/|$))/i.test(pathname)) return res.sendStatus(403);
+      if (/^\/(?:api\/(?:(?:devryan|openchamber)\/tunnel|system\/supabase-connection|passkeys|auth\/reset|admin|bug-reports|user-analytics)(?:\/|$)|auth\/(?:local-owner|passkey|agent-test-session|claim|invite)(?:\/|$))/i.test(pathname)) return res.sendStatus(403);
       if (!['GET', 'HEAD'].includes(req.method) && (req.headers['x-devryan-csrf'] !== '1' || req.headers.origin !== `https://${remoteSession.hostname}`)) return res.sendStatus(403);
       if (!authorizeOwner(req, remoteSession)) return res.sendStatus(401);
       res.setHeader('Cache-Control', 'no-store');
@@ -360,28 +354,20 @@ export function registerTunnelAccessBoundary(app, server, { controller, connecti
       res.once('close', unregister); res.once('finish', unregister);
       return runWithRequestPrincipal(req.principal, next);
     }
-    // Valid Bot sessions retain their restricted authority. An expired or revoked
-    // cookie must not trap the stable hostname behind the obsolete link screen.
+    // An expired or revoked cookie must not trap the stable hostname behind the
+    // obsolete link screen.
     // Clearing it only reaches normal account authentication; it grants no access.
-    if (usesManagedDirectLogin(req) && hasTunnelCookie && !remoteSession) {
-      controller.clearTunnelSessionCookie(req, res);
+    if (usesManagedDirectLogin(req) && !remoteSession) {
+      if (hasTunnelCookie) controller.clearTunnelSessionCookie(req, res);
+      // Admit the transport past the native service-cookie gate. The ordinary
+      // account session and policy checks still authorize it.
+      authorizedRequests.add(req);
       return next();
     }
     if (connection.enabled && !hasTunnelCookie) return next();
-    if (pathname === '/auth/session' && req.method === 'GET') {
-      return res.status(remoteSession ? 200 : 401).json(remoteSession
-        ? { authenticated: true, mode: 'local', scope: 'tunnel-bot', principal: controller.principalFor(remoteSession) }
-        : { authenticated: false, locked: true, tunnelLocked: true });
-    }
+    if (pathname === '/auth/session' && req.method === 'GET') return res.status(401).json({ authenticated: false, locked: true, tunnelLocked: true });
     if (req.method === 'GET' && /^(?:\/|\/assets\/[A-Za-z0-9_./-]+|\/favicon\.ico|\/manifest\.webmanifest|\/sw\.js)$/.test(pathname)) { authorizedRequests.add(req); return next(); }
-    if (!remoteSession) return res.status(401).json({ error: 'Tunnel authentication required', tunnelLocked: true });
-    if (!isBotTunnelRoute(req)) return res.status(403).json({ code: 'tunnel_bot_only', error: 'This link grants access only to selected Bot workspaces' });
-    if (!['GET', 'HEAD'].includes(req.method) && (req.headers['x-devryan-csrf'] !== '1' || req.headers.origin !== `https://${remoteSession.hostname}`)) return res.sendStatus(403);
-    req.principal = controller.principalFor(remoteSession);
-    authorizedRequests.add(req);
-    const unregister = controller.registerConnection(req.principal, () => res.destroy());
-    res.once('close', unregister); res.once('finish', unregister);
-    return runWithRequestPrincipal(req.principal, next);
+    return res.status(401).json({ error: 'Tunnel authentication required', tunnelLocked: true });
   });
   const upgrade = (req, socket) => {
     if (socket.destroyed) return;
@@ -393,9 +379,14 @@ export function registerTunnelAccessBoundary(app, server, { controller, connecti
       socket.once('close', unregister);
       return;
     }
-    if (connection.enabled && !String(req.headers?.cookie || '').includes(`${COOKIE}=`)) return;
     // Downstream upgrade handlers still require normal account authentication.
-    if (usesManagedDirectLogin(req) && !controller.getTunnelSessionFromRequest(req)) return;
+    if (usesManagedDirectLogin(req) && !session
+      && sameRemoteOrigin(req, controller.getActiveTunnelHost(), true)
+      && /^\/api\/(?:(?:terminal\/ws|(?:global\/)?event\/ws)(?:\?|$)|preview\/proxy\/)/.test(req.url || '')) {
+      authorizedRequests.add(req);
+      return;
+    }
+    if (connection.enabled && !String(req.headers?.cookie || '').includes(`${COOKIE}=`)) return;
     req.tunnelAccessDenied = true;
     socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n'); socket.destroy();
   };

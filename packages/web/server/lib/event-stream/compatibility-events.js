@@ -13,7 +13,7 @@ export function deriveDirectoryCompatibilityEvents(payload, now = Date.now()) {
 
   return [
     {
-      type: 'openchamber:session-status',
+      type: 'devryan:session-status',
       properties: {
         sessionId,
         sessionID: sessionId,
@@ -34,7 +34,7 @@ export function deriveDirectoryCompatibilityEvents(payload, now = Date.now()) {
       },
     },
     {
-      type: 'openchamber:session-activity',
+      type: 'devryan:session-activity',
       properties: {
         sessionId,
         sessionID: sessionId,

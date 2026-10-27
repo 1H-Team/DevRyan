@@ -27,8 +27,6 @@ const NO_REASONING_SUMMARY_MODEL_IDS = new Set([
   "gpt-5.3-codex-spark",
   "gpt-5.3-codex-spark-fast",
 ]);
-const CODEX_ORIGINATOR = "codex_cli_rs";
-const CODEX_USER_AGENT = "codex_cli_rs/0.0.0 (OpenCode)";
 const OPENCODE_COMPACTION_BUFFER = 20_000;
 const OPENCODE_OUTPUT_TOKEN_MAX = 32_000;
 
@@ -45,8 +43,8 @@ const CODEX_128K_LIMITS = Object.freeze({
   autoCompact: 115_200,
 });
 
-// Pinned from Codex's model catalog. Fast rows are separate OpenCode catalog
-// entries, but use the same Codex context policy as their base model.
+// Historical Codex catalog windows; only the legacy v1 plugin still pins them.
+// Fast rows are separate OpenCode catalog entries with the same policy.
 const CODEX_LIMITS_BY_MODEL_ID = new Map([
   ["gpt-5.3-codex-spark", CODEX_128K_LIMITS],
   ["gpt-5.3-codex-spark-fast", CODEX_128K_LIMITS],
@@ -200,7 +198,7 @@ const normalizeCodexContextLimits = (models, configuredReserved) => {
   return normalized;
 };
 
-const enforceDetailedOpenAIReasoningSummary = (input, output) => {
+export const enforceDetailedOpenAIReasoningSummary = (input, output) => {
   const model = input?.model;
   if (model?.providerID !== PROVIDER_ID || !isPlainObject(output)) return;
 
@@ -249,6 +247,21 @@ export const normalizeOpenAIOAuthGpt56Models = (models) => {
   return normalized;
 };
 
+// Shared data-only policy for the legacy plugin and the owned native adapter.
+// `pinContext: false` (the native adapter) keeps OpenCode's own ChatGPT caps
+// (2.1.4 `openai-context-caps`) and its native compaction ceiling instead of the
+// legacy v1 `limit.input - reserved` threshold shim.
+export const normalizeOpenAIModels = (models, { oauth = false, chatgpt = false, compactionReserved, pinContext = true } = {}) => {
+  const supported = removeNoneReasoningVariants(models);
+  const oauthModels = oauth ? normalizeOpenAIOAuthGpt56Models(supported) : supported;
+  const limited = (oauth || chatgpt) && pinContext ? normalizeCodexContextLimits(oauthModels, compactionReserved) : oauthModels;
+  return normalizeReasoningSummaries(limited);
+};
+
+// Sign in with ChatGPT plan usage uses bearer auth only; do not spoof Codex CLI
+// identity headers against api.openai.com.
+export const openAIModelHeaders = (_model, _oauth) => ({});
+
 export const OpenAIGpt56ModelsPlugin = async () => {
   let openAIOAuthActive = false;
   let configuredCompactionReserved;
@@ -261,29 +274,14 @@ export const OpenAIGpt56ModelsPlugin = async () => {
     provider: {
       id: PROVIDER_ID,
       async models(provider, ctx) {
-        const models = removeNoneReasoningVariants(provider?.models ?? {});
         openAIOAuthActive = ctx?.auth?.type === "oauth";
-        const oauthModels = openAIOAuthActive
-          ? normalizeOpenAIOAuthGpt56Models(models)
-          : models;
-        const normalizedModels = openAIOAuthActive
-          ? normalizeCodexContextLimits(oauthModels, configuredCompactionReserved)
-          : oauthModels;
-        return normalizeReasoningSummaries(normalizedModels);
+        return normalizeOpenAIModels(provider?.models ?? {}, {
+          oauth: openAIOAuthActive, compactionReserved: configuredCompactionReserved,
+        });
       },
     },
     "chat.headers": async (input, output) => {
-      const model = input?.model;
-      if (
-        !openAIOAuthActive
-        || model?.providerID !== PROVIDER_ID
-        || model?.api?.id !== LUNA_API_MODEL_ID
-      ) {
-        return;
-      }
-
-      output.headers.originator = CODEX_ORIGINATOR;
-      output.headers["User-Agent"] = CODEX_USER_AGENT;
+      Object.assign(output.headers, openAIModelHeaders(input?.model, openAIOAuthActive));
     },
     "chat.params": async (input, output) => {
       enforceDetailedOpenAIReasoningSummary(input, output);

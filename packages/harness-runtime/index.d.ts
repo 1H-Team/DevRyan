@@ -1,4 +1,6 @@
+import type {WindowsPrivateFileOwner} from './lib/windows-private-files.js';
 export * from './lib/session-mutations.js';
+export { createSessionMutationHost, sessionMutationWorkerEnabled } from './lib/session-mutation-host.js';
 export * from './lib/session-revert-coordinator.js';
 
 export interface HarnessPaths {
@@ -109,12 +111,25 @@ export function writeFileAtomic(
     now?: () => number;
     randomId?: () => string;
     fs?: unknown;
+    onProgress?(input: { phase: string; state: 'started' | 'completed' }): void;
   },
 ): Promise<void>;
 
+export function writeFileAtomicSync(
+  filePath: string,
+  data: string | Uint8Array,
+  options?: {
+    mode?: number;
+    encoding?: BufferEncoding;
+    now?: () => number;
+    randomId?: () => string;
+    fs?: unknown;
+  },
+): void;
+
 export function withCrossProcessFileLock<T>(
   lockPath: string,
-  callback: () => Promise<T> | T,
+  callback: (ownershipSignal?: AbortSignal) => Promise<T> | T,
   options?: {
     timeoutMs?: number;
     retryMs?: number;
@@ -123,6 +138,9 @@ export function withCrossProcessFileLock<T>(
     wait?: (milliseconds: number) => Promise<void>;
     randomToken?: () => string;
     isProcessAlive?: (pid: number) => boolean;
+    /** Constructor-owned, verified Windows SDK helper; never obtained from HTTP. */
+    windowsLauncher?: string;
+    signal?: AbortSignal;
     fs?: unknown;
   },
 ): Promise<T>;
@@ -409,6 +427,7 @@ export interface DiagnosticJournal {
 }
 
 export function createDiagnosticJournal(options: {
+  windowsOwner?:WindowsPrivateFileOwner;
   directory: string;
   sanitizer: DiagnosticSanitizer;
   runtime?: string;
@@ -740,13 +759,55 @@ export function parseEvidenceNumstat(raw: string): Array<{
 
 export function toPublicEvidenceRecord(record: EvidenceRecord): Record<string, unknown>;
 export type PrimaryRecoveryState = 'observing' | 'stopping' | 'reconciling' | 'recovery_reserved' | 'recovering' | 'completed' | 'needs_attention' | 'cancelled' | 'superseded';
+export interface RecoveredInputIdentity { revision: string; messageID: string; payloadHash: string }
+export type RecoveredInputType = 'user' | 'synthetic' | 'compaction' | 'move';
+export interface RecoveredInputDescriptor {
+  messageID: string; payloadHash: string; type: RecoveredInputType; delivery: 'queue' | 'steer';
+  location: 'queued' | 'promoted'; preview: string; attachmentCount: number;
+  canResume: boolean; canDiscard: boolean; reason: string | null;
+}
+export interface RecoveredInputSnapshot {
+  revision: string; state: 'paused' | 'resuming' | 'discarding'; inputs: RecoveredInputDescriptor[];
+}
+export interface RecoveredInputDetails {
+  messageID: string; payloadHash: string; type: RecoveredInputType; delivery: 'queue' | 'steer';
+  location: 'queued' | 'promoted'; text: string;
+  files: Array<{ uri: string; name?: string; mime?: string }>;
+  agents?: Array<{ name: string }>; skills?: Array<{ id: string; name: string }>;
+}
+/** Native constructor-owned paused inventory; never supplied by a plugin or renderer. */
+export interface RecoveredInputOwner {
+  /** Constructor-only live dispatch status proof; never grants execution. */
+  isRecoveryDispatchPending?(record: PrimaryRecoveryExecutionRecord, liveDispatch?: { readonly itemHash?: string }): Promise<boolean>;
+  has(sessionID: string): boolean;
+  snapshot(sessionID: string): Promise<RecoveredInputSnapshot | undefined>;
+  details(sessionID: string, input: RecoveredInputIdentity): Promise<RecoveredInputDetails>;
+  action(sessionID: string, action: 'resume-input' | 'discard-input', input: RecoveredInputIdentity,
+    context: { owner?: string | null }): Promise<unknown>;
+}
+export interface RecoveredInputAdoption {
+  sessionID: string; messageID: string; payloadHash: string; recordRevision: number; cancellationGeneration: number;
+  previousOwner: string | null; owner: string | null; instanceID: string; enqueuedSeq: number; delivery: 'queue' | 'steer';
+}
+export interface RecoveredInputDiscardRequest {
+  sessionID: string; messageID: string; payloadHash: string; recordRevision: number; cancellationGeneration: number;
+  previousOwner: string | null; type: RecoveredInputType; delivery: 'queue' | 'steer'; enqueuedSeq: number;
+}
+export interface RecoveredInputDiscardSettlement {
+  sessionID: string; messageID: string; payloadHash: string; enqueuedSeq: number; eventID: string; eventSeq: number;
+}
 export interface PrimaryRecoverySnapshot {
   schemaVersion: 1;
   mode: 'off' | 'observe' | 'enforce';
   supported: boolean;
   enforced: boolean;
   progressTimeoutMs: number | false;
+  /** The host may still send its one native transport continuation for this turn. */
+  automaticRecoveryPending?: boolean;
   stopConfirmed?: boolean;
+  /** Controller SSE updates only the record; inventory is confirmed by a full host snapshot. */
+  recoveredInputPartial?: true;
+  recoveredInput?: RecoveredInputSnapshot;
   record: null | {
     sessionID: string; anchorID: string; failedID: string | null; recoveryID: string | null;
     collectionIssue?: { taskId: string; code: string } | null;
@@ -756,7 +817,55 @@ export interface PrimaryRecoverySnapshot {
     progress: { policy: 'report-only'; lastUsefulAt: number | null; counts: Partial<Record<ObjectiveProgressKind, number>>; relevance: string };
   };
 }
+export interface NativeFallbackExecution {providerID:string;modelID:string;agent:string;variant:string}
+export interface NativeHelloOwner {authorize():Promise<void>;isCurrent():boolean}
+export interface NativeFallbackAttempt {traceID:string;spanID:string}
+export interface NativeFallbackWitness {attempt:NativeFallbackAttempt;permitSha256:string}
+export interface NativeFallbackPending extends NativeFallbackWitness {
+  instanceID:string;cancellationGeneration:number;previousStepID:string|null;currentExecution:NativeFallbackExecution;
+}
+export type NativeFallbackIdentity = {sessionID:string;userMessageID:string;instanceID:string;currentExecution:NativeFallbackExecution}
+  & ({assistantMessageID:string;attempt?:NativeFallbackAttempt;permitSha256?:string}
+    | {assistantMessageID:null;previousStepID:string|null;attempt:NativeFallbackAttempt;permitSha256:string});
+export interface NativeFallbackOwner {authorize():Promise<void>;choose(state:{tried:string[];exhaustion:0|1|2}):Promise<{tried:readonly string[];exhaustion:0|1|2;execution?:NativeFallbackExecution}>}
+export interface NativeStreamReservation extends NativeFallbackWitness {
+  instanceID:string;configurationDigest:string;cancellationGeneration:number;anchorID:string;objectiveID:string;
+  sourceUserMessageID:string;previousStepID:string;requestID:string;outputEventID:string;fingerprint:string;toolPolicySha256:string;
+  reservedAt:number;preparedAt?:number;
+  eventID?:string;eventSeq?:number;userMessageID?:string;syntheticFingerprint?:string;preparedRequestID?:string;successorAttempt?:NativeFallbackAttempt;
+}
+export interface NativeStreamTransition {
+  action:'prepare'|'send'|'reserve'|'bind'|'progress';sessionID:string;directory:string;instanceID:string;configurationDigest:string;
+  permitSha256:string;requestID:string;execution:NativeFallbackExecution;attempt?:NativeFallbackAttempt;outputEventID?:string;
+  assistantMessageID?:string;fingerprint?:string;eventID?:string;eventSeq?:number;userMessageID?:string;observedUnits?:number;
+}
+export interface NativeStreamContinuationReceipt extends NativeStreamReservation {assistantMessageID:string;ordinal:1|2}
 export interface PrimaryRecoveryController {
+  /** Constructor-owned bounded native interrupted-stream continuation; no public action protocol. */
+  nativeStreamContinuation(input:NativeStreamTransition,authorize:()=>Promise<void>):Promise<boolean>;
+  /** Saved constructor proof; caller must authorize the read and verify canonical message identities. */
+  nativeStreamContinuationReceipts(sessionID:string,objectiveID:string):Promise<NativeStreamContinuationReceipt[]>;
+  /** Completed canonical leaf disposal under the committed native removal owner decision only. */
+  discardNativeStreamContinuationReceipts(input:{directory:string;sessions:readonly string[]},authorize:()=>Promise<void>):Promise<void>;
+  /** Original accepted-item commit pins status proof in existing live dispatch state. */
+  bindNativeRecoveryDispatchInput(input:{sessionID:string;messageID:string;instanceID:string;itemHash:string}):void;
+  /** Constructor-only restart inspection/adoption/disposition; absent from plugin actions. */
+  nativeStartupRecords(): Promise<PrimaryRecoveryExecutionRecord[]>;
+  adoptRecoveredInput(input: RecoveredInputAdoption, authorizeWrite: () => Promise<void>): Promise<PrimaryRecoveryExecutionRecord | null>;
+  requestRecoveredInputDiscard(input: RecoveredInputDiscardRequest, authorizeWrite: () => Promise<void>): Promise<PrimaryRecoveryExecutionRecord | null>;
+  settleRecoveredInputDiscard(input: RecoveredInputDiscardSettlement, authorizeWrite: () => Promise<void>): Promise<PrimaryRecoveryExecutionRecord | null>;
+  /** Trusted native retry hook only; canonical settlement owns the single recovery dispatch. */
+  reserveNativeFallback(input:NativeFallbackIdentity,owner:NativeFallbackOwner):Promise<{reserved:boolean;record:PrimaryRecoveryExecutionRecord}>;
+  captureNativeRecoveryDispatch(input:{sessionID:string;directory:string;messageID:string;instanceID?:string}):Promise<{record:PrimaryRecoveryExecutionRecord;prompt:NonNullable<PrimaryRecoveryExecutionRecord['recoveryPrompt']>;recheck:()=>Promise<void>}>;
+  /** Constructor-only native continuation reservation and original owner reauthorization. */
+  reserveNativeContinuation(input: Record<string, unknown>, prompt: NativePrimaryContinuationPrompt): Promise<unknown>;
+  pendingNativeContinuations(input: {directory:string}): Promise<Array<{sessionID:string;directory:string;messageID:string}>>;
+  captureNativeContinuationDispatch(input: {sessionID:string;directory:string;messageID:string;instanceID?:string}): Promise<{
+    record: PrimaryRecoveryExecutionRecord; prompt: NativePrimaryContinuationPrompt; recheck:()=>Promise<void>}>;
+  /** Trusted host-only adoption at canonical native Step.Started; absent from plugin/HTTP actions. */
+  adoptOwnedNativeContinuation(input: { sessionID: string; userMessageID: string; assistantMessageID: string; instanceID: string;
+    execution: { providerID: string; modelID: string; agent: string; variant?: string | null };nativeAttempt?:NativeFallbackAttempt;nativePermitSha256?:string }): Promise<PrimaryRecoveryExecutionRecord>;
+  markPromptDispatchUncertain(input: { sessionID: string; messageID: string }): Promise<unknown>;
   observeProgress(input: { sessionID: string; messageID?: string; taskCreatedAt?: number; kind: ObjectiveProgressKind; identity: string }): Promise<unknown>;
   readRecord(sessionID: string): Promise<PrimaryRecoveryExecutionRecord | null>;
   initialize(): Promise<void>;
@@ -765,14 +874,75 @@ export interface PrimaryRecoveryController {
   reconcile(): Promise<void>;
   getSnapshot(sessionID: string): Promise<PrimaryRecoverySnapshot>;
   control(sessionID: string, action: string, expectedRevision?: number): Promise<PrimaryRecoverySnapshot>;
-  plugin(input: Record<string, unknown>): Promise<unknown>;
+  plugin(input: Record<string, unknown>, authorizeRejectionWrite?: () => Promise<void>, nativePrompt?: NativePrimaryContinuationPrompt, nativeHelloOwner?: NativeHelloOwner): Promise<unknown>;
+  /** Private native observation; the original caller is rechecked immediately before durable rejection counts change. */
+  recordRejection(input: Record<string, unknown>, authorizeWrite: () => Promise<void>): Promise<unknown>;
+}
+export interface NativePrimaryContinuationPrompt {
+  messageID:string;agent:string;model:{providerID:string;modelID:string};variant:string;tools:Record<string,boolean>;objectiveID:string;
+  parts:Array<{type:'text';text:string;synthetic:true}>;
+}
+export interface NativePromptSelectionReceipt {
+  sessionID: string; messageID: string; directory: string; parentID?: string;
+  body: Record<string, unknown>; objectiveID?: string; queuedAfterChildren?: boolean;
+  execution: { providerID: string; modelID: string; agent: string; variant: string } | null;
 }
 export interface PrimaryRecoveryHost extends PrimaryRecoveryController {
+  setRecoveredInputOwner(adapter: RecoveredInputOwner): void;
+  /** External owner recheck only; no native observation or execution. */
+  authorizeRecoveredInputOwner(record: PrimaryRecoveryExecutionRecord): Promise<void>;
+  /** Private native Step handoff; canonical pinned version only, not runtime readiness or recovery support. */
+  helloNative(input: { policyVersion: 1; instanceID: string }, owner?: NativeHelloOwner): Promise<unknown>;
+  captureNativePromptAdmission(sessionID:string):Promise<()=>Promise<void>>;
+  requiresNativePromptSelection(): boolean;
+  markNativePromptUncertain(receipt: NativePromptSelectionReceipt): Promise<unknown>;
+  admitNativePrompt(receipt: NativePromptSelectionReceipt, context?: { owner?: string | null; objectiveID?: string; sessionID?:string; authorizeWrite?:()=>Promise<void> }): Promise<void>;
+  withPromptAdmissionContext<T>(method: string, rawPath: string, context: { owner?: string | null }, action: () => T): T;
   handleRequest(method: string, path: string, body: unknown, context?: { owner?: string | null }): Promise<null | { status: number; body: unknown }>;
 }
+/** Required native transport supplied by the web/Electron host. */
+export interface HarnessOpenCodeReadOptions {
+  beforePromptDispatch?(receipt: NativePromptSelectionReceipt, context?: {authorizeWrite:()=>Promise<void>}): Promise<void>;
+  onPromptDispatchFailure?(receipt: NativePromptSelectionReceipt): Promise<unknown>;
+  directory?: string;
+  signal?: AbortSignal;
+  timeoutMs?: number;
+  /** Applied while streaming each upstream response, before full buffering. */
+  maxResponseBytes?: number;
+  /** Chunk bytes are increments; end bytes are the total released by that response. */
+  onResponseRead?(event: { phase: 'start' | 'chunk' | 'end'; bytes: number }): void;
+}
+export interface HarnessOpenCodeClient {
+  generation(): 2;
+  sessions: {
+    get(id: string, options?: HarnessOpenCodeReadOptions): Promise<unknown>;
+    children(id: string, options?: HarnessOpenCodeReadOptions): Promise<unknown>;
+    status(query?: { directory?: string }, options?: HarnessOpenCodeReadOptions): Promise<unknown>;
+    messages(id: string, page?: { limit?: number; before?: string }, options?: HarnessOpenCodeReadOptions): Promise<{ records: unknown[]; cursor?: string }>;
+    message(id: string, messageID: string, options?: HarnessOpenCodeReadOptions): Promise<unknown>;
+    todo(id: string, options?: HarnessOpenCodeReadOptions): Promise<unknown>;
+    abort(id: string, options?: HarnessOpenCodeReadOptions): Promise<unknown>;
+  };
+  interaction: {
+    permissions: { list(query?: { directory?: string }, options?: HarnessOpenCodeReadOptions): Promise<unknown> };
+    questions: { list(query?: { directory?: string }, options?: HarnessOpenCodeReadOptions): Promise<unknown> };
+  };
+  catalog: { tools(query?: { directory?: string }, options?: HarnessOpenCodeReadOptions): Promise<{ ids: string[] } | null> };
+  prompts: { prompt(id: string, body: unknown, options?: HarnessOpenCodeReadOptions): Promise<unknown> };
+  health: {
+    probe(options?: HarnessOpenCodeReadOptions): Promise<{ ready: boolean; version: string | null }>;
+    runtimeInfo(options?: HarnessOpenCodeReadOptions): Promise<{ version: string | null }>;
+  };
+}
 export interface PrimaryRecoveryHostOptions {
-  executionOutcomes?: (input: { directory: string; sessionID: string; calls: Array<{ messageID: string; callID: string }> }) => Promise<Array<{
+  /** Constructor-owned original pinned Slim classifier; absent means native fallback cannot be reserved. */
+  isNativeFallbackError?(error:unknown):boolean;
+  /** Existing native dispatch owner must issue fresh exact recovery-message authority after settlement. */
+  dispatchNativeRecovery?(record:PrimaryRecoveryExecutionRecord,prompt:NonNullable<PrimaryRecoveryExecutionRecord['recoveryPrompt']>):Promise<unknown>;
+  openCodeClient: HarnessOpenCodeClient | (() => HarnessOpenCodeClient | null);
+  executionOutcomes?: (input: { directory: string; sessionID: string; calls: Array<{ messageID: string; callID: string; tool?: string }> }) => Promise<Array<{
     sessionID: string; messageID: string; callID: string; outcome: 'never_started' | 'finished' | 'uncertain';
+    effect?: 'read-only'; coveredBy?: string;
   }>>;
   classifyFailure?(error: unknown): string | null;
   dataDirectory: string;
@@ -780,16 +950,15 @@ export interface PrimaryRecoveryHostOptions {
   anthropicMode?: 'off' | 'observe' | 'enforce';
   isAnthropicConformant?(record: PrimaryRecoveryExecutionRecord, runtimeVersion: string | undefined): boolean;
   progressTimeoutMs?: number | false;
-  buildOpenCodeUrl(pathname: string): string | URL;
-  getOpenCodeAuthHeaders?(): Record<string, string>;
   isManaged(): boolean;
   authorize(record: { owner: string | null; sessionID: string; directory: string }): Promise<boolean>;
   managedBarrier(sessionID: string): Promise<unknown>;
   cancelDescendants?(sessionID: string): Promise<void>;
   publishEvent?(event: unknown, options?: { directory: string }): void | Promise<void>;
   recordIncident?(incident: { event: string; sessionID?: string; messageID?: string; [key: string]: unknown }): void;
-  fetchImpl?: typeof fetch;
   verifyRecoveredCollection?(record: PrimaryRecoveryExecutionRecord, collection: { taskId: string; claimantId: string }): Promise<unknown>;
+  /** Complete canonical chain and actual ledger/termination proof; caller metadata grants no authority. */
+  verifyOwnedNativeContinuation?(record: PrimaryRecoveryExecutionRecord, observation: unknown, targetUserID: string): Promise<{ kind: 'native-shell' } | null>;
 }
 export function createPrimaryRecoveryHost(options: PrimaryRecoveryHostOptions): PrimaryRecoveryHost;
 export interface SessionChangeIdentity {
@@ -805,7 +974,7 @@ export type SessionChangeFileReceipt = { path: string; oldPath?: string | null }
   | { patch: string; before?: never; after?: never }
 );
 export type SessionChangeReceipt = SessionChangeIdentity & {
-  messageID: string; callID: string; createdAt?: number; complete?: boolean;
+  messageID: string; callID: string; createdAt?: number; complete?: boolean; publicationSequence?: number;
   files: Iterable<SessionChangeFileReceipt> | AsyncIterable<SessionChangeFileReceipt>;
 };
 export type SessionChangeExecution = {
@@ -816,6 +985,7 @@ export type SessionChangeExecution = {
 };
 export interface SessionChangeDiagnostic {
   code: string; phase: string; sessionID: string; callID?: string; source?: string; evidence?: SessionChangeEvidenceKind;
+  hasChanges?: boolean;
 }
 export interface SessionChangePage {
   nextCursor: string | null; previousCursor: string | null; pageIndex: number;
@@ -825,8 +995,8 @@ export interface SessionChangeSummary extends SessionChangePage {
   rootSessionID: string; directory: string; worktreeDirectory: string; worktreeID: string; revision: string;
   coverage: 'complete' | 'partial'; reasons: string[]; sessionCount: number;
   reconciliationState: 'pending' | 'settled';
-  attributionVersion: number; totalsMode: 'net' | 'recorded'; restoreAvailable: boolean; restoreReasons: string[];
-  firstUserMessageID: string | null; hasUnattributedMutations: false; undone?: boolean;
+  attributionVersion: number; totalsMode: 'net' | 'recorded'; restoreAvailable: boolean; restoreReasons: string[]; restoreProof?: { version: 1; digest: string };
+  firstUserMessageID: string | null; hasUnattributedMutations: boolean; undone?: boolean;
   files: Array<{ path: string; oldPath: string | null; status: 'added' | 'deleted' | 'modified' | 'renamed';
     additions: number | null; deletions: number | null; sessions: string[]; reviewMode: 'net' | 'segments'; segmentCount: number }>;
 }
@@ -834,6 +1004,8 @@ export interface SessionChangeRuntime {
   begin(input: SessionChangeIdentity & { messageID: string; callID: string }): Promise<void>;
   finish(input: SessionChangeIdentity & { callID: string }): Promise<void>;
   recordReceipt(input: SessionChangeReceipt): Promise<void>;
+  /** Trusted in-process batch; all receipts must belong to the same project. */
+  recordReceipts(inputs: SessionChangeReceipt[]): Promise<void>;
   recordExecution(input: SessionChangeExecution & { parentID?: string | null; receipt?: ReturnType<typeof sessionChangeReceipt> }): Promise<void>;
   findCall(input: SessionChangeIdentity & { callID: string }): Promise<string | null>;
   unresolvedHistory(input: SessionChangeIdentity & { cursor?: string | null }): Promise<{ messages: Array<{ id: string; cursor: string }>; more: boolean }>;
@@ -844,29 +1016,38 @@ export interface SessionChangeRuntime {
     firstUserMessageID?: string | null; coverageReasons?: string[];
     expectedCalls?: Array<{ sessionID: string; callID: string }>;
     hiddenMessages?: Array<{ sessionID: string; messageID: string }>;
-    reverts?: Array<{ sessionID: string; messageID: string }> }): Promise<SessionChangeSummary>;
+    reverts?: Array<{ sessionID: string; messageID: string }>;
+    /** Calls whose confined command still runs: `background_running` instead of `missing_capture`. */
+    activeCalls?: Array<{ sessionID: string; callID: string }> }): Promise<SessionChangeSummary>;
   summaryPage(input: { directory: string; rootSessionID: string; revision: string; cursor?: string | null }): Promise<SessionChangeSummary>;
   diff(input: { directory: string; rootSessionID: string; revision: string; file: string; cursor?: string | null; segment?: number | string | null }): Promise<SessionChangePage & {
     rootSessionID: string; revision: string; path: string; patch: string; totalBytes: number;
     reviewMode: 'net' | 'segments'; segmentIndex: number | null; segmentCount: number;
     segment: { sessionID: string; messageID: string; callID: string; source: string } | null;
   }>;
-  restore(input: { directory: string; rootSessionID: string; revision: string; redo?: boolean }): Promise<{ undone: boolean }>;
+  restore(input: { directory: string; rootSessionID: string; revision: string; redo?: boolean; restoreProof?: { version: 1; digest: string } }): Promise<{ undone: boolean }>;
+  previewRestore(input: { directory: string; rootSessionID: string; summary: SessionChangeSummary }): Promise<SessionChangeSummary>;
   deleteSession(sessionID: string): Promise<void>;
   observe(event: unknown, directory?: string | null): Promise<void>;
   drain(): Promise<void>;
 }
 export interface SessionOwnedRestoreRequest { directory: string; sessionID: string; revision: string; redo: boolean;
-  calls: Array<{ sessionID: string; messageID: string; callID: string }> }
+  calls: Array<{ sessionID: string; messageID: string; callID: string }>;
+  proof?: { version: 1; digest: string } }
 export function createSessionChangeRuntime(options: { directory: string; maxBytes?: number; maxOperations?: number;
-  restoreOwned?: (input: SessionOwnedRestoreRequest) => Promise<unknown>;
+  previewOwned?: (input: SessionOwnedRestoreRequest) => Promise<{ version: 1; digest: string }>;
+  restoreOwned?: (input: SessionOwnedRestoreRequest & { proof: { version: 1; digest: string } }) => Promise<unknown>;
   maxCaptureBytes?: number; maxRevisions?: number; maintenanceEvery?: number;
   onDiagnostic?: (event: SessionChangeDiagnostic) => void | Promise<void>;
   onChange?: (scope: { directory: string; sessionID: string }) => void | Promise<void> }): SessionChangeRuntime;
 export interface SessionChangeHost {
   recordReceipt(input: SessionChangeReceipt): Promise<unknown>;
+  /** Trusted in-process batch, never exposed through the HTTP/plugin bridge. */
+  recordReceipts(inputs: SessionChangeReceipt[]): Promise<void>;
   acceptExecution(input: SessionChangeExecution): Promise<{ acknowledged: true }>;
   plugin(input: Record<string, unknown>): Promise<unknown>;
+  /** Private native observation; the original caller is rechecked immediately before durable rejection counts change. */
+  recordRejection(input: Record<string, unknown>, authorizeWrite: () => Promise<void>): Promise<unknown>;
   handleRequest(method: string, path: string, body?: unknown, context?: { signal?: AbortSignal }): Promise<null | { status: number; body: unknown }>;
   getReadDiagnostics(): { active: number; queued: number; scopes: number; activeResponses: number; responseBytes: number; peakResponseBytes: number };
   observe(event: unknown, directory?: string | null): Promise<void>;
@@ -876,12 +1057,15 @@ export interface SessionChangeHost {
     current: { mode: string; oid: string } | null; previous: { mode: string; oid: string } | null }>>;
   legacyBlob(input: { directory: string; oid: string }): Promise<Uint8Array>;
 }
-export function createSessionChangeHost(options: Pick<PrimaryRecoveryHostOptions, 'dataDirectory' | 'buildOpenCodeUrl' | 'getOpenCodeAuthHeaders' | 'fetchImpl' | 'publishEvent'> & {
-  restoreOwned?: (input: SessionOwnedRestoreRequest) => Promise<unknown>;
+export function createSessionChangeHost(options: Pick<PrimaryRecoveryHostOptions, 'dataDirectory' | 'publishEvent' | 'openCodeClient' | 'executionOutcomes'> & {
+  previewOwned?: (input: SessionOwnedRestoreRequest) => Promise<{ version: 1; digest: string }>;
+  restoreOwned?: (input: SessionOwnedRestoreRequest & { proof: { version: 1; digest: string } }) => Promise<unknown>;
   /** Without the ownership ledger, rejects restoring a conversation the ledger owns. */
   assertLegacyRestore?: (input: { directory: string; sessionID: string }) => Promise<void>;
   onDiagnostic?: (event: SessionChangeDiagnostic) => void | Promise<void>;
   reconcileExecutionReceipts?: (scope: { directory: string; sessionID: string }) => Promise<{ pending: boolean; reasons: string[] }>;
+  /** Call IDs of the session whose confined command is still running (reported as `background_running`). */
+  activeExecutionCalls?: (scope: { directory: string; sessionID: string }) => readonly string[] | Promise<readonly string[]>;
 }): SessionChangeHost;
 export const SESSION_CHANGE_READ_ONLY_TOOLS: readonly string[];
 export function normalizeSessionChangeTool(value: unknown): string;
@@ -900,24 +1084,52 @@ export const RECOVERY_CONTINUATION: string;
 export function isPrimaryRecoveryProvider(providerID: unknown): providerID is 'openai' | 'anthropic';
 export function primaryRecoveryMode(providerID: unknown, options: Pick<PrimaryRecoveryHostOptions, 'mode' | 'anthropicMode'>): 'off' | 'observe' | 'enforce';
 export function classifyPrimaryTransportError(error: unknown, runtimeVersion: string): null | { kind: string; source: string };
+export const NATIVE_TRANSPORT_RECOVERY_OPENCODE_VERSIONS: readonly string[];
+export function isNativeTransportRecoveryRuntimeVersion(version: unknown): boolean;
+export function recoveryPlanMode(observation: unknown, userIDs: readonly string[]): { planMode: boolean; preface: string | null };
+export function nativeTransportContinuation(plan: { planMode: boolean; preface: string | null }): {
+  parts: Array<{ type: 'text'; text: string; synthetic: true }>; planMode?: true };
+export function nativeTransportRecoveryMode(providerID: unknown, options: Pick<PrimaryRecoveryHostOptions, 'mode' | 'anthropicMode'>): 'off' | 'observe' | 'enforce';
 export interface PrimaryRecoveryExecutionRecord {
+  recoveredInput?: { inputID: string; payloadHash: string; enqueuedSeq: number; delivery: 'queue' | 'steer'; phase: 'adopted' };
+  recoveredInputDispositions?: Array<{ inputID: string; payloadHash: string; enqueuedSeq: number;
+    type: RecoveredInputType; delivery: 'queue' | 'steer' } & ({ phase: 'requested' } | { phase: 'cancelled'; eventID: string; eventSeq: number })>;
+  stepID:string|null;requestedAt:number|null;instanceID:string|null;
+  nativeStepWitness?:NativeFallbackWitness;
+  nativeFallback?:{userMessageID:string;tried:readonly string[];exhaustion:0|1|2;execution?:NativeFallbackExecution}
+    & ({stepID:string;pending?:never}|{stepID:null;pending:NativeFallbackPending});
+  recoveryExecution?:NativeFallbackExecution;
+  /** Set when the recovery is the host's native transport continuation with the record's own selection. */
+  recoveryKind?:'native_transport';
+  recoveryPrompt?:{messageID:string;model:{providerID:string;modelID:string};agent:string;variant:string;parts:readonly unknown[];tools:Record<string,boolean>;planMode?:true};
+  ownedNativeContinuation?: { kind: 'native-shell' | 'native-compaction' | 'native-stream'; sourceUserMessageID: string; userMessageID: string; assistantMessageID: string };
+  nativeStream?:{consumed:number;pending?:NativeStreamReservation;committed?:NativeStreamReservation};
+  nativeStreamReceipts?:NativeStreamContinuationReceipt[];
   rejections?: ObjectiveRejection[]; progress?: ObjectiveProgress; failureKind?: string | null;
   continuationID?: string; activeUserID?: string; recoverySourceUserID?: string; todoContinuationCount?: number;
+  nativeContinuation?: {messageID:string;sourceUserMessageID:string;sourceAssistantMessageID:string;cancellationGeneration:number;
+    kind:'builder_todo'|'orchestrator_todo'|'collect'|'verification';prompt:NativePrimaryContinuationPrompt};
   /** The objective an explicit continuation continued; compaction re-anchors to it. */ objectiveID?: string;
   builderTodoGuard?: { taskSetHash: string; progressHash: string; stagnantCount: number; progressCounts: Partial<Record<ObjectiveProgressKind, number>> };
   sessionID: string; directory: string; anchorID: string; providerID: string; modelID: string;
   agent: string; variant: string | null; tools: Record<string, boolean>; owner: string | null;
   recoveryID: string | null; failedID: string | null; state: PrimaryRecoveryState; attemptCount: number;
   cancellationGeneration: number; reason?: string | null;
+  /** Native accepted effective tuple, distinct from original request intent. */
+  executionGeneration?: 2;
   revision: number; guardedIDs: string[]; createdAt: number; updatedAt: number;
 }
 export function createPrimaryRecoveryController(options: {
+  isNativeFallbackError?:PrimaryRecoveryHostOptions['isNativeFallbackError'];
   classifyFailure?(error: unknown): string | null;
   directory: string; mode?: 'off' | 'observe' | 'enforce'; progressTimeoutMs?: number | false;
   anthropicMode?: PrimaryRecoveryHostOptions['anthropicMode'];
   isAnthropicConformant?: PrimaryRecoveryHostOptions['isAnthropicConformant'];
   isManaged(): boolean;
   verifyRecoveredCollection?: PrimaryRecoveryHostOptions['verifyRecoveredCollection'];
+  verifyOwnedNativeContinuation?: PrimaryRecoveryHostOptions['verifyOwnedNativeContinuation'];
+  /** Status-only live native dispatch proof; cannot authorize admission. */
+  isNativeRecoveryDispatchPending?: (record: PrimaryRecoveryExecutionRecord, liveDispatch?: { readonly itemHash?: string }) => Promise<boolean>;
   authorize(record: PrimaryRecoveryExecutionRecord): Promise<boolean>;
   observeTurn(record: PrimaryRecoveryExecutionRecord, options?: { signal: AbortSignal; includeTodos?: boolean; includeExecutionOutcomes?: boolean }): Promise<unknown>;
   abortSession(record: PrimaryRecoveryExecutionRecord): Promise<unknown>;
@@ -928,7 +1140,7 @@ export function createPrimaryRecoveryController(options: {
   createMessageID?(): string;
   getToolPolicy?(record: PrimaryRecoveryExecutionRecord): Promise<{ toolIDs: string[]; allowedReadTools: string[] }>;
 }): PrimaryRecoveryController & {
-  admit(input: { sessionID: string; directory: string; primary: boolean; owner?: string | null; body: unknown }): Promise<unknown>;
+  admit(input: { sessionID: string; directory: string; primary: boolean; owner?: string | null; body: unknown; executionGeneration?: 2 }, authorizeWrite?:()=>Promise<void>): Promise<unknown>;
   readRecord(sessionID: string): Promise<PrimaryRecoveryExecutionRecord | null>;
 };
 
@@ -944,20 +1156,35 @@ export interface ProjectDecision {
   createdAt: number; validUntil: number | null; supersedes: string | null; supersededBy?: string;
   validity?: 'active' | 'stale' | 'expired' | 'superseded';
 }
+export interface TaskContextInterfaceRef { taskId: string; checkName: string; paths: string[]; contentHash: string }
+export interface TaskContextPlanRef { sourceMessageId: string; version: string; phase: string; paths: string[]; contentHash: string }
 export interface TaskContextChild {
   taskId: string; rootSessionId: string; childSessionId: string | null; status: string; failureReason?: string | null;
+  approvedPlanRef?: TaskContextPlanRef; taskPrerequisites?: TaskContextInterfaceRef[];
+  waitingReason?: { kind: 'capacity' | 'system_pressure' | 'prerequisites'; activeCount: number; limit: number | null; since: number } | null;
   requiredChecks?: Array<{ name: string }>;
   requiredCheckReceipts?: Array<{ name: string; status: 'passed' | 'failed' | 'not-observed'; callId: string; messageId: string }>;
 }
 export interface TaskContextEnvelope { taskId: string; rootSessionId: string; envelopeId: string; action: string | null; autoResume?: { state: string; nextAttemptAt: number | null } | null }
+export interface TaskContextVerificationCheck {
+  name: string; status: 'pending' | 'passed' | 'failed' | 'blocked' | 'skipped' | 'waived'; reason: string;
+  coverage: { kind: 'declared-files'; paths: string[]; contentHash: string | null };
+  source?: { kind: 'objective'; objectiveId: string } | { kind: 'task'; taskId: string };
+  evidence: { callId: string; messageId: string | null; exitCode: number | null; observedAt: number; checkedContentHash: string | null } | null;
+}
+export interface TaskContextVerification {
+  objectiveId: string; ready: boolean; status: 'pending' | 'passed' | 'failed' | 'blocked' | 'skipped' | 'waived'; checks: TaskContextVerificationCheck[];
+}
 export interface TaskCheckpoint {
   schemaVersion: 1; kind: 'task'; sessionID: string; projectKey: string; updatedAt: number;
   anchor: { messageID: string; objective: string; complete: boolean; reference: { sessionID: string; messageID: string } };
   selectedPlan: { sourceSessionId: string; sourceMessageId: string; planIndex: number; projectDirectory?: string } | null;
   decisions: ProjectDecision[];
+  verification: (TaskContextVerification & { coverage: { returned: number; total: number; complete: boolean } }) | null;
   unresolvedWork: Array<{ id: string | null; status: string; content: string }>;
   children: Array<{ taskId: string; childSessionId: string | null; status: string; envelopeId: string | null; action: string | null;
     failureReason: string | null; recovery: { state: string; nextAttemptAt: number | null } | null;
+    approvedPlanRef?: TaskContextPlanRef; taskPrerequisites?: TaskContextInterfaceRef[]; waitingReason?: NonNullable<TaskContextChild['waitingReason']>;
     checks: Array<{ name: string; status: 'failed' | 'not-observed'; lastObservation: string; callId: string | null; messageId: string | null }> }>;
   childCoverage: { returned: number; total: number; complete: boolean };
   recovery: { state: string; reason: string | null; attemptCount: number; todoContinuationCount: number; cancellationGeneration: number; readOnly: boolean; activeUserID: string } | null;
@@ -969,7 +1196,7 @@ export type TaskContextRecord = TaskCheckpoint | ProjectContextRecord;
 export interface TaskContextScope { session: TaskContextSession; projectDirectory: string; projectIdentity: string; projectKey?: string }
 export interface TaskContextState {
   anchor: TaskContextMessage; primary?: PrimaryRecoveryExecutionRecord | null; tasks?: TaskContextChild[]; envelopes?: TaskContextEnvelope[];
-  todos?: Array<{ id?: string; status: string; content: string }>;
+  todos?: Array<{ id?: string; status: string; content: string }>; verification?: TaskContextVerification;
 }
 export interface TaskContextRequest { sessionID: string; directory: string; query?: string }
 export function validateTaskContextRecord(record: unknown): TaskContextRecord;
@@ -979,6 +1206,7 @@ export function formatCompactionAnchor(checkpoint: TaskCheckpoint, options?: { p
 export function formatChildCompactionAnchor(assignmentText: string): string;
 export function deriveTaskCheckpoint(input: TaskContextState & { session: TaskContextSession; projectKey: string; now?: number; sanitizeText?(value: string): string; decisions?: ProjectDecision[] }): TaskCheckpoint;
 export function createTaskContextRuntime(options: {
+  authorizeWrite?(input: { action: 'checkpoint' | 'remember_decision' | 'prune'; sessionID: string; directory: string }): Promise<void>;
   dataDirectory: string; store?: RecordStore<TaskContextRecord>; now?(): number; logger?: Pick<Console, 'warn'>;
   sanitizeText?(value: string): string; recordDiagnostic?(entry: Record<string, unknown>): unknown;
   withLock?<T>(key: string, run: () => Promise<T>): Promise<T>;
@@ -1006,3 +1234,24 @@ export function validateObjectiveProgress(value: unknown): void;
 export function applyObjectiveRejection(previous: ObjectiveRejection[] | undefined, input: { fingerprint: string; reason: ObjectiveRejection['reason']; callID: string; at: number }): { receipts: ObjectiveRejection[]; state: 'blocked' | 'duplicate' | 'tracking-capacity' | 'corrective-replan' | 'correct-input'; count: number | null };
 export function applyObjectiveProgress(previous: ObjectiveProgress | undefined, input: { kind: ObjectiveProgressKind; fingerprint: string; at: number }): ObjectiveProgress;
 export function projectObjectiveProgress(value: ObjectiveProgress | undefined): { policy: 'report-only'; lastUsefulAt: number | null; counts: Partial<Record<ObjectiveProgressKind, number>>; relevance: string };
+
+export const DATA_ROOT_MIGRATION_MARKER: '.devryan-migration.json';
+export type DataRootMigrationOutcome = 'explicit' | 'unsupported_platform' | 'none' | 'current' | 'linked'
+  | 'migrated' | 'merged' | 'deferred' | 'kept_in_place';
+export interface DataRootMigrationResult {
+  outcome: DataRootMigrationOutcome;
+  root?: string;
+  code?: string;
+  conflicts?: string[];
+  conflictDirectory?: string | null;
+}
+export function isLegacyDataRootBusy(legacy: string, options?: { fs?: unknown; isAlive?: (pid: number) => boolean }): Promise<boolean>;
+export function migrateLegacyDataRoot(options?: {
+  env?: Record<string, string | undefined>;
+  home?: string;
+  platform?: NodeJS.Platform;
+  fs?: unknown;
+  now?: () => Date;
+  isBusy?: (legacy: string) => Promise<boolean>;
+  lockOptions?: Record<string, unknown>;
+}): Promise<DataRootMigrationResult>;

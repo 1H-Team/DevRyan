@@ -3,20 +3,27 @@ import http from 'node:http';
 import path from 'node:path';
 import { test } from 'node:test';
 import vm from 'node:vm';
-import { createLoopbackOpenCodeFixture } from './loopback-opencode-fixture.mjs';
+import { createLoopbackOpenCodeV2Fixture } from './loopback-opencode-v2-fixture.mjs';
+import { createOpenCodeClient } from '../../packages/web/server/lib/opencode/opencode-client/index.js';
 import { createQaUiDriver } from '../qa/ui-driver.mjs';
 import {
   captureFirstDocumentStartup,
+  waitForStartupCatalog,
   captureMemoryCheckpoint,
+  canonicalHistoryPage,
   assertEarlierCanonicalHistory,
   historyCoverage,
   loadOlderHistoryPage,
   observeStartupNavigation,
   prepareMemorySessions,
+  readFixtureCanonicalMessage,
+  revealEarlierHistoryWindow,
+  parseStartupPhaseLogs,
   projectRendererMemory,
   selectedFixtureModelIsAvailable,
   SESSION_MEMORY_FIXTURE,
   summarizeMemoryCheckpoints,
+  sanitizeStartupPhases,
 } from './electron-lifecycle-benchmark.mjs';
 
 const host = { process: { heapUsed: 99999 }, appMetrics: [
@@ -25,6 +32,39 @@ const host = { process: { heapUsed: 99999 }, appMetrics: [
 ] };
 const heap = { usedSize: 123, totalSize: 456 };
 const dom = { documents: 1, nodes: 20, jsEventListeners: 5 };
+
+test('catalog readiness records warmup errors and still requires a successful bounded response', async t => {
+  let statuses = [503, 500, 200];
+  let holdResponse = false;
+  const server = http.createServer((_request, response) => {
+    if (holdResponse) return;
+    response.statusCode = statuses.length > 1 ? statuses.shift() : statuses[0];
+    response.end(JSON.stringify({ connected: ['fixture'] }));
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); });
+  const origin = `http://127.0.0.1:${server.address().port}`, observed = [];
+  assert.deepEqual(await waitForStartupCatalog(origin, { onResponse: status => observed.push(status) }), { connected: ['fixture'] });
+  assert.deepEqual(observed, [503, 500, 200]);
+  statuses = [403];
+  await assert.rejects(waitForStartupCatalog(origin), /failed \(403\)/);
+  statuses = [503];
+  await assert.rejects(waitForStartupCatalog(origin, { timeoutMs: 30 }), /readiness timed out/);
+  holdResponse = true;
+  await assert.rejects(waitForStartupCatalog(origin, { timeoutMs: 30 }), /readiness timed out/);
+});
+
+test('catalog deadline normalizes fetch timeout wrappers while preserving other failures', async () => {
+  const timer = setInterval(() => {}, 1000);
+  try {
+    await assert.rejects(waitForStartupCatalog('http://fixture', { timeoutMs: 10, fetchCatalog: async (_url, { signal }) => {
+      await new Promise(resolve => signal.addEventListener('abort', resolve, { once: true }));
+      throw new DOMException('wrapped timeout', 'TimeoutError');
+    } }), /readiness timed out/);
+    const failure = Error('connection failed');
+    await assert.rejects(waitForStartupCatalog('http://fixture', { fetchCatalog: async () => { throw failure; } }), error => error === failure);
+  } finally { clearInterval(timer); }
+});
 
 test('a buffered history reveal must prove older canonical content in the exact session', () => {
   const row = (id, created, sessionID = 'ses_history') => ({ info: { id, sessionID, time: { created } }, parts: [{ type: 'text', text: id }] });
@@ -37,17 +77,28 @@ test('a buffered history reveal must prove older canonical content in the exact 
 });
 
 test('fixture preparation owns four independent histories without submitting prompts', async () => {
-  const fixture = await createLoopbackOpenCodeFixture({ directory: path.resolve('.cache/perf/lifecycle-unit-workspace') });
+  const fixture = await createLoopbackOpenCodeV2Fixture({ directory: path.resolve('.cache/perf/lifecycle-unit-workspace') });
   try {
+    const client = createOpenCodeClient({ getRuntime: () => ({ generation: 2, baseUrl: fixture.origin }), getAuthHeaders: () => fixture.authHeaders });
     const sessions = await prepareMemorySessions(fixture);
     assert.equal(sessions.length, 4);
     assert.equal(new Set(sessions.map(session => session.id)).size, 4);
     for (const session of sessions) {
-      const response = await fetch(`${fixture.origin}/session/${session.id}/message?limit=1000`);
-      const rows = await response.json();
+      const rows = (await client.sessions.messages(session.id, { limit: 1000 }, { directory: fixture.directory })).records;
       assert.equal(rows.length, SESSION_MEMORY_FIXTURE.turns * 2);
-      assert.equal(rows.at(-1).parts[0].text.length, SESSION_MEMORY_FIXTURE.textBytes);
+      assert.equal(rows.at(-1).parts.find(part => part.type === 'text').text.length, SESSION_MEMORY_FIXTURE.textBytes);
       assert.equal(rows[0].info.sessionID, session.id);
+      const beforeWitness = fixture.getState().messagePageRequests.length;
+      const canonical = await readFixtureCanonicalMessage(fixture, session.id, rows[0].info.id);
+      assert.equal(canonical.info.id, rows[0].info.id);
+      assert.equal(canonical.info.sessionID, session.id);
+      assert.deepEqual(canonical.parts, rows[0].parts);
+      const assistant = await readFixtureCanonicalMessage(fixture, session.id, rows[1].info.id);
+      assert.equal(assistant.info.id, rows[1].info.id);
+      assert.equal(assistant.parts.find(part => part.type === 'text').text, rows[1].parts.find(part => part.type === 'text').text);
+      assert.equal(fixture.getState().messagePageRequests.length, beforeWitness, 'Canonical witnesses must not manufacture UI page coverage');
+      assert.equal(historyCoverage(fixture.getState().messagePageRequests.filter(page => page.sessionID === session.id)), session.expectedMessages,
+        'Authenticated v2 pagination must prove the complete exact history');
     }
     assert.equal(fixture.getState().receivedPrompts.length, 0);
   } finally { await fixture.close(); }
@@ -66,18 +117,50 @@ test('history coverage ignores overlapping adaptive snapshots and counts a conti
   assert.equal(historyCoverage([{ before: 'unrelated', returned: 900, firstMessageID: 'm000' }]), 0);
 });
 
+test('v2 history proof follows only actual descending next-cursor anchors and rejects discontinuity', () => {
+  const page = (cursorAnchor, returned, firstMessageID, lastMessageID) => ({ order: 'desc', type: null,
+    cursor: cursorAnchor !== null, cursorAnchor, cursorDirection: cursorAnchor === null ? null : 'next', returned, firstMessageID, lastMessageID });
+  const pages = [page(null, 50, 'm359', 'm310'), page('m310', 200, 'm309', 'm110'), page('m110', 110, 'm109', 'm000')];
+  assert.equal(historyCoverage(pages), 360);
+  assert.equal(canonicalHistoryPage(pages[1]).before, 'm310');
+  assert.equal(canonicalHistoryPage(pages[1]).firstMessageID, 'm110');
+  assert.equal(historyCoverage([pages[0], { ...pages[1], cursorAnchor: 'unrelated' }, pages[2]]), 50);
+  for (const change of [{ cursorDirection: 'previous' }, { order: 'asc' }, { type: 'assistant' }, { cursorAnchor: null }, { cursor: false }]) {
+    assert.equal(historyCoverage([pages[0], { ...pages[1], ...change }, pages[2]]), 50);
+  }
+});
+
+test('a prepended canonical text witness is revealed through trusted input after anchor restoration', async t => {
+  const fixture = await createLoopbackOpenCodeV2Fixture({ directory: path.resolve('.cache/perf/lifecycle-unit-workspace') });
+  t.after(() => fixture.close());
+  fixture.seedHistory('ses_perfparent', { turns: 2, textBytes: 256 });
+  const client = createOpenCodeClient({ getRuntime: () => ({ generation: 2, baseUrl: fixture.origin }), getAuthHeaders: () => fixture.authHeaders });
+  const rows = (await client.sessions.messages('ses_perfparent', { limit: 10 }, { directory: fixture.directory })).records;
+  const older = rows[0], newer = rows[2]; let clicked = false, revealed = false;
+  const cdp = { send: async (_method, { expression }) => ({ result: { value: expression.includes('atTop:true')
+    ? { atTop: true } : clicked ? older.info.id : newer.info.id } }) };
+  const ui = { click: async () => { clicked = true; }, waitFor: async (_label, action) => action(),
+    waitVisibleText: async () => { throw new Error('Canonical text is clipped until trusted reveal'); },
+    revealText: async (text, selector, options) => {
+      assert.equal(text, older.parts.find(part => part.type === 'text').text);
+      assert.ok(selector.includes(older.info.id));
+      assert.deepEqual(options, { scrollContainer: '[data-scrollbar="chat"]', direction: 'up' });
+      revealed = true;
+    } };
+  const result = await revealEarlierHistoryWindow({ session: { id: 'ses_perfparent' }, cdp, ui, fixture });
+  assert.equal(revealed, true);
+  assert.equal(result.beforeMessageID, newer.info.id);
+  assert.equal(result.firstMessageID, older.info.id);
+});
+
 test('Load Older requires this click’s fresh contiguous page and visible canonical row, independent of scroll height', async t => {
-  const session = { id: 'ses_history', expectedMessages: 360 };
+  const session = { id: 'ses_perfparent', expectedMessages: 360 };
   const firstMessageID = 'msg_110';
   const canonicalText = 'History request 56';
-  const server = http.createServer((request, response) => {
-    assert.equal(request.url, `/session/${session.id}/message/${firstMessageID}`);
-    response.setHeader('Content-Type', 'application/json');
-    response.end(JSON.stringify({ info: { id: firstMessageID, sessionID: session.id, role: 'user' },
-      parts: [{ type: 'text', text: canonicalText }] }));
-  });
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  t.after(async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); });
+  const wire = await createLoopbackOpenCodeV2Fixture({ directory: path.resolve('.cache/perf/lifecycle-unit-workspace') });
+  wire.replayRecoveryVisual({ sessionID: session.id, rows: [{ info: { id: firstMessageID, sessionID: session.id, role: 'user', time: { created: 110 } },
+    parts: [{ id: 'prt_historycanonical', sessionID: session.id, messageID: firstMessageID, type: 'text', text: canonicalText }] }] });
+  t.after(() => wire.close());
   for (const failure of [undefined, 'adaptive initial snapshot', 'unrelated after adaptive snapshot', 'HTTP only', 'unchanged page', 'stale page', 'wrong session', 'absent DOM', 'wrong text']) {
     await t.test(failure ?? 'same-height canonical commit', async () => {
       const pages = [
@@ -123,7 +206,7 @@ test('Load Older requires this click’s fresh contiguous page and visible canon
         assert.deepEqual(options, { scrollContainer: '[data-scrollbar="chat"]', direction: 'up' });
         reveals += 1;
       };
-      const fixture = { origin: `http://127.0.0.1:${server.address().port}`,
+      const fixture = { ...wire,
         getState: () => ({ messagePageRequests: structuredClone(pages) }) };
       const run = loadOlderHistoryPage({ session, ui, fixture, messagePageRequestOffset: 1 });
       if (failure && failure !== 'adaptive initial snapshot') await assert.rejects(run, undefined, `${failure} must not count as a UI page commit`);
@@ -336,4 +419,119 @@ test('startup requires the actual selected model to resolve in both UI and conne
   assert.equal(selectedFixtureModelIsAvailable({ ...snapshot, selectedModel: { ...snapshot.selectedModel, catalogAvailable: false } }, catalog), false);
   assert.equal(selectedFixtureModelIsAvailable(snapshot, { ...catalog, connected: [] }), false);
   assert.equal(selectedFixtureModelIsAvailable(snapshot, { ...catalog, all: [] }), false);
+});
+
+test('startup evidence separates host availability, native readiness and usable UI without admitting a failure splash', async t => {
+  for (const terminal of [false, true]) await t.test(terminal ? 'terminal failure' : 'delayed ready', async child => {
+    let healthCalls = 0;
+    let catalogCalls = 0;
+    const server = http.createServer((request, response) => {
+      response.setHeader('Content-Type', 'application/json');
+      if (request.url === '/api/provider') {
+        catalogCalls++;
+        response.end(JSON.stringify({ connected: ['fixture'], all: [{ id: 'fixture', models: { 'fixture-model': {} } }] }));
+      } else {
+        healthCalls++;
+        response.end(JSON.stringify({ isOpenCodeReady: !terminal && healthCalls > 1,
+          openCodeStartup: { state: terminal ? 'failed' : healthCalls > 1 ? 'ready' : 'starting', attempt: 4,
+            code: terminal ? 'NATIVE_BOOT_FAILED' : null }, lastOpenCodeError: 'sensitive host details' }));
+      }
+    });
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    child.after(async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); });
+    const cdp = { on: () => () => {}, send: async () => ({ result: { value: readyStartupSnapshot('visible') } }) };
+    const result = await captureFirstDocumentStartup({ cdp, origin: `http://127.0.0.1:${server.address().port}`,
+      fixture: { getState: () => ({ sseClientCount: 1 }) }, startedAt: performance.now(),
+      readStartupPhases: () => [{ phase: 'initial_url', outcome: 'completed', elapsedMs: 17, directory: '/private' }] });
+    assert.equal(result.nativeStartupObservation, 'observed');
+    assert.deepEqual(result.electronStartupPhases.records, [{ phase: 'initial_url', outcome: 'completed', durationMs: 17 }]);
+    assert.equal(JSON.stringify(result).includes('sensitive host details'), false);
+    assert.equal(JSON.stringify(result).includes('/private'), false);
+    if (terminal) {
+      assert.equal(result.outcome, 'failed');
+      assert.equal(result.startupFailure.code, 'NATIVE_BOOT_FAILED');
+      assert.equal(result.startupFailure.attempt, 4);
+      assert.equal(healthCalls, 1);
+      assert.equal(catalogCalls, 0);
+      assert.equal(result.uiReadyMs, undefined);
+    } else {
+      assert.equal(result.outcome, 'passed');
+      assert.deepEqual(result.healthObservations.map(record => record.state), ['starting', 'ready']);
+      assert.ok(result.nativeStartupReadyMs >= result.hostAvailableMs);
+      assert.ok(result.hostReadyMs >= result.nativeStartupReadyMs);
+      assert.ok(result.fixtureCatalogReadyMs >= result.hostReadyMs);
+      assert.ok(result.uiReadyMs >= result.fixtureCatalogReadyMs);
+    }
+  });
+});
+
+test('startup phase projection keeps durations and fixed codes without paths or arbitrary log payloads', () => {
+  const logs = `[electron] startup phase { phase: 'initial_url', outcome: 'completed', elapsedMs: 12, secret: 'private' }\n`
+    + `[electron] startup phase {\n phase: 'service_connection', outcome: 'failed', elapsedMs: 15, code: 'runtime_service_not_registered' }\n`
+    + `[runtime-bundle] startup phase { phase: 'bundle_upgrade', outcome: 'completed', elapsedMs: 42 }`;
+  assert.deepEqual(sanitizeStartupPhases(parseStartupPhaseLogs(logs)), [
+    { phase: 'initial_url', outcome: 'completed', durationMs: 12 },
+    { phase: 'service_connection', outcome: 'failed', durationMs: 15, code: 'runtime_service_not_registered' },
+    { phase: 'bundle_upgrade', outcome: 'completed', durationMs: 42 },
+  ]);
+  assert.deepEqual(sanitizeStartupPhases([{ phase: '/private/path', outcome: 'completed', elapsedMs: 3 },
+    { phase: 'service', outcome: 'failed', elapsedMs: 2, code: 'secret token' },
+    { phase: 'service', outcome: 'completed', elapsedMs: -1 }]), [
+    { phase: 'service', outcome: 'failed', durationMs: 2, code: null },
+  ]);
+});
+
+test('native startup requires its exact model/agent tuple and an authoritative event-stream acknowledgement', async t => {
+  const tuple = { providerId: 'devryan-smoke', modelId: 'smoke-write', agent: 'builder' };
+  const server = http.createServer((request, response) => {
+    response.setHeader('Content-Type', 'application/json');
+    response.end(JSON.stringify(request.url === '/api/provider'
+      ? { connected: [tuple.providerId], all: [{ id: tuple.providerId, models: { [tuple.modelId]: {} } }] }
+      : { isOpenCodeReady: true }));
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); });
+  let reads = 0;
+  const cdp = { on: () => () => {}, send: async () => {
+    reads++;
+    return { result: { value: { ...readyStartupSnapshot('visible'),
+      selectedModel: { ...tuple, agent: reads < 3 ? 'wrong-agent' : tuple.agent, catalogAvailable: true } } } };
+  } };
+  const result = await captureFirstDocumentStartup({ cdp, origin: `http://127.0.0.1:${server.address().port}`,
+    startedAt: performance.now(), runtimeUiTuple: tuple, isEventStreamReady: () => reads >= 4,
+    proveComposerUsable: async () => ({ outcome: 'passed', unsent: true }) });
+  assert.equal(result.outcome, 'passed');
+  assert.equal(reads, 4);
+  assert.deepEqual(result.composerProof, { outcome: 'passed', unsent: true });
+  assert.ok(result.uiReadyMs >= result.controlsReadyMs);
+  assert.ok(result.eventStreamReadyMs >= result.fixtureCatalogReadyMs);
+  assert.match(result.scope, /actual native backend; local HTTP model fixture/);
+  assert.equal(result.nativeStartupObservation, 'unavailable');
+  await assert.rejects(captureFirstDocumentStartup({ cdp, startedAt: 0, runtimeUiTuple: tuple }), /authoritative event-stream readiness/);
+  await assert.rejects(captureFirstDocumentStartup({ cdp, startedAt: 0, runtimeUiTuple: tuple,
+    isEventStreamReady: () => true }), /independent composer usability proof/);
+});
+
+
+test('foreground admission uses the owned shell focus command once and still requires a later visible snapshot', async t => {
+  const origin = await startupTestHost(t);
+  let focused = false, requests = 0, reads = 0;
+  const methods = [];
+  const cdp = { on: () => () => {}, send: async method => {
+    methods.push(method);
+    assert.equal(method, 'Runtime.evaluate');
+    reads++;
+    return { result: { value: readyStartupSnapshot(focused ? 'visible' : 'hidden') } };
+  } };
+  const result = await captureFirstDocumentStartup({ cdp, fixture: { getState: () => ({ sseClientCount: 1 }) },
+    origin, startedAt: performance.now(), startupMode: 'foreground',
+    foregroundWindow: { method: 'desktop_focus_main_window', activate: async () => { requests++; focused = true; return { focused: true }; } } });
+  assert.equal(result.outcome, 'passed');
+  assert.equal(requests, 1);
+  assert.ok(reads >= 3);
+  assert.equal(result.foregroundActivation.method, 'desktop_focus_main_window');
+  assert.deepEqual(result.foregroundActivation.acknowledgement, { focused: true });
+  assert.equal(result.document.visibilityState, 'visible');
+  assert.ok(result.uiReadyMs > result.foregroundActivation.acknowledgedAtMs);
+  assert.equal(result.forcedNavigations, 0);
 });

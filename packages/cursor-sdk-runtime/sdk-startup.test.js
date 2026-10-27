@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
+import { copyFile, mkdir, mkdtemp, readdir, realpath, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 
 const waitForPersistentWorkerReady = () => new Promise((resolve, reject) => {
   const child = spawn('node', ['./persistent-worker.mjs'], {
@@ -39,6 +42,78 @@ const waitForPersistentWorkerReady = () => new Promise((resolve, reject) => {
 });
 
 describe('Cursor SDK startup compatibility', () => {
+  test('confined one-shot worker initializes SQLite in its private scratch before sending the prompt', async () => {
+    const directory = await realpath(await mkdtemp(path.join(os.tmpdir(), 'devryan-cursor-confined-worker-')));
+    let child;
+    try {
+      for (const name of await readdir(import.meta.dirname)) {
+        if (/\.(mjs|js)$/.test(name) && !name.includes('.test.')) {
+          await copyFile(path.join(import.meta.dirname, name), path.join(directory, name));
+        }
+      }
+      const sdk = path.join(directory, 'node_modules/@cursor/sdk');
+      await mkdir(sdk, { recursive: true });
+      await writeFile(path.join(directory, 'package.json'), '{"type":"module"}');
+      await writeFile(path.join(sdk, 'package.json'), JSON.stringify({ type: 'module', exports: { '.': './index.js', './sqlite': './sqlite.js' } }));
+      await writeFile(path.join(sdk, 'sqlite.js'), `
+        import assert from 'node:assert/strict';
+        import path from 'node:path';
+        export const SqliteLocalAgentStore = { async open({ workspaceRef, stateRoot }) {
+          assert.equal(workspaceRef, process.cwd());
+          assert.equal(stateRoot, path.join(process.env.HOME, 'cursor-sdk-state'));
+          return { confinedFixture: true };
+        } };
+      `);
+      await writeFile(path.join(sdk, 'index.js'), `
+        import assert from 'node:assert/strict';
+        let configured = false;
+        export function configureCursorSdk({ local: { store } }) { assert.equal(store.confinedFixture, true); configured = true; }
+        export const Agent = { async create() {
+          assert.equal(configured, true);
+          return { agentId: 'fixture-agent', async send({ text }, { onDelta }) {
+            assert.equal(text, 'confined fixture');
+            onDelta({ type: 'turn-ended', usage: { inputTokens: 1 } });
+            onDelta({ type: 'unrecognized-private-event', text: 'private callback text' });
+            onDelta({ type: 'text-delta', text: 'callback text must not be replayed' });
+            onDelta({ type: 'thinking-delta', text: 'private reasoning' });
+            return { id: 'fixture-run', status: 'finished',
+              async *stream() { yield { type: 'assistant', message: { content: [{ type: 'text', text: 'confined ok' }] } }; },
+              async wait() { return { status: 'finished', result: 'confined ok' }; },
+              async conversation() { return [{type:'agentConversationTurn',turn:{steps:[{type:'assistantMessage',message:{text:'confined ok'}}]}}]; }
+            };
+          } };
+        } };
+      `);
+      child = spawn('node', [path.join(directory, 'node-worker.mjs')], {
+        cwd: directory, stdio: ['pipe', 'pipe', 'pipe'],
+        env: { ...process.env, HOME: directory, TMPDIR: directory, DEVRYAN_EXECUTION_WORKER: '1' },
+      });
+      let stdout = '', stderr = '';
+      child.stdout.on('data', chunk => { stdout += chunk; });
+      child.stderr.on('data', chunk => { stderr += chunk; });
+      const exit = new Promise((resolve, reject) => { child.once('error', reject); child.once('close', resolve); });
+      child.stdin.end(JSON.stringify({ apiKey: 'synthetic-fixture', modelID: 'fixture', directory, prompt: 'confined fixture', readOnly: true }));
+      expect(await exit).toBe(0);
+      expect(stderr).toBe('');
+      const events = stdout.trim().split('\n').map(line => JSON.parse(line));
+      expect(events.some(event => event.type === 'error')).toBe(false);
+      const deltaTimings = events.filter(event => event.type === 'timing' && event.mark === 'cursor_first_sdk_delta');
+      expect(deltaTimings).toEqual([{ type: 'timing', mark: 'cursor_first_sdk_delta' }]);
+      expect(events.findIndex(event => event.type === 'usage')).toBeLessThan(events.indexOf(deltaTimings[0]));
+      expect(stdout).not.toContain('private callback text');
+      expect(stdout).not.toContain('callback text must not be replayed');
+      expect(stdout).not.toContain('private reasoning');
+      expect(events.filter(event => event.type === 'message' && event.message.type === 'assistant')).toEqual([
+        { type: 'message', message: { type: 'assistant', message: { content: [{ type: 'text', text: 'confined ok' }] } } },
+      ]);
+      expect(events.find(event => event.type === 'final-result')?.result).toMatchObject({ ok: true, finalText: 'confined ok' });
+      expect(events.find(event => event.type === 'done')?.status).toBe('finished');
+    } finally {
+      if (child?.exitCode === null) child.kill('SIGKILL');
+      await rm(directory, { recursive: true, force: true });
+    }
+  }, 15_000);
+
   test('loads the installed SDK and starts the persistent Node worker', async () => {
     const child = await waitForPersistentWorkerReady();
     const exitCode = await new Promise((resolve) => child.once('exit', resolve));

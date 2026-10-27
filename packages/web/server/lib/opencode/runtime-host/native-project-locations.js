@@ -1,0 +1,51 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import {nativeWebfetchBinaryDirectory} from './native-read-paths.js';
+
+const fail=code=>Object.assign(new Error(code),{code,status:403,statusCode:403});
+const within=(root,file)=>file===root||file.startsWith(root+path.sep);
+
+/** Registered project settings are the existing durable owner. Request paths
+ * alone never add a native location; every boot rederives canonical scopes.
+ * `listProjectWorktrees` names the app-created linked worktrees of a project;
+ * an unsafe or unreadable worktree is skipped, never fatal to the project list. */
+export function createNativeProjectLocations({baseLocations,launch,getRegisteredProjects,listProjectWorktrees}) {
+ const protectedRoots=[...new Set([...baseLocations.flatMap(location=>location.protectedRoots??[]),launch.webDataDirectory,
+  launch.webConfigDirectory,launch.opencodeConfigDirectory,...Object.values(launch.global)])];
+ return async()=>{
+  const projects=await getRegisteredProjects();
+  if(!Array.isArray(projects)||projects.length>128)throw fail('native_project_directory_invalid');
+  const locations=baseLocations.map(location=>({...location,readRoots:[...(location.readRoots??[location.directory]),
+   nativeWebfetchBinaryDirectory(launch.global.tmp,location.directory)],protectedRoots:[...new Set([...(location.protectedRoots??[]),...protectedRoots])]}));
+  // A sealed root may name a pre-rename path that is now a link (for example
+  // ~/.config/openchamber); project directories are canonical, so compare both.
+  const canonicalRoots=[...new Set([...protectedRoots,...await Promise.all(protectedRoots.map(root=>fs.realpath(root).catch(()=>root)))])];
+  for(const project of projects){
+   const directory=project?.path;
+   if(typeof directory!=='string'||!path.isAbsolute(directory)||directory!==path.resolve(directory)||/[\u0000-\u001f]/.test(directory))throw fail('native_project_directory_invalid');
+   if(locations.some(location=>location.directory===directory))continue;
+   // A removed saved project is still inspectable in settings; it does not
+   // grant a location or prevent unrelated valid projects from opening.
+   const stat=await fs.lstat(directory).catch(error=>{if(error.code==='ENOENT')return undefined;throw error;});
+   if(!stat)continue;
+   if(!stat.isDirectory()||stat.isSymbolicLink()||await fs.realpath(directory)!==directory)throw fail('native_project_directory_invalid');
+   if(canonicalRoots.some(root=>within(root,directory)))throw fail('native_project_directory_protected');
+   locations.push({directory,readRoots:[directory,nativeWebfetchBinaryDirectory(launch.global.tmp,directory)],protectedRoots});
+  }
+  if(locations.length>128)throw fail('native_project_directory_invalid');
+  if(typeof listProjectWorktrees==='function'){
+   for(const project of locations.slice()){
+    for(const directory of await listProjectWorktrees(project.directory).catch(()=>[])){
+     if(locations.length>=128)break;
+     if(typeof directory!=='string'||!path.isAbsolute(directory)||directory!==path.resolve(directory)||/[\u0000-\u001f]/.test(directory)
+      ||locations.some(location=>location.directory===directory))continue;
+     const stat=await fs.lstat(directory).catch(()=>undefined);
+     if(!stat?.isDirectory()||stat.isSymbolicLink()||await fs.realpath(directory).catch(()=>undefined)!==directory
+      ||canonicalRoots.some(root=>within(root,directory)))continue;
+     locations.push({directory,readRoots:[directory,nativeWebfetchBinaryDirectory(launch.global.tmp,directory)],protectedRoots});
+    }
+   }
+  }
+  return locations;
+ };
+}

@@ -6,12 +6,14 @@ This module fetches quota and usage signals for supported providers in the web s
 ## Entrypoints and structure
 - `packages/web/server/lib/quota/index.js`: public entrypoint imported by `packages/web/server/index.js`.
 - `packages/web/server/lib/quota/routes.js`: Express route registration for quota endpoints.
-- `packages/web/server/lib/quota/providers/index.js`: provider registry, configured-provider list, and provider dispatcher.
+- `packages/web/server/lib/quota/providers/index.js`: provider registry, configured-provider list, provider dispatcher, and the exported alias resolver `resolveProviderId`.
+- `packages/web/server/lib/quota/native-credentials.js`: native-runtime credential source for `codex` (OpenAI), `xai` and `opencode-go` (see Native runtime credentials).
 - `packages/web/server/lib/quota/providers/interface.js`: JSDoc provider contract used as implementation reference.
 - `packages/web/server/lib/quota/credentials/`: allowlisted managed-credential normalization, private atomic storage, and explicit Cursor import.
 - `packages/web/server/lib/quota/providers/google/`: Google/Gemini auth-source API and transform modules. Antigravity quota was removed with the retired Antigravity plugin; its account files are only discovered by the provider disconnect route (`listAntigravityAccountsPaths` in `utils/auth.js`).
+- Antigravity disconnect scans current `.devryan/runtime-agent-overlays` accounts first, then historical `.openchamber/runtime-agent-overlays` accounts.
 - `packages/web/server/lib/quota/utils/`: shared auth, transform, and formatting helpers.
-- `@openchamber/shared-runtime/lib/quota-adapters.js`: injected request/parsing contract  for OpenCode Zen, z.ai, Kimi, Codex, xAI, and DeepSeek.
+- `@devryan/shared-runtime/lib/quota-adapters.js`: injected request/parsing contract  for OpenCode Zen, z.ai, Kimi, Codex, xAI, and DeepSeek.
 
 ## Supported provider IDs (dispatcher)
 
@@ -40,7 +42,31 @@ These provider IDs are currently dispatchable via `fetchQuotaForProvider(provide
 
 ## Codex reset-bank credits
 
-The Codex provider uses the OpenAI/ChatGPT OAuth entry (`openai`, `codex`, or `chatgpt`) and fetches the standard usage payload from `https://chatgpt.com/backend-api/wham/usage`. When possible it also makes a best-effort request to the private `https://chatgpt.com/backend-api/wham/rate-limit-reset-credits` endpoint to display reset-bank credits with per-credit expiry dates.
+Native **Codex browser (legacy)** (`chatgpt-browser`) uses the selected OpenCode
+credential for chat and usage. `native-credentials.js` first reads secret-free
+metadata, then obtains the selected value through the private owner read,
+verifying directory, integration and credential ID. Only its access token and
+actual `metadata.accountID` reach the injected Codex fetcher. Usage and optional reset-bank reads reject redirects and bound time/response size.
+No refresh token is forwarded and usage never renews or persists credentials. OpenCode owns refresh
+inside the host's serialized resolution commit during provider requests.
+
+The fetcher reads `https://chatgpt.com/backend-api/wham/usage` and makes a bounded,
+best-effort reset-credit lookup. Results identify the selected connection with
+an opaque ID; account email is absent. Changing connections invalidates old
+figures through the existing quota store contract. A missing weekly window is
+not invented. The separate Codex app-server profile, enrollment routes and UI
+have been removed; `/api/quota/codex/connection*` no longer exists. Existing
+private usage profiles are not imported, migrated or deleted automatically.
+
+Existing `chatgpt-token-sharing` and retired OAuth rows remain metadata-only for
+usage. They return compatible `siwc_usage_unavailable` with a Codex sign-in hint,
+without a provider request. The built-in credential investigation
+returned HTTP 401 `no_matching_rule`; the subsequent isolated native Codex
+probe passed chat and returned HTTP 200 with one recognized allowance window.
+
+External OpenCode's compatible OAuth entry (`openai`, `codex`, or `chatgpt`)
+continues to use the existing legacy usage fetcher. This does not establish
+support for token-sharing credentials.
 
 Codex rate-limit window labels are derived from each window's `limit_window_seconds`, not from whether OpenAI reports it as `primary_window` or `secondary_window`. A 5-hour duration maps to `5h`, a 7-day duration maps to `weekly`, and other positive durations use the shared duration-label convention. If duration metadata is absent or invalid, the compatibility fallback remains primary → `5h` and secondary → `weekly`.
 
@@ -48,7 +74,7 @@ The reset-credit endpoint is undocumented and can change independently of the st
 
 ## Shared provider adapters
 
-OpenCode Zen, z.ai, Kimi, Codex, xAI, DeepSeek, and OpenCode Go host modules are deliberately thin: credential discovery and persistence stay in the host, while requests and payload normalization live in `@openchamber/shared-runtime`. This keeps web/Electron output equivalent and makes adapters independently testable with injected `fetch` and clock functions.
+OpenCode Zen, z.ai, Kimi, Codex, xAI, DeepSeek, and OpenCode Go host modules are deliberately thin: credential discovery and persistence stay in the host, while requests and payload normalization live in `@devryan/shared-runtime`. This keeps web/Electron output equivalent and makes adapters independently testable with injected `fetch` and clock functions.
 
 xAI requests the pinned CLI billing endpoint with manual redirect handling. Redirects are rejected, and an HTTP 401 permits one refresh-and-retry when a refresh token and host persistence callback are available; otherwise the result asks the user to re-authenticate. A recognized weekly or monthly period with a valid reset timestamp and an omitted percentage is normalized as zero usage to account for protobuf default-value omission; an explicitly malformed percentage remains a warning. After billing succeeds, the shared adapter uses the effective OAuth access token for a bounded, best-effort request to the private `https://grok.com/prod_mc_billing.ConsumerUiSvc/GetRemainingResets` gRPC-Web method. It exposes only the number and expiry dates of valid banked resets through the existing reset-credit contract; provider token IDs remain private and redemption is intentionally unsupported. Empty inventories are omitted. Authentication, protocol, redirect, timeout, oversized-body, and parse failures preserve the successful billing result and add a sanitized warning. DeepSeek maps available currency balances to value-only rows because the API does not expose a percentage window.
 
@@ -57,6 +83,7 @@ xAI requests the pinned CLI billing endpoint with manual redirect handling. Redi
 - `providers/claude-meridian.js` validates and queries the active local `opencode-with-claude`/Meridian runtime through bounded loopback-only quota and per-session context endpoints. Context lookup resolves and caches the OpenCode → Claude session mapping, coalesces reads per session, and refreshes that mapping after native compaction.
 - `providers/claude-code-usage.js` is the compatibility fallback for older Meridian releases. It runs the local, non-billable `/usage` command with JSON output and no session persistence.
 - `providers/claude-code-status.js` reads legacy status-line JSON only as degraded last-known data. A status-line result is never reported as a successful fresh quota read, and quota reads never install or modify Claude status-line settings.
+- New managed Claude status-line scripts and JSON live in `~/.cache/devryan`; the reader falls back to `~/.cache/openchamber/claude-code-status.json` when the new file is absent. Setup recognizes an existing managed `~/.cache/openchamber/claude-code-status-line.sh` command without replacing the user's Claude settings.
 
 ## Anthropic usage sources
 
@@ -95,7 +122,7 @@ The host (`providers/opencode.js`) refreshes an access token within 60 seconds o
 
 The managed layer is additive and does not replace or mutate existing provider auth. Canonical provider IDs are `opencode`, `ollama-cloud`, and `cursor-acp`; HTTP callers may use `zen`/`opencode-zen` and `cursor` as aliases, but discovery exposes only canonical rows. OpenCode Go's retired dashboard form is no longer exposed.
 
-- Files live under `${OPENCHAMBER_DATA_DIR ?? ~/.config/openchamber}/quota/<provider>.json`.
+- Files live under `<data root>/quota/<provider>.json`; the data root is `DEVRYAN_DATA_DIR` or `~/.config/devryan` ([identity compatibility](../../../../../docs/IDENTITY_COMPATIBILITY.md)).
 - Provider IDs are allowlisted before path construction. Directories use mode `0700`; temporary and final files use `0600`; writes use same-directory atomic rename with exact temporary-file cleanup.
 - Payloads are bounded to 16 KB in the route and storage host, use exact provider-specific shapes, and reject CR/LF/NUL injection, unknown fields, mixed Cursor dashboard/OAuth forms, and malformed OpenCode Zen workspace/token values. Only the server writes the Zen credential, from an approved device sign-in.
 - Status responses contain only `configured`, optional safe metadata (`credentialKind`, `hasRefreshToken`, `effectiveSource`, Zen `workspaceId`, Zen `reconnectRequired`), and a fixed mask. `reconnectRequired` marks a retired `{ workspaceId, authCookie }` file, which is detected but never sent anywhere; the Zen provider stays listed with `RECONNECT_REQUIRED` until the user reconnects or disconnects. Secrets and secret fragments are never returned or logged.
@@ -131,6 +158,18 @@ All providers should return results via shared helpers to preserve API shape:
 
 Quota routes accept the active project directory via `x-opencode-directory` or `?directory=` so project-local `.opencode/opencode.json` provider config is included in provider detection.
 
+## Native runtime credentials
+
+Under the native (v2) runtime, provider credentials live privately in the native controller; no `auth.json` exists and none is ever written or consulted. The legacy path (external OpenCode, or no native owner) is unchanged.
+
+`native-credentials.js` (`createNativeQuotaCredentials`) exposes `mode()` (`legacy` | `native-pending` | `native-ready`), `listConfigured()`, `readAuth(quotaId)` and `refreshXai(auth)`. Every lookup is scoped to the default reviewed location (`snapshot.locations[0]`), never the request's project directory, because credentials are global. Discovery uses secret-free `credentialMetadata` rows: a provider is configured when an active row of the expected type exists (OpenAI and xAI `oauth`, OpenCode Go `key`); a failed lookup is unknown rather than absent, so that provider stays listed and its fetch reports either `configured: false` or an explicit unreadable result. `readAuth` returns OpenAI metadata or a legacy-shaped, in-memory entry for the other fetchers and validates the reply (integration, directory, value type, field types, otherwise `native_credential_invalid`). OpenAI uses `readNativeOpenAiMetadata` and, only for Codex browser, the selected credential read; xAI and OpenCode Go use the owner's `readProviderSelected`. The xAI entry carries no refresh token; rejected usage requests delegate renewal to the native owner through `refreshXai`, then reread the selected access token. Values are never logged or persisted by the web host.
+
+- `GET /api/quota/providers` (native): does not resolve the Claude proxy. While the owner is `native-pending` it waits up to `runtimeReadinessHoldMs`, then answers `503 { error: 'native_runtime_not_ready', code: 'native_runtime_not_ready' }` so clients retry. The list is the registry list minus `claude`, `codex`, `xai`, `opencode-go`, plus the native-configured ids, plus `claude` when `inspectClaudeRequest({ kind: 'status' })` succeeds or fails with any code other than `claude_credentials_missing`, `native_claude_external_unavailable` or `native_claude_update_required` (`native_runtime_not_ready` returns the 503). Each lookup has its own try/catch.
+- `GET /api/quota/:providerId` (native, resolved id `codex`/`xai`/`opencode-go`): reads through `readAuth`; Codex browser reaches the existing fetcher; other OpenAI OAuth returns usage unavailable immediately. xAI gets a no-op `writeAuth`, OpenCode Go no-op `mutateAuth`/`deleteManagedCredential` so legacy auth-file cleanup cannot run. A failed read returns 200 `ok: false, configured: true, errorCode: 'native_credential_unreadable'` ("Usage could not be read from the selected account."); a pending runtime returns the same shape with `errorCode: 'native_runtime_not_ready'`. It never falls back to `readAuthFile`.
+- Native-only outcomes (`configured: true`, `ok: false`): native Codex usage 401 becomes `native_openai_token_renewal_pending` (updates after the next OpenAI request); xAI 401 triggers one original-caller-authorized native renewal and one usage retry; permanently rejected renewal or a repeated 401 returns `REAUTHENTICATION_REQUIRED` ("Reconnect xAI to load usage."), while transient renewal failures return `native_xai_usage_unavailable`. Refresh tokens remain private to the native controller, and failed usage checks never remove credentials; non-Codex OpenAI OAuth metadata returns `siwc_usage_unavailable` without accessing tokens or usage endpoints.
+- Claude (native) discovery lists `claude` when the status inspection succeeds or fails with an account-exists code (`isClaudeInspectionUnavailable` and not `isClaudeAccountAbsent`). Authorization refusals do not list it. `native_runtime_not_ready`, `native_provider_owner_expired` and `native_provider_configuration_changed` answer the pending 503 so the client retries. Claude accounts are global: when the request's project directory is not a reviewed location, discovery and `GET /api/quota/claude` repeat the read against the default location.
+- Claude (native): `unavailableClaudeInspection('quota', code)` is `configured: true` unless the code is `claude_credentials_missing`, `native_claude_external_unavailable` or `native_claude_update_required`, so an expired, ambiguous or unreadable account shows a note instead of a blank (`claude_credentials_expired` and `native_claude_account_ambiguous` have specific short messages).
+
 ## Client refresh ownership
 
 The shared UI has one quota polling owner in `packages/ui/src/apps/AppEffects.tsx`.
@@ -156,6 +195,8 @@ and state/transport to `packages/ui/src/stores/useQuotaStore.ts`.
 - Successful data is retained when a later request fails. UI state records
   `lastAttemptAt`, `lastSuccessAt`, and `refreshError` separately and derives
   staleness from the active cadence.
+  Retention is limited to the same source and account; a changed connection
+  identity invalidates the earlier result, including on a failed refresh.
 - Authentication and provider-configuration success paths request safe
   rediscovery instead of starting additional polling loops.
 
@@ -177,3 +218,6 @@ measuring refresh behavior. Request counts and status codes are sufficient.
 - Keep provider IDs stable; clients use them directly.
 - Keep one visible UI entry per provider family even when dispatcher aliases are accepted for compatibility.
 - Review `providers/google/*` together; the Google provider reads only the Gemini CLI auth source.
+
+
+xAI native usage renewal binds the initial in-memory auth snapshot to its selected credential ID and fingerprint through a private WeakMap. `refreshXai` rejects copied snapshots or a replaced runtime owner. The existing startup quota coordinator invokes this same path; it creates no session or model request. Legacy/external-runtime OAuth renewal retains its existing fetcher behavior.

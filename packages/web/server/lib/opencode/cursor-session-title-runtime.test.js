@@ -1,6 +1,13 @@
+import { createNativeConsumerFixture } from './test-native-consumer-client.js';
+const createCursorSessionTitleRuntime = (options = {}) => createCursorSessionTitleRuntimeNative({
+  ...options, openCodeClient: options.openCodeClient ?? createNativeConsumerFixture({
+    readFixture: options.fetchImpl ?? ((...args) => globalThis.fetch(...args)), headers: options.getOpenCodeAuthHeaders,
+  }),
+});
 import { describe, expect, it, vi } from 'vitest';
+import { AsyncLocalStorage } from 'node:async_hooks';
 
-import { createCursorSessionTitleRuntime } from './cursor-session-title-runtime.js';
+import { createCursorSessionTitleRuntime as createCursorSessionTitleRuntimeNative } from './cursor-session-title-runtime.js';
 
 const sessionResponse = (title) => ({
   ok: true,
@@ -16,6 +23,35 @@ const cursorRecords = (text = 'Fix the Cursor provider session title summarizati
 }]);
 
 describe('Cursor session title runtime', () => {
+  it('scheduled title callbacks retain the original request context and cannot borrow a later caller after revocation', async () => {
+    const requests = new AsyncLocalStorage();
+    const original = { id: 'original', allowed: true }, replacement = { id: 'replacement', allowed: true };
+    let releaseRead;
+    const read = new Promise(resolve => { releaseRead = resolve; });
+    const captured = [], patches = [], physical = [];
+    const runtime = createCursorSessionTitleRuntime({
+      cursorSdkRuntime: {
+        getSessionMessages: async () => cursorRecords(),
+        generateTitle: async input => {
+          const caller = requests.getStore();captured.push({ caller, input });
+          if (!caller?.allowed) throw new Error('original caller revoked');
+          physical.push(caller.id);return 'Owned title';
+        },
+      },
+      buildOpenCodeUrl: requestPath => `http://opencode.test${requestPath}`,
+      fetchImpl: async (_url, options) => {
+        if (options.method === 'PATCH') { patches.push(options.body);return { ok: true }; }
+        await read;return sessionResponse('Untitled Session');
+      },
+      logger: { warn: vi.fn() },
+    });
+    const job = requests.run(original, () => runtime.schedule({ sessionID: 'ses_1', directory: '/fixture' }));
+    original.allowed = false;
+    await requests.run(replacement, async () => { releaseRead();expect(await job).toBe(false); });
+    expect(captured).toEqual([{ caller: original, input: { sessionID: 'ses_1', directory: '/fixture', text: 'Fix the Cursor provider session title summarization' } }]);
+    expect(physical).toEqual([]);expect(patches).toEqual([]);
+  });
+
   it('retains a generated title when the metadata reread fails before saving', async () => {
     const generateTitle = vi.fn(async () => 'Cursor usage accounting');
     const fetchImpl = vi.fn()
@@ -208,5 +244,103 @@ describe('Cursor session title runtime', () => {
     expect(generateTitle).toHaveBeenCalledTimes(2);
     expect(warn).toHaveBeenCalledTimes(1);
     expect(fetchImpl.mock.calls.some(([, options]) => options?.method === 'PATCH')).toBe(true);
+  });
+});
+
+// Gen 2 (DESIGN C.1, E item 13b): the session read and title PATCH go through openCodeClient.
+describe('Cursor session title runtime on OpenCode 2 (openCodeClient)', () => {
+  const createClient = ({ generation = 2, titles = ['Untitled Session'], update } = {}) => {
+    let title = titles[0];
+    let reads = 0;
+    return {
+      generation: typeof generation === 'function' ? generation : () => generation,
+      sessions: {
+        get: vi.fn(async (sessionID) => {
+          title = titles[Math.min(reads, titles.length - 1)] ?? title;
+          reads += 1;
+          return { id: sessionID, title, directory: '/fixture' };
+        }),
+        update: update ?? vi.fn(async (sessionID, patch) => ({ id: sessionID, title: patch.title })),
+      },
+    };
+  };
+
+  it('reads and renames the session through the client', async () => {
+    const fetchImpl = vi.fn();
+    const openCodeClient = createClient();
+    const runtime = createCursorSessionTitleRuntime({
+      cursorSdkRuntime: { getSessionMessages: async () => cursorRecords(), generateTitle: async () => 'Cursor usage accounting' },
+      fetchImpl,
+      openCodeClient,
+    });
+
+    await expect(runtime.schedule({ sessionID: 'ses_1', directory: '/fixture' })).resolves.toBe(true);
+    expect(openCodeClient.sessions.get).toHaveBeenCalledWith('ses_1', { directory: '/fixture' });
+    expect(openCodeClient.sessions.update).toHaveBeenCalledWith('ses_1', { title: 'Cursor usage accounting' }, { directory: '/fixture' });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('keeps the generated title for the next run when the client refuses the PATCH', async () => {
+    const generateTitle = vi.fn(async () => 'Cursor usage accounting');
+    const update = vi.fn()
+      .mockRejectedValueOnce(Object.assign(new Error('busy'), { statusCode: 409 }))
+      .mockImplementation(async (sessionID, patch) => ({ id: sessionID, title: patch.title }));
+    const runtime = createCursorSessionTitleRuntime({
+      cursorSdkRuntime: { getSessionMessages: async () => cursorRecords(), generateTitle },
+      openCodeClient: createClient({ update }),
+    });
+
+    await expect(runtime.schedule({ sessionID: 'ses_1', directory: '/fixture' })).resolves.toBe(false);
+    await expect(runtime.schedule({ sessionID: 'ses_1', directory: '/fixture' })).resolves.toBe(true);
+    expect(generateTitle).toHaveBeenCalledTimes(1);
+    expect(update).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not overwrite a title renamed during generation', async () => {
+    const openCodeClient = createClient({ titles: ['Untitled Session', 'Manual rename'] });
+    const runtime = createCursorSessionTitleRuntime({
+      cursorSdkRuntime: { getSessionMessages: async () => cursorRecords(), generateTitle: async () => 'Cursor usage accounting' },
+      openCodeClient,
+    });
+
+    await expect(runtime.schedule({ sessionID: 'ses_1', directory: '/fixture' })).resolves.toBe(false);
+    expect(openCodeClient.sessions.update).not.toHaveBeenCalled();
+  });
+
+  it('refuses generation 1 without reading or patching', async () => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(sessionResponse('Untitled Session'))
+      .mockResolvedValueOnce(sessionResponse('Untitled Session'))
+      .mockResolvedValueOnce({ ok: true, json: vi.fn(async () => ({})) });
+    const openCodeClient = createClient({ generation: 1 });
+    const runtime = createCursorSessionTitleRuntime({
+      cursorSdkRuntime: { getSessionMessages: async () => cursorRecords(), generateTitle: async () => 'Cursor usage accounting' },
+      buildOpenCodeUrl: (requestPath) => `http://opencode.test${requestPath}`,
+      fetchImpl,
+      openCodeClient,
+      logger: { warn: vi.fn() },
+    });
+
+    await expect(runtime.schedule({ sessionID: 'ses_1', directory: '/fixture' })).resolves.toBe(false);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(openCodeClient.sessions.get).not.toHaveBeenCalled();
+  });
+
+  it('sends no request when the client generation is unknown (fail closed)', async () => {
+    const fetchImpl = vi.fn();
+    const generateTitle = vi.fn(async () => 'Cursor usage accounting');
+    const openCodeClient = createClient({ generation: () => { throw Object.assign(new Error('unknown'), { statusCode: 503 }); } });
+    const runtime = createCursorSessionTitleRuntime({
+      cursorSdkRuntime: { getSessionMessages: async () => cursorRecords(), generateTitle },
+      buildOpenCodeUrl: (requestPath) => `http://opencode.test${requestPath}`,
+      fetchImpl,
+      openCodeClient,
+      logger: { warn: vi.fn() },
+    });
+
+    await expect(runtime.schedule({ sessionID: 'ses_1', directory: '/fixture' })).resolves.toBe(false);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(openCodeClient.sessions.get).not.toHaveBeenCalled();
+    expect(generateTitle).not.toHaveBeenCalled();
   });
 });

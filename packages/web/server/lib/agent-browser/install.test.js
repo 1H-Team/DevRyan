@@ -73,6 +73,20 @@ describe('managed agent-browser installer', () => {
     expect(recording.ensureInstalled).toHaveBeenLastCalledWith({ repair: true });
   });
 
+  it('does not hold managed setup on a slow recording download', async () => {
+    const dataRoot = makeTemporaryDirectory();
+    writeInstalledPackage(join(dataRoot, 'tools', 'agent-browser'));
+    const unavailable = { ok: false, state: 'unavailable', issues: [{ code: 'ffmpeg-not-ready', message: 'not ready' }] };
+    let finishDownload;
+    const download = new Promise(resolve => { finishDownload = resolve; });
+    const recording = { status: vi.fn(async () => unavailable), ensureInstalled: vi.fn(() => download) };
+    const installer = createAgentBrowserInstaller({ dataRoot, platform: 'darwin', arch: 'arm64', recordingInstaller: recording,
+      bunExecutable: writeFakeBun(makeTemporaryDirectory()), runCommand: async () => ({ ok: true, stdout: '' }) });
+    expect(await installer.ensureInstalled()).toMatchObject({ ok: true, state: 'ready', recording: unavailable });
+    expect(recording.ensureInstalled).toHaveBeenCalledWith();
+    finishDownload(unavailable);
+  });
+
   it('resolves every packaged platform binary name', () => {
     expect(resolveAgentBrowserBinaryName({ platform: 'darwin', arch: 'arm64' }))
       .toBe('agent-browser-darwin-arm64');
@@ -168,9 +182,9 @@ describe('managed agent-browser installer', () => {
     const installRoot = join(dataRoot, 'tools', 'agent-browser');
     mkdirSync(installRoot, { recursive: true });
     writeFileSync(join(installRoot, 'package.json'), `${JSON.stringify({
-      dependencies: { 'agent-browser': '0.33.2' },
+      dependencies: { 'agent-browser': '0.38.1' },
     })}\n`, 'utf8');
-    writeInstalledPackage(installRoot, '0.33.2');
+    writeInstalledPackage(installRoot, '0.38.1');
     const installer = createAgentBrowserInstaller({
       dataRoot,
       platform: 'darwin',
@@ -207,82 +221,89 @@ describe('managed agent-browser installer', () => {
       arch: 'arm64',
       bunExecutable,
       runCommand,
+      // This concurrency check must not depend on subprocess version-probe latency.
+      probeBunExecutable: async () => ({ ok: true, version: '1.2.3' }),
+      probeBinaryVersion: async () => ({ ok: true, version: AGENT_BROWSER_VERSION }),
     });
     const first = installer.ensureInstalled();
     const second = installer.install();
-    await vi.waitFor(() => expect(runCommand).toHaveBeenCalledTimes(1));
-    release();
-    expect(await first).toEqual(await second);
+    try {
+      await vi.waitFor(() => expect(runCommand).toHaveBeenCalledTimes(1));
+      release();
+      expect(await first).toEqual(await second);
+    } finally {
+      release();
+      await Promise.allSettled([first, second]);
+    }
   });
 
-  it('resolves and validates Bun from option, environment, current runtime, and the user install path', async () => {
-    const cases = [
-      {
-        name: 'option',
-        prepare: (root, homeDir) => ({
+  const bunResolutionCases = [
+    {
+      name: 'option',
+      prepare: (root, homeDir) => ({
+        homeDir,
+        env: { PATH: '' },
+        currentExecutable: join(root, 'DevRyan'),
+        bunExecutable: writeFakeBun(join(root, 'option')),
+      }),
+    },
+    {
+      name: 'environment',
+      prepare: (root, homeDir) => {
+        const bunInstall = join(root, 'bun-install');
+        const executable = writeFakeBun(join(bunInstall, 'bin'));
+        return {
           homeDir,
-          env: { PATH: '' },
+          env: { PATH: '', BUN_INSTALL: bunInstall },
           currentExecutable: join(root, 'DevRyan'),
-          bunExecutable: writeFakeBun(join(root, 'option')),
-        }),
+          expected: executable,
+        };
       },
-      {
-        name: 'environment',
-        prepare: (root, homeDir) => {
-          const bunInstall = join(root, 'bun-install');
-          const executable = writeFakeBun(join(bunInstall, 'bin'));
-          return {
-            homeDir,
-            env: { PATH: '', BUN_INSTALL: bunInstall },
-            currentExecutable: join(root, 'DevRyan'),
-            expected: executable,
-          };
-        },
-      },
-      {
-        name: 'current executable',
-        prepare: (root, homeDir) => ({
-          homeDir,
-          env: { PATH: '' },
-          currentExecutable: writeFakeBun(join(root, 'runtime')),
-        }),
-      },
-      {
-        name: 'user install',
-        prepare: (root, homeDir) => ({
-          homeDir,
-          env: { PATH: '' },
-          currentExecutable: join(root, 'DevRyan'),
-          expected: writeFakeBun(join(homeDir, '.bun', 'bin')),
-        }),
-      },
-    ];
+    },
+    {
+      name: 'current executable',
+      prepare: (root, homeDir) => ({
+        homeDir,
+        env: { PATH: '' },
+        currentExecutable: writeFakeBun(join(root, 'runtime')),
+      }),
+    },
+    {
+      name: 'user install',
+      prepare: (root, homeDir) => ({
+        homeDir,
+        env: { PATH: '' },
+        currentExecutable: join(root, 'DevRyan'),
+        expected: writeFakeBun(join(homeDir, '.bun', 'bin')),
+      }),
+    },
+  ];
 
-    for (const entry of cases) {
-      const root = makeTemporaryDirectory();
-      const homeDir = join(root, 'home');
-      const options = entry.prepare(root, homeDir);
-      const expected = options.expected ?? options.bunExecutable ?? options.currentExecutable;
-      const runCommand = vi.fn(async (_command, _args, commandOptions) => {
-        writeInstalledPackage(commandOptions.cwd);
-        return { ok: true, code: 0, stdout: '', stderr: '' };
-      });
-      const installer = createAgentBrowserInstaller({
-        dataRoot: join(root, 'data'),
-        platform: 'darwin',
-        arch: 'arm64',
-        runCommand,
-        ...options,
-      });
+  // One test per case: each spawns fake Bun executables and gets its own time budget.
+  it.each(bunResolutionCases)('resolves and validates Bun from the $name', async (entry) => {
+    const root = makeTemporaryDirectory();
+    const homeDir = join(root, 'home');
+    const options = entry.prepare(root, homeDir);
+    const expected = options.expected ?? options.bunExecutable ?? options.currentExecutable;
+    const runCommand = vi.fn(async (_command, _args, commandOptions) => {
+      writeInstalledPackage(commandOptions.cwd);
+      return { ok: true, code: 0, stdout: '', stderr: '' };
+    });
+    const installer = createAgentBrowserInstaller({
+      dataRoot: join(root, 'data'),
+      platform: 'darwin',
+      arch: 'arm64',
+      runCommand,
+      ...options,
+    });
 
-      const result = await installer.ensureInstalled();
-      expect(result, entry.name).toMatchObject({ ok: true, bunExecutable: expected });
-      expect(runCommand, entry.name).toHaveBeenCalledWith(
-        expected,
-        ['install', '--ignore-scripts'],
-        expect.any(Object),
-      );
-    }
+    const result = await installer.ensureInstalled();
+    expect(result, entry.name).toMatchObject({ ok: true, bunExecutable: expected });
+    expect(runCommand, entry.name).toHaveBeenCalledWith(
+      expected,
+      ['install', '--ignore-scripts'],
+      expect.any(Object),
+    );
   });
 
   it('reports an actionable unavailable state when no validated Bun executable exists', async () => {

@@ -22,11 +22,9 @@ describe('provider prompt tool policy', () => {
   test('keeps managed delegation root-owned without hiding plugins or MCP tools', () => {
     expect(resolveProviderPromptTools('openai', 'orchestrator')).toEqual({
       task: false,
-      invalid: false,
     });
     expect(resolveProviderPromptTools('cursor-acp', ' Orchestrator ')).toEqual({
       task: false,
-      invalid: false,
     });
   });
 
@@ -35,7 +33,6 @@ describe('provider prompt tool policy', () => {
       'resend_*': false,
       'mcp__resend__*': false,
       task: false,
-      invalid: false,
     });
   });
 
@@ -43,32 +40,25 @@ describe('provider prompt tool policy', () => {
     expect(resolveProviderPromptTools('openai', 'designer', { readOnly: true })).toEqual({
       '*': false,
       read: true,
-      oc_read: true,
       glob: true,
-      oc_glob: true,
       grep: true,
-      ls: true,
-      oc_ls: true,
-      stat: true,
-      oc_stat: true,
-      ast_grep_search: true,
       webfetch: true,
-      websearch: true,
-      google_search: true,
+      devryan_plan_read: true,
     });
-    expect(resolveProviderPromptTools('github-copilot', 'designer', { readOnly: true })).toMatchObject({
-      'resend_*': false,
-      'mcp__resend__*': false,
+    expect(resolveProviderPromptTools('github-copilot', 'orchestrator', { readOnly: true })).toEqual({
+      task: false,
       '*': false,
       read: true,
+      glob: true,
+      grep: true,
       webfetch: true,
+      devryan_plan_read: true,
     });
   });
 
   test('adds no tool overrides for UI Plan Mode', () => {
     expect(resolveProviderPromptTools('openai', 'orchestrator', { planMode: true })).toEqual({
       task: false,
-      invalid: false,
     });
     expect(resolveProviderPromptTools('openai', 'plan', { planMode: true })).toBeUndefined();
   });

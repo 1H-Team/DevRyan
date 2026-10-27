@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { lstat, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readFile, readdir, readlink, realpath, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { assertQaProjectFixtureOwned } from './project-fixture.mjs';
 
@@ -43,6 +43,33 @@ export async function captureQaArtifactIdentity(directory) {
       if (entry.isSymbolicLink()) throw new Error('QA artifact contains a symbolic link');
       if (entry.isDirectory()) await visit(file);
       else if (entry.isFile()) entries.push({ file, sha256: digest(await readFile(path.join(directory, file))) });
+    }
+  };
+  await visit('');
+  return { sha256: digest(JSON.stringify(entries)), entries };
+}
+
+// macOS frameworks use internal aliases. Record them without traversing them;
+// the generic web/runner artifact identity deliberately still rejects links.
+export async function captureQaElectronAppIdentity(directory) {
+  const root = await realpath(directory);
+  if (root !== directory || !root.endsWith('.app') || !(await lstat(root)).isDirectory()) {
+    throw new Error('QA Electron donor must be a canonical app directory');
+  }
+  const entries = [];
+  const visit = async relative => {
+    const files = await readdir(path.join(root, relative), { withFileTypes: true });
+    for (const entry of files.sort((a, b) => a.name.localeCompare(b.name))) {
+      const file = path.join(relative, entry.name), absolute = path.join(root, file);
+      if (entry.isSymbolicLink()) {
+        const target = await readlink(absolute);
+        if (path.isAbsolute(target)) throw new Error('QA Electron donor contains an absolute symbolic link');
+        const resolved = await realpath(absolute);
+        if (!resolved.startsWith(root + path.sep)) throw new Error('QA Electron donor symbolic link escapes the app');
+        entries.push({ file, target, mode: (await lstat(absolute)).mode & 0o777 });
+      } else if (entry.isDirectory()) await visit(file);
+      else if (entry.isFile()) entries.push({ file, sha256: digest(await readFile(absolute)), mode: (await lstat(absolute)).mode & 0o777 });
+      else throw new Error('QA Electron donor contains a non-file entry');
     }
   };
   await visit('');

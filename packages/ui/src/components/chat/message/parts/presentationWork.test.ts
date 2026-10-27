@@ -1,15 +1,55 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, test } from 'bun:test';
+import React, { act } from 'react';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { withDom, type HostElement } from '@/test/mountedDom';
+import PlanCardSkeleton from './PlanCardSkeleton';
+import { WorkingPlaceholder } from './WorkingPlaceholder';
+import { useDurationTickerNow } from './useDurationTicker';
 import {
   formatRetryCountdown,
   getRetryCountdownBoundaryDelayMs,
   getRetryCountdownSeconds,
 } from './workingPlaceholderTiming';
 
+const mountElement = async (
+  element: () => React.ReactElement,
+  run: (container: HostElement) => Promise<void>,
+  options: { hidden?: boolean } = {},
+) => {
+  await withDom(async (container) => {
+    const doc = globalThis.document;
+    Reflect.set(doc, 'visibilityState', options.hidden ? 'hidden' : 'visible');
+    const { createRoot } = await import('react-dom/client');
+    const root = createRoot(container as unknown as Element);
+    try {
+      await act(async () => root.render(element()));
+      await run(container);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+};
+
+const originalSetTimeout = globalThis.setTimeout;
+let scheduledDelays: number[] = [];
+
+beforeEach(() => {
+  scheduledDelays = [];
+  // Records every timer a component schedules, then runs the real implementation.
+  globalThis.setTimeout = ((handler: TimerHandler, delay?: number, ...args: unknown[]) => {
+    if (typeof delay === 'number') scheduledDelays.push(delay);
+    return originalSetTimeout(handler as () => void, delay, ...args);
+  }) as typeof setTimeout;
+});
+
+afterEach(() => {
+  globalThis.setTimeout = originalSetTimeout;
+});
+
 describe('mounted presentation work', () => {
-  test('the plan skeleton owns one container animation and no line animations', () => {
+  test('the plan skeleton owns one container animation and no line animations', async () => {
+    // CSS has no runtime in bun:test; the stylesheet text is the contract.
     const styles = readFileSync(new URL('../../../../index.css', import.meta.url), 'utf8');
-    const skeleton = readFileSync(new URL('./PlanCardSkeleton.tsx', import.meta.url), 'utf8');
     const containerRule = styles.slice(
       styles.indexOf('.oc-plan-skeleton-lines[data-animation-state="running"]'),
       styles.indexOf('.oc-plan-skeleton-line {'),
@@ -21,7 +61,16 @@ describe('mounted presentation work', () => {
 
     expect(containerRule.match(/animation:/g)?.length).toBe(1);
     expect(lineRule).not.toContain('animation:');
-    expect(skeleton).toContain("data-animation-state={shouldAnimate ? 'running' : 'paused'}");
+
+    await mountElement(() => React.createElement(PlanCardSkeleton, { lineCount: 3 }), async (container) => {
+      const lines = container.find((node) => node.getAttribute('data-animation-state') !== null);
+      expect(lines?.getAttribute('data-animation-state')).toBe('running');
+      expect(container.childNodes[0]?.childNodes).toHaveLength(3);
+    });
+    await mountElement(() => React.createElement(PlanCardSkeleton), async (container) => {
+      const lines = container.find((node) => node.getAttribute('data-animation-state') !== null);
+      expect(lines?.getAttribute('data-animation-state')).toBe('paused');
+    }, { hidden: true });
   });
 
   test('retry countdown aligns to the next second boundary and stops at zero', () => {
@@ -34,14 +83,72 @@ describe('mounted presentation work', () => {
     expect(formatRetryCountdown(61)).toBe('1m 1s');
   });
 
-  test('visibility-gates shimmers, countdowns, and duration tickers', () => {
-    const placeholder = readFileSync(new URL('./WorkingPlaceholder.tsx', import.meta.url), 'utf8');
-    const ticker = readFileSync(new URL('./useDurationTicker.ts', import.meta.url), 'utf8');
+  test('visibility-gates shimmers and retry countdowns', async () => {
+    const retrying = () => React.createElement(WorkingPlaceholder, {
+      isWorking: true,
+      statusText: null,
+      retryInfo: { attempt: 1, next: 5_000 },
+    });
 
-    expect(placeholder.match(/data-animation-state=/g)?.length).toBe(1);
-    expect(placeholder.match(/<StatusShimmerText/g)?.length).toBe(2);
-    expect(placeholder).toContain('if (!isVisible || seconds === 0) return;');
-    expect(placeholder).not.toContain('AnimatePresence');
-    expect(ticker).toContain('if (!active || !isVisible)');
+    await mountElement(retrying, async (container) => {
+      expect(container.textContent).toMatch(/^Retrying in [45]s$/);
+      expect(container.find((node) => node.getAttribute('data-animation-state') === 'running')).not.toBeNull();
+      // A visible countdown re-arms itself at the next second boundary.
+      expect(scheduledDelays.some((delay) => delay >= 1 && delay <= 1_000)).toBe(true);
+    });
+
+    scheduledDelays = [];
+    await mountElement(retrying, async (container) => {
+      expect(container.textContent).toMatch(/^Retrying in [45]s$/);
+      expect(container.find((node) => node.getAttribute('data-animation-state') === 'paused')).not.toBeNull();
+      expect(container.find((node) => node.getAttribute('data-animation-state') === 'running')).toBeNull();
+      // A hidden document renders the countdown once and schedules no ticks.
+      expect(scheduledDelays.filter((delay) => delay <= 1_000)).toEqual([]);
+    }, { hidden: true });
+  });
+
+  test('visibility-gates duration tickers', async () => {
+    const intervals: number[] = [];
+    const Probe = ({ active }: { active: boolean }) => {
+      useDurationTickerNow(active, 123);
+      return null;
+    };
+    const originalSetInterval = globalThis.setInterval;
+    const originalClearInterval = globalThis.clearInterval;
+    const patchWindow = () => {
+      globalThis.setInterval = ((_handler: unknown, ms: number) => {
+        intervals.push(ms);
+        return 1;
+      }) as unknown as typeof setInterval;
+      globalThis.clearInterval = (() => {}) as typeof clearInterval;
+    };
+    const restoreTimers = () => {
+      globalThis.setInterval = originalSetInterval;
+      globalThis.clearInterval = originalClearInterval;
+    };
+
+    await withDom(async (container) => {
+      patchWindow();
+      Reflect.set(globalThis.document, 'visibilityState', 'visible');
+      const { createRoot } = await import('react-dom/client');
+      const root = createRoot(container as unknown as Element);
+      await act(async () => root.render(React.createElement(Probe, { active: true })));
+      expect(intervals).toEqual([123]);
+      await act(async () => root.unmount());
+    });
+    // Inactive or hidden tickers never start an interval (patchWindow would record it).
+    for (const [active, hidden] of [[false, false], [true, true]] as const) {
+      await withDom(async (container) => {
+        patchWindow();
+        intervals.length = 0;
+        Reflect.set(globalThis.document, 'visibilityState', hidden ? 'hidden' : 'visible');
+        const { createRoot } = await import('react-dom/client');
+        const root = createRoot(container as unknown as Element);
+        await act(async () => root.render(React.createElement(Probe, { active })));
+        expect(intervals).toEqual([]);
+        await act(async () => root.unmount());
+      });
+    }
+    restoreTimers();
   });
 });

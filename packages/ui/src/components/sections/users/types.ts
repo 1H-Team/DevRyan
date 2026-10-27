@@ -96,7 +96,7 @@ export interface AuditStatus {
   deliveryFailures: number;
 }
 
-export type CapabilityKey = 'bots' | 'files' | 'terminal' | 'browser' | 'createWorktrees' | 'createBranches' | 'manageProjects' | 'manageUsers' | 'manageGlobalSettings' | 'manageGit' | 'push' | 'github';
+export type CapabilityKey = 'files' | 'terminal' | 'browser' | 'createWorktrees' | 'createBranches' | 'manageProjects' | 'manageUsers' | 'manageGlobalSettings' | 'manageGit' | 'push' | 'github';
 export type CapabilityOverride = 'inherit' | 'on' | 'off';
 export type McpPolicyOverride = 'inherit' | 'on' | 'off';
 
@@ -126,15 +126,6 @@ export interface UserPolicyPayload {
   } & Record<CapabilityKey, boolean>;
 }
 
-export interface UserAnalyticsHour {
-  start: string;
-  end: string;
-  label: string;
-  offset: string;
-  activeMinutes: number;
-  promptCount: number;
-}
-
 export interface UserAnalyticsSession {
   id: string;
   start: string;
@@ -155,16 +146,6 @@ export interface UserAnalyticsTotals {
   filesOpened: number;
   copies: number;
   settingsChanges: number;
-}
-
-export interface UserAnalyticsDaily {
-  date: string;
-  timeZone: string;
-  dayStart: string;
-  dayEnd: string;
-  totals: UserAnalyticsTotals;
-  hours: UserAnalyticsHour[];
-  activitySessions: UserAnalyticsSession[];
 }
 
 export interface UserAnalyticsRangeDay extends UserAnalyticsTotals {
@@ -221,7 +202,7 @@ export const capabilityLabels: Array<[CapabilityKey, string]> = [
   ['manageGlobalSettings', 'Host settings'],
 ];
 
-export const capabilityKeys: CapabilityKey[] = ['bots', ...capabilityLabels.map(([key]) => key)];
+export const capabilityKeys: CapabilityKey[] = capabilityLabels.map(([key]) => key);
 
 export const roleLabel = (role: Role): string => role.replace('_', ' ');
 

@@ -46,8 +46,7 @@ tools still use confined views. The exemption is never based on a tool's name.
 
 The built-in `read`, `glob` and `grep` run as control operations in the
 companion process on the published project, with no private view or worker.
-Each implementation was audited to read only (see
-[companion/SEAMS.md](../packages/web/server/lib/opencode/companion/SEAMS.md)):
+Each implementation was audited to read only:
 - `read` keeps its LSP warm-up disabled there.
 - `grep` and `glob` use read-only ripgrep.
 
@@ -126,7 +125,8 @@ composer restoration are retained; activity follows authoritative events.
 
 Each reconciled execution base has a durable Git ref while preparation, execution
 or recovery consumes it. Cleanup requires a terminal lease, proof that native
-writers have stopped and no active consumers. It removes the private view while
+writers have stopped and no active consumers. It removes (or parks for the
+session's next view) the private view while
 preserving termination receipts, publication history and conflict objects. Snapshot ref identity commits before pin installation. Terminal leases carry durable pending cleanup; recovery also discovers older uncleaned terminal records and isolates each lease failure. Cleanup failures are reported separately from a successful publication and retried on recovery. Private read-only directories can be removed after these guards pass without following symlinks to project or dependency inputs.
 **Per-call cost.** A view records only its base file list. Publication
 recomputes the "before" runs of the files a call changed from the lease's
@@ -142,7 +142,11 @@ an exclusive create, then chmod and one lstat for its stamp (about four
 filesystem requests per file instead of about twelve). Symbolic links and
 existing entries (for example case-only collisions) use the general writer
 (`DEVRYAN_VIEW_FAST_MATERIALIZE=0` restores it for every file). Its steps are
-journaled as `view_files`, `view_commit`, `view_git` and `view_inputs`. Publication reuses
+journaled as `view_files`, `view_commit`, `view_git` and `view_inputs`. On macOS
+and Linux, cleanup parks a published process lease's view, and the session's
+next preparation adopts every file still exactly as materialized and copies only
+the rest (`view_reuse`; `DEVRYAN_VIEW_REUSE=0` copies everything; see
+`packages/harness-runtime/DOCUMENTATION.md`). Publication reuses
 the base entry of a file whose full stat stamp is unchanged (inode, size, mode,
 nanosecond mtime and ctime); whole-second timestamps are always re-hashed
 (`DEVRYAN_VIEW_STAT_REUSE=0` hashes every file). Repository resolution is
@@ -157,6 +161,21 @@ Observation treats a path under a file or symlink ancestor as absent. The
 ancestor is observed instead and is never followed, so replacing a tracked
 directory does not block later executions. Writes into the project still refuse
 such paths. Symlink targets are captured and restored as raw bytes.
+
+Granular text history (`runs/<document>`) is stored as inline base64 pages,
+except for a document still at its first observed text. That document stores one
+`{ baseline, size }` page naming its content object, because the object
+already holds those bytes and objects are never collected
+(`DEVRYAN_LEDGER_BASELINE_REFS=0` writes inline pages again; references stay
+readable). Background maintenance (`DEVRYAN_LEDGER_PACK=0` turns it off)
+converts older inline baselines in batches of 1024 under the owner lock. It
+replaces a document only while its `runs/<document>` subtree still matches the
+snapshot the candidate was read from, and writes `baseline-refs` in the ledger
+root once nothing remains. Pinned lease trees keep their inline pages. After
+packing loose objects, maintenance prunes unreachable ones older than two
+hours. Records themselves have no retention horizon: deleted text, deleted-file
+documents, operations, leases and calls stay, because any operation can be
+reverted or redone while its session exists.
 Execution views are disposable, since a crash cancels their lease and a view is
 never published after one. View files are copied without sync, while writes
 into the project stay synced. Reconciliation and view preparation overlap
@@ -177,25 +196,14 @@ message, phase and error identifiers without file contents or tool arguments.
 
 ## Build and rollout
 
-The [companion manifest](../packages/web/server/lib/opencode/companion/manifest.json)
-pins OpenCode 1.18.33 at `51ef4be1d3c122f18fefb510dca8d778571f4f18`, the full patch
-digest and every changed source file. `bun run build:revert-runtime` prepares the
-pinned checkout inside `.cache`, verifies source, checks types and regression
-tests, builds the companion and native supervisor, and runs real execution
-acceptance. It uses frozen dependency fixtures and no live provider credentials.
-An authorized existing checkout may be supplied with `--source`; it is never
-reset. No installed runtime or user profile is changed by this build.
+`scripts/build-native-runtime.mjs` builds the sealed native runtime and the
+accepted execution launcher into `packages/web/runtime/<platform>-<arch>`;
+`bun run build:revert-runtime` is a compatibility alias for it. Release
+ordering, the shared web/native handoffs and cache behavior are in
+[RELEASE_PIPELINE.md](RELEASE_PIPELINE.md).
 
-A companion that passed its type and regression checks is cached under
-`.cache/revert-runtime-companion`. The cache key covers the pinned commit, patch
-digest, runtime version, platform and Bun version, and the entry is reused only
-when its recorded digest matches. The native supervisor build and DevRyan
-execution acceptance always run. `DEVRYAN_REVERT_COMPANION_ONLY=1` stops after
-the companion step; the `Warm release caches` workflow uses this on `main`,
-because caches saved by a tag-triggered release are visible only to that tag.
-
-Only successful acceptance writes the runtime manifest. The current paired
-companion is 2.1.2 on OpenCode 1.18.33, with execution preparation protocol 3
+Only successful acceptance writes the runtime manifest. The paired runtime uses
+execution preparation protocol 3
 (direct receipts for built-in read, glob, grep and skill; the host records only their fenced ledger commit) and retention protocol 1. The host verifies the required
 capability versions, platform, architecture and artifact digests before enabling
 capture. Artifacts live under `packages/web/runtime/<platform>-<arch>`; Electron
@@ -250,17 +258,15 @@ records `required_unavailable` and returns `execution_artifacts_unavailable`
 and Cursor starts. Explicitly external or unsupported runtime modes retain their
 documented ordinary behavior.
 Deploy or roll back the host and companion together. A preparation rollback must
-retain a host that can read whole-content revisions and retained conflict objects;
-do not point a pre-migration ledger implementation at new history.
+retain a host that can read whole-content revisions, retained conflict objects and
+baseline references; a host predating references fails closed
+(`invalid_change_record`) on every document stored by reference. Do not point a
+pre-migration ledger implementation at new history.
 
 The real dispatcher journey is `scripts/verify-concurrent-revert-execution.mjs`.
-Set `DEVRYAN_TEST_REVERT_UI=1` to additionally exercise the actual web and Electron
-Revert control, restored composer, concurrent command and late publication.
-Supply `DEVRYAN_TEST_ELECTRON_BINARY` from `scripts/qa/package-electron.mjs` for
-the packaged Electron journey. Its isolated bootstrap uses a mock OS keychain,
-private profile and home, and disables background Bots and protocol registration.
-Verification results and platform availability are recorded in the
-[implementation audit](audits/2026-09-20-concurrent-revert/README.md).
+Its isolated bootstrap uses a mock OS keychain, private profile and home, and
+disables protocol registration. Web and packaged-Electron
+Revert UI journeys run through `scripts/qa/run.mjs` (see [QA.md](QA.md)).
 
 ## Execution admission deadlines
 
@@ -309,9 +315,6 @@ sanitized failure notice even when no assistant exists or provider recovery is
 unavailable. Viewed state does not hide it; a newer authoritative successful
 completion resolves it. Sanitized classifications survive reload in the bounded
 notification store. Failed grouped tools are labelled as failures.
-
-See the [2026-09-21 implementation report](audits/2026-09-21-plan-implementation/README.md)
-for current validation, platform limits and rollback guidance.
 
 Preparation polling spends the same request budget on identity checks, lease lookup and waiting. Poll waits reserve one second for the response and return `preparing` when the remaining budget is exhausted. Completed enumeration, unchanged-file checks and reconciliation batches advance the progress meter. Bounded `identity_lookup`, `lease_lookup` and `poll_wait` diagnostic phases distinguish polling overhead from reconciliation. Cleanup failures are reported separately without replacing the preparation error. Compact skill rows retain the skill name and show loaded or failed outcomes, including sanitized preparation errors.
 

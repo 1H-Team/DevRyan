@@ -24,7 +24,9 @@ const searchFilesMock = mock(() => {
   return request.promise;
 });
 
+const actualOpencodeClientModule = await import('@/lib/opencode/client');
 mock.module('@/lib/opencode/client', () => ({
+  ...actualOpencodeClientModule,
   opencodeClient: {
     searchFiles: searchFilesMock,
   },

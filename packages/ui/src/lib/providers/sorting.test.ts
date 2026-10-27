@@ -18,9 +18,9 @@ describe('sortProvidersByDisplayName', () => {
     const sorted = sortProvidersByDisplayName(providers);
 
     expect(sorted.map((provider) => provider.name)).toEqual([
+      'OpenAI',
       'Anthropic',
       'GitHub Copilot',
-      'OpenAI',
       'OpenCode Go',
       'OpenCode Zen',
     ]);
@@ -48,7 +48,7 @@ describe('sortProvidersByDisplayName', () => {
       },
     });
 
-    expect(sorted.map((provider) => provider.id)).toEqual(['anthropic-oauth', 'openai']);
+    expect(sorted.map((provider) => provider.id)).toEqual(['openai', 'anthropic-oauth']);
   });
 
   test('is case-insensitive and tie-breaks on id for stable ordering', () => {
@@ -126,12 +126,12 @@ describe('sortProviderTreeForPicker', () => {
 
     const sorted = sortProviderTreeForPicker(providers);
 
-    expect(sorted.map((provider) => provider.id)).toEqual(['anthropic', 'openai']);
-    expect(sorted[0].models.map((model) => model.id)).toEqual([
+    expect(sorted.map((provider) => provider.id)).toEqual(['openai', 'anthropic']);
+    expect(sorted[1].models.map((model) => model.id)).toEqual([
       'claude-3-5-haiku',
       'claude-3-5-sonnet',
     ]);
-    expect(sorted[1].models.map((model) => model.id)).toEqual([
+    expect(sorted[0].models.map((model) => model.id)).toEqual([
       'gpt-4o',
       'gpt-4o-mini',
     ]);

@@ -53,12 +53,10 @@ describe('multi-user policy', () => {
     ]);
     expect(ROLE_POLICY_DEFAULTS.developer.settingsPermissions['bug-reports']).toEqual({ read: true, edit: true });
     expect(ROLE_POLICY_DEFAULTS.senior_developer.settingsPermissions['bug-reports']).toEqual({ read: true, edit: true });
-    expect(ROLE_POLICY_DEFAULTS.developer.settingsPermissions.bots).toEqual({ read: false, edit: false });
-    expect(ROLE_POLICY_DEFAULTS.senior_developer.settingsPermissions.bots).toEqual({ read: false, edit: false });
-    expect(ROLE_POLICY_DEFAULTS.admin.settingsPermissions.bots).toEqual({ read: true, edit: true });
-    expect(ROLE_POLICY_DEFAULTS.developer.bots).toBe(true);
-    expect(ROLE_POLICY_DEFAULTS.senior_developer.bots).toBe(true);
-    expect(ROLE_POLICY_DEFAULTS.admin.bots).toBe(true);
+    for (const role of ['developer', 'senior_developer', 'admin']) {
+      expect(ROLE_POLICY_DEFAULTS[role]).not.toHaveProperty('bots');
+      expect(ROLE_POLICY_DEFAULTS[role].settingsPermissions).not.toHaveProperty('bots');
+    }
     expect(ROLE_POLICY_DEFAULTS.developer.files).toBe(false);
     expect(ROLE_POLICY_DEFAULTS.developer.terminal).toBe(false);
     expect(ROLE_POLICY_DEFAULTS.developer.browser).toBe(true);
@@ -80,13 +78,12 @@ describe('multi-user policy', () => {
     });
 
     expect(policy.settingsPages).toEqual(['home', 'appearance']);
-    expect(policy.bots).toBe(false);
+    expect(policy).not.toHaveProperty('bots');
     expect(policy.terminal).toBe(true);
     expect(policy.browser).toBe(false);
     expect(policy.createWorktrees).toBe(true);
     expect(policy.createBranches).toBe(true);
     expect(ROLE_POLICY_DEFAULTS.developer.terminal).toBe(false);
-    expect(ROLE_POLICY_DEFAULTS.developer.bots).toBe(true);
     expect(ROLE_POLICY_DEFAULTS.developer.browser).toBe(true);
     expect(ROLE_POLICY_DEFAULTS.developer.createWorktrees).toBe(false);
     expect(ROLE_POLICY_DEFAULTS.developer.createBranches).toBe(false);
@@ -150,19 +147,29 @@ describe('multi-user policy', () => {
       ['/config/skills/catalog/source', 'GET', 'skills.catalog'],
       ['/config/skills/example', 'GET', 'skills.installed'],
       ['/config/plugins', 'GET', 'plugins'],
-      ['/config/slim/install', 'POST', 'plugins'],
       ['/magic-prompts/default', 'PUT', 'magic-prompts'],
       ['/magic-prompts/default', 'DELETE', 'magic-prompts'],
       ['/magic-prompts', 'DELETE', 'magic-prompts'],
       ['/config/providers', 'PUT', 'providers'],
       ['/provider', 'GET', 'providers'],
       ['/provider/openai/oauth/authorize', 'POST', 'providers'],
+      ['/provider/openai/accounts', 'GET', 'providers'],
+      ['/credential/cred_1', 'PATCH', 'providers'],
+      ['/credential/cred_1/activate', 'POST', 'providers'],
+      ['/credential/cred_1', 'DELETE', 'providers'],
       ['/provider/anthropic/claude-cli', 'GET', 'providers'],
       ['/provider/anthropic/prompt-mode', 'PUT', 'providers'],
       ['/quota/credentials/openai', 'PUT', 'providers'],
       ['/openchamber/tunnel/status', 'GET', 'tunnel'],
       ['/diagnostics/export', 'POST', 'about'],
       ['/opencode/update-check', 'GET', 'about'],
+      ['/config/opencode-resolution', 'GET', 'about'],
+      ['/config/opencode-update-check', 'GET', 'about'],
+      ['/config/claude-update-check', 'GET', 'about'],
+      ['/config/claude-resolution', 'GET', 'about'],
+      ['/config/claude-update', 'GET', 'about'],
+      ['/config/claude-update/install', 'POST', 'about'],
+      ['/config/claude-update/rollback', 'POST', 'about'],
       ['/projects/project-1/icon', 'PUT', 'projects'],
       ['/git/identities', 'GET', 'git'],
       ['/github/auth/start', 'POST', 'users'],
@@ -224,7 +231,7 @@ describe('multi-user policy', () => {
 
     expect(policy.settingsPermissions.appearance).toEqual({ read: true, edit: true });
     expect(policy.settingsPermissions['bug-reports']).toEqual({ read: true, edit: true });
-    expect(policy.settingsPermissions.bots).toEqual({ read: false, edit: false });
+    expect(policy.settingsPermissions).not.toHaveProperty('bots');
     expect(Object.keys(policy.settingsPermissions)).toEqual(SETTINGS_PERMISSION_SLUGS);
   });
 
@@ -240,9 +247,9 @@ describe('multi-user policy', () => {
 
     expect(Object.keys(policy.settingsPermissions)).toEqual(SETTINGS_PERMISSION_SLUGS);
     expect(policy.settingsPermissions.appearance).toEqual({ read: false, edit: false });
-    expect(policy.settingsPermissions.bots).toEqual({ read: true, edit: true });
     expect(policy.settingsPermissions['bug-reports']).toEqual({ read: false, edit: false });
     expect(policy.settingsPermissions).not.toHaveProperty('unknown');
+    expect(policy.settingsPermissions).not.toHaveProperty('bots');
   });
 
   it('returns values for a read-only page while rejecting mutations from it', () => {
@@ -402,7 +409,7 @@ describe('multi-user policy', () => {
     expect(settings.themeId).toBe('developer-theme');
     expect(settings.notificationMode).toBe('all');
     expect(settings.multiUser.capabilities.browser).toBe(true);
-    expect(settings.multiUser.capabilities.bots).toBe(true);
+    expect(settings.multiUser.capabilities).not.toHaveProperty('bots');
     expect(settings.multiUser.capabilities.createWorktrees).toBe(false);
     expect(settings.openaiApiKey).toBeUndefined();
     expect(settings.tunnelToken).toBeUndefined();

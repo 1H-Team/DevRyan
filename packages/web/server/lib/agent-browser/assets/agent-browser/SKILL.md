@@ -7,6 +7,8 @@ description: Inspect and visually verify websites with DevRyan's managed browser
 
 Use `devryan_browser` to verify website work in DevRyan's isolated browser lease. DevRyan creates the browser in the background; the user sees only an activity badge until they choose to observe it. Do not ask the user to open the browser panel first.
 
+Clicks on hidden, disabled, or off-viewport targets fail explicitly. Inspect and refresh refs after a stale-reference error; never assume a failed click succeeded. The live viewer shows the actual pointer and a blue click pulse.
+
 ## Workflow
 
 1. Call `devryan_browser` with `command: "open"` and omit `args` so the active branch's assigned preview is the authoritative target.
@@ -27,7 +29,7 @@ devryan_browser({ command: "screenshot", args: ["--full", "site.png"] })
 devryan_browser({ command: "close" })
 ```
 
-## Comparisons and recording (0.38.1)
+## Comparisons and recording (0.39.2)
 
 Use `command: "sequence"` for state that must survive across actions. A sequence
 runs 1–32 ordered steps on one lease and daemon, within a total timeout of at most
@@ -100,6 +102,13 @@ screenshot, video, and contact sheet before claiming visual acceptance. Preserve
 existing file-publication rules and report only files actually produced. WebMCP,
 connection/trust configuration, tab pinning, and session-wide input settings are
 not available through this tool.
+
+Shell verification starts in the mapped private project `$PWD`. Do not `cd` to
+the absolute logical project path: that live tree is read-only. Use `$TMPDIR`
+for one-call scratch or `$DEVRYAN_SESSION_TMP` for files needed by later calls;
+never assume `/tmp` is writable. Check temporary-directory creation and server
+launch before polling readiness; stop on setup failure. A shell-owned server
+and its browser checks must finish in the same bounded shell call.
 
 ## Safe DOM inspection
 

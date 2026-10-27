@@ -1,12 +1,14 @@
 import type { Provider } from '@opencode-ai/sdk/v2';
 
+import type { ProviderAccountModelFields } from '@/lib/providers/modelAvailability';
+
 // Antigravity (opencode-antigravity-auth) is retired and no longer offered as a
 // provider. Its entry exists only so leftover account files or plugin-written
 // config can still be disconnected; the source-driven visibility filter hides
 // it whenever nothing is left to remove.
 const RETIRED_PROVIDER_IDS = new Set(['antigravity']);
 
-type RetiredProviderEntry = Omit<Provider, 'models'> & { models: never[] };
+type RetiredProviderEntry = Omit<Provider, 'models'> & ProviderAccountModelFields & { models: never[] };
 
 const RETIRED_PROVIDER_ENTRIES: readonly RetiredProviderEntry[] = [
   { id: 'antigravity', name: 'Antigravity', source: 'custom', env: [], options: {}, models: [] },

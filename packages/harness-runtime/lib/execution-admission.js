@@ -4,15 +4,20 @@ import { hostDeadlineExpired } from './host-stall-clock.js';
 const context = new AsyncLocalStorage();
 export const executionRemainingMs = () => Math.max(0, (context.getStore()?.deadline ?? Infinity) - Date.now());
 export const executionDiagnostic = (record) => context.getStore()?.report?.(record);
+// True while an admission, summary or observation journals this work.
+export const executionReporting = () => typeof context.getStore()?.report === 'function';
 export const executionSignal = () => context.getStore()?.signal;
 export const checkExecutionAdmission = () => executionSignal()?.throwIfAborted();
 export const executionProgressMeter = () => context.getStore()?.meter;
 // Optional private-companion observations, never authorization inputs. Older
 // companions remain valid and report unknown origin rather than a guessed one.
+// Native host kinds (shell, writer, read) each run one confined process.
+const NATIVE_PROCESS_KINDS = new Set(['shell', 'writer', 'read']);
 export const executionToolMetadata = (input) => ({
   ...(['builtin', 'custom'].includes(input?.toolOrigin) ? { toolOrigin: input.toolOrigin } : {}),
   ...(['direct-admit', 'direct-finish'].includes(input?.action) ? { executionTier: 'direct' }
-    : ['control', 'process'].includes(input?.kind) ? { executionTier: input.kind } : {}),
+    : ['control', 'process'].includes(input?.kind) ? { executionTier: input.kind }
+      : NATIVE_PROCESS_KINDS.has(input?.kind) ? { executionTier: 'process' } : {}),
   ...(['custom_tool', 'native_reads_disabled', 'direct_admission_failed'].includes(input?.fallbackReason)
     ? { fallbackReason: input.fallbackReason } : {}),
 });
@@ -43,11 +48,11 @@ const followedProgress = (start) => {
 // for `slowMs` (default 2 s), so a hang remains visible while it happens.
 const SLOW_PHASE_MS = 2_000;
 const MAX_SUMMARY_STEPS = 32;
-const recordStep = (current, phase, elapsedMs) => {
+const recordStep = (current, phase, elapsedMs, count = 1) => {
   const steps = current?.summary?.steps;
   if (!steps || (!steps.has(phase) && steps.size >= MAX_SUMMARY_STEPS)) return;
   const step = steps.get(phase) ?? { count: 0, elapsedMs: 0 };
-  step.count += 1; step.elapsedMs += elapsedMs;
+  step.count += count; step.elapsedMs += elapsedMs;
   steps.set(phase, step);
 };
 const formatSteps = (steps) => [...steps].map(([phase, step]) => `${phase}:${step.count}/${step.elapsedMs}`).join(',');
@@ -66,7 +71,9 @@ const createReport = (input, onDiagnostic) => {
 // `timeoutMs` is an absolute cap. With `idleMs`, admission also expires once
 // neither this work nor the lock holder it waits behind has progressed for
 // that long, so queueing behind productive work does not end a turn.
-export async function withExecutionAdmission(input, action, { timeoutMs = 25_000, idleMs, onDiagnostic, signal, summary } = {}) {
+// `phase` names the root record (default `admission`); a preparation is its
+// own root, so its time is never reported twice (admission and preparation).
+export async function withExecutionAdmission(input, action, { timeoutMs = 25_000, idleMs, onDiagnostic, signal, summary, phase = 'admission' } = {}) {
   const controller = new AbortController();
   const expired = Object.assign(new Error('local_execution_timeout'), { code: 'local_execution_timeout', status: 503 });
   const started = Date.now();
@@ -81,9 +88,9 @@ export async function withExecutionAdmission(input, action, { timeoutMs = 25_000
   }, Math.min(idle, 1000));
   const combined = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
   const report = createReport(input, onDiagnostic);
-  const summarized = summary ? createSummary(summary, 'admission') : undefined;
+  const summarized = summary ? createSummary(summary, phase) : undefined;
   try {
-    return await context.run({ signal: combined, deadline: started + timeoutMs, report, meter, summary: summarized }, () => executionPhase('admission', action));
+    return await context.run({ signal: combined, deadline: started + timeoutMs, report, meter, summary: summarized }, () => executionPhase(phase, action));
   } finally { clearTimeout(timer); clearInterval(timer); }
 }
 
@@ -97,10 +104,44 @@ export async function withExecutionSummary(input, action, { phase, onDiagnostic,
   return context.run({ ...context.getStore(), report, summary: createSummary({ minMs, slowMs }, phase) }, () => executionPhase(phase, action));
 }
 
+// Like withExecutionSummary, for paths that ran without any execution context
+// (native direct admissions and finishes): failures keep their original error
+// and code, because timeout errors are rewrapped only for work that had a
+// context before. Inside an existing context it is withExecutionSummary.
+export async function withExecutionObservation(input, action, { phase, onDiagnostic, minMs, slowMs } = {}) {
+  if (context.getStore()) return withExecutionSummary(input, action, { phase, onDiagnostic, minMs, slowMs });
+  if (typeof phase !== 'string' || !phase) throw new TypeError('withExecutionObservation requires a phase');
+  const report = createReport(input, onDiagnostic);
+  return context.run({ report, summary: createSummary({ minMs, slowMs }, phase), observeOnly: true }, () => executionPhase(phase, action));
+}
+
+// Publication already owns its cancellation boundaries. Timing its root must
+// neither reject a committed result nor replace the original failure.
+export async function withExecutionTiming(input, action, { phase, onDiagnostic, minMs, slowMs } = {}) {
+  if (typeof phase !== 'string' || !phase) throw new TypeError('withExecutionTiming requires a phase');
+  const report = createReport(input, onDiagnostic);
+  const summary = createSummary({ minMs, slowMs }, phase);
+  return context.run({ ...context.getStore(), report, summary }, async () => {
+    const started = Date.now();
+    let completed = false;
+    const timer = setTimeout(() => report({ phase, state: 'started', slow: true }), summary.slowMs);
+    timer.unref?.();
+    try { const result = await action(); completed = true; return result; }
+    finally {
+      clearTimeout(timer);
+      const elapsedMs = Date.now() - started;
+      if (!completed || elapsedMs >= summary.minMs) report({ phase, state: completed ? 'completed' : 'failed', elapsedMs,
+        steps: formatSteps(summary.steps), ...(!completed ? { code: 'local_execution_failed' } : {}) });
+    }
+  });
+}
+
 // Timing-only steps for an active summary. Unlike executionPhase, they never
 // check the admission signal, so code that did not observe cancellation
 // before (for example the session-changes queue) cannot start throwing.
-export const executionStep = (phase, elapsedMs) => recordStep(context.getStore(), phase, elapsedMs);
+// `count` (default 1) lets one call record many units, such as files copied.
+export const executionStep = (phase, elapsedMs, count = 1) => recordStep(context.getStore(), phase, elapsedMs,
+  Number.isSafeInteger(count) && count >= 0 ? count : 1);
 export async function timedExecutionStep(phase, action) {
   const current = context.getStore();
   if (!current?.summary) return action();
@@ -137,7 +178,7 @@ export async function executionPhase(phase, action) {
     return result;
   } catch (cause) {
     const failure = current?.signal?.aborted ? current.signal.reason
-      : current && (cause?.name === 'TimeoutError' || ['capture_timeout', 'LOCK_TIMEOUT'].includes(cause?.code))
+      : current && !current.observeOnly && (cause?.name === 'TimeoutError' || ['capture_timeout', 'LOCK_TIMEOUT'].includes(cause?.code))
         ? Object.assign(new Error('local_execution_timeout', { cause }), { code: 'local_execution_timeout', status: 503 }) : cause;
     settle({ phase, state: 'failed', elapsedMs: Date.now() - started,
       code: ['local_execution_timeout', 'execution_preparation_stalled', 'execution_poller_lost',
@@ -162,7 +203,7 @@ export async function quietExecutionPhase(phase, action, slowMs = 250) {
     return result;
   } catch (cause) {
     const failure = current?.signal?.aborted ? current.signal.reason
-      : current && (cause?.name === 'TimeoutError' || ['capture_timeout', 'LOCK_TIMEOUT'].includes(cause?.code))
+      : current && !current.observeOnly && (cause?.name === 'TimeoutError' || ['capture_timeout', 'LOCK_TIMEOUT'].includes(cause?.code))
         ? Object.assign(new Error('local_execution_timeout', { cause }), { code: 'local_execution_timeout', status: 503 }) : cause;
     current?.report?.({ phase, state: 'failed', elapsedMs: Date.now() - started,
       code: ['local_execution_timeout', 'execution_preparation_stalled', 'execution_poller_lost',
@@ -234,7 +275,72 @@ export async function withExecutionPreparation(input, action, { signal, onDiagno
         code: 'execution_preparation_stalled', status: 503,
       }));
     }, Math.min(stallMs, 1000));
-    try { return await executionPhase('preparation', action); }
+    try { return await action(); }
     finally { clearInterval(timer); }
-  }, { timeoutMs, onDiagnostic, summary, signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal });
+  }, { timeoutMs, onDiagnostic, summary, phase: 'preparation', signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal });
+}
+
+// Execution context across a thread boundary (session-mutation-host.js). The
+// caller's context is reduced to plain values: deadline, whether it is
+// cancellable, journaled, metered or summarized. The worker runs the call in
+// an equivalent context, forwards its progress, reports and summary steps, and
+// the caller applies them in its own context, so a remote call looks to
+// admission, idle and stall timers exactly like local work.
+export const captureExecutionContext = () => {
+  const current = context.getStore();
+  if (!current) return null;
+  return {
+    deadline: Number.isFinite(current.deadline) ? current.deadline : null,
+    cancellable: Boolean(current.signal),
+    reporting: typeof current.report === 'function',
+    metered: Boolean(current.meter),
+    summary: current.summary ? { minMs: current.summary.minMs, slowMs: current.summary.slowMs } : null,
+    observeOnly: current.observeOnly === true,
+  };
+};
+// The caller's side: the live context plus appliers for forwarded events.
+export const remoteExecutionTarget = () => {
+  const current = context.getStore();
+  let waiting = false;
+  return {
+    signal: current?.signal,
+    report: (record) => current?.report?.(record),
+    progress: (state) => {
+      const meter = current?.meter;
+      if (!meter) return;
+      meter.progress = Date.now();
+      // Remote queue waits count as waiting, as a local slot wait does.
+      if (state.waiting !== waiting) { meter.waiters += state.waiting ? 1 : -1; waiting = state.waiting; }
+    },
+    steps: (steps) => { for (const [phase, step] of steps) recordStep(current, phase, step.elapsedMs, step.count); },
+    settle: () => { if (waiting && current?.meter) { current.meter.waiters -= 1; current.meter.progress = Date.now(); } waiting = false; },
+  };
+};
+// The worker's side: runs `action` in a context equivalent to `captured`.
+// `onReport` and `onProgress` forward records and meter state. Resolves
+// `{ failed, result | failure, steps }`, the summary steps recorded either way.
+const REMOTE_ROOT = '\0remote';
+export async function runInRemoteExecutionContext(captured, action, { signal, onReport, onProgress, progressMs = 250 } = {}) {
+  if (!captured) {
+    try { return { failed: false, result: await action(), steps: [] }; }
+    catch (failure) { return { failed: true, failure, steps: [] }; }
+  }
+  const meter = captured.metered ? { progress: Date.now(), waiters: 0 } : undefined;
+  const summary = captured.summary ? createSummary(captured.summary, REMOTE_ROOT) : undefined;
+  let last = null;
+  const forward = () => {
+    if (!meter) return;
+    const state = followedProgress(meter), next = `${state.progress}:${state.waiting}`;
+    if (next !== last) { last = next; try { onProgress?.({ waiting: state.waiting }); } catch { /* Observer only. */ } }
+  };
+  const timer = meter ? setInterval(forward, progressMs) : null;
+  timer?.unref?.();
+  const steps = () => (summary ? [...summary.steps] : []);
+  try {
+    const result = await context.run({ signal: captured.cancellable ? signal : undefined, deadline: captured.deadline ?? undefined,
+      report: captured.reporting ? (record) => { try { onReport?.(record); } catch { /* Observer only. */ } } : undefined,
+      meter, summary, ...(captured.observeOnly ? { observeOnly: true } : {}) }, action);
+    return { failed: false, result, steps: steps() };
+  } catch (failure) { return { failed: true, failure, steps: steps() }; }
+  finally { clearInterval(timer); forward(); }
 }

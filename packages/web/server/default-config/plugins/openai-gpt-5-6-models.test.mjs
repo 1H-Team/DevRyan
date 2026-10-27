@@ -451,10 +451,10 @@ describe("OpenAI GPT-5.6 provider model normalization", () => {
     });
   });
 
-  test("adds Codex identity headers to OAuth Luna requests", async () => {
+  test("does not add Codex identity headers for Sign in with ChatGPT Luna", async () => {
     const hooks = await OpenAIGpt56ModelsPlugin();
     await hooks.provider.models({ models: {} }, { auth: { type: "oauth" } });
-    const output = { headers: {} };
+    const output = { headers: { existing: "value" } };
 
     await hooks["chat.headers"]({
       model: {
@@ -464,16 +464,13 @@ describe("OpenAI GPT-5.6 provider model normalization", () => {
       },
     }, output);
 
-    expect(output.headers).toEqual({
-      originator: "codex_cli_rs",
-      "User-Agent": "codex_cli_rs/0.0.0 (OpenCode)",
-    });
+    expect(output.headers).toEqual({ existing: "value" });
   });
 
-  test("adds Codex identity headers to OAuth Luna Fast requests", async () => {
+  test("does not add Codex identity headers for Sign in with ChatGPT Luna Fast", async () => {
     const hooks = await OpenAIGpt56ModelsPlugin();
     await hooks.provider.models({ models: {} }, { auth: { type: "oauth" } });
-    const output = { headers: {} };
+    const output = { headers: { existing: "value" } };
 
     await hooks["chat.headers"]({
       model: {
@@ -483,10 +480,7 @@ describe("OpenAI GPT-5.6 provider model normalization", () => {
       },
     }, output);
 
-    expect(output.headers).toEqual({
-      originator: "codex_cli_rs",
-      "User-Agent": "codex_cli_rs/0.0.0 (OpenCode)",
-    });
+    expect(output.headers).toEqual({ existing: "value" });
   });
 
   test("does not add Codex identity headers outside OpenAI OAuth Luna", async () => {

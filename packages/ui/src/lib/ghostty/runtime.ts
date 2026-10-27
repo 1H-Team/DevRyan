@@ -21,19 +21,19 @@ const textDecoder = new TextDecoder();
 
 // The vendored artifact is fetched at runtime; `new URL` keeps this a plain
 // static asset for Vite in every surface (web and Electron's
-// openchamber-ui:// protocol) and a readable file URL under bun's test runner.
+// custom app protocol) and a readable file URL under bun's test runner.
 const ghosttyWasmUrl = new URL('./vendor/ghostty-vt.wasm', import.meta.url);
 
 /**
  * Compiled from scripts/ghostty-write-pty.zig: one exported function that
- * forwards libghostty-vt's write-PTY callback to the `openchamber_write_pty`
- * import. Embedding the 121 bytes avoids a second network fetch and any CSP
+ * forwards libghostty-vt's write-PTY callback to the `devryan_write_pty`
+ * import. Embedding the 117 bytes avoids a second network fetch and any CSP
  * question about data: URLs.
  */
 const WRITE_PTY_TRAMPOLINE = Uint8Array.from([
-  0, 97, 115, 109, 1, 0, 0, 0, 1, 8, 1, 96, 4, 127, 127, 127, 127, 0, 2, 29, 1, 3, 101, 110, 118,
-  21, 111, 112, 101, 110, 99, 104, 97, 109, 98, 101, 114, 95, 119, 114, 105, 116, 101, 95, 112,
-  116, 121, 0, 0, 3, 2, 1, 0, 5, 3, 1, 0, 16, 6, 9, 1, 127, 1, 65, 128, 128, 192, 0, 11, 7, 30, 2,
+  0, 97, 115, 109, 1, 0, 0, 0, 1, 8, 1, 96, 4, 127, 127, 127, 127, 0, 2, 25, 1, 3, 101, 110, 118,
+  17, 100, 101, 118, 114, 121, 97, 110, 95, 119, 114, 105, 116, 101, 95, 112, 116, 121, 0, 0,
+  3, 2, 1, 0, 5, 3, 1, 0, 16, 6, 9, 1, 127, 1, 65, 128, 128, 192, 0, 11, 7, 30, 2,
   6, 109, 101, 109, 111, 114, 121, 2, 0, 17, 103, 104, 111, 115, 116, 116, 121, 95, 119, 114,
   105, 116, 101, 95, 112, 116, 121, 0, 1, 10, 18, 1, 16, 0, 32, 0, 32, 1, 32, 2, 32, 3, 16, 128,
   128, 128, 128, 0, 11,
@@ -216,14 +216,13 @@ export class GhosttyRuntime {
   }
 
   private async installWritePtyTrampoline(): Promise<void> {
+    const writePty = (_terminal: number, userdata: number, pointer: number, length: number) => {
+      const writer = this.ptyWriters.get(userdata);
+      if (!writer || length === 0) return;
+      writer(textDecoder.decode(new Uint8Array(this.memory.buffer, pointer, length)));
+    };
     const result = await WebAssembly.instantiate(WRITE_PTY_TRAMPOLINE, {
-      env: {
-        openchamber_write_pty: (_terminal: number, userdata: number, pointer: number, length: number) => {
-          const writer = this.ptyWriters.get(userdata);
-          if (!writer || length === 0) return;
-          writer(textDecoder.decode(new Uint8Array(this.memory.buffer, pointer, length)));
-        },
-      },
+      env: { devryan_write_pty: writePty, openchamber_write_pty: writePty },
     });
     const trampoline = result.instance.exports.ghostty_write_pty;
     const table = this.exports.__indirect_function_table;

@@ -1,6 +1,7 @@
 import os from 'node:os';
 import path from 'node:path';
-import { resolvePlanProjectStorageId } from '@openchamber/shared-runtime/lib/plan-storage-id.js';
+import { resolvePlanProjectStorageId } from '@devryan/shared-runtime/lib/plan-storage-id.js';
+import { resolveDevRyanDataRoot } from '@devryan/shared-runtime/node/data-root.js';
 
 const normalizeProjectPathForId = (value) => {
   if (typeof value !== 'string') return '';
@@ -24,9 +25,7 @@ export const resolveProjectPlansDirectory = async (projectPath, homeDirectory = 
   }
 
   return path.join(
-    path.resolve(normalizedHome),
-    '.config',
-    'openchamber',
+    resolveDevRyanDataRoot({ env: {}, home: path.resolve(normalizedHome) }),
     'projects',
     projectID,
     'plans',

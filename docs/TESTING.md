@@ -1,270 +1,103 @@
 # DevRyan Testing
 
-## Required gates
+## Commands
 
-- `bun run test:full` is the deterministic repository test gate. It recursively discovers repository script tests, runs every test-owning workspace package, and includes the locked legacy Tauri Cargo suite.
-- `bun run validate:quick` selects checks from the current changed-file set for fast local feedback.
-- `bun run validate:affected` expands validation to affected packages and shared-runtime dependents.
-- `bun run validate:full` runs workspace lint, type checks, documentation validation, and the full deterministic test gate.
-- Release verification also runs `bun run build` and `bun run bundle:check`.
+| Command | Use |
+| --- | --- |
+| `bun run validate` | The local gate before every push and release tag. Diffs against the upstream branch (override with `VALIDATE_BASE`) and runs only what the change touches. |
+| `bun run validate:full` | Lint, import boundaries, the browser graph, type-check, `docs:validate`, build (once), `bundle:check` and `test:full`. CI runs these same checks across its build and test lanes. |
+| `bun run test:startup` | Curated startup and user-data contract. |
+| `bun run test:full` | Scripts, the visual fixture and every package suite, as one bounded concurrent pool (`node scripts/test-full.mjs [--suite=web,ui]`). |
+| `bun run docs:validate` | Markdown links and inline-code paths. |
 
-The full gate rejects skipped or todo tests, undiscovered JavaScript/TypeScript test files, test-owning workspace packages omitted from `test:full`, and stale paths in the checked feature matrix.
+`bun run validate` runs:
 
-Documentation-only changes select `docs:validate`. Packaged agent/skill Markdown
-is runtime configuration and also selects its owning contract suite. Manifests
-and lockfiles require full validation even in quick mode; `test:affected` selects
-the full test gate for those inputs. Shared-runtime changes include web tests in
-affected mode. See the command planner in `scripts/validate.mjs`.
+- oxlint on changed files;
+- type-check of changed packages and their dependents (everything when root `package.json`, `bun.lock`, `.oxlintrc.json`, `tsconfig.json`, `vite-theme-plugin.ts` or `.opencode/opencode.json` change);
+- tests of changed packages and their dependents;
+- `test:scripts` when `scripts/`, `.github/` or `.opencode/agents|plugins` change;
+- `docs:validate` when Markdown changes;
+- import boundaries and the browser graph when package code changes (every importer when a package manifest, `scripts/import-boundaries.json` or a checker changes);
+- `test:startup`, always: each startup group whose owner suite already runs in the same plan runs there instead of twice.
 
-The documentation check scans current Markdown/MDX local links, reference-link
-definitions, HTML `src`/`href`, and explicit repository source paths in inline
-code. It ignores code examples, remote URLs, and same-page fragments; it checks
-file existence, not heading anchors. Historical reports under `docs/audits/`,
-saved plans under `docs/superpowers/plans/`, and changelog/backport records report
-missing old targets as warnings. Known generated build/runtime paths are
-reported as unchecked. It does not contact external sites.
+A change confined to the `version` fields that `scripts/bump-version.mjs` writes (package manifests, workspace versions in `bun.lock`, the legacy Tauri `tauri.conf.json`, `Cargo.toml` and the `devryan-desktop` entry in `Cargo.lock`) runs `node scripts/release.mjs check-versions` (every version file and `bun.lock` workspace agrees) instead of every package's lint, type-check and tests. Any other change to those files keeps the full shared-configuration plan. CI still runs everything for the bump commit before release admission.
 
-## Suite ownership
+Independent static checks run concurrently and all report, and any failure stops before tests. In `validate:full` the build and bundle budgets then run in order beside the test pool, and `scripts/built-web-assets.test.mjs` (the only test that reads the build output) runs after the build; in `validate` (fast) the build chain still precedes tests. Test commands run as one weighted pool of independent processes within a capacity of `DEVRYAN_TEST_CONCURRENCY` (default: half the cores, between 2 and 4). A unit reserves its `weight` (default 1): the Vitest `web` project and the harness suite start their own workers and weigh 2. Local runs split the serial `node --test` script batch into three timing-balanced shards and the web runtime-host project into two (`localTestUnits` in `scripts/test-ci-lanes.mjs`; CI lanes use their own inventory). While the host's 1-minute load average is above its core count, the pool starts no further unit (one always runs), so concurrent runs on one machine (other worktrees, a build) queue instead of driving timeouts; `DEVRYAN_TEST_LOAD_LIMIT` sets the ceiling as a multiple of the cores and `0` disables it. Every unit has a wall-clock budget (`DEVRYAN_TEST_UNIT_TIMEOUT_MS`, default 20 minutes) after which its process group is killed and it fails as timed out; script `node --test` files also get `--test-timeout=300000` and `--test-force-exit`. Each Bun package run gets the cores the pool leaves it (`--parallel=<cores / DEVRYAN_TEST_CONCURRENCY>`, at least two, scaled by a heavy unit's weight; `DEVRYAN_TEST_WORKERS` overrides), each unit's output printed whole when it ends, a heartbeat naming running units every minute, every unit run to completion and every failure listed. Native graph test files share one exclusive pool resource: they build and spawn the pinned runtime, and the shared fixture's browser OAuth callback binds localhost:1455. Independent units keep running alongside them. Interrupting stops every owned process group and removes the run's scratch. Both modes end with per-command and slowest-unit timings.
 
-### Typecheck memory and incremental state
+`scripts/check-import-boundaries.mjs` resolves static, re-export, `require` and literal dynamic imports between packages. Application packages (web, Electron, legacy desktop) expose only their `main`/`exports`; a package that declares `exports` exposes only those targets, by package name or relative path. Tests (`*.test.*`, `*.spec.*` and files under a `tests/` directory) may import another package's private files, since parity and integration tests exercise both sides; they are still refused a package-name import that the target's `exports` omit. Each temporary exception in `scripts/import-boundaries.json` (production code only; currently none) is one exact importer/target pair with the plan stage that removes it (`unscheduled` when none does yet); an exception that no longer matches fails, so the list only shrinks. No exception covers a package-name import of a subpath the target's `exports` omits, because Node refuses that import at runtime. `scripts/check-browser-graph.mjs` walks the web Vite entry points with the build's aliases and fails on Node builtins, `adm-zip`, or a web-server, Electron or Node-only shared-runtime file.
 
-`bun run type-check` runs workspace checks sequentially to bound overlap within
-that invocation. UI and web retain separate checks because their ambient types
-and compiler contexts differ, even though both include the shared UI. Each uses
-its own incremental build-info file under ignored `.cache/typecheck/`; deleting
-that cache directory forces fresh checks. Cached checks still report type errors
-and invalidate affected results when sources change. Independent agent commands
-can still overlap; avoid launching multiple full typechecks at once.
+A docs-only change runs only `docs:validate`. Both validate modes fail if the run left new entries in `.cache/` (see [STORAGE_CLEANUP.md](STORAGE_CLEANUP.md)).
 
-For a fresh memory diagnostic, run one target at a time:
+## CI
 
-```bash
-bun run type-check:diagnose ui
-bun run type-check:diagnose web
-```
+`.github/workflows/ci.yml` runs on every main push and pull request. Every job starts at once; none waits for another and no artifacts move between them:
 
-These commands print Node/TypeScript versions, the effective V8 heap limit,
-host memory, TypeScript extended diagnostics, elapsed time, peak RSS and exit
-status. They use fresh disposable caches without replacing the normal caches.
-Peak RSS and TypeScript's memory counter measure different things. Host memory
-is not a container allowance. Environment values are not printed. A fatal abort
-or forced kill may prevent the final summary and cache cleanup; retain stderr
-and the shell's exit status, and remove any leftover `diagnose-*` cache directory.
+- `static` (Ubuntu): `node scripts/validate.mjs static` — lint, import boundaries, the browser graph, type-check and `docs:validate`, run concurrently.
+- `build` (Ubuntu): `node scripts/validate.mjs build` — the build, bundle budgets and the tests of the built assets (`BUILD_JOB_TESTS` in `scripts/test-ci-lanes.mjs`, such as `scripts/built-web-assets.test.mjs`).
+- `tests` (two Ubuntu lanes): `node scripts/validate.mjs ci:<lane>` with the normal scratch guard.
+- `native-tests` (three macOS lanes): build and verify the native v2 runtime in-lane (cheaper than shipping it between jobs), then run their lane. GitHub Free runs five macOS jobs at a time and a release holds two while it waits for CI, so three is the most CI may use.
 
-No command raises the heap limit or retries automatically. Only after confirming
-a V8 heap-exhaustion diagnostic, choose a limit that fits the host/container
-budget and apply it to the failing command, for example:
+`scripts/test-ci-lanes.mjs` expands the full suite into files before assigning platforms; it keeps macOS sandbox, native binary, case-insensitive filesystem and platform-gated checks on macOS. Units are packed onto lanes longest first from the recorded durations in `scripts/test-unit-timings.json` (a unit without a recording costs the median); the web runtime-host Vitest project runs as two shards. Every lane uploads its unit timings as the `test-timings-<lane>` artifact; refresh the recordings with `bun run test:timings:update <files...>`. The native-stream file has two disjoint case shards (ordinary local runs register every case); `test-suite-contract.test.mjs` checks the complete inventory and shard union, and that a case-sharded file registers every test through its shard filter. CI runs Bun package suites in randomized order seeded with the workflow run number (`DEVRYAN_TEST_SEED`). Main-push concurrency is unique to the commit SHA and never cancels a different main commit; superseded PRs still cancel. Release preparation overlaps CI, but publication requires the exact main-push workflow to pass. `bun run validate:full` remains the equivalent complete local gate. `release-cache.yml` is manual-only; see [Release pipeline](RELEASE_PIPELINE.md).
 
-```bash
-NODE_OPTIONS=--max-old-space-size=4096 bun run type-check:diagnose ui
-```
+Measured and deliberately not adopted (2026-10): caching `tsbuildinfo` or the Vitest module cache in CI (TypeScript 7 type-checks every package in about 10 s and transforms are 1–2% of Vitest time), parallel `node --test` for the script suite (no speedup; deadline-sensitive tests fail under contention), and moving hazard-free web tests to `bun test` (they rely on Vitest APIs such as `vi.waitFor`, and parallel Vitest already runs them in under a minute).
 
-4096 is an example in MiB, not necessarily an increase over the runtime default.
-A process kill, timeout, or exit code 134 alone does not prove heap exhaustion.
-For failures inside DevRyan tools, follow the journal correlation and gap checks
-in [runtime verification](AGENT_RUNTIME_VERIFICATION.md).
+## Startup contract
 
-### Package suites
+`scripts/test-startup-contract.mjs` runs the startup and user-data tests: runtime bundle startup, selection and upgrade, ledger and session integrity, Retry, cancellation, delayed bootstrap, event subscription, and Electron startup and ownership. It uses disposable fixtures only: no installed-app data, live accounts or OS service registration. `STARTUP_CONTRACT_GROUPS` names each group's owner suite (`electron`, `scripts`, `shared`, `harness`, `ui`, `web`); `--covered-by=<suite,...>` skips groups already covered elsewhere in the same run.
 
-| Surface | Command or runner | Ownership |
+## Suites and runners
+
+`test:full` runs every suite below, including the bundled Plan Mode contract in the frozen legacy Tauri package. Cargo tests are not run because they require native build assets. `FULL_TEST_SUITES` in `scripts/test-full.mjs` is the inventory. The pool splits three suites without changing what they run: one process per script Bun test file, the two Vitest projects of the web suite (`test:vitest --project=web|web-runtime-host`) beside its Bun native files (`test:native`), and the harness suite with Bun file workers (`bun test --parallel=4`). `scripts/test-suite-contract.test.mjs` checks every split runs each file exactly once.
+
+Set `DEVRYAN_TEST_TIMINGS=<file.json>` to record each unit's duration and status. Set `DEVRYAN_TEST_SEED=<n>` to run Bun package suites in randomized order (`--randomize --seed=<n>`); a failure reproduces with the same seed. Tests must not depend on the order of other tests: reset shared stores, module-level mocks and globals in `beforeEach`, not only `afterEach`.
+
+Expensive invariants are tested at the smallest size that crosses the boundary. Production limits that tests must exceed (ledger install batches, the change-store listing bound, the admission dedupe cache) are constructor options with unchanged defaults, so a test crosses them with a few hundred records instead of tens of thousands. Create test Git repositories with `initGitRepository()` from `scripts/test-git-template.mjs` (a copied template, about ten times faster than `git init`).
+
+| Suite | Command | Runner |
 | --- | --- | --- |
-| Repository, release, and project-plugin tooling | `bun run test:scripts` | `scripts/**/*.test.mjs` and `.opencode/plugins/**/*.test.mjs`, recursively discovered by `scripts/test-scripts.mjs` |
-| Harness runtime | `bun run --cwd packages/harness-runtime test` | Diagnostics journal, evidence, worktree, lifecycle, and process contracts |
-| Managed orchestration | `bun run --cwd packages/orchestration-runtime test` | Shared managed-task admission, scheduling, cancellation, and recovery |
-| Production Bots runtime | `bun run --cwd packages/bots-runtime test` | Strict JSON contracts, lifecycle/policy state, scope isolation, leases, action hashing, and routine recovery |
-| Production Bot engine proxy | `bun run --cwd packages/bot-engine-proxy test` | Eleven Engine-operation schemas, API-version/path hardening, ownership labels, response bounds, and proof that the supervisor has no socket mount |
-| Production Bot computer | `bun run --cwd packages/bot-computer test` | Authenticated reviewed Chromium commands, profile/scratch ownership, accessibility refs, control, screencast, and gateway file transfer |
-| Production Bot retrieval index | `bun run --cwd packages/bot-indexer test` | Deterministic chunks, offline embeddings, SQLite FTS/vector ranking, namespace isolation, rebuild/recovery, and authenticated host API |
-| Cursor SDK runtime | `bun run --cwd packages/cursor-sdk-runtime test` | Cursor execution, question bridge, tool calls, auth, and usage contracts |
-| Electron | `bun run --cwd packages/electron test` | Recursively discovers Electron `*.test.*` outside generated/package output; dispatches Node, Bun, and Vitest suites to their declared runner, isolates Bun module/global mocks, and leaves Docker acceptance behind its explicit opt-in below |
-| Legacy Tauri | `bun run --cwd packages/desktop test` | Locked Rust unit and local integration tests in `src-tauri` |
-| Shared UI | `bun run --cwd packages/ui test` | UI, store, sync, Git, tool presentation, and policy tests; global mocks run in isolated processes |
-| Web | `bun run --cwd packages/web test` | Web runtime adapters, Express APIs, libraries, CLI, packaging, and integration contracts |
+| Scripts, `.opencode/agents` and `.opencode/plugins` tests, reviewed runtime inputs | `bun run test:scripts` | `scripts/test-scripts.mjs`: files importing `bun:test` run one per `bun test` process (never sharing Bun's resolver), the rest in one `node --test` run, all through the bounded pool. `DEVRYAN_SCRIPT_TEST_CONCURRENCY` sets Node concurrency (default: one file at a time inside the outer pool). |
+| Shared UI | `bun run --cwd packages/ui test` | `scripts/test-ui.mjs`: one `bun test --parallel` run; every file gets its own global and module registry, so `mock.module` and global replacements cannot leak |
+| Web | `bun run --cwd packages/web test` | `test:vitest` (`vitest.config.ts`: project `web` file-parallel with a 15 s test budget; project `web-runtime-host` with two workers for the native runtime-host suites; no app build plugins), then `test:native`: three native-host files and the native integration directory under `bun test`. Native host scripts: `bun run --cwd packages/web test:native-host`. |
+| Electron | `bun run --cwd packages/electron test` | `scripts/test-electron.mjs` routes by import: `node:test` to Node (concurrent files), `bun:test` to one `bun test --parallel` run; any other framework is refused |
+| Legacy Tauri JavaScript contract | `bun run --cwd packages/desktop test:managed-orchestration` | `bun test` |
+| `shared-runtime`, `harness-runtime`, `orchestration-runtime`, `cursor-sdk-runtime` | `bun run --cwd packages/<name> test` | `bun test` |
 
-Runner, discovery, validation-selection, and release-gate changes belong to `scripts/`. Feature tests belong beside their source unless an integration contract spans packages.
+Runner and discovery changes belong in `scripts/`. Feature tests live beside their source unless a contract spans packages.
 
-## Checked feature matrix
+## Policies enforced by lint
 
-`scripts/feature-test-matrix.mjs` is the executable source of truth connecting current source anchors to deterministic test anchors. Its contract test covers these feature families:
+Module-graph rules that used to be source-text tests (a component must not import an eager dialog, a removed surface, or a heavy renderer; a file must not own timers) live in `.oxlintrc.json` `overrides` as path-scoped `no-restricted-imports` and `no-restricted-globals` rules, so `bun run lint` enforces them once instead of a test reading the source. Tests assert behaviour: rendered markup, calls and state, not the text of the implementation. Keep a source read only for a genuine text contract (CSS rules, generated assets, documentation).
 
-- shared UI, chat, session, and event synchronization;
-- web/server APIs and web `RuntimeAPIs` parity;
-- Electron integrations and legacy Tauri compatibility;
-- Cursor SDK, managed orchestration, and Production Bots runtime contracts;
-- diagnostics, evidence, worktrees, providers, and quota;
-- Git, GitHub, terminal, skills, plugins, MCP, notifications, and TTS;
-- browser preview/CDP, CLI/tunnels/auth, packaging, release branding, validation, bundle budgets, and agent evaluations;
-- product-tool discovery, permission aliases, provider prompt policy, presentation families, state/target rendering, activity grouping, unknown-tool fallback, and managed-task replacement cards.
+## Test-suite contract
 
-Tool tests intentionally describe stable policy and presentation families instead of enumerating every possible plugin tool. A newly discovered tool must remain visible through the safe generic fallback.
+`scripts/test-suite-contract.test.mjs` fails when a test file is not discovered by its package runner, when a deterministic test uses `skip` or `todo`, or when the feature matrix is stale. Do not silence a scenario: delete tests for removed behavior or rewrite them for the current contract. Opt-in gates below are reported as not run, never skipped.
+
+`scripts/feature-test-matrix.mjs` maps feature families to source and test anchors; the contract test checks that every anchor exists. Add a row when you add a feature family. Tool tests describe stable policy and presentation families, not every plugin tool; a new tool must stay visible through the generic fallback.
 
 ## Fixture rules
 
-Deterministic suites must use temporary directories, injected dependencies, or loopback-only fake services. Tests must not require credentials, live providers, external network access, the user's configuration, or installed-app state. Always clean up temporary files and child processes, including failure paths.
+- Use temporary directories in the OS temp dir, injected dependencies or loopback-only fakes. Never require credentials, live providers, external network, the user's configuration or installed-app state.
+- `packages/web` Vitest gives every test file its own empty `DEVRYAN_DATA_DIR` under `<os tmpdir>/devryan-web-test/run-*` (`test/isolated-data.global.mjs`, `test/isolated-data.setup.mjs`), removed when the run ends. A guard fails any test file whose process creates, writes, moves or removes a path inside the real `~/.config/devryan`, `~/.config/openchamber` or `~/.config/opencode`, even when the code swallows the refusal. Child processes and the Bun `test:native` suites are not intercepted.
+- The web `server/test-supertest.js` helper owns unbound loopback listeners until every sharing request finishes; already-bound servers remain caller-owned.
+- Clean up temp files and child processes on pass, failure and interruption. Never write scratch under `.cache/`.
+- `scripts/qa/run-root.mjs` `createRunRoot` removes a run directory (`<os tmpdir>/devryan-<family>`) unless `--keep-artifacts` or `DEVRYAN_KEEP_ARTIFACTS=1` is set.
+- DevRyan names are canonical; the installed OpenChamber identities and accepted aliases are listed in [identity compatibility](IDENTITY_COMPATIBILITY.md). DevRyan branding assertions apply to public release filenames and metadata.
 
-Use narrow fixtures that state the contract being exercised. Preserve public compatibility identifiers such as `@openchamber/*`, `OPENCHAMBER_*`, `openchamber://`, config paths, and event names. DevRyan branding assertions apply to public release filenames and user-facing release metadata.
+## Opt-in groups
 
-Do not silence a deterministic scenario with `skip` or `todo`. Remove tests for deleted behavior, or rewrite them around the current contract. Nondeterministic/manual validation belongs in release or audit documentation, not the required unit/integration gate.
+Native installer tests are excluded from the deterministic gate. Run them on macOS:
 
-## Production Bots Docker and acceptance gates
-
-The normal deterministic gate never requires Docker. Four opt-in groups use
-only disposable test containers/volumes and must be run on a release host with a
-healthy Docker Engine:
-
-```bash
-DEVRYAN_RUN_DOCKER_TESTS=1 bun test packages/bot-supervisor
-DEVRYAN_RUN_BROWSER_TESTS=1 bun test packages/bot-computer/src/browser.test.js
-DEVRYAN_RUN_BOT_INDEXER_DOCKER_TESTS=1 bun run --cwd packages/bot-indexer test
-DEVRYAN_RUN_BOT_DB_DOCKER_TESTS=1 bun test --cwd packages/electron tests/bot-catalog.docker.test.mjs --timeout 600000
+```sh
+bun run --cwd packages/electron build:runtime-service-control
+DEVRYAN_RUN_DMG_INSTALLER_NATIVE_TESTS=1 bun run --cwd packages/electron test
 ```
 
-The local Bot catalog group needs the development catalog images
-(`docker build -f packages/bot-db/docker/database/Dockerfile -t devryan/bot-database:dev .`
-and the same for `rest`). Every run uses a unique `devryan-it-<hex>` Compose
-project, namespace and data directory and refuses production resource names,
-so it never touches an installed runtime. It verifies initialization,
-migrations, the REST boundary, backup → verified candidate → validation →
-journaled swap → commit, rollback of an uncommitted replacement, newer-schema
-refusal, Start Empty, cold restart, and a hosted-catalog import against a
-GET-only fake cloud: drift rejection, a resumable 402 block, a disjoint merge
-with regenerated identities, owner mappings and the activation hold, and a
-conflicting re-import that changes nothing.
+| Group | Covers |
+| --- | --- |
+| DMG installer (macOS only) | Native atomic install/rollback exchanges and identity-based recovery with synthetic app data. It does not launch a packaged DMG. |
 
-The supervisor group verifies the real Docker-socket round trip through the
-engine proxy, owned-resource confinement, internal/public network split,
-browser-egress failure closure, and standard/runsc replacement when the host
-advertises gVisor. The engine-proxy deterministic suite covers all eleven
-version-normalized operations plus malformed bodies, path/query smuggling,
-upgrades, ownership, image/network/volume scope, and unavailable-proxy behavior.
-The Chromium group builds the fixture image and verifies authenticated explicit
-proxying, public/private/metadata/redirect/rebinding policy, token rotation,
-login persistence, ref fencing, control contention, profile reset, private file
-transfer, and graceful flush. The indexer group builds the pinned offline-model
-image and verifies exact namespace isolation, persistence across container
-replacement, and `rebuild_required` after deleting its disposable volume.
+Live multi-user checks use the password-free accounts in [Agent runtime verification](AGENT_RUNTIME_VERIFICATION.md). Database migration checks run on an isolated local Supabase stack only: `supabase db reset`, then `supabase db lint --local`. Never use `--linked`.
 
-The Production Bots release acceptance gate is:
+## Isolated QA and releases
 
-```bash
-bun run validate:full
-bun run build
-bun run electron:build
-bun run release:test:arm
-bun run release:test:intel
-git diff --check
-```
-
-`electron:build` is expected to reject a release build without the
-release-generated, signature-verified `bot-runtime/images.release.json`. Do not
-copy the development manifest into that location or record that safety failure
-as a pass. Build and sign the multi-architecture images through the release
-workflow, verify their SBOM/provenance/signatures, then rerun packaging.
-
-The local Tauri compatibility smokes still build the app and DMG when release
-signing secrets are unavailable, but omit updater artifacts and code signing in
-that case. Supplying `TAURI_SIGNING_PRIVATE_KEY` retains the signed updater path;
-the unsigned local smoke is compilation/packaging evidence, not release-signing
-evidence.
-
-Run the Docker matrix on both Apple Silicon and Intel macOS. An Apple Silicon
-host is not evidence for an Intel Docker/packaging pass (or vice versa); when a
-platform is unavailable locally, record the exact command as unavailable and
-require the matching release-CI job. Include Docker-running and Docker-stopped
-preflight behavior, setup/repair/update/rollback, Team and Personalized scopes,
-browser uncertainty/reconciliation, index rebuild, launchd-owned routine recovery,
-Skill materialization, local/remote MCP manifest drift and uncertain writes,
-and recovery/purge partial-failure behavior. Never stop a user's active Docker
-Engine merely to satisfy an audit; use an isolated host or record the live case
-as unavailable and retain deterministic test evidence separately.
-
-Live multi-user verification uses the password-free `agent_test` accounts from
-[the runtime verification runbook](AGENT_RUNTIME_VERIFICATION.md). Build the current UI/server first, then start an isolated data root
-on a spare port when the user's app already owns the normal runtime. Confirm the
-target Supabase deployment contains migration `20260830150000` before creating a
-synthetic Bot. If the migration is missing, retain the `migration_required`
-evidence, create no fixture, and mark membership/transcript/ACL/runtime cases
-unavailable rather than bypassing the control plane.
-
-The committed test-only fixture in `tests/visual-production-bots/` renders the
-real Bot settings, policy, transcript, operations rail, dialogs, and narrow
-stores without entering the production bundle. Its Electron-CDP capture is:
-
-```bash
-bun run visual:bots:capture -- --output .cache/e2e/production-bots-visual/reviewed
-```
-
-The release-candidate variant first packages the dedicated test shell with the
-pinned Electron runtime and then drives that packaged application through CDP.
-The shell is emitted only under ignored `.cache/e2e/`; neither the shell nor the
-fixture enters the DevRyan application bundle:
-
-```bash
-bun run visual:bots:capture:packaged -- --output .cache/e2e/production-bots-visual/packaged
-```
-
-Visual acceptance covers light and dark themes, 1280×800 and 390×844
-viewports, 220/280/500px rails, the mobile drawer, OpenCode/AG-UI connection
-states, signed-spec trust/binding/diff failures, matcher/quota states,
-browser-egress and runsc failures, runtime-service lifecycle, exact transcript
-Activity/Approval focus, partial failures, paused/retired Bots, and
-administrator/developer presentation. It also covers the persistent optimistic/
-canonical acknowledgment before a final-only result and the decoded Computer
-canvas in connecting, live, disconnected, owned, view-only, and conflicting
-control states. Durable control-wait scenes cover owner Return Control and
-another-operator presentation. Generated-image scenes cover loading, decoded
-ready, and error/retry states independently of Shared publication. These are
-deterministic component fixtures, not evidence of a live OAuth generation.
-The capture blocks on clipping/overflow,
-stale scroll origin, focused-row visibility, keyboard Tab/Enter/Escape, focus
-rings, unnamed dialogs, secret sentinels, console errors, and unhandled
-rejections. Browser-network scenes also block unless the real network/isolation
-fieldset is inside the screenshot viewport. It always writes screenshots and JSON evidence; cross-machine pixel
-baselines are not blocking.
-
-Store only sanitized, reviewed evidence under a dated `docs/audits/` directory.
-The 2026-08-27 matrix and assertions are documented in
-`docs/audits/2026-08-27-agent-agnostic-bots/README.md`. See
-`docs/BOTS_RUNTIME.md` for the operational and security boundaries that the
-matrix must preserve.
-
-The macOS Bot Catalog click must also pass the native hit-test smoke:
-
-```bash
-bun run electron:test:native-pointer -- --output docs/audits/<date>-bot-settings/native-pointer
-```
-
-This command builds the current Electron web assets, launches a separate
-temporary DevRyan/Chromium profile, uses the password-free Test Administrator,
-and posts a real CoreGraphics mouse click at the enabled Catalog `+` bounds. It
-passes only when the `Create Bot` dialog appears and writes a PNG, bounded
-Electron log, and safe JSON evidence. It deliberately fails on non-macOS hosts,
-missing agent-test configuration, or missing Accessibility event-posting access;
-do not turn those prerequisites into a skipped unit test. Hosted CI requires a
-managed interactive macOS runner before this command can become a release gate.
-
-After `bun run electron:build`, the release-candidate pairing uses the packaged
-DevRyan application for that same isolated, loopback-only native test:
-
-```bash
-bun run electron:test:native-pointer:packaged -- --output .cache/e2e/bot-catalog-native-pointer/packaged
-```
-
-`bun run visual:bots:acceptance` runs the packaged fixture matrix followed by
-the packaged native-pointer smoke. It intentionally fails when the signed app,
-agent-test configuration, interactive session, or Accessibility permission is
-missing; release operators must record that prerequisite failure rather than
-silently replacing the native test with a synthetic click.
-
-Database migration verification is local-only: run an isolated Supabase stack,
-apply `supabase db reset`, assert forced RLS and browser-role revocations for
-`bot_skill_packages`/`bot_mcp_bindings`, then run `supabase db lint --local`.
-Never use `--linked` or target the production database for this check.
-
-## Isolated runtime audit QA
-
-Use [QA.md](QA.md) for the web/Electron fixture entrypoint, responsive screenshot review, explicit live-provider HTTP smoke and journal correlation workflow. This audit excludes VS Code runtime acceptance; the ordinary full validation contract remains unchanged.
-
-## Release handoff verification
-
-See [Release pipeline](RELEASE_PIPELINE.md) for separate compilation/preparation/packaging commands and artifact invariants. `scripts/release-artifacts.test.mjs` covers stale/corrupt inputs and packaging gates; `scripts/release-workflow.test.mjs` checks shared-build and prerequisite wiring. Bot image aggregation/signing cases extend the existing image verifier suite. Root `build` now compiles web and Electron JavaScript explicitly; source-only UI validation remains `type-check:ui`.
+[QA.md](QA.md) covers the isolated web and Electron runner, packaged-app smokes and benchmarks. Release handoff is in [Release pipeline](RELEASE_PIPELINE.md): `scripts/release.test.mjs` covers stage, the single-PATCH publish, the ledger, dry runs, moved tags, the asset allowlist and updater discovery; `release-state.test.mjs` the same-version states and the shipped-discovery matrix; `release-github.test.mjs` client retries, pagination and upload reconcile (a late GitHub digest included); `release-convergence.test.mjs` crash-point convergence and the ledger write ordering; `release-preflight.test.mjs` preflight, the pipeline-change gate and the backend-deploy decision; `release-tag.test.mjs` gated tagging; `release-candidate.test.mjs` the manifest, the green dry-run lookup and build reuse; `verify-release-assets.test.mjs` the asset-set table; `release-docs.test.mjs` that docs never instruct deleting or re-uploading a release; `release-ci-wait.test.mjs` CI re-runs; `release-packaging.test.mjs` and `release-workflow.test.mjs` the packaging and workflow contracts; `release-artifacts.test.mjs` and `release-ci.test.mjs` the web and prepared-tree handoffs.

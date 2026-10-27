@@ -1,5 +1,5 @@
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
-import { getPlanBlockId, getPlanImplementationKey } from "@/lib/messages/actionablePlan"
+import { getPlanBlockId, getPlanImplementationKey, resolveMessagePlanCard, resolvePlanTurnIntent } from "@/lib/messages/actionablePlan"
 import { projectPlanRevisions, type PlanRevisionTurnInput } from "@/lib/messages/planRevisions"
 import { filterMessagesForRevert, getEffectiveSessionRevertMessageID } from "./revert-transactions"
 import type { State } from "./types"
@@ -53,6 +53,29 @@ export function detectPlanProposedCandidate({
   const turnInputs = buildRevisionTurnInputs(messages, state, isRecordedPlanModeUserMessage)
   if (turnInputs.length === 0) return null
 
+  // A settled native tail may contain only the remainder of a failed prefix.
+  // This is a validation probe, not an approval: the server requires receipts.
+  let lastHumanIndex = -1
+  turnInputs.forEach((turn, index) => { if (turn.userParts.some(part => part.type !== 'text' || part.synthetic !== true)) lastHumanIndex = index })
+  if (lastHumanIndex >= 0 && lastHumanIndex < turnInputs.length - 1) {
+    const root = turnInputs[lastHumanIndex]
+    const following = turnInputs.slice(lastHumanIndex + 1)
+    const descendants = turnInputs.slice(lastHumanIndex).flatMap(turn => turn.assistants)
+    const terminal = descendants.at(-1)
+    const rootIntent = resolvePlanTurnIntent(root.userInfo, root.userParts, root.isRecordedPlanMode)
+    if (rootIntent !== 'implement' && rootIntent !== 'maintenance'
+      && following.every(turn => turn.userParts.length > 0 && turn.userParts.every(part => part.type === 'text' && part.synthetic === true)
+        && resolvePlanTurnIntent(turn.userInfo, turn.userParts, false) === 'none')
+      && descendants.every(assistant => assistant.completedAt !== null && !hasRunningToolPart(assistant.parts))
+      && !following.some(turn => turn.assistants.some(assistant => resolveMessagePlanCard(assistant.parts)?.source === 'sentinel'))
+      && terminal && !terminal.hasError && ['stop', 'end_turn', 'complete', 'completed'].includes(terminal.finish ?? '')) {
+      const prefix = [...root.assistants].reverse().find(assistant => assistant.hasError
+        && resolveMessagePlanCard(assistant.parts, { isPlanModeSource: rootIntent === 'plan' }))
+      const markdown = prefix && resolveMessagePlanCard(prefix.parts, { isPlanModeSource: rootIntent === 'plan' })?.planText
+      if (prefix && markdown?.trim()) return { sessionID, sourceMessageId: prefix.id, originatingUserMessageId: root.userMessageId,
+        implementationKey: getPlanImplementationKey(sessionID, getPlanBlockId(prefix.id, 0)), markdown }
+    }
+  }
   const revisions = projectPlanRevisions(turnInputs)
   const revision = revisions[revisions.length - 1]
   // A sentinel-backed Plan card is explicit even when local plan-mode
@@ -60,7 +83,10 @@ export function detectPlanProposedCandidate({
   // session). Structured markdown still requires plan-mode evidence because
   // resolveMessagePlanCard only recognizes it for plan-mode revisions.
   if (!revision) return null
+  const revisionRoot = turnInputs.find(turn => turn.userMessageId === revision.rootUserMessageId)
+  if (revisionRoot?.userParts.length && !revisionRoot.isRecordedPlanMode && revisionRoot.userParts.every(part => part.type === 'text' && part.synthetic === true)) return null
   if (!revision.sourceMessageId || !revision.planText || revision.planText.trim().length === 0) return null
+  if (revision.sourceMessageId !== lastMessage.id) return null
 
   // Only propose while the revision is still the live tail of the session.
   const lastTurnId = turnInputs[turnInputs.length - 1]?.turnId
@@ -130,6 +156,7 @@ function buildRevisionTurnInputs(
       parentMessageId: typeof parentID === "string" && parentID.trim().length > 0 ? parentID : null,
       completedAt: getAssistantCompletedAt(message),
       hasError: message.role === "assistant" && message.error != null,
+      finish: message.role === "assistant" ? message.finish : undefined,
       parts: state.part[message.id] ?? [],
     })
   }

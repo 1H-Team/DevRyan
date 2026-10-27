@@ -11,7 +11,7 @@ Own filesystem API behavior for the web server runtime, including workspace-boun
 ## Public exports
 - `registerFsRoutes(app, dependencies)` from `routes.js`
   - Registers all filesystem routes:
-    - `GET /api/fs/home`
+    - `GET /api/fs/home` (`{ home, configDirectory }`; `configDirectory` is the injected active runtime config folder, matching filesystem policy and project-config storage. Without an injected root, it falls back to `~/.config/devryan` or the pre-rename folder while it holds the data.)
     - `POST /api/fs/mkdir`
     - `GET /api/fs/read`
   - `GET /api/fs/raw`
@@ -28,7 +28,7 @@ Own filesystem API behavior for the web server runtime, including workspace-boun
     - `git rev-parse --absolute-git-dir`
     - `git rev-parse --git-common-dir`
     - `git rev-parse --absolute-git-dir --git-common-dir`
-  - Cache TTL defaults to 30 seconds and can be disabled with `OPENCHAMBER_GIT_READ_CACHE_TTL_MS=0`.
+  - Cache TTL defaults to 30 seconds and can be disabled with `DEVRYAN_GIT_READ_CACHE_TTL_MS=0`.
   - Failures, non-allowlisted commands, multi-command jobs, and background jobs bypass the cache.
   - Enforces workspace boundary checks with active project + worktree fallback support.
   - Accepts a short-lived `assetGrant` only for assistant gallery files prepared

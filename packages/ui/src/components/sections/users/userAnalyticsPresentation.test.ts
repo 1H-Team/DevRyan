@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 
-import { formatPromptModelLabel, formatPromptRowSummary } from './userAnalyticsPresentation';
+import {
+  formatPromptAgentLabel,
+  formatPromptModelLabel,
+  formatPromptRowSummary,
+  formatPromptThinkingLabel,
+} from './userAnalyticsPresentation';
 
 describe('user analytics prompt presentation', () => {
   test('shows the recorded provider and model identifiers together', () => {
@@ -40,5 +45,17 @@ describe('user analytics prompt presentation', () => {
     const title = 'Title '.repeat(80).trim();
     const preview = 'Preview '.repeat(100).trim();
     expect(formatPromptRowSummary(`${title}\n${preview}`)).toEqual({ title, preview });
+  });
+
+  test('titles the agent id and falls back to Default Agent when absent', () => {
+    expect(formatPromptAgentLabel('orchestrator')).toBe('Orchestrator');
+    expect(formatPromptAgentLabel('code_reviewer')).toBe('Code Reviewer');
+    expect(formatPromptAgentLabel('  ')).toBe('Default Agent');
+    expect(formatPromptAgentLabel('')).toBe('Default Agent');
+  });
+
+  test('formats the thinking variant through the shared effort formatter', () => {
+    expect(formatPromptThinkingLabel('high', 'openai')).toBe('High');
+    expect(formatPromptThinkingLabel('xhigh', 'openai')).toBe('Extra High');
   });
 });

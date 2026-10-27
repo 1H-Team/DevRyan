@@ -4,7 +4,7 @@ import {
     extractAssistantImageReferences,
     isSupportedAssistantImageSource,
     type AssistantImageReferenceKind,
-} from '../../../../../../shared-runtime/lib/assistant-image-sources.js';
+} from '@devryan/shared-runtime/lib/assistant-image-sources.js';
 
 import { isToolPartFinalizedForDisplay } from './toolDisplayState';
 import { normalizeToolName } from './toolRenderUtils';
@@ -88,19 +88,6 @@ const extractToolOutput = (part: ToolPart): { source: string; mimeType?: string 
     const mimeType = readDeclaredMimeType(metadata);
     if (!mimeType.startsWith('image/') && !isImageGenerationTool(normalizeToolName(part.tool))) return null;
     return { source, ...(mimeType ? { mimeType } : {}) };
-};
-
-export const buildAssistantImageRawUrl = (
-    path: string,
-    directory?: string,
-    assetGrant?: string,
-    workspaceOnly = false,
-): string => {
-    const params = new URLSearchParams({ path });
-    if (directory?.trim()) params.set('directory', directory.trim());
-    if (assetGrant?.trim()) params.set('assetGrant', assetGrant.trim());
-    if (workspaceOnly) params.set('assistantImage', '1');
-    return `/api/fs/raw?${params.toString()}`;
 };
 
 export const extractAssistantImageCandidates = ({

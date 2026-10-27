@@ -19,7 +19,9 @@ mock.module("@/sync/sync-refs", () => ({
   }),
 }))
 
+const actualOpencodeClientModule = await import("@/lib/opencode/client")
 mock.module("@/lib/opencode/client", () => ({
+  ...actualOpencodeClientModule,
   opencodeClient: {
     getDirectory: () => "/repo",
     listPendingPermissions: mock(async (opts?: { directories?: Array<string | null | undefined> }) => {
@@ -60,12 +62,25 @@ describe("permissionStore auto-accept", () => {
     listPendingPermissionsResponse = []
     sessions = [{ id: "session-a", title: "Session", time: { created: 1, updated: 1 } } as Session]
     permissionMap = { "session-a": [{ id: "perm-1", sessionID: "session-a" }] }
-    usePermissionStore.setState({ autoAccept: {} })
+    usePermissionStore.setState({ autoAccept: {}, defaultAutoAccept: false })
     globalThis.fetch = mock((input: RequestInfo | URL, init?: RequestInit) => {
       const rawBody = typeof init?.body === "string" ? JSON.parse(init.body) : init?.body
       fetchCalls.push({ url: String(input), body: rawBody })
       return Promise.resolve(new Response(null, { status: 204 }))
     }) as typeof fetch
+  })
+
+  test("applies the auto-accept default to a new session only when it is on", async () => {
+    await usePermissionStore.getState().applyDefaultAutoAccept("session-a")
+    expect(usePermissionStore.getState().autoAccept).toEqual({})
+    expect(fetchCalls).toEqual([])
+
+    usePermissionStore.getState().setDefaultAutoAccept(true)
+    await usePermissionStore.getState().applyDefaultAutoAccept("session-a")
+
+    expect(usePermissionStore.getState().autoAccept).toEqual({ "session-a": true })
+    expect(fetchCalls.map((call) => call.body)).toEqual([{ sessionId: "session-a", enabled: true }])
+    expect(respondCalls).toEqual([{ sessionID: "session-a", requestID: "perm-1", reply: "once" }])
   })
 
   test("still responds to sync-store pending permissions when the pending API fails", async () => {

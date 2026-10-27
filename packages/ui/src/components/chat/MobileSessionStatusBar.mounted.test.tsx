@@ -2,7 +2,7 @@ import React, { act } from 'react';
 import { expect, mock, test } from 'bun:test';
 import { create } from 'zustand';
 import { useNotificationStore } from '@/sync/notification-store';
-import { withDom } from '../bots/chat/botMountedDom';
+import { withDom } from '@/test/mountedDom';
 
 const sessions = [{ id: 'root', title: 'Finished task', directory: '/repo', time: { created: 1, updated: 2 } }];
 const statuses = { root: { type: 'idle' } };

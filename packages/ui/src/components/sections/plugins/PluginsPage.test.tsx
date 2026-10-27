@@ -31,10 +31,6 @@ describe('PluginsPage default details', () => {
       selectedId: defaultPlugin.id,
       isLoading: false,
       lastError: null,
-      slimStatus: null,
-      slimStatusLoading: false,
-      slimActionInFlight: null,
-      slimLastError: null,
     });
     Object.assign(usePluginsStore.getInitialState(), {
       defaults: [defaultPlugin],

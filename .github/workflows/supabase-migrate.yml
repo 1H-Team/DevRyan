@@ -1,15 +1,17 @@
 name: Supabase migrations
 
-# Applies pending Supabase migrations to the linked bots project without cutting
-# a release. Mirrors the migration step of release.yml; the `DevRyan Secrets`
+# Applies pending Supabase migrations to the linked project between releases.
+# Release preparation never needs it: release.yml's deploy-backend job is the
+# authoritative deployment and also verifies migration history. It lists
+# pending migrations unless dry_run is turned off. The `DevRyan Secrets`
 # environment provides the Supabase credentials.
 on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: Only list pending migrations, do not apply them
+        description: Only list pending migrations; turn off to apply them between releases
         type: boolean
-        default: false
+        default: true
 
 concurrency:
   group: supabase-migrate
@@ -49,5 +51,3 @@ jobs:
             supabase db push --linked --yes
           fi
           supabase migration list --linked
-          supabase db query --linked --agent=no --output json \
-            "select public.devryan_bot_schema_version() as schema_version;"

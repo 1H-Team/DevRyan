@@ -5,7 +5,14 @@ import { dirname, resolve } from 'node:path';
 import { renderToString } from 'react-dom/server';
 import { fileURLToPath } from 'node:url';
 
-import { DeferredChatDialog } from './lazyChatDialogs';
+import {
+  DeferredChatDialog,
+  LazyAgentHandoffDialog,
+  LazyGitHubIssuePickerDialog,
+  LazyGitHubPrPickerDialog,
+  LazyStashDialog,
+  LazyTimelineDialog,
+} from './lazyChatDialogs';
 
 const testDir = dirname(fileURLToPath(import.meta.url));
 
@@ -43,27 +50,28 @@ describe('lazy chat dialogs', () => {
     expect(loadCount).toBe(1);
   });
 
-  test('declares recovery-aware lazy imports for unopened chat dialogs', () => {
-    const source = readSource('lazyChatDialogs.tsx');
+  test('declares lazy components for every unopened chat dialog', () => {
+    // Import paths are verified by the type-checker (dynamic import of a missing module fails tsc);
+    // the chunk-recovery wrapper must still yield a React.lazy element type.
+    const lazyExports = {
+      LazyGitHubIssuePickerDialog,
+      LazyGitHubPrPickerDialog,
+      LazyStashDialog,
+      LazyTimelineDialog,
+      LazyAgentHandoffDialog,
+    };
 
-    expect(source).toContain("import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery'");
-    expect(source).toContain("import('@/components/session/GitHubIssuePickerDialog')");
-    expect(source).toContain("import('@/components/session/GitHubPrPickerDialog')");
-    expect(source).toContain("import('@/components/views/git/StashDialog')");
-    expect(source).toContain("import('@/components/chat/TimelineDialog')");
-    expect(source).toContain("import('@/components/chat/AgentHandoffDialog')");
-
-    for (const dialogName of ['GitHubIssuePickerDialog', 'GitHubPrPickerDialog', 'StashDialog', 'TimelineDialog', 'AgentHandoffDialog']) {
-      expect(source).toContain(`export const Lazy${dialogName} = /* @__PURE__ */ lazyWithChunkRecovery`);
+    for (const [name, component] of Object.entries(lazyExports)) {
+      expect({ name, type: (component as { $$typeof?: symbol }).$$typeof }).toEqual({
+        name,
+        type: Symbol.for('react.lazy'),
+      });
     }
   });
 
   test('mounts each composer dialog only for its authoritative local state', () => {
     const source = readSource('ChatInput.tsx');
 
-    expect(source).not.toContain("import { GitHubIssuePickerDialog } from '@/components/session/GitHubIssuePickerDialog'");
-    expect(source).not.toContain("import { GitHubPrPickerDialog } from '@/components/session/GitHubPrPickerDialog'");
-    expect(source).not.toContain("import { StashDialog } from '@/components/views/git/StashDialog'");
     expect(source).toContain("from './lazyChatDialogs'");
 
     expect(source).toContain('active={issuePickerOpen}');
@@ -77,7 +85,6 @@ describe('lazy chat dialogs', () => {
   test('mounts the timeline dialog only while the shared open state is active', () => {
     const source = readSource('ChatContainer.tsx');
 
-    expect(source).not.toContain("import { TimelineDialog } from './TimelineDialog'");
     expect(source).toContain("from './lazyChatDialogs'");
     expect(source).toContain('active={isTimelineDialogOpen}');
     expect(source).toContain('open={isTimelineDialogOpen}');
@@ -87,7 +94,6 @@ describe('lazy chat dialogs', () => {
   test('mounts the agent handoff dialog only while coordinator state is open', () => {
     const source = readSource('AgentHandoffGuard.tsx');
 
-    expect(source).not.toContain("import { AgentHandoffDialog } from './AgentHandoffDialog'");
     expect(source).toContain("from './lazyChatDialogs'");
     expect(source).toContain('active={state.open}');
     expect(source).toContain('<LazyAgentHandoffDialog');

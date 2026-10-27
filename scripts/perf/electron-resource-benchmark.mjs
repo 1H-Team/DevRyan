@@ -12,11 +12,17 @@ import { createQaUiDriver } from '../qa/ui-driver.mjs';
 import { reservePort, startOwnedProcess } from '../qa/process.mjs';
 import { loadQaPackagedArtifact } from '../qa/packaged-artifact.mjs';
 import { prepareQaFixtureProfile } from '../qa/fixture-scenarios.mjs';
+import { createQaHostLaunchEnvironment } from '../qa/launch-environment.mjs';
+import { resolveQaFixtureGeneration } from '../qa/runtime-target.mjs';
+import { waitForQaHostReady } from '../qa/host-readiness.mjs';
+import { navigateQaElectronWireFacade } from '../qa/matrix-runner.mjs';
+export { compareRuntimeUpgradeSummaries } from './runtime-upgrade-comparison.mjs';
 import { assertPerfCleanupComplete, capturePerfJournal, observePerfBrowserErrors } from './electron-run-evidence.mjs';
 import {
   assertStartupMode,
   captureFirstDocumentStartup,
   observeStartupNavigation,
+  parseStartupPhaseLogs,
   prepareMemorySessions,
   runSessionMemoryScenario,
 } from './electron-lifecycle-benchmark.mjs';
@@ -30,15 +36,17 @@ import {
   runInteractiveScenario,
 } from './electron-interactive-benchmark.mjs';
 
-import {
-  createLoopbackOpenCodeFixture,
-  PERF_PARENT_SESSION_ID,
-} from './loopback-opencode-fixture.mjs';
+import { PERF_PARENT_SESSION_ID } from './fixture-session-seeds.mjs';
+import { createRunRoot, scratchParent } from '../qa/run-root.mjs';
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(scriptDirectory, '../..');
 const DEFAULT_SCENARIOS = ['idle', 'one-stream', 'four-stream', 'plan-skeleton'];
-const VALID_SCENARIOS = new Set([...DEFAULT_SCENARIOS, 'session-memory', 'interactive']);
+// Opt-in: seeds eight extra root sessions, so it never changes the default fixture.
+const RESOURCE_SCENARIOS = [...DEFAULT_SCENARIOS, 'twelve-stream'];
+const VALID_SCENARIOS = new Set([...RESOURCE_SCENARIOS, 'session-memory', 'interactive']);
+/** Sessions each streaming workload must keep streaming through the whole measurement window. */
+export const STREAM_SCENARIO_SESSIONS = Object.freeze({ idle: 0, 'one-stream': 1, 'four-stream': 4, 'twelve-stream': 12 });
 const SAMPLE_INTERVAL_MS = 500;
 const MAX_LOG_BYTES = 2 * 1024 * 1024;
 
@@ -59,10 +67,11 @@ export const parseBenchmarkArguments = (argv) => {
     runs: 3,
     warmupMs: 5_000,
     measureMs: 30_000,
-    outputRoot: path.join(repositoryRoot, '.cache/perf'),
+    outputRoot: scratchParent('perf'),
     electronBinary: null,
     packageEvidence: null,
     baseline: null,
+    generation: undefined,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -81,6 +90,7 @@ export const parseBenchmarkArguments = (argv) => {
     else if (flag === '--electron-binary') options.electronBinary = path.resolve(repositoryRoot, value);
     else if (flag === '--package-evidence') options.packageEvidence = path.resolve(repositoryRoot, value);
     else if (flag === '--baseline') options.baseline = path.resolve(repositoryRoot, value);
+    else if (flag === '--generation') options.generation = value;
     else throw new Error(`Unknown benchmark flag: ${flag}`);
   }
 
@@ -94,6 +104,7 @@ export const parseBenchmarkArguments = (argv) => {
       throw new Error(`Unknown scenario ${JSON.stringify(scenario)}; expected ${[...VALID_SCENARIOS].join(', ')}`);
     }
   }
+  options.generation = resolveQaFixtureGeneration(options.generation);
   return options;
 };
 
@@ -129,14 +140,14 @@ const appendBoundedLog = (current, chunk) => {
   return next.length > MAX_LOG_BYTES ? next.slice(-MAX_LOG_BYTES) : next;
 };
 
-export async function stopPerfOwnedResources(ownedProcess, fixture) {
+export async function stopPerfOwnedResources(ownedProcess, profile) {
   const cleanup = { errors: [], app: { stopped: false }, fixture: { closed: false } };
   try { await ownedProcess.stop(); cleanup.app.stopped = true; }
   catch (error) { cleanup.errors.push(error.message); }
-  try { await fixture.close(); cleanup.fixture = { closed: true, finalState: fixture.getState() }; }
+  try { await profile.close(); cleanup.fixture = { closed: true, finalState: profile.fixture.getState() }; }
   catch (error) { cleanup.errors.push(error.message); }
   // The shared stop already audits before closing tracking. Re-observe after
-  // the fixture closes so detached descendants cannot be hidden by a dead PGID.
+  // the profile closes so detached descendants cannot be hidden by a dead PGID.
   try { await ownedProcess.auditStopped(); }
   catch (error) { cleanup.app.stopped = false; cleanup.errors.push(error.message); }
   const ownership = ownedProcess.getCleanupEvidence();
@@ -145,6 +156,34 @@ export async function stopPerfOwnedResources(ownedProcess, fixture) {
     escalated: ownership.signals.some(entry => ['SIGTERM', 'SIGKILL'].includes(entry.signal)), ownership });
   cleanup.complete = cleanup.errors.length === 0 && cleanup.app.stopped && cleanup.fixture.closed;
   return cleanup;
+}
+
+export async function withPerfFixtureSetup(profile, setup) {
+  try { return await setup(); }
+  catch (error) {
+    try { await profile.close(); }
+    catch (cleanup) { throw new AggregateError([error, cleanup], 'Fixture setup and cleanup failed'); }
+    throw error;
+  }
+}
+
+export async function preparePerfFixtureLaunch(profile, { localPort }) {
+  const localOrigin = `http://127.0.0.1:${localPort}`;
+  const facade = await profile.startFacade(localOrigin);
+  const env = createQaHostLaunchEnvironment(profile.env, { DEVRYAN_PORT: String(localPort) });
+  delete env.DEVRYAN_SERVER_URL;
+  return { localOrigin, facade, env };
+}
+
+export async function preparePerfFixtureWindow(cdp, { workspace }) {
+  const acknowledgement = await evaluate(cdp, 'window.__TAURI__.core.invoke("desktop_focus_main_window", {})');
+  if (acknowledgement?.focused !== true) throw new Error('Owned Electron fixture window must acknowledge focus');
+  await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: `
+    if(location.protocol==='http:'&&location.hostname==='127.0.0.1')for (const principal of ['anonymous', 'local-admin']) {
+      localStorage.setItem('devryan.user.' + principal + ':lastDirectory', ${JSON.stringify(workspace)});
+    }
+  ` });
+  return { method: 'desktop_focus_main_window', acknowledgement };
 }
 
 const waitForRendererOrigin = async (cdp) => {
@@ -238,27 +277,39 @@ const displaySignature = ({ visibilityState, innerWidth, innerHeight, outerWidth
   visibilityState, innerWidth, innerHeight, outerWidth, outerHeight, devicePixelRatio, screen,
 });
 
-export const lifecycleProtocolIdentity = async (readProtocolFile = file => readFile(path.join(scriptDirectory, file)), startupMode = 'natural') => {
+export const fixtureProtocolIdentity = async (generation = 2, readProtocolFile = file => readFile(path.join(scriptDirectory, file))) => {
+  const selected = resolveQaFixtureGeneration(generation);
+  const files = ['fixture-session-seeds.mjs', 'loopback-opencode-fixtures.mjs',
+    'loopback-opencode-v2-fixture.mjs', 'opencode-v2-wire.mjs',
+      '../../packages/web/server/lib/opencode/v2/openapi-2.0.20.json'];
+  const hash = createHash('sha256').update(JSON.stringify({ generation: selected }));
+  for (const file of files) hash.update(file).update(await readProtocolFile(file));
+  return hash.digest('hex');
+};
+
+export const lifecycleProtocolIdentity = async (readProtocolFile = file => readFile(path.join(scriptDirectory, file)), startupMode = 'natural', generation = 2) => {
   assertStartupMode(startupMode);
   const hash = createHash('sha256');
   hash.update(JSON.stringify({ startupMode }));
-  for (const file of ['electron-resource-benchmark.mjs', 'electron-lifecycle-benchmark.mjs', 'electron-run-evidence.mjs', 'loopback-opencode-fixture.mjs',
+  hash.update(await fixtureProtocolIdentity(generation, readProtocolFile));
+  for (const file of ['electron-resource-benchmark.mjs', 'electron-lifecycle-benchmark.mjs', 'electron-run-evidence.mjs', 'fixture-session-seeds.mjs',
     '../journal.mjs', '../qa/cdp.mjs', '../qa/ui-driver.mjs', '../qa/host-readiness.mjs', '../qa/history-scroll.mjs', '../qa/fixture-scenarios.mjs',
+    '../qa/fixture-host-facade.mjs', '../qa/matrix-runner.mjs', '../qa/run-root.mjs',
     '../qa/packaged-artifact.mjs', '../qa/artifact-evidence.mjs', '../qa/project-fixture.mjs', '../qa/isolated-home.mjs',
-    '../qa/process.mjs', '../qa/process-ownership.mjs', '../dev-child-utils.mjs']) {
+    '../qa/process.mjs', '../qa/process-ownership.mjs', '../qa/runtime-target.mjs', '../qa/launch-environment.mjs', '../dev-child-utils.mjs']) {
     hash.update(file).update(await readProtocolFile(file));
   }
   return hash.digest('hex');
 };
 
 export const interactiveProtocolIdentity = async (startupMode = 'natural', interactiveScope = 'full',
-  readProtocolFile = file => readFile(path.join(scriptDirectory, file))) => {
+  readProtocolFile = file => readFile(path.join(scriptDirectory, file)), generation = 2) => {
   assertStartupMode(startupMode);
   assertInteractiveScope(interactiveScope);
   return createHash('sha256').update(JSON.stringify({ startupMode, interactiveScope }))
-    .update(await lifecycleProtocolIdentity(readProtocolFile, startupMode))
+    .update(await lifecycleProtocolIdentity(readProtocolFile, startupMode, generation))
     .update(await readProtocolFile('electron-interactive-benchmark.mjs'))
-    .update(await readProtocolFile('loopback-opencode-fixture.mjs'))
+    .update(await readProtocolFile('fixture-session-seeds.mjs'))
     .digest('hex');
 };
 
@@ -300,6 +351,13 @@ const metricForType = (sample, type, field, nestedField) => {
   return typeof value === 'number' ? value : null;
 };
 
+const totalAppWorkingSet = (sample) => sample.appMetrics.reduce((total, entry) => total + (entry.memory?.workingSetSize ?? 0), 0);
+
+const percentile95 = (values) => {
+  const finite = values.filter(Number.isFinite).sort((left, right) => left - right);
+  return finite.length === 0 ? null : finite[Math.ceil(finite.length * 0.95) - 1];
+};
+
 export const summarizeMemorySamples = (rawSamples) => {
   const samples = rawSamples.slice(1);
   return {
@@ -307,11 +365,25 @@ export const summarizeMemorySamples = (rawSamples) => {
     medianTabCpu: median(samples.map((sample) => metricForType(sample, 'Tab', 'cpu', 'percentCPUUsage'))),
     medianGpuCpu: median(samples.map((sample) => metricForType(sample, 'GPU', 'cpu', 'percentCPUUsage'))),
     medianTabWorkingSet: median(samples.map((sample) => metricForType(sample, 'Tab', 'memory', 'workingSetSize'))),
-    medianTotalAppWorkingSet: median(samples.map((sample) => (
-      sample.appMetrics.reduce((total, entry) => total + (entry.memory?.workingSetSize ?? 0), 0)
+    medianTotalAppWorkingSet: median(samples.map(totalAppWorkingSet)),
+    p95TotalAppWorkingSet: percentile95(samples.map(totalAppWorkingSet)),
+    medianTotalAppCpu: median(samples.map((sample) => (
+      sample.appMetrics.reduce((total, entry) => total + (entry.cpu?.percentCPUUsage ?? 0), 0)
     ))),
     medianMainRss: median(samples.map((sample) => sample.process?.rss ?? null)),
+    processTypes: [...new Set(samples.flatMap((sample) => sample.appMetrics.map((entry) => entry.type)))].sort(),
   };
+};
+
+/** Sessions that kept streaming between two fixture delta-count snapshots; underloaded runs fail. */
+export const assessStreamConcurrency = (scenario, before = {}, after = {}) => {
+  const expectedSessions = STREAM_SCENARIO_SESSIONS[scenario];
+  if (expectedSessions === undefined) throw new Error(`No streaming workload for ${scenario}`);
+  const observedSessions = Object.keys(after).filter((sessionID) => (after[sessionID] ?? 0) > (before[sessionID] ?? 0)).length;
+  if (observedSessions < expectedSessions) {
+    throw new Error(`Underloaded ${scenario} run: ${observedSessions}/${expectedSessions} sessions streamed during measurement`);
+  }
+  return { expectedSessions, observedSessions };
 };
 
 const aggregateRunSummaries = (runs) => ({
@@ -320,7 +392,10 @@ const aggregateRunSummaries = (runs) => ({
   medianGpuCpu: median(runs.map((run) => run.summary.medianGpuCpu)),
   medianTabWorkingSet: median(runs.map((run) => run.summary.medianTabWorkingSet)),
   medianTotalAppWorkingSet: median(runs.map((run) => run.summary.medianTotalAppWorkingSet)),
+  medianP95TotalAppWorkingSet: median(runs.map((run) => run.summary.p95TotalAppWorkingSet)),
+  medianTotalAppCpu: median(runs.map((run) => run.summary.medianTotalAppCpu)),
   medianMainRss: median(runs.map((run) => run.summary.medianMainRss)),
+  processTypes: [...new Set(runs.flatMap((run) => run.summary.processTypes ?? []))].sort(),
 });
 
 export const summarizeStartupRuns = (runs) => {
@@ -337,6 +412,8 @@ const aggregateMemoryRuns = (runs) => Object.fromEntries(['initial', 'loaded', '
 ]));
 
 const assertMatchingStartupModes = (baseline, current) => {
+  if ((baseline.fixtureGeneration ?? 2) !== (current.fixtureGeneration ?? 2)) throw new Error('Benchmark comparison requires matching fixtureGeneration');
+  resolveQaFixtureGeneration(baseline.fixtureGeneration ?? 2);
   const before = baseline.startupMode === undefined ? 'natural' : baseline.startupMode;
   const after = current.startupMode === undefined ? 'natural' : current.startupMode;
   assertStartupMode(before);
@@ -399,56 +476,50 @@ export const compareBenchmarkSummaries = (baseline, current) => {
   return { passed: checks.every((check) => check.passed), checks };
 };
 
-const runOnce = async ({ scenario, runIndex, scenarioDirectory, electronBinary, packageEvidence, warmupMs, measureMs, startupMode, interactiveScope }) => {
+const runOnce = async ({ scenario, runIndex, scenarioDirectory, electronBinary, packageEvidence, warmupMs, measureMs, startupMode, interactiveScope, generation, runScope }) => {
   const runDirectory = path.join(scenarioDirectory, `run-${runIndex}`);
   const fixtureDirectory = path.join(runDirectory, 'workspace');
   await mkdir(fixtureDirectory, { recursive: true });
   execFileSync('git', ['init', '--quiet', fixtureDirectory], { stdio: 'pipe' });
-  const profile = packageEvidence ? await prepareQaFixtureProfile({ runtimeRoot: path.join(runDirectory, 'runtime'), workspace: fixtureDirectory,
-    cell: { transport: 'fixture', runtime: 'electron', providerId: 'fixture', modelId: 'fixture-model', agent: 'builder', planMode: false, variant: null, scenarioId: 'core-journey' } }) : null;
-  const dataDirectory = profile?.env.OPENCHAMBER_DATA_DIR ?? path.join(runDirectory, 'data');
-  const userDataDirectory = profile?.env.OPENCHAMBER_ELECTRON_USER_DATA_DIR ?? path.join(runDirectory, 'chromium-profile');
-  await mkdir(dataDirectory, { recursive: true });
-  await mkdir(userDataDirectory, { recursive: true });
-  const settings = profile ? JSON.parse(await readFile(path.join(dataDirectory, 'settings.json'), 'utf8')) : {
-    messageStreamTransport: 'sse', lastDirectory: fixtureDirectory,
-    projects: [{ id: 'perf-project', path: fixtureDirectory, label: 'Performance workspace' }], activeProjectId: 'perf-project',
-    desktopWindowState: { width: 1280, height: 800, maximized: false },
-  };
-  // Pin only this fresh benchmark profile before launch. Host-managed agent
-  // defaults otherwise may select a production model outside the fixture catalog.
-  await writeFile(path.join(dataDirectory, 'settings.json'), JSON.stringify({ ...settings,
-    defaultModel: 'fixture/fixture-model', defaultAgent: 'build',
-    agentModelSelections: Object.fromEntries(['build', 'builder', 'orchestrator'].map(agent => [agent,
-      { providerId: 'fixture', modelId: 'fixture-model' }])),
-  }, null, 2), { mode: 0o600 });
-
-  const fixture = profile?.fixture ?? await createLoopbackOpenCodeFixture({ directory: fixtureDirectory });
-  const memorySessions = scenario === 'session-memory'
-    ? await prepareMemorySessions(fixture).catch(async error => { await fixture.close(); throw error; })
-    : [];
-  const interactiveSessions = scenario === 'interactive'
-    ? await prepareInteractiveSessions(fixture).catch(async error => { await fixture.close(); throw error; })
-    : null;
-  const debugPort = await reservePort();
+  // Fixture profiles bind the verified repository-cache native artifacts and
+  // use only this constructor-owned performance run for generated state.
+  const profile = await prepareQaFixtureProfile({ runtimeRoot: path.join(runDirectory, 'runtime'), workspace: fixtureDirectory, generation,
+    artifactRoot: process.env.QA_NATIVE_ARTIFACT_ROOT, runScope,
+    cell: { transport: 'fixture', runtime: 'electron', providerId: 'fixture', modelId: 'fixture-model', agent: 'builder', planMode: false, variant: null, scenarioId: 'core-journey' } });
   let logs = '';
-  const spawnedAt = performance.now();
-  const ownedProcess = startOwnedProcess(electronBinary, [
-    `--remote-debugging-port=${debugPort}`,
-    `--user-data-dir=${userDataDirectory}`,
-    '--force-device-scale-factor=1',
-  ], {
-    cwd: repositoryRoot,
-    env: {
-      ...process.env,
-      ...profile?.env,
-      OPENCHAMBER_DATA_DIR: dataDirectory,
-      OPENCODE_HOST: fixture.origin,
-      OPENCODE_SKIP_START: 'true',
-      OPENCHAMBER_SKIP_OPENCODE_START: 'true',
-      NO_PROXY: 'localhost,127.0.0.1',
-      no_proxy: 'localhost,127.0.0.1',
-    },
+  const { dataDirectory, fixture, memorySessions, interactiveSessions, debugPort, spawnedAt, ownedProcess, wireLaunch } = await withPerfFixtureSetup(profile, async () => {
+    const dataDirectory = profile.env.DEVRYAN_DATA_DIR;
+    const userDataDirectory = profile.env.DEVRYAN_ELECTRON_USER_DATA_DIR;
+    await mkdir(dataDirectory, { recursive: true });
+    await mkdir(userDataDirectory, { recursive: true });
+    const settings = JSON.parse(await readFile(path.join(dataDirectory, 'settings.json'), 'utf8'));
+    // Pin only this fresh benchmark profile before launch. Host-managed agent
+    // defaults otherwise may select a production model outside the fixture catalog.
+    await writeFile(path.join(dataDirectory, 'settings.json'), JSON.stringify({ ...settings,
+      defaultModel: 'fixture/fixture-model', defaultAgent: 'build',
+      agentModelSelections: Object.fromEntries(['build', 'builder', 'orchestrator'].map(agent => [agent,
+        { providerId: 'fixture', modelId: 'fixture-model' }])),
+    }, null, 2), { mode: 0o600 });
+    const fixture = profile.fixture;
+    const memorySessions = scenario === 'session-memory' ? await prepareMemorySessions(fixture) : [];
+    const interactiveSessions = scenario === 'interactive' ? await prepareInteractiveSessions(fixture) : null;
+    if (scenario === 'twelve-stream') fixture.seedStreamSessions();
+    const debugPort = await reservePort();
+    const wireLaunch = await preparePerfFixtureLaunch(profile, { localPort: await reservePort() });
+    const spawnedAt = performance.now();
+    const ownedProcess = startOwnedProcess(electronBinary, [
+      `--remote-debugging-port=${debugPort}`,
+      `--user-data-dir=${userDataDirectory}`,
+      '--force-device-scale-factor=1',
+    ], {
+      cwd: repositoryRoot,
+      env: createQaHostLaunchEnvironment(wireLaunch.env, {
+        DEVRYAN_DATA_DIR: dataDirectory,
+        NO_PROXY: 'localhost,127.0.0.1',
+        no_proxy: 'localhost,127.0.0.1',
+      }),
+    });
+    return { dataDirectory, fixture, memorySessions, interactiveSessions, debugPort, spawnedAt, ownedProcess, wireLaunch };
   });
   const child = ownedProcess.child;
   child.stdout?.on('data', (chunk) => { logs = appendBoundedLog(logs, chunk); });
@@ -459,7 +530,7 @@ const runOnce = async ({ scenario, runIndex, scenarioDirectory, electronBinary, 
   let startupNavigationAudit = null;
   let browserErrors = null;
   let runError = null;
-  const runEvidence = { schemaVersion: 1, scenario, runIndex, startupMode,
+  const runEvidence = { schemaVersion: 1, scenario, runIndex, startupMode, fixtureGeneration: generation,
     ...(scenario === 'interactive' ? { interactiveScope } : {}), diagnostics: null, browserErrors: null,
     fixture: null, journal: null, cleanup: { errors: [] }, review: 'required' };
   const screenshot = async name => {
@@ -474,14 +545,28 @@ const runOnce = async ({ scenario, runIndex, scenarioDirectory, electronBinary, 
     startupNavigationAudit = observeStartupNavigation(cdp, spawnedAt, target.url);
     browserErrors = observePerfBrowserErrors(cdp, { runDirectory, repositoryRoot });
     await Promise.all([cdp.send('Page.enable'), cdp.send('Runtime.enable'), cdp.send('Log.enable')]);
-    const origin = await waitForRendererOrigin(cdp);
+    const localOrigin = await waitForRendererOrigin(cdp);
+    const localReady = await waitForQaHostReady({ origin: wireLaunch.localOrigin, checkAlive });
     const loopbackOriginMs = performance.now() - spawnedAt;
+    // Native readiness precedes the explicit wire-fixture setup. This is not a
+    // first-document natural startup measurement; resource windows start later.
+    startupNavigationAudit.complete();
+    const windowSetup = await preparePerfFixtureWindow(cdp, { workspace: fixtureDirectory });
+    const wireSetup = await navigateQaElectronWireFacade(cdp, { localOrigin, facadeOrigin: wireLaunch.facade.origin });
+    const fixtureStartedAt = performance.now();
+    startupNavigationAudit = observeStartupNavigation(cdp, fixtureStartedAt, wireLaunch.facade.origin);
+    const origin = wireLaunch.facade.origin;
     startup = await captureFirstDocumentStartup({ cdp, fixture, origin, startedAt: spawnedAt, checkAlive, startupMode,
+      readStartupPhases: () => parseStartupPhaseLogs(logs),
       milestones: { cdpTargetMs, loopbackOriginMs }, navigationAudit: startupNavigationAudit });
+    Object.assign(startup, { measurement: 'fixture-ready latency after native readiness and authorized wire navigation; not natural startup latency',
+      scope: 'fresh isolated packaged process; native local host readiness then deterministic external wire fixture',
+      wireSetup: { ...wireSetup, localReady, windowSetup, nativeReadyMs: loopbackOriginMs, fixtureSetupAtMs: fixtureStartedAt - spawnedAt,
+        forcedNavigationsBeforeFixtureReadiness: 1 } });
     await writeFile(path.join(runDirectory, 'startup.json'), JSON.stringify(startup, null, 2));
     if (startup.outcome !== 'passed') throw new Error(`Native startup failed: ${startup.error}`);
     const chromium = await cdp.send('Browser.getVersion');
-    if (profile) {
+    if (packageEvidence) {
       const host = JSON.parse(await readFile(path.join(runDirectory, 'runtime/packaged-host.json'), 'utf8'));
       if (host.isPackaged !== true) throw new Error('Resource measurement requires the actual packaged host');
       await writeFile(path.join(runDirectory, 'packaged-host.json'), JSON.stringify(host, null, 2));
@@ -512,11 +597,6 @@ const runOnce = async ({ scenario, runIndex, scenarioDirectory, electronBinary, 
       await writeFile(path.join(runDirectory, 'metrics.json'), JSON.stringify(metrics, null, 2));
       return metrics;
     }
-    await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: `
-      if(location.protocol==='http:'&&location.hostname==='127.0.0.1')for (const principal of ['anonymous', 'local-admin']) {
-        localStorage.setItem('devryan.user.' + principal + ':lastDirectory', ${JSON.stringify(fixtureDirectory)});
-      }
-    ` });
     const fixtureUrl = `${origin}/?session=${PERF_PARENT_SESSION_ID}`;
     let previousDocument = null;
     if (scenario === 'plan-skeleton') {
@@ -543,6 +623,7 @@ const runOnce = async ({ scenario, runIndex, scenarioDirectory, electronBinary, 
     }
 
     await wait(warmupMs);
+    const streamsBefore = fixture.getState().streamDeltaCounts;
 
     const traceEvents = [];
     const removeTraceListener = cdp.on('Tracing.dataCollected', ({ value }) => {
@@ -575,6 +656,8 @@ const runOnce = async ({ scenario, runIndex, scenarioDirectory, electronBinary, 
     await cdp.send('Tracing.end');
     await traceComplete;
     removeTraceListener();
+    const concurrency = scenario === 'plan-skeleton' ? null
+      : assessStreamConcurrency(scenario, streamsBefore, fixture.getState().streamDeltaCounts);
     fixture.stopScenario();
 
     const summary = summarizeMemorySamples(samples);
@@ -592,6 +675,7 @@ const runOnce = async ({ scenario, runIndex, scenarioDirectory, electronBinary, 
       forcedNavigation,
       skeleton,
       fixture: fixture.getState(),
+      concurrency,
       summary,
       samples,
     };
@@ -616,12 +700,11 @@ const runOnce = async ({ scenario, runIndex, scenarioDirectory, electronBinary, 
     runEvidence.fixture = fixture.getState();
     startupNavigationAudit?.complete();
     cdp?.close();
-    runEvidence.cleanup = await stopPerfOwnedResources(ownedProcess, fixture);
+    runEvidence.cleanup = await stopPerfOwnedResources(ownedProcess, profile);
     runEvidence.journal = await capturePerfJournal(path.join(dataDirectory, 'harness/journal'))
       .catch(error => ({ available: false, complete: false, error: error.message }));
     runEvidence.workloadOutcome = runError ? 'failed' : 'passed';
     runEvidence.workloadError = runError?.message ?? null;
-    runEvidence.cleanup.complete = runEvidence.cleanup.errors.length === 0;
     await writeFile(path.join(runDirectory, 'electron.log'), logs);
     await writeFile(path.join(runDirectory, 'run-evidence.json'), JSON.stringify(runEvidence, null, 2));
     assertPerfCleanupComplete(runEvidence.cleanup, runError);
@@ -635,7 +718,7 @@ export const runElectronResourceBenchmark = async ({ argv = [], startupMode = 'n
   if (interactiveScope === 'typing' && (options.scenarios.length !== 1 || options.scenarios[0] !== 'interactive')) {
     throw new Error('Typing scope requires only the interactive scenario');
   }
-  if (startupMode === 'foreground' && interactiveScope !== 'typing' && options.scenarios.some(scenario => !DEFAULT_SCENARIOS.includes(scenario))) {
+  if (startupMode === 'foreground' && interactiveScope !== 'typing' && options.scenarios.some(scenario => !RESOURCE_SCENARIOS.includes(scenario))) {
     throw new Error('Foreground startup is only supported for resource scenarios');
   }
   const packaged = options.packageEvidence ? await loadQaPackagedArtifact({ root: repositoryRoot, evidencePath: options.packageEvidence }) : null;
@@ -649,8 +732,10 @@ export const runElectronResourceBenchmark = async ({ argv = [], startupMode = 'n
   }
   const electronBinary = packaged?.binary ?? resolvePackagedElectronBinary(options.electronBinary);
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const outputDirectory = path.join(options.outputRoot, `${timestamp}-${options.label}`);
-  await mkdir(outputDirectory, { recursive: true });
+  // Per-run runtime payloads (profiles, Chromium caches) go on pass; summary, screenshots and traces stay.
+  const run = createRunRoot({ parent: options.outputRoot, name: `${timestamp}-${options.label}`, owner: 'scripts/perf/electron-resource-benchmark.mjs',
+    heavyNames: ['runtime'] });
+  const outputDirectory = run.dir;
 
   const gitCommit = execFileSync('git', ['rev-parse', 'HEAD'], {
     cwd: repositoryRoot,
@@ -662,6 +747,7 @@ export const runElectronResourceBenchmark = async ({ argv = [], startupMode = 'n
     gitCommit,
     createdAt: new Date().toISOString(),
     startupMode,
+    fixtureGeneration: options.generation,
     electronBinary,
     packageEvidence: packaged ? { path: packaged.evidencePath, evidenceFileSha256: packageEvidenceSha256, sourceSha256: packaged.evidence.source.sha256,
       archiveSha256: packaged.evidence.archiveSha256, uiArtifactSha256: packaged.evidence.packagedWebArtifact.sha256,
@@ -673,10 +759,10 @@ export const runElectronResourceBenchmark = async ({ argv = [], startupMode = 'n
     warmupMs: options.warmupMs,
     ...(interactiveScope === 'typing' ? { measurement: getInteractiveProtocol(interactiveScope).measurement }
       : { measureMs: options.measureMs, sampleIntervalMs: SAMPLE_INTERVAL_MS }),
-    fixtureSha256: createHash('sha256').update(await readFile(path.join(scriptDirectory, 'loopback-opencode-fixture.mjs'))).digest('hex'),
-    lifecycleProtocolSha256: await lifecycleProtocolIdentity(undefined, startupMode),
+    fixtureSha256: await fixtureProtocolIdentity(options.generation),
+    lifecycleProtocolSha256: await lifecycleProtocolIdentity(undefined, startupMode, options.generation),
     ...(options.scenarios.includes('interactive') ? { interactiveScope,
-      interactiveProtocolSha256: await interactiveProtocolIdentity(startupMode, interactiveScope),
+      interactiveProtocolSha256: await interactiveProtocolIdentity(startupMode, interactiveScope, undefined, options.generation),
       interactiveProtocol: getInteractiveProtocol(interactiveScope), interactivePrimaryMetrics: getInteractivePrimaryMetrics(interactiveScope) } : {}),
     scenarios: {},
   };
@@ -700,6 +786,8 @@ export const runElectronResourceBenchmark = async ({ argv = [], startupMode = 'n
           measureMs: options.measureMs,
           startupMode,
           interactiveScope,
+          generation: options.generation,
+          runScope: run.scope,
         }));
       }
       const display = displaySignature(runs[0].display);
@@ -716,7 +804,7 @@ export const runElectronResourceBenchmark = async ({ argv = [], startupMode = 'n
         startup: summarizeStartupRuns(runs.map(run => run.startup)),
         chromium: runs[0].chromium,
         display,
-        runs: runs.map((run) => ({ runIndex: run.runIndex, summary: run.summary,
+        runs: runs.map((run) => ({ runIndex: run.runIndex, summary: run.summary, ...(run.concurrency ? { concurrency: run.concurrency } : {}),
           startup: run.startup, ...(run.sessionMemory ? { memory: run.sessionMemory.summary } : {}),
           ...(run.interactive ? { interactive: { outcome: run.interactive.outcome,
             interactiveScope, actions: run.interactive.actionsSummary,
@@ -727,6 +815,7 @@ export const runElectronResourceBenchmark = async ({ argv = [], startupMode = 'n
 
     if (options.baseline) {
       const baseline = JSON.parse(await readFile(options.baseline, 'utf8'));
+      assertMatchingStartupModes(baseline, result);
       if (options.scenarios.some(scenario => DEFAULT_SCENARIOS.includes(scenario))) result.comparison = compareBenchmarkSummaries(baseline, result);
       if (options.scenarios.includes('interactive')) result.interactiveComparison = compareInteractiveSummaries(baseline, result);
       if (interactiveScope !== 'typing') {
@@ -745,14 +834,15 @@ export const runElectronResourceBenchmark = async ({ argv = [], startupMode = 'n
     catch (error) { integrityErrors.push(error); }
   }
   try {
-    if (result.lifecycleProtocolSha256 !== await lifecycleProtocolIdentity(undefined, startupMode)) throw new Error('Lifecycle runner, fixture or shared QA helpers changed during measurement');
+    if (result.lifecycleProtocolSha256 !== await lifecycleProtocolIdentity(undefined, startupMode, options.generation)) throw new Error('Lifecycle runner, fixture or shared QA helpers changed during measurement');
   } catch (error) { integrityErrors.push(error); }
   try {
-    if (result.interactiveProtocolSha256 && result.interactiveProtocolSha256 !== await interactiveProtocolIdentity(startupMode, interactiveScope)) throw new Error('Interactive protocol or fixture changed during measurement');
+    if (result.interactiveProtocolSha256 && result.interactiveProtocolSha256 !== await interactiveProtocolIdentity(startupMode, interactiveScope, undefined, options.generation)) throw new Error('Interactive protocol or fixture changed during measurement');
   } catch (error) { integrityErrors.push(error); }
   result.integrity = { passed: integrityErrors.length === 0, errors: integrityErrors.map(error => error.message) };
   if (measurementError) result.workloadError = measurementError.message;
   await writeFile(path.join(outputDirectory, 'summary.json'), JSON.stringify(result, null, 2));
+  run.finish(measurementError || integrityErrors.length ? 'failed' : 'passed');
   if (measurementError || integrityErrors.length) {
     throw new AggregateError([...(measurementError ? [measurementError] : []), ...integrityErrors], 'Performance workload or integrity validation failed; see summary.json');
   }
@@ -764,7 +854,7 @@ export const runElectronResourceBenchmark = async ({ argv = [], startupMode = 'n
 };
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  runElectronResourceBenchmark({ argv: process.argv.slice(2) }).catch((error) => {
+  runElectronResourceBenchmark({ argv: process.argv.slice(2).filter(argument => argument !== '--keep-artifacts') }).catch((error) => {
     console.error('[perf] benchmark failed:', error);
     process.exitCode = 1;
   });

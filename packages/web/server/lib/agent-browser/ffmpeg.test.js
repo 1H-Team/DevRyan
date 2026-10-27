@@ -61,6 +61,25 @@ describe('managed recording dependency', () => {
     await fs.writeFile(installed.binaryPath, 'tampered');
     expect((await f.installer.status()).ok).toBe(false);
   });
+  it('re-proves a stale receipt identity from the checksum without downloading', async () => {
+    const f = await fixture(); await f.installer.ensureInstalled();
+    const receiptPath = path.join(f.root, 'ffmpeg/ready.json');
+    const receipt = JSON.parse(await fs.readFile(receiptPath, 'utf8'));
+    // Receipts written before the device number was dropped, or after APFS renumbered the volume.
+    await fs.writeFile(receiptPath, JSON.stringify({ ...receipt, identity: `16777229:${receipt.identity}` }));
+    const restarted = createFfmpegInstaller({ installRoot: f.root, platform: 'darwin', arch: 'arm64',
+      manifest: { release: 'b6.1.1', source: 'https://fixture.invalid/source', platforms: { 'darwin-arm64': {
+        binary: { url: 'https://fixture.invalid/binary', sha256: receipt.sha256 },
+        license: { url: 'https://fixture.invalid/license', sha256: crypto.createHash('sha256').update('license').digest('hex') },
+        readme: { url: 'https://fixture.invalid/readme', sha256: crypto.createHash('sha256').update('source/build instructions').digest('hex') } } } },
+      fetchImpl: () => { throw new Error('unexpected network'); }, runCommand: () => { throw new Error('unexpected probe'); } });
+    expect(await restarted.ensureInstalled()).toMatchObject({ ok: true, state: 'ready' });
+    expect(JSON.parse(await fs.readFile(receiptPath, 'utf8')).identity).toBe(receipt.identity);
+    expect(await fs.readdir(path.join(f.root, 'ffmpeg'))).toEqual(['LICENSE', 'README', 'ffmpeg', 'ready.json']);
+    await fs.writeFile(receiptPath, JSON.stringify({ ...receipt, identity: 'stale' }));
+    await fs.writeFile(path.join(f.root, 'ffmpeg/ffmpeg'), 'tampered');
+    expect((await restarted.status()).ok).toBe(false);
+  });
   it('repairs missing distribution notices even after a cached successful status', async () => {
     const f = await fixture(); await f.installer.ensureInstalled();
     await fs.rm(path.join(f.root, 'ffmpeg/LICENSE'));

@@ -1,479 +1,207 @@
 # Isolated Electron and web QA
 
-For manual reclamation of superseded QA application binaries while preserving
-reports and required native donors, see [local storage cleanup](STORAGE_CLEANUP.md).
-New packages record creation/completion and optional retention pins in
-`storage-retention.json`. Historical or partially removed packages cannot be used
-as runnable acceptance artifacts; rebuild them or select a retained package.
+QA runs use private data, a Git fixture workspace and loopback fixtures; they never touch the installed app. Passing means the automated checks passed; inspect screenshots yourself before calling a visual change reviewed. Use `--keep-artifacts` to retain failed-run evidence. Live-account and journal investigation: [Agent runtime verification](AGENT_RUNTIME_VERIFICATION.md). Release steps: [Release pipeline](RELEASE_PIPELINE.md).
 
-Run from the repository root using the Node and Bun versions declared in `package.json`. Install the lockfile dependencies with `bun install --frozen-lockfile`. No extra QA dependency is required; the browser driver reuses Electron and `ws` already installed in its workspace.
+## Run directories and disk use
+
+Runners create one run directory per invocation through `scripts/qa/run-root.mjs`, under `<os tmpdir>/devryan-<family>`, with a `run.json` (`status`: `running`, `passed`, `failed`, `interrupted`; `pinned`). The directory is removed on pass, failure and interruption unless `--keep-artifacts` or `DEVRYAN_KEEP_ARTIFACTS=1` is set; the runner prints the evidence path when it keeps one. The one exception is the QA packager's `.cache/qa/packaged-electron-current` (below). A packaged QA app is about 1.8 GB: check `df -h .` first and see [STORAGE_CLEANUP.md](STORAGE_CLEANUP.md).
+
+A live run carries a constructor-owned scope tied to its canonical directory and
+device/inode through fixture and native preparation. The token cannot authorize
+a sibling run, a replaced root or a symlink escape. Native inputs and compiled
+artifacts retain their pinned repository-owned verification. Retained provider
+handoff profiles use private `.cache/qa`: registration and later resume processes
+need the existing pinned-file readers, rather than an in-memory scope token.
+
+## Isolated QA runner
 
 ```sh
 bun run type-check:ui
 bun run build:web
 bun run --cwd packages/electron build:web-assets
-bun run qa
+bun run qa                                   # web / chat
 DEVRYAN_QA_RUNTIME=electron bun run qa
-DEVRYAN_QA_SCENARIO=mobile bun run qa
+DEVRYAN_QA_SCENARIO=mobile bun run qa        # web only
+bun run qa --config <matrix.json>            # cells of runtime x provider x model x scenario
 ```
 
-Without `--config`, `qa` defaults to `web` / `chat`. Supported runtimes are `web` and `electron`; `mobile` is web-only. Web launches the actual Express server and shared UI in a sandboxed Chromium window. Electron launches the actual repository main process and preload with the in-process server. These are development-binary checks; they do not replace packaged native pointer/updater/quit verification. The explicit matrix below uses actual packaged Electron.
+`scripts/qa/run.mjs` launches the real Express server and shared UI in a sandboxed Chromium (`web`) or the repository's Electron main process and preload (`electron`) on a private data directory and browser profile, against a deterministic loopback provider fixture. Electron QA rejects a stale staged UI: rerun `build:web-assets` after rebuilding web assets. These are development-binary checks, not packaged-app checks.
 
-Each run creates a private `.cache/qa/<runtime>-<scenario>-<random>/runtime/` with a Git workspace, data directory, and browser profile. It connects only to its deterministic loopback provider fixture. The browser profile is seeded with the same workspace preference as the isolated server before shared stores mount. It prints the evidence directory and CDP inspection URL. `DEVRYAN_QA_HOLD_MS=120000` keeps the owned runtime inspectable for two minutes after checks finish, including on failure. An interrupt exits the hold and proceeds to cleanup. Use the printed CDP target or the launched window to inspect the exact failing state.
+| Variable | Meaning |
+| --- | --- |
+| `DEVRYAN_QA_RUNTIME` | `web` (default) or `electron` |
+| `DEVRYAN_QA_SCENARIO` | `chat` (default), `mobile`, `recovery`, `thinking`, `grok-plan`, `session-changes`, `execution-failure`, `skill-loading`, `navigation`, `provider-usage` |
+| `DEVRYAN_QA_HOLD_MS` | Keep the runtime up this long after the checks, even on failure, so you can attach to the printed CDP URL |
 
-The runner records revision, dirty state, runtime/scenario, check timings, sanitized errors, screenshot paths, fixture request counts/canonical IDs, diagnostic health when available, and cleanup errors in `result.json`. `process-logs.json` keeps bounded sanitized child logs. The sanitized journal is preserved as `journal/` before temporary runtime data is removed. Only children created by this invocation are stopped; shutdown failures retain temporary data and fail the run. A missing build, executable, connection, or assertion is a failure with evidence, not a skipped success.
+`result.json` records revision, dirty state, scenario, check timings, sanitized errors, screenshot paths, fixture request counts, diagnostic health and cleanup errors; `process-logs.json` has bounded child logs and `journal/` the sanitized journal. A missing build, executable, connection or assertion is a failure, not a skip.
 
-The opt-in `DEVRYAN_QA_SCENARIO=recovery bun run qa` adds recovery-card acceptance after the chat smoke; set `DEVRYAN_QA_RUNTIME=electron` for the actual desktop host. It replays canonical failure/recovery records, prunes the original attempts, checks the current child and model, verifies the saved Plan Markdown through the real host API, reloads, expands the card and captures narrow layouts (390px touch web and 600px Electron content). It also verifies generic Explorer/Designer titles summarize their task briefs, persist only on idle, and survive reload. Task snapshots and provider events are deterministic fixtures; this does not establish live-provider acceptance. Electron QA rejects a stale staged UI; run `bun run --cwd packages/electron build:web-assets` after rebuilding web assets. See the [reviewed recovery and title evidence](audits/2026-09-06-recovery-cards/README.md).
+Scenarios beyond `chat` (which selects a session, connects events, runs four concurrent streams, preserves composer text, submits, cancels, and reconnects without resubmission):
 
-Current coverage: select a fixture session; connect event transport; receive four concurrent streams; preserve typed composer text; submit through the composer and reconcile; cancel a second active prompt; reconnect/reload without resubmission or lost completed text. The mobile scenario captures 390×844, 844×390, and 768×1024 in both themes before the stream journey and checks composer/viewport bounds plus touch-driven session drawer open/close at the mobile breakpoints. `passed` describes these automated checks only. A human or agent must inspect every PNG and write a reviewed summary under `docs/audits/`; screenshot creation alone is not visual acceptance. Reviewed results and missing journeys are tracked in the September audit register.
+- `mobile`: 390x844, 844x390 and 768x1024 in both themes, composer and viewport bounds, touch drawer open/close.
+- `recovery`: replays failure/recovery records, checks the recovery card, saved Plan Markdown, Explorer/Designer titles, reload and narrow layouts. Completed task execution is shown separately from pending, stale, failed and passed checks; a scoped fixture also exercises the current root-objective verification panel and objective changes on desktop and mobile. Fixture-owned managed task updates enter the isolated page through scoped app WebSocket/SSE wire frames, with matching snapshot reads; they do not qualify native OpenCode event projection, actual check execution or scheduler execution. The saved-plan route uses the production file owner with a fixture-scoped simulated source identity and settlement; it does not establish native plan authority. The saved plan is from a separate human follow-up; a receipt-backed plan continued from a synthetic wake is not qualified. Child title checks use the production title coordinator with a scoped simulated source and deterministic fixture model, not native helper authorization.
+- `session-changes`: exercises isolated capture and disabled Undo for unowned evidence. A narrowly scoped UI transport simulates stale proof rejection, refresh and fresh Undo/Redo proof revisions; it does not mutate files or qualify a native restore. Native ownership and restore are covered by the compiled package lanes.
+- `thinking`, `grok-plan`, `skill-loading`, `navigation`: the named feature journeys.
+- `execution-failure`: a session error after idle without an assistant, its persistent notice after reload, and failed grouped tools.
+- `provider-usage`: weekly usage, native sign-in source, reset expiries and empty inventories in the Providers UI.
 
-The default smoke does not cover new-session creation, attachments, queue policy, permission dialogs, tool expansion or old-history anchoring; use the matrix fixture for those journeys. Drawer swipes, native dialogs, long idle recovery and closed-session memory still need separate verification. Physical-device keyboard behavior remains unverified until exercised on a device.
+The default smoke does not cover new-session creation, attachments, queue policy, permission dialogs, tool expansion or old-history anchoring. Physical-device keyboard and drawer swipes are unverified.
 
-## Grok streaming plan cards
+### Matrix configuration
 
-Run `DEVRYAN_QA_SCENARIO=grok-plan bun scripts/qa/run.mjs` for isolated web acceptance and add `DEVRYAN_QA_RUNTIME=electron` for the actual desktop host. Build the current UI and stage Electron assets first, as for the recovery-card scenario. The fixture emits xAI-shaped reasoning/text parts and real `message.part.delta` events, holds the turn busy at each assertion, and proves the card grows before completion. It covers a split sentinel, multiple reasoning parts, a text continuation, the handoff to a final assistant, disabled actions across tool-call gaps, exact saved Markdown after idle/reload, and an aborted draft that cannot save or implement. Captures cover both themes and wide/narrow layouts, with reasoning displayed and hidden. Plan turns retain reasoning source parts through `ChatMessage`; `MessageBody` applies the Thinking visibility preference after resolving the card. Inspect every original PNG before recording visual acceptance. This is deterministic provider transport; a separately configured live xAI journey is required for a live-provider claim. The product fixes chat rendering to Live; legacy Sorted projection remains unit-test territory.
+`--config` reads `QA_SCENARIO_IDS` from `scripts/qa/matrix-config.mjs` (`core-journey`, `project-work`, `compaction-manual`, `compaction-natural`, `mobile`, `compaction-retrieval-control`, `compaction-retrieval-compacted`); read that file for the cell fields. Configured live profiles can set `preserveOrchestration: true` (keeps the saved role graph, effort, presets and fallbacks in the private profile; select the orchestrator model in the composer) and `mirrorPersonalSetup` (`true` or `{ plugins, skills, mcp: 'off' | 'definitions' | 'live' }`, requires `preserveOrchestration`; MCP definitions are written disabled and auth state is never copied; see `scripts/qa/live-setup-mirror.mjs`). A run that needs an unavailable provider fails; it never substitutes another model.
 
-The [2026-09-07 Grok streaming audit](audits/2026-09-07-grok-plan-streaming/README.md) retains reviewed web/Electron captures, exact build identity, automated results, and the unavailable live-provider check.
+### Candidate OpenCode runtime
 
-## Local packaged Electron candidate
+Live QA expects the runtime to report the host pin (`TARGET_OPENCODE_VERSION` in `packages/web/server/lib/opencode/version-policy.js`). To qualify a candidate first, set an exact version (no `-devryan.N` suffix, no ranges): `DEVRYAN_QA_OPENCODE_VERSION=<version> <usual QA command>`. Evidence records `runtimeTarget: { version, source }`; `source: DEVRYAN_QA_OPENCODE_VERSION` qualifies the candidate only, not the pin.
 
-The opt-in macOS arm64 packager consumes a chosen web build and the matching native binaries from an existing repository-local `packages/electron/dist/mac-arm64/DevRyan.app`:
+### Parity manifest
+
+`scripts/qa/parity-manifest.mjs` captures the effective agent runtime catalog of a running isolated host (`scripts/qa/isolated-host.mjs`; take `origin` from its `ready.json`) using GET requests only: health, agents, commands, allowlisted config, MCP status, tools, skills and Slim status. Bodies are stored as sha256 plus length.
 
 ```sh
-DEVRYAN_QA_DIST_DIR=/absolute/path/inside/DevRyan/.cache/qa/candidate-web-EXAMPLE bun scripts/qa/package-electron.mjs
+node scripts/qa/parity-manifest.mjs --origin http://127.0.0.1:<port> --directory <workspace> \
+  --qa-home <private QA home> --out <baseline.json>
+node scripts/qa/parity-manifest.mjs --diff <baseline.json> --origin ... --directory ... --qa-home ... --out <candidate.json>
+# or compare saved captures: --diff <baseline.json> --candidate <candidate.json>
 ```
 
-It writes a new `.cache/qa/packaged-electron-*/` app and `package-evidence.json`. The app contains the current bundled Electron main, server dependencies, preload and the supplied UI. Evidence compares shipped workspace source and UI bytes, verifies Electron/native package versions, and runs SQLite and PTY under the packaged executable. It uses no signing, publication or shared native rebuild step.
+Use `DEVRYAN_QA_OPENCODE_VERSION` or `--expect-runtime <v>` for a candidate. `--diff` exits 0 only when every section matches; a 404 route is `skipped`, any other failure is `error` (exit 1).
 
-Launch the returned executable directly with the existing fixture/live profile's environment and CDP flags; omit the development `isolated-host.mjs` argument. Its packaged entrypoint requires `DEVRYAN_QA_RUNTIME=electron`, the owned `DEVRYAN_QA_RUNTIME_ROOT`/`DEVRYAN_QA_HOME` marker, and private data/profile paths. Before importing production main, this QA-only bootstrap fixes packaged resource mode, isolates logs and shell configuration, uses Chromium's mock keychain, suppresses global protocol registration, and disables the private profile's background Bot service. These exclusions are recorded in `runtime/packaged-host.json`; signing, updater installation, OS keychain, protocol registration, background service and legacy Tauri acceptance remain separate.
-
-## Fresh-checkout packaged bootstrap
-
-This is a source-checked recipe, not a completed clean-room build. It uses the existing Bun, Electron rebuild and electron-builder dependencies. The current QA packager supports macOS arm64 only. Prerequisites are Git, Bun 1.3.14, Node >=22.13 with npm and Node N-API headers, and Xcode Command Line Tools providing `xcrun swiftc`, `xcrun clang++`, `lipo`, and the macOS SDK. Python and a working native compiler toolchain are needed if the existing native rebuild cannot use a prebuilt binding. Network access is needed for locked dependencies, Electron/native headers and the pinned OpenCode npm archive.
-
-Run from the root of a clean, committed DevRyan checkout. Use a separate disposable worktree with its own copied dependencies for the Electron ABI rebuild. Rebuilding native modules in the checkout used by web QA would replace its Node bindings with Electron bindings.
+## OpenCode 2 native verification
 
 ```sh
-bun install --frozen-lockfile --backend=copyfile
-bun run type-check:ui
-bun run build:web
-bun run --cwd packages/electron build:native-helpers
-
-mkdir -p .cache/qa
-qaNativeRoot="$PWD/.cache/qa/native-bootstrap"
-git worktree add --detach "$qaNativeRoot" HEAD
-(
-  cd "$qaNativeRoot"
-  bun install --frozen-lockfile --backend=copyfile --cache-dir "$qaNativeRoot/.cache/bun-install"
-  DEVRYAN_BOT_RUNTIME_REQUIRE_RELEASE_MANIFEST=0 bun run --cwd packages/electron bundle:main
-  ELECTRON_BUILDER_ARCH=arm64 bun run --cwd packages/electron rebuild:native
-  CSC_IDENTITY_AUTO_DISCOVERY=false node --input-type=module <<'NODE'
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { createRequire } from 'node:module';
-import path from 'node:path';
-
-const projectDir = path.resolve('packages/electron');
-const load = createRequire(path.join(projectDir, 'package.json'));
-const pkg = JSON.parse(await readFile(path.join(projectDir, 'package.json'), 'utf8'));
-const { build, Platform, Arch } = load('electron-builder');
-const configPath = path.resolve('.cache/qa/native-donor-builder.cjs');
-await mkdir(path.dirname(configPath), { recursive: true });
-const config = {
-  ...pkg.build,
-  extends: null,
-  electronVersion: load('electron/package.json').version,
-  directories: { ...pkg.build.directories, output: path.join(projectDir, 'dist') },
-  extraResources: [],
-  extraFiles: [],
-  asarUnpack: ['**/*.node', '**/spawn-helper'],
-  npmRebuild: false,
-  afterPack: null,
-  publish: null,
-  mac: { ...pkg.build.mac, target: ['dir'], identity: null, hardenedRuntime: false, notarize: false },
-};
-await writeFile(configPath, `module.exports = ${JSON.stringify(config, null, 2)};\n`);
-await build({ projectDir, config: configPath, targets: Platform.MAC.createTarget('dir', Arch.arm64), publish: 'never' });
-NODE
-)
-
-mkdir -p packages/electron/dist/mac-arm64
-cp -R "$qaNativeRoot/packages/electron/dist/mac-arm64/DevRyan.app" packages/electron/dist/mac-arm64/
-
-qaWebDist="$(mktemp -d "$PWD/.cache/qa/candidate-web-XXXXXX")"
-cp -R packages/web/dist/. "$qaWebDist/"
-DEVRYAN_QA_DIST_DIR="$qaWebDist" bun scripts/qa/package-electron.mjs
+node scripts/verify-opencode-v2-native.mjs
 ```
 
-The first app is only a native-binary donor and must not be launched or treated as an acceptance artifact. Its recipe deliberately omits release resources and the release afterPack hook. The real QA packager subsequently checks the donor's Electron version, module versions, arm64 architecture and copied hashes, packages the current source plus selected UI, and runs actual SQLite and PTY ABI smoke checks. Retain the final emitted `package-evidence.json` path for QA/performance commands. The donor worktree and its local dependency tree may be retained until verification is complete; do not reuse that dependency tree for Node/web runs. No signing, notarization, publication, installed-app replacement or global runtime installation is requested. The production `bun run electron:build` is unsuitable here because it requires a verified Bot release manifest and invokes the release packaging path.
+Darwin arm64. Exercises the native transport (pinned by `TARGET_OPENCODE_VERSION`) and product host against the real web bridge, execution supervisor and mutation ledger in a private directory with no live provider: direct reads, supervised grep, write/edit/patch workers, ambiguous and failed patches, eight concurrent writers, protected paths, BOM/CRLF, cancellation, interrupted publication, controller restart, and managed child completion with Revert/Redo. Output goes to a new `native-*` directory under `.cache/v2-validation/`; `result.json` lists lanes that did not complete.
 
-Install the exact live-QA OpenCode runtime only in the ignored path expected by profile preparation:
+## OpenCode 2 compiled package
+
+Build a fresh candidate with pinned Bun on Darwin arm64, then qualify it with Node (the entrypoint refuses Bun):
 
 ```sh
-mkdir -p .cache/qa/opencode-1.18.33
-npm pack opencode-darwin-arm64@1.18.33 \
-  --pack-destination "$PWD/.cache/qa/opencode-1.18.33" --json \
-  > .cache/qa/opencode-1.18.33/pack-metadata.json
-
-node --input-type=module <<'NODE'
-import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
-
-const directory = path.resolve('.cache/qa/opencode-1.18.33');
-const metadata = JSON.parse(await readFile(path.join(directory, 'pack-metadata.json'), 'utf8'));
-assert.equal(metadata.length, 1);
-const entry = metadata[0];
-assert.equal(entry.name, 'opencode-darwin-arm64');
-assert.equal(entry.version, '1.18.33');
-assert.equal(path.basename(entry.filename), entry.filename);
-const archive = path.join(directory, entry.filename);
-assert.equal(`sha512-${createHash('sha512').update(await readFile(archive)).digest('base64')}`, entry.integrity);
-execFileSync('tar', ['-xzf', archive, '-C', directory], { stdio: 'inherit' });
-const pkg = JSON.parse(await readFile(path.join(directory, 'package/package.json'), 'utf8'));
-assert.equal(pkg.name, 'opencode-darwin-arm64');
-assert.equal(pkg.version, '1.18.33');
-const version = execFileSync(path.join(directory, 'package/bin/opencode'), ['--version'], { encoding: 'utf8' }).trim();
-assert.equal(version, '1.18.33');
-console.log(`Verified cached OpenCode ${version}`);
-NODE
+bun scripts/build-native-runtime.mjs --output-root .cache/v2-validation/native-artifact-candidate
+node scripts/verify-opencode-v2-package.mjs --artifact-root .cache/v2-validation/native-artifact-candidate
 ```
 
-Managed hosts always launch the bundled companion runtime, which reports `<pin>-devryan.<n>`; live readiness and natural-threshold checks compare its base version with the pin. The profile's CLI executable is recorded by hash only. To use an already installed executable instead of the cached archive, set `DEVRYAN_QA_OPENCODE_BINARY=/absolute/path/to/opencode` for `scripts/qa/run.mjs`; its hash still enters the profile evidence.
+The output directory must be new. Qualification uses the compiled controller and writer with the real web admission owner, scheduler, ledger and supervisor; only HTTP model responses are fixtures. Results land in `.cache/v2-validation/package-*/result.json`; incomplete lanes or changed source keep the exit nonzero. It does not activate a bundle in the installed app. To qualify an upgrade from a retained release, add `--baseline-artifact-root <retained-release-artifacts>` (repository-owned). Lane contracts and case IDs are in [OpenCode 2 native verification scripts](../scripts/opencode-v2-native/DOCUMENTATION.md).
 
-The archive's integrity is checked against npm pack's retained metadata, and the installed package identity and executable version are checked after extraction. This does not modify the user's OpenCode installation or install a package globally. The package identity and layout must match the `.cache/qa/opencode-1.18.33/package/package.json` and `profile-preparation.mjs` contract.
+## Packaged Electron QA
 
-A fresh checkout alone still cannot run live-provider QA. `prepareQaProfile` also requires the user's existing supported OpenCode configuration directory, its installed dependency tree/package manifest and managed provider/agent configuration. It copies those installed dependencies into each owned private profile and provisions candidate defaults there. It projects only supported unexpired access credentials without refresh tokens; Anthropic requires the existing Claude CLI credential source. Establish these through their canonical owners. Fixture QA needs no provider credentials or cached OpenCode executable. Do not suggest hand-written credential files or a global install as a bootstrap substitute.
-
-Validation performed for this proposal: read root/workspace package scripts, both native-helper builders, native rebuild resolver, bundler and QA packager; checked installed Bun's `--frozen-lockfile`, `--backend=copyfile`, `--cache-dir` syntax and npm's `pack --pack-destination --json` syntax. Builder options and explicit config-file behavior match the existing QA packager. No dependency install, native rebuild, donor package build or provider request was executed for this task.
-
-## Interpreting an incomplete acceptance run
-
-Grade recorded checks and evidence, not just the process exit code or screenshot filename. A partial fixture run does not qualify later steps. Direct use of an existing shared scenario can supply separately labeled coverage; retain the failed original and record the exact source, helper and served artifact identities before/after. Inspect every original screenshot, correlate journal records, and independently verify retained PID/start identities are absent before removing a private profile.
-
-Give a QA-only objective one focused correction and a separately identified retry. If QA machinery prevents that objective again, stop expanding the helper and use an existing direct route or report it unverified. Keep network/provider failures separately classified. A transient startup retry uses a fresh run ID/evidence root and never replaces its original failed attempt. Do not refresh credentials to manufacture available coverage.
-
-Closed-session memory requires complete canonical/rendered history coverage before loaded, inactive and deleted checkpoints. An initial-only sample or successful pagination HTTP response cannot qualify retention. Typing requires normal selection of the exact control session, sixty trusted inputs during proven background progress and an unchanged unsent draft. Keep natural samples separate from forced GC, use three fresh baseline/candidate runs in B1/C1/C2/B2/B3/C3 order, and stop a cohort at its failed prerequisite. See `scripts/perf/INTERACTIVE.md` and the [current acceptance report](audits/2026-09-05-cleanup/coding-agents-acceptance.md) for scope and retained evidence.
-
-## Explicit UI matrix
-
-Before broad live-provider matrix execution, complete a representative manual-compaction journey and a representative natural-compaction journey. Each must pass two verified native boundaries, resume implementation, pass the independent application and browser checks, and reconcile managed tasks, results and dispositions. Use the [reusable cleanup and QA checklist](audits/reusable-cleanup-checklist.md) for the next repository.
-
-An optional Electron cell `windowSize: { width: 800, height: 800 }` resizes the actual native window after configuration through its owned loopback main-process inspector and verifies the committed bounds before the journey. The helper records the application's native minimum first. A requested 600-pixel frame is unavailable while that minimum remains 800 pixels; it fails explicitly instead of changing the minimum or presenting an emulated viewport as native coverage.
-
-Before submitting any live prompt, each cell records the native tool inventory and requires `devryan_task` to be registered. This proves actual runtime plugin loading separately from the packaged-config asset smoke.
-
-The separate matrix schema pins runtime, provider, model, primary agent, Plan mode and thinking choice for each cell. Run it through the existing entrypoint:
+`scripts/qa/package-electron.mjs` (macOS arm64, run with Bun) packages a chosen web build with the native binaries from an existing `packages/electron/dist/mac-arm64/DevRyan.app`. Without signing, publishing or a shared native rebuild:
 
 ```sh
-DEVRYAN_QA_DIST_DIR=/absolute/path/inside/DevRyan/.cache/qa/candidate-web-EXAMPLE \
-  bun scripts/qa/run.mjs --config .cache/qa/matrix.json
+DEVRYAN_QA_DIST_DIR=/absolute/path/inside/DevRyan/<web-dist> bun scripts/qa/package-electron.mjs
 ```
 
-This minimal `.cache/qa/matrix.json` runs two credential-free web journeys:
+It keeps one fixed slot, `.cache/qa/packaged-electron-current/`, replaced by each run, containing the app and `package-evidence.json`. Evidence compares shipped source and UI bytes, checks Electron and native package versions, and runs SQLite and PTY under the packaged executable. The packaged QA host uses fixed packaged resource mode, isolated logs, Chromium's mock keychain, no protocol registration and no background runtime service (recorded in `runtime/packaged-host.json`); signing, updater install, OS keychain and launchd registration are not exercised. The smokes below take `--package-evidence <that file>`.
 
-```json
-{
-  "schemaVersion": 1,
-  "evidenceRoot": ".cache/qa/example-matrix",
-  "cells": [
-    {
-      "id": "fixture-web-builder-low",
-      "runtime": "web",
-      "transport": "fixture",
-      "providerId": "fixture",
-      "modelId": "fixture-model",
-      "agent": "builder",
-      "planMode": false,
-      "variant": "low",
-      "scenarioIds": ["core-journey", "mobile"],
-      "repetitions": 1,
-      "timeoutMs": 420000
-    }
-  ]
-}
-```
-
-All shown fields are required; unknown fields fail validation. The optional `projectCompaction` composition is described below. Cell IDs must be unique. A variant string selects an advertised thinking level such as `"high"`. Historical `variant: null` remains accepted by the schema, but current chat controls require an explicit advertised level and a null selection fails admission. Agents are `builder` or `orchestrator`; `planMode` is a boolean. The fixture accepts only `fixture/fixture-model` with `null`, `"low"` or `"high"` variants; current UI journeys use Low and High. Live cells accept `openai`, `anthropic` or `xai` and require an exact configured model ID and connected provider. No fallback model or effort is selected when a pinned choice is unavailable.
-
-| Scenario | Supported execution | Graded behavior |
-| --- | --- | --- |
-| `core-journey` | Fixture or live; web or Electron | Actual UI selection, submission, streaming, cancellation and reload; the fixture adds deterministic queue, attachment, tool, permission, rejected-send, reasoning and history cases. |
-| `mobile` | Web | Viewport/theme and touch checks with the core journey; it is not a physical-device test. |
-| `project-work` | Live; web or Electron | Attached project requirements, revisions, Plan approval, independent domain/API/restart probes and browser behavior. |
-| `compaction-manual` | Live; web or Electron | Two composer `/compact` boundaries, current saved-plan restoration and approved implementation. |
-| `compaction-natural` | Live; Electron | Two automatic native boundaries reached by ordinary project context growth, followed by restoration and approved implementation. |
-
-The matrix fixture's `core-journey` also changes the Agent Runtime language-server
-switch through the shared Settings UI, reloads, checks the saved value, and
-restores the private sidecar. Its loopback runtime is external, so both applied
-and restart state must remain unknown; managed readiness is verified separately
-by lifecycle tests. Its Stop controls operate on main sessions. The fixture does
-not launch managed children, so managed-child Stop is covered by the real
-registry/executor integration suite rather than claimed as UI acceptance.
-
-To cover manual Electron compaction within selected existing project journeys, set `"projectCompaction": "manual"` on a live Electron cell whose `scenarioIds` is exactly `["project-work"]`. This opt-in keeps one run, owned project, session and pinned model/agent/Plan/thinking selection. It uses the manual adapter's attached diagnosis, two saved plan revisions and unfinished implementation pause, then two actual composer `/compact` boundaries with steering and reload before approval and implementation. It retains the project's seeded-failure gate and final canonical task/browser graders. Each boundary has a separate continuation record for its restored native summary, independently checked paused project and exact revised state. `projectComposition` requires both distinct ordered native cycles, both continuation records, one session through implementation, operational continuity and the independent implementation grade. The browser grade remains separate and mandatory. Omitting the option leaves existing project journeys unchanged; adding `compaction-manual` to `scenarioIds` instead would create another fresh run. Make prospective configurations with an appropriate full-journey timeout; do not relabel historical results or count an unexecuted composition as coverage.
-
-`repetitions` accepts 1–100 and `timeoutMs` accepts 1,000–86,400,000 ms per expanded run. A matrix has 1–500 cells and may expand to at most 10,000 runs. Runs execute sequentially. The evidence root must resolve below the repository's `.cache/`, without a symlink escape. Interrupts clean up the owned run and stop expansion; failures and incomplete matrices exit nonzero.
-
-For any Electron cell, provide the packager's evidence file. The runner resolves its executable and packaged UI from that file; `DEVRYAN_QA_DIST_DIR` selects only the web cells' build:
+### First-launch smokes
 
 ```sh
-DEVRYAN_QA_DIST_DIR=/absolute/path/inside/DevRyan/.cache/qa/candidate-web-EXAMPLE \
-DEVRYAN_QA_PACKAGE_EVIDENCE=/absolute/path/inside/DevRyan/.cache/qa/packaged-electron-EXAMPLE/package-evidence.json \
-  bun scripts/qa/run.mjs --config .cache/qa/matrix.json
+node scripts/qa/first-launch-smoke.mjs --package-evidence <abs package-evidence.json> --scenario owner-shaped
 ```
 
-Before and after an Electron cell, the loader verifies the app archive, shipped UI and recorded unpacked SQLite/PTY binaries against the package evidence. Runtime evidence must confirm `isPackaged: true`. Web artifacts must also remain inside the repository and include `.vite/manifest.json`; the served entry and artifact hashes are recorded and artifact changes fail the run. Source fingerprints and `sourceDrift` are recorded separately, so review them before attributing a result to the current working tree. Keep source and artifact bytes stable through a matrix.
+Provisions the first native bundle on a private HOME, one launch at a time. Scenarios: `owner-shaped` (synthetic v1 tree: 8 project records, 608 plans, Finder files, fake `qa-fixture-*` keys), `v200-half-seed` and `v200-selected` (both need `--v200-source <abs v2.0.0 checkout with node_modules>`; `v200-selected` accepts `--v200-artifacts <dir>`). Other flags: `--timeout-ms`, `--keep-runtime`, `--shell-exports` (checks the app ignores `OPENCODE_*`/`DEVRYAN_RUNTIME_BUNDLE_ROOT` exported by login shell files). PASS requires the loopback app document, `/api/health` `ok` with `isOpenCodeReady`, and `selection.json`; the v1 source tree must be unchanged. FAIL is the first `[electron] startup failed`, the startup or recovery page, an exit, or the timeout. A pre-2.0.0 package is expected to fail `owner-shaped` with `native_setup_json_invalid`.
 
-Initial low-level health readiness does not imply that native plugins, providers, and agents have finished initializing. Only the first cold reload therefore has a separate 180-second bootstrap ceiling, additionally capped by the cell's remaining deadline. Its document-load event shares that ceiling; the reload command and all later ordinary reloads retain their 30-second limits. The gate requires initialized UI provider/agent state, visible enabled composer and New Chat controls, populated model/agent controls, and the exact pinned model and requested primary agent in the real connected native catalogs. Five-second bounded catalog requests retry transient startup failures; unavailable selections and permanent API failures fail explicitly. `initial-bootstrap.json` retains phase timings, request attempts, and the last UI snapshot, including on failure. All subsequent ordinary reloads keep their 30-second limit, and the later exact provider, agent, variant, and canonical submission checks still run.
-
-Each cell receives an owned Git project, private home marker, managed data directory and Chromium profile. Live profile preparation provisions candidate defaults and plugins into that private installation, copies installed dependencies from the existing OpenCode configuration, and pins primary and delegated agent models. It expects the verified OpenCode 1.18.33 executable at `.cache/qa/opencode-1.18.33/package/bin/opencode`. Available API credentials or unexpired OAuth access credentials are projected into private files; refresh tokens and personal skills are not copied. The user's installed OpenCode ripgrep (`~/.cache/opencode/bin/rg`) is copied into the private `XDG_CACHE_HOME`, because OpenCode's read, grep and skill tools fail with `ripgrep execution failed` when its lazy download cannot run; `profile-evidence.json` records `ripgrep` as `copied` with its hash or `not-installed`. Claude access comes from the existing CLI credential source. The launch environment sets `HOME`, `CLAUDE_CONFIG_DIR`, `MERIDIAN_CONFIG_DIR` and `MERIDIAN_SESSION_DIR` inside the private home and drops inherited Meridian/Claude path overrides. Meridian runs inside the compiled Bun OpenCode host, where the preload shim cannot redirect named `homedir` imports; Meridian 1.62.x derives its oauth-token profile `CLAUDE_CONFIG_DIR` (`~/.config/meridian/profiles/<id>`) and other state from that home, so without a private `HOME` Claude Code writes the owner's real Meridian profile. Preparation fails before provisioning if any such path resolves outside the private home, and it writes a private `.gitconfig` with the `DevRyan QA` identity. Do not put credentials in matrix JSON or handcraft the profile environment. The runner records credential availability and installed/plugin fingerprints without exposing secret values; missing dependencies, unsupported credentials or unavailable model access fail explicitly. Immediately after preparing each fresh live profile and before starting any host, the runner requires the copied selected-provider OAuth/Claude access expiry to cover the configured cell timeout plus ten minutes. It records the successful admission timestamp and budget; unavailable, expired, insufficient or unknown OAuth/Claude expiry fails the cell and follows normal private-profile cleanup. Existing OpenAI/xAI API-key admission is preserved with `expiryCheck: 'not-applicable-to-api-key'`; this makes no credential-lifetime guarantee. Other providers do not determine admission, and this check never refreshes credentials.
-
-For focused specialist diagnostics, the `prepareQaProfile` / `pinQaAgents` APIs accept an optional `agentAssignments` map for known specialist roles, for example `{ explorer: { providerId: 'openai', modelId: 'gpt-5.3-codex-spark', variant: 'high' } }`. Assignments require the primary provider and an explicit nullable variant by default. The explicit option `allowCrossProviderAssignments: true` additionally permits Builder and known managed specialists pinned to OpenAI, Anthropic, xAI or OpenCode Zen; it projects only those admitted providers into the private profile and preserves each exact model/effort. Unknown providers, ambiguous roles and missing efforts still fail before writes. Verify advertised availability and copied-access duration for every assigned provider before a managed live trial; primary matrix adapters remain unchanged. Explicitly assigning a disabled specialist also fails instead of recording an ineffective assignment. Primary defaults remain pinned to the original cell. Profile evidence records the actual `agentModels` map and each role's model and nullable variant in `agentSelections`. Live matrix cells also accept `agentAssignments` and `allowCrossProviderAssignments`. The matrix verifies copied-access duration for all assigned providers and checks each native role against the live model/variant catalog before submission. It records start/finish harness fingerprints. Availability and correct configuration do not establish successful specialist execution: inspect actual child results and parent reconciliation too. It changes only the owned QA profile.
-
-After primary-agent selection, the runner checks the actual selected provider, model and native agent against the pinned cell and usable catalog before opening effort controls or submitting a prompt. An available pinned model elsewhere in the catalog is insufficient. The private fixture profile must pin the same model and inherited Low choice through the application's actual standalone agent-config path; the UI then explicitly selects each cell's explicit Low or High choice.
-
-The fixture matrix checks shared UI and canonical transport behavior. Its synthetic compaction records specifically test Low/High restoration and saved Plan-card approval after reload; they do not prove native compaction or managed scheduler execution. Plan screenshots require the exact current or disabled historical approval control to be visible. Only successfully written, safe relative PNG basenames from the screenshot callback are preserved after result-content sanitization; arbitrary metadata does not receive that exception. Live project grading requires actual native tool results, unchanged protected tests, independent behavioral probes and, for Orchestrator, exact managed dispatch, child and disposition evidence. Model prose and session idleness cannot satisfy those grades.
-
-Project instructions require the agent to run the native causal failing/passing test sequence, the full test suite, HTTP API checks, and server restart persistence checks inside its fixture. Both Builder and Orchestrator must pass the native causal repair grader. Its source read and edit must target regular files in the owned `src/` or `public/` tree; the original test file/script must remain intact, test exits must be numeric native metadata, and the selected tool intervals must not overlap. Orchestrator may distribute the chain across its verified root/child task graph, with exact managed disposition checks still required. Plan/README edits, opaque execution, prose exit claims and final independent behavior alone do not establish this chain. The independent QA browser then inspects the resulting UI; that mandatory grader remains separate from the agent's verification report. The agent must report that browser check as pending and must not discover or install browser tooling or request external-directory access to perform it. This keeps the same verification contract executable in standalone web profiles, which do not receive Electron's managed browser capability.
-
-A rejected native permission can end a QA turn before its deadline only when the observer's typed request/reply IDs match a failed canonical tool in the completed assistant directly parented by the current submitted request. The same completed assistant and canonical idle state must appear in two fresh polls. The runner records the correlation evidence and fails explicitly; it never grants permission or resumes the agent. Error prose, historical rejections, active work and unproven continuation parents cannot trigger this guard.
-
-The live observer records whitelisted controls at native `chat.message` and final `chat.params` hooks after configured plugins and before the provider adapter. The grader correlates the tracked user-message IDs, provider/model and explicit variant selection with the advertised control values. Historical Default evidence must contain an explicit cleared variant; current chat journeys select an advertised level. Native adapter defaults are reported separately. These records are not provider wire capture. Inspect `reasoningControls.turns` for the exact graded turn set, including any declared gaps.
-
-The initial manual/natural planning request explicitly makes the revision-1 brief authoritative for the proposed priority sorting while preserving the user-note file as historical input. Revision 2 then rejects that sorting and requires creation order. This avoids an unrelated ambiguity before the compaction workload; it does not answer questions after compaction, change the saved-plan checks, or authorize implementation early.
-
-Manual compaction requires both canonical summary linkage and independently observed native lifecycle events at each boundary. It verifies revision 2 remains saved, the paused project stays unchanged, and implementation resumes from the current approval surface. With Plan enabled, the reference is the app's saved session revision, identified by its original human request, source message, session directory, creation time and slug. Its raw path, byte count and hash remain pinned. Every exact revision read must stay inside the project-plan directory derived from the prepared runtime's own data root, reject symlinks and match the file's bytes to the API response. With Plan disabled, the reference remains the existing `.opencode/plans/qa-current.md` file in the owned project. Both references are checked at every paused boundary and before approval; a later Plan card cannot replace the baseline. Fresh approval requests contain the existing path and require an observed successful native read before a new full canonical Plan response. The harness does not copy the file, refeed its contents or count an unreadable reference as continuity. Natural compaction additionally requires OpenCode 1.18.31's unchanged configured model limits, measured usage at the threshold, `auto: true` and no provider-overflow substitute. It sends labelled synthetic project audit data through the ordinary composer, bounded to 256 KiB per batch, 40 batches per boundary and 32 MiB total, within the cell deadline. Reaching a workload bound without two verified boundaries fails; one boundary, a forced summary or a fixture result cannot stand in for natural coverage.
-
-Manual Orchestrator coverage keeps its mixed first-boundary policy: two distinct seeded task/child/dispatch identities, one actually running child and one completed result with its exact undispositioned envelope. Both must be observed across native start and canonical summary completion. The active child may finish naturally during compaction while its result stays pending. Collection follows that exit observation; both exact results must remain completed through the second boundary. Missing, failed, consumed, replaced or ambiguous witnesses fail coverage.
-
-Natural Orchestrator coverage uses two explicit phases instead: one active domain-review Oracle witness at boundary one, then one completed browser-location Explorer result awaiting disposition at boundary two. Each existing investigation marker is dispatched exactly once, near its own threshold; the first result is collected after its summary exit and reload, and remains completed through the second boundary. The second result is collected only after its own summary exit and reload. Native automatic collection remains authoritative: an already collected exact result is not dispositioned again, and a result consumed before its required pending observation fails coverage. Tasks finish their bounded work naturally; the harness never holds, prolongs or recreates a witness. Ordinary prefill before each seed shares the unchanged 40-batch per-boundary and 32-MiB total bounds. Its headroom estimate schedules work only. The original compaction observation start is preserved throughout; second-phase prefill excludes only the exact already-recorded first boundary and its native events. Any other early boundary is retained and rejected. Growth after either seed is input-only because the native Orchestrator dispatch barrier blocks ordinary tools. Each Plan-mode witness separately proves the canonical read-only child permissions.
-
-Each required manual or natural witness uses the nearest managed snapshots whose entire HTTP request windows fall strictly before and after the native `compacting` timestamp. They must preserve the exact task, child, dispatch, attempt, execution kind and recovery lineage; a completed witness must retain the same unique unacknowledged envelope. The nearest wholly-after-canonical-summary observation proves the required pending state survived the summary. An active witness may finish naturally by that exit, with its result still unacknowledged. Earlier pre-request state, a later convenient sample or a late observer-delivery timestamp cannot replace these observations. Later reload and collection checks accept a disposition only when one canonical continue call starts strictly after summary completion and brackets the envelope acknowledgement. These are bracketed inferences from authoritative task state, not atomic native-hook snapshots. Natural evidence retains a separate `witnesses` record per phase, including its cohort, start bracket, summary exit, reload and collection request intervals. Final grading also checks global dispatch/child/attempt/result identity across all retained snapshots and canonical actions, including baseline work and implementation; an initially null child ID may bind once, but an observed identity cannot be rebound or silently disappear in a later wholly-after snapshot. Action identity conflicts remain sticky across context captures. Missing observations or evidence gaps prevent a complete continuity claim. No production scheduling, thresholds, wake rules or permissions are changed to make a cell pass.
-
-New manual/natural evidence stores `managedSnapshots` as schema 2: `{ schemaVersion: 2, limits, projections, stages, reads }`. Each read is `[stageIndex, projectionIndex, requestStartedAt, responseCompletedAt]`; array order preserves actual completion order, including equal-time ties. Identical immutable projections are stored once, but every actual read keeps its exact interval, including unavailable observations. `decodeQaCompactionSnapshots` in `scripts/qa/compaction-snapshot-evidence.mjs` accepts legacy arrays or this compact format and returns the original row shape for the unchanged graders. Expanded rows are not serialized back into evidence. Bounds are 500 distinct projections, 100,000 reads, 256 stage labels and 8 MiB of minified JSON for the compact data; malformed input or overflow leaves a sticky `managedSnapshotGap`. The existing 100 ms readiness delay and 500 ms background sampling stay unchanged. The 120-minute natural budget admits 86,400 nominal reads from those schedules before request overhead; real count or byte exhaustion still fails explicitly. Action-count audit rows coalesce only when stage and counts are unchanged, retaining their first/last times and observation count under 500-row/256-KiB minified-JSON bounds; canonical action records are unchanged. Compression never repairs an older failed run or backfills dropped task observations from journal events.
-
-Per-run `result.json` and matrix `summary.json` retain automated outcomes with visual review initially pending. Evidence includes source/artifact/package provenance, screenshots, sanitized journal and native observer records, saved plans, project changes and independent grades. Inspect every captured PNG and record an explicit visual review before claiming visual acceptance. A run can preserve evidence after failure; cleanup errors retain the owned project and fail the run. These commands define checks, not a statement that the full matrix has passed.
-
-## Resource benchmark with the same package
-
-Use the exact QA package for reproducible resource measurements:
+### Release upgrade lane
 
 ```sh
-bun run perf:electron -- --label candidate \
-  --package-evidence .cache/qa/packaged-electron-EXAMPLE/package-evidence.json
+node scripts/qa/release-upgrade-lane.mjs --candidate-artifacts <abs native runtime dir> [--direct-baseline previous|vX.Y.Z | --chain vA,vB]
 ```
 
-This path creates private credential-free fixture profiles, verifies the package before and after measurement, and records its source/archive/UI identity plus the actual packaged-host bootstrap evidence. Do not combine `--package-evidence` with `--electron-binary`. The default is three fresh runs each of `idle`, `one-stream`, `four-stream` and `plan-skeleton`, with 5 seconds warm-up, 30 seconds measurement and 500 ms sampling. Use `--scenarios`, `--runs`, `--warmup-ms` and `--measure-ms` for an explicitly labelled smoke; it does not replace the default measured comparison. Add `--baseline .cache/perf/BASELINE/summary.json` to apply comparison gates. Keep fixture version, runtime, display/window conditions and measurement parameters consistent across baseline/candidate runs, and inspect the recorded package identities. Results are written under `.cache/perf/`; see `scripts/perf/codemap.md` for the other profiling tools.
+Headless, no Electron. Upgrades are supported from v2.0.0 (`SUPPORTED_UPGRADE_FLOOR`) on; the lane refuses an older baseline, and for the floor release itself, with no published baseline, it records `skipped: first-supported-release` and passes. By default it prepares one private profile with the previous supported release: the newest published release from the floor up to this checkout's version (from `gh release list`). `--chain` ages the profile through several supported releases, oldest first. Each release's own source (`git archive` of its tag, `bun install`) starts its server against the native runtime from its published DMG. That runs the release's own provisioning or startup upgrade, then creates one session and deletes another. Finally this checkout's server cold-starts with the candidate runtime (`packages/web/runtime/darwin-arm64` locally; in `release.yml` the packaged DMG's `revert-runtime`). PASS requires the candidate upgrade to apply, the candidate to be the selected bundle, the production verifier and native readiness to pass, every kept session to survive and every deleted one to stay gone. The lane seeds the profile's `~/.config/openchamber` (an installed app always has it); the first aging release or candidate that supports the data-root migration must move it whole to `~/.config/devryan` and leave `~/.config/openchamber` as a link to `devryan`. If an aging release already migrated the root, the candidate must preserve that link and every entry in the DevRyan folder (evidence `dataRoots`). A refused upgrade in an older hop is recorded, not failed: installed users stay on the runtime it left. After a passing candidate hop, the held-recovery fixture marks the upgraded selection as requiring rollback reconciliation and cold-starts the candidate again: it must start only the recovery composition (`/api/health` 503 with a held runtime, `/api/runtime/bundle` held at the same revision, never ready) and leave the selection unchanged; with the exact selection restored, a normal start must be ready on the same bundle with every kept session. Needs `gh` auth, `hdiutil`, Bun and network; the run root is under `scratchParent('release-upgrade')` and is removed unless `--keep-artifacts`.
 
-Each fresh launch also writes `startup.json` before any benchmark navigation. Its parent-clock milestones distinguish spawn-to-CDP, loopback origin, host readiness and the first usable app UI. The composer, populated model control, New Chat control, fixture provider catalog and SSE connection must be ready. The benchmark pins the private profile to the fixture model before launch and reads the selected provider/model IDs from the live config store; readiness requires that selection to resolve in both the UI catalog and connected fixture catalog. The first observed selection and visible label are recorded. Every observed native document/transition is retained: normal splash-to-UI navigation is part of startup, while a guard rejects benchmark-forced navigation or reload until startup ends. Browser navigation and paint entries use their own document clock and are supplementary. The later resource-session navigation is timed separately. This fixture measurement excludes real provider initialization and does not claim cold operating-system caches.
+### Direct supported release upgrades and immutable DMG observation
 
-Run the separate session-memory protocol with the same verified package:
+Installed Electron qualification is separate from the headless runtime lane below. `node scripts/qa/release-installed-upgrades.mjs X.Y.Z <absolute DMG> <absolute release-manifest.json> <absolute report.json> candidate` runs serial isolated upgrades from v2.0.0 and the previous release; each lane qualifies only the upgrade, since `visual-qa` already checked the candidate's own launch. Every lane checks the baseline's startup and version, the offer, download, native installer restart and retained private settings; a skipped upgrade fails the matrix. Installer preparation runs inside the restart IPC; the main-process observer records its outcome, so a refused preparation fails the lane at once with its product code and sanitized diagnostic (for example `native_runtime_artifacts_unverified` with stage, reason and purpose) instead of a five-minute missing-receipt timeout. `candidate` pins the exact unchanged DMG through a loopback transport fixture injected only into the isolated app's paused main-process inspector. It leaves the shipping feed and updater untouched. `public` repeats only the previous-release lane through the real canonical GitHub feed after publication. Both modes require a disposable macOS arm64 GitHub runner, public baseline downloads and Electron CDP/inspector support; they never run alongside the owner's app or use `/Applications`. Visual QA and candidate installed upgrades must pass before tagging; public installed upgrades are a read-only post-publication gate. Reports/screenshots survive cleanup; private profiles do not. See [Release visual QA](RELEASE_PIPELINE.md#release-visual-qa) for the transport and isolation contract.
+
+`release.yml` starts `scripts/qa/release-preaged-upgrades.mjs <absolute report directory>` independently of packaging. It prepares the previous-supported-release profile (`upgrade-previous.json`) before waiting for the candidate. Aging lanes are retired: upgrades from releases older than v2.0.0 are out of scope. Baseline GitHub installer digests and pinned source revisions are recorded; verified baseline inputs are shared only within this run. The coordinator then polls the exact workflow run's package producer and artifacts within one shared 60-minute deadline across baseline preparation and acquisition retries (the cold web/package path allows 55 minutes plus five minutes for queues; the qualification job has an 85-minute cap), verifies source/run/producer-attempt identity and DMG bytes, and extracts the runtime once. Each profile's candidate hop, migration/history checks and held recovery run sequentially. A before/after tree digest rejects mutation of the candidate runtime. No profile or passing qualification result is cached or uploaded.
+
+Local single-lane use accepts `--direct-baseline vX.Y.Z` (v2.0.0 or later) with `--candidate-artifacts`. The existing `release-upgrade-lanes.mjs --candidate-artifacts <dir> --report-dir <dir> --sequential` command remains available when a candidate already exists. Every direct baseline must start and create/delete fixture sessions; an empty provisioned profile cannot pass.
+
+Setup failures are classified by `scripts/qa/release-qualification-failure.mjs`. `infra` (a failed `gh`, `git`, `tar`, `ditto`, `bun` or `hdiutil` command, a network error or timeout, a busy disk image, a corrupt baseline download) is retried once inside the job; `product` (a candidate hop, migration, history or held-recovery failure, a changed candidate runtime, a failed producer) is never retried, and an unknown failure counts as `product`. The job log and the lane report carry the class and the bounded error text (`failureClass`, `error`), not only a code.
+
+Each `upgrade-<lane>.json` report contains sanitized evidence and phase timings for baseline downloads/installations, historical hops, candidate hops, held recovery, report writing and profile deletion. `qualification-timings.json` includes shared-input cleanup and candidate waiting/extraction. CLI process-exit time is logged. Reports are updated after measured cleanup; `--fallback-reports` creates failing incomplete reports if setup never reached a lane. Only reports leave the qualification runner. Interruption stops owned subprocesses and detaches owned DMGs before scratch deletion; private profiles and source/install scratch are removed on success, failure and interruption unless explicitly retained locally. The CI workflow never enables retention of private scratch.
+
+The separate `scripts/qa/release-final-dmg-smoke.mjs --dmg <absolute DMG> --report <absolute JSON>` refuses local execution: it launches the production bundle only on a disposable macOS arm64 GitHub runner with the same console user. It mounts the unchanged DMG read-only, uses a private HOME/profile, and checks ready health plus a visible composer within 120 seconds. It imports an ordinary private custom-provider configuration pointing only to the credential-free loopback fixture, registers the private workspace as a project (Electron starts in HOME, so an unregistered folder is not a native location) and pins the helper model to the fixture, so session titles never reach the default hosted helper. It then requires a real native read, published write, and final assistant response within a further 60 seconds; the fixture answers only the shipped title helper's own prompt outside that tool turn. On failure the report keeps bounded, sanitized evidence: the error code and message (run paths replaced, opaque tokens removed), refusal status codes, provider request and error codes, the session's message and tool states, diagnostic counters, a journal gap count with recent record identifiers, a `failure.png` screenshot, and which cleanup step failed. A fixture failure rethrown by the provider's close is round-trip evidence, not a cleanup failure. A CDP screenshot and physical shutdown are required. It performs no paid model request and uses no constructor-only QA configuration hook. Evidence is uploaded even when prerequisites or setup fail; scratch is removed on normal completion and interruption. This is a startup smoke, not proof of updater installation or native service migration. It is no longer a workflow job: it failed every release run because Builder's shipped model was unavailable in the private profile ([Release pipeline](RELEASE_PIPELINE.md#final-dmg-smoke-retired-from-the-workflow)). The required `scripts/qa/release-visual-qa.mjs` replaces it on dry runs ([Release visual QA](RELEASE_PIPELINE.md#release-visual-qa)): it copies the DMG's app with `ditto` into a private run root, launches it on a private HOME/XDG profile over CDP, screenshots the splash, the ready window and About, and checks for an update against the real feed, optionally updating the previous release in place once the candidate is published. It refuses to run beside the owner's app.
+
+Qualification commands wait in a POSIX shell until OS process ownership is
+observed, then exec with the same PID. Even instant commands retain cleanup
+evidence. Failed-command reports include the executable basename and exit
+code plus a bounded stderr tail with run paths replaced and opaque tokens removed,
+never arguments.
+The dedicated DMG mount scope owns attach/detach and its disk-image helpers;
+ordinary command cleanup must not stop those helpers before extraction finishes.
+The final-DMG profile pins the helper model and saves Builder model and thinking
+level selections before UI submission; saved agent selections apply only to managed
+users, which is the quarantined smoke defect.
+
+### Native startup benchmark
 
 ```sh
-bun run perf:electron -- --label candidate-session-memory \
-  --package-evidence .cache/qa/packaged-electron-EXAMPLE/package-evidence.json \
-  --scenarios session-memory
+bun scripts/qa/native-startup-benchmark.mjs --package-evidence <abs> --artifact-root <abs> [--baseline-artifact-root <abs>]
+bun scripts/qa/native-startup-benchmark.mjs --baseline-package-evidence <abs> --candidate-package-evidence <abs> --artifact-root <abs> [--startup-mode foreground] [--gate no-regression]
 ```
 
-This scenario opens four owned, independent fixture sessions and loads each complete 180-turn history with 4 KiB assistant responses through the UI. It measures initial, loaded, inactive-after-New-Chat and permanently-deleted states in the same renderer. Each checkpoint waits at least six seconds for the five-second background-trim debounce, samples naturally for the configured window, then records a separate explicit-GC heap/DOM checkpoint. Memory records distinguish renderer heap bytes, renderer working-set bytes converted from Electron's KiB, and the separate main/server process. The Debug Panel stays closed during measurement; its final cache snapshot confirms exact deleted IDs are absent. Archive and Delete both use the actual controls and any confirmation dialogs presented by the profile's settings; the fixture must acknowledge each transition. No provider prompt is sent.
+Three fresh packaged launches through usable chat (native catalog, exact fixture model and agent, sessions and event readiness, plus a trusted pointer click focusing an unobstructed composer and exact unsent draft entry), first document only, no reloads. `--baseline-artifact-root` instead measures first launches after a production startup upgrade from the older native artifacts. The second form runs interleaved baseline/candidate pairs and accepts only a median reduction of at least 5% with all pairs faster. With `--gate no-regression` it runs five interleaved pairs, records (rather than restricts) the changed files, and fails when median time to usable chat grows by more than max(5%, 50 ms). Run benchmarks alone, not beside builds or tests. `DEVRYAN_QA_CATALOG_CONFIG` can point at a sanitized `providers.json` to require specific Cursor models in the catalog.
 
-“Close Sessions” collapses the sidebar; it does not retire sessions. New Chat measures retained inactive history, Archive preserves reversible caches, and Delete invokes permanent cleanup. Four sessions do not exceed the 40-session cache limit, so retained inactive memory is not itself a leak. Compare three fresh runs per package under the same idle machine/display conditions, with the same runner/fixture/runtime and history parameters. Do not run the final measurements alongside builds, validation or live-provider workloads. `--baseline` reports matched startup and lifecycle deltas without assigning new pass/fail thresholds; the existing six resource gates remain unchanged. Short windows or one-run exercises only verify the harness, and historical resource summaries cannot establish startup or session-retention results.
+### Resource benchmark
 
-The independent interactive workload uses that same packaged runner:
+The resource runner boots its private native host normally, waits for native readiness, focuses only its owned window through the preload acknowledgement, seeds its private last-directory storage for every scenario, and registers/navigates to the existing loopback wire facade before fixture checks. Its `startup.json` reports **fixture-ready latency**, including this controlled setup; it does not qualify natural first-document native startup. Use the separate native startup benchmark for that claim. Resource sampling still starts after fixture checks and warm-up, and visible-document admission remains required. OS-temp facade paths require the exact live constructor-owned run scope; arbitrary temp paths, symlinks and expired or foreign scopes remain refused. Memory history witnesses use authenticated v2 reads and core message projection without fetching extra pages into the independent UI pagination proof. The runner fingerprints these launch/facade owners, so results from the earlier legacy launch protocol cannot be pooled with these runs.
 
 ```sh
-bun run perf:electron -- --label candidate-interactive \
-  --package-evidence .cache/qa/packaged-electron-EXAMPLE/package-evidence.json \
-  --scenarios interactive
+bun run perf:electron -- --label candidate --package-evidence <abs package-evidence.json>
+bun run perf:electron -- --label candidate --package-evidence <abs> --scenarios session-memory   # or interactive
+bun run perf:resource-gate -- --scenarios idle,twelve-stream --baseline <B1/summary.json> --candidate <C1/summary.json> --candidate <C2/summary.json> --baseline <B2/summary.json>
+bun run perf:reducer:compare -- --baseline <baseline checkout> [--pairs 10]
 ```
 
-It measures trusted typing during a background stream, two complete histories and pagination, session/draft switching, scrolling, reasoning expansion, reconnect/cancel and repeated navigation with natural heap/DOM samples. Each input measurement ends when the expected DOM state and two animation frames have completed: this is render-ready latency, not compositor presentation. Chromium Event Timing, long tasks and a bounded compressed trace are retained separately. Read [the exact protocol](../scripts/perf/INTERACTIVE.md) before running a matched comparison. Three fresh runs per package with at least five seconds of warmup and thirty-second memory windows are required. Every measured action retains its correctness gate, including the unchanged two-pixel pagination bound. A baseline that fails a correctness gate cannot support a complete performance comparison; retain its failure and report the unavailable phases rather than repairing or relabelling the preserved baseline.
+Private credential-free fixture profiles. Defaults: three runs of `idle`, `one-stream`, `four-stream` and `plan-skeleton`, 5 s warm-up, 30 s measurement, 500 ms sampling. `--scenarios`, `--runs`, `--warmup-ms`, `--measure-ms` and `--output` change that (label shortened runs a smoke), and `--baseline <summary.json>` applies comparison gates. Do not combine `--package-evidence` with `--electron-binary`. Each launch writes `startup.json` with parent-clock milestones. Protocols: `session-memory` loads four 180-turn histories and measures initial, loaded, inactive and deleted states; `interactive` is described in [INTERACTIVE.md](../scripts/perf/INTERACTIVE.md). The opt-in `twelve-stream` scenario seeds eight extra root sessions before launch and streams all twelve. Every streaming run records how many sessions actually streamed through the measurement window and fails when fewer than its workload did.
 
-## Cold web update-check comparison
+The wire facade archives only IDs owned by its disposable fixture, through the existing serialized client archive contract; it cannot archive real native sessions. Packaged history measurements boot the native host but render synthetic sessions without model prompts, so they do not qualify live-provider initialization or controller retention. `--package-evidence` pins the retained packaged source identity and immutable payload hashes; later worktree edits are not part of that snapshot. Driver protocol changes require separate results, not cross-protocol comparisons.
 
-The focused [update-check protocol](../scripts/perf/WEB_UPDATE_CHECK.md) compares
-three fresh hosts per source version, in AB/BA/AB order, with the same final UI,
-runtime, dependencies and instrumentation. It measures the actual cold route,
-concurrent health latency, event-loop delay and synchronous package-discovery
-CPU samples. Run it after builds, validation and other QA have stopped. This
-benchmark specifically requires Node's [`module.registerHooks`](https://nodejs.org/api/module.html#moduleregisterhooksoptions)
-(added in Node 22.15.0 and 23.5.0); the recorded comparison runtime is Node 26.0.0.
+`perf:resource-gate` is the no-regression gate over separate single-package benchmark runs taken alternately (B C C B …) with identical options, `QA_NATIVE_ARTIFACT_ROOT` set to the verified native artifacts, and the default `--output` under `scratchParent('perf')` (fixture profiles carry their exact owned run scope; the benchmark removes them). It fails on median total-app CPU growth above max(5%, 1 percentage point) or median/p95 total working-set growth above max(5%, 16 MiB), and refuses mismatched protocols, Chromium runtimes, process types, unpaired or non-interleaved runs. `perf:reducer:compare` runs the reducer benchmark alternately from a baseline checkout (an isolated worktree, for example under a canonical OS-temp audit root) and this one, and per scenario allows max(5% of the baseline median p95, 3 × its median absolute deviation); an allowance above 15% is reported as too noisy to qualify. Other profiling tools live in `scripts/perf/`.
 
-From a fresh checkout, recover the exact historical module and copy the current
-module into ignored evidence storage. The benchmark validates both byte hashes
-before launching; a different revision fails instead of changing the baseline.
+## Focused Claude and Cursor regression
+
+`focused-provider` is an opt-in live Builder scenario with Plan off and one repetition. It runs a short prompt, reload, a follow-up that must recall the original assistant reply without repeating it in the new prompt, cancellation after a correlated physical provider request with a canonical aborted assistant, browser disconnection/reconnection and successful continuation, then a native source read and confined, receipt-backed proof-file publication. It does not run project implementation or delegation. Use one exact model/effort per provider for both hosts; discover Claude's advertised default in the isolated account catalog and freeze that tuple before preparing inputs. Cursor's existing QA tuple is `cursor-acp/grok-4.6` / `medium`; unavailable selections fail.
+
+First run the credential-free factory diagnostic:
 
 ```sh
-mkdir -p .cache/perf/update-check-inputs
-git show ff7abd116ca37db53a56981d7de76100f2a97690:packages/web/server/lib/package-manager.js > .cache/perf/update-check-inputs/package-manager.before.js
-cp packages/web/server/lib/package-manager.js .cache/perf/update-check-inputs/package-manager.after.js
-node --input-type=module <<'JS'
-import path from 'node:path';
-import { runWebUpdateCheckBenchmark } from './scripts/perf/web-update-check-benchmark.mjs';
-const inputs = path.resolve('.cache/perf/update-check-inputs');
-const result = await runWebUpdateCheckBenchmark({
-  beforeSource: path.join(inputs, 'package-manager.before.js'),
-  afterSource: path.join(inputs, 'package-manager.after.js'),
-  uiDirectory: path.resolve('.cache/qa/REPLACE_WITH_FINAL_VERIFIED_WEB_CANDIDATE'),
-  label: 'cold-discovery',
-});
-process.stdout.write(JSON.stringify({ outcome: result.outcome, resultFile: result.resultFile }) + '\n');
-if (result.outcome !== 'passed') process.exitCode = 1;
-JS
+node scripts/qa/native-profile-factory-diagnostic.mjs --artifact-root <absolute-artifact-root>
 ```
 
-Replace the UI path with the verified candidate built using the procedure above.
-The benchmark uses ordinary Node module options and retains all six outcomes.
-It measures one historical module inside the otherwise fixed current host;
-it does not represent an entire historical build or live-provider performance.
+Its final JSON includes `advertisedClaudeDefault` from `GET /api/provider?directory=<private-workspace>`: `default.anthropic` must name a model in `all[id=anthropic].models` with `capabilities.toolcall: true`. A null result means discovery did not establish a choice; do not guess one. The provider list's default is the native configured default when that provider is selected, otherwise its first enabled model in native catalog order. Discovery requires no Claude login or inference. Use that exact returned model ID below and require actual account availability during the live preflight.
+
+Prepare each provider separately with the current verified native artifact and a new private directory below `.cache/qa`:
+
+```sh
+node scripts/qa/focused-provider-inputs.mjs <absolute-artifact-root> <absolute-new-output-root> anthropic <exact-model-id> default
+node scripts/qa/focused-provider-inputs.mjs <absolute-artifact-root> <different-absolute-new-output-root> cursor-acp grok-4.6 medium
+```
+
+The helper creates credential-free reviewed configuration, pins all packaged role and Council routes and the helper model to the selected provider, resolves the actual saved graph through the compiled native configuration owner, rejects foreign provider routes, and removes its temporary graph probe. An owned run directory removes partial output on failure or interruption; only successfully prepared handoff inputs are retained. It reads no personal profile and performs no inference. `default` means the provider default reasoning policy (`variant: null`), not an unpinned model. Each generated matrix runs web then Electron sequentially. Its JSON output supplies the mirror/matrix hashes and evidence root for:
+
+```sh
+node scripts/qa/live-credential-owner.mjs --artifact-root <absolute-artifact-root> \
+  --mirror <preparationFile> --mirror-sha256 <mirrorSha256> \
+  --matrix <matrixFile> --matrix-sha256 <matrixSha256> --evidence-root <evidenceRoot>
+```
+
+Keep the attended launcher terminal open. The human opens its single-use owner link and signs in only to the independent provider account using the isolated Providers flow (Claude's explicit isolated vendor login command is also printed). Send one JSON command per line: `{"command":"hold-and-verify"}`, then `{"command":"run"}`, then `{"command":"close"}`. Native credentials use the existing held source and canonical candidate CAS owner; Claude uses its access-only platform-store owner. Cursor-only runs do not require Claude login or candidate admission. No credential file is manually copied.
+
+The attended source owns a private `claude-budget.json` with the initial five-hour usage, reset identity, last sample and in-flight/stopped state. It captures the initial values from the first fresh canonical `/api/quota/claude` read and reads quota again before and in a finally block after each generation in both host cells. Matrix calls must receive this owner-held budget; they cannot create a replacement. Reusing the source preserves the same baseline, and reopening an interrupted in-flight budget refuses traffic. Routine work stops at six percentage points, preserving four of the ten authorized points for deliberate retests; when account headroom is smaller, routine admission is reduced to preserve four remaining account points and refuses entirely at 96% used. Missing/stale quota, a changed reset, decreasing usage or usage changes between turns refuse further requests. The bounded constructor `createQaClaudeBudget({baseline, retest: true})` requires the original `{usedPercent, resetAt}` for a retest; the ordinary launcher never spends the reserve automatically. Do not start another launcher with a fresh baseline to bypass this limit. Percentage reporting cannot guarantee a single in-flight request will not overshoot; outputs are bounded and traffic is serial. Coordinate the first baseline with any earlier paid probes in the same authorization window.
+
+Evidence includes canonical turn/tool IDs, native observation completeness, publication operation and confinement receipt, cancellation/recovery witnesses and budget samples. Require zero journal gaps and review screenshots separately. Runtime profiles remain private to the attended owner; its close summary lists provider sign-out and isolated platform-store cleanup obligations. The original shared saved-graph and source identity checks remain enforced.
 
 ## Configured live-provider smoke
 
-This opt-in command makes two minimal real-provider requests through an existing loopback DevRyan host. Set the origin explicitly; the runner never discovers or stops the user's app.
+`bun scripts/qa/provider-access-smoke.mjs --allow-live <bundle-root> <output> [openai|xai]` sends one short direct request per provider using the current token in memory (OpenAI also three tool-bearing requests). It uses real provider credentials: only run it when the user has authorized it for that provider.
 
-```sh
-DEVRYAN_QA_LIVE_ORIGIN=http://127.0.0.1:PORT node scripts/qa/live.mjs
-```
+## Investigations
 
-It uses the documented password-free administrator agent-test endpoint, the host's configured default OpenAI model and existing Builder agent, and an isolated Git workspace. It disables the enumerated tools and denies permissions, creates one QA session, verifies a completed answer, observes a second streamed answer, reconnects the SSE transport, cancels, and checks for two distinct user turns. It deletes only its own session and logs out its own in-memory cookie. No passwords or provider credentials are supplied or written. Unsupported authentication, missing agent/model/tool inventory, or unavailable provider access fails explicitly. The runner preserves canonical correlation IDs and sanitized health counts without storing provider output.
+Read the journal first: `bun scripts/journal.mjs show SESSION_ID --grep CALL_ID --dir <run>/journal` and `bun scripts/journal.mjs gaps --dir <run>/journal`. Layout, retention and Error Log correlation: [Agent runtime verification](AGENT_RUNTIME_VERIFICATION.md). Storage, sanitizer and export contracts: `packages/harness-runtime/DOCUMENTATION.md` and `packages/web/server/lib/diagnostics/DOCUMENTATION.md`.
 
-This is HTTP/host acceptance, separate from live UI send/cancel/reconnect acceptance. The existing host binary may differ from the working tree; record its version alongside the result. Failed cleanup is actionable and retains the workspace. Do not rerun paid smoke requests to substitute for investigating a deterministic fixture failure.
-
-## Start investigations from evidence
-
-For an Error Log UUID, first open the authenticated administrator detail surface/API. Record session ID, timestamp, action/kind, and available call/tool/message/task IDs. The UUID indexes the Error Log store; it is not expected in the execution journal. Query with the strongest correlation ID, then inspect gaps:
-
-```sh
-bun scripts/journal.mjs show SESSION_ID --grep CALL_ID --dir .cache/qa/RUN/journal
-bun scripts/journal.mjs gaps --dir .cache/qa/RUN/journal
-```
-
-Fall back to tool/message/task ID or a bounded timestamp window. Read `GET /api/diagnostics/status` through the authenticated app context for queue/write/gap counts and last error. Use the existing diagnostic export/sanitize endpoints for support evidence. The journal intentionally omits deltas and coalesces repeated snapshots; those trims are not gaps. Missing/expired host journals, overflow, parse failures, and sanitization failures qualify any conclusion. Never reconstruct missing detail from the Error Log summary.
-
-See `packages/harness-runtime/DOCUMENTATION.md` and `packages/web/server/lib/diagnostics/DOCUMENTATION.md` for storage, sanitization, authenticated export, and retention contracts.
-
-## Matched retrieval diagnostics
-
-The scenarios **compaction-retrieval-control** and **compaction-retrieval-compacted** investigate retrieval and inference after one manually requested native summary. They require live packaged Electron, Builder and Plan off. They do not establish retention, natural-compaction or automatic-continuation acceptance.
-
-Generate the reviewed six-arm order (control/compacted, compacted/control, control/compacted):
-
-~~~sh
-node --input-type=module <<'JS'
-import { mkdir, writeFile } from 'node:fs/promises';
-import { createQaRetrievalDiagnosticMatrix } from './scripts/qa/compaction-retrieval-diagnostic.mjs';
-await mkdir('.cache/qa', { recursive: true });
-const config = createQaRetrievalDiagnosticMatrix({
-  evidenceRoot: '.cache/qa/retrieval-study',
-  providerId: 'xai', modelId: 'grok-4.6', timeoutMs: 1200000,
-});
-await writeFile('.cache/qa/retrieval-study.json', JSON.stringify(config, null, 2));
-JS
-DEVRYAN_QA_PACKAGE_EVIDENCE=/absolute/path/to/package-evidence.json \
-  bun scripts/qa/run.mjs --config .cache/qa/retrieval-study.json
-~~~
-
-Freeze the candidate package, production source and all scripts before starting paid runs. Each arm starts with a fresh owned profile/project/session and the same attachments, diagnosis, revision-2 input and one 256-KiB ordinary audit batch. The runner verifies the saved revised plan, unchanged paused implementation, observed source read and initial native failed test, no prior compaction, and measured usage below the unchanged native threshold. It records differing model-generated plan hashes; mismatched or failed prerequisites remain visible as incomparable arms.
-
-Only the compacted arm sends the actual composer command /compact. Both arms then receive exactly “Continue with the next permitted step from the current state.” A pending question stops the arm without a reply or repair. Question evidence must link the current root assistant and exact pending call; an unresolved historical/unmatched request is classified separately. Provider, native or permission failures remain separate from retrieval evidence. Every arm still receives the normal owned-session cleanup after its evidence and failure screenshot have been captured.
-
-The per-arm retrieval-diagnostic.json preserves canonical summary, tool input/output, exact read/glob/claim ordering, question IDs, before/after saved plans, ordinary input hashes, profile/candidate identity and journal health. Any bounded text truncation is marked. Empty glob output alone is insufficient: a missing-path inference candidate requires a subsequent absence claim, the unchanged saved file, and no successful exact-path recovery. This is human-review triage; a candidate alone records **review-required**, not a proven functional or compaction-induced failure. Questions, changed paused files and repeated completed inspections still fail automated checks.
-
-Aggregate all six records without dropping failed arms:
-
-~~~sh
-node --input-type=module <<'JS'
-import { readFile, writeFile } from 'node:fs/promises';
-import path from 'node:path';
-import { summarizeQaRetrievalStudy } from './scripts/qa/compaction-retrieval-diagnostic.mjs';
-const root = '.cache/qa/retrieval-study';
-const summary = JSON.parse(await readFile(path.join(root, 'summary.json'), 'utf8'));
-const arms = [];
-for (const run of summary.runs) {
-  const result = JSON.parse(await readFile(path.join(run.output, 'result.json'), 'utf8'));
-  let diagnostic = null;
-  try { diagnostic = JSON.parse(await readFile(path.join(run.output, 'retrieval-diagnostic.json'), 'utf8')); }
-  catch (error) { if (error.code !== 'ENOENT') throw error; }
-  arms.push({ id: result.cell.id, outcome: run.outcome, diagnostic });
-}
-await writeFile(path.join(root, 'paired-diagnostic.json'),
-  JSON.stringify(summarizeQaRetrievalStudy(arms), null, 2));
-JS
-~~~
-
-Inspect every captured PNG and the exact claim/read/question evidence. The pair report separates comparable and incomparable states, generic interruptions and compacted-only/control-only/both/neither retrieval candidates. It preserves differing plans and failed matrix outcomes. Its three acceptance flags always remain false, including when all observation checks pass. Human classification is required before attributing any loss to compaction or proposing a retrieval or memory change.
-
-## Thinking slider acceptance
-
-After building and staging the shared UI, run
-`DEVRYAN_QA_SCENARIO=thinking bun run qa` and
-`DEVRYAN_QA_RUNTIME=electron DEVRYAN_QA_SCENARIO=thinking bun run qa`.
-The isolated scenario checks zero through five native levels, the circular thumb,
-60% detent/release behavior, keyboard/focus restoration, light/dark desktop and
-390px touch web, cancelled touch, reduced motion, and an explicit Medium prompt
-plus canonical reload. Screenshots and results are written to the reported
-`.cache/qa/` directory. This verifies fixture transport, not live provider billing
-or physical touch hardware.
-
-Set `DEVRYAN_QA_BACKGROUND=1` to keep the web QA Chromium window hidden during
-scripted interaction; screenshots still capture the real renderer. The thinking
-scenario also verifies the supported header Fast toggle and focus restoration.
-
-Recorded acceptance evidence: [2026-09-07 thinking slider](audits/2026-09-07-thinking-slider/README.md).
-
-## Claude quota and native prefix verification
-
-The [Claude quota audit](audits/2026-09-07-claude-quota.md) documents the incident, pinned runtime, control/candidate distinction, quota resolution and rollback. This study is opt-in and is separate from deterministic CI and visual QA.
-
-Run the real-executable offline regression with explicit installed paths:
-
-```sh
-node scripts/qa/meridian-prefix.mjs --modules /absolute/managed/node_modules --claude /absolute/native/claude --arm candidate --steps 20 --parallel 4
-node scripts/qa/meridian-prefix.mjs --modules /absolute/managed/node_modules --claude /absolute/native/claude --arm candidate --steps 10 --parallel 3 --stream false
-```
-
-The loopback provider emits synthetic authored responses and never contacts Anthropic or reads authentication. `--arm control` retains the previous installed HTTP/handoff revision and is expected to fail the prefix/history assertions. Do not treat its synthetic usage values as quota measurements.
-
-For live work, first prepare a cache-owned profile with `prepareMeridianFixture` and `prepareClaudeQuotaRuntime` from `scripts/qa/claude-quota-fixture.mjs` and `scripts/qa/claude-quota-runtime.mjs`. Both require explicit installed module/executable paths and refuse dependency installation. The runtime launch environment sets `HOME`, `CLAUDE_CONFIG_DIR`, `MERIDIAN_CONFIG_DIR` and `MERIDIAN_SESSION_DIR` inside the private home for the same reason as live matrix profiles: Meridian 1.62.x inside the Bun OpenCode host derives its `quota` oauth-token profile and other state from `HOME`. Preparation and `startClaudeQuotaRuntime` both reject any Meridian/Claude path outside that home (only the absolute `MERIDIAN_CLAUDE_PATH` executable may live elsewhere); a profile saved before `HOME` was owned fails before any process starts and must be prepared again. Save their `{ fixture, profile }` return values to a cache-owned JSON file. Record an authoritative `projectQuota` baseline from the explicitly authorized loopback Meridian quota origin, plus the agreed `limitPoints`, `diagnosticReservePoints` and `finalHeadroomPoints`. The admission default is 20 points; the implementation allows at most 40 when separately authorized. Keep at least five points for final retests.
-
-The guarded runner accepts this configuration (all paths must be explicit):
-
-```json
-{
-  "preparedFile": "/absolute/DevRyan/.cache/qa/study/prepared.json",
-  "installedModules": "/absolute/managed/node_modules",
-  "claudeExecutable": "/absolute/native/claude",
-  "arm": "direct",
-  "baselineFile": "/absolute/DevRyan/.cache/qa/study/baseline.json",
-  "quotaOrigin": "http://127.0.0.1:3456",
-  "outputRoot": "/absolute/DevRyan/.cache/qa/study/results",
-  "referenceSession": "/absolute/authorized/reference-session.jsonl"
-}
-```
-
-Run `node scripts/qa/meridian-designer-continuity.mjs --quota /absolute/CONFIG.json`. Each `direct`, `control` or `candidate` invocation creates a fresh Git project, uses identical TSX/CSS prompts, verifies exact Opus 4.8/medium selection, and checks files and tests independently. Native interactive Claude uses the existing web package's `node-pty`; mediated runs use the actual private web/OpenCode/plugin path. Explicit benchmark titles separate the primary workload from title generation. Use three cohorts in direct/control/candidate, candidate/control/direct, then direct/control/candidate order. Retain failed attempts, pause on missing/stale quota, and never admit another arm merely because a quota request failed. Avoid other account activity throughout the measured windows.
-
-Set `"cancellationCheck": true` for a separate direct/candidate idle/cancellation/recovery run, outside paired workload totals. It keeps the completed session open for six minutes, checks for native responses and quota changes, then cancels an actually started foreground tool. It waits past that tool's completion deadline to detect survivors, checks for newly observed native responses after settled abort, and resumes the review/tests. All of its consumption still counts against the same overall quota ceiling.
-
-Set `"workload": "sustained"` for the longer twelve-brief review workbench instead of the default small component. Every turn requires actual TypeScript/TSX, CSS and test edits. Its independent grader lives outside the editable project and checks public behavior and React server-rendered output, including stable sorting, pagination, CSV escaping, immutable moderation/replies and safe highlighting. The final turn also builds the component for a browser. React and React DOM are linked from existing installed repository dependencies; seeding does not install packages. Freeze the same fixture and prompts for all arms and retain their prompt/source hashes.
-
-An optional `"calibrationTurns": 2` runs only the first two sustained briefs to check the new fixture before committing to a full cohort. Such evidence is labeled `editing-calibration`, records its shorter prompt hash and required/full turn counts, and must not be counted as a completed paired workload.
-
-A quota reset does not renew the authorized study ceiling. Do not run a measured arm across a reset. While all model work is idle, retain a valid final reading for the old window and a fresh starting reading for the new window; explicitly carry previous consumption in the baseline file's `carriedConsumedPoints`, including any reserve for integer rounding. Admission adds that carried amount to new-window consumption. Missing old-window evidence must not be replaced with an invented zero.
-
-An authoritative zero-usage window can have a null reset timestamp while inactive. Preserve that raw baseline. When its first active reset timestamp appears, the runner records `activatedFiveHourReset` and the corresponding observation atomically in the cache-owned baseline file. Subsequent inactive windows or changed reset timestamps then stop admission; an inactive starting baseline cannot silently grant a second window's budget. A nonzero window without a reset boundary remains invalid. Full sustained arms require at least sixty minutes before a known quota reset and sixty minutes of existing access lifetime at startup; the runner does not write refresh credentials.
-
-The output records authoritative quota before/after each turn, immediate and delayed samples, native usage deduplicated by provider message ID, exact model/effort evidence, mediated request counters and verified file/test outcomes. Each delayed endpoint must have been fetched after completed work plus 30 seconds; a recent cached reading that predates completion is insufficient. That endpoint can serve as the next turn's preceding observation while fresh, since no inference occurs between them. The first prompt similarly requires a fresh observation fetched after the arm started. Valid observations can be reused for up to 85 seconds to avoid bursts of quota refresh requests, while their provider fetch time remains subject to the 90-second freshness bound. With model work idle, the runner can wait up to ten minutes for a fresh endpoint. Missing or stale quota during active inference still aborts the owned workload. Native transcript and Meridian client counters do not cover every auxiliary or failed provider attempt. A one-point quota display delta of zero does not establish zero consumption or parity. The runner never writes refresh credentials or passwords, never patches the installed runtime, and stops only processes it created.
-
-## Cursor usage comparison
-
-The [Cursor usage audit](audits/2026-09-15-cursor-usage.md) records SDK 1.0.28 model selections, the fixed two-pool budget, observed limitations and rollback. `scripts/qa/cursor-usage-live.mjs` is explicit opt-in and never runs as part of deterministic validation. It compares direct SDK execution with frozen control/candidate shared runtimes in private `.cache/qa/` workspaces. The runner keeps failed consumption, rotates per-run question scopes, checks completed files/tests and reload/idle behavior, and stops admission on missing quota, changed account evidence or reserved headroom. `lifecycle` adds bounded native question, subagent, cancellation/resume and title checks. Its measurements do not establish browser or packaged Electron acceptance; run isolated host QA separately. Never infer provider cache hits from local Agent-cache reuse, turn occupancy from cumulative run totals, or zero consumption from missing billing data.
-
-Run `DEVRYAN_QA_SCENARIO=execution-failure bun scripts/qa/run.mjs` (and add `DEVRYAN_QA_RUNTIME=electron` for desktop) to replay a session error after idle without an assistant, reload its persistent notice, and verify failed grouped tools. Build and stage current assets first. The fixture uses no live provider and no installed-app data.
-
-Use `DEVRYAN_QA_SCENARIO=skill-loading bun run qa` (plus `DEVRYAN_QA_RUNTIME=electron` for desktop) for the isolated skill-loading, preparation-failure, reload and loaded-state journey. It retains the shared chat smoke checks and uses only the loopback fixture.
-
-For incident reproduction with the user’s actual orchestration setup, use the opt-in live profile/cell field `preserveOrchestration: true` without `agentAssignments` or cross-provider overrides. It preserves the saved role graph, effort, presets, fallbacks and agent backup selections in the private profile. Select the requested OpenAI orchestrator model through the composer; do not change the source profile. Confined tool workers retain their per-call scratch home; the QA home shim only redirects provider/host processes, so sibling workers cannot contend on shared QA plugin state. Credential evidence explicitly records unavailable specialist providers. A run requiring an unavailable provider remains a failed/unavailable journey, never a substituted-model pass. Saved-provider access must be checked in addition to parent access, and acceptance requires child/result identity evidence plus independent inspection and tests of produced edits.
+`node scripts/qa/native-profile-factory-diagnostic.mjs --artifact-root <abs>` starts a credential-free disposable host (add `--hold-chatgpt-signin` to keep it up for a human sign-in; it prints the loopback origin and journal directory and waits for SIGINT).

@@ -32,23 +32,17 @@ and public static/liveness responses. Managed Remote supports private owner link
 with Supabase Off or unconfigured: create the link from the authenticated local app,
 then redeem it once within 15 minutes for a seven-day session. These owner sessions
 can access ordinary chats, projects, files, Git, terminal and preview streams.
-While disconnected, the hosted project is never contacted in the background:
-a hosted-catalog check or import runs only on the owner's request.
-Bot grants remain Bot-only; native capabilities, Supabase/tunnel controls and passkey
-enrollment remain local. Ordinary local chats, projects, files and diagnostics remain
-available, and so do the workstation owner's Bots: they live in the local Bot
-catalog and the owner's Bot session does not depend on Supabase (see
-[Local Bot catalog](BOTS_RUNTIME.md#local-bot-catalog)). Shared users' Bot
-access, their autonomous Bot work, managed-user scheduled execution and cloud
-audit delivery are unavailable. Existing actor-audit records remain in
-the durable outbox; disconnected diagnostics do not enter that outbox.
+While disconnected, the hosted project is never contacted in the background.
+Native capabilities, Supabase/tunnel controls and passkey enrollment remain local.
+Ordinary local chats, projects, files and diagnostics remain available.
+Managed-user scheduled execution and cloud audit delivery are unavailable.
+Existing actor-audit records remain in the durable outbox; disconnected diagnostics do not enter that outbox.
 
 The switch persists the requested mode immediately. New work admission closes only
 while an automatic idle restart will apply it; without a restart driver, or after a
 failed restart, the host keeps serving in its effective mode and reports
 **restart required**. The effective mode changes only after that restart. Active chat status must be
-verified through OpenCode; active Bot runs, routines, Telegram jobs, memory
-extraction, managed task launches, scheduled tasks and mutation requests hold the
+verified through OpenCode; managed task launches, scheduled tasks and mutation requests hold the
 restart pending. Queued cloud work remains persisted. Finishing, approving and
 cancelling admitted work remain possible. Cancelling a pending change rearms
 admission. A failed restart requires an explicit retry.
@@ -66,10 +60,7 @@ status 1 once idle. Do not set that flag for an unsupervised process. Restart th
 process manually after its listed blockers clear.
 
 An explicit reconnect probes the saved owner's active administrator role before
-opening access and reports the hosted Bot schema separately (`botsSchema`). It
-matters only for shared-user authorization and a hosted-catalog import; the
-local Bot catalog is migrated by Electron and reports its own state through
-`GET /api/bots/capabilities` (`catalogAvailable`, `database`). The new process repeats that check
+opening access. The new process repeats that check
 before initializing workers. Failure preserves the selected preference and leaves remote access
 closed: a failed Off-to-On attempt stays Off, while a failed On startup retains
 managed-account authentication. Explicitly changing that policy requires the idle
@@ -131,15 +122,14 @@ Connected-mode changes include:
   Offline-grace principals cannot populate remote authorization results.
 - Session `last_seen_at` writes occur at most once per minute. Hot identity reads
   use narrow projections; authentication omits personal settings payloads until
-  a settings request needs them. Bot list projections validate column names and
-  retain cursor columns; full records remain available for execution and details.
+  a settings request needs them.
 
 ## Validation and rollout
 
 The deterministic tests cover disconnected transport and runtime initialization,
 owner authentication, native recovery proof, persistent mode changes, restart
 blockers/failures, concurrent refreshes, idle discovery/backoff and projected
-pagination. Existing Bot, auth, audit, scheduling and recovery suites remain the
+pagination. Existing auth, audit, scheduling and recovery suites remain the
 regression gate. Visual checks use isolated fixtures, not the installed app.
 
 After deployment, capture local counters during representative idle and active

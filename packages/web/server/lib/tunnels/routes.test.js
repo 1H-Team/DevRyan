@@ -61,7 +61,7 @@ const createApp = (overrides = {}) => {
 describe('tunnel routes', () => {
   it('returns a safe client error when a managed remote token is invalid', async () => {
     const response = await request(createApp())
-      .put('/api/openchamber/tunnel/managed-remote-token')
+      .put('/api/devryan/tunnel/managed-remote-token')
       .send({
         presetId: 'production',
         presetName: 'Production',
@@ -104,7 +104,7 @@ describe('tunnel routes', () => {
       tunnelAuthController,
       getActiveTunnelController: vi.fn(() => ({ provider: 'cloudflare' })),
     }))
-      .post('/api/openchamber/tunnel/stop')
+      .post('/api/devryan/tunnel/stop')
       .send({});
 
     expect(response.status).toBe(200);
@@ -136,7 +136,7 @@ describe('tunnel routes', () => {
         tunnelAuthController,
         getActiveTunnelController: vi.fn(() => ({ provider: 'cloudflare' })),
       }))
-        .post('/api/openchamber/tunnel/stop')
+        .post('/api/devryan/tunnel/stop')
         .send({});
 
       expect(response.status).toBe(500);
@@ -196,7 +196,7 @@ describe('tunnel routes', () => {
         getActiveTunnelController: vi.fn(() => null),
         getManagedAccountLoginAvailable: vi.fn(() => true),
       }))
-        .post('/api/openchamber/tunnel/start')
+        .post('/api/devryan/tunnel/start')
         .send({
           provider: 'cloudflare',
           mode: 'managed-remote',
@@ -256,7 +256,7 @@ describe('tunnel routes', () => {
       normalizeTunnelSessionTtlMs: vi.fn((value) => value ?? 28_800_000),
       getActivePort: vi.fn(() => 57123),
       getRuntimeManagedRemoteTunnelToken: vi.fn(() => ''),
-    })).get('/api/openchamber/tunnel/status');
+    })).get('/api/devryan/tunnel/status');
 
     expect(response.status).toBe(200);
     expect(refreshHealth).toHaveBeenCalledWith({ maxAgeMs: 5000 });
@@ -321,7 +321,7 @@ describe('tunnel routes', () => {
       getRuntimeManagedRemoteTunnelToken: vi.fn(() => ''),
       getRuntimeReady: vi.fn(() => runtimeReady),
       getManagedAccountLoginAvailable: vi.fn(() => accountLogin),
-    })).get('/api/openchamber/tunnel/status');
+    })).get('/api/devryan/tunnel/status');
 
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
@@ -342,7 +342,7 @@ describe('tunnel routes', () => {
     expect(response.text).not.toContain('stored-secret-token');
   });
 
-  it.each([[true, [], false], [true, ['a7fef886-f6ef-4f43-ac04-a42c9b5f8a10'], false], [false, [], false], [false, [], true], [false, ['a7fef886-f6ef-4f43-ac04-a42c9b5f8a10'], true]])('starts managed remote with accounts=%s bots=%j ownerLogin=%s', async (accountLogin, botIds, ownerLogin) => {
+  it.each([[true, false], [false, false], [false, true]])('starts managed remote with accounts=%s ownerLogin=%s', async (accountLogin, ownerLogin) => {
     const tunnelService = {
       resolveActiveMode: vi.fn(() => null),
       resolveActiveProvider: vi.fn(() => null),
@@ -387,14 +387,13 @@ describe('tunnel routes', () => {
         getActivePort: vi.fn(() => 57123),
         getManagedAccountLoginAvailable: vi.fn(() => accountLogin),
       }))
-        .post('/api/openchamber/tunnel/start')
+        .post('/api/devryan/tunnel/start')
         .send({
           provider: 'cloudflare',
           mode: 'managed-remote',
           hostname: 'app.example.com',
           token: `eyJ${'x'.repeat(80)}`,
           originPort: 3000,
-          botIds,
         });
 
       if (accountLogin) {
@@ -407,17 +406,11 @@ describe('tunnel routes', () => {
           bootstrapExpiresAt: null,
           policy: 'account-login',
         });
-      } else if (ownerLogin && botIds.length) {
-        expect(response.status).toBe(400);
-        expect(response.body.code).toBe('tunnel_bots_unavailable');
-        expect(tunnelService.start).not.toHaveBeenCalled();
-        expect(persistToken).not.toHaveBeenCalled();
-        expect(tunnelAuthController.issueBootstrapToken).not.toHaveBeenCalled();
       } else if (ownerLogin) {
         expect(response.status).toBe(200);
         expect(response.body).toMatchObject({ runtimeReady: true, connectReady: true,
           connectUrl: 'https://app.example.com/tunnel/connect#t=bootstrap-token', policy: 'owner-link' });
-        expect(tunnelAuthController.issueBootstrapToken).toHaveBeenCalledWith({ access: 'owner', botIds: undefined, ttlMs: 900_000 });
+        expect(tunnelAuthController.issueBootstrapToken).toHaveBeenCalledWith({ ttlMs: 900_000 });
         expect(persistToken).toHaveBeenCalledOnce();
       } else {
         expect(tunnelAuthController.issueBootstrapToken).not.toHaveBeenCalled();
@@ -459,7 +452,7 @@ describe('tunnel routes', () => {
         getRuntimeManagedRemoteTunnelHostname: vi.fn(() => ''),
         getRuntimeManagedRemoteTunnelToken: vi.fn(() => ''),
       }))
-        .post('/api/openchamber/tunnel/start')
+        .post('/api/devryan/tunnel/start')
         .send({
           provider: 'cloudflare',
           mode: 'managed-remote',
@@ -519,7 +512,7 @@ describe('tunnel routes', () => {
         getRuntimeManagedRemoteTunnelToken: vi.fn(() => ''),
         getActivePort: vi.fn(() => 57123),
       }))
-        .post('/api/openchamber/tunnel/start')
+        .post('/api/devryan/tunnel/start')
         .send({ provider: 'cloudflare', mode });
 
       expect(response.status).toBe(200);
@@ -558,7 +551,7 @@ describe('tunnel routes', () => {
       getRuntimeManagedRemoteTunnelHostname: vi.fn(() => ''),
       getRuntimeManagedRemoteTunnelToken: vi.fn(() => ''),
     }))
-      .post('/api/openchamber/tunnel/start')
+      .post('/api/devryan/tunnel/start')
       .send({
         provider: 'cloudflare',
         mode: 'managed-remote',

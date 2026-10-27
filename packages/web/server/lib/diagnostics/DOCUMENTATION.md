@@ -3,7 +3,12 @@
 The diagnostics module exposes the always-on local harness journal without
 uploading it. `GET /api/diagnostics/status` reports bounded storage health,
 including `sessionCount`, plus `commandDeadlineRecovery` with active,
-recovered, and unresolved counts plus the latest sanitized outcome/error;
+recovered, and unresolved counts plus the latest sanitized outcome/error,
+and `eventLoop` (`windowMs`, `p50Ms`, `p99Ms`, `maxMs`): the host process's
+event-loop delay since the previous status read (in Electron, the main
+thread that also serves UI IPC and SSE; each read starts a new window), and
+`ledgerWorker` (`running`, `pendingCalls`, `heapUsedMB`, `heapTotalMB`): the
+session mutation ledger's worker thread, or `null` when the ledger runs inline;
 `DELETE /api/diagnostics?range=24h|7d|14d|all`
 removes records in the selected recent window (or every session/runtime bucket
 plus legacy segments for `all`) while leaving chat history untouched;

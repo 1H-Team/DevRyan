@@ -1,7 +1,7 @@
 import {
   classifyProviderTransportFailure,
   type ProviderTransportFailureKind,
-} from "@openchamber/orchestration-runtime"
+} from "@devryan/orchestration-runtime"
 
 import { isLikelyProviderAuthFailure } from "./providerAuthError"
 

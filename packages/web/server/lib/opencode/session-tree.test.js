@@ -1,5 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { createNativeConsumerFixture } from './test-native-consumer-client.js';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { describe, expect, it, vi } from 'vitest';
 
+import { createLoopbackOpenCodeFixtureForGeneration } from '../../../../../scripts/perf/loopback-opencode-fixtures.mjs';
+import { PERF_CHILD_SESSION_IDS, PERF_PARENT_SESSION_ID } from '../../../../../scripts/perf/fixture-session-seeds.mjs';
+import { createOpenCodeClient } from './opencode-client/index.js';
 import { SESSION_TREE_MAX_DEPTH, isActiveSessionStatus, listSessionStatuses, listSessionTree } from './session-tree.js';
 
 const buildOpenCodeUrl = (requestPath) => `http://opencode.test${requestPath}`;
@@ -39,6 +46,7 @@ const listOptions = (fetchImpl, extra = {}) => ({
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders: () => ({ authorization: 'Bearer test' }),
   fetchImpl,
+  openCodeClient: createNativeConsumerFixture({ readFixture: fetchImpl }),
   ...extra,
 });
 
@@ -143,15 +151,130 @@ describe('listSessionStatuses', () => {
       '/session/status': { a: { type: 'busy' }, b: { type: 'idle' }, c: { type: 'retry', attempt: 2, message: 'x' }, bad: 'nope' },
     });
 
-    const statuses = await listSessionStatuses({ directory: '/repo', buildOpenCodeUrl, getOpenCodeAuthHeaders: () => ({}), fetchImpl: withStatuses.fetchImpl });
+    const statuses = await listSessionStatuses({ directory: '/repo', buildOpenCodeUrl, getOpenCodeAuthHeaders: () => ({}), fetchImpl: withStatuses.fetchImpl, openCodeClient: createNativeConsumerFixture({ readFixture: withStatuses.fetchImpl }) });
 
     expect(statuses).toEqual({ a: { type: 'busy' }, b: { type: 'idle' }, c: { type: 'retry', attempt: 2, message: 'x' } });
     expect(Object.values(statuses).filter(isActiveSessionStatus).map((status) => status.type)).toEqual(['busy', 'retry']);
 
     const missing = createFakeFetch({});
-    await expect(listSessionStatuses({ directory: '/repo', buildOpenCodeUrl, getOpenCodeAuthHeaders: () => ({}), fetchImpl: missing.fetchImpl })).resolves.toEqual({});
+    await expect(listSessionStatuses({ directory: '/repo', buildOpenCodeUrl, getOpenCodeAuthHeaders: () => ({}), fetchImpl: missing.fetchImpl, openCodeClient: createNativeConsumerFixture({ readFixture: missing.fetchImpl }) })).resolves.toEqual({});
 
     const failing = createFakeFetch({ '/session/status': new Error('down') });
-    await expect(listSessionStatuses({ directory: '/repo', buildOpenCodeUrl, getOpenCodeAuthHeaders: () => ({}), fetchImpl: failing.fetchImpl })).rejects.toThrow('Cannot read session status (status 500)');
+    await expect(listSessionStatuses({ directory: '/repo', buildOpenCodeUrl, getOpenCodeAuthHeaders: () => ({}), fetchImpl: failing.fetchImpl, openCodeClient: createNativeConsumerFixture({ readFixture: failing.fetchImpl }) })).rejects.toThrow('Cannot read session status (status 500)');
   });
+});
+
+// ---------------------------------------------------------------------------
+// Generation 2: the same reads through `openCodeClient` (DESIGN.md E item 13c).
+
+const clientError = (statusCode, code = 'opencode_http_error') => Object.assign(new Error(`failed (${statusCode})`), { statusCode, code });
+
+const createFakeClient = ({ sessions = {}, children = {}, statuses = {}, generation = 2 } = {}) => {
+  const calls = [];
+  const resolve = (value) => (value instanceof Error ? Promise.reject(value) : Promise.resolve(value));
+  return {
+    calls,
+    generation: () => generation,
+    sessions: {
+      get: vi.fn((id, options) => {
+        calls.push({ op: 'get', id, options });
+        return resolve(Object.hasOwn(sessions, id) ? sessions[id] : null);
+      }),
+      children: vi.fn((id, options) => {
+        calls.push({ op: 'children', id, options });
+        return resolve(Object.hasOwn(children, id) ? children[id] : null);
+      }),
+      status: vi.fn((query, options) => {
+        calls.push({ op: 'status', query, options });
+        return resolve(statuses);
+      }),
+    },
+  };
+};
+
+describe('listSessionTree (generation 2)', () => {
+  it('reads the root and descendants through the client and never fetches', async () => {
+    const { fetchImpl, calls: fetchCalls } = createFakeFetch({});
+    const client = createFakeClient({
+      sessions: { root: session('root', undefined, { revert: { messageID: 'msg-1' } }) },
+      children: { root: [session('b', 'root'), session('c', 'root')], b: [session('d', 'b')], c: [] },
+    });
+
+    const tree = await listSessionTree(listOptions(fetchImpl, { openCodeClient: client }));
+
+    expect(tree.map((entry) => `${entry.id}<${entry.parentID}@${entry.depth}`)).toEqual(['root<null@0', 'b<root@1', 'c<root@1', 'd<b@2']);
+    expect(tree[0].revert).toEqual({ messageID: 'msg-1' });
+    expect(fetchCalls).toEqual([]);
+    expect(client.calls.map((call) => `${call.op} ${call.id}`)).toEqual(['get root', 'children root', 'children b', 'children c', 'children d']);
+    for (const call of client.calls) expect(call.options).toMatchObject({ directory: '/repo', allowNotFound: true });
+  });
+
+  it('synthesizes a missing root, skips missing branches and keeps the depth limit', async () => {
+    const client = createFakeClient({ children: { root: [{ id: 'child' }] } });
+
+    const tree = await listSessionTree(listOptions(undefined, { openCodeClient: client }));
+    expect(tree).toEqual([
+      { id: 'root', parentID: null, title: '', time: null, projectID: null, revert: null, depth: 0 },
+      { id: 'child', parentID: 'root', title: '', time: null, projectID: null, revert: null, depth: 1 },
+    ]);
+
+    const rootOnly = await listSessionTree(listOptions(undefined, { openCodeClient: createFakeClient(), maxDepth: 0 }));
+    expect(rootOnly).toEqual([expect.objectContaining({ id: 'root', depth: 0 })]);
+  });
+
+  it('surfaces client failures with the client status instead of a partial tree', async () => {
+    const failingChildren = createFakeClient({ sessions: { root: session('root') }, children: { root: clientError(503, 'opencode_unavailable') } });
+    await expect(listSessionTree(listOptions(undefined, { openCodeClient: failingChildren })))
+      .rejects.toThrow('Cannot list children of session root (status 503)');
+
+    const failingRoot = createFakeClient({ sessions: { root: new Error('socket hang up') } });
+    const error = await listSessionTree(listOptions(undefined, { openCodeClient: failingRoot })).catch((cause) => cause);
+    expect(error.message).toBe('Cannot load session root (status 502)');
+    expect(error.cause.message).toBe('socket hang up');
+  });
+
+  it('honours an aborted signal before any client call', async () => {
+    const client = createFakeClient({ sessions: { root: session('root') } });
+    const controller = new AbortController();
+    controller.abort(new Error('cancelled'));
+
+    await expect(listSessionTree(listOptions(undefined, { openCodeClient: client, signal: controller.signal }))).rejects.toThrow('cancelled');
+    expect(client.calls).toEqual([]);
+  });
+
+  it.each([undefined, {}, createFakeClient({ generation: 1 }), createFakeClient({ generation: 3 })])('refuses unsupported tree identity: %j', async openCodeClient => {
+    const fetchImpl = vi.fn();
+    await expect(listSessionTree(listOptions(fetchImpl, { openCodeClient }))).rejects.toMatchObject({ code: 'opencode_generation_invalid' });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});
+
+describe('listSessionStatuses (generation 2)', () => {
+  it('reads non-idle statuses through the client, treats 404 as empty and reports other failures', async () => {
+    const client = createFakeClient({ statuses: { a: { type: 'busy' }, c: { type: 'retry', attempt: 2, message: 'x', next: 5 }, bad: 'nope' } });
+    const statuses = await listSessionStatuses({ directory: '/repo', openCodeClient: client });
+    expect(statuses).toEqual({ a: { type: 'busy' }, c: { type: 'retry', attempt: 2, message: 'x', next: 5 } });
+    expect(client.calls[0]).toMatchObject({ op: 'status', query: { directory: '/repo' } });
+
+    const missing = createFakeClient({ statuses: clientError(404, 'opencode_not_found') });
+    await expect(listSessionStatuses({ directory: '/repo', openCodeClient: missing })).resolves.toEqual({});
+
+    const failing = createFakeClient({ statuses: clientError(500, 'opencode_upstream_failure') });
+    await expect(listSessionStatuses({ directory: '/repo', openCodeClient: failing })).rejects.toThrow('Cannot read session status (status 500)');
+  });
+});
+
+describe('session tree native wire', () => {
+  it('lists the canonical native fixture tree through the real client', async () => {
+    const directory = mkdtempSync(path.join(tmpdir(), 'devryan-session-tree-'));
+    const fixture = await createLoopbackOpenCodeFixtureForGeneration(2, { directory, heartbeatMs: 50 });
+    try {
+      const client = createOpenCodeClient({ getRuntime: () => ({ generation: 2, baseUrl: fixture.origin }),
+        getAuthHeaders: () => ({ ...fixture.authHeaders }) });
+      const tree = await listSessionTree({ sessionID: PERF_PARENT_SESSION_ID, directory, openCodeClient: client });
+      expect(tree.map(entry => entry.id).sort()).toEqual([PERF_PARENT_SESSION_ID, ...PERF_CHILD_SESSION_IDS].sort());
+      expect(tree[0]).toMatchObject({ id: PERF_PARENT_SESSION_ID, depth: 0 });
+      expect(await listSessionStatuses({ directory, openCodeClient: client })).toEqual({});
+    } finally { await fixture.close(); rmSync(directory, { recursive: true, force: true }); }
+  }, 30_000);
 });

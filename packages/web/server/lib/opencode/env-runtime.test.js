@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -9,12 +8,6 @@ const originalOpencodeBinary = process.env.OPENCODE_BINARY;
 const originalPlatform = process.platform;
 const originalPath = process.env.PATH;
 const tempDirs = [];
-
-const createTempDir = (prefix) => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
-  tempDirs.push(dir);
-  return dir;
-};
 
 const setPlatform = (platform) => {
   Object.defineProperty(process, 'platform', {
@@ -63,83 +56,6 @@ const createRuntime = (settings, overrides = {}) => {
 
   return { runtime, state };
 };
-
-describe('OpenCode env runtime', () => {
-  it('prefers the canonical OpenCode installer binary over a PATH shadow', () => {
-    const home = createTempDir('openchamber-opencode-home-');
-    const canonicalDir = path.join(home, '.opencode', 'bin');
-    const pathDir = createTempDir('openchamber-opencode-path-');
-    const canonicalBinary = path.join(canonicalDir, 'opencode');
-    const pathBinary = path.join(pathDir, 'opencode');
-    fs.mkdirSync(canonicalDir, { recursive: true });
-    fs.writeFileSync(canonicalBinary, '#!/bin/sh\nexit 0\n');
-    fs.writeFileSync(pathBinary, '#!/bin/sh\nexit 0\n');
-    fs.chmodSync(canonicalBinary, 0o755);
-    fs.chmodSync(pathBinary, 0o755);
-
-    const { runtime, state } = createRuntime({}, {
-      homeDirectory: home,
-      environmentPath: pathDir,
-    });
-
-    expect(runtime.resolveOpencodeCliPath()).toBe(canonicalBinary);
-    expect(state.resolvedOpencodeBinarySource).toBe('canonical');
-  });
-
-  it('throws a specific error for a missing configured OpenCode binary in strict mode', async () => {
-    const { runtime } = createRuntime({ opencodeBinary: '/missing/opencode' });
-
-    await expect(runtime.applyOpencodeBinaryFromSettings({ strict: true })).rejects.toMatchObject({
-      code: 'OPENCODE_BINARY_INVALID',
-      message: expect.stringContaining('Configured OpenCode binary not found: /missing/opencode'),
-    });
-  });
-
-  it('throws a specific error for a configured directory without an executable CLI in strict mode', async () => {
-    const dir = createTempDir('openchamber-opencode-dir-');
-    const { runtime } = createRuntime({ opencodeBinary: dir });
-
-    await expect(runtime.applyOpencodeBinaryFromSettings({ strict: true })).rejects.toMatchObject({
-      code: 'OPENCODE_BINARY_INVALID',
-      message: expect.stringContaining('Configured OpenCode binary directory does not contain an executable'),
-    });
-  });
-
-  it('applies a valid configured executable OpenCode binary', async () => {
-    const dir = createTempDir('openchamber-opencode-bin-');
-    const binary = path.join(dir, 'opencode');
-    fs.writeFileSync(binary, '#!/bin/sh\nexit 0\n');
-    fs.chmodSync(binary, 0o755);
-    const { runtime, state } = createRuntime({ opencodeBinary: binary });
-
-    await expect(runtime.applyOpencodeBinaryFromSettings({ strict: true })).resolves.toBe(binary);
-    expect(process.env.OPENCODE_BINARY).toBe(binary);
-    expect(state.resolvedOpencodeBinary).toBe(binary);
-    expect(state.resolvedOpencodeBinarySource).toBe('settings');
-  });
-
-  it.runIf(process.platform === 'darwin')('rejects known macOS OpenCode app bundle executable paths', async () => {
-    const { runtime } = createRuntime({ opencodeBinary: '/Applications/OpenCode.app/Contents/MacOS/OpenCode' });
-
-    await expect(runtime.applyOpencodeBinaryFromSettings({ strict: true })).rejects.toMatchObject({
-      code: 'OPENCODE_BINARY_INVALID',
-      message: expect.stringContaining('macOS desktop app bundle'),
-    });
-  });
-
-  it('does not classify failed WSL resolution as an invalid configured binary in strict mode', async () => {
-    setPlatform('win32');
-    const { runtime } = createRuntime({ opencodeBinary: 'wsl:/usr/local/bin/opencode' }, {
-      isExecutable: () => false,
-      executeProbe: () => ({ status: 1, stdout: '' }),
-    });
-
-    await expect(runtime.applyOpencodeBinaryFromSettings({ strict: true })).rejects.toThrow('uses WSL');
-    await runtime.applyOpencodeBinaryFromSettings({ strict: true }).catch((error) => {
-      expect(error.code).toBeUndefined();
-    });
-  });
-});
 
 describe('bounded discovery probes', () => {
   const fixture = (overrides = {}) => createRuntime({}, {
@@ -204,73 +120,8 @@ describe('bounded discovery probes', () => {
     });
     state.cachedLoginShellEnvSnapshot = undefined;
     expect(runtime.getLoginShellEnvSnapshot()).toEqual({ PATH: 'C:\\fixture' });
-    expect(runtime.resolveOpencodeCliPath()).toBe(binary);
-  });
-
-  it('rejects thrown, signalled and malformed shell results before using a valid path', () => {
-    let calls = 0;
-    const { runtime } = fixture({
-      isExecutable: (file) => ['/fixture/a', '/fixture/b', '/fixture/c', '/fixture/d', '/fixture/bin/opencode'].includes(file),
-      executeProbe: () => {
-        calls += 1;
-        if (calls === 1) throw new Error('probe failed');
-        if (calls === 2) return { status: 0, signal: 'SIGKILL', stdout: '/fixture/bin/opencode' };
-        if (calls === 3) return { status: 0, stdout: 'unexpected banner\n/fixture/bin/opencode' };
-        return { status: 0, stdout: '/fixture/bin/opencode\n' };
-      },
-    });
-    expect(runtime.resolveOpencodeCliPath()).toBe('/fixture/bin/opencode');
-    expect(calls).toBe(4);
-  });
-
-  it.each([0, 7_000])('constrains the WSL six-second ceiling after %i ms of discovery', (elapsed) => {
-    setPlatform('win32');
-    let now = 0;
-    const calls = [];
-    const wsl = 'C:\\fixture\\wsl.exe';
-    const { runtime, state } = fixture({
-      isExecutable: (file) => file === wsl,
-      probeNow: () => now,
-      executeProbe: (file, args, options) => {
-        calls.push({ file, timeout: options.timeout });
-        if (args[0] === 'opencode') { now += elapsed / 2; return { status: 1, stdout: '' }; }
-        if (args[0] === 'wsl') { now += elapsed / 2; return { status: 0, stdout: `${wsl}\r\n` }; }
-        return { status: 0, stdout: '/usr/local/bin/opencode\n' };
-      },
-    });
-    expect(runtime.resolveOpencodeCliPath()).toBe('wsl:/usr/local/bin/opencode');
-    expect(state.resolvedWslBinary).toBe(wsl);
-    expect(state.resolvedWslOpencodePath).toBe('/usr/local/bin/opencode');
-    expect(calls.at(-1)).toEqual({ file: wsl, timeout: Math.min(6_000, 10_000 - elapsed) });
-  });
-
-  it('bounds OpenCode shell lookup and discards a failed executable result', () => {
-    const attempts = [];
-    const { runtime } = fixture({ isExecutable: (file) => ['/fixture/a', '/fixture/b', '/fixture/bin/opencode'].includes(file),
-      executeProbe: (file, args, options) => {
-        attempts.push(options.timeout);
-        return { status: file === '/fixture/a' ? 1 : 0, stdout: '/fixture/bin/opencode\n' };
-      } });
-    expect(runtime.resolveOpencodeCliPath()).toBe('/fixture/bin/opencode');
-    expect(attempts).toEqual([5_000, 5_000]);
-  });
-
-  it.each(['node', 'bun'])('bounds %s discovery needed by a configured shim', async (interpreter) => {
-    const dir = createTempDir('devryan-probe-shim-');
-    const shim = path.join(dir, 'opencode');
-    fs.writeFileSync(shim, `#!/usr/bin/env ${interpreter}\n`);
-    const calls = [];
-    const { runtime, state } = createRuntime({ opencodeBinary: shim }, {
-      environmentPath: '', homeDirectory: dir, shellCandidates: ['/fixture/shell'],
-      isExecutable: (file) => [shim, '/fixture/shell', `/fixture/bin/${interpreter}`].includes(file),
-      executeProbe: (file, args, options) => {
-        calls.push({ command: args.at(-1), timeout: options.timeout });
-        return { status: 0, stdout: `/fixture/bin/${interpreter}\n` };
-      },
-    });
-    await runtime.applyOpencodeBinaryFromSettings({ strict: true });
-    expect(calls).toEqual([{ command: `command -v ${interpreter}`, timeout: 5_000 }]);
-    expect(state[interpreter === 'node' ? 'resolvedNodeBinary' : 'resolvedBunBinary']).toBe(`/fixture/bin/${interpreter}`);
+    expect(runtime.isExecutable(binary)).toBe(true);
+    expect(runtime.resolveOpencodeCliPath).toBeUndefined();
   });
 
   it('forcefully terminates an isolated process that ignores SIGTERM', () => {
@@ -289,5 +140,59 @@ describe('bounded discovery probes', () => {
     expect(result.error.code).toBe('ETIMEDOUT');
     expect(result.signal).toBe('SIGKILL');
     expect(() => process.kill(result.pid, 0)).toThrow();
+  });
+});
+
+describe('applyLoginShellEnvSnapshot filter', () => {
+  const NAMES = ['OPENCODE_HOST', 'OPENCODE_BINARY', 'OPENCODE_SKIP_START', 'OPENCODE_DB', 'DEVRYAN_OPENCODE_GENERATION', 'DEVRYAN_RUNTIME_BUNDLE_ROOT',
+    'DEVRYAN_ELECTRON_DEV', 'DEVRYAN_EXECUTION_ARTIFACTS', 'DEVRYAN_DEFAULT_CONFIG_ROOT', 'DEVRYAN_ELECTRON_USER_DATA_DIR',
+    'DEVRYAN_DATA_DIR', 'DEVRYAN_PRIMARY_RECOVERY_MODE', 'DEVRYAN_PACKAGED_DESKTOP'];
+  const saved = Object.fromEntries(NAMES.map((name) => [name, process.env[name]]));
+  afterEach(() => {
+    for (const [name, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[name]; else process.env[name] = value;
+    }
+  });
+  const shell = { OPENCODE_HOST: 'https://fixture.invalid:4096', OPENCODE_BINARY: '/fixture/bin/opencode', OPENCODE_SKIP_START: 'true',
+    OPENCODE_DB: 'relative.db', DEVRYAN_OPENCODE_GENERATION: '1', DEVRYAN_RUNTIME_BUNDLE_ROOT: '/fixture/bundles',
+    DEVRYAN_ELECTRON_DEV: '1', DEVRYAN_EXECUTION_ARTIFACTS: '/fixture/artifacts', DEVRYAN_DEFAULT_CONFIG_ROOT: '/fixture/default-config',
+    DEVRYAN_ELECTRON_USER_DATA_DIR: '/fixture/user-data', DEVRYAN_DATA_DIR: '/fixture/data', DEVRYAN_PRIMARY_RECOVERY_MODE: 'legacy' };
+  const apply = ({ launch = {}, packaged = false } = {}) => {
+    for (const name of NAMES) delete process.env[name];
+    Object.assign(process.env, launch);
+    if (packaged) process.env.DEVRYAN_PACKAGED_DESKTOP = '1';
+    const info = [];
+    const { runtime, state } = createRuntime({}, { shellCandidates: ['/fixture/zsh'], isExecutable: (file) => file === '/fixture/zsh',
+      executeProbe: () => ({ status: 0, stdout: `${Object.entries(shell).map(([key, value]) => `${key}=${value}`).join('\0')}\0` }),
+      logger: { info: (message) => info.push(message) } });
+    state.cachedLoginShellEnvSnapshot = undefined;
+    runtime.applyLoginShellEnvSnapshot();
+    runtime.applyLoginShellEnvSnapshot();
+    return { env: Object.fromEntries(NAMES.map((name) => [name, process.env[name] ?? null])), info };
+  };
+  const provisioning = ['DEVRYAN_OPENCODE_GENERATION', 'DEVRYAN_RUNTIME_BUNDLE_ROOT', 'OPENCODE_BINARY', 'OPENCODE_DB', 'OPENCODE_HOST', 'OPENCODE_SKIP_START'];
+  const redirections = ['DEVRYAN_DEFAULT_CONFIG_ROOT', 'DEVRYAN_EXECUTION_ARTIFACTS', 'DEVRYAN_ELECTRON_DEV', 'DEVRYAN_ELECTRON_USER_DATA_DIR'];
+
+  it('drops provisioning-refused login-shell values in every runtime, merges the rest and logs names once', () => {
+    const { env, info } = apply();
+    for (const name of provisioning) expect(env[name], name).toBeNull();
+    for (const name of [...redirections, 'DEVRYAN_DATA_DIR', 'DEVRYAN_PRIMARY_RECOVERY_MODE']) expect(env[name], name).toBe(shell[name]);
+    expect(info).toEqual([`[shell-env] server ignored login-shell variables the runtime does not support: ${provisioning.join(', ')}`]);
+  });
+
+  it('drops dev/packaging redirections only under the packaged desktop marker', () => {
+    const { env, info } = apply({ packaged: true });
+    for (const name of [...provisioning, ...redirections]) expect(env[name], name).toBeNull();
+    expect(env.DEVRYAN_DATA_DIR).toBe('/fixture/data');
+    expect(info).toHaveLength(1);
+    for (const name of [...provisioning, ...redirections]) expect(info[0]).toContain(name);
+    for (const value of Object.values(shell)) expect(info[0]).not.toContain(value);
+  });
+
+  it('never touches launch-environment values', () => {
+    const launch = { OPENCODE_HOST: 'http://127.0.0.1:9999', DEVRYAN_ELECTRON_DEV: '0', DEVRYAN_EXECUTION_ARTIFACTS: '/launch/artifacts' };
+    const { env, info } = apply({ launch, packaged: true });
+    for (const [name, value] of Object.entries(launch)) expect(env[name]).toBe(value);
+    expect(info[0]).not.toMatch(/OPENCODE_HOST|DEVRYAN_ELECTRON_DEV|DEVRYAN_EXECUTION_ARTIFACTS/);
   });
 });

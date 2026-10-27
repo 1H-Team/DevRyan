@@ -1,8 +1,0 @@
-{
-  "passed": true,
-  "model": "gpt-6-astra",
-  "reasoningEffort": "medium",
-  "imageRequests": 1,
-  "internet": "disabled",
-  "bakedImage": true
-}

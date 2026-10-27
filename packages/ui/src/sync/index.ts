@@ -85,10 +85,6 @@ export type { SessionMessageLoadState, SessionMessageLoadKind } from "./session-
 // Sync operations
 export { useSync } from "./use-sync"
 
-// Prompt submission
-export { usePromptSubmit, type SubmitInput } from "./submit"
-
-
 // Streaming lifecycle
 export {
   useStreamingStore,

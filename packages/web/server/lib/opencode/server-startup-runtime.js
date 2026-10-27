@@ -1,3 +1,7 @@
+// The error listeners act through the process-wide gracefulShutdown, so one set
+// per process serves every web host constructed in it; a restart adds none.
+const processesWithErrorHandlers = new WeakSet();
+
 export const createServerStartupRuntime = (dependencies) => {
   const {
     process,
@@ -20,8 +24,8 @@ export const createServerStartupRuntime = (dependencies) => {
 
   const resolveBindHost = (host) =>
     host
-    || (typeof process.env.OPENCHAMBER_HOST === 'string' && process.env.OPENCHAMBER_HOST.trim().length > 0
-      ? process.env.OPENCHAMBER_HOST.trim()
+    || (typeof process.env.DEVRYAN_HOST === 'string' && process.env.DEVRYAN_HOST.trim().length > 0
+      ? process.env.DEVRYAN_HOST.trim()
       : '127.0.0.1');
 
   const startListeningAndMaybeTunnel = async ({
@@ -44,7 +48,7 @@ export const createServerStartupRuntime = (dependencies) => {
         activePort = typeof addressInfo === 'object' && addressInfo ? addressInfo.port : port;
 
         try {
-          process.send?.({ type: 'openchamber:ready', port: activePort });
+          process.send?.({ type: 'devryan:ready', port: activePort });
         } catch {
           // ignore
         }
@@ -52,7 +56,7 @@ export const createServerStartupRuntime = (dependencies) => {
         const displayHost = (bindHost === '0.0.0.0' || bindHost === '::' || bindHost === '[::]')
           ? 'localhost'
           : (bindHost.includes(':') ? `[${bindHost}]` : bindHost);
-        console.log(`OpenChamber server listening on ${bindHost}:${activePort}`);
+        console.log(`DevRyan server listening on ${bindHost}:${activePort}`);
         console.log(`Health check: http://${displayHost}:${activePort}/health`);
         console.log(`Web interface: http://${displayHost}:${activePort}`);
 
@@ -111,7 +115,6 @@ export const createServerStartupRuntime = (dependencies) => {
                   : 'Sign in with your DevRyan account.');
               } else if (tunnelAuthController.hasOwner) {
                 console.log(`\nTunnel connector ready: ${publicUrl}`);
-                console.log('Create Bot access links from the authenticated local tunnel settings.');
               } else {
                 console.log(`\n🌐 Tunnel URL: ${connectUrl}`);
                 console.log('🔑 One-time connect link (expires after first use)\n');
@@ -146,13 +149,16 @@ export const createServerStartupRuntime = (dependencies) => {
       syncToHmrState();
     }
 
+    if (processesWithErrorHandlers.has(process)) return;
+    processesWithErrorHandlers.add(process);
+
     process.on('unhandledRejection', (reason, promise) => {
       console.error('Unhandled Rejection at:', promise, 'reason:', reason);
     });
 
     process.on('uncaughtException', (error) => {
       console.error('Uncaught Exception:', error);
-      if (process.env.OPENCHAMBER_DEV_MODE === 'true') {
+      if (process.env.DEVRYAN_DEV_MODE === 'true') {
         // Previously this called process.exit(1) directly, which orphaned the
         // managed `opencode serve` child on every dev-mode crash/HMR restart (the
         // child is not detached and has no die-with-parent guarantee on macOS, so

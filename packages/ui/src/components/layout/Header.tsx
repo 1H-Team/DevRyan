@@ -13,8 +13,6 @@ import {
 import { SortableTabsStrip, type SortableTabsStripItem } from '@/components/ui/sortable-tabs-strip';
 
 import { RiArrowLeftSLine, RiBarChartLine, RiChat4Line, RiChatNewLine, RiCloseLine, RiCommandLine, RiDraftLine, RiPlayListAddLine, RiServerLine, type RemixiconComponentType } from '@remixicon/react';
-import { BotIdentityHeader } from '@/components/bots/chat/BotIdentityHeader';
-import type { BotSummary } from '@/lib/botsApi';
 import { DiffIcon } from '@/components/icons/DiffIcon';
 import {
   SidebarLeftCollapseIcon,
@@ -96,8 +94,6 @@ interface HeaderProps {
   leftDrawerOpen?: boolean;
   rightDrawerOpen?: boolean;
   browserActionPortalTarget?: HTMLElement | null;
-  botMode?: boolean;
-  bot?: BotSummary | null;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -106,8 +102,6 @@ export const Header: React.FC<HeaderProps> = ({
   leftDrawerOpen,
   rightDrawerOpen,
   browserActionPortalTarget,
-  botMode = false,
-  bot,
 }) => {
   const { t } = useI18n();
   const principal = useAuthPrincipal();
@@ -172,7 +166,7 @@ export const Header: React.FC<HeaderProps> = ({
       return null;
     }
 
-    const injected = (window as unknown as { __OPENCHAMBER_MACOS_MAJOR__?: unknown }).__OPENCHAMBER_MACOS_MAJOR__;
+    const injected = (window as unknown as { __DEVRYAN_MACOS_MAJOR__?: unknown }).__DEVRYAN_MACOS_MAJOR__;
     if (typeof injected === 'number' && Number.isFinite(injected) && injected > 0) {
       return injected;
     }
@@ -239,6 +233,9 @@ export const Header: React.FC<HeaderProps> = ({
           ?? quotaProviderRefreshState[provider.id]?.lastSuccessAt
           ?? null,
         resetCredits: result?.usage?.resetCredits,
+        source: result?.source,
+        connectionId: result?.connectionId,
+        account: result?.account,
         warnings: result?.warnings,
         error: quotaProviderRefreshState[provider.id]?.refreshError
           ?? ((result && !result.ok && result.configured) ? result.error : undefined),
@@ -634,25 +631,6 @@ export const Header: React.FC<HeaderProps> = ({
     };
   }, [isDesktopApp, isSidebarOpen, isTabletStandalonePwa, reservesDesktopRightChromeSpace]);
 
-  const botIdentityDesktopStyle = React.useMemo<React.CSSProperties>(() => {
-    if (isDesktopApp) {
-      return {
-        paddingLeft: isSidebarOpen ? '1rem' : DESKTOP_LEFT_CHROME_CLUSTER_WIDTH,
-        paddingRight: isRightSidebarOpen ? '1rem' : '3.5rem',
-      };
-    }
-
-    return {
-      paddingLeft: isSidebarOpen
-        ? '1rem'
-        : 'calc(3.5rem + var(--oc-wco-left-inset, 0px))',
-      paddingRight: isRightSidebarOpen
-        ? '1rem'
-        : 'calc(3.5rem + var(--oc-wco-right-inset, 0px))',
-      minHeight: 'max(5.5rem, var(--oc-wco-titlebar-height, 0px))',
-    };
-  }, [isDesktopApp, isRightSidebarOpen, isSidebarOpen]);
-
   const updateHeaderHeight = React.useCallback(() => {
     if (typeof document === 'undefined') {
       return;
@@ -822,19 +800,6 @@ export const Header: React.FC<HeaderProps> = ({
 
     return <React.Fragment key={tab.id}>{tabButton}</React.Fragment>;
   };
-
-  const renderBotDesktop = () => (
-    <BotIdentityHeader
-      bot={bot ?? null}
-      mobile={false}
-      style={botIdentityDesktopStyle}
-      onMouseDown={handleDragStart}
-    />
-  );
-
-  const renderBotMobile = () => (
-    <BotIdentityHeader bot={bot ?? null} mobile />
-  );
 
   const renderDesktop = () => (
     <div
@@ -1180,9 +1145,7 @@ export const Header: React.FC<HeaderProps> = ({
       className={headerClassName}
       style={{ ['--padding-scale' as string]: '1' } as React.CSSProperties}
     >
-      {isMobile
-        ? botMode ? renderBotMobile() : renderMobile()
-        : botMode ? renderBotDesktop() : renderDesktop()}
+      {isMobile ? renderMobile() : renderDesktop()}
     </header>
   );
 };

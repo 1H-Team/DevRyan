@@ -802,6 +802,44 @@ describe('tool activity grouping', () => {
         expect(getToolActivityGroupSummaryCount('edit', groups[0]?.items ?? [], (item) => item.part)).toBe(2);
     });
 
+    test('bridges search and fetch groups across assistant tool-call messages in live rendering', () => {
+        const items = [
+            { messageId: 'message-1', tool: 'grep', part: toolPart('grep', { output: 'src/a.ts:1:x' }, 'grep-1') },
+            { messageId: 'message-2', tool: 'read', part: toolPart('read', { input: { filePath: 'src/a.ts' } }, 'read-1') },
+            { messageId: 'message-3', tool: 'glob', part: toolPart('glob', { output: 'src/b.ts\nsrc/c.ts' }, 'glob-1') },
+            { messageId: 'message-4', tool: 'grep', part: toolPart('grep', { output: 'src/a.ts:2:y\nsrc/d.ts:3:z' }, 'grep-2') },
+            { messageId: 'message-5', tool: 'webfetch', part: toolPart('webfetch', { input: { url: 'https://example.com/a' } }, 'fetch-1') },
+            { messageId: 'message-6', tool: 'webfetch', part: toolPart('webfetch', { input: { url: 'https://example.com/b' } }, 'fetch-2') },
+        ];
+        const options = {
+            getToolName: (item: (typeof items)[number]) => item.tool,
+            getToolPart: (item: (typeof items)[number]) => item.part,
+            getMessageId: (item: (typeof items)[number]) => item.messageId,
+        };
+
+        const groups = collectCrossMessageFileActivityGroups(items, options);
+        const search = groups.find((group) => group.groupInfo.kind === 'search');
+        const fetch = groups.find((group) => group.groupInfo.kind === 'fetch');
+
+        expect(search?.items.map((item) => item.part.id)).toEqual(['grep-1', 'glob-1', 'grep-2']);
+        expect(getToolActivityGroupSummaryCount('search', search?.items ?? [], options.getToolPart)).toBe(4);
+        expect(fetch?.items.map((item) => item.part.id)).toEqual(['fetch-1', 'fetch-2']);
+        expect(getToolActivityGroupSummaryCount('fetch', fetch?.items ?? [], options.getToolPart)).toBe(2);
+    });
+
+    test('does not bridge a search burst confined to one message', () => {
+        const items = [
+            { messageId: 'message-1', tool: 'grep', part: toolPart('grep', { output: 'src/a.ts:1:x' }, 'grep-1') },
+            { messageId: 'message-1', tool: 'glob', part: toolPart('glob', { output: 'src/b.ts' }, 'glob-1') },
+        ];
+
+        expect(collectCrossMessageFileActivityGroups(items, {
+            getToolName: (item) => item.tool,
+            getToolPart: (item) => item.part,
+            getMessageId: (item) => item.messageId,
+        })).toEqual([]);
+    });
+
     test('renders one passive browser activity for a 15-command narrated turn in sorted and live modes', () => {
         type BrowserTurnItem = {
             messageId: string;
@@ -1085,7 +1123,7 @@ describe('tool activity summary extraction', () => {
             'packages/ui/src/stores/useAgentsStore.ts:',
             "Line 5: import { create } from '../lib/state';",
             'packages/ui/src/components/session/SessionSidebar.tsx:',
-            'packages/ui/src/components/sections/openchamber/VoiceSettings.tsx:',
+            'packages/ui/src/components/sections/devryan/VoiceSettings.tsx:',
             "Line 23: import { getSelectableVoiceInputProviders } from './voiceSettingsUtils';",
             'Line 388: && prev.onOpenSettings === next.onOpenSettings',
             'app-icon white.svg',
@@ -1095,7 +1133,7 @@ describe('tool activity summary extraction', () => {
         expect(extractSearchedFilePathsFromToolPart(toolPart('search', { output }))).toEqual([
             'packages/ui/src/stores/useAgentsStore.ts',
             'packages/ui/src/components/session/SessionSidebar.tsx',
-            'packages/ui/src/components/sections/openchamber/VoiceSettings.tsx',
+            'packages/ui/src/components/sections/devryan/VoiceSettings.tsx',
             'app-icon white.svg',
             '.env',
         ]);

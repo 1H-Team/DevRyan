@@ -6,7 +6,7 @@ export const RUNTIME_PLUGIN_EXTENSIONS = Object.freeze(['.js', '.mjs', '.cjs', '
 
 const PROHIBITED_SEGMENTS = new Set([
   'auth', 'credential', 'credentials', 'secret', 'secrets', 'log', 'logs',
-  'cache', 'caches', 'backup', 'backups', 'node_modules', '.git', '.openchamber',
+  'cache', 'caches', 'backup', 'backups', 'node_modules', '.git', '.devryan', '.openchamber',
 ]);
 
 const toSegments = (relativePath) => String(relativePath)

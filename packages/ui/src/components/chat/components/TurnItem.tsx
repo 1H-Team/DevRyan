@@ -7,9 +7,10 @@ interface TurnItemProps {
     turn: Turn;
     stickyUserHeader?: boolean;
     renderMessage: (message: ChatMessageEntry) => React.ReactNode;
+    beforeAssistant?: React.ReactNode;
 }
 
-const TurnItem: React.FC<TurnItemProps> = ({ turn, stickyUserHeader = true, renderMessage }) => {
+const TurnItem: React.FC<TurnItemProps> = ({ turn, stickyUserHeader = true, renderMessage, beforeAssistant }) => {
     return (
         <section
             className="relative w-full"
@@ -32,6 +33,7 @@ const TurnItem: React.FC<TurnItemProps> = ({ turn, stickyUserHeader = true, rend
                 renderMessage(turn.userMessage)
             )}
 
+            {beforeAssistant}
             <TurnAssistantBlock assistantMessages={turn.assistantMessages} renderMessage={renderMessage} />
         </section>
     );

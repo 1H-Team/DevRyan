@@ -7,7 +7,7 @@ import {
   createRecordStore,
   createTurnEvidenceRuntime,
   validateEvidenceRecord,
-} from '@openchamber/harness-runtime';
+} from '@devryan/harness-runtime';
 import { createProjectIdFromPath } from '../projects/project-id.js';
 
 const execFileAsync = promisify(execFile);
@@ -32,6 +32,7 @@ export const createWebEvidenceRuntime = (options = {}) => {
   const evidenceDirectory = options.evidenceDirectory;
   const store = createRecordStore({
     directory: path.join(evidenceDirectory, 'records'),
+    windowsOwner: options.windowsOwner,
     validateRecord: validateEvidenceRecord,
     logger: options.logger ?? console,
   });

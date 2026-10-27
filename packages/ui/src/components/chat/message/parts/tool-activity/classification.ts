@@ -300,10 +300,6 @@ export const isFetchToolName = (toolName: unknown): boolean => {
     return FETCH_TOOL_NAMES.has(normalizeToolName(toolName));
 };
 
-export const isBrowserToolName = (toolName: unknown): boolean => {
-    return BROWSER_TOOL_NAMES.has(normalizeToolName(toolName));
-};
-
 export const getStaticGroupToolName = (toolName: string): string => {
     const normalized = normalizeToolName(toolName);
     if (SEARCH_TOOL_NAMES.has(normalized)) {

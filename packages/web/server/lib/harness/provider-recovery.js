@@ -1,6 +1,6 @@
-import { classifyManagedTaskFailure } from '@openchamber/orchestration-runtime';
+import { classifyManagedTaskFailure } from '@devryan/orchestration-runtime';
 import crypto from 'node:crypto';
-import { createPrimaryRecoveryHost, createPrimaryRecoveryManagedAdapter } from '@openchamber/harness-runtime';
+import { createPrimaryRecoveryHost, createPrimaryRecoveryManagedAdapter } from '@devryan/harness-runtime';
 
 const ownerHash = (req) => {
   const cookie = String(req.headers?.cookie ?? '').split(';').map((value) => value.trim())
@@ -21,7 +21,7 @@ export function createWebPrimaryRecoveryRuntime(options) {
     middleware: async (req, res, next) => {
       const result = await host.handleRequest(req.method, req.originalUrl, req.body, { owner: ownerHash(req) });
       if (result) { res.status(result.status).json(result.body); return; }
-      next();
+      return host.withPromptAdmissionContext(req.method, req.originalUrl, { owner: ownerHash(req) }, next);
     },
   };
 }

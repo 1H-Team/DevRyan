@@ -1,5 +1,5 @@
 {
   "extends": "../../packages/ui/tsconfig.json",
-  "compilerOptions": { "baseUrl": "../..", "paths": { "@/*": ["packages/ui/src/*"], "@openchamber/ui/*": ["packages/ui/src/*"] } },
+  "compilerOptions": { "paths": { "@/*": ["../../packages/ui/src/*"], "@devryan/ui/*": ["../../packages/ui/src/*"] } },
   "include": ["*.ts", "*.tsx", "../../packages/ui/src/**/*.d.ts"]
 }

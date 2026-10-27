@@ -1,8 +1,11 @@
+import { DEFAULT_HELPER_MODEL_SELECTION, createHelperModelRevision, parseHelperModelSelection } from '@/lib/helperModelSelection';
+import { ControlledModelPicker } from '@/components/chat/ControlledModelPicker';
 import React from 'react';
 import { RiAiAgentLine, RiArrowRightSLine, RiChatHistoryLine } from '@remixicon/react';
 import type { Agent } from '@opencode-ai/sdk/v2';
 import { AgentSelector } from '@/components/sections/commands/AgentSelector';
-import { SessionCleanupSettings } from '@/components/sections/openchamber/SessionRetentionSettings';
+import { SessionCleanupSettings } from '@/components/sections/devryan/SessionRetentionSettings';
+import { SavedApprovalsSettings } from './SavedApprovalsSettings';
 import {
   SettingsBadge,
   SettingsDetailHeader,
@@ -26,10 +29,11 @@ import {
 } from '@/lib/agentSelection';
 import { canAccessSettingsPage, canEditPersonalAgentModels, useAuthPrincipal } from '@/lib/authSession';
 import { useI18n } from '@/lib/i18n';
-import { updateDesktopSettings } from '@/lib/persistence';
+import { updateDesktopSettings, saveDesktopSettingsNow } from '@/lib/persistence';
 import { getModelDisplayName } from '@/lib/providers/modelIdentity';
 import { filterVisibleAgentSelectorOptions, filterVisibleSettingsAgents, useAgentsStore } from '@/stores/useAgentsStore';
 import { useConfigStore } from '@/stores/useConfigStore';
+import type { ProviderRecoverySelection } from '@/stores/useProviderRecoveryStore';
 import { useUIStore } from '@/stores/useUIStore';
 
 const NewSessionDefaults: React.FC = () => {
@@ -186,7 +190,7 @@ const NewSessionDefaults: React.FC = () => {
       title={t('settings.sessionDefaults.section.newSessions')}
       meta={isLoading ? null : (
         <>
-          {t('settings.openchamber.defaults.summaryPrefix')}
+          {t('settings.devryan.defaults.summaryPrefix')}
           {' '}
           <span className="text-foreground">
             {resolvedDefaultAgent ? formatAgentDisplayName(resolvedDefaultAgent) : t('settings.commands.agentSelector.notSelected')}
@@ -200,7 +204,7 @@ const NewSessionDefaults: React.FC = () => {
         <div className="divide-y divide-[var(--interactive-border)]/60">
           <div className="flex flex-col gap-2 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
             <div className="flex min-w-0 flex-col gap-0.5">
-              <span className="typography-ui-label text-foreground">{t('settings.openchamber.defaults.field.defaultAgent')}</span>
+              <span className="typography-ui-label text-foreground">{t('settings.devryan.defaults.field.defaultAgent')}</span>
               <span className="typography-meta text-muted-foreground">{t('settings.sessionDefaults.field.defaultAgentDescription')}</span>
             </div>
             <div className="flex shrink-0 flex-wrap items-center gap-2">
@@ -211,7 +215,7 @@ const NewSessionDefaults: React.FC = () => {
 
           <div className="flex items-start justify-between gap-6 py-2">
             <div className="flex min-w-0 flex-col gap-0.5">
-              <span className="typography-ui-label text-foreground">{t('settings.openchamber.defaults.field.defaultPlanMode')}</span>
+              <span className="typography-ui-label text-foreground">{t('settings.devryan.defaults.field.defaultPlanMode')}</span>
               <span className="typography-meta text-muted-foreground">{t('settings.sessionDefaults.field.planModeDescription')}</span>
             </div>
             <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 pt-0.5">
@@ -219,12 +223,67 @@ const NewSessionDefaults: React.FC = () => {
               <Switch
                 checked={settingsDefaultPlanMode}
                 onCheckedChange={(checked) => handlePlanModeChange(checked)}
-                aria-label={t('settings.openchamber.defaults.field.defaultPlanModeAria')}
+                aria-label={t('settings.devryan.defaults.field.defaultPlanModeAria')}
               />
             </div>
           </div>
         </div>
       )}
+    </SettingsDetailSection>
+  );
+};
+
+export const HelperModelSettings: React.FC = () => {
+  const { t } = useI18n();
+  const principal = useAuthPrincipal();
+  const selection = useConfigStore((state) => state.settingsHelperModelSelection);
+  const providers = useConfigStore((state) => state.providers);
+  const overrideKeys = useConfigStore((state) => state.settingsOverrideKeys);
+  const resetOverride = useConfigStore((state) => state.resetPersonalSettingsOverride);
+  const isPersonal = principal.scope === 'managed' && principal.role !== 'admin';
+  const hasOverride = overrideKeys.includes('helperModelSelection');
+  const [saving, setSaving] = React.useState(false);
+  const chosen = selection ?? DEFAULT_HELPER_MODEL_SELECTION;
+  // The chat pickers' shape; `variant: null` is Default reasoning.
+  const value: ProviderRecoverySelection = { providerId: chosen.providerID, modelId: chosen.modelID, variant: chosen.variant ?? null };
+  const save = async (next: ProviderRecoverySelection) => {
+    if (next.providerId === value.providerId && next.modelId === value.modelId && next.variant === value.variant) return;
+    setSaving(true);
+    try {
+      const helperModelSelection = { providerID: next.providerId, modelID: next.modelId,
+        ...(next.variant ? { variant: next.variant } : {}), revision: createHelperModelRevision() };
+      const persisted = parseHelperModelSelection((await saveDesktopSettingsNow({ helperModelSelection }))?.helperModelSelection);
+      if (!persisted || persisted.providerID !== helperModelSelection.providerID || persisted.modelID !== helperModelSelection.modelID
+        || persisted.variant !== helperModelSelection.variant || persisted.revision !== helperModelSelection.revision) {
+        throw new Error('Helper model save was not acknowledged');
+      }
+      useConfigStore.setState((state) => ({
+        settingsHelperModelSelection: persisted,
+        ...(isPersonal ? { settingsOverrideKeys: [...new Set([...state.settingsOverrideKeys, 'helperModelSelection'])].sort() } : {}),
+      }));
+    } catch {
+      toast.error(t('settings.sessionDefaults.helper.saveFailed'));
+    } finally { setSaving(false); }
+  };
+  const reset = async () => {
+    setSaving(true);
+    try { await resetOverride('helperModelSelection'); }
+    catch { toast.error(t('settings.sessionDefaults.helper.saveFailed')); }
+    finally { setSaving(false); }
+  };
+  return (
+    <SettingsDetailSection title={t('settings.sessionDefaults.helper.title')}>
+      <div data-helper-model-settings="true" className="flex flex-col gap-2 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+        <span className="typography-ui-label text-foreground">{t('settings.sessionDefaults.helper.model')}</span>
+        <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-2">
+          {isPersonal ? <>
+            <SettingsBadge tone={hasOverride ? 'accent' : 'neutral'}>{t(hasOverride ? 'settings.sessionDefaults.badge.personal' : 'settings.sessionDefaults.badge.inherited')}</SettingsBadge>
+            <Button size="xs" variant="outline" disabled={saving || !hasOverride} onClick={() => { void reset(); }}>{t('settings.common.actions.reset')}</Button>
+          </> : null}
+          {/* Same session-free pickers and filtering as the chat input. */}
+          <ControlledModelPicker providers={providers} value={value} disabled={saving} align="end" onChange={(next) => { void save(next); }} />
+        </div>
+      </div>
     </SettingsDetailSection>
   );
 };
@@ -235,6 +294,12 @@ type AgentModelRow = {
   modelLabel: string | null;
 };
 
+// OpenCode built-in helpers that are not worth a row in the summary card.
+const OPENCODE_BUILTIN_AGENT_NAMES = new Set(['general', 'explore']);
+
+const isVisibleSummaryAgent = (agent: Agent): boolean =>
+  !OPENCODE_BUILTIN_AGENT_NAMES.has(agent.name.trim().toLowerCase());
+
 const AgentModelsSummary: React.FC = () => {
   const { t } = useI18n();
   const principal = useAuthPrincipal();
@@ -244,31 +309,36 @@ const AgentModelsSummary: React.FC = () => {
   const setSelectedAgent = useAgentsStore((state) => state.setSelectedAgent);
   const isPersonalEditor = canEditPersonalAgentModels(principal);
 
-  const rows = React.useMemo<AgentModelRow[]>(() => {
+  const buildRows = React.useCallback((agents: Agent[]): AgentModelRow[] => agents.map((agent) => {
+    const selection = resolveAgentDefaultSelection({
+      agentName: agent.name,
+      agents: [agent],
+      providers,
+      personalSelections,
+    });
+    const model = selection
+      ? providers.find((provider) => provider.id === selection.providerId)?.models.find((entry) => entry.id === selection.modelId)
+      : undefined;
+    const modelName = selection ? (model ? getModelDisplayName(model) : selection.modelId) : null;
+    return {
+      agent,
+      selection,
+      modelLabel: modelName ? [modelName, selection?.variant].filter(Boolean).join(' · ') : null,
+    };
+  }), [personalSelections, providers]);
+
+  const groups = React.useMemo(() => {
     // Same agents as the Agents sidebar, so every row opens an editor.
-    const visible = filterVisibleSettingsAgents(filterVisibleAgentSelectorOptions(configAgents));
+    const visible = filterVisibleSettingsAgents(filterVisibleAgentSelectorOptions(configAgents))
+      .filter(isVisibleSummaryAgent);
     const primary = visible.filter((agent) => isPrimaryAgentMode(agent.mode)).sort(compareAgentOptions);
     const subagents = visible
       .filter((agent) => !isPrimaryAgentMode(agent.mode))
       .sort((a, b) => formatAgentDisplayName(a.name).localeCompare(formatAgentDisplayName(b.name)));
-    return [...primary, ...subagents].map((agent) => {
-      const selection = resolveAgentDefaultSelection({
-        agentName: agent.name,
-        agents: [agent],
-        providers,
-        personalSelections,
-      });
-      const model = selection
-        ? providers.find((provider) => provider.id === selection.providerId)?.models.find((entry) => entry.id === selection.modelId)
-        : undefined;
-      const modelName = selection ? (model ? getModelDisplayName(model) : selection.modelId) : null;
-      return {
-        agent,
-        selection,
-        modelLabel: modelName ? [modelName, selection?.variant].filter(Boolean).join(' · ') : null,
-      };
-    });
-  }, [configAgents, personalSelections, providers]);
+    return { primary: buildRows(primary), subagents: buildRows(subagents) };
+  }, [buildRows, configAgents]);
+
+  const rows = [...groups.primary, ...groups.subagents];
 
   const openAgent = React.useCallback((agentName: string) => {
     setSelectedAgent(agentName);
@@ -290,6 +360,40 @@ const AgentModelsSummary: React.FC = () => {
     }
   };
 
+  const renderRow = ({ agent, selection, modelLabel }: AgentModelRow) => {
+    const label = formatAgentDisplayName(agent.name);
+    return (
+      <li key={agent.name}>
+        <button
+          type="button"
+          onClick={() => openAgent(agent.name)}
+          aria-label={t('settings.sessionDefaults.agentModels.openAria', { agent: label })}
+          className="group flex w-full items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/50"
+        >
+          <RiAiAgentLine
+            className="h-3.5 w-3.5 shrink-0"
+            style={{ color: `var(${getAgentIconColor(agent.name).var})` }}
+          />
+          <span className="w-32 shrink-0 truncate typography-ui-label text-foreground sm:w-40">{label}</span>
+          <span className="min-w-0 flex-1 truncate typography-meta text-muted-foreground">
+            {modelLabel ?? t('settings.sessionDefaults.agentModels.defaultModel')}
+          </span>
+          {renderSourceBadge(selection)}
+          <RiArrowRightSLine className="h-4 w-4 shrink-0 text-muted-foreground/60 transition-colors group-hover:text-foreground" />
+        </button>
+      </li>
+    );
+  };
+
+  const renderGroup = (label: string, groupRows: AgentModelRow[]) => groupRows.length > 0 ? (
+    <>
+      <div className="px-3 pt-2 pb-1 typography-micro font-semibold uppercase tracking-[0.08em] text-muted-foreground/80">
+        {label}
+      </div>
+      {groupRows.map(renderRow)}
+    </>
+  ) : null;
+
   return (
     <SettingsDetailSection
       title={t('settings.sessionDefaults.section.agentModels')}
@@ -301,30 +405,8 @@ const AgentModelsSummary: React.FC = () => {
       bodyClassName="px-0 py-1"
     >
       <ul className="divide-y divide-[var(--interactive-border)]/60">
-        {rows.map(({ agent, selection, modelLabel }) => {
-          const label = formatAgentDisplayName(agent.name);
-          return (
-            <li key={agent.name}>
-              <button
-                type="button"
-                onClick={() => openAgent(agent.name)}
-                aria-label={t('settings.sessionDefaults.agentModels.openAria', { agent: label })}
-                className="group flex w-full items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/50"
-              >
-                <RiAiAgentLine
-                  className="h-3.5 w-3.5 shrink-0"
-                  style={{ color: `var(${getAgentIconColor(agent.name).var})` }}
-                />
-                <span className="w-32 shrink-0 truncate typography-ui-label text-foreground sm:w-40">{label}</span>
-                <span className="min-w-0 flex-1 truncate typography-meta text-muted-foreground">
-                  {modelLabel ?? t('settings.sessionDefaults.agentModels.defaultModel')}
-                </span>
-                {renderSourceBadge(selection)}
-                <RiArrowRightSLine className="h-4 w-4 shrink-0 text-muted-foreground/60 transition-colors group-hover:text-foreground" />
-              </button>
-            </li>
-          );
-        })}
+        {renderGroup(t('settings.sessionDefaults.agentModels.group.primary'), groups.primary)}
+        {renderGroup(t('settings.sessionDefaults.agentModels.group.subagents'), groups.subagents)}
       </ul>
     </SettingsDetailSection>
   );
@@ -344,6 +426,8 @@ export const SessionDefaultsPage: React.FC = () => {
       />
       <NewSessionDefaults />
       {canReadAgents ? <AgentModelsSummary /> : null}
+      <HelperModelSettings />
+      <SavedApprovalsSettings />
       <SettingsDetailSection title={t('settings.sessionDefaults.section.cleanup')}>
         <SessionCleanupSettings />
       </SettingsDetailSection>

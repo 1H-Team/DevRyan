@@ -175,7 +175,10 @@ export class ChildStoreManager {
     this.mark(directory)
 
     const shouldBootstrap = options?.bootstrap ?? true
-    if (shouldBootstrap && store.getState().status !== "complete") {
+    const state = store.getState()
+    const failed = state.status === "partial" && (state.bootstrapError || state.sessionListStatus === "error")
+    // Rendering a failed startup must not silently launch another retry loop.
+    if (shouldBootstrap && state.status !== "complete" && !failed) {
       this.onBootstrap?.(directory)
     }
 

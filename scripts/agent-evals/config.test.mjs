@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, test } from 'node:test';
+import { after, describe, test } from 'node:test';
 
 import {
   EVALUATION_CASE_IDS,
@@ -12,10 +12,15 @@ import {
 } from './config.mjs';
 import { discoverScriptTestFiles } from '../test-scripts.mjs';
 
+// Temporary fixtures live under os.tmpdir(), which may be repository-local; remove them afterwards.
+const tempRoots = [];
+const trackTemp = directory => { tempRoots.push(directory); return directory; };
+after(() => { for (const directory of tempRoots) rmSync(directory, { recursive: true, force: true }); });
+
 const repoRoot = path.resolve(new URL('../..', import.meta.url).pathname);
 
 const makeWorkspace = () => {
-  const root = mkdtempSync(path.join(os.tmpdir(), 'devryan-agent-eval-config-'));
+  const root = trackTemp(mkdtempSync(path.join(os.tmpdir(), 'devryan-agent-eval-config-')));
   const fixtureRoot = path.join(root, 'fixture');
   const reportDirectory = path.join(root, 'reports');
   mkdirSync(path.join(fixtureRoot, 'src'), { recursive: true });
@@ -253,6 +258,42 @@ describe('agent evaluation CLI configuration', () => {
         JSON.stringify(patch),
       );
     }
+  });
+
+  test('accepts the runtime pairing factor with a bounded non-inferiority margin', () => {
+    const workspace = makeWorkspace();
+    const config = validConfig(workspace);
+    const pairing = { baselineConfig: 'baseline.json', pairs: 3, factor: 'runtime', targetMetric: 'input' };
+    const validate = (patch) => validateEvaluationConfig({ ...config, pairing: { ...pairing, ...patch } }, { repoRoot: workspace.root }).pairing;
+
+    const defaulted = validate({});
+    assert.equal(defaulted.factor, 'runtime');
+    assert.equal(defaulted.nonInferiorityMargin, 0.1);
+    assert.deepEqual(defaulted.runtimePluginMigrations, []);
+    assert.equal(defaulted.baselineConfig, path.join(workspace.root, 'baseline.json'));
+    assert.equal(Object.isFrozen(defaulted), true);
+    assert.equal(validate({ nonInferiorityMargin: 0 }).nonInferiorityMargin, 0);
+    assert.equal(validate({ nonInferiorityMargin: 1 }).nonInferiorityMargin, 1);
+    assert.equal(validate({ nonInferiorityMargin: 0.25 }).nonInferiorityMargin, 0.25);
+
+    for (const margin of [-0.01, 1.01, Number.NaN, Number.POSITIVE_INFINITY, '0.1', null]) {
+      assert.throws(() => validate({ nonInferiorityMargin: margin }), /pairing\.nonInferiorityMargin/, String(margin));
+    }
+    for (const factor of ['readOverlap', 'role']) {
+      assert.equal('nonInferiorityMargin' in validate({ factor }), false, factor);
+      assert.throws(() => validate({ factor, nonInferiorityMargin: 0.1 }), /only valid with factor runtime/, factor);
+    }
+    assert.throws(() => validate({ factor: 'runtimeVersion' }), /Invalid paired live comparison/);
+    const migration = { name: 'custom-plugin', baselineHash: 'a'.repeat(64), candidateHash: 'b'.repeat(64) };
+    const configured = validate({ runtimePluginMigrations: [migration] });
+    assert.deepEqual(configured.runtimePluginMigrations, [migration]);
+    assert.ok(Object.isFrozen(configured.runtimePluginMigrations) && Object.isFrozen(configured.runtimePluginMigrations[0]));
+    for (const migrations of [null, {}, [migration, migration], [{ ...migration, name: '' }], [{ ...migration, name: ' custom-plugin' }],
+      [{ ...migration, baselineHash: '*' }], [{ ...migration, candidateHash: migration.baselineHash }], [{ ...migration, extra: true }],
+      [{ name: migration.name, baselineHash: migration.baselineHash }]]) {
+      assert.throws(() => validate({ runtimePluginMigrations: migrations }), /runtimePluginMigrations/);
+    }
+    assert.throws(() => validate({ factor: 'role', runtimePluginMigrations: [] }), /only valid with factor runtime/);
   });
 
   test('keeps the report directory outside the fixture and wires the root script', () => {

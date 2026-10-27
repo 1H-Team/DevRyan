@@ -10,12 +10,6 @@ export interface RuntimeDescriptor {
   label?: string;
 }
 
-export interface ApiError {
-  message: string;
-  code?: string;
-  cause?: unknown;
-}
-
 export interface Subscription {
 
   close: () => void;
@@ -87,7 +81,13 @@ export interface ForceKillOptions {
   cwd?: string;
 }
 
+export type TerminalCapabilities = Readonly<
+  { available: true; code: null }
+  | { available: false; code: 'terminal_platform_unsupported' }
+>;
+
 export interface TerminalAPI {
+  getCapabilities?(): Promise<TerminalCapabilities>;
   createSession(options: CreateTerminalOptions): Promise<TerminalSession>;
   connect(sessionId: string, handlers: TerminalHandlers, options?: TerminalStreamOptions): Subscription;
   sendInput(sessionId: string, input: string): Promise<void>;
@@ -197,9 +197,20 @@ export interface GitPushResult {
     local: string;
     remote: string;
   }>;
+  /** Porcelain `!` rows; a rejected push fails with GIT_PUSH_REJECTED instead. */
+  rejected?: Array<{
+    local: string;
+    remote: string;
+  }>;
   repo: string;
   ref: unknown;
 }
+
+export type GitPushOptions = {
+  remote?: string;
+  branch?: string;
+  options?: string[] | Record<string, unknown>;
+};
 
 export interface GitPullResult {
   success: boolean;
@@ -494,6 +505,10 @@ export interface GeneratedCommitMessage {
   subject: string;
   highlights: string[];
   files?: string[];
+  source?: string;
+  selectionMode?: 'configured' | 'active';
+  model?: string | null;
+  warnings?: string[];
 }
 
 export interface GitCommitMessageFileContext {
@@ -519,12 +534,14 @@ export interface GitCommitMessageContext {
 }
 
 export interface GenerateGitCommitMessageRequest {
+  sessionID?: string;
   context: GitCommitMessageContext;
   guidance?: string;
   zenModel?: string;
 }
 
 export interface GenerateGitCommitMessageDraftRequest {
+  sessionID?: string;
   selectedFiles: string[];
   stagedOnly?: boolean;
   guidance?: string;
@@ -536,11 +553,18 @@ export interface GeneratedCommitWorkflowResult {
   commits: GeneratedCommitMessage[];
   message?: string;
   warnings?: string[];
+  source?: string;
+  selectionMode?: 'configured' | 'active';
+  model?: string | null;
 }
 
 export interface GeneratedPullRequestDescription {
   title: string;
   body: string;
+  source?: 'zen' | 'helper_model' | 'session_model';
+  selectionMode?: 'configured' | 'active';
+  model?: string | null;
+  attempts?: Array<{ tier: string; model: string | null; reason: string | null; durationMs?: number }>;
 }
 
 export interface GitWorktreeAPI {
@@ -579,7 +603,7 @@ export interface GitAPI {
   ): Promise<GeneratedCommitWorkflowResult>;
   generatePullRequestDescription(
     directory: string,
-    payload: { base: string; head: string; context?: string; prompt?: string }
+    payload: { base: string; head: string; context?: string; prompt?: string; sessionID?: string }
   ): Promise<GeneratedPullRequestDescription>;
   listGitWorktrees(directory: string): Promise<GitWorktreeInfo[]>;
   getPrimaryWorktreeRoot?(directory: string): Promise<string>;
@@ -592,7 +616,7 @@ export interface GitAPI {
   retryGitWorktreeBootstrapOperation?(operationId: string): Promise<GitWorktreeBootstrapStatus>;
   deleteGitWorktree?(directory: string, payload: RemoveGitWorktreePayload): Promise<{ success: boolean; removedPath?: string }>;
   createGitCommit(directory: string, message: string, options?: CreateGitCommitOptions): Promise<GitCommitResult>;
-  gitPush(directory: string, options?: { remote?: string; branch?: string; options?: string[] | Record<string, unknown> }): Promise<GitPushResult>;
+  gitPush(directory: string, options?: GitPushOptions): Promise<GitPushResult>;
   gitPull(directory: string, options?: GitPullOptions): Promise<GitPullResult>;
   gitFetch(directory: string, options?: { remote?: string; branch?: string }): Promise<{ success: boolean }>;
   listGitStashes(directory: string): Promise<{ stashes: GitStashEntry[] }>;
@@ -733,6 +757,18 @@ export interface FilesAPI {
   downloadFile?(path: string, options?: FileReadOptions): Promise<void>;
 }
 
+export interface SessionPlanSourceIdentity {
+  sessionID: string;
+  sourceMessageID: string;
+  rootUserMessageID: string;
+  memberUserMessageIDs: string[];
+  memberAssistantMessageIDs: string[];
+  currentSourceMessageID: string;
+  successful: true;
+  settled: true;
+  current: boolean;
+}
+
 export interface SessionPlanRevisionIdentity {
   sessionId: string;
   sourceMessageId: string;
@@ -750,9 +786,9 @@ export interface SessionPlanRevisionUpdate extends SessionPlanRevisionWrite {
 }
 
 export interface SessionPlansAPI {
-  ensureRevision(input: SessionPlanRevisionWrite): Promise<{ path: string; created: boolean; version: string }>;
-  readRevision(input: SessionPlanRevisionIdentity): Promise<{ path: string; content: string; version: string }>;
-  updateRevision(input: SessionPlanRevisionUpdate): Promise<{ path: string; saved: boolean; version: string }>;
+  ensureRevision(input: SessionPlanRevisionWrite): Promise<{ path: string; created: boolean; version: string; sourceIdentity?: SessionPlanSourceIdentity; content?: string }>;
+  readRevision(input: SessionPlanRevisionIdentity): Promise<{ path: string; content: string; version: string; sourceIdentity?: SessionPlanSourceIdentity }>;
+  updateRevision(input: SessionPlanRevisionUpdate): Promise<{ path: string; saved: boolean; version: string; sourceIdentity?: SessionPlanSourceIdentity; content?: string }>;
 }
 
 export interface ProjectEntry {
@@ -903,96 +939,11 @@ export interface DiagnosticsExportResult {
 
 export type DiagnosticsClearRange = '24h' | '7d' | '14d' | 'all';
 
-// OpenCode database maintenance (Settings → Data Retention → OpenCode Storage).
-// Served by `GET /api/storage/opencode-db` / `POST /api/storage/opencode-db/compact`.
-export type OpenCodeStorageVacuumReason =
-  | 'not_evaluated'
-  | 'not_requested'
-  | 'other_opencode_process'
-  | 'free_disk_unknown'
-  | 'insufficient_free_disk'
-  | 'forced'
-  | 'freelist_above_threshold'
-  | 'freelist_below_threshold'
-  | 'time_budget_exhausted';
-
-export interface OpenCodeStorageSnapshot {
-  dbBytes: number;
-  walBytes: number;
-  pageSize: number;
-  pageCount: number;
-  freelistPages: number;
-  reclaimableBytes: number;
-  eventRows: number;
-}
-
-export interface OpenCodeStorageRunSummary {
-  at: number;
-  reason: string;
-  dryRun: boolean;
-  status: 'ok' | 'skipped' | 'error';
-  schema?: 'ok' | 'mismatch' | 'unknown';
-  driver?: string | null;
-  durationMs: number;
-  deletedEvents: number;
-  deletedOrphanEvents: number;
-  deletedOrphanSequences: number;
-  prunedEvents: number;
-  prunedSessions: number;
-  candidateSessions: number;
-  orphanEvents: number;
-  prunableEvents: number;
-  partial: boolean;
-  vacuum: { requested: 'never' | 'auto' | 'force'; decided: boolean; reason: OpenCodeStorageVacuumReason } | null;
-  vacuumed: boolean;
-  vacuumDurationMs: number;
-  before: OpenCodeStorageSnapshot | null;
-  after: OpenCodeStorageSnapshot | null;
-  error: string | null;
-}
-
-export interface OpenCodeStorageMaintenanceSettings {
-  enabled: boolean;
-  idleHours: number;
-  keepSeqPerAggregate: number;
-}
-
-export interface OpenCodeStorageStatus {
-  dbPath: string;
-  exists: boolean;
-  schema: 'ok' | 'mismatch' | 'unknown';
-  dbBytes: number;
-  walBytes: number;
-  reclaimableBytes: number;
-  pageSize: number;
-  pageCount: number;
-  freelistPages: number;
-  eventRows: number;
-  orphanEventRows: number;
-  error: string | null;
-  lastRun: OpenCodeStorageRunSummary | null;
-  lastDryRun: OpenCodeStorageRunSummary | null;
-  running: boolean;
-  maintenance: OpenCodeStorageMaintenanceSettings;
-  managedRuntime: boolean;
-  compactionPending: boolean;
-}
-
-export interface OpenCodeStorageCompactResult {
-  scheduled?: boolean;
-  pending?: boolean;
-  dryRun?: boolean;
-  run?: OpenCodeStorageRunSummary;
-}
-
 export interface DiagnosticsAPI {
   getStatus(): Promise<DiagnosticsStatus>;
   export(scope: DiagnosticsExportScope): Promise<DiagnosticsExportResult>;
   sanitizeText(text: string): Promise<string>;
   clear(range?: DiagnosticsClearRange): Promise<DiagnosticsStatus>;
-  // Optional: only the web/Electron runtime serves OpenCode storage maintenance.
-  getOpenCodeStorage?(): Promise<OpenCodeStorageStatus>;
-  compactOpenCodeStorage?(options?: { dryRun?: boolean }): Promise<OpenCodeStorageCompactResult>;
 }
 
 export interface EvidenceProjectSetting {
@@ -1526,17 +1477,13 @@ export interface RuntimeAPIs {
   worktrees?: WorktreeMetadata[];
 }
 
-export type RuntimeAPISelector<TValue> = (apis: RuntimeAPIs) => TValue;
-
 // ============== Plugins Types ==============
 
 export type PluginScope = 'user' | 'project';
 export type PluginParsedKind = 'npm' | 'path';
 export type DevRyanDefaultPluginId =
   | '@rama_nigg/open-cursor'
-  | 'oh-my-opencode-slim'
   | 'opencode-with-claude'
-  | 'superpowers'
   | 'openai-tool-schema-sanitizer';
 
 export interface DevRyanDefaultPlugin {
@@ -1584,41 +1531,6 @@ export interface PluginsListResponse {
   entries: PluginEntry[];
   files: PluginFile[];
   errors: PluginConfigError[];
-}
-
-export interface SlimSetupIssue {
-  code: string;
-  message: string;
-}
-
-export interface SlimWrapperStatus {
-  configured: boolean;
-  wrapperRegistered: boolean;
-  wrapperFileExists: boolean;
-  rawRegistered: boolean;
-  path: string;
-  spec: string;
-}
-
-export interface SlimSetupStatus {
-  ok?: boolean;
-  installedVersion: string | null;
-  configDirectory?: string;
-  configPath?: string;
-  slimConfigPath?: string;
-  wrapperPath?: string;
-  packageJsonPath?: string;
-  runtimeEnabled: boolean;
-  wrapperConfigured: boolean;
-  wrapperStatus?: SlimWrapperStatus;
-  packageDependencyInstalled: boolean;
-  slimConfigExists?: boolean;
-  backgroundSubagentsEnv?: string;
-  changedFiles?: string[];
-  backupPaths?: string[];
-  issues: SlimSetupIssue[];
-  repair?: boolean;
-  reload?: unknown;
 }
 
 // ============== Skills Catalog Types ==============

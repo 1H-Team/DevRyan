@@ -191,11 +191,11 @@ export const useOpenInAppsStore = create<OpenInAppsState>()((set, get) => ({
       applyInstalledApps(detail);
     };
 
-    window.addEventListener('openchamber:settings-synced', settingsHandler);
-    window.addEventListener('openchamber:app-ready', appReadyHandler);
-    window.addEventListener('openchamber:installed-apps-updated', updateHandler);
+    window.addEventListener('devryan:settings-synced', settingsHandler);
+    window.addEventListener('devryan:app-ready', appReadyHandler);
+    window.addEventListener('devryan:installed-apps-updated', updateHandler);
 
-    const appReady = (window as unknown as { __openchamberAppReady?: boolean }).__openchamberAppReady;
+    const appReady = (window as unknown as { __devryanAppReady?: boolean }).__devryanAppReady;
     if (appReady) {
       void loadInstalledApps();
     }

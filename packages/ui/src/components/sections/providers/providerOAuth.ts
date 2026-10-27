@@ -39,6 +39,7 @@ export type ProviderOAuthFetch = (
 interface ProviderCatalogEntry {
   id?: unknown;
   models?: unknown;
+  authType?: unknown;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -92,28 +93,43 @@ export const requestProviderOAuthCallback = async ({
   code,
   fallbackError,
   fetchImpl = fetch,
+  signal,
 }: {
   providerId: string;
   methodIndex: number;
   code?: string;
   fallbackError: string;
+  signal?: AbortSignal;
   fetchImpl?: ProviderOAuthFetch;
 }): Promise<void> => {
   const normalizedCode = code?.trim();
   const body: { method: number; code?: string } = { method: methodIndex };
   if (normalizedCode) body.code = normalizedCode;
 
-  const response = await fetchImpl(
-    `/api/provider/${encodeURIComponent(providerId)}/oauth/callback`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    },
-  );
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error(getProviderOAuthErrorMessage(payload, fallbackError));
+  for (;;) {
+    signal?.throwIfAborted();
+    const response = await fetchImpl(
+      `/api/provider/${encodeURIComponent(providerId)}/oauth/callback`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-DevRyan-CSRF': '1' },
+        signal,
+        body: JSON.stringify(body),
+      },
+    );
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new Error(getProviderOAuthErrorMessage(payload, fallbackError));
+    }
+    signal?.throwIfAborted();
+    const status = unwrapPayload(payload).status;
+    if (status === 'failed' || status === 'expired') throw new Error(fallbackError);
+    if (status !== 'pending') return;
+    await new Promise<void>((resolve, reject) => {
+      const abort = () => { clearTimeout(timer); reject(signal?.reason); };
+      const timer = setTimeout(() => { signal?.removeEventListener('abort', abort); resolve(); }, 1500);
+      signal?.addEventListener('abort', abort, { once: true });
+    });
   }
 };
 
@@ -157,3 +173,10 @@ export const providerCatalogHasModels = (
   && Array.isArray(provider.models)
   && provider.models.length > 0
 )) === true;
+
+export const providerCatalogHasOpenAiPlanModels = (
+  providers: readonly ProviderCatalogEntry[] | null | undefined,
+): boolean => providers?.some(provider => provider.id === 'openai'
+  && provider.authType === 'oauth'
+  && Array.isArray(provider.models)
+  && provider.models.some((model: unknown) => isRecord(model) && model.available !== false)) === true;

@@ -1,8 +1,41 @@
-import { describe, expect, test } from 'bun:test';
+import { beforeEach, afterEach, describe, expect, test } from 'bun:test';
+
+import { opencodeClient } from './opencode/client';
+let releaseGate: (() => void) | undefined;
+beforeEach(() => { releaseGate = opencodeClient.registerInputSubscriptionGate(async () => () => {}); });
+afterEach(() => releaseGate?.());
 
 import { createManagedOrchestrationApi, ManagedOrchestrationApiError } from './orchestrationApi';
 
 describe('managed orchestration API', () => {
+  test('waiver sends exact current file hashes and reason through the authenticated UI route', async () => {
+    let request: { url: string; init?: RequestInit } | undefined;
+    const api = createManagedOrchestrationApi({ fetchImpl: async (input, init) => {
+      request = { url: String(input), init };
+      return Response.json({ taskId: 'dvr_task_check' });
+    } });
+    const body = { rootSessionId: 'ses_root', directory: '/workspace',
+      checks: [{ name: 'Populated cards', contentHash: 'a'.repeat(64) }], reason: 'Accept fixture coverage for this change' };
+    await api.waiveVerification?.('dvr_task_check/unsafe', body);
+    expect(request?.url).toBe('/api/orchestration/task/dvr_task_check%2Funsafe/verification/waive');
+    expect(JSON.parse(String(request?.init?.body))).toEqual(body);
+    expect(new Headers(request?.init?.headers).get('X-DevRyan-CSRF')).toBe('1');
+    expect(request?.init?.credentials).toBe('same-origin');
+  });
+  test('reads and waives root objective checks through scoped UI routes', async () => {
+    const requests: Array<{ url: string; init?: RequestInit }> = [];
+    const api = createManagedOrchestrationApi({ fetchImpl: async (input, init) => {
+      requests.push({ url: String(input), init }); return Response.json({});
+    } });
+    const scope = { rootSessionId: 'ses_root', directory: '/project with spaces' };
+    const body = { ...scope, objectiveId: 'msg_user', checks: [{ name: 'unit', contentHash: 'a'.repeat(64) }], reason: 'accepted' };
+    await api.getObjectiveVerification?.(scope); await api.waiveObjectiveVerification?.(body);
+    expect(requests[0]?.url).toBe('/api/orchestration/objective/verification?rootSessionId=ses_root&directory=%2Fproject+with+spaces');
+    expect(requests[1]?.url).toBe('/api/orchestration/objective/verification/waive');
+    expect(JSON.parse(String(requests[1]?.init?.body))).toEqual(body);
+    expect(new Headers(requests[1]?.init?.headers).get('X-DevRyan-CSRF')).toBe('1');
+    expect(requests.map(request => request.init?.credentials)).toEqual(['same-origin', 'same-origin']);
+  });
   test('preserves authoritative status, code, and message', async () => {
     const api = createManagedOrchestrationApi({
       fetchImpl: async () => Response.json({
@@ -200,4 +233,41 @@ describe('managed orchestration API', () => {
       },
     });
   });
+});
+
+test('recovery intent waits across SSE readiness, revalidates once and never retries an uncertain POST', async () => {
+  let ready: (() => void) | undefined;
+  const waiting = new Promise<void>(resolve => { ready = resolve; });
+  let gateTimeout: number | undefined, rechecks = 0, posts = 0;
+  const unregister = opencodeClient.registerInputSubscriptionGate(async (_signal, timeout) => { gateTimeout = timeout; await waiting; return () => {}; });
+  try {
+    const api = createManagedOrchestrationApi({ fetchImpl: async () => { posts++; throw new TypeError('connection lost after send'); } });
+    const operation = api.acknowledgeTask('task', { rootSessionId: 'root', action: 'retry_in_place', idempotencyKey: 'same-intent' }, { signal: new AbortController().signal, beforeSend: () => { rechecks++; } });
+    await Promise.resolve();
+    expect(posts).toBe(0);
+    expect(gateTimeout).toBe(Infinity);
+    ready?.();
+    await expect(operation).rejects.toThrow('connection lost');
+    expect(posts).toBe(1);
+    expect(rechecks).toBe(1);
+  } finally { unregister(); }
+});
+
+test('cancelled recovery and stale revision checks cannot POST after SSE readiness returns', async () => {
+  for (const cancel of [true, false]) {
+    let ready: (() => void) | undefined;
+    const waiting = new Promise<void>(resolve => { ready = resolve; });
+    const controller = new AbortController();
+    let posts = 0;
+    const unregister = opencodeClient.registerInputSubscriptionGate(async () => { await waiting; return () => {}; });
+    try {
+      const api = createManagedOrchestrationApi({ fetchImpl: async () => { posts++; return Response.json({}); } });
+      const operation = api.acknowledgeTask('task', { rootSessionId: 'root', action: 'retry', idempotencyKey: 'same-intent' }, { signal: controller.signal,
+        beforeSend: () => { throw new Error('revision changed'); } });
+      if (cancel) controller.abort();
+      ready?.();
+      await expect(operation).rejects.toThrow(cancel ? 'cancelled' : 'revision changed');
+      expect(posts).toBe(0);
+    } finally { unregister(); }
+  }
 });

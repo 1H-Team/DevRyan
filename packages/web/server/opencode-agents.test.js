@@ -20,13 +20,13 @@ const originalOpencodeConfigDir = process.env.OPENCODE_CONFIG_DIR;
 let isolatedOpencodeConfigDir;
 
 const makeTempProject = async () => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-agents-'));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-agents-'));
   await fs.mkdir(path.join(directory, '.opencode', 'agents'), { recursive: true });
   return directory;
 };
 
 beforeEach(async () => {
-  isolatedOpencodeConfigDir = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-opencode-config-'));
+  isolatedOpencodeConfigDir = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-opencode-config-'));
   process.env.OPENCODE_CONFIG_DIR = isolatedOpencodeConfigDir;
 });
 
@@ -100,7 +100,7 @@ describe('OpenCode agent model normalization', () => {
   });
 
   it('reads packaged model metadata without user config sync', () => {
-    userConfigPath = path.join(os.tmpdir(), `openchamber-agents-${Date.now()}-config.json`);
+    userConfigPath = path.join(os.tmpdir(), `devryan-agents-${Date.now()}-config.json`);
     const result = getAgentConfig('council', null, { userConfigPath });
 
     expect(result.scope).toBe('packaged');
@@ -140,7 +140,7 @@ describe('OpenCode config agent listing', () => {
 
   it('ignores user-global agents even when a matching directory is passed', async () => {
     projectDirectory = await makeTempProject();
-    userAgentDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-user-agents-'));
+    userAgentDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-user-agents-'));
     await fs.writeFile(path.join(userAgentDirectory, 'user-only-test-agent.md'), [
       '---',
       'mode: primary',
@@ -256,7 +256,7 @@ describe('OpenCode user agent model overrides', () => {
 
   beforeEach(async () => {
     projectDirectory = await makeTempProject();
-    userConfigDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-user-agent-overrides-'));
+    userConfigDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-user-agent-overrides-'));
     userConfigPath = path.join(userConfigDirectory, 'config.json');
   });
 
@@ -328,7 +328,9 @@ describe('OpenCode user agent model overrides', () => {
 
     expect(result.config.model).toEqual({ providerID: 'openai', modelID: 'gpt-5.5' });
     expect(result.config.variant).toBeUndefined();
-    expect(result.config.overrides.variant).toBe(true);
+    // DevRyan roles route through the built-in agent orchestration config: a
+    // root model override clears the inherited variant without a variant entry.
+    expect(result.config.overrides.model).toBe(true);
   });
 
   it('rejects user overrides that try to mutate inherited agent fields', () => {
@@ -359,15 +361,13 @@ describe('OpenCode user agent model overrides', () => {
       variant: 'low',
     }, projectDirectory, { userConfigPath });
 
-    const deleted = deleteAgentModelOverride('builder', { userConfigPath });
-    const overrides = listAgentModelOverrides({ userConfigPath });
+    const deleted = deleteAgentModelOverride('builder', { userConfigPath, workingDirectory: projectDirectory });
 
     expect(deleted).toBe(true);
-    expect(overrides.builder).toBeUndefined();
-    expect(overrides.designer).toEqual({
-      model: 'opencode-go/glm-5.1',
-      variant: 'low',
-    });
+    expect(getAgentConfig('builder', projectDirectory, { userConfigPath }).config.overrides.model).toBe(false);
+    const designer = getAgentConfig('designer', projectDirectory, { userConfigPath }).config;
+    expect(designer.model).toEqual({ providerID: 'opencode-go', modelID: 'glm-5.1' });
+    expect(designer.variant).toBe('low');
   });
 
   it('retains stale overrides on disk but excludes them from runtime agent listings', async () => {
@@ -427,7 +427,7 @@ describe('OpenCode user agent model overrides', () => {
   });
 });
 
-describe('Packaged OpenChamber agents', () => {
+describe('Packaged DevRyan agents', () => {
   it('discovers the packaged primary and subagents', () => {
     const agents = listPackagedAgents();
 
@@ -493,7 +493,7 @@ describe('Packaged OpenChamber agents', () => {
     expect(orchestrator?.prompt).toContain('Need:');
     expect(orchestrator?.prompt).toContain('Avoid:');
     expect(orchestrator?.prompt).toContain('Goal:');
-    expect(orchestrator?.prompt).toContain('**Explorer-first discovery.**');
+    expect(orchestrator?.prompt).toContain('**Evidence-driven discovery.**');
   });
 
   it('instructs Orchestrator to stop after plan-only responses without asking to implement', () => {
@@ -528,14 +528,14 @@ describe('Packaged OpenChamber agents', () => {
   it('keeps Orchestrator question-first for unresolved user-answerable ambiguity', () => {
     const orchestrator = listPackagedAgents().find((agent) => agent.name === 'orchestrator');
 
-    expect(orchestrator?.prompt).toContain('Inspect repository and system facts that could resolve uncertainty before asking.');
+    expect(orchestrator?.prompt).toContain('Ask unresolved user-owned questions early, before dependent work.');
     expect(orchestrator?.prompt).toContain('unresolved user-owned intent, requirements, preferences, or choices would materially change');
     expect(orchestrator?.prompt).toContain('even when work is not otherwise blocked');
     expect(orchestrator?.prompt).toContain('Infer only trivial, reversible implementation details');
     expect(orchestrator?.prompt).not.toContain('Clarify intent before consequential choices.');
-    expect(orchestrator?.prompt).toContain('Do not build long speculative option trees');
-    expect(orchestrator?.prompt).toContain('Do not re-litigate settled decisions');
-    expect(orchestrator?.prompt).toContain('Pick exactly one next action: ask, inspect, delegate, implement, verify, or finish.');
+    expect(orchestrator?.prompt).toContain('Do not speculate about missing answers');
+    expect(orchestrator?.prompt).toContain('or reopen settled choices');
+    expect(orchestrator?.prompt).toContain('Sequence only actual dependencies.');
   });
 
   it('continues permitted work after managed results through one continuation owner', () => {
@@ -543,7 +543,7 @@ describe('Packaged OpenChamber agents', () => {
 
     expect(orchestrator?.prompt).toContain('After a managed `devryan_task` result returns, reconcile its evidence and the active todo, disposition the result, and continue the next permitted action.');
     expect(orchestrator?.prompt).toContain('Do not stop after a completed subagent result while actionable work remains.');
-    expect(orchestrator?.prompt).toContain('DevRyan owns automatic continuation and recovery.');
+    expect(orchestrator?.prompt).toContain('DevRyan owns automatic recovery and continuation.');
     expect(orchestrator?.prompt).toContain('Do not enable another continuation loop or use provider-native task tools to bypass managed state.');
     expect(orchestrator?.prompt).not.toContain('enable `auto_continue`');
     expect(orchestrator?.prompt).toContain("A synthetic wake delivers existing work; it does not expand the user's authorization or reset retry budgets.");
@@ -560,7 +560,7 @@ describe('Packaged OpenChamber agents', () => {
     expect(orchestrator?.prompt).toContain('retain the backlog in the parent and dispatch bounded waves');
     expect(orchestrator?.prompt).toContain('must not expand the active child');
     expect(orchestrator?.prompt).not.toContain('use at least 3,600 seconds for multi-file implementation plus tests');
-    expect(orchestrator?.prompt).toContain('Never lengthen a deadline merely because an implementation spans multiple files or tests');
+    expect(orchestrator?.prompt).toContain('Lengthen it only for one inherently indivisible operation with fixed targets and acceptance checks; decompose broad work.');
 
     expect(fixer?.prompt).toContain('Closed-Scope Execution');
     expect(fixer?.prompt).toContain('Treat outcomes such as "fix all remaining failures"');
@@ -574,13 +574,15 @@ describe('Packaged OpenChamber agents', () => {
     const orchestrator = listPackagedAgents().find((agent) => agent.name === 'orchestrator');
 
     expect(orchestrator?.prompt).toContain('Parallel delegation readiness gate');
-    expect(orchestrator?.prompt).toContain('DevRyan does not cap managed launches: start every justified independent child without artificial slot limits or oversized assignments.');
+    expect(orchestrator?.prompt).toContain('Start every independent specialist needed by the task in the same dispatch: issue every independent `devryan_task` start as parallel tool calls in the same assistant message.');
+    expect(orchestrator?.prompt).toContain('DevRyan does not impose an artificial managed concurrency cap, so do not serialize or batch work around a fixed slot count.');
+    expect(orchestrator?.prompt).toContain('Keep each brief bounded; follow the managed launch rule above.');
     expect(orchestrator?.prompt).toContain('Use parallel agents only when tasks are independently useful and target disjoint files or subsystems.');
     expect(orchestrator?.prompt).toContain('If tasks overlap files, share mutable state, or depend on earlier findings, sequence those dependencies.');
     expect(orchestrator?.prompt).toContain('Give a single coherent change to one owning specialist instead of splitting it.');
     expect(orchestrator?.prompt).not.toContain('Solve a small coherent change directly');
     expect(orchestrator?.prompt).not.toContain('at most 3');
-    expect(orchestrator?.prompt).toContain('Treat provider/tool crashes, missing terminal status markers, or repeated progress-only output as a blocked subtask.');
+    expect(orchestrator?.prompt).toContain('Missing terminal markers and progress-only output are incomplete: continue capable work with its existing scope and evidence instead of declaring success or a blocker.');
     expect(orchestrator?.prompt).toContain('Continue reconciling other returned subtasks instead of waiting indefinitely for the failed branch.');
   });
 
@@ -608,7 +610,7 @@ describe('Packaged OpenChamber agents', () => {
       const agent = agents.find((candidate) => candidate.name === agentName);
       expect(agent?.prompt).toContain('Runtime Failure Discipline');
       expect(agent?.prompt).toContain('On unrecoverable provider/tool errors, return a final `**Status:** blocked` line with a concise reason.');
-      expect(agent?.prompt).toContain('Avoid repeated progress-only messages such as "continuing" or "implementing" without a terminal status marker.');
+      expect(agent?.prompt).toContain(agentName === 'council' ? 'Avoid repeated progress-only messages such as "continuing" or "implementing" without a terminal status marker.' : 'Continue capable incomplete work; blockers need external prerequisites.');
       expect(agent?.prompt).toContain('Do not retry the same failing runtime operation more than once.');
     }
   });
@@ -624,10 +626,9 @@ describe('Packaged OpenChamber agents', () => {
     const orchestrator = listPackagedAgents().find((agent) => agent.name === 'orchestrator');
 
     expect(orchestrator?.prompt).toContain('Git Command Boundary');
-    expect(orchestrator?.prompt).toContain('Do not run git commands as a default finalization or safety routine.');
-    expect(orchestrator?.prompt).toContain('Only run git commands when the user explicitly asks for git work');
-    expect(orchestrator?.prompt).toContain('git status');
-    expect(orchestrator?.prompt).toContain('git diff');
+    expect(orchestrator?.prompt).toContain('Run git/GitHub commands only for explicit or inherent git work');
+    expect(orchestrator?.prompt).toContain('never routine finalization or edit tracking');
+    expect(orchestrator?.prompt).toContain('Track your own edits from tool use');
   });
 
   it('keeps routine git checks out of packaged subagent completion unless requested', () => {
@@ -643,6 +644,10 @@ describe('Packaged OpenChamber agents', () => {
 
     for (const agent of subagents) {
       expect(agent.prompt).toContain('Git Command Boundary');
+      if (agent.name === 'librarian') {
+        expect(agent.prompt).toContain('No git commands; this research assignment changes no local files.');
+        continue;
+      }
       expect(agent.prompt).toContain('Do not run git commands as a default finalization or safety routine.');
       expect(agent.prompt).toContain('Do not use `git status`, `git diff`, `git diff --stat`, or `git diff --check` to determine whether you made edits.');
       expect(agent.prompt).toContain('If you did not use an edit, write, or patch tool in this turn, report that no code changes were made without checking git.');
@@ -674,14 +679,17 @@ describe('Packaged OpenChamber agents', () => {
     expect(designer?.prompt).toContain('Do not author design plans, propose alternate directions, or take standalone review assignments.');
     expect(fixer?.prompt).toContain('frontend data/state/logic and component correctness');
     expect(fixer?.prompt).toContain('make no design edits and return a final `**Status:** blocked` line');
-    expect(orchestrator?.prompt).toContain('Subagent prompt templates');
+    expect(orchestrator?.prompt).toContain('<Subagent Prompt Template>');
+    expect(orchestrator?.prompt).toContain('Include objective, evidence, ownership, dependencies, exclusions, outcome, and acceptance checks.');
+    expect(orchestrator?.prompt).toContain("State sibling ownership and the shared interface contract; tell parallel workers they are not alone and to preserve others' changes.");
     expect(orchestrator?.prompt).toContain('structured question tool');
     expect(orchestrator?.prompt).toContain('Skill announcements are tool activity only');
     expect(orchestrator?.prompt).toContain('do not write assistant text to announce skill use');
     expect(orchestrator?.prompt).toContain('**Visible reasoning rule.**');
-    expect(orchestrator?.prompt).toContain('Honor the DevRyan rationale-display reminder captured in the first user turn');
-    expect(orchestrator?.prompt).toContain('Explain why instead of merely repeating the tool action');
-    expect(orchestrator?.prompt).toContain('Never expose or claim to expose private chain-of-thought');
+    expect(orchestrator?.prompt).toContain('Before the first tool call, briefly state the outcome, distinct concerns, evidence gaps and selected ownership.');
+    expect(orchestrator?.prompt).toContain('Honor the first-turn DevRyan rationale reminder');
+    expect(orchestrator?.prompt).toContain('Explain purpose without restating tool activity');
+    expect(orchestrator?.prompt).toContain('Never invent findings or expose private chain-of-thought');
     expect(orchestrator?.prompt).toContain('If the user skips a question, continue with best judgment and explicitly state the assumption.');
     expect(orchestrator?.frontmatter.permission.skill).toBe('allow');
     expect(orchestrator?.frontmatter.permission).toMatchObject({
@@ -692,7 +700,10 @@ describe('Packaged OpenChamber agents', () => {
     });
 
     for (const agent of [orchestrator, builder, fixer, designer, explorer, oracle, librarian, plan]) {
-      expect(agent?.prompt).toContain('structured question tool');
+      if (agent?.name === 'explorer') {
+        expect(agent.prompt).toContain('return `**Status:** blocked` with the missing scope or access');
+        expect(agent.prompt).not.toContain('structured question tool');
+      } else expect(agent?.prompt).toContain('structured question tool');
       expect(agent?.prompt).not.toContain('Skill to use:');
       expect(agent?.prompt).not.toContain('Skills to use:');
       expect(agent?.prompt).not.toContain('Skill plan:');
@@ -735,12 +746,12 @@ describe('Packaged OpenChamber agents', () => {
     const council = listPackagedAgents().find((agent) => agent.name === 'council');
 
     expect(council?.frontmatter.councillors).toEqual([
-      { model: 'openai/gpt-5.5', variant: 'medium' },
+      { model: 'openai/gpt-6.1-sol', variant: 'medium' },
       { model: 'opencode/claude-opus-4-5' },
       { model: 'opencode/deepseek-v4-flash' },
     ]);
     expect(council?.frontmatter.modelRefs).toEqual([
-      'openai/gpt-5.5',
+      'openai/gpt-6.1-sol',
       'opencode/claude-opus-4-5',
       'opencode/deepseek-v4-flash',
     ]);
@@ -791,7 +802,7 @@ describe('OpenCode config agent routes', () => {
 
   it('lists, writes, and deletes user agent model overrides', async () => {
     projectDirectory = await makeTempProject();
-    const userConfigDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-route-overrides-'));
+    const userConfigDirectory = await fs.mkdtemp(path.join(isolatedOpencodeConfigDir, 'route-overrides-'));
     const userConfigPath = path.join(userConfigDirectory, 'config.json');
     const app = express();
     app.use(express.json());
@@ -803,8 +814,9 @@ describe('OpenCode config agent routes', () => {
       getAgentSources: () => ({ md: { exists: true, scope: 'packaged' }, json: { exists: false } }),
       getAgentConfig: (name, directory) => getAgentConfig(name, directory, { userConfigPath }),
       listAgentModelOverrides: () => listAgentModelOverrides({ userConfigPath }),
+      readAgentModelCatalog: async () => ({ providers: [{ id: 'openai', models: [{ id: 'gpt-5.5', variants: ['high'] }] }] }),
       writeAgentModelOverride: (name, body, directory) => writeAgentModelOverride(name, body, directory, { userConfigPath }),
-      deleteAgentModelOverride: (name) => deleteAgentModelOverride(name, { userConfigPath }),
+      deleteAgentModelOverride: (name, options) => deleteAgentModelOverride(name, { ...options, userConfigPath }),
       listConfigAgents: (directory) => listConfigAgents(directory, { userConfigPath }),
       getCommandSources: () => ({ md: { exists: false }, json: { exists: false } }),
       createCommand: () => {},
@@ -835,12 +847,9 @@ describe('OpenCode config agent routes', () => {
         expect(res.body.agent.config.variant).toBeUndefined();
       });
 
-    await request(app)
-      .get('/api/config/agent-overrides')
-      .expect(200)
-      .expect((res) => {
-        expect(res.body.overrides.builder).toEqual({ model: 'openai/gpt-5.5', variant: null });
-      });
+    // DevRyan roles persist in the built-in agent orchestration config, not the sidecar.
+    expect(getAgentConfig('builder', projectDirectory, { userConfigPath }).config.model)
+      .toEqual({ providerID: 'openai', modelID: 'gpt-5.5' });
 
     await request(app)
       .delete('/api/config/agents/builder/override')
@@ -854,7 +863,7 @@ describe('OpenCode config agent routes', () => {
 
   it('queues OpenCode apply after writing and deleting an agent model override', async () => {
     projectDirectory = await makeTempProject();
-    const userConfigDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-route-refresh-'));
+    const userConfigDirectory = await fs.mkdtemp(path.join(isolatedOpencodeConfigDir, 'route-refresh-'));
     const userConfigPath = path.join(userConfigDirectory, 'config.json');
     const refreshCalls = [];
     const app = express();
@@ -870,8 +879,9 @@ describe('OpenCode config agent routes', () => {
       getAgentSources: () => ({ md: { exists: true, scope: 'packaged' }, json: { exists: false } }),
       getAgentConfig: (name, directory) => getAgentConfig(name, directory, { userConfigPath }),
       listAgentModelOverrides: () => listAgentModelOverrides({ userConfigPath }),
+      readAgentModelCatalog: async () => ({ providers: [{ id: 'openai', models: [{ id: 'gpt-5.5', variants: ['high'] }] }] }),
       writeAgentModelOverride: (name, body, directory) => writeAgentModelOverride(name, body, directory, { userConfigPath }),
-      deleteAgentModelOverride: (name) => deleteAgentModelOverride(name, { userConfigPath }),
+      deleteAgentModelOverride: (name, options) => deleteAgentModelOverride(name, { ...options, userConfigPath }),
       listConfigAgents: (directory) => listConfigAgents(directory, { userConfigPath }),
       getCommandSources: () => ({ md: { exists: false }, json: { exists: false } }),
       createCommand: () => {},
@@ -932,7 +942,7 @@ describe('OpenCode config agent routes', () => {
 
   it('keeps a saved agent override visible when the apply request cannot be recorded', async () => {
     projectDirectory = await makeTempProject();
-    const userConfigDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-route-refresh-fail-'));
+    const userConfigDirectory = await fs.mkdtemp(path.join(isolatedOpencodeConfigDir, 'route-refresh-fail-'));
     const userConfigPath = path.join(userConfigDirectory, 'config.json');
     const app = express();
     app.use(express.json());
@@ -946,8 +956,9 @@ describe('OpenCode config agent routes', () => {
       getAgentSources: () => ({ md: { exists: true, scope: 'packaged' }, json: { exists: false } }),
       getAgentConfig: (name, directory) => getAgentConfig(name, directory, { userConfigPath }),
       listAgentModelOverrides: () => listAgentModelOverrides({ userConfigPath }),
+      readAgentModelCatalog: async () => ({ providers: [{ id: 'openai', models: [{ id: 'gpt-5.5', variants: ['high'] }] }] }),
       writeAgentModelOverride: (name, body, directory) => writeAgentModelOverride(name, body, directory, { userConfigPath }),
-      deleteAgentModelOverride: (name) => deleteAgentModelOverride(name, { userConfigPath }),
+      deleteAgentModelOverride: (name, options) => deleteAgentModelOverride(name, { ...options, userConfigPath }),
       listConfigAgents: (directory) => listConfigAgents(directory, { userConfigPath }),
       getCommandSources: () => ({ md: { exists: false }, json: { exists: false } }),
       createCommand: () => {},
@@ -972,10 +983,9 @@ describe('OpenCode config agent routes', () => {
         expect(res.body.warning).toContain('coordinator unavailable');
       });
 
-    expect(listAgentModelOverrides({ userConfigPath }).explorer).toEqual({
-      model: 'openai/gpt-5.5',
-      variant: 'high',
-    });
+    const explorer = getAgentConfig('explorer', projectDirectory, { userConfigPath }).config;
+    expect(explorer.model).toEqual({ providerID: 'openai', modelID: 'gpt-5.5' });
+    expect(explorer.variant).toBe('high');
 
     await fs.rm(userConfigDirectory, { recursive: true, force: true });
   });

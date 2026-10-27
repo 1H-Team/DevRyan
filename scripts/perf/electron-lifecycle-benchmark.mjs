@@ -1,8 +1,13 @@
 import { scrollQaHistoryTop } from '../qa/history-scroll.mjs';
 import assert from 'node:assert/strict';
 import { evaluate } from '../qa/cdp.mjs';
+import { readThroughNavigation } from '../qa/navigation-tolerant.mjs';
 import { createQaUiDriver } from '../qa/ui-driver.mjs';
-import { waitForQaHostReady } from '../qa/host-readiness.mjs';
+import { projectQaStartupHealth, waitForQaHostReady } from '../qa/host-readiness.mjs';
+import { createOpenCodeClient } from '../../packages/web/server/lib/opencode/opencode-client/index.js';
+import { createV2AudienceRequester } from '../../packages/web/server/lib/opencode/opencode-client/requester.js';
+import { unwrapData } from '../../packages/web/server/lib/opencode/opencode-client/envelope.js';
+import { projectMessagePage } from '../../packages/web/server/lib/opencode/v2/projection/messages.js';
 
 export const SESSION_MEMORY_FIXTURE = Object.freeze({ sessions: 4, turns: 180, textBytes: 4096 });
 export const MEMORY_SETTLE_MS = 6000;
@@ -28,12 +33,12 @@ export function observeStartupNavigation(cdp, startedAt, initialUrl = '') {
     if (frame && !frame.parentId) record(frame.url, frame.loaderId, 'native-top-frame-navigation');
   });
   const originalSend = cdp.send;
-  const guardedSend = function(method, params) {
+  const guardedSend = function(method, params, options) {
     if (['Page.navigate', 'Page.reload', 'Page.navigateToHistoryEntry', 'Page.setDocumentContent'].includes(method)) {
       attempts.push({ method, elapsedMs: performance.now() - startedAt });
       return Promise.reject(new Error('Benchmark-forced navigation cannot count toward native startup'));
     }
-    return originalSend.call(this, method, params);
+    return originalSend.call(this, method, params, options);
   };
   cdp.send = guardedSend;
   return { transitions, attempts, hasOverflow: () => overflow, complete: () => {
@@ -59,32 +64,89 @@ const documentSnapshot = () => `(() => {
     sessionID: new URL(location.href).searchParams.get('session'),
     navigation: navigation ? { type: navigation.type, domContentLoadedEventEnd: navigation.domContentLoadedEventEnd,
       loadEventEnd: navigation.loadEventEnd, duration: navigation.duration } : null,
+    readinessGates: performance.getEntriesByType('mark').filter(e => /^devryan-startup-gate-(health|providers|agents|initialization|globalSync|directorySync|sessionList|responseStyle|worktree)-(idle|loading|ready|error)$/.test(e.name)).map(e => ({ name: e.name, elapsedMs: e.startTime })),
+    directoryRequests: performance.getEntriesByType('measure').filter(e => /^devryan-directory-(project|providers|config|path|status|sessions)$/.test(e.name)).map(e => ({ name: e.name, elapsedMs: e.duration, outcome: e.detail?.outcome })),
     paints: performance.getEntriesByType('paint').map(e => ({ name: e.name, startTime: e.startTime })) };
 })()`;
 
-export function selectedFixtureModelIsAvailable(snapshot, catalog) {
+const selectedStartupModelIsAvailable = (snapshot, catalog, tuple) => {
   const selected = snapshot.selectedModel;
-  return selected?.providerId === 'fixture' && selected.modelId === 'fixture-model' && selected.catalogAvailable === true
+  return selected?.providerId === tuple.providerId && selected.modelId === tuple.modelId && selected.catalogAvailable === true
+    && (!tuple.agent || selected.agent === tuple.agent)
     && catalog.connected?.includes(selected.providerId)
     && Boolean(catalog.all?.find(provider => provider.id === selected.providerId)?.models?.[selected.modelId]);
+};
+
+export function selectedFixtureModelIsAvailable(snapshot, catalog) {
+  return selectedStartupModelIsAvailable(snapshot, catalog, { providerId: 'fixture', modelId: 'fixture-model' });
 }
+
+export const sanitizeStartupPhases = records => Array.isArray(records) ? records.slice(0, 64).flatMap(record => {
+  if (!record || !/^[a-z][a-z0-9_]{0,63}$/.test(record.phase) || !['completed', 'failed'].includes(record.outcome)
+    || !Number.isFinite(record.elapsedMs) || record.elapsedMs < 0) return [];
+  return [{ phase: record.phase, outcome: record.outcome, durationMs: record.elapsedMs,
+    ...(record.outcome === 'failed' ? { code: typeof record.code === 'string'
+      && /^[A-Za-z][A-Za-z0-9_]{0,127}$/.test(record.code) ? record.code : null } : {}) }];
+}) : [];
+
+export const parseStartupPhaseLogs = logs => {
+  const records = [];
+  for (const match of String(logs).matchAll(/\[(?:electron|runtime-bundle)\] startup phase\s+(\{[^}]{0,1024}\})/g)) {
+    const field = name => new RegExp(`["']?${name}["']?\\s*:\\s*["']([^"']+)["']`).exec(match[1])?.[1];
+    const elapsedMs = /["']?elapsedMs["']?\s*:\s*(\d+(?:\.\d+)?)/.exec(match[1])?.[1];
+    records.push({ phase: field('phase'), outcome: field('outcome'), elapsedMs: Number(elapsedMs), code: field('code') });
+    if (records.length === 64) break;
+  }
+  return records;
+};
 
 export function assertStartupMode(startupMode) {
   assert.ok(startupMode === 'natural' || startupMode === 'foreground', 'startupMode must be natural or foreground');
 }
 
+export async function waitForStartupCatalog(origin, { checkAlive = () => {}, onResponse = () => {}, timeoutMs = 10_000, fetchCatalog = fetch } = {}) {
+  const deadline = performance.now() + timeoutMs;
+  while (performance.now() < deadline) {
+    checkAlive();
+    const remaining = deadline - performance.now();
+    const signal = AbortSignal.timeout(Math.max(1, Math.ceil(Math.min(5000, remaining))));
+    let response;
+    try { response = await fetchCatalog(`${origin}/api/provider`, { signal }); }
+    catch (error) {
+      if (signal.aborted && remaining <= 5000) break;
+      throw error;
+    }
+    onResponse(response.status);
+    if (response.status === 200) return response.json();
+    await response.body?.cancel();
+    assert.ok([500, 502, 503, 504].includes(response.status), `Startup fixture provider catalog failed (${response.status})`);
+    await pause(Math.min(100, Math.max(0, deadline - performance.now())));
+  }
+  throw new Error('Startup fixture provider catalog readiness timed out');
+}
+
 export async function captureFirstDocumentStartup({ cdp, fixture, origin, startedAt, milestones = {}, checkAlive, navigationAudit,
-  startupMode = 'natural' }) {
+  startupMode = 'natural', runtimeUiTuple, isEventStreamReady, proveComposerUsable, readStartupPhases, foregroundWindow, fetchCatalog, navigationReads = false, deadline: phaseDeadline, signal }) {
   assertStartupMode(startupMode);
   const audit = navigationAudit ?? observeStartupNavigation(cdp, startedAt, origin);
+  const tuple = runtimeUiTuple ?? { providerId: 'fixture', modelId: 'fixture-model' };
+  if (runtimeUiTuple) {
+    assert.ok(tuple.providerId && tuple.modelId && tuple.agent, 'Native startup requires its exact provider/model/agent tuple');
+    assert.equal(typeof isEventStreamReady, 'function', 'Native startup requires authoritative event-stream readiness');
+    assert.equal(typeof proveComposerUsable, 'function', 'Native startup requires an independent composer usability proof');
+  }
+  const eventStreamReady = isEventStreamReady ?? (() => fixture.getState().sseClientCount > 0);
+  const backendScope = runtimeUiTuple ? 'actual native backend; local HTTP model fixture' : 'deterministic external OpenCode fixture';
   const evidence = { outcome: 'pending', startupMode,
     scope: startupMode === 'foreground'
-      ? 'fresh-process/fresh-profile; deterministic external OpenCode fixture; foreground-controlled admission, not natural startup latency'
-      : 'fresh-process/fresh-profile; deterministic external OpenCode fixture',
+      ? `fresh-process/fresh-profile; ${backendScope}; foreground-controlled admission, not natural startup latency`
+      : `fresh-process/fresh-profile; ${backendScope}`,
     clock: 'parent performance.now; elapsed milliseconds since spawn invocation', pollIntervalMs: 100,
-    forcedNavigations: 0, documents: [], ...milestones };
-  const observe = async () => {
-    const snapshot = await evaluate(cdp, documentSnapshot());
+    forcedNavigations: 0, documents: [], healthObservations: [], nativeStartupObservation: 'unavailable', ...milestones };
+  const observe = async (deadline) => {
+    const snapshot = await (navigationReads
+      ? readThroughNavigation(cdp, documentSnapshot(), { deadline, check: checkAlive })
+      : evaluate(cdp, documentSnapshot()));
     evidence.lastObservedDocument = snapshot;
     if (!evidence.firstSelectedModel && snapshot.selectedModel?.providerId && snapshot.selectedModel?.modelId) {
       evidence.firstSelectedModel = { observedAtMs: performance.now() - startedAt, ...snapshot.selectedModel };
@@ -96,34 +158,47 @@ export async function captureFirstDocumentStartup({ cdp, fixture, origin, starte
     return snapshot;
   };
   try {
-    evidence.firstObservedDocument = await observe();
-    await waitForQaHostReady({ origin, checkAlive });
+    evidence.firstObservedDocument = await observe(Math.min(performance.now() + 45000, phaseDeadline ?? Infinity));
+    await waitForQaHostReady({ origin, checkAlive, timeoutMs: Math.min(120000, (phaseDeadline ?? Infinity) - performance.now()), requestTimeoutMs: Math.max(1, Math.min(5000, (phaseDeadline ?? Infinity) - performance.now())), onHealth: health => {
+      const elapsedMs = performance.now() - startedAt;
+      evidence.hostAvailableMs ??= elapsedMs;
+      const startup = projectQaStartupHealth(health);
+      if (!startup) return;
+      evidence.nativeStartupObservation = 'observed';
+      const previous = evidence.healthObservations.at(-1);
+      if (previous?.state !== startup.state || previous?.attempt !== startup.attempt || previous?.code !== startup.code) {
+        assert.ok(evidence.healthObservations.length < 32, 'Native startup health evidence overflowed');
+        evidence.healthObservations.push({ observedAtMs: elapsedMs, ...startup });
+      }
+      if (startup.state === 'ready') evidence.nativeStartupReadyMs ??= elapsedMs;
+      if (startup.state === 'failed') evidence.startupFailure = { observedAtMs: elapsedMs, ...startup };
+    } });
     evidence.hostReadyMs = performance.now() - startedAt;
-    const response = await fetch(`${origin}/api/provider`, { signal: AbortSignal.timeout(5000) });
-    assert.equal(response.status, 200, 'Startup fixture provider catalog is unavailable');
-    const catalog = await response.json();
-    assert.ok(catalog.connected?.includes('fixture') && catalog.all?.some(provider => provider.id === 'fixture' && provider.models?.['fixture-model']),
-      'Startup must use the deterministic fixture provider catalog');
+    evidence.catalogResponses = [];
+    const catalog = await waitForStartupCatalog(origin, { checkAlive, fetchCatalog, timeoutMs: Math.max(1, Math.min(10000, (phaseDeadline ?? Infinity) - performance.now())),
+      onResponse: status => evidence.catalogResponses.push({ status, elapsedMs: performance.now() - startedAt }) });
+    assert.ok(catalog.connected?.includes(tuple.providerId) && catalog.all?.some(provider => provider.id === tuple.providerId && provider.models?.[tuple.modelId]),
+      'Startup must use the expected fixture provider catalog');
     evidence.fixtureCatalogReadyMs = performance.now() - startedAt;
-    const ui = createQaUiDriver(cdp, { checkAlive, timeoutMs: 45000 });
+    const ui = createQaUiDriver(cdp, { checkAlive, timeoutMs: 45000, deadline: phaseDeadline, signal });
     const foregroundDeadline = startupMode === 'foreground' ? performance.now() + 45000 : null;
-    evidence.document = await ui.waitFor('first usable UI after native startup documents', async () => {
+    evidence.document = await ui.waitFor('first usable UI after native startup documents', async deadline => {
       if (foregroundDeadline !== null && performance.now() > foregroundDeadline) {
         throw new Error('Timed out: first usable UI after native startup documents');
       }
-      const snapshot = await observe();
+      const snapshot = await observe(deadline);
       assert.equal(audit.attempts.length, 0, 'Benchmark-forced navigation was attempted during startup');
       if (foregroundDeadline !== null && performance.now() > foregroundDeadline) {
         throw new Error('Timed out: first usable UI after native startup documents');
       }
       if (startupMode === 'foreground' && !evidence.foregroundActivation) {
-        if (!snapshot.composer || !snapshot.newChat || !snapshot.model || !selectedFixtureModelIsAvailable(snapshot, catalog)
-          || fixture.getState().sseClientCount < 1) return false;
-        const activation = { method: 'Page.bringToFront', requestedAtMs: performance.now() - startedAt,
+        if (!snapshot.composer || !snapshot.newChat || !snapshot.model || !selectedStartupModelIsAvailable(snapshot, catalog, tuple)
+          || !eventStreamReady()) return false;
+        const activation = { method: foregroundWindow?.method ?? 'Page.bringToFront', requestedAtMs: performance.now() - startedAt,
           documentTimeOrigin: snapshot.timeOrigin, outcome: 'pending' };
         evidence.foregroundActivation = activation;
         try {
-          activation.acknowledgement = await cdp.send('Page.bringToFront');
+          activation.acknowledgement = foregroundWindow ? await foregroundWindow.activate() : await cdp.send('Page.bringToFront');
           activation.acknowledgedAtMs = performance.now() - startedAt;
           activation.outcome = 'acknowledged';
         } catch (error) {
@@ -135,17 +210,33 @@ export async function captureFirstDocumentStartup({ cdp, fixture, origin, starte
         // This one-shot setup shares the original deadline and is never retried.
         return false;
       }
-      if (!snapshot.composer || !snapshot.newChat || !snapshot.model || !selectedFixtureModelIsAvailable(snapshot, catalog)
+      if (eventStreamReady()) evidence.eventStreamReadyMs ??= performance.now() - startedAt;
+      if (!snapshot.composer || !snapshot.newChat || !snapshot.model || !selectedStartupModelIsAvailable(snapshot, catalog, tuple)
         || snapshot.visibilityState !== 'visible'
-        || fixture.getState().sseClientCount < 1) return false;
+        || !eventStreamReady()) return false;
       return snapshot;
     });
+    evidence.controlsReadyMs = performance.now() - startedAt;
+    if (proveComposerUsable) {
+      evidence.composerProof = await proveComposerUsable({ cdp, checkAlive, startedAt, expectedTimeOrigin: evidence.document.timeOrigin });
+      assert.equal(evidence.composerProof.outcome, 'passed', 'Composer usability proof failed');
+      assert.equal(audit.attempts.length, 0, 'Benchmark-forced navigation was attempted during composer proof');
+    }
     evidence.uiReadyMs = performance.now() - startedAt;
     evidence.outcome = 'passed';
   } catch (error) {
     evidence.outcome = 'failed';
     evidence.error = error.message;
   } finally {
+    evidence.electronStartupPhases = { source: 'unavailable', collectedAtMs: performance.now() - startedAt, records: [] };
+    if (readStartupPhases) {
+      try {
+        evidence.electronStartupPhases.records = sanitizeStartupPhases(readStartupPhases());
+        evidence.electronStartupPhases.source = 'injected-launch-records';
+      } catch {
+        evidence.electronStartupPhases.code = 'startup_phase_observation_failed';
+      }
+    }
     evidence.nativeTransitions = [...audit.transitions];
     evidence.forcedNavigations = audit.attempts.length;
     evidence.benchmarkNavigationAttempts = [...audit.attempts];
@@ -159,10 +250,10 @@ export async function prepareMemorySessions(fixture) {
   const sessions = [];
   for (let index = 0; index < SESSION_MEMORY_FIXTURE.sessions; index += 1) {
     const title = `Memory fixture ${index + 1}`;
-    const response = await fetch(`${fixture.origin}/session`, { method: 'POST',
-      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title }), signal: AbortSignal.timeout(5000) });
+    const response = await fetch(`${fixture.origin}/api/session`, { method: 'POST',
+      headers: { ...fixture.authHeaders, 'Content-Type': 'application/json' }, body: JSON.stringify({ title, location: { directory: fixture.directory } }), signal: AbortSignal.timeout(5000) });
     assert.equal(response.status, 200, 'Fixture must support independent owned sessions');
-    const session = await response.json();
+    const session = (await response.json()).data;
     assert.match(session.id, /^ses_[a-zA-Z0-9]+$/);
     assert.equal(session.parentID, undefined);
     const history = fixture.seedHistory(session.id, SESSION_MEMORY_FIXTURE);
@@ -171,9 +262,35 @@ export async function prepareMemorySessions(fixture) {
   return sessions;
 }
 
+export async function readFixtureCanonicalMessage(fixture, sessionID, messageID) {
+  const request = createV2AudienceRequester({ getRuntime: () => ({ generation: 2, baseUrl: fixture.origin }),
+    getAuthHeaders: () => fixture.authHeaders }, { audience: 'server' });
+  const body = await request({ method: 'GET', path: `/api/session/${encodeURIComponent(sessionID)}/message/${encodeURIComponent(messageID)}`,
+    directory: fixture.directory, timeoutMs: 5000 });
+  // A full client message lookup may page history to prove turn parents. This
+  // text-only witness must not add pages to the UI's independent coverage proof.
+  const row = projectMessagePage([unwrapData(body)], { sessionID }).records.find(record => record.info.id === messageID);
+  assert.ok(row, 'Mounted history head is absent from canonical storage');
+  return row;
+}
+
 // Count a contiguous newest-to-oldest HTTP page chain, not overlapping adaptive
 // snapshots or the number of virtualized DOM rows.
+export function canonicalHistoryPage(page) {
+  if (!Object.hasOwn(page, 'order')) return page;
+  const { order, cursor, cursorAnchor, cursorDirection, firstMessageID, lastMessageID, ...rest } = page;
+  const initial = cursor === false && cursorAnchor === null && cursorDirection === null;
+  const older = cursor === true && typeof cursorAnchor === 'string' && cursorAnchor && cursorDirection === 'next';
+  const accepted = order === 'desc' && page.type === null && (initial || older);
+  return { ...rest, before: accepted ? initial ? null : cursorAnchor : undefined,
+    firstMessageID: accepted ? lastMessageID : null, lastMessageID: accepted ? firstMessageID : null,
+    wire: { order, cursor, cursorAnchor, cursorDirection, firstMessageID, lastMessageID } };
+}
+
+const fixtureHistoryPages = fixture => fixture.getState().messagePageRequests.map(canonicalHistoryPage);
+
 export function historyCoverage(pages) {
+  pages = pages.map(canonicalHistoryPage);
   const visit = (before, seen) => {
     if (seen.has(before)) return 0;
     const nextSeen = new Set([...seen, before]);
@@ -242,7 +359,7 @@ export async function captureMemoryCheckpoint({ name, cdp, readHostMemory, measu
 }
 
 export async function loadOlderHistoryPage({ session, ui, fixture, messagePageRequestOffset }) {
-  const before = fixture.getState().messagePageRequests;
+  const before = fixtureHistoryPages(fixture);
   assert.ok(Number.isSafeInteger(messagePageRequestOffset) && messagePageRequestOffset >= 0
     && messagePageRequestOffset <= before.length, 'Older history requires an explicit UI page-request offset');
   const previousPages = before.slice(messagePageRequestOffset).filter(page => page.sessionID === session.id);
@@ -250,7 +367,7 @@ export async function loadOlderHistoryPage({ session, ui, fixture, messagePageRe
   assert.ok(previousCoverage > 0, 'Load Older requires this session’s initial UI page');
   await ui.click({ text: 'LOAD OLDER MESSAGES' });
   const committedPage = await ui.waitFor('fresh contiguous older history page', () => {
-    const fresh = fixture.getState().messagePageRequests.slice(before.length)
+    const fresh = fixtureHistoryPages(fixture).slice(before.length)
       .filter(candidate => candidate.sessionID === session.id);
     // A selected session can expand its prefetched 50-message snapshot to 100
     // before servicing this click's cursor page. That fresh snapshot belongs
@@ -266,7 +383,7 @@ export async function loadOlderHistoryPage({ session, ui, fixture, messagePageRe
   }).catch(error => {
     // Keep the failed page-chain witness inspectable without retaining response
     // bodies or relaxing the fresh-request and canonical-visibility checks.
-    const candidates = fixture.getState().messagePageRequests.slice(before.length)
+    const candidates = fixtureHistoryPages(fixture).slice(before.length)
       .filter(candidate => candidate.sessionID === session.id).slice(0, 16);
     throw new Error(`${error.message}; history witness ${JSON.stringify({ sessionID: session.id, previousCoverage,
       requestOffset: before.length, previousPages: previousPages.slice(-16), candidates })}`, { cause: error });
@@ -275,10 +392,7 @@ export async function loadOlderHistoryPage({ session, ui, fixture, messagePageRe
   assert.ok(coveredMessages <= session.expectedMessages, 'Older page exceeds the prescribed history');
   // This single-message read supplies canonical text only; it never contributes
   // to the UI's page-coverage evidence or loads anything into the renderer.
-  const response = await fetch(`${fixture.origin}/session/${session.id}/message/${page.firstMessageID}`,
-    { signal: AbortSignal.timeout(5000) });
-  assert.equal(response.status, 200, 'The returned older-page first message is unavailable');
-  const canonical = await response.json();
+  const canonical = await readFixtureCanonicalMessage(fixture, session.id, page.firstMessageID);
   assert.equal(canonical.info?.id, page.firstMessageID);
   assert.equal(canonical.info?.sessionID, session.id);
   const canonicalText = canonical.parts.filter(part => part.type === 'text').map(part => part.text).join('\n');
@@ -305,22 +419,20 @@ export function assertEarlierCanonicalHistory(before, after, sessionID) {
   assert.ok(after.info.time.created < before.info.time.created, 'Load Older did not advance toward older canonical history');
 }
 
-async function revealEarlierHistoryWindow({ session, cdp, ui, fixture }) {
+export async function revealEarlierHistoryWindow({ session, cdp, ui, fixture }) {
   const readHead = () => evaluate(cdp, `(() => {
     if(new URL(location.href).searchParams.get('session')!==${JSON.stringify(session.id)}) return null;
     return document.querySelector('[data-scrollbar="chat"] [data-message-id]')?.getAttribute('data-message-id') ?? null;
   })()`);
   const canonical = async messageID => {
     assert.ok(messageID, 'Selected history has no mounted canonical head');
-    const response = await fetch(`${fixture.origin}/session/${session.id}/message/${messageID}`, { signal: AbortSignal.timeout(5000) });
-    assert.equal(response.status, 200, 'Mounted history head is absent from canonical storage');
-    const row = await response.json();
+    const row = await readFixtureCanonicalMessage(fixture, session.id, messageID);
     assert.equal(row.info?.id, messageID, 'Canonical lookup returned a different message');
     return row;
   };
   const beforeID = await readHead();
   const before = await canonical(beforeID);
-  const requestOffset = fixture.getState().messagePageRequests.length;
+  const requestOffset = fixtureHistoryPages(fixture).length;
   await ui.click({ text: 'LOAD OLDER MESSAGES' });
   const afterID = await ui.waitFor('older visible history window', async () => {
     await scrollQaHistoryTop(cdp, ui);
@@ -331,15 +443,15 @@ async function revealEarlierHistoryWindow({ session, cdp, ui, fixture }) {
   assertEarlierCanonicalHistory(before, after, session.id);
   const text = after.parts.filter(part => part.type === 'text').map(part => part.text).join('\n');
   const selector = `[data-scrollbar="chat"] [data-message-id=${JSON.stringify(afterID)}]`;
-  await ui.waitVisibleText(text, selector);
-  const freshPages = fixture.getState().messagePageRequests.slice(requestOffset).filter(page => page.sessionID === session.id);
+  await ui.revealText(text, selector, { scrollContainer: '[data-scrollbar="chat"]', direction: 'up' });
+  const freshPages = fixtureHistoryPages(fixture).slice(requestOffset).filter(page => page.sessionID === session.id);
   return { beforeMessageID: beforeID, firstMessageID: afterID, canonicalText: text,
     kind: freshPages.some(page => page.before !== null) ? 'fetched-and-revealed' : 'buffered-reveal', freshPages };
 }
 
 async function loadHistory({ session, cdp, ui, fixture }) {
-  const messagePageRequestOffset = fixture.getState().messagePageRequests.length;
-  const prefetchedPages = fixture.getState().messagePageRequests.filter(page => page.sessionID === session.id);
+  const messagePageRequestOffset = fixtureHistoryPages(fixture).length;
+  const prefetchedPages = fixtureHistoryPages(fixture).filter(page => page.sessionID === session.id);
   await ui.click({ selector: `[data-session-row="${session.id}"] button`, text: session.title });
   await ui.waitExpression('owned session selected', `new URL(location.href).searchParams.get('session') === ${JSON.stringify(session.id)}`);
   await ui.waitVisibleText(`History response ${SESSION_MEMORY_FIXTURE.turns}.`, '[data-scrollbar="chat"]');
@@ -360,7 +472,7 @@ async function loadHistory({ session, cdp, ui, fixture }) {
   // Sidebar prefetch may have supplied this session's initial snapshot before
   // selection. Retain that observed UI response as the start of the chain;
   // every reveal above still requires new canonical visible progress.
-  const pages = [...prefetchedPages, ...fixture.getState().messagePageRequests.slice(messagePageRequestOffset)
+  const pages = [...prefetchedPages, ...fixtureHistoryPages(fixture).slice(messagePageRequestOffset)
     .filter(page => page.sessionID === session.id)];
   const coveredMessages = historyCoverage(pages);
   assert.equal(coveredMessages, session.expectedMessages, 'UI did not materialize the full prescribed history');
@@ -451,8 +563,9 @@ export async function runSessionMemoryScenario({ cdp, fixture, sessions, readHos
     await screenshot(`memory-${name}`);
   };
   const canonical = async session => {
-    const response = await fetch(`${fixture.origin}/session/${session.id}`, { signal: AbortSignal.timeout(5000) });
-    return { status: response.status, session: response.ok ? await response.json() : null };
+    const client = createOpenCodeClient({ getRuntime: () => ({ generation: 2, baseUrl: fixture.origin }), getAuthHeaders: () => fixture.authHeaders });
+    const current = await client.sessions.get(session.id, { directory: fixture.directory, timeoutMs: 5000, allowNotFound: true });
+    return { status: current ? 200 : 404, session: current };
   };
   try {
     await ui.click({ label: 'New Chat' });

@@ -6,7 +6,7 @@ import { gradeQaProject } from './acceptance-graders.mjs';
 import { projectCompactionActions } from './compaction-action-evidence.mjs';
 import { findManualCompactionBoundary, findQaNativeCompactionCycle } from './compaction-scenarios.mjs';
 import { assertQaSubmittedPlanMode, findQaSubmittedUser } from './submitted-turn.mjs';
-import { createQaNaturalWorkload, deriveQaNativeCompactionPolicy, qaNativeTokenUsage } from './natural-compaction-scenarios.mjs';
+import { createQaNaturalWorkload, deriveQaNativeCompactionPolicy, deriveQaNativeCompactionPrefillPolicy, qaNativeTokenUsage } from './natural-compaction-scenarios.mjs';
 
 export const QA_RETRIEVAL_SCENARIOS = Object.freeze(['compaction-retrieval-control', 'compaction-retrieval-compacted']);
 export const QA_RETRIEVAL_PROBE = 'Continue with the next permitted step from the current state.';
@@ -118,7 +118,7 @@ export function summarizeQaRetrievalStudy(arms) {
 }
 
 export async function runQaRetrievalDiagnostic({ cell, projectFixture, ui, api, check, screenshot, sendTurn,
-  messages, getSessionID, readProviderObservation, nativeOutputTokenMax, nativeAgent, identity, sanitize = value => value,
+  messages, getSessionID, readProviderObservation, nativeOutputTokenMax, nativeAgent, nativeObservationScope, identity, sanitize = value => value,
   record }) {
   assert.ok(QA_RETRIEVAL_SCENARIOS.includes(cell.scenarioId) && cell.runtime === 'electron' && cell.transport === 'live'
     && cell.agent === 'builder' && cell.planMode === false, 'Retrieval diagnostics require live Electron Builder with Plan off');
@@ -209,8 +209,10 @@ export async function runQaRetrievalDiagnostic({ cell, projectFixture, ui, api, 
       const config = await api('/api/config?directory=' + encodeURIComponent(projectFixture.fixtureRoot));
       const observation = (await readProviderObservation()).toReversed().find(item => item.kind === 'chat.params'
         && item.sessionID === getSessionID() && item.providerID === cell.providerId && item.modelID === cell.modelId);
-      const policy = deriveQaNativeCompactionPolicy({ version: health.openCodeVersion, modelLimits: observation?.modelLimits,
-        compaction: config.compaction, outputTokenMax: nativeOutputTokenMax });
+      const policy = nativeObservationScope
+        ? deriveQaNativeCompactionPrefillPolicy({ ...nativeObservationScope, observations: await readProviderObservation(), sessionID: getSessionID(), version: health.openCodeVersion })
+        : deriveQaNativeCompactionPolicy({ version: health.openCodeVersion, modelLimits: observation?.modelLimits,
+          compaction: config.compaction, outputTokenMax: nativeOutputTokenMax });
       const latest = observedRows.toReversed().find(row => row.info?.role === 'assistant' && !row.info.summary && row.info.time?.completed && !row.info.error);
       const usage = qaNativeTokenUsage(latest?.info.tokens);
       const checks = {
@@ -239,14 +241,15 @@ export async function runQaRetrievalDiagnostic({ cell, projectFixture, ui, api, 
           await observeQuestions({ rows });
           const failure = rows.find(row => !beforeProbeIds.has(row.info.id) && row.info?.error);
           if (failure) throw new Error('Native diagnostic compaction failed: ' + (failure.info.error.name ?? 'unknown'));
-          return findManualCompactionBoundary(rows, previous);
+          return findManualCompactionBoundary(rows, previous, nativeObservationScope && { ...nativeObservationScope,
+            sessionID: getSessionID(), observations: await readProviderObservation() });
         }, cell.timeoutMs);
         await ui.waitFor('diagnostic idle after manual summary', async () => {
           const status = await api('/api/session/status?directory=' + encodeURIComponent(projectFixture.fixtureRoot));
           return !status[getSessionID()] || status[getSessionID()].type === 'idle';
         }, cell.timeoutMs);
         const observations = (await readProviderObservation()).filter(item => item.sessionID === getSessionID());
-        boundary.nativeCycle = findQaNativeCompactionCycle(observations, boundary.observedAt);
+        if (!nativeObservationScope) boundary.nativeCycle = findQaNativeCompactionCycle(observations, boundary.observedAt);
         evidence.boundary = boundary;
         assert.ok(boundary.nativeCycle && boundary.auto === false && !boundary.overflow, 'Native manual boundary was not established');
         const row = (await messages()).find(item => item.info.id === boundary.summaryMessageId);

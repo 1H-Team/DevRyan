@@ -1,12 +1,23 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createHarnessTaskContextHost } from './harness-task-context.js';
+import { createHarnessTaskContextHost as createHarnessTaskContextHostNative } from './harness-task-context.js';
+import { createNativeConsumerFixture } from './test-native-consumer-client.js';
 import { readPlanRevision, resolveSessionPlanRevision } from '../plans/revisions.js';
+import { createNativePlanSettlementVerifier } from './runtime-host/native-plan-settlement.js';
+
+const createHarnessTaskContextHost = (options = {}) => createHarnessTaskContextHostNative({
+  ...options, openCodeClient: options.openCodeClient ?? createNativeConsumerFixture({
+    readFixture: options.fetchImpl, headers: options.getOpenCodeAuthHeaders,
+  }),
+});
 
 describe('selected saved-plan root authority', () => {
-  let root, directory, scope, primary, routes, marker, revision, hosts, events, diagnostics, owners, projects;
+  let root, directory, scope, primary, routes, marker, revision, hosts, events, diagnostics, owners, projects, sourceState;
+  const sourcePrimary = () => ({ sessionID: 'ses_plan', directory: routes['/session/ses_plan'].directory,
+    anchorID: 'msg_plan_user', stepID: 'msg_plan', cancellationGeneration: 0, state: 'completed' });
   const user = () => routes['/session/ses_root/message/msg_user'];
   const assistant = () => routes['/session/ses_root/message/msg_assistant'];
   const select = (extra = {}) => { marker = { action: 'implement', sourceSessionId: 'ses_plan', sourceMessageId: 'msg_plan', planIndex: 0, ...extra };
@@ -15,7 +26,13 @@ describe('selected saved-plan root authority', () => {
   const host = (extra = {}) => {
     const value = createHarnessTaskContextHost({ dataDirectory: root,
       buildOpenCodeUrl: pathname => `http://127.0.0.1:3000${pathname}`,
-      readPrimaryRecord: async () => structuredClone(primary),
+      readPrimaryRecord: async id => structuredClone(id === 'ses_plan' ? sourcePrimary() : primary),
+      verifyPlanSourceSettled: createNativePlanSettlementVerifier({
+        readControllerPin: () => ({ instanceID: 'owned-fixture-controller', configurationDigest: 'a'.repeat(64) }),
+        readPrimaryRecord: async () => sourcePrimary(), readStatus: async () => sourceState.status,
+        readManagedState: async () => sourceState.managed, readManagedBarrier: async () => sourceState.barrier,
+        activeLeases: async () => sourceState.leases,
+      }),
       sessionOwnerKey: async id => owners[id] ?? null,
       getRegisteredProjects: async () => projects,
       publishEvent: (...args) => events.push(args), recordDiagnostic: entry => diagnostics.push(entry),
@@ -40,12 +57,19 @@ describe('selected saved-plan root authority', () => {
     routes = {
       '/session/ses_root': { id: 'ses_root', directory, projectID: 'project_a', slug: 'root', time: { created: 1700000000001 } },
       '/session/ses_plan': { id: 'ses_plan', directory, projectID: 'project_a', slug: 'plan', time: { created: 1700000000000 } },
-      '/session/ses_plan/message/msg_plan': { info: { id: 'msg_plan', sessionID: 'ses_plan', role: 'assistant' }, parts: [] },
+      '/session/ses_plan/message/msg_plan_user': { info: { id: 'msg_plan_user', sessionID: 'ses_plan', role: 'user',
+        metadata: { openchamberPlanMode: true } }, parts: [{ type: 'text', text: 'Make the plan.' }] },
+      '/session/ses_plan/message/msg_plan': { info: { id: 'msg_plan', sessionID: 'ses_plan', role: 'assistant', parentID: 'msg_plan_user',
+        time: { completed: 1700000000002 }, finish: 'stop' },
+        turnOwnership: { source: 'native-sequence', userMessageID: 'msg_plan_user' }, parts: [{ type: 'text', text: '# Plan\n- Original step\n' }] },
       '/session/ses_root/message/msg_user': { info: { id: 'msg_user', sessionID: 'ses_root', role: 'user' }, parts: [] },
       '/session/ses_root/message/msg_assistant': { info: { id: 'msg_assistant', sessionID: 'ses_root', role: 'assistant', parentID: 'msg_user' },
+        turnOwnership: { source: 'native-sequence', userMessageID: 'msg_user' },
         parts: [{ type: 'tool', tool: 'devryan_task', callID: 'call_plan', state: { status: 'running' } }] },
       '/session/ses_root/todo': [],
     };
+    routes['/session/ses_plan/message'] = [routes['/session/ses_plan/message/msg_plan_user'], routes['/session/ses_plan/message/msg_plan']];
+    sourceState = { status: {}, managed: { tasks: [], envelopes: [] }, barrier: { state: 'clear' }, leases: [] };
     select({ projectDirectory: directory });
     revision = await resolveSessionPlanRevision({ dataDirectory: root, directory, sessionCreated: 1700000000000, sessionSlug: 'plan', sourceMessageID: 'msg_plan' });
     await fs.mkdir(revision.directory, { recursive: true }); await fs.writeFile(revision.path, '# Plan\n- Original step\n');
@@ -53,17 +77,64 @@ describe('selected saved-plan root authority', () => {
   });
   afterEach(async () => { await Promise.all(hosts.map(value => value.drain())); await fs.rm(root, { recursive: true, force: true }); });
 
+  it('captures a scoped immutable plan and permits only its assigned child read', async () => {
+    const content='# Plan\n## Constraints & assumptions\nKeep permissions unchanged.\n## Implementation\n### Phase 1: Backend\nImplement backend.\n### Phase 2: UI\nImplement UI.\n## Verification\nRun tests.';
+    routes['/session/ses_plan/message/msg_plan'].parts[0].text=content;
+    await fs.writeFile(revision.path,content);
+    const version=(await readPlanRevision(revision)).version,value=host();
+    const input={...scope,messageID:'msg_assistant',callID:'call_plan'};
+    const ref=await value.captureApprovedPlan(input,{version,phase:'Phase 1: Backend',paths:['src/backend']},async()=>{});
+    expect(ref).toMatchObject({rootSessionId:'ses_root',objectiveId:'msg_user',version,phase:'Phase 1: Backend'});
+    expect(ref.content).toContain('Keep permissions unchanged.');expect(ref.content).not.toContain('Implement UI.');
+    await expect(value.captureApprovedPlan(input,{version:'0'.repeat(64),phase:'Phase 1: Backend',paths:[]},async()=>{})).rejects.toMatchObject({code:'plan_version_conflict'});
+    routes['/session/ses_child']={id:'ses_child',directory,projectID:'project_a',parentID:'ses_root'};owners.ses_child='user:a';
+    routes['/session/ses_child/message/msg_child']={info:{id:'msg_child',sessionID:'ses_child',role:'assistant',parentID:'msg_assignment'},turnOwnership:{source:'native-sequence',userMessageID:'msg_assignment'},parts:[{type:'tool',tool:'devryan_task',callID:'call_read',state:{status:'running'}}]};
+    const child=host({getManagedRuntime:()=>({handleRpc:async()=>({approvedPlanRef:ref,rootSessionId:'ses_root'})})});
+    const childInput={action:'plan_read',sessionID:'ses_child',directory,messageID:'msg_child',callID:'call_read'};
+    expect(await child.handleNativePlanRpc(childInput,async()=>{})).toMatchObject({content:ref.content,readOnly:true});
+    await expect(child.handleNativePlanRpc({...childInput,action:'plan_update',text:'Changed',expectedVersion:version},async()=>{})).rejects.toMatchObject({code:'plan_root_authority_required'});
+    const call=routes['/session/ses_child/message/msg_child'].parts[0];
+    call.tool='devryan_plan_read';call.state.input={};
+    const alias={...childInput,tool:'devryan_plan_read'};
+    expect(await child.handleNativePlanRpc(alias,async()=>{})).toMatchObject({content:ref.content,readOnly:true});
+    await expect(child.authorizeNativePlanInvocation({...alias,action:undefined,input:{}})).resolves.toBeUndefined();
+    call.state.input={action:'start'};
+    await expect(child.handleNativePlanRpc(alias,async()=>{})).rejects.toMatchObject({code:'plan_call_stale'});
+    call.state.input={};
+    await expect(child.handleNativePlanRpc({...alias,action:'plan_update',text:'Changed'},async()=>{})).rejects.toMatchObject({code:'plan_rpc_invalid'});
+    await expect(child.handleNativePlanRpc({...scope,action:'plan_read',tool:'devryan_plan_read',messageID:'msg_assistant',callID:'call_plan'},async()=>{})).rejects.toMatchObject({code:'plan_assignment_missing'});
+    call.tool='devryan_task';
+    routes['/session/ses_child'].time={archived:1};
+    await expect(child.handleNativePlanRpc(childInput,async()=>{})).rejects.toMatchObject({code:'plan_assignment_stale'});
+  });
+
   it('derives HTTP plan identity from its canonical session and assistant message across worktrees', async () => {
     const worktree = path.join(root, 'worktree'); await fs.mkdir(worktree);
     routes['/session/ses_plan'].directory = worktree;
     const value = host();
     expect(await value.readCanonicalPlanIdentity({ sessionID: 'ses_plan', sourceMessageID: 'msg_plan', directory }))
-      .toEqual({ sessionCreated: 1700000000000, sessionSlug: 'plan' });
+      .toMatchObject({ sessionCreated: 1700000000000, sessionSlug: 'plan', content: '# Plan\n- Original step\n',
+        sourceIdentity: { sessionID: 'ses_plan', sourceMessageID: 'msg_plan', successful: true, settled: true, current: true } });
     routes['/session/ses_plan/message/msg_plan'].info.sessionID = 'ses_foreign';
     await expect(value.readCanonicalPlanIdentity({ sessionID: 'ses_plan', sourceMessageID: 'msg_plan', directory })).rejects.toThrow();
     routes['/session/ses_plan/message/msg_plan'].info.sessionID = 'ses_plan';
     routes['/session/ses_plan/message/msg_plan'].info.role = 'user';
     await expect(value.readCanonicalPlanIdentity({ sessionID: 'ses_plan', sourceMessageID: 'msg_plan', directory })).rejects.toThrow();
+  });
+
+  it.each([
+    ['busy source', () => { sourceState.status = { ses_plan: { type: 'busy' } }; }],
+    ['live lease', () => { sourceState.leases = [{ sessionID: 'ses_plan' }]; }],
+    ['running descendant', () => { sourceState.managed.tasks = [{ childSessionId: 'ses_child', status: 'running' }]; }],
+    ['unacknowledged envelope', () => { sourceState.barrier.state = 'awaiting_acknowledgement'; }],
+  ])('the original settlement verifier refuses %s without saving', async (_name, unsettle) => {
+    const value = host(), before = await rpc(value);
+    unsettle();
+    await expect(value.readCanonicalPlanIdentity({ sessionID: 'ses_plan', sourceMessageID: 'msg_plan', directory }))
+      .rejects.toMatchObject({ code: 'plan_source_unsettled' });
+    await expect(update(value, before.version)).rejects.toMatchObject({ code: 'plan_source_unsettled' });
+    expect((await readPlanRevision(revision)).content).toBe(before.content);
+    expect(events).toEqual([]);
   });
 
   it('binds global non-Git plans to their actual registered root on HTTP and private selection', async () => {
@@ -92,7 +163,7 @@ describe('selected saved-plan root authority', () => {
     select({ projectDirectory: directory });
     expect((await rpc(value)).path).toBe(revision.path);
     expect(await value.readCanonicalPlanIdentity({ sessionID: 'ses_plan', sourceMessageID: 'msg_plan', directory }))
-      .toEqual({ sessionCreated: 1700000000000, sessionSlug: 'plan' });
+      .toMatchObject({ sessionCreated: 1700000000000, sessionSlug: 'plan', sourceIdentity: { successful: true, settled: true, current: true } });
   });
 
   it('reads saved identity from the authorized root when a historical Git worktree is gone', async () => {
@@ -103,7 +174,7 @@ describe('selected saved-plan root authority', () => {
       return Response.json(url.pathname === '/project/current' ? { id: 'project_a', worktree: directory } : routes[url.pathname]);
     } });
     expect(await value.readCanonicalPlanIdentity({ sessionID: 'ses_plan', sourceMessageID: 'msg_plan', directory }))
-      .toEqual({ sessionCreated: 1700000000000, sessionSlug: 'plan' });
+      .toMatchObject({ sessionCreated: 1700000000000, sessionSlug: 'plan', sourceIdentity: { successful: true, settled: true, current: true } });
   });
 
   it('rejects missing canonical project identity rather than comparing two undefined IDs', async () => {
@@ -228,6 +299,7 @@ describe('selected saved-plan root authority', () => {
     const value = host();
     for (const activeUserID of ['msg_maintenance', 'msg_answer', 'msg_compaction', 'msg_explicit']) {
       primary = { ...primary, activeUserID, objectiveID: 'msg_user' }; assistant().info.parentID = activeUserID;
+      assistant().turnOwnership.userMessageID = activeUserID;
       expect((await rpc(value)).path).toBe(revision.path);
     }
   });
@@ -267,5 +339,35 @@ describe('selected saved-plan root authority', () => {
     const foreign = path.join(root, 'foreign.md'); await fs.writeFile(foreign, '# Foreign'); await fs.symlink(foreign, revision.path);
     await expect(rpc(value)).rejects.toMatchObject({ code: 'plan_path_unsafe' });
     expect(await fs.readFile(foreign, 'utf8')).toBe('# Foreign');
+  });
+
+  it('plan_read returns a compact unchanged receipt only for this session\'s own uncompacted, unedited plan', async () => {
+    const text = '# Plan\n- Original step\n', version = value => crypto.createHash('sha256').update(value).digest('hex');
+    routes['/session/ses_root/message/msg_root_plan_user'] = { info: { id: 'msg_root_plan_user', sessionID: 'ses_root', role: 'user',
+      metadata: { openchamberPlanMode: true } }, parts: [{ type: 'text', text: 'Make the plan.' }] };
+    routes['/session/ses_root/message/msg_root_plan'] = { info: { id: 'msg_root_plan', sessionID: 'ses_root', role: 'assistant',
+      parentID: 'msg_root_plan_user', time: { completed: 1700000000003 }, finish: 'stop' },
+      turnOwnership: { source: 'native-sequence', userMessageID: 'msg_root_plan_user' }, parts: [{ type: 'text', text }] };
+    const history = () => [routes['/session/ses_root/message/msg_root_plan_user'], routes['/session/ses_root/message/msg_root_plan'], user(), assistant()];
+    routes['/session/ses_root/message'] = history();
+    const own = await resolveSessionPlanRevision({ dataDirectory: root, directory, sessionCreated: 1700000000001, sessionSlug: 'root', sourceMessageID: 'msg_root_plan' });
+    await fs.mkdir(own.directory, { recursive: true }); await fs.writeFile(own.path, text);
+    select({ sourceSessionId: 'ses_root', sourceMessageId: 'msg_root_plan', projectDirectory: directory, version: version(text) });
+    const value = host();
+    expect(await rpc(value)).toEqual({ unchanged: true, version: version(text), sourceMessageID: 'msg_root_plan' });
+    // A compaction after the source replaced the plan text in context.
+    routes['/session/ses_root/message'] = [...history().slice(0, 2), { info: { id: 'msg_compaction', sessionID: 'ses_root', role: 'user' },
+      parts: [{ type: 'compaction' }] }, ...history().slice(2)];
+    expect(await rpc(value)).toMatchObject({ content: text, version: version(text) });
+    routes['/session/ses_root/message'] = history();
+    // The saved plan changed after Implement.
+    await fs.writeFile(own.path, '# Plan\n- Revised step\n');
+    expect(await rpc(value)).toMatchObject({ content: '# Plan\n- Revised step\n' });
+    // Edited in Plan View before Implement: marker and file agree, the transcript does not.
+    select({ sourceSessionId: 'ses_root', sourceMessageId: 'msg_root_plan', projectDirectory: directory, version: version('# Plan\n- Revised step\n') });
+    expect(await rpc(value)).toMatchObject({ content: '# Plan\n- Revised step\n' });
+    // A plan written in another session is not in this one's context.
+    select({ projectDirectory: directory, version: version(text) });
+    expect(await rpc(value)).toMatchObject({ content: text });
   });
 });

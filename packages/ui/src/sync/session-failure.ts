@@ -1,11 +1,14 @@
-import { describeExecutionFailure } from '@/lib/executionFailure';
+import { describeExecutionFailure, describeExecutionRecoveryFailure } from '@/lib/executionFailure';
 import { isLikelyProviderAuthFailure, PROVIDER_AUTH_FAILURE_MESSAGE } from '@/lib/messages/providerAuthError';
 import { isLikelyProviderTokenExpired, PROVIDER_TOKEN_EXPIRED_MESSAGE } from '@/lib/messages/providerTokenExpired';
+import { isFreeTierRejectedMessage } from '@devryan/shared-runtime/lib/free-tier-rejection.js';
 export type SessionFailure = {
   code?: string;
   message?: string;
   name?: string;
-  data?: { message?: string };
+  /** Absolute provider reset time (ms), persisted next to `code`. */
+  retryAt?: number;
+  data?: { message?: string; v2Type?: string; statusCode?: number; providerCode?: string; providerParam?: string; retryAfterMs?: number };
 };
 
 export const isSessionCancellation = (error?: SessionFailure): boolean =>
@@ -16,22 +19,77 @@ export const isSessionCancellation = (error?: SessionFailure): boolean =>
 export function describeSessionFailure(error?: SessionFailure): { code: string; message: string } {
   if (isSessionCancellation(error)) return { code: 'session_cancelled', message: 'Request cancelled.' };
   const text = `${error?.code ?? ''} ${error?.message ?? ''} ${error?.data?.message ?? ''}`;
+  const recovery = describeExecutionRecoveryFailure(text);
+  if (recovery) return recovery;
   const execution = describeExecutionFailure(text);
   if (execution) return { code: 'local_execution_failed', message: execution };
   if (/local_execution_|mutation_runtime_|capture_timeout/.test(text)) return {
     code: 'local_execution_failed',
     message: 'Local tool execution could not start or finish. Review failed tools before sending another prompt.',
   };
+  if (error?.code === 'provider_credentials_changed' || /\bnative_credential_changed\b/.test(text)) return {
+    code: 'provider_credentials_changed',
+    message: 'The provider account changed while this request was being prepared. Check the selected account in Providers, then retry.',
+  };
   // Persistence keeps only the code, so each provider class must round-trip from it.
   // Token expiry is checked first: the broader auth heuristic would swallow it.
   if (error?.code === 'provider_token_expired' || isLikelyProviderTokenExpired(text)) {
     return { code: 'provider_token_expired', message: PROVIDER_TOKEN_EXPIRED_MESSAGE };
   }
-  if (error?.code === 'provider_auth_failed' || isLikelyProviderAuthFailure(text)) {
+  const providerCode = error?.data?.providerCode;
+  const providerType = error?.data?.v2Type;
+  if (error?.code === 'provider_request_unsupported' || providerType === 'provider.unsupported-operation'
+    || ['subscription_sharing_user_not_eligible', 'subscription_sharing_unsupported_capability', 'subscription_sharing_route_not_supported',
+      'unsupported_parameter', 'unsupported_value', 'unsupported_capability', 'model_not_found'].includes(providerCode ?? '')) return {
+    code: 'provider_request_unsupported',
+    message: 'The selected provider connection does not support this request. Check the model and options, or choose another connection, then retry.',
+  };
+  // A free tier that is used up or refuses this request is neither an auth
+  // failure (Zen answers 403) nor the account's paid quota: switching to a paid
+  // model or another connection is the recovery.
+  if (error?.code === 'provider_free_limit' || providerType === 'provider.free-limit' || isFreeTierRejectedMessage(text)) return {
+    code: 'provider_free_limit',
+    message: 'The model\'s free tier is used up or does not allow this request. Choose a paid model or another provider connection, then retry.',
+  };
+  if (error?.code === 'provider_auth_failed' || providerType === 'provider.auth'
+    || error?.name === 'ProviderAuthError' || error?.data?.statusCode === 401 || error?.data?.statusCode === 403
+    || ['invalid_api_key', 'invalid_authentication', 'authentication_error', 'subscription_sharing_invalid_user',
+      'chatpass_v2_scope_not_authorized', 'chatpass_v2_invalid_authorization_context'].includes(providerCode ?? '')
+    || isLikelyProviderAuthFailure(text)) {
     return { code: 'provider_auth_failed', message: PROVIDER_AUTH_FAILURE_MESSAGE };
   }
+  if (error?.code === 'provider_quota_exceeded' || providerType === 'provider.quota'
+    || ['subscription_sharing_usage_limit_exceeded', 'insufficient_quota', 'quota_exceeded', 'usage_limit_exceeded'].includes(providerCode ?? '')) return {
+    code: 'provider_quota_exceeded',
+    message: 'The selected provider account has reached its usage limit. Check its usage or choose another account, then retry.',
+  };
+  if (error?.code === 'provider_rate_limited' || providerType === 'provider.rate-limit'
+    || ['rate_limit_exceeded', 'too_many_requests'].includes(providerCode ?? '')) return {
+    code: 'provider_rate_limited', message: 'The provider is limiting requests. Wait briefly, then retry.',
+  };
+  if (error?.code === 'provider_transport_failed' || providerType === 'provider.transport' || providerType === 'provider.timeout'
+    || ['subscription_sharing_usage_unavailable', 'subscription_sharing_user_unavailable'].includes(providerCode ?? '')
+    || /chatgpt_siwc_stream_(?:failed|incomplete)\b|Failed to read [^\n]+ stream/.test(text)) return {
+    code: 'provider_transport_failed', message: 'The provider connection was interrupted before the response finished. Retry the request.',
+  };
+  if (error?.code === 'output_limit' || error?.name === 'MessageOutputLengthError' || providerType === 'output-limit') return {
+    code: 'output_limit',
+    message: 'The response kept reaching the model\'s output limit. Ask for a shorter answer or continue in smaller steps.',
+  };
   if (/TimeoutError|timed out|session_timeout/.test(`${error?.name ?? ''} ${text}`)) return {
     code: 'session_timeout', message: 'The request timed out. Review failed tools before continuing; their effects may be unknown.',
   };
   return { code: 'session_failed', message: 'The request failed. Review the conversation and failed tools before continuing.' };
+}
+
+const RESET_CODES = new Set(['provider_rate_limited', 'provider_quota_exceeded', 'provider_free_limit']);
+
+/** When a limited provider says it resets (ms since epoch): a persisted
+ * `retryAt`, or the provider's `retryAfterMs` counted from `at`, the time the
+ * failure was recorded. Undefined for other failures or without timing. */
+export function sessionFailureRetryAt(error: SessionFailure | undefined, at: number): number | undefined {
+  if (!RESET_CODES.has(describeSessionFailure(error).code)) return undefined;
+  if (typeof error?.retryAt === 'number' && Number.isFinite(error.retryAt) && error.retryAt > 0) return error.retryAt;
+  const after = error?.data?.retryAfterMs;
+  return typeof after === 'number' && Number.isFinite(after) && after >= 0 && Number.isFinite(at) ? at + after : undefined;
 }

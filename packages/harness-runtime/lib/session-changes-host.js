@@ -14,8 +14,10 @@ const error = (code, status = 409) => Object.assign(new Error(code), { code, sta
 // directory against OpenCode before touching the filesystem.
 export function createSessionChangeHost(options) {
   const runtime = createSessionChangeRuntime({ directory: path.join(options.dataDirectory, 'harness', 'session-changes'),
+    windowsOwner:options.windowsOwner, windowsLauncher:options.windowsLauncher,
     onDiagnostic: options.onDiagnostic,
     restoreOwned: options.restoreOwned,
+    previewOwned: options.previewOwned,
     assertLegacyRestore: options.assertLegacyRestore,
     onChange: ({ directory, sessionID }) => options.publishEvent?.({ type: 'session.changes.updated', properties: { sessionID } }, { directory }),
   });
@@ -29,36 +31,60 @@ export function createSessionChangeHost(options) {
     callMessages.delete(key); callMessages.set(key, messageID);
     while (callMessages.size > 256) callMessages.delete(callMessages.keys().next().value);
   };
-  const request = async (pathname, directory, deadline = Date.now() + 15_000) => {
-    const url = new URL(options.buildOpenCodeUrl(pathname));
-    if (directory) url.searchParams.set('directory', directory);
-    const response = await (options.fetchImpl ?? fetch)(url, {
-      headers: options.getOpenCodeAuthHeaders?.(), signal: AbortSignal.any([
-        AbortSignal.timeout(Math.max(1, Math.min(15_000, deadline - Date.now()))),
-        ...(readContext.getStore()?.signal ? [readContext.getStore().signal] : []),
-      ]),
-    });
-    if (!response.ok) throw error('session_observation_unavailable', response.status === 404 ? 404 : 503);
-    const reader = response.body?.getReader();
-    if (!reader) throw error('session_observation_unavailable', 503);
-    const chunks = [];
+  const gen2Client = () => {
+    const client = typeof options.openCodeClient === 'function' ? options.openCodeClient() : options.openCodeClient;
+    const generation = typeof client?.generation === 'function' ? client.generation() : undefined;
+    if (generation !== 2) throw error('opencode_generation_invalid', 503);
+    return client;
+  };
+  const requestDomain = async (client, pathname, directory, signal) => {
+    const url = new URL(pathname, 'http://session-changes.invalid');
     let bytes = 0;
-    responseMetrics.activeResponses++;
+    const readOptions = { directory, signal, maxResponseBytes: 16 * 1024 * 1024,
+      onResponseRead: ({ phase, bytes: count }) => {
+        if (phase === 'start') responseMetrics.activeResponses++;
+        else if (phase === 'end') { responseMetrics.activeResponses--; responseMetrics.responseBytes -= count; }
+        else if (phase === 'chunk') {
+          bytes += count;
+          responseMetrics.responseBytes += count;
+          responseMetrics.peakResponseBytes = Math.max(responseMetrics.peakResponseBytes, responseMetrics.responseBytes);
+          if (bytes > 16 * 1024 * 1024) throw error('history_limit', 503);
+        }
+      } };
+    const match = url.pathname.match(/^\/session\/([^/]+)(?:\/(children|message)(?:\/([^/]+))?)?$/);
+    let data, cursor;
     try {
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        bytes += value.byteLength;
-        responseMetrics.responseBytes += value.byteLength;
-        responseMetrics.peakResponseBytes = Math.max(responseMetrics.peakResponseBytes, responseMetrics.responseBytes);
-        if (bytes > 16 * 1024 * 1024) throw error('history_limit', 503);
-        chunks.push(value);
+      if (url.pathname === '/session/status') data = await client.sessions.status({ directory }, readOptions);
+      else if (match) {
+        const [, id, action, messageID] = match;
+        if (!action) data = await client.sessions.get(id, readOptions);
+        else if (action === 'children') data = await client.sessions.children(id, readOptions);
+        else if (messageID) data = await client.sessions.message(id, messageID, readOptions);
+        else {
+          const page = await client.sessions.messages(id, { limit: Number(url.searchParams.get('limit')) || 100,
+            before: url.searchParams.get('before') ?? undefined }, readOptions);
+          data = page.records; cursor = page.cursor;
+        }
+      } else throw error('session_observation_unavailable', 503);
+      signal.throwIfAborted();
+      const projectedBytes = Buffer.byteLength(JSON.stringify(data ?? null));
+      if (projectedBytes > 16 * 1024 * 1024) throw error('history_limit', 503);
+      return { data, cursor, bytes: Math.max(bytes, projectedBytes) };
+    } catch (cause) {
+      if (cause?.code === 'opencode_response_too_large') throw error('history_limit', 503);
+      if (cause?.code === 'history_limit' || cause?.code === 'opencode_runtime_changed' || cause?.code === 'opencode_generation_invalid') {
+        if (cause.status === undefined) cause.status = cause.statusCode ?? 503;
+        throw cause;
       }
-      return { data: JSON.parse(Buffer.concat(chunks).toString()), bytes, cursor: response.headers.get('x-next-cursor') };
-    } finally {
-      responseMetrics.activeResponses--; responseMetrics.responseBytes -= bytes;
-      await reader.cancel().catch(() => {});
+      throw Object.assign(error('session_observation_unavailable', cause?.statusCode === 404 ? 404 : 503), { cause });
     }
+  };
+  const request = async (pathname, directory, deadline = Date.now() + 15_000) => {
+    const client = gen2Client();
+    return requestDomain(client, pathname, directory, AbortSignal.any([
+      AbortSignal.timeout(Math.max(1, Math.min(15_000, deadline - Date.now()))),
+      ...(readContext.getStore()?.signal ? [readContext.getStore().signal] : []),
+    ]));
   };
   const session = async (id, directory) => {
     if (typeof id !== 'string' || !/^[a-zA-Z0-9_-]+$/.test(id)) throw error('invalid_session_id', 400);
@@ -119,8 +145,8 @@ export function createSessionChangeHost(options) {
     const id = verified.id;
     await runtime.registerSession({ directory, sessionID: id, parentID: verified.parentID ?? null });
     const saved = await runtime.historyState({ directory, sessionID: id });
-    const indexed = saved?.repairVersion === 1;
-    const state = indexed ? { ...saved } : { complete: false, cursor: null, first: null, newestID: null, repairVersion: 1 };
+    const indexed = saved?.repairVersion === 3;
+    const state = indexed ? { ...saved } : { complete: false, cursor: null, first: null, newestID: null, repairVersion: 3 };
     const deadline = Date.now() + 20_000;
     const seen = new Set();
     let cursor = state.complete ? null : state.cursor;
@@ -128,31 +154,74 @@ export function createSessionChangeHost(options) {
     let limit = 100;
     const visited = new Set();
     const importRecords = async (records) => {
-      const receipts = [], messages = [], terminalCalls = [];
+      const receipts = [], messages = [], terminalCalls = [], failedCalls = [];
+      const candidates = records.flatMap(record => (record.parts ?? []).filter(part => part.type === 'tool'
+        && !isSyntheticSessionChange(part) && classifySessionChangeTool(part.tool) === 'read-only'
+        && !(normalizeSessionChangeTool(part.tool) === 'task'
+          && (record.info?.providerID === 'cursor-acp' || part.state?.metadata?.cursorNativeTask?.source === 'cursor-native')))
+        .map(part => ({ messageID: record.info?.id, callID: part.callID ?? part.id, tool: part.tool })));
+      const trusted = new Set(), covered = new Map();
+      if (candidates.length && options.executionOutcomes) {
+        const outcomes = await options.executionOutcomes({ directory, sessionID: id, calls: candidates });
+        if (!Array.isArray(outcomes) || outcomes.length !== candidates.length || outcomes.some((outcome, index) =>
+          outcome?.sessionID !== id || outcome.messageID !== candidates[index].messageID || outcome.callID !== candidates[index].callID
+          || !['never_started', 'finished', 'uncertain'].includes(outcome.outcome)
+          || outcome.effect !== undefined && outcome.effect !== 'read-only'
+          || outcome.coveredBy !== undefined && (typeof outcome.coveredBy !== 'string' || !outcome.coveredBy
+            || outcome.coveredBy === outcome.callID))) throw error('capture_identity_mismatch', 503);
+        outcomes.forEach((outcome, index) => {
+          const key = `${candidates[index].messageID}\0${candidates[index].callID}`;
+          if (outcome.effect === 'read-only') trusted.add(key);
+          if (outcome.coveredBy) covered.set(key, outcome.coveredBy);
+        });
+      }
       for (const record of records) {
         if (!record.info?.id || typeof record.info.time?.created !== 'number') throw error('invalid_session_history', 503);
         visited.add(record.info.id);
-        const calls = [];
+        const calls = [], readOnlyCalls = [], claimedReadOnlyCalls = [], coveredCalls = [];
         if (record.info.sessionID && record.info.sessionID !== id) throw error('capture_identity_mismatch', 503);
         for (const part of record.parts ?? []) {
           // Native task wrappers need the private execution ledger. Bounded
           // activity previews cannot establish complete edit coverage.
           const nativeTask = normalizeSessionChangeTool(part.tool) === 'task'
             && (record.info.providerID === 'cursor-acp' || part.state?.metadata?.cursorNativeTask?.source === 'cursor-native');
-          if (part.type !== 'tool' || isSyntheticSessionChange(part) || classifySessionChangeTool(part.tool) === 'read-only' && !nativeTask) continue;
+          if (part.type !== 'tool' || isSyntheticSessionChange(part)) continue;
           if (part.sessionID && part.sessionID !== id || part.messageID && part.messageID !== record.info.id) throw error('capture_identity_mismatch', 503);
           const callID = part.callID ?? part.id;
           if (typeof callID !== 'string' || !callID) throw error('capture_identity_mismatch', 503);
+          if (classifySessionChangeTool(part.tool) === 'read-only' && !nativeTask && trusted.has(`${record.info.id}\0${callID}`)) {
+            readOnlyCalls.push({ callID, tool: part.tool }); continue;
+          }
+          const coveredBy = record.info.providerID === 'cursor-acp' ? covered.get(`${record.info.id}\0${callID}`) : null;
+          if (coveredBy && classifySessionChangeTool(part.tool) === 'read-only' && !nativeTask) {
+            coveredCalls.push({ callID, coveredBy }); continue;
+          }
+          if (classifySessionChangeTool(part.tool) === 'read-only' && !nativeTask) claimedReadOnlyCalls.push(callID);
           calls.push(callID);
           rememberCall(directory, id, callID, record.info.id);
           const receipt = sessionChangeReceipt(part);
           if (receipt) receipts.push({ ...receipt, sessionID: id, callID, messageID: record.info.id,
             userMessageID: record.info.parentID, createdAt: part.state?.time?.start ?? record.info.time.created,
             directory, source: record.info.providerID === 'cursor-acp' ? 'cursor' : 'opencode' });
+          else if (part.state?.status === 'error') failedCalls.push({ messageID: record.info.id, callID });
           if (['completed', 'error'].includes(part.state?.status)) terminalCalls.push({ directory, sessionID: id, messageID: record.info.id, callID });
         }
-        messages.push({ id: record.info.id, createdAt: record.info.time.created, calls });
+        messages.push({ id: record.info.id, createdAt: record.info.time.created, calls, readOnlyCalls, claimedReadOnlyCalls, coveredCalls });
         if (record.info.role === 'user' && (!state.first || record.info.time.created < state.first.createdAt)) state.first = { id: record.info.id, createdAt: record.info.time.created };
+      }
+      if (failedCalls.length && options.executionOutcomes) {
+        const outcomes = await options.executionOutcomes({ directory, sessionID: id, calls: failedCalls });
+        if (!Array.isArray(outcomes) || outcomes.length !== failedCalls.length
+          || outcomes.some((outcome, index) => outcome?.sessionID !== id || outcome.messageID !== failedCalls[index].messageID
+            || outcome.callID !== failedCalls[index].callID || !['never_started', 'finished', 'uncertain'].includes(outcome.outcome))) {
+          throw error('capture_identity_mismatch', 503);
+        }
+        // Only the constructor's durable no-start attestation can repair a
+        // failed call without file metadata; error text never proves no edits.
+        await runtime.recordReceipts(outcomes.filter(outcome => outcome.outcome === 'never_started').map(outcome => ({
+          directory, sessionID: id, messageID: outcome.messageID, callID: outcome.callID,
+          files: [], complete: true, source: 'confined-execution',
+        })));
       }
       await runtime.importHistorical(receipts);
       for (const call of terminalCalls) await runtime.settleHistoricalCall(call);
@@ -278,7 +347,7 @@ export function createSessionChangeHost(options) {
     },
     async handleRequest(method, rawPath, body = {}) {
       const url = new URL(rawPath, 'http://session-changes.invalid');
-      const match = url.pathname.replace(/^\/api(?=\/)/, '').match(/^\/openchamber\/session\/([^/]+)\/changes(?:\/(diff|undo|redo))?$/);
+      const match = url.pathname.replace(/^\/api(?=\/)/, '').match(/^\/(?:devryan|openchamber)\/session\/([^/]+)\/changes(?:\/(diff|undo|redo))?$/);
       if (!match) return null;
       const [, rootSessionID, action] = match;
       const directory = url.searchParams.get('directory');
@@ -308,23 +377,32 @@ export function createSessionChangeHost(options) {
           await Promise.race([Promise.allSettled(sessions.flatMap((entry) => [...(observations.get(entry.id) ?? [])])),
             new Promise((resolve) => { settleTimer = setTimeout(resolve, 20_000); })]).finally(() => clearTimeout(settleTimer));
           const firstUserMessageID = histories[0].first;
-          const summary = await runtime.summarize({ directory, rootSessionID, sessions, firstUserMessageID,
+          // Calls whose confined command still runs (a background shell) have
+          // no change record yet; they are reported as running, not missing.
+          const activeCalls = [];
+          for (const entry of sessions) {
+            const calls = await options.activeExecutionCalls?.({ directory, sessionID: entry.id }) ?? [];
+            if (!Array.isArray(calls)) throw error('capture_identity_mismatch', 503);
+            for (const callID of calls) if (typeof callID === 'string' && callID) activeCalls.push({ sessionID: entry.id, callID });
+          }
+          const summary = await runtime.summarize({ directory, rootSessionID, sessions, firstUserMessageID, activeCalls,
             reverts: sessions.filter((entry) => entry.revert?.messageID).map((entry) => ({ sessionID: entry.id, messageID: entry.revert.messageID })),
+            sessionCoverage: sessions.map((entry, index) => ({ sessionID: entry.id, reasons: [
+              ...(entry.revert?.messageID ? ['native_revert_active'] : []),
+              ...(!histories[index].complete ? ['history_pending'] : []),
+              ...(receiptStates[index]?.reasons ?? []),
+              ...(receiptStates[index]?.pending || observations.get(entry.id)?.size ? ['receipts_pending'] : []),
+            ] })),
             coverageReasons: [...(sessions.some((entry) => entry.revert?.messageID) ? ['native_revert_active'] : []),
               ...(histories.some((entry) => !entry.complete) ? ['history_pending'] : []),
               ...receiptStates.flatMap((state) => state?.reasons ?? []),
               ...(receiptStates.some((state) => state?.pending) || sessions.some((entry) => observations.get(entry.id)?.size) ? ['receipts_pending'] : [])] });
-          if (method === 'GET') return { status: 200, body: summary };
+          if (method === 'GET') return { status: 200, body: await runtime.previewRestore({ directory, rootSessionID, summary }) };
           if (summary.revision !== body?.revision) throw error('summary_revision_changed');
         }
         if (method === 'POST' && ['undo', 'redo'].includes(action)) {
-          if (!options.restoreOwned) {
-            const { data: statuses } = await request('/session/status', directory);
-            if (!statuses || typeof statuses !== 'object' || Array.isArray(statuses)
-              || Object.values(statuses).some((status) => !['idle', 'busy', 'retry'].includes(status?.type))) throw error('session_status_unavailable', 503);
-            if (Object.values(statuses).some((status) => ['busy', 'retry'].includes(status.type))) throw error('directory_busy');
-          }
-          const result = await runtime.restore({ directory, rootSessionID, revision: body?.revision, redo: action === 'redo' });
+          if (typeof options.restoreOwned !== 'function') throw error('mutation_runtime_unsupported');
+          const result = await runtime.restore({ directory, rootSessionID, revision: body?.revision, redo: action === 'redo', restoreProof: body?.restoreProof });
           return { status: 200, body: result };
         }
         return { status: 405, body: { code: 'method_not_allowed', error: 'Method not allowed' } };
@@ -336,7 +414,7 @@ export function createSessionChangeHost(options) {
   const requestUnshared = host.handleRequest;
   host.handleRequest = async (method, rawPath, body = {}, context = {}) => {
     const url = new URL(rawPath, 'http://session-changes.invalid');
-    const match = url.pathname.replace(/^\/api(?=\/)/, '').match(/^\/openchamber\/session\/([a-zA-Z0-9_-]+)\/changes(?:\/(diff|undo|redo))?$/);
+    const match = url.pathname.replace(/^\/api(?=\/)/, '').match(/^\/(?:devryan|openchamber)\/session\/([a-zA-Z0-9_-]+)\/changes(?:\/(diff|undo|redo))?$/);
     if (!match) return requestUnshared(method, rawPath, body);
     try {
       const directory = url.searchParams.get('directory');

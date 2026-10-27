@@ -79,7 +79,3 @@ SIDEBAR_SECTIONS.forEach((section) => {
     sidebarSectionDescriptions[section.id] = section.description;
     sidebarSectionConfigMap[section.id] = section;
 });
-
-export const SIDEBAR_SECTION_LABELS = sidebarSectionLabels;
-export const SIDEBAR_SECTION_DESCRIPTIONS = sidebarSectionDescriptions;
-export const SIDEBAR_SECTION_CONFIG_MAP = sidebarSectionConfigMap;

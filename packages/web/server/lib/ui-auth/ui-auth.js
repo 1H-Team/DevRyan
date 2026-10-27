@@ -1,9 +1,9 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import os from 'os';
 import { createUiPasskeys } from './ui-passkeys.js';
 import { LEGACY_UI_SESSION_COOKIE, requestUiSessionCookieName } from './session-cookie.js';
+import { resolveDevRyanDataRoot } from '@devryan/shared-runtime/node/data-root.js';
 
 let jose;
 const loadJose = () => jose ??= import('jose');
@@ -11,10 +11,10 @@ const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const TRUSTED_DEVICE_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 const RATE_LIMIT_WINDOW_MS = 5 * 60 * 1000;
-const RATE_LIMIT_MAX_ATTEMPTS = Number(process.env.OPENCHAMBER_RATE_LIMIT_MAX_ATTEMPTS) || 10;
+const RATE_LIMIT_MAX_ATTEMPTS = Number(process.env.DEVRYAN_RATE_LIMIT_MAX_ATTEMPTS) || 10;
 const RATE_LIMIT_LOCKOUT_MS = 15 * 60 * 1000;
 const RATE_LIMIT_CLEANUP_MS = 60 * 60 * 1000;
-const RATE_LIMIT_NO_IP_MAX_ATTEMPTS = Number(process.env.OPENCHAMBER_RATE_LIMIT_NO_IP_MAX_ATTEMPTS) || 3;
+const RATE_LIMIT_NO_IP_MAX_ATTEMPTS = Number(process.env.DEVRYAN_RATE_LIMIT_NO_IP_MAX_ATTEMPTS) || 3;
 
 const loginRateLimiter = new Map();
 let rateLimitCleanupTimer = null;
@@ -283,10 +283,8 @@ const normalizePassword = (candidate) => {
 
 const isTrustedDeviceRequest = (value) => value === true;
 
-const OPENCHAMBER_DATA_DIR = process.env.OPENCHAMBER_DATA_DIR
-  ? path.resolve(process.env.OPENCHAMBER_DATA_DIR)
-  : path.join(os.homedir(), '.config', 'openchamber');
-const JWT_SECRET_FILE = path.join(OPENCHAMBER_DATA_DIR, 'jwt-secret');
+const DEVRYAN_DATA_DIR = resolveDevRyanDataRoot();
+const JWT_SECRET_FILE = path.join(DEVRYAN_DATA_DIR, 'jwt-secret');
 
 function getOrCreateJwtSecret() {
   const envSecret = process.env.OPENCODE_JWT_SECRET;
@@ -304,7 +302,7 @@ function getOrCreateJwtSecret() {
 
   const secret = crypto.randomBytes(32).toString('hex');
   try {
-    fs.mkdirSync(OPENCHAMBER_DATA_DIR, { recursive: true });
+    fs.mkdirSync(DEVRYAN_DATA_DIR, { recursive: true });
     fs.writeFileSync(JWT_SECRET_FILE, secret, { mode: 0o600 });
     console.log('[JWT] Generated and persisted new secret to', JWT_SECRET_FILE);
   } catch (e) {
@@ -321,7 +319,7 @@ function persistJwtSecret(secret) {
     throw error;
   }
 
-  fs.mkdirSync(OPENCHAMBER_DATA_DIR, { recursive: true });
+  fs.mkdirSync(DEVRYAN_DATA_DIR, { recursive: true });
   fs.writeFileSync(JWT_SECRET_FILE, secret, { mode: 0o600 });
   return new TextEncoder().encode(secret);
 }
@@ -333,6 +331,7 @@ export const createUiAuth = ({
   readSettingsFromDiskMigrated,
 } = {}) => {
   const normalizedPassword = normalizePassword(password);
+  let disposed = false;
   const sessionCookie = (req) => {
     const name = cookieName ?? requestUiSessionCookieName(req);
     if (!name) throw new Error('The UI session listening port is unavailable');
@@ -364,6 +363,7 @@ export const createUiAuth = ({
 
     return {
       enabled: false,
+      captureAuthorization: () => () => !disposed,
       requireAuth: (_req, _res, next) => next(),
       handleSessionStatus: (_req, res) => {
         res.json({ authenticated: true, disabled: true });
@@ -400,7 +400,7 @@ export const createUiAuth = ({
       },
       ensureSessionToken,
       dispose: () => {
-
+        disposed = true;
       },
     };
   }
@@ -488,6 +488,19 @@ export const createUiAuth = ({
     } catch {
       return false;
     }
+  };
+  // Capture verified claims and the current signing generation, not a bearer.
+  // Secret rotation, expiry and disposal revoke already-issued native grants.
+  const captureAuthorization = async (req) => {
+    const token = getTokenFromRequest(req);
+    if (disposed || !token) return null;
+    try {
+      const { jwtVerify } = await loadJose(), secret = jwtSecret;
+      const { payload } = await jwtVerify(token, secret, { audience: sessionCookie(req) });
+      if (!Number.isFinite(payload.exp)) return null;
+      const expiresAt = payload.exp * 1000;
+      return () => !disposed && secret === jwtSecret && Date.now() < expiresAt;
+    } catch { return null; }
   };
 
   const issueSession = async (req, res, { trustDevice = false } = {}) => {
@@ -659,6 +672,7 @@ export const createUiAuth = ({
   };
 
   const dispose = () => {
+    disposed = true;
     loginRateLimiter.clear();
     if (rateLimitCleanupTimer) {
       clearInterval(rateLimitCleanupTimer);
@@ -669,6 +683,7 @@ export const createUiAuth = ({
 
   return {
     enabled: true,
+    captureAuthorization,
     requireAuth,
     handleSessionStatus,
     handleSessionCreate,

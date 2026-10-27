@@ -105,6 +105,7 @@ export const isAllowedBridgeOrigin = (origin) => origin === undefined || origin 
 
 export const describeAgentInput = (method, params) => {
   if (method === 'Input.dispatchMouseEvent') {
+    if (!Number.isFinite(params?.x) || !Number.isFinite(params?.y)) return null;
     const type = String(params?.type || '');
     const kind = type === 'mousePressed' ? 'down'
       : type === 'mouseReleased' ? 'up'
@@ -112,21 +113,22 @@ export const describeAgentInput = (method, params) => {
           : 'move';
     return {
       kind,
-      x: Number(params?.x) || 0,
-      y: Number(params?.y) || 0,
+      x: params.x,
+      y: params.y,
       button: typeof params?.button === 'string' ? params.button : null,
       clickCount: Number(params?.clickCount) || 0,
     };
   }
   if (method === 'Input.dispatchKeyEvent') {
-    return { kind: 'key', keyType: String(params?.type || ''), key: typeof params?.key === 'string' ? params.key : null };
+    return { kind: 'key', keyType: String(params?.type || '') };
   }
   if (method === 'Input.insertText') {
     return { kind: 'text', length: typeof params?.text === 'string' ? params.text.length : 0 };
   }
   if (method === 'Input.dispatchTouchEvent') {
     const touch = Array.isArray(params?.touchPoints) ? params.touchPoints[0] : null;
-    return { kind: 'touch', x: Number(touch?.x) || 0, y: Number(touch?.y) || 0, touchType: String(params?.type || '') };
+    if (!Number.isFinite(touch?.x) || !Number.isFinite(touch?.y)) return null;
+    return { kind: 'touch', x: touch.x, y: touch.y, touchType: String(params?.type || '') };
   }
   return null;
 };
@@ -138,7 +140,7 @@ const buildTargetInfo = (targetId, url, title) => ({
   url: url || 'about:blank',
   attached: true,
   canAccessOpener: false,
-  browserContextId: 'openchamber-browser',
+  browserContextId: 'devryan-browser',
 });
 
 const removeListener = (emitter, event, listener) => {
@@ -468,15 +470,6 @@ export const createBrowserCdpBridge = ({
       return;
     }
 
-    const input = describeAgentInput(message.method, message.params);
-    if (input) {
-      try {
-        onAgentInput?.({ leaseId: lease.leaseId, ...input });
-      } catch (error) {
-        log(`[cdp-bridge] onAgentInput failed for lease ${lease.leaseId}`, error);
-      }
-    }
-
     const commandFence = Symbol(`command:${message.id}`);
     const token = lease.token;
     const timer = setTimer(() => {
@@ -499,6 +492,14 @@ export const createBrowserCdpBridge = ({
     const isPending = () => isCurrentLease(lease, token) && lease.inFlight.get(message.id)?.fence === commandFence;
     const send = () => {
       if (!isPending()) throw new Error('Command expired before dispatch');
+      const input = describeAgentInput(message.method, message.params);
+      if (input) {
+        try {
+          onAgentInput?.({ leaseId: lease.leaseId, ...input });
+        } catch (error) {
+          log(`[cdp-bridge] onAgentInput failed for lease ${lease.leaseId}`, error);
+        }
+      }
       return operation ? operation(isPending) : guest.debugger.sendCommand(message.method, message.params,
         nativeSession);
     };

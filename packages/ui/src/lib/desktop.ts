@@ -1,14 +1,9 @@
+import type { HelperModelSelection } from '@/lib/helperModelSelection';
 import type { ProjectEntry } from '@/lib/api/types';
 import type { MobileKeyboardMode } from '@/lib/mobileKeyboardMode';
-import { getAuthPrincipal } from '@/lib/authSession';
 import type { AgentModelSelection } from '@/lib/agentModelSelection';
 
 export type { AgentModelSelection } from '@/lib/agentModelSelection';
-
-export type AssistantNotificationPayload = {
-  title?: string;
-  body?: string;
-};
 
 export type UpdateInfo = {
   available: boolean;
@@ -135,6 +130,7 @@ export type DesktopSettings = {
   agentModelSelections?: Record<string, AgentModelSelection>;
   defaultAgent?: string;
   defaultPlanMode?: boolean;
+  helperModelSelection?: HelperModelSelection;
   defaultGitIdentityId?: string; // ''/undefined = unset, 'global' or profile id
   openInAppId?: string;
   autoCreateWorktree?: boolean;
@@ -226,7 +222,7 @@ type ElectronRuntimeGlobal = {
 
 const getElectronRuntime = (): ElectronRuntimeGlobal | null => {
   if (typeof window === 'undefined') return null;
-  return (window as unknown as { __OPENCHAMBER_ELECTRON__?: ElectronRuntimeGlobal }).__OPENCHAMBER_ELECTRON__ ?? null;
+  return (window as unknown as { __DEVRYAN_ELECTRON__?: ElectronRuntimeGlobal }).__DEVRYAN_ELECTRON__ ?? null;
 };
 
 export const isTauriShell = (): boolean => {
@@ -389,7 +385,7 @@ export const isDesktopLocalOriginActive = (): boolean => {
   if (typeof window === 'undefined') return false;
   if (!isDesktopShell()) return false;
 
-  const local = typeof window.__OPENCHAMBER_LOCAL_ORIGIN__ === 'string' ? window.__OPENCHAMBER_LOCAL_ORIGIN__ : '';
+  const local = typeof window.__DEVRYAN_LOCAL_ORIGIN__ === 'string' ? window.__DEVRYAN_LOCAL_ORIGIN__ : '';
   const localUrl = parseUrl(local);
   const currentUrl = parseUrl(window.location.origin);
 
@@ -440,17 +436,6 @@ export const startDesktopWindowDrag = async (): Promise<boolean> => {
   }
 };
 
-export const isLoopbackStandaloneWebRuntime = (): boolean => {
-  if (typeof window === 'undefined' || isDesktopShell()) return false;
-  if (getAuthPrincipal().scope === 'managed') return false;
-  const current = parseUrl(window.location.href);
-  return Boolean(
-    current
-    && (current.protocol === 'http:' || current.protocol === 'https:')
-    && isLoopbackHost(current.hostname),
-  );
-};
-
 export const isStandaloneWebRuntime = (): boolean => {
   if (typeof window === 'undefined' || isDesktopShell()) return false;
   const current = parseUrl(window.location.href);
@@ -463,7 +448,7 @@ export const isStandaloneWebRuntime = (): boolean => {
 
 export const isWebRuntime = (): boolean => {
   if (typeof window === "undefined") return false;
-  const apis = (window as { __OPENCHAMBER_RUNTIME_APIS__?: { runtime?: { platform?: string } } }).__OPENCHAMBER_RUNTIME_APIS__;
+  const apis = (window as { __DEVRYAN_RUNTIME_APIS__?: { runtime?: { platform?: string } } }).__DEVRYAN_RUNTIME_APIS__;
   const platform = apis?.runtime?.platform;
   if (platform === 'web') {
     return true;
@@ -477,7 +462,7 @@ export const isWebRuntime = (): boolean => {
 
 export const getDesktopHomeDirectory = async (): Promise<string | null> => {
   if (typeof window !== 'undefined') {
-    const embedded = window.__OPENCHAMBER_HOME__;
+    const embedded = window.__DEVRYAN_HOME__;
     if (embedded && embedded.length > 0) {
       return embedded;
     }
@@ -552,29 +537,6 @@ export const stopAccessingDirectory = async (
   return { success: true };
 };
 
-export const sendAssistantCompletionNotification = async (
-  payload?: AssistantNotificationPayload
-): Promise<boolean> => {
-  if (isTauriShell()) {
-    try {
-      const tauri = (window as unknown as { __TAURI__?: TauriGlobal }).__TAURI__;
-      await tauri?.core?.invoke?.('desktop_notify', {
-        payload: {
-          title: payload?.title,
-          body: payload?.body,
-          tag: 'openchamber-agent-complete',
-        },
-      });
-      return true;
-    } catch (error) {
-      console.warn('Failed to send assistant completion notification (tauri)', error);
-      return false;
-    }
-  }
-
-  return false;
-};
-
 export const checkForDesktopUpdates = async (): Promise<UpdateInfo | null> => {
   if (!isTauriShell() || !isDesktopLocalOriginActive()) {
     return null;
@@ -590,11 +552,19 @@ export const checkForDesktopUpdates = async (): Promise<UpdateInfo | null> => {
   }
 };
 
+// `opened`: the release has no in-app updater payload, so the shell opened the
+// verified installer download or the release's tag page in the browser
+// instead, after draining the background runtime when one was running.
+export type DesktopUpdateDownloadResult = 'downloaded' | 'unavailable' | {
+  opened: 'installer' | 'release-page';
+  backgroundRuntimeStopped: boolean;
+};
+
 export const downloadDesktopUpdate = async (
   onProgress?: (progress: UpdateProgress) => void
-): Promise<boolean> => {
+): Promise<DesktopUpdateDownloadResult> => {
   if (!isTauriShell() || !isDesktopLocalOriginActive()) {
-    return false;
+    return 'unavailable';
   }
 
   const tauri = (window as unknown as { __TAURI__?: TauriGlobal }).__TAURI__;
@@ -604,7 +574,7 @@ export const downloadDesktopUpdate = async (
 
   try {
     if (typeof onProgress === 'function' && tauri?.event?.listen) {
-      unlisten = await tauri.event.listen('openchamber:update-progress', (evt) => {
+      unlisten = await tauri.event.listen('devryan:update-progress', (evt) => {
         const payload = evt?.payload;
         if (!payload || typeof payload !== 'object') return;
         const data = payload as { event?: unknown; data?: unknown };
@@ -633,11 +603,22 @@ export const downloadDesktopUpdate = async (
       });
     }
 
-    await tauri?.core?.invoke?.('desktop_download_and_install_update');
-    return true;
+    const result = await tauri?.core?.invoke?.('desktop_download_and_install_update');
+    if (typeof result !== 'object' || result === null) return 'downloaded';
+    const { openedExternally, kind, backgroundRuntimeStopped } = result as {
+      openedExternally?: unknown; kind?: unknown; backgroundRuntimeStopped?: unknown;
+    };
+    if (openedExternally !== true) return 'downloaded';
+    return {
+      opened: kind === 'installer' ? 'installer' : 'release-page',
+      backgroundRuntimeStopped: backgroundRuntimeStopped === true,
+    };
   } catch (error) {
     console.warn('Failed to download update (tauri)', error);
-    return false;
+    const message = error instanceof Error
+      ? error.message.replace(/^Error invoking remote method ['"]devryan:invoke['"]:\s*(?:Error:\s*)?/i, '').trim()
+      : '';
+    throw new Error(message || 'Failed to download update');
   } finally {
     if (unlisten) {
       try {
@@ -671,7 +652,7 @@ export const restartDesktopApp = async (): Promise<boolean> => {
     return true;
   } catch (error) {
     console.warn('Failed to restart desktop app (tauri)', error);
-    return false;
+    throw new Error(error instanceof Error ? error.message.replace(/^Error invoking remote method ['"]devryan:invoke['"]:\s*(?:Error:\s*)?/i, '').trim() : 'Failed to restart desktop app');
   }
 };
 
@@ -829,60 +810,6 @@ export const openDesktopFileInApp = async (
   } catch (error) {
     console.warn('Failed to open file in app', error);
     return false;
-  }
-};
-
-export const filterInstalledDesktopApps = async (apps: string[]): Promise<string[]> => {
-  if (!isTauriShell() || !isDesktopLocalOriginActive()) {
-    return [];
-  }
-
-  const candidate = Array.isArray(apps) ? apps.filter((value) => typeof value === 'string') : [];
-  if (candidate.length === 0) {
-    return [];
-  }
-
-  try {
-    const tauri = (window as unknown as { __TAURI__?: TauriGlobal }).__TAURI__;
-    const result = await tauri?.core?.invoke?.('desktop_filter_installed_apps', {
-      apps: candidate,
-    });
-    return Array.isArray(result) ? result.filter((value) => typeof value === 'string') : [];
-  } catch (error) {
-    console.warn('Failed to check installed apps (tauri)', error);
-    return [];
-  }
-};
-
-export const fetchDesktopAppIcons = async (apps: string[]): Promise<Record<string, string>> => {
-  if (!isTauriShell() || !isDesktopLocalOriginActive()) {
-    return {};
-  }
-
-  const candidate = Array.isArray(apps) ? apps.filter((value) => typeof value === 'string') : [];
-  if (candidate.length === 0) {
-    return {};
-  }
-
-  try {
-    const tauri = (window as unknown as { __TAURI__?: TauriGlobal }).__TAURI__;
-    const result = await tauri?.core?.invoke?.('desktop_fetch_app_icons', {
-      apps: candidate,
-    });
-    if (!Array.isArray(result)) {
-      return {};
-    }
-    const map: Record<string, string> = {};
-    for (const entry of result) {
-      if (!entry || typeof entry !== 'object') continue;
-      const candidateEntry = entry as { app?: unknown; data_url?: unknown };
-      if (typeof candidateEntry.app !== 'string' || typeof candidateEntry.data_url !== 'string') continue;
-      map[candidateEntry.app] = candidateEntry.data_url;
-    }
-    return map;
-  } catch (error) {
-    console.warn('Failed to fetch installed app icons (tauri)', error);
-    return {};
   }
 };
 

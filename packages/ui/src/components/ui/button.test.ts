@@ -1,10 +1,19 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { I18nProvider } from '@/lib/i18n';
 import { buttonVariants } from './button';
+import { SortableTabsStrip } from './sortable-tabs-strip';
 
-const testDirectory = dirname(fileURLToPath(import.meta.url));
+const renderPillTabs = (activePillLowercase?: boolean) => renderToStaticMarkup(
+  createElement(I18nProvider, null, createElement(SortableTabsStrip, {
+    items: [{ id: 'a', label: 'Alpha' }],
+    activeId: 'a',
+    onSelect: () => {},
+    variant: 'active-pill',
+    ...(activePillLowercase === undefined ? {} : { activePillLowercase }),
+  })),
+);
 
 describe('button casing', () => {
   test('preserves the authored casing for control labels', () => {
@@ -15,9 +24,15 @@ describe('button casing', () => {
   });
 
   test('does not lowercase active-pill tab labels by default', () => {
-    const source = readFileSync(resolve(testDirectory, 'sortable-tabs-strip.tsx'), 'utf8');
+    const tabClasses = /<button[^>]*role="tab"[^>]*class="([^"]*)"/.exec(renderPillTabs())?.[1].split(/\s+/) ?? [];
 
-    expect(source).toContain('activePillLowercase = false');
-    expect(source).not.toContain('activePillLowercase = true');
+    expect(tabClasses).toContain('animated-tabs__button');
+    expect(tabClasses).not.toContain('lowercase');
+  });
+
+  test('lowercases active-pill tab labels only when asked', () => {
+    const tabClasses = /<button[^>]*role="tab"[^>]*class="([^"]*)"/.exec(renderPillTabs(true))?.[1].split(/\s+/) ?? [];
+
+    expect(tabClasses).toContain('lowercase');
   });
 });

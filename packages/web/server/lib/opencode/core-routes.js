@@ -1,7 +1,25 @@
 import { selectionIngress, markSelectionTiming } from './selection-timing.js';
 import { sshManagedIdentity, authorizeSshManagedShutdown } from './ssh-managed-identity.js';
 import { getTunnelOwnerPrincipal } from '../tunnels/access-control.js';
-import { runWithRequestPrincipal } from '../multi-user/request-context.js';
+import {
+  describeOpenCodeRuntimeCapabilities,
+  parseOpenCodeGeneration,
+  resolveExternalOpenCodeGeneration,
+} from './readiness-probe.js';
+
+/**
+ * The runtime generation `/health` reports: the generation the lifecycle
+ * observed (`openCodeGeneration` in the health snapshot) when present, else
+ * the external declaration (`DEVRYAN_OPENCODE_GENERATION`), else gen 2. An
+ * invalid declaration reports `null`, and with it no capability.
+ */
+export const resolveHealthOpenCodeGeneration = (snapshot, env = process.env) => {
+  if (snapshot?.openCodeGeneration !== undefined && snapshot.openCodeGeneration !== null) {
+    return parseOpenCodeGeneration(snapshot.openCodeGeneration);
+  }
+  return resolveExternalOpenCodeGeneration(env).generation;
+};
+
 export const registerServerStatusRoutes = (app, dependencies) => {
   const {
     express,
@@ -12,6 +30,7 @@ export const registerServerStatusRoutes = (app, dependencies) => {
     runtimeInstanceId,
     gracefulShutdown,
     getHealthSnapshot,
+    getNativeRuntimeOwner,
     uiAuthController,
   } = dependencies;
   const requireSystemAdmin = (req, res, next) => {
@@ -44,13 +63,13 @@ export const registerServerStatusRoutes = (app, dependencies) => {
     });
   };
 
-  const isDevMode = () => process.env.OPENCHAMBER_DEV_MODE === 'true';
+  const isDevMode = () => process.env.DEVRYAN_DEV_MODE === 'true';
 
   const isDevShutdownAllowed = () => {
     // Dev-only escape hatch: allow terminating the dev stack from the UI.
     // Requires explicit opt-in so default dev sessions are not group-killed accidentally.
-    return process.env.OPENCHAMBER_DEV_SHUTDOWN === 'true'
-      && process.env.OPENCHAMBER_ALLOW_DEV_SHUTDOWN === 'true';
+    return process.env.DEVRYAN_DEV_SHUTDOWN === 'true'
+      && process.env.DEVRYAN_ALLOW_DEV_SHUTDOWN === 'true';
   };
 
   const isSameOriginRequest = (req) => {
@@ -157,10 +176,24 @@ export const registerServerStatusRoutes = (app, dependencies) => {
     if (typeof runtimeInstanceId === 'string' && runtimeInstanceId.length > 0) {
       res.set('X-DevRyan-Instance-ID', runtimeInstanceId);
     }
+    const snapshot = getHealthSnapshot();
+    const nativeOwner = getNativeRuntimeOwner?.();
+    const mcpOAuthAvailable = nativeOwner?.isReady?.() === true
+      && Array.isArray(nativeOwner.getConfigurationSnapshot?.()?.locations)
+      && typeof nativeOwner.withIntegrationOperation === 'function'
+      && typeof nativeOwner.credentialOperation === 'function'
+      && typeof nativeOwner.credentialMetadata === 'function';
     res.json({
       status: 'ok',
       timestamp: new Date().toISOString(),
-      ...getHealthSnapshot(),
+      ...snapshot,
+      devryanVersion: openchamberVersion,
+      openchamberVersion,
+      // Native integrations require the current owned host, including during replacement.
+      openCode: {
+        ...describeOpenCodeRuntimeCapabilities(resolveHealthOpenCodeGeneration(snapshot, process.env), { mcpOAuthAvailable }),
+        runtimeIdentity: typeof snapshot.openCodeRuntimeIdentity === 'string' ? snapshot.openCodeRuntimeIdentity : null,
+      },
       sshManaged: sshManagedIdentity(req, { env: process.env, version: openchamberVersion, runtimeInstanceId }),
     });
   };
@@ -213,7 +246,7 @@ export const registerServerStatusRoutes = (app, dependencies) => {
       await Promise.all(previewPorts.map((port) => killListenPort(port)));
 
       const pgid = await resolveProcessGroupId(process.pid);
-      const orchestratorPid = Number.parseInt(process.env.OPENCHAMBER_DEV_ORCHESTRATOR_PID || '', 10);
+      const orchestratorPid = Number.parseInt(process.env.DEVRYAN_DEV_ORCHESTRATOR_PID || '', 10);
 
       // Kick off shutdown cleanup first.
       void gracefulShutdown({ exitProcess: false });
@@ -263,6 +296,7 @@ export const registerServerStatusRoutes = (app, dependencies) => {
 
   app.get('/api/system/info', requireSystemAdmin, (_req, res) => {
     res.json({
+      devryanVersion: openchamberVersion,
       openchamberVersion,
       runtime: runtimeName,
       pid: process.pid,
@@ -294,7 +328,6 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
     readSettingsFromDiskMigrated,
     normalizeTunnelSessionTtlMs,
     getRuntimeReady = () => true,
-    getBotOwner = () => null,
   } = dependencies;
   const requireMultiUserCsrf = (req, res) => {
     if (!uiAuthController.multiUser) return true;
@@ -595,20 +628,6 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
       next(error);
     };
     try {
-      // The early tunnel boundary already authenticated this explicit,
-      // restricted principal and checked the Bot route allowlist.
-      if (req.principal?.scope === 'tunnel-bot') return authenticated();
-      // The workstation owner's Bot-scoped session: direct-local requests to
-      // Bot routes only. It never authorizes any other API.
-      const botOwner = getBotOwner();
-      const owner = botOwner?.authenticate?.(req) || null;
-      if (owner) {
-        if (botOwner.requiresCsrf(req) && !botOwner.hasCsrf(req)) {
-          return res.status(403).json({ error: 'Missing CSRF request header' });
-        }
-        req.principal = owner;
-        return runWithRequestPrincipal(owner, authenticated);
-      }
       if (requiresManagedAccountAuth(req)) {
         return sendManagedAccountAuthRequired(res);
       }
@@ -656,10 +675,6 @@ const SHARED_JSON_50MB_PREFIXES = Object.freeze([
   '/api/admin',
   '/api/analytics',
   '/api/bug-reports',
-  '/api/bots',
-  '/api/bot-actions',
-  '/api/bot-channels',
-  '/api/bot-runs',
   '/api/error-logs',
   '/api/client-errors',
   '/api/auth',
@@ -680,14 +695,17 @@ const SHARED_JSON_50MB_PREFIXES = Object.freeze([
   '/api/text',
   '/api/voice',
   '/api/tts',
-  '/api/openchamber/tunnel',
+  '/api/devryan/tunnel',
 ]);
 
 // Limit for the shared JSON parser, or null when the path is left unparsed.
 // Unlisted /api paths stay raw so the OpenCode proxy can stream them; any
 // other /api route that reads req.body mounts its own bounded express.json
 // (enforced by api-json-body-coverage.test.js).
+const isOpenAiOAuthPath = (pathname) => /^\/api\/provider\/openai\/oauth(?:\/|$)/i.test(pathname);
 export const resolveSharedJsonBodyLimit = (pathname) => {
+  // OpenAI OAuth routes authorize local transport/admin/CSRF before parsing.
+  if (isOpenAiOAuthPath(pathname)) return null;
   if (pathname.startsWith('/api/behavior')) return '1mb';
   if (SHARED_JSON_16KB_PREFIXES.some((prefix) => pathname.startsWith(prefix))) return '16kb';
   if (SHARED_JSON_50MB_PREFIXES.some((prefix) => pathname.startsWith(prefix))) return '50mb';
@@ -711,7 +729,8 @@ export const registerCommonRequestMiddleware = (app, dependencies) => {
     return express.json({ limit })(req, res, next);
   });
 
-  app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+  const parseUrlEncoded = express.urlencoded({ extended: true, limit: '50mb' });
+  app.use((req, res, next) => isOpenAiOAuthPath(req.path) ? next() : parseUrlEncoded(req, res, next));
 
   app.use((req, _res, next) => {
     if (verboseRequestLogs) {

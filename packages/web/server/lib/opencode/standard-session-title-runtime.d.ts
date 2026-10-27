@@ -5,6 +5,7 @@ export type StandardSessionTitleScheduleInput = {
   sessionID: string;
   directory?: string;
   text?: string;
+  acceptedInputID?: string;
   providerID?: string;
   modelID?: string;
   variant?: string;
@@ -33,4 +34,7 @@ export function normalizeGeneratedSessionTitle(
 
 export function deriveLocalSessionTitle(sourceText: unknown): string;
 
-export function createStandardSessionTitleRuntime(options?: Record<string, unknown>): StandardSessionTitleRuntime;
+export function createStandardSessionTitleRuntime(options?: Record<string, unknown> & {
+  /** Constructor-owned observation of the current lifecycle readiness deadline. */
+  isStartupReadinessPending?: (() => boolean) | null;
+}): StandardSessionTitleRuntime;

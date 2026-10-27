@@ -39,8 +39,8 @@ const loadOpenCursorPlugin = async () => {
   }
   const module = await import(pathToFileURL(pluginEntrypoint).href);
   const exported = module.default || module;
-  // open-cursor 2.5.8 default-exports an OpenCode plugin descriptor; this
-  // OpenCode version runs only its server factory.
+  // open-cursor 2.5.17 also exports a native setup factory; this compatibility
+  // adapter runs only the server factory, preserving DevRyan's runtime owners.
   const plugin = isRecord(exported) ? exported.server : exported;
   if (typeof plugin !== 'function') {
     throw new Error(`[DevRyan] Installed Open Cursor entrypoint does not export a plugin: ${pluginEntrypoint}`);

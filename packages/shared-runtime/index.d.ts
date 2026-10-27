@@ -1,73 +1,8 @@
 export * from './lib/usage-observation.js';
 export * from './lib/cache-efficiency-policy.js';
+export * from './lib/helper-model-selection.js';
 
-export interface ArchiveLimits {
-  maxArchiveBytes?: number;
-  maxEntries?: number;
-  maxTotalBytes?: number;
-  maxFileBytes?: number;
-  maxPathBytes?: number;
-  maxDepth?: number;
-}
-
-export type ArchiveRejectionCode =
-  | 'ARCHIVE_DOWNLOAD_TOO_LARGE'
-  | 'ARCHIVE_ENTRY_LIMIT'
-  | 'ARCHIVE_INVALID_PATH'
-  | 'ARCHIVE_PATH_COLLISION'
-  | 'ARCHIVE_UNSAFE_ENTRY'
-  | 'ARCHIVE_SIZE_LIMIT'
-  | 'ARCHIVE_CORRUPT'
-  | 'ARCHIVE_MISSING_SKILL_FILE'
-  | 'ARCHIVE_DOWNLOAD_TIMEOUT';
-
-export class ArchiveRejectionError extends Error {
-  readonly code: ArchiveRejectionCode;
-  constructor(code: ArchiveRejectionCode, message: string, options?: { cause?: unknown });
-}
-
-export function isArchiveRejectionError(error: unknown): error is ArchiveRejectionError;
-
-export interface SafeArchiveEntry {
-  name: string;
-  isDirectory: boolean;
-  declaredSize: number;
-}
-
-export interface SafeArchivePlan {
-  archive: unknown;
-  entries: SafeArchiveEntry[];
-  totalDeclaredBytes: number;
-}
-
-export const DEFAULT_ARCHIVE_LIMITS: Readonly<Required<ArchiveLimits>>;
-
-export function downloadArchive(
-  url: string | URL,
-  options?: {
-    fetchImpl?: SharedQuotaFetch;
-    headers?: HeadersInit;
-    allowedOrigins?: Iterable<string>;
-    timeoutMs?: number;
-    maxRedirects?: number;
-    maxArchiveBytes?: number;
-    signal?: AbortSignal;
-  },
-): Promise<Buffer>;
-
-export function preflightSkillArchive(
-  archiveBuffer: Buffer | Uint8Array | ArrayBuffer,
-  limits?: ArchiveLimits,
-): SafeArchivePlan;
-
-export function installSkillArchive(options: {
-  archiveBuffer: Buffer | Uint8Array | ArrayBuffer;
-  targetDir: string;
-  replace?: boolean;
-  limits?: ArchiveLimits;
-  requiredRootFile?: string;
-  fsOps?: Record<string, unknown>;
-}): Promise<{ installedPath: string; files: number; bytes: number }>;
+export * from './lib/safe-archive.js';
 
 export type ConfigApplyScope = 'agents' | 'providers' | 'commands' | 'skills' | 'mcp' | 'behavior' | 'runtime';
 export type ConfigApplyReasonCode =
@@ -382,12 +317,13 @@ export interface SharedUsageResetCredits {
   totalEarnedCount: number | null;
   credits: SharedUsageResetCredit[];
   source: 'dedicated' | 'usage';
+  detailsAvailable?: boolean;
 }
 
 export interface SharedProviderUsage {
   windows: Record<string, SharedUsageWindow>;
   models?: Record<string, SharedProviderUsage>;
-  resetCredits?: SharedUsageResetCredits;
+  resetCredits?: SharedUsageResetCredits | null;
 }
 
 export interface SharedQuotaProviderResult {
@@ -476,6 +412,8 @@ export function fetchCodexQuotaAdapter(options?: SharedQuotaAdapterOptions<{
   accessToken: string;
   accountId?: string | null;
 }>): Promise<SharedQuotaProviderResult>;
+
+export function normalizeCodexAppServerQuota(payload: unknown, options?: { now?: number }): SharedQuotaProviderResult;
 
 export function fetchXaiQuotaAdapter(options?: SharedQuotaAdapterOptions<{
   accessToken: string;
@@ -577,3 +515,4 @@ export function isSupportedAssistantImageSource(value: unknown): boolean;
 export function extractAssistantImageReferences(markdown: string): AssistantImageReference[];
 export function stripAssistantImageMarkdown(markdown: string): string;
 export const SUPPORTED_IMAGE_EXTENSIONS: Set<string>;
+export * from './lib/model-selection-availability.js';

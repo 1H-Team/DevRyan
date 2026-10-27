@@ -1,4 +1,4 @@
-import type { ToolsAPI } from '@openchamber/ui/lib/api/types';
+import type { ToolsAPI } from '@devryan/ui/lib/api/types';
 import { buildToolManifest, normalizeToolIds } from '../../../ui/src/lib/tools/manifest';
 
 type ToolsAPIOptions = {

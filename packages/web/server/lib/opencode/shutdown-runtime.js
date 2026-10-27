@@ -1,3 +1,5 @@
+const SERVER_STREAM_GRACE_MS = 1000;
+
 export const createGracefulShutdownRuntime = (dependencies) => {
   const {
     process,
@@ -7,6 +9,7 @@ export const createGracefulShutdownRuntime = (dependencies) => {
     setIsShuttingDown,
     syncToHmrState,
     openCodeWatcherRuntime,
+    globalMessageStreamHub,
     sessionRuntime,
     scheduledTasksRuntime,
     getHealthCheckInterval,
@@ -15,7 +18,6 @@ export const createGracefulShutdownRuntime = (dependencies) => {
     setTerminalRuntime,
     getMessageStreamRuntime,
     setMessageStreamRuntime,
-    getBotsRuntime,
     getManagedOrchestrationRuntime,
     getBrowserLeaseRuntime,
     getCursorSdkRuntime,
@@ -25,8 +27,6 @@ export const createGracefulShutdownRuntime = (dependencies) => {
     getOpenCodePort,
     getOpenCodeProcess,
     setOpenCodeProcess,
-    killProcessOnPort,
-    waitForPortRelease,
     getServer,
     getUiAuthController,
     setUiAuthController,
@@ -34,6 +34,9 @@ export const createGracefulShutdownRuntime = (dependencies) => {
     setActiveTunnelController,
     tunnelAuthController,
     getHarnessRuntime,
+    closeNativeRuntime,
+    closeFeatureRoutes,
+    onShutdownComplete,
   } = dependencies;
 
   const gracefulShutdown = async (options = {}) => {
@@ -45,8 +48,21 @@ export const createGracefulShutdownRuntime = (dependencies) => {
     const exitProcess = typeof options.exitProcess === 'boolean' ? options.exitProcess : getExitOnShutdown();
     const harnessRuntime = typeof getHarnessRuntime === 'function' ? getHarnessRuntime() : null;
     harnessRuntime?.beginDrain?.();
+    // Native close needs the journal, scheduler and private execution bridge
+    // alive until its scope, supervisors and durable ACK barrier have settled.
+    if (closeNativeRuntime || closeFeatureRoutes) {
+      try { await closeNativeRuntime?.(); await closeFeatureRoutes?.(); }
+      catch (cause) {
+        // Admission stays drained, but a refused native settlement must be
+        // retryable once its owner confirms exit and durable recovery.
+        setIsShuttingDown(false);
+        syncToHmrState();
+        throw cause;
+      }
+    }
 
     openCodeWatcherRuntime.stop();
+    globalMessageStreamHub?.stop();
     sessionRuntime.dispose();
     scheduledTasksRuntime?.stop?.();
 
@@ -91,15 +107,6 @@ export const createGracefulShutdownRuntime = (dependencies) => {
         console.warn('Error draining harness runtime:', error);
       } finally {
         if (harnessDrainTimeout) clearTimeout(harnessDrainTimeout);
-      }
-    }
-
-    const botsRuntime = typeof getBotsRuntime === 'function' ? getBotsRuntime() : null;
-    if (botsRuntime && typeof botsRuntime.shutdown === 'function') {
-      try {
-        await botsRuntime.shutdown();
-      } catch (error) {
-        console.warn('Error stopping Production Bots runtime:', error);
       }
     }
 
@@ -150,8 +157,9 @@ export const createGracefulShutdownRuntime = (dependencies) => {
       }
     }
 
-    if (!shouldSkipOpenCodeStop()) {
-      const portToKill = getOpenCodePort();
+    if (closeNativeRuntime) {
+      setOpenCodeProcess(null);
+    } else if (!shouldSkipOpenCodeStop()) {
       const openCodeProcess = getOpenCodeProcess();
 
       if (openCodeProcess) {
@@ -177,17 +185,13 @@ export const createGracefulShutdownRuntime = (dependencies) => {
         setOpenCodeProcess(null);
       }
 
-      killProcessOnPort(portToKill);
-      if (!(await waitForPortRelease(portToKill, 5000))) {
-        console.warn(`Timed out waiting for OpenCode port ${portToKill} to be released during shutdown`);
-      }
     } else {
       console.log('Skipping OpenCode shutdown (external server)');
     }
 
     const server = getServer();
     if (server) {
-      let closeTimeout = null;
+      let closeTimeout = null, streamTimeout = null;
       try {
         await Promise.race([
           new Promise((resolve) => {
@@ -195,6 +199,11 @@ export const createGracefulShutdownRuntime = (dependencies) => {
               console.log('HTTP server closed');
               resolve();
             });
+            // Live streams (the desktop renderer's events) never end on their
+            // own, so close used to wait out the whole shutdown bound, longer
+            // than the desktop updater's cleanup bound. End them after a grace.
+            server.closeIdleConnections?.();
+            streamTimeout = setTimeout(() => server.closeAllConnections?.(), Math.min(shutdownTimeoutMs, SERVER_STREAM_GRACE_MS));
           }),
           new Promise((resolve) => {
             closeTimeout = setTimeout(() => {
@@ -207,27 +216,34 @@ export const createGracefulShutdownRuntime = (dependencies) => {
         if (closeTimeout) {
           clearTimeout(closeTimeout);
         }
+        if (streamTimeout) clearTimeout(streamTimeout);
       }
     }
 
-    const uiAuthController = getUiAuthController();
-    if (uiAuthController) {
-      await uiAuthController.dispose();
-      setUiAuthController(null);
-    }
-
-    const activeTunnelController = getActiveTunnelController();
-    if (activeTunnelController) {
-      console.log('Stopping active tunnel...');
-      activeTunnelController.stop();
-      setActiveTunnelController(null);
-      // Restart suspends transport; only the explicit Stop action revokes
-      // durable Bot grants and sessions.
-      if (tunnelAuthController.suspendActiveTunnel) tunnelAuthController.suspendActiveTunnel();
-      else tunnelAuthController.clearActiveTunnel();
+    // A failing auth disposal still rejects shutdown, but never before the
+    // tunnel is stopped (an orphaned cloudflared outlives this host).
+    try {
+      const uiAuthController = getUiAuthController();
+      if (uiAuthController) {
+        await uiAuthController.dispose();
+        setUiAuthController(null);
+      }
+    } finally {
+      const activeTunnelController = getActiveTunnelController();
+      if (activeTunnelController) {
+        console.log('Stopping active tunnel...');
+        void Promise.resolve(activeTunnelController.stop())
+          .catch((error) => console.warn('Error stopping active tunnel:', error?.message || error));
+        setActiveTunnelController(null);
+        // Restart suspends transport; only the explicit Stop action revokes
+        // durable tunnel grants and sessions.
+        if (tunnelAuthController.suspendActiveTunnel) tunnelAuthController.suspendActiveTunnel();
+        else tunnelAuthController.clearActiveTunnel();
+      }
     }
 
     console.log('Graceful shutdown complete');
+    onShutdownComplete?.();
     if (exitProcess) {
       process.exit(0);
     }

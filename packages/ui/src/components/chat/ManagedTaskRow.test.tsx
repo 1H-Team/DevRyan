@@ -9,7 +9,7 @@ import {
   type ManagedTaskRecord,
   type ManagedTaskStatus,
   type ManagedTransportRecovery,
-} from '@openchamber/orchestration-runtime';
+} from '@devryan/orchestration-runtime';
 
 import { I18nProvider } from '@/lib/i18n';
 import { managedTitleFixture, renderManagedTaskMarkup } from './managedTaskTestFixture';
@@ -161,7 +161,7 @@ const manualRecoveryFailure = (
 
 const ingest = (task: ManagedTaskEventRecord, resultEnvelope?: ManagedTaskProjectedEnvelope) => {
   store.getState().ingestEvent({
-    type: 'openchamber:managed-task',
+    type: 'devryan:managed-task',
     properties: {
       owner: 'devryan',
       directory: '/workspace',
@@ -175,11 +175,84 @@ const renderView = (element: React.ReactElement) => renderToStaticMarkup(
   <I18nProvider>{element}</I18nProvider>,
 );
 
+test('dispatch keeps completed execution separate from failed verification', () => {
+  const verification: NonNullable<ManagedTaskEventRecord['verification']> = {
+    objectiveId: 'implementation', ready: false, status: 'failed', observedAt: 2_000,
+    remaining: [{ name: 'Focused tests', status: 'failed', reason: 'command_failed' }],
+    checks: [{ name: 'Focused tests', kind: 'command', status: 'failed', reason: 'command_failed', evidence: null,
+      coverage: { kind: 'declared-files', paths: ['src/cards.tsx'], contentHash: 'a'.repeat(64) } }],
+  };
+  const renderStatus = (status: ManagedTaskStatus) => renderView(<ManagedTaskRowView
+    task={{ ...toManagedTaskEvent(record('dvr_task_verify', status, { firstAssistantPartAt: 1_200 })).properties.task, verification }}
+    onOpenChild={() => undefined}
+  />);
+  const repairing = renderStatus('running');
+  expect(repairing).toContain('>Running...</p>');
+  expect(repairing).not.toContain('>Failed</p>');
+  const terminal = renderStatus('completed');
+  expect(terminal).toContain('>Complete</p>');
+  expect(terminal).toContain('data-task-verification="failed"');
+  expect(terminal).toContain('Checks failed');
+  expect(terminal).not.toContain('>Failed</p>');
+  for (const html of [repairing, terminal]) {
+    expect(html).toContain('Map the Workspace');
+    expect(html).toContain('Open Subtask');
+    expect(html).not.toContain('Focused tests');
+    expect(html).not.toContain('Waive');
+    expect(html).not.toContain('Verification incomplete');
+  }
+  const skipped = renderView(<ManagedTaskRowView
+    task={{ ...toManagedTaskEvent(record('dvr_task_skipped', 'completed')).properties.task,
+      verification: { ...verification, ready: true, status: 'skipped', remaining: [],
+        checks: verification.checks.map(check => ({ ...check, status: 'skipped', reason: 'environment_unavailable' })) } }}
+    onOpenChild={() => undefined}
+  />);
+  expect(skipped).toContain('>Complete</p>');
+  expect(skipped).not.toContain('>Failed</p>');
+  expect(skipped).not.toContain('Passed');
+  expect(skipped).not.toContain('Focused tests');
+  expect(skipped).not.toContain('Waive');
+  expect(skipped).toContain('Verification skipped');
+});
+
+for (const [status, reason, expected] of [
+  ['pending', 'check_not_observed', 'Verification pending'],
+  ['pending', 'content_changed_or_check_incomplete', 'Checks need rerunning'],
+  ['blocked', 'required_evidence_unavailable', 'Verification blocked'],
+  ['passed', 'observed_exit_zero_for_current_content', 'Verified'],
+] as const) test(`completed dispatch presents ${expected.toLowerCase()} without changing its execution outcome`, () => {
+  const check: NonNullable<ManagedTaskEventRecord['verification']>['checks'][number] = {
+    name: 'Focused tests', kind: 'command', status, reason, evidence: null,
+    coverage: { kind: 'declared-files', paths: ['src/cards.tsx'], contentHash: 'a'.repeat(64) },
+  };
+  const html = renderView(<ManagedTaskRowView
+    task={{ ...toManagedTaskEvent(record('dvr_task_verification', 'completed')).properties.task,
+      verification: { objectiveId: 'implementation', ready: status === 'passed', status, observedAt: 2_000,
+        checks: [check], remaining: status === 'passed' ? [] : [{ name: check.name, status, reason }] } }}
+    onOpenChild={() => undefined}
+  />);
+  expect(html).toContain('>Complete</p>');
+  expect(html).toContain(expected);
+  expect(html).not.toContain('>Failed</p>');
+});
+
 const transportRecovery: ManagedTransportRecovery = {
   revision: 3, phase: 'exhausted', kind: 'connection_failure', sameModelAttempts: 1, backupAttempts: 0,
   failedMessageId: 'msg_failed', failedUserMessageId: 'msg_user', recoveryMessageId: 'msg_recovery',
   eventId: 'evt_failed', reservedAt: 1_000, submittedAt: 1_100,
 };
+
+test('a queued dependency hold explains the prerequisite instead of claiming execution started', () => {
+  const html = renderView(<ManagedTaskRowView
+    task={toManagedTaskEvent(record('dvr_task_prerequisites', 'queued', {
+      waitingReason: { kind: 'prerequisites', activeCount: 1, limit: null, since: 1_500 },
+    })).properties.task}
+    onOpenChild={() => undefined}
+  />);
+  expect(html).toContain('Waiting for prerequisite checks');
+  expect(html).not.toContain('>Running');
+  expect(html).not.toContain('>Failed');
+});
 
 test('connection recovery shows a backup control without claiming a usage limit', () => {
   const failed = record('dvr_task_transport', 'failed', {
@@ -443,4 +516,69 @@ describe('ManagedTaskRow', () => {
     expect(html).not.toContain('Auto-Resume');
     expect(html).not.toContain('role="checkbox"');
   });
+});
+
+ test('user stopped tasks offer explicit model recovery and stay stopped during independent child work', () => {
+  const stopped = record('dvr_task_stopped', 'aborted', { terminationIntent: 'user_stopped', failureReason: 'Stopped by the user' });
+  const envelope = createManagedTaskResultEnvelope(stopped, { sequence: 1, createdAt: 2000, resumable: true });
+  const task = toManagedTaskEvent(stopped, envelope).properties.task;
+  const html = renderView(<ManagedTaskRowView task={task} onOpenChild={() => undefined} resultEnvelope={envelope} onRetryInPlace={() => undefined} />);
+  expect(html).toContain('Stopped by you');
+  expect(html).toContain('Resume as Task');
+  expect(html).not.toContain('>Error<');
+  expect(html).not.toContain('>Running');
+  const active = renderView(<ManagedTaskRowView task={task} onOpenChild={() => undefined} resultEnvelope={envelope} childActive onRetryInPlace={() => undefined} />);
+  expect(active).toContain('Stopped by you');
+  expect(active).not.toContain('>Running');
+  expect(active).not.toContain('Resume as Task');
+});
+
+test('a user stop keeps Dismiss beside Resume as Task and names the last model, not a failed one', () => {
+  const stopped = record('dvr_task_stopped', 'aborted', { terminationIntent: 'user_stopped', failureReason: 'Stopped by the user' });
+  const envelope = createManagedTaskResultEnvelope(stopped, { sequence: 1, createdAt: 2000, resumable: true });
+  const task = toManagedTaskEvent(stopped, envelope).properties.task;
+  const html = renderView(<ManagedTaskRowView task={task} onOpenChild={() => undefined} resultEnvelope={envelope}
+    onRetryInPlace={() => undefined} onDismissStopped={() => undefined} />);
+  const recovery = html.slice(html.indexOf('aria-label="Model Recovery"'));
+  expect(recovery).toContain('Dismiss Stopped Task');
+  expect(recovery.indexOf('Dismiss Stopped Task')).toBeLessThan(recovery.indexOf('Resume as Task'));
+  expect(html.match(/Dismiss Stopped Task/g)).toHaveLength(1);
+  expect(html).toContain('Last model: github-copilot / gpt-4.1');
+  expect(html).not.toContain('Failed model');
+  expect(html).toContain('Open Subtask');
+
+  const active = renderView(<ManagedTaskRowView task={task} onOpenChild={() => undefined} resultEnvelope={envelope} childActive
+    onRetryInPlace={() => undefined} onDismissStopped={() => undefined} />);
+  expect(active).not.toContain('Model Recovery');
+  expect(active.match(/Dismiss Stopped Task/g)).toHaveLength(1);
+});
+
+test('the session surface renders its own card without linking to the session it is in', () => {
+  const stopped = record('dvr_task_stopped', 'aborted', { terminationIntent: 'user_stopped', failureReason: 'Stopped by the user' });
+  const envelope = createManagedTaskResultEnvelope(stopped, { sequence: 1, createdAt: 2000, resumable: true });
+  const task = toManagedTaskEvent(stopped, envelope).properties.task;
+  const html = renderView(<ManagedTaskRowView task={task} surface="session" onOpenChild={() => undefined} resultEnvelope={envelope}
+    onRetryInPlace={() => undefined} onDismissStopped={() => undefined} />);
+  expect(html).toContain('chat-message-column');
+  expect(html).toContain('rounded-xl');
+  expect(html).not.toContain('Open Subtask');
+  expect(html).toContain('Resume as Task');
+});
+
+test('a provider failure still names the failed model', () => {
+  const { task, envelope } = manualRecoveryFailure('model_unavailable', null);
+  const html = renderView(<ManagedTaskRowView task={task} resultEnvelope={envelope} onRetryInPlace={() => undefined} onOpenChild={() => undefined} />);
+  expect(html).toContain('Failed model: github-copilot / gpt-4.1');
+  expect(html).not.toContain('Last model');
+});
+
+
+test('runtime admission failures explain repair without claiming a connection interruption', () => {
+  const failed = record('dvr_task_capability', 'failed', {
+    failureReason: 'admission.prompt: the native permission action for tool todoread is unavailable',
+  });
+  const html = renderView(<ManagedTaskRowView task={toManagedTaskEvent(failed).properties.task} onOpenChild={() => undefined} />);
+  expect(html).toContain('required tool permission is unavailable');
+  expect(html).toContain('Repair or update the runtime');
+  expect(html).not.toContain('model connection was interrupted');
 });

@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { COMPACTION_ANCHOR_TAG, createTaskContextRuntime, deriveTaskCheckpoint, formatChildCompactionAnchor, formatCompactionAnchor, planReference } from './task-context.js';
 
@@ -24,6 +25,11 @@ test('selected plan references require one canonical synthetic implement marker'
   const ordinary = selected(marker); ordinary.parts[0].synthetic = false; expect(planReference(ordinary)).toBeNull();
   const assistant = selected(marker); assistant.info = { ...anchor.info, role: 'assistant' }; expect(planReference(assistant)).toBeNull();
   const duplicate = selected(marker); duplicate.parts.push({ ...duplicate.parts[0] }); expect(planReference(duplicate)).toBeNull();
+  const canonical = selected(marker);
+  canonical.parts[0].text = canonical.parts[0].text.replace('[openchamber-plan-action:v1]', '[devryan-plan-action:v1]');
+  expect(planReference(canonical)).toEqual(planReference(selected(marker)));
+  canonical.parts.push(selected(marker).parts[0]);
+  expect(planReference(canonical)).toBeNull();
 });
 
 describe('recoverable task checkpoints', () => {
@@ -48,6 +54,15 @@ describe('recoverable task checkpoints', () => {
       { name: 'unit', status: 'not-observed', lastObservation: 'passed', callId: 'call_pass', messageId: 'msg_pass' },
       { name: 'lint', status: 'failed', lastObservation: 'failed', callId: 'call_fail', messageId: 'msg_fail' },
     ]);
+  });
+  test('uses objective-wide current verification even after the child result is collected', () => {
+    const verification = { objectiveId: 'msg_user', ready: false, status: 'pending', checks: [{ name: 'unit', status: 'pending',
+      reason: 'content_changed', coverage: { kind: 'declared-files', paths: ['source.js'], contentHash: 'b'.repeat(64) }, evidence: null }] };
+    const checkpoint = deriveTaskCheckpoint({ ...base, tasks: [], envelopes: [], verification });
+    expect(checkpoint.verification).toMatchObject({ ready: false, checks: [{ name: 'unit', reason: 'content_changed' }], coverage: { complete: true } });
+    expect(checkpoint.nextAction.kind).toBe('inspect-managed-barrier');
+    expect(formatCompactionAnchor(checkpoint)).toContain('unit: pending (content_changed)');
+    expect(deriveTaskCheckpoint({ ...base, verification: { ...verification, objectiveId: 'other' } }).verification).toBeNull();
   });
   test('bounds views without changing the task graph and names missing evidence explicitly', () => {
     const tasks = Array.from({ length: 250 }, (_, i) => ({ ...base.tasks[0], taskId: `dvr_task_${i}` }));
@@ -204,4 +219,86 @@ describe('compaction anchors', () => {
       expect(writes).toEqual([]);
     } finally { await runtime.drain(); await fs.rm(directory, { recursive: true, force: true }); }
   });
+});
+
+test('final constructor authorization runs after canonical context reads and before record commits', async () => {
+  let revoked=false,writes=0;
+  const store={drain:async()=>{},directory:'/owned',readRecord:async()=>null,listRecords:async()=>[],writeRecord:async()=>{writes++;},deleteRecord:async()=>{throw Error('no pruning');}};
+  const runtime=createTaskContextRuntime({dataDirectory:'/owned',store,withLock:async(_key,action)=>action(),
+    readScope:async()=>({session:base.session,projectDirectory:'/project',projectIdentity:'/project'}),
+    readTaskState:async()=>{revoked=true;return base;},readMessage:async()=>{revoked=true;return anchor;},fingerprintFiles:async()=>null,
+    authorizeWrite:async()=>{if(revoked)throw Error('revoked_after_read');}});
+  await expect(runtime.checkpoint({sessionID:'ses_root',directory:'/project'})).rejects.toThrow('revoked_after_read');
+  revoked=false;
+  await expect(runtime.rememberDecision({sessionID:'ses_root',directory:'/project',statement:'Keep dependencies unchanged.',sourceMessageID:'msg_user'})).rejects.toThrow('revoked_after_read');
+  expect(writes).toBe(0);await runtime.drain();
+});
+
+const checkpointDeferred = () => {
+  let resolve;
+  const promise = new Promise(done => { resolve = done; });
+  return { promise, resolve };
+};
+const checkpointFixture = (overrides = {}) => createTaskContextRuntime({ dataDirectory: '/owned',
+  store: { directory: '/owned', drain: async () => {}, readRecord: async () => null,
+    listRecords: async () => [], writeRecord: async () => {} },
+  readScope: async () => ({ session: base.session, projectDirectory: '/project', projectIdentity: '/project' }),
+  readTaskState: async () => base, fingerprintFiles: async () => null, ...overrides,
+});
+
+test('concurrent checkpoints rank decisions for each query rather than sharing the first ranked result', async () => {
+  const gate = checkpointDeferred(), readsStarted = checkpointDeferred();
+  let reads = 0;
+  const decisions = Array.from({ length: 10 }, (_, index) => ({ id: `decision_${index}`, state: 'active', paths: [],
+    createdAt: index, statement: index === 0 ? 'Preserve zebra routing.' : index === 1 ? 'Preserve otter routing.' : 'Unrelated choice.' }));
+  const runtime = checkpointFixture({
+    store: { directory: '/owned', drain: async () => {}, readRecord: async () => ({ decisions }), listRecords: async () => [], writeRecord: async () => {} },
+    readTaskState: async () => { if (++reads === 2) readsStarted.resolve(); await gate.promise; return base; },
+  });
+  const left = runtime.checkpoint({ sessionID: 'ses_root', directory: '/project', query: 'zebra' });
+  const right = runtime.checkpoint({ sessionID: 'ses_root', directory: '/project', query: 'otter' });
+  await readsStarted.promise;
+  gate.resolve();
+  const results = await Promise.all([left, right]);
+  expect(results[0].checkpoint.decisions[0].id).toBe('decision_0');
+  expect(results[1].checkpoint.decisions[0].id).toBe('decision_1');
+  expect(results[0].checkpoint.decisions.map(entry => entry.id)).not.toContain('decision_1');
+  expect(results[1].checkpoint.decisions.map(entry => entry.id)).not.toContain('decision_0');
+  await runtime.drain();
+});
+
+test('same-query checkpoints share canonical reads but reauthorize each caller before committing', async () => {
+  const context = new AsyncLocalStorage(), gate = checkpointDeferred(), started = checkpointDeferred();
+  const authorizations = [], writes = [];
+  let reads = 0;
+  const runtime = checkpointFixture({
+    store: { directory: '/owned', drain: async () => {}, readRecord: async () => null, listRecords: async () => [],
+      writeRecord: async () => { writes.push(context.getStore()); } },
+    readTaskState: async () => { reads++; started.resolve(); await gate.promise; return base; },
+    authorizeWrite: async () => { authorizations.push(context.getStore()); if (context.getStore() === 'revoked') throw Error('caller_revoked'); },
+  });
+  const first = context.run('authorized', () => runtime.checkpoint({ sessionID: 'ses_root', directory: '/project', query: 'same' }));
+  await started.promise;
+  const second = context.run('revoked', () => runtime.checkpoint({ sessionID: 'ses_root', directory: '/project', query: 'same' }));
+  const failed = second.catch(error => error);
+  await Promise.resolve(); await Promise.resolve();
+  gate.resolve();
+  await first;
+  expect(await failed).toMatchObject({ message: 'caller_revoked' });
+  expect(reads).toBe(1);
+  expect(authorizations).toEqual(['authorized', 'revoked']);
+  expect(writes).toEqual(['authorized']);
+  await runtime.drain();
+});
+
+test('a checkpoint rejects a changed canonical scope after its shared read', async () => {
+  let identity = '/project', writes = 0;
+  const runtime = checkpointFixture({
+    readScope: async () => ({ session: base.session, projectDirectory: '/project', projectIdentity: identity }),
+    readTaskState: async () => { identity = '/replacement'; return base; },
+    store: { directory: '/owned', drain: async () => {}, readRecord: async () => null, listRecords: async () => [], writeRecord: async () => { writes++; } },
+  });
+  await expect(runtime.checkpoint({ sessionID: 'ses_root', directory: '/project' })).rejects.toThrow('context_scope_changed');
+  expect(writes).toBe(0);
+  await runtime.drain();
 });

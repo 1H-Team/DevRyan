@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import { continueRebase, createGitWorktree, getGitLog, getGitStatus, getGitWorktreeBootstrapStatus, getPrimaryWorktreeRoot, gitFetch, resolveGitApiBaseOrigin, retryGitWorktreeBootstrapOperation } from "./gitApiHttp"
+import { continueRebase, createGitWorktree, generateCommitMessage, generateCommitMessageDraft, generatePullRequestDescription, getGitLog, getGitStatus, getGitWorktreeBootstrapStatus, getPrimaryWorktreeRoot, gitFetch, gitPush, resolveGitApiBaseOrigin, retryGitWorktreeBootstrapOperation } from "./gitApiHttp"
 
 type TestWindow = {
   location: { origin: string }
-  __OPENCHAMBER_DESKTOP_SERVER__?: {
+  __DEVRYAN_DESKTOP_SERVER__?: {
     origin: string
     opencodePort: number | null
     apiPrefix: string
@@ -30,6 +30,18 @@ const restoreGlobals = (): void => {
 }
 
 describe("gitApiHttp URL routing", () => {
+  test("keeps model and fallback source across commit and PR HTTP responses",async()=>{
+    try {
+      setTestWindow({location:{origin:"http://127.0.0.1:5173"}})
+      const attempt={tier:"session_model",model:"active/model",reason:null,durationMs:10}
+      globalThis.fetch=(async()=>Response.json({title:"Draft",body:"Body",message:{subject:"fix: draft",highlights:[]},status:"complete",commits:[],
+        source:"session_model",selectionMode:"active",model:"active/model",attempts:[attempt]})) as typeof fetch
+      expect(await generatePullRequestDescription("/repo",{base:"main",head:"feature"})).toEqual({title:"Draft",body:"Body",source:"session_model",selectionMode:"active",model:"active/model",attempts:[attempt]})
+      expect(await generateCommitMessage("/repo",{context:{branch:"main",tracking:null,scope:"staged-and-unstaged",stagedOnly:false,recentCommitSubjects:[],selectedFiles:[{path:"file",index:"M",workingDir:" "}]}}))
+        .toEqual({subject:"fix: draft",highlights:[],source:"session_model",selectionMode:"active",model:"active/model"})
+      expect(await generateCommitMessageDraft("/repo",{selectedFiles:["file"]})).toMatchObject({source:"session_model",selectionMode:"active",model:"active/model"})
+    } finally { restoreGlobals() }
+  })
   test("sends the CSRF marker when retrying a bootstrap operation", async () => {
     try {
       setTestWindow({ location: { origin: "http://127.0.0.1:5173" } })
@@ -53,7 +65,7 @@ describe("gitApiHttp URL routing", () => {
     try {
       setTestWindow({
         location: { origin: "http://127.0.0.1:5173" },
-        __OPENCHAMBER_DESKTOP_SERVER__: {
+        __DEVRYAN_DESKTOP_SERVER__: {
           origin: "http://127.0.0.1:3901",
           opencodePort: null,
           apiPrefix: "/api",
@@ -81,7 +93,7 @@ describe("gitApiHttp URL routing", () => {
     try {
       setTestWindow({
         location: { origin: "http://127.0.0.1:57123" },
-        __OPENCHAMBER_DESKTOP_SERVER__: {
+        __DEVRYAN_DESKTOP_SERVER__: {
           origin: "http://127.0.0.1:57123",
           opencodePort: null,
           apiPrefix: "/api",
@@ -322,6 +334,48 @@ describe("gitApiHttp URL routing", () => {
   })
 })
 
+
+describe("gitPush errors", () => {
+  test("preserves transport errors and makes only a push request", async () => {
+    try {
+      setTestWindow({ location: { origin: "http://127.0.0.1:5173" } })
+      const calls: string[] = []
+      globalThis.fetch = async (input) => {
+        calls.push(String(input))
+        return Response.json({ error: "Push failed: Authentication failed", code: "GIT_PUSH_FAILED", details: "fatal: Authentication failed" }, { status: 500 })
+      }
+      await expect(gitPush("/repo")).rejects.toMatchObject({
+        message: "Push failed: Authentication failed", code: "GIT_PUSH_FAILED", details: "fatal: Authentication failed",
+      })
+      expect(calls).toEqual(["http://127.0.0.1:5173/api/git/push?directory=%2Frepo"])
+    } finally { restoreGlobals() }
+  })
+
+  test("surfaces GIT_PUSH_HOOK_FAILED code and details from the JSON body", async () => {
+    try {
+      setTestWindow({ location: { origin: "http://127.0.0.1:5173" } })
+      globalThis.fetch = (async () => new Response(JSON.stringify({
+        error: "Pre-push hook failed: ✖ some test failed",
+        code: "GIT_PUSH_HOOK_FAILED",
+        details: "✖ some test failed\nerror: failed to push some refs",
+      }), { status: 409 })) as typeof fetch
+
+      let thrown: unknown = null
+      try {
+        await gitPush("/repo", { remote: "origin" })
+      } catch (error) {
+        thrown = error
+      }
+      expect(thrown).toMatchObject({
+        message: "Pre-push hook failed: ✖ some test failed",
+        code: "GIT_PUSH_HOOK_FAILED",
+        details: "✖ some test failed\nerror: failed to push some refs",
+      })
+    } finally {
+      restoreGlobals()
+    }
+  })
+})
 
 describe('rebase status invalidation', () => {
   test('refreshes cached operation state even when continuation returns an error', async () => {

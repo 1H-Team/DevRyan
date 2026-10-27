@@ -62,4 +62,32 @@ describe('resolveMessageHeaderVariant', () => {
             variant: undefined,
         });
     });
+
+    test('names the catalog default level when the turn ran at the model default', () => {
+        const options = ['low', 'medium', 'high'];
+        expect(resolveMessageHeaderVariant(undefined, options, 'medium')).toBe('medium');
+        expect(resolveMessageHeaderVariant(resolveUserMessageVariant({ model: { variant: null }, variant: 'high' }), options, 'medium')).toBe('medium');
+        expect(formatEffortLabel(resolveMessageHeaderVariant(undefined, options, ' Medium '))).toBe('Medium');
+    });
+
+    test('keeps a recorded effort over the catalog default', () => {
+        expect(resolveMessageHeaderVariant('high', ['low', 'medium', 'high'], 'medium')).toBe('high');
+    });
+
+    test('does not name a default for models without thinking levels or without a reported default', () => {
+        expect(resolveMessageHeaderVariant(undefined, [], 'medium')).toBeUndefined();
+        expect(resolveMessageHeaderVariant(undefined, ['low', 'high'], undefined)).toBeUndefined();
+    });
+
+    test('shows the default level beside fast mode', () => {
+        expect(resolveMessageHeaderVariantDisplay({
+            recordedVariant: 'fast',
+            modelVariantOptions: ['low', 'medium'],
+            fastEnabled: true,
+            modelDefaultThinkingLevel: 'medium',
+        })).toEqual({
+            fastEnabled: true,
+            variant: 'medium',
+        });
+    });
 });

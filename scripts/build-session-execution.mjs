@@ -17,13 +17,19 @@ await fs.mkdir(output, { recursive: true, mode: 0o700 });
 const temporary = path.join(output, `${name}.${process.pid}.tmp`);
 try {
   const flags = windows ? ['/nologo', '/std:c11', '/W4', '/WX', '/O2', '/D_CRT_SECURE_NO_WARNINGS',
-    source, `/Fe:${temporary}`, `/Fo:${temporary}.obj`, '/link', 'advapi32.lib', 'user32.lib']
+    source, `/Fe:${temporary}`, `/Fo:${temporary}.obj`, '/link', 'advapi32.lib', 'user32.lib', 'userenv.lib', 'onecoreuap.lib', 'version.lib']
     : ['-std=c11', '-Wall', '-Wextra', '-Werror', '-O2', source, '-o', temporary];
-  await promisify(execFile)(process.env.CC || (windows ? 'cl.exe' : 'cc'), flags,
-    { cwd: root, timeout: 60_000, maxBuffer: 1024 * 1024 });
+  try {
+    const compiled = await promisify(execFile)(process.env.CC || (windows ? 'cl.exe' : 'cc'), flags,
+      { cwd: root, timeout: 60_000, maxBuffer: 1024 * 1024 });
+    if (windows) await fs.writeFile(path.join(output, 'compile.log'), compiled.stdout + compiled.stderr);
+  } catch (cause) {
+    if (windows) await fs.writeFile(path.join(output, 'compile-failure.log'), (cause.stdout ?? '') + (cause.stderr ?? ''));
+    throw cause;
+  }
   await fs.chmod(temporary, 0o755);
   const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
-  const manifest = { version: 1, policy: 2, acceptance: false, platform: process.platform, arch: process.arch, binary: name,
+  const manifest = { version: 1, policy: windows ? 3 : 2, acceptance: false, platform: process.platform, arch: process.arch, binary: name,
     sha256: hash(await fs.readFile(temporary)), sourceSha256: hash(await fs.readFile(source)) };
   if (process.platform === 'darwin') {
     const spawnSource = path.join(root, 'packages/harness-runtime/native/session-spawn-darwin.c');
@@ -40,7 +46,9 @@ try {
   const manifestPath = path.join(output, `${name}.json`);
   await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n', { mode: 0o600 });
   if (process.argv.includes('--verify')) {
-    await promisify(execFile)(process.execPath, [path.join(root, 'scripts/verify-session-execution.mjs')], {
+    // The acceptance suite uses node:test hooks, including when Bun builds the helper.
+    const verificationRunner = process.versions.bun ? 'node' : process.execPath;
+    await promisify(execFile)(verificationRunner, [path.join(root, 'scripts/verify-session-execution.mjs')], {
       cwd: root, env: { ...process.env, DEVRYAN_TEST_EXECUTION_LAUNCHER: path.join(output, name) },
       timeout: 300_000, maxBuffer: 1024 * 1024,
     });

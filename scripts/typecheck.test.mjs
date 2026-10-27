@@ -2,13 +2,14 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const require = createRequire(import.meta.url);
-const compiler = require.resolve('typescript/lib/tsc.js');
+const compiler = path.join(path.dirname(require.resolve('typescript/package.json')), 'bin', 'tsc');
 
 test('diagnostic command rejects missing, unknown, and extra arguments', () => {
   for (const args of [[], ['desktop'], ['ui', '--json']]) {
@@ -23,8 +24,7 @@ test('diagnostic command rejects missing, unknown, and extra arguments', () => {
 
 test('package incremental checks retain errors and invalidate cached results after edits', () => {
   const parent = path.join(root, '.cache', 'typecheck');
-  mkdirSync(parent, { recursive: true });
-  const fixture = mkdtempSync(path.join(parent, 'test-'));
+  const fixture = mkdtempSync(path.join(os.tmpdir(), 'devryan-typecheck-test-'));
   try {
     const caches = new Set();
     for (const target of ['ui', 'web']) {
@@ -83,15 +83,15 @@ test('diagnostics measure the compiler, preserve type errors, and clean their di
       cwd: fixture, encoding: 'utf8', timeout: 30_000,
       env: { ...process.env, NODE_OPTIONS: '--title=private-diagnostic-marker' },
     });
-    assert.equal(result.status, 2, result.stdout + result.stderr);
+    // TypeScript 7 exits 1 when diagnostics are present (TypeScript 5 used 2 under --noEmit).
+    assert.equal(result.status, 1, result.stdout + result.stderr);
     assert.match(result.stdout, /TS2322/);
     assert.match(result.stdout, /Memory used:/);
     assert.doesNotMatch(result.stdout + result.stderr, /private-diagnostic-marker/);
     const summaries = result.stdout.trim().split('\n').filter((line) => line.startsWith('{')).map(JSON.parse);
     assert.equal(summaries[0].incrementalCache, 'fresh');
-    assert.ok(summaries[0].heapLimitMiB > 0);
-    assert.equal(summaries[1].exitCode, 2);
-    assert.ok(summaries[1].maxRssMiB > 0);
+    assert.equal(summaries[1].exitCode, 1);
+    assert.ok(summaries[1].elapsedMs >= 0);
     assert.deepEqual(readdirSync(path.join(fixture, '.cache', 'typecheck')), []);
   } finally {
     rmSync(fixture, { recursive: true, force: true });

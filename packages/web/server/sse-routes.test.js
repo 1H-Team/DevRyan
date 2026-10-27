@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { registerNotificationRoutes } from './lib/notifications/routes.js';
+import { createNotificationEmitterRuntime } from './lib/notifications/emitter-runtime.js';
 import { registerScheduledTaskRoutes } from './lib/scheduled-tasks/routes.js';
 
 const createRouteRegistry = () => {
@@ -86,7 +87,12 @@ const createMockResponse = () => {
 };
 
 describe('local SSE routes', () => {
-  it('serves notification SSE with nginx-safe headers', async () => {
+  const { writeSseEvent } = createNotificationEmitterRuntime({});
+
+  it.each([
+    ['legacy', undefined, 'openchamber:notification-stream-ready'],
+    ['devryan', 'devryan', 'devryan:notification-stream-ready'],
+  ])('serves notification SSE with nginx-safe headers and %s dialect', async (_name, dialect, readyType) => {
     const { app, getRoute } = createRouteRegistry();
     const clients = new Set();
 
@@ -96,13 +102,12 @@ describe('local SSE routes', () => {
       },
       getUiSessionTokenFromRequest: () => 'ui-token',
       getUiNotificationClients: () => clients,
-      writeSseEvent(res, payload) {
-        res.write(`data: ${JSON.stringify(payload)}\n\n`);
-      },
+      writeSseEvent,
     });
 
     const handler = getRoute('GET', '/api/notifications/stream');
     const req = createMockRequest();
+    if (dialect) req.query = { events: dialect };
     const res = createMockResponse();
 
     await handler(req, res);
@@ -113,26 +118,28 @@ describe('local SSE routes', () => {
     expect(res.getHeader('connection')).toBe('keep-alive');
     expect(res.getHeader('x-accel-buffering')).toBe('no');
     expect(res.flushed).toBe(true);
-    expect(res.body).toContain('openchamber:notification-stream-ready');
+    expect(JSON.parse(res.body.slice('data: '.length)).type).toBe(readyType);
     expect(clients.has(res)).toBe(true);
 
     req.emit('close');
     expect(clients.has(res)).toBe(false);
   });
 
-  it('serves OpenChamber SSE with nginx-safe headers', () => {
+  it.each([
+    ['legacy', undefined, 'openchamber:event-stream-ready'],
+    ['devryan', 'devryan', 'devryan:event-stream-ready'],
+  ])('serves DevRyan SSE with nginx-safe headers and %s dialect', (_name, dialect, readyType) => {
     const { app, getRoute } = createRouteRegistry();
     const clients = new Set();
 
     registerScheduledTaskRoutes(app, {
-      getOpenChamberEventClients: () => clients,
-      writeSseEvent(res, payload) {
-        res.write(`data: ${JSON.stringify(payload)}\n\n`);
-      },
+      getDevRyanEventClients: () => clients,
+      writeSseEvent,
     });
 
-    const handler = getRoute('GET', '/api/openchamber/events');
+    const handler = getRoute('GET', '/api/devryan/events');
     const req = createMockRequest();
+    if (dialect) req.query = { events: dialect };
     const res = createMockResponse();
 
     handler(req, res);
@@ -143,7 +150,7 @@ describe('local SSE routes', () => {
     expect(res.getHeader('connection')).toBe('keep-alive');
     expect(res.getHeader('x-accel-buffering')).toBe('no');
     expect(res.flushed).toBe(true);
-    expect(res.body).toContain('openchamber:event-stream-ready');
+    expect(JSON.parse(res.body.slice('data: '.length)).type).toBe(readyType);
     expect([...clients].some((client) => client.response === res)).toBe(true);
 
     req.emit('close');

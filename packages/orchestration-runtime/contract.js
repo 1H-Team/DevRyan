@@ -1,37 +1,38 @@
+import { validateTaskPrerequisites } from './task-prerequisites.js';
+import { validateApprovedPlanRef } from './approved-plan.js';
 import { validateRequiredChecks, validateRequiredCheckReceipts } from './required-checks.js';
+import { validateCheckCorrectionHistory } from './check-correction.js';
 import {
   MODEL_UNAVAILABLE_FAILURE_KIND,
   isProviderAuthenticationFailure,
+  isManagedTaskCapabilityFailure,
   PROVIDER_USAGE_LIMIT_FAILURE_KIND,
   classifyManagedTaskFailure,
-  classifyProviderRetryFailure,
   isDefiniteProviderUsageLimit,
   isProviderConfigurationFailure,
   isManagedTaskModelUnavailable,
   isProviderPromptRejected,
 } from './provider-retry-policy.js';
 import { validateManagedTransportRecovery } from './transport-recovery.js';
+import {
+  MANAGED_TASK_ID_PREFIX,
+  MANAGED_TASK_STATUSES,
+  MANAGED_TASK_TERMINAL_STATUSES,
+  MANAGED_WAVE_ID_PREFIX,
+} from './codec-primitives.js';
+
+export { MANAGED_TASK_STATUSES };
 
 export const MANAGED_TASK_OWNER = 'devryan';
-
-export const MANAGED_TASK_STATUSES = Object.freeze([
-  'queued',
-  'starting',
-  'running',
-  'completed',
-  'failed',
-  'aborted',
-  'interrupted',
-]);
 
 export const MAX_MANAGED_TASK_LABEL_BYTES = 512;
 export const MAX_MANAGED_TASK_PROMPT_BYTES = 256 * 1024;
 export const MAX_MANAGED_TASK_PREVIEW_BYTES = 64 * 1024;
 export const MAX_MANAGED_TASK_FAILURE_BYTES = 16 * 1024;
 
-const TERMINAL_STATUSES = new Set(['completed', 'failed', 'aborted', 'interrupted']);
+const TERMINAL_STATUSES = new Set(MANAGED_TASK_TERMINAL_STATUSES);
 const STATUS_SET = new Set(MANAGED_TASK_STATUSES);
-export const MANAGED_TASK_WAITING_REASON_KINDS = Object.freeze(['capacity', 'system_pressure']);
+export const MANAGED_TASK_WAITING_REASON_KINDS = Object.freeze(['capacity', 'system_pressure', 'prerequisites']);
 const WAITING_REASON_KIND_SET = new Set(MANAGED_TASK_WAITING_REASON_KINDS);
 const WAITING_REASON_FIELDS = new Set(['kind', 'activeCount', 'limit', 'since']);
 const MODE_SET = new Set(['builder', 'orchestrator']);
@@ -150,14 +151,14 @@ const assertNullableWaitingReason = (value, field) => {
     }
   }
   if (!WAITING_REASON_KIND_SET.has(value.kind)) {
-    throw new TypeError(`${field}.kind must be capacity or system_pressure`);
+    throw new TypeError(`${field}.kind must be capacity or system_pressure or prerequisites`);
   }
   if (!Number.isSafeInteger(value.activeCount) || value.activeCount < 0) {
     throw new TypeError(`${field}.activeCount must be a non-negative integer`);
   }
-  if (value.kind === 'system_pressure') {
+  if (value.kind === 'system_pressure' || value.kind === 'prerequisites') {
     if (value.limit !== null) {
-      throw new TypeError(`${field}.limit must be null for system_pressure`);
+      throw new TypeError(`${field}.limit must be null for ${value.kind}`);
     }
   } else if (value.limit !== null && (!Number.isSafeInteger(value.limit) || value.limit < 1)) {
     throw new TypeError(`${field}.limit must be a positive integer or null`);
@@ -195,13 +196,13 @@ export const validateManagedTaskRecord = (task) => {
   if (task.owner !== MANAGED_TASK_OWNER) {
     throw new TypeError('owner must be devryan');
   }
-  assertString(task.taskId, 'taskId', { prefix: 'dvr_task_' });
+  assertString(task.taskId, 'taskId', { prefix: MANAGED_TASK_ID_PREFIX });
   assertString(task.idempotencyKey, 'idempotencyKey', { maxBytes: 1024 });
   assertString(task.rootSessionId, 'rootSessionId');
   assertNullableString(task.dispatchGroupId, 'dispatchGroupId', { maxBytes: 1024 });
   assertNullableString(task.dispatchCallId, 'dispatchCallId', { maxBytes: 1024 });
-  assertNullableString(task.dispatchWaveId, 'dispatchWaveId', { prefix: 'dvr_wave_', maxBytes: 1024 });
-  assertNullableString(task.parentTaskId, 'parentTaskId', { prefix: 'dvr_task_' });
+  assertNullableString(task.dispatchWaveId, 'dispatchWaveId', { prefix: MANAGED_WAVE_ID_PREFIX, maxBytes: 1024 });
+  assertNullableString(task.parentTaskId, 'parentTaskId', { prefix: MANAGED_TASK_ID_PREFIX });
   assertNullableString(task.childSessionId, 'childSessionId');
   assertString(task.directory, 'directory');
   if (!Number.isSafeInteger(task.sequence) || task.sequence < 1) {
@@ -222,7 +223,7 @@ export const validateManagedTaskRecord = (task) => {
   if (!Number.isSafeInteger(task.attempt) || task.attempt < 1) {
     throw new TypeError('attempt must be a positive integer');
   }
-  assertNullableString(task.priorTaskId, 'priorTaskId', { prefix: 'dvr_task_' });
+  assertNullableString(task.priorTaskId, 'priorTaskId', { prefix: MANAGED_TASK_ID_PREFIX });
   if (!EXECUTION_KIND_SET.has(task.executionKind)) {
     throw new TypeError('executionKind must be start, retry, resume, recover_in_place, or retry_in_place');
   }
@@ -230,6 +231,11 @@ export const validateManagedTaskRecord = (task) => {
     throw new TypeError(`status must be one of ${MANAGED_TASK_STATUSES.join(', ')}`);
   }
   assertNullableString(task.leaseToken, 'leaseToken', { prefix: 'dvr_lease_' });
+  if (task.terminationIntent !== undefined && task.terminationIntent !== null && task.terminationIntent !== 'user_stopped') throw new TypeError('invalid termination intent');
+  if (task.operatorStop !== undefined && task.operatorStop !== null
+    && (!isRecord(task.operatorStop) || !Number.isFinite(task.operatorStop.requestedAt)
+      || task.operatorStop.requestedAt < 0 || typeof task.operatorStop.requestId !== 'string'
+      || task.operatorStop.state !== undefined && !['pending', 'accepted', 'uncertain'].includes(task.operatorStop.state) || task.operatorStop.leaseToken !== task.leaseToken)) throw new TypeError('invalid operator stop');
   assertNullableString(task.failureReason, 'failureReason', {
     maxBytes: MAX_MANAGED_TASK_FAILURE_BYTES,
   });
@@ -257,8 +263,13 @@ export const validateManagedTaskRecord = (task) => {
   if (task.status !== 'queued' && task.waitingReason !== null) {
     throw new TypeError('waitingReason must be null unless the task is queued');
   }
+  validateApprovedPlanRef(task.approvedPlanRef);
+  if (task.approvedPlanRef && task.approvedPlanRef.rootSessionId !== task.rootSessionId) throw new TypeError('Approved plan root mismatch');
+  validateTaskPrerequisites(task.taskPrerequisites);
   validateRequiredChecks(task.requiredChecks);
   validateRequiredCheckReceipts(task.requiredCheckReceipts, task.requiredChecks);
+  validateCheckCorrectionHistory(task.requiredCheckCorrections);
+  assertNullableString(task.dispatchObjectiveId ?? null, 'dispatchObjectiveId');
   assertJsonCompatible(task, 'task');
   return task;
 };
@@ -292,14 +303,20 @@ export const createManagedTaskRecord = (input) => {
   return validateManagedTaskRecord(task);
 };
 
+export const MANAGED_OPERATOR_STOP_UNCERTAIN_REASON = 'Stop request outcome could not be confirmed';
+export const hasAcceptedUserStop = (task) => task?.terminationIntent === 'user_stopped' || task?.operatorStop?.state === 'accepted';
+export const hasPendingOperatorStop = (task) => Boolean(task?.operatorStop && (task.operatorStop.state === undefined || task.operatorStop.state === 'pending'));
+
 const resolveManagedTaskAgentRetryAvailable = (task, failureKind) => (
   task.mode === 'orchestrator'
   && task.dispatchGroupId !== null
+  && !hasAcceptedUserStop(task) && !task.operatorStop
   && task.attempt < 2
   && failureKind !== PROVIDER_USAGE_LIMIT_FAILURE_KIND
   && failureKind !== MODEL_UNAVAILABLE_FAILURE_KIND
   && !isProviderAuthenticationFailure(task.failureReason)
   && !isProviderConfigurationFailure(task.failureReason)
+  && !isManagedTaskCapabilityFailure(task.failureReason)
   && !task.transportRecovery
 );
 
@@ -307,7 +324,7 @@ export const isManagedTaskAgentRetryAvailable = (task) => {
   validateManagedTaskRecord(task);
   return resolveManagedTaskAgentRetryAvailable(
     task,
-    classifyProviderRetryFailure(task.failureReason),
+    classifyManagedTaskFailure(task.failureReason),
   );
 };
 
@@ -316,6 +333,14 @@ export const isManagedTaskAgentRetryAvailable = (task) => {
  * model and thinking level (Model Recovery) before work continues in place.
  * Shared by the scheduler's acknowledgement gate and the auto-resume policy.
  */
+export const isStoppedRecoveryAvailable = (task, envelope) => Boolean(
+  !hasPendingOperatorStop(task)
+  && (task.status === 'aborted' || (hasAcceptedUserStop(task) || task.operatorStop?.state === 'uncertain') && ['failed', 'interrupted'].includes(task.status)) && task.childSessionId
+  && envelope?.resumable && envelope.action === null
+);
+
+export const isUserStoppedRecoveryAvailable = (task, envelope) => hasAcceptedUserStop(task) && isStoppedRecoveryAvailable(task, envelope);
+
 export const requiresManualModelRecovery = (task, resultEnvelope) => Boolean(
   task.childSessionId
   && !isManagedTaskAgentRetryAvailable(task)
@@ -342,6 +367,8 @@ const projectTaskForEvent = (task, resultEnvelope) => {
     // The raw group id is deliberately withheld; consumers only need to know whether the
     // task belongs to a dispatch group so they can mirror the manual-recovery gate.
     dispatchGrouped: task.dispatchGroupId !== null,
+    ...(task.requiredChecks?.length ? { requiredChecks: structuredClone(task.requiredChecks) } : {}),
+    ...(task.taskPrerequisites?.length ? { taskPrerequisites: structuredClone(task.taskPrerequisites) } : {}),
     // Display-only label: which parallel dispatch wave the task belongs to. Not a
     // secret (it carries no message identity), so the UI may group cards by it.
     dispatchWaveId: task.dispatchWaveId,
@@ -368,13 +395,16 @@ const projectTaskForEvent = (task, resultEnvelope) => {
     firstAssistantPartAt: task.firstAssistantPartAt,
     waitingReason: task.waitingReason ? { ...task.waitingReason } : null,
     transportRecovery: task.transportRecovery ? { ...task.transportRecovery } : null,
+    ...(hasAcceptedUserStop(task) ? { terminationIntent: 'user_stopped',
+      userStoppedRecoveryAvailable: isUserStoppedRecoveryAvailable(task, resultEnvelope) } : {}),
+    ...(isStoppedRecoveryAvailable(task, resultEnvelope) ? { stoppedRecoveryAvailable: true } : {}),
     failureReason: task.failureReason,
     failureKind,
     partial: task.partial,
     recoverablePreview: task.recoverablePreview,
     canonicalRefs: task.canonicalRefs,
     agentRetryAvailable: resolveManagedTaskAgentRetryAvailable(task, failureKind),
-    ...(resultEnvelope ? { manualRecoveryRequired: resultEnvelope.action === null && requiresManualModelRecovery(task, resultEnvelope) } : {}),
+    ...(resultEnvelope ? { manualRecoveryRequired: !hasPendingOperatorStop(task) && resultEnvelope.action === null && requiresManualModelRecovery(task, resultEnvelope) } : {}),
   };
 };
 
@@ -391,7 +421,7 @@ export const toManagedTaskEvent = (task, resultEnvelope = null) => {
     assertJsonCompatible(resultEnvelope, 'resultEnvelope');
   }
   return {
-    type: 'openchamber:managed-task',
+    type: 'devryan:managed-task',
     properties: {
       owner: MANAGED_TASK_OWNER,
       directory: task.directory,
@@ -404,7 +434,7 @@ export const toManagedTaskEvent = (task, resultEnvelope = null) => {
 export const toManagedTaskRemovalEvent = (task) => {
   validateManagedTaskRecord(task);
   return {
-    type: 'openchamber:managed-task-removed',
+    type: 'devryan:managed-task-removed',
     properties: {
       owner: MANAGED_TASK_OWNER,
       taskId: task.taskId,

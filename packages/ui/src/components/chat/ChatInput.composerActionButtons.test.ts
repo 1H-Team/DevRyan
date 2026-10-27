@@ -1,13 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { StopIconFilled } from '../icons/StopIconFilled';
 
 const chatInputSource = readFileSync(
     fileURLToPath(new URL('./ChatInput.tsx', import.meta.url)),
-    'utf8',
-);
-const stopIconSource = readFileSync(
-    fileURLToPath(new URL('../icons/StopIconFilled.tsx', import.meta.url)),
     'utf8',
 );
 
@@ -30,7 +29,10 @@ describe('ChatInput composer action buttons', () => {
     });
 
     test('renders the Stop glyph as a sharp-cornered square', () => {
-        expect(stopIconSource).toContain('<path d="M60 60H196V196H60Z" />');
-        expect(stopIconSource).not.toContain('A30 30');
+        const markup = renderToStaticMarkup(createElement(StopIconFilled));
+
+        expect(markup).toContain('<path d="M60 60H196V196H60Z"');
+        // A rounded square would need arc segments.
+        expect(markup).not.toMatch(/ d="[^"]*[AaCcQqSs]/);
     });
 });

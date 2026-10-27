@@ -333,6 +333,24 @@ export const gradeManagedIndependentFacts = ({ sessionTree = [], rootSessionId, 
   result('managed-independent.children', childSessionIds.length === 3 && new Set(childSessionIds).size === 3)];
 };
 
+/** Checks visible prose ordering, not private reasoning or semantic understanding. */
+export const gradeInitialAssessment = ({ sessionTree = [], rootSessionId }) => {
+  const root = sessionTree.find(entry => entry.sessionId === rootSessionId);
+  let text = '';
+  for (const message of root?.messages ?? []) {
+    if (message.info?.role !== 'assistant') continue;
+    for (const part of message.parts ?? []) {
+      if (part.type === 'text' && part.synthetic !== true) text += `${part.text ?? ''}\n`;
+      if (part.type !== 'tool') continue;
+      const assessment = text.trim();
+      return result('orchestrator.initial-assessment', assessment.split(/\s+/).length >= 4
+        && /[.!?](?:["'’”]|\*\*)?\s*$/.test(assessment)
+        && !/^(?:starting subagent delegation|delegating (?:to )?\w+|starting (?:an? )?\w+ (?:task|agent))[.!?]?$/i.test(assessment));
+    }
+  }
+  return result('orchestrator.initial-assessment', false);
+};
+
 export const summarizeGraders = (graders = []) => {
   const byId = {};
   let passed = 0;

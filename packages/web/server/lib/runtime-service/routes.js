@@ -84,7 +84,6 @@ export const registerRuntimeServiceRoutes = (app, {
   server,
   onDesktopHostLease,
   onDesktopHostRelease,
-  botRuntimeControl,
   onDisableRuntimeService,
   onPrepareRuntimeServiceUpdate,
   onLocalOwnerBootstrap,
@@ -123,7 +122,7 @@ export const registerRuntimeServiceRoutes = (app, {
 
   const requireRuntimeSession = (req, res, next) => {
     // Only the early server boundary can mark this request. Native capability
-    // paths are excluded there; admitted Bot traffic needs no desktop cookie.
+    // paths are excluded there; admitted remote traffic needs no desktop cookie.
     if (hasTunnelBoundaryAuthorization(req)) return next();
     if (req.path === '/health' || req.path === '/api/health') return next();
     if (!controller.authorizeSession(sessionFromRequest(req))) return unauthorized(res);
@@ -196,34 +195,6 @@ export const registerRuntimeServiceRoutes = (app, {
     }
   });
 
-  const runtimeOperations = Object.freeze({
-    status: { method: 'GET', handler: 'status' },
-    operation: { method: 'GET', handler: 'operationStatus' },
-    setup: { method: 'POST', handler: 'setup' },
-    repair: { method: 'POST', handler: 'repair' },
-    update: { method: 'POST', handler: 'update' },
-    rollback: { method: 'POST', handler: 'rollback' },
-  });
-  for (const [operation, contract] of Object.entries(runtimeOperations)) {
-    app[contract.method.toLowerCase()](`/api/runtime-service/bot-runtime/${operation}`, async (_req, res) => {
-      const handler = botRuntimeControl?.[contract.handler];
-      if (typeof handler !== 'function') {
-        return res.status(503).json({
-          error: 'Bot runtime control is unavailable',
-          code: 'bot_runtime_unsupported_host',
-        });
-      }
-      try {
-        return res.json((await handler()) ?? null);
-      } catch (error) {
-        return res.status(503).json({
-          error: 'Bot runtime operation failed',
-          code: typeof error?.code === 'string' ? error.code : 'bot_runtime_operation_failed',
-        });
-      }
-    });
-  }
-
   app.post('/api/runtime-service/disable', async (_req, res) => {
     if (typeof onDisableRuntimeService !== 'function') {
       return res.status(503).json({
@@ -262,9 +233,11 @@ export const registerRuntimeServiceRoutes = (app, {
     }
   });
 
-  if (server && typeof server.prependListener === 'function') {
-    server.prependListener('upgrade', (request, socket) => {
+  if (server && typeof server.on === 'function') {
+    // The tunnel boundary runs first; feature upgrade handlers register later.
+    server.on('upgrade', (request, socket) => {
       if (request.tunnelAccessDenied || socket.destroyed) return;
+      if (hasTunnelBoundaryAuthorization(request)) return;
       if (controller.authorizeSession(sessionFromRequest(request))) return;
       socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
       socket.destroy();

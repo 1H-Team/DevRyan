@@ -1,22 +1,21 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
+import { resolveDevRyanDataRoot } from '@devryan/shared-runtime/node/data-root.js';
 
 // v2 adds `workingDirectory`; v1 files (no such field) still read as null.
 const REGISTRY_VERSION = 2;
 const REGISTRY_FILE_NAME = 'managed-opencode-processes.json';
 
-function getOpenChamberDataDir(env = process.env) {
-  const configured = typeof env.OPENCHAMBER_DATA_DIR === 'string' ? env.OPENCHAMBER_DATA_DIR.trim() : '';
-  return configured ? path.resolve(configured) : path.join(os.homedir(), '.config', 'openchamber');
+function getDevRyanDataDir(env = process.env) {
+  return resolveDevRyanDataRoot({ env });
 }
 
 function getManagedOpenCodeRegistryPath(options = {}) {
   if (typeof options.registryPath === 'string' && options.registryPath.trim()) {
     return path.resolve(options.registryPath);
   }
-  return path.join(getOpenChamberDataDir(options.env), REGISTRY_FILE_NAME);
+  return path.join(getDevRyanDataDir(options.env), REGISTRY_FILE_NAME);
 }
 
 function normalizePositiveInteger(value) {
@@ -36,6 +35,10 @@ function normalizeRegistryRecord(record) {
     ownerPid,
     port: normalizePositiveInteger(record.port),
     binary: typeof record.binary === 'string' && record.binary.trim() ? record.binary.trim() : 'opencode',
+    ...(typeof record.nativeInstanceID === 'string' && /^[a-f0-9-]{32,64}$/.test(record.nativeInstanceID)
+      ? { nativeInstanceID: record.nativeInstanceID } : {}),
+    ...(typeof record.providerInstanceID === 'string' && /^[a-f0-9-]{32,64}$/.test(record.providerInstanceID)
+      ? { providerInstanceID: record.providerInstanceID } : {}),
     hostRuntime: typeof record.hostRuntime === 'string' && record.hostRuntime.trim() ? record.hostRuntime.trim() : 'web',
     hostname: typeof record.hostname === 'string' && record.hostname.trim() ? record.hostname.trim() : null,
     startedAt: Number.isFinite(record.startedAt) ? Math.trunc(record.startedAt) : Date.now(),
@@ -235,8 +238,15 @@ function isManagedOpenCodeProcessCommand(command, record) {
   const binaryBase = path.basename(record?.binary || 'opencode').toLowerCase();
   const binaryLooksRight = normalized.includes('opencode')
     || (binaryBase && normalized.includes(binaryBase));
-  if (!binaryLooksRight || !/(?:^|\s)serve(?:$|\s)/.test(normalized)) {
+  const mode = record?.providerInstanceID ? '--provider-worker' : 'serve';
+  if (!binaryLooksRight || !new RegExp(`(?:^|\\s)${mode}(?:$|\\s)`).test(normalized)) {
     return false;
+  }
+
+  const instanceID = record?.providerInstanceID ?? record?.nativeInstanceID;
+  if (instanceID) {
+    if (!/^[a-f0-9-]{32,64}$/.test(instanceID)) return false;
+    return new RegExp(`(?:^|\\s)--native-instance\\s+${instanceID}(?:$|\\s)`).test(normalized);
   }
 
   const port = normalizePositiveInteger(record?.port);
@@ -365,6 +375,11 @@ async function reapOrphanedManagedOpenCodeProcesses(options = {}) {
     }
 
     const command = await Promise.resolve(commandReader(record.childPid)).catch(() => null);
+    if (typeof command !== 'string' || !command.trim()) {
+      kept.push(record);
+      skipped.push({ ...record, reason: 'command-unavailable' });
+      continue;
+    }
     if (!isManagedOpenCodeProcessCommand(command, record)) {
       removed.push({ ...record, reason: 'command-mismatch' });
       continue;
@@ -377,7 +392,7 @@ async function reapOrphanedManagedOpenCodeProcesses(options = {}) {
   // Remove only the records this sweep actually processed, from a fresh read:
   // terminations above can take seconds, and a wholesale write of `kept` would
   // clobber any record registered by another process mid-sweep.
-  const processedChildPids = new Set([...reaped, ...removed].map((entry) => entry.childPid));
+  const processedChildPids = new Set([...reaped.filter(entry => entry.terminated), ...removed].map((entry) => entry.childPid));
   withRegistryLock(options, () => {
     const current = readManagedOpenCodeRegistry(options);
     writeManagedOpenCodeRegistry(
@@ -391,7 +406,7 @@ async function reapOrphanedManagedOpenCodeProcesses(options = {}) {
 export {
   readProcessStartTime,
   REGISTRY_FILE_NAME,
-  getOpenChamberDataDir,
+  getDevRyanDataDir,
   getManagedOpenCodeRegistryPath,
   readManagedOpenCodeRegistry,
   writeManagedOpenCodeRegistry,

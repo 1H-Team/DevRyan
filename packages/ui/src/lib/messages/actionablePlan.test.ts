@@ -51,12 +51,19 @@ describe("plan implementation request marker", () => {
   })
 
   test("round-trips an exact synthetic implementation marker", () => {
+    expect(marker.startsWith('[devryan-plan-action:v1] ')).toBe(true)
     expect(parsePlanImplementationRequestPart(syntheticTextPart(marker))).toEqual({
       action: "implement",
       sourceSessionId: "session-1",
       sourceMessageId: "assistant-1",
       planIndex: 0,
     })
+  })
+
+  test('accepts a marker saved before the rename', () => {
+    const legacy = marker.replace('[devryan-plan-action:v1] ', '[openchamber-plan-action:v1] ')
+    expect(parsePlanImplementationRequestPart(syntheticTextPart(legacy)))
+      .toEqual(parsePlanImplementationRequestPart(syntheticTextPart(marker)))
   })
 
   test('round-trips the saved project directory without changing legacy markers', () => {
@@ -126,7 +133,7 @@ describe("isPlanModeUserMessage", () => {
     )).toBe(true)
   })
 
-  test("treats OpenChamber plan-mode metadata as a plan source", () => {
+  test("treats DevRyan plan-mode metadata as a plan source", () => {
     expect(isPlanModeUserMessage(
       {
         ...userMessage("user-1"),

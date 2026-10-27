@@ -1,6 +1,6 @@
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
 import type { QueuedMessage } from "@/stores/messageQueueStore"
-import { useMessageQueueStore } from "@/stores/messageQueueStore"
+import { trackQueuedDispatch, useMessageQueueStore } from "@/stores/messageQueueStore"
 import type { AttachedFile } from "@/stores/types/sessionTypes"
 import { createClientMessageId } from "@/sync/client-message-id"
 import {
@@ -48,6 +48,7 @@ export type SendQueuedMessageToSession = (
 ) => Promise<void>
 
 export type QueuedSendLifecycleCallbacks = {
+  delivery?: 'queue' | 'steer'
   messageID?: string
   directory?: string
   /** Awaited by the send right before its prompt reaches the transport. */
@@ -64,6 +65,7 @@ export type FlushQueuedMessagesOptions = {
   sendMessageToSession?: SendQueuedMessageToSession
   waitForReadyToSendNext?: (sessionId: string, messageId?: string, directory?: string) => Promise<void>
   createMessageId?: () => string
+  firstDelivery?: 'queue' | 'steer'
   waitForCurrentTurnBeforeFirstSend?: boolean
   getCurrentTurnContext?: (sessionId: string) => { messageId?: string; directory?: string }
   authorizeSend?: (request: {
@@ -86,7 +88,7 @@ export type SendQueuedMessagesNowOptions = FlushQueuedMessagesOptions & {
 export type DispatchQueuedMessageOptions = {
   sessionId: string
   queuedMessageId: string
-  dispatch: (message: QueuedMessage) => Promise<void>
+  dispatch: (message: QueuedMessage, assertCurrent: () => void) => Promise<void>
   createMessageId?: () => string
 }
 
@@ -149,22 +151,29 @@ export async function dispatchQueuedMessageForSession(
     return false
   }
 
+  const dispatch = trackQueuedDispatch(options.sessionId)
   let dispatchClaim = claim
 
   try {
-    const dispatchedMessage = withDispatchIdentity(
+    const dispatchedMessage = { ...withDispatchIdentity(
       claim.message,
       options.createMessageId ?? (() => createClientMessageId("msg")),
-    )
+    ), dispatchDelivery: claim.message.dispatchDelivery ?? 'steer' as const }
     dispatchClaim = {
       ...claim,
       message: dispatchedMessage,
     }
-    await options.dispatch(dispatchedMessage)
+    useMessageQueueStore.getState().updateClaimedMessage(options.sessionId, dispatchedMessage)
+    await options.dispatch(dispatchedMessage, () => {
+      if (!dispatch.isCurrent()) throw new Error("Queued messages were cleared")
+    })
+    useMessageQueueStore.getState().acknowledgeClaimedMessage(options.sessionId, dispatchedMessage.id)
     return true
   } catch (error) {
-    useMessageQueueStore.getState().restoreClaimedMessage(options.sessionId, dispatchClaim)
+    if (dispatch.isCurrent()) useMessageQueueStore.getState().restoreClaimedMessage(options.sessionId, dispatchClaim)
     throw error
+  } finally {
+    dispatch.release()
   }
 }
 
@@ -243,6 +252,7 @@ export async function flushQueuedMessagesForSession(options: FlushQueuedMessages
   if (claimedQueue.length === 0) {
     return 0
   }
+  const dispatch = trackQueuedDispatch(options.sessionId)
   const claimedMessages = [...claimedQueue]
 
   const sendMessageToSession = options.sendMessageToSession ?? defaultSendMessageToSession
@@ -267,9 +277,12 @@ export async function flushQueuedMessagesForSession(options: FlushQueuedMessages
     }
 
     while (nextMessageIndex < claimedMessages.length) {
+      if (!dispatch.isCurrent()) throw new Error("Queued messages were cleared")
       const claimedMessage = claimedMessages[nextMessageIndex]
-      const queuedMessage = withDispatchIdentity(claimedMessage, createMessageId)
+      const queuedMessage = { ...withDispatchIdentity(claimedMessage, createMessageId),
+        dispatchDelivery: claimedMessage.dispatchDelivery ?? (nextMessageIndex === 0 ? (options.firstDelivery ?? 'queue') : 'queue') }
       claimedMessages[nextMessageIndex] = queuedMessage
+      useMessageQueueStore.getState().updateClaimedMessage(options.sessionId, queuedMessage)
       const sendConfig = resolveSendConfig(queuedMessage, options.fallbackSendConfig)
       if (options.authorizeSend && !await options.authorizeSend({
         sessionId: options.sessionId,
@@ -277,13 +290,18 @@ export async function flushQueuedMessagesForSession(options: FlushQueuedMessages
       })) {
         throw new QueuedSendAuthorizationRequiredError()
       }
+      if (!dispatch.isCurrent()) throw new Error("Queued messages were cleared")
       const preparedMessage = options.prepareQueuedMessage(queuedMessage, sendConfig)
       const messageID = preparedMessage.messageID ?? queuedMessage.messageId
       const directory = preparedMessage.directory ?? queuedMessage.directory
-      const awaitTransportGate = nextMessageIndex === 0 ? options.firstSendTransportGate : undefined
-      const lifecycleCallbacks: QueuedSendLifecycleCallbacks | undefined = (messageID || directory || awaitTransportGate)
-        ? { messageID, directory, ...(awaitTransportGate ? { awaitTransportGate } : {}) }
-        : undefined
+      const firstGate = nextMessageIndex === 0 ? options.firstSendTransportGate : undefined
+      const awaitTransportGate = async () => {
+        await firstGate?.()
+        if (!dispatch.isCurrent()) throw new Error("Queued messages were cleared")
+      }
+      const lifecycleCallbacks: QueuedSendLifecycleCallbacks = {
+        messageID, directory, delivery: queuedMessage.dispatchDelivery, awaitTransportGate,
+      }
 
       await sendMessageToSession(
         options.sessionId,
@@ -300,6 +318,7 @@ export async function flushQueuedMessagesForSession(options: FlushQueuedMessages
         lifecycleCallbacks,
       )
 
+      useMessageQueueStore.getState().acknowledgeClaimedMessage(options.sessionId, queuedMessage.id)
       nextMessageIndex += 1
 
       if (nextMessageIndex < claimedMessages.length) {
@@ -307,12 +326,13 @@ export async function flushQueuedMessagesForSession(options: FlushQueuedMessages
       }
     }
   } catch (error) {
-    useMessageQueueStore.getState().restoreClaimedQueue(
+    if (dispatch.isCurrent()) useMessageQueueStore.getState().restoreClaimedQueue(
       options.sessionId,
       claimedMessages.slice(nextMessageIndex),
     )
     throw error
   } finally {
+    dispatch.release()
     const remainingFlushes = (queuedMessageFlushCounts.get(options.sessionId) ?? 1) - 1
     if (remainingFlushes > 0) {
       queuedMessageFlushCounts.set(options.sessionId, remainingFlushes)
@@ -335,5 +355,5 @@ export async function sendQueuedMessagesNowForSession(
     ? options.beginInterrupt(options.sessionId)
     : undefined
 
-  return flushQueuedMessagesForSession({ ...options, firstSendTransportGate })
+  return flushQueuedMessagesForSession({ ...options, firstDelivery: 'steer', firstSendTransportGate })
 }

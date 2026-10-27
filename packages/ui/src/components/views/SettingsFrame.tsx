@@ -8,7 +8,7 @@ import {
 } from '@remixicon/react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
-import type { OpenChamberSection } from '@/components/sections/openchamber/types';
+import type { DevRyanSection } from '@/components/sections/devryan/types';
 import { useDeviceInfo } from '@/lib/device';
 import { isDesktopShell, isWebRuntime } from '@/lib/desktop';
 import { useI18n } from '@/lib/i18n';
@@ -56,7 +56,7 @@ import {
 import { SettingsSectionTabs } from './SettingsSectionTabs';
 import {
   canAccessSettingsDestination,
-  isBotCapabilitySettingsSlug,
+  isCodingAgentCapabilitySettingsSlug,
 } from './SettingsView.access';
 import { SettingsLoadFallback } from './SettingsLoadFallback';
 import { usePreparedSettingsNavigation } from './usePreparedSettingsNavigation';
@@ -67,7 +67,6 @@ import {
   PreparedAgentsSidebar,
   PreparedSessionDefaultsPage,
   PreparedBehaviorPage,
-  PreparedBotsPage,
   PreparedBugReportsPage,
   PreparedCommandsPage,
   PreparedCommandsSidebar,
@@ -76,7 +75,7 @@ import {
   PreparedMagicPromptsSidebar,
   PreparedMcpPage,
   PreparedMcpSidebar,
-  PreparedOpenChamberPage,
+  PreparedDevRyanPage,
   PreparedPluginsPage,
   PreparedPluginsSidebar,
   PreparedProjectsPage,
@@ -152,11 +151,10 @@ const SettingsHome: React.FC<{
     : 'sessions';
   const skillsCard = canAccessSettingsPage(principal, 'skills.catalog')
     ? { slug: 'skills.catalog' as const, title: t('settings.view.home.cards.skillsCatalog.title'), description: t('settings.view.home.cards.skillsCatalog.description') }
-    : { slug: 'skills.installed' as const, title: 'Skills', description: 'Review the skills assigned to your Bots.' };
+    : { slug: 'skills.installed' as const, title: 'Skills', description: 'Review the skills available to your agents.' };
   const cards = ([
     { slug: 'users', title: 'User Management', description: 'Manage roles, projects, GitHub accounts, branch grants, and activity.' },
     { slug: 'appearance', title: 'Appearance', description: 'Theme, typography, spacing, and interface preferences.' },
-    { slug: 'bots', title: t('settings.page.bots.title'), description: t('settings.page.bots.description') },
     { slug: 'notifications', title: 'Notifications', description: 'Choose when and how DevRyan notifies you.' },
     { slug: providersDestinationSlug, title: t('settings.view.home.cards.providers.title'), description: t('settings.view.home.cards.providers.description') },
     { slug: agentsDestinationSlug, title: t('settings.view.home.cards.agents.title'), description: t('settings.view.home.cards.agents.description') },
@@ -345,11 +343,10 @@ export const SettingsFrame: React.FC<SettingsFrameProps> = ({ onClose, forceMobi
   }, [settingsSlug]);
   const activePageKind = activePageMeta ? getSettingsPageLayoutKind(activePageMeta, visibleSlugSet) : null;
 
-  const settingsAudience = 'coding-agents' as const;
 
   // Nav is always open (collapsed state removed)
 
-  const openChamberSectionBySlug: Partial<Record<SettingsPageSlug, OpenChamberSection>> = React.useMemo(() => ({
+  const devRyanSectionBySlug: Partial<Record<SettingsPageSlug, DevRyanSection>> = React.useMemo(() => ({
     appearance: 'visual',
     chat: 'chat',
     shortcuts: 'shortcuts',
@@ -372,8 +369,6 @@ export const SettingsFrame: React.FC<SettingsFrameProps> = ({ onClose, forceMobi
         return t('settings.page.providers.title');
       case 'usage':
         return t('settings.page.usage.title');
-      case 'bots':
-        return t('settings.page.bots.title');
       case 'agents':
         return t('settings.page.agents.title');
       case 'behavior':
@@ -407,7 +402,7 @@ export const SettingsFrame: React.FC<SettingsFrameProps> = ({ onClose, forceMobi
       case 'tunnel':
         return t('settings.page.tunnel.title');
       case 'about':
-        return t('settings.openchamber.about.title');
+        return t('settings.devryan.about.title');
       case 'home':
       default:
         return t('settings.view.home.title');
@@ -458,7 +453,7 @@ export const SettingsFrame: React.FC<SettingsFrameProps> = ({ onClose, forceMobi
   }, [t]);
 
   const renderPageSidebar = React.useCallback((slug: SettingsPageSlug, opts: { onItemSelect?: () => void }) => {
-    if (isBotCapabilitySettingsSlug(slug) && !canAccessSettingsPage(principal, slug)) {
+    if (isCodingAgentCapabilitySettingsSlug(slug) && !canAccessSettingsPage(principal, slug)) {
       return <CodingAgentSettingsAccessRequired />;
     }
     switch (slug) {
@@ -493,7 +488,7 @@ export const SettingsFrame: React.FC<SettingsFrameProps> = ({ onClose, forceMobi
     if (meta && !isPageAvailable(meta, runtimeCtx)) {
       return renderUnavailable();
     }
-    if (isBotCapabilitySettingsSlug(slug) && !canAccessSettingsPage(principal, slug)) {
+    if (isCodingAgentCapabilitySettingsSlug(slug) && !canAccessSettingsPage(principal, slug)) {
       return <CodingAgentSettingsAccessRequired />;
     }
 
@@ -528,8 +523,6 @@ export const SettingsFrame: React.FC<SettingsFrameProps> = ({ onClose, forceMobi
         return <PreparedProvidersPage />;
       case 'usage':
         return <PreparedUsagePage />;
-      case 'bots':
-        return <PreparedBotsPage />;
       case 'magic-prompts':
         return <PreparedMagicPromptsPage />;
       case 'git':
@@ -548,25 +541,25 @@ export const SettingsFrame: React.FC<SettingsFrameProps> = ({ onClose, forceMobi
       case 'notifications':
       case 'voice':
       case 'tunnel': {
-        const section = openChamberSectionBySlug[slug] ?? 'visual';
-        return <PreparedOpenChamberPage section={section} />;
+        const section = devRyanSectionBySlug[slug] ?? 'visual';
+        return <PreparedDevRyanPage section={section} />;
       }
       default:
         return <SettingsHome onOpen={openPage} pendingSlug={pendingSlug} />;
     }
-  }, [openChamberSectionBySlug, openPage, pendingSlug, principal, renderUnavailable, runtimeCtx]);
+  }, [devRyanSectionBySlug, openPage, pendingSlug, principal, renderUnavailable, runtimeCtx]);
 
   const renderPageContent = React.useCallback((slug: SettingsPageSlug) => {
     const content = renderRawPageContent(slug);
     if (slug === 'skills.installed' || slug === 'mcp') {
       return (
-        <CapabilityMutationBoundary slug={slug} audience={settingsAudience}>
+        <CapabilityMutationBoundary slug={slug}>
           {content}
         </CapabilityMutationBoundary>
       );
     }
     return <SettingsPagePermissionBoundary slug={slug}>{content}</SettingsPagePermissionBoundary>;
-  }, [renderRawPageContent, settingsAudience]);
+  }, [renderRawPageContent]);
 
   // Mobile: if opened via deep-link / palette to a non-home page, jump into it once.
   React.useEffect(() => {
@@ -740,7 +733,7 @@ export const SettingsFrame: React.FC<SettingsFrameProps> = ({ onClose, forceMobi
       return (
         <div className={cn('flex-1 min-h-0 overflow-hidden', 'bg-sidebar')}>
           {settingsSlug === 'skills.installed' || settingsSlug === 'mcp' ? (
-            <CapabilityMutationBoundary slug={settingsSlug} audience={settingsAudience}>
+            <CapabilityMutationBoundary slug={settingsSlug}>
               <SettingsSectionBoundary>
                 {renderPageSidebar(settingsSlug, { onItemSelect: () => setMobileStage('page-content') })}
               </SettingsSectionBoundary>
@@ -786,9 +779,6 @@ export const SettingsFrame: React.FC<SettingsFrameProps> = ({ onClose, forceMobi
         return renderSettingsSectionTabs((
           <CapabilitySettingsWorkspace
             slug={settingsSlug}
-            audience={settingsAudience}
-            onAudienceChange={() => {}}
-            idPrefix={`${settingsSlug.replace('.', '-')}-audience`}
           >
             {splitContent}
           </CapabilitySettingsWorkspace>

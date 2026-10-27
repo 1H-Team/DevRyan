@@ -2,8 +2,6 @@ import { afterEach, describe, expect, mock, test } from 'bun:test';
 
 import {
   clearErrorLogs,
-  clearBotAudit,
-  listBotAudit,
   listBugReports,
   listErrorLogs,
   submitBugReport,
@@ -134,7 +132,6 @@ describe('Bug Reports browser API', () => {
 
   for (const [clear, endpoint] of [
     [clearErrorLogs, '/api/error-logs'],
-    [clearBotAudit, '/api/bot-audit'],
   ] as const) {
     test(`sends the selected clear range with CSRF protection (${endpoint})`, async () => {
       let capturedInput: RequestInfo | URL | null = null;
@@ -155,40 +152,4 @@ describe('Bug Reports browser API', () => {
       expect(new Headers(capturedInit?.headers).get('X-DevRyan-CSRF')).toBe('1');
     });
   }
-
-  test('serializes Bot audit filters while keeping the issues-first defaults compact', async () => {
-    let capturedInput: RequestInfo | URL | null = null;
-    globalThis.fetch = mock(async (input: RequestInfo | URL) => {
-      capturedInput = input;
-      return new Response(JSON.stringify({ logs: [], nextCursor: null }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }) as unknown as typeof fetch;
-
-    await listBotAudit({ result: 'issues', bot: 'all', actor: 'all' });
-    let query = new URLSearchParams(String(capturedInput).split('?')[1]);
-    expect([...query.keys()]).toEqual(['limit']);
-    expect(query.get('limit')).toBe('50');
-
-    await listBotAudit({
-      result: 'denied',
-      bot: 'bot-1',
-      actor: 'user-1',
-      search: '  approval expired  ',
-      from: '2026-08-01T00:00:00.000Z',
-      to: '2026-08-31T00:00:00.000Z',
-      limit: 200,
-      cursor: 'opaque',
-    });
-    query = new URLSearchParams(String(capturedInput).split('?')[1]);
-    expect(query.get('result')).toBe('denied');
-    expect(query.get('bot')).toBe('bot-1');
-    expect(query.get('actor')).toBe('user-1');
-    expect(query.get('q')).toBe('approval expired');
-    expect(query.get('from')).toBe('2026-08-01T00:00:00.000Z');
-    expect(query.get('to')).toBe('2026-08-31T00:00:00.000Z');
-    expect(query.get('limit')).toBe('200');
-    expect(query.get('cursor')).toBe('opaque');
-  });
 });

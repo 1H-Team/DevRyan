@@ -39,10 +39,14 @@ export async function writeVersionedFile(file, content, expectedVersion) {
       const latest = await readVersionedFile(file);
       if (latest.version !== expectedVersion || latest.stamp !== current.stamp) throw stale();
       await fs.rename(temporary, file);
-      const parent = await fs.open(path.dirname(file), 'r');
-      try { await parent.sync(); } catch (error) {
-        if (!['EINVAL', 'ENOTSUP', 'EBADF'].includes(error.code)) throw error;
-      } finally { await parent.close(); }
+      // Ordinary Windows Node cannot open a directory for fsync. File sync and
+      // atomic rename still apply; this API makes no native durability receipt.
+      if (process.platform !== 'win32') {
+        const parent = await fs.open(path.dirname(file), 'r');
+        try { await parent.sync(); } catch (error) {
+          if (!['EINVAL', 'ENOTSUP', 'EBADF'].includes(error.code)) throw error;
+        } finally { await parent.close(); }
+      }
       return digest(bytes);
     } finally { await output?.close(); await fs.rm(temporary, { force: true }); }
   });

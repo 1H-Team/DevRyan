@@ -1,18 +1,19 @@
 import { create } from 'zustand'
 
-import { opencodeClient, type SessionTreeChangedFile, type SessionTreeChanges } from '@/lib/opencode/client'
+import { opencodeClient, ScopedRevertError, type SessionTreeChangedFile, type SessionTreeChanges } from '@/lib/opencode/client'
 import { getAuthPrincipal, subscribeAuthPrincipal } from '@/lib/authSession'
 import { sessionEvents } from '@/lib/sessionEvents'
+import { isTransientError } from '@/sync/retry'
 
 /**
  * Files changed by a session tree (root + every sub-agent session that worked
- * for it), as reported by `GET /api/openchamber/session/:id/changes`.
+ * for it), as reported by `GET /api/devryan/session/:id/changes`.
  *
  * Keyed by runtime, principal, directory and root session. Refreshes are debounced (500 ms)
  * and every response is checked against the latest request for its key so a
  * slow, superseded fetch can never overwrite fresher data.
  */
-export type SessionTreeChangesEntry = Pick<SessionTreeChanges, 'fileCount' | 'nextCursor' | 'previousCursor' | 'pageIndex'> & {
+export type SessionTreeChangesEntry = Pick<SessionTreeChanges, 'fileCount' | 'nextCursor' | 'previousCursor' | 'pageIndex' | 'current' | 'coverageBySession'> & {
   revision?: string
   worktreeDirectory?: string
   coverage?: 'complete' | 'partial'
@@ -21,6 +22,7 @@ export type SessionTreeChangesEntry = Pick<SessionTreeChanges, 'fileCount' | 'ne
   totalsMode?: 'net' | 'recorded'
   restoreAvailable?: boolean
   restoreReasons?: string[]
+  restoreProof?: { version: 1; digest: string }
   undone?: boolean
   files: SessionTreeChangedFile[]
   sessionCount: number
@@ -88,6 +90,10 @@ const subscriberCounts = new Map<string, number>()
 const workingByKey = new Map<string, boolean>()
 const sessionIdsByKey = new Map<string, ReadonlySet<string>>()
 const pendingRetries = new Map<string, number>()
+// Reuse the pending-summary backoff levels, but HTTP failures have a finite
+// budget: initial read plus five retries, with 0.5/1/2/4/8 seconds of delay.
+const transientRetries = new Map<string, number>()
+const MAX_TRANSIENT_RETRIES = 5
 const entryBytes = (entry: SessionTreeChangesEntry): number => new TextEncoder().encode(JSON.stringify(entry)).byteLength
 let authIdentity = getAuthPrincipal().id
 subscribeAuthPrincipal(() => {
@@ -168,6 +174,11 @@ export function refreshSessionTreeChanges(directory: string, rootSessionID: stri
     do {
       dirtyReads.delete(key)
       await fetchSessionTreeChanges(directory, rootSessionID)
+      if (getSessionTreeChangesKey(directory, rootSessionID) !== key) break
+      const entry = useSessionTreeChangesStore.getState().entries.get(key)
+      // A scheduled recovery owns the next read and its delay. Queued hints
+      // must neither bypass that backoff nor restart an exhausted budget.
+      if (debounceTimers.has(key) || (entry?.loading === false && entry.error !== null)) break
     } while (inFlightReads.get(key) === read && dirtyReads.has(key))
   })().then(() => { release(); resolve() }, (error: unknown) => { release(); reject(error) })
   return read
@@ -193,6 +204,7 @@ async function fetchSessionTreeChanges(directory: string, rootSessionID: string)
 
   let result: SessionTreeChanges | null = null
   let failure: string | null = null
+  let failureCause: unknown
   try {
     result = await fetcher(rootSessionID, directory, controller.signal)
     if (entryBytes({ ...result, fetchedAt: 0, loading: false, error: null }) > 8 * 1024 * 1024) throw new Error('Session change summary exceeds the cache limit')
@@ -201,23 +213,47 @@ async function fetchSessionTreeChanges(directory: string, rootSessionID: string)
   } catch (error) {
     if (controller.signal.aborted) return
     result = null
+    failureCause = error
     failure = error instanceof Error ? error.message : String(error)
   }
 
   // A newer request for the same key owns the entry now.
-  if (controller.signal.aborted || requestSequence.get(key) !== sequence || getSessionTreeChangesKey(directory, rootSessionID) !== key) return
+  if (controller.signal.aborted || requestSequence.get(key) !== sequence) return
   if (inFlightControllers.get(key) === controller) {
     inFlightControllers.delete(key)
     requestSequence.delete(key)
   }
+  if (getSessionTreeChangesKey(directory, rootSessionID) !== key) {
+    if (useSessionTreeChangesStore.getState().entries.get(key)?.loading) patchEntry(key, { loading: false })
+    return
+  }
 
   if (!result) {
+    const attempt = transientRetries.get(key) ?? 0
+    if (failureCause instanceof ScopedRevertError && failureCause.status === 503 && isTransientError(failureCause)
+      && (subscriberCounts.get(key) ?? 0) > 0 && attempt < MAX_TRANSIENT_RETRIES) {
+      transientRetries.set(key, attempt + 1)
+      // Keep retained rows and revision non-authoritative while recovery waits.
+      // This timer belongs to the same subscription cleanup as pending reads.
+      requestSessionTreeChangesRefresh(directory, rootSessionID, { delayMs: Math.min(10_000, debounceMs * 2 ** attempt) })
+      return
+    }
+    transientRetries.delete(key)
+    pendingRetries.delete(key)
+    const queuedTimer = debounceTimers.get(key)
+    if (queuedTimer !== undefined) {
+      clearTimeout(queuedTimer)
+      debounceTimers.delete(key)
+    }
     patchEntry(key, { loading: false, error: failure })
     return
   }
 
+  transientRetries.delete(key)
   const previous = useSessionTreeChangesStore.getState().entries.get(key)
   patchEntry(key, {
+    current: result.current,
+    coverageBySession: result.coverageBySession,
     revision: result.revision,
     fileCount: result.fileCount,
     nextCursor: result.nextCursor,
@@ -230,6 +266,7 @@ async function fetchSessionTreeChanges(directory: string, rootSessionID: string)
     totalsMode: result.totalsMode,
     restoreAvailable: result.restoreAvailable,
     restoreReasons: result.restoreReasons,
+    restoreProof: result.restoreProof,
     undone: result.undone,
     files: previous && areFilesEqual(previous.files, result.files) ? previous.files : result.files,
     sessionCount: result.sessionCount,
@@ -260,12 +297,21 @@ export function requestSessionTreeChangesRefresh(
     return
   }
   const key = getSessionTreeChangesKey(directory, rootSessionID)
+  // Ambient hints coalesce behind the recovery owner. Replacing its timer
+  // would shorten later backoff levels or continually postpone the next read.
+  if (options.delayMs === undefined && transientRetries.has(key) && debounceTimers.has(key)) return
   if (options.delayMs === undefined && inFlightReads.has(key)) { dirtyReads.add(key); return }
   if (options.delayMs === undefined) pendingRetries.delete(key)
   const existing = debounceTimers.get(key)
   if (existing !== undefined) clearTimeout(existing)
   debounceTimers.set(key, setTimeout(() => {
     debounceTimers.delete(key)
+    // A delayed retry cannot carry an old runtime/account scope to a new host.
+    if (getSessionTreeChangesKey(directory, rootSessionID) !== key) {
+      transientRetries.delete(key)
+      if (useSessionTreeChangesStore.getState().entries.get(key)?.loading) patchEntry(key, { loading: false })
+      return
+    }
     void refreshSessionTreeChanges(directory, rootSessionID)
   }, options.delayMs ?? debounceMs))
 }
@@ -310,11 +356,13 @@ export function subscribeSessionTreeChanges(directory: string, rootSessionID: st
       workingByKey.delete(key)
       sessionIdsByKey.delete(key)
       pendingRetries.delete(key)
+      transientRetries.delete(key)
       inFlightControllers.get(key)?.abort()
       inFlightControllers.delete(key)
       inFlightReads.delete(key)
       dirtyReads.delete(key)
       requestSequence.delete(key)
+      if (useSessionTreeChangesStore.getState().entries.get(key)?.loading) patchEntry(key, { loading: false })
       const timer = debounceTimers.get(key)
       if (timer !== undefined) { clearTimeout(timer); debounceTimers.delete(key) }
     } else {
@@ -322,9 +370,6 @@ export function subscribeSessionTreeChanges(directory: string, rootSessionID: st
     }
   }
 }
-
-export const isSessionTreeChangesSubscribed = (directory: string, rootSessionID: string): boolean =>
-  (subscriberCounts.get(getSessionTreeChangesKey(directory, rootSessionID)) ?? 0) > 0
 
 export function clearSessionTreeChanges(directory: string, rootSessionID: string): void {
   if (!directory || !rootSessionID) return
@@ -342,6 +387,7 @@ export function clearSessionTreeChanges(directory: string, rootSessionID: string
   workingByKey.delete(key)
   sessionIdsByKey.delete(key)
   pendingRetries.delete(key)
+  transientRetries.delete(key)
   useSessionTreeChangesStore.setState((current) => {
     if (!current.entries.has(key)) return current
     const entries = new Map(current.entries)
@@ -363,6 +409,7 @@ export function clearDirectorySessionTreeChanges(directory: string): void {
 /** Test seam: drop every entry, timer, and subscription. */
 export function resetSessionTreeChanges(): void {
   pendingRetries.clear()
+  transientRetries.clear()
   for (const timer of debounceTimers.values()) clearTimeout(timer)
   debounceTimers.clear()
   for (const controller of inFlightControllers.values()) controller.abort()
@@ -384,7 +431,6 @@ sessionEvents.onGitRefreshHint(({ directory, sessionChanges, sessionID }) => {
     if (splitKey(key).directory !== normalized) continue
     const { rootSessionID } = splitKey(key)
     if (sessionChanges && sessionID && sessionID !== rootSessionID && !sessionIdsByKey.get(key)?.has(sessionID)) continue
-    if (!sessionChanges && useSessionTreeChangesStore.getState().entries.get(key)?.revision) continue
     requestSessionTreeChangesRefresh(directory, rootSessionID)
   }
 })

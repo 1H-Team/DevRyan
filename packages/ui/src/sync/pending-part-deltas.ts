@@ -1,5 +1,5 @@
 import type { Event, Part } from "@opencode-ai/sdk/v2/client"
-import { appendNonOverlappingDelta, appendStreamingTextDelta, normalizeAssistantPartText } from "./part-delta"
+import { appendNonOverlappingDelta, appendStreamingFieldDelta, normalizeAssistantPartText } from "./part-delta"
 import type { State } from "./types"
 
 export type PendingPartDelta = {
@@ -36,7 +36,7 @@ function pendingPartDeltaPrefix(directory: string, messageID: string, partID: st
 
 function appendPendingDelta(field: string, existing: string | undefined, incoming: string): string {
   if (field === "text" || field === "output") {
-    return appendStreamingTextDelta(existing, incoming)
+    return appendStreamingFieldDelta(field, existing, incoming)
   }
 
   return existing ? existing + incoming : incoming

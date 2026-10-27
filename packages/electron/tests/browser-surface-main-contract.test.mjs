@@ -112,7 +112,7 @@ describe('main-owned browser surface contract', () => {
   test('authorizes native surface commands for configured DevRyan origins and keeps state out of pop-out URLs', () => {
     const remoteCommands = mainSource.slice(
       mainSource.indexOf('const COMMANDS_SAFE_FOR_REMOTE = new Set(['),
-      mainSource.indexOf("ipcMain.handle('openchamber:invoke'"),
+      mainSource.indexOf("ipcMain.handle('devryan:invoke'"),
     );
     expect(mainSource).toContain("case 'desktop_browser_surface_create':");
     expect(mainSource).toContain("case 'desktop_browser_surface_popout':");
@@ -136,7 +136,8 @@ describe('main-owned browser surface contract', () => {
     expect(managerSource).toContain("safeString(browserPartition, 256) || BROWSER_WEBVIEW_PARTITION");
     expect(managerSource).toContain('existingWorkspace.browserContextKey !== browserContext.contextKey');
     expect(managerSource).toContain("throw new Error('Browser surface belongs to another authenticated context')");
-    expect(mainSource).toContain('createManualBrowserContext({ origin, principalId: principal.id })');
+    expect(mainSource).toContain("const browserPartitionIdentity = selectBrowserPartitionIdentity({ userDataDirectory: app.getPath('userData') });");
+    expect(mainSource).toContain('createManualBrowserContext({ origin, principalId: principal.id,\n    partitionPrefix: browserPartitionIdentity.manualPrefix })');
     expect(mainSource).toContain("releaseManualForHomeWindow(windowId, 'browser_context_changed')");
   });
 

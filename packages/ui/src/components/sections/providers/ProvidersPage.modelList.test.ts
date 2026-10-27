@@ -8,6 +8,7 @@ const providersPageSource = readFileSync(
 );
 
 describe('ProvidersPage model list', () => {
+  // Candidate lint rule: no-restricted-syntax on Identifier[name=/^(contextTokens|outputTokens)$/] in ProvidersPage.tsx.
   test('does not render context and output token badges in provider model rows', () => {
     expect(providersPageSource).not.toContain('contextTokens');
     expect(providersPageSource).not.toContain('outputTokens');

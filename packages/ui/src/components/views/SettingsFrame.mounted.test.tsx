@@ -1,7 +1,7 @@
 import React, { act } from 'react';
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { create } from 'zustand';
-import { withDom, type HostElement } from '@/components/bots/chat/botMountedDom';
+import { withDom, type HostElement } from '@/test/mountedDom';
 import { getAuthPrincipal, setAuthPrincipal, type AuthPrincipal } from '@/lib/authSession';
 import type { SettingsPageSlug } from '@/lib/settings/metadata';
 import { createPreparedSettingsComponent } from './preparedSettingsComponent';
@@ -34,13 +34,13 @@ mock.module('@/components/ui/tooltip', () => ({ Tooltip: passthrough, TooltipTri
 mock.module('./config-apply/ConfigApplyControls', () => ({ ConfigApplyControls: () => null }));
 mock.module('./SettingsSectionTabs', () => ({ SettingsSectionTabs: passthrough }));
 mock.module('./settingsSectionLoaders', () => ({
-  ...Object.fromEntries(['AboutSettings', 'AgentsPage', 'AgentsSettingsPicker', 'AgentsSidebar', 'BehaviorPage', 'BotsPage', 'BugReportsPage',
+  ...Object.fromEntries(['AboutSettings', 'AgentsPage', 'AgentsSettingsPicker', 'AgentsSidebar', 'BehaviorPage', 'BugReportsPage',
     'CommandsPage', 'CommandsSidebar', 'GitPage', 'MagicPromptsPage', 'MagicPromptsSidebar', 'McpPage', 'McpSidebar',
     'PluginsPage', 'PluginsSidebar', 'ProjectsPage', 'ProjectsSidebar', 'ProvidersPage', 'ProvidersSidebar',
     'RemoteInstancesPage', 'RemoteInstancesSidebar', 'SessionDefaultsPage', 'SkillsPage', 'SkillsSidebar', 'UsagePage', 'UsageSidebar',
     'UserManagementPage'].map((name) => [`Prepared${name}`, () => <div>{name}</div>])),
   PreparedSettingsDataBoundary: passthrough,
-  PreparedOpenChamberPage: ({ section }: { section: string }) => {
+  PreparedDevRyanPage: ({ section }: { section: string }) => {
     const Component = resourceFor(section === 'visual' ? 'appearance' : section).Component;
     return <Component />;
   },
@@ -214,6 +214,49 @@ describe('immediately available Settings frames', () => {
       expect(container.textContent).toContain('AgentsSidebar');
       expect(container.textContent).toContain('AgentsSettingsPicker');
       expect(container.textContent).toContain('SessionDefaultsPage');
+    });
+  });
+
+  test('orders Providers before the Plugins hub in managed navigation', async () => {
+    setAuthPrincipal(developer(['*']));
+    ui.setState({ settingsPage: 'providers' });
+    await mounted(true, async (container) => {
+      const providers = container.textContent.indexOf('settings.page.providers.title');
+      const plugins = container.textContent.indexOf('settings.page.plugins.title');
+      expect(providers).toBeGreaterThan(-1);
+      expect(plugins).toBeGreaterThan(providers);
+    });
+  });
+
+  test('shows Providers without a Usage item or tab when Providers is readable', async () => {
+    setAuthPrincipal(developer(['providers', 'usage']));
+    ui.setState({ settingsPage: 'providers' });
+    await mounted(true, async (container) => {
+      expect(button(container, 'settings.page.providers.title')?.getAttribute('aria-current')).toBe('page');
+      expect(button(container, 'settings.page.usage.title')).toBeNull();
+      expect(container.textContent).toContain('ProvidersPage');
+      expect(container.textContent).not.toContain('UsagePage');
+    });
+  });
+
+  test('redirects a stored Usage destination to Providers when Providers is readable', async () => {
+    setAuthPrincipal(developer(['providers', 'usage']));
+    ui.setState({ settingsPage: 'usage' });
+    await mounted(true, async (container) => {
+      expect(button(container, 'settings.page.providers.title')?.getAttribute('aria-current')).toBe('page');
+      expect(container.textContent).toContain('ProvidersPage');
+      expect(container.textContent).not.toContain('UsagePage');
+    });
+  });
+
+  test('keeps Usage reachable under the Providers destination when only Usage is readable', async () => {
+    setAuthPrincipal(developer(['usage']));
+    ui.setState({ settingsPage: 'providers' });
+    await mounted(true, async (container) => {
+      expect(button(container, 'settings.page.providers.title')?.getAttribute('aria-current')).toBe('page');
+      expect(container.textContent).toContain('UsageSidebar');
+      expect(container.textContent).toContain('UsagePage');
+      expect(container.textContent).not.toContain('ProvidersPage');
     });
   });
 

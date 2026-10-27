@@ -21,18 +21,6 @@ export const LazyTerminalView = /* @__PURE__ */ lazyWithChunkRecovery(() =>
 export const LazyMultiRunWindow = /* @__PURE__ */ lazyWithChunkRecovery(() =>
   import('@/components/views/MultiRunWindow').then((module) => ({ default: module.MultiRunWindow })),
 );
-export const LazyAgentManagerView = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/views/agent-manager/AgentManagerView').then((module) => ({ default: module.AgentManagerView })),
-);
-export const LazyBotView = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/views/BotView').then((module) => ({ default: module.BotView })),
-);
-export const LazyBotOperationsRail = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/bots/operations/BotOperationsRail').then((module) => ({ default: module.BotOperationsRail })),
-);
-export const LazyBotSidebarSection = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('@/components/bots/sidebar/BotSidebarSection').then((module) => ({ default: module.BotSidebarSection })),
-);
 export const LazyViewBoundary: React.FC<React.PropsWithChildren<{ fallback?: React.ReactNode }>> = ({ children, fallback = null }) => (
   <ErrorBoundary>
     <React.Suspense fallback={fallback}>{children}</React.Suspense>

@@ -1,4 +1,4 @@
-import type { ToolPart as ToolPartType } from '@opencode-ai/sdk/v2';
+import { isRecord, readTrimmedString, type UnknownRecord } from '@/lib/decoders/guards';
 import {
     formatTaskModelLabel,
     normalizeTaskSummaryEntries,
@@ -7,18 +7,7 @@ import {
 
 const CURSOR_NATIVE_TASK_SCHEMA_VERSION = 1;
 
-const isRecord = (value: unknown): value is Record<string, unknown> => (
-    value !== null && typeof value === 'object' && !Array.isArray(value)
-);
-
-const readString = (...candidates: unknown[]): string => {
-    for (const candidate of candidates) {
-        if (typeof candidate === 'string' && candidate.trim()) {
-            return candidate.trim();
-        }
-    }
-    return '';
-};
+const readString = readTrimmedString;
 
 export type CursorNativeTaskStatus = 'running' | 'completed' | 'error' | 'cancelled';
 
@@ -71,14 +60,13 @@ export const resolveCursorNativeTaskDispatches = (
     const tasks: CursorNativeTaskDispatch[] = [];
     for (const candidate of parts) {
         if (!isRecord(candidate) || candidate.type !== 'tool') continue;
-        const part = candidate as unknown as ToolPartType;
+        const part = candidate;
         if (readString(part.tool).toLowerCase() !== 'task') continue;
 
-        const state: Record<string, unknown> = isRecord(part.state) ? part.state : {};
+        // Metadata merges both levels, the tool state's winning.
+        const state: UnknownRecord = isRecord(part.state) ? part.state : {};
         const metadata = {
-            ...(isRecord((part as unknown as Record<string, unknown>).metadata)
-                ? (part as unknown as Record<string, unknown>).metadata as Record<string, unknown>
-                : {}),
+            ...(isRecord(part.metadata) ? part.metadata : {}),
             ...(isRecord(state.metadata) ? state.metadata : {}),
         };
         const projection = isRecord(metadata.cursorNativeTask) ? metadata.cursorNativeTask : null;
@@ -88,11 +76,11 @@ export const resolveCursorNativeTaskDispatches = (
             || projection.source !== 'cursor-native'
         ) continue;
 
-        const input = isRecord((part as unknown as Record<string, unknown>).input)
-            ? (part as unknown as Record<string, unknown>).input as Record<string, unknown>
+        const input = isRecord(part.input)
+            ? part.input
             : (isRecord(state.input) ? state.input : {});
-        const partId = readString((part as unknown as { id?: unknown }).id);
-        const callId = readString(projection.parentCallId, (part as unknown as { callID?: unknown }).callID, partId);
+        const partId = readString(part.id);
+        const callId = readString(projection.parentCallId, part.callID, partId);
         if (!partId || !callId) continue;
 
         const model = input.model;
@@ -105,10 +93,7 @@ export const resolveCursorNativeTaskDispatches = (
             modelLabel: formatTaskModelLabel(model),
             status: normalizeStatus(state.status),
             text: readString(projection.text),
-            output: readString(
-                (part as unknown as Record<string, unknown>).output,
-                state.output,
-            ),
+            output: readString(part.output, state.output),
             ...(state.error !== undefined ? { error: state.error } : {}),
             entries: normalizeTaskSummaryEntries(projection.entries),
             stepCount: typeof projection.stepCount === 'number' && Number.isFinite(projection.stepCount)

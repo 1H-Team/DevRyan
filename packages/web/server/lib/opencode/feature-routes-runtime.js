@@ -14,7 +14,6 @@ import { registerScheduledTaskRoutes } from '../scheduled-tasks/routes.js';
 import { registerSkillRoutes } from './skill-routes.js';
 import { registerOpenCodeRoutes } from './routes.js';
 import { createPluginReadModel, registerReadonlyPluginRoutes } from './plugins-readonly.js';
-import { createSlimSetupRuntime, registerSlimSetupRoutes } from './slim-install.js';
 import { registerConfigApplyRoutes } from './config-apply-runtime.js';
 import { createImageAssetsRuntime } from '../image-assets/runtime.js';
 
@@ -41,9 +40,9 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       spawn,
       resolveGitBinaryForSpawn,
       createFsSearchRuntime,
-      openchamberDataDir,
+      devryanDataDir,
       projectIconStore,
-      openchamberUserConfigRoot,
+      devryanUserConfigRoot,
       normalizeDirectoryPath,
       resolveProjectDirectory,
       resolveOptionalProjectDirectory,
@@ -56,7 +55,6 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       abortActiveSessionsForConfigRestart,
       auditForceConfigRestart,
       getOpenCodeResolutionSnapshot,
-      checkForOpenCodeUpdates,
       formatSettingsResponse,
       readSettingsFromDisk,
       readSettingsFromDiskMigrated,
@@ -66,6 +64,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       sanitizeHiddenSkills,
       isUnsafeSkillRelativePath,
       buildOpenCodeUrl,
+      openCodeClient,
       getOpenCodeAuthHeaders,
       cursorSdkRuntime,
       standardSessionTitleRuntime,
@@ -75,17 +74,22 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       restartOpenCode,
       waitForOpenCodeReady,
       isExternalOpenCode,
-      getAgentRuntimeApplicationState,
+      getPackagedAgentPrompts,
+      restorePackagedAgentPrompt,
       buildAugmentedPath,
       projectConfigRuntime,
       scheduledTasksRuntime,
-      getOpenChamberEventClients,
+      getDevRyanEventClients,
       writeSseEvent,
       emitSyntheticOpenCodeEvent,
+      broadcastGlobalUiEvent,
       resolveZenModel,
       resolveZenModelNonBlocking,
       xaiToolCatalogRuntime,
       recordCommitTiming,
+      generateHelperText,
+      resolveHelperSelection,
+      cursorTextRuntime,
       resolveManagedProject,
       ownsSession,
       resolveOwnedSessionPlanContext,
@@ -116,19 +120,24 @@ export const createFeatureRoutesRuntime = (dependencies) => {
     });
 
     // Host process inspection (bottom-dock Processes tab, session-delete auto-stop).
-    const processesRuntime = createProcessesRuntime({ dataDir: openchamberDataDir });
+    const processesRuntime = createProcessesRuntime({ dataDir: devryanDataDir });
 
     registerOpenCodeRoutes(app, {
+      openCodeClient,
+      recordDiagnostic: routeDependencies.recordDiagnostic,
+      getNativeRuntimeOwner: routeDependencies.getNativeRuntimeOwner,
+      getClaudeEnrollmentOwner: () => routeDependencies.getNativeRuntimeOwner?.()?.getClaudeEnrollmentOwner?.(),
+      isProviderAdministrator: routeDependencies.isProviderAdministrator,
       crypto,
       clientReloadDelayMs,
       getOpenCodeResolutionSnapshot,
-      checkForOpenCodeUpdates,
       formatSettingsResponse,
       readSettingsFromDisk,
       readSettingsFromDiskMigrated,
       persistSettings,
       sanitizeProjects,
       validateDirectoryPath,
+      ensureNativeDirectory: routeDependencies.ensureNativeDirectory,
       resolveProjectDirectory,
       getProviderSources,
       listProviderConfigFiles,
@@ -149,6 +158,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       processesRuntime,
       standardSessionTitleRuntime,
       emitSyntheticOpenCodeEvent,
+      isStartupReadinessPending: routeDependencies.isStartupReadinessPending,
       resolveZenModel,
       resolveZenModelNonBlocking,
       xaiToolCatalogRuntime,
@@ -158,7 +168,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       fsPromises,
       path,
       crypto,
-      openchamberDataDir,
+      devryanDataDir,
       projectIconStore,
       sanitizeProjects,
       readSettingsFromDiskMigrated,
@@ -174,7 +184,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       sanitizeProjects,
       projectConfigRuntime,
       scheduledTasksRuntime,
-      getOpenChamberEventClients,
+      getDevRyanEventClients,
       writeSseEvent,
       resolveManagedProject,
     });
@@ -183,16 +193,6 @@ export const createFeatureRoutesRuntime = (dependencies) => {
     registerReadonlyPluginRoutes(app, {
       resolveOptionalProjectDirectory,
       listPlugins: pluginReadModel.listPlugins,
-    });
-    registerSlimSetupRoutes(app, {
-      slimSetupRuntime: createSlimSetupRuntime({
-        fs,
-        path,
-        os,
-        spawn,
-        env: process.env,
-      }),
-      markConfigChange,
     });
 
     const {
@@ -205,8 +205,6 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       deleteAgentModelOverride,
       writeAgentBackupModel,
       deleteAgentBackupModel,
-      readAgentRuntimeSettings,
-      writeAgentRuntimeSettings,
       listConfigAgents,
       getCommandSources,
       createCommand,
@@ -221,6 +219,8 @@ export const createFeatureRoutesRuntime = (dependencies) => {
     } = await import('./index.js');
 
     registerConfigEntityRoutes(app, {
+      readAgentModelCatalog: directory => openCodeClient.catalog.providers({ directory }, { timeoutMs: 5_000 }),
+      validateCursorModelSelection: input => cursorSdkRuntime?.validateModelSelection?.(input) ?? null,
       resolveProjectDirectory,
       resolveOptionalProjectDirectory,
       markConfigChange,
@@ -234,9 +234,8 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       deleteAgentModelOverride,
       writeAgentBackupModel,
       deleteAgentBackupModel,
-      readAgentRuntimeSettings,
-      writeAgentRuntimeSettings,
-      getAgentRuntimeApplicationState,
+      getPackagedAgentPrompts,
+      restorePackagedAgentPrompt,
       listConfigAgents,
       getCommandSources,
       createCommand,
@@ -278,6 +277,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
     const { getProfiles, getProfile } = await import('../git/index.js');
 
     registerSkillRoutes(app, {
+      openCodeClient,
       fs,
       path,
       os,
@@ -319,6 +319,10 @@ export const createFeatureRoutesRuntime = (dependencies) => {
     });
 
     registerQuotaRoutes(app, {
+      devryanDataDir,
+      isProviderAdministrator: routeDependencies.isProviderAdministrator,
+      getNativeRuntimeOwner: routeDependencies.getNativeRuntimeOwner,
+      openCodeClient,
       getQuotaProviders,
       resolveProjectDirectory,
       buildOpenCodeUrl,
@@ -330,7 +334,13 @@ export const createFeatureRoutesRuntime = (dependencies) => {
     registerGitHubRoutes(app);
     registerProcessesRoutes(app, { runtime: processesRuntime });
     registerGitRoutes(app, {
+      openCodeClient,
+      broadcastEvent: broadcastGlobalUiEvent,
+      generateHelperText,
+      resolveHelperSelection,
+      cursorRuntime: cursorTextRuntime,
       recordCommitTiming,
+      prepareNativeDirectory: routeDependencies.ensureNativeDirectory,
       // Native Zen helper sessions, plus PR description tier 2 (session model).
       buildOpenCodeUrl,
       getOpenCodeAuthHeaders,
@@ -338,15 +348,15 @@ export const createFeatureRoutesRuntime = (dependencies) => {
     registerMagicPromptRoutes(app, {
       fsPromises,
       path,
-      openchamberDataDir,
+      devryanDataDir,
     });
     registerSessionFoldersRoutes(app, {
       fsPromises,
       path,
-      openchamberDataDir,
+      devryanDataDir,
     });
     registerSessionPlanRoutes(app, {
-      dataDirectory: openchamberDataDir,
+      dataDirectory: devryanDataDir,
       fsPromises,
       path,
       ownsSession,
@@ -356,6 +366,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       readCanonicalPlanIdentity,
     });
     const imageAssetsRuntime = createImageAssetsRuntime({
+      openCodeClient,
       fsPromises,
       path,
       os,
@@ -375,12 +386,13 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       resolveProjectDirectory,
       buildAugmentedPath,
       resolveGitBinaryForSpawn,
-      openchamberUserConfigRoot,
+      devryanUserConfigRoot,
       authorizeImageAssetGrant: imageAssetsRuntime.authorizeAssetGrant,
     });
   };
 
   return {
     registerRoutes,
+    close: () => {},
   };
 };

@@ -5,12 +5,35 @@ import { getSafeStorage } from './utils/safeStorage';
 import type { AttachedFile } from './types/sessionTypes';
 import { updateDesktopSettings } from '@/lib/persistence';
 
+// Only in-flight dispatches are retained. Clearing/removing a session invalidates
+// rollback so an outstanding transport cannot resurrect its discarded queue.
+const dispatches = new Map<string, Set<{ current: boolean }>>();
+export function trackQueuedDispatch(sessionId: string) {
+    const claim = { current: true };
+    const claims = dispatches.get(sessionId) ?? new Set<{ current: boolean }>();
+    claims.add(claim);
+    dispatches.set(sessionId, claims);
+    return {
+        isCurrent: () => claim.current,
+        release: () => {
+            claims.delete(claim);
+            if (dispatches.get(sessionId) === claims && claims.size === 0) dispatches.delete(sessionId);
+        },
+    };
+}
+function invalidateQueuedDispatches(sessionId: string) {
+    for (const claim of dispatches.get(sessionId) ?? []) claim.current = false;
+    dispatches.delete(sessionId);
+}
+
 export interface QueuedMessage {
     id: string;
     /** Canonical user-message ID assigned immediately before this row's first dispatch attempt. */
     messageId?: string;
     /** Distinguishes dispatch-safe IDs from legacy queue-time IDs that can sort before newer turns. */
     messageIdScope?: 'dispatch';
+    /** Frozen admission intent for idempotent retry after an ambiguous response. */
+    dispatchDelivery?: 'queue' | 'steer';
     /** Session directory captured at queue time; absent only on legacy persisted rows. */
     directory?: string;
     content: string;
@@ -31,12 +54,47 @@ export interface QueuedMessageClaim {
     index: number;
 }
 
+// Claimed rows stay in the persisted FIFO until transport is acknowledged.
+// They are hidden from live senders but recovered on reload with the same ID.
+const durableClaims = new Map<string, Map<string, QueuedMessageClaim>>();
+const retainClaim = (sessionId: string, claim: QueuedMessageClaim) => {
+    const claims = durableClaims.get(sessionId) ?? new Map<string, QueuedMessageClaim>();
+    claims.set(claim.message.id, claim);
+    durableClaims.set(sessionId, claims);
+};
+const shiftClaimsAfterRemoval = (sessionId: string, index: number) => {
+    if (index < 0) return;
+    for (const claim of durableClaims.get(sessionId)?.values() ?? []) {
+        if (claim.index > index) claim.index -= 1;
+    }
+};
+const releaseClaim = (sessionId: string, messageId: string, accepted = false) => {
+    const claims = durableClaims.get(sessionId);
+    const removed = claims?.get(messageId);
+    claims?.delete(messageId);
+    if (accepted && removed) shiftClaimsAfterRemoval(sessionId, removed.index);
+    if (claims?.size === 0) durableClaims.delete(sessionId);
+};
+const persistedQueue = (queues: Record<string, QueuedMessage[]>) => {
+    const result = { ...queues };
+    for (const [sessionId, claims] of durableClaims) {
+        const queue = [...(result[sessionId] ?? [])];
+        for (const claim of [...claims.values()].sort((a, b) => a.index - b.index)) {
+            if (!queue.some(message => message.id === claim.message.id)) queue.splice(Math.min(claim.index, queue.length), 0, claim.message);
+        }
+        result[sessionId] = queue;
+    }
+    return result;
+};
+
 interface MessageQueueState {
     queuedMessages: Record<string, QueuedMessage[]>; // sessionId → queue
     queueModeEnabled: boolean; // global toggle
 }
 
 interface MessageQueueActions {
+    updateClaimedMessage: (sessionId: string, message: QueuedMessage) => void;
+    acknowledgeClaimedMessage: (sessionId: string, messageId: string) => void;
     addToQueue: (sessionId: string, message: Omit<QueuedMessage, 'id' | 'createdAt'>) => void;
     removeFromQueue: (sessionId: string, messageId: string) => void;
     claimMessageForSession: (sessionId: string, messageId: string) => QueuedMessageClaim | null;
@@ -58,6 +116,17 @@ export const useMessageQueueStore = create<MessageQueueStore>()(
             (set, get) => ({
                 queuedMessages: {},
                 queueModeEnabled: true,
+
+                updateClaimedMessage: (sessionId, message) => {
+                    const claim = durableClaims.get(sessionId)?.get(message.id);
+                    if (!claim) return;
+                    retainClaim(sessionId, { ...claim, message });
+                    set(state => ({ queuedMessages: state.queuedMessages }));
+                },
+                acknowledgeClaimedMessage: (sessionId, messageId) => {
+                    releaseClaim(sessionId, messageId, true);
+                    set(state => ({ queuedMessages: state.queuedMessages }));
+                },
 
                 addToQueue: (sessionId, message) => {
                     const id = `queued-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
@@ -84,6 +153,9 @@ export const useMessageQueueStore = create<MessageQueueStore>()(
                 removeFromQueue: (sessionId, messageId) => {
                     set((state) => {
                         const currentQueue = state.queuedMessages[sessionId] ?? [];
+                        if (currentQueue.some(message => message.id === messageId)) {
+                            shiftClaimsAfterRemoval(sessionId, (persistedQueue(state.queuedMessages)[sessionId] ?? []).findIndex(message => message.id === messageId));
+                        }
                         const newQueue = currentQueue.filter((m) => m.id !== messageId);
                         
                         if (newQueue.length === 0) {
@@ -111,7 +183,8 @@ export const useMessageQueueStore = create<MessageQueueStore>()(
                         }
 
                         const message = currentQueue[index];
-                        claim = { message, index };
+                        claim = { message, index: (persistedQueue(state.queuedMessages)[sessionId] ?? []).findIndex(row => row.id === message.id) };
+                        retainClaim(sessionId, claim);
                         const newQueue = currentQueue.filter((_, queueIndex) => queueIndex !== index);
                         if (newQueue.length === 0) {
                             const { [sessionId]: _removed, ...rest } = state.queuedMessages;
@@ -130,13 +203,16 @@ export const useMessageQueueStore = create<MessageQueueStore>()(
                 },
 
                 restoreClaimedMessage: (sessionId, claim) => {
+                    const position = durableClaims.get(sessionId)?.get(claim.message.id)?.index ?? claim.index;
+                    releaseClaim(sessionId, claim.message.id);
                     set((state) => {
                         const currentQueue = state.queuedMessages[sessionId] ?? [];
                         if (currentQueue.some((message) => message.id === claim.message.id)) {
                             return state;
                         }
 
-                        const insertionIndex = Math.min(Math.max(claim.index, 0), currentQueue.length);
+                        const hiddenBefore = [...(durableClaims.get(sessionId)?.values() ?? [])].filter(row => row.index < position).length;
+                        const insertionIndex = Math.min(Math.max(position - hiddenBefore, 0), currentQueue.length);
                         const restoredQueue = [...currentQueue];
                         restoredQueue.splice(insertionIndex, 0, claim.message);
                         return {
@@ -157,6 +233,8 @@ export const useMessageQueueStore = create<MessageQueueStore>()(
                         }
 
                         claimedQueue = currentQueue;
+                        const fullQueue = persistedQueue(state.queuedMessages)[sessionId] ?? [];
+                        currentQueue.forEach(message => retainClaim(sessionId, { message, index: fullQueue.findIndex(row => row.id === message.id) }));
                         const { [sessionId]: _removed, ...rest } = state.queuedMessages;
                         void _removed;
                         return { queuedMessages: rest };
@@ -165,6 +243,7 @@ export const useMessageQueueStore = create<MessageQueueStore>()(
                 },
 
                 restoreClaimedQueue: (sessionId, messages) => {
+                    messages.forEach(message => releaseClaim(sessionId, message.id));
                     if (messages.length === 0) {
                         return;
                     }
@@ -199,6 +278,7 @@ export const useMessageQueueStore = create<MessageQueueStore>()(
                     // Remove from queue
                     set((prevState) => {
                         const queue = prevState.queuedMessages[sessionId] ?? [];
+                        shiftClaimsAfterRemoval(sessionId, (persistedQueue(prevState.queuedMessages)[sessionId] ?? []).findIndex(row => row.id === messageId));
                         const newQueue = queue.filter((m) => m.id !== messageId);
                         
                         if (newQueue.length === 0) {
@@ -219,6 +299,8 @@ export const useMessageQueueStore = create<MessageQueueStore>()(
                 },
 
                 clearQueue: (sessionId) => {
+                    invalidateQueuedDispatches(sessionId);
+                    durableClaims.delete(sessionId);
                     set((state) => {
                         const { [sessionId]: _removed, ...rest } = state.queuedMessages;
                         void _removed;
@@ -227,6 +309,8 @@ export const useMessageQueueStore = create<MessageQueueStore>()(
                 },
 
                 clearAllQueues: () => {
+                    for (const sessionId of dispatches.keys()) invalidateQueuedDispatches(sessionId);
+                    durableClaims.clear();
                     set({ queuedMessages: {} });
                 },
 
@@ -244,7 +328,7 @@ export const useMessageQueueStore = create<MessageQueueStore>()(
                 name: 'message-queue-store',
                 storage: createJSONStorage(() => getSafeStorage()),
                 partialize: (state) => ({
-                    queuedMessages: state.queuedMessages,
+                    queuedMessages: persistedQueue(state.queuedMessages),
                     queueModeEnabled: state.queueModeEnabled,
                 }),
             }

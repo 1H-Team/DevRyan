@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { createManagedTaskRecord, toManagedTaskEvent } from '@openchamber/orchestration-runtime';
+import { createManagedTaskRecord, toManagedTaskEvent } from '@devryan/orchestration-runtime';
 
 import { createManagedOrchestrationStore, managedOrchestrationSelectors } from './useManagedOrchestrationStore';
 
@@ -30,14 +30,14 @@ describe('managed orchestration selectors', () => {
     const rootSelector = managedOrchestrationSelectors.taskIdsForRoot('ses_root');
     const taskSelector = managedOrchestrationSelectors.task('dvr_task_1');
     store.getState().ingestEvent({
-      type: 'openchamber:managed-task',
+      type: 'devryan:managed-task',
       properties: { owner: 'devryan', directory: '/workspace', task: task('dvr_task_1', 'ses_root', 1) },
     });
     const rootIds = rootSelector(store.getState());
     const selectedTask = taskSelector(store.getState());
 
     store.getState().ingestEvent({
-      type: 'openchamber:managed-task',
+      type: 'devryan:managed-task',
       properties: { owner: 'devryan', directory: '/workspace', task: task('dvr_task_2', 'ses_other', 2) },
     });
 
@@ -52,7 +52,7 @@ describe('managed orchestration selectors', () => {
     const store = createManagedOrchestrationStore();
     for (const candidate of [task('dvr_task_3', 'ses_root', 3), task('dvr_task_1', 'ses_root', 1), task('dvr_task_2', 'ses_root', 2)]) {
       store.getState().ingestEvent({
-        type: 'openchamber:managed-task',
+        type: 'devryan:managed-task',
         properties: { owner: 'devryan', directory: '/workspace', task: candidate },
       });
     }

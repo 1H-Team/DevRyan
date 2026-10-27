@@ -25,7 +25,7 @@ const createRuntimeFixture = () => {
   const runtime = createStaticRoutesRuntime({
     fs: { existsSync: vi.fn(() => true) },
     path,
-    process: { env: { OPENCHAMBER_DIST_DIR: '/tmp/devryan-dist' } },
+    process: { env: { DEVRYAN_DIST_DIR: '/tmp/devryan-dist' } },
     __dirname: '/tmp/server',
     express,
     resolveProjectDirectory: vi.fn(),

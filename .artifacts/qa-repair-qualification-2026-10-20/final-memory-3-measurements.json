@@ -1,0 +1,4816 @@
+{
+  "outcome": "failed",
+  "fixture": {
+    "sessions": 4,
+    "turns": 180,
+    "textBytes": 4096
+  },
+  "checkpoints": [
+    {
+      "name": "initial",
+      "settleMs": 6000,
+      "measureMs": 30000,
+      "sampleIntervalMs": 500,
+      "samples": [
+        {
+          "elapsedMs": 4.836708999999246,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 534937600,
+          "rendererHeapUsedBytes": 38287076,
+          "rendererHeapTotalBytes": 92372992,
+          "rendererBackingStorageBytes": 14398226,
+          "dom": {
+            "documents": 4,
+            "nodes": 19601,
+            "jsEventListeners": 595
+          },
+          "mainProcess": {
+            "rss": 498319360,
+            "heapTotal": 249331712,
+            "heapUsed": 189117268,
+            "external": 9400544,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 505.15120899999965,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 534937600,
+          "rendererHeapUsedBytes": 38287076,
+          "rendererHeapTotalBytes": 92372992,
+          "rendererBackingStorageBytes": 14398226,
+          "dom": {
+            "documents": 4,
+            "nodes": 19601,
+            "jsEventListeners": 595
+          },
+          "mainProcess": {
+            "rss": 498319360,
+            "heapTotal": 249331712,
+            "heapUsed": 189176004,
+            "external": 9400544,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 1004.3435839999984,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 534937600,
+          "rendererHeapUsedBytes": 38287076,
+          "rendererHeapTotalBytes": 92372992,
+          "rendererBackingStorageBytes": 14398226,
+          "dom": {
+            "documents": 4,
+            "nodes": 19601,
+            "jsEventListeners": 595
+          },
+          "mainProcess": {
+            "rss": 498319360,
+            "heapTotal": 249331712,
+            "heapUsed": 189207828,
+            "external": 9400544,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 1503.9450419999994,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 534937600,
+          "rendererHeapUsedBytes": 38287076,
+          "rendererHeapTotalBytes": 92372992,
+          "rendererBackingStorageBytes": 14398226,
+          "dom": {
+            "documents": 4,
+            "nodes": 19601,
+            "jsEventListeners": 595
+          },
+          "mainProcess": {
+            "rss": 498319360,
+            "heapTotal": 249331712,
+            "heapUsed": 189238720,
+            "external": 9400544,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 2005.1646249999976,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 534937600,
+          "rendererHeapUsedBytes": 38287076,
+          "rendererHeapTotalBytes": 92372992,
+          "rendererBackingStorageBytes": 14398226,
+          "dom": {
+            "documents": 4,
+            "nodes": 19601,
+            "jsEventListeners": 595
+          },
+          "mainProcess": {
+            "rss": 498319360,
+            "heapTotal": 249331712,
+            "heapUsed": 189275300,
+            "external": 9400544,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 2503.487541999999,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 534953984,
+          "rendererHeapUsedBytes": 38288004,
+          "rendererHeapTotalBytes": 92372992,
+          "rendererBackingStorageBytes": 14398226,
+          "dom": {
+            "documents": 4,
+            "nodes": 19601,
+            "jsEventListeners": 595
+          },
+          "mainProcess": {
+            "rss": 498319360,
+            "heapTotal": 249331712,
+            "heapUsed": 189318372,
+            "external": 9408736,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 3004.7986249999994,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 534953984,
+          "rendererHeapUsedBytes": 38288004,
+          "rendererHeapTotalBytes": 92372992,
+          "rendererBackingStorageBytes": 14398226,
+          "dom": {
+            "documents": 4,
+            "nodes": 19601,
+            "jsEventListeners": 595
+          },
+          "mainProcess": {
+            "rss": 498319360,
+            "heapTotal": 249331712,
+            "heapUsed": 189348264,
+            "external": 9408736,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 3504.0030000000006,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 534953984,
+          "rendererHeapUsedBytes": 38288376,
+          "rendererHeapTotalBytes": 92372992,
+          "rendererBackingStorageBytes": 14398226,
+          "dom": {
+            "documents": 4,
+            "nodes": 19601,
+            "jsEventListeners": 595
+          },
+          "mainProcess": {
+            "rss": 498319360,
+            "heapTotal": 249331712,
+            "heapUsed": 189382476,
+            "external": 9408736,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 4004.5837919999976,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 534953984,
+          "rendererHeapUsedBytes": 38288376,
+          "rendererHeapTotalBytes": 92372992,
+          "rendererBackingStorageBytes": 14398226,
+          "dom": {
+            "documents": 4,
+            "nodes": 19601,
+            "jsEventListeners": 595
+          },
+          "mainProcess": {
+            "rss": 498335744,
+            "heapTotal": 249331712,
+            "heapUsed": 189438288,
+            "external": 9409632,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 4504.253625000001,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 534953984,
+          "rendererHeapUsedBytes": 38288376,
+          "rendererHeapTotalBytes": 92372992,
+          "rendererBackingStorageBytes": 14398226,
+          "dom": {
+            "documents": 4,
+            "nodes": 19601,
+            "jsEventListeners": 595
+          },
+          "mainProcess": {
+            "rss": 498237440,
+            "heapTotal": 249331712,
+            "heapUsed": 189469584,
+            "external": 9417824,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 5003.138708999999,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 534953984,
+          "rendererHeapUsedBytes": 38288376,
+          "rendererHeapTotalBytes": 92372992,
+          "rendererBackingStorageBytes": 14398226,
+          "dom": {
+            "documents": 4,
+            "nodes": 19601,
+            "jsEventListeners": 595
+          },
+          "mainProcess": {
+            "rss": 498270208,
+            "heapTotal": 249331712,
+            "heapUsed": 189500528,
+            "external": 9417824,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 5503.653916999996,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 534953984,
+          "rendererHeapUsedBytes": 38289304,
+          "rendererHeapTotalBytes": 92372992,
+          "rendererBackingStorageBytes": 14398226,
+          "dom": {
+            "documents": 4,
+            "nodes": 19601,
+            "jsEventListeners": 595
+          },
+          "mainProcess": {
+            "rss": 498270208,
+            "heapTotal": 249331712,
+            "heapUsed": 189532848,
+            "external": 9417824,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 6004.383999999998,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 534953984,
+          "rendererHeapUsedBytes": 38289304,
+          "rendererHeapTotalBytes": 92372992,
+          "rendererBackingStorageBytes": 14398226,
+          "dom": {
+            "documents": 4,
+            "nodes": 19601,
+            "jsEventListeners": 595
+          },
+          "mainProcess": {
+            "rss": 498270208,
+            "heapTotal": 249331712,
+            "heapUsed": 189562356,
+            "external": 9417824,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 6503.013166999997,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 534953984,
+          "rendererHeapUsedBytes": 38289304,
+          "rendererHeapTotalBytes": 92372992,
+          "rendererBackingStorageBytes": 14398226,
+          "dom": {
+            "documents": 4,
+            "nodes": 19601,
+            "jsEventListeners": 595
+          },
+          "mainProcess": {
+            "rss": 498270208,
+            "heapTotal": 249331712,
+            "heapUsed": 189593028,
+            "external": 9426016,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 7003.814666999999,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 534953984,
+          "rendererHeapUsedBytes": 38289304,
+          "rendererHeapTotalBytes": 92372992,
+          "rendererBackingStorageBytes": 14398226,
+          "dom": {
+            "documents": 4,
+            "nodes": 19601,
+            "jsEventListeners": 595
+          },
+          "mainProcess": {
+            "rss": 498270208,
+            "heapTotal": 249331712,
+            "heapUsed": 189622888,
+            "external": 9426016,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 7504.569959,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 534953984,
+          "rendererHeapUsedBytes": 38289304,
+          "rendererHeapTotalBytes": 92372992,
+          "rendererBackingStorageBytes": 14398226,
+          "dom": {
+            "documents": 4,
+            "nodes": 19601,
+            "jsEventListeners": 595
+          },
+          "mainProcess": {
+            "rss": 498270208,
+            "heapTotal": 249331712,
+            "heapUsed": 189654272,
+            "external": 9426016,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 8002.626875000002,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 534953984,
+          "rendererHeapUsedBytes": 38289304,
+          "rendererHeapTotalBytes": 92372992,
+          "rendererBackingStorageBytes": 14398226,
+          "dom": {
+            "documents": 4,
+            "nodes": 19601,
+            "jsEventListeners": 595
+          },
+          "mainProcess": {
+            "rss": 498270208,
+            "heapTotal": 249331712,
+            "heapUsed": 189778168,
+            "external": 9446222,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 8503.724834,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 534953984,
+          "rendererHeapUsedBytes": 38294504,
+          "rendererHeapTotalBytes": 92372992,
+          "rendererBackingStorageBytes": 14398250,
+          "dom": {
+            "documents": 4,
+            "nodes": 19601,
+            "jsEventListeners": 595
+          },
+          "mainProcess": {
+            "rss": 424067072,
+            "heapTotal": 191660032,
+            "heapUsed": 188477116,
+            "external": 9359482,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 9004.278666999999,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 534953984,
+          "rendererHeapUsedBytes": 38295180,
+          "rendererHeapTotalBytes": 92372992,
+          "rendererBackingStorageBytes": 14398250,
+          "dom": {
+            "documents": 4,
+            "nodes": 19601,
+            "jsEventListeners": 595
+          },
+          "mainProcess": {
+            "rss": 423067648,
+            "heapTotal": 190611456,
+            "heapUsed": 187853068,
+            "external": 9359482,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 9502.033583999997,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 534953984,
+          "rendererHeapUsedBytes": 38295180,
+          "rendererHeapTotalBytes": 92372992,
+          "rendererBackingStorageBytes": 14398250,
+          "dom": {
+            "documents": 4,
+            "nodes": 19601,
+            "jsEventListeners": 595
+          },
+          "mainProcess": {
+            "rss": 423100416,
+            "heapTotal": 190611456,
+            "heapUsed": 187887952,
+            "external": 9359482,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 10002.915792,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 534953984,
+          "rendererHeapUsedBytes": 38295180,
+          "rendererHeapTotalBytes": 92372992,
+          "rendererBackingStorageBytes": 14398250,
+          "dom": {
+            "documents": 4,
+            "nodes": 19601,
+            "jsEventListeners": 595
+          },
+          "mainProcess": {
+            "rss": 423133184,
+            "heapTotal": 190611456,
+            "heapUsed": 187917420,
+            "external": 9359482,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 10503.848624999999,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 534953984,
+          "rendererHeapUsedBytes": 38295180,
+          "rendererHeapTotalBytes": 92372992,
+          "rendererBackingStorageBytes": 14398250,
+          "dom": {
+            "documents": 4,
+            "nodes": 19601,
+            "jsEventListeners": 595
+          },
+          "mainProcess": {
+            "rss": 423165952,
+            "heapTotal": 190611456,
+            "heapUsed": 187947860,
+            "external": 9367674,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 11003.994291999996,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 534953984,
+          "rendererHeapUsedBytes": 38295180,
+          "rendererHeapTotalBytes": 92372992,
+          "rendererBackingStorageBytes": 14398250,
+          "dom": {
+            "documents": 4,
+            "nodes": 19601,
+            "jsEventListeners": 595
+          },
+          "mainProcess": {
+            "rss": 423182336,
+            "heapTotal": 190611456,
+            "heapUsed": 187977332,
+            "external": 9367674,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 11502.030083999998,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 534953984,
+          "rendererHeapUsedBytes": 38296108,
+          "rendererHeapTotalBytes": 92372992,
+          "rendererBackingStorageBytes": 14398250,
+          "dom": {
+            "documents": 4,
+            "nodes": 19601,
+            "jsEventListeners": 595
+          },
+          "mainProcess": {
+            "rss": 423231488,
+            "heapTotal": 190611456,
+            "heapUsed": 188029604,
+            "external": 9367874,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 12003.977874999997,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 534953984,
+          "rendererHeapUsedBytes": 38296108,
+          "rendererHeapTotalBytes": 92372992,
+          "rendererBackingStorageBytes": 14398250,
+          "dom": {
+            "documents": 4,
+            "nodes": 19601,
+            "jsEventListeners": 595
+          },
+          "mainProcess": {
+            "rss": 423264256,
+            "heapTotal": 190611456,
+            "heapUsed": 188069632,
+            "external": 9367874,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 12505.446959,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 534953984,
+          "rendererHeapUsedBytes": 38296108,
+          "rendererHeapTotalBytes": 92372992,
+          "rendererBackingStorageBytes": 14398250,
+          "dom": {
+            "documents": 4,
+            "nodes": 19601,
+            "jsEventListeners": 595
+          },
+          "mainProcess": {
+            "rss": 423297024,
+            "heapTotal": 190873600,
+            "heapUsed": 188100140,
+            "external": 9376066,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 13004.505083999997,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 534953984,
+          "rendererHeapUsedBytes": 38296108,
+          "rendererHeapTotalBytes": 92372992,
+          "rendererBackingStorageBytes": 14398250,
+          "dom": {
+            "documents": 4,
+            "nodes": 19601,
+            "jsEventListeners": 595
+          },
+          "mainProcess": {
+            "rss": 423329792,
+            "heapTotal": 190873600,
+            "heapUsed": 188129676,
+            "external": 9376066,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 13503.514042000003,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 416448512,
+          "rendererHeapUsedBytes": 36599876,
+          "rendererHeapTotalBytes": 39682048,
+          "rendererBackingStorageBytes": 14396892,
+          "dom": {
+            "documents": 3,
+            "nodes": 19592,
+            "jsEventListeners": 573
+          },
+          "mainProcess": {
+            "rss": 423411712,
+            "heapTotal": 190873600,
+            "heapUsed": 188218960,
+            "external": 9376089,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 14002.642584000001,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 414875648,
+          "rendererHeapUsedBytes": 36392324,
+          "rendererHeapTotalBytes": 37847040,
+          "rendererBackingStorageBytes": 14396797,
+          "dom": {
+            "documents": 3,
+            "nodes": 19592,
+            "jsEventListeners": 573
+          },
+          "mainProcess": {
+            "rss": 423378944,
+            "heapTotal": 190873600,
+            "heapUsed": 188254432,
+            "external": 9376985,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 14503.601458999998,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 414892032,
+          "rendererHeapUsedBytes": 36393252,
+          "rendererHeapTotalBytes": 38109184,
+          "rendererBackingStorageBytes": 14396797,
+          "dom": {
+            "documents": 3,
+            "nodes": 19592,
+            "jsEventListeners": 573
+          },
+          "mainProcess": {
+            "rss": 423411712,
+            "heapTotal": 190873600,
+            "heapUsed": 188289932,
+            "external": 9385208,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 15003.711875,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 414892032,
+          "rendererHeapUsedBytes": 36393252,
+          "rendererHeapTotalBytes": 38109184,
+          "rendererBackingStorageBytes": 14396797,
+          "dom": {
+            "documents": 3,
+            "nodes": 19592,
+            "jsEventListeners": 573
+          },
+          "mainProcess": {
+            "rss": 423444480,
+            "heapTotal": 190873600,
+            "heapUsed": 188322456,
+            "external": 9385208,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 15503.900916999999,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 414892032,
+          "rendererHeapUsedBytes": 36393252,
+          "rendererHeapTotalBytes": 38109184,
+          "rendererBackingStorageBytes": 14396797,
+          "dom": {
+            "documents": 3,
+            "nodes": 19592,
+            "jsEventListeners": 573
+          },
+          "mainProcess": {
+            "rss": 423575552,
+            "heapTotal": 190873600,
+            "heapUsed": 188352840,
+            "external": 9385208,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 16004.982499999998,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 414892032,
+          "rendererHeapUsedBytes": 36393252,
+          "rendererHeapTotalBytes": 38109184,
+          "rendererBackingStorageBytes": 14396797,
+          "dom": {
+            "documents": 3,
+            "nodes": 19592,
+            "jsEventListeners": 573
+          },
+          "mainProcess": {
+            "rss": 423608320,
+            "heapTotal": 191135744,
+            "heapUsed": 188382328,
+            "external": 9385208,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 16503.261584,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 414892032,
+          "rendererHeapUsedBytes": 36393252,
+          "rendererHeapTotalBytes": 38109184,
+          "rendererBackingStorageBytes": 14396797,
+          "dom": {
+            "documents": 3,
+            "nodes": 19592,
+            "jsEventListeners": 573
+          },
+          "mainProcess": {
+            "rss": 423641088,
+            "heapTotal": 191135744,
+            "heapUsed": 188412748,
+            "external": 9393400,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 17004.387959,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 414892032,
+          "rendererHeapUsedBytes": 36393252,
+          "rendererHeapTotalBytes": 38109184,
+          "rendererBackingStorageBytes": 14396797,
+          "dom": {
+            "documents": 3,
+            "nodes": 19592,
+            "jsEventListeners": 573
+          },
+          "mainProcess": {
+            "rss": 423657472,
+            "heapTotal": 191135744,
+            "heapUsed": 188442144,
+            "external": 9393400,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 17503.7235,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 414908416,
+          "rendererHeapUsedBytes": 36400200,
+          "rendererHeapTotalBytes": 38109184,
+          "rendererBackingStorageBytes": 14396797,
+          "dom": {
+            "documents": 3,
+            "nodes": 19592,
+            "jsEventListeners": 573
+          },
+          "mainProcess": {
+            "rss": 423690240,
+            "heapTotal": 191135744,
+            "heapUsed": 188472640,
+            "external": 9393400,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 18003.968958999998,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 414908416,
+          "rendererHeapUsedBytes": 36400200,
+          "rendererHeapTotalBytes": 38109184,
+          "rendererBackingStorageBytes": 14396797,
+          "dom": {
+            "documents": 3,
+            "nodes": 19592,
+            "jsEventListeners": 573
+          },
+          "mainProcess": {
+            "rss": 423723008,
+            "heapTotal": 191135744,
+            "heapUsed": 188502148,
+            "external": 9393400,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 18504.347167,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 414908416,
+          "rendererHeapUsedBytes": 36400248,
+          "rendererHeapTotalBytes": 38109184,
+          "rendererBackingStorageBytes": 14396797,
+          "dom": {
+            "documents": 3,
+            "nodes": 19592,
+            "jsEventListeners": 573
+          },
+          "mainProcess": {
+            "rss": 423755776,
+            "heapTotal": 191135744,
+            "heapUsed": 188532692,
+            "external": 9401592,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 19004.271249999998,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 414908416,
+          "rendererHeapUsedBytes": 36402940,
+          "rendererHeapTotalBytes": 38109184,
+          "rendererBackingStorageBytes": 14396866,
+          "dom": {
+            "documents": 3,
+            "nodes": 19592,
+            "jsEventListeners": 573
+          },
+          "mainProcess": {
+            "rss": 423804928,
+            "heapTotal": 191135744,
+            "heapUsed": 188576200,
+            "external": 9401592,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 19504.223083999997,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 414908416,
+          "rendererHeapUsedBytes": 36402940,
+          "rendererHeapTotalBytes": 38109184,
+          "rendererBackingStorageBytes": 14396866,
+          "dom": {
+            "documents": 3,
+            "nodes": 19592,
+            "jsEventListeners": 573
+          },
+          "mainProcess": {
+            "rss": 423837696,
+            "heapTotal": 191135744,
+            "heapUsed": 188606752,
+            "external": 9401592,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 20003.264125,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 414908416,
+          "rendererHeapUsedBytes": 36402940,
+          "rendererHeapTotalBytes": 38109184,
+          "rendererBackingStorageBytes": 14396866,
+          "dom": {
+            "documents": 3,
+            "nodes": 19592,
+            "jsEventListeners": 573
+          },
+          "mainProcess": {
+            "rss": 423870464,
+            "heapTotal": 191135744,
+            "heapUsed": 188636148,
+            "external": 9401592,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 20503.539167000003,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 414908416,
+          "rendererHeapUsedBytes": 36404036,
+          "rendererHeapTotalBytes": 38109184,
+          "rendererBackingStorageBytes": 14396866,
+          "dom": {
+            "documents": 3,
+            "nodes": 19592,
+            "jsEventListeners": 573
+          },
+          "mainProcess": {
+            "rss": 423870464,
+            "heapTotal": 191397888,
+            "heapUsed": 188666920,
+            "external": 9409784,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 21004.035834000002,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 414908416,
+          "rendererHeapUsedBytes": 36404036,
+          "rendererHeapTotalBytes": 38109184,
+          "rendererBackingStorageBytes": 14396866,
+          "dom": {
+            "documents": 3,
+            "nodes": 19592,
+            "jsEventListeners": 573
+          },
+          "mainProcess": {
+            "rss": 423886848,
+            "heapTotal": 191397888,
+            "heapUsed": 188697832,
+            "external": 9409784,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 21504.407459000002,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 414908416,
+          "rendererHeapUsedBytes": 36404036,
+          "rendererHeapTotalBytes": 38109184,
+          "rendererBackingStorageBytes": 14396866,
+          "dom": {
+            "documents": 3,
+            "nodes": 19592,
+            "jsEventListeners": 573
+          },
+          "mainProcess": {
+            "rss": 424034304,
+            "heapTotal": 191660032,
+            "heapUsed": 188038700,
+            "external": 9409784,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 22002.990292000002,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 414908416,
+          "rendererHeapUsedBytes": 36404036,
+          "rendererHeapTotalBytes": 38109184,
+          "rendererBackingStorageBytes": 14396866,
+          "dom": {
+            "documents": 3,
+            "nodes": 19592,
+            "jsEventListeners": 573
+          },
+          "mainProcess": {
+            "rss": 424067072,
+            "heapTotal": 191660032,
+            "heapUsed": 188067984,
+            "external": 9409784,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 22504.318417000002,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 414908416,
+          "rendererHeapUsedBytes": 36404036,
+          "rendererHeapTotalBytes": 38109184,
+          "rendererBackingStorageBytes": 14396866,
+          "dom": {
+            "documents": 3,
+            "nodes": 19592,
+            "jsEventListeners": 573
+          },
+          "mainProcess": {
+            "rss": 424099840,
+            "heapTotal": 191660032,
+            "heapUsed": 188098348,
+            "external": 9375904,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 23004.378666999997,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 414908416,
+          "rendererHeapUsedBytes": 36404036,
+          "rendererHeapTotalBytes": 38109184,
+          "rendererBackingStorageBytes": 14396866,
+          "dom": {
+            "documents": 3,
+            "nodes": 19592,
+            "jsEventListeners": 573
+          },
+          "mainProcess": {
+            "rss": 424214528,
+            "heapTotal": 191922176,
+            "heapUsed": 188223732,
+            "external": 9396110,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 23504.433334,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 414908416,
+          "rendererHeapUsedBytes": 36414144,
+          "rendererHeapTotalBytes": 38109184,
+          "rendererBackingStorageBytes": 14396878,
+          "dom": {
+            "documents": 3,
+            "nodes": 19592,
+            "jsEventListeners": 573
+          },
+          "mainProcess": {
+            "rss": 424247296,
+            "heapTotal": 191922176,
+            "heapUsed": 188255880,
+            "external": 9396110,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 24004.952749999997,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 400441344,
+          "rendererHeapUsedBytes": 36414144,
+          "rendererHeapTotalBytes": 38109184,
+          "rendererBackingStorageBytes": 14396878,
+          "dom": {
+            "documents": 3,
+            "nodes": 19592,
+            "jsEventListeners": 573
+          },
+          "mainProcess": {
+            "rss": 424296448,
+            "heapTotal": 191922176,
+            "heapUsed": 188293756,
+            "external": 9397006,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 24504.851084,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 400441344,
+          "rendererHeapUsedBytes": 36414144,
+          "rendererHeapTotalBytes": 38109184,
+          "rendererBackingStorageBytes": 14396878,
+          "dom": {
+            "documents": 3,
+            "nodes": 19592,
+            "jsEventListeners": 573
+          },
+          "mainProcess": {
+            "rss": 424329216,
+            "heapTotal": 191922176,
+            "heapUsed": 188324184,
+            "external": 9405198,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 25004.968875,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 397230080,
+          "rendererHeapUsedBytes": 36414144,
+          "rendererHeapTotalBytes": 38109184,
+          "rendererBackingStorageBytes": 14396878,
+          "dom": {
+            "documents": 3,
+            "nodes": 19592,
+            "jsEventListeners": 573
+          },
+          "mainProcess": {
+            "rss": 424345600,
+            "heapTotal": 191922176,
+            "heapUsed": 188353580,
+            "external": 9405198,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 25505.820166999998,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 397230080,
+          "rendererHeapUsedBytes": 36414144,
+          "rendererHeapTotalBytes": 38109184,
+          "rendererBackingStorageBytes": 14396878,
+          "dom": {
+            "documents": 3,
+            "nodes": 19592,
+            "jsEventListeners": 573
+          },
+          "mainProcess": {
+            "rss": 424378368,
+            "heapTotal": 191922176,
+            "heapUsed": 188384220,
+            "external": 9405198,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 26006.825834000003,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 397230080,
+          "rendererHeapUsedBytes": 36414144,
+          "rendererHeapTotalBytes": 38109184,
+          "rendererBackingStorageBytes": 14396878,
+          "dom": {
+            "documents": 3,
+            "nodes": 19592,
+            "jsEventListeners": 573
+          },
+          "mainProcess": {
+            "rss": 424411136,
+            "heapTotal": 192184320,
+            "heapUsed": 188431008,
+            "external": 9405198,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 26507.224084,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 397230080,
+          "rendererHeapUsedBytes": 36415080,
+          "rendererHeapTotalBytes": 38109184,
+          "rendererBackingStorageBytes": 14396878,
+          "dom": {
+            "documents": 3,
+            "nodes": 19592,
+            "jsEventListeners": 573
+          },
+          "mainProcess": {
+            "rss": 424443904,
+            "heapTotal": 192184320,
+            "heapUsed": 188461204,
+            "external": 9413390,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 27005.676333999996,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 397230080,
+          "rendererHeapUsedBytes": 36415080,
+          "rendererHeapTotalBytes": 38109184,
+          "rendererBackingStorageBytes": 14396878,
+          "dom": {
+            "documents": 3,
+            "nodes": 19592,
+            "jsEventListeners": 573
+          },
+          "mainProcess": {
+            "rss": 424476672,
+            "heapTotal": 192184320,
+            "heapUsed": 188497260,
+            "external": 9413390,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 27505.867083999998,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 397230080,
+          "rendererHeapUsedBytes": 36415080,
+          "rendererHeapTotalBytes": 38109184,
+          "rendererBackingStorageBytes": 14396878,
+          "dom": {
+            "documents": 3,
+            "nodes": 19592,
+            "jsEventListeners": 573
+          },
+          "mainProcess": {
+            "rss": 424509440,
+            "heapTotal": 192184320,
+            "heapUsed": 188527868,
+            "external": 9413390,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 28010.466,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 397230080,
+          "rendererHeapUsedBytes": 36415080,
+          "rendererHeapTotalBytes": 38109184,
+          "rendererBackingStorageBytes": 14396878,
+          "dom": {
+            "documents": 3,
+            "nodes": 19592,
+            "jsEventListeners": 573
+          },
+          "mainProcess": {
+            "rss": 424542208,
+            "heapTotal": 192184320,
+            "heapUsed": 188566460,
+            "external": 9413390,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 28506.162459,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 397230080,
+          "rendererHeapUsedBytes": 36415128,
+          "rendererHeapTotalBytes": 38109184,
+          "rendererBackingStorageBytes": 14396878,
+          "dom": {
+            "documents": 3,
+            "nodes": 19592,
+            "jsEventListeners": 573
+          },
+          "mainProcess": {
+            "rss": 424574976,
+            "heapTotal": 192184320,
+            "heapUsed": 188601476,
+            "external": 9421582,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 29007.356999999996,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 397230080,
+          "rendererHeapUsedBytes": 36415128,
+          "rendererHeapTotalBytes": 38109184,
+          "rendererBackingStorageBytes": 14396878,
+          "dom": {
+            "documents": 3,
+            "nodes": 19592,
+            "jsEventListeners": 573
+          },
+          "mainProcess": {
+            "rss": 424607744,
+            "heapTotal": 192184320,
+            "heapUsed": 188631848,
+            "external": 9421582,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 29506.445999999996,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 397230080,
+          "rendererHeapUsedBytes": 36416064,
+          "rendererHeapTotalBytes": 38109184,
+          "rendererBackingStorageBytes": 14396878,
+          "dom": {
+            "documents": 3,
+            "nodes": 19592,
+            "jsEventListeners": 573
+          },
+          "mainProcess": {
+            "rss": 424640512,
+            "heapTotal": 192184320,
+            "heapUsed": 188666264,
+            "external": 9421613,
+            "arrayBuffers": 0
+          }
+        }
+      ],
+      "postGc": {
+        "elapsedMs": 30046.240625,
+        "rendererPid": 86766,
+        "rendererCreatedAt": 1792517262146.51,
+        "rendererWorkingSetBytes": 395821056,
+        "rendererHeapUsedBytes": 31923424,
+        "rendererHeapTotalBytes": 33128448,
+        "rendererBackingStorageBytes": 14291526,
+        "dom": {
+          "documents": 3,
+          "nodes": 19592,
+          "jsEventListeners": 573
+        },
+        "mainProcess": {
+          "rss": 424689664,
+          "heapTotal": 192446464,
+          "heapUsed": 188696208,
+          "external": 9421613,
+          "arrayBuffers": 0
+        }
+      },
+      "gcPolicy": "natural samples first; one explicit CDP collection before the separate postGc sample",
+      "structure": {
+        "sessionID": null,
+        "mountedMessageRows": 0
+      }
+    },
+    {
+      "name": "loaded",
+      "settleMs": 6000,
+      "measureMs": 30000,
+      "sampleIntervalMs": 500,
+      "samples": [
+        {
+          "elapsedMs": 9.630166999995708,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445906944,
+          "rendererHeapUsedBytes": 45314584,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14917449,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425508864,
+            "heapTotal": 191135744,
+            "heapUsed": 189089348,
+            "external": 9451218,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 507.76108399999794,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445906944,
+          "rendererHeapUsedBytes": 45315520,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14917449,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425508864,
+            "heapTotal": 191135744,
+            "heapUsed": 189119920,
+            "external": 9451218,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 1008.6208340000012,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445906944,
+          "rendererHeapUsedBytes": 45315520,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14917449,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425508864,
+            "heapTotal": 191135744,
+            "heapUsed": 189149472,
+            "external": 9451218,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 1504.5098339999968,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445906944,
+          "rendererHeapUsedBytes": 45319048,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14917449,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425508864,
+            "heapTotal": 191135744,
+            "heapUsed": 189180024,
+            "external": 9451218,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 2008.4076249999925,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445906944,
+          "rendererHeapUsedBytes": 45320400,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14917449,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425508864,
+            "heapTotal": 191135744,
+            "heapUsed": 189212292,
+            "external": 9459410,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 2508.9250420000026,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445906944,
+          "rendererHeapUsedBytes": 45320400,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14917449,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425508864,
+            "heapTotal": 191397888,
+            "heapUsed": 189243220,
+            "external": 9459410,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 3009.085374999995,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445906944,
+          "rendererHeapUsedBytes": 45328516,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14917883,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425361408,
+            "heapTotal": 190611456,
+            "heapUsed": 188670088,
+            "external": 9459410,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 3506.720749999993,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445906944,
+          "rendererHeapUsedBytes": 45329452,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14917883,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425394176,
+            "heapTotal": 190611456,
+            "heapUsed": 188700544,
+            "external": 9459410,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 4008.95541699999,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445906944,
+          "rendererHeapUsedBytes": 45329452,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14917883,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425426944,
+            "heapTotal": 190611456,
+            "heapUsed": 188731320,
+            "external": 9449701,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 4509.649624999991,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445906944,
+          "rendererHeapUsedBytes": 45329452,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14917883,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425410560,
+            "heapTotal": 190611456,
+            "heapUsed": 188768420,
+            "external": 9449701,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 5010.093041999993,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445906944,
+          "rendererHeapUsedBytes": 45330804,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14917883,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425426944,
+            "heapTotal": 190873600,
+            "heapUsed": 188798776,
+            "external": 9449701,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 5504.904792000001,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445906944,
+          "rendererHeapUsedBytes": 45330804,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14917883,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425426944,
+            "heapTotal": 190873600,
+            "heapUsed": 188829172,
+            "external": 9449701,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 6006.848958999995,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445906944,
+          "rendererHeapUsedBytes": 45330804,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14917883,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425443328,
+            "heapTotal": 190873600,
+            "heapUsed": 188936508,
+            "external": 9478099,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 6510.772666999997,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445906944,
+          "rendererHeapUsedBytes": 45343236,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14917975,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425443328,
+            "heapTotal": 190873600,
+            "heapUsed": 188995392,
+            "external": 9478122,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 7009.253124999988,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445906944,
+          "rendererHeapUsedBytes": 45343236,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14917975,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425443328,
+            "heapTotal": 190873600,
+            "heapUsed": 189033276,
+            "external": 9479018,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 7508.0171249999985,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445906944,
+          "rendererHeapUsedBytes": 45343236,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14917975,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425443328,
+            "heapTotal": 191135744,
+            "heapUsed": 189063816,
+            "external": 9479018,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 8001.735000000001,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445906944,
+          "rendererHeapUsedBytes": 45349828,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14917975,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425443328,
+            "heapTotal": 191135744,
+            "heapUsed": 189133992,
+            "external": 9487210,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 8508.465749999988,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445906944,
+          "rendererHeapUsedBytes": 45349828,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14917975,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425443328,
+            "heapTotal": 191135744,
+            "heapUsed": 189167128,
+            "external": 9487210,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 9002.079375000001,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445906944,
+          "rendererHeapUsedBytes": 45349828,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14917975,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425443328,
+            "heapTotal": 191135744,
+            "heapUsed": 189196372,
+            "external": 9487210,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 9502.213833999995,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445906944,
+          "rendererHeapUsedBytes": 45350764,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14917975,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425492480,
+            "heapTotal": 191135744,
+            "heapUsed": 189226892,
+            "external": 9487210,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 10002.779291999992,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445906944,
+          "rendererHeapUsedBytes": 45350764,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14917975,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425492480,
+            "heapTotal": 191135744,
+            "heapUsed": 189263404,
+            "external": 9495402,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 10506.649749999997,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445906944,
+          "rendererHeapUsedBytes": 45350764,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14917975,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425492480,
+            "heapTotal": 191135744,
+            "heapUsed": 189294616,
+            "external": 9495402,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 11008.950167000003,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445906944,
+          "rendererHeapUsedBytes": 45350764,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14917975,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425492480,
+            "heapTotal": 191397888,
+            "heapUsed": 189326348,
+            "external": 9495402,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 11508.576541999995,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445923328,
+          "rendererHeapUsedBytes": 45351344,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14917975,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425492480,
+            "heapTotal": 191397888,
+            "heapUsed": 189356992,
+            "external": 9495402,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 12013.860333999997,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445923328,
+          "rendererHeapUsedBytes": 45351344,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14917975,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425492480,
+            "heapTotal": 191397888,
+            "heapUsed": 189387612,
+            "external": 9503594,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 12509.349791999994,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445923328,
+          "rendererHeapUsedBytes": 45352280,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14917975,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425492480,
+            "heapTotal": 190611456,
+            "heapUsed": 188767768,
+            "external": 9441540,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 13011.989042000001,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445923328,
+          "rendererHeapUsedBytes": 45357736,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14917975,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425492480,
+            "heapTotal": 190611456,
+            "heapUsed": 188834500,
+            "external": 9441540,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 13507.580166999993,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445923328,
+          "rendererHeapUsedBytes": 45357736,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14917975,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425492480,
+            "heapTotal": 190611456,
+            "heapUsed": 188864332,
+            "external": 9441540,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 14010.079208999989,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445923328,
+          "rendererHeapUsedBytes": 45357736,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14917975,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425492480,
+            "heapTotal": 190873600,
+            "heapUsed": 188893980,
+            "external": 9449732,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 14509.382291999995,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445923328,
+          "rendererHeapUsedBytes": 45357736,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14917975,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425459712,
+            "heapTotal": 190873600,
+            "heapUsed": 188924712,
+            "external": 9449732,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 15006.491834,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445923328,
+          "rendererHeapUsedBytes": 45357736,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14917975,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425476096,
+            "heapTotal": 190873600,
+            "heapUsed": 188954268,
+            "external": 9449732,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 15509.773625000002,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445923328,
+          "rendererHeapUsedBytes": 45358672,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14917975,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425476096,
+            "heapTotal": 190873600,
+            "heapUsed": 188984996,
+            "external": 9449732,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 16008.316584,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445923328,
+          "rendererHeapUsedBytes": 45358672,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14917975,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425476096,
+            "heapTotal": 190873600,
+            "heapUsed": 189014796,
+            "external": 9457924,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 16509.218416999996,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445923328,
+          "rendererHeapUsedBytes": 45359252,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14917975,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425476096,
+            "heapTotal": 190873600,
+            "heapUsed": 189045500,
+            "external": 9457924,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 17007.749874999994,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445923328,
+          "rendererHeapUsedBytes": 45359252,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14917975,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425476096,
+            "heapTotal": 190873600,
+            "heapUsed": 189083296,
+            "external": 9458820,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 17509.701833999992,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445923328,
+          "rendererHeapUsedBytes": 45359252,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14917975,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425476096,
+            "heapTotal": 190873600,
+            "heapUsed": 189114232,
+            "external": 9458820,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 18009.25099999999,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445923328,
+          "rendererHeapUsedBytes": 45379964,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14917975,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425476096,
+            "heapTotal": 191135744,
+            "heapUsed": 189203764,
+            "external": 9467012,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 18508.740374999994,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445923328,
+          "rendererHeapUsedBytes": 45380900,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14917975,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425476096,
+            "heapTotal": 191135744,
+            "heapUsed": 189234028,
+            "external": 9467012,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 19009.351458999998,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445923328,
+          "rendererHeapUsedBytes": 45380900,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14917975,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425476096,
+            "heapTotal": 191135744,
+            "heapUsed": 189263520,
+            "external": 9467012,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 19508.893834000002,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445923328,
+          "rendererHeapUsedBytes": 45380900,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14917975,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425525248,
+            "heapTotal": 191135744,
+            "heapUsed": 189293992,
+            "external": 9467012,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 20009.035999999993,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445923328,
+          "rendererHeapUsedBytes": 45380900,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14917975,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425525248,
+            "heapTotal": 191135744,
+            "heapUsed": 189323368,
+            "external": 9475204,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 20509.927167,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445923328,
+          "rendererHeapUsedBytes": 45380900,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14917975,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425525248,
+            "heapTotal": 191135744,
+            "heapUsed": 189355752,
+            "external": 9475204,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 21009.778416999994,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445923328,
+          "rendererHeapUsedBytes": 45380900,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14917975,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425525248,
+            "heapTotal": 191397888,
+            "heapUsed": 189475980,
+            "external": 9495410,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 21509.585624999992,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445939712,
+          "rendererHeapUsedBytes": 45393912,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14917987,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425525248,
+            "heapTotal": 191397888,
+            "heapUsed": 189506376,
+            "external": 9495410,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 22008.41341699999,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445939712,
+          "rendererHeapUsedBytes": 45394576,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14918056,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425590784,
+            "heapTotal": 191922176,
+            "heapUsed": 188899848,
+            "external": 9503602,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 22508.507499999992,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445939712,
+          "rendererHeapUsedBytes": 45394576,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14918056,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425590784,
+            "heapTotal": 191922176,
+            "heapUsed": 188930488,
+            "external": 9503602,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 23006.213791999995,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445939712,
+          "rendererHeapUsedBytes": 45400488,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14918056,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425590784,
+            "heapTotal": 191922176,
+            "heapUsed": 189011600,
+            "external": 9503602,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 23507.488874999995,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445939712,
+          "rendererHeapUsedBytes": 45400488,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14918056,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425623552,
+            "heapTotal": 192184320,
+            "heapUsed": 189042020,
+            "external": 9503602,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 24004.050499999998,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445939712,
+          "rendererHeapUsedBytes": 45400488,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14918056,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425672704,
+            "heapTotal": 192184320,
+            "heapUsed": 189071804,
+            "external": 9449732,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 24505.768834000002,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445939712,
+          "rendererHeapUsedBytes": 45401424,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14918056,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425689088,
+            "heapTotal": 192184320,
+            "heapUsed": 189102384,
+            "external": 9449732,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 25009.176666999992,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445939712,
+          "rendererHeapUsedBytes": 45401424,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14918056,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425689088,
+            "heapTotal": 192184320,
+            "heapUsed": 189138844,
+            "external": 9449732,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 25508.512084,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445939712,
+          "rendererHeapUsedBytes": 45401424,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14918056,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425721856,
+            "heapTotal": 192184320,
+            "heapUsed": 189169768,
+            "external": 9449732,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 26008.571834000002,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445939712,
+          "rendererHeapUsedBytes": 45401424,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14918056,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425738240,
+            "heapTotal": 192184320,
+            "heapUsed": 189201424,
+            "external": 9457924,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 26509.37512499999,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445939712,
+          "rendererHeapUsedBytes": 45405980,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14918056,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425803776,
+            "heapTotal": 192184320,
+            "heapUsed": 189260172,
+            "external": 9457947,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 27008.616125,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445939712,
+          "rendererHeapUsedBytes": 45405980,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14918056,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425836544,
+            "heapTotal": 192446464,
+            "heapUsed": 189312088,
+            "external": 9458843,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 27506.83,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445939712,
+          "rendererHeapUsedBytes": 45406916,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14918056,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425869312,
+            "heapTotal": 192446464,
+            "heapUsed": 189352748,
+            "external": 9458874,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 28010.191624999992,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445939712,
+          "rendererHeapUsedBytes": 45412900,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14918056,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425951232,
+            "heapTotal": 192446464,
+            "heapUsed": 189419964,
+            "external": 9467066,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 28507.80674999999,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445939712,
+          "rendererHeapUsedBytes": 45412900,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14918056,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 425967616,
+            "heapTotal": 192446464,
+            "heapUsed": 189450312,
+            "external": 9467066,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 29010.44720899999,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445939712,
+          "rendererHeapUsedBytes": 45412900,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14918056,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 426000384,
+            "heapTotal": 192446464,
+            "heapUsed": 189480716,
+            "external": 9467066,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 29506.608167,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 445939712,
+          "rendererHeapUsedBytes": 45412900,
+          "rendererHeapTotalBytes": 49528832,
+          "rendererBackingStorageBytes": 14918056,
+          "dom": {
+            "documents": 2,
+            "nodes": 20135,
+            "jsEventListeners": 978
+          },
+          "mainProcess": {
+            "rss": 426082304,
+            "heapTotal": 192446464,
+            "heapUsed": 189510996,
+            "external": 9467066,
+            "arrayBuffers": 0
+          }
+        }
+      ],
+      "postGc": {
+        "elapsedMs": 30063.409625,
+        "rendererPid": 86766,
+        "rendererCreatedAt": 1792517262146.51,
+        "rendererWorkingSetBytes": 442613760,
+        "rendererHeapUsedBytes": 43069600,
+        "rendererHeapTotalBytes": 45072384,
+        "rendererBackingStorageBytes": 14802093,
+        "dom": {
+          "documents": 2,
+          "nodes": 20135,
+          "jsEventListeners": 966
+        },
+        "mainProcess": {
+          "rss": 426115072,
+          "heapTotal": 192446464,
+          "heapUsed": 189540824,
+          "external": 9475258,
+          "arrayBuffers": 0
+        }
+      },
+      "gcPolicy": "natural samples first; one explicit CDP collection before the separate postGc sample",
+      "structure": {
+        "sessionID": "ses_ea5a54871ffe0000000000000V",
+        "mountedMessageRows": 16,
+        "visibleHistoryText": "History response 1."
+      }
+    },
+    {
+      "name": "inactive",
+      "settleMs": 6000,
+      "measureMs": 30000,
+      "sampleIntervalMs": 500,
+      "samples": [
+        {
+          "elapsedMs": 15.483791999999085,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 447299584,
+          "rendererHeapUsedBytes": 45857040,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14907501,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 426737664,
+            "heapTotal": 191922176,
+            "heapUsed": 189396980,
+            "external": 9490502,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 514.0240000000049,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 447315968,
+          "rendererHeapUsedBytes": 45876888,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14907513,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 426737664,
+            "heapTotal": 191922176,
+            "heapUsed": 189427804,
+            "external": 9498694,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 1002.4780420000025,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 447332352,
+          "rendererHeapUsedBytes": 45902720,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908482,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 426819584,
+            "heapTotal": 191397888,
+            "heapUsed": 189375496,
+            "external": 9458212,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 1506.673708000002,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 447332352,
+          "rendererHeapUsedBytes": 45902720,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908482,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 426819584,
+            "heapTotal": 191397888,
+            "heapUsed": 189406796,
+            "external": 9458212,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 2014.4769579999993,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 447332352,
+          "rendererHeapUsedBytes": 45903044,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908482,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 426819584,
+            "heapTotal": 191397888,
+            "heapUsed": 189436448,
+            "external": 9458212,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 2506.0973749999976,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 447332352,
+          "rendererHeapUsedBytes": 45903044,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908482,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 426819584,
+            "heapTotal": 191397888,
+            "heapUsed": 189467128,
+            "external": 9466404,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 3007.4671249999956,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 447332352,
+          "rendererHeapUsedBytes": 45903044,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908482,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 426819584,
+            "heapTotal": 191397888,
+            "heapUsed": 189496828,
+            "external": 9466404,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 3506.826874999999,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 447332352,
+          "rendererHeapUsedBytes": 45903980,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908482,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 426835968,
+            "heapTotal": 191397888,
+            "heapUsed": 189772020,
+            "external": 9466404,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 4007.7493329999998,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 447332352,
+          "rendererHeapUsedBytes": 45903980,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908482,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 426835968,
+            "heapTotal": 191660032,
+            "heapUsed": 189569512,
+            "external": 9466404,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 4507.178125000006,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 447332352,
+          "rendererHeapUsedBytes": 45903980,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908482,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 426835968,
+            "heapTotal": 191660032,
+            "heapUsed": 189600192,
+            "external": 9474596,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 5011.546791999994,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 447332352,
+          "rendererHeapUsedBytes": 45903980,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908482,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 426835968,
+            "heapTotal": 191660032,
+            "heapUsed": 189631680,
+            "external": 9474596,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 5507.6451249999955,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 447332352,
+          "rendererHeapUsedBytes": 45904028,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908482,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 426835968,
+            "heapTotal": 191660032,
+            "heapUsed": 189661908,
+            "external": 9474596,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 6005.743875,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 447332352,
+          "rendererHeapUsedBytes": 45904028,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908482,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 426835968,
+            "heapTotal": 191660032,
+            "heapUsed": 189692616,
+            "external": 9474596,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 6508.825874999995,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 447332352,
+          "rendererHeapUsedBytes": 45904964,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908482,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 426835968,
+            "heapTotal": 191660032,
+            "heapUsed": 189727360,
+            "external": 9482819,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 7007.750083000006,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 447332352,
+          "rendererHeapUsedBytes": 45904964,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908482,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 426835968,
+            "heapTotal": 191660032,
+            "heapUsed": 189759084,
+            "external": 9482819,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 7507.433875000002,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 447332352,
+          "rendererHeapUsedBytes": 45904964,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908482,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 426835968,
+            "heapTotal": 191660032,
+            "heapUsed": 189789316,
+            "external": 9482819,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 8008.729500000001,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 447332352,
+          "rendererHeapUsedBytes": 45904964,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908482,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 426835968,
+            "heapTotal": 191922176,
+            "heapUsed": 189818692,
+            "external": 9482819,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 8507.943750000006,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 447332352,
+          "rendererHeapUsedBytes": 45904964,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908482,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 426835968,
+            "heapTotal": 191922176,
+            "heapUsed": 189849152,
+            "external": 9491011,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 9004.639750000002,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 447332352,
+          "rendererHeapUsedBytes": 45905640,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908482,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 426573824,
+            "heapTotal": 191397888,
+            "heapUsed": 189270280,
+            "external": 9491011,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 9506.638166999997,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 447332352,
+          "rendererHeapUsedBytes": 45906576,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908482,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 426573824,
+            "heapTotal": 191397888,
+            "heapUsed": 189300428,
+            "external": 9491011,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 10007.201207999999,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 447332352,
+          "rendererHeapUsedBytes": 45906576,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908482,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 426573824,
+            "heapTotal": 191397888,
+            "heapUsed": 189329768,
+            "external": 9491011,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 10507.204333000001,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 447332352,
+          "rendererHeapUsedBytes": 45911124,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908519,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 426573824,
+            "heapTotal": 191660032,
+            "heapUsed": 189390424,
+            "external": 9466212,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 11011.300667000003,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 447332352,
+          "rendererHeapUsedBytes": 45911732,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908588,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 426573824,
+            "heapTotal": 191660032,
+            "heapUsed": 189430556,
+            "external": 9467108,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 11506.163583000001,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 447332352,
+          "rendererHeapUsedBytes": 45911732,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908588,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 426573824,
+            "heapTotal": 191660032,
+            "heapUsed": 189465692,
+            "external": 9467108,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 12005.080166999993,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 447332352,
+          "rendererHeapUsedBytes": 45911732,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908588,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 426573824,
+            "heapTotal": 191660032,
+            "heapUsed": 189495032,
+            "external": 9467108,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 12508.996792000005,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 447332352,
+          "rendererHeapUsedBytes": 45912668,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908588,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 426573824,
+            "heapTotal": 191660032,
+            "heapUsed": 189526476,
+            "external": 9475300,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 13005.707832999993,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 447332352,
+          "rendererHeapUsedBytes": 45912668,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908588,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 426573824,
+            "heapTotal": 191660032,
+            "heapUsed": 189555616,
+            "external": 9475300,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 13506.899332999994,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 447332352,
+          "rendererHeapUsedBytes": 45912668,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908588,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 426573824,
+            "heapTotal": 191660032,
+            "heapUsed": 189587064,
+            "external": 9475300,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 14012.106291999997,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 447332352,
+          "rendererHeapUsedBytes": 45912668,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908588,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 426622976,
+            "heapTotal": 191660032,
+            "heapUsed": 189616260,
+            "external": 9475300,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 14506.283458000005,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 447332352,
+          "rendererHeapUsedBytes": 45912668,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908588,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 426622976,
+            "heapTotal": 191922176,
+            "heapUsed": 189647344,
+            "external": 9483492,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 15005.077999999994,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 447299584,
+          "rendererHeapUsedBytes": 45912668,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908588,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 426360832,
+            "heapTotal": 191922176,
+            "heapUsed": 189773380,
+            "external": 9503698,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 15508.924499999994,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 440664064,
+          "rendererHeapUsedBytes": 45916324,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908600,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 422821888,
+            "heapTotal": 191922176,
+            "heapUsed": 189807648,
+            "external": 9503698,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 16008.247707999995,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 440664064,
+          "rendererHeapUsedBytes": 45916324,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908600,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 423116800,
+            "heapTotal": 191922176,
+            "heapUsed": 189864124,
+            "external": 9503698,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 16507.738583,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 440664064,
+          "rendererHeapUsedBytes": 45916324,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908600,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 423116800,
+            "heapTotal": 191922176,
+            "heapUsed": 189894304,
+            "external": 9511890,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 17007.484542000006,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 431964160,
+          "rendererHeapUsedBytes": 45916324,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908600,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 421986304,
+            "heapTotal": 191922176,
+            "heapUsed": 189923612,
+            "external": 9511890,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 17508.651125000004,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 431964160,
+          "rendererHeapUsedBytes": 45916324,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908600,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 421986304,
+            "heapTotal": 192184320,
+            "heapUsed": 189953844,
+            "external": 9511890,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 18007.730750000002,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 431964160,
+          "rendererHeapUsedBytes": 45916324,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908600,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 421986304,
+            "heapTotal": 192184320,
+            "heapUsed": 189983040,
+            "external": 9511890,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 18507.018832999995,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 432029696,
+          "rendererHeapUsedBytes": 45917260,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908600,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 422019072,
+            "heapTotal": 191397888,
+            "heapUsed": 189398388,
+            "external": 9520082,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 19008.935457999993,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 432029696,
+          "rendererHeapUsedBytes": 45917260,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908600,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 422019072,
+            "heapTotal": 191397888,
+            "heapUsed": 189434640,
+            "external": 9520082,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 19508.466667,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 432029696,
+          "rendererHeapUsedBytes": 45917260,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908600,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 421969920,
+            "heapTotal": 191397888,
+            "heapUsed": 189465604,
+            "external": 9520082,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 20008.959000000003,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 432029696,
+          "rendererHeapUsedBytes": 45917260,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908600,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 421969920,
+            "heapTotal": 191660032,
+            "heapUsed": 189496792,
+            "external": 9520082,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 20507.073333000008,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 432029696,
+          "rendererHeapUsedBytes": 45917308,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908600,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 421969920,
+            "heapTotal": 191660032,
+            "heapUsed": 189536372,
+            "external": 9466389,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 21007.40054199999,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 432029696,
+          "rendererHeapUsedBytes": 45917308,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908600,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 421969920,
+            "heapTotal": 191660032,
+            "heapUsed": 189573988,
+            "external": 9467285,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 21507.752624999994,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 432029696,
+          "rendererHeapUsedBytes": 45918244,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908600,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 421969920,
+            "heapTotal": 191660032,
+            "heapUsed": 189608264,
+            "external": 9467316,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 22006.94104199999,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 432029696,
+          "rendererHeapUsedBytes": 45918244,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908600,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 421969920,
+            "heapTotal": 191660032,
+            "heapUsed": 189637584,
+            "external": 9467316,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 22511.810708000005,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 432029696,
+          "rendererHeapUsedBytes": 45918244,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908600,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 421969920,
+            "heapTotal": 191660032,
+            "heapUsed": 189668044,
+            "external": 9475508,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 23007.768417000014,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 432029696,
+          "rendererHeapUsedBytes": 45918244,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908600,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 421969920,
+            "heapTotal": 191660032,
+            "heapUsed": 189697084,
+            "external": 9475508,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 23507.809791999985,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 432029696,
+          "rendererHeapUsedBytes": 45918244,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908600,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 421969920,
+            "heapTotal": 191660032,
+            "heapUsed": 189727204,
+            "external": 9475508,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 24014.252083,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 415121408,
+          "rendererHeapUsedBytes": 45919180,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908600,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 411156480,
+            "heapTotal": 191922176,
+            "heapUsed": 189756664,
+            "external": 9475508,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 24512.433458000014,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 415121408,
+          "rendererHeapUsedBytes": 45919180,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908600,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 411156480,
+            "heapTotal": 191922176,
+            "heapUsed": 189788512,
+            "external": 9483700,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 25007.099917000014,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 415121408,
+          "rendererHeapUsedBytes": 45919180,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908600,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 411156480,
+            "heapTotal": 191922176,
+            "heapUsed": 189817708,
+            "external": 9483700,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 25507.928583,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 415121408,
+          "rendererHeapUsedBytes": 45919228,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908600,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 411156480,
+            "heapTotal": 191922176,
+            "heapUsed": 189847828,
+            "external": 9483700,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 26003.35945799999,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 415121408,
+          "rendererHeapUsedBytes": 45919228,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908600,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 411156480,
+            "heapTotal": 191922176,
+            "heapUsed": 189880152,
+            "external": 9483700,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 26505.500375000003,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 415121408,
+          "rendererHeapUsedBytes": 45919228,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908600,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 411156480,
+            "heapTotal": 191922176,
+            "heapUsed": 189910612,
+            "external": 9491892,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 27007.492750000005,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 415121408,
+          "rendererHeapUsedBytes": 45919228,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908600,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 411156480,
+            "heapTotal": 191922176,
+            "heapUsed": 189940012,
+            "external": 9491892,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 27506.626667000004,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 415121408,
+          "rendererHeapUsedBytes": 45920164,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908600,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 411156480,
+            "heapTotal": 191922176,
+            "heapUsed": 189970764,
+            "external": 9491892,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 28007.769417000003,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 415121408,
+          "rendererHeapUsedBytes": 45920164,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908600,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 411172864,
+            "heapTotal": 191922176,
+            "heapUsed": 190003856,
+            "external": 9491892,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 28517.780874999997,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 415170560,
+          "rendererHeapUsedBytes": 45920164,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908600,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 411172864,
+            "heapTotal": 192184320,
+            "heapUsed": 190034224,
+            "external": 9500084,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 29008.630957999994,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 415170560,
+          "rendererHeapUsedBytes": 45920164,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908600,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 411172864,
+            "heapTotal": 192184320,
+            "heapUsed": 190063140,
+            "external": 9500084,
+            "arrayBuffers": 0
+          }
+        },
+        {
+          "elapsedMs": 29507.022957999987,
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51,
+          "rendererWorkingSetBytes": 415170560,
+          "rendererHeapUsedBytes": 45920164,
+          "rendererHeapTotalBytes": 49790976,
+          "rendererBackingStorageBytes": 14908600,
+          "dom": {
+            "documents": 4,
+            "nodes": 20182,
+            "jsEventListeners": 1370
+          },
+          "mainProcess": {
+            "rss": 411189248,
+            "heapTotal": 191397888,
+            "heapUsed": 189472028,
+            "external": 9500084,
+            "arrayBuffers": 0
+          }
+        }
+      ],
+      "postGc": {
+        "elapsedMs": 30045.726250000007,
+        "rendererPid": 86766,
+        "rendererCreatedAt": 1792517262146.51,
+        "rendererWorkingSetBytes": 390496256,
+        "rendererHeapUsedBytes": 38728272,
+        "rendererHeapTotalBytes": 41664512,
+        "rendererBackingStorageBytes": 14799146,
+        "dom": {
+          "documents": 3,
+          "nodes": 19592,
+          "jsEventListeners": 573
+        },
+        "mainProcess": {
+          "rss": 410140672,
+          "heapTotal": 191397888,
+          "heapUsed": 189584956,
+          "external": 9478234,
+          "arrayBuffers": 0
+        }
+      },
+      "gcPolicy": "natural samples first; one explicit CDP collection before the separate postGc sample",
+      "structure": {
+        "sessionID": null,
+        "mountedMessageRows": 0
+      }
+    }
+  ],
+  "loadedHistories": [
+    {
+      "id": "ses_ea5a54887ff20000000000000P",
+      "title": "Memory fixture 1",
+      "expectedMessages": 360,
+      "pageClicks": 4,
+      "coveredMessages": 360,
+      "pages": [
+        {
+          "sessionID": "ses_ea5a54887ff20000000000000P",
+          "limit": 50,
+          "type": null,
+          "returned": 50,
+          "before": null,
+          "firstMessageID": "msg_1a15a5a41370000000000100009b",
+          "lastMessageID": "msg_1a15a5a9f0b000000000010000b3",
+          "wire": {
+            "order": "desc",
+            "cursor": false,
+            "cursorAnchor": null,
+            "cursorDirection": null,
+            "firstMessageID": "msg_1a15a5a9f0b000000000010000b3",
+            "lastMessageID": "msg_1a15a5a41370000000000100009b"
+          }
+        },
+        {
+          "sessionID": "ses_ea5a54887ff20000000000000P",
+          "limit": 50,
+          "type": null,
+          "returned": 50,
+          "before": null,
+          "firstMessageID": "msg_1a15a5a41370000000000100009b",
+          "lastMessageID": "msg_1a15a5a9f0b000000000010000b3",
+          "wire": {
+            "order": "desc",
+            "cursor": false,
+            "cursorAnchor": null,
+            "cursorDirection": null,
+            "firstMessageID": "msg_1a15a5a9f0b000000000010000b3",
+            "lastMessageID": "msg_1a15a5a41370000000000100009b"
+          }
+        },
+        {
+          "sessionID": "ses_ea5a54887ff20000000000000P",
+          "limit": 200,
+          "type": null,
+          "returned": 200,
+          "before": "msg_1a15a5a41370000000000100009b",
+          "firstMessageID": "msg_1a15a58ba9700000000001000037",
+          "lastMessageID": "msg_1a15a5a3d630000000000100009a",
+          "wire": {
+            "order": "desc",
+            "cursor": true,
+            "cursorAnchor": "msg_1a15a5a41370000000000100009b",
+            "cursorDirection": "next",
+            "firstMessageID": "msg_1a15a5a3d630000000000100009a",
+            "lastMessageID": "msg_1a15a58ba9700000000001000037"
+          }
+        },
+        {
+          "sessionID": "ses_ea5a54887ff20000000000000P",
+          "limit": 200,
+          "type": null,
+          "returned": 110,
+          "before": "msg_1a15a58ba9700000000001000037",
+          "firstMessageID": "msg_1a15a57e3bf00000000001000000",
+          "lastMessageID": "msg_1a15a58b6c300000000001000036",
+          "wire": {
+            "order": "desc",
+            "cursor": true,
+            "cursorAnchor": "msg_1a15a58ba9700000000001000037",
+            "cursorDirection": "next",
+            "firstMessageID": "msg_1a15a58b6c300000000001000036",
+            "lastMessageID": "msg_1a15a57e3bf00000000001000000"
+          }
+        }
+      ],
+      "prefetchedPages": [
+        {
+          "sessionID": "ses_ea5a54887ff20000000000000P",
+          "limit": 50,
+          "type": null,
+          "returned": 50,
+          "before": null,
+          "firstMessageID": "msg_1a15a5a41370000000000100009b",
+          "lastMessageID": "msg_1a15a5a9f0b000000000010000b3",
+          "wire": {
+            "order": "desc",
+            "cursor": false,
+            "cursorAnchor": null,
+            "cursorDirection": null,
+            "firstMessageID": "msg_1a15a5a9f0b000000000010000b3",
+            "lastMessageID": "msg_1a15a5a41370000000000100009b"
+          }
+        }
+      ],
+      "commits": [
+        {
+          "beforeMessageID": "msg_1a15a5a7bcf000000000010000aa",
+          "firstMessageID": "msg_1a15a5a5c8f000000000010000a2",
+          "canonicalText": "History request 163",
+          "kind": "buffered-reveal",
+          "freshPages": []
+        },
+        {
+          "beforeMessageID": "msg_1a15a5a5c8f000000000010000a2",
+          "firstMessageID": "msg_1a15a5a41370000000000100009b",
+          "canonicalText": "History request 156",
+          "kind": "buffered-reveal",
+          "freshPages": []
+        },
+        {
+          "beforeMessageID": "msg_1a15a5a41370000000000100009b",
+          "firstMessageID": "msg_1a15a5a25df00000000001000094",
+          "canonicalText": "History request 149",
+          "kind": "fetched-and-revealed",
+          "freshPages": [
+            {
+              "sessionID": "ses_ea5a54887ff20000000000000P",
+              "limit": 200,
+              "type": null,
+              "returned": 200,
+              "before": "msg_1a15a5a41370000000000100009b",
+              "firstMessageID": "msg_1a15a58ba9700000000001000037",
+              "lastMessageID": "msg_1a15a5a3d630000000000100009a",
+              "wire": {
+                "order": "desc",
+                "cursor": true,
+                "cursorAnchor": "msg_1a15a5a41370000000000100009b",
+                "cursorDirection": "next",
+                "firstMessageID": "msg_1a15a5a3d630000000000100009a",
+                "lastMessageID": "msg_1a15a58ba9700000000001000037"
+              }
+            }
+          ]
+        },
+        {
+          "beforeMessageID": "msg_1a15a58ba9700000000001000037",
+          "firstMessageID": "msg_1a15a57e3bf00000000001000000",
+          "canonicalText": "History request 1",
+          "kind": "fetched-and-revealed",
+          "freshPages": [
+            {
+              "sessionID": "ses_ea5a54887ff20000000000000P",
+              "limit": 200,
+              "type": null,
+              "returned": 110,
+              "before": "msg_1a15a58ba9700000000001000037",
+              "firstMessageID": "msg_1a15a57e3bf00000000001000000",
+              "lastMessageID": "msg_1a15a58b6c300000000001000036",
+              "wire": {
+                "order": "desc",
+                "cursor": true,
+                "cursorAnchor": "msg_1a15a58ba9700000000001000037",
+                "cursorDirection": "next",
+                "firstMessageID": "msg_1a15a58b6c300000000001000036",
+                "lastMessageID": "msg_1a15a57e3bf00000000001000000"
+              }
+            }
+          ]
+        }
+      ],
+      "messagePageRequestOffset": 12
+    },
+    {
+      "id": "ses_ea5a5487bffe0000000000000R",
+      "title": "Memory fixture 2",
+      "expectedMessages": 360,
+      "pageClicks": 4,
+      "coveredMessages": 360,
+      "pages": [
+        {
+          "sessionID": "ses_ea5a5487bffe0000000000000R",
+          "limit": 50,
+          "type": null,
+          "returned": 50,
+          "before": null,
+          "firstMessageID": "msg_1a15a5a41370000000000200009b",
+          "lastMessageID": "msg_1a15a5a9f0b000000000020000b3",
+          "wire": {
+            "order": "desc",
+            "cursor": false,
+            "cursorAnchor": null,
+            "cursorDirection": null,
+            "firstMessageID": "msg_1a15a5a9f0b000000000020000b3",
+            "lastMessageID": "msg_1a15a5a41370000000000200009b"
+          }
+        },
+        {
+          "sessionID": "ses_ea5a5487bffe0000000000000R",
+          "limit": 50,
+          "type": null,
+          "returned": 50,
+          "before": null,
+          "firstMessageID": "msg_1a15a5a41370000000000200009b",
+          "lastMessageID": "msg_1a15a5a9f0b000000000020000b3",
+          "wire": {
+            "order": "desc",
+            "cursor": false,
+            "cursorAnchor": null,
+            "cursorDirection": null,
+            "firstMessageID": "msg_1a15a5a9f0b000000000020000b3",
+            "lastMessageID": "msg_1a15a5a41370000000000200009b"
+          }
+        },
+        {
+          "sessionID": "ses_ea5a5487bffe0000000000000R",
+          "limit": 50,
+          "type": null,
+          "returned": 50,
+          "before": null,
+          "firstMessageID": "msg_1a15a5a41370000000000200009b",
+          "lastMessageID": "msg_1a15a5a9f0b000000000020000b3",
+          "wire": {
+            "order": "desc",
+            "cursor": false,
+            "cursorAnchor": null,
+            "cursorDirection": null,
+            "firstMessageID": "msg_1a15a5a9f0b000000000020000b3",
+            "lastMessageID": "msg_1a15a5a41370000000000200009b"
+          }
+        },
+        {
+          "sessionID": "ses_ea5a5487bffe0000000000000R",
+          "limit": 50,
+          "type": null,
+          "returned": 50,
+          "before": null,
+          "firstMessageID": "msg_1a15a5a41370000000000200009b",
+          "lastMessageID": "msg_1a15a5a9f0b000000000020000b3",
+          "wire": {
+            "order": "desc",
+            "cursor": false,
+            "cursorAnchor": null,
+            "cursorDirection": null,
+            "firstMessageID": "msg_1a15a5a9f0b000000000020000b3",
+            "lastMessageID": "msg_1a15a5a41370000000000200009b"
+          }
+        },
+        {
+          "sessionID": "ses_ea5a5487bffe0000000000000R",
+          "limit": 200,
+          "type": null,
+          "returned": 200,
+          "before": "msg_1a15a5a41370000000000200009b",
+          "firstMessageID": "msg_1a15a58ba9700000000002000037",
+          "lastMessageID": "msg_1a15a5a3d630000000000200009a",
+          "wire": {
+            "order": "desc",
+            "cursor": true,
+            "cursorAnchor": "msg_1a15a5a41370000000000200009b",
+            "cursorDirection": "next",
+            "firstMessageID": "msg_1a15a5a3d630000000000200009a",
+            "lastMessageID": "msg_1a15a58ba9700000000002000037"
+          }
+        },
+        {
+          "sessionID": "ses_ea5a5487bffe0000000000000R",
+          "limit": 200,
+          "type": null,
+          "returned": 110,
+          "before": "msg_1a15a58ba9700000000002000037",
+          "firstMessageID": "msg_1a15a57e3bf00000000002000000",
+          "lastMessageID": "msg_1a15a58b6c300000000002000036",
+          "wire": {
+            "order": "desc",
+            "cursor": true,
+            "cursorAnchor": "msg_1a15a58ba9700000000002000037",
+            "cursorDirection": "next",
+            "firstMessageID": "msg_1a15a58b6c300000000002000036",
+            "lastMessageID": "msg_1a15a57e3bf00000000002000000"
+          }
+        }
+      ],
+      "prefetchedPages": [
+        {
+          "sessionID": "ses_ea5a5487bffe0000000000000R",
+          "limit": 50,
+          "type": null,
+          "returned": 50,
+          "before": null,
+          "firstMessageID": "msg_1a15a5a41370000000000200009b",
+          "lastMessageID": "msg_1a15a5a9f0b000000000020000b3",
+          "wire": {
+            "order": "desc",
+            "cursor": false,
+            "cursorAnchor": null,
+            "cursorDirection": null,
+            "firstMessageID": "msg_1a15a5a9f0b000000000020000b3",
+            "lastMessageID": "msg_1a15a5a41370000000000200009b"
+          }
+        },
+        {
+          "sessionID": "ses_ea5a5487bffe0000000000000R",
+          "limit": 50,
+          "type": null,
+          "returned": 50,
+          "before": null,
+          "firstMessageID": "msg_1a15a5a41370000000000200009b",
+          "lastMessageID": "msg_1a15a5a9f0b000000000020000b3",
+          "wire": {
+            "order": "desc",
+            "cursor": false,
+            "cursorAnchor": null,
+            "cursorDirection": null,
+            "firstMessageID": "msg_1a15a5a9f0b000000000020000b3",
+            "lastMessageID": "msg_1a15a5a41370000000000200009b"
+          }
+        },
+        {
+          "sessionID": "ses_ea5a5487bffe0000000000000R",
+          "limit": 50,
+          "type": null,
+          "returned": 50,
+          "before": null,
+          "firstMessageID": "msg_1a15a5a41370000000000200009b",
+          "lastMessageID": "msg_1a15a5a9f0b000000000020000b3",
+          "wire": {
+            "order": "desc",
+            "cursor": false,
+            "cursorAnchor": null,
+            "cursorDirection": null,
+            "firstMessageID": "msg_1a15a5a9f0b000000000020000b3",
+            "lastMessageID": "msg_1a15a5a41370000000000200009b"
+          }
+        },
+        {
+          "sessionID": "ses_ea5a5487bffe0000000000000R",
+          "limit": 50,
+          "type": null,
+          "returned": 50,
+          "before": null,
+          "firstMessageID": "msg_1a15a5a41370000000000200009b",
+          "lastMessageID": "msg_1a15a5a9f0b000000000020000b3",
+          "wire": {
+            "order": "desc",
+            "cursor": false,
+            "cursorAnchor": null,
+            "cursorDirection": null,
+            "firstMessageID": "msg_1a15a5a9f0b000000000020000b3",
+            "lastMessageID": "msg_1a15a5a41370000000000200009b"
+          }
+        }
+      ],
+      "commits": [
+        {
+          "beforeMessageID": "msg_1a15a5a7bcf000000000020000aa",
+          "firstMessageID": "msg_1a15a5a5c8f000000000020000a2",
+          "canonicalText": "History request 163",
+          "kind": "buffered-reveal",
+          "freshPages": []
+        },
+        {
+          "beforeMessageID": "msg_1a15a5a5c8f000000000020000a2",
+          "firstMessageID": "msg_1a15a5a41370000000000200009b",
+          "canonicalText": "History request 156",
+          "kind": "buffered-reveal",
+          "freshPages": []
+        },
+        {
+          "beforeMessageID": "msg_1a15a5a41370000000000200009b",
+          "firstMessageID": "msg_1a15a5a25df00000000002000094",
+          "canonicalText": "History request 149",
+          "kind": "fetched-and-revealed",
+          "freshPages": [
+            {
+              "sessionID": "ses_ea5a5487bffe0000000000000R",
+              "limit": 200,
+              "type": null,
+              "returned": 200,
+              "before": "msg_1a15a5a41370000000000200009b",
+              "firstMessageID": "msg_1a15a58ba9700000000002000037",
+              "lastMessageID": "msg_1a15a5a3d630000000000200009a",
+              "wire": {
+                "order": "desc",
+                "cursor": true,
+                "cursorAnchor": "msg_1a15a5a41370000000000200009b",
+                "cursorDirection": "next",
+                "firstMessageID": "msg_1a15a5a3d630000000000200009a",
+                "lastMessageID": "msg_1a15a58ba9700000000002000037"
+              }
+            }
+          ]
+        },
+        {
+          "beforeMessageID": "msg_1a15a58ba9700000000002000037",
+          "firstMessageID": "msg_1a15a57e3bf00000000002000000",
+          "canonicalText": "History request 1",
+          "kind": "fetched-and-revealed",
+          "freshPages": [
+            {
+              "sessionID": "ses_ea5a5487bffe0000000000000R",
+              "limit": 200,
+              "type": null,
+              "returned": 110,
+              "before": "msg_1a15a58ba9700000000002000037",
+              "firstMessageID": "msg_1a15a57e3bf00000000002000000",
+              "lastMessageID": "msg_1a15a58b6c300000000002000036",
+              "wire": {
+                "order": "desc",
+                "cursor": true,
+                "cursorAnchor": "msg_1a15a58ba9700000000002000037",
+                "cursorDirection": "next",
+                "firstMessageID": "msg_1a15a58b6c300000000002000036",
+                "lastMessageID": "msg_1a15a57e3bf00000000002000000"
+              }
+            }
+          ]
+        }
+      ],
+      "messagePageRequestOffset": 17
+    },
+    {
+      "id": "ses_ea5a54876ffe0000000000000T",
+      "title": "Memory fixture 3",
+      "expectedMessages": 360,
+      "pageClicks": 4,
+      "coveredMessages": 360,
+      "pages": [
+        {
+          "sessionID": "ses_ea5a54876ffe0000000000000T",
+          "limit": 50,
+          "type": null,
+          "returned": 50,
+          "before": null,
+          "firstMessageID": "msg_1a15a5a41370000000000300009b",
+          "lastMessageID": "msg_1a15a5a9f0b000000000030000b3",
+          "wire": {
+            "order": "desc",
+            "cursor": false,
+            "cursorAnchor": null,
+            "cursorDirection": null,
+            "firstMessageID": "msg_1a15a5a9f0b000000000030000b3",
+            "lastMessageID": "msg_1a15a5a41370000000000300009b"
+          }
+        },
+        {
+          "sessionID": "ses_ea5a54876ffe0000000000000T",
+          "limit": 50,
+          "type": null,
+          "returned": 50,
+          "before": null,
+          "firstMessageID": "msg_1a15a5a41370000000000300009b",
+          "lastMessageID": "msg_1a15a5a9f0b000000000030000b3",
+          "wire": {
+            "order": "desc",
+            "cursor": false,
+            "cursorAnchor": null,
+            "cursorDirection": null,
+            "firstMessageID": "msg_1a15a5a9f0b000000000030000b3",
+            "lastMessageID": "msg_1a15a5a41370000000000300009b"
+          }
+        },
+        {
+          "sessionID": "ses_ea5a54876ffe0000000000000T",
+          "limit": 50,
+          "type": null,
+          "returned": 50,
+          "before": null,
+          "firstMessageID": "msg_1a15a5a41370000000000300009b",
+          "lastMessageID": "msg_1a15a5a9f0b000000000030000b3",
+          "wire": {
+            "order": "desc",
+            "cursor": false,
+            "cursorAnchor": null,
+            "cursorDirection": null,
+            "firstMessageID": "msg_1a15a5a9f0b000000000030000b3",
+            "lastMessageID": "msg_1a15a5a41370000000000300009b"
+          }
+        },
+        {
+          "sessionID": "ses_ea5a54876ffe0000000000000T",
+          "limit": 50,
+          "type": null,
+          "returned": 50,
+          "before": null,
+          "firstMessageID": "msg_1a15a5a41370000000000300009b",
+          "lastMessageID": "msg_1a15a5a9f0b000000000030000b3",
+          "wire": {
+            "order": "desc",
+            "cursor": false,
+            "cursorAnchor": null,
+            "cursorDirection": null,
+            "firstMessageID": "msg_1a15a5a9f0b000000000030000b3",
+            "lastMessageID": "msg_1a15a5a41370000000000300009b"
+          }
+        },
+        {
+          "sessionID": "ses_ea5a54876ffe0000000000000T",
+          "limit": 200,
+          "type": null,
+          "returned": 200,
+          "before": "msg_1a15a5a41370000000000300009b",
+          "firstMessageID": "msg_1a15a58ba9700000000003000037",
+          "lastMessageID": "msg_1a15a5a3d630000000000300009a",
+          "wire": {
+            "order": "desc",
+            "cursor": true,
+            "cursorAnchor": "msg_1a15a5a41370000000000300009b",
+            "cursorDirection": "next",
+            "firstMessageID": "msg_1a15a5a3d630000000000300009a",
+            "lastMessageID": "msg_1a15a58ba9700000000003000037"
+          }
+        },
+        {
+          "sessionID": "ses_ea5a54876ffe0000000000000T",
+          "limit": 200,
+          "type": null,
+          "returned": 110,
+          "before": "msg_1a15a58ba9700000000003000037",
+          "firstMessageID": "msg_1a15a57e3bf00000000003000000",
+          "lastMessageID": "msg_1a15a58b6c300000000003000036",
+          "wire": {
+            "order": "desc",
+            "cursor": true,
+            "cursorAnchor": "msg_1a15a58ba9700000000003000037",
+            "cursorDirection": "next",
+            "firstMessageID": "msg_1a15a58b6c300000000003000036",
+            "lastMessageID": "msg_1a15a57e3bf00000000003000000"
+          }
+        }
+      ],
+      "prefetchedPages": [
+        {
+          "sessionID": "ses_ea5a54876ffe0000000000000T",
+          "limit": 50,
+          "type": null,
+          "returned": 50,
+          "before": null,
+          "firstMessageID": "msg_1a15a5a41370000000000300009b",
+          "lastMessageID": "msg_1a15a5a9f0b000000000030000b3",
+          "wire": {
+            "order": "desc",
+            "cursor": false,
+            "cursorAnchor": null,
+            "cursorDirection": null,
+            "firstMessageID": "msg_1a15a5a9f0b000000000030000b3",
+            "lastMessageID": "msg_1a15a5a41370000000000300009b"
+          }
+        },
+        {
+          "sessionID": "ses_ea5a54876ffe0000000000000T",
+          "limit": 50,
+          "type": null,
+          "returned": 50,
+          "before": null,
+          "firstMessageID": "msg_1a15a5a41370000000000300009b",
+          "lastMessageID": "msg_1a15a5a9f0b000000000030000b3",
+          "wire": {
+            "order": "desc",
+            "cursor": false,
+            "cursorAnchor": null,
+            "cursorDirection": null,
+            "firstMessageID": "msg_1a15a5a9f0b000000000030000b3",
+            "lastMessageID": "msg_1a15a5a41370000000000300009b"
+          }
+        },
+        {
+          "sessionID": "ses_ea5a54876ffe0000000000000T",
+          "limit": 50,
+          "type": null,
+          "returned": 50,
+          "before": null,
+          "firstMessageID": "msg_1a15a5a41370000000000300009b",
+          "lastMessageID": "msg_1a15a5a9f0b000000000030000b3",
+          "wire": {
+            "order": "desc",
+            "cursor": false,
+            "cursorAnchor": null,
+            "cursorDirection": null,
+            "firstMessageID": "msg_1a15a5a9f0b000000000030000b3",
+            "lastMessageID": "msg_1a15a5a41370000000000300009b"
+          }
+        },
+        {
+          "sessionID": "ses_ea5a54876ffe0000000000000T",
+          "limit": 50,
+          "type": null,
+          "returned": 50,
+          "before": null,
+          "firstMessageID": "msg_1a15a5a41370000000000300009b",
+          "lastMessageID": "msg_1a15a5a9f0b000000000030000b3",
+          "wire": {
+            "order": "desc",
+            "cursor": false,
+            "cursorAnchor": null,
+            "cursorDirection": null,
+            "firstMessageID": "msg_1a15a5a9f0b000000000030000b3",
+            "lastMessageID": "msg_1a15a5a41370000000000300009b"
+          }
+        }
+      ],
+      "commits": [
+        {
+          "beforeMessageID": "msg_1a15a5a7bcf000000000030000aa",
+          "firstMessageID": "msg_1a15a5a5c8f000000000030000a2",
+          "canonicalText": "History request 163",
+          "kind": "buffered-reveal",
+          "freshPages": []
+        },
+        {
+          "beforeMessageID": "msg_1a15a5a5c8f000000000030000a2",
+          "firstMessageID": "msg_1a15a5a41370000000000300009b",
+          "canonicalText": "History request 156",
+          "kind": "buffered-reveal",
+          "freshPages": []
+        },
+        {
+          "beforeMessageID": "msg_1a15a5a41370000000000300009b",
+          "firstMessageID": "msg_1a15a5a25df00000000003000094",
+          "canonicalText": "History request 149",
+          "kind": "fetched-and-revealed",
+          "freshPages": [
+            {
+              "sessionID": "ses_ea5a54876ffe0000000000000T",
+              "limit": 200,
+              "type": null,
+              "returned": 200,
+              "before": "msg_1a15a5a41370000000000300009b",
+              "firstMessageID": "msg_1a15a58ba9700000000003000037",
+              "lastMessageID": "msg_1a15a5a3d630000000000300009a",
+              "wire": {
+                "order": "desc",
+                "cursor": true,
+                "cursorAnchor": "msg_1a15a5a41370000000000300009b",
+                "cursorDirection": "next",
+                "firstMessageID": "msg_1a15a5a3d630000000000300009a",
+                "lastMessageID": "msg_1a15a58ba9700000000003000037"
+              }
+            }
+          ]
+        },
+        {
+          "beforeMessageID": "msg_1a15a58ba9700000000003000037",
+          "firstMessageID": "msg_1a15a57e3bf00000000003000000",
+          "canonicalText": "History request 1",
+          "kind": "fetched-and-revealed",
+          "freshPages": [
+            {
+              "sessionID": "ses_ea5a54876ffe0000000000000T",
+              "limit": 200,
+              "type": null,
+              "returned": 110,
+              "before": "msg_1a15a58ba9700000000003000037",
+              "firstMessageID": "msg_1a15a57e3bf00000000003000000",
+              "lastMessageID": "msg_1a15a58b6c300000000003000036",
+              "wire": {
+                "order": "desc",
+                "cursor": true,
+                "cursorAnchor": "msg_1a15a58ba9700000000003000037",
+                "cursorDirection": "next",
+                "firstMessageID": "msg_1a15a58b6c300000000003000036",
+                "lastMessageID": "msg_1a15a57e3bf00000000003000000"
+              }
+            }
+          ]
+        }
+      ],
+      "messagePageRequestOffset": 20
+    },
+    {
+      "id": "ses_ea5a54871ffe0000000000000V",
+      "title": "Memory fixture 4",
+      "expectedMessages": 360,
+      "pageClicks": 4,
+      "coveredMessages": 360,
+      "pages": [
+        {
+          "sessionID": "ses_ea5a54871ffe0000000000000V",
+          "limit": 50,
+          "type": null,
+          "returned": 50,
+          "before": null,
+          "firstMessageID": "msg_1a15a5a41370000000000400009b",
+          "lastMessageID": "msg_1a15a5a9f0b000000000040000b3",
+          "wire": {
+            "order": "desc",
+            "cursor": false,
+            "cursorAnchor": null,
+            "cursorDirection": null,
+            "firstMessageID": "msg_1a15a5a9f0b000000000040000b3",
+            "lastMessageID": "msg_1a15a5a41370000000000400009b"
+          }
+        },
+        {
+          "sessionID": "ses_ea5a54871ffe0000000000000V",
+          "limit": 50,
+          "type": null,
+          "returned": 50,
+          "before": null,
+          "firstMessageID": "msg_1a15a5a41370000000000400009b",
+          "lastMessageID": "msg_1a15a5a9f0b000000000040000b3",
+          "wire": {
+            "order": "desc",
+            "cursor": false,
+            "cursorAnchor": null,
+            "cursorDirection": null,
+            "firstMessageID": "msg_1a15a5a9f0b000000000040000b3",
+            "lastMessageID": "msg_1a15a5a41370000000000400009b"
+          }
+        },
+        {
+          "sessionID": "ses_ea5a54871ffe0000000000000V",
+          "limit": 50,
+          "type": null,
+          "returned": 50,
+          "before": null,
+          "firstMessageID": "msg_1a15a5a41370000000000400009b",
+          "lastMessageID": "msg_1a15a5a9f0b000000000040000b3",
+          "wire": {
+            "order": "desc",
+            "cursor": false,
+            "cursorAnchor": null,
+            "cursorDirection": null,
+            "firstMessageID": "msg_1a15a5a9f0b000000000040000b3",
+            "lastMessageID": "msg_1a15a5a41370000000000400009b"
+          }
+        },
+        {
+          "sessionID": "ses_ea5a54871ffe0000000000000V",
+          "limit": 30,
+          "type": null,
+          "returned": 30,
+          "before": null,
+          "firstMessageID": "msg_1a15a5a6847000000000040000a5",
+          "lastMessageID": "msg_1a15a5a9f0b000000000040000b3",
+          "wire": {
+            "order": "desc",
+            "cursor": false,
+            "cursorAnchor": null,
+            "cursorDirection": null,
+            "firstMessageID": "msg_1a15a5a9f0b000000000040000b3",
+            "lastMessageID": "msg_1a15a5a6847000000000040000a5"
+          }
+        },
+        {
+          "sessionID": "ses_ea5a54871ffe0000000000000V",
+          "limit": 200,
+          "type": null,
+          "returned": 200,
+          "before": "msg_1a15a5a41370000000000400009b",
+          "firstMessageID": "msg_1a15a58ba9700000000004000037",
+          "lastMessageID": "msg_1a15a5a3d630000000000400009a",
+          "wire": {
+            "order": "desc",
+            "cursor": true,
+            "cursorAnchor": "msg_1a15a5a41370000000000400009b",
+            "cursorDirection": "next",
+            "firstMessageID": "msg_1a15a5a3d630000000000400009a",
+            "lastMessageID": "msg_1a15a58ba9700000000004000037"
+          }
+        },
+        {
+          "sessionID": "ses_ea5a54871ffe0000000000000V",
+          "limit": 200,
+          "type": null,
+          "returned": 110,
+          "before": "msg_1a15a58ba9700000000004000037",
+          "firstMessageID": "msg_1a15a57e3bf00000000004000000",
+          "lastMessageID": "msg_1a15a58b6c300000000004000036",
+          "wire": {
+            "order": "desc",
+            "cursor": true,
+            "cursorAnchor": "msg_1a15a58ba9700000000004000037",
+            "cursorDirection": "next",
+            "firstMessageID": "msg_1a15a58b6c300000000004000036",
+            "lastMessageID": "msg_1a15a57e3bf00000000004000000"
+          }
+        }
+      ],
+      "prefetchedPages": [
+        {
+          "sessionID": "ses_ea5a54871ffe0000000000000V",
+          "limit": 50,
+          "type": null,
+          "returned": 50,
+          "before": null,
+          "firstMessageID": "msg_1a15a5a41370000000000400009b",
+          "lastMessageID": "msg_1a15a5a9f0b000000000040000b3",
+          "wire": {
+            "order": "desc",
+            "cursor": false,
+            "cursorAnchor": null,
+            "cursorDirection": null,
+            "firstMessageID": "msg_1a15a5a9f0b000000000040000b3",
+            "lastMessageID": "msg_1a15a5a41370000000000400009b"
+          }
+        },
+        {
+          "sessionID": "ses_ea5a54871ffe0000000000000V",
+          "limit": 50,
+          "type": null,
+          "returned": 50,
+          "before": null,
+          "firstMessageID": "msg_1a15a5a41370000000000400009b",
+          "lastMessageID": "msg_1a15a5a9f0b000000000040000b3",
+          "wire": {
+            "order": "desc",
+            "cursor": false,
+            "cursorAnchor": null,
+            "cursorDirection": null,
+            "firstMessageID": "msg_1a15a5a9f0b000000000040000b3",
+            "lastMessageID": "msg_1a15a5a41370000000000400009b"
+          }
+        },
+        {
+          "sessionID": "ses_ea5a54871ffe0000000000000V",
+          "limit": 50,
+          "type": null,
+          "returned": 50,
+          "before": null,
+          "firstMessageID": "msg_1a15a5a41370000000000400009b",
+          "lastMessageID": "msg_1a15a5a9f0b000000000040000b3",
+          "wire": {
+            "order": "desc",
+            "cursor": false,
+            "cursorAnchor": null,
+            "cursorDirection": null,
+            "firstMessageID": "msg_1a15a5a9f0b000000000040000b3",
+            "lastMessageID": "msg_1a15a5a41370000000000400009b"
+          }
+        }
+      ],
+      "commits": [
+        {
+          "beforeMessageID": "msg_1a15a5a7bcf000000000040000aa",
+          "firstMessageID": "msg_1a15a5a5c8f000000000040000a2",
+          "canonicalText": "History request 163",
+          "kind": "buffered-reveal",
+          "freshPages": []
+        },
+        {
+          "beforeMessageID": "msg_1a15a5a5c8f000000000040000a2",
+          "firstMessageID": "msg_1a15a5a41370000000000400009b",
+          "canonicalText": "History request 156",
+          "kind": "buffered-reveal",
+          "freshPages": []
+        },
+        {
+          "beforeMessageID": "msg_1a15a5a41370000000000400009b",
+          "firstMessageID": "msg_1a15a58ba9700000000004000037",
+          "canonicalText": "History request 56",
+          "kind": "fetched-and-revealed",
+          "freshPages": [
+            {
+              "sessionID": "ses_ea5a54871ffe0000000000000V",
+              "limit": 200,
+              "type": null,
+              "returned": 200,
+              "before": "msg_1a15a5a41370000000000400009b",
+              "firstMessageID": "msg_1a15a58ba9700000000004000037",
+              "lastMessageID": "msg_1a15a5a3d630000000000400009a",
+              "wire": {
+                "order": "desc",
+                "cursor": true,
+                "cursorAnchor": "msg_1a15a5a41370000000000400009b",
+                "cursorDirection": "next",
+                "firstMessageID": "msg_1a15a5a3d630000000000400009a",
+                "lastMessageID": "msg_1a15a58ba9700000000004000037"
+              }
+            }
+          ]
+        },
+        {
+          "beforeMessageID": "msg_1a15a58ba9700000000004000037",
+          "firstMessageID": "msg_1a15a57e3bf00000000004000000",
+          "canonicalText": "History request 1",
+          "kind": "fetched-and-revealed",
+          "freshPages": [
+            {
+              "sessionID": "ses_ea5a54871ffe0000000000000V",
+              "limit": 200,
+              "type": null,
+              "returned": 110,
+              "before": "msg_1a15a58ba9700000000004000037",
+              "firstMessageID": "msg_1a15a57e3bf00000000004000000",
+              "lastMessageID": "msg_1a15a58b6c300000000004000036",
+              "wire": {
+                "order": "desc",
+                "cursor": true,
+                "cursorAnchor": "msg_1a15a58ba9700000000004000037",
+                "cursorDirection": "next",
+                "firstMessageID": "msg_1a15a58b6c300000000004000036",
+                "lastMessageID": "msg_1a15a57e3bf00000000004000000"
+              }
+            }
+          ]
+        }
+      ],
+      "messagePageRequestOffset": 22
+    }
+  ],
+  "lifecycle": [],
+  "measurement": "one renderer; natural windows and separately labeled forced-GC checkpoints",
+  "limitations": [
+    "Inactive histories may remain cached; four sessions do not exceed the 40-session LRU.",
+    "Heap and working-set differences alone do not establish a leak.",
+    "Fixture transport does not measure provider initialization or scheduling."
+  ],
+  "summary": {
+    "initial": {
+      "naturalMedianRendererWorkingSetBytes": 414908416,
+      "naturalMedianRendererHeapUsedBytes": 36415128,
+      "postGcRendererHeapUsedBytes": 31923424,
+      "postGcDomNodes": 19592,
+      "postGcHeapDeltaFromInitialBytes": 0
+    },
+    "loaded": {
+      "naturalMedianRendererWorkingSetBytes": 445923328,
+      "naturalMedianRendererHeapUsedBytes": 45357736,
+      "postGcRendererHeapUsedBytes": 43069600,
+      "postGcDomNodes": 20135,
+      "postGcHeapDeltaFromInitialBytes": 11146176
+    },
+    "inactive": {
+      "naturalMedianRendererWorkingSetBytes": 447299584,
+      "naturalMedianRendererHeapUsedBytes": 45912668,
+      "postGcRendererHeapUsedBytes": 38728272,
+      "postGcDomNodes": 19592,
+      "postGcHeapDeltaFromInitialBytes": 6804848
+    }
+  },
+  "error": "Timed out: Archive confirmation or authoritative acknowledgement"
+}

@@ -1,10 +1,10 @@
-// OpenAI tool-schema sanitizer (OpenChamber-bundled opencode plugin)
+// OpenAI tool-schema sanitizer (DevRyan-bundled opencode plugin)
 //
 // Problem: OpenAI's strict function/tool JSON-schema validator rejects `pattern`
 // regexes that use lookaround. Zod's `z.string().email()` (and similar) compiles
 // to exactly such a pattern, and several MCP tools (resend, mercury, stripe,
 // linear, …) ship those schemas. The result is that EVERY turn on the OpenAI
-// provider (e.g. the default `gpt-5.5` orchestrator) fails before the model runs:
+// provider (e.g. the default `gpt-6.1-sol` orchestrator) fails before the model runs:
 //
 //   AI_APICallError: Invalid JSON schema: regex lookaround is not supported.
 //                    Found at $.properties.email.pattern.

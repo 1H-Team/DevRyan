@@ -28,6 +28,7 @@ import {
   buildPlanPhaseTodoProjection,
   buildTodoSummary,
   getCurrentTodoPosition,
+  getTodoDependencyReasons,
 } from "./lib/todoSummary";
 import { useSessionPlanFileStore } from '@/stores/useSessionPlanFileStore';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
@@ -88,6 +89,7 @@ interface TodoItemRowProps {
 
 const TodoItemRow: React.FC<TodoItemRowProps> = ({ todo, displayContent }) => {
   const { t } = useI18n();
+  const dependencyReasons = getTodoDependencyReasons(todo);
   const config = statusConfig[todo.status] || statusConfig.pending;
   const statusKey = statusLabelKey[todo.status] ?? statusLabelKey.pending;
   const priorityKey = priorityLabelKey[todo.priority] ?? priorityLabelKey.medium;
@@ -118,6 +120,7 @@ const TodoItemRow: React.FC<TodoItemRowProps> = ({ todo, displayContent }) => {
         )}
       >
         {displayContent ?? todo.content}
+        {dependencyReasons.length > 0 ? <span className="mt-0.5 block typography-meta text-muted-foreground">Waiting for: {dependencyReasons.join('; ')}</span> : null}
       </span>
       <Tooltip>
         <TooltipTrigger asChild>
@@ -299,6 +302,7 @@ export const StatusRow: React.FC<StatusRowProps> = ({
   const activeTodo = React.useMemo(() => {
     return (
       visibleTodos.find((t) => t.status === "in_progress") ||
+      visibleTodos.find((t) => t.status === "pending" && getTodoDependencyReasons(t).length === 0) ||
       visibleTodos.find((t) => t.status === "pending") ||
       null
     );

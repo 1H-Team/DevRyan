@@ -2,22 +2,13 @@ import { getSafeStorage } from '@/stores/utils/safeStorage';
 export const streamDebugEnabled = (): boolean => {
     if (typeof window === 'undefined') return false;
     try {
-        return getSafeStorage().getItem('openchamber_stream_debug') === '1';
+        return getSafeStorage().getItem('devryan_stream_debug') === '1';
     } catch {
         return false;
     }
 };
 
-export const sessionStatusDebugEnabled = (): boolean => {
-    if (typeof window === 'undefined') return false;
-    try {
-        return getSafeStorage().getItem('openchamber_session_status_debug') === '1';
-    } catch {
-        return false;
-    }
-};
-
-const STREAM_PERF_STORAGE_KEY = 'openchamber_stream_perf';
+const STREAM_PERF_STORAGE_KEY = 'devryan_stream_perf';
 
 type PerfCounter = {
     count: number;
@@ -51,8 +42,8 @@ export type StreamPerfSnapshot = {
 
 declare global {
     interface Window {
-        __openchamberStreamPerfState?: StreamPerfState;
-        __openchamberResponsivenessPerfState?: StreamPerfState;
+        __devryanStreamPerfState?: StreamPerfState;
+        __devryanResponsivenessPerfState?: StreamPerfState;
 
     }
 }
@@ -78,16 +69,16 @@ const ensureStreamPerfState = (): StreamPerfState | null => {
         return null;
     }
 
-    if (!window.__openchamberStreamPerfState) {
+    if (!window.__devryanStreamPerfState) {
         const startedAt = Date.now();
-        window.__openchamberStreamPerfState = {
+        window.__devryanStreamPerfState = {
             counters: new Map<string, PerfCounter>(),
             startedAt,
             lastUpdatedAt: startedAt,
         };
     }
 
-    return window.__openchamberStreamPerfState;
+    return window.__devryanStreamPerfState;
 };
 
 const ensureResponsivenessPerfState = (): StreamPerfState | null => {
@@ -95,16 +86,16 @@ const ensureResponsivenessPerfState = (): StreamPerfState | null => {
         return null;
     }
 
-    if (!window.__openchamberResponsivenessPerfState) {
+    if (!window.__devryanResponsivenessPerfState) {
         const startedAt = Date.now();
-        window.__openchamberResponsivenessPerfState = {
+        window.__devryanResponsivenessPerfState = {
             counters: new Map<string, PerfCounter>(),
             startedAt,
             lastUpdatedAt: startedAt,
         };
     }
 
-    return window.__openchamberResponsivenessPerfState;
+    return window.__devryanResponsivenessPerfState;
 };
 
 const normalizePerfEntries = (counters: Map<string, PerfCounter>): StreamPerfEntry[] => {
@@ -150,12 +141,12 @@ export const setStreamPerfEnabled = (enabled: boolean): void => {
     try {
         if (enabled) {
             getSafeStorage().setItem(STREAM_PERF_STORAGE_KEY, '1');
-            window.__openchamberStreamPerfState = {
+            window.__devryanStreamPerfState = {
                 counters: new Map<string, PerfCounter>(),
                 startedAt: Date.now(),
                 lastUpdatedAt: Date.now(),
             };
-            window.__openchamberResponsivenessPerfState = {
+            window.__devryanResponsivenessPerfState = {
                 counters: new Map<string, PerfCounter>(),
                 startedAt: Date.now(),
                 lastUpdatedAt: Date.now(),
@@ -164,8 +155,8 @@ export const setStreamPerfEnabled = (enabled: boolean): void => {
         }
 
         getSafeStorage().removeItem(STREAM_PERF_STORAGE_KEY);
-        delete window.__openchamberStreamPerfState;
-        delete window.__openchamberResponsivenessPerfState;
+        delete window.__devryanStreamPerfState;
+        delete window.__devryanResponsivenessPerfState;
     } catch {
         // ignore storage failures in debug helper
     }
@@ -177,12 +168,12 @@ export const resetStreamPerf = (): void => {
     }
 
     if (streamPerfEnabled()) {
-        window.__openchamberStreamPerfState = {
+        window.__devryanStreamPerfState = {
             counters: new Map<string, PerfCounter>(),
             startedAt: Date.now(),
             lastUpdatedAt: Date.now(),
         };
-        window.__openchamberResponsivenessPerfState = {
+        window.__devryanResponsivenessPerfState = {
             counters: new Map<string, PerfCounter>(),
             startedAt: Date.now(),
             lastUpdatedAt: Date.now(),
@@ -202,7 +193,7 @@ export const getStreamPerfSnapshot = (): StreamPerfSnapshot => {
         };
     }
 
-    const state = window.__openchamberStreamPerfState;
+    const state = window.__devryanStreamPerfState;
     if (!streamPerfEnabled() || !state) {
         return {
             enabled: false,
@@ -233,7 +224,7 @@ export const getResponsivenessPerfSnapshot = (): StreamPerfSnapshot => {
         };
     }
 
-    const state = window.__openchamberResponsivenessPerfState;
+    const state = window.__devryanResponsivenessPerfState;
     if (!streamPerfEnabled() || !state) {
         return {
             enabled: false,

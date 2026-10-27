@@ -61,7 +61,7 @@ import {
   waitForWorktreeBootstrap,
 } from '@/lib/worktrees/worktreeBootstrap';
 import { withWorktreeUpstreamDefaults } from '@/lib/worktrees/worktreeCreate';
-import { getWorktreeSetupCommands } from '@/lib/openchamberConfig';
+import { getWorktreeSetupCommands } from '@/lib/devryanConfig';
 import { getRootBranch } from '@/lib/worktrees/worktreeStatus';
 import { generateBranchSlug } from '@/lib/git/branchNameGenerator';
 import { opencodeClient } from '@/lib/opencode/client';
@@ -571,18 +571,9 @@ export function NewWorktreeDialog({
   const resolveAgentVariant = React.useCallback((agentName: string | undefined, providerID: string, modelID: string): string | undefined => {
     if (!agentName) return undefined;
     const configState = useConfigStore.getState();
-    const agent = configState.getVisibleAgents().find((entry) => entry.name === agentName) as { variant?: unknown } | undefined;
-    const agentVariant = typeof agent?.variant === 'string' ? agent.variant : undefined;
-    if (!agentVariant) return undefined;
-
-    const provider = configState.providers.find((p) => p.id === providerID);
-    const model = provider?.models.find((m: Record<string, unknown>) => (m as { id?: string }).id === modelID) as
-      | { variants?: Record<string, unknown> }
-      | undefined;
-    const variants = model?.variants;
-    if (!variants) return undefined;
-    if (!Object.prototype.hasOwnProperty.call(variants, agentVariant)) return undefined;
-    return agentVariant;
+    const agent = configState.getVisibleAgents().find((entry) => entry.name === agentName);
+    if (agent?.model?.providerID !== providerID || agent.model.modelID !== modelID) return undefined;
+    return typeof agent.variant === 'string' && agent.variant.trim() ? agent.variant.trim() : undefined;
   }, []);
 
   const applySessionModelAndAgentDefaults = React.useCallback((args: {
@@ -1066,7 +1057,7 @@ export function NewWorktreeDialog({
           void sessionActions.updateSessionTitle(session.id, sessionTitle).catch(() => undefined);
 
           try {
-            useSessionUIStore.getState().initializeNewOpenChamberSession(session.id, useConfigStore.getState().agents);
+            useSessionUIStore.getState().initializeNewDevRyanSession(session.id, useConfigStore.getState().agents);
           } catch {
             // ignore
           }

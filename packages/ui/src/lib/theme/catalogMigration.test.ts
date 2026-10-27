@@ -5,6 +5,7 @@ import {
   DEFAULT_LIGHT_THEME_ID,
   migrateThemeCatalogLocalStorage,
   migrateThemeCatalogSettings,
+  normalizeThemeId,
   THEME_CATALOG_VERSION,
 } from './catalogMigration';
 
@@ -63,6 +64,14 @@ describe('theme catalog migration', () => {
 
     expect(result.settings.lightThemeId).toBe('custom-light');
     expect(result.settings.darkThemeId).toBe(DEFAULT_DARK_THEME_ID);
+  });
+
+  test('normalizes saved theme identities from the old app name', () => {
+    const settings = migrateThemeCatalogSettings({ lightThemeId: 'openchamber-light', darkThemeId: 'openchamber-dark', themeCatalogVersion: 3 });
+    expect(settings.settings.lightThemeId).toBe('devryan-light');
+    expect(settings.settings.darkThemeId).toBe('devryan-dark');
+    expect(normalizeThemeId('openchamber-dark')).toBe('devryan-dark');
+    expect(normalizeThemeId('custom-dark')).toBe('custom-dark');
   });
 
   test('migrates removed selections from the previous catalog version', () => {

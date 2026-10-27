@@ -1,5 +1,5 @@
 /**
- * Router module for URL-based navigation in OpenChamber.
+ * Router module for URL-based navigation in DevRyan.
  *
  * Provides bidirectional sync between URL query parameters and application state.
  * Works across web and desktop.

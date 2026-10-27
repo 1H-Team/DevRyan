@@ -40,6 +40,13 @@ export async function listVisibleSessionPage({ limit, cursor = null, fetchPage, 
       visible.push(session);
       if (visible.length < requestedLimit) continue;
 
+      // The cursor is a strict-before timestamp. Include visible peers with
+      // that timestamp even if the requested size is exceeded.
+      while (index + 1 < sessions.length && sessionCursor(sessions[index + 1]) === sessionCursor(session)) {
+        const peer = sessions[++index];
+        if (peer?.id && await isVisible(peer)) visible.push(peer);
+      }
+
       const moreInCurrentPage = index < sessions.length - 1;
       const moreUpstream = finiteCursor(page?.nextCursor) !== null;
       return {

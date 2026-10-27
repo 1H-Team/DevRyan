@@ -13,6 +13,10 @@ export function createSessionExecutionOwner({ runtime, launcher, stopSessions, v
   const active = new Map();
   const supported = () => verifyLauncher({ launcher, platform: process.platform });
   const start = async (input) => {
+    const report = (phase, state, elapsedMs) => {
+      try { onDiagnostic?.({ event: 'session_execution', sessionID: input.sessionID, messageID: input.messageID,
+        callID: input.callID, phase, state, ...(elapsedMs === undefined ? {} : { elapsedMs }) }); } catch { /* Observer only. */ }
+    };
     input.signal?.throwIfAborted();
     if (!await supported()) throw failure('mutation_runtime_unsupported');
     const environment = Object.entries(input.env ?? {}).sort(([a], [b]) => a.localeCompare(b));
@@ -23,8 +27,8 @@ export function createSessionExecutionOwner({ runtime, launcher, stopSessions, v
     const controller = new AbortController();
     const signal = AbortSignal.any([controller.signal, ...[input.signal, hostOwner?.signal].filter(Boolean)]);
     const lease = await withExecutionAdmission(input,
-      () => runtime.reserve({ ...input, kind: 'process', executionFingerprint, ownerID: hostOwner?.id }), { signal });
-    if (lease.state === 'published') return { lease, child: null, result: Promise.resolve({ ...await readSessionExecutionReceipt(lease), ...lease.result }) };
+      () => runtime.reserve({ ...input, kind: 'process', executionFingerprint, ownerID: hostOwner?.id }), { signal, onDiagnostic });
+    if (lease.state === 'published') return { lease, child: null, result: Promise.resolve({ ...await readSessionExecutionReceipt(lease, { launcher }), ...lease.result }) };
     if (hostOwner && lease.ownerID !== hostOwner.id) throw failure('execution_owner_lost');
     if (active.has(lease.token) || lease.executionKind) throw failure('execution_already_started');
     const owned = { lease, controller, settled: null };
@@ -33,7 +37,7 @@ export function createSessionExecutionOwner({ runtime, launcher, stopSessions, v
     owned.settled = (async () => {
       let handle;
       try {
-        const ready = await withExecutionPreparation(input, () => runtime.prepare(lease), { signal });
+        const ready = await withExecutionPreparation(input, () => runtime.prepare(lease), { signal, onDiagnostic });
         signal.throwIfAborted(); hostOwner?.assert();
         await runtime.claimLease({ directory: input.directory, token: lease.token, kind: 'process' });
         const workerInput = input.inputForLease ? await input.inputForLease(ready) : input.input;
@@ -52,20 +56,40 @@ export function createSessionExecutionOwner({ runtime, launcher, stopSessions, v
         });
         throw signal.aborted ? failure('execution_cancelled') : cause;
       }
-      const receipt = await handle.result;
+      let receipt;
+      const processStarted = Date.now();
+      try { receipt = await handle.result; report('process_settlement', 'completed', Date.now() - processStarted); }
+      catch (cause) {
+        report('process_settlement', 'failed', Date.now() - processStarted);
+        if (!cause?.neverStarted) throw cause;
+        // The supervisor ended before creating its receipt, so nothing ran.
+        await withoutExecutionDeadline(async () => {
+          await runtime.cancelUnstartedCall({ ...input, token: lease.token });
+          await cleanupExecutionLease(runtime, { directory: input.directory, token: lease.token }, onDiagnostic);
+        });
+        throw signal.aborted ? failure('execution_cancelled') : cause;
+      }
       if (receipt.cancelled || signal.aborted || !receipt.confined) {
         await runtime.cancelLease({ directory: input.directory, token: lease.token });
         await cleanupExecutionLease(runtime, { directory: input.directory, token: lease.token }, onDiagnostic);
         throw failure(receipt.cancelled || signal.aborted ? 'execution_cancelled' : 'mutation_runtime_unsupported');
       }
-      const publication = await runtime.finish({ directory: input.directory, token: lease.token });
+      const publicationStarted = Date.now();
+      report('publication', 'started');
+      let publication;
+      try {
+        publication = await runtime.finish({ directory: input.directory, token: lease.token });
+        report('publication', 'completed', Date.now() - publicationStarted);
+      } catch (cause) { report('publication', 'failed', Date.now() - publicationStarted); throw cause; }
       await cleanupExecutionLease(runtime, { directory: input.directory, token: lease.token }, onDiagnostic);
       return { ...receipt, ...publication };
     })().finally(() => { if (active.get(lease.token) === owned) active.delete(lease.token); });
     // Streaming adapters may not await settlement until after their output
     // reader drains. Attach a rejection handler immediately without hiding it.
     void owned.settled.catch(() => {});
-    const handle = await started.promise;
+    let handle;
+    try { handle = await started.promise; }
+    catch (cause) { await owned.settled; throw cause; }
     return { ...handle, lease, result: owned.settled };
   };
   const execute = async (input) => (await start(input)).result;
@@ -86,7 +110,7 @@ export function createSessionExecutionOwner({ runtime, launcher, stopSessions, v
         // Unknown ownership after a restart needs a durable native receipt;
         // never infer process termination from an empty in-memory collection.
         if (!owned) {
-          await readSessionExecutionReceipt(lease);
+          await readSessionExecutionReceipt(lease, { launcher });
           await runtime.cancelLease({ directory: lease.directory, token: lease.token });
           continue;
         }

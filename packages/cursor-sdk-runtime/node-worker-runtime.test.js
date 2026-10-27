@@ -3,10 +3,11 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:f
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable, Writable } from 'node:stream';
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import {
-  createCursorSdkRuntime,
+  createCursorSdkRuntime as createUntrackedCursorSdkRuntime,
   resolveCursorSdkWorkerRuntimeConfig,
+  readCursorAbortOutcome,
 } from './index.js';
 import { normalizeInteractionUpdateToSdkMessage } from './interaction-update-normalize.js';
 
@@ -19,15 +20,45 @@ const PACKAGED_RIPGREP_PATH = join(PACKAGED_RIPGREP_ROOT,
 mkdirSync(join(PACKAGED_RIPGREP_PATH, '..'), { recursive: true });
 writeFileSync(PACKAGED_RIPGREP_PATH, '#!/bin/sh\nexit 0\n');
 chmodSync(PACKAGED_RIPGREP_PATH, 0o755);
-process.once('exit', () => rmSync(PACKAGED_RIPGREP_ROOT, { recursive: true, force: true }));
+// Bun's test runner does not reliably emit process 'exit' handlers, so remove
+// the staged tree with the suite lifecycle instead.
+afterAll(() => rmSync(PACKAGED_RIPGREP_ROOT, { recursive: true, force: true }));
 
+// Some tests create more than one scratch directory, so track every one and
+// remove them all after each test rather than only the last assignment.
 let tempDir = null;
+const tempDirs = [];
+const makeTempDir = (prefix) => {
+  const directory = mkdtempSync(join(tmpdir(), prefix));
+  tempDirs.push(directory);
+  return directory;
+};
 
-afterEach(() => {
-  if (tempDir) {
-    rmSync(tempDir, { recursive: true, force: true });
-    tempDir = null;
+// Runs a test leaves in flight keep persisting session state into its storage
+// directory, which would recreate the scratch after removal. Settle every
+// runtime a test created before removing its directories.
+const runtimes = [];
+const createCursorSdkRuntime = (options) => {
+  const runtime = createUntrackedCursorSdkRuntime(options);
+  runtimes.push(runtime);
+  return runtime;
+};
+const settleWithin = (promise, timeoutMs = 2000) => {
+  let timer;
+  return Promise.race([
+    Promise.resolve(promise).catch(() => {}),
+    new Promise((resolve) => { timer = setTimeout(resolve, timeoutMs); }),
+  ]).finally(() => clearTimeout(timer));
+};
+
+afterEach(async () => {
+  for (const runtime of runtimes.splice(0)) {
+    const sessions = Object.keys(runtime.getSessionStatus?.() ?? {});
+    await Promise.all(sessions.map((sessionID) => settleWithin(runtime.abortAndWait(sessionID))));
+    await settleWithin(runtime.dispose());
   }
+  for (const directory of tempDirs.splice(0)) rmSync(directory, { recursive: true, force: true });
+  tempDir = null;
 });
 
 const createFakeWorkerSpawn = (capture) => (command, args, options) => {
@@ -51,6 +82,7 @@ const createFakeWorkerSpawn = (capture) => (command, args, options) => {
             type: 'assistant',
             message: { content: [{ type: 'text', text: 'worker ok' }] },
         }];
+        for (const timing of capture.timings ?? []) child.stdout.push(`${JSON.stringify({ type: 'timing', ...timing })}\n`);
         for (const message of messages) child.stdout.push(`${JSON.stringify({ type: 'message', message })}\n`);
         child.stdout.push(`${JSON.stringify({ type: 'done', status: 'finished' })}\n`);
         child.stdout.push(null);
@@ -93,6 +125,7 @@ const createFinalResultBeforeStreamWorkerSpawn = (capture) => (command, args, op
             ok: true,
             finalStatus: 'success',
             finalText: 'worker final text before stream completion',
+            finalTextWitness: {assistantOrdinal: 1, priorNonempty: 0},
           },
         })}\n`);
       });
@@ -101,6 +134,7 @@ const createFinalResultBeforeStreamWorkerSpawn = (capture) => (command, args, op
   });
   child.kill = (signal) => {
     child.killed = true;
+    child.stdout.push(null);
     child.exitCode = signal === 'SIGKILL' ? 137 : 130;
     queueMicrotask(() => child.emit('close', child.exitCode, signal));
     return true;
@@ -126,7 +160,8 @@ const createFakeTitleWorkerSpawn = (capture) => (command, args, options) => {
     final(callback) {
       capture.input = JSON.parse(rawInput);
       queueMicrotask(() => {
-        child.stdout.push(`${JSON.stringify({ type: 'title-result', title: '# Worker Generated Title.' })}\n`);
+        if(capture.hold)return;
+        child.stdout.push(`${JSON.stringify(capture.input.type==='text'?{type:'text-result',text:'# Raw multiline\n\nBody preserved.'}:{ type: 'title-result', title: '# Worker Generated Title.' })}\n`);
         child.stdout.push(null);
         child.exitCode = 0;
         child.emit('close', 0, null);
@@ -135,7 +170,7 @@ const createFakeTitleWorkerSpawn = (capture) => (command, args, options) => {
     },
   });
   child.kill = (signal) => {
-    child.killed = true;
+    child.killed = true;child.stdout.push(null);
     child.exitCode = signal === 'SIGKILL' ? 137 : 130;
     queueMicrotask(() => child.emit('close', child.exitCode, signal));
     return true;
@@ -186,7 +221,7 @@ const createFakePersistentWorkerSpawn = (capture, options = {}) => (command, arg
             child.stdout.push(`${JSON.stringify({
               requestID: commandPayload.requestID,
               type: 'final-result',
-              result: { ok: true, finalStatus: 'success', finalText: '' },
+              result: { ok: true, finalStatus: 'success' },
             })}\n`);
             child.stdout.push(`${JSON.stringify({
               requestID: commandPayload.requestID,
@@ -245,7 +280,7 @@ const waitFor = async (predicate, timeoutMs = 500) => {
 describe('Cursor SDK worker runtime config', () => {
   test('runs desktop Electron prompt work in an Electron-as-Node worker', () => {
     const config = resolveCursorSdkWorkerRuntimeConfig({
-      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      env: { DEVRYAN_RUNTIME: 'desktop' },
       hasInjectedLoadSdk: false,
       isBunRuntime: false,
       isElectronRuntime: true,
@@ -256,7 +291,7 @@ describe('Cursor SDK worker runtime config', () => {
       requestedUseNodeWorkerForPrompts: undefined,
       requestedWorkerCwd: '',
       requestedWorkerEnv: {},
-      workerPath: '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@openchamber/cursor-sdk-runtime/node-worker.mjs',
+      workerPath: '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@devryan/cursor-sdk-runtime/node-worker.mjs',
       ripgrepPath: PACKAGED_RIPGREP_PATH,
     });
 
@@ -270,16 +305,16 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('passes configured worker process settings to spawned prompt workers', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-worker-'));
+    tempDir = makeTempDir('cursor-sdk-worker-');
     const capture = { calls: [], input: null };
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
-      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      env: { DEVRYAN_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
       usePersistentWorkerForPrompts: false,
       nodeBinary: '/Applications/DevRyan.app/Contents/MacOS/DevRyan',
-      workerPath: '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@openchamber/cursor-sdk-runtime/node-worker.mjs',
+      workerPath: '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@devryan/cursor-sdk-runtime/node-worker.mjs',
       workerCwd: '/Applications/DevRyan.app/Contents/Resources',
       workerEnv: { ELECTRON_RUN_AS_NODE: '1' },
       ripgrepPath: PACKAGED_RIPGREP_PATH,
@@ -299,7 +334,7 @@ describe('Cursor SDK worker runtime config', () => {
     expect(capture.calls).toHaveLength(1);
     expect(capture.calls[0].command).toBe('/Applications/DevRyan.app/Contents/MacOS/DevRyan');
     expect(capture.calls[0].args).toEqual([
-      '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@openchamber/cursor-sdk-runtime/node-worker.mjs',
+      '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@devryan/cursor-sdk-runtime/node-worker.mjs',
     ]);
     expect(capture.calls[0].options.cwd).toBe('/tmp/project');
     expect(capture.calls[0].options.env.ELECTRON_RUN_AS_NODE).toBe('1');
@@ -310,8 +345,318 @@ describe('Cursor SDK worker runtime config', () => {
     });
   });
 
+  test.each([false, true])('uses only host policy in one-shot and persistent workers (persistent=%s)', async persistent => {
+    tempDir = makeTempDir('cursor-policy-wire-');
+    const capture = { calls: [], children: [], commands: [], input: null };
+    let readOnly = true;
+    const runtime = createCursorSdkRuntime({ storageDir: tempDir, env: { CURSOR_API_KEY: 'synthetic' },
+      ownedPrompt: async () => ({ readOnly, run: action => action(), close: async () => {} }),
+      useNodeWorkerForPrompts: true, usePersistentWorkerForPrompts: persistent,
+      spawnImpl: persistent ? createFakePersistentWorkerSpawn(capture) : createFakeWorkerSpawn(capture),
+    });
+    try {
+      expect((await runtime.prewarmSession({ sessionID: 'ses_policy', modelID: 'composer-2.5' })).disabled).toBe(true);
+      expect(capture.calls).toHaveLength(0);
+      for (const policy of [true, false]) {
+        readOnly = policy;
+        await runtime.handlePromptAsync({ sessionID: 'ses_policy', directory: tempDir, body: {
+          readOnly: !policy, messageID: `msg_policy_${policy}`, model: { providerID: 'cursor-acp', modelID: 'composer-2.5' }, parts: [{ type: 'text', text: 'Inspect' }],
+        } });
+        await waitFor(() => runtime.getSessionStatus().ses_policy?.type === 'idle');
+        const payload = persistent ? capture.commands.filter(command => command.type === 'prompt').at(-1) : capture.input;
+        expect(payload.readOnly).toBe(policy);
+      }
+    } finally { await runtime.dispose(); }
+  });
+
+  test('owned prompt retains original scope through physical settlement and final persistence', async () => {
+    tempDir = makeTempDir('cursor-owned-lifetime-');
+    const capture = { calls: [], input: null }, phases = [];
+    let publish, persisted, releasePersist;
+    const publication = new Promise(resolve => { publish = resolve; });
+    const finalPersistence = new Promise(resolve => { releasePersist = resolve; });
+    let current = false, catalog = false, closed = 0;
+    const runtime = createCursorSdkRuntime({ storageDir: tempDir, env: { CURSOR_API_KEY: 'forbidden-environment-fallback' },
+      readAuth: () => { throw new Error('Owned native prompt must not read compatibility auth'); },
+      ownedReadOnly: async (scope, action) => {
+        expect(scope).toEqual({ kind: 'catalog', directory: tempDir, signal: expect.any(AbortSignal) });catalog = true;
+        try { return await action(); } finally { catalog = false; }
+      },
+      loadSdk: async () => ({ Cursor: { models: { list: async input => {
+        expect(catalog).toBe(true);expect(input.apiKey).toBe('native-selected-fixture-key');return [{ id: 'composer-2.5' }];
+      } } } }),
+      resolveApiKey: async input => {
+        if (input.kind === 'catalog') {
+          expect(catalog).toBe(true);expect(current).toBe(false);expect(input.directory).toBe(tempDir);
+          phases.push('catalog-key');return 'native-selected-fixture-key';
+        }
+        if (input.kind !== 'prompt') throw new Error('No read-only grant in this prompt fixture');
+        expect(current).toBe(true);expect(input.userMessageID).toBe('msg_owned_lifetime');
+        phases.push('key');return 'native-selected-fixture-key';
+      },
+      useNodeWorkerForPrompts: true, getWorkspaceDiff: async () => '',
+      ownedPrompt: async input => {
+        expect(input.userMessageID).toBe('msg_owned_lifetime');
+        expect(input.modelID).toBe('composer-2.5');
+        phases.push('captured');
+        return { readOnly: true, run: async action => { current = true; return action(); }, close: async () => { current = false; closed++; phases.push('closed'); } };
+      },
+      onPersistRecord: async ({ record }) => {
+        expect(current).toBe(true);
+        phases.push(record.info.role);
+        if (record.info.role === 'assistant' && record.info.time.completed) {
+          persisted = record; await finalPersistence;
+        }
+      },
+      executionAdapter: { beforePrompt: async () => null,
+        start: async ({ command, args, inputForLease }) => {
+          expect(current).toBe(true);
+          expect(JSON.parse(inputForLease({ workingDirectory: tempDir })).apiKey).toBe('native-selected-fixture-key');
+          return { workerInput: inputForLease({ workingDirectory: tempDir }),
+            child: createFakeWorkerSpawn(capture)(command, args, { cwd: tempDir }),
+            lease: { workingDirectory: tempDir }, result: publication, cancel: () => {} };
+        } },
+    });
+    try {
+      const response = await runtime.handlePromptAsync({ sessionID: 'ses_owned_lifetime', directory: tempDir,
+        body: { messageID: 'msg_owned_lifetime', model: { providerID: 'cursor-acp', modelID: 'composer-2.5' }, parts: [{ type: 'text', text: 'owned' }] } });
+      expect(response.status).toBe(204);
+      await waitFor(() => capture.input);
+      expect(capture.input.readOnly).toBe(true);
+      expect(closed).toBe(0); expect(phases.slice(0, 5)).toEqual(['catalog-key', 'captured', 'key', 'user', 'assistant']);
+      publish({});
+      await waitFor(() => persisted);
+      expect(closed).toBe(0);
+      releasePersist();
+      await waitFor(() => closed === 1);
+      expect(current).toBe(false); expect(phases.at(-1)).toBe('closed');
+    } finally { publish({}); releasePersist(); await runtime.dispose(); }
+  });
+
+  test('owned cancellation waits for final persistence and owned cleanup, preserving cleanup failure', async () => {
+    tempDir = makeTempDir('cursor-owned-cancel-');
+    for (const cleanupFails of [false, true]) {
+      const capture = { calls: [], input: null };
+      const publication = Promise.withResolvers(), cleanup = Promise.withResolvers();
+      let finalPersisted = false, closing = false;
+      const runtime = createCursorSdkRuntime({ storageDir: tempDir, env: {},
+        readAuth: () => ({ 'cursor-acp': { key: 'fixture-key' } }), getWorkspaceDiff: async () => '',
+        useNodeWorkerForPrompts: true,
+        ownedPrompt: async () => ({ run: action => action(), close: async () => {
+          expect(finalPersisted).toBe(true); closing = true; await cleanup.promise;
+        } }),
+        onPersistRecord: async ({ record }) => { if (record.info.role === 'assistant' && record.info.time.completed) finalPersisted = true; },
+        executionAdapter: { beforePrompt: async () => null, start: async ({ command, args, inputForLease }) => ({
+          child: createFakeWorkerSpawn(capture)(command, args, { cwd: tempDir }),
+          workerInput: inputForLease({ workingDirectory: tempDir }), lease: { workingDirectory: tempDir },
+          result: publication.promise, cancel: () => {},
+        }) },
+      });
+      const sessionID = `ses_owned_cancel_${cleanupFails}`;
+      try {
+        expect((await runtime.handlePromptAsync({ sessionID, directory: tempDir,
+          body: { model: { providerID: 'cursor-acp', modelID: 'composer-2.5' }, parts: [{ type: 'text', text: 'owned cancellation' }] } })).status).toBe(204);
+        await waitFor(() => capture.input);
+        publication.reject(Object.assign(new Error('execution_cancelled'), { code: 'execution_cancelled' }));
+        await waitFor(() => closing);
+        let completed = false;
+        const stopped = runtime.abortSession(sessionID).finally(() => { completed = true; });
+        void stopped.catch(() => {});
+        await new Promise(resolve => setTimeout(resolve, 10));
+        expect(completed).toBe(false);
+        if (cleanupFails) {
+          const uncertain = Object.assign(new Error('actual cleanup uncertainty'), { nativeProcessUnsettled: true });
+          cleanup.reject(uncertain); await expect(stopped).rejects.toBe(uncertain);
+          expect(readCursorAbortOutcome(uncertain)).toEqual({ sessionID, terminated: false, transcriptPersisted: true });
+        } else {
+          cleanup.resolve(); await expect(stopped).resolves.toBe(true);
+        }
+      } finally { cleanup.resolve(); await runtime.dispose(); }
+    }
+  });
+
+  test.each(['cancelled', 'unconfirmed', 'cancelled-unsettled'])('owned abort reports %s separately from final transcript persistence', async (receiptKind) => {
+    const terminationProven = receiptKind === 'cancelled';
+    tempDir = makeTempDir('cursor-owned-cancel-persist-');
+    const capture = { calls: [], input: null };
+    const publication = Promise.withResolvers(), close = Promise.withResolvers();
+    const persistenceFailure = Object.assign(new Error('private transcript write failed'), { code: 'native_control_failed' });
+    let closing = false;
+    const runtime = createCursorSdkRuntime({ storageDir: tempDir, env: {},
+      readAuth: () => ({ 'cursor-acp': { key: 'fixture-key' } }), getWorkspaceDiff: async () => '',
+      logger: { error() {} }, ownedPrompt: async () => ({ run: action => action(), close: async () => { closing = true; await close.promise; } }),
+      onPersistRecord: async ({ record }) => { if (record.info.role === 'assistant' && record.info.time.completed) throw persistenceFailure; },
+      executionAdapter: { beforePrompt: async () => null, start: async ({ command, args, inputForLease }) => ({
+        child: createFakeWorkerSpawn(capture)(command, args, { cwd: tempDir }),
+        workerInput: inputForLease({ workingDirectory: tempDir }), lease: { workingDirectory: tempDir },
+        result: publication.promise, cancel() {},
+      }) },
+    });
+    try {
+      await runtime.handlePromptAsync({ sessionID: 'ses_cancel_persistence', directory: tempDir,
+        body: { model: { providerID: 'cursor-acp', modelID: 'composer-2.5' }, parts: [{ type: 'text', text: 'cancel' }] } });
+      await waitFor(() => capture.input);
+      const code = receiptKind === 'unconfirmed' ? 'native_process_settlement_unconfirmed' : 'execution_cancelled';
+      publication.reject(Object.assign(new Error(code), { code, ...(receiptKind === 'cancelled-unsettled' ? { nativeProcessUnsettled: true } : {}) }));
+      await waitFor(() => closing);
+      const stopped = runtime.abortSession('ses_cancel_persistence');
+      void stopped.catch(() => {}); close.resolve();
+      let failure;
+      try { await stopped; } catch (error) { failure = error; }
+      expect(failure).toBeInstanceOf(AggregateError);
+      expect(failure.errors).toContain(persistenceFailure);
+      expect(readCursorAbortOutcome(failure)).toEqual({ sessionID: 'ses_cancel_persistence', terminated: terminationProven, transcriptPersisted: false });
+      expect(readCursorAbortOutcome(Object.assign(new Error('forged'), { cursorAbortOutcome: { terminated: true } }))).toBeNull();
+    } finally { close.resolve(); await runtime.dispose(); }
+  });
+
+  test('native stop cancels prompt-time catalog discovery before creating a worker', async () => {
+    tempDir = makeTempDir('cursor-startup-stop-');
+    const started = Promise.withResolvers();
+    let catalogSignal, workers = 0;
+    const runtime = createCursorSdkRuntime({ storageDir: tempDir, env: {}, nativeWarming: false,
+      resolveApiKey: async () => 'synthetic-fixture',
+      ownedReadOnly: async (scope, action) => { catalogSignal = scope.signal; return action(); },
+      loadSdk: async () => ({ Cursor: { models: { list: async () => {
+        started.resolve();
+        await new Promise(resolve => catalogSignal.addEventListener('abort', resolve, { once: true }));
+        return [{ id: 'fixture' }];
+      } } } }),
+      executionAdapter: { beforePrompt: async () => null, start: async () => { workers++; throw Error('Stopped prompt must not start'); } },
+    });
+    try {
+      const prompt = runtime.handlePromptAsync({ sessionID: 'ses_starting', directory: tempDir,
+        body: { messageID: 'msg_starting', model: { providerID: 'cursor-acp', modelID: 'fixture' }, parts: [{ type: 'text', text: 'Inspect' }] } });
+      void prompt.catch(() => {});
+      await started.promise;
+      expect(await runtime.abortSession('ses_starting')).toBe(true);
+      await expect(prompt).rejects.toMatchObject({ code: 'execution_cancelled' });
+      expect(workers).toBe(0);
+      expect(await runtime.abortSession('ses_starting')).toBe(false);
+      expect(runtime.getCachedVirtualProvider().models.fixture).toBeUndefined();
+    } finally { await runtime.dispose(); }
+  });
+
+  test('native stop retains busy until the owned worker and transcript have settled', async () => {
+    tempDir = makeTempDir('cursor-owned-worker-stop-');
+    const capture = { calls: [], input: null, hold: true }, receipt = Promise.withResolvers();
+    const events = [];
+    let cancelCalled = 0, closed = false, completed = false;
+    const runtime = createCursorSdkRuntime({ storageDir: tempDir, env: { CURSOR_API_KEY: 'synthetic-fixture' },
+      useNodeWorkerForPrompts: true, getWorkspaceDiff: async () => '', emitEvent: event => events.push(event),
+      ownedPrompt: async () => ({ run: action => action(), close: async () => { closed = true; } }),
+      executionAdapter: { beforePrompt: async () => null, start: async ({ command, args, inputForLease }) => {
+        const child = createFakeTitleWorkerSpawn(capture)(command, args, {}), terminate = child.kill;
+        return { child, lease: { workingDirectory: tempDir }, workerInput: inputForLease({ workingDirectory: tempDir }),
+          result: receipt.promise, cancel: () => { cancelCalled++; terminate('SIGTERM'); } };
+      } },
+    });
+    try {
+      await runtime.handlePromptAsync({ sessionID: 'ses_worker_stop', directory: tempDir,
+        body: { messageID: 'msg_worker_stop', model: { providerID: 'cursor-acp', modelID: 'composer-2.5' }, parts: [{ type: 'text', text: 'Inspect' }] } });
+      const stopped = runtime.abortSession('ses_worker_stop').finally(() => { completed = true; });
+      await waitFor(() => cancelCalled);
+      expect(completed).toBe(false);
+      expect(closed).toBe(false);
+      expect(runtime.getSessionStatus().ses_worker_stop.type).toBe('busy');
+      expect(events.some(event => event.type === 'session.status' && event.properties.status.type === 'idle')).toBe(false);
+      receipt.reject(Object.assign(Error('execution_cancelled'), { code: 'execution_cancelled' }));
+      expect(await stopped).toBe(true);
+      expect(cancelCalled).toBe(1);
+      expect(closed).toBe(true);
+      expect(runtime.getSessionStatus().ses_worker_stop.type).toBe('idle');
+      const assistant = (await runtime.getSessionMessages('ses_worker_stop')).find(record => record.info.role === 'assistant');
+      expect(assistant.info.finish).toBe('cancelled');
+    } finally { receipt.resolve({}); await runtime.dispose(); }
+  });
+
+  test('one-shot worker forwards create and provider-send timing under the owned session without payload content', async () => {
+    tempDir = makeTempDir('cursor-worker-timing-');
+    const marks = [], timings = ['cursor_run_created', 'cursor_provider_send_started', 'cursor_provider_send_accepted']
+      .map(mark => ({ mark, metadata: { cacheHit: false, text: 'private fixture content' } }));
+    const runtime = createCursorSdkRuntime({ storageDir: tempDir, env: { CURSOR_API_KEY: 'synthetic-fixture' },
+      useNodeWorkerForPrompts: true, usePersistentWorkerForPrompts: false, getWorkspaceDiff: async () => '',
+      spawnImpl: createFakeWorkerSpawn({ calls: [], timings }), recordTimingMark: entry => marks.push(entry) });
+    try {
+      await runtime.handlePromptAsync({ sessionID: 'ses_worker_timing', directory: tempDir,
+        body: { messageID: 'msg_worker_timing', model: { providerID: 'cursor-acp', modelID: 'composer-2.5' }, parts: [{ type: 'text', text: 'fixture prompt' }] } });
+      await waitFor(() => runtime.getSessionStatus().ses_worker_timing?.type === 'idle');
+      expect(marks.filter(entry => timings.some(timing => timing.mark === entry.mark)).map(entry => entry.mark)).toEqual(timings.map(timing => timing.mark));
+      for (const mark of marks.filter(entry => timings.some(timing => timing.mark === entry.mark))) {
+        expect(mark).toMatchObject({ sessionId: 'ses_worker_timing', messageId: 'msg_worker_timing',
+          metadata: { providerID: 'cursor-acp', modelID: 'composer-2.5', cacheHit: false } });
+        expect(mark.metadata).not.toHaveProperty('text');
+      }
+    } finally { await runtime.dispose(); }
+  });
+
+  test.each(['empty', 'reasoning', 'assistant'])('first emitted text measures assistant answer only (%s)', async mode => {
+    tempDir = makeTempDir('cursor-first-answer-');
+    const marks = [];
+    const capture = { calls: [], input: null, messages: mode === 'assistant'
+      ? [{ type: 'assistant', message: { content: [{ type: 'text', text: 'Answer' }] } }]
+      : mode === 'reasoning' ? [{ type: 'thinking', text: 'Reasoning' }] : [] };
+    const runtime = createCursorSdkRuntime({ storageDir: tempDir, env: { CURSOR_API_KEY: 'synthetic-fixture' },
+      useNodeWorkerForPrompts: true, usePersistentWorkerForPrompts: false,
+      getWorkspaceDiff: async () => '', spawnImpl: createFakeWorkerSpawn(capture),
+      recordTimingMark: entry => marks.push(entry),
+    });
+    try {
+      await runtime.handlePromptAsync({ sessionID: 'ses_timing', directory: tempDir,
+        body: { messageID: 'msg_timing', model: { providerID: 'cursor-acp', modelID: 'composer-2.5' }, parts: [{ type: 'text', text: 'Replay this user prompt' }] } });
+      await waitFor(() => runtime.getSessionStatus().ses_timing?.type === 'idle');
+      expect(marks.filter(entry => entry.mark === 'cursor_first_emitted_text_delta')).toHaveLength(mode === 'assistant' ? 1 : 0);
+    } finally { await runtime.dispose(); }
+  });
+
+  test('owned prompt closes after initial persistence failure without creating a worker', async () => {
+    tempDir = makeTempDir('cursor-owned-persist-failure-');
+    let closed = 0, runs = 0;
+    const runtime = createCursorSdkRuntime({ storageDir: tempDir, env: {},
+      readAuth: () => ({ 'cursor-acp': { key: 'fixture-key' } }), getWorkspaceDiff: async () => '',
+      ownedPrompt: async () => ({ run: async action => action(), close: async () => { closed++; } }),
+      onPersistRecord: async () => { throw Error('actual fixture persistence failure'); },
+      executionAdapter: { beforePrompt: async () => null, start: async () => { runs++; throw Error('must not start'); } },
+    });
+    try {
+      expect((await runtime.handlePromptAsync({ sessionID: 'ses_owned_fail', directory: tempDir,
+        body: { messageID: 'msg_owned_fail', model: { providerID: 'cursor-acp', modelID: 'composer-2.5' }, parts: [{ type: 'text', text: 'owned' }] } })).status).toBe(204);
+      expect(closed).toBe(1); expect(runs).toBe(0);
+    } finally { await runtime.dispose(); }
+  });
+
+  test('native abort reports terminal persistence failure after the owned receipt and cleanup settle', async () => {
+    tempDir = makeTempDir('cursor-final-persist-failure-');
+    const capture = { calls: [], input: null, hold: true }, receipt = Promise.withResolvers(), diagnostics = [];
+    const failure = Object.assign(Error('private fixture detail'), { code: 'native_managed_task_lease_invalid' });
+    let cancelled = false, closed = false;
+    const runtime = createCursorSdkRuntime({ storageDir: tempDir, env: { CURSOR_API_KEY: 'synthetic-fixture' },
+      useNodeWorkerForPrompts: true, getWorkspaceDiff: async () => '', logger: { error: () => {} }, finalResultWaitTimeoutMs: 20,
+      recordDiagnostic: entry => diagnostics.push(entry),
+      ownedPrompt: async () => ({ run: action => action(), close: async () => { closed = true; } }),
+      onPersistRecord: async ({ record }) => { if (record.info.time.completed) throw failure; },
+      executionAdapter: { beforePrompt: async () => null, start: async ({ command, args, inputForLease }) => {
+        const child = createFakeTitleWorkerSpawn(capture)(command, args, {});
+        return { child, lease: { workingDirectory: tempDir }, workerInput: inputForLease({ workingDirectory: tempDir }),
+          result: receipt.promise, cancel: () => { cancelled = true; child.kill('SIGTERM'); } };
+      } },
+    });
+    try {
+      await runtime.handlePromptAsync({ sessionID: 'ses_persist_stop', directory: tempDir,
+        body: { messageID: 'msg_persist_stop', model: { providerID: 'cursor-acp', modelID: 'composer-2.5' }, parts: [{ type: 'text', text: 'Inspect' }] } });
+      const stopped = runtime.abortSession('ses_persist_stop'); void stopped.catch(() => {});
+      await waitFor(() => cancelled); expect(closed).toBe(false);
+      receipt.reject(Object.assign(Error('execution_cancelled'), { code: 'execution_cancelled' }));
+      await expect(stopped).rejects.toMatchObject({ errors: expect.arrayContaining([failure]) });
+      expect(closed).toBe(true);
+      expect(diagnostics.filter(entry => entry.payload.phase === 'failed')).toEqual([expect.objectContaining({ type: 'lifecycle', event: 'cursor_persistence', payload: expect.objectContaining({ phase: 'failed', reason: 'native_managed_task_lease_invalid' }) })]);
+      expect(diagnostics.some(entry => entry.payload.phase === 'sdk_failed' && entry.payload.reason === 'native_managed_task_lease_invalid')).toBe(true);
+      expect(JSON.stringify(diagnostics)).not.toContain('private fixture detail');
+    } finally { receipt.resolve({}); await runtime.dispose(); }
+  });
+
   test('persists one conflict notice after native publication before reporting a successful Cursor run idle', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-publication-conflict-'));
+    tempDir = makeTempDir('cursor-sdk-publication-conflict-');
     const capture = { calls: [], input: null };
     const events = [];
     let publish;
@@ -366,7 +711,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('generates OpenCode-compatible message identities when the caller omits one', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-worker-generated-id-'));
+    tempDir = makeTempDir('cursor-sdk-worker-generated-id-');
     const capture = { calls: [], input: null };
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
@@ -400,8 +745,37 @@ describe('Cursor SDK worker runtime config', () => {
     await runtime.dispose();
   });
 
+  test('raw helper worker preserves selected model and settles owned cancellation before release', async () => {
+    tempDir = makeTempDir('cursor-helper-worker-');
+    const capture = { calls: [], input: null, hold: true }; let finish, closed = false, scope;
+    const receipt = new Promise(resolve => { finish = resolve; });
+    const runtime = createCursorSdkRuntime({ storageDir: tempDir, env: {}, readAuth: () => ({'cursor-acp':{key:'fixture'}}),
+      loadSdk: async () => ({Cursor:{models:{list:async()=>[{id:'chosen',displayName:'Chosen'}]}}}),
+      ownedReadOnly: async (value, action) => { if(value.kind==='catalog')return action();scope=value;try{return await action();}finally{closed=true;} },
+      executionAdapter: { startReadOnly: async ({command,args,inputForLease}) => {
+        const child=createFakeTitleWorkerSpawn(capture)(command,args,{});
+        return {child,workerInput:inputForLease({workingDirectory:tempDir}),result:receipt,cancel:()=>{child.kill('SIGTERM');}};
+      } },
+    });
+    try {
+      const controller=new AbortController();let completed=false;
+      const work=runtime.generateText({text:'  exact raw prompt  ',directory:tempDir,modelID:'chosen',signal:controller.signal}).catch(error=>{completed=true;return error;});
+      await waitFor(()=>capture.input);expect(capture.input).toMatchObject({type:'text',modelID:'chosen',modelSelection:{id:'chosen'},text:'  exact raw prompt  '});
+      expect(scope.kind).toBe('text');controller.abort(Error('caller stop'));await new Promise(resolve=>setTimeout(resolve,10));expect(completed).toBe(false);expect(closed).toBe(false);
+      finish({terminated:true,confined:true,cancelled:true});expect((await work).code).toBe('execution_cancelled');expect(closed).toBe(true);
+    } finally { finish({terminated:true,confined:true,cancelled:true});await runtime.dispose(); }
+  });
+  test('raw Cursor title helper uses title owner without detached catalog refresh or title normalization', async () => {
+    tempDir = makeTempDir('cursor-helper-title-');const capture={calls:[],input:null};const scopes=[];
+    const runtime=createCursorSdkRuntime({storageDir:tempDir,env:{},readAuth:()=>({'cursor-acp':{key:'fixture'}}),
+      ownedReadOnly:async(scope,action)=>{scopes.push(scope);return action();},loadSdk:async()=>{throw Error('Detached title must not refresh catalog');},spawnImpl:createFakeTitleWorkerSpawn(capture)});
+    try{expect(await runtime.generateText({text:'Exact title prompt',directory:tempDir,sessionID:'ses_title',modelID:'auto',titleHelper:true})).toBe('# Raw multiline\n\nBody preserved.');
+      expect(scopes).toEqual([{kind:'title',directory:tempDir,sessionID:'ses_title',modelID:'auto'}]);expect(capture.input.type).toBe('text');
+    }finally{await runtime.dispose();}
+  });
+
   test('generates titles through an ephemeral one-shot Cursor Auto worker request', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-title-worker-'));
+    tempDir = makeTempDir('cursor-sdk-title-worker-');
     const capture = { calls: [], input: null };
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
@@ -431,7 +805,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('generates titles through the persistent worker without a prompt session request', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-persistent-title-'));
+    tempDir = makeTempDir('cursor-sdk-persistent-title-');
     const capture = { calls: [], commands: [], children: [] };
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
@@ -459,12 +833,12 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('passes inherited Cursor SDK subagent definitions to one-shot prompt workers', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-worker-'));
+    tempDir = makeTempDir('cursor-sdk-worker-');
     const capture = { calls: [], input: null };
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
-      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      env: { DEVRYAN_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
       usePersistentWorkerForPrompts: false,
       spawnImpl: createFakeWorkerSpawn(capture),
@@ -497,12 +871,12 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('passes explicit Cursor SDK subagent models to one-shot prompt workers', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-worker-'));
+    tempDir = makeTempDir('cursor-sdk-worker-');
     const capture = { calls: [], input: null };
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
-      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      env: { DEVRYAN_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
       usePersistentWorkerForPrompts: false,
       spawnImpl: createFakeWorkerSpawn(capture),
@@ -534,17 +908,18 @@ describe('Cursor SDK worker runtime config', () => {
     });
   });
 
-  test('applies worker final result while stdout stream remains open', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-worker-'));
+  test('marks an open worker stdout partial instead of applying an early final result', async () => {
+    tempDir = makeTempDir('cursor-sdk-worker-');
     const capture = { calls: [], input: null };
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
+      streamIdleTimeoutMs: 20,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
-      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      env: { DEVRYAN_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
       usePersistentWorkerForPrompts: false,
       nodeBinary: '/Applications/DevRyan.app/Contents/MacOS/DevRyan',
-      workerPath: '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@openchamber/cursor-sdk-runtime/node-worker.mjs',
+      workerPath: '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@devryan/cursor-sdk-runtime/node-worker.mjs',
       workerCwd: '/Applications/DevRyan.app/Contents/Resources',
       workerEnv: { ELECTRON_RUN_AS_NODE: '1' },
       spawnImpl: createFinalResultBeforeStreamWorkerSpawn(capture),
@@ -569,22 +944,22 @@ describe('Cursor SDK worker runtime config', () => {
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
 
-    expect(records?.[1]?.info.finish).toBe('stop');
-    expect(records?.[1]?.parts?.find((part) => part.type === 'text')?.text).toBe('worker final text before stream completion');
+    expect(records?.[1]?.info.finish).toBe('error');
+    expect(records?.[1]?.info.error).toEqual({ name: 'CursorStreamPartialError', message: 'Cursor stream incomplete (CURSOR_STREAM_DRAIN_TIMEOUT).' });
     expect(runtime.getRuntimeStatus().activeRuns).toBe(0);
   });
 
   test('passes data URL image attachments to prompt workers as Cursor data images', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-worker-'));
+    tempDir = makeTempDir('cursor-sdk-worker-');
     const capture = { calls: [], input: null };
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
-      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      env: { DEVRYAN_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
       usePersistentWorkerForPrompts: false,
       nodeBinary: '/Applications/DevRyan.app/Contents/MacOS/DevRyan',
-      workerPath: '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@openchamber/cursor-sdk-runtime/node-worker.mjs',
+      workerPath: '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@devryan/cursor-sdk-runtime/node-worker.mjs',
       workerCwd: '/Applications/DevRyan.app/Contents/Resources',
       workerEnv: { ELECTRON_RUN_AS_NODE: '1' },
       spawnImpl: createFakeWorkerSpawn(capture),
@@ -614,16 +989,16 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('encodes non-base64 data URL image attachments for prompt workers', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-worker-'));
+    tempDir = makeTempDir('cursor-sdk-worker-');
     const capture = { calls: [], input: null };
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
-      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      env: { DEVRYAN_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
       usePersistentWorkerForPrompts: false,
       nodeBinary: '/Applications/DevRyan.app/Contents/MacOS/DevRyan',
-      workerPath: '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@openchamber/cursor-sdk-runtime/node-worker.mjs',
+      workerPath: '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@devryan/cursor-sdk-runtime/node-worker.mjs',
       workerCwd: '/Applications/DevRyan.app/Contents/Resources',
       workerEnv: { ELECTRON_RUN_AS_NODE: '1' },
       spawnImpl: createFakeWorkerSpawn(capture),
@@ -653,7 +1028,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('direct Cursor SDK runs send data URL image attachments as Cursor data images', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-direct-'));
+    tempDir = makeTempDir('cursor-sdk-direct-');
     let sentMessage = null;
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
@@ -700,7 +1075,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('preserves provider-native task output and its failure reason when a run fails', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-partial-tool-failure-'));
+    tempDir = makeTempDir('cursor-sdk-partial-tool-failure-');
     const events = [];
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
@@ -785,7 +1160,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('emits busy before output and publishes durable final parts before terminal metadata and idle', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-lifecycle-order-'));
+    tempDir = makeTempDir('cursor-sdk-lifecycle-order-');
     const events = [];
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
@@ -818,6 +1193,7 @@ describe('Cursor SDK worker runtime config', () => {
           ok: true,
           finalStatus: 'success',
           finalText: 'Implementation complete.',
+            finalTextWitness: {assistantOrdinal: 1, priorNonempty: 0},
         }),
       }),
     });
@@ -865,7 +1241,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('clears busy with an error and never emits success metadata when final persistence fails', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-final-persist-failure-'));
+    tempDir = makeTempDir('cursor-sdk-final-persist-failure-');
     const events = [];
     let releaseFinalization;
     const finalizationGate = new Promise((resolve) => { releaseFinalization = resolve; });
@@ -888,6 +1264,7 @@ describe('Cursor SDK worker runtime config', () => {
           ok: true,
           finalStatus: 'success',
           finalText: 'This must not look successful.',
+            finalTextWitness: {assistantOrdinal: 1, priorNonempty: 0},
         }),
       }),
     });
@@ -929,7 +1306,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('non-data image URLs are rejected before calling the Cursor SDK', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-url-image-'));
+    tempDir = makeTempDir('cursor-sdk-url-image-');
     let promptRunCalled = false;
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
@@ -974,7 +1351,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('non-image attachments still produce the unsupported Cursor attachment message', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-pdf-'));
+    tempDir = makeTempDir('cursor-sdk-pdf-');
     let promptRunCalled = false;
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
@@ -1018,15 +1395,15 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('reuses one persistent worker across sequential Composer 2.5 prompts', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-persistent-worker-'));
+    tempDir = makeTempDir('cursor-sdk-persistent-worker-');
     const capture = { calls: [], children: [], commands: [] };
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
-      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      env: { DEVRYAN_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
       nodeBinary: '/Applications/DevRyan.app/Contents/MacOS/DevRyan',
-      workerPath: '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@openchamber/cursor-sdk-runtime/node-worker.mjs',
+      workerPath: '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@devryan/cursor-sdk-runtime/node-worker.mjs',
       workerCwd: '/Applications/DevRyan.app/Contents/Resources',
       workerEnv: { ELECTRON_RUN_AS_NODE: '1' },
       ripgrepPath: PACKAGED_RIPGREP_PATH,
@@ -1064,7 +1441,7 @@ describe('Cursor SDK worker runtime config', () => {
     const promptCommands = capture.commands.filter((entry) => entry.type === 'prompt');
     expect(capture.calls).toHaveLength(1);
     expect(capture.calls[0].args).toEqual([
-      '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@openchamber/cursor-sdk-runtime/persistent-worker.mjs',
+      '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@devryan/cursor-sdk-runtime/persistent-worker.mjs',
     ]);
     expect(capture.calls[0].options.cwd).toBe('/tmp/project');
     expect(capture.calls[0].options.env.CURSOR_SDK_RIPGREP_PATH).toBe(PACKAGED_RIPGREP_PATH);
@@ -1086,12 +1463,12 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('isolates persistent Node workers by project directory', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-persistent-directories-'));
+    tempDir = makeTempDir('cursor-sdk-persistent-directories-');
     const capture = { calls: [], children: [], commands: [] };
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
-      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      env: { DEVRYAN_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
       spawnImpl: createFakePersistentWorkerSpawn(capture),
     });
@@ -1125,14 +1502,14 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('caps simultaneous cold persistent workers and falls back to one-shot for the fourth directory', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-persistent-cold-cap-'));
+    tempDir = makeTempDir('cursor-sdk-persistent-cold-cap-');
     const capture = { calls: [], children: [], commands: [], input: null };
     const persistentSpawn = createFakePersistentWorkerSpawn(capture, { autoReady: false });
     const oneShotSpawn = createFakeWorkerSpawn(capture);
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
-      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      env: { DEVRYAN_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
       spawnImpl: (command, args, options) => (
         args[0]?.endsWith('persistent-worker.mjs')
@@ -1164,14 +1541,14 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('falls back to one-shot when three directory workers all have active prompts', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-persistent-busy-cap-'));
+    tempDir = makeTempDir('cursor-sdk-persistent-busy-cap-');
     const capture = { calls: [], children: [], commands: [], input: null };
     const persistentSpawn = createFakePersistentWorkerSpawn(capture, { autoRespond: false });
     const oneShotSpawn = createFakeWorkerSpawn(capture);
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
-      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      env: { DEVRYAN_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
       spawnImpl: (command, args, options) => (
         args[0]?.endsWith('persistent-worker.mjs')
@@ -1212,14 +1589,14 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('does not evict reused workers while prompt admission is still registering requests', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-persistent-admission-cap-'));
+    tempDir = makeTempDir('cursor-sdk-persistent-admission-cap-');
     const capture = { calls: [], children: [], commands: [] };
     const admissionReleases = new Map();
     let pauseAdmissions = false;
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
-      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      env: { DEVRYAN_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
       spawnImpl: createFakePersistentWorkerSpawn(capture),
       resolveAgentDefinitions: async ({ directory }) => {
@@ -1269,12 +1646,12 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('prewarms a session through the persistent worker prepare command', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-persistent-worker-'));
+    tempDir = makeTempDir('cursor-sdk-persistent-worker-');
     const capture = { calls: [], children: [], commands: [] };
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
-      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      env: { DEVRYAN_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
       spawnImpl: createFakePersistentWorkerSpawn(capture),
     });
@@ -1308,12 +1685,12 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('releases persistent worker Agent entries when session state is deleted', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-persistent-release-'));
+    tempDir = makeTempDir('cursor-sdk-persistent-release-');
     const capture = { calls: [], children: [], commands: [] };
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
-      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      env: { DEVRYAN_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
       spawnImpl: createFakePersistentWorkerSpawn(capture),
     });
@@ -1337,12 +1714,12 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('passes inherited Cursor SDK subagent definitions to persistent prompt workers', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-persistent-worker-'));
+    tempDir = makeTempDir('cursor-sdk-persistent-worker-');
     const capture = { calls: [], children: [], commands: [] };
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
-      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      env: { DEVRYAN_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
       spawnImpl: createFakePersistentWorkerSpawn(capture),
       resolveAgentDefinitions: async () => ({
@@ -1378,12 +1755,12 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('passes explicit Cursor SDK subagent models to persistent prompt workers', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-persistent-worker-'));
+    tempDir = makeTempDir('cursor-sdk-persistent-worker-');
     const capture = { calls: [], children: [], commands: [] };
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
-      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      env: { DEVRYAN_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
       spawnImpl: createFakePersistentWorkerSpawn(capture),
       resolveAgentDefinitions: async () => ({
@@ -1419,12 +1796,12 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('routes interleaved persistent worker events by request id', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-persistent-routing-'));
+    tempDir = makeTempDir('cursor-sdk-persistent-routing-');
     const capture = { calls: [], children: [], commands: [] };
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
-      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      env: { DEVRYAN_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
       spawnImpl: createFakePersistentWorkerSpawn(capture, { autoRespond: false }),
     });
@@ -1488,11 +1865,11 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test.each(['finished', 'error', 'cancelled'])('settles unreported parent and nested tool results honestly after %s', async (finish) => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-unreported-tools-'));
+    tempDir = makeTempDir('cursor-sdk-unreported-tools-');
     const capture = { calls: [], children: [], commands: [] };
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir, readAuth: () => ({ 'cursor-acp': { key: 'fixture-key' } }),
-      env: { OPENCHAMBER_RUNTIME: 'desktop' }, useNodeWorkerForPrompts: true,
+      env: { DEVRYAN_RUNTIME: 'desktop' }, useNodeWorkerForPrompts: true,
       spawnImpl: createFakePersistentWorkerSpawn(capture, { autoRespond: false }),
     });
     try {
@@ -1543,12 +1920,12 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('routes persistent-worker Cursor subagent activity into the parent task metadata', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-persistent-task-activity-'));
+    tempDir = makeTempDir('cursor-sdk-persistent-task-activity-');
     const capture = { calls: [], children: [], commands: [] };
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
-      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      env: { DEVRYAN_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
       spawnImpl: createFakePersistentWorkerSpawn(capture, { autoRespond: false }),
     });
@@ -1625,7 +2002,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   for (const persistent of [false, true]) test(`preserves private native edit receipts through the ${persistent ? 'persistent' : 'one-shot'} worker transport`, async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-worker-receipts-'));
+    tempDir = makeTempDir('cursor-sdk-worker-receipts-');
     const diff = '--- a/file.txt\n+++ b/file.txt\n@@ -1 +1 @@\n-old\n+' + 'x'.repeat(5000) + '\n';
     const messages = [
       { type: 'tool_call', name: 'task', call_id: 'task_1', status: 'running' },
@@ -1664,12 +2041,12 @@ describe('Cursor SDK worker runtime config', () => {
   }, 15_000);
 
   test('sends persistent worker cancel commands for active prompts', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-persistent-cancel-'));
+    tempDir = makeTempDir('cursor-sdk-persistent-cancel-');
     const capture = { calls: [], children: [], commands: [] };
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
-      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      env: { DEVRYAN_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
       spawnImpl: createFakePersistentWorkerSpawn(capture, { autoRespond: false }),
     });
@@ -1696,7 +2073,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('abortSession frees the session immediately even when the underlying cancel never settles', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-abort-nonblock-'));
+    tempDir = makeTempDir('cursor-sdk-abort-nonblock-');
     const events = [];
     let cancelInvoked = false;
     const runtime = createCursorSdkRuntime({
@@ -1741,7 +2118,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('abortSession preserves provider-native task output and stops consuming cancel-tail events', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-abort-partial-task-'));
+    tempDir = makeTempDir('cursor-sdk-abort-partial-task-');
     const events = [];
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
@@ -1787,6 +2164,14 @@ describe('Cursor SDK worker runtime config', () => {
     });
     const assistant = records.find((record) => record.info?.role === 'assistant');
     const task = assistant?.parts?.find((part) => part.tool === 'task');
+    // Finalization publishes the cancelled assistant message and then idle,
+    // possibly after the persisted record is readable; nothing (no cancel-tail
+    // event) may arrive after that.
+    await waitFor(async () => {
+      const finished = events.findIndex((event) => event.type === 'message.updated' && event.properties?.info?.finish === 'cancelled');
+      return finished >= 0 && events.slice(finished + 1).some((event) => event.type === 'session.status'
+        && event.properties?.status?.type === 'idle') ? true : null;
+    });
     const eventCountAfterFinalization = events.length;
     await new Promise((resolve) => setTimeout(resolve, 25));
 
@@ -1801,7 +2186,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('a new prompt supersedes and cancels a prior active run for the same session', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-supersede-'));
+    tempDir = makeTempDir('cursor-sdk-supersede-');
     const created = [];
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
@@ -1841,7 +2226,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('falls back to the one-shot worker when persistent worker startup fails before prompt submission', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-persistent-fallback-'));
+    tempDir = makeTempDir('cursor-sdk-persistent-fallback-');
     const capture = { calls: [], input: null };
     const spawnImpl = (command, args, options) => {
       if (capture.calls.length === 0) {
@@ -1875,10 +2260,10 @@ describe('Cursor SDK worker runtime config', () => {
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
-      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      env: { DEVRYAN_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
       nodeBinary: '/Applications/DevRyan.app/Contents/MacOS/DevRyan',
-      workerPath: '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@openchamber/cursor-sdk-runtime/node-worker.mjs',
+      workerPath: '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@devryan/cursor-sdk-runtime/node-worker.mjs',
       workerCwd: '/Applications/DevRyan.app/Contents/Resources',
       workerEnv: { ELECTRON_RUN_AS_NODE: '1' },
       ripgrepPath: PACKAGED_RIPGREP_PATH,
@@ -1905,10 +2290,10 @@ describe('Cursor SDK worker runtime config', () => {
 
     expect(capture.calls).toHaveLength(2);
     expect(capture.calls[0].args).toEqual([
-      '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@openchamber/cursor-sdk-runtime/persistent-worker.mjs',
+      '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@devryan/cursor-sdk-runtime/persistent-worker.mjs',
     ]);
     expect(capture.calls[1].args).toEqual([
-      '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@openchamber/cursor-sdk-runtime/node-worker.mjs',
+      '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@devryan/cursor-sdk-runtime/node-worker.mjs',
     ]);
     expect(capture.calls[0].options.env.CURSOR_SDK_RIPGREP_PATH).toBe(PACKAGED_RIPGREP_PATH);
     expect(capture.calls[1].options.env.CURSOR_SDK_RIPGREP_PATH).toBe(PACKAGED_RIPGREP_PATH);
@@ -1917,12 +2302,12 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('passes question MCP configuration through one-shot worker commands', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-question-one-shot-'));
+    tempDir = makeTempDir('cursor-sdk-question-one-shot-');
     const capture = { calls: [], input: null };
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
-      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      env: { DEVRYAN_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
       usePersistentWorkerForPrompts: false,
       spawnImpl: createFakeWorkerSpawn(capture),
@@ -1965,12 +2350,12 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('passes question MCP configuration through persistent prompt and prewarm commands', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-question-persistent-'));
+    tempDir = makeTempDir('cursor-sdk-question-persistent-');
     const capture = { calls: [], children: [], commands: [] };
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
-      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      env: { DEVRYAN_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
       spawnImpl: createFakePersistentWorkerSpawn(capture),
       questionRuntime: {
@@ -2020,7 +2405,7 @@ describe('Cursor SDK worker runtime config', () => {
     await runtime.dispose();
   });
   test('freezes Cursor worker input before owned preparation and checks the remapped payload before spawn', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-frozen-'));
+    tempDir = makeTempDir('cursor-sdk-frozen-');
     const capture = { calls: [], input: null };
     const definitions = { Helper: { description: 'fixture', prompt: 'original', model: 'inherit' } };
     let preflight;
@@ -2048,7 +2433,7 @@ describe('Cursor SDK worker runtime config', () => {
 
   test('Cursor rejects oversized history before admission and oversized final input before spawn', async () => {
     for (const stage of ['preflight', 'final']) {
-      tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-bound-'));
+      tempDir = makeTempDir('cursor-sdk-bound-');
       let admissions = 0, spawns = 0;
       const events = [];
       const runtime = createCursorSdkRuntime({ storageDir: tempDir, env: {},

@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { createWebHarnessRuntime } from './runtime.js';
+import { createWebHarnessRuntime, createManagedOperatorStopPreparation } from './runtime.js';
 
 const temporaryDirectories = [];
 
@@ -34,6 +34,65 @@ afterEach(async () => {
 });
 
 describe('web harness prompt admission', () => {
+  it('passes only canonical idle events to the native TODO observer after existing liveness observation', async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'devryan-idle-observer-'));
+    temporaryDirectories.push(directory);
+    const runtime = createWebHarnessRuntime({ dataDirectory: directory, runtime: 'test' });
+    const events = [];
+    runtime.setPrimaryRecoveryRuntime({ observe: () => events.push('primary') });
+    runtime.setNativeSessionIdleObserver(input => { events.push(input); });
+    const idle = { type: 'session.status', properties: { sessionID: 'ses_owned', status: { type: 'idle' } } };
+    runtime.recordOpenCodeEvent(idle, directory);
+    await Promise.resolve();
+    expect(events).toEqual(['primary', { sessionID: 'ses_owned', directory }]);
+    runtime.recordOpenCodeEvent(idle);
+    runtime.recordOpenCodeEvent({ ...idle, properties: { ...idle.properties, status: { type: 'busy' } } }, directory);
+    runtime.recordOpenCodeEvent({ type: 'message.updated', properties: { sessionID: 'ses_owned' } }, directory);
+    await Promise.resolve();
+    expect(events.slice(2)).toEqual(['primary', 'primary', 'primary']);
+    await runtime.drain();
+  });
+  it('isolates observational failures in recordOpenCodeEvent while primary recovery runs first and may throw', async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'devryan-observation-isolation-'));
+    temporaryDirectories.push(directory);
+    const runtime = createWebHarnessRuntime({ dataDirectory: directory, runtime: 'test' });
+    const order = [], recorded = [];
+    const enqueue = runtime.journal.enqueue;
+    runtime.journal.enqueue = (entry) => { recorded.push(entry); return true; };
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      runtime.setPrimaryRecoveryRuntime({ observe: () => order.push('primary') });
+      runtime.setNativeSessionIdleObserver(() => { order.push('idle'); });
+      // A sync throw in session-change observation still journals the event.
+      runtime.setSessionChangeHost({ observe: () => { order.push('changes'); throw Object.assign(new Error('x'), { code: 'capture_broken' }); }, drain: async () => {} });
+      const idle = { type: 'session.status', properties: { sessionID: 'ses_iso', status: { type: 'idle' } } };
+      expect(runtime.recordOpenCodeEvent(idle, directory)).toBe(true);
+      await Promise.resolve();
+      expect(order).toEqual(['primary', 'changes', 'idle']);
+      expect(recorded.map((entry) => entry.event ?? entry.type)).toEqual(['session_changes_observation_failed', 'open_code_event']);
+      expect(recorded[0].payload.code).toBe('capture_broken');
+      // An async rejection is recorded once it settles.
+      recorded.length = 0;
+      runtime.setSessionChangeHost({ observe: async () => { throw new Error('later'); }, drain: async () => {} });
+      runtime.recordOpenCodeEvent({ type: 'message.updated', properties: { sessionID: 'ses_iso' } }, directory);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(recorded.map((entry) => entry.event ?? entry.type)).toEqual(['open_code_event', 'session_changes_observation_failed']);
+      // A journal that throws synchronously never throws into the event path.
+      runtime.journal.enqueue = () => { throw Object.assign(new Error('disk'), { code: 'journal_closed' }); };
+      expect(runtime.recordOpenCodeEvent({ type: 'message.updated', properties: { sessionID: 'ses_iso' } }, directory)).toBe(false);
+      expect(warn).toHaveBeenCalledWith('[harness] journal record failed', { type: 'open_code_event', code: 'journal_closed' });
+      // Primary recovery is authority-bearing: its throw still propagates before anything else runs.
+      order.length = 0;
+      runtime.setPrimaryRecoveryRuntime({ observe: () => { throw new Error('recovery owner failed'); } });
+      expect(() => runtime.recordOpenCodeEvent(idle, directory)).toThrow('recovery owner failed');
+      expect(order).toEqual([]);
+    } finally {
+      warn.mockRestore();
+      runtime.journal.enqueue = enqueue;
+      runtime.setSessionChangeHost(null);
+      await runtime.drain();
+    }
+  });
   it('returns retryable 503 before initialization and records only accepted prompts', async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), 'devryan-web-harness-'));
     temporaryDirectories.push(directory);
@@ -191,6 +250,44 @@ describe('web harness control journal', () => {
   });
 });
 
+describe('web harness abort source attribution', () => {
+  it('keeps an accepted abort source until the next accepted prompt', async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'devryan-web-harness-'));
+    temporaryDirectories.push(directory);
+    const runtime = createWebHarnessRuntime({ dataDirectory: directory, runtime: 'test' });
+    await runtime.initialize();
+    const abort = (sessionID, source) => ({
+      method: 'POST', path: '/abort', params: { sessionID }, query: { directory: '/repo' },
+      headers: source ? { 'x-devryan-abort-source': source } : {}, body: {},
+    });
+    const next = vi.fn();
+    const accepted = createResponse();
+    runtime.controlJournalMiddleware(abort('ses_retry', 'provider_retry'), accepted, next);
+    expect(runtime.readAbortSource('ses_retry')).toBe('provider_retry');
+    accepted.emit('finish');
+    expect(runtime.readAbortSource('ses_retry')).toBe('provider_retry');
+
+    const rejected = createResponse();
+    runtime.controlJournalMiddleware(abort('ses_rejected', 'stall_watchdog'), rejected, next);
+    rejected.statusCode = 409;
+    rejected.emit('finish');
+    expect(runtime.readAbortSource('ses_rejected')).toBeNull();
+
+    runtime.controlJournalMiddleware(abort('ses_retry'), createResponse(), next);
+    expect(runtime.readAbortSource('ses_retry')).toBeNull();
+
+    runtime.controlJournalMiddleware(abort('ses_retry', 'abort_guard'), createResponse(), next);
+    const prompt = createResponse();
+    runtime.promptAdmissionMiddleware()({
+      method: 'POST', params: { sessionID: 'ses_retry' }, query: { directory: '/repo' }, headers: {}, body: {},
+    }, prompt, next);
+    expect(runtime.readAbortSource('ses_retry')).toBe('abort_guard');
+    prompt.emit('finish');
+    expect(runtime.readAbortSource('ses_retry')).toBeNull();
+    await runtime.drain();
+  });
+});
+
 describe('web harness control observer', () => {
   it('hands accepted session controls to the server observer without letting it block the request', async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), 'devryan-web-harness-'));
@@ -245,4 +342,84 @@ describe('web harness control observer', () => {
     expect(controls[0]).toMatchObject({ sessionID: 'ses_primary', action: 'abort', payload: { source: 'stop_button' } });
     await runtime.drain();
   });
+});
+
+describe('web harness session execution diagnostics', () => {
+  it('journals execution and revert diagnostics with the production lifecycle mapping', async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'devryan-web-harness-'));
+    temporaryDirectories.push(directory);
+    const runtime = createWebHarnessRuntime({ dataDirectory: directory, runtime: 'test' });
+    await runtime.initialize();
+    expect(runtime.recordSessionExecution({ event: 'session_execution', sessionID: 'ses_exec', phase: 'finish', state: 'completed' })).toBe(true);
+    expect(runtime.recordSessionExecution({ event: 'session_revert', sessionID: 'ses_revert', phase: 'recovery_failed' })).toBe(true);
+    expect(runtime.recordSessionExecution({ event: 'other', phase: 'unattributed' })).toBe(true);
+    await runtime.journal.flush();
+    const rows = (await runtime.journal.readRecords()).filter((record) => record.type === 'lifecycle');
+    const bySession = Object.fromEntries(rows.map((record) => [record.sessionID ?? 'runtime', record]));
+    expect(bySession.ses_exec).toMatchObject({ event: 'session_execution', runtime: 'test', payload: { phase: 'finish', state: 'completed' } });
+    expect(bySession.ses_revert).toMatchObject({ event: 'session_revert', payload: { phase: 'recovery_failed' } });
+    expect(bySession.runtime).toMatchObject({ event: 'session_revert', payload: { phase: 'unattributed' } });
+    await runtime.drain();
+    expect(runtime.recordSessionExecution({ event: 'session_execution', sessionID: 'ses_late' })).toBe(false);
+  });
+});
+
+
+it('awaits mandatory control preparation and fails closed while observers remain advisory', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'devryan-control-prepare-'));
+  temporaryDirectories.push(directory);
+  const runtime = createWebHarnessRuntime({ dataDirectory: directory, runtime: 'test' });
+  const request = { method: 'POST', path: '/abort', params: { sessionID: 'ses_child' }, query: { directory: '/repo' }, headers: { 'x-devryan-abort-source': 'stop_button' } };
+  const next = vi.fn(), order = [];
+  runtime.setControlPreparation(async input => { await Promise.resolve(); order.push(['durable', input.directory]); });
+  runtime.setControlObserver(() => { order.push(['observer']); throw new Error('advisory'); });
+  const accepted = runtime.controlJournalMiddleware(request, createResponse(), () => { order.push(['forward']); next(); });
+  expect(next).not.toHaveBeenCalled();
+  await accepted;
+  expect(order).toEqual([['durable', '/repo'], ['observer'], ['forward']]);
+  runtime.setControlPreparation(async () => { throw new Error('private failure'); });
+  const rejected = createResponse();
+  await runtime.controlJournalMiddleware(request, rejected, next);
+  expect(next).toHaveBeenCalledTimes(1);
+  expect(rejected.statusCode).toBe(503);
+  expect(rejected.body).toEqual({ code: 'control_preparation_failed', error: 'Control request could not be prepared' });
+  await runtime.drain();
+});
+
+it.each([
+  { status: 500, outcome: { sessionID: 'ses_child', terminated: true, transcriptPersisted: false }, phase: 'accepted' },
+  { status: 500, outcome: { sessionID: 'ses_child', terminated: false, transcriptPersisted: false }, phase: 'uncertain' },
+  { status: 500, outcome: { sessionID: 'ses_other', terminated: true, transcriptPersisted: false }, phase: 'rejected' },
+  { status: 500, outcome: null, phase: 'rejected' },
+  { status: 200, outcome: null, phase: 'accepted' },
+  { status: 200, outcome: null, phase: 'superseded', disposition: false },
+  { status: 500, outcome: null, phase: 'superseded', disposition: false },
+])('retains managed Stop as $phase for HTTP $status using its own physical outcome', async ({ status, outcome, phase, disposition = true }) => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'devryan-stop-outcome-'));
+  temporaryDirectories.push(directory);
+  const runtime = createWebHarnessRuntime({ dataDirectory: directory, runtime: 'test' });
+  await runtime.initialize();
+  const diagnostics = [], receipt = { sessionId: 'ses_child', requestId: 'stop_fixture', taskId: 'dvr_task_fixture', leaseToken: 'private-lease-sentinel' };
+  const managed = { recordOperatorAbort: vi.fn(async () => receipt), acceptOperatorAbort: vi.fn(async () => disposition), withdrawOperatorAbort: vi.fn(async () => disposition) };
+  runtime.setControlPreparation(createManagedOperatorStopPreparation({ getRuntime: () => managed,
+    operatorSources: new Set(['stop_button']), record: entry => { diagnostics.push(entry); runtime.record(entry); } }));
+  const express = (await import('express')).default, request = (await import('../../test-supertest.js')).default;
+  const app = express();
+  app.use('/api/session/:sessionID', express.json(), runtime.controlJournalMiddleware, (_req, res) => {
+    if (outcome) res.locals.devryanAbortOutcome = outcome;
+    res.status(status).json({ error: status === 500 ? 'final persistence failed' : undefined });
+  });
+  try {
+    await request(app).post('/api/session/ses_child/abort?directory=%2Frepo').set('X-DevRyan-Abort-Source', 'stop_button').send({}).expect(status);
+    await vi.waitFor(() => expect(diagnostics.map(entry => entry.payload.phase)).toEqual(['prepared', phase]));
+    const accepts = status === 200 || outcome?.sessionID === 'ses_child' && outcome.terminated;
+    expect(managed.acceptOperatorAbort).toHaveBeenCalledTimes(accepts ? 1 : 0);
+    expect(managed.withdrawOperatorAbort).toHaveBeenCalledTimes(!accepts && phase !== 'uncertain' ? 1 : 0);
+    expect(diagnostics.every(entry => entry.payload.requestId === receipt.requestId && entry.payload.taskId === receipt.taskId)).toBe(true);
+    if (outcome?.sessionID === 'ses_child') expect(diagnostics.at(-1).payload).toMatchObject({ terminated: outcome.terminated, transcriptPersisted: false });
+    await runtime.journal.flush();
+    const journal = await runtime.journal.readRecords();
+    expect(journal.filter(entry => entry.event === 'managed_operator_stop').map(entry => entry.payload.phase)).toEqual(['prepared', phase]);
+    expect(JSON.stringify({ diagnostics, journal })).not.toContain(receipt.leaseToken);
+  } finally { await runtime.drain(); }
 });

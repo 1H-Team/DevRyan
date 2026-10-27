@@ -18,7 +18,6 @@ export const ManagedSettingsDataBoundary: React.FC<SettingsDataBoundaryProps> = 
       void useSkillsCatalogStore.getState().loadCatalog();
     } else if (slug === 'plugins') {
       void usePluginsStore.getState().loadPlugins();
-      void usePluginsStore.getState().loadSlimStatus();
     }
   }, [activeProjectId, principal, slug]);
 

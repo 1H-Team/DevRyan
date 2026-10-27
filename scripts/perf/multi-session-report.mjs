@@ -240,18 +240,6 @@ export const analyzeRun = ({ meta, samples, events }) => {
     bucket.health.push(sample.server.healthMs);
   }
 
-  const docker = {};
-  for (const sample of samples) {
-    for (const container of sample.docker?.devryan || []) {
-      const entry = docker[container.name] || (docker[container.name] = { name: container.name, samples: 0, sum: 0, peak: 0, cpuPeak: 0, limit: container.limitBytes });
-      entry.samples += 1;
-      entry.sum += container.memBytes || 0;
-      entry.peak = Math.max(entry.peak, container.memBytes || 0);
-      entry.cpuPeak = Math.max(entry.cpuPeak, container.cpuPct || 0);
-    }
-  }
-  const otherContainers = summarizeSeries(seriesOf(samples, (sample) => sample.docker?.otherContainersMemBytes ?? null));
-
   const fds = {};
   for (const sample of samples) {
     for (const [pid, entry] of Object.entries(sample.fds || {})) {
@@ -272,7 +260,7 @@ export const analyzeRun = ({ meta, samples, events }) => {
   return {
     meta, samples, events, durationS, intervalS, tickMs,
     total, totalCpu, processCount, roles, pids, childRoles, spawnEvents, shortLived,
-    system, topSystem, server, busyBuckets, docker, otherContainers, fds, logs,
+    system, topSystem, server, busyBuckets, fds, logs,
     marks: events.filter((event) => event.type === 'mark'),
     orphans: [...pids.values()].filter((entry) => entry.kind === 'orphan'),
   };
@@ -336,7 +324,7 @@ export const renderReport = (analysis, comparison = null) => {
   lines.push('');
   lines.push(`- Window: ${first.t} → ${last.t} (${formatElapsed(analysis.durationS)}, ${samples.length} samples every ~${formatNumber(analysis.intervalS, 1)}s, tick cost p95 ${formatMs(analysis.tickMs?.p95)})`);
   lines.push(`- App: DevRyan ${meta.devryanVersion ?? '?'} / opencode ${meta.opencodeVersion ?? '?'} (launched in ${meta.opencodeLaunch?.cwd ?? '?'})`);
-  lines.push(`- Machine: ${meta.machine?.cpu ?? '?'}, ${meta.machine?.cpus ?? '?'} cores, ${formatBytes(meta.machine?.memoryBytes)} RAM, macOS ${meta.machine?.macos ?? '?'}; Docker VM ${meta.dockerSettings?.memoryMiB ?? '?'} MiB / ${meta.dockerSettings?.cpus ?? '?'} CPUs`);
+  lines.push(`- Machine: ${meta.machine?.cpu ?? '?'}, ${meta.machine?.cpus ?? '?'} cores, ${formatBytes(meta.machine?.memoryBytes)} RAM, macOS ${meta.machine?.macos ?? '?'}`);
   lines.push(`- Server metrics: ${analysis.server.authenticated ? 'authenticated (heap, app metrics, busy sessions captured)' : 'unauthenticated (/api/health only)'}`);
   lines.push('');
 
@@ -442,17 +430,6 @@ export const renderReport = (analysis, comparison = null) => {
   }
   lines.push('');
 
-  const dockerRows = Object.values(analysis.docker).sort((a, b) => b.peak - a.peak)
-    .map((entry) => [entry.name, formatBytes(entry.sum / entry.samples), formatBytes(entry.peak), formatBytes(entry.limit), formatNumber(entry.cpuPeak, 1)]);
-  lines.push('## Docker bot containers');
-  lines.push('');
-  if (dockerRows.length === 0) lines.push('No docker stats captured.');
-  else {
-    lines.push(table(['Container', 'Avg mem', 'Peak mem', 'Limit', 'Peak CPU %'], dockerRows));
-    lines.push('');
-    lines.push(`Non-DevRyan containers in the same VM: ${formatBytes(analysis.otherContainers?.avg)} average, ${formatBytes(analysis.otherContainers?.max)} peak.`);
-  }
-  lines.push('');
 
   const fdRows = Object.values(analysis.fds).map((entry) => [entry.role, entry.pid, entry.first, entry.last, entry.max]);
   if (fdRows.length > 0) {

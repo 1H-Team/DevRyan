@@ -4,17 +4,34 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import fs from 'node:fs/promises';
 
+const ownedRunners=new WeakMap();
+/** Constructor-only runner for an immutable executable inside an already owned
+ * offline job. Requests never supply this handle or its executable/environment. */
+export function createOwnedGitRunner({binary,environment,argumentsPrefix=[],assertAllowed}){
+ const handle=Object.freeze({});ownedRunners.set(handle,{binary,environment:Object.freeze({...environment}),argumentsPrefix:[...argumentsPrefix],assertAllowed});
+ return Object.freeze({
+  git:(cwd,args,options)=>git(cwd,args,{...options,ownedRunner:handle}),
+  gitTokens:(cwd,args,options)=>gitTokens(cwd,args,{...options,ownedRunner:handle}),
+  gitRecords:(cwd,args,rows)=>gitRecords(cwd,args,rows,{ownedRunner:handle}),
+ });
+}
+
 export const changeError = (code, status = 409) => Object.assign(new Error(code), { code, status });
 
 // Never inherit a caller's index or object-store overrides. All mutation callers
 // supply the private repository explicitly; checkout commands are read-only.
-const start = (cwd, args, { env, input, timeoutMs = 30_000, stdout = 'pipe', acceptExitCodes = [] } = {}) => {
+const gitEnvironment = (base, env) => ({ ...base,
+  GIT_DIR: undefined, GIT_COMMON_DIR: undefined, GIT_INDEX_FILE: undefined, GIT_WORK_TREE: undefined,
+  GIT_OBJECT_DIRECTORY: undefined, GIT_ALTERNATE_OBJECT_DIRECTORIES: undefined,
+  GIT_OPTIONAL_LOCKS: '0', ...env });
+const start = (cwd, args, { env, input, timeoutMs = 30_000, stdout = 'pipe', acceptExitCodes = [],ownedRunner } = {}) => {
   const signal = executionSignal();
   signal?.throwIfAborted();
-  const child = spawn('git', args, { cwd, env: { ...process.env,
-    GIT_DIR: undefined, GIT_COMMON_DIR: undefined, GIT_INDEX_FILE: undefined, GIT_WORK_TREE: undefined,
-    GIT_OBJECT_DIRECTORY: undefined, GIT_ALTERNATE_OBJECT_DIRECTORIES: undefined,
-    GIT_OPTIONAL_LOCKS: '0', ...env }, stdio: ['pipe', stdout, 'pipe'] });
+  const owned=ownedRunner?ownedRunners.get(ownedRunner):undefined;
+  if(ownedRunner&&!owned)throw changeError('owned_git_runner_invalid',503);
+  owned?.assertAllowed?.(cwd,args,{env});
+  const child = spawn(owned?.binary??'git', [...(owned?.argumentsPrefix??[]),...args], { cwd, env: gitEnvironment(owned?.environment??process.env, env),
+    stdio: ['pipe', stdout, 'pipe'] });
   const abort = () => child.kill('SIGKILL');
   signal?.addEventListener('abort', abort, { once: true });
   let timedOut = false;
@@ -114,10 +131,10 @@ export async function gitToFile(cwd, args, file, options = {}) {
 
 // Read small metadata blobs in one Git process. Each input and output batch is
 // bounded; history length never determines the size of a stdout buffer.
-export async function* gitRecords(cwd, args, rows) {
+export async function* gitRecords(cwd, args, rows,options={}) {
   let batch = [], bytes = 0;
   const read = async (entries) => {
-    const data = await git(cwd, [...args, 'cat-file', '--batch'], {
+    const data = await git(cwd, [...args, 'cat-file', '--batch'], {...options,
       input: entries.map((entry) => entry.oid).join('\n') + '\n', limit: 8 * 1024 * 1024 + 16 * 1024,
     });
     let offset = 0;
@@ -140,3 +157,90 @@ export async function* gitRecords(cwd, args, rows) {
   }
   if (batch.length) yield* await read(batch);
 }
+
+// Long-lived `cat-file --batch` (contents) or `--batch-check` (identity) per
+// Git directory: a ledger transaction reads tens of small objects, and one
+// process per read cost 5-50 ms each. Requests are answered in order; a dead
+// or stuck process fails every pending read and the next read starts a new
+// one. An idle reader exits on its own and never keeps the host alive. Packs
+// written later are found because Git rescans them on a miss. Windows keeps
+// one process per read: an open pack there would block repack's deletion.
+const READER_IDLE_MS = 15_000;
+const READER_TIMEOUT_MS = 30_000;
+const readers = new Map();
+const openReader = (cwd, args, check) => {
+  const key = JSON.stringify([cwd, args, check]);
+  const existing = readers.get(key);
+  if (existing && !existing.closed) return existing;
+  const child = spawn('git', [...args, 'cat-file', check ? '--batch-check' : '--batch'], { cwd, env: gitEnvironment(process.env),
+    stdio: ['pipe', 'pipe', 'ignore'] });
+  const reader = { child, pending: [], buffer: Buffer.alloc(0), closed: false, idle: null, watchdog: null };
+  readers.set(key, reader);
+  const close = (error) => {
+    if (reader.closed) return;
+    reader.closed = true;
+    if (readers.get(key) === reader) readers.delete(key);
+    clearTimeout(reader.idle); clearInterval(reader.watchdog);
+    child.kill('SIGKILL');
+    for (const request of reader.pending.splice(0)) request.reject(error ?? changeError('capture_git_failed', 503));
+  };
+  reader.close = close;
+  const settle = () => {
+    for (;;) {
+      const request = reader.pending[0];
+      if (!request) { if (reader.buffer.length) close(changeError('invalid_change_record', 503)); return; }
+      const end = reader.buffer.indexOf(10);
+      if (end < 0) return;
+      const header = reader.buffer.subarray(0, end).toString();
+      if (header.endsWith(' missing') || header.endsWith(' ambiguous')) {
+        reader.buffer = reader.buffer.subarray(end + 1); reader.pending.shift(); request.resolve(null); continue;
+      }
+      const [oid, type, sizeText] = header.split(' '), size = Number(sizeText);
+      if (!oid || !type || !Number.isSafeInteger(size) || size < 0) { close(changeError('invalid_change_record', 503)); return; }
+      if (check) { reader.buffer = reader.buffer.subarray(end + 1); reader.pending.shift(); request.resolve({ oid, type, size }); continue; }
+      if (reader.buffer.length < end + 1 + size + 1) return;
+      const data = Buffer.from(reader.buffer.subarray(end + 1, end + 1 + size));
+      reader.buffer = reader.buffer.subarray(end + 1 + size + 1); reader.pending.shift();
+      request.resolve({ oid, type, size, data });
+    }
+  };
+  child.stdout.on('data', (chunk) => { reader.buffer = reader.buffer.length ? Buffer.concat([reader.buffer, chunk]) : chunk; settle(); });
+  child.on('error', () => close());
+  child.on('close', () => close());
+  child.stdin.on('error', () => close());
+  reader.watchdog = setInterval(() => {
+    if (reader.pending.length && Date.now() - reader.pending[0].started > READER_TIMEOUT_MS) close(changeError('capture_timeout', 503));
+  }, 1_000);
+  reader.watchdog.unref?.();
+  // Only a pending read keeps the event loop alive. Toggle on change only:
+  // Bun counts a repeated ref() and then never lets the process exit.
+  let held = true;
+  reader.hold = (next) => {
+    if (next === held) return;
+    held = next;
+    for (const handle of [child, child.stdin, child.stdout]) next ? handle.ref?.() : handle.unref?.();
+  };
+  return reader;
+};
+// One object by name (`<oid>` or `<tree>:<path>`), or null when absent.
+// `check` answers only { oid, type, size }.
+// `idleMs` (tests) shortens how long an idle reader lives.
+export function readGitObject(cwd, args, name, { check = false, idleMs = READER_IDLE_MS } = {}) {
+  executionSignal()?.throwIfAborted();
+  if (typeof name !== 'string' || !name || /[\n\r\0]/.test(name)) return Promise.reject(changeError('invalid_change_record'));
+  const reader = openReader(cwd, args, check);
+  clearTimeout(reader.idle);
+  reader.hold(true);
+  return new Promise((resolve, reject) => {
+    reader.pending.push({ started: Date.now(), resolve, reject });
+    reader.child.stdin.write(`${name}\n`);
+  }).finally(() => {
+    if (reader.closed || reader.pending.length) return;
+    reader.hold(false);
+    // Reads settling together each get here: replace, never orphan, the timer.
+    clearTimeout(reader.idle);
+    reader.idle = setTimeout(() => { if (!reader.pending.length) reader.close(); }, idleMs);
+    reader.idle.unref?.();
+  });
+}
+export const persistentGitReaders = () => process.platform !== 'win32' && process.env.DEVRYAN_LEDGER_PERSISTENT_READER !== '0';

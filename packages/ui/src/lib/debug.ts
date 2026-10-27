@@ -220,7 +220,7 @@ export const debugUtils = {
     })();
 
     const runtimeApis = typeof window !== 'undefined'
-      ? (window as any).__OPENCHAMBER_RUNTIME_APIS__
+      ? (window as any).__DEVRYAN_RUNTIME_APIS__
       : null;
     const isTauriShell = typeof window !== 'undefined' && Boolean((window as any).__TAURI__);
 
@@ -365,7 +365,7 @@ export const debugUtils = {
         projectInfo,
         health: opencodeHealth,
       },
-      openchamber: {
+      devryan: {
         settingsInfo,
       },
     };
@@ -379,10 +379,10 @@ export const debugUtils = {
     const serialized = JSON.stringify(report, null, 2);
     const runtimeApis = typeof window !== 'undefined'
       ? (window as typeof window & {
-          __OPENCHAMBER_RUNTIME_APIS__?: {
+          __DEVRYAN_RUNTIME_APIS__?: {
             diagnostics?: { sanitizeText?: (text: string) => Promise<string> };
           };
-        }).__OPENCHAMBER_RUNTIME_APIS__
+        }).__DEVRYAN_RUNTIME_APIS__
       : null;
     if (runtimeApis?.diagnostics?.sanitizeText) {
       return runtimeApis.diagnostics.sanitizeText(serialized);

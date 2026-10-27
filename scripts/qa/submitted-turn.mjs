@@ -1,5 +1,21 @@
 // A native compaction may append generated user records after the real input.
 // Identify the exact submitted input before considering which answer settles it.
+// Native active snapshots omit idle sessions. Absence alone cannot establish
+// settlement: retain the exact session and its completed canonical tail.
+export function isQaKnownSessionSettled({ sessionID, session, rows, status }) {
+  if (!session || session.id !== sessionID || !Array.isArray(rows)
+    || !status || typeof status !== 'object' || Array.isArray(status)
+    || Object.values(status).some(value => !value || typeof value !== 'object' || Array.isArray(value)
+      || !['idle', 'busy', 'retry'].includes(value.type))
+    || status[sessionID] && status[sessionID].type !== 'idle') return false;
+  const user = rows.findLast(row => row.info?.role === 'user')?.info;
+  const assistant = rows.at(-1)?.info;
+  return Boolean(user && user.sessionID === sessionID && Number.isFinite(user.time?.created)
+    && assistant?.role === 'assistant' && assistant.sessionID === sessionID
+    && assistant.parentID === user.id && Number.isFinite(assistant.time?.completed)
+    && assistant.time.completed >= user.time.created);
+}
+
 export function findQaSubmittedUser(rows, previousIds, text) {
   // ChatInput's submission boundary removes only leading/trailing LF runs.
   const expectedText = text.replace(/^\n+|\n+$/g, '');

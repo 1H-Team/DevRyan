@@ -2,13 +2,11 @@ import React from 'react';
 
 import { SettingsPagePermissionBoundary } from '@/lib/settings/permission-context';
 import { cn } from '@/lib/utils';
-import type { ProductAudience } from '@/stores/useMainSidebarAudienceStore';
 
 export type CapabilitySettingsSlug = 'skills.installed' | 'mcp';
 
 export const CapabilityMutationBoundary: React.FC<{
   slug: CapabilitySettingsSlug;
-  audience: ProductAudience;
   children: React.ReactNode;
 }> = ({ slug, children }) => (
   <SettingsPagePermissionBoundary slug={slug}>{children}</SettingsPagePermissionBoundary>
@@ -16,9 +14,6 @@ export const CapabilityMutationBoundary: React.FC<{
 
 export const CapabilitySettingsWorkspace: React.FC<{
   slug: CapabilitySettingsSlug;
-  audience: ProductAudience;
-  onAudienceChange: (audience: ProductAudience) => void;
-  idPrefix: string;
   panelClassName?: string;
   children: React.ReactNode;
 }> = ({ slug, panelClassName, children }) => {
@@ -27,7 +22,7 @@ export const CapabilitySettingsWorkspace: React.FC<{
       <div
         className={cn('min-h-0 flex-1 overflow-hidden', panelClassName)}
       >
-        <CapabilityMutationBoundary slug={slug} audience="coding-agents">
+        <CapabilityMutationBoundary slug={slug}>
           {children}
         </CapabilityMutationBoundary>
       </div>

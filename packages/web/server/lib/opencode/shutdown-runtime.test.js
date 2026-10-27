@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 
 import { createGracefulShutdownRuntime } from './shutdown-runtime.js';
 
@@ -18,7 +20,6 @@ const createRuntime = (server, overrides = {}) => createGracefulShutdownRuntime(
   setTerminalRuntime: vi.fn(),
   getMessageStreamRuntime: () => null,
   setMessageStreamRuntime: vi.fn(),
-  getBotsRuntime: () => null,
   getCursorSdkRuntime: () => null,
   getSessionTitleRuntime: () => null,
   shouldSkipOpenCodeStop: () => true,
@@ -37,6 +38,79 @@ const createRuntime = (server, overrides = {}) => createGracefulShutdownRuntime(
 });
 
 describe('graceful shutdown runtime', () => {
+  it('keeps store owners alive after refused native settlement and permits a shutdown retry', async () => {
+    let shuttingDown = false, settled = false;
+    const order = [];
+    const runtime = createRuntime(null, {
+      getIsShuttingDown: () => shuttingDown, setIsShuttingDown: value => { shuttingDown = value; },
+      getHarnessRuntime: () => ({ beginDrain: () => order.push('admission'), drain: async () => order.push('stores') }),
+      closeNativeRuntime: async () => { order.push('native'); if (!settled) throw new Error('settlement pending'); },
+      closeFeatureRoutes: async () => { order.push('usage-connection'); },
+      openCodeWatcherRuntime: { stop: () => order.push('watcher') },
+      globalMessageStreamHub: { stop: () => order.push('shared-hub') },
+      // The host lifecycle may restart only after a shutdown completed, never after a refusal.
+      onShutdownComplete: () => order.push('complete'),
+    });
+    await expect(runtime.gracefulShutdown({ exitProcess: false })).rejects.toThrow('settlement pending');
+    expect(order).toEqual(['admission', 'native']); expect(shuttingDown).toBe(false);
+    settled = true;
+    await runtime.gracefulShutdown({ exitProcess: false });
+    expect(order).toEqual(['admission', 'native', 'admission', 'native', 'usage-connection', 'watcher', 'shared-hub', 'stores', 'complete']);
+  });
+
+  it('naturally exits after stopping the real shared hub reconnect timer', async () => {
+    const moduleUrl = relative => JSON.stringify(new URL(relative, import.meta.url).href);
+    const script = `
+      import {createGlobalMessageStreamHub} from ${moduleUrl('../event-stream/global-hub.js')};
+      import {createProjectedStreamClient} from ${moduleUrl('../event-stream/test-projected-stream.js')};
+      import {createGracefulShutdownRuntime} from ${moduleUrl('./shutdown-runtime.js')};
+      let unavailable;
+      const firstUnavailable = new Promise(resolve => { unavailable = resolve; });
+      const hub = createGlobalMessageStreamHub({openCodeClient:createProjectedStreamClient(),
+        fetchImpl:async () => new Response(null,{status:503})});
+      hub.subscribeStatus(status => { if(status.type==='initial-error') unavailable(); });
+      hub.start();
+      await firstUnavailable;
+      await new Promise(resolve => setImmediate(resolve));
+      let shuttingDown = false;
+      const runtime = createGracefulShutdownRuntime({process,shutdownTimeoutMs:1000,getExitOnShutdown:()=>false,
+        getIsShuttingDown:()=>shuttingDown,setIsShuttingDown:value=>{shuttingDown=value;},syncToHmrState:()=>{},
+        openCodeWatcherRuntime:{stop(){}},globalMessageStreamHub:hub,sessionRuntime:{dispose(){}},scheduledTasksRuntime:{stop(){}},
+        getHealthCheckInterval:()=>null,getTerminalRuntime:()=>null,getMessageStreamRuntime:()=>null,
+        getCursorSdkRuntime:()=>null,getSessionTitleRuntime:()=>null,shouldSkipOpenCodeStop:()=>true,getServer:()=>null,
+        getUiAuthController:()=>null,getActiveTunnelController:()=>null,tunnelAuthController:{clearActiveTunnel(){}},
+      });
+      await runtime.gracefulShutdown({exitProcess:false});
+      console.log('shared-hub-shutdown-returned');
+    `;
+    const child = spawn(process.execPath, ['--input-type=module', '--eval', script], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const closed = once(child, 'close');
+    let stdout = '', stderr = '', timedOut = false;
+    child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8');
+    child.stdout.on('data', value => { stdout += value; });
+    child.stderr.on('data', value => { stderr += value; });
+    const timer = setTimeout(() => { timedOut = true; child.kill('SIGKILL'); }, 3000);
+    let code, signal;
+    try { [code, signal] = await closed; } finally { clearTimeout(timer); }
+    expect(stdout).toContain('shared-hub-shutdown-returned');
+    expect(stderr).toBe('');
+    expect(timedOut).toBe(false);
+    expect({ code, signal }).toEqual({ code: 0, signal: null });
+  });
+
+  it('settles native ownership before store teardown and never kills a later occupant of its released port', async () => {
+    const order = [], killProcessOnPort = vi.fn(), close = vi.fn();
+    const runtime = createRuntime(null, {
+      getHarnessRuntime: () => ({ beginDrain: () => order.push('admission'), drain: async () => order.push('stores') }),
+      closeNativeRuntime: async () => { order.push('native-exit-and-recovery'); },
+      getManagedOrchestrationRuntime: () => ({ shutdown: async () => order.push('scheduler') }),
+      shouldSkipOpenCodeStop: () => false, getOpenCodePort: () => 12345, getOpenCodeProcess: () => ({ close }), killProcessOnPort,
+    });
+    await runtime.gracefulShutdown({ exitProcess: false });
+    expect(order).toEqual(['admission','native-exit-and-recovery','stores','scheduler']);
+    expect(close).not.toHaveBeenCalled(); expect(killProcessOnPort).not.toHaveBeenCalled();
+  });
+
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
@@ -58,6 +132,42 @@ describe('graceful shutdown runtime', () => {
 
     expect(warnSpy).not.toHaveBeenCalledWith('Server close timeout reached, forcing shutdown');
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('ends live streams after a one-second grace so the server closes within the desktop update bound', async () => {
+    vi.useFakeTimers();
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    let closed;
+    const server = {
+      close: vi.fn((callback) => { closed = callback; }),
+      closeIdleConnections: vi.fn(),
+      closeAllConnections: vi.fn(() => closed()),
+    };
+    const runtime = createRuntime(server);
+    const shutdown = runtime.gracefulShutdown({ exitProcess: false });
+    await vi.advanceTimersByTimeAsync(999);
+    expect(server.closeIdleConnections).toHaveBeenCalledTimes(1);
+    expect(server.closeAllConnections).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    await shutdown;
+    expect(server.closeAllConnections).toHaveBeenCalledTimes(1);
+    expect(warnSpy).not.toHaveBeenCalledWith('Server close timeout reached, forcing shutdown');
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('stops the active tunnel even when auth disposal fails', async () => {
+    let controller = { stop: vi.fn(async () => {}) };
+    const tunnelAuthController = { suspendActiveTunnel: vi.fn(), clearActiveTunnel: vi.fn() };
+    const runtime = createRuntime(null, {
+      getUiAuthController: () => ({ dispose: vi.fn(async () => { throw new Error('auth store unavailable'); }) }),
+      getActiveTunnelController: () => controller,
+      setActiveTunnelController: (value) => { controller = value; },
+      tunnelAuthController,
+    });
+    const stop = controller.stop;
+    await expect(runtime.gracefulShutdown({ exitProcess: false })).rejects.toThrow('auth store unavailable');
+    expect(stop).toHaveBeenCalledOnce(); expect(controller).toBeNull();
+    expect(tunnelAuthController.suspendActiveTunnel).toHaveBeenCalledOnce();
   });
 
   it('disposes the Cursor SDK runtime during graceful shutdown', async () => {
@@ -112,7 +222,7 @@ describe('graceful shutdown runtime', () => {
     expect(order).toEqual(['managed', 'cursor']);
   });
 
-  it('stops Production Bots before browser, provider, OpenCode, and HTTP teardown', async () => {
+  it('stops browser, provider and OpenCode before HTTP teardown', async () => {
     const order = [];
     const server = {
       close: vi.fn((callback) => {
@@ -121,7 +231,6 @@ describe('graceful shutdown runtime', () => {
       }),
     };
     const runtime = createRuntime(server, {
-      getBotsRuntime: () => ({ shutdown: vi.fn(async () => { order.push('bots'); }) }),
       getBrowserLeaseRuntime: () => ({ closeAll: vi.fn(async () => { order.push('browser'); }) }),
       getManagedOrchestrationRuntime: () => ({ shutdown: vi.fn(async () => { order.push('managed'); }) }),
       getCursorSdkRuntime: () => ({ dispose: vi.fn(async () => { order.push('cursor'); }) }),
@@ -132,7 +241,7 @@ describe('graceful shutdown runtime', () => {
 
     await runtime.gracefulShutdown({ exitProcess: false });
 
-    expect(order).toEqual(['bots', 'browser', 'managed', 'cursor', 'opencode', 'server']);
+    expect(order).toEqual(['browser', 'managed', 'cursor', 'opencode', 'server']);
   });
 
   it('closes browser leases before managed runtime teardown', async () => {

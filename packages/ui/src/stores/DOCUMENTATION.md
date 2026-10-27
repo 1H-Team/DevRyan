@@ -29,6 +29,29 @@ These are the most performance-sensitive.
 
 These stores act like centralized keyed caches. UI should consume narrow slices from them instead of re-fetching the same data in multiple places.
 
+`useSessionTreeChangesStore.ts` owns subscribed, read-only session-tree summaries,
+keyed by runtime, principal, directory and root session. A typed HTTP 503 uses
+the existing pending-summary timer lifecycle and transient classifier for at most
+five retries after the first GET: 500, 1,000, 2,000, 4,000 and 8,000 milliseconds
+(15.5 seconds of waiting, plus request time). This covers native restart while
+the web/SSE connection remains alive without relying on a reconnect event.
+The previous rows and revision remain visible with loading set; restoration stays
+disabled until an authoritative summary succeeds. Retry exhaustion, authentication,
+permission, conflict and other failures retain the rows and expose the existing
+load-failed/Retry state. Only a typed 503 summary failure enters this budget;
+Undo/Redo and other mutation requests are never retried by it. Unsubscribe, scope
+cleanup and account change cancel its timers/reads, and delayed callbacks recheck
+the captured runtime/principal key before starting another read. Successful
+pending-reconciliation responses keep their existing separate backoff behavior.
+Queued hints yield to a scheduled recovery timer and drain at a settled failure,
+so they cannot bypass its delay or reopen an exhausted budget. A later explicit
+refresh can start a new cycle; successful settled reads still perform their
+existing coalesced trailing refresh when a new change arrived during the read.
+Ordinary hints arriving between retry reads keep the existing transient timer
+intact, so they neither shorten its backoff nor postpone its deadline. Explicit
+immediate refresh remains the existing manual request path.
+Actual rebuilt runtime qualification remains separate.
+
 ### UI state stores
 
 Examples:
@@ -38,18 +61,46 @@ Examples:
 - `useFeatureFlagsStore.ts`
 - `useUpdateStore.ts`
 
+`useDirectoryStore.ts` does not store the home-folder fallback as the last
+directory, locally or in the server settings, and `goHome` (used once the last
+project is removed) goes home without storing it and sends `lastDirectory: ''`
+to forget the removed project. The server turns a stored last directory into a
+project when the list is empty and warms it at startup, so either path used to
+put the home, or the project just removed, back in the sidebar.
+
 `useAgentRuntimeWarmupStore.ts` is a narrow, non-persisted status store for the
-single directory currently being warmed by the app startup effect. Assistant
+single directory currently being warmed after the app becomes usable. Assistant
 status consumers subscribe only to this string and replace a generic working
 phrase with `Preparing project…` when their active directory matches. The app
 clears the value on warmup settlement and effect cleanup only when it still owns
-the same directory value.
+the same directory value. Optional project discovery (including MCP and command
+catalog prewarming) and Markdown/tool-dialog imports start one second after the
+startup-ready event and do not gate the composer. The backend does not launch
+prewarming for every saved project during startup. Native health, provider/agent
+catalogs, configuration, global/directory sync, session list, response style and
+worktree state still gate readiness. The first automatic update check uses the
+regular one-hour interval after `MainLayout` mounts; explicit checks remain
+immediate.
 
 `useConfigStore.ts` keeps OpenCode connection state separate from its low-frequency
 provider/agent initialization status. A confirmed healthy connection stays connected
 when a later bootstrap phase fails, while the non-persisted initialization status and
 error let the startup gate identify the actual failing phase and retry it without an
 unnecessary runtime restart.
+
+The runtime-capability health projection separately retains the explicit
+`isOpenCodeReady` boolean as `nativeReady`. While a visible session has work or
+the native runtime is unavailable, `StatusRowContainer` refreshes that projection
+every five seconds with a three-second deadline, sharing capability reads.
+A confirmed unavailable runtime replaces animated task activity with recovery
+copy and the existing configuration Retry Apply action. This presentation never
+rewrites durable task state or infers native readiness from `isConnected`.
+
+Startup overlaps provider loading with agent/config/default HTTP requests. The
+`loadAgents` constructor options `providersReady` and `signal` gate agent/default
+resolution and persistence on the committed provider catalog and the same active
+directory. Failed providers, cancellation or a directory change discard the
+agent result. A replacement startup does not reuse an aborted in-flight loader.
 
 Applying a default agent updates its agent, configured provider/model, and thinking
 variant in one store transition. Only an explicit draft model selection (including
@@ -72,6 +123,16 @@ agent configuration uses the agent captured before the request as its fallback.
 Late catalog, model override, and backup-model responses cannot replace the
 visible settings catalog after its directory changes.
 
+The agent model editor's primary, backup and Council rows each use the chat's
+`ControlledModelPicker` (model list plus the `ThinkingSlider` for the selected
+model). A saved level the catalog no longer lists stays visible with an inline
+error, and saving requires a confirmed model and a supported or unset level.
+Picking another model takes that model's chat level, as in the composer. A
+catalog model without thinking levels drops any saved level: it shows no level,
+reports no error and saves without a variant. Each section validates
+independently, and the first Council row owns the Council's primary model and
+thinking level.
+
 Settings catalog refreshes reconcile complete normalized records by agent name
 against state at response time, retaining save/reset generation guards. Structural
 comparison ignores object key order, preserves array order, and distinguishes
@@ -88,13 +149,6 @@ fallback, normalizing thinking through the selected provider model. Council is
 host-managed and ignores stale personal entries.
 
 These stores coordinate visible app state, navigation, selected tabs, dialogs, and lightweight feature flags.
-
-The Bot runtime uses separate low-frequency projections for catalog, channels,
-operations, and persistent Shared files. `useBotSharedFilesStore.ts` is scoped to
-the authenticated principal, indexes file IDs per authorized channel, and
-reconciles `shared_file.updated` events without making the operations rail poll
-or subscribe to transcript streaming. Snapshot ACL changes synchronously prune
-files for channels the principal can no longer access.
 
 `useConfigApplyStore.ts` is the renderer projection of the host-owned revisioned
 configuration-apply coordinator. Every successful config mutation merges its
@@ -128,7 +182,7 @@ the default assignment's public `/projects/<project>/<branch>` path becomes auth
 instead. Managed metadata changes are admin-only, persisted through the server, and
 rolled back optimistically if that request fails. Active managed clients refresh their
 principal assignment snapshot after a scoped project-metadata event and after the
-OpenChamber event stream reconnects, recovering changes missed while disconnected.
+DevRyan event stream reconnects, recovering changes missed while disconnected.
 
 `useGlobalSessionsStore.ts` combines complete global HTTP listings with low-frequency
 `session.created`, `session.updated`, and `session.deleted` events from the sync pipeline. Lifecycle
@@ -215,6 +269,28 @@ re-enabling server suppression after deletion. Completed tails are released;
 there is no deleted-session tombstone. Archive and failed optimistic deletion
 preserve the explicit override.
 
+`defaultAutoAccept` (Settings → Agents → Session Defaults → Approvals) is a
+persisted, device-local default. `createSessionRecord` announces each new root
+session through `sessionEvents.notifyRootSessionCreated`, and the store applies
+the default once as an explicit override, so the host mirror and pending
+permission replies behave as if the user had toggled it; child sessions inherit
+through lineage and git-generation sessions are skipped. Changing the default
+never rewrites existing sessions.
+
+Saved approvals ("Always allow") are not a store: Settings → Agents → Session
+Defaults → Approvals → Saved Approvals (`components/sections/agents/SavedApprovalsSettings.tsx`)
+reads one project at a time through `lib/savedApprovalsApi.ts`
+(`/api/permission/saved?directory=`), defaulting to the active project with a
+local project picker that does not change the active project. Rows show the
+permission name, the allowed input (`*` is flagged as Any Input), and the saved
+and edited times. Administrators and the local administrator can edit the input
+pattern; managed non-administrators see no edit control and a short explanation
+(`canEditSavedApprovals`, mirroring the server's 403
+`saved_approval_edit_forbidden`) but can still revoke. Revoking asks for
+confirmation. Native saved approvals are allow rules only, so there is no
+allow/deny control. A `capability_unavailable` answer shows the feature as
+turned off.
+
 ### Managed orchestration projection store
 
 `useManagedOrchestrationStore.ts` is the dedicated client projection of the
@@ -233,6 +309,12 @@ Core model:
 - one serialized snapshot load per scope, reconciled against events received
   after that load began in one atomic store update
 
+Result envelope identity stays fixed while its collection `sequence` advances
+on disposition. Events, snapshots, and acknowledgement responses accept a
+nonregressing sequence for the same envelope; an established action remains
+immutable, and stale unacknowledged results cannot restore recovery controls.
+Same-sequence automatic-resume updates retain their separate revision guards.
+
 Task records carry a `waitingReason` field for ledger/wire compatibility
 (records written by v1.1.11 carry `waitingReason: null`). Ingestion still
 parses it, normalizes it to `null` for any non-queued status or malformed
@@ -241,17 +323,18 @@ replays keep the record reference. No DevRyan host wires launch admission, so
 sub-agent launches are never capped or held and the field is always `null` in
 practice (user requirement, 2026-09-04); no store surfaces limits or pacing.
 
-The managed agent-runtime switches (today only `lsp`, OpenCode's language
-servers inside agent sessions) live in `useAgentsStore` as `agentRuntimeSettings`,
-loaded and saved through `/api/config/agent-runtime` from the Agent Runtime
-section. Saves are serialized, retain confirmed values while pending, and fence
-older loads. GET and PUT return desired `lsp`, `appliesOnRestart: true`,
-`runtimeMode`, `appliedLsp`, and `restartRequired`. Only successful managed
-readiness proves application; external or unknown application returns null for
-the latter two fields. Repeated saves and renderer reloads preserve pending
-changes, and reverting desired settings clears them. Restart acceptance,
-configuration-apply state changes, and focus trigger fresh reads; none locally
-clear the restart notice. A 404 or 501 clears the state so the section hides.
+OpenCode's language servers are always off for agent sessions, so no store
+carries an agent-runtime switch.
+
+Host payloads (task events, snapshots, action responses) decode through the
+orchestration codec (`@devryan/orchestration-runtime`, lenient mode); the
+store has no parser of its own. Lenient mode degrades a newer host's unknown
+auto-resume reason, or a malformed auto-resume/waiting block, to `null` instead
+of dropping the task or its result envelope. `orchestrationApi.ts` returns the
+task endpoints' JSON as `unknown` for the store to decode and decodes the
+handoff response itself. Other UI payload decoders (assistant errors, message
+info, managed-task tool parts, shared guards) live in `src/lib/decoders/`;
+the tool-part decoder parses each part state's output once.
 
 Ownership and safety rules:
 
@@ -349,51 +432,14 @@ result is stale while its canonical child reports live `busy`/`retry` activity
 is presented as running. This is a display-only reconciliation and does not
 rewrite or discard the retained failure envelope.
 
-### Production Bots projection stores
-
-Production Bots deliberately use focused non-persisted stores instead of the
-ordinary OpenCode session/message branches:
-
-- `useBotsStore.ts` owns low-frequency capability, Bot, safe revision metadata,
-  current-principal membership, and Bot selection state.
-- `useBotChannelStore.ts` owns authorized channels, normalized paged canonical
-  messages, stable per-channel attachment IDs, per-channel cursors, drafts,
-  coalesced owner-channel opening, and one client-stable optimistic send row.
-  Attachment references are recalculated only when attachment membership
-  changes, so message updates preserve the artifact leaf. One atomic send update
-  inserts and orders the optimistic row, clears the exact draft, and marks the
-  short acceptance request pending. Definitive rejection rolls back that row and
-  restores the captured draft; ambiguous transport failure retains a
-  `Not confirmed` row, refreshes history, and retries the same ID exactly once.
-  Explicit failed-run retry requeues the same server run and creates no message.
-  Refusals refresh run status without mutating drafts or messages; a permanent
-  refusal clears stale retry eligibility even if an older status projection
-  still allows it. Principal changes discard late retry/status responses.
-- `useBotLiveMessageStore.ts` owns only requester-streaming message records and
-  one live message ID per channel. Revisions are monotonic, payloads are capped
-  at 192 KiB, and canonical/final/terminal/channel/principal/reconnect boundaries
-  clear transient text without touching canonical history.
-- `useBotOperationsStore.ts` owns runs, pending approvals, action metadata,
-  low-frequency computer/control status, and Bot-SSE connection state.
-  Screencast frames never enter Zustand.
-
-`apps/BotsEventOwner.tsx` is the only stream owner. It applies each authorized
-snapshot as the current principal's ACL boundary, preserves the last accepted
-sequence across same-epoch reconnect snapshots, drops replayed events, and
-resets every Bot store, including transient live text, on account change or real
-owner unmount. Bot events do
-not enter `sync-context.tsx`. Entity and channel/run index references are
-preserved when presentation-relevant values did not change; rendering code
-should use the exported per-Bot, per-channel, and per-run leaf selectors.
-
 ### Provider recovery store
 
 `useProviderRecoveryStore.ts` retains one low-frequency, non-persisted recovery
 record per root session. Retryable terminal provider errors populate it after
 an authoritative active-to-idle transition. A definite provider usage limit in
 a live root retry status first receives a confirmed abort, then populates the
-same record immediately; ordinary transient retry loops remain bounded at
-three attempts. Child sessions are excluded by authoritative `parentID` and
+same record immediately; ordinary transient retry loops are stopped only after
+three attempts and five minutes of retrying. Child sessions are excluded by authoritative `parentID` and
 continue through managed-task recovery. The record owns a local
 provider/model/variant selection plus pending/action error leaves. Normal user
 sends clear it, while a manual recovery send preserves it until the send
@@ -578,6 +624,23 @@ Expected model:
 - no live PR work for header
 - no background PR sweeps outside visible demand
 
+### Provider usage (quota)
+
+- OpenAI usage results identify their source and connection account. Retained
+  successful data and trends belong only to that identity. A changed identity,
+  explicit disconnect or reconnect invalidates old figures; a revision fence
+  prevents an earlier in-flight response from restoring them.
+- Optional Codex connection controls use the existing quota refresh owner after
+  account changes. They poll only while an explicit sign-in is pending and
+  cancel that sign-in when the connection panel unmounts.
+
+- `quota-refresh-coordinator.ts` owns the usage refresh timer (30-minute baseline, faster when auto-refresh is on).
+- Optional `needsPromptRetry` (wired in `useQuotaStore.ts` to `configuredProviderIds === null`) shortens the next delay to `min(interval, DISCOVERY_RETRY_MS = 15 s)` while provider discovery has not succeeded, e.g. a `503 native_runtime_not_ready` while the runtime starts.
+- Prompt retries are capped at 8 consecutive attempts; the counter resets when the dependency returns false and on `stop()`. Without the dependency the schedule is unchanged.
+- A failed discovery leaves `configuredProviderIds` null and keeps previously known results.
+- Settings → Providers shows a provider's usage panel when a result exists, or when the provider is connected and discovery is failing (`configuredProviderIds === null` with a store `error`), so the reason and the refresh button are visible. A connected provider with no usage source after a successful discovery shows nothing. An account whose usage cannot be read arrives from the server as a `configured: true`, `ok: false` result and renders its `error` text.
+- `ProviderUsagePanel` without a result shows "no data yet" while discovery is pending and "Usage can't be read yet" once discovery finished.
+
 ## Known Intentional Fallbacks
 
 There is still one explicit fallback path worth knowing about:
@@ -625,6 +688,48 @@ resolve this root's provisional wait. `isLoadingSnapshotForRoot` permits the
 fallback only during that root's or a global snapshot load; failed/unavailable
 loads stop it. Confirmation survives refreshes and clears
 on store reset. Snapshot/event ordering and barrier enforcement are unchanged.
+`wait` and `wait_any` share this authority. Once an empty snapshot settles the
+wait, its finishing tool does not display the copy reserved for management
+actions. Concurrent parent text and tools retain their own status.
+
+### Managed verification projection
+
+Task records carry optional host-computed `verification` and validated
+`requiredChecks`. Newer verification observations can update terminal task rows;
+they never change the settled execution status. Stale observations cannot erase
+a newer verification result. `hasIncompleteVerificationForObjective` uses the
+core requirement-selection rule, including equivalent retry declarations, and
+does not treat result dismissal as a waiver.
+
+Dispatch rows keep the settled execution label and show verification separately:
+pending, rerun needed, blocked, failed, verified, skipped or user-waived. A stale
+check never changes completed execution into Failed. Queued prerequisite holds
+say what they are waiting for. Dispatch cards keep per-check rows and waiver
+controls in the detailed verification surface.
+The root objective panel uses the canonical objective verification API and the
+same detail/waiver component as task checks, with objective identity and source
+hashes rechecked by the host.
+The panel and completion gate share scoped objective-proof reads. Ordinary and
+plan success require a fresh matching objective proof, or a confirmed response
+that no root requirements exist. Failed, stale, malformed, unavailable or
+superseded responses cannot manufacture completion; confirmed Standard Preview
+absence of the native checker retains that runtime's existing behavior.
+Completion also requires the host's attested `originatingMessageId`. Ordinary
+completion uses the returned canonical objective for root and child checks;
+Implement Plan additionally fences its original implementation objective. An
+assistant with an explicit parent from an older turn cannot borrow a newer turn's
+proof. A newer human turn, including one arriving during the read, suppresses an
+older completion.
+Host-backed environment-unavailable checks retain an explicit Skipped state and
+their diagnostic hint in detailed verification output. They permit closeout
+without claiming Passed; compact dispatch rows summarize execution completion.
+
+The session changes card shows `Edited N files`, the first five captured paths,
+and an expandable remainder. Current-content verification and capture-gap details
+remain in View changes; disabled Undo explains its safety gate on focus or hover.
+Compact presentation never changes restore eligibility or captured evidence.
+The session-change parser accepts restore authority from attribution versions
+2, 3 and 4 only, with the host's complete, settled and restore-available gates.
 
 
 ### Managed task deadline reconciliation
@@ -637,3 +742,67 @@ null/finite changes and other task identity changes are rejected. A completion
 carrying a renewed deadline settles the existing row even if its renewal event
 was missed, without waiting for root idle or remounting. No-op reconciliation
 preserves row references and terminal status cannot regress.
+
+Native ChatGPT quota results identify their source as `chatgpt-browser` and
+the selected credential with an opaque `connectionId`. Token-sharing or retired
+OAuth results identify their own method and expose no usage token. The existing
+source/connection comparison clears old readings on a switch; a missing provider
+window stays absent. No second usage enrollment is owned by the UI.
+
+`useConfigStore.settingsHelperModelSelection` holds the shared typed helper tuple,
+optional reasoning `variant` and revision, independently of primary selection,
+notification Zen, and legacy Git preferences. Settings → Agents → Session Defaults
+uses the session-free chat picker (`ControlledModelPicker`, one control with the
+chat filtering and a `ThinkingSlider` footer for the selected model) above
+Cleanup. `variant: null` in the picker is Default reasoning and is saved without a
+`variant`; changing the model keeps the variant only if the new model offers it.
+Save persists a new revision; personal reset removes only this override.
+Low-frequency settings load and account reset restore the host or personal tuple
+through the shared parser. Helpers never modify composer selection.
+The revision uses the existing UUID-or-opaque-fallback convention when
+`crypto.randomUUID` is unavailable. Revision creation stays inside the save
+try/finally so a failure releases the disabled selector and uses the existing toast.
+Helper saves use the existing immediate acknowledged settings operation, holding
+the selector disabled through HTTP/runtime settlement. A null response or a
+different model/variant/revision fails before the local selection changes; the general
+debounced settings writer remains for its existing callers.
+
+Plan file records retain the saved SHA-256 version, canonical content and
+sanitized server source identity. Plan approval requires a successful current
+settled source and the exact saved version. A validation attempt is tied to
+the tail message and authoritative status observation; a transient settlement
+refusal is retried on a new observation, without polling. Late saves/refusals
+from an older attempt cannot replace a newer record. Plan View acknowledges
+actual returned content/version after read or edit.
+
+Session-tree change reads keep their captured runtime/account key through
+coalescing and recovery. Scope switches and selection release clear loading only
+for the retired key; a late response cannot clear a reopened request or trigger
+a trailing read against the new runtime. Other entries retain their references.
+
+### Browser activity presentation
+
+`useBrowserAgentStore` remains the authoritative, root-scoped lease projection.
+The Browser header control opens one lease directly when it is not visible;
+otherwise it retains the chooser/manual-browser menu. Activity alone never opens
+the panel. Removed leases are pruned through the existing snapshot lifecycle;
+closing a preview only stops observation, not agent control. Cursor/pulse pixels
+come from the host surface, including in the view-only web stream.
+
+## Pending managed recovery intent
+
+`useManagedOrchestrationStore` retains one in-memory recovery choice per task,
+including its idempotency key, model/effort and result-envelope sequence. While
+the live-event subscription reconnects, `waitingForEventsByTaskId` exposes a
+cancellable pending state rather than a ten-second failure. The API waits for
+acknowledged readiness, then rechecks exact task/root/directory/attempt and result
+identity before its single POST. Cancellation, task removal and store reset
+retire the intent; cancellation after transport begins is not offered. A failed
+POST remains explicit and is never automatically replayed. Pending intent does
+not persist across account changes or reloads.
+
+Provider Settings reads optional finite `lastSuccessfulInferenceAt` and
+`lastLaunchFailure` metadata from the existing Claude status response. Saved
+sign-in status remains independent; a failed process launch does not infer a
+signed-out credential. Both provider summaries show safe category/timestamp
+information, drop unknown codes, and retain older-host behavior when absent.

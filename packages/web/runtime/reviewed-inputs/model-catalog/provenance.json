@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "sourceURL": "https://models.opencode.ai/api.json",
+  "retrievedUTC": "2026-10-02T07:29:13.740Z",
+  "httpStatus": 200,
+  "sha256": "1290e78c59b72a425cb6c39c1c354a780a4e002605f03c9867f17271c7cb04b9",
+  "byteSize": 5293409,
+  "providerCount": 225,
+  "selectedModel": {
+    "providerID": "openai",
+    "modelID": "gpt-6.1-sol",
+    "sha256": "0e46e1d1cc687ab8bd0371c9c976045fe3e266955e1f9ea00e98a914e70b4b58"
+  },
+  "previousEvidence": {
+    "path": ".cache/v2-validation/resume-gpt61-public-catalog.json",
+    "sha256": "1290e78c59b72a425cb6c39c1c354a780a4e002605f03c9867f17271c7cb04b9",
+    "selectedRowSha256": "0e46e1d1cc687ab8bd0371c9c976045fe3e266955e1f9ea00e98a914e70b4b58"
+  },
+  "sameResponse": true,
+  "sameSelectedRow": true,
+  "path": "DevRyan-model-catalog.json",
+  "kind": "public-runtime-model-metadata",
+  "credentials": false
+}

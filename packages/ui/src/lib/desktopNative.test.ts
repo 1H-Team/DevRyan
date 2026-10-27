@@ -20,7 +20,7 @@ describe("listenDesktopNativeDragDrop", () => {
   test("does not import Tauri webview APIs when Electron exposes the Tauri compatibility shim", async () => {
     const { listenDesktopNativeDragDrop } = await import("./desktopNative");
     setWindow({
-      __OPENCHAMBER_ELECTRON__: { runtime: "electron" },
+      __DEVRYAN_ELECTRON__: { runtime: "electron" },
       __TAURI__: {
         core: {
           invoke: async () => null,

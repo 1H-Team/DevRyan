@@ -17,18 +17,18 @@ import { buildGitEnv, commit, fetch as fetchRemote, getBranches, merge, pull, pu
 const execFileAsync = promisify(execFile);
 
 const temporaryDirectories = [];
-const originalDataDirectory = process.env.OPENCHAMBER_DATA_DIR;
+const originalDataDirectory = process.env.DEVRYAN_DATA_DIR;
 
 beforeEach(async () => {
   accounts.clear();
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-git-credentials-'));
   temporaryDirectories.push(directory);
-  process.env.OPENCHAMBER_DATA_DIR = directory;
+  process.env.DEVRYAN_DATA_DIR = directory;
 });
 
 afterEach(async () => {
-  if (originalDataDirectory === undefined) delete process.env.OPENCHAMBER_DATA_DIR;
-  else process.env.OPENCHAMBER_DATA_DIR = originalDataDirectory;
+  if (originalDataDirectory === undefined) delete process.env.DEVRYAN_DATA_DIR;
+  else process.env.DEVRYAN_DATA_DIR = originalDataDirectory;
   await Promise.all(temporaryDirectories.splice(0).map((directory) => fs.rm(directory, { recursive: true, force: true })));
 });
 
@@ -305,7 +305,7 @@ describe('managed Git credential isolation', () => {
       });
   });
 
-  it('updates the origin tracking ref after a managed push to the assignment remote URL', async () => {
+  it('skips the pre-push hook and updates tracking after a managed push to the assignment remote URL', async () => {
     const directory = await createManagedRepository();
     const remoteDirectory = path.join(temporaryDirectories[0], 'remote.git');
     await execFileAsync('git', ['init', '--bare', remoteDirectory]);
@@ -324,6 +324,11 @@ describe('managed Git credential isolation', () => {
       }],
     };
 
+    const hook = path.join(directory, '.git', 'hooks', 'pre-push');
+    const marker = path.join(directory, 'hook-ran');
+    await fs.writeFile(hook, '#!/bin/sh\ntouch hook-ran\nexit 1\n');
+    await fs.chmod(hook, 0o755);
+
     await expect(runWithRequestPrincipal(managedPrincipal, () => push(directory)))
       .resolves.toMatchObject({ success: true, ref: 'developer',
         pushed: [{ local: 'refs/heads/developer', remote: 'refs/heads/developer' }] });
@@ -333,5 +338,6 @@ describe('managed Git credential isolation', () => {
     expect(trackingRef).toBe(head);
     const remoteHead = (await git(remoteDirectory, ['rev-parse', 'refs/heads/developer'])).stdout.trim();
     expect(remoteHead).toBe(head);
+    await expect(fs.access(marker)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 });

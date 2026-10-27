@@ -21,7 +21,7 @@ describe('settings permission catalog', () => {
       'General', 'Workflow', 'Connections', 'Development',
     ]);
     expect(grouped).toContain('skills.catalog');
-    expect(grouped).toContain('bots');
+    expect(grouped).not.toContain('bots');
     expect(grouped).toContain('remote-instances');
     expect(grouped).toContain('bug-reports');
     expect(grouped).not.toContain('home');
@@ -54,13 +54,14 @@ describe('settings permission catalog', () => {
       appearance: { read: true, edit: true },
     } as SettingsPermissions, {});
     expect(partial.appearance).toEqual({ read: true, edit: true });
-    expect(partial.bots).toEqual({ read: false, edit: false });
+    expect(partial['magic-prompts']).toEqual({ read: false, edit: false });
   });
 
   test('normalizes partial or malformed API matrices without exposing edit-only access', () => {
     const fallback = permissionsFromLegacyPages(['appearance', 'users']);
     const normalized = normalizeSettingsPermissions({
       appearance: { read: false, edit: true },
+      'magic-prompts': { read: true, edit: true },
       bots: { read: true, edit: true },
       providers: 'invalid',
       unknown: { read: true, edit: true },
@@ -68,10 +69,11 @@ describe('settings permission catalog', () => {
 
     expect(Object.keys(normalized)).toEqual(SETTINGS_PERMISSION_SLUGS);
     expect(normalized.appearance).toEqual({ read: false, edit: false });
-    expect(normalized.bots).toEqual({ read: true, edit: true });
+    expect(normalized['magic-prompts']).toEqual({ read: true, edit: true });
     expect(normalized.providers).toEqual({ read: false, edit: false });
     expect(normalized.users).toEqual({ read: true, edit: false });
     expect(Object.prototype.hasOwnProperty.call(normalized, 'unknown')).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(normalized, 'bots')).toBe(false);
   });
 
   test('cycles user cells through inherit, allow, deny, and inherit', () => {

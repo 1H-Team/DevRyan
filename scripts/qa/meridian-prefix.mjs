@@ -6,6 +6,7 @@ import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { createRunRoot } from './run-root.mjs';
 import { prepareMeridianFixture, isolatedClaudeEnvironment, fixtureGit, repository, studyModel, studyEffort } from './claude-quota-fixture.mjs';
 
 export function withoutCacheMarkers(value) {
@@ -97,6 +98,8 @@ export async function runMeridianPrefixProbe({ installedModules, claudeExecutabl
   if (!Number.isSafeInteger(steps) || steps < 3 || steps > 20
     || !Number.isSafeInteger(parallelTools) || parallelTools < 1 || parallelTools > 4) throw new Error('Expected 3–20 handoffs and 1–4 parallel tools');
   const fixture = await prepareMeridianFixture({ outputRoot, arm, installedModules });
+  const run = createRunRoot({ dir: fixture.root, owner: 'scripts/qa/meridian-prefix.mjs', signals: 'exit' });
+  let passed = false;
   // createProxyServer (unlike startProxyServer) does not initialize the module's
   // executable selection for streaming. Seed that configuration in this owned
   // copy; starting the full server would enable unrelated auth refresh timers.
@@ -211,6 +214,7 @@ export async function runMeridianPrefixProbe({ installedModules, claudeExecutabl
       sdkSessions: new Set(telemetry.map(row => row.sdkSessionId).filter(Boolean)).size };
     await fs.writeFile(path.join(fixture.root, 'synthetic-requests.json'), JSON.stringify(requests, null, 2));
     await fs.writeFile(path.join(fixture.root, 'result.json'), JSON.stringify(result, null, 2));
+    passed = true;
     await fs.writeFile(path.join(fixture.root, 'telemetry.json'), JSON.stringify({ telemetry, logs }, null, 2));
     return result;
   } catch (error) {
@@ -233,6 +237,7 @@ export async function runMeridianPrefixProbe({ installedModules, claudeExecutabl
     Object.assign(process.env, previousEnvironment);
     process.off('SIGINT', interrupt);
     process.off('SIGTERM', interrupt);
+    run.finish(passed ? 'passed' : controller.signal.aborted ? 'interrupted' : 'failed');
     if (proxy?.getInFlightCount() > 0) throw new Error('Offline fixture SDK cleanup did not settle');
   }
 }

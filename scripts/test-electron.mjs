@@ -5,13 +5,12 @@ import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
+import os from 'node:os';
 
-import { discoverTestFiles, isIsolatedUiTestSource } from './test-runner-utils.mjs';
+import { bunTestArgs, bunTestWorkers, discoverTestFiles } from './test-runner-utils.mjs';
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const electronRoot = path.join(repositoryRoot, 'packages/electron');
-const require = createRequire(import.meta.url);
 
 export function discoverElectronTestFiles(root = electronRoot) {
   return discoverTestFiles(root, root, {
@@ -21,47 +20,43 @@ export function discoverElectronTestFiles(root = electronRoot) {
 }
 
 export function planElectronTests(root = electronRoot, environment = process.env) {
-  const node = [], bun = [], isolatedBun = [], vitest = [], optional = [];
+  const node = [], bun = [], optional = [];
   for (const file of discoverElectronTestFiles(root)) {
-    if (file === 'tests/bot-catalog.docker.test.mjs' && environment.DEVRYAN_RUN_BOT_DB_DOCKER_TESTS !== '1') {
+    if (file === 'tests/desktop-update-install-native.test.mjs' && environment.DEVRYAN_RUN_DMG_INSTALLER_NATIVE_TESTS !== '1') {
       optional.push(file);
       continue;
     }
     const source = readFileSync(path.join(root, file), 'utf8');
     if (/\bfrom\s*['"]node:test['"]/.test(source)) node.push(file);
-    else if (/\bfrom\s*['"]vitest['"]/.test(source)) vitest.push(file);
-    else if (/\bfrom\s*['"]bun:test['"]/.test(source)) {
-      (isIsolatedUiTestSource(source) ? isolatedBun : bun).push(file);
-    } else throw new Error(`No supported test framework declared in ${file}`);
+    else if (/\bfrom\s*['"]bun:test['"]/.test(source)) bun.push(file);
+    else throw new Error(`No supported test framework declared in ${file} (use node:test or bun:test)`);
   }
-  return { node, bun, isolatedBun, vitest, optional };
+  return { node, bun, optional };
 }
 
 export function runElectronTests(root = electronRoot) {
   const plan = planElectronTests(root);
-  if (plan.optional.length > 0) {
-    console.log('Docker acceptance is a separate opt-in gate (DEVRYAN_RUN_BOT_DB_DOCKER_TESTS=1).');
+  if (plan.optional.includes('tests/desktop-update-install-native.test.mjs')) {
+    console.log('Native DMG installer acceptance is a separate opt-in gate (DEVRYAN_RUN_DMG_INSTALLER_NATIVE_TESTS=1; macOS required).');
   }
-  const vitestEntry = plan.vitest.length
-    ? path.join(path.dirname(require.resolve('vitest/package.json', { paths: [root, electronRoot] })), 'vitest.mjs')
-    : null;
+  // Node-hosted main-process code runs on node:test; Bun files run isolated per file.
   const commands = [
-    ...(plan.node.length ? [[process.execPath, ['--test', '--test-concurrency=1', ...plan.node]]] : []),
-    ...plan.isolatedBun.map((file) => ['bun', ['test', file]]),
-    ...(plan.bun.length ? [['bun', ['test', ...plan.bun]]] : []),
-    ...(vitestEntry ? [[process.execPath, [vitestEntry, 'run', '--no-file-parallelism', '--maxWorkers=1', ...plan.vitest]]] : []),
+    ...(plan.node.length ? [[process.execPath, ['--test', `--test-concurrency=${Math.min(bunTestWorkers(), os.availableParallelism())}`, ...plan.node]]] : []),
+    ...(plan.bun.length ? [['bun', bunTestArgs(plan.bun.map((file) => `./${file}`))]] : []),
   ];
   if (commands.length === 0) {
     console.log('No Electron test files matched.');
     return 0;
   }
 
+  // Every tier runs; the result fails if any tier failed.
+  let status = 0;
   for (const [command, args] of commands) {
     console.log(`\n$ ${command} ${args.join(' ')}`);
     const result = spawnSync(command, args, { cwd: root, stdio: 'inherit', env: process.env });
-    if (result.status !== 0) return result.status ?? 1;
+    if (result.status !== 0) status = result.status ?? 1;
   }
-  return 0;
+  return status;
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {

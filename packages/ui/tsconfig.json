@@ -15,10 +15,9 @@
     "noEmit": true,
     "incremental": true,
     "tsBuildInfoFile": "../../.cache/typecheck/ui.tsbuildinfo",
-    "baseUrl": "./src",
     "paths": {
-      "@/*": ["./*"],
-      "@openchamber/ui/*": ["./*"]
+      "@/*": ["./src/*"],
+      "@devryan/ui/*": ["./src/*"]
     }
   },
   "include": ["src"]

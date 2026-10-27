@@ -1,3 +1,8 @@
+import { randomUUID } from 'node:crypto';
+
+export const SESSION_PRESENTATION_MAX_SESSIONS = 10000;
+export const SESSION_PRESENTATION_MAX_OWNERS = 4096;
+
 const SESSION_COOLDOWN_DURATION_MS = 2000;
 const SESSION_STATE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const SESSION_ATTENTION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -53,6 +58,81 @@ const deriveSessionActivityTransitions = (payload) => {
 };
 
 export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, broadcastEvent }) => {
+  const presentationEpoch = randomUUID();
+  let presentationRevision = 0;
+  const presentations = new Map();
+  // A global producer watermark fences delayed captured callbacks across sessions.
+  // null permanently retires an owner for this server epoch; capacity fails closed.
+  const presentationOwners = new Map();
+  const validPresentationID = value => typeof value === 'string' && /^[A-Za-z0-9_.:/-]{1,256}$/.test(value);
+  const presentationFields = sessionID => {
+    const current = presentations.get(sessionID);
+    return current ? { presentationEpoch, presentationRevision: current.revision, presentation: current.value } : {};
+  };
+  const broadcastPresentation = sessionID => {
+    const activity = sessionActivityPhases.get(sessionID);
+    if (activity && typeof broadcastEvent === 'function') {
+      try { broadcastEvent({ type: 'devryan:session-activity',
+        properties: { sessionId: sessionID, sessionID, phase: activity.phase, ...presentationFields(sessionID) } }); }
+      catch { /* Optional display observers cannot veto status or durable work. */ }
+    }
+  };
+  const clearPresentation = sessionID => {
+    const current = presentations.get(sessionID);
+    if (!current?.value) return false;
+    presentations.set(sessionID, { ...current, value: null, revision: ++presentationRevision, blockedGeneration: current.value.generation, updatedAt: Date.now() });
+    broadcastPresentation(sessionID); return true;
+  };
+  // A Stop response may arrive after another objective starts. Capture only
+  // the existing display identity, never an authority or a future generation.
+  const captureSessionPresentationClear = sessionID => {
+    const captured = presentations.get(sessionID), value = captured?.value;
+    if (!value) return () => false;
+    return () => {
+      const current = presentations.get(sessionID);
+      if (current?.ownerID !== captured.ownerID || !current.value
+        || ['provider', 'generation', 'objectiveID', 'assistantID', 'stepID', 'attemptID'].some(key => current.value[key] !== value[key])) return false;
+      return clearPresentation(sessionID);
+    };
+  };
+  // Constructor-only observation input. These fields never set session status,
+  // renew execution authority, or report completion of the owning objective.
+  const updateSessionPresentation = input => {
+    if (!input || !['native', 'cursor'].includes(input.provider) || !['finalizing', 'cleared'].includes(input.phase)
+      || !['ownerID', 'sessionID', 'generation', 'objectiveID', 'assistantID'].every(key => validPresentationID(input[key]))
+      || !Number.isSafeInteger(input.sequence) || input.sequence < 0 || !Number.isSafeInteger(input.progress) || input.progress < 0
+      || (input.provider === 'native' ? !validPresentationID(input.stepID) || !validPresentationID(input.attemptID)
+        : [input.stepID, input.attemptID].some(value => value !== null && !validPresentationID(value)))
+      || presentationOwners.has(input.ownerID) && presentationOwners.get(input.ownerID) === null) return false;
+    const current = presentations.get(input.sessionID);
+    if (input.phase === 'cleared' && !current) return false;
+    if (input.phase === 'finalizing' && sessionActivityPhases.get(input.sessionID)?.phase !== 'busy') return false;
+    if (!presentationOwners.has(input.ownerID) && presentationOwners.size >= SESSION_PRESENTATION_MAX_OWNERS
+      || !current && presentations.size >= SESSION_PRESENTATION_MAX_SESSIONS) return false;
+    if (input.sequence <= (presentationOwners.get(input.ownerID) ?? -1)) return false;
+    presentationOwners.set(input.ownerID, input.sequence);
+    if (input.phase === 'cleared') {
+      if (current?.ownerID !== input.ownerID || current.generation !== input.generation) return false;
+      // The ordered producer's terminal acknowledgment makes older captured
+      // callbacks unreachable through its global sequence watermark.
+      current.closed = true; current.updatedAt = Date.now();
+      return clearPresentation(input.sessionID);
+    }
+    if (sessionActivityPhases.get(input.sessionID)?.phase !== 'busy' || current?.blockedGeneration === input.generation) return false;
+    const value = { provider: input.provider, phase: 'finalizing', generation: input.generation, objectiveID: input.objectiveID,
+      assistantID: input.assistantID, stepID: input.stepID, attemptID: input.attemptID, progress: input.progress };
+    if (current?.value?.generation === input.generation) {
+      if (current.ownerID !== input.ownerID || ['provider', 'objectiveID', 'assistantID', 'stepID', 'attemptID'].some(key => current.value[key] !== value[key])
+        || input.progress <= current.value.progress) return false;
+    }
+    presentations.set(input.sessionID, { ownerID: input.ownerID, generation: input.generation, value: Object.freeze(value), revision: ++presentationRevision, closed: false, updatedAt: Date.now() });
+    broadcastPresentation(input.sessionID); return true;
+  };
+  const clearSessionPresentationOwner = ownerID => {
+    if (!validPresentationID(ownerID)) return;
+    if (presentationOwners.has(ownerID) || presentationOwners.size < SESSION_PRESENTATION_MAX_OWNERS) presentationOwners.set(ownerID, null);
+    for (const [sessionID, current] of presentations) if (current.ownerID === ownerID) { clearPresentation(sessionID); presentations.get(sessionID).closed = true; }
+  };
   const sessionActivityPhases = new Map();
   const sessionActivityCooldowns = new Map();
   const sessionStates = new Map();
@@ -106,11 +186,12 @@ export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, br
 
     if (typeof broadcastEvent === 'function') {
       broadcastEvent({
-        type: 'openchamber:session-activity',
+        type: 'devryan:session-activity',
         properties: {
           sessionId,
           sessionID: sessionId,
           phase,
+          ...presentationFields(sessionId),
         },
       });
     }
@@ -136,6 +217,7 @@ export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, br
   const updateSessionState = (sessionId, status, eventId, metadata = {}) => {
     if (!sessionId || typeof sessionId !== 'string') return;
 
+    if (status !== 'busy') clearPresentation(sessionId);
     const now = Date.now();
     const existing = sessionStates.get(sessionId);
     const existingAttentionState = sessionAttentionStates.get(sessionId);
@@ -157,7 +239,7 @@ export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, br
     if (!existing || existing.status !== status || attentionChanged) {
       const state = sessionStates.get(sessionId);
       const syntheticPayload = {
-        type: 'openchamber:session-status',
+        type: 'devryan:session-status',
         properties: {
           sessionId,
           sessionID: sessionId,
@@ -216,7 +298,7 @@ export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, br
       state.needsAttention = false;
 
       const syntheticPayload = {
-        type: 'openchamber:session-status',
+        type: 'devryan:session-status',
         properties: {
           sessionId,
           sessionID: sessionId,
@@ -248,6 +330,7 @@ export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, br
   };
 
   const markUserMessageSent = (sessionId) => {
+    clearPresentation(sessionId);
     const state = getOrCreateAttentionState(sessionId);
     if (!state) return;
     state.lastUserMessageAt = Date.now();
@@ -285,12 +368,13 @@ export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, br
   const getSessionActivitySnapshot = () => {
     const result = {};
     for (const [sessionId, data] of sessionActivityPhases) {
-      result[sessionId] = { type: data.phase };
+      result[sessionId] = { type: data.phase, ...presentationFields(sessionId) };
     }
     return result;
   };
 
   const resetAllSessionActivityToIdle = () => {
+    for (const sessionID of presentations.keys()) clearPresentation(sessionID);
     for (const timer of sessionActivityCooldowns.values()) {
       clearTimeout(timer);
     }
@@ -308,6 +392,7 @@ export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, br
       clearTimeout(cooldown);
       sessionActivityCooldowns.delete(sessionId);
     }
+    clearPresentation(sessionId);
     const removed = sessionActivityPhases.delete(sessionId);
     sessionStates.delete(sessionId);
     sessionAttentionStates.delete(sessionId);
@@ -327,6 +412,9 @@ export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, br
 
   const cleanupOldSessionStates = () => {
     const now = Date.now();
+    for (const [sessionID, current] of presentations) {
+      if (!current.value && current.closed && now - current.updatedAt > SESSION_STATE_MAX_AGE_MS) presentations.delete(sessionID);
+    }
     for (const [sessionId, data] of sessionStates) {
       if (now - data.lastUpdateAt > SESSION_STATE_MAX_AGE_MS) {
         sessionStates.delete(sessionId);
@@ -342,6 +430,10 @@ export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, br
   const cleanupInterval = setInterval(cleanupOldSessionStates, SESSION_STATE_CLEANUP_INTERVAL_MS);
 
   const processOpenCodeSsePayload = (payload) => {
+    const sessionID = payload?.properties?.sessionID ?? payload?.properties?.info?.sessionID;
+    if (['session.error', 'session.deleted', 'session.execution.interrupted'].includes(payload?.type)) clearPresentation(sessionID);
+    if (payload?.type === 'message.updated' && payload.properties?.info?.role === 'user'
+      && payload.properties.info.id !== presentations.get(sessionID)?.value?.objectiveID) clearPresentation(sessionID);
     const transitions = deriveSessionActivityTransitions(payload);
     for (const activity of transitions) {
       setSessionActivityPhase(activity.sessionId, activity.phase);
@@ -369,6 +461,10 @@ export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, br
 
   return {
     processOpenCodeSsePayload,
+    updateSessionPresentation,
+    clearSessionPresentation: clearPresentation,
+    captureSessionPresentationClear,
+    clearSessionPresentationOwner,
     getSessionActivitySnapshot,
     getSessionStateSnapshot,
     getSessionAttentionSnapshot,

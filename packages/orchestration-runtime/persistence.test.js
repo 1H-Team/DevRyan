@@ -311,6 +311,47 @@ describe('managed orchestration ledger compaction', () => {
     expect(result.overLimit).toBe(true);
   });
 
+  test('collecting a result cannot erase live-objective checks under age, count, byte or lineage pressure', () => {
+    const checks = [{ name: 'unit', command: 'bun test source.test.js', paths: ['source.js'] }];
+    const collected = terminal(1, { dispatchGroupId: 'msg_parent', requiredChecks: checks });
+    const running = task(2, { status: 'running', createdAt: 90, startedAt: 90 });
+    const disposed = terminal(3, { dispatchGroupId: 'msg_old', requiredChecks: checks });
+    for (const receipts of [[], [{ name: 'unit', callId: 'call_1', messageId: 'msg_1', exitCode: 0, observedAt: 1,
+      status: 'passed', contentHash: 'a'.repeat(64) }]]) {
+      const input = state([{ ...collected, requiredCheckReceipts: receipts }, running, disposed], {
+        [collected.taskId]: { ...acknowledged(), action: 'collect' }, [disposed.taskId]: acknowledged(),
+      });
+      const result = compactManagedOrchestrationState(input, { ...tightCaps, maxBytes: 1 });
+      expect(result.removedTaskIds).toEqual([disposed.taskId]);
+      expect(result.state.tasks.map(row => row.taskId)).toEqual([collected.taskId, running.taskId]);
+      expect(result.state.resultEnvelopes[0].action).toBe('collect');
+      expect(result.overLimit).toBe(true);
+    }
+    const chain = Array.from({ length: MAX_RETAINED_LINEAGE_RECORDS + 2 }, (_, index) => terminal(index + 10, {
+      dispatchGroupId: 'msg_parent', requiredChecks: checks, recoveryLineageId: 'dvr_lineage_checks',
+      priorTaskId: index ? `dvr_task_${index + 9}` : null,
+    }));
+    const collectedChain = state(chain, Object.fromEntries(chain.map(row => [row.taskId, { ...acknowledged(), action: 'collect' }])));
+    expect(compactManagedOrchestrationState(collectedChain, { ...tightCaps, maxAgeMs: Infinity }).removedTaskIds).toEqual([]);
+  });
+
+  test('retains disposed producer evidence while a dependent is queued', () => {
+    const producer = terminal(1, { requiredChecks: [{ name: 'interface', command: 'bun test', paths: ['api.js'] }] });
+    const dependent = task(2, { status: 'queued', taskPrerequisites: [{ taskId: producer.taskId, checkName: 'interface', paths: ['api.js'], contentHash: 'a'.repeat(64) }] });
+    const input = state([producer, dependent], { [producer.taskId]: acknowledged() });
+    const result = compactManagedOrchestrationState(input, { ...tightCaps, maxBytes: 1 });
+    expect(result.state.tasks.map(row => row.taskId)).toEqual([producer.taskId, dependent.taskId]);
+    expect(result.overLimit).toBe(true);
+  });
+
+  test('collected checks expire only with an idle conversation; collection without declarations retains ordinary bounds', () => {
+    const collected = terminal(1, { dispatchGroupId: 'msg_parent', requiredChecks: [{ name: 'unit', command: 'bun test', paths: ['source.js'] }] });
+    const empty = terminal(2, { dispatchGroupId: 'msg_parent' });
+    const input = state([collected, empty], Object.fromEntries([collected, empty].map(row => [row.taskId, { ...acknowledged(), action: 'collect' }])));
+    expect(compactManagedOrchestrationState(input, tightCaps).removedTaskIds).toEqual([collected.taskId, empty.taskId]);
+    expect(compactManagedOrchestrationState(input, { ...tightCaps, maxAgeMs: Infinity }).removedTaskIds).toEqual([empty.taskId]);
+  });
+
   test('ages out old unreferenced terminal history before the count limit is reached', () => {
     const day = 24 * 60 * 60 * 1_000;
     const old = terminal(1, { finishedAt: day });

@@ -1,46 +1,54 @@
+import { createHash } from 'node:crypto';
+import { scopedApprovedPlanContent, validateApprovedPlanRef, verifyApprovedPlanRef } from '@devryan/orchestration-runtime/approved-plan.js';
+import { assertManagedToolOutputSize } from '@devryan/orchestration-runtime/tool-output-limits.js';
 import path from 'node:path';
+import { validateCanonicalPlanSource } from '../plans/canonical-source.js';
 import fs from 'node:fs/promises';
-import { createTaskContextRuntime, planReference } from '@openchamber/harness-runtime';
-import { currentObjectiveUser } from '@openchamber/harness-runtime/lib/objective-identity.js';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { createTaskContextRuntime, planReference } from '@devryan/harness-runtime';
+import { currentObjectiveUser, isNativeCompactionRecord } from '@devryan/harness-runtime/lib/objective-identity.js';
 import { planError, readPlanRevision, writePlanRevision } from '../plans/revisions.js';
 import { resolveSelectedPlanRevision, assertGlobalPlanProjectScope } from '../plans/selected-revision.js';
 import { fingerprintCheckContent } from '../orchestration/required-check-observer.js';
+import { resolveGen2OpenCodeClient } from './opencode-client-seam.js';
 
 const identifier = (value) => typeof value === 'string' && /^[a-zA-Z0-9_-]{1,256}$/.test(value);
+const PLAN_ACTION_PREFIXES = ['[devryan-plan-action:v1] ', '[openchamber-plan-action:v1] '];
+// The saved plan version an Implement marker recorded, when well formed.
+const planMarkerVersion = (record) => {
+  const parts = Array.isArray(record?.parts) ? record.parts : [];
+  const marker = parts.find(part => part.type === 'text' && PLAN_ACTION_PREFIXES.some(prefix => part.text?.startsWith(prefix)));
+  if (!marker) return undefined;
+  let version;
+  try { version = JSON.parse(marker.text.slice(PLAN_ACTION_PREFIXES.find(prefix => marker.text.startsWith(prefix)).length)).version; }
+  catch { /* A malformed marker records no version. */ }
+  return typeof version === 'string' && /^[a-f0-9]{64}$/.test(version) ? version : undefined;
+};
 const fault = (code) => Object.assign(new Error(code), { code, statusCode: 503 });
-const managedToolMethods = new Set(['submit', 'status', 'wait', 'wait_any', 'wait_result_action', 'cancel', 'read_result', 'acknowledge', 'set_auto_resume']);
+const managedToolMethods = new Set(['submit', 'status', 'wait', 'wait_any', 'wait_result_action', 'cancel', 'read_result', 'acknowledge', 'set_auto_resume', 'correct_check']);
 
 export const createHarnessTaskContextHost = (options) => {
-  const request = async (pathname, directory) => {
-    const url = new URL(options.buildOpenCodeUrl(pathname));
-    url.searchParams.set('directory', directory);
-    const response = await (options.fetchImpl ?? fetch)(url, { headers: options.getOpenCodeAuthHeaders?.() ?? {}, signal: AbortSignal.timeout(5000) });
-    if (!response.ok || !response.body) throw fault('context_canonical_source_unavailable');
-    const reader = response.body.getReader();
-    const chunks = []; let bytes = 0;
-    try {
-      for (;;) {
-        const { done, value } = await reader.read(); if (done) break;
-        bytes += value.byteLength;
-        if (bytes > 8 * 1024 * 1024) throw fault('context_canonical_source_too_large');
-        chunks.push(value);
-      }
-      return { data: JSON.parse(Buffer.concat(chunks).toString('utf8')), next: response.headers.get('x-next-cursor') };
-    } finally { await reader.cancel().catch(() => {}); }
+  const nativeWrites = new AsyncLocalStorage();
+  const canonical = async (read) => {
+    let client;
+    try { client = resolveGen2OpenCodeClient(options.openCodeClient); } catch { throw fault('context_canonical_source_unavailable'); }
+    try { return await read(client); } catch { throw fault('context_canonical_source_unavailable'); }
   };
   const readMessage = async ({ sessionID, directory, messageID }) => {
     if (!identifier(sessionID) || !identifier(messageID)) throw fault('context_invalid_identity');
-    const { data } = await request(`/session/${sessionID}/message/${messageID}`, directory);
+    const data = await canonical((client) => client.sessions.message(sessionID, messageID, { directory, timeoutMs: 5000, maxResponseBytes: 8 * 1024 * 1024 }));
     if (data?.info?.id !== messageID || data.info.sessionID !== sessionID || !Array.isArray(data.parts)) throw fault('context_message_scope_mismatch');
     return data;
   };
-  const readSession = async (sessionID, directory) => (await request(`/session/${sessionID}`, directory)).data;
-  const readProject = async (directory) => (await request('/project/current', directory)).data;
-  const readCanonicalPlanIdentity = async ({ sessionID, sourceMessageID, directory }) => {
+  const readSession = async (sessionID, directory) => canonical((client) => client.sessions.get(sessionID, { directory, timeoutMs: 5000, maxResponseBytes: 8 * 1024 * 1024 }));
+  const readProject = async (directory) => canonical((client) => client.catalog.project({ directory }, { timeoutMs: 5000 }));
+  const readTodos = async (sessionID, directory) => canonical((client) => client.sessions.todo(sessionID, { directory, timeoutMs: 5000, maxResponseBytes: 8 * 1024 * 1024 }));
+  const readCanonicalPlanIdentity = async ({ sessionID, sourceMessageID, directory, allowSelected = false }) => {
     if (!identifier(sessionID) || !identifier(sourceMessageID) || typeof directory !== 'string' || !path.isAbsolute(directory)) {
       throw planError(400, 'plan_identity_invalid');
     }
     const session = await readSession(sessionID, directory);
+    if (session?.revert) throw planError(409, 'plan_source_stale');
     if (session?.id !== sessionID || session.time?.archived || !Number.isSafeInteger(session.time?.created)
       || session.time.created <= 0 || typeof session.slug !== 'string'
       || typeof session.projectID !== 'string' || !session.projectID
@@ -58,9 +66,49 @@ export const createHarnessTaskContextHost = (options) => {
       if (!(await Promise.all(allowed.map(canonical))).includes(target)) throw planError(403, 'plan_project_mismatch');
     }
     await assertGlobalPlanProjectScope(project.id, directory, [session.directory]);
-    return { sessionCreated: session.time.created, sessionSlug: session.slug };
+    const records = [], cursors = new Set(); let before, totalBytes = 0, nativeSequence = [];
+    if (typeof options.readCanonicalPlanSequence === 'function') {
+      // The requested directory may be the project root of a worktree session;
+      // the native sequence is read where the session lives.
+      const sequence = await options.readCanonicalPlanSequence({sessionID,directory:session.directory});
+      if (!Array.isArray(sequence?.records)||sequence.records.length>2000||!Array.isArray(sequence.nativeSequence)
+        ||sequence.nativeSequence.length>2000||Buffer.byteLength(JSON.stringify(sequence))>16*1024*1024)throw planError(503,'plan_source_unavailable');
+      records.push(...sequence.records);nativeSequence=sequence.nativeSequence;
+    } else do {
+      const page = await canonical(client => client.sessions.messages(sessionID, { limit: 200, ...(before ? { before } : {}) },
+        { directory, timeoutMs: 5000, maxResponseBytes: 8 * 1024 * 1024 }));
+      if (!Array.isArray(page?.records) || page.records.length > 200) throw planError(503, 'plan_source_unavailable');
+      totalBytes += Buffer.byteLength(JSON.stringify(page.records));
+      if (records.length + page.records.length > 2000 || totalBytes > 8 * 1024 * 1024) throw planError(503, 'plan_source_unavailable');
+      records.unshift(...page.records); before = page.cursor;
+      if (before !== undefined && before !== null) {
+        if (typeof before !== 'string' || !before || before.length > 8192 || cursors.has(before)) throw planError(503, 'plan_source_unavailable');
+        cursors.add(before);
+      }
+    } while (before);
+    const sourceIndex = records.findIndex(row => row.info.id === sourceMessageID);
+    const nativeSourceIndex=nativeSequence.findIndex(row=>row.id===sourceMessageID);
+    const nativeRoot=nativeSequence.slice(0,nativeSourceIndex).findLast(row=>row.type==='user');
+    const root = nativeRoot ? records.find(row=>row.info.id===nativeRoot.id)
+      : records.slice(0, sourceIndex).findLast(row => row.info.role === 'user' && row.parts.some(part => part.synthetic !== true));
+    const objectiveID = root?.info.id ?? message.info.parentID;
+    const receipts = await options.nativeStreamContinuationReceipts?.(sessionID, objectiveID) ?? [];
+    const primary = await options.readPrimaryRecord(sessionID);
+    const ownedObjectiveID = primary?.objectiveID ?? primary?.anchorID;
+    if (identifier(ownedObjectiveID) && ownedObjectiveID !== objectiveID) {
+      const owned = await options.nativeStreamContinuationReceipts?.(sessionID, ownedObjectiveID) ?? [];
+      for (const receipt of owned) if (!receipts.some(existing => existing.eventID === receipt.eventID)) receipts.push(receipt);
+    }
+    const validated = validateCanonicalPlanSource({ sessionID, sourceMessageID, records, receipts, nativeSequence, allowSelected });
+    if (validated.sourceIdentity.current) {
+      if (typeof options.verifyPlanSourceSettled !== 'function') throw planError(503, 'plan_source_settlement_unavailable');
+      await options.verifyPlanSourceSettled({ sessionID, directory: session.directory, sourceIdentity: validated.sourceIdentity, providerID: message.info.providerID });
+    }
+    // Compaction after the source replaces its text in the model's context.
+    const compactedSinceSource = sourceIndex < 0 || records.slice(sourceIndex + 1).some(isNativeCompactionRecord);
+    return { sessionCreated: session.time.created, sessionSlug: session.slug, ...validated, compactedSinceSource };
   };
-  const resolvePlan = (plan, context) => resolveSelectedPlanRevision({ plan, context, readSession, readProject, options });
+  const resolvePlan = (plan, context) => resolveSelectedPlanRevision({ plan, context, readSession, readProject, options: { ...options, readCanonicalPlanIdentity } });
   // Read the current saved outline; Plan View and root-agent updates share it.
   const readPlanOutline = async ({ plan, context }) => {
     const { revision } = await resolvePlan(plan, context);
@@ -96,6 +144,117 @@ export const createHarnessTaskContextHost = (options) => {
         { code: 'managed_orchestrator_authority_required', statusCode: 403 });
     }
   };
+  const readNativePlanPolicy = async (input, readNativeUserMessage) => {
+    const context = await readScope(input);
+    if (context.session.parentID) {
+      let root = context.session, seen = new Set();
+      while (root.parentID) {
+        if (seen.has(root.id) || seen.size > 256) throw fault('native_plan_policy_unavailable');
+        const parentID=root.parentID;
+        seen.add(root.id); root = await readSession(parentID,input.directory);
+        if (root?.id!==parentID || root.directory!==input.directory || root.projectID!==context.session.projectID) throw fault('context_project_scope_mismatch');
+      }
+      const state = await options.getManagedRuntime().handleRpc({ method: 'context_state', params: { rootSessionId: root.id, directory: input.directory } });
+      if (!Array.isArray(state?.tasks)) throw fault('native_plan_policy_unavailable');
+      const task = state.tasks.find(task => task.childSessionId === input.sessionID);
+      // A verified child without retained assignment proof may inspect only.
+      if (!task) return {readOnly:true};
+      if (typeof task.readOnly !== 'boolean') throw fault('native_plan_policy_unavailable');
+      const rootPolicy = await readNativePlanPolicy({ ...input, sessionID: root.id, directory: root.directory }, readNativeUserMessage);
+      return { readOnly: task.readOnly || rootPolicy.readOnly };
+    }
+    const primary = await options.readPrimaryRecord(input.sessionID);
+    if (primary?.sessionID !== input.sessionID || primary.directory !== input.directory) throw fault('native_plan_policy_unavailable');
+    const objectiveID = primary.objectiveID ?? primary.anchorID;
+    if (!identifier(objectiveID) || typeof readNativeUserMessage !== 'function') throw fault('native_plan_policy_unavailable');
+    const raw = await readNativeUserMessage({ ...input, messageID: objectiveID });
+    if (raw?.id !== objectiveID || raw.sessionID !== input.sessionID || raw.type !== 'user') throw fault('native_plan_policy_unavailable');
+    const anchor = await readMessage({ ...input, messageID: objectiveID });
+    const legacyRestriction = anchor.parts.some(part => part.type === 'text' && part.synthetic === true
+      && part.text?.startsWith('User has requested to enter plan mode'));
+    return { objectiveID, readOnly: primary.agent === 'plan' || raw.metadata?.devryan?.agent === 'plan'
+      || raw.metadata?.devryan?.planMode === true || raw.metadata?.devryanPlanMode === true || raw.metadata?.openchamberPlanMode === true || legacyRestriction };
+  };
+  const authorizeNativeTaskInvocation = async (input) => {
+    if (!identifier(input?.messageID) || !identifier(input?.callID)) {
+      throw fault('native_task_identity_required');
+    }
+    const tool = input.tool ?? 'devryan_task';
+    if (!['devryan_task', 'council_session'].includes(tool)) throw fault('native_task_identity_required');
+    await authorizePrivateRpc({ method: 'submit', params: { rootSessionId: input.sessionID, directory: input.directory } });
+    const primary = await options.readPrimaryRecord(input.sessionID);
+    const objectiveID = primary?.objectiveID ?? primary?.anchorID;
+    const [assistant, anchor] = await Promise.all([readMessage(input), readMessage({ ...input, messageID: objectiveID })]);
+    if (primary?.stepID !== input.messageID || assistant.info.role !== 'assistant' || assistant.info.time?.completed
+      || assistant.turnOwnership?.source !== 'native-sequence' || assistant.turnOwnership.userMessageID !== currentObjectiveUser(primary)
+      || assistant.info.parentID !== currentObjectiveUser(primary) || anchor.info.role !== 'user'
+      || !assistant.parts.some(part => part.type === 'tool' && part.tool === tool && part.callID === input.callID
+        && part.state?.status === 'running')) throw fault('native_task_call_stale');
+    if (typeof options.readOnlyInvocation !== 'function') throw fault('native_plan_policy_unavailable');
+    const capturedReadOnly = await options.readOnlyInvocation(input);
+    if (typeof capturedReadOnly !== 'boolean') throw fault('native_plan_policy_unavailable');
+    return { objectiveID, readOnly: capturedReadOnly || anchor.info.metadata?.devryanPlanMode === true || anchor.info.metadata?.openchamberPlanMode === true
+      || anchor.parts.some(part => part.type === 'text' && part.synthetic === true && part.text?.startsWith('User has requested to enter plan mode')) };
+  };
+  const authorizeNativeCheckCorrectionTask = async (input, task) => {
+    const policy = await authorizeNativeTaskInvocation(input);
+    if (task.rootSessionId !== input.sessionID || task.directory !== input.directory) throw fault('task_scope_mismatch');
+    if (task.dispatchObjectiveId != null) {
+      if (task.dispatchObjectiveId !== policy.objectiveID) throw fault('task_scope_mismatch');
+      return;
+    }
+    if (task.dispatchGroupId === policy.objectiveID) return;
+    const [group, primary] = await Promise.all([readMessage({ ...input, messageID: task.dispatchGroupId }), options.readPrimaryRecord(input.sessionID)]);
+    if (group.info?.id !== task.dispatchGroupId || group.info.sessionID !== input.sessionID || group.info.role !== 'assistant'
+      || group.turnOwnership?.source !== 'native-sequence' || group.turnOwnership.userMessageID !== group.info.parentID
+      || ![policy.objectiveID, currentObjectiveUser(primary)].includes(group.info.parentID)) throw fault('task_scope_mismatch');
+  };
+  const authorizeNativeTodoInvocation = async (input) => {
+    if (!identifier(input?.messageID) || !identifier(input?.callID)
+      || !['todoread','todowrite'].includes(input.tool)) throw fault('native_todo_identity_required');
+    const context=await readScope(input),primary=await options.readPrimaryRecord(input.sessionID);
+    if(context.session.parentID||context.session.time?.archived||primary?.sessionID!==input.sessionID||primary.directory!==input.directory
+      ||!['build','builder','orchestrator'].includes(primary.agent?.toLowerCase())
+      ||['stopping','reconciling','recovery_reserved','recovering','superseded','cancelled','needs_attention'].includes(primary.state)
+      ||primary.recoveryID||primary.guardedIDs?.includes(currentObjectiveUser(primary)))throw fault('native_todo_root_authority_required');
+    const assistant=await readMessage(input);
+    if(primary.stepID!==input.messageID||assistant.info.role!=='assistant'||assistant.info.time?.completed
+      ||assistant.turnOwnership?.source!=='native-sequence'||assistant.turnOwnership.userMessageID!==currentObjectiveUser(primary)
+      ||assistant.info.parentID!==currentObjectiveUser(primary)||!assistant.parts.some(part=>part.type==='tool'&&part.tool===input.tool
+        &&part.callID===input.callID&&part.state?.status==='running'))throw fault('native_todo_call_stale');
+  };
+  const authorizeNativeObjectiveCheckInvocation = async input => {
+    if (!identifier(input?.messageID) || !identifier(input?.callID) || input.tool !== 'devryan_task'
+      || !['declare_checks', 'correct_objective_check'].includes(input.input?.action)) throw fault('native_task_identity_required');
+    const context = await readScope(input), primary = await options.readPrimaryRecord(input.sessionID);
+    if (context.session.parentID || context.session.time?.archived || primary?.sessionID !== input.sessionID || primary.directory !== input.directory
+      || !['build', 'builder', 'orchestrator'].includes(primary.agent?.toLowerCase())
+      || ['stopping', 'reconciling', 'recovery_reserved', 'recovering', 'superseded', 'cancelled', 'needs_attention'].includes(primary.state)
+      || primary.recoveryID || primary.guardedIDs?.includes(currentObjectiveUser(primary))) throw fault('native_task_root_authority_required');
+    const objectiveID = primary.objectiveID ?? primary.anchorID;
+    if (!identifier(objectiveID)) throw fault('context_objective_owner_unavailable');
+    const assistant = await readMessage(input);
+    if (primary.stepID !== input.messageID || assistant.info.role !== 'assistant' || assistant.info.time?.completed
+      || assistant.turnOwnership?.source !== 'native-sequence' || assistant.turnOwnership.userMessageID !== currentObjectiveUser(primary)
+      || assistant.info.parentID !== currentObjectiveUser(primary) || !assistant.parts.some(part => part.type === 'tool' && part.tool === 'devryan_task'
+        && part.callID === input.callID && part.state?.status === 'running' && part.state.input?.action === input.input.action)) throw fault('native_task_call_stale');
+    return { objectiveID };
+  };
+  const readAssignedPlan = async input => {
+    const context=await readScope(input);
+    const alias=input.tool==='devryan_plan_read';
+    if(!context.session.parentID){if(alias)throw planError(403,'plan_assignment_missing');return null;}
+    if(context.session.time?.archived||context.session.revert)throw planError(409,'plan_assignment_stale');
+    if(!alias&&(input.action??input.input?.action)!=='plan_read')throw planError(403,'plan_root_authority_required');
+    const assistant=await readMessage(input);
+    if(assistant.info.role!=='assistant'||assistant.info.time?.completed||assistant.turnOwnership?.source!=='native-sequence'
+      ||!assistant.parts.some(part=>part.type==='tool'&&part.tool===(alias?'devryan_plan_read':'devryan_task')&&part.callID===input.callID&&part.state?.status==='running'
+        &&(!alias||part.state.input&&typeof part.state.input==='object'&&!Array.isArray(part.state.input)&&Object.keys(part.state.input).length===0)))throw planError(409,'plan_call_stale');
+    const result=await options.getManagedRuntime().handleRpc({method:'child_plan',params:{childSessionId:input.sessionID,directory:input.directory}});
+    if(!result.approvedPlanRef||result.rootSessionId!==context.session.parentID||result.approvedPlanRef.rootSessionId!==context.session.parentID)throw planError(409,'plan_assignment_missing');
+    await verifyApprovedPlanRef(result.approvedPlanRef);
+    return result.approvedPlanRef;
+  };
   const readPlanAuthority = async (input) => {
     const context = await readScope(input), primary = await options.readPrimaryRecord(input.sessionID);
     if (context.session.parentID || context.session.time?.archived || primary?.sessionID !== input.sessionID
@@ -105,19 +264,33 @@ export const createHarnessTaskContextHost = (options) => {
       || primary.recoveryID || primary.guardedIDs?.includes(currentObjectiveUser(primary))) throw planError(403, 'plan_root_authority_required');
     const objectiveID = primary.objectiveID ?? primary.anchorID;
     const [anchor, assistant] = await Promise.all([readMessage({ ...input, messageID: objectiveID }), readMessage(input)]);
+    if ((assistant.turnOwnership?.source !== 'native-sequence'
+      || assistant.turnOwnership.userMessageID !== assistant.info.parentID)) throw planError(409, 'plan_call_stale');
     if (primary.stepID !== input.messageID || assistant.info.role !== 'assistant' || assistant.info.time?.completed
       || assistant.info.parentID !== currentObjectiveUser(primary) || !assistant.parts.some((part) => part.type === 'tool'
         && part.tool === 'devryan_task' && part.callID === input.callID && part.state?.status === 'running')) throw planError(409, 'plan_call_stale');
     const plan = planReference(anchor);
     if (!plan) throw planError(409, 'plan_selection_required', 'Select a saved plan with Implement before using plan tools');
-    return { primary, objectiveID, currentUser: currentObjectiveUser(primary), ...await resolvePlan(plan, context) };
+    return { primary, objectiveID, currentUser: currentObjectiveUser(primary), plan, markerVersion: planMarkerVersion(anchor), ...await resolvePlan(plan, context) };
   };
-  const handlePlanRpc = async (input) => {
+  const handlePlanRpc = async (input, recheck, { maxBytes } = {}) => {
+    const fit = value => {
+      try { return assertManagedToolOutputSize(value, maxBytes); }
+      catch (error) {
+        if (error.code === 'managed_tool_output_metadata_too_large') throw planError(413, 'plan_tool_output_too_large', 'The saved plan exceeds this tool response budget. Open Plan View to read it or shorten it there before using plan_read.');
+        throw error;
+      }
+    };
     try {
       if (!input || !['plan_read', 'plan_update'].includes(input.action) || !identifier(input.sessionID) || !identifier(input.messageID)
-        || !identifier(input.callID) || Object.keys(input).some((key) => !['action', 'sessionID', 'directory', 'messageID', 'callID', 'expectedVersion', 'text'].includes(key))) {
+        || !identifier(input.callID) || input.tool!==undefined&&!['devryan_task','devryan_plan_read'].includes(input.tool)
+        || input.tool==='devryan_plan_read'&&(input.action!=='plan_read'||input.text!==undefined||input.expectedVersion!==undefined)
+        || Object.keys(input).some((key) => !['action', 'sessionID', 'directory', 'messageID', 'callID', 'expectedVersion', 'text','tool'].includes(key))) {
         throw planError(400, 'plan_rpc_invalid');
       }
+      const assigned=await readAssignedPlan(input);
+      if(assigned){await recheck();if(JSON.stringify(await readAssignedPlan(input))!==JSON.stringify(assigned))throw planError(409,'plan_assignment_changed');
+        return fit({version:assigned.version,phase:assigned.phase,paths:assigned.paths,content:assigned.content,contentHash:assigned.contentHash,readOnly:true});}
       const selected = await readPlanAuthority(input), generation = selected.primary.cancellationGeneration;
       const authorize = async () => {
         const current = await readPlanAuthority(input);
@@ -125,15 +298,32 @@ export const createHarnessTaskContextHost = (options) => {
           || current.currentUser !== selected.currentUser || current.ownerKey !== selected.ownerKey || current.revision.path !== selected.revision.path) {
           throw planError(409, 'plan_authority_changed');
         }
+        await recheck?.();
       };
-      if (input.action === 'plan_read') return await readPlanRevision(selected.revision, { fsApi: options.fsApi });
+      if (input.action === 'plan_read') {
+        const result = await readPlanRevision(selected.revision, { fsApi: options.fsApi });
+        await authorize();
+        // The plan this session wrote is still in its context: the Implement
+        // marker, the saved file and the canonical source text share a version,
+        // and no compaction followed the source. Anything else gets full text.
+        if (selected.plan.sourceSessionId === input.sessionID && selected.markerVersion === result.version
+          && selected.sourceContentVersion === result.version && selected.compactedSinceSource === false) {
+          return fit({ unchanged: true, version: result.version, sourceMessageID: selected.sourceMessageID });
+        }
+        return fit({ ...result, sourceIdentity: selected.sourceIdentity });
+      }
+      fit({ path: selected.revision.path, saved: true, version: '0'.repeat(64), sourceIdentity: selected.sourceIdentity });
       const result = await writePlanRevision(selected.revision, { text: input.text, expectedVersion: input.expectedVersion, authorize, fsApi: options.fsApi });
-      options.recordDiagnostic?.({ type: 'lifecycle', event: 'session_plan_write', sessionID: input.sessionID,
-        messageID: input.messageID, payload: { outcome: 'saved', callID: input.callID, version: result.version } });
-      options.publishEvent?.({ type: 'session.plan.updated', properties: { sessionID: selected.source.id,
-        sourceMessageID: selected.sourceMessageID, directory: selected.projectDirectory,
-        sessionCreated: selected.source.time.created, sessionSlug: selected.source.slug, version: result.version } }, { directory: selected.projectDirectory });
-      return result;
+      // The rename committed. Observer failure must not turn a saved receipt
+      // into a refusal or invite a caller to repeat the mutation.
+      try {
+        options.recordDiagnostic?.({ type: 'lifecycle', event: 'session_plan_write', sessionID: input.sessionID,
+          messageID: input.messageID, payload: { outcome: 'saved', callID: input.callID, version: result.version } });
+        options.publishEvent?.({ type: 'session.plan.updated', properties: { sessionID: selected.source.id,
+          sourceMessageID: selected.sourceMessageID, directory: selected.projectDirectory,
+          sessionCreated: selected.source.time.created, sessionSlug: selected.source.slug, version: result.version } }, { directory: selected.projectDirectory });
+      } catch { /* Canonical saved receipt remains authoritative. */ }
+      return { ...result, sourceIdentity: selected.sourceIdentity };
     } catch (error) {
       options.recordDiagnostic?.({ type: 'lifecycle', event: 'session_plan_write', sessionID: identifier(input?.sessionID) ? input.sessionID : undefined,
         messageID: identifier(input?.messageID) ? input.messageID : undefined,
@@ -143,6 +333,7 @@ export const createHarnessTaskContextHost = (options) => {
   };
   const runtime = createTaskContextRuntime({ ...options,
     fingerprintFiles: fingerprintCheckContent, readMessage, readPlanOutline, readChildAssignment, readScope,
+    async authorizeWrite(input) { await options.authorizeWrite?.(input); await nativeWrites.getStore()?.(); },
     async readTaskState(context) {
       const sessionID = context.session.id, directory = context.session.directory;
       const primary = await options.readPrimaryRecord(sessionID);
@@ -151,24 +342,22 @@ export const createHarnessTaskContextHost = (options) => {
       if (!primary || primary.sessionID !== sessionID || primary.directory !== directory || !identifier(primary.anchorID)) throw fault('context_objective_owner_unavailable');
       // An explicit continuation keeps the objective it continued.
       const objectiveID = identifier(primary.objectiveID) ? primary.objectiveID : primary.anchorID;
-      const [anchor, { data: todos }, managed] = await Promise.all([
+      const [anchor, todos, managed] = await Promise.all([
         readMessage({ sessionID, directory, messageID: objectiveID }),
-        request(`/session/${sessionID}/todo`, directory),
-        options.getManagedRuntime().handleRpc({ method: 'context_state', params: { rootSessionId: sessionID, directory } }),
+        readTodos(sessionID, directory),
+        options.getManagedRuntime().handleRpc({ method: 'context_state', params: { rootSessionId: sessionID, directory, objectiveId: objectiveID } }),
       ]);
       if (!Array.isArray(todos)) throw fault('context_todos_unavailable');
-      return { anchor, primary, todos, tasks: managed.tasks, envelopes: managed.envelopes };
+      return { anchor, primary, todos, tasks: managed.tasks, envelopes: managed.envelopes, verification: managed.verification };
     },
   });
   const planOperations = new Set();
-  return { ...runtime, authorizePrivateRpc, readCanonicalPlanIdentity,
-    handlePlanRpc(input) {
-      const operation = handlePlanRpc(input); planOperations.add(operation);
-      void operation.finally(() => planOperations.delete(operation)).catch(() => {});
-      return operation;
-    },
-    async drain() { while (planOperations.size) await Promise.allSettled([...planOperations]); await runtime.drain(); },
-    async handleRpc(input) {
+  const trackPlan = (input, recheck, budget) => {
+    const operation = handlePlanRpc(input, recheck, budget); planOperations.add(operation);
+    void operation.finally(() => planOperations.delete(operation)).catch(() => {});
+    return operation;
+  };
+  const handleContextRpc = async (input) => {
     // Compaction re-anchoring is always on (host kill switch only); it never
     // writes records or exposes model-visible checkpoint tools.
     if (input.action === 'compaction_anchor') {
@@ -181,5 +370,64 @@ export const createHarnessTaskContextHost = (options) => {
     if (input.action === 'remember_decision') return { decision: await runtime.rememberDecision(input) };
     if (input.action === 'decisions') return { decisions: await runtime.decisions(input) };
     throw fault('context_action_invalid');
-  } };
+  };
+  const validatePlanImplementation = async (accepted) => {
+    const parts = accepted.intent?.parts ?? accepted.request?.parts;
+    if (!Array.isArray(parts)) return;
+    const record = { info: { role: 'user' }, parts };
+    const markerParts = parts.filter(part => part.type === 'text' && (part.text?.startsWith('[devryan-plan-action:v1] ') || part.text?.startsWith('[openchamber-plan-action:v1] ')));
+    if (!markerParts.length) return;
+    const observe = phase => { try { options.recordDiagnostic?.({ type: 'lifecycle', event: 'session_plan_implementation_validation',
+      sessionID: accepted.sessionID, messageID: accepted.messageID, payload: { phase } }); } catch { /* Read authorization never depends on an observer. */ } };
+    observe('started');
+    const plan = planReference(record);
+    if (!plan || plan.planIndex !== 0) throw planError(400, 'plan_selection_invalid');
+    const directory = accepted.directory ?? (await readSession(accepted.sessionID)).directory;
+    observe('session_read');
+    const context = await readScope({ sessionID: accepted.sessionID, directory });
+    observe('scope_read');
+    const selected = await resolvePlan(plan, context);
+    observe('selected_source_validated');
+    const version = planMarkerVersion(record);
+    if (version === undefined) throw planError(409, 'plan_saved_version_required');
+    const saved = await readPlanRevision(selected.revision, { fsApi: options.fsApi });
+    if (saved.version !== version) throw planError(409, 'plan_version_conflict');
+    observe('saved_version_validated');
+    await readCanonicalPlanIdentity({ sessionID: plan.sourceSessionId, sourceMessageID: plan.sourceMessageId,
+      directory: selected.projectDirectory });
+    observe('current_source_validated');
+  };
+  const captureApprovedPlan = async (input, selection, recheck) => {
+    if(!selection||Object.keys(selection).some(key=>!['version','phase','paths'].includes(key)))throw planError(400,'plan_scope_invalid');
+    const selected=await readPlanAuthority(input);
+    const revision=await readPlanRevision(selected.revision,{fsApi:options.fsApi});
+    if(selection.version!==revision.version)throw planError(409,'plan_version_conflict');
+    const content=scopedApprovedPlanContent(revision.content,selection.phase);
+    const ref={rootSessionId:input.sessionID,objectiveId:selected.objectiveID,sourceMessageId:selected.sourceMessageID,
+      version:revision.version,phase:selection.phase,paths:selection.paths,content,contentHash:createHash('sha256').update(content).digest('hex')};
+    validateApprovedPlanRef(ref);await recheck();
+    const current=await readPlanAuthority(input);
+    if(current.primary.cancellationGeneration!==selected.primary.cancellationGeneration||current.objectiveID!==selected.objectiveID
+      ||current.revision.path!==selected.revision.path)throw planError(409,'plan_authority_changed');
+    return ref;
+  };
+  return { ...runtime, captureApprovedPlan, validatePlanImplementation, readNativePlanPolicy, authorizePrivateRpc, authorizeNativeTaskInvocation, authorizeNativeObjectiveCheckInvocation, authorizeNativeCheckCorrectionTask, authorizeNativeTodoInvocation, readCanonicalPlanIdentity,
+    async authorizeNativePlanInvocation(input) {
+      resolveGen2OpenCodeClient(options.openCodeClient);
+      if(!await readAssignedPlan(input))await readPlanAuthority(input);
+    },
+    handleNativePlanRpc(input, recheck, budget) {
+      if (typeof recheck !== 'function') throw fault('native_task_authority_required');
+      return trackPlan(input, recheck, budget);
+    },
+    handleNativeContextRpc(input, recheck) {
+      if (typeof recheck !== 'function') throw fault('native_task_authority_required');
+      return nativeWrites.run(recheck, () => handleContextRpc(input));
+    },
+    handlePlanRpc(input) {
+      return trackPlan(input);
+    },
+    async drain() { while (planOperations.size) await Promise.allSettled([...planOperations]); await runtime.drain(); },
+    handleRpc: handleContextRpc,
+  };
 };

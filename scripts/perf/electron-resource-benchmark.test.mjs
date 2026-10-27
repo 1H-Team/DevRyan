@@ -2,21 +2,29 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { describe, it } from 'node:test';
 import { runInNewContext } from 'node:vm';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { scratchParent } from '../qa/run-root.mjs';
 
 import {
+  assessStreamConcurrency,
   compareBenchmarkSummaries,
   compareLifecycleSummaries,
   assertPerfPackageEvidenceUnchanged,
   lifecycleProtocolIdentity,
+  fixtureProtocolIdentity,
   interactiveProtocolIdentity,
   injectPlanSkeleton,
   median,
   parseBenchmarkArguments,
+  preparePerfFixtureLaunch,
+  preparePerfFixtureWindow,
   runElectronResourceBenchmark,
   summarizeMemorySamples,
   summarizeStartupRuns,
   stopPerfOwnedResources,
   waitForPlanSkeletonDocument,
+  withPerfFixtureSetup,
 } from './electron-resource-benchmark.mjs';
 
 const sample = (tabCpu, gpuCpu, tabMemory, browserMemory = 200) => ({
@@ -29,6 +37,88 @@ const sample = (tabCpu, gpuCpu, tabMemory, browserMemory = 200) => ({
 });
 
 describe('Electron resource benchmark metrics', () => {
+  it('activates only the owned fixture window and seeds its directory before every scenario document', async () => {
+    const calls = [];
+    const cdp = { send: async (method, parameters) => { calls.push({ method, parameters }); return { result: { value: { focused: true } } }; } };
+    const setup = await preparePerfFixtureWindow(cdp, { workspace: '/owned/workspace' });
+    assert.equal(calls[0].method, 'Runtime.evaluate');
+    assert.match(calls[0].parameters.expression, /desktop_focus_main_window/);
+    assert.equal(calls[1].method, 'Page.addScriptToEvaluateOnNewDocument');
+    assert.match(calls[1].parameters.source, /\/owned\/workspace/);
+    assert.equal(setup.acknowledgement.focused, true);
+    await assert.rejects(preparePerfFixtureWindow({ send: async () => ({ result: { value: { focused: false } } }) },
+      { workspace: '/owned/workspace' }), /acknowledge focus/);
+  });
+  it('boots the owned native host before using its authorized wire facade without legacy runtime flags', async () => {
+    const origins = [];
+    const profile = { env: { DEVRYAN_QA_RUNTIME: 'electron', DEVRYAN_SERVER_URL: 'http://127.0.0.1:9999',
+      DEVRYAN_RUNTIME_BUNDLE_ROOT: '/owned/bundles' }, fixture: { origin: 'http://127.0.0.1:9011' },
+      startFacade: async origin => { origins.push(origin); return { origin: 'http://127.0.0.1:9012' }; } };
+    const launch = await preparePerfFixtureLaunch(profile, { localPort: 9010 });
+    for (const key of ['OPENCODE_HOST', 'OPENCODE_SKIP_START', 'DEVRYAN_SKIP_OPENCODE_START', 'DEVRYAN_SERVER_URL']) {
+      assert.equal(launch.env[key], undefined, `${key} must not bypass native startup`);
+    }
+    assert.deepEqual(origins, ['http://127.0.0.1:9010']);
+    assert.equal(launch.localOrigin, origins[0]);
+    assert.equal(launch.facade.origin, 'http://127.0.0.1:9012');
+    assert.equal(launch.env.DEVRYAN_RUNTIME_BUNDLE_ROOT, '/owned/bundles');
+    assert.equal(launch.env.DEVRYAN_PORT, '9010');
+  });
+  it('selects only the v2 fixture explicitly and follows only the verified default target', () => {
+    const prior = process.env.DEVRYAN_QA_OPENCODE_VERSION;
+    try {
+      delete process.env.DEVRYAN_QA_OPENCODE_VERSION;
+      assert.equal(parseBenchmarkArguments([]).generation, 2);
+      process.env.DEVRYAN_QA_OPENCODE_VERSION = '2.0.20';
+      assert.equal(parseBenchmarkArguments([]).generation, 2);
+      assert.throws(() => parseBenchmarkArguments(['--generation', '1']));
+      assert.equal(parseBenchmarkArguments(['--generation', '2']).generation, 2);
+      for (const generation of ['0', '3', '2suffix', 'latest']) {
+        assert.throws(() => parseBenchmarkArguments(['--generation', generation]));
+      }
+    } finally {
+      if (prior === undefined) delete process.env.DEVRYAN_QA_OPENCODE_VERSION;
+      else process.env.DEVRYAN_QA_OPENCODE_VERSION = prior;
+    }
+  });
+
+  it('defaults resource and interactive run output to the owned OS temp family', () => {
+    assert.equal(parseBenchmarkArguments([]).outputRoot, scratchParent('perf'));
+    assert.equal(parseBenchmarkArguments(['--scenarios', 'interactive', '--package-evidence', '.cache/qa/package-evidence.json']).outputRoot, scratchParent('perf'));
+  });
+
+  it('closes a fixture on setup rejection so an isolated runner exits within its deadline', async () => {
+    const script = `
+      import http from 'node:http';
+      import { withPerfFixtureSetup } from './scripts/perf/electron-resource-benchmark.mjs';
+      const server = http.createServer();
+      await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+      try {
+        await withPerfFixtureSetup({ close: () => new Promise(resolve => server.close(resolve)) },
+          async () => { throw new Error('setup rejected'); });
+        process.exitCode = 2;
+      } catch (error) { if (error.message !== 'setup rejected') process.exitCode = 3; }
+    `;
+    await promisify(execFile)(process.execPath, ['--input-type=module', '--eval', script], { timeout: 3000 });
+    const original = new Error('setup rejected'), cleanup = new Error('fixture close rejected');
+    await assert.rejects(withPerfFixtureSetup({ close: async () => { throw cleanup; } }, async () => { throw original; }),
+      error => error instanceof AggregateError && error.errors[0] === original && error.errors[1] === cleanup);
+  });
+
+  it('records generation-specific fixture protocol identity and forbids cross-generation optimization comparisons', async () => {
+    const files = [];
+    const read = async file => { files.push(file); return Buffer.from(file); };
+    await assert.rejects(fixtureProtocolIdentity(1, read), /Unsupported/);
+    assert.deepEqual(files, []);
+    const generation2 = await fixtureProtocolIdentity(2, read);
+    assert.match(generation2, /^[a-f0-9]{64}$/);
+    assert.ok(files.includes('loopback-opencode-v2-fixture.mjs'));
+    assert.ok(files.some(file => file.endsWith('openapi-2.0.20.json')));
+    for (const compare of [compareBenchmarkSummaries, compareLifecycleSummaries]) {
+      assert.throws(() => compare({ fixtureGeneration: 1 }, { fixtureGeneration: 2 }), /matching fixtureGeneration/);
+    }
+  });
+
   it('waits for the requested new loader and document body even when the old document is ready', async () => {
     const url = 'http://127.0.0.1:3100/?session=ses_perfparent';
     const frame = { id: 'main', loaderId: 'new-loader', url };
@@ -127,13 +217,38 @@ describe('Electron resource benchmark metrics', () => {
     const owner = { child: { pid: 123, exitCode: 0, signalCode: null },
       stop: async () => { order.push('stop-with-first-audit'); },
       auditStopped: async () => { order.push('audit-after-fixture'); }, getCleanupEvidence: () => ownership };
-    const fixture = { close: async () => { order.push('close-fixture'); }, getState: () => ({ activePrompts: 0 }) };
-    const cleanup = await stopPerfOwnedResources(owner, fixture);
-    assert.deepEqual(order, ['stop-with-first-audit', 'close-fixture', 'audit-after-fixture']);
+    const profile = { close: async () => { order.push('close-profile'); }, fixture: { getState: () => ({ activePrompts: 0 }) } };
+    const cleanup = await stopPerfOwnedResources(owner, profile);
+    assert.deepEqual(order, ['stop-with-first-audit', 'close-profile', 'audit-after-fixture']);
     assert.equal(cleanup.complete, true);
     assert.equal(cleanup.app.ownership, ownership);
     assert.equal(cleanup.app.escalated, true);
     assert.equal(cleanup.fixture.closed, true);
+  });
+
+  it('closes the full profile after launch so all fixture services release their listeners', async () => {
+    const script = `
+      import http from 'node:http';
+      import { stopPerfOwnedResources } from './scripts/perf/electron-resource-benchmark.mjs';
+      const servers = await Promise.all(Array.from({ length: 3 }, async () => {
+        const server = http.createServer();
+        await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+        return server;
+      }));
+      const close = server => new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+      const profile = {
+        fixture: { close: () => close(servers[0]), getState: () => ({ activePrompts: 0 }) },
+        close: async () => { await Promise.all(servers.map(close)); },
+      };
+      const owner = {
+        child: { pid: 123, exitCode: 0, signalCode: null },
+        stop: async () => {}, auditStopped: async () => {},
+        getCleanupEvidence: () => ({ source: 'test', signals: [], remainingProcessIds: [] }),
+      };
+      const cleanup = await stopPerfOwnedResources(owner, profile);
+      if (!cleanup.complete || servers.some(server => server.listening)) process.exitCode = 2;
+    `;
+    await promisify(execFile)(process.execPath, ['--input-type=module', '--eval', script], { timeout: 3000 });
   });
 
   it('retains every cleanup failure and still closes the fixture and performs the second audit', async () => {
@@ -143,8 +258,8 @@ describe('Electron resource benchmark metrics', () => {
         stop: async () => { order.push('stop'); if (failure === 'stop') throw new Error('stop failed'); },
         auditStopped: async () => { order.push('audit'); if (failure === 'audit') throw new Error('detached child remains'); },
         getCleanupEvidence: () => ({ source: 'retained ownership', signals: [], remainingProcessIds: failure === 'audit' ? [456] : [] }) };
-      const fixture = { close: async () => { order.push('fixture'); if (failure === 'fixture') throw new Error('fixture failed'); }, getState: () => ({}) };
-      const cleanup = await stopPerfOwnedResources(owner, fixture);
+      const profile = { close: async () => { order.push('fixture'); if (failure === 'fixture') throw new Error('fixture failed'); }, fixture: { getState: () => ({}) } };
+      const cleanup = await stopPerfOwnedResources(owner, profile);
       assert.deepEqual(order, ['stop', 'fixture', 'audit']);
       assert.equal(cleanup.complete, false);
       assert.equal(cleanup.errors.length, 1);
@@ -164,7 +279,7 @@ describe('Electron resource benchmark metrics', () => {
 
   it('invalidates every scenario protocol when the fixture or owned-process dependencies change', async () => {
     const original = await lifecycleProtocolIdentity(async () => 'original module bytes');
-    for (const changed of ['loopback-opencode-fixture.mjs', '../qa/history-scroll.mjs', '../qa/process.mjs', '../qa/process-ownership.mjs', '../dev-child-utils.mjs']) {
+    for (const changed of ['fixture-session-seeds.mjs', '../qa/history-scroll.mjs', '../qa/process.mjs', '../qa/process-ownership.mjs', '../dev-child-utils.mjs']) {
       const current = await lifecycleProtocolIdentity(async file => file === changed ? 'changed module bytes' : 'original module bytes');
       assert.notEqual(current, original, `Missing protocol dependency: ${changed}`);
     }
@@ -229,7 +344,8 @@ describe('Electron resource benchmark metrics', () => {
     assert.equal(new Set(identities).size, 4);
     assert.equal(await interactiveProtocolIdentity(undefined, undefined, read), identities[0]);
     for (const changed of ['electron-interactive-benchmark.mjs', 'electron-lifecycle-benchmark.mjs',
-      'loopback-opencode-fixture.mjs', '../qa/process.mjs', '../qa/process-ownership.mjs', '../dev-child-utils.mjs']) {
+      'fixture-session-seeds.mjs', '../qa/process.mjs', '../qa/process-ownership.mjs', '../dev-child-utils.mjs',
+      '../qa/fixture-host-facade.mjs', '../qa/matrix-runner.mjs', '../qa/run-root.mjs']) {
       assert.notEqual(await interactiveProtocolIdentity('foreground', 'typing', async file => file === changed ? 'changed' : read()), identities[3]);
     }
     await assert.rejects(interactiveProtocolIdentity('unknown', 'typing', read), /startupMode/);
@@ -262,7 +378,21 @@ describe('Electron resource benchmark metrics', () => {
     assert.equal(summary.medianGpuCpu, 8);
     assert.equal(summary.medianTabWorkingSet, 90);
     assert.equal(summary.medianTotalAppWorkingSet, 340);
+    assert.equal(summary.p95TotalAppWorkingSet, 350);
+    assert.equal(summary.medianTotalAppCpu, 39);
+    assert.deepEqual(summary.processTypes, ['Browser', 'GPU', 'Tab']);
     assert.equal(median([4, 1, 3, 2]), 2.5);
+  });
+
+  it('accepts the opt-in twelve-stream workload and rejects underloaded streaming runs', () => {
+    assert.deepEqual(parseBenchmarkArguments(['--scenarios', 'twelve-stream']).scenarios, ['twelve-stream']);
+    assert.ok(!parseBenchmarkArguments([]).scenarios.includes('twelve-stream'), 'twelve-stream stays out of the defaults');
+    const counts = (count, value) => Object.fromEntries(Array.from({ length: count }, (_, index) => [`ses_${index}`, value]));
+    assert.deepEqual(assessStreamConcurrency('twelve-stream', counts(12, 5), counts(12, 9)), { expectedSessions: 12, observedSessions: 12 });
+    assert.throws(() => assessStreamConcurrency('twelve-stream', counts(12, 5), { ...counts(11, 9), ses_11: 5 }), /Underloaded twelve-stream run: 11\/12/);
+    assert.throws(() => assessStreamConcurrency('four-stream', {}, counts(3, 1)), /Underloaded four-stream/);
+    assert.deepEqual(assessStreamConcurrency('idle', {}, {}), { expectedSessions: 0, observedSessions: 0 });
+    assert.throws(() => assessStreamConcurrency('plan-skeleton', {}, {}), /No streaming workload/);
   });
 
   it('requires one explicit packaged artifact source for isolated measurements', () => {

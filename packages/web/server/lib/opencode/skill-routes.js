@@ -5,12 +5,14 @@ import {
   resolveApprovedSkills,
 } from './skill-policy.js';
 import { isAllowedSkillSource } from './shared.js';
+import { selectedRuntimeBundle } from './runtime-host/runtime-bundle-binding.js';
 import {
   createHarnessError,
   createHarnessSuccess,
   createHarnessWarning,
   withHarnessResult,
 } from './harness-result.js';
+import { resolveGen2OpenCodeClient } from './opencode-client-seam.js';
 
 export const registerSkillRoutes = (app, dependencies) => {
   const {
@@ -25,9 +27,8 @@ export const registerSkillRoutes = (app, dependencies) => {
     sanitizeHiddenSkills,
     isUnsafeSkillRelativePath,
     markConfigChange,
-    buildOpenCodeUrl,
-    getOpenCodeAuthHeaders,
     getOpenCodePort,
+    openCodeClient = null,
     getSkillSources,
     discoverSkills,
     createSkill,
@@ -224,7 +225,7 @@ export const registerSkillRoutes = (app, dependencies) => {
 
   const inferSkillScopeAndSourceFromPath = (skillPath, workingDirectory) => {
     const resolvedPath = typeof skillPath === 'string' ? path.resolve(skillPath) : '';
-    const home = os.homedir();
+    const home = selectedRuntimeBundle?.descriptor.launch.global.home ?? os.homedir();
     const source = resolvedPath.includes(`${path.sep}.agents${path.sep}skills${path.sep}`)
       ? 'agents'
       : resolvedPath.includes(`${path.sep}.claude${path.sep}skills${path.sep}`)
@@ -260,31 +261,20 @@ export const registerSkillRoutes = (app, dependencies) => {
     return { scope: SKILL_SCOPE.USER, source };
   };
 
+  // Native skill catalogs are scoped to the current working directory.
+  const readOpenCodeSkillPayload = async (workingDirectory) => {
+    const client = resolveGen2OpenCodeClient(openCodeClient);
+    if (!workingDirectory) return null;
+    return client.catalog.skills({ directory: workingDirectory }, { timeoutMs: 8_000 });
+  };
+
   const fetchOpenCodeDiscoveredSkills = async (workingDirectory) => {
     if (!getOpenCodePort()) {
       return null;
     }
 
     try {
-      const url = new URL(buildOpenCodeUrl('/skill', ''));
-      if (workingDirectory) {
-        url.searchParams.set('directory', workingDirectory);
-      }
-
-      const response = await fetch(url.toString(), {
-        method: 'GET',
-        headers: {
-          Accept: 'application/json',
-          ...getOpenCodeAuthHeaders(),
-        },
-        signal: AbortSignal.timeout(8_000),
-      });
-
-      if (!response.ok) {
-        return null;
-      }
-
-      const payload = await response.json();
+      const payload = await readOpenCodeSkillPayload(workingDirectory);
       if (!Array.isArray(payload)) {
         return null;
       }

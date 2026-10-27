@@ -1,0 +1,246 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import os from 'node:os';
+import { openApplicationStopStream } from './package-application-stop-stream.mjs';
+
+const temporaryRoot = await fs.realpath(os.tmpdir());
+
+async function runDriver({ mode = 'upgrade', cleanupFails = false, settleStop = false, rollbackFails = false,
+  parts = [{ type: 'text', text: '1. Synthetic cancellation case.\n' }], oldText = false,
+  parentID, completed = false, stream = 'valid', browserAck = true, planFails = false } = {}) {
+  let source = await fs.readFile(new URL('./package-application-lifecycle-driver.mjs', import.meta.url), 'utf8');
+  source = source.replace(/^import .*;\n/gm, '')
+    .replace("await import('../../packages/web/server/lib/opencode/runtime-host/runtime-bundle-binding.js')", 'runtimeBinding')
+    .replace("await import('../../packages/web/server/index.js')", 'webServer')
+    .replace("await import('./package-plan-implement-lane.mjs')", 'planImplementation');
+  const output = [], phases = [], crashMessages=[], rollbackMode=mode==='rollback'||mode==='rollback-crash', sessionID = mode === 'upgrade' ? 'ses_owned' : 'ses_candidate', assistantID = 'msg_active';
+  const oldHistory = { ses_old: ['msg_old_user', 'msg_old_assistant'] };
+  let accepted = 0, activeUserID, abortCalls = 0, stopCalls = 0, disconnected = false, restarted = false, completedAt;
+  const messageListeners = new Set();
+  const fakeProcess = { pid: 321, stdin: (async function* () { yield JSON.stringify({ mode, directory: '/owned',
+    ...(rollbackMode ? { sessionIDs: ['ses_old'], history: oldHistory } : {}) }); })(), stderr: {}, stdout: { write: value => { output.push(value); if(mode==='plan-implement')phases.push('result'); } },
+    on: (event, callback) => { assert.equal(event, 'message'); messageListeners.add(callback); },
+    off: (event, callback) => { assert.equal(event, 'message'); messageListeners.delete(callback); },
+    once: (event, callback) => { assert.equal(event, 'message'); queueMicrotask(() => callback({ type: 'application-owner-session',
+      owner: rollbackMode ? { name: 'fixture', value: 'must-not-persist' } : null })); },
+    send: (value, callback) => {
+      if(value.type==='application-rollback-crash-ready'){crashMessages.push(value);phases.push('crash-ready');}
+      if(value.type==='application-plan-checkpoint') {
+        assert.equal(value.input.phase,'browser-settlement'); phases.push('browser-settlement-request');
+        if(browserAck)queueMicrotask(()=>{phases.push('browser-settlement-ack');for(const receive of messageListeners)receive({type:'application-plan-checkpoint-done',phase:value.input.phase});});
+      }
+      callback?.();
+    }, disconnect: () => { disconnected = true; } };
+  const server = { getPort: () => 12345, isReady: () => true, issueLocalOwnerSession: () => ({ name: 'fixture', value: 'must-not-persist' }),
+    restartOpenCode: async () => { restarted = true; phases.push('restart'); },
+    stop: async () => { stopCalls++; if(mode==='plan-implement')phases.push('server-stop'); if (cleanupFails) throw new Error('must-not-persist'); } };
+  let streamController, streamClosed = false, streamOpened = false, readyBeforeSubmit = false, abortSawEmptyText = false;
+  const encoder = new TextEncoder();
+  const emit = (type, properties, eventDirectory = '/owned') => streamController?.enqueue(encoder.encode(
+    `data: ${JSON.stringify({ directory: eventDirectory, payload: { type, properties } })}\n\n`));
+  const canonicalParts = parts.map((part, index) => ({ ...part, id: `prt_active_${index}`, text: '' }));
+  const fetch = async (url, init) => {
+    const route = new URL(url).pathname;
+    let value;
+    if (route === '/api/global/event') {
+      streamOpened = true;
+      assert.equal(init.headers.origin, 'http://127.0.0.1:12345');
+      assert.equal(init.headers.cookie, 'fixture=must-not-persist');
+      assert.equal(init.headers['x-devryan-subscription-ready'], '1');
+      assert.equal(init.headers['last-event-id'], undefined);
+      const body = new ReadableStream({ start(controller) {
+        streamController = controller;
+        if (stream !== 'no-ready') controller.enqueue(encoder.encode('event: devryan.subscription-ready\r\ndata: {"type":"ready","scope":"global"}\r\n\r\n'));
+        init.signal.addEventListener('abort', () => { if (!streamClosed) { streamClosed = true; controller.close(); } }, { once: true });
+      }, cancel() { streamClosed = true; } });
+      return { ok: true, body };
+    }
+    if (route === '/api/session') value = { id: sessionID };
+    else if (route.endsWith('/prompt_async')) {
+      accepted++; activeUserID = JSON.parse(init.body).messageID; value = null;
+      phases.push(accepted === 1 ? 'normal-submit' : 'stop-submit');
+      if (accepted === 2) {
+        readyBeforeSubmit = streamOpened;
+        for (const [index, part] of parts.entries()) {
+          const partID = `prt_active_${index}`;
+          const eventSession = stream === 'wrong-session' ? 'ses_unrelated' : sessionID;
+          const eventMessage = stream === 'wrong-assistant' ? 'msg_unrelated' : assistantID;
+          if (stream !== 'orphan-delta') emit('message.part.updated', { sessionID: eventSession,
+            part: { ...part, id: partID, sessionID: eventSession, messageID: eventMessage, text: '', time: stream === 'ended-part' ? { end: 1 } : {} } });
+          if (stream === 'completed-message') emit('message.updated', { info: { id: eventMessage, sessionID: eventSession, time: { completed: 1 } } });
+          const fields = { sessionID: eventSession, messageID: eventMessage, partID: stream === 'wrong-part' ? 'prt_unrelated' : partID,
+            field: stream === 'wrong-field' ? 'reasoning' : 'text' };
+          // Real stream chunks can precede any durable REST text, including a split prefix.
+          emit('message.part.delta', { ...fields, delta: part.text.slice(0, 10) }, stream === 'wrong-directory' ? '/unrelated' : '/owned');
+          emit('message.part.delta', { ...fields, delta: part.text.slice(10) }, stream === 'wrong-directory' ? '/unrelated' : '/owned');
+          if (stream === 'removed-part') emit('message.part.removed', { sessionID, messageID: assistantID, partID });
+        }
+        if (stream === 'gap') streamController?.enqueue(encoder.encode('event: devryan.replay-gap\ndata: {"replayGap":{}}\n\n'));
+        if (stream === 'eof' && streamController) { streamClosed = true; streamController.close(); }
+        await new Promise(resolve => setImmediate(resolve));
+      }
+    } else if (route.endsWith('/abort')) {
+      abortSawEmptyText = canonicalParts.every(part => part.text === '');
+      abortCalls++; phases.push('abort'); value = true; if (settleStop) completedAt = Date.now();
+    } else if (route === '/api/session/status') value = { [sessionID]: { type: abortCalls && settleStop ? 'idle' : 'busy' } };
+    else if (route === '/api/session/ses_old/message') value = oldHistory.ses_old.map(id => ({ info: { id } }));
+    else if (route.endsWith('/message')) {
+      value = [{ info: { id: 'msg_user_1', role: 'user' } }, { info: { id: 'msg_baseline', role: 'assistant', time: { completed: 1 } },
+        parts: oldText ? [{ type: 'text', text: '1. Synthetic cancellation case.\n' }] : [] },
+      ...(accepted > 1 ? [{ info: { id: activeUserID, role: 'user' } }, { info: { id: assistantID, role: 'assistant', parentID: parentID ?? activeUserID,
+        time: completed || (abortCalls && settleStop) ? { completed: completedAt ?? 1 } : {},
+        ...(abortCalls && settleStop ? { error: { name: 'MessageAbortedError' } } : {}) }, parts: canonicalParts }] : [])];
+    } else if (route === '/api/runtime/bundle') { phases.push('bundle-read'); value = { state: 'upgrade_available', revision: 9 }; }
+    else if (route === '/api/runtime/bundle/rollback' || route === '/api/runtime/bundle/upgrade') {
+      assert.deepEqual(JSON.parse(init.body), { expectedRevision: 9 });
+      const transition = route.endsWith('/rollback') ? 'rollback' : 'upgrade'; phases.push(transition);
+      if (rollbackFails) return { ok: false, status: 500 };
+      value = { transition, restartRequired: true, reconciliationRequired: false, bundleID: transition === 'rollback' ? 'bundle_A' : 'bundle_B' };
+    } else assert.fail('Unexpected driver request');
+    return { ok: true, status: 200, json: async () => value };
+  };
+  const waitFor = async (read, predicate, message, timeout) => {
+    const value = await read(); assert.ok(predicate(value), message);
+    if (message === 'Production application conversation did not settle' || message === 'Candidate-only work did not settle') phases.push('normal-settled');
+    if (message === 'Production Stop never observed its exact native streaming assistant') {
+      assert.ok(timeout > 0 && timeout <= 30000, 'Ready and stream barrier share the original 30s deadline'); phases.push('stream-observed');
+    }
+    return value;
+  };
+  const readBundleConversationRows = () => {
+    assert.ok(abortCalls && settleStop); phases.push('native-settled');
+    return { messages: [{ id: assistantID, session_id: sessionID, seq: 4, data: { time: { completed: completedAt }, error: { type: 'aborted' } } },
+      { id: 'msg_idle', session_id: sessionID, seq: 5, type: 'idle', data: { outcome: 'interrupted' } }] };
+  };
+  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+  await new AsyncFunction('assert', 'Console', 'fs', 'path', 'waitFor', 'readBundleConversationRows', 'createV2MessageId',
+    'readManagedOpenCodeRegistry', 'openApplicationStopStream', 'process', 'fetch', 'globalThis', 'runtimeBinding', 'webServer', 'planImplementation', 'setTimeout', source)(
+    assert, class {}, fs, path, waitFor, readBundleConversationRows,
+    () => `msg_user_${accepted + 1}`, () => [{ ownerPid: 321, childPid: restarted ? 987 : 654 }],
+    options => openApplicationStopStream({ ...options, fetchImpl: fetch, ...(stream === 'no-ready' ? { deadline: Date.now() + 20 } : {}) }), fakeProcess, fetch, {},
+    { readRuntimeBundleBinding: () => ({ admission: 'open', descriptor: { bundleID: mode === 'upgrade' ? 'bundle_A' : 'bundle_B',
+      launch: { global: { state: '/owned' }, artifactManifestSha256: (mode === 'upgrade' ? 'a' : 'b').repeat(64) } } }) },
+    { startWebUiServer: async () => server },
+    { runApplicationPlanImplementation: async () => { phases.push('plan-complete'); if(planFails)throw Error('Actual Plan acceptance failed'); return {status:'passed'}; } },
+    (callback, milliseconds) => {
+      if(mode==='plan-implement'){assert.equal(milliseconds,90000);return setTimeout(callback,browserAck?milliseconds:0);}
+      return setTimeout(callback,milliseconds);
+    });
+  assert.equal(output.length, 1); assert.equal(disconnected, true); assert.equal(stopCalls, 1);
+  assert.equal(output[0].includes('must-not-persist'), false);
+  if (streamOpened) assert.equal(streamClosed, true, 'Every driver exit must close its owned stream');
+  return { readyBeforeSubmit, abortSawEmptyText, result: JSON.parse(output[0]), phases, sessionID, assistantID, accepted, abortCalls, exitCode: fakeProcess.exitCode, oldHistory,crashMessages };
+}
+
+test('actual driver waits for private browser settlement before normal server cleanup and result', async () => {
+  const { result, phases, exitCode } = await runDriver({ mode:'plan-implement' });
+  assert.equal(result.status,'passed'); assert.equal(exitCode,undefined);
+  assert.deepEqual(phases,['plan-complete','browser-settlement-request','browser-settlement-ack','server-stop','result']);
+});
+
+test('missing Plan browser ACK fails the driver while retaining normal server cleanup', async () => {
+  const { result, phases, exitCode } = await runDriver({ mode:'plan-implement',browserAck:false });
+  assert.equal(result.status,'failed'); assert.equal(result.error.code,'application_plan_browser_cleanup_failed');
+  assert.deepEqual(result.cleanup,{browser:'failed'}); assert.equal(exitCode,1);
+  assert.deepEqual(phases,['plan-complete','browser-settlement-request','server-stop','result']);
+});
+
+test('Plan acceptance failure still settles the browser before normal server cleanup', async () => {
+  const { result, phases, exitCode } = await runDriver({ mode:'plan-implement',planFails:true });
+  assert.equal(result.status,'failed'); assert.equal(result.error.message,'Actual Plan acceptance failed'); assert.equal(exitCode,1);
+  assert.deepEqual(phases,['plan-complete','browser-settlement-request','browser-settlement-ack','server-stop','result']);
+});
+
+test('rollback crash driver publishes only settled B history before the real route and fails if the crash barrier is missed',async()=>{
+ const {result,phases,crashMessages,oldHistory}=await runDriver({mode:'rollback-crash',settleStop:true});
+ assert.equal(crashMessages.length,1);const evidence=crashMessages[0];assert.equal(evidence.revision,9);assert.equal(evidence.bundleID,'bundle_B');
+ assert.equal(evidence.result.ownerSessionReused,true);assert.deepEqual(evidence.result.history,oldHistory);assert.equal(evidence.result.stopProof.nativeIdleOutcome,'interrupted');
+ assert.ok(phases.indexOf('native-settled')<phases.indexOf('crash-ready'));assert.ok(phases.indexOf('crash-ready')<phases.indexOf('rollback'));
+ assert.equal(result.status,'failed');assert.equal(result.error.message,'Original rollback completed before its required pending-intent crash');
+ assert.equal(JSON.stringify(evidence).includes('must-not-persist'),false);
+});
+
+for (const mode of ['upgrade', 'rollback']) for (const cleanupFails of [false, true]) {
+  test(`${mode} preserves exact partial streaming Stop witness when settlement fails and cleanup ${cleanupFails ? 'fails' : 'succeeds'}`, async () => {
+    const { result, sessionID, assistantID, accepted, abortCalls, exitCode, phases } = await runDriver({ mode, cleanupFails });
+    assert.equal(result.status, 'failed'); assert.equal(result.error.code, 'ERR_ASSERTION');
+    assert.equal(result.error.message, 'Production Stop did not settle its exact canonical assistant');
+    assert.equal(result.stopProof.sessionID, sessionID); assert.equal(result.stopProof.userID, 'msg_user_2');
+    assert.equal(result.stopProof.assistantID, assistantID); assert.equal(result.stopProof.abortAcknowledgement, true);
+    assert.equal(result.stopProof.scope, mode === 'upgrade' ? 'old-A-streaming-Stop' : 'candidate-B-streaming-Stop');
+    assert.equal(result.stopProof.bundleID, mode === 'upgrade' ? 'bundle_A' : 'bundle_B');
+    assert.equal(result.stopProof.manifestSha256, (mode === 'upgrade' ? 'a' : 'b').repeat(64));
+    assert.ok(result.stopProof.streamedTextBytes > 0);
+    assert.ok(result.stopProof.streamObservedAt >= result.stopProof.submittedAt && result.stopProof.stopRequestedAt >= result.stopProof.streamObservedAt);
+    assert.equal(Object.hasOwn(result.stopProof, 'nativeCompletedAt'), false);
+    assert.deepEqual(result.cleanup, cleanupFails ? { serverStop: 'failed' } : undefined);
+    assert.equal(exitCode, 1); assert.equal(accepted, 2); assert.equal(abortCalls, 1);
+    assert.equal(phases.includes('rollback'), false); assert.equal(phases.includes('upgrade'), false);
+  });
+}
+
+for (const [name, options] of [
+  ['empty text', { parts: [] }], ['unrelated text', { parts: [{ type: 'text', text: 'Unrelated response' }] }],
+  ['synthetic text', { parts: [{ type: 'text', text: '1. Synthetic cancellation case.\n', synthetic: true }] }],
+  ['old assistant text', { parts: [], oldText: true }], ['wrong parent', { parentID: 'msg_other_user' }], ['completed assistant', { completed: true }],
+]) test(`Stop barrier rejects ${name} before issuing abort`, async () => {
+  const { result, abortCalls, phases } = await runDriver(options);
+  assert.equal(result.status, 'failed'); assert.equal(result.error.message, 'Production Stop never observed its exact native streaming assistant');
+  assert.equal(abortCalls, 0); assert.equal(phases.includes('stream-observed'), false);
+  assert.equal(Object.hasOwn(result.stopProof, 'stopRequestedAt'), false);
+});
+
+test('A retains streamed Stop, restart, revision-bound upgrade and the full canonical history', async () => {
+  const { result, phases, exitCode, sessionID, readyBeforeSubmit, abortSawEmptyText } = await runDriver({ settleStop: true });
+  assert.equal(result.status, 'passed', result.error?.message);
+  assert.equal(readyBeforeSubmit, true); assert.equal(abortSawEmptyText, true); assert.equal(exitCode, undefined); assert.equal(result.ownerSessionReused, false);
+  assert.deepEqual(phases, ['normal-submit', 'normal-settled', 'stop-submit', 'stream-observed', 'abort', 'native-settled', 'restart', 'bundle-read', 'upgrade']);
+  assert.deepEqual(result.history, { [sessionID]: ['msg_user_1', 'msg_baseline', 'msg_user_2', 'msg_active'] });
+  assert.equal(result.stopProof.nativeError, 'aborted'); assert.equal(result.stopProof.nativeIdleOutcome, 'interrupted');
+});
+
+test('B finishes its normal turn and the same canonical Stop before rollback, retaining candidate history separately', async () => {
+  const { result, phases, exitCode, oldHistory, readyBeforeSubmit, abortSawEmptyText } = await runDriver({ mode: 'rollback', settleStop: true });
+  assert.equal(result.status, 'passed', result.error?.message);
+  assert.equal(readyBeforeSubmit, true); assert.equal(abortSawEmptyText, true); assert.equal(exitCode, undefined); assert.equal(result.ownerSessionReused, true);
+  assert.deepEqual(phases, ['normal-submit', 'normal-settled', 'stop-submit', 'stream-observed', 'abort', 'native-settled', 'bundle-read', 'rollback']);
+  assert.deepEqual(result.history, oldHistory); assert.deepEqual(result.sessionIDs, ['ses_old']);
+  assert.deepEqual(result.candidateStopHistory, ['msg_user_1', 'msg_baseline', 'msg_user_2', 'msg_active']);
+  assert.equal(result.candidateSessionID, 'ses_candidate');
+  assert.equal(result.stopProof.nativeError, 'aborted'); assert.equal(result.stopProof.nativeIdleOutcome, 'interrupted');
+});
+
+for (const failure of ['rollback', 'cleanup']) test(`B retains its stopped candidate history if subsequent ${failure} fails`, async () => {
+  const { result, exitCode } = await runDriver({ mode: 'rollback', settleStop: true,
+    rollbackFails: failure === 'rollback', cleanupFails: failure === 'cleanup' });
+  assert.equal(result.status, 'failed'); assert.equal(exitCode, 1);
+  assert.deepEqual(result.candidateStopHistory, ['msg_user_1', 'msg_baseline', 'msg_user_2', 'msg_active']);
+  assert.equal(result.stopProof.nativeError, 'aborted'); assert.equal(result.stopProof.nativeIdleOutcome, 'interrupted');
+  assert.equal(result.error.code, failure === 'rollback' ? 'ERR_ASSERTION' : 'application_server_stop_failed');
+});
+
+for (const stream of ['wrong-session', 'wrong-assistant', 'wrong-part', 'wrong-field', 'wrong-directory', 'orphan-delta', 'ended-part', 'completed-message', 'removed-part']) {
+  test(`Stop refuses ${stream} despite an otherwise active canonical assistant`, async () => {
+    const { result, abortCalls } = await runDriver({ stream, settleStop: true });
+    assert.equal(result.status, 'failed'); assert.equal(abortCalls, 0);
+    assert.equal(result.error.message, 'Production Stop never observed its exact native streaming assistant');
+    assert.equal(Object.hasOwn(result.stopProof, 'stopRequestedAt'), false);
+  });
+}
+for (const [stream, code] of [['eof', 'application_stop_stream_ended'], ['gap', 'application_stop_stream_gap'], ['no-ready', 'application_stop_stream_ended']]) {
+  test(`Stop refuses ${stream} and closes the stream without aborting a turn`, async () => {
+    const { result, abortCalls, accepted, exitCode } = await runDriver({ stream, settleStop: true });
+    assert.equal(result.status, 'failed'); assert.equal(result.error.code, code); assert.equal(exitCode, 1);
+    assert.equal(abortCalls, 0); assert.equal(accepted, stream === 'no-ready' ? 1 : 2);
+    assert.equal(Object.hasOwn(result.stopProof, 'stopRequestedAt'), false);
+  });
+}
+
+test('Stop evidence excludes provider text and payloads while retaining measured delta bytes', async () => {
+  const { result, abortCalls } = await runDriver({ settleStop: true,
+    parts: [{ type: 'text', text: '1. Synthetic cancellation case.\n must-not-persist' }] });
+  assert.equal(result.status, 'passed'); assert.equal(abortCalls, 1);
+  assert.equal(result.stopProof.streamEvent.deltaBytes, Buffer.byteLength('1. Synthetic cancellation case.\n must-not-persist'));
+});

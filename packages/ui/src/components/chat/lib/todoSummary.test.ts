@@ -221,3 +221,9 @@ describe('todo summary helpers', () => {
         expect(summary.visibleTodos).toEqual([todo('pending', 'task-1')]);
     });
 });
+
+ test('dependency-blocked TODOs remain pending and malformed/stale reasons do not label completed work', async () => {
+  const { getTodoDependencyReasons } = await import('./todoSummary');
+  expect(getTodoDependencyReasons({ status: 'pending', blockedBy: ['Docker endpoint', 'Deployment credentials'] })).toEqual(['Docker endpoint', 'Deployment credentials']);
+  for (const todo of [{ status: 'completed', blockedBy: ['Old blocker'] }, { status: 'pending', blockedBy: 'guess' }, { status: 'pending', blockedBy: [1] }]) expect(getTodoDependencyReasons(todo)).toEqual([]);
+ });

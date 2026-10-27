@@ -93,6 +93,10 @@ describe('auto-resume policy constants and identities', () => {
     const retired = parkedTask({ failureReason: 'Model not found: opencode/retired' });
     expect(isAutoResumeEligible(retired, parkedEnvelope(retired))).toBe(false);
     expect(isAutoResumeEligible(task, null)).toBe(false);
+    for (const status of ['failed', 'interrupted']) {
+      const stopped = { ...task, status, terminationIntent: 'user_stopped' };
+      expect(isAutoResumeEligible(stopped, parkedEnvelope(stopped))).toBe(false);
+    }
   });
 
   test('active means enabled and still planning, scheduled, or attempting', () => {
@@ -276,6 +280,25 @@ describe('auto-resume attempt planning', () => {
       now: NOW, task, backup,
       state: freshState({ backupAttemptTaskId: 'dvr_task_backup' }),
     })).toMatchObject({ nextAttemptAt: NOW + 15 * MINUTE, target: { kind: 'original' } });
+  });
+
+  test('requires host capability for read-only Cursor transport and usage backups', () => {
+    for (const trigger of ['provider_transport', 'provider_usage_limit']) {
+      for (const cursorReadOnly of [undefined, false, true]) {
+        const plan = planAutoResumeAttempt({
+          now: NOW, task: parkedTask({ readOnly: true }),
+          state: freshState({ trigger }), cursorReadOnly,
+          backup: { providerId: 'cursor-acp', modelId: 'composer', variant: null },
+        });
+        if (cursorReadOnly === true) {
+          expect(plan).toMatchObject({ state: 'scheduled', target: { kind: 'backup', providerId: 'cursor-acp' } });
+        } else if (trigger === 'provider_transport') {
+          expect(plan).toEqual({ state: 'exhausted', reason: 'backup_unavailable' });
+        } else {
+          expect(plan).toMatchObject({ state: 'scheduled', target: { kind: 'original' } });
+        }
+      }
+    }
   });
 
   test('tries a distinct, compatible, unbroken backup immediately', () => {

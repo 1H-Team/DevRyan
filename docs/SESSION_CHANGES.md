@@ -48,6 +48,10 @@ strengthen an identical receipt; repeated or stale deliveries cannot downgrade i
 Missing hooks and conflicts are scoped to their call, so repairing one call
 cannot clear another call’s gap. Unknown shell/MCP effects remain unresolved
 unless trustworthy receipts exist. External agents require no configuration.
+Canonical history reindexes older capture classifications once. A verified
+read-only call removes only its matching obsolete observation and expected-call
+row; it never synthesizes an empty mutation receipt or removes conflicting exact
+edit evidence. Contradictory identities remain incomplete.
 
 Cursor’s private `cursor-session-changes.js` channel stores full execution diffs
 separately from bounded activity previews. Direct, one-shot-worker and
@@ -87,7 +91,7 @@ rows. Identical invalid history therefore settles without an event/read loop.
 
 ## Summary and review contract
 
-`GET /api/openchamber/session/:id/changes?directory=...` returns:
+`GET /api/devryan/session/:id/changes?directory=...` returns:
 
 - `rootSessionID`, requested `directory`, canonical `worktreeDirectory`, `worktreeID` and `revision`.
 - `coverage` (`complete` or `partial`), machine-readable `reasons`, and typed
@@ -100,15 +104,34 @@ rows. Identical invalid history therefore settles without an event/read loop.
 - Each file has `path`, optional `oldPath`, status, contributing sessions and
   line counts. Binary line counts are `null`. `reviewMode` is `net` or `segments`,
   with `segmentCount` for recorded edits.
-- `attributionVersion: 3`, `totalsMode` (`net` or `recorded`), and explicit
+- `attributionVersion: 4`, `totalsMode` (`net` or `recorded`), and explicit
   `restoreAvailable` / `restoreReasons`, separate from capture coverage.
+- `hasUnattributedMutations` is true when observed calls have missing, pending,
+  incomplete, conflicting or unverified effects. It clears only when those calls
+  are accounted for; exact file rows remain available during a coverage gap.
 
 The root is the selected session, plus verified descendants. Selecting a child
-excludes its parent and siblings. Uninterrupted before/after chains compose into
-net diffs; exact reversals disappear. If another writer interrupts a file chain,
-known edits remain chronological segments under one file row. Patch-only receipts
+excludes its parent and siblings. Confined receipts carry the mutation owner's
+project publication sequence, independent of tool start time and receipt arrival.
+Historical full-file receipts join only unique byte-and-mode boundaries; this
+also repairs reverse delivery without assigning timestamps publication authority.
+Uninterrupted before/after chains compose into net diffs; exact reversals disappear.
+Disconnected or branching evidence stays segmented. Receipts alone cannot
+enable Undo for it; the mutation ledger may independently prove restoration for
+the exact selected operation set.
+The host returns its current `restoreProof` token separately from the captured
+revision. Undo/Redo returns both values; missing or stale proof refuses and
+refreshes the review. An overlapping GET cannot replace the proof attached to
+an older approval. All owned restores, including net summaries, use the same
+ledger proof and foreign-change guards.
+If another writer interrupts a file chain,
+known edits remain individually recorded segments under one file row. Patch-only receipts
 also remain segments. Segmented line totals are labeled **Recorded edits** and
-must not be interpreted as a net repository diff. Another session's later edits,
+must not be interpreted as a net repository diff. A segmented row without a
+current ledger restore proof cannot be restored automatically. Its current state
+is checked against the session's final
+content like a net row: equal, it counts as verified; otherwise it counts as
+changed outside the session. Another session's later edits,
 commits and repository polling do not rewrite stored revisions.
 
 `GET .../changes/diff?revision=...&file=...` reads only the selected stored
@@ -145,6 +168,9 @@ seconds, stopping on settlement or unsubscribe. Settled failures use specific
 execution-evidence, receipt-conflict, interrupted-capture, timeout or storage
 messages. Recoverable failures and failed reads with retained files offer Retry. A successful read-only shell command
 produces no warning.
+Background calls count as running only until their supervised process termination
+receipt arrives. Pending publication or receipt repair after exit remains an
+evidence gap rather than extending the process's running state.
 
 ## Undo and Redo
 
@@ -205,7 +231,10 @@ Production capture has no fixed snapshot-byte, path-count, operation-count,
 session-registration, or cumulative storage-admission ceiling. Explicit runtime
 options can impose operator/test limits; they are not enabled by the host.
 Disk failures (`storage_unavailable`), command/capture deadlines (`capture_timeout`),
-and interrupted captures remain distinct. Diagnostics record the phase, session
+and interrupted captures remain distinct. A call whose confined command is still
+running (a background shell such as a dev server) is `background_running`, not
+`missing_capture`: its receipt is recorded when it ends, or when a user Stop ends
+it (the host's `activeExecutionCalls` option supplies these calls). Diagnostics record the phase, session
 and call identity without source contents. Tool execution keeps its existing
 behavior when capture fails; coverage never silently becomes complete.
 
@@ -246,7 +275,9 @@ interleaving segments and revision isolation.
 shell-only and partial writes, staged/dirty baselines, untracked and ignored
 files, raw CRLF/filters, symlinks, binaries, renames, net-zero changes, descendant
 retention, independent and overlapping writers, revision expiration, restart
-and conflict-safe Undo/Redo. `session-changes-host.test.js` checks the shared
+and conflict-safe Undo/Redo. The web-host integration tests under
+`packages/web/server/lib/harness/native-integration/` include
+`session-changes-host.test.js`, which checks the shared
 HTTP/plugin contract and history pagination. Plugin tests check tool coverage;
 card/store tests check presentation and asynchronous isolation.
 `session-changes-scale.test.js` crosses the old snapshot, path, storage, operation
@@ -278,3 +309,30 @@ automatic settlement without a refresh event and disabled unsafe restore.
 Screenshots require individual visual inspection; result.json alone does not
 establish visual acceptance. This is deterministic adapter QA, not live-provider
 verification.
+
+## Current observations and captured history
+
+Stored revisions, file totals and segmented edits describe immutable captured history.
+Every summary/page also returns a separate `current` observation. Private per-row
+before/after evidence is compared with live raw bytes and modes without writing
+objects, indexes or tree references. Exact original content means `restored`;
+exact captured final content means `verified`, including segmented evidence whose
+final content is known (safe restoration remains a separate decision).
+Other content, patch-only receipts, missing legacy evidence, unsafe ancestors, read races and limits
+remain `uncertain`. Matching paths in Git never establish ownership of current hunks.
+The observation examines at most 256 file rows, 8MiB per file and 32MiB total;
+unchecked rows remain uncertain. Each summary row lands in exactly one of the
+`restored`, `verified` or `uncertain` counts (a rename row, old and new path, counts
+once), so they always add up to `fileCount`. `foreignModifiedCount` is the subset
+of uncertain rows whose live content matches neither captured side, which the card
+reports as "N differ from captured content". This establishes a mismatch, not who
+changed the file. Each row exposes `verification: { state, reason }` from the same
+observation: `verified`, `restored`, or `uncertain`, with the exact comparison or
+read-limit reason. The UI displays those reasons per file and explains Undo
+unavailability separately, including `segmented_changes`. Current observations never change historical
+revision identity or make an uncertain Undo safe. Coverage reasons are also
+reported per session, including descendants. Git refresh hints refresh these
+observations while historical diffs remain available through their revision.
+The chat card labels captured history explicitly and folds it separately from
+current verification, so shell Undo cannot continue to claim historical totals
+as live edits.

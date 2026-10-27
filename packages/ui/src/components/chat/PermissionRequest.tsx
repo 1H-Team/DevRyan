@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils';
 import type { PermissionRequest as PermissionRequestPayload, PermissionResponse } from '@/types/permission';
 import * as sessionActions from '@/sync/session-actions';
 import { useI18n } from '@/lib/i18n';
+import { getSkillPermissionName } from './permissionCardPatterns';
 
 interface PermissionRequestProps {
   permission: PermissionRequestPayload;
@@ -37,9 +38,10 @@ export const PermissionRequest: React.FC<PermissionRequestProps> = ({
     return null;
   }
 
-  const command = typeof permission.metadata.command === 'string'
-    ? permission.metadata.command
-    : (permission.patterns?.[0] ?? permission.permission);
+  const command = getSkillPermissionName(permission.permission, permission.metadata)
+    ?? (typeof permission.metadata.command === 'string'
+      ? permission.metadata.command
+      : (permission.patterns?.[0] ?? permission.permission));
 
   return (
     <div className="flex items-center justify-between">

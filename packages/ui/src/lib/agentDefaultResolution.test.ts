@@ -85,7 +85,7 @@ describe('agent default resolution', () => {
     });
   });
 
-  test('falls back from a known unavailable personal model to the host default', () => {
+  test('preserves a known unavailable personal model and effort', () => {
     expect(resolveAgentDefaultSelection({
       agentName: 'Orchestrator',
       agents: [orchestrator],
@@ -95,10 +95,10 @@ describe('agent default resolution', () => {
       },
     })).toEqual({
       agentName: 'Orchestrator',
-      providerId: 'openai',
-      modelId: 'gpt-5.6-sol',
-      variant: 'medium',
-      source: 'inherited',
+      providerId: 'anthropic',
+      modelId: 'retired-model',
+      variant: 'high',
+      source: 'personal',
     });
   });
 
@@ -119,7 +119,7 @@ describe('agent default resolution', () => {
     });
   });
 
-  test('normalizes thinking when an explicitly unavailable host model uses the catalog fallback', () => {
+  test('preserves an unavailable host model without substituting a catalog fallback', () => {
     const unavailableHost = {
       ...orchestrator,
       model: { providerID: 'openai', modelID: 'retired-model' },
@@ -139,9 +139,9 @@ describe('agent default resolution', () => {
     })).toEqual({
       agentName: 'Orchestrator',
       providerId: 'openai',
-      modelId: 'gpt-5.6-sol',
-      variant: null,
-      source: 'availability-fallback',
+      modelId: 'retired-model',
+      variant: 'medium',
+      source: 'inherited',
     });
   });
 
@@ -167,5 +167,36 @@ describe('agent default resolution', () => {
       variant: 'medium',
       source: 'host-managed',
     });
+  });
+
+  test('replaces a default that needs an API key with a model the ChatGPT sign-in can use', () => {
+    const agents = [{ ...orchestrator, variant: 'high' }];
+    const apiOnly = { available: false as const, unavailableReason: 'auth_type_unsupported' as const };
+    const other = { id: 'anthropic', models: [{ id: 'claude-sonnet-4-6' }] };
+    expect(resolveAgentDefaultSelection({
+      agentName: 'Orchestrator',
+      agents,
+      providers: [other, { id: 'openai', models: [
+        { id: 'gpt-5.6-sol', ...apiOnly, variants: { high: {} } },
+        { id: 'gpt-5.6', variants: { medium: {}, high: {} } },
+      ] }],
+    })).toMatchObject({ providerId: 'openai', modelId: 'gpt-5.6', variant: 'high', source: 'availability-fallback' });
+
+    // Never crosses providers: with nothing usable on the provider the saved choice stays.
+    expect(resolveAgentDefaultSelection({
+      agentName: 'Orchestrator',
+      agents,
+      providers: [other, { id: 'openai', models: [{ id: 'gpt-5.6-sol', ...apiOnly }] }],
+    })).toMatchObject({ providerId: 'openai', modelId: 'gpt-5.6-sol', source: 'inherited' });
+  });
+
+  test('keeps the saved default when the ChatGPT account models could not be loaded', () => {
+    const outage = { available: false as const, unavailableReason: 'account_models_unavailable' as const };
+    expect(resolveAgentDefaultSelection({
+      agentName: 'Orchestrator',
+      agents: [orchestrator],
+      providers: [{ id: 'anthropic', models: [{ id: 'claude-sonnet-4-6' }] },
+        { id: 'openai', models: [{ id: 'gpt-5.6-sol', ...outage }, { id: 'gpt-5.6', ...outage }] }],
+    })).toMatchObject({ providerId: 'openai', modelId: 'gpt-5.6-sol', source: 'inherited' });
   });
 });

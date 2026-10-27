@@ -71,4 +71,14 @@ describe('getProviderModelsForDisplay', () => {
       'composer-2-fast',
     ]);
   });
+
+  test('hides unavailable models only when asked', () => {
+    const models = [
+      { id: 'a', name: 'A', available: false },
+      { id: 'b', name: 'B', available: true },
+      { id: 'c', name: 'C' },
+    ];
+    expect(getProviderModelsForDisplay({ models }).map((model) => model.id)).toEqual(['a', 'b', 'c']);
+    expect(getProviderModelsForDisplay({ models }, { hideUnavailable: true }).map((model) => model.id)).toEqual(['b', 'c']);
+  });
 });

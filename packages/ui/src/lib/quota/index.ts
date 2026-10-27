@@ -1,6 +1,7 @@
 export { QUOTA_PROVIDERS, QUOTA_PROVIDER_MAP, getSortedQuotaProviders } from './providers';
 export type { QuotaProviderMeta } from './providers';
 export {
+  getCatalogProviderForQuotaProvider,
   getQuotaProviderIdForProvider,
   getUsageOnlyQuotaProviders,
   parseUsageOnlyProviderSelection,

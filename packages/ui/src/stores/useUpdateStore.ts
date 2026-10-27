@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { UpdateInfo, UpdateProgress } from '@/lib/desktop';
 import { getDeviceInfo } from '@/lib/device';
+import { toast } from '@/components/ui';
 import { useUIStore } from './useUIStore';
 import {
   checkForDesktopUpdates,
@@ -92,7 +93,7 @@ async function checkForWebUpdates(runtime: ClientRuntime, currentVersion?: strin
     const params = mapRuntimeParams(runtime);
 
     if (currentVersion) params.set('currentVersion', currentVersion);
-    const response = await fetch(`/api/openchamber/update-check?${params.toString()}`, {
+    const response = await fetch(`/api/devryan/update-check?${params.toString()}`, {
       method: 'GET',
       headers: { Accept: 'application/json' },
     });
@@ -242,11 +243,25 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
           : desktopInfo,
       }));
 
-      const ok = await downloadDesktopUpdate((progress) => {
+      const result = await downloadDesktopUpdate((progress) => {
         set({ progress });
       });
-      if (!ok) {
+      if (result === 'unavailable') {
         throw new Error('Desktop update only works on Local instance');
+      }
+      if (typeof result === 'object') {
+        // No in-app updater payload: the installer or release page opened in the browser.
+        set({ downloading: false, progress: null });
+        const installer = result.opened === 'installer';
+        toast.success(installer
+          ? 'Opened the DevRyan installer download in your browser'
+          : 'Opened the DevRyan release page in your browser', {
+          // Only a background runtime the main process actually drained is reported stopped.
+          description: `${result.backgroundRuntimeStopped ? 'The background runtime was stopped for the update. ' : ''}${installer
+            ? 'Open the downloaded DMG'
+            : 'Download the DMG from the release page and open it'}, then quit DevRyan before replacing it in Applications.`,
+        });
+        return;
       }
       set({ downloading: false, downloaded: true });
     } catch (error) {

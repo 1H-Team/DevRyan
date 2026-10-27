@@ -9,6 +9,14 @@ import {
 const session = (id, updated) => ({ id, time: { updated } });
 
 describe('managed global session visibility', () => {
+  it('keeps visible timestamp peers together without exposing foreign sessions', async () => {
+    const result = await listVisibleSessionPage({
+      limit: 1,
+      fetchPage: async () => ({ sessions: [session('own-a', 3), session('foreign', 3), session('own-b', 3), session('own-c', 2)], nextCursor: 2 }),
+      isVisible: ({ id }) => id.startsWith('own-'),
+    });
+    expect(result).toEqual({ sessions: [session('own-a', 3), session('own-b', 3)], nextCursor: 3 });
+  });
   it('fills a visible page across upstream pages containing foreign sessions', async () => {
     const fetchPage = vi.fn()
       .mockResolvedValueOnce({

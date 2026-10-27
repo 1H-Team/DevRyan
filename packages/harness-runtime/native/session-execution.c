@@ -59,7 +59,9 @@ static void mapping(const char *file, const char *value) {
  */
 static void readonly_host(const char *directory, const char *scratch) {
   uid_t uid = getuid(); gid_t gid = getgid(); char value[96];
-  if (unshare(CLONE_NEWUSER | CLONE_NEWNS | CLONE_NEWIPC | CLONE_NEWPID)) fatal("private namespaces required");
+  const char *read_only = getenv("DEVRYAN_EXECUTION_READ_ONLY");
+  int network = read_only && !strcmp(read_only, "1") ? CLONE_NEWNET : 0;
+  if (unshare(CLONE_NEWUSER | CLONE_NEWNS | CLONE_NEWIPC | CLONE_NEWPID | network)) fatal("private namespaces required");
   mapping("/proc/self/setgroups", "deny");
   snprintf(value, sizeof(value), "%u %u 1", uid, uid); mapping("/proc/self/uid_map", value);
   snprintf(value, sizeof(value), "%u %u 1", gid, gid); mapping("/proc/self/gid_map", value);

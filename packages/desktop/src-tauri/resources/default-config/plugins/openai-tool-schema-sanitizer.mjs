@@ -1,4 +1,4 @@
-// OpenAI tool-schema sanitizer (OpenChamber-bundled opencode plugin)
+// OpenAI tool-schema sanitizer (DevRyan-bundled opencode plugin)
 //
 // Problem: OpenAI's strict function/tool JSON-schema validator rejects `pattern`
 // regexes that use lookaround. Zod's `z.string().email()` (and similar) compiles

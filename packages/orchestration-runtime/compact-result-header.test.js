@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { createCompactResultHeader } from './compact-result-header.js';
+import { decodeRequiredCheckVerification, projectRequiredCheckCompletion, projectRequiredCheckEvidence, selectRequiredCheckTasks, validateRequiredCheckReceipts, validateRequiredChecks } from './required-checks.js';
 
 const task = { taskId: 'dvr_task_header', rootSessionId: 'ses_root', status: 'completed', failureReason: null };
 const checks = [{ name: 'unit', status: 'passed' }];
@@ -39,4 +40,43 @@ describe('compact reported outcomes and detail requirements', () => {
       expect(header('**Status:** complete', { checks: requiredChecks }).detail.requiredBeforeDisposition).toBe(true);
     },
   );
+});
+
+describe('typed required verification completion', () => {
+  test('the wire decoder validates every consumed verification field and projects bounded shapes', () => {
+    const checks = projectRequiredCheckEvidence([{ name: 'unit', command: 'bun test', paths: ['src.js'] }]);
+    const value = { ...projectRequiredCheckCompletion(checks), objectiveId: 'msg_user', checks, observedAt: 1 };
+    expect(decodeRequiredCheckVerification(value)).toEqual(value);
+    for (const change of [{ kind: 'unreviewed' }, { coverage: { ...checks[0].coverage, kind: 'all-code' } },
+      { evidence: { callId: 12 } }, { visual: { dataSource: 'fixture' } }, { waiver: { reason: 'child prose' } }]) {
+      expect(decodeRequiredCheckVerification({ ...value, checks: [{ ...checks[0], ...change }] })).toBeNull();
+    }
+    expect(decodeRequiredCheckVerification({ ...value, ready: true })).toBeNull();
+  });
+  test('only observed passes or content-bound authenticated waivers satisfy declared checks', () => {
+    const checks = [{ name: 'unit', command: 'bun test', paths: ['src.js'] }];
+    expect(projectRequiredCheckCompletion([])).toMatchObject({ ready: true, status: 'passed' });
+    expect(projectRequiredCheckCompletion(projectRequiredCheckEvidence(checks))).toMatchObject({ ready: false, status: 'pending', remaining: [{ name: 'unit' }] });
+    const receipt = { name: 'unit', callId: 'waiver_1', messageId: null, exitCode: null, observedAt: 1, status: 'waived', contentHash: 'a'.repeat(64),
+      waiver: { source: 'authenticated-user', userId: 'owner', reason: 'Accept this known limitation' } };
+    expect(projectRequiredCheckCompletion(projectRequiredCheckEvidence(checks, [receipt], { unit: 'a'.repeat(64) }))).toMatchObject({ ready: true, status: 'waived' });
+    expect(projectRequiredCheckCompletion(projectRequiredCheckEvidence(checks, [receipt], { unit: 'b'.repeat(64) }))).toMatchObject({ ready: false, status: 'pending' });
+    expect(() => validateRequiredCheckReceipts([{ ...receipt, waiver: { ...receipt.waiver, source: 'child-report' } }], checks)).toThrow();
+  });
+  test('visual declarations require populated state, assertions and an explicit data source', () => {
+    const check = { name: 'visual', command: 'bun run visual', paths: ['src.js'], kind: 'visual', visual: { state: 'populated', dataSource: 'fixture', assertions: ['rows visible'], reportPath: 'visual.json' } };
+    expect(validateRequiredChecks([check])).toEqual([check]);
+    for (const visual of [{ ...check.visual, assertions: [] }, { ...check.visual, state: 'empty' }, { ...check.visual, reportPath: '../report.json' }]) {
+      expect(() => validateRequiredChecks([{ ...check, visual }])).toThrow();
+    }
+  });
+  test('supersession preserves requirements and never treats abandonment or a new objective as a waiver', () => {
+    const prior = { taskId: 'old', dispatchGroupId: 'objective', priorTaskId: null, requiredChecks: [{ name: 'unit', command: 'bun test', paths: ['src.js'] }] };
+    const next = { ...prior, taskId: 'retry', priorTaskId: 'old' };
+    expect(selectRequiredCheckTasks([prior, next], 'objective')).toEqual([next]);
+    expect(selectRequiredCheckTasks([prior, { ...next, requiredChecks: [] }], 'objective')).toEqual([prior]);
+    expect(selectRequiredCheckTasks([prior], 'new-objective')).toEqual([]);
+    const projected = { ...prior, dispatchGroupId: undefined, verification: { objectiveId: 'objective' } };
+    expect(selectRequiredCheckTasks([projected], 'objective')).toEqual([projected]);
+  });
 });

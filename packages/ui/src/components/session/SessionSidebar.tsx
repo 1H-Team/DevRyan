@@ -2,6 +2,7 @@ import { getRetentionNavigationRevision } from '@/lib/sessionRetention';
 import { buildKnownSessionDirectories } from '@/lib/worktrees/worktreeDiscovery';
 import { createSidebarRowModel, selectableModelRows } from './sidebar/sidebarRowModel';
 import { SidebarRowsContext } from './sidebar/SidebarRowsContext';
+import { useRuntimeFeature } from '@/lib/opencode/runtime-capabilities';
 import React from 'react';
 import type { Session } from '@opencode-ai/sdk/v2';
 import { RiDeleteBinLine } from '@remixicon/react';
@@ -72,7 +73,7 @@ import {
   LazySessionDeleteConfirmDialog,
   LazySessionSearchDialog,
 } from './sidebar/lazySessionDialogs';
-import { LazyBotSidebarSection, LazyViewBoundary } from '@/components/views/lazyViews';
+import { LazyViewBoundary } from '@/components/views/lazyViews';
 import { BulkActionBar } from './sidebar/BulkActionBar';
 import { useSessionMultiSelectStore } from '@/stores/useSessionMultiSelectStore';
 import { type SessionGroup, type SessionNode } from './sidebar/types';
@@ -94,7 +95,7 @@ import {
 } from '@/stores/useGlobalSessionsStore';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useGitHubAuthStore } from '@/stores/useGitHubAuthStore';
-import { subscribeOpenchamberEvents } from '@/lib/openchamberEvents';
+import { subscribeDevRyanEvents } from '@/lib/devryanEvents';
 import type { GitHubAuthStatus } from '@/lib/api/types';
 import { markWorktreeBootstrapPending } from '@/lib/worktrees/worktreeBootstrap';
 import { hasAuthCapability, useAuthPrincipal } from '@/lib/authSession';
@@ -102,7 +103,6 @@ import {
   isManagedBranchGranted,
 } from '@/lib/worktrees/managedBranches';
 import { archiveBranchSessions } from './sidebar/branchSessionCleanup';
-import { useMainSidebarAudienceStore } from '@/stores/useMainSidebarAudienceStore';
 
 const PROJECT_COLLAPSE_STORAGE_KEY = 'oc.sessions.projectCollapse';
 const GROUP_ORDER_STORAGE_KEY = 'oc.sessions.groupOrder';
@@ -243,10 +243,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   const [sidebarModel] = React.useState(createSidebarRowModel);
   const sidebarRows = React.useSyncExternalStore(sidebarModel.subscribe, sidebarModel.getRows);
   const { t } = useI18n();
-  const audience = useMainSidebarAudienceStore((state) => state.audience);
-  const setAudience = useMainSidebarAudienceStore((state) => state.setAudience);
   const principal = useAuthPrincipal();
-  const canUseBots = hasAuthCapability(principal, 'bots');
   const canManageProjects = hasAuthCapability(principal, 'manageProjects');
   const canCreateWorktrees = hasAuthCapability(principal, 'createWorktrees');
   const canCreateBranches = hasAuthCapability(principal, 'createBranches');
@@ -359,6 +356,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   const openContextPanelTab = useUIStore((state) => state.openContextPanelTab);
   const setSettingsDialogOpen = useUIStore((state) => state.setSettingsDialogOpen);
   const setSessionSwitcherOpen = useUIStore((state) => state.setSessionSwitcherOpen);
+  const managedChildTasks = useRuntimeFeature('managedChildTasks');
   const isScheduledTasksDialogOpen = useUIStore((state) => state.isScheduledTasksDialogOpen);
   const setScheduledTasksDialogOpen = useUIStore((state) => state.setScheduledTasksDialogOpen);
   const setMultiRunLauncherOpen = useUIStore((state) => state.setMultiRunLauncherOpen);
@@ -500,7 +498,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
 
   React.useEffect(() => {
     let refreshTimeout: ReturnType<typeof setTimeout> | null = null;
-    const unsubscribe = subscribeOpenchamberEvents((event) => {
+    const unsubscribe = subscribeDevRyanEvents((event) => {
       if (event.type !== 'scheduled-task-ran') {
         return;
       }
@@ -632,7 +630,6 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
 
   const deleteSession = useSessionUIStore((state) => state.deleteSession);
   const deleteSessions = useSessionUIStore((state) => state.deleteSessions);
-  const archiveSession = useSessionUIStore((state) => state.archiveSession);
   const archiveSessions = useSessionUIStore((state) => state.archiveSessions);
   const unarchiveSession = useSessionUIStore((state) => state.unarchiveSession);
   const unarchiveSessions = useSessionUIStore((state) => state.unarchiveSessions);
@@ -698,7 +695,6 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     unshareSession,
     deleteSession,
     deleteSessions,
-    archiveSession,
     archiveSessions,
     unarchiveSession,
     unarchiveSessions,
@@ -715,15 +711,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     editTitle,
   });
 
-  const handleSessionSelect = React.useCallback((
-    sessionId: string,
-    sessionDirectory?: string | null,
-    disabled?: boolean,
-    projectId?: string | null,
-  ) => {
-    if (!disabled) setAudience('coding-agents');
-    handleOrdinarySessionSelect(sessionId, sessionDirectory, disabled, projectId);
-  }, [handleOrdinarySessionSelect, setAudience]);
+  const handleSessionSelect = handleOrdinarySessionSelect;
 
   const confirmDeleteFolder = React.useCallback(() => {
     if (!deleteFolderConfirm) return;
@@ -1151,14 +1139,13 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   }, [handleSessionSelect]);
 
   const handleDraftSelect = React.useCallback((draftId: string) => {
-    setAudience('coding-agents');
     setActiveMainTab('chat');
     selectNewSessionDraft(draftId);
     if (mobileVariant) {
       setSessionSwitcherOpen(false);
     }
     onSessionSelected?.(draftId);
-  }, [mobileVariant, onSessionSelected, selectNewSessionDraft, setActiveMainTab, setAudience, setSessionSwitcherOpen]);
+  }, [mobileVariant, onSessionSelected, selectNewSessionDraft, setActiveMainTab, setSessionSwitcherOpen]);
 
   const handleDraftDelete = React.useCallback((draftId: string) => {
     deleteNewSessionDraft(draftId);
@@ -1568,18 +1555,23 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     try {
       let successfulCount = 0;
       let failedCount = 0;
+      let remainingIds: string[] = [];
       if (bulkScopeIsArchived) {
-        const { deletedIds, failedIds } = await deleteSessions(ids);
+        const { deletedIds, failedIds, failures } = await deleteSessions(ids);
+        remainingIds = failedIds;
         successfulCount = deletedIds.length;
         failedCount = failedIds.length;
         if (failedIds.length > 0) {
           toast.error(failedIds.length === 1
             ? t('sessions.sidebar.bulkActions.failedDeleteSingle', { count: failedIds.length })
-            : t('sessions.sidebar.bulkActions.failedDeletePlural', { count: failedIds.length }));
+            : t('sessions.sidebar.bulkActions.failedDeletePlural', { count: failedIds.length }), {
+            description: resolveSessionDeleteFailureDescription(failures, t('sessions.sidebar.dialogs.deleteResult.tryAgain')),
+          });
         }
       } else {
         recordPendingArchiveRevealSessionIds(ids);
         const { archivedIds, failedIds, failures } = await archiveSessions(ids);
+        remainingIds = failedIds;
         collapseArchivedSessionTrees(archivedIds);
         successfulCount = archivedIds.length;
         failedCount = failedIds.length;
@@ -1598,15 +1590,17 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         }
       }
 
-      // Keep selection active when every item failed so the retry target is preserved.
-      if (successfulCount > 0 || failedCount === 0) {
+      // Preserve exactly the failed targets, including after partial success.
+      if (remainingIds.length > 0) {
+        useSessionMultiSelectStore.getState().replaceAll(remainingIds, derivedSelectionScope);
+      } else if (successfulCount > 0 || failedCount === 0) {
         useSessionMultiSelectStore.getState().clear();
       }
     } finally {
       bulkDeletePendingRef.current = false;
       setBulkDeletePending(false);
     }
-  }, [archiveSessions, bulkScopeIsArchived, collapseArchivedSessionTrees, deleteSessions, discardPendingArchiveRevealSessionIdsFor, recordPendingArchiveRevealSessionIds, selectedIds, t]);
+  }, [archiveSessions, bulkScopeIsArchived, collapseArchivedSessionTrees, deleteSessions, derivedSelectionScope, discardPendingArchiveRevealSessionIdsFor, recordPendingArchiveRevealSessionIds, selectedIds, t]);
 
   const handleBulkDelete = React.useCallback(() => {
     const count = selectedIds.size;
@@ -1657,13 +1651,12 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     return () => window.removeEventListener('keydown', listener);
   }, [handleBulkDelete, isInlineEditing, multiSelectStoreApi, selectionModeEnabled, sidebarModel]);
   const handleSidebarNewSession = React.useCallback(() => {
-    setAudience('coding-agents');
     setActiveMainTab('chat');
     if (mobileVariant) {
       setSessionSwitcherOpen(false);
     }
     openNewSessionDraft();
-  }, [mobileVariant, openNewSessionDraft, setActiveMainTab, setAudience, setSessionSwitcherOpen]);
+  }, [mobileVariant, openNewSessionDraft, setActiveMainTab, setSessionSwitcherOpen]);
 
   const sidebarRowsContext = React.useMemo(() => ({ model: sidebarModel, expanded: expandedParents,
     search: hasSessionSearchQuery, editingId, menuKey: openSidebarMenuKey, currentSessionId }),
@@ -1687,40 +1680,14 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         headerActionButtonClass={headerActionButtonClass}
         isSessionSearchOpen={isSessionSearchOpen}
         setIsSessionSearchOpen={setIsSessionSearchOpen}
-        showSidebarToggle={isWebRuntime && audience !== 'bots'}
+        showSidebarToggle={isWebRuntime}
         onToggleSidebar={toggleSidebar}
         hideSearchAction={hideSearchInSidebarHeader}
         avoidWindowControlsOverlay={isTabletStandalonePwa}
-        reserveExternalDesktopChromeRow={!mobileVariant && (isDesktopShellRuntime || audience === 'bots')}
-        audience={audience}
-        onAudienceChange={setAudience}
+        reserveExternalDesktopChromeRow={!mobileVariant && isDesktopShellRuntime}
       />
 
-      {canUseBots && audience === 'bots' ? (
-        <div
-          id="main-sidebar-audience-panel"
-          role="tabpanel"
-          aria-labelledby="main-sidebar-audience-bots-tab"
-          className="min-h-0 flex-1 overflow-y-auto px-2 pb-3"
-        >
-          <LazyViewBoundary>
-            <LazyBotSidebarSection
-              standalone
-              onBotSelected={(botId) => {
-                if (mobileVariant) setSessionSwitcherOpen(false);
-                onSessionSelected?.(`bot:${botId}`);
-              }}
-            />
-          </LazyViewBoundary>
-        </div>
-      ) : null}
-
-      {audience === 'coding-agents' ? <div
-        id="main-sidebar-audience-panel"
-        role={canUseBots ? 'tabpanel' : undefined}
-        aria-labelledby={canUseBots ? 'main-sidebar-audience-coding-agents-tab' : undefined}
-        className="flex min-h-0 flex-1 flex-col"
-      >
+      <div className="flex min-h-0 flex-1 flex-col">
         <DeferredSessionDialog active={isSessionSearchOpen}>
           <LazyViewBoundary>
             <LazySessionSearchDialog
@@ -1791,7 +1758,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
           />
         ) : null}
 
-      </div> : null}
+      </div>
 
       <SidebarFooter
         onOpenSettings={handleOpenSettings}
@@ -1801,7 +1768,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         showGitHubProfilePlaceholder={principal.scope === 'managed'
           && principal.assignments.some((assignment) => Boolean(assignment.githubAccountId))}
         showRuntimeButtons={true}
-        hideDirectoryControls={audience === 'bots' || shouldHideProjectAdminControls}
+        hideDirectoryControls={shouldHideProjectAdminControls}
         handleOpenDirectoryDialog={handleOpenDirectoryDialog}
       />
 
@@ -1855,7 +1822,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         </LazyViewBoundary>
       </DeferredSessionDialog>
 
-      <DeferredSessionDialog active={isScheduledTasksDialogOpen}>
+      <DeferredSessionDialog active={isScheduledTasksDialogOpen && managedChildTasks}>
         <LazyViewBoundary>
           <LazyScheduledTasksDialog />
         </LazyViewBoundary>

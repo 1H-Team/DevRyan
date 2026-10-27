@@ -1,7 +1,13 @@
+import { probe, resolveManagedOpenCodeGeneration } from './readiness-probe.js';
+
 export const createOpenCodeNetworkRuntime = (deps) => {
   const {
     state,
     getOpenCodeAuthHeaders,
+    // Readiness of the runtime this server launched (DESIGN C.4): gen 1 asks
+    // `/global/health`, gen 2 asks `/devryan/ready` and `/api/info`.
+    probeOpenCodeReadiness = probe,
+    resolveOpenCodeGeneration = () => resolveManagedOpenCodeGeneration(),
   } = deps;
 
   const normalizeApiPrefix = (prefix) => {
@@ -28,36 +34,23 @@ export const createOpenCodeNetworkRuntime = (deps) => {
 
   const waitForReady = async (url, timeoutMs = 10000) => {
     const start = Date.now();
+    const { generation } = resolveOpenCodeGeneration();
     while (Date.now() - start < timeoutMs) {
-      let timeout = null;
       try {
-        const controller = new AbortController();
-        timeout = setTimeout(() => controller.abort(), 3000);
-        const response = await fetch(`${url.replace(/\/+$/, '')}/global/health`, {
-          method: 'GET',
-          headers: {
-            Accept: 'application/json',
-            ...getOpenCodeAuthHeaders(),
-          },
-          signal: controller.signal,
+        const result = await probeOpenCodeReadiness({
+          generation,
+          baseUrl: url,
+          headers: getOpenCodeAuthHeaders(),
+          timeoutMs: 3000,
         });
-        clearTimeout(timeout);
-        timeout = null;
-
-        if (response.ok) {
-          const body = await response.json().catch(() => null);
-          if (body?.healthy === true) {
-            state.openCodeVersion = typeof body.version === 'string' && body.version.trim().length > 0
-              ? body.version.trim()
-              : null;
-            return true;
-          }
+        if (result.ready) {
+          state.openCodeVersion = result.version;
+          state.openCodeGeneration = result.generation;
+          return true;
         }
+        // An invalid generation never becomes ready; do not wait it out.
+        if (result.reason === 'generation_invalid') return false;
       } catch {
-      } finally {
-        if (timeout) {
-          clearTimeout(timeout);
-        }
       }
       await new Promise((resolve) => setTimeout(resolve, 100));
     }

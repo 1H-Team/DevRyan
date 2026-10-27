@@ -1,3 +1,5 @@
+import { applyEventDialect } from '../event-stream/event-dialect.js';
+
 export const createNotificationEmitterRuntime = (dependencies) => {
   const {
     process,
@@ -27,7 +29,7 @@ export const createNotificationEmitterRuntime = (dependencies) => {
   const SSE_MAX_BUFFERED_BYTES = 16 * 1024 * 1024;
 
   const writeSseEvent = (res, payload) => {
-    res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    res.write(`data: ${applyEventDialect(JSON.stringify(payload), res.devryanEventDialect ?? null)}\n\n`);
     if ((res.socket?.writableLength ?? 0) > SSE_MAX_BUFFERED_BYTES) {
       res.destroy?.();
     }
@@ -68,7 +70,7 @@ export const createNotificationEmitterRuntime = (dependencies) => {
     }
 
     const syntheticPayload = {
-      type: 'openchamber:notification',
+      type: 'devryan:notification',
       properties: {
         ...payload,
         // Tell the UI whether the sidecar stdout notification channel is active.

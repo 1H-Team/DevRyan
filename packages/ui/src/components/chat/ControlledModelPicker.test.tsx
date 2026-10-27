@@ -7,7 +7,7 @@ mock.module('@/components/ui/ProviderLogo', () => ({
   ProviderLogo: ({ providerId }: { providerId: string }) => React.createElement('img', { src: `/logos/${providerId}.svg` }),
 }));
 
-const { ControlledModelPicker, ControlledVariantPicker } = await import('./ControlledModelPicker');
+const { ControlledModelPicker } = await import('./ControlledModelPicker');
 const { getControlledModelOptions, findControlledModelProvider } = await import('./controlledModelPickerOptions');
 
 const providers = [{
@@ -53,22 +53,39 @@ describe('ControlledModelPicker', () => {
     expect(html).toContain('/logos/opencode-go.svg');
   });
 
-  test('renders the selected thinking level beside the model picker', () => {
+  test('renders the selected thinking level inside the single model trigger', () => {
     const html = renderToStaticMarkup(
       <I18nProvider>
-        <ControlledVariantPicker
+        <ControlledModelPicker
           providers={providers}
           value={{ providerId: 'opencode-go', modelId: 'deepseek-v4-flash', variant: 'high' }}
           onChange={() => undefined}
         />
       </I18nProvider>,
     );
-    expect(html).toContain('model-controls__variant-trigger');
-    expect(html).toContain('High');
-    expect(html).toContain('aria-label="Thinking"');
-    expect(html).toContain('leading-[14px]');
-    expect(html).toContain('-my-[2px]');
-    expect(html).toContain('py-[2px]');
+    expect(html).not.toContain('model-controls__variant-trigger');
+    expect(html.match(/<button/g)).toHaveLength(1);
+    const trigger = html.slice(html.indexOf('model-controls__model-trigger'), html.indexOf('</button>'));
+    expect(trigger).toContain('DeepSeek V4 Flash');
+    expect(trigger).toContain('model-controls__variant-label');
+    expect(trigger).toContain('High');
+    expect(trigger).toContain('leading-[14px]');
+    expect(trigger).toContain('-my-[2px]');
+    expect(trigger).toContain('py-[2px]');
+  });
+
+  test('omits the thinking label for a model without thinking levels', () => {
+    const html = renderToStaticMarkup(
+      <I18nProvider>
+        <ControlledModelPicker
+          providers={[{ id: 'plain', name: 'Plain', models: [{ id: 'basic', name: 'Basic Model' }] }]}
+          value={{ providerId: 'plain', modelId: 'basic', variant: null }}
+          onChange={() => undefined}
+        />
+      </I18nProvider>,
+    );
+    expect(html).toContain('Basic Model');
+    expect(html).not.toContain('model-controls__variant-label');
   });
 });
 

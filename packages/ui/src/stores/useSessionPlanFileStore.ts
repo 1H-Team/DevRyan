@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-import type { SessionPlanRevisionIdentity } from '@/lib/api/types';
+import type { SessionPlanRevisionIdentity, SessionPlanSourceIdentity } from '@/lib/api/types';
 
 export type SessionPlanFileStatus = 'saving' | 'saved' | 'error';
 
@@ -11,18 +11,26 @@ export interface SessionPlanFileRecord {
   status: SessionPlanFileStatus;
   error: string | null;
   autoRevealed?: boolean;
+  sourceIdentity?: SessionPlanSourceIdentity;
+  canonicalContent?: string;
+  version?: string;
+  validationAttempt?: string;
 }
 
 interface SessionPlanFileState {
   recordsBySession: Record<string, SessionPlanFileRecord | undefined>;
-  beginSaving: (sessionId: string, sourceMessageId: string) => void;
+  beginSaving: (sessionId: string, sourceMessageId: string, validationAttempt?: string) => void;
   markSaved: (
     sessionId: string,
     sourceMessageId: string,
     path: string,
     revisionIdentity: SessionPlanRevisionIdentity,
+    sourceIdentity?: SessionPlanSourceIdentity,
+    canonicalContent?: string,
+    version?: string,
+    validationAttempt?: string,
   ) => void;
-  markError: (sessionId: string, sourceMessageId: string, error: string) => void;
+  markError: (sessionId: string, sourceMessageId: string, error: string, validationAttempt?: string) => void;
   claimAutoReveal: (sessionId: string, sourceMessageId: string) => boolean;
   clearSession: (sessionId: string) => void;
 }
@@ -32,14 +40,14 @@ const clean = (value: string): string => value.trim();
 export const useSessionPlanFileStore = create<SessionPlanFileState>((set) => ({
   recordsBySession: {},
 
-  beginSaving: (sessionId, sourceMessageId) => {
+  beginSaving: (sessionId, sourceMessageId, validationAttempt) => {
     const id = clean(sessionId);
     const messageId = clean(sourceMessageId);
     if (!id || !messageId) return;
 
     set((state) => {
       const current = state.recordsBySession[id];
-      if (current?.sourceMessageId === messageId && current.status === 'saving') return state;
+      if (current?.sourceMessageId === messageId && current.status === 'saving' && current.validationAttempt === validationAttempt) return state;
       return {
         recordsBySession: {
           ...state.recordsBySession,
@@ -47,6 +55,7 @@ export const useSessionPlanFileStore = create<SessionPlanFileState>((set) => ({
             sourceMessageId: messageId,
             path: null,
             revisionIdentity: null,
+            validationAttempt,
             status: 'saving',
             error: null,
             autoRevealed: false,
@@ -56,7 +65,7 @@ export const useSessionPlanFileStore = create<SessionPlanFileState>((set) => ({
     });
   },
 
-  markSaved: (sessionId, sourceMessageId, path, revisionIdentity) => {
+  markSaved: (sessionId, sourceMessageId, path, revisionIdentity, sourceIdentity, canonicalContent, version, validationAttempt) => {
     const id = clean(sessionId);
     const messageId = clean(sourceMessageId);
     const savedPath = clean(path);
@@ -70,11 +79,14 @@ export const useSessionPlanFileStore = create<SessionPlanFileState>((set) => ({
 
     set((state) => {
       const current = state.recordsBySession[id];
-      if (current?.sourceMessageId !== messageId) return state;
+      if (current?.sourceMessageId !== messageId || validationAttempt !== undefined && current.validationAttempt !== validationAttempt) return state;
       if (
         current.status === 'saved'
         && current.path === savedPath
         && current.revisionIdentity === revisionIdentity
+        && current.sourceIdentity === sourceIdentity
+        && current.canonicalContent === canonicalContent
+        && current.version === version
         && current.error === null
       ) return state;
       return {
@@ -84,6 +96,10 @@ export const useSessionPlanFileStore = create<SessionPlanFileState>((set) => ({
             sourceMessageId: messageId,
             path: savedPath,
             revisionIdentity,
+            sourceIdentity,
+            canonicalContent,
+            version,
+            validationAttempt: current.validationAttempt,
             status: 'saved',
             error: null,
             autoRevealed: current.autoRevealed === true,
@@ -93,14 +109,14 @@ export const useSessionPlanFileStore = create<SessionPlanFileState>((set) => ({
     });
   },
 
-  markError: (sessionId, sourceMessageId, error) => {
+  markError: (sessionId, sourceMessageId, error, validationAttempt) => {
     const id = clean(sessionId);
     const messageId = clean(sourceMessageId);
     if (!id || !messageId) return;
 
     set((state) => {
       const current = state.recordsBySession[id];
-      if (current?.sourceMessageId !== messageId) return state;
+      if (current?.sourceMessageId !== messageId || validationAttempt !== undefined && current.validationAttempt !== validationAttempt) return state;
       const errorText = clean(error) || 'Failed to save plan file';
       if (current.status === 'error' && current.error === errorText) return state;
       return {
@@ -111,6 +127,7 @@ export const useSessionPlanFileStore = create<SessionPlanFileState>((set) => ({
             path: null,
             revisionIdentity: null,
             status: 'error',
+            validationAttempt: current.validationAttempt,
             error: errorText,
             autoRevealed: current.autoRevealed === true,
           },

@@ -2,6 +2,7 @@ import { getSafeStorage } from '@/stores/utils/safeStorage';
 import React, { useState, useEffect } from 'react';
 import { RiArrowDownSLine } from '@remixicon/react';
 import { cn } from '@/lib/utils';
+import { typography } from '@/lib/typography';
 
 interface SidebarGroupProps {
   /** Group display label (e.g. "Project", "User / Agents") */
@@ -12,6 +13,8 @@ interface SidebarGroupProps {
   storageKey: string;
   /** Whether to start expanded. Defaults to true. */
   defaultExpanded?: boolean;
+  /** Match larger navigation rows without changing other settings sidebars. */
+  size?: 'compact' | 'comfortable';
   children: React.ReactNode;
 }
 
@@ -29,6 +32,7 @@ export const SidebarGroup: React.FC<SidebarGroupProps> = ({
   count,
   storageKey,
   defaultExpanded = true,
+  size = 'compact',
   children,
 }) => {
   const key = getStorageKey(storageKey, label);
@@ -64,11 +68,14 @@ export const SidebarGroup: React.FC<SidebarGroupProps> = ({
           'typography-micro font-semibold uppercase tracking-[0.08em] text-muted-foreground/80',
           'hover:bg-interactive-hover hover:text-muted-foreground transition-colors duration-150',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50',
+          size === 'comfortable' && 'min-h-9 gap-2 py-1.5',
         )}
+        style={size === 'comfortable' ? typography.uiHeader : undefined}
       >
         <RiArrowDownSLine
           className={cn(
             'h-3.5 w-3.5 flex-shrink-0 transition-transform duration-200',
+            size === 'comfortable' && 'h-4 w-4',
             !expanded && '-rotate-90',
           )}
         />

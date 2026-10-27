@@ -1,5 +1,7 @@
 import crypto from 'node:crypto';
 
+import { openCodeClientErrorStatus, resolveGen2OpenCodeClient } from '../opencode/opencode-client-seam.js';
+
 import {
   isLoopbackSocketAddress,
   isMatchingDiscoveryToken,
@@ -55,11 +57,7 @@ const readParentID = (session) => {
   return typeof session.id === 'string' && session.id.trim() ? null : undefined;
 };
 
-const appendDirectory = (url, directory) => {
-  const parsed = new URL(url);
-  parsed.searchParams.set('directory', directory);
-  return parsed.toString();
-};
+
 
 const normalizeHostResult = (result) => {
   const wsUrl = normalizeOptionalString(result?.wsUrl);
@@ -135,9 +133,8 @@ export const createBrowserLeaseRuntime = (options = {}) => {
   const getBrowserLeaseAvailability = options.getBrowserLeaseAvailability;
   const resolveBrowserLeaseContext = options.resolveBrowserLeaseContext;
   const onObservationChanged = options.onObservationChanged;
-  const buildOpenCodeUrl = options.buildOpenCodeUrl;
-  const getOpenCodeAuthHeaders = options.getOpenCodeAuthHeaders ?? (() => ({}));
-  const fetchImpl = options.fetchImpl ?? fetch;
+  // Runtime reads use the required native application client.
+  const openCodeClient = options.openCodeClient ?? null;
   const now = options.now ?? Date.now;
   const createLeaseID = options.createLeaseID
     ?? (() => `dvr_lease_${crypto.randomBytes(18).toString('base64url')}`);
@@ -154,9 +151,19 @@ export const createBrowserLeaseRuntime = (options = {}) => {
   const lineageControllers = new Set();
   const keyTails = new Map();
   const activeAcquisitions = new Set();
+  const pendingHostReleases = new Set();
+  const failedHostReleases = new Map();
+  let checkpointDrain;
   let shuttingDown = false;
   let admissionEpoch = 0;
   let activeReset = null;
+  const releaseHostLease = async input => {
+    const operation = Promise.resolve().then(() => releaseBrowserLease?.(input));
+    pendingHostReleases.add(operation);
+    try { const result = await operation; failedHostReleases.delete(input.leaseId); return result; }
+    catch (error) { failedHostReleases.set(input.leaseId, input); throw error; }
+    finally { pendingHostReleases.delete(operation); }
+  };
 
   const emitObservationChanged = (record) => {
     try {
@@ -249,8 +256,38 @@ export const createBrowserLeaseRuntime = (options = {}) => {
     return cached.parentID;
   };
 
+  const lineageRefused = (status) => {
+    const error = new BrowserLeaseError(
+      'lineage_unavailable',
+      `Cannot resolve session lineage (${status})`,
+      503,
+    );
+    error.transient = status >= 500;
+    return error;
+  };
+
+  const readSessionThroughClient = async (client, sessionID, directory, signal) => {
+    try {
+      return readSessionInfo(await client.sessions.get(sessionID, { directory, signal }));
+    } catch (error) {
+      const status = openCodeClientErrorStatus(error);
+      if (status) throw lineageRefused(status);
+      throw error;
+    }
+  };
+
+  const resolveLineageSource = () => {
+    try {
+      return { client: resolveGen2OpenCodeClient(openCodeClient) };
+    } catch {
+      return null;
+    }
+  };
+
   const fetchParentIDUncached = async (sessionID, directory) => {
-    if (typeof buildOpenCodeUrl !== 'function') {
+    const source = resolveLineageSource();
+    const client = source?.client ?? null;
+    if (!client) {
       throw new BrowserLeaseError(
         'lineage_unavailable',
         'Session lineage is unavailable in this runtime',
@@ -263,25 +300,8 @@ export const createBrowserLeaseRuntime = (options = {}) => {
     const timeout = setTimeout(() => controller.abort(new Error('Session lineage lookup timed out')), lineageRequestTimeoutMs);
     timeout.unref?.();
     try {
-      const baseUrl = buildOpenCodeUrl(`/session/${encodeURIComponent(sessionID)}`, '');
-      const response = await fetchImpl(appendDirectory(baseUrl, directory), {
-        method: 'GET',
-        headers: {
-          accept: 'application/json',
-          ...getOpenCodeAuthHeaders(),
-        },
-        signal: controller.signal,
-      });
-      if (!response.ok) {
-        const error = new BrowserLeaseError(
-          'lineage_unavailable',
-          `Cannot resolve session lineage (${response.status})`,
-          503,
-        );
-        error.transient = response.status >= 500;
-        throw error;
-      }
-      const session = readSessionInfo(await response.json().catch(() => null));
+      // Runtime reads use the required native application client.
+      const session = await readSessionThroughClient(client, sessionID, directory, controller.signal);
       if (normalizeOptionalString(session?.id) !== sessionID) {
         throw new BrowserLeaseError(
           'lineage_unavailable',
@@ -452,7 +472,7 @@ export const createBrowserLeaseRuntime = (options = {}) => {
         if (error instanceof BrowserLeaseError && error.code === 'agent_browser_disabled' && existing) {
           if (removeRecordLocked(existing)) emitObservationChanged(existing);
           try {
-            await releaseBrowserLease?.({ leaseId: existing.leaseId, reason: 'agent_browser_disabled' });
+            await releaseHostLease({ leaseId: existing.leaseId, reason: 'agent_browser_disabled' });
           } catch {
           }
           assertAdmission(epoch);
@@ -547,7 +567,7 @@ export const createBrowserLeaseRuntime = (options = {}) => {
         const current = leasesByID.get(leaseId);
         if (current?.fence === fence) removeRecordLocked(current);
         try {
-          await releaseBrowserLease?.({ leaseId, reason: 'create_failed' });
+          await releaseHostLease({ leaseId, reason: 'create_failed' });
         } catch {
         }
         assertAdmission(epoch);
@@ -603,6 +623,8 @@ export const createBrowserLeaseRuntime = (options = {}) => {
   };
 
   const touch = async (leaseIdInput, input) => {
+    const epoch = admissionEpoch;
+    assertAdmission(epoch);
     const leaseId = requireString(leaseIdInput, 'leaseId');
     const scope = parseScope(input);
     const record = leasesByID.get(leaseId);
@@ -614,6 +636,7 @@ export const createBrowserLeaseRuntime = (options = {}) => {
       }
       requireMatchingScope(current, scope);
       const hostTouchResult = await touchBrowserLease?.({ leaseId, metadata: current.metadata });
+      assertAdmission(epoch);
       if (isHostLeaseMissing(hostTouchResult)) {
         if (removeRecordLocked(current)) emitObservationChanged(current);
         throw new BrowserLeaseError('browser_lease_not_found', 'Browser lease was not found', 404);
@@ -636,7 +659,7 @@ export const createBrowserLeaseRuntime = (options = {}) => {
     if (!removed) return false;
     emitObservationChanged(record);
     try {
-      await releaseBrowserLease?.({ leaseId: record.leaseId, reason });
+      await releaseHostLease({ leaseId: record.leaseId, reason });
     } catch {
       // The server record is authoritative. A failed host cleanup remains
       // visible to the Electron owner and must never resurrect this lease.
@@ -717,6 +740,21 @@ export const createBrowserLeaseRuntime = (options = {}) => {
   const closeAll = async (reason = 'shutdown') => {
     shuttingDown = true;
     return await releaseAll(reason);
+  };
+  const holdForCheckpoint = () => {
+    shuttingDown = true;
+    admissionEpoch++;
+    for (const controller of lineageControllers) controller.abort(admissionError());
+    checkpointDrain ??= (async () => {
+      await Promise.allSettled([...activeAcquisitions]);
+      await Promise.allSettled([...keyTails.values()]);
+      await releaseAll('runtime-bundle-checkpoint');
+      await Promise.allSettled([...pendingHostReleases]);
+      if (failedHostReleases.size) {
+        await Promise.all([...failedHostReleases.values()].map(releaseHostLease));
+      }
+    })();
+    return checkpointDrain;
   };
 
   const authorize = (req, res) => {
@@ -800,6 +838,7 @@ export const createBrowserLeaseRuntime = (options = {}) => {
     resumeAfterReset,
     releaseAll,
     closeAll,
+    holdForCheckpoint,
     processOpenCodeEvent,
     releaseByOpenCodeSession,
     resolveRootSessionID,

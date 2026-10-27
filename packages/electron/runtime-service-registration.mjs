@@ -5,7 +5,8 @@ import { execFile as execFileCallback } from 'node:child_process';
 import { promisify } from 'node:util';
 
 const execFileDefault = promisify(execFileCallback);
-const LABEL = 'dev.openchamber.desktop.runtime-service';
+const LABEL = 'dev.devryan.desktop.runtime-service';
+const LEGACY_LABEL = 'dev.openchamber.desktop.runtime-service';
 const MAX_OUTPUT_BYTES = 32 * 1_024;
 const ALLOWED_STATES = new Set([
   'enabled',
@@ -84,7 +85,7 @@ export const createRuntimeServiceRegistration = ({
   if (platform !== 'darwin') {
     return Object.freeze({
       status: async () => ({ ok: false, state: 'unsupported', code: 'runtime_service_platform_unsupported' }),
-      register: async () => fail('Background Bots require macOS', 'runtime_service_platform_unsupported'),
+      register: async () => fail('The background runtime service requires macOS', 'runtime_service_platform_unsupported'),
       unregister: async () => ({ ok: true, state: 'not_registered', code: null }),
       settingsUrl: null,
       mode: 'unsupported',
@@ -98,6 +99,7 @@ export const createRuntimeServiceRegistration = ({
 
   const modern = macosMajor >= 13 && isPackaged === true;
   const legacyPath = path.join(homeDirectory, 'Library', 'LaunchAgents', `${LABEL}.legacy.plist`);
+  const previousLegacyPath = path.join(homeDirectory, 'Library', 'LaunchAgents', `${LEGACY_LABEL}.legacy.plist`);
   const bundledPlistPath = typeof resourcesPath === 'string' && path.isAbsolute(resourcesPath)
     ? path.resolve(resourcesPath, '..', 'Library', 'LaunchAgents', `${LABEL}.plist`)
     : null;
@@ -111,7 +113,7 @@ export const createRuntimeServiceRegistration = ({
         code: 'runtime_service_packaged_build_required',
       }),
       register: async () => fail(
-        'Background Bots require an installed packaged DevRyan build',
+        'The background runtime service requires an installed packaged DevRyan build',
         'runtime_service_packaged_build_required',
       ),
       unregister: async () => ({ ok: true, state: 'not_registered', code: null }),
@@ -178,7 +180,8 @@ export const createRuntimeServiceRegistration = ({
   };
 
   const legacyStatus = async () => {
-    const exists = await fsPromises.stat(legacyPath).then((entry) => entry.isFile(), () => false);
+    const exists = await Promise.all([legacyPath, previousLegacyPath].map(file =>
+      fsPromises.stat(file).then((entry) => entry.isFile(), () => false))).then(values => values.some(Boolean));
     return Object.freeze({ ok: true, state: exists ? 'enabled' : 'not_registered', code: null });
   };
 
@@ -192,6 +195,14 @@ export const createRuntimeServiceRegistration = ({
     if (legacy.state === 'enabled') {
       activeMode = 'legacy';
       return Object.freeze({ mode: activeMode, status: legacy });
+    }
+
+    if (typeof nativeControl?.statusLegacy === 'function') {
+      const previous = await callNativeControl('statusLegacy');
+      if (previous.state === 'enabled' || previous.state === 'requires_approval') {
+        activeMode = 'legacy-smappservice';
+        return Object.freeze({ mode: activeMode, status: previous });
+      }
     }
 
     const current = await modernStatus();
@@ -229,16 +240,20 @@ export const createRuntimeServiceRegistration = ({
   };
 
   const unregisterLegacy = async () => {
-    if (Number.isSafeInteger(uid) && uid >= 0) {
-      await execFile('/bin/launchctl', ['bootout', `gui/${uid}`, legacyPath], {
-        encoding: 'utf8',
-        maxBuffer: MAX_OUTPUT_BYTES,
-        timeout: 15_000,
-      }).catch(() => undefined);
+    for (const file of [legacyPath, previousLegacyPath]) {
+      const exists = await fsPromises.lstat(file).then((entry) => entry.isFile(), (error) => {
+        if (error?.code === 'ENOENT') return false;
+        throw error;
+      });
+      if (exists && Number.isSafeInteger(uid) && uid >= 0) {
+        await execFile('/bin/launchctl', ['bootout', `gui/${uid}`, file], {
+          encoding: 'utf8', maxBuffer: MAX_OUTPUT_BYTES, timeout: 15_000,
+        }).catch(() => undefined);
+      }
+      await fsPromises.unlink(file).catch((error) => {
+        if (error?.code !== 'ENOENT') throw error;
+      });
     }
-    await fsPromises.unlink(legacyPath).catch((error) => {
-      if (error?.code !== 'ENOENT') throw error;
-    });
     return Object.freeze({ ok: true, state: 'not_registered', code: null });
   };
 
@@ -250,7 +265,11 @@ export const createRuntimeServiceRegistration = ({
     register: async (options) => {
       if (!modern) return registerLegacy(options);
       const selected = await selectModernMode();
-      if (selected.mode === 'legacy') return registerLegacy(options);
+      // An older private LaunchAgent already owns the runtime after upgrade.
+      // Bootstrapping the new label beside it would start a second owner.
+      if (selected.mode === 'legacy') return selected.status.state === 'enabled'
+        ? selected.status : registerLegacy(options);
+      if (selected.mode === 'legacy-smappservice') return selected.status;
       const registered = await registerModern();
       if (registered.state === 'not_found' && await bundledDefinitionExists()) {
         activeMode = 'legacy';
@@ -263,7 +282,17 @@ export const createRuntimeServiceRegistration = ({
       const legacy = await legacyStatus();
       if (activeMode === 'legacy' || legacy.state === 'enabled') {
         activeMode = 'legacy';
-        return unregisterLegacy();
+        const removed = await unregisterLegacy();
+        if (typeof nativeControl?.unregister === 'function') {
+          const current = await callNativeControl('unregister');
+          if (!current.ok && !['not_found', 'not_registered'].includes(current.state)) return current;
+        }
+        return removed;
+      }
+      if (activeMode === 'legacy-smappservice') {
+        const previous = await callNativeControl('unregisterLegacy');
+        if (!previous.ok && !['not_found', 'not_registered'].includes(previous.state)) return previous;
+        activeMode = 'smappservice';
       }
       activeMode = 'smappservice';
       const result = await callNativeControl('unregister');
@@ -284,5 +313,6 @@ export const createRuntimeServiceRegistration = ({
       return activeMode;
     },
     legacyPath,
+    previousLegacyPath,
   });
 };

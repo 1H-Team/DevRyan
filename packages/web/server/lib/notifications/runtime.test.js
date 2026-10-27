@@ -1,6 +1,13 @@
+import { createNativeConsumerFixture } from '../opencode/test-native-consumer-client.js';
+const createNotificationTriggerRuntime = (options = {}) => createNotificationTriggerRuntimeNative({
+  ...options, openCodeClient: options.openCodeClient ?? createNativeConsumerFixture({
+    readFixture: options.fetchImpl ?? ((...args) => globalThis.fetch(...args)), headers: options.getOpenCodeAuthHeaders,
+  }),
+});
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { createNotificationTriggerRuntime } from './runtime.js';
+import { createNotificationTriggerRuntime as createNotificationTriggerRuntimeNative } from './runtime.js';
+import { prepareNotificationLastMessage } from './message.js';
 import { createNotificationTemplateRuntime } from './template-runtime.js';
 
 const createCompletionPayload = (overrides = {}) => ({
@@ -133,8 +140,10 @@ const createRuntime = (settings = {}, options = {}) => {
       },
     })),
     prepareNotificationLastMessage: vi.fn(async ({ message }) => message),
-    summarizeText: vi.fn(async (text) => text),
-    resolveZenModel: vi.fn(async () => 'gpt-5-nano'),
+    resolveHelperSelection: vi.fn(async () => ({
+      providerID: 'helper', modelID: 'flash', revision: 'saved', selectionMode: 'configured', selectionRevision: 'saved',
+    })),
+    generateHelperText: vi.fn(async () => ({ text: 'Helper summary' })),
     buildTemplateVariables: vi.fn(async (_payload, sessionId) => ({
       project_name: 'Project',
       worktree: '/tmp/project',
@@ -184,13 +193,13 @@ const createRuntime = (settings = {}, options = {}) => {
   const runtime = createNotificationTriggerRuntime({
     readSettingsFromDisk: mocks.readSettingsFromDisk,
     prepareNotificationLastMessage: mocks.prepareNotificationLastMessage,
-    summarizeText: mocks.summarizeText,
-    resolveZenModel: mocks.resolveZenModel,
+    resolveHelperSelection: mocks.resolveHelperSelection,
+    generateHelperText: mocks.generateHelperText,
     buildTemplateVariables: mocks.buildTemplateVariables,
     extractLastMessageText: mocks.extractLastMessageText,
     fetchSessionMessages: mocks.fetchSessionMessages,
     fetchSessionInfo: mocks.fetchSessionInfo,
-    fetchSessionMessage: mocks.fetchSessionMessage,
+    fetchSessionMessage: options.fetchSessionMessage === null ? undefined : mocks.fetchSessionMessage,
     fetchLastAssistantMessageText: mocks.fetchLastAssistantMessageText,
     resolveNotificationTemplate: mocks.resolveNotificationTemplate,
     shouldApplyResolvedTemplateMessage: mocks.shouldApplyResolvedTemplateMessage,
@@ -200,11 +209,44 @@ const createRuntime = (settings = {}, options = {}) => {
     buildOpenCodeUrl: (path) => path,
     getOpenCodeAuthHeaders: () => ({}),
     completionSettleMs: options.completionSettleMs ?? 0,
+    ...(options.openCodeClient ? { openCodeClient: options.openCodeClient } : {}),
     ...(mocks.getIsWindowFocused ? { getIsWindowFocused: mocks.getIsWindowFocused } : {}),
   });
 
   return { runtime, calls, mocks };
 };
+
+it('checkpoint clears pending notification timers and rejects later event admission', async () => {
+  vi.useFakeTimers();
+  const { runtime, calls } = createRuntime();
+  const question = { type: 'question.asked', properties: { sessionID: 'ses_1', questions: [{ question: 'Continue?' }] } };
+  await runtime.maybeSendPushForTrigger(question);
+  await runtime.holdForCheckpoint();
+  await runtime.maybeSendPushForTrigger(question);
+  await vi.advanceTimersByTimeAsync(1_000);
+  expect(calls.desktop).toHaveLength(0); expect(calls.push).toHaveLength(0);
+});
+
+it('checkpoint waits the actual admitted notification push after its debounce timer has fired', async () => {
+  vi.useFakeTimers();
+  const { runtime, mocks } = createRuntime(); let release;
+  mocks.sendPushToAllUiSessions.mockImplementation(() => new Promise(resolve => { release = resolve; }));
+  await runtime.maybeSendPushForTrigger({ type: 'question.asked', properties: { sessionID: 'ses_1', questions: [{ question: 'Continue?' }] } });
+  await vi.advanceTimersByTimeAsync(500);
+  expect(mocks.sendPushToAllUiSessions).toHaveBeenCalledOnce();
+  let drained = false; const drain = runtime.holdForCheckpoint().then(() => { drained = true; });
+  await Promise.resolve(); expect(drained).toBe(false);
+  release(); await drain; expect(drained).toBe(true);
+});
+
+it('checkpoint reports a failed admitted notification tail even after timer error handling', async () => {
+  vi.useFakeTimers();
+  const { runtime, mocks } = createRuntime();
+  mocks.sendPushToAllUiSessions.mockRejectedValue(new Error('write refused'));
+  await runtime.maybeSendPushForTrigger({ type: 'question.asked', properties: { sessionID: 'ses_1', questions: [{ question: 'Continue?' }] } });
+  await vi.advanceTimersByTimeAsync(500);
+  await expect(runtime.holdForCheckpoint()).rejects.toMatchObject({ code: 'bundle_notifications_unsettled' });
+});
 
 const completeSession = async (runtime) => {
   await runtime.maybeSendPushForTrigger(createStatusPayload('busy'));
@@ -468,7 +510,7 @@ describe('notification trigger runtime completion gating', () => {
     expect(calls.push).toHaveLength(0);
     expect(mocks.buildTemplateVariables).not.toHaveBeenCalled();
     expect(mocks.prepareNotificationLastMessage).not.toHaveBeenCalled();
-    expect(mocks.summarizeText).not.toHaveBeenCalled();
+    expect(mocks.generateHelperText).not.toHaveBeenCalled();
   });
 
   it('still sends always-mode completion notifications while the window is focused', async () => {
@@ -485,15 +527,15 @@ describe('notification trigger runtime completion gating', () => {
     expect(mocks.buildTemplateVariables).toHaveBeenCalledOnce();
   });
 
-  it('does not fetch plan history or resolve a Zen model for an ordinary unsummarized completion', async () => {
+  it('does not fetch plan history or call the helper for an ordinary short completion', async () => {
     const { runtime, calls, mocks } = createRuntime({ summarizeLastMessage: false });
 
     await completeSession(runtime);
 
     expect(calls.desktop).toHaveLength(1);
     expect(mocks.fetchSessionMessages).not.toHaveBeenCalled();
-    expect(mocks.resolveZenModel).not.toHaveBeenCalled();
-    expect(mocks.summarizeText).not.toHaveBeenCalled();
+    expect(mocks.resolveHelperSelection).not.toHaveBeenCalled();
+    expect(mocks.generateHelperText).not.toHaveBeenCalled();
   });
 
   it('deduplicates terminal message and busy/idle repeats by assistant message', async () => {
@@ -710,7 +752,7 @@ describe('notification trigger runtime completion gating', () => {
       info: { parentID: 'user_plan_1' },
     }));
     await runtime.maybeSendPushForTrigger(createCompletionPayload({
-      info: { parentID: 'user_plan_1', finish: undefined, status: 'completed' },
+      info: { parentID: 'user_plan_1', finish: 'stop', status: 'completed' },
     }));
     await runtime.maybeSendPushForTrigger(createStatusPayload('busy'));
     await runtime.maybeSendPushForTrigger(createStatusPayload('idle'));
@@ -723,8 +765,8 @@ describe('notification trigger runtime completion gating', () => {
     expect(calls.push[0].data).toMatchObject({ type: 'plan-ready', sourceMessageId: 'msg_1' });
   });
 
-  it('delivers a cached sentinel plan without history or Zen enrichment', async () => {
-    const { runtime, calls, mocks } = createRuntime({ summarizeLastMessage: false });
+  it('delivers a cached sentinel plan without history or helper enrichment', async () => {
+    const { runtime, calls, mocks } = createRuntime();
     mocks.fetchSessionMessages.mockRejectedValue(new Error('history timeout'));
 
     await completePlanSession(runtime);
@@ -732,7 +774,7 @@ describe('notification trigger runtime completion gating', () => {
     expect(calls.desktop).toHaveLength(1);
     expect(calls.desktop[0].kind).toBe('plan-ready');
     expect(mocks.fetchSessionMessages).not.toHaveBeenCalled();
-    expect(mocks.resolveZenModel).not.toHaveBeenCalled();
+    expect(mocks.resolveHelperSelection).not.toHaveBeenCalled();
   });
 
   it.each(['instruction-first', 'maintenance-first'])('suppresses maintenance Plan Ready across cached and payload fallback paths (%s)', async (order) => {
@@ -795,6 +837,19 @@ describe('notification trigger runtime completion gating', () => {
     expect(calls.desktop).toHaveLength(1);
     expect(calls.desktop[0].kind).toBe('plan-ready');
     expect(mocks.fetchSessionMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it('a partial positive instruction cache cannot grant a wholly synthetic canonical replacement parent', async () => {
+    const { runtime, calls, mocks } = createRuntime();
+    mocks.fetchSessionMessage.mockResolvedValue({
+      info: { id: 'user_plan_1', sessionID: 'ses_1', role: 'user', mode: 'plan' },
+      parts: [{ type: 'text', synthetic: true, text: 'Replace the draft.' }],
+    });
+    await completePlanSession(runtime);
+    expect(mocks.fetchSessionMessage).toHaveBeenCalledWith('ses_1', 'user_plan_1');
+    expect(calls.desktop.some(payload => payload.kind === 'plan-ready')).toBe(false);
+    expect(calls.ui.some(payload => payload.kind === 'plan-ready')).toBe(false);
+    expect(calls.push.some(payload => payload.data?.type === 'plan-ready')).toBe(false);
   });
 
   it.each([
@@ -1065,6 +1120,28 @@ describe('notification trigger runtime completion gating', () => {
     expect(calls.push[0].data.type).toBe('permission');
   });
 
+  it('names a reviewed skill permission by its human name, not the hashed resource', async () => {
+    vi.useFakeTimers();
+    const hashed = 'devryan-539ddc37a961e3aceadfc7bbb540b8e7';
+    const { runtime, calls } = createRuntime({ notifyOnQuestion: true });
+
+    await runtime.maybeSendPushForTrigger({
+      type: 'permission.asked',
+      properties: {
+        sessionID: 'ses_1',
+        id: 'perm_skill_1',
+        permission: 'skill',
+        patterns: [hashed],
+        metadata: { name: 'Superpowers' },
+      },
+    });
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(calls.desktop).toHaveLength(1);
+    expect(calls.desktop[0]).toMatchObject({ kind: 'permission', body: 'Superpowers' });
+    expect(JSON.stringify([calls.desktop, calls.ui, calls.push])).not.toContain(hashed);
+  });
+
   it('lets Permissions Needed be disabled independently from Agent Questions', async () => {
     vi.useFakeTimers();
     const { runtime, calls } = createRuntime({
@@ -1086,5 +1163,221 @@ describe('notification trigger runtime completion gating', () => {
     expect(calls.desktop).toHaveLength(0);
     expect(calls.ui).toHaveLength(0);
     expect(calls.push).toHaveLength(0);
+  });
+});
+
+// Gen 2 (DESIGN C.1, E item 13b): OpenCode reads go through openCodeClient.
+const createFakeOpenCodeClient = (generation, sessions = {}) => ({
+  generation: typeof generation === 'function' ? generation : () => generation,
+  sessions: {
+    get: vi.fn(async () => { throw new Error('unexpected sessions.get'); }),
+    list: vi.fn(async () => []),
+    message: vi.fn(async () => { throw new Error('unexpected sessions.message'); }),
+    ...sessions,
+  },
+});
+
+const childPermissionPayload = {
+  type: 'permission.asked',
+  properties: { sessionID: 'ses_child', id: 'perm_child', permission: 'external_directory', patterns: ['/workspace/**'] },
+};
+
+describe('notification trigger runtime on OpenCode 2 (openCodeClient)', () => {
+  it('walks the auto-accept parent chain through the client', async () => {
+    vi.useFakeTimers();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const openCodeClient = createFakeOpenCodeClient(2, {
+      get: vi.fn(async (sessionId) => (sessionId === 'ses_child'
+        ? { id: 'ses_child', title: 'Child', parentID: 'ses_parent' }
+        : { id: sessionId, title: 'Root' })),
+    });
+    const { runtime, calls } = createRuntime({ notifyOnPermission: true }, { openCodeClient });
+    runtime.setAutoAcceptSession('ses_parent', true);
+
+    await runtime.maybeSendPushForTrigger(childPermissionPayload);
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(openCodeClient.sessions.get).toHaveBeenCalledWith('ses_child', { timeoutMs: 2000 });
+    expect(calls.desktop).toHaveLength(0);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the client session list when the specific read fails', async () => {
+    vi.useFakeTimers();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const openCodeClient = createFakeOpenCodeClient(2, {
+      get: vi.fn(async () => { throw Object.assign(new Error('unavailable'), { statusCode: 503 }); }),
+      list: vi.fn(async () => [{ id: 'ses_child', parentID: 'ses_parent' }, { id: 'ses_parent' }]),
+    });
+    const { runtime, calls } = createRuntime({ notifyOnPermission: true }, { openCodeClient });
+    runtime.setAutoAcceptSession('ses_parent', true);
+
+    await runtime.maybeSendPushForTrigger(childPermissionPayload);
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(openCodeClient.sessions.list).toHaveBeenCalledWith({}, { timeoutMs: 2000 });
+    expect(calls.desktop).toHaveLength(0);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('verifies a plan revision parent through the client message read', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const openCodeClient = createFakeOpenCodeClient(2, {
+      message: vi.fn(async (sessionId, messageId) => ({
+        info: { id: messageId, sessionID: sessionId, role: 'user', mode: 'plan' },
+        parts: [{ type: 'text', text: 'Make a plan.' }],
+      })),
+    });
+    const { runtime, calls } = createRuntime({}, { messages: createPlanMessages(), openCodeClient, fetchSessionMessage: null });
+
+    await completePlanSession(runtime);
+
+    expect(openCodeClient.sessions.message).toHaveBeenCalledWith('ses_1', 'user_plan_1', { timeoutMs: 2000 });
+    expect(calls.desktop).toHaveLength(1);
+    expect(calls.desktop[0].kind).toBe('plan-ready');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('refuses generation 1 without a request', async () => {
+    vi.useFakeTimers();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: 'ses_child', parentID: 'ses_parent' }),
+    });
+    const openCodeClient = createFakeOpenCodeClient(1);
+    const { runtime, calls } = createRuntime({ notifyOnPermission: true }, { openCodeClient });
+    runtime.setAutoAcceptSession('ses_parent', true);
+
+    await runtime.maybeSendPushForTrigger(childPermissionPayload);
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(openCodeClient.sessions.get).not.toHaveBeenCalled();
+    // Unknown lineage must not borrow the parent's auto-accept preference.
+    expect(calls.desktop).toHaveLength(1);
+    expect(calls.desktop[0].kind).toBe('permission');
+  });
+
+  it('sends no OpenCode request when the client generation is unknown (fail closed)', async () => {
+    vi.useFakeTimers();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const openCodeClient = createFakeOpenCodeClient(() => {
+      throw Object.assign(new Error('The OpenCode runtime generation is unknown'), { statusCode: 503 });
+    });
+    const { runtime, calls } = createRuntime({ notifyOnPermission: true }, { openCodeClient });
+    runtime.setAutoAcceptSession('ses_parent', true);
+
+    await runtime.maybeSendPushForTrigger(childPermissionPayload);
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(openCodeClient.sessions.get).not.toHaveBeenCalled();
+    expect(openCodeClient.sessions.list).not.toHaveBeenCalled();
+    // The lineage is unknown, so the child is not treated as auto-accepting.
+    expect(calls.desktop).toHaveLength(1);
+    expect(calls.desktop[0].kind).toBe('permission');
+  });
+});
+
+describe('always-on notification summarization through the devryan-notify helper', () => {
+  const longMessage = 'a'.repeat(300);
+  const completionSettings = {
+    nativeNotificationsEnabled: true,
+    notificationMode: 'always',
+    notifyOnCompletion: true,
+    notificationTemplates: { completion: { title: 'Session complete', message: '{last_message}' } },
+  };
+
+  const createHelperRuntime = ({ helperText, sessionInfo } = {}) => {
+    const helperSelectionInputs = [];
+    const calls = { desktop: [] };
+    const mocks = {
+      resolveHelperSelection: vi.fn(async (input) => {
+        helperSelectionInputs.push(input);
+        return { providerID: 'helper', modelID: 'flash', revision: 'saved', selectionMode: 'configured', selectionRevision: 'saved' };
+      }),
+      generateHelperText: vi.fn(async () => ({ text: helperText ?? 'Concise completion summary' })),
+      fetchSessionInfo: vi.fn(async () => (
+        sessionInfo ?? { id: 'ses_1', title: 'Session title', directory: '/fixture-directory' }
+      )),
+      extractLastMessageText: vi.fn(() => longMessage),
+    };
+    const runtime = createNotificationTriggerRuntime({
+      readSettingsFromDisk: async () => completionSettings,
+      prepareNotificationLastMessage,
+      resolveHelperSelection: mocks.resolveHelperSelection,
+      generateHelperText: mocks.generateHelperText,
+      buildTemplateVariables: vi.fn(async () => ({ session_name: 'Session title' })),
+      extractLastMessageText: mocks.extractLastMessageText,
+      fetchSessionMessages: vi.fn(async () => []),
+      fetchSessionInfo: mocks.fetchSessionInfo,
+      fetchLastAssistantMessageText: vi.fn(async () => longMessage),
+      resolveNotificationTemplate: (template, variables) => template.replace(/\{(\w+)\}/g, (_match, key) => variables[key] ?? ''),
+      shouldApplyResolvedTemplateMessage: () => true,
+      emitDesktopNotification: (payload) => calls.desktop.push(payload),
+      broadcastUiNotification: vi.fn(),
+      sendPushToAllUiSessions: vi.fn(async () => {}),
+      completionSettleMs: 0,
+    });
+    return { runtime, calls, mocks, helperSelectionInputs };
+  };
+
+  it('summarizes a long completion through the configured helper model', async () => {
+    const { runtime, calls, mocks, helperSelectionInputs } = createHelperRuntime();
+
+    await completeSession(runtime);
+
+    expect(mocks.resolveHelperSelection).toHaveBeenCalledOnce();
+    expect(helperSelectionInputs[0]).toMatchObject({
+      agent: 'devryan-notify',
+      directory: '/fixture-directory',
+      sessionID: 'ses_1',
+      selectionMode: 'configured',
+    });
+    expect(mocks.generateHelperText).toHaveBeenCalledOnce();
+    expect(mocks.generateHelperText.mock.calls[0][0]).toMatchObject({
+      agent: 'devryan-notify',
+      providerID: 'helper',
+      modelID: 'flash',
+      selectionMode: 'configured',
+      selectionRevision: 'saved',
+    });
+    expect(calls.desktop).toHaveLength(1);
+    expect(calls.desktop[0].body).toBe('Concise completion summary');
+  });
+
+  it('retries an empty first answer once with the short repair prompt', async () => {
+    const { runtime, calls, mocks } = createHelperRuntime();
+    mocks.generateHelperText.mockResolvedValueOnce({ text: '' }).mockResolvedValueOnce({ text: 'Repaired summary' });
+
+    await completeSession(runtime);
+
+    expect(mocks.generateHelperText).toHaveBeenCalledTimes(2);
+    expect(mocks.generateHelperText.mock.calls[0][0]).not.toHaveProperty('variant');
+    expect(mocks.generateHelperText.mock.calls[1][0].prompt).toMatch(/^Reply with one plain sentence under \d+ characters/);
+    expect(mocks.generateHelperText.mock.calls[1][0].prompt).toContain(longMessage);
+    expect(calls.desktop[0].body).toBe('Repaired summary');
+  });
+
+  it('falls back to plain truncation when the helper fails', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { runtime, calls, mocks } = createHelperRuntime();
+    mocks.generateHelperText.mockRejectedValue(new Error('helper unavailable'));
+
+    await completeSession(runtime);
+
+    expect(mocks.generateHelperText).toHaveBeenCalledOnce();
+    expect(calls.desktop).toHaveLength(1);
+    expect(calls.desktop[0].body).toBe(`${'a'.repeat(250)}...`);
+  });
+
+  it('falls back to plain truncation when the session directory is unavailable', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { runtime, calls } = createHelperRuntime({ sessionInfo: { id: 'ses_1', title: 'Session title' } });
+
+    await completeSession(runtime);
+
+    expect(calls.desktop).toHaveLength(1);
+    expect(calls.desktop[0].body).toBe(`${'a'.repeat(250)}...`);
   });
 });

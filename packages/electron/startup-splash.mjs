@@ -155,7 +155,7 @@ ${renderLogoSvg()}
   </html>`;
 };
 
-export const buildStartupErrorHtml = (settings = {}, { message = '' } = {}) => {
+export const buildStartupErrorHtml = (settings = {}, { message = '', rebootRecovery = false, rebootRequired = false } = {}) => {
   const splashBgLight = readColorSetting(settings, 'splashBgLight', DEFAULT_SPLASH_BG_LIGHT);
   const splashFgLight = readColorSetting(settings, 'splashFgLight', DEFAULT_SPLASH_FG_LIGHT);
   const splashBgDark = readColorSetting(settings, 'splashBgDark', DEFAULT_SPLASH_BG_DARK);
@@ -210,73 +210,10 @@ export const buildStartupErrorHtml = (settings = {}, { message = '' } = {}) => {
     <main>
 ${renderLogoSvg()}
       <div class="error-content" role="alert">
-        <h1>Startup needs attention</h1>
+        <h1>${rebootRequired ? 'Restart your computer to continue' : 'Startup needs attention'}</h1>
         <p>${detail}</p>
-        <a href="openchamber://retry-startup">Retry</a>
-      </div>
-    </main>
-  </body>
-  </html>`;
-};
-
-export const buildBotStartupAttentionHtml = (settings = {}, { message = '' } = {}) => {
-  const splashBgLight = readColorSetting(settings, 'splashBgLight', DEFAULT_SPLASH_BG_LIGHT);
-  const splashFgLight = readColorSetting(settings, 'splashFgLight', DEFAULT_SPLASH_FG_LIGHT);
-  const splashBgDark = readColorSetting(settings, 'splashBgDark', DEFAULT_SPLASH_BG_DARK);
-  const splashFgDark = readColorSetting(settings, 'splashFgDark', DEFAULT_SPLASH_FG_DARK);
-  const splashVariant = resolveStartupSplashVariant(settings);
-  const detail = escapeHtml(message || 'The private Bot runtime could not be prepared.');
-
-  return `<!doctype html>
-  <html data-splash-variant="${splashVariant}">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <style>
-      :root { color-scheme: light dark; --background: ${splashBgLight}; --foreground: ${splashFgLight}; }
-      html[data-splash-variant="dark"] { --background: ${splashBgDark}; --foreground: ${splashFgDark}; }
-      @media (prefers-color-scheme: dark) {
-        html[data-splash-variant="system"] { --background: ${splashBgDark}; --foreground: ${splashFgDark}; }
-      }
-      body {
-        margin: 0;
-        min-height: 100vh;
-        display: grid;
-        place-items: center;
-        background: var(--background);
-        color: var(--foreground);
-        font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, sans-serif;
-      }
-      main { box-sizing: border-box; width: min(560px, 100%); padding: 0 24px; text-align: center; }
-      .splash-logo { width: min(169px, 42vw); height: min(169px, 42vw); }
-      .error-content { margin-top: 24px; }
-      h1 { margin: 0 0 8px; font-size: 16px; line-height: 22px; font-weight: 600; }
-      p { margin: 0 auto 18px; max-width: 480px; opacity: .72; font-size: 13px; line-height: 18px; overflow-wrap: anywhere; }
-      .actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
-      a {
-        display: inline-block;
-        padding: 10px 18px;
-        border: 1px solid color-mix(in srgb, var(--foreground) 24%, transparent);
-        border-radius: 8px;
-        color: inherit;
-        text-decoration: none;
-        font-weight: 600;
-      }
-      a.primary { background: var(--foreground); color: var(--background); }
-      a:hover { filter: brightness(.94); }
-      a:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
-    </style>
-  </head>
-  <body>
-    <main>
-${renderLogoSvg()}
-      <div class="error-content" role="alert">
-        <h1>Private Bot runtime needs attention</h1>
-        <p>${detail}</p>
-        <div class="actions">
-          <a class="primary" href="openchamber://retry-bot-runtime">Retry</a>
-          <a href="openchamber://continue-without-bots">Continue without Bots</a>
-        </div>
+        ${rebootRecovery ? '<p>A previous execution has not been safely settled. Prepare recovery to check whether a computer restart can resolve it. Your sessions and retained work will be preserved.</p><a href="devryan://retry-startup">Retry</a><a href="devryan://prepare-reboot-recovery">Prepare recovery for restart</a>' : rebootRequired ? '<p>Recovery is prepared. Restart your computer, then reopen DevRyan. Restarting only the app cannot finish this recovery.</p>' : '<a href="devryan://retry-startup">Retry</a>'}
+        <a href="devryan://copy-startup-diagnostics">Copy Diagnostics</a>
       </div>
     </main>
   </body>

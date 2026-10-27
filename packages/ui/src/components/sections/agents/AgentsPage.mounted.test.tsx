@@ -1,13 +1,16 @@
 import React, { act } from 'react';
 import { expect, mock, spyOn, test } from 'bun:test';
-import { withDom, type HostElement } from '@/components/bots/chat/botMountedDom';
+import { withDom, type HostElement } from '@/test/mountedDom';
 import type { AgentWithExtras } from '@/stores/useAgentsStore';
+import type { Model } from '@opencode-ai/sdk/v2';
+import type { ControlledModelPickerProvider } from '@/components/chat/ControlledModelPicker';
+import type { ProviderRecoverySelection } from '@/stores/useProviderRecoveryStore';
+import { getChatThinkingState, resolveChatThinkingVariant } from '@/lib/providers/chatThinking';
 
 const passthrough = ({ children }: React.PropsWithChildren) => <>{children}</>;
 for (const [path, names] of [
   ['collapsible', ['Collapsible', 'CollapsibleContent', 'CollapsibleTrigger']],
   ['tooltip', ['Tooltip', 'TooltipContent', 'TooltipTrigger']],
-  ['select', ['Select', 'SelectContent', 'SelectItem', 'SelectSeparator', 'SelectTrigger', 'SelectValue']],
   ['ScrollableOverlay', ['ScrollableOverlay']],
 ] as const) {
   mock.module(`@/components/ui/${path}`, () => Object.fromEntries(names.map((name) => [name, passthrough])));
@@ -27,11 +30,29 @@ const permissions = {};
 const actualSync = await import('@/sync/sync-context');
 mock.module('@/sync/sync-context', () => ({ ...actualSync, useDirectorySync: () => permissions }));
 mock.module('@/components/sections/behavior/BehaviorPage', () => ({ BehaviorPage: passthrough }));
-mock.module('./AgentRuntimeSection', () => ({ AgentRuntimeSection: () => null }));
-mock.module('./ModelSelector', () => ({
-  ModelSelector: ({ providerId, modelId, onChange }: { providerId: string; modelId: string; onChange: (provider: string, model: string) => void }) => (
-    <button data-model={`${providerId}/${modelId}`} onClick={() => onChange(providerId, `${modelId}-draft`)}>{modelId}</button>
-  ),
+// The chat picker: a model button (switches to `<model>-draft` the way the real
+// picker resolves a new model's level) and one button per catalog thinking level.
+mock.module('@/components/chat/ControlledModelPicker', () => ({
+  ControlledModelPicker: ({ providers, value, onChange, disabled }: {
+    providers: ControlledModelPickerProvider[];
+    value: ProviderRecoverySelection;
+    onChange: (selection: ProviderRecoverySelection) => void;
+    disabled: boolean;
+  }) => {
+    const provider = providers.find((entry) => entry.id === value.providerId);
+    const { levels } = getChatThinkingState(provider, value.modelId, value.variant);
+    return (
+      <div data-variant-select={value.variant ?? ''}>
+        <button data-model={`${value.providerId}/${value.modelId}`} disabled={disabled} onClick={() => {
+          const modelId = `${value.modelId}-draft`;
+          onChange({ providerId: value.providerId, modelId, variant: resolveChatThinkingVariant(provider, modelId, undefined) ?? null });
+        }}>{value.modelId}</button>
+        {levels.map((level) => (
+          <button key={level} data-effort={level} disabled={disabled} onClick={() => onChange({ ...value, variant: level })}>Choose {level}</button>
+        ))}
+      </div>
+    );
+  },
 }));
 const { AgentsPage } = await import('./AgentsPage');
 const { useAgentsStore } = await import('@/stores/useAgentsStore');
@@ -45,6 +66,15 @@ const modelButton = (container: HostElement, model: string) => {
   expect(button).not.toBeNull();
   return button!;
 };
+
+const catalogModel = (id: string, variants: Model['variants']): Model => ({
+  id, providerID: 'example', api: { id, url: 'https://example.test', npm: 'example' }, name: id,
+  capabilities: { temperature: true, reasoning: true, attachment: false, toolcall: true,
+    input: { text: true, audio: false, image: false, video: false, pdf: false },
+    output: { text: true, audio: false, image: false, video: false, pdf: false }, interleaved: false },
+  cost: { input: 0, output: 0, cache: { read: 0, write: 0 } }, limit: { context: 1000, output: 1000 },
+  status: 'active', options: {}, headers: {}, release_date: '2026-01-01', variants,
+});
 
 for (const selected of ['builder', 'council']) {
   test(`${selected} drafts survive unrelated saved fields and provider refresh, and reset on selection changes`, async () => withDom(async (container) => {
@@ -108,3 +138,200 @@ for (const selected of ['builder', 'council']) {
     }
   }));
 }
+
+
+for (const selected of ['builder', 'council']) {
+  test(`${selected} retains saved efforts and blocks primary, backup and Council saves while catalog is unavailable`, async () => withDom(async container => {
+    const { createRoot } = await import('react-dom/client');
+    const root = createRoot(container as unknown as Element);
+    const originalAgents = useAgentsStore.getState(), originalConfig = useConfigStore.getState();
+    const originalDirectory = useDirectoryStore.getState(), originalPrincipal = getAuthPrincipal();
+    const tools = spyOn(opencodeClient, 'listToolIds').mockResolvedValue([]);
+    const saves: unknown[] = [], backups: unknown[] = [];
+    const agent: AgentWithExtras = { name: selected, mode: 'all', options: {}, permission: [],
+      model: { providerID: 'cursor-acp', modelID: 'composer-2.5' }, variant: 'high', modelRefs: ['cursor-acp/composer-2.5'],
+      councillors: selected === 'council' ? [{ model: 'cursor-acp/composer-2.5', variant: 'high' }, { model: 'example/second', variant: 'ultra' }] : undefined,
+      backupModel: { providerID: 'cursor-acp', modelID: 'composer-2.5', variant: 'high' },
+    };
+    try {
+      setAuthPrincipal({ ...originalPrincipal, scope: 'local-admin', role: 'admin' });
+      useAgentsStore.setState({ agents: [agent], selectedAgentName: selected,
+        saveAgentModelOverride: async (name, config) => { saves.push({ name, config }); return null; },
+        saveAgentBackupModel: async (name, config) => { backups.push({ name, config }); return null; },
+      });
+      useConfigStore.setState({ providers: [] });
+      useDirectoryStore.setState({ currentDirectory: '/saved-availability-fixture' });
+      await act(async () => { root.render(<AgentsPage />); });
+      await act(async () => { useConfigStore.setState({ providers: [] }); });
+      expect(container.textContent).toContain('Saved selection: high.');
+      const save = container.find(node => node.tagName === 'BUTTON' && node.textContent.includes('settings.agents.page.actions.saveModelOverride'));
+      expect(save).not.toBeNull();
+      await act(async () => { save!.click(); });
+      expect(saves).toEqual([]);
+      expect(container.textContent).toContain('Refresh the model catalog or choose an available model before saving.');
+      if (selected === 'builder') {
+        const saveBackup = container.find(node => node.tagName === 'BUTTON' && node.textContent.includes('settings.agents.page.actions.saveBackupModel'));
+        expect(saveBackup).not.toBeNull();
+        await act(async () => { saveBackup!.click(); });
+        expect(backups).toEqual([]);
+      }
+    } finally {
+      await act(async () => { root.unmount(); }); tools.mockRestore();
+      useAgentsStore.setState(originalAgents); useConfigStore.setState(originalConfig);
+      useDirectoryStore.setState(originalDirectory); setAuthPrincipal(originalPrincipal);
+    }
+  }));
+}
+
+test('a cleared or variant-less backup does not show the primary variant', async () => withDom(async container => {
+  const { createRoot } = await import('react-dom/client');
+  const root = createRoot(container as unknown as Element);
+  const originalAgents = useAgentsStore.getState(), originalConfig = useConfigStore.getState();
+  const originalDirectory = useDirectoryStore.getState(), originalPrincipal = getAuthPrincipal();
+  const tools = spyOn(opencodeClient, 'listToolIds').mockResolvedValue([]);
+  const agent: AgentWithExtras = { name: 'builder', mode: 'all', options: {}, permission: [],
+    model: { providerID: 'cursor-acp', modelID: 'composer-2.5' }, variant: 'high', modelRefs: ['cursor-acp/composer-2.5'],
+    backupModel: { providerID: 'cursor-acp', modelID: 'composer-2.5', variant: 'high' },
+  };
+  // Only the primary row may carry the saved High warning once the backup has none.
+  const savedHighCount = () => container.textContent.split('Saved selection: high.').length - 1;
+  try {
+    setAuthPrincipal({ ...originalPrincipal, scope: 'local-admin', role: 'admin' });
+    useAgentsStore.setState({ agents: [agent], selectedAgentName: 'builder',
+      resetAgentBackupModel: async (name) => {
+        const cleared: AgentWithExtras = { ...agent, name, backupModel: null };
+        useAgentsStore.setState({ agents: [cleared] });
+        return null;
+      },
+    });
+    useConfigStore.setState({ providers: [] });
+    useDirectoryStore.setState({ currentDirectory: '/cleared-backup-fixture' });
+    await act(async () => { root.render(<AgentsPage />); });
+    expect(savedHighCount()).toBe(2);
+
+    const clear = container.find(node => node.tagName === 'BUTTON' && node.textContent.includes('settings.agents.page.actions.clearBackupModel'));
+    expect(clear).not.toBeNull();
+    await act(async () => { clear!.click(); });
+    expect(savedHighCount()).toBe(1);
+
+    await act(async () => {
+      const variantless: AgentWithExtras = { ...agent, backupModel: { providerID: 'cursor-acp', modelID: 'composer-2.5', variant: null } };
+      useAgentsStore.setState({ agents: [variantless] });
+    });
+    expect(savedHighCount()).toBe(1);
+  } finally {
+    await act(async () => { root.unmount(); }); tools.mockRestore();
+    useAgentsStore.setState(originalAgents); useConfigStore.setState(originalConfig);
+    useDirectoryStore.setState(originalDirectory); setAuthPrincipal(originalPrincipal);
+  }
+}));
+
+for (const selected of ['builder', 'council']) {
+  test(`${selected} requires an explicit supported effort and rechecks model changes`, async () => withDom(async container => {
+    const { createRoot } = await import('react-dom/client');
+    const root = createRoot(container as unknown as Element);
+    const originalAgents = useAgentsStore.getState(), originalConfig = useConfigStore.getState();
+    const originalDirectory = useDirectoryStore.getState(), originalPrincipal = getAuthPrincipal();
+    const tools = spyOn(opencodeClient, 'listToolIds').mockResolvedValue([]);
+    const saves: unknown[] = [], backups: unknown[] = [];
+    const agent: AgentWithExtras = { name: selected, mode: 'all', options: {}, permission: [],
+      model: { providerID: 'example', modelID: 'primary' }, modelRefs: ['example/primary'], variant: 'high',
+      councillors: selected === 'council' ? [{ model: 'example/primary', variant: 'high' }, { model: 'example/second', variant: 'ultra' }] : undefined,
+      backupModel: { providerID: 'example', modelID: 'backup', variant: 'ultra' },
+    };
+    const variantRows = () => {
+      const rows: HostElement[] = [];
+      container.find(node => { if (node.hasAttribute('data-variant-select')) rows.push(node); return false; });
+      return rows;
+    };
+    const choose = async (index: number, effort: string) => {
+      const option = variantRows()[index]?.find(node => node.getAttribute('data-effort') === effort);
+      expect(option).not.toBeNull();
+      await act(async () => { option!.click(); });
+    };
+    const saveButton = () => container.find(node => node.tagName === 'BUTTON' && node.textContent.includes('settings.agents.page.actions.saveModelOverride'))!;
+    try {
+      setAuthPrincipal({ ...originalPrincipal, scope: 'local-admin', role: 'admin' });
+      useAgentsStore.setState({ agents: [agent], selectedAgentName: selected,
+        saveAgentModelOverride: async (name, config) => { saves.push({ name, config }); return null; },
+        saveAgentBackupModel: async (name, config) => { backups.push({ name, config }); return null; },
+      });
+      useConfigStore.setState({ providers: [{ id: 'example', name: 'Example', source: 'custom', options: {}, env: [],
+        models: [catalogModel('primary', { medium: {} }), catalogModel('primary-draft', { high: {} }),
+          catalogModel('second', { medium: {} }), catalogModel('backup', { medium: {} })],
+      }] });
+      useDirectoryStore.setState({ currentDirectory: '/invalid-effort-fixture' });
+      await act(async () => { root.render(<AgentsPage />); });
+      expect(container.textContent).toContain('Saved selection: high.');
+      expect(container.textContent).toContain('Choose a supported thinking level before saving.');
+      expect(container.textContent).not.toContain('Provider Default');
+      expect(saveButton().hasAttribute('disabled')).toBe(true);
+      await act(async () => { saveButton().click(); });
+      expect(saves).toEqual([]);
+
+      await choose(0, 'medium');
+      if (selected === 'council') {
+        expect(saveButton().hasAttribute('disabled')).toBe(true);
+        await choose(1, 'medium');
+      }
+      expect(saveButton().hasAttribute('disabled')).toBe(false);
+      await act(async () => { saveButton().click(); });
+      expect(saves).toEqual([{ name: selected, config: { name: selected, model: 'example/primary', variant: 'medium',
+        councillors: selected === 'council' ? [{ model: 'example/primary', variant: 'medium' }, { model: 'example/second', variant: 'medium' }] : undefined,
+      } }]);
+      if (selected === 'builder') {
+        await choose(1, 'medium');
+        const saveBackup = container.find(node => node.tagName === 'BUTTON' && node.textContent.includes('settings.agents.page.actions.saveBackupModel'))!;
+        await act(async () => { saveBackup.click(); });
+        expect(backups).toEqual([{ name: selected, config: { model: 'example/backup', variant: 'medium' } }]);
+      }
+
+      // A model change takes the new model's supported level, as in the chat picker.
+      await act(async () => { modelButton(container, 'primary').click(); });
+      expect(variantRows()[0]?.getAttribute('data-variant-select')).toBe('high');
+      expect(variantRows()[0]?.find(node => node.getAttribute('data-effort') === 'medium')).toBeNull();
+      expect(saveButton().hasAttribute('disabled')).toBe(false);
+      await act(async () => { saveButton().click(); });
+      expect(saves.at(-1)).toEqual({ name: selected, config: { name: selected, model: 'example/primary-draft', variant: 'high',
+        councillors: selected === 'council' ? [{ model: 'example/primary-draft', variant: 'high' }, { model: 'example/second', variant: 'medium' }] : undefined,
+      } });
+    } finally {
+      await act(async () => { root.unmount(); }); tools.mockRestore();
+      useAgentsStore.setState(originalAgents); useConfigStore.setState(originalConfig);
+      useDirectoryStore.setState(originalDirectory); setAuthPrincipal(originalPrincipal);
+    }
+  }));
+}
+
+test('a model without thinking levels shows no level and saves without one', async () => withDom(async container => {
+  const { createRoot } = await import('react-dom/client');
+  const root = createRoot(container as unknown as Element);
+  const originalAgents = useAgentsStore.getState(), originalConfig = useConfigStore.getState();
+  const originalDirectory = useDirectoryStore.getState(), originalPrincipal = getAuthPrincipal();
+  const tools = spyOn(opencodeClient, 'listToolIds').mockResolvedValue([]);
+  const saves: unknown[] = [];
+  const agent: AgentWithExtras = { name: 'builder', mode: 'all', options: {}, permission: [],
+    model: { providerID: 'example', modelID: 'plain' }, modelRefs: ['example/plain'], variant: 'medium',
+  };
+  try {
+    setAuthPrincipal({ ...originalPrincipal, scope: 'local-admin', role: 'admin' });
+    useAgentsStore.setState({ agents: [agent], selectedAgentName: 'builder',
+      saveAgentModelOverride: async (name, config) => { saves.push({ name, config }); return null; },
+    });
+    useConfigStore.setState({ providers: [{ id: 'example', name: 'Example', source: 'custom', options: {}, env: [],
+      models: [catalogModel('plain', {})] }] });
+    useDirectoryStore.setState({ currentDirectory: '/no-levels-fixture' });
+    await act(async () => { root.render(<AgentsPage />); });
+    expect(container.textContent).not.toContain('Saved selection');
+    expect(container.find(node => node.hasAttribute('data-effort'))).toBeNull();
+    expect(container.find(node => node.getAttribute('data-variant-select') === '')).not.toBeNull();
+    const save = container.find(node => node.tagName === 'BUTTON' && node.textContent.includes('settings.agents.page.actions.saveModelOverride'))!;
+    expect(save.hasAttribute('disabled')).toBe(false);
+    await act(async () => { save.click(); });
+    expect(saves).toEqual([{ name: 'builder', config: { name: 'builder', model: 'example/plain', variant: undefined, councillors: undefined } }]);
+  } finally {
+    await act(async () => { root.unmount(); }); tools.mockRestore();
+    useAgentsStore.setState(originalAgents); useConfigStore.setState(originalConfig);
+    useDirectoryStore.setState(originalDirectory); setAuthPrincipal(originalPrincipal);
+  }
+}));

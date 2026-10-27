@@ -39,19 +39,6 @@ export function getUsageModelDisplayInfo(
   return { displayName, contextLabel };
 }
 
-/**
- * Get the auth source label from a model name prefix.
- * e.g., "gemini/..." -> "Gemini"
- */
-export function getAuthSourceLabel(modelName: string): string | null {
-  const slashIndex = modelName.indexOf('/');
-  if (slashIndex === -1) return null;
-  
-  const prefix = modelName.substring(0, slashIndex);
-  if (prefix === 'gemini') return 'Gemini';
-  return null;
-}
-
 const GOOGLE_MODEL_FAMILIES: ModelFamily[] = [
   {
     id: 'gemini-auth',

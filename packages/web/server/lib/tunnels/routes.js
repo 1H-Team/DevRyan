@@ -246,7 +246,7 @@ export const createTunnelRoutesRuntime = (dependencies) => {
   };
 
   const registerRoutes = (app) => {
-    app.get('/api/openchamber/tunnel/check', async (req, res) => {
+    app.get('/api/devryan/tunnel/check', async (req, res) => {
       try {
         const requestedProvider = typeof req?.query?.provider === 'string' && req.query.provider.trim().length > 0
           ? normalizeTunnelProvider(req.query.provider)
@@ -350,27 +350,27 @@ export const createTunnelRoutesRuntime = (dependencies) => {
         return res.status(500).json({ ok: false, error: 'Failed to run tunnel doctor' });
       }
     };
-    app.post('/api/openchamber/tunnel/doctor', handleTunnelDoctor);
-    app.get('/api/openchamber/tunnel/doctor', handleTunnelDoctor);
+    app.post('/api/devryan/tunnel/doctor', handleTunnelDoctor);
+    app.get('/api/devryan/tunnel/doctor', handleTunnelDoctor);
 
-    app.get('/api/openchamber/tunnel/providers', (_req, res) => {
+    app.get('/api/devryan/tunnel/providers', (_req, res) => {
       const providers = tunnelProviderRegistry.listCapabilities();
       return res.json({ providers });
     });
 
-    app.post('/api/openchamber/tunnel/links', async (req, res) => {
+    app.post('/api/devryan/tunnel/links', async (req, res) => {
       try {
-        const link = await tunnelAuthController.issueBootstrapToken({ access: req.body?.access, botIds: req.body?.botIds, ttlMs: TUNNEL_LINK_TTL_MS });
+        const link = await tunnelAuthController.issueBootstrapToken({ ttlMs: TUNNEL_LINK_TTL_MS });
         return res.json({ connectUrl: `https://${tunnelAuthController.getActiveTunnelHost()}/tunnel/connect#t=${link.token}`, expiresAt: link.expiresAt });
       } catch (error) { return res.status(error.statusCode || 503).json({ error: error.message, code: error.code || 'tunnel_link_unavailable' }); }
     });
 
-    app.delete('/api/openchamber/tunnel/grants/:grantId', async (req, res) => {
+    app.delete('/api/devryan/tunnel/grants/:grantId', async (req, res) => {
       try { await tunnelAuthController.revokeGrant(req.params.grantId); return res.sendStatus(204); }
       catch (error) { return res.status(error.statusCode || 503).json({ error: 'Tunnel grant could not be revoked' }); }
     });
 
-    app.get('/api/openchamber/tunnel/status', async (_req, res) => {
+    app.get('/api/devryan/tunnel/status', async (_req, res) => {
       try {
         await tunnelService.refreshHealth?.({ maxAgeMs: 5000 });
         const runtimeReady = Boolean(getRuntimeReady());
@@ -420,7 +420,6 @@ export const createTunnelRoutesRuntime = (dependencies) => {
             activeTunnelMode: tunnelAuthController.getActiveTunnelMode() || null,
             activeSessions,
             localPort: getActivePort(),
-            botOnlyLinks: Boolean(tunnelAuthController.hasOwner),
             ttlConfig: {
               bootstrapTtlMs: tunnelAuthController.hasOwner ? TUNNEL_LINK_TTL_MS : bootstrapTtlMs,
               sessionTtlMs: tunnelAuthController.hasOwner ? TUNNEL_SESSION_TTL_MS : sessionTtlMs,
@@ -477,7 +476,6 @@ export const createTunnelRoutesRuntime = (dependencies) => {
           activeTunnelMode: activeNormalizedMode,
           activeSessions: tunnelAuthController.listTunnelSessions(),
           localPort: getActivePort(),
-          botOnlyLinks: Boolean(tunnelAuthController.hasOwner),
           ttlConfig: {
             bootstrapTtlMs: tunnelAuthController.hasOwner ? TUNNEL_LINK_TTL_MS : bootstrapTtlMs,
             sessionTtlMs: tunnelAuthController.hasOwner ? TUNNEL_SESSION_TTL_MS : sessionTtlMs,
@@ -488,7 +486,7 @@ export const createTunnelRoutesRuntime = (dependencies) => {
       }
     });
 
-    app.put('/api/openchamber/tunnel/managed-remote-token', async (req, res) => {
+    app.put('/api/devryan/tunnel/managed-remote-token', async (req, res) => {
       try {
         const presetId = typeof req?.body?.presetId === 'string' ? req.body.presetId.trim() : '';
         const presetName = typeof req?.body?.presetName === 'string' ? req.body.presetName.trim() : '';
@@ -521,11 +519,11 @@ export const createTunnelRoutesRuntime = (dependencies) => {
       }
     });
 
-    app.post('/api/openchamber/tunnel/start', async (_req, res) => {
+    app.post('/api/devryan/tunnel/start', async (_req, res) => {
       try {
         if (tunnelAuthController.hasOwner && ((_req.body?.connectTtlMs !== undefined && _req.body.connectTtlMs !== TUNNEL_LINK_TTL_MS)
           || (_req.body?.sessionTtlMs !== undefined && _req.body.sessionTtlMs !== TUNNEL_SESSION_TTL_MS))) {
-          return res.status(400).json({ code: 'tunnel_expiry_fixed', error: 'Bot links expire after 15 minutes and sessions after seven days' });
+          return res.status(400).json({ code: 'tunnel_expiry_fixed', error: 'Tunnel links expire after 15 minutes and sessions after seven days' });
         }
         if (!getRuntimeReady()) {
           return res.status(503).json({
@@ -600,15 +598,8 @@ export const createTunnelRoutesRuntime = (dependencies) => {
         const previousMode = tunnelAuthController.getActiveTunnelMode();
         const previousProvider = tunnelService.resolveActiveProvider();
         const previousUrl = tunnelService.getPublicUrl();
-        const selectedBotIds = _req.body?.botIds;
         const ownerLogin = usesOwnerLogin(mode);
         const usesDirectLogin = mode === TUNNEL_MODE_MANAGED_REMOTE && !ownerLogin;
-        if (ownerLogin && selectedBotIds !== undefined && (!Array.isArray(selectedBotIds) || selectedBotIds.length)) {
-          return res.status(400).json({ code: 'tunnel_bots_unavailable', error: 'Managed Remote with Supabase Off creates a private owner link. Bot sharing requires Supabase On.' });
-        }
-        if (!usesDirectLogin && !ownerLogin && selectedBotIds !== undefined && (!Array.isArray(selectedBotIds) || selectedBotIds.length)) {
-          await tunnelAuthController.validateSelection?.(selectedBotIds);
-        }
 
         const { publicUrl, provider: activeProvider, providerMetadata, controllerReused } = await startTunnelWithNormalizedRequest({
           provider,
@@ -643,9 +634,11 @@ export const createTunnelRoutesRuntime = (dependencies) => {
           mode,
         });
 
-        const bootstrapToken = usesDirectLogin || (!ownerLogin && tunnelAuthController.hasOwner && !selectedBotIds?.length)
+        // An enrolled owner gets a link only for a managed tunnel with Supabase Off
+        // (the private owner link); a host without an owner keeps one-time links.
+        const bootstrapToken = usesDirectLogin || (!ownerLogin && tunnelAuthController.hasOwner)
           ? null
-          : await tunnelAuthController.issueBootstrapToken({ access: ownerLogin ? 'owner' : 'bots', botIds: ownerLogin ? undefined : selectedBotIds, ttlMs: tunnelAuthController.hasOwner ? TUNNEL_LINK_TTL_MS : bootstrapTtlMs });
+          : await tunnelAuthController.issueBootstrapToken({ ttlMs: tunnelAuthController.hasOwner ? TUNNEL_LINK_TTL_MS : bootstrapTtlMs });
         const connectUrl = bootstrapToken
           ? `${publicUrl.replace(/\/$/, '')}/tunnel/connect#t=${encodeURIComponent(bootstrapToken.token)}`
           : null;
@@ -718,7 +711,7 @@ export const createTunnelRoutesRuntime = (dependencies) => {
       }
     });
 
-    app.post('/api/openchamber/tunnel/stop', async (_req, res) => {
+    app.post('/api/devryan/tunnel/stop', async (_req, res) => {
       let revokedBootstrapCount = 0;
       let invalidatedSessionCount = 0;
       const activeTunnelId = tunnelAuthController.getActiveTunnelId();

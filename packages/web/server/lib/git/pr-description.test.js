@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createFreeZenCooldowns } from '@openchamber/shared-runtime';
+import { createFreeZenCooldowns } from '@devryan/shared-runtime';
 
 import {
   PR_GENERATION_FREE_DEADLINE_MS,

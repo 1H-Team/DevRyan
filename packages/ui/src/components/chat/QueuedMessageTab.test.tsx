@@ -1,17 +1,20 @@
 import React from 'react';
-import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { describe, expect, mock, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { fileURLToPath } from 'node:url';
 
 import { I18nProvider } from '@/lib/i18n';
 import type { QueuedMessage } from '@/stores/messageQueueStore';
-import { QueuedMessageRow, QueuedMessageTabView } from './QueuedMessageTab';
+import { useMessageQueueStore } from '@/stores/messageQueueStore';
+import { useSessionUIStore } from '@/sync/session-ui-store';
 
-const tabSource = readFileSync(
-    fileURLToPath(new URL('./QueuedMessageTab.tsx', import.meta.url)),
-    'utf8',
-);
+// The connected wrapper reads session activity from the sync provider; the
+// phase is the only thing this file needs to control.
+let mockedPhase = 'busy';
+mock.module('@/hooks/useSessionActivity', () => ({
+    useCurrentSessionActivity: () => ({ phase: mockedPhase, isWorking: true, isBusy: true, isCooldown: false }),
+}));
+
+const { QueuedMessageRow, QueuedMessageTabView, QueuedMessageTab } = await import('./QueuedMessageTab');
 
 const queued = (
     id: string,
@@ -105,9 +108,28 @@ describe('QueuedMessageTab', () => {
         steer.props.onClick();
 
         expect(sent).toEqual(message);
-        expect(tabSource).toContain('onSend={onSendMessage}');
-        expect(tabSource).toContain('onSend={onSend}');
-        expect(tabSource).toContain('RiSteering2Line');
+    });
+
+    test('shows the steering icon only while a turn is abortable', () => {
+        const row = (showSteerIcon: boolean) => renderToStaticMarkup(
+            <>{QueuedMessageRow({
+                message: queued('q1', 'Icon check'),
+                sendLabel: 'Steer',
+                sendAria: 'Steer Conversation',
+                emptyLabel: '(empty)',
+                editAria: 'Edit Queued Message',
+                removeAria: 'Remove from Queue',
+                showSteerIcon,
+                onEdit: () => undefined,
+                onSend: () => undefined,
+                onRemove: () => undefined,
+            })}</>,
+        );
+        const sendButton = (html: string) => html.match(/<button[^>]*aria-label="Steer Conversation"[^>]*>[\s\S]*?<\/button>/)?.[0] ?? '';
+        expect(sendButton(row(true))).toContain('<svg');
+        expect(sendButton(row(false))).not.toContain('<svg');
+        const editButton = row(true).match(/<button[^>]*aria-label="Edit Queued Message"[^>]*>[\s\S]*?<\/button>/)?.[0] ?? '';
+        expect(editButton).toContain('<svg');
     });
 
     test('edit icon calls onEdit with that message', () => {
@@ -134,7 +156,6 @@ describe('QueuedMessageTab', () => {
         edit.props.onClick();
 
         expect(edited).toEqual(message);
-        expect(tabSource).toContain('RiPencilLine');
     });
 
     test('remove calls removeFromQueue', () => {
@@ -161,12 +182,55 @@ describe('QueuedMessageTab', () => {
         remove.props.onClick();
 
         expect(removedId).toBe(message.id);
-        expect(tabSource).toContain('onRemove={(messageId) => removeFromQueue(currentSessionId, messageId)}');
+    });
+
+    test('the connected tab forwards Steer, Edit and Remove to the queue store and caller', async () => {
+        const { act } = await import('react');
+        const { withDom } = await import('@/test/mountedDom');
+        const { createRoot } = await import('react-dom/client');
+        const message = queued('q-connected', 'Connected queued prompt');
+        const sentMessages: QueuedMessage[] = [];
+        const edited: string[] = [];
+        useSessionUIStore.setState({ currentSessionId: 'ses_queue' });
+        useMessageQueueStore.setState({ queuedMessages: { ses_queue: [message] } });
+        mockedPhase = 'busy';
+        await withDom(async (container) => {
+            const root = createRoot(container as unknown as Element);
+            try {
+                await act(async () => root.render(
+                    <I18nProvider>
+                        <QueuedMessageTab
+                            tabBackground="#222222"
+                            onEditMessage={(content) => { edited.push(content); }}
+                            onSendMessage={(next) => { sentMessages.push(next); }}
+                        />
+                    </I18nProvider>,
+                ));
+                const byAria = (label: string) => container.find((node) => node.getAttribute('aria-label') === label);
+                await act(async () => { byAria('Steer Conversation')!.click(); });
+                expect(sentMessages).toEqual([message]);
+                await act(async () => { byAria('Edit Queued Message')!.click(); });
+                expect(edited).toEqual(['Connected queued prompt']);
+                expect(useMessageQueueStore.getState().queuedMessages.ses_queue ?? []).toHaveLength(0);
+                await act(async () => { useMessageQueueStore.setState({ queuedMessages: { ses_queue: [message] } }); });
+                await act(async () => { byAria('Remove from Queue')!.click(); });
+                expect(useMessageQueueStore.getState().queuedMessages.ses_queue ?? []).toHaveLength(0);
+            } finally {
+                await act(async () => root.unmount());
+            }
+        });
+    });
+
+    test('the connected tab renders nothing without a current session', () => {
+        useSessionUIStore.setState({ currentSessionId: null });
+        useMessageQueueStore.setState({ queuedMessages: { ses_queue: [queued('q1', 'Orphan')] } });
+        expect(renderToStaticMarkup(
+            <I18nProvider><QueuedMessageTab tabBackground="#222" onEditMessage={() => undefined} onSendMessage={() => undefined} /></I18nProvider>,
+        )).toBe('');
     });
 
     test('renders null on an empty queue', () => {
         expect(renderTab([], 'busy')).toBe('');
-        expect(tabSource).toContain('if (queuedMessages.length === 0 || !currentSessionId)');
     });
 
     test('labels Steer while abortable and Send Now when idle', () => {

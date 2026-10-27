@@ -1,16 +1,21 @@
-// Independent, default-off rollout switches. These affect behavior, never
-// native permissions or launch admission. Hosts pass the same resolved values
-// to the private bridge, provisioned plugins, preflight and evaluation reports.
+// Independent rollout switches. These affect behavior, never native
+// permissions or launch admission. Hosts pass the same resolved values to the
+// private bridge, provisioned plugins, preflight and evaluation reports.
 export const HARNESS_POLICY_ENV = Object.freeze({
   readOverlap: 'DEVRYAN_MANAGED_READ_OVERLAP',
   waitAny: 'DEVRYAN_MANAGED_WAIT_ANY',
   compactResults: 'DEVRYAN_COMPACT_MANAGED_RESULTS',
   contextProjection: 'DEVRYAN_TASK_CONTEXT_PROJECTION',
   duplicateOutputs: 'DEVRYAN_DUPLICATE_OUTPUTS',
+  adaptiveDelegation: 'DEVRYAN_ADAPTIVE_DELEGATION',
 });
 
+// Default-on policies; `0` is their kill switch. The rest need `1`.
+const DEFAULT_ON_HARNESS_POLICIES = new Set(['waitAny', 'compactResults']);
+
 export const resolveHarnessPolicies = (environment = {}) => Object.fromEntries(
-  Object.entries(HARNESS_POLICY_ENV).map(([key, name]) => [key, environment[name] === '1']),
+  Object.entries(HARNESS_POLICY_ENV).map(([key, name]) => [key,
+    DEFAULT_ON_HARNESS_POLICIES.has(key) ? environment[name] !== '0' : environment[name] === '1']),
 );
 
 // This is an authorization list, intentionally separate from change-capture
@@ -18,3 +23,7 @@ export const resolveHarnessPolicies = (environment = {}) => Object.fromEntries(
 export const MANAGED_OVERLAP_READ_TOOLS = Object.freeze([
   'read', 'glob', 'grep', 'webfetch',
 ]);
+
+// Native admission owns scoped parent overlap; the legacy plugin flag cannot
+// advertise or disable this independently enforced native capability.
+export const resolveNativeHarnessPolicies = (environment = {}) => ({ ...resolveHarnessPolicies(environment), readOverlap: true });

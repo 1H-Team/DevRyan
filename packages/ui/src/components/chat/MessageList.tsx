@@ -4,6 +4,8 @@ import { measureElement as measureVirtualElement, observeElementOffset, type Vir
 import { useFeatureFlagsStore } from '@/stores/useFeatureFlagsStore';
 
 import ChatMessage from './ChatMessage';
+import { ManagedTaskRow } from './ManagedTaskRow';
+import { ObjectiveVerification } from './ObjectiveVerification';
 import { PrimaryModelRecovery } from './PrimaryModelRecovery';
 import { areOptionalRenderRelevantMessagesEqual, areRelevantTurnGroupingContextsEqual, areRenderRelevantMessagesEqual } from './message/renderCompare';
 import TurnItem from './components/TurnItem';
@@ -52,6 +54,10 @@ import {
 import { resolveManagedTaskTurnProjection } from './managedTaskDispatch';
 import { assistantRowRendersContent, selectAssistantHeaderTargetId } from './message/assistantRowContent';
 import type { AssistantImageMessage } from './message/parts/generatedImageResults';
+import { windowTurnActivity } from './lib/turns/windowTurnActivity';
+import { Button } from '@/components/ui/button';
+import { useI18n } from '@/lib/i18n';
+import { readMessageClientRole, readMessageId, readMessageParentId, readMessageRole } from '@/lib/decoders/messageInfo';
 
 // Sessions below the threshold render fully (zero behavior change for the
 // common case); above it, history virtualizes so DOM + observers + highlighted
@@ -114,12 +120,7 @@ const useStableEvent = <TArgs extends unknown[], TResult>(handler: (...args: TAr
 
 const USER_SHELL_MARKER = 'The following tool was executed by the user';
 
-const resolveMessageRole = (message: ChatMessageEntry): string | null => {
-    const info = message.info as unknown as { clientRole?: string | null | undefined; role?: string | null | undefined };
-    return (typeof info.clientRole === 'string' ? info.clientRole : null)
-        ?? (typeof info.role === 'string' ? info.role : null)
-        ?? null;
-};
+const resolveMessageRole = (message: ChatMessageEntry): string | null => readMessageRole(message.info);
 
 const normalizeCompactionCommandMessage = (message: ChatMessageEntry): ChatMessageEntry => {
     if (!hasCompactionPart(message)) {
@@ -139,8 +140,7 @@ const normalizeCompactionCommandMessage = (message: ChatMessageEntry): ChatMessa
         return { type: 'text', text: '/compact' } as Part;
     });
 
-    const info = message.info as unknown as { clientRole?: string | null | undefined };
-    const needsClientRole = info.clientRole !== 'user';
+    const needsClientRole = readMessageClientRole(message.info) !== 'user';
     const needsBoundary = Boolean(boundary) && getCompactionBoundary(message)?.kind !== boundary?.kind;
 
     if (!changedParts && !needsClientRole && !needsBoundary) {
@@ -174,8 +174,7 @@ const normalizeCompactionSummaryMessage = (
         return message;
     }
 
-    const info = message.info as unknown as { clientRole?: string | null | undefined };
-    if (info.clientRole === 'assistant') {
+    if (readMessageClientRole(message.info) === 'assistant') {
         return message;
     }
 
@@ -210,14 +209,10 @@ const isUserSubtaskMessage = (message: ChatMessageEntry | undefined): boolean =>
 
 const getMessageId = (message: ChatMessageEntry | undefined): string | null => {
     if (!message) return null;
-    const id = (message.info as unknown as { id?: unknown }).id;
-    return typeof id === 'string' && id.trim().length > 0 ? id : null;
+    return readMessageId(message.info);
 };
 
-const getMessageParentId = (message: ChatMessageEntry): string | null => {
-    const parentID = (message.info as unknown as { parentID?: unknown }).parentID;
-    return typeof parentID === 'string' && parentID.trim().length > 0 ? parentID : null;
-};
+const getMessageParentId = (message: ChatMessageEntry): string | null => readMessageParentId(message.info);
 
 const isUserShellMarkerMessage = (message: ChatMessageEntry | undefined): boolean => {
     if (!message) return false;
@@ -557,7 +552,7 @@ const TurnBlock = React.memo(({
         return null;
     }, [activeStreamingMessageId, turn.assistantMessages]);
 
-    const visibleAssistantMessages = React.useMemo(() => {
+    const unwindowedAssistantMessages = React.useMemo(() => {
         if (chatRenderMode === 'live') {
             return turn.assistantMessages;
         }
@@ -581,6 +576,53 @@ const TurnBlock = React.memo(({
         const firstAssistant = turn.assistantMessages[0];
         return firstAssistant ? [firstAssistant] : [];
     }, [chatRenderMode, streamingAssistantMessageId, turn.assistantMessages]);
+
+    const longTurnWindowingEnabled = useFeatureFlagsStore(state => state.longTurnActivityWindowingEnabled);
+    const { t } = useI18n();
+    const [activityAnchor, setActivityAnchor] = React.useState<string | null>(null);
+    const revealButtonRef = React.useRef<HTMLButtonElement | null>(null);
+    const pendingRevealRef = React.useRef<{ container: HTMLElement; target: HTMLElement; top: number } | null>(null);
+    const afterRevealRef = React.useRef<(() => void) | null>(null);
+    const activityWindow = React.useMemo(() => longTurnWindowingEnabled && isLastTurn
+        ? windowTurnActivity(turn, unwindowedAssistantMessages, activityAnchor) : null,
+    [activityAnchor, isLastTurn, longTurnWindowingEnabled, turn, unwindowedAssistantMessages]);
+    const visibleAssistantMessages = activityWindow?.messages ?? unwindowedAssistantMessages;
+    React.useLayoutEffect(() => {
+        const pending = pendingRevealRef.current;
+        if (pending && pending.target.isConnected) pending.container.scrollTop += pending.target.getBoundingClientRect().top - pending.top;
+        pendingRevealRef.current = null;
+        const after = afterRevealRef.current;
+        afterRevealRef.current = null;
+        if (after) window.requestAnimationFrame(after);
+    }, [activityAnchor]);
+    React.useEffect(() => {
+        if (!longTurnWindowingEnabled || !isLastTurn || !activityWindow?.hidden) return;
+        const reveal = (event: Event) => {
+            if (!(event instanceof CustomEvent)) return;
+            const detail: unknown = event.detail;
+            if (!detail || typeof detail !== 'object') return;
+            const messageId: unknown = Reflect.get(detail, 'messageId');
+            const sessionId: unknown = Reflect.get(detail, 'sessionId');
+            const after: unknown = Reflect.get(detail, 'afterReveal');
+            if (sessionId !== turn.userMessage.info.sessionID || typeof messageId !== 'string' || typeof after !== 'function'
+                || !turn.assistantMessages.some(message => message.info.id === messageId)) return;
+            Reflect.set(detail, 'handled', true);
+            afterRevealRef.current = () => { after(); };
+            setActivityAnchor('*');
+        };
+        window.addEventListener('devryan:reveal-turn-message', reveal);
+        return () => window.removeEventListener('devryan:reveal-turn-message', reveal);
+    }, [activityWindow?.hidden, isLastTurn, longTurnWindowingEnabled, turn.assistantMessages, turn.userMessage.info.sessionID]);
+    const revealOlderActivity = React.useCallback(() => {
+        if (!activityWindow?.olderAnchor) return;
+        const button = revealButtonRef.current;
+        const container = button?.closest<HTMLElement>('[data-scrollbar="chat"]');
+        const section = button?.closest<HTMLElement>('[data-turn-id]');
+        const target = container && section ? Array.from(section.querySelectorAll<HTMLElement>('[data-message-id]'))
+            .find(node => node.dataset.messageId !== turn.userMessageId && node.getBoundingClientRect().bottom > container.getBoundingClientRect().top) : undefined;
+        if (container && target) pendingRevealRef.current = { container, target, top: target.getBoundingClientRect().top };
+        setActivityAnchor(activityWindow.olderAnchor);
+    }, [activityWindow?.olderAnchor, turn.userMessageId]);
 
     const completedAssistantMessages = React.useMemo(() => {
         if (chatRenderMode !== 'sorted') {
@@ -622,22 +664,22 @@ const TurnBlock = React.memo(({
 
     const visibleActivityParts = React.useMemo(() => {
         if (chatRenderMode !== 'sorted') {
-            return turn.activityParts;
+            return activityWindow?.activityParts ?? turn.activityParts;
         }
         if (visibleActivityMessageIdSet.size === turn.assistantMessages.length) {
-            return turn.activityParts;
+            return activityWindow?.activityParts ?? turn.activityParts;
         }
-        return turn.activityParts.filter((activity) => visibleActivityMessageIdSet.has(activity.messageId));
-    }, [chatRenderMode, visibleActivityMessageIdSet, turn.activityParts, turn.assistantMessages.length]);
+        return (activityWindow?.activityParts ?? turn.activityParts).filter((activity) => visibleActivityMessageIdSet.has(activity.messageId));
+    }, [activityWindow, chatRenderMode, visibleActivityMessageIdSet, turn.activityParts, turn.assistantMessages.length]);
 
     const visibleActivitySegments = React.useMemo(() => {
         if (chatRenderMode !== 'sorted') {
-            return turn.activitySegments;
+            return activityWindow?.activitySegments ?? turn.activitySegments;
         }
         if (visibleActivityMessageIdSet.size === turn.assistantMessages.length) {
-            return turn.activitySegments;
+            return activityWindow?.activitySegments ?? turn.activitySegments;
         }
-        return turn.activitySegments
+        return (activityWindow?.activitySegments ?? turn.activitySegments)
             .map((segment) => {
                 const parts = segment.parts.filter((activity) => visibleActivityMessageIdSet.has(activity.messageId));
                 if (parts.length === 0) {
@@ -656,7 +698,7 @@ const TurnBlock = React.memo(({
                 };
             })
             .filter((segment): segment is NonNullable<typeof segment> => segment !== null);
-    }, [chatRenderMode, visibleActivityMessageIdSet, turn.activitySegments, turn.assistantMessages.length]);
+    }, [activityWindow, chatRenderMode, visibleActivityMessageIdSet, turn.activitySegments, turn.assistantMessages.length]);
 
     const activityPartsByMessageId = React.useMemo(() => {
         const byMessageId = new Map<string, typeof visibleActivityParts>();
@@ -782,16 +824,17 @@ const TurnBlock = React.memo(({
     // Agent Dispatch card, so they render empty. Without this pass each such turn
     // still stamped its own "<agent> · <model>" row, stacking identical headers.
     // The predicate is deliberately permissive — anything uncertain counts as content.
-    const contentBearingAssistantIds = React.useMemo(() => {
+    const { contentBearingAssistantIds, errorOnlyAssistantIds } = React.useMemo(() => {
         const activitySegmentAnchorIds = new Set(
             visibleActivitySegments.map((segment) => segment.anchorMessageId),
         );
         const ids = new Set<string>();
+        const errorOnlyIds = new Set<string>();
         visibleAssistantMessages.forEach((assistant, index) => {
             const messageId = assistant.info.id;
             const managedProjection = managedTaskProjectionsByMessageId.get(messageId);
             const finish = (assistant.info as { finish?: unknown }).finish;
-            const rendersContent = assistantRowRendersContent({
+            const contentInput = {
                 parts: assistant.parts,
                 messageFinish: typeof finish === 'string' ? finish : undefined,
                 lastTodoToolPartId: turnGroupingContextBase.lastTodoToolPartId,
@@ -809,16 +852,16 @@ const TurnBlock = React.memo(({
                 ownsAssistantImages: index === visibleAssistantMessages.length - 1
                     && assistantImageMessages.length > 0,
                 ownsActivityOutput: activitySegmentAnchorIds.has(messageId)
-                    || messageId === activityOwnerMessageId
                     || (activityPartsByMessageId.get(messageId)?.length ?? 0) > 0,
-            });
+            };
+            const rendersContent = assistantRowRendersContent(contentInput);
             if (rendersContent) {
                 ids.add(messageId);
+                if (contentInput.hasErrorSurface && !assistantRowRendersContent({ ...contentInput, hasErrorSurface: false })) errorOnlyIds.add(messageId);
             }
         });
-        return ids;
+        return { contentBearingAssistantIds: ids, errorOnlyAssistantIds: errorOnlyIds };
     }, [
-        activityOwnerMessageId,
         activityPartsByMessageId,
         assistantImageMessages,
         managedTaskProjectionsByMessageId,
@@ -833,8 +876,9 @@ const TurnBlock = React.memo(({
         () => selectAssistantHeaderTargetId(
             visibleAssistantMessages.map((assistant) => assistant.info.id),
             contentBearingAssistantIds,
+            errorOnlyAssistantIds,
         ),
-        [contentBearingAssistantIds, visibleAssistantMessages],
+        [contentBearingAssistantIds, errorOnlyAssistantIds, visibleAssistantMessages],
     );
 
     React.useEffect(() => {
@@ -987,7 +1031,10 @@ const TurnBlock = React.memo(({
     }
 
     return (
-        <TurnItem turn={renderableTurn} stickyUserHeader={stickyUserHeader} renderMessage={renderMessage} />
+        <TurnItem turn={renderableTurn} stickyUserHeader={stickyUserHeader} renderMessage={renderMessage}
+            beforeAssistant={activityWindow?.hidden ? <Button ref={revealButtonRef} variant="ghost" size="sm" onClick={revealOlderActivity}>
+                {t('chat.showOlderActivity', { count: Math.min(activityWindow.hidden, 40) })}
+            </Button> : null} />
     );
 });
 
@@ -1369,6 +1416,12 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         () => orderChatMessagesChronologically(messages),
         [messages],
     );
+    const verificationRevision = React.useMemo(() => {
+        const last = chronologicalMessages.at(-1);
+        if (!last) return '';
+        return JSON.stringify([last.info.id, (last.info.time as { completed?: number } | undefined)?.completed,
+            last.parts.filter(part => part.type === 'tool').map(part => [part.id, part.state.status])]);
+    }, [chronologicalMessages]);
     const responseStyleLevel = React.useMemo(
         () => readSessionResponseStyleLevel(chronologicalMessages),
         [chronologicalMessages],
@@ -1887,6 +1940,11 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                     return false;
                 }
 
+                if (useFeatureFlagsStore.getState().longTurnActivityWindowingEnabled) {
+                    const detail = { sessionId: sessionKey, messageId, handled: false, afterReveal: () => { scrollMessageElementIntoView(messageId, behavior); } };
+                    window.dispatchEvent(new CustomEvent('devryan:reveal-turn-message', { detail }));
+                    if (detail.handled) return true;
+                }
                 return scrollMessageElementIntoView(messageId, behavior)
                     || (
                         trailingStreamingEntry !== undefined && index >= historyEntries.length
@@ -1942,6 +2000,12 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                 if (applyViewportAnchor(anchor) && (!shouldVirtualizeHistory || historyWidthPx !== null)) {
                     pendingViewportAnchorRef.current = null;
                     return true;
+                }
+                if (useFeatureFlagsStore.getState().longTurnActivityWindowingEnabled) {
+                    const detail = { sessionId: sessionKey, messageId: anchor.messageId, handled: false,
+                        afterReveal: () => { applyViewportAnchor(anchor); } };
+                    window.dispatchEvent(new CustomEvent('devryan:reveal-turn-message', { detail }));
+                    if (detail.handled) return true;
                 }
 
                 const index = messageIndexMap.get(anchor.messageId);
@@ -2037,6 +2101,8 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                                 activeStreamingPhase={activeStreamingPhase}
                             />
                         ) : null}
+                        {manualRecoveryTaskId ? <ManagedTaskRow taskId={manualRecoveryTaskId} surface="session" onContentChange={() => stableTailContentChange('structural')} /> : null}
+                        <ObjectiveVerification sessionId={sessionKey} directory={currentDirectory} revision={verificationRevision} />
                         <PrimaryModelRecovery
                             sessionId={sessionKey}
                             onContentChange={() => stableTailContentChange('structural')}

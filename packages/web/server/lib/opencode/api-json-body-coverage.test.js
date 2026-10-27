@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import ts from 'typescript';
+import ts from '@typescript/typescript6';
 import { describe, expect, it } from 'vitest';
 
 import { resolveSharedJsonBodyLimit } from './core-routes.js';
@@ -267,7 +267,7 @@ describe('API JSON body coverage scanner', () => {
 
   it('accepts shared-allowlist paths and ignores routes that never read the body', () => {
     expect(flagged(`
-      app.post('/api/bots/:botId/pause', (req, res) => res.json(req.body));
+      app.post('/api/bug-reports/:reportId/archive', (req, res) => res.json(req.body));
       app.post('/api/session/:sessionID/abort', (req, res) => res.json(req.body));
       app.post('/api/example/ping', (_req, res) => res.json({ ok: true }));
       app.post('/auth/example', (req, res) => res.json(req.body));

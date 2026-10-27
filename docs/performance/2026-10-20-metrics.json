@@ -1,0 +1,387 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-20",
+  "status": "completed-with-unqualified-runtime-journeys",
+  "baselineRevision": "72ca82dc",
+  "historicalCandidateRevision": "c05c3a77826aacccb2457565d7b27132b3f939de",
+  "historicalCommits": 60,
+  "harnessRepairCommit": "c4e0f580",
+  "startupProtocolCommit": "40f405d2",
+  "performanceFixes": [],
+  "measurements": [
+    {
+      "journey": "streaming reducer",
+      "schemaVersion": 1,
+      "verdict": "passed",
+      "pairs": 10,
+      "requiredPairs": 10,
+      "runtime": "1.3.14",
+      "baseline": {
+        "revision": "72ca82dc690011ce50496afa131b9a69a981de54",
+        "reducerSha256": "67da9e814412d95d92998fc9c19707dab6bc6716d0447e7aec9d1c59bfb7e0b5"
+      },
+      "candidate": {
+        "revision": "c05c3a77826aacccb2457565d7b27132b3f939de",
+        "reducerSha256": "67da9e814412d95d92998fc9c19707dab6bc6716d0447e7aec9d1c59bfb7e0b5"
+      },
+      "scope": "reducer only; excludes rendering, network, and provider latency",
+      "scenarios": [
+        {
+          "scenario": "1x50:delta",
+          "baselineMedianP95Ms": 0.0008010400000000039,
+          "baselineMadMs": 2.6460000000003755e-05,
+          "allowanceMs": 7.938000000001126e-05,
+          "candidateMedianP95Ms": 0.0007460449999999952,
+          "deltaMs": -5.499500000000874e-05,
+          "verdict": "passed"
+        },
+        {
+          "scenario": "1x50:snapshot",
+          "baselineMedianP95Ms": 0.0007154150000000037,
+          "baselineMadMs": 2.0625000000009676e-05,
+          "allowanceMs": 6.187500000002903e-05,
+          "candidateMedianP95Ms": 0.0007064599999999999,
+          "deltaMs": -8.955000000003847e-06,
+          "verdict": "passed"
+        },
+        {
+          "scenario": "1x500:delta",
+          "baselineMedianP95Ms": 0.0030658299999999986,
+          "baselineMadMs": 3.7500000000001725e-05,
+          "allowanceMs": 0.00015329149999999993,
+          "candidateMedianP95Ms": 0.003031250000000014,
+          "deltaMs": -3.457999999998459e-05,
+          "verdict": "passed"
+        },
+        {
+          "scenario": "1x500:snapshot",
+          "baselineMedianP95Ms": 0.0017829150000000025,
+          "baselineMadMs": 5.520499999999372e-05,
+          "allowanceMs": 0.00016561499999998117,
+          "candidateMedianP95Ms": 0.0017324999999999945,
+          "deltaMs": -5.0415000000008075e-05,
+          "verdict": "passed"
+        },
+        {
+          "scenario": "1x2000:delta",
+          "baselineMedianP95Ms": 0.006502709999999965,
+          "baselineMadMs": 0.00010479000000003687,
+          "allowanceMs": 0.00032513549999999827,
+          "candidateMedianP95Ms": 0.006383330000000029,
+          "deltaMs": -0.00011937999999993634,
+          "verdict": "passed"
+        },
+        {
+          "scenario": "1x2000:snapshot",
+          "baselineMedianP95Ms": 0.006800415000000015,
+          "baselineMadMs": 0.00016438000000000823,
+          "allowanceMs": 0.0004931400000000247,
+          "candidateMedianP95Ms": 0.006744164999999995,
+          "deltaMs": -5.625000000002069e-05,
+          "verdict": "passed"
+        },
+        {
+          "scenario": "4x50:delta",
+          "baselineMedianP95Ms": 0.000522500000000008,
+          "baselineMadMs": 1.5415000000018608e-05,
+          "allowanceMs": 4.6245000000055825e-05,
+          "candidateMedianP95Ms": 0.0005343750000000114,
+          "deltaMs": 1.187500000000342e-05,
+          "verdict": "passed"
+        },
+        {
+          "scenario": "4x50:snapshot",
+          "baselineMedianP95Ms": 0.0005099999999998772,
+          "baselineMadMs": 1.4999999999787373e-05,
+          "allowanceMs": 4.499999999936212e-05,
+          "candidateMedianP95Ms": 0.00048458499999981086,
+          "deltaMs": -2.541500000006634e-05,
+          "verdict": "passed"
+        },
+        {
+          "scenario": "4x500:delta",
+          "baselineMedianP95Ms": 0.0018852100000000859,
+          "baselineMadMs": 6.895999999997579e-05,
+          "allowanceMs": 0.00020687999999992736,
+          "candidateMedianP95Ms": 0.0018722950000000082,
+          "deltaMs": -1.291500000007769e-05,
+          "verdict": "passed"
+        },
+        {
+          "scenario": "4x500:snapshot",
+          "baselineMedianP95Ms": 0.001842085000000111,
+          "baselineMadMs": 5.729500000029486e-05,
+          "allowanceMs": 0.00017188500000088459,
+          "candidateMedianP95Ms": 0.0018362500000000635,
+          "deltaMs": -5.83500000004753e-06,
+          "verdict": "passed"
+        },
+        {
+          "scenario": "4x2000:delta",
+          "baselineMedianP95Ms": 0.007194169999999929,
+          "baselineMadMs": 0.00032417000000009447,
+          "allowanceMs": 0.0009725100000002834,
+          "candidateMedianP95Ms": 0.0072839550000000485,
+          "deltaMs": 8.978500000011991e-05,
+          "verdict": "passed"
+        },
+        {
+          "scenario": "4x2000:snapshot",
+          "baselineMedianP95Ms": 0.006543334999999928,
+          "baselineMadMs": 0.0002958350000000112,
+          "allowanceMs": 0.0008875050000000336,
+          "candidateMedianP95Ms": 0.006494584999999943,
+          "deltaMs": -4.874999999998457e-05,
+          "verdict": "passed"
+        }
+      ]
+    }
+  ],
+  "liveProviders": {
+    "physicalRequests": 0,
+    "spendUsd": 0,
+    "status": "unavailable: isolated supported authentication and bounded pricing not established"
+  },
+  "evidenceDirectory": ".artifacts/performance-audit-2026-10-20",
+  "qualification": {
+    "startup": "unqualified",
+    "sendStreaming": "unqualified",
+    "interactive": "unqualified",
+    "resources": "unqualified",
+    "reducer": "no meaningful change"
+  },
+  "nativeBuilds": {
+    "toolingOverlay": {
+      "path": "/Users/zoubair/Repositories/DevRyan/.artifacts/performance-audit-2026-10-20/qa-package-donor.patch",
+      "sha256": "f71eef8fd67e93a4954dd6851a62f6b87d8602b3070df85dc18fc239cade0dac",
+      "appliedIdenticallyToBothArms": true
+    },
+    "baseline": {
+      "nativeRuntime": {
+        "status": "unqualified",
+        "attempts": 2,
+        "reason": "First attempt used mismatched reviewed Claude input, corrected with pinned verified npm asset; second attempt failed launcher AF_UNIX socket path length in isolated long TMPDIR. No third attempt per coordinator."
+      },
+      "webBuild": "passed",
+      "nativeModuleRebuild": "passed",
+      "package": {
+        "status": "failed",
+        "reason": "No qualified native runtime bundle; revert-runtime/darwin-arm64/native-bundle.json missing."
+      }
+    },
+    "candidate": {
+      "nativeRuntime": {
+        "status": "passed",
+        "output": "/private/var/folders/3s/qdbpzys94jb188kh88k0fcjh0000gn/T/devryan-performance-audit-2026-10-20-RVHJhg/candidate/.cache/audit-native",
+        "buildId": "025d0fec5253e497ab2d8e0f72d72e68385685d1e2e2fdf506e1f12398e852d3",
+        "manifestSha256": "1516fd9a03960275a561d0031804de119dce886dfa70d7e4bb2fdeec1fdab711"
+      },
+      "webBuild": "passed",
+      "nativeModuleRebuild": "passed",
+      "package": {
+        "status": "passed",
+        "binary": "/private/var/folders/3s/qdbpzys94jb188kh88k0fcjh0000gn/T/devryan-performance-audit-2026-10-20-RVHJhg/candidate/.cache/qa/packaged-electron-current/app/mac-arm64/DevRyan QA.app/Contents/MacOS/DevRyan QA",
+        "evidencePath": "/private/var/folders/3s/qdbpzys94jb188kh88k0fcjh0000gn/T/devryan-performance-audit-2026-10-20-RVHJhg/candidate/.cache/qa/packaged-electron-current/package-evidence.json",
+        "electronVersion": "41.2.1",
+        "nativeSmoke": {
+          "electron": "41.2.1",
+          "nodeModuleAbi": "145",
+          "sqlite": "passed",
+          "pty": "passed"
+        }
+      }
+    },
+    "realUserConfig": {
+      "baselineBefore": "9ce96b3a6587c5086eb1ff5a37bcc125c8006b434884057fee30788e4e6ec363",
+      "baselineAfter": "9ce96b3a6587c5086eb1ff5a37bcc125c8006b434884057fee30788e4e6ec363",
+      "candidateBefore": "9ce96b3a6587c5086eb1ff5a37bcc125c8006b434884057fee30788e4e6ec363",
+      "candidateAfter": "9ce96b3a6587c5086eb1ff5a37bcc125c8006b434884057fee30788e4e6ec363"
+    }
+  },
+  "startupCalibration": {
+    "status": "unqualified",
+    "historicalBaselinePairs": 0,
+    "candidateSelfCheckAttempts": 2,
+    "validPairs": 0,
+    "confidenceInterval95Ms": null,
+    "frozenComparisonPairs": null,
+    "reason": "pre-composer scope failure; contaminated host window; no historical native baseline"
+  },
+  "windows": {
+    "reducer-ten-pair": {
+      "exitCode": 0,
+      "signal": null,
+      "isolation": "unchanged",
+      "hostLoad": "accepted",
+      "contaminationLimits": {
+        "hostCpuFraction": 0.25,
+        "userAppCpuPercent": 50,
+        "consecutiveSamples": 2,
+        "sampleIntervalMs": 1000
+      },
+      "outputOverflow": false,
+      "sampleCount": 7
+    },
+    "candidate-startup-calibration": {
+      "exitCode": 1,
+      "signal": null,
+      "isolation": "unchanged",
+      "hostLoad": "contaminated",
+      "contaminationLimits": {
+        "hostCpuFraction": 0.25,
+        "userAppCpuPercent": 50,
+        "consecutiveSamples": 2,
+        "sampleIntervalMs": 1000
+      },
+      "outputOverflow": false,
+      "sampleCount": 59
+    },
+    "candidate-interactive-smoke": {
+      "exitCode": null,
+      "signal": "SIGINT",
+      "isolation": "unchanged",
+      "hostLoad": "contaminated",
+      "contaminationLimits": {
+        "hostCpuFraction": 0.25,
+        "userAppCpuPercent": 50,
+        "consecutiveSamples": 2,
+        "sampleIntervalMs": 1000
+      },
+      "outputOverflow": false,
+      "sampleCount": 1492
+    },
+    "candidate-interactive-functional": {
+      "exitCode": 1,
+      "signal": null,
+      "isolation": "unchanged",
+      "hostLoad": "accepted",
+      "contaminationLimits": {
+        "hostCpuFraction": 0.25,
+        "userAppCpuPercent": 50,
+        "consecutiveSamples": 2,
+        "sampleIntervalMs": 1000
+      },
+      "outputOverflow": false,
+      "timedOut": false,
+      "forcedExit": false,
+      "timeoutMs": 480000,
+      "cleanupQualification": "inner QA owner evidence required",
+      "sampleCount": 3
+    }
+  },
+  "classificationCounts": {
+    "regression repaired": 0,
+    "measured improvement": 0,
+    "no meaningful change": 1,
+    "unqualified": 4
+  },
+  "interactiveFunctional": {
+    "attempts": 2,
+    "completedWorkloads": 0,
+    "status": "unqualified",
+    "failures": [
+      "Unauthenticated v1 fixture setup against authenticated v2 fixture; server cleanup gap (fixed with tests)",
+      "Audit launcher omitted required QA_NATIVE_ARTIFACT_ROOT; clean bounded prelaunch failure"
+    ],
+    "nativeArtifactIntegrityFirstAttempt": "passed",
+    "productionPerformanceImplication": null
+  },
+  "protocolFollowups": [
+    "a7707622",
+    "f690fe9e",
+    "6312cb05",
+    "d8929010",
+    "9e1c2efd"
+  ],
+  "realUserConfiguration": "all recorded before/after runtime manifests unchanged",
+  "correctnessFollowups": {
+    "fixtureSetup": "6312cb05",
+    "fullProfileCleanup": "5ce3a36c",
+    "launchdAbsentLegacyPlist": "d8929010",
+    "desktopJavascriptGate": [
+      "c3203df2",
+      "d95545fb",
+      "d89d88d7",
+      "8a3fcaf8"
+    ],
+    "remainingCanonicalWebReadersAndDefaults": "a336f972",
+    "reviewedDocumentCacheAuthority": "f3723f73",
+    "canonicalWriterTestFixtures": "7502cd4d",
+    "realSseDialectTestWriter": "641754c7",
+    "malformedLegacyTaskOwnershipRejection": "a9f949dd",
+    "tauriLoaderExportContract": "89e2bff3"
+  },
+  "cleanup": {
+    "completedAt": "2026-10-20T01:25:35.858852+00:00",
+    "worktrees": [
+      {
+        "arm": "baseline",
+        "revision": "72ca82dc690011ce50496afa131b9a69a981de54",
+        "removed": true
+      },
+      {
+        "arm": "candidate",
+        "revision": "c05c3a77826aacccb2457565d7b27132b3f939de",
+        "removed": true
+      }
+    ],
+    "auditRootRemoved": true,
+    "privateRunnerHomeRemoved": true,
+    "activeOwnedTempCwdBeforeCleanup": [],
+    "evidenceExportedBeforeRemoval": true,
+    "installedAppsModified": false
+  },
+  "unavailableChecks": [
+    "faithful historical native baseline",
+    "historical baseline startup calibration and confidence interval",
+    "matched fixture send/render and resource workloads",
+    "live provider authentication/pricing preflight",
+    "signed native bundle ID / Keychain ACL upgrade",
+    "installed Tauri updater transition",
+    "Docker image and existing volume exercise"
+  ],
+  "validation": {
+    "full": {
+      "command": "bun run validate:full",
+      "exitCode": 0,
+      "revision": "89e2bff3a1c8ffea99631e8938fe80afbf675e27",
+      "completedAt": "2026-10-20T02:53:18.566902+00:00",
+      "log": "validate-full-final.log",
+      "logSha256": "d3b28ecb1135e1e290833ec065a6a88e3db148f277bc0fe05f826806acb60605",
+      "webVitest": {
+        "filesPassed": 569,
+        "testsPassed": 7180
+      },
+      "finalNativeIntegration": {
+        "files": 8,
+        "testsPassed": 122
+      },
+      "preExistingSkippedOutput": [
+        "(skip) captured managed Rust daemon reaches only owned CDP through lease-local relative Unix socket policy",
+        " 1 skip"
+      ],
+      "cacheScratchGuard": "passed"
+    },
+    "fast": {
+      "command": "VALIDATE_BASE=4e208520 bun run validate",
+      "exitCode": 0,
+      "revision": "89e2bff3a1c8ffea99631e8938fe80afbf675e27",
+      "completedAt": "2026-10-20T03:20:43.678694+00:00",
+      "log": "validate-passed.log",
+      "logSha256": "34d4f4b5f391e72673098cf2db6ff4c3d93427945d6c99ac39562fba3afd5d12",
+      "startupWebContract": {
+        "filesPassed": 12,
+        "testsPassed": 276
+      },
+      "cacheScratchGuard": "passed"
+    },
+    "realConfiguration": {
+      "status": "unchanged",
+      "beforeSha256": "9ce96b3a6587c5086eb1ff5a37bcc125c8006b434884057fee30788e4e6ec363",
+      "afterSha256": "9ce96b3a6587c5086eb1ff5a37bcc125c8006b434884057fee30788e4e6ec363",
+      "automaticRestoration": false
+    }
+  },
+  "completedAt": "2026-10-20T03:20:43.678694+00:00",
+  "validatedCodeRevision": "89e2bff3a1c8ffea99631e8938fe80afbf675e27"
+}

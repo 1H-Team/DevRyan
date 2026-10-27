@@ -4,13 +4,16 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import yaml from 'yaml';
 
+import { MANAGED_RECOVERY_INSTRUCTIONS } from '@devryan/orchestration-runtime';
+import { renderAgentPromptPolicies } from './packaged-agents.js';
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const AGENTS_DIR = path.resolve(__dirname, '../../default-config/agents');
 const PRE_TASK_ORCHESTRATOR_PROMPT_UTF8_BYTES = 15_902;
-const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 40_546;
+const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 35917;
 const DEFAULT_SLIM_PROFILE_PATH = path.resolve(
   __dirname,
-  '../../default-config/user-profile/oh-my-opencode-slim.json',
+  '../../default-config/user-profile/devryan-agents.jsonc',
 );
 
 const LOCAL_PATH_PATTERNS = [
@@ -97,9 +100,9 @@ describe('packaged agent defaults', () => {
     const content = fs.readFileSync(path.join(AGENTS_DIR, 'orchestrator.md'), 'utf8');
 
     expect(content).toContain('<Completion Contract>');
-    expect(content).toContain('finish every completed work turn');
-    expect(content).toContain('Use natural Markdown headings such as `Summary` and `Verification`');
-    expect(content).toContain('do not use tool-shaped XML report wrappers');
+    expect(content).toContain('Always end with a concise final response');
+    expect(content).toContain('changes, checks, remaining risk');
+    expect(content).toContain('Continue every runnable part of the objective');
   });
 
   it('council reconciles plan-mode prompts with its required council report', () => {
@@ -216,8 +219,8 @@ describe('packaged agent defaults', () => {
 
   it('puts correctness and reliability gates before efficiency and cost', () => {
     const { body } = readPackagedAgent('orchestrator');
-    const correctnessGate = 'Correctness and reliability are hard gates.';
-    const efficiencyPriority = 'Once both hold, optimize latency and resource efficiency, then cost.';
+    const correctnessGate = 'Correctness and reliability gate';
+    const efficiencyPriority = 'latency, resource efficiency and cost.';
 
     expect(body).toContain(correctnessGate);
     expect(body).toContain(efficiencyPriority);
@@ -240,9 +243,14 @@ describe('packaged agent defaults', () => {
 
     expect(countOccurrences(body, 'structured question tool')).toBe(1);
     expect(countOccurrences(body, 'Skill announcements are tool activity only')).toBe(1);
-    expect(countOccurrences(body, 'Honor the DevRyan rationale-display reminder captured in the first user turn')).toBe(1);
-    expect(countOccurrences(body, 'Explain why instead of merely repeating the tool action')).toBe(1);
-    expect(countOccurrences(body, 'Never expose or claim to expose private chain-of-thought')).toBe(1);
+    expect(countOccurrences(body, 'Honor the first-turn DevRyan rationale reminder')).toBe(1);
+    expect(countOccurrences(body, 'Explain purpose without restating tool activity')).toBe(1);
+    expect(countOccurrences(body, 'Never invent findings or expose private chain-of-thought')).toBe(1);
+    expect(body).toContain('Before the first tool call, briefly state the outcome');
+    expect(body).toContain('distinct concerns, evidence gaps and selected ownership');
+    expect(body).toContain('Before the first tool call, briefly state the outcome');
+    expect(body).toContain('Provider Default still includes this assessment');
+    expect(body).toContain('never redispatch unchanged work or switch agents or models to evade that boundary');
     expect(countOccurrences(body, 'Approval belongs only to the plan card lifecycle')).toBe(1);
     expect(body).toContain('Do not guess user-owned intent, ask about trivial, reversible mechanics, or request permission for already-approved mechanical steps; when the next step is clear, take it.');
     expect(body).not.toContain('**Clarify unresolved user intent.**');
@@ -279,9 +287,8 @@ describe('packaged agent defaults', () => {
     expect(frontmatter).toEqual({
       mode: 'primary',
       description: 'AI coding orchestrator that delegates tasks to specialist agents for optimal quality, speed, and cost',
-      model: 'openai/gpt-5.5',
+      model: 'openai/gpt-6.1-sol',
       variant: 'medium',
-      temperature: 0.1,
       permission: {
         '*': 'allow',
         doom_loop: 'ask',
@@ -306,23 +313,17 @@ describe('packaged agent defaults', () => {
     for (const contract of [
       '**DevRyan-managed delegation.**',
       'at most one managed recovery',
+      'following the `instruction` the failed result carries',
       'never change its model automatically',
-      'at most one brief status sentence',
-      'Do not repeat recovery instructions',
-      'DevRyan sends one synthetic continuation to the idle parent',
       'Any collected result with `manualRecoveryRequired: true`',
-      'sends one transcript-marked same-child continuation when the child is already terminal',
-      'A collected `provider_prompt_rejected` failure is context-specific',
-      'compact, semantically complete task capsule',
-      'preserve the configured agent, model, and thinking level',
-      'do not retry again or enter Model Recovery solely for prompt rejection',
+      'issue every independent `devryan_task` start as parallel tool calls in the same assistant message',
       '**Managed dispatch barrier.**',
       'Workspace writes, general execution, dependent implementation, and final completion remain gated.',
       'Allowed subagents: `explorer`, `librarian`, `oracle`, `designer`, `fixer`, `council`.',
       '<Git Command Boundary>',
-      'Do not run git commands as a default finalization or safety routine.',
+      'Run git/GitHub commands only for explicit or inherent git work',
       '<Completion Contract>',
-      'Always finish every completed work turn with a concise user-facing final response.',
+      'Always end with a concise final response',
       '<Routing>',
       '- `explorer`:',
       '- `librarian`:',
@@ -341,6 +342,20 @@ describe('packaged agent defaults', () => {
       expect(body, contract).toContain(contract);
     }
     expect(body).not.toContain('use `recover_in_place`');
+    // Recovery detail moved out of the static prompt into the failed result's instruction.
+    for (const [contract, instruction] of [
+      ['at most one brief status sentence', MANAGED_RECOVERY_INSTRUCTIONS.manual],
+      ['Do not repeat recovery instructions', MANAGED_RECOVERY_INSTRUCTIONS.manual],
+      ['never change its model automatically', MANAGED_RECOVERY_INSTRUCTIONS.manual],
+      ['DevRyan sends one synthetic continuation to the idle parent', MANAGED_RECOVERY_INSTRUCTIONS.scheduled],
+      ['sends one transcript-marked same-child continuation when the child is already terminal', MANAGED_RECOVERY_INSTRUCTIONS.failed],
+      ['compact, semantically complete task capsule', MANAGED_RECOVERY_INSTRUCTIONS.promptRejected],
+      ['preserving the configured agent, model, and thinking level', MANAGED_RECOVERY_INSTRUCTIONS.promptRejected],
+      ['do not retry again or enter Model Recovery solely for prompt rejection', MANAGED_RECOVERY_INSTRUCTIONS.promptRejected],
+    ]) {
+      expect(instruction, contract).toContain(contract);
+    }
+    expect(body).not.toContain('compact, semantically complete task capsule');
   });
 
   it('uses catalog-driven skill permissions without hardcoded skill names', () => {
@@ -392,42 +407,81 @@ describe('packaged agent defaults', () => {
   });
 
   it('permits negotiated reads and wait-any while preserving mutation and disposition gates', () => {
-    const content = readPackagedAgent('orchestrator').content;
+    const { body } = readPackagedAgent('orchestrator');
+    const off = renderAgentPromptPolicies(body, {});
+    const on = renderAgentPromptPolicies(body, { readOverlap: true, waitAny: true, compactResults: true, contextProjection: true });
 
-    expect(content).toContain('Start independent managed tasks, then collect and reconcile their results.');
-    expect(content).toContain('capabilities.policies.readOverlap');
-    expect(content).toContain('These reads are provisional: reread affected files after the barrier clears before building a mutation.');
-    expect(content).toContain('Workspace writes, general execution, dependent implementation, and final completion remain gated.');
-    expect(content).toContain('capabilities.policies.waitAny');
-    expect(content).toContain('Omit the cursor when changing the selected tasks.');
-    expect(content).toContain('Waits remain attached across internal transport slices');
-    expect(content).toContain('use `status` only for an intentional nonblocking snapshot');
-    expect(content).toContain('Read each legacy `resultReference.nextCursor` page in order until complete, then disposition the result.');
-    expect(content).toContain('Completed results require `continue`');
-    expect(content).toContain('Leave scheduled or manual recovery pending');
-    expect(content).toContain('Follow-up attempts remain in the same dispatch group and require collection and disposition too.');
-    expect(content).toContain('Follow legacy paging when no versioned header is present.');
-    expect(content).toContain('Canonical failure and check evidence outrank child prose, including facts outside the first detail page.');
-    expect(content).toContain('a pass followed by relevant edits needs another check');
-    expect(content).toContain('`continue` reconciles a result and never converts unverified work into a pass.');
+    for (const rendered of [off, on]) {
+      expect(rendered).toContain('Start independent managed tasks, then collect and reconcile their results.');
+      expect(rendered).toContain('Workspace writes, general execution, dependent implementation, and final completion remain gated');
+      expect(rendered).toContain('Follow-up attempts remain in the same dispatch group and require collection and disposition too.');
+      expect(rendered).toContain('Relevant edits invalidate prior evidence');
+      expect(rendered).toContain('`continue` refuses unmet checks.');
+      expect(rendered).toContain('Use `collect` to acknowledge a reviewed result without passing checks.');
+      expect(rendered).toContain('Keep blocked todos pending with `blockedBy`; stop only when no runnable work remains.');
+      expect(rendered).toContain('Waivers require the user through the UI.');
+      expect(rendered).toContain('Never self-waive or equate screenshots with a pass.');
+      expect(rendered).toContain('visual checks also need populated state, fixture/live source, assertions and a report path.');
+      expect(rendered).not.toContain('<!-- devryan:');
+    }
+    // Default-off capabilities cost no prompt bytes until enabled.
+    for (const enabledOnly of [
+      'These reads are provisional: reread affected files after the barrier clears before building a mutation.',
+      '`action: wait_any`', 'Omit the cursor when changing the selected tasks.',
+      'Canonical failure and check evidence outrank child prose, including facts outside the first detail page.',
+      'Follow legacy paging when no versioned header is present.', '**Task and project context.**', '`remember_decision`',
+    ]) {
+      expect(off, enabledOnly).not.toContain(enabledOnly);
+      expect(on, enabledOnly).toContain(enabledOnly);
+    }
+    expect(off).toContain('While children run, use orchestration bookkeeping and any independent reads');
+    expect(off).toContain('Use `wait` for each task.');
+    expect(on).not.toContain('While children run, use orchestration bookkeeping and any independent reads');
+    expect(on).not.toContain('Use `wait` for each task.');
+  });
+
+  it('renders adaptive routing only when enabled and preserves legacy policy otherwise', () => {
+    for (const name of ['orchestrator', 'builder', 'designer']) {
+      const { body } = readPackagedAgent(name), off = renderAgentPromptPolicies(body, {}), on = renderAgentPromptPolicies(body, { adaptiveDelegation: true });
+      expect(off).not.toContain('populated fixture or live state');
+      expect(on).toContain('populated fixture or live state');
+      expect(on).toContain('[devryan-runtime-capabilities:v1]');
+      expect(off).not.toContain('[devryan-runtime-capabilities:v1]');
+      expect(on).not.toContain('<!-- devryan:');
+      if (name === 'orchestrator') {
+        expect(off).toContain('A one-line bug fix is still a bug fix');
+        expect(on).not.toContain('A one-line bug fix is still a bug fix');
+        expect(on).toContain('one small cohesive unit');
+        expect(on).toContain('`declare_checks`');
+        expect(on).toContain('`prerequisites`');
+        expect(on).toContain('Follow explicit user requests');
+        expect(on).not.toContain('A contract both briefs already state is not a dependency.');
+      }
+    }
+  });
+
+  it('renders harness policy blocks fail-closed', () => {
+    expect(() => renderAgentPromptPolicies('a\n<!-- devryan:if notAPolicy -->\nb\n<!-- devryan:end -->\n', {})).toThrow(/Unknown harness policy/);
+    expect(() => renderAgentPromptPolicies('a\n<!-- devryan:if waitAny -->\nb\n', {})).toThrow(/Unbalanced/);
+    expect(renderAgentPromptPolicies('plain prompt', {})).toBe('plain prompt');
   });
 
   it('keeps managed deadlines as exceptional recovery boundaries', () => {
     const content = readPackagedAgent('orchestrator').content;
 
-    expect(content).toContain('A deadline is a recovery safety boundary');
+    expect(content).toContain('A deadline is a recovery boundary');
     expect(content).toContain('Omit `timeout_seconds` for ordinary bounded work');
-    expect(content).toContain('only for a closed, inherently indivisible operation');
-    expect(content).toContain('Never lengthen a deadline merely because an implementation spans multiple files or tests');
+    expect(content).toContain('only for one inherently indivisible operation');
+    expect(content).toContain('decompose broad work');
   });
 
   it('never presents provider-native delegation as an Orchestrator path', () => {
     const content = readPackagedAgent('orchestrator').content;
 
-    expect(content).toContain('consume its partial output');
     expect(content).toContain('at most one managed recovery');
-    expect(content).toContain('prefer `resume` only for a resumable timed-out or interrupted result');
-    expect(content).toContain('never use `resume`, `recover_in_place`, or `retry_in_place`');
+    expect(MANAGED_RECOVERY_INSTRUCTIONS.failed).toContain('Consume its partial output');
+    expect(MANAGED_RECOVERY_INSTRUCTIONS.failed).toContain('prefer `resume` only for a resumable timed-out or interrupted result');
+    expect(MANAGED_RECOVERY_INSTRUCTIONS.promptRejected).toContain('never use `resume`, `recover_in_place`, or `retry_in_place`');
     expect(content).toContain('Number steps only when their order is a real dependency.');
     expect(content).toContain('Provider-native `task` is disabled for Orchestrator');
     expect(content).toContain('Provider-native `task` is unavailable to Orchestrator');
@@ -441,7 +495,7 @@ describe('packaged agent defaults', () => {
     expect(builder).toContain('Inspect repository and system facts that could resolve the ambiguity before asking.');
     expect(builder).toContain('multiple plausible interpretations remain and the user can resolve them');
     expect(builder).toContain('even when the ambiguity is not a hard blocker');
-    expect(content).toContain('Inspect repository and system facts that could resolve uncertainty before asking.');
+    expect(content).toContain('Ask unresolved user-owned questions early, before dependent work.');
     expect(content).toContain('unresolved user-owned intent, requirements, preferences, or choices would materially change');
     expect(content).toContain('even when work is not otherwise blocked');
 
@@ -451,10 +505,10 @@ describe('packaged agent defaults', () => {
     }
     expect(content).toContain('Infer only trivial, reversible implementation details');
     expect(content).not.toContain('Clarify intent before consequential choices.');
-    expect(content).toContain('Do not build long speculative option trees');
-    expect(content).toContain('Do not re-litigate settled decisions');
+    expect(content).toContain('Do not speculate about missing answers');
+    expect(content).toContain('or reopen settled choices');
     expect(content).toContain('**Question routing.**');
-    expect(content).toContain('Pick exactly one next action: ask, inspect, delegate, implement, verify, or finish.');
+    expect(content).toContain('Sequence only actual dependencies.');
   });
 
   it('requires Builder task generation and prevents completion with unfinished todos', () => {
@@ -477,16 +531,31 @@ describe('packaged agent defaults', () => {
     expect(content).not.toContain('likely edit points');
   });
 
-  it('starts new tasks with Explorer discovery in normal and plan modes', () => {
+  it('uses coherent evidence-driven routing in normal and plan modes', () => {
     const content = fs.readFileSync(path.join(AGENTS_DIR, 'orchestrator.md'), 'utf8');
-    expect(content).toContain('For every new user task, in normal and plan mode, start `explorer` with the user\'s goal before any direct `grep`, `glob`, or `read`');
-    expect(content).toContain('Apply Explorer-first discovery in plan mode too');
+    expect(content).toContain('Use one appropriate specialist for one coherent concern');
+    expect(content).toContain('Use the same evidence-driven routing in plan mode');
     expect(content).toContain('Goal: <the user\'s objective in one sentence>');
     expect(content).not.toContain('An unknown filename alone never requires Explorer.');
     expect(content).not.toContain('direct-first discovery policy');
     expect(content).toContain('Explicit user requests for a specialist take precedence.');
     expect(content).toContain('if a required specialist remains unavailable after managed recovery, report the blocker');
     expect(content).not.toContain('Unknown codebase location: call');
+  });
+
+  it('splits independent discovery concerns and requires grounded synthesis without a fixed agent count', () => {
+    const { body } = readPackagedAgent('orchestrator');
+    expect(body).toContain('Split discovery only into independently useful, scoped questions');
+    expect(body).toContain('with distinct targets and exclusions; start those together');
+    expect(body).toContain('Use one appropriate specialist for one coherent concern');
+    expect(body).toContain('Do not repeat discovery.');
+    expect(body).toContain('Startup failure, empty output or progress alone is not discovery');
+    expect(body).toContain('For related missing context, continue the existing Explorer with the unanswered question and supplied findings');
+    expect(body).toContain('start another only for a distinct scope, never to reset a read count.');
+    expect(body).toContain('Verify a decisive claim or explicit gap with a narrow named read.');
+    expect(body).toContain('concise evidence map: question → finding → path:line; unresolved gap and next action; no raw logs');
+    expect(body).toContain('tell parallel workers they are not alone and to preserve others\' changes');
+    expect(body).toContain('<!-- devryan:if contextProjection -->\n\n**Task and project context.**');
   });
 
   it('explorer is constrained to context discovery only', () => {
@@ -539,8 +608,8 @@ describe('packaged agent defaults', () => {
 
       expect(lineCount, `${agentName}.md line count`).toBeLessThanOrEqual(maxLineCount);
       expect(content).toContain('On unrecoverable provider/tool errors, return a final `**Status:** blocked` line with a concise reason.');
-      expect(content).toContain('Avoid repeated progress-only messages such as "continuing" or "implementing" without a terminal status marker.');
-      expect(content).toContain('Do not use `git status`, `git diff`, `git diff --stat`, or `git diff --check` to determine whether you made edits.');
+      expect(content).toContain('Continue capable incomplete work; blockers need external prerequisites.');
+      expect(content).toContain(agentName === 'librarian' ? 'No git commands; this research assignment changes no local files.' : 'Do not use `git status`, `git diff`, `git diff --stat`, or `git diff --check` to determine whether you made edits.');
     }
   });
 

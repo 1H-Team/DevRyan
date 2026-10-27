@@ -1,174 +1,54 @@
 import assert from 'node:assert/strict';
-import { describe, test } from 'node:test';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, describe, test } from 'node:test';
 
 import {
-  ensureRuntimeServiceRegistered,
-  prepareAutomaticRuntimeService,
   createRuntimeOwnerAcquirer,
-  recoverAppBoundRuntime,
-  retryRuntimeServiceConnection,
+  acquireRuntimeServiceOwnership,
+  retireRuntimeServiceRegistration,
+  runStartupPhase,
 } from '../runtime-service-startup.mjs';
-import { createRuntimeServiceRegistration } from '../runtime-service-registration.mjs';
 
-const run = async ({ currentMode = 'app_bound', optedOut = false, status, register } = {}) => {
-  const modes = [];
-  const result = await prepareAutomaticRuntimeService({
-    currentMode,
-    optedOut,
-    platform: 'darwin',
-    isPackaged: true,
-    registration: {
-      status: async () => status,
-      register: register || (async () => ({ ok: true, state: 'enabled', code: null })),
-    },
-    setMode: async (mode) => modes.push(mode),
-  });
-  return { result, modes };
+const directories = [];
+afterEach(async () => {
+  await Promise.all(directories.splice(0).map((directory) => fs.rm(directory, { recursive: true, force: true })));
+});
+const markerPath = async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-runtime-retire-'));
+  directories.push(directory);
+  return path.join(directory, 'runtime-service', 'retired.v1');
 };
+const exists = (file) => fs.access(file).then(() => true, () => false);
 
-describe('automatic background runtime startup', () => {
-  test('registers a first launch and selects service ownership', async () => {
-    const options = [];
-    const { result, modes } = await run({
-      status: { ok: true, state: 'not_registered', code: null },
-      register: async (value) => {
-        options.push(value);
-        return { ok: true, state: 'enabled', code: null };
-      },
-    });
-    assert.equal(result.mode, 'service');
-    assert.deepEqual(modes, ['service']);
-    assert.deepEqual(options, [{ allowLegacy: true }]);
-  });
-
-  test('never registers the service after the user switched it off', async () => {
-    let registered = false;
-    const { result, modes } = await run({
-      optedOut: true,
-      status: { ok: true, state: 'not_registered', code: null },
-      register: async () => {
-        registered = true;
-        return { ok: true, state: 'enabled', code: null };
-      },
-    });
-    assert.equal(result.mode, 'app_bound');
-    assert.equal(result.state, 'skipped');
-    assert.equal(registered, false);
-    assert.deepEqual(modes, []);
-  });
-
-  test('keeps app-bound Bots available while approval is required', async () => {
-    const { result, modes } = await run({
-      status: { ok: true, state: 'requires_approval', code: null },
-    });
-    assert.equal(result.mode, 'app_bound');
-    assert.equal(result.state, 'requires_approval');
-    assert.deepEqual(modes, []);
-  });
-
-  test('persists automatic fallback so an unavailable service is not awaited again', async () => {
-    const { result, modes } = await run({
-      currentMode: 'automatic',
-      status: { ok: false, state: 'unavailable', code: 'runtime_service_bridge_unavailable' },
-    });
-    assert.equal(result.mode, 'app_bound');
-    assert.equal(result.state, 'unavailable');
-    assert.deepEqual(modes, ['app_bound']);
-  });
-
-  test('keeps app-bound Bots available on safe registration failure', async () => {
-    const { result, modes } = await run({
-      status: { ok: true, state: 'not_registered', code: null },
-      register: async () => {
-        throw Object.assign(new Error('denied'), { code: 'smappservice_registration_failed' });
-      },
-    });
-    assert.equal(result.mode, 'app_bound');
-    assert.equal(result.code, 'smappservice_registration_failed');
-    assert.deepEqual(modes, []);
-  });
-
-  test('restores app-bound mode when automatic private-agent fallback fails', async () => {
-    const { result, modes } = await run({
-      currentMode: 'automatic',
-      status: { ok: true, state: 'not_registered', code: null },
-      register: async () => {
-        throw Object.assign(new Error('launchctl failed'), {
-          code: 'runtime_service_registration_failed',
-        });
-      },
-    });
-
-    assert.equal(result.mode, 'app_bound');
-    assert.equal(result.state, 'registration_failed');
-    assert.equal(result.code, 'runtime_service_registration_failed');
-    assert.deepEqual(modes, ['app_bound']);
-  });
-
-  test('honors an explicit disabled mode without inspecting registration', async () => {
-    let inspected = false;
-    const result = await prepareAutomaticRuntimeService({
-      currentMode: 'disabled',
-      platform: 'darwin',
-      isPackaged: true,
-      registration: { status: async () => { inspected = true; } },
-      setMode: async () => undefined,
-    });
-    assert.equal(result.mode, 'disabled');
-    assert.equal(inspected, false);
-  });
+test('ownership contention uses remaining budget and never abandons an in-flight acquisition', async () => {
+  let now = 0, calls = 0;
+  const budgets = [];
+  const result = await acquireRuntimeServiceOwnership({ now: () => now, wait: async ms => { now += ms; },
+    acquire: async ({ timeoutMs }) => {
+      budgets.push(timeoutMs); calls++;
+      if (calls === 1) { now += 5000; throw Object.assign(Error('busy'), { code: 'runtime_service_owner_busy' }); }
+      now += 50000; return 'owned';
+    } });
+  assert.equal(result, 'owned'); assert.deepEqual(budgets, [45000, 39975]);
+  for (const code of ['runtime_service_owner_exists', 'runtime_service_owner_invalid', 'EIO']) {
+    let attempts = 0;
+    await assert.rejects(acquireRuntimeServiceOwnership({ acquire: async () => { attempts++; throw Object.assign(Error(code), { code }); } }), { code });
+    assert.equal(attempts, 1);
+  }
+  now = 0;
+  await assert.rejects(acquireRuntimeServiceOwnership({ now: () => now, acquire: async ({ timeoutMs }) => {
+    assert.equal(timeoutMs, 45000); now += timeoutMs; throw Object.assign(Error('busy'), { code: 'runtime_service_owner_busy' });
+  } }), { code: 'runtime_service_owner_busy' });
+  now = 0; calls = 0;
+  await assert.rejects(acquireRuntimeServiceOwnership({ timeoutMs: 10, now: () => now, wait: async ms => { now += ms + 1; },
+    acquire: async () => { calls++; throw Object.assign(Error('busy'), { code: 'runtime_service_owner_busy' }); },
+  }), { code: 'runtime_service_owner_busy' });
+  assert.equal(calls, 1, 'No new acquisition may start after the deadline');
 });
 
-describe('transactional foreground recovery', () => {
-  for (const connectionCode of ['runtime_service_descriptor_missing', 'smappservice_registration_failed', 'runtime_service_approval_required',
-    'runtime_service_owner_stale', 'desktop_host_registration_failed']) {
-    test(`recovers stale service mode or post-update failure: ${connectionCode}`, async () => {
-      const calls = [];
-      const logs = [];
-      const registration = createRuntimeServiceRegistration({
-        platform: 'darwin', macosMajor: 15, isPackaged: true,
-        executablePath: '/test/DevRyan.app/Contents/MacOS/DevRyan',
-        dataDirectory: '/test/data', homeDirectory: '/test/home',
-        fsPromises: { stat: async () => { throw Object.assign(new Error('absent'), { code: 'ENOENT' }); } },
-        nativeControl: { unregister: async () => {
-          calls.push('unregister');
-          return { ok: false, state: 'not_found', code: 'smappservice_unregistration_failed' };
-        } },
-      });
-      const { result } = await run({ currentMode: 'service' });
-      assert.equal(result.mode, 'service');
-      await recoverAppBoundRuntime({
-        connectionError: Object.assign(new Error('connection failed'), { code: connectionCode }),
-        unregister: () => registration.unregister(),
-        waitForStopped: async () => { calls.push('wait'); return true; },
-        acquire: async () => { calls.push('acquire'); },
-        setMode: async () => { calls.push('persist'); },
-        release: async () => { calls.push('release'); },
-        log: { warn: (_message, detail) => logs.push(detail) },
-      });
-      assert.deepEqual(calls, ['unregister', 'wait', 'acquire', 'persist']);
-      assert.deepEqual(logs[0], {
-        phase: 'app_bound_acquired', code: 'runtime_service_startup_recovered',
-        registrationState: 'not_found', registrationCode: 'smappservice_unregistration_failed',
-        connectionCode,
-      });
-    });
-  }
-
-  test('failure diagnostics retain only allowlisted states and bounded machine codes', async () => {
-    const logs = [];
-    const connectionError = Object.assign(new Error('original'), { code: 'private/path' });
-    await assert.rejects(recoverAppBoundRuntime({
-      connectionError,
-      unregister: async () => ({ ok: false, state: 'private data', code: `runtime_service_${'a'.repeat(101)}` }),
-      log: { warn: (_message, detail) => logs.push(detail) },
-    }), (error) => error.cause === connectionError && error.code === 'runtime_service_unregister_failed');
-    assert.deepEqual(logs[0], {
-      phase: 'unregister', code: 'runtime_service_unregister_failed',
-      registrationState: null, registrationCode: null, connectionCode: 'runtime_service_connection_failed',
-    });
-  });
-
+describe('runtime owner acquisition', () => {
   test('failed acquisition is never cached, retries reacquire, and concurrent attempts share a claim', async () => {
     let coordinator = null;
     let attempts = 0;
@@ -192,141 +72,91 @@ describe('transactional foreground recovery', () => {
     assert.equal(attempts, 2);
   });
 
-  const scenario = async (failure) => {
-    const calls = [];
-    const connectionError = Object.assign(new Error('connection failed'), { code: 'runtime_service_start_timeout' });
-    let error;
-    try {
-      await recoverAppBoundRuntime({
-        connectionError,
-        unregister: async () => { calls.push('unregister'); return { ok: failure !== 'unregister' }; },
-        waitForStopped: async () => {
-          calls.push('wait');
-          if (failure === 'corrupt') throw Object.assign(new Error('damaged'), { code: 'runtime_service_owner_invalid' });
-          return failure !== 'active';
-        },
-        acquire: async () => {
-          calls.push('acquire');
-          if (failure === 'acquire') throw Object.assign(new Error('competing owner'), { code: 'runtime_service_owner_exists' });
-        },
-        setMode: async () => { calls.push('persist'); if (failure === 'persist') throw new Error('disk full'); },
-        release: async () => { calls.push('release'); },
-      });
-    } catch (caught) { error = caught; }
-    return { calls, error, connectionError };
-  };
-
-  test('fallback acquires ownership before persisting mode', async () => {
-    const { calls, error } = await scenario();
-    assert.equal(error, undefined);
-    assert.deepEqual(calls, ['unregister', 'wait', 'acquire', 'persist']);
-  });
-  for (const failure of ['unregister', 'active', 'corrupt', 'acquire', 'persist']) {
-    test(`${failure} failure stops fallback and retains the original connection error`, async () => {
-      const { calls, error, connectionError } = await scenario(failure);
-      assert.equal(error.cause, connectionError);
-      assert.match(error.code, /^runtime_service_/);
-      if (failure === 'persist') assert.deepEqual(calls, ['unregister', 'wait', 'acquire', 'persist', 'release']);
-      else assert.equal(calls.includes('persist'), false);
-      if (failure === 'unregister') assert.deepEqual(calls, ['unregister']);
-      if (failure === 'active' || failure === 'corrupt') assert.deepEqual(calls, ['unregister', 'wait']);
-    });
-  }
 });
 
-describe('background runtime connection wait', () => {
-  const failure = (code) => Object.assign(new Error(code), { code });
-  const retry = (connect) => {
-    const clock = { now: 0, attempts: 0 };
-    const result = retryRuntimeServiceConnection({
-      connect: async () => {
-        clock.attempts += 1;
-        return connect(clock.now);
-      },
-      now: () => clock.now,
-      wait: async (ms) => { clock.now += ms; },
-    });
-    return { clock, result };
-  };
-
-  test('keeps waiting past the ordinary bound while a cold service start publishes no live owner', async () => {
-    // Observed cold launchd boots reached 20-27 s before the service listened.
-    const { clock, result } = await retry((elapsed) => {
-      if (elapsed < 10_000) throw failure('ENOENT');
-      if (elapsed < 24_000) throw failure('runtime_service_owner_stale');
-      if (elapsed < 27_000) throw failure('runtime_service_unavailable');
-      return 'http://127.0.0.1:57123';
-    });
-    assert.equal(await result, 'http://127.0.0.1:57123');
-    assert.ok(clock.now >= 27_000);
-  });
-
-  test('gives up on a service that never starts at the starting bound', async () => {
-    const { clock, result } = retry(() => { throw failure('runtime_service_owner_stale'); });
-    await assert.rejects(result, { code: 'runtime_service_owner_stale' });
-    assert.ok(clock.now >= 60_000 && clock.now < 61_000);
-  });
-
-  test('keeps the ordinary bound for a definitive rejection', async () => {
-    const { clock, result } = retry(() => { throw failure('desktop_host_registration_failed'); });
-    await assert.rejects(result, { code: 'desktop_host_registration_failed' });
-    assert.ok(clock.now >= 20_000 && clock.now < 21_000);
-  });
-
-  test('a late-starting service that rejects the connection falls back without further waiting', async () => {
-    const { clock, result } = retry((elapsed) => {
-      if (elapsed < 25_000) throw failure('runtime_service_owner_stale');
-      throw failure('runtime_service_bootstrap_rejected');
-    });
-    await assert.rejects(result, { code: 'runtime_service_bootstrap_rejected' });
-    assert.ok(clock.now >= 25_000 && clock.now < 25_500);
-  });
+test('startup phase timings retain success results and original failures without payloads', async () => {
+  const logs = [];
+  let clock = 10;
+  const log = { info: (...args) => logs.push(args), warn: (...args) => logs.push(args) };
+  assert.equal(await runStartupPhase('fixture_success', async () => { clock += 12; return 'result'; }, log, () => clock), 'result');
+  const error = new Error('private request details');
+  await assert.rejects(runStartupPhase('fixture_failure', async () => { clock += 8; throw error; }, log, () => clock), value => value === error);
+  assert.deepEqual(logs.map(([, value]) => value), [
+    { phase: 'fixture_success', outcome: 'completed', elapsedMs: 12 },
+    { phase: 'fixture_failure', outcome: 'failed', elapsedMs: 8, code: 'startup_phase_failed' },
+  ]);
+  assert.doesNotMatch(JSON.stringify(logs), /private/);
 });
 
-describe('service mode without a registration', () => {
-  const registration = (status, register) => {
+describe('background runtime retirement', () => {
+  const retire = async ({ status, unregister = { ok: true, state: 'not_registered' }, stopped = true, platform = 'darwin',
+    isPackaged = true, marker } = {}) => {
     const calls = [];
-    return { calls, status: async () => { calls.push('status'); if (status instanceof Error) throw status; return status; },
-      register: async (options) => { calls.push(['register', options]); if (register instanceof Error) throw register; return register; } };
+    const logs = [];
+    const file = marker ?? await markerPath();
+    const result = await retireRuntimeServiceRegistration({
+      platform, isPackaged, markerPath: file,
+      registration: () => ({
+        status: async () => { calls.push('status'); if (status instanceof Error) throw status; return status; },
+        unregister: async () => { calls.push('unregister'); return unregister; },
+      }),
+      waitForStopped: async () => { calls.push('wait'); return stopped; },
+      clearSettings: async () => { calls.push('clear'); },
+      log: { warn: (...args) => logs.push(args) },
+    });
+    return { result, calls, logs, file, marked: await exists(file) };
   };
 
-  test('an enabled registration is left alone and the connection is awaited as before', async () => {
-    const service = registration({ ok: true, state: 'enabled', code: null });
-    assert.deepEqual(await ensureRuntimeServiceRegistered({ registration: service }), { state: 'enabled', registered: false });
-    assert.deepEqual(service.calls, ['status']);
+  test('only packaged macOS apps inspect launchd', async () => {
+    for (const options of [{ platform: 'linux' }, { isPackaged: false }]) {
+      const { result, calls, marked } = await retire({ ...options, status: { ok: true, state: 'enabled' } });
+      assert.equal(result.state, 'skipped');
+      assert.deepEqual(calls, []);
+      assert.equal(marked, false);
+    }
   });
 
-  test('a missing registration is registered before waiting', async () => {
-    const service = registration({ ok: true, state: 'not_registered', code: null }, { ok: true, state: 'enabled', code: null });
-    const warnings = [];
-    assert.deepEqual(await ensureRuntimeServiceRegistered({ registration: service, log: { warn: (...args) => warnings.push(args) } }),
-      { state: 'enabled', registered: true });
-    assert.deepEqual(service.calls, ['status', ['register', { allowLegacy: true }]]);
-    assert.equal(warnings.length, 1);
+  test('a recorded retirement never queries the registration again', async () => {
+    const marker = await markerPath();
+    await fs.mkdir(path.dirname(marker), { recursive: true });
+    await fs.writeFile(marker, '{}');
+    const { result, calls } = await retire({ marker, status: { ok: true, state: 'enabled' } });
+    assert.equal(result.state, 'retired');
+    assert.deepEqual(calls, []);
   });
 
-  for (const [name, status, register] of [
-    ['registration needs approval', { ok: true, state: 'not_registered' }, { ok: true, state: 'requires_approval', code: null }],
-    ['registration fails', { ok: true, state: 'not_registered' }, Object.assign(new Error('denied'), { code: 'smappservice_register_failed' })],
-    ['approval is pending', { ok: true, state: 'requires_approval' }, undefined],
-    ['the service is not in the bundle', { ok: false, state: 'not_found' }, undefined],
-    ['the service is unavailable', { ok: false, state: 'unavailable' }, undefined],
-  ]) {
-    test(`fails at once when ${name}, so startup falls back without waiting`, async () => {
-      await assert.rejects(ensureRuntimeServiceRegistered({ registration: registration(status, register) }),
-        (error) => error.code === 'runtime_service_not_registered');
+  for (const state of ['not_registered', 'not_found']) {
+    test(`${state} records retirement and clears the old service settings without unregistering`, async () => {
+      const { result, calls, marked } = await retire({ status: { ok: true, state } });
+      assert.equal(result.state, 'retired');
+      assert.deepEqual(calls, ['status', 'clear']);
+      assert.equal(marked, true);
     });
   }
 
-  for (const [name, status] of [
-    ['the state is unknown', { ok: true, state: 'unknown' }],
-    ['a legacy agent is required', { ok: true, state: 'legacy_required' }],
-    ['the status cannot be read', new Error('status unavailable')],
-  ]) {
-    test(`keeps the ordinary wait when ${name}`, async () => {
-      const result = await ensureRuntimeServiceRegistered({ registration: registration(status) });
-      assert.equal(result.registered, false);
-      assert.notEqual(result.state, 'enabled');
+  for (const state of ['enabled', 'requires_approval']) {
+    test(`${state} registration is withdrawn and its owner proved stopped before the marker`, async () => {
+      const { result, calls, marked, logs } = await retire({ status: { ok: true, state } });
+      assert.equal(result.state, 'retired');
+      assert.deepEqual(calls, ['status', 'unregister', 'wait', 'clear']);
+      assert.equal(marked, true);
+      assert.equal(logs[0][1].code, 'runtime_service_retired');
     });
   }
+
+  test('failures defer to the next launch without throwing or recording retirement', async () => {
+    const cases = [
+      [{ status: { ok: true, state: 'enabled' }, unregister: { ok: false } }, 'runtime_service_unregister_failed'],
+      [{ status: { ok: true, state: 'enabled' }, stopped: false }, 'runtime_service_owner_active'],
+      [{ status: new Error('bridge unavailable') }, 'runtime_service_retire_failed'],
+      [{ status: { ok: false, state: 'unknown' } }, 'runtime_service_registration_unavailable'],
+    ];
+    for (const [options, code] of cases) {
+      const { result, calls, marked, logs } = await retire(options);
+      assert.equal(result.state, 'deferred');
+      assert.equal(marked, false);
+      assert.equal(calls.includes('clear'), false);
+      assert.equal(logs.at(-1)[1].code, code);
+    }
+  });
 });

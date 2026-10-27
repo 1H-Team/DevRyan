@@ -14,6 +14,7 @@ import type {
   GenerateGitCommitMessageDraftRequest,
   GeneratedCommitMessage,
   GeneratedCommitWorkflowResult,
+  GeneratedPullRequestDescription,
   GitWorktreeInfo,
   CreateGitWorktreePayload,
   GitWorktreeCreateResult,
@@ -23,6 +24,7 @@ import type {
   CreateGitCommitOptions,
   GitCommitResult,
   GitPushResult,
+  GitPushOptions,
   GitPullResult,
   GitPullOptions,
   GitStashEntry,
@@ -41,7 +43,7 @@ import type {
 
 declare global {
   interface Window {
-    __OPENCHAMBER_DESKTOP_SERVER__?: {
+    __DEVRYAN_DESKTOP_SERVER__?: {
       origin: string;
       opencodePort: number | null;
       apiPrefix: string;
@@ -55,7 +57,7 @@ export const resolveGitApiBaseOrigin = (): string => {
     return '';
   }
   const currentOrigin = window.location?.origin || '';
-  const desktopOrigin = window.__OPENCHAMBER_DESKTOP_SERVER__?.origin;
+  const desktopOrigin = window.__DEVRYAN_DESKTOP_SERVER__?.origin;
   if (desktopOrigin && desktopOrigin !== currentOrigin) {
     const currentHost = (() => {
       try {
@@ -452,7 +454,12 @@ export async function generateCommitMessage(
         .map((item) => (item as string).trim())
     : [];
 
-  return { subject, highlights };
+  return { subject, highlights,
+    ...(typeof data.source === 'string' ? { source: data.source } : {}),
+    ...(data.selectionMode === 'configured' || data.selectionMode === 'active' ? { selectionMode: data.selectionMode } : {}),
+    ...(data.model === null || typeof data.model === 'string' ? { model: data.model } : {}),
+    ...(Array.isArray(data.warnings) ? { warnings: data.warnings.filter((warning: unknown): warning is string => typeof warning === 'string') } : {}),
+  };
 }
 
 export async function generateCommitMessageDraft(
@@ -527,9 +534,9 @@ export class PullRequestGenerationError extends Error {
 
 export async function generatePullRequestDescription(
   directory: string,
-  payload: { base: string; head: string; context?: string; prompt?: string; providerId?: string; modelId?: string }
-): Promise<{ title: string; body: string }> {
-  const { base, head, context, prompt, providerId, modelId } = payload;
+  payload: { base: string; head: string; context?: string; prompt?: string; providerId?: string; modelId?: string; sessionID?: string }
+): Promise<GeneratedPullRequestDescription> {
+  const { base, head, context, prompt, providerId, modelId, sessionID } = payload;
   if (!base || !head) {
     throw new Error('base and head are required');
   }
@@ -541,7 +548,8 @@ export async function generatePullRequestDescription(
     prompt?: string;
     providerId?: string;
     modelId?: string;
-  } = { base, head };
+    sessionID?: string;
+  } = { base, head, ...(sessionID ? { sessionID } : {}) };
   if (context?.trim()) {
     requestBody.context = context.trim();
   }
@@ -585,7 +593,16 @@ export async function generatePullRequestDescription(
     if (!title && !body) {
       throw new PullRequestGenerationError('Malformed PR description response', { status: response.status });
     }
-    return { title, body };
+    return { title, body,
+      ...(data.source === 'zen' || data.source === 'helper_model' || data.source === 'session_model' ? { source: data.source } : {}),
+      ...(data.selectionMode === 'configured' || data.selectionMode === 'active' ? { selectionMode: data.selectionMode } : {}),
+      ...(data.model === null || typeof data.model === 'string' ? { model: data.model } : {}),
+      ...(Array.isArray(data.attempts) ? { attempts: data.attempts.filter((attempt: unknown): attempt is PullRequestGenerationAttempt =>
+        typeof attempt === 'object' && attempt !== null && 'tier' in attempt && typeof attempt.tier === 'string'
+        && 'model' in attempt && (attempt.model === null || typeof attempt.model === 'string')
+        && 'reason' in attempt && (attempt.reason === null || typeof attempt.reason === 'string')
+        && (!('durationMs' in attempt) || typeof attempt.durationMs === 'number' && Number.isFinite(attempt.durationMs) && attempt.durationMs >= 0)) } : {}),
+    };
   } catch (error) {
     if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) {
       throw new PullRequestGenerationError(
@@ -601,7 +618,7 @@ export async function generatePullRequestDescription(
 
 export async function listGitWorktrees(directory: string): Promise<GitWorktreeInfo[]> {
   const response = await fetch(buildUrl(`${API_BASE}/worktrees`, directory));
-  if (response.headers.get('X-OpenChamber-Warning')) throw new Error('Worktree discovery unavailable');
+  if (response.headers.get('X-DevRyan-Warning') || response.headers.get('X-OpenChamber-Warning')) throw new Error('Worktree discovery unavailable');
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: response.statusText }));
     throw new Error(error.error || 'Failed to list worktrees');
@@ -773,7 +790,7 @@ export async function createGitCommit(
 
 export async function gitPush(
   directory: string,
-  options: { remote?: string; branch?: string; options?: string[] | Record<string, unknown> } = {}
+  options: GitPushOptions = {}
 ): Promise<GitPushResult> {
   const response = await fetch(buildUrl(`${API_BASE}/push`, directory), {
     method: 'POST',
@@ -782,8 +799,17 @@ export async function gitPush(
   });
   invalidateGitStatusCache(directory);
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: response.statusText }));
-    throw new Error(error.error || 'Failed to push');
+    const error = await response.json().catch(() => ({ error: response.statusText })) as {
+      error?: unknown;
+      code?: unknown;
+      details?: unknown;
+      rejected?: unknown;
+    };
+    throw Object.assign(new Error(typeof error.error === 'string' && error.error ? error.error : 'Failed to push'), {
+      ...(typeof error.code === 'string' ? { code: error.code } : {}),
+      ...(typeof error.details === 'string' ? { details: error.details } : {}),
+      ...(Array.isArray(error.rejected) ? { rejected: error.rejected } : {}),
+    });
   }
   return response.json();
 }
@@ -1275,68 +1301,6 @@ export async function canonicalizeWorktreeState(
   });
   if (!response.ok) {
     throw new Error(`Failed to canonicalize worktree state: ${response.statusText}`);
-  }
-  return response.json();
-}
-
-
-// ---- Conventional commit template (deterministic, no AI) ----
-
-export interface CommitTemplateStatus {
-  installed: boolean;
-  templatePath: string;
-  hookPath: string;
-  hooksDir: string;
-  templatePresent: boolean;
-  hookPresent: boolean;
-  templateMatches: boolean;
-  hookMatches: boolean;
-  templateConfigured: boolean;
-  hooksPathConfigured: boolean;
-  currentTemplate: string;
-  currentHooksPath: string;
-}
-
-export async function getCommitTemplateStatus(): Promise<CommitTemplateStatus> {
-  const response = await fetch(buildUrl(`${API_BASE}/commit-template/status`, null));
-  if (!response.ok) {
-    const detail = await response.json().catch(() => ({ error: response.statusText }));
-    throw new Error(detail.error || "Failed to read commit template status");
-  }
-  return response.json();
-}
-
-export async function installCommitTemplate(): Promise<{ success: boolean; templatePath: string; hookPath: string; hooksDir: string }> {
-  const response = await fetch(buildUrl(`${API_BASE}/commit-template/install`, null), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: "{}",
-  });
-  if (!response.ok) {
-    const detail = await response.json().catch(() => ({ error: response.statusText }));
-    throw new Error(detail.error || "Failed to install commit template");
-  }
-  return response.json();
-}
-
-export async function uninstallCommitTemplate(): Promise<{ success: boolean }> {
-  const response = await fetch(buildUrl(`${API_BASE}/commit-template/uninstall`, null), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: "{}",
-  });
-  if (!response.ok) {
-    const detail = await response.json().catch(() => ({ error: response.statusText }));
-    throw new Error(detail.error || "Failed to uninstall commit template");
-  }
-  return response.json();
-}
-
-export async function getCommitTemplateContent(): Promise<{ templatePath: string; content: string; fromDisk: boolean }> {
-  const response = await fetch(buildUrl(`${API_BASE}/commit-template/content`, null));
-  if (!response.ok) {
-    const detail = await response.json().catch(() => ({ error: response.statusText }));
-    throw new Error(detail.error || "Failed to fetch commit template");
   }
   return response.json();
 }

@@ -55,27 +55,6 @@ export const collectVisibleSessionIdsForBlockingRequests = (
     return scoped;
 };
 
-export const flattenBlockingRequests = <T extends { id: string }>(
-    source: Map<string, T[]>,
-    sessionIds: string[],
-): T[] => {
-    if (sessionIds.length === 0) return [];
-    const seen = new Set<string>();
-    const result: T[] = [];
-
-    for (const sessionId of sessionIds) {
-        const entries = source.get(sessionId);
-        if (!entries || entries.length === 0) continue;
-        for (const entry of entries) {
-            if (seen.has(entry.id)) continue;
-            seen.add(entry.id);
-            result.push(entry);
-        }
-    }
-
-    return result;
-};
-
 export const flattenBlockingRequestsFromRecord = <T extends { id: string }>(
     source: BlockingRequestRecord<T> | undefined,
     sessionIds: string[],

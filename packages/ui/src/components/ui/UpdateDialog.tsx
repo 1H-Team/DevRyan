@@ -120,7 +120,7 @@ const WEB_UPDATE_MAX_WAIT_MS = 10 * 60 * 1000;
 
 async function installWebUpdate(): Promise<InstallWebUpdateResult> {
   try {
-    const response = await fetch('/api/openchamber/update-install', {
+    const response = await fetch('/api/devryan/update-install', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
     });
@@ -159,7 +159,7 @@ async function waitForUpdateApplied(
 ): Promise<boolean> {
   for (let i = 0; i < maxAttempts; i++) {
     try {
-      const response = await fetch('/api/openchamber/update-check', {
+      const response = await fetch('/api/devryan/update-check', {
         method: 'GET',
         headers: { Accept: 'application/json' },
       });
@@ -213,7 +213,7 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
     : 0;
 
   const isWebRuntime = runtimeType === 'web';
-  const updateCommand = info?.updateCommand || 'openchamber update';
+  const updateCommand = info?.updateCommand || 'devryan update';
 
   // Reset state when dialog closes
   useEffect(() => {

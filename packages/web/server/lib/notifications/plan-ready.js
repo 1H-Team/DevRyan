@@ -1,10 +1,10 @@
 const PLAN_CARD_SENTINEL = '<!--plan-->';
 const PLAN_MODE_INSTRUCTION_PREFIX = 'User has requested to enter plan mode';
-const PLAN_IMPLEMENTATION_REQUEST_PREFIX = '[openchamber-plan-action:v1] ';
+const PLAN_IMPLEMENTATION_REQUEST_PREFIX = '[devryan-plan-action:v1] ';
+const LEGACY_PLAN_IMPLEMENTATION_REQUEST_PREFIX = '[openchamber-plan-action:v1] ';
 const PROVIDER_RECOVERY_PREFIX = '[devryan-provider-recovery:v1:';
 const OPEN_TODO_CONTINUATION_PREFIX = '[devryan-open-todo-continuation:v1]\n';
 const LEGACY_OPEN_TODO_CONTINUATION_PROMPT = 'Your turn ended with open todos. If a plan deviation stopped you, classify it (Class 1: note it and continue; Class 2: ask with the question tool) and continue from the first open todo. If everything is done, mark the todos complete and give the final summary.';
-const COMPACT_COMMAND_TEXT = '/compact';
 
 const PLAN_MODE_SECTION_HEADINGS = new Set([
   'context',
@@ -96,7 +96,7 @@ const isPlanModeUserMessage = (message) => {
   if (!info || info.role !== 'user') return false;
   if (isPlanReadySuppressedUserMessage(message)) return false;
   if (typeof info.mode === 'string' && info.mode.trim().toLowerCase() === 'plan') return true;
-  if (info.metadata?.openchamberPlanMode === true) return true;
+  if (info.metadata?.devryanPlanMode === true || info.metadata?.openchamberPlanMode === true) return true;
   return Array.isArray(message.parts) && message.parts.some((part) => (
     part?.synthetic === true
     && getPartText(part).trim().startsWith(PLAN_MODE_INSTRUCTION_PREFIX)
@@ -107,9 +107,11 @@ const isImplementationRequest = (message) => Array.isArray(message?.parts)
   && message.parts.some((part) => {
     if (part?.type !== 'text' || part.synthetic !== true) return false;
     const text = getPartText(part).trim();
-    if (!text.startsWith(PLAN_IMPLEMENTATION_REQUEST_PREFIX)) return false;
+    const prefix = [PLAN_IMPLEMENTATION_REQUEST_PREFIX, LEGACY_PLAN_IMPLEMENTATION_REQUEST_PREFIX]
+      .find(candidate => text.startsWith(candidate));
+    if (!prefix) return false;
     try {
-      const request = JSON.parse(text.slice(PLAN_IMPLEMENTATION_REQUEST_PREFIX.length));
+      const request = JSON.parse(text.slice(prefix.length));
       return request?.action === 'implement'
         && typeof request.sourceSessionId === 'string' && request.sourceSessionId.trim().length > 0
         && typeof request.sourceMessageId === 'string' && request.sourceMessageId.trim().length > 0
@@ -133,16 +135,9 @@ export const isPlanReadySuppressedUserMessage = (message) => {
   });
 };
 
-const isContinuationUserMessage = (message) => {
-  if (isPlanReadySuppressedUserMessage(message)) return false;
-  const parts = Array.isArray(message?.parts) ? message.parts : [];
-  if (parts.some((part) => part?.type === 'compaction')) return true;
-  if (parts.some((part) => part?.type === 'text' && getPartText(part).trim() === COMPACT_COMMAND_TEXT)) return true;
-  return parts.length > 0 && parts.every((part) => part?.synthetic === true);
-};
-
 const isAssistantComplete = (info) => {
-  if (!info || info.role !== 'assistant' || info.streaming === true) return false;
+  if (!info || info.role !== 'assistant' || info.streaming === true || info.error
+    || !['stop', 'end_turn', 'complete', 'completed', 'tool-calls', 'tool_calls'].includes(info.finish)) return false;
   if (typeof info.status === 'string') {
     const status = info.status.trim().toLowerCase();
     if (status === 'running' || status === 'pending' || status === 'streaming') return false;
@@ -176,19 +171,6 @@ const buildTurns = (messages) => {
   return turns;
 };
 
-const groupTurns = (turns) => {
-  const groups = [];
-  for (const turn of turns) {
-    const openGroup = groups[groups.length - 1];
-    if (openGroup && !isPlanModeUserMessage(turn.user) && isContinuationUserMessage(turn.user)) {
-      openGroup.push(turn);
-    } else {
-      groups.push([turn]);
-    }
-  }
-  return groups;
-};
-
 /**
  * Returns the canonical plan revision that is actionable at the live session
  * tail. This mirrors the UI's plan-card/yellow-indicator contract while using
@@ -201,13 +183,15 @@ export const detectPlanReadyRevision = (messages) => {
   if (!tail || tail.info?.role !== 'assistant' || !isAssistantComplete(tail.info)) return null;
   const parent = normalized.find((message) => message.info.id === tail.info.parentID);
   if (isPlanReadySuppressedUserMessage(parent)) return null;
+  if (parent?.parts.length && parent.parts.every(part => part.synthetic === true)) return null;
 
   // A terminal event can carry the complete assistant parts before the
   // authoritative history endpoint exposes its parent user message. The
   // sentinel is an explicit plan contract, so it remains independently
   // classifiable from that one-message snapshot.
   const tailSentinelPlan = findSentinelPlan(collectPartText(tail.parts, 'text').join('\n'));
-  if (tailSentinelPlan?.trim() && !hasRunningTool(tail.parts)) {
+  if (tailSentinelPlan?.trim() && !hasRunningTool(tail.parts)
+    && normalized.filter(row => row.info.role === 'assistant' && row.info.parentID === tail.info.parentID).every(row => isAssistantComplete(row.info) && !hasRunningTool(row.parts))) {
     return {
       sourceMessageId: tail.info.id,
       sourceParentMessageId: typeof tail.info.parentID === 'string' ? tail.info.parentID : null,
@@ -215,7 +199,7 @@ export const detectPlanReadyRevision = (messages) => {
     };
   }
 
-  const groups = groupTurns(buildTurns(normalized));
+  const groups = buildTurns(normalized).map(turn => [turn]);
   const group = groups[groups.length - 1];
   if (!group || group.length === 0) return null;
   if (isPlanReadySuppressedUserMessage(group[group.length - 1]?.user)) return null;
@@ -234,7 +218,7 @@ export const detectPlanReadyRevision = (messages) => {
     }
   }
 
-  if (!source || !planText?.trim()) return null;
+  if (!source || source !== tail || !planText?.trim()) return null;
   return {
     sourceMessageId: source.info.id,
     sourceParentMessageId: typeof source.info.parentID === 'string' ? source.info.parentID : null,

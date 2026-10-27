@@ -29,22 +29,15 @@ describe('semantic sidebar toggle icons', () => {
     expect(collapseMarkup).toContain('d="m9.5 9.5 2.5 2.5-2.5 2.5"');
   });
 
-  test('keeps browser and Electron controls on the shared semantic variants', () => {
-    const sources = [
-      '../layout/DesktopEdgeChrome.tsx',
-      '../layout/DesktopRightChromeActions.tsx',
-      '../layout/Header.tsx',
-      '../session/sidebar/SidebarHeader.tsx',
-    ].map((path) => readFileSync(resolve(testDir, path), 'utf8'));
+  // DesktopEdgeChrome, DesktopRightChromeActions and SidebarHeader pick these variants in
+  // their own mounted/rendered tests. Header.tsx cannot be rendered without its full store graph.
+  test('keeps the Header toggles on the shared semantic variants', () => {
+    const header = readFileSync(resolve(testDir, '../layout/Header.tsx'), 'utf8');
 
-    expect(sources[0]).toContain('SidebarLeftCollapseIcon');
-    expect(sources[0]).toContain('SidebarLeftExpandIcon');
-    expect(sources[1]).toContain('SidebarRightCollapseIcon');
-    expect(sources[1]).toContain('SidebarRightExpandIcon');
-    expect(sources[2]).toContain('SidebarLeftExpandIcon');
-    expect(sources[3]).toContain('SidebarLeftCollapseIcon');
-    for (const source of sources) {
-      expect(source).not.toContain('chevronDirection=');
-    }
+    expect(header).toContain('SidebarLeftExpandIcon');
+    expect(header).toContain('SidebarLeftCollapseIcon');
+    expect(header).toContain('SidebarRightCollapseIcon');
+    expect(header).toContain('SidebarRightExpandIcon');
+    expect(header).not.toContain('chevronDirection=');
   });
 });

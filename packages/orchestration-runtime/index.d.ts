@@ -12,6 +12,19 @@ export type AbortSource =
 export const ABORT_SOURCE_HEADER: 'X-DevRyan-Abort-Source';
 export const ABORT_SOURCES: readonly AbortSource[];
 export function normalizeAbortSource(value: unknown): AbortSource | 'unknown';
+export const ABORT_SOURCE_TTL_MS: number;
+export type AbortSourceEntry = { sessionId: string; source: AbortSource; recordedAt: number };
+export function createAbortSourceRegistry(options?: {
+  now?: () => number;
+  ttlMs?: number;
+  maximumSessions?: number;
+}): {
+  record(input?: { sessionId?: unknown; source?: unknown }): AbortSourceEntry | null;
+  withdraw(entry: AbortSourceEntry | null | undefined): boolean;
+  read(sessionId: unknown): AbortSource | null;
+  clear(sessionId: unknown): boolean;
+  readonly size: number;
+};
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
 export interface ProviderToolCatalogEntry {
@@ -28,7 +41,23 @@ export function isManagedModelAvailableInCatalog(
   payload: unknown,
   providerId: unknown,
   modelId: unknown,
+  variant?: string | null,
 ): boolean | null;
+export function inspectManagedModelInCatalog(
+  payload: unknown,
+  providerId: unknown,
+  modelId: unknown,
+  variant?: string | null,
+): import('../shared-runtime/lib/model-selection-availability.js').ModelSelectionAvailability & {
+  supportedVariants?: string[]; modelName?: string;
+};
+export function projectManagedModelValidationFailure(value: unknown): {
+  code: 'managed_agent_model_unavailable' | 'managed_agent_model_availability_unknown';
+  message: string;
+  details: { reason: 'provider_missing' | 'model_missing' | 'variant_missing' | 'selection_unavailable' | 'catalog_unavailable';
+    providerId: string | null; modelId: string | null; variant: string | null;
+    agent?: string; modelName?: string; supportedVariants?: string[] };
+} | null;
 export function isXaiProviderID(providerID: unknown): boolean;
 export function listXaiModelIds(providerPayload: unknown): string[];
 export function createXaiToolCatalogCache(options?: {
@@ -63,9 +92,10 @@ export type ManagedTaskStatus =
 export type ManagedTaskTerminalStatus = Extract<ManagedTaskStatus, 'completed' | 'failed' | 'aborted' | 'interrupted'>;
 export type ManagedTaskMode = 'builder' | 'orchestrator';
 export type ManagedTaskExecutionKind = 'start' | 'retry' | 'resume' | 'recover_in_place' | 'retry_in_place';
-export type ManagedTaskResultAction = 'continue' | 'resume' | 'retry' | 'recover_in_place' | 'retry_in_place' | 'abandon';
+export type ManagedTaskResultAction = 'collect' | 'continue' | 'resume' | 'retry' | 'recover_in_place' | 'retry_in_place' | 'abandon';
 export type ManagedTaskFailureKind =
   | 'provider_configuration'
+  | 'runtime_capability'
   | 'provider_transport'
   | 'provider_usage_limit'
   | 'provider_authentication'
@@ -170,7 +200,7 @@ export interface ManagedTaskAutoResume {
   reason: ManagedTaskAutoResumeReason | null;
 }
 
-export type ManagedTaskWaitingReasonKind = 'capacity' | 'system_pressure';
+export type ManagedTaskWaitingReasonKind = 'capacity' | 'system_pressure' | 'prerequisites';
 
 /** Why a queued task is being held back from launch. Mutable only while `status === 'queued'`. */
 export interface ManagedTaskWaitingReason {
@@ -183,9 +213,15 @@ export interface ManagedTaskWaitingReason {
   since: number;
 }
 
+export interface TaskPrerequisite { taskId: string; checkName: string; paths: string[]; contentHash: string }
+export function validateTaskPrerequisites(value?: TaskPrerequisite[]): TaskPrerequisite[];
 export interface ManagedTaskRecord {
+  taskPrerequisites?: TaskPrerequisite[];
+  approvedPlanRef?: ApprovedPlanRef;
   requiredChecks?: RequiredCheck[];
   requiredCheckReceipts?: RequiredCheckReceipt[];
+  requiredCheckCorrections?: RequiredCheckCorrectionHistoryEntry[];
+  dispatchObjectiveId?: string | null;
   transportRecovery?: ManagedTransportRecovery | null;
   owner: 'devryan';
   taskId: string;
@@ -230,6 +266,8 @@ export interface ManagedTaskRecord {
   firstAssistantPartAt: number | null;
   /** Why a queued task is not launching yet; null once it leaves `queued`. */
   waitingReason: ManagedTaskWaitingReason | null;
+  terminationIntent?: 'user_stopped' | null;
+  operatorStop?: { requestedAt: number; requestId: string; leaseToken: string | null; state?: 'pending' | 'accepted' | 'uncertain' };
   failureReason: string | null;
   partial: boolean;
   recoverablePreview: string;
@@ -243,17 +281,21 @@ export function requiresManualModelRecovery(
 ): boolean;
 
 export type ManagedTaskEventRecord = Omit<ManagedTaskRecord,
-  'prompt' | 'idempotencyKey' | 'dispatchGroupId' | 'dispatchWaveId' | 'readOnly' | 'leaseToken'> & {
+  'operatorStop' | 'prompt' | 'idempotencyKey' | 'dispatchGroupId' | 'dispatchWaveId' | 'readOnly' | 'leaseToken'> & {
+    verification?: RequiredCheckVerification;
     dispatchGrouped: boolean;
     /** Optional on the wire so records from hosts predating the label stay assignable; consumers read absent as null. */
     dispatchWaveId?: string | null;
     failureKind: ManagedTaskFailureKind;
     agentRetryAvailable: boolean;
+    userStoppedRecoveryAvailable?: boolean;
+    stoppedRecoveryAvailable?: boolean;
     /** Authoritative when a result envelope is available; absent on older hosts. */
     manualRecoveryRequired?: boolean;
   };
 
 export interface ManagedTaskResultEnvelope {
+  acknowledgementIdentity?: string;
   owner: 'devryan';
   envelopeId: string;
   taskId: string;
@@ -265,6 +307,8 @@ export interface ManagedTaskResultEnvelope {
   sequence: number;
   status: ManagedTaskTerminalStatus;
   partial: boolean;
+  terminationIntent?: 'user_stopped' | null;
+
   failureReason: string | null;
   attempt: number;
   priorTaskId: string | null;
@@ -279,6 +323,8 @@ export interface ManagedTaskResultEnvelope {
   /** Provider reset hint (epoch ms) reported with a usage-limit failure. */
   providerResetAt: number | null;
   autoResume: ManagedTaskAutoResume | null;
+  /** Model prompt observed this terminal revision; never result collection. */
+  promptObserved?: { attempt:number;sequence:number;observedAt:number };
 }
 
 export type ManagedResultMode = 'eager' | 'reference' | 'compact';
@@ -292,6 +338,13 @@ export interface ManagedResultReference {
   nextCursor: string | null;
   complete: boolean;
 }
+export interface ManagedMetadataReference extends ManagedResultReference {section: 'metadata'; identitySha256: string}
+export function isManagedMetadataCursor(cursor: unknown): boolean;
+export function sliceManagedResultText(value: string, stringOffset: number, maxBytes?: number): {text: string; nextOffset: number; pageBytes: number};
+export function prepareManagedResultMetadata(value: Record<string, unknown>): Promise<{
+  project(maxPageBytes?: number, resultReference?: ManagedResultReference): Record<string, unknown>;
+  read(resultCursor: string, maxPageBytes?: number): {metadataReference: ManagedMetadataReference; resultContractVersion: 2};
+}>;
 
 export class ManagedResultReferenceError extends Error {
   code: 'invalid_result_cursor' | 'result_reference_mismatch';
@@ -299,7 +352,7 @@ export class ManagedResultReferenceError extends Error {
 }
 
 export interface ManagedTaskEvent {
-  type: 'openchamber:managed-task';
+  type: 'devryan:managed-task';
   properties: {
     owner: 'devryan';
     directory: string;
@@ -309,7 +362,7 @@ export interface ManagedTaskEvent {
 }
 
 export interface ManagedTaskRemovalEvent {
-  type: 'openchamber:managed-task-removed';
+  type: 'devryan:managed-task-removed';
   properties: {
     owner: 'devryan';
     taskId: string;
@@ -322,7 +375,11 @@ export interface ManagedTaskRemovalEvent {
 export type ManagedOrchestrationEvent = ManagedTaskEvent | ManagedTaskRemovalEvent;
 
 export interface ManagedTaskSubmitInput {
+  taskPrerequisites?: TaskPrerequisite[];
+  approvedPlanRef?: ApprovedPlanRef;
   requiredChecks?: RequiredCheck[];
+  requiredCheckCorrections?: RequiredCheckCorrectionHistoryEntry[];
+  dispatchObjectiveId?: string | null;
   idempotencyKey: string;
   rootSessionId: string;
   dispatchGroupId?: string | null;
@@ -353,11 +410,14 @@ export interface ManagedTaskExecutorResult {
   partial?: boolean;
   recoverablePreview?: string;
   canonicalRefs?: ManagedTaskCanonicalRef[];
+  terminationIntent?: 'user_stopped' | null;
+
   resumable?: boolean;
   providerResetAt?: number | null;
 }
 
 export interface ManagedTaskControl {
+  assertPrerequisites?(): Promise<void>;
   /** Required for automatic transport recovery. Commits before dispatch and fences stale/cancelled leases. */
   recordTransportRecovery?(recovery: ManagedTransportRecovery, expectedRevision: number): Promise<boolean>;
   setChildSessionId(childSessionId: string): Promise<boolean>;
@@ -387,7 +447,7 @@ export interface ManagedTaskExecutor {
   resume?(task: ManagedTaskRecord, control: ManagedTaskControl): Promise<ManagedTaskExecutorResult>;
   retryInPlace?(task: ManagedTaskRecord, control: ManagedTaskControl): Promise<ManagedTaskExecutorResult>;
   observe?(task: ManagedTaskRecord, control: ManagedTaskControl): Promise<ManagedTaskExecutorResult>;
-  abort(task: ManagedTaskRecord, options?: { signal?: AbortSignal }): Promise<{
+  abort(task: ManagedTaskRecord, options?: { signal?: AbortSignal; /** Constructor-owned native removal settlement only. */ nativeSettled?: boolean }): Promise<{
     aborted: boolean;
     failureReason?: string;
   }>;
@@ -402,16 +462,24 @@ export interface ManagedOpenCodeTransportInput {
   sessionId: string;
   directory: string;
   providerId: string;
+  signal?: AbortSignal;
 }
 
 export interface ManagedOpenCodeTransport {
   createSession(input: {
+    taskId: string;
+    leaseToken: string | null;
     directory: string;
     parentSessionId: string;
     parentCallID?: string;
     title: string;
+    mayWrite: boolean;
+    /** Advisory preparation only; does not grant workspace write permissions. */
+    prewarmExecutionView: boolean;
   }): Promise<{ id?: string } | null>;
   promptSession(input: ManagedOpenCodeTransportInput & {
+    taskId: string;
+    leaseToken: string | null;
     signal?: AbortSignal;
     modelId: string;
     agent: string;
@@ -439,28 +507,41 @@ export interface ManagedOpenCodeTransport {
     observedAt: number;
     eventId: string | null;
     errorName: string;
+    v2Type?: string | null;
     message: string;
     code: string | null;
     statusCode: number | null;
     retryable: boolean | null;
   } | null>;
-  readOperatorAbort?(input: ManagedOpenCodeTransportInput & { after?: number }): Promise<{
+  readOperatorAbort?(input: ManagedOpenCodeTransportInput & { after?: number; taskId?: string; leaseToken?: string | null }): Promise<{
     sessionId: string;
     requestedAt: number;
+    state?: 'pending' | 'accepted' | 'uncertain';
+    durable?: boolean;
   } | null>;
   abortSession(input: ManagedOpenCodeTransportInput & { signal?: AbortSignal }): Promise<boolean>;
   deleteSession(input: ManagedOpenCodeTransportInput): Promise<boolean>;
 }
 
 export interface ManagedOpenCodeExecutorOptions {
+  /** Host capability; enable only for enforced managed Cursor read-only execution. */
+  cursorReadOnly?: boolean;
   transport: ManagedOpenCodeTransport;
   subscribeAssistantActivity?: ManagedAssistantActivitySubscribe;
+  bindAssistantActivity?: ManagedAssistantActivityBind;
+  subscribeSessionChanges?: (input: { sessionId: string; directory: string }, onChange: () => void) => () => void;
   onFirstAssistantActivity?: (activity: ManagedAssistantActivity & {
     taskId: string;
     childSessionId: string;
     source: 'event' | 'transcript';
   }) => void | Promise<void>;
   pollIntervalMs?: number;
+  eventReconcileIntervalMs?: number;
+  /** Read once per observed child: when true and `subscribeSessionChanges` is supplied, change events wake every
+   * idle or live wait and the reconcile poll falls back to `eventFallbackIntervalMs` unless `eventReconcileIntervalMs` is set. */
+  eventDrivenWait?: () => boolean;
+  /** Missed-event backstop for event-driven waits; defaults to 3000 ms. */
+  eventFallbackIntervalMs?: number;
   idleStablePolls?: number;
   retryStopMaxAborts?: number;
   retryStopPollLimit?: number;
@@ -492,6 +573,7 @@ export interface ManagedOpenCodeExecutorOptions {
 }
 
 export interface ManagedOrchestrationState {
+  objectiveChecks?: ObjectiveCheckRecord[];
   version: 1;
   tasks: ManagedTaskRecord[];
   resultEnvelopes: ManagedTaskResultEnvelope[];
@@ -499,7 +581,22 @@ export interface ManagedOrchestrationState {
 
 export interface ManagedOrchestrationPersistence {
   load(): Promise<ManagedOrchestrationState | null>;
-  save(state: ManagedOrchestrationState): Promise<void>;
+  save(state: ManagedOrchestrationState, observation?: { onProgress(input: { phase: string; state: 'started' | 'completed' }): void }): Promise<void>;
+}
+
+export interface ManagedPersistenceObservation {
+  ownerID: string;
+  state: 'needs_attention' | 'settled';
+  code: 'managed_persistence_stalled';
+  phase: string;
+  at: number;
+  elapsedMs: number;
+  idleMs?: number;
+  reason?: 'task_deadline' | 'owner_progress_timeout';
+  outcome?: 'committed' | 'failed';
+  taskCount: number;
+  taskId?: string;
+  rootSessionId?: string;
 }
 
 export interface ManagedTaskAutoResumeAttemptParams {
@@ -534,6 +631,8 @@ export interface ManagedTaskAutoResumeProviderReset {
 export interface ManagedTaskAutoResumeOptions {
   resolveOwnerKey?(input: { rootSessionId: string }): string | Promise<string>;
   resolveBackupExecution?(input: {
+    taskId: string;
+    autoResumeGeneration: number;
     rootSessionId: string;
     directory: string;
     agent: string;
@@ -574,8 +673,15 @@ export type ManagedTaskLaunchAdmissionDecision =
     };
 
 export interface ManagedTaskSchedulerOptions {
+  inspectRequiredChecks?: (task: ManagedTaskRecord) => Promise<RequiredCheckCompletion>;
+  verifyTaskPrerequisites?: (task: ManagedTaskRecord) => Promise<boolean>;
+  /** Same verified host capability used by the managed executor. Defaults false. */
+  cursorReadOnly?: boolean;
   onBarrierChange?(input: { rootSessionId: string; state: string; at: number; taskCount: number }): void;
   onRequiredCheckReceipt?(input: { task: ManagedTaskRecord; receipt: RequiredCheckReceipt }): void;
+  onPersistenceObservation?(input: ManagedPersistenceObservation): void | Promise<void>;
+  onMutationTiming?(input: Readonly<{ waitMs: number; holdMs: number; failed: boolean }>): void | Promise<void>;
+  persistenceStallMs?: number;
   executor: ManagedTaskExecutor;
   persistence?: ManagedOrchestrationPersistence;
   now?: () => number;
@@ -622,6 +728,7 @@ export interface ManagedTaskSchedulerDiagnostics {
   compactedTaskCount: number;
   serializedBytes: number;
   shutDown: boolean;
+  persistence: { state: 'writing' | 'needs_attention'; phase: string; elapsedMs: number; idleMs: number } | null;
 }
 
 export interface ManagedAgentHandoffScope {
@@ -641,6 +748,8 @@ export interface ManagedAgentHandoffResult {
 }
 
 export interface ManagedProviderRecoveryContinuation {
+  dispatchObjectiveId?: string | null;
+  dispatchGroupId: string | null;
   sourceTaskId: string | null;
   taskId: string;
   rootSessionId: string;
@@ -659,11 +768,13 @@ export interface HarnessPolicies {
   waitAny: boolean;
   compactResults: boolean;
   contextProjection: boolean;
+  adaptiveDelegation: boolean;
   duplicateOutputs: boolean;
 }
 export const HARNESS_POLICY_ENV: Readonly<Record<keyof HarnessPolicies, string>>;
 export const MANAGED_OVERLAP_READ_TOOLS: readonly string[];
 export function resolveHarnessPolicies(environment?: Record<string, string | undefined>): HarnessPolicies;
+export function resolveNativeHarnessPolicies(environment?: Record<string, string | undefined>): HarnessPolicies;
 export interface ManagedWaitSnapshot {
   schemaVersion: 2;
   rootSessionId: string;
@@ -685,16 +796,32 @@ export function createManagedWaitCursor(rootSessionId: string, envelope: Pick<Ma
 export function resolveManagedWaitCursor(cursor: string | null | undefined, rootSessionId: string, envelopes: ManagedTaskResultEnvelope[], taskIds?: string[] | null): { sequence: number; reset: boolean };
 export function projectManagedWaitSnapshot(input: { rootSessionId: string; tasks: ManagedTaskRecord[]; envelopes: ManagedTaskResultEnvelope[]; afterCursor?: string | null; allTasks?: ManagedTaskRecord[] }): ManagedWaitSnapshot;
 
+export interface ObjectiveCheckScope { rootSessionId: string; directory: string; objectiveId: string }
+export interface ObjectiveCheckRecord extends ObjectiveCheckScope { updatedAt?: number; requiredChecks: RequiredCheck[]; requiredCheckReceipts: RequiredCheckReceipt[]; requiredCheckCorrections: RequiredCheckCorrectionHistoryEntry[] }
 export interface ManagedTaskScheduler {
+  discardObjectiveChecks(scope: { directory: string; sessions: string[] }, authorize: () => Promise<void>): Promise<{ removed: number }>;
+  declareObjectiveChecks(scope: ObjectiveCheckScope, checks: RequiredCheck[], corrections: RequiredCheckCorrectionHistoryEntry[], authorize: () => Promise<void>): Promise<ObjectiveCheckRecord>;
+  getObjectiveRequiredChecks(scope: ObjectiveCheckScope): ObjectiveCheckRecord | null;
   waitForResultCommit(options: { directory: string; afterCursor?: string | null; signal?: AbortSignal; timeoutMs?: number }): Promise<{ cursor: string; cursorReset: boolean; rootSessionIds: string[] }>;
   waitForAnyTask(options: { rootSessionId: string; taskIds: string[]; afterCursor?: string | null;
-    signal?: AbortSignal; timeoutMs?: number }): Promise<ManagedWaitSnapshot>;
+    signal?: AbortSignal; timeoutMs?: number; until?: 'settled' }): Promise<ManagedWaitSnapshot>;
   initialize(): Promise<void>;
+  recoverStoppedRuntime(assertStopped: () => Promise<void>): Promise<void>;
+  withRuntimeRestart<T>(action: () => Promise<T>): Promise<T>;
+  getRequiredCheckTasks(sessionId: string, directory: string): ManagedTaskRecord[];
+  waiveRequiredChecks(taskId: string | ObjectiveCheckScope, receipts: RequiredCheckReceipt[], authority: { [USER_CHECK_WAIVER]: true; recheck(): Promise<void> }): Promise<ManagedTaskRecord | ObjectiveCheckRecord>;
+  correctRequiredCheck(taskId: string | ObjectiveCheckScope, correction: RequiredCheckCorrection, authority: {
+    [REQUIRED_CHECK_CORRECTION]: true; rootSessionId: string; directory: string; objectiveId: string; legacyDispatchGroupId?: string | null; recheck(): Promise<void>;
+  }): Promise<ManagedTaskRecord | ObjectiveCheckRecord>;
   getRequiredCheckTask(childSessionId: string, directory: string): Pick<ManagedTaskRecord, 'taskId' | 'leaseToken' | 'directory' | 'requiredChecks'> | null;
+  recordOperatorStop(input: { sessionId: string; directory?: string; requestedAt: number; requestId?: string }): Promise<{ sessionId: string; taskId: string; leaseToken: string | null; requestedAt: number; requestId: string } | null>;
+  acceptOperatorStop(input: { taskId: string; leaseToken: string | null; requestedAt: number; requestId: string }): Promise<boolean>;
+  withdrawOperatorStop(input: { taskId: string; leaseToken: string | null; requestedAt: number; requestId: string }): Promise<boolean>;
+  readOperatorStop(input: { sessionId: string; directory?: string; taskId?: string; leaseToken?: string | null; after?: number }): { sessionId: string; requestedAt: number; state: 'pending' | 'accepted' | 'uncertain'; durable: true } | null;
   getChildAssignment(childSessionId: string, directory: string): ManagedTaskRecord | null;
   recordRequiredCheck(taskId: string, leaseToken: string, receipt: RequiredCheckReceipt, phase: 'start' | 'bind' | 'complete'): Promise<boolean>;
-  recordRequiredChecks(taskId: string, leaseToken: string, receipts: RequiredCheckReceipt[], phase: 'start' | 'bind' | 'complete'): Promise<boolean>;
-  submit(input: ManagedTaskSubmitInput): Promise<ManagedTaskRecord>;
+  recordRequiredChecks(taskId: string | ObjectiveCheckScope, leaseToken: string | undefined, receipts: RequiredCheckReceipt[], phase: 'start' | 'bind' | 'complete'): Promise<boolean>;
+  submit(input: ManagedTaskSubmitInput, options?: { signal?: AbortSignal; authorize?:()=>Promise<void> }): Promise<ManagedTaskRecord>;
   cancelTask(taskId: string, options?: { cascade?: false; reason?: string }): Promise<ManagedTaskRecord>;
   cancelTask(taskId: string, options: { cascade: true; reason?: string }): Promise<ManagedTaskRecord[]>;
   waitForTask(taskId: string, options?: {
@@ -736,6 +863,8 @@ export interface ManagedTaskScheduler {
     idempotencyKey: string;
   }): Promise<ManagedAgentHandoffResult>;
   acknowledgeResult(taskId: string, options: {
+    acknowledgementIdentity?: string;
+    authorize?:()=>Promise<void>;
     action: ManagedTaskResultAction;
     idempotencyKey: string;
     providerId?: string;
@@ -756,11 +885,21 @@ export interface ManagedTaskScheduler {
     sessionId: string,
     reason: 'session_deleted' | 'cancelled',
   ): Promise<{ cancelledTaskIds: string[] }>;
+  /** Constructor-only; restore the native ledger's fence before recovery. */
+  cancelSessionsForRemoval(input: { directory: string; sessions: string[]; intentID: string } & (
+    { phase: 'fence' } | { phase: 'settle'; settled: { terminated: true; sessions: readonly string[] } | null; absentSessions: readonly string[];
+      verifyRemovedSession?: (sessionID: string) => Promise<boolean> }
+  )): Promise<{ fenced: true; sessions: string[] } | { settled: true; sessions: string[]; taskIDs: string[] }>;
   releaseModeLease(rootSessionId: string, mode: ManagedTaskMode): Promise<boolean>;
   flush(): Promise<void>;
   shutdown(): Promise<void>;
   getTask(taskId: string): ManagedTaskRecord | null;
+  verifyTaskDispatch(taskId: string, leaseToken: string | null): Promise<ManagedTaskRecord>;
+  verifyTaskSettlement(taskId: string, leaseToken: string | null): Promise<ManagedTaskRecord>;
   listTasks(options?: { rootSessionId?: string }): ManagedTaskRecord[];
+  withNativePromptContext<A>(input:{rootSessionId:string;directory:string;authorize:()=>Promise<void>},action:(state:{tasks:ManagedTaskRecord[];envelopes:ManagedTaskResultEnvelope[];
+    readBarrier(scope:{rootSessionId:string;directory:string}):Promise<{state:'clear'|'active'|'awaiting_acknowledgement';taskIds:string[]}>;
+    markPromptObserved:(receipt:{taskId:string;attempt:number;sequence:number})=>void})=>Promise<A>):Promise<A>;
   getSnapshot(): ManagedOrchestrationState;
   getResultEnvelope(taskId: string): ManagedTaskResultEnvelope | null;
   listResultEnvelopes(options?: { rootSessionId?: string }): ManagedTaskResultEnvelope[];
@@ -853,6 +992,7 @@ export function planAutoResumeAttempt(input: {
   providerReset?: ManagedTaskAutoResumeProviderReset | null;
   /** The execution the lineage started on; defaults to the task's own. */
   origin?: { providerId: string; modelId: string; variant: string | null } | null;
+  cursorReadOnly?: boolean;
 }): ManagedTaskAutoResumePlan;
 export function buildAutoResumeAcknowledgeParams(input: {
   task: Pick<ManagedTaskRecord, 'taskId' | 'rootSessionId' | 'directory'>;
@@ -860,7 +1000,16 @@ export function buildAutoResumeAcknowledgeParams(input: {
 }): ManagedTaskAutoResumeAttemptParams;
 export function validateManagedTaskAutoResume(value: unknown): ManagedTaskAutoResume | null;
 export const MANAGED_RESULT_PAGE_MAX_BYTES: number;
+export const MANAGED_RESULT_V2_PAGE_MAX_BYTES: number;
 export const MANAGED_RESULT_MODES: readonly ManagedResultMode[];
+export const NATIVE_TOOL_OUTPUT_DEFAULTS: Readonly<{max_bytes: number; max_lines: number}>;
+export const MANAGED_TOOL_OUTPUT_MAX_BYTES: number;
+export const PLAN_MODE_SYSTEM_INSTRUCTIONS: string;
+export function nativeToolOutputLimits(value?: unknown): {max_bytes: number; max_lines: number};
+export function managedToolOutputBudget(limits?: {max_bytes?: number; max_lines?: number}): number;
+export function compactManagedTaskToolResult<T>(value: T): T;
+export function assertManagedToolOutputSize<T>(value: T, maxBytes?: number): T;
+export function fitManagedToolOutput<T>(factory: (maxPageBytes: number) => T, maxBytes?: number, maxPageBytes?: number): T;
 
 export function formatManagedTaskDisplayName(label: string): string;
 export function isManagedTaskPlaceholderSession(session: unknown): boolean;
@@ -873,6 +1022,8 @@ export function projectManagedTaskResult<TTask extends Record<string, unknown>>(
   task: TTask,
   resultEnvelope: ManagedTaskResultEnvelope | null | undefined,
   resultMode?: ManagedResultMode,
+  maxPageBytes?: number,
+  options?: { inlineFirstPage?: boolean },
 ): {
   task: TTask | Omit<TTask, 'recoverablePreview'>;
   resultEnvelope?: ManagedTaskResultEnvelope | Omit<ManagedTaskResultEnvelope, 'recoverablePreview'>;
@@ -882,6 +1033,7 @@ export function projectManagedResultEnvelope(
   task: Partial<ManagedTaskRecord> | ManagedTaskEventRecord,
   resultEnvelope: ManagedTaskResultEnvelope,
   resultMode?: ManagedResultMode,
+  maxPageBytes?: number,
 ): {
   resultEnvelope: ManagedTaskResultEnvelope | Omit<ManagedTaskResultEnvelope, 'recoverablePreview'>;
   resultReference?: ManagedResultReference;
@@ -890,9 +1042,11 @@ export function readManagedResultReference(input: {
   task: Partial<ManagedTaskRecord> | ManagedTaskEventRecord;
   resultEnvelope: ManagedTaskResultEnvelope;
   resultCursor: string;
+  maxPageBytes?: number;
 }): ManagedResultReference;
+export function waitForSharedOperation<T>(operation: T | PromiseLike<T>, options?: { signal?: AbortSignal }): Promise<T>;
 export function createKeyedSingleFlight(): {
-  run<T>(key: string, operation: () => T | PromiseLike<T>): Promise<T>;
+  run<T>(key: string, operation: () => T | PromiseLike<T>, options?: { signal?: AbortSignal }): Promise<T>;
 };
 export function classifyProviderRetryFailure(value: unknown): ManagedTaskFailureKind;
 export function classifyProviderRetryStatus(value: unknown): ManagedTaskFailureKind;
@@ -918,6 +1072,7 @@ export function createManagedTerminalErrorRegistry(options?: {
     observedAt: number;
     eventId: string | null;
     errorName: string;
+    v2Type?: string | null;
     message: string;
     code: string | null;
     statusCode: number | null;
@@ -931,8 +1086,9 @@ export function createManagedOperatorAbortRegistry(options?: {
   now?: () => number;
   maximumSessions?: number;
 }): {
-  record(input: { sessionId?: string; requestedAt?: number }): { sessionId: string; requestedAt: number } | null;
-  withdraw(input: { sessionId?: string; requestedAt?: number }): boolean;
+  record(input: { sessionId?: string; requestedAt?: number; requestId?: string; state?: 'pending' | 'accepted' }): { sessionId: string; requestedAt: number } | null;
+  accept(input: { sessionId: string; requestedAt: number; requestId?: string }): boolean;
+  withdraw(input: { sessionId?: string; requestedAt?: number; requestId?: string }): boolean;
   read(input?: { sessionId?: string; after?: number }): { sessionId: string; requestedAt: number } | null;
   observe(payload: unknown): boolean;
   clear(): void;
@@ -963,6 +1119,7 @@ export function createManagedTaskRecord(input: Omit<ManagedTaskRecord,
 > & {
   childSessionId?: string | null;
   dispatchGroupId?: string | null;
+  dispatchObjectiveId?: string | null;
   dispatchCallId?: string | null;
   dispatchWaveId?: string | null;
   readOnly?: boolean;
@@ -1001,7 +1158,7 @@ export function resolveProviderPromptTools(
 ): Readonly<Record<string, boolean>> | undefined;
 export const MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED: 'MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED';
 export const MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED_MESSAGE: string;
-export function supportsManagedReadOnlyProvider(providerId: unknown): boolean;
+export function supportsManagedReadOnlyProvider(providerId: unknown, options?: { cursorReadOnly?: boolean }): boolean;
 export const MANAGED_READ_ONLY_AGENT_UNSUPPORTED: 'MANAGED_READ_ONLY_AGENT_UNSUPPORTED';
 export const MANAGED_READ_ONLY_AGENT_UNSUPPORTED_MESSAGE: string;
 export function supportsManagedReadOnlyAgent(agent: unknown): boolean;
@@ -1009,15 +1166,26 @@ export interface ManagedAssistantActivity {
   messageId: string;
   observedAt: number;
 }
-export type ManagedAssistantActivitySubscribe = (input: {
+export interface ManagedAssistantActivityScope {
   sessionId: string;
   directory?: string;
   after: number;
   excludedMessageId?: string | null;
-}, onActivity: (activity: ManagedAssistantActivity) => void) => () => void;
+}
+export interface ManagedAssistantActivityBinding {
+  messageId: string;
+  createdAt: number;
+  completedAt?: number;
+}
+export type ManagedAssistantActivityBind = (input: ManagedAssistantActivityScope,
+  assistants: readonly ManagedAssistantActivityBinding[]) => void;
+export type ManagedAssistantActivitySubscribe = (input: ManagedAssistantActivityScope, onActivity: (activity: ManagedAssistantActivity) => void,
+onProgress?: (activity: ManagedAssistantActivity) => void) => () => void;
 export function isManagedAssistantActivityPart(part: unknown): boolean;
 export function createManagedAssistantActivityRegistry(options?: { now?: () => number }): {
   subscribe: ManagedAssistantActivitySubscribe;
+  bind: ManagedAssistantActivityBind;
+  subscribeChanges: NonNullable<ManagedOpenCodeExecutorOptions['subscribeSessionChanges']>;
   observe(payload: unknown, directory?: string | null): void;
   clear(): void;
 };
@@ -1035,22 +1203,51 @@ export function normalizeManagedAgentContractRole(agent: unknown): ManagedAgentC
 export function buildManagedAgentContract(input?: { agent?: string | null }): string;
 export function createManagedTaskScheduler(options: ManagedTaskSchedulerOptions): ManagedTaskScheduler;
 
-export interface RequiredCheck { name: string; command: string; paths: string[] }
-export interface RequiredCheckReceipt { name: string; callId: string; messageId: string | null; identityConflict?: true; exitCode: number | null; observedAt: number; status: 'passed' | 'failed' | 'not-observed'; contentHash: string | null }
-export interface RequiredCheckEvidence { name: string; status: 'passed' | 'failed' | 'not-observed'; coverage: { kind: 'declared-files'; paths: string[]; contentHash: string | null }; reason: string; evidence: { callId: string; messageId: string | null; exitCode: number | null; observedAt: number; checkedContentHash: string | null } | null }
+export type RequiredCheckStatus = 'pending' | 'passed' | 'failed' | 'blocked' | 'skipped' | 'waived';
+export interface RequiredVisualCheck { state: 'populated'; dataSource: 'fixture' | 'live'; assertions: string[]; reportPath: string }
+export interface VisualCheckObservation { state: 'populated'; dataSource: 'fixture' | 'live'; assertions: { name: string; status: 'passed' | 'failed' }[]; evidence: { path: string; sha256: string }[]; reportHash: string }
+export interface ApprovedPlanRef { rootSessionId:string; objectiveId:string; sourceMessageId:string; version:string; phase:string; paths:string[]; content:string; contentHash:string }
+export interface RequiredCheck { cwd?: string; environment?: string; purpose?: 'implementation' | 'integration' | 'deployment'; prerequisites?: string[]; name: string; command: string; paths: string[]; kind?: 'command' | 'visual'; visual?: RequiredVisualCheck }
+export interface RequiredCheckRunnerIdentity { kind: 'edge-deno-function-v1'; packagePath: 'package.json'; packageSha256: string;
+  scriptPath: 'scripts/testing/run-deno-tests.mjs'; scriptSha256: string; functionName: string; selector: '--function';
+  testPath: string; coverageHash: string; verifiedBy: 'host-policy' }
+export interface RequiredCheckCorrection { name: string; previousCommand: string; command: string; reason: 'repository_edge_deno_runner';
+  observedAt: number; previousReceipt?: RequiredCheckReceipt; runnerIdentity: RequiredCheckRunnerIdentity }
+export interface RequiredCheckCorrectionHistoryEntry extends RequiredCheckCorrection { previousCheck: RequiredCheck }
+export const REQUIRED_CHECK_CORRECTION: unique symbol;
+export function validateCheckCorrection(value: unknown, check: RequiredCheck): RequiredCheckCorrection;
+export function validateCheckCorrectionHistory(value?: unknown): RequiredCheckCorrectionHistoryEntry[];
+export function applyCheckCorrection(input: { checks?: RequiredCheck[]; receipts?: RequiredCheckReceipt[]; history?: RequiredCheckCorrectionHistoryEntry[] }, correction: RequiredCheckCorrection): {
+  checks: RequiredCheck[]; receipts: RequiredCheckReceipt[]; history: RequiredCheckCorrectionHistoryEntry[] };
+export function isCheckCorrectionTransition(previous: ManagedTaskRecord, next: ManagedTaskRecord): boolean;
+export function parseVitestEdgeCommand(command: string): { functionName: string; testPath: string; functionPath: string } | null;
+export function correctedEdgeCommand(functionName: string): string;
+export interface RequiredCheckWaiver { source: 'authenticated-user'; userId: string; reason: string }
+export interface RequiredCheckEnvironmentUnavailable { reason: 'docker_daemon_unavailable' | 'docker_socket_denied' | 'uid_mapping_unavailable'; hint: string }
+export interface RequiredCheckReceipt { environmentUnavailable?: RequiredCheckEnvironmentUnavailable; name: string; callId: string; messageId: string | null; identityConflict?: true; exitCode: number | null; observedAt: number; status: RequiredCheckStatus | 'not-observed'; contentHash: string | null; visual?: VisualCheckObservation; waiver?: RequiredCheckWaiver }
+export interface RequiredCheckEvidence { environmentUnavailable?: RequiredCheckEnvironmentUnavailable; execution?: { command: string; cwd: string; environment: string | null }; hint?: string; purpose?: 'implementation' | 'integration' | 'deployment'; prerequisites?: string[]; name: string; kind?: 'command' | 'visual'; status: RequiredCheckStatus; coverage: { kind: 'declared-files'; paths: string[]; contentHash: string | null }; reason: string; visual?: RequiredVisualCheck & { observation: VisualCheckObservation | null }; waiver?: RequiredCheckWaiver; evidence: { callId: string; messageId: string | null; exitCode: number | null; observedAt: number; checkedContentHash: string | null } | null }
+export interface RequiredCheckCompletion { ready: boolean; status: RequiredCheckStatus; remaining: { name: string; status: RequiredCheckStatus; reason: string }[] }
+export interface RequiredCheckVerification extends RequiredCheckCompletion { objectiveId: string | null; checks: RequiredCheckEvidence[]; observedAt: number }
+export const USER_CHECK_WAIVER: unique symbol;
+export function visualCheckPassed(check: RequiredCheck, observation: unknown): boolean;
+export function projectRequiredCheckCompletion(checks?: RequiredCheckEvidence[]): RequiredCheckCompletion;
+export function selectRequiredCheckTasks<T extends { taskId: string; dispatchObjectiveId?: string | null; dispatchGroupId?: string | null; verification?: Pick<RequiredCheckVerification, 'objectiveId'>; priorTaskId: string | null; requiredChecks?: RequiredCheck[] }>(tasks: T[], objectiveId: string | null): T[];
+export function decodeRequiredCheckVerification(value: unknown): RequiredCheckVerification | null;
 export interface CompactResultHeader {
   schemaVersion: 1; taskId: string; envelopeId: string;
   outcome: { status: ManagedTaskTerminalStatus; partial: boolean; disposition: ManagedTaskResultAction | null };
   reported: { source: 'retained-child-preview'; authoritative: false; terminalMarker: 'complete' | 'blocked' | 'missing' | 'ambiguous'; routing: string | null };
   criticalFailures: string[];
   recovery: { restriction: string | null; resumable: boolean; autoResume: ManagedTaskAutoResume | null; failureKind: ManagedTaskFailureKind };
-  verification: { status: 'passed' | 'failed' | 'not-observed'; checks: RequiredCheckEvidence[]; observedAt: number; coverage: 'declared-files-only' | 'no-required-checks-declared' };
+  verification: RequiredCheckCompletion & { checks: RequiredCheckEvidence[]; observedAt: number; coverage: 'declared-files-only' | 'no-required-checks-declared' };
   detail: { source: 'canonical-managed-result'; taskId: string; envelopeId: string; bytes: number; canonicalRefs: ManagedTaskCanonicalRef[]; requiredBeforeDisposition: boolean };
 }
 export function validateRequiredChecks(value?: unknown): RequiredCheck[];
 export function validateRequiredCheckReceipts(receipts?: unknown, checks?: RequiredCheck[]): RequiredCheckReceipt[];
-export function projectRequiredCheckEvidence(checks?: RequiredCheck[], receipts?: RequiredCheckReceipt[], identities?: Record<string, string | null>): RequiredCheckEvidence[];
+export function projectRequiredCheckEvidence(checks?: RequiredCheck[], receipts?: RequiredCheckReceipt[], identities?: Record<string, string | null>, visualFreshness?: Record<string, boolean>): RequiredCheckEvidence[];
 export function createCompactResultHeader(input: { task: ManagedTaskRecord; envelope: ManagedTaskResultEnvelope; checks?: RequiredCheckEvidence[]; observedAt: number }): CompactResultHeader;
+export const MANAGED_RECOVERY_INSTRUCTIONS: Readonly<{ scheduled: string; manual: string; promptRejected: string; failed: string }>;
+export function managedRecoveryInstruction(task: ManagedTaskRecord | null | undefined, envelope: ManagedTaskResultEnvelope | null | undefined): string | null;
 export function readManagedResultReport(preview: string): CompactResultHeader['reported'];
 
 export const PROVIDER_AUTHENTICATION_FAILURE_KIND: 'provider_authentication';
@@ -1059,3 +1256,94 @@ export function formatManagedAssignmentContext(
   task: Pick<ManagedTaskRecord, 'taskId' | 'rootSessionId' | 'agent' | 'label' | 'prompt'> & { readOnly?: boolean },
   options?: { maxPromptBytes?: number; maxBytes?: number },
 ): string | null;
+
+// Orchestration codec (codec.js): persisted ledger and host-to-UI wire shapes.
+export const MANAGED_TASK_ID_PREFIX: 'dvr_task_';
+export const MANAGED_WAVE_ID_PREFIX: 'dvr_wave_';
+export const MANAGED_TASK_LIVE_STATUSES: readonly Exclude<ManagedTaskStatus, ManagedTaskTerminalStatus>[];
+export const MANAGED_TASK_TERMINAL_STATUSES: readonly ManagedTaskTerminalStatus[];
+export const MANAGED_TASK_FAILURE_KINDS: readonly Exclude<ManagedTaskFailureKind, null>[];
+export const AUTO_RESUME_STATES: readonly ManagedTaskAutoResumeState[];
+export const AUTO_RESUME_RESET_SOURCES: readonly ManagedTaskAutoResumeResetSource[];
+export const AUTO_RESUME_REASONS: readonly ManagedTaskAutoResumeReason[];
+export type ManagedResultPayloadField =
+  | 'taskId' | 'rootSessionId' | 'parentTaskId' | 'childSessionId' | 'directory' | 'status' | 'partial'
+  | 'failureReason' | 'attempt' | 'priorTaskId' | 'executionKind' | 'recoverablePreview';
+export const MANAGED_RESULT_PAYLOAD_FIELDS: readonly ManagedResultPayloadField[];
+export const MANAGED_RESULT_COMPACTED_FIELDS: readonly ('failureReason' | 'recoverablePreview' | 'canonicalRefs')[];
+export function isManagedTaskId(value: unknown): value is string;
+export function isAutoResumeActiveState(state: unknown): state is 'planning' | 'scheduled' | 'attempting';
+export function findManagedResultPayloadMismatch(
+  task: Record<string, unknown>,
+  envelope: Record<string, unknown>,
+  options?: { requireOwnFields?: boolean },
+): ManagedResultPayloadField | 'canonicalRefs' | null;
+export function encodeBase64Url(text: string, options: { pad: boolean }): string;
+export function decodeBase64Url(value: string, options: { pad: boolean }): string;
+export function stableStringify(value: unknown): string;
+
+export function decodeManagedTaskRecord(value: unknown): ManagedTaskRecord;
+export function decodeResultEnvelope(value: unknown): ManagedTaskResultEnvelope;
+export type ManagedLedgerDecodeErrorCode =
+  | 'invalid_ledger_version'
+  | 'invalid_ledger_collections'
+  | 'invalid_result_envelopes'
+  | 'duplicate_task'
+  | 'duplicate_idempotency_key'
+  | 'duplicate_result_envelope'
+  | 'orphan_result_envelope';
+export interface ManagedLedgerDecodeErrorDetail {
+  taskId?: string;
+  envelopeId?: string;
+  rootSessionId?: string;
+}
+export interface ManagedLedgerSnapshot {
+  version: 1;
+  tasks: ManagedTaskRecord[];
+  resultEnvelopes: ManagedTaskResultEnvelope[];
+}
+export function decodeLedgerSnapshot(value: unknown, options?: {
+  requireResultEnvelopes?: boolean;
+  createError?: (code: ManagedLedgerDecodeErrorCode, detail: ManagedLedgerDecodeErrorDetail) => Error;
+}): ManagedLedgerSnapshot;
+export function encodeLedgerSnapshot(snapshot: unknown): string;
+
+export type ManagedWireDecodeMode = 'strict' | 'lenient';
+export interface ManagedWireDecodeOptions { mode?: ManagedWireDecodeMode }
+/** A task record as decoded from a task event or snapshot: absent optional fields read as null. */
+export type DecodedManagedTaskEventRecord = Omit<ManagedTaskEventRecord, 'dispatchWaveId' | 'transportRecovery'> & {
+  dispatchWaveId: string | null;
+  transportRecovery: ManagedTransportRecovery | null;
+};
+export type DecodedManagedTaskResultEnvelope = Omit<ManagedTaskResultEnvelope, 'acknowledgementIdentity' | 'promptObserved'>;
+export interface DecodedManagedOrchestrationSnapshot {
+  available: boolean;
+  bridgeReady: boolean;
+  dispatchReady?: boolean;
+  recoveryWarning: string | null;
+  tasks: DecodedManagedTaskEventRecord[];
+  resultEnvelopes: DecodedManagedTaskResultEnvelope[];
+}
+export function decodeManagedTaskWaitingReason(value: unknown): ManagedTaskWaitingReason | null;
+export function decodeManagedTaskAutoResume(value: unknown): ManagedTaskAutoResume | null;
+export function decodeTaskEventRecord(value: unknown, options?: ManagedWireDecodeOptions): DecodedManagedTaskEventRecord | null;
+export function decodeResultEnvelopePayload(value: unknown, options?: ManagedWireDecodeOptions): DecodedManagedTaskResultEnvelope | null;
+export function decodedEnvelopeMatchesTask(task: DecodedManagedTaskEventRecord, envelope: DecodedManagedTaskResultEnvelope): boolean;
+export function decodeTaskEventPayload(properties: unknown, options?: ManagedWireDecodeOptions): {
+  task: DecodedManagedTaskEventRecord;
+  resultEnvelope: DecodedManagedTaskResultEnvelope | null;
+} | null;
+export function decodeSnapshotPayload(value: unknown, options?: ManagedWireDecodeOptions): DecodedManagedOrchestrationSnapshot;
+
+export const USER_STOPPED_RECOVERY: unique symbol;
+export function isUserStoppedRecoveryAvailable(task: ManagedTaskRecord, envelope: ManagedTaskResultEnvelope | null): boolean;
+
+export function isStoppedRecoveryAvailable(task: ManagedTaskRecord, envelope: ManagedTaskResultEnvelope | null): boolean;
+
+export function hasAcceptedUserStop(task: ManagedTaskRecord): boolean;
+export function hasPendingOperatorStop(task: ManagedTaskRecord): boolean;
+
+export const MANAGED_OPERATOR_STOP_UNCERTAIN_REASON: string;
+
+export function formatManagedTaskFailureReason(error: unknown): string;
+export function isManagedTaskCapabilityFailure(value: unknown): boolean;

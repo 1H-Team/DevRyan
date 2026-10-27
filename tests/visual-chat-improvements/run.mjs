@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { omitMessageToolOutput } from '../../packages/web/server/lib/opencode/tool-output-trim.js';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,11 +10,14 @@ import { createServer } from 'vite';
 import { CdpConnection, discoverPageTarget, evaluate } from '../../scripts/qa/cdp.mjs';
 import { reservePort, startOwnedProcess } from '../../scripts/qa/process.mjs';
 import { createDiagnosticSanitizer } from '../../packages/harness-runtime/lib/sanitizer.js';
+import { createRunRoot, scratchParent } from '../../scripts/qa/run-root.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const requireElectron = createRequire(new URL('../../packages/electron/package.json', import.meta.url));
-await mkdir(path.join(root, '.cache/qa'), { recursive: true });
-const output = await mkdtemp(path.join(root, '.cache/qa/chat-improvements-'));
+let server, host, cdp;
+const run = createRunRoot({ parent: scratchParent('qa'), prefix: 'chat-improvements-', owner: 'chat-improvements',
+    onInterrupt: async () => { cdp?.close(); await host?.stop(); await server?.close(); } });
+const output = run.dir;
 const profile = path.join(output, 'profile');
 const downloads = path.join(output, 'downloads');
 await mkdir(downloads);
@@ -22,13 +27,14 @@ const evidence = { runtime: 'production-web-components-in-electron-chromium', ou
     checks: [], consoleErrors: [], cleanupErrors: [], sourceHashes: {}, screenshots: [],
     limitations: ['Synthetic sync context; no installed app or provider', 'Clipboard permission and storage simulated in renderer; system clipboard untouched', 'Development Chromium host; packaged native Electron not checked'],
     startedAt: new Date().toISOString() };
-for (const file of ['sync/user-message-history.ts', 'sync/sync-context.tsx', 'components/chat/message/MessageBody.tsx',
+for (const file of ['sync/user-message-history.ts', 'sync/sync-context.tsx', 'hooks/useChatSearchDirectory.ts',
+    'components/chat/message/parts/PlanCard.tsx', 'components/chat/message/MessageBody.tsx',
     'components/chat/message/parts/ToolPart.tsx', 'components/chat/message/parts/toolDiffPreview.ts', 'lib/messages/messageCopyText.ts',
     'components/chat/message/parts/tool-activity/targets.ts', 'components/chat/message/parts/RawPatchFallback.tsx',
-    'components/chat/message/parts/toolDiffDownload.ts', 'components/chat/message/parts/toolPartDiffEntries.ts', 'components/chat/message/questionContext.ts']) {
+    'components/chat/message/parts/toolDiffDownload.ts', 'components/chat/message/parts/toolPartDiffEntries.ts', 'components/chat/message/questionContext.ts',
+    'components/chat/ManagedTaskRow.tsx', 'components/chat/SessionChangesCard.tsx', 'components/chat/ChangedFilesList.tsx']) {
     evidence.sourceHashes[file] = createHash('sha256').update(await readFile(path.join(root, 'packages/ui/src', file))).digest('hex');
 }
-let server, host, cdp;
 const waitFor = async (expression) => {
     const start = performance.now();
     while (performance.now() - start < 45_000) {
@@ -50,7 +56,8 @@ const screenshot = async (name) => {
     evidence.screenshots.push(name + '.png');
 };
 try {
-    server = await createServer({ configFile: path.join(root, 'tests/visual-chat-improvements/vite.config.ts'), server: { port: await reservePort() } });
+    server = await createServer({ configFile: path.join(root, 'tests/visual-chat-improvements/vite.config.ts'),
+        cacheDir: path.join(output, 'vite-cache'), server: { port: await reservePort() } });
     await server.listen();
     const origin = `http://127.0.0.1:${server.httpServer.address().port}`;
     const debugPort = await reservePort();
@@ -109,6 +116,14 @@ try {
                 await waitFor("document.querySelector('#question').textContent.includes('Context before the question.')");
                 await page("document.querySelector('#question').textContent.split('Context before the question.').length === 2", 'Explanation appears once');
             }
+            if (stage === 'failed') {
+                await page("document.querySelector('#question').textContent.includes('Question failed')", 'Failed question is labelled as failed');
+                await page("!document.querySelector('#question').textContent.includes('Choose a color')", 'Failed question never fabricates an answer card from input');
+                await cdp.send('Page.bringToFront');
+                await evaluate(cdp, "document.querySelector('#question').scrollIntoView({ block: 'start', behavior: 'instant' }); new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
+                await screenshot('question-failed');
+            }
+            if (stage === 'answered') await page("document.querySelector('#question').textContent.includes('Blue')", 'Answered question shows the real answer');
         }
         await page("document.querySelectorAll('#question [data-plan-source-message-id]').length === 1", 'Question exception preserves one plan card');
         await evaluate(cdp, "window.__chatFixture.setMode('live'); window.__chatFixture.setStage('pending')");
@@ -116,6 +131,19 @@ try {
         await page("document.querySelector('#question').textContent.split('Context before the question.').length === 2", 'Live context appears once');
         await evaluate(cdp, "window.__chatFixture.setMode('sorted')");
         await waitFor("document.querySelector('#stage').dataset.stage === 'pending'");
+    });
+    await check('question failure and answer remain correct after document reload', async () => {
+        for (const stage of ['failed', 'answered']) {
+            const previous = await evaluate(cdp, 'performance.timeOrigin');
+            await cdp.send('Page.navigate', { url: `${origin}/?question-stage=${stage}` });
+            await waitFor(`performance.timeOrigin !== ${previous} && Boolean(window.__chatFixture) && document.querySelector('#stage')?.dataset.stage === ${JSON.stringify(stage)}`);
+            await waitFor("document.querySelector('#question').textContent.includes('Context before the question.')");
+            await page("document.querySelector('#question').textContent.split('Context before the question.').length === 2", 'Reload keeps exactly one explanation');
+            if (stage === 'failed') {
+                await page("document.querySelector('#question').textContent.includes('Question failed') && !document.querySelector('#question').textContent.includes('Choose a color')", 'Reload preserves failure without a fabricated question card');
+            } else await page("document.querySelector('#question').textContent.includes('Blue')", 'Reload preserves the answer');
+        }
+        await evaluate(cdp, "window.__chatFixture.setStage('pending')");
     });
     await check('clipboard abstraction preserves Markdown and reports denied copy', async () => {
         await evaluate(cdp, "document.querySelector('#copy').click()");
@@ -146,6 +174,134 @@ try {
         await evaluate(cdp, "window.__chatFixture.setSession('deleted')");
         await waitFor("document.querySelector('#composer output').textContent === ''");
     });
+    await check('composer directory ignores session activity but follows an actual directory change', async () => {
+        await waitFor("document.querySelector('#search-directory').textContent === '/fixture'");
+        const before = await evaluate(cdp, '({...window.__chatFixture.counts})');
+        for (let index = 0; index < 120; index += 1) {
+            await evaluate(cdp, `window.__chatFixture.updateSession(${JSON.stringify(index % 2 ? 'session' : 'other')}, {title: 'Activity ${index}', time: {created: 1, updated: ${index + 2}}})`);
+        }
+        const after = await evaluate(cdp, '({...window.__chatFixture.counts})');
+        evidence.directoryRenderCounts = { updates: 120, commits: after.directory - before.directory,
+            broadBaselineCommits: after.broadDirectory - before.broadDirectory };
+        assert.equal(evidence.directoryRenderCounts.commits, 0);
+        assert.equal(evidence.directoryRenderCounts.broadBaselineCommits, 120);
+        await evaluate(cdp, "window.__chatFixture.updateSession('session', {directory: '/fixture/moved'})");
+        await waitFor("document.querySelector('#search-directory').textContent === '/fixture/moved'");
+    });
+    await check('redundant plan status is visually hidden while action guards and descriptions remain', async () => {
+        for (const [started, reason] of [[false, 'The response is still finishing.'], [true, 'Implementation already started.']]) {
+            if (started) await evaluate(cdp, 'window.__chatFixture.markPlanStarted()');
+            await waitFor(`document.querySelector('#plan-controls .oc-plan-implement-btn')?.getAttribute('title') === ${JSON.stringify(reason)}`);
+            await page(`(() => {
+                const button = document.querySelector('#plan-controls .oc-plan-implement-btn');
+                const description = document.getElementById(button.getAttribute('aria-describedby'));
+                return button.disabled && description?.textContent === ${JSON.stringify(reason)}
+                    && description.classList.contains('sr-only') && description.getBoundingClientRect().width <= 1;
+            })()`, 'Description stays accessible without visible duplicate status or an enabled action');
+            await evaluate(cdp, "document.querySelector('#plan-controls').scrollIntoView({block: 'center', behavior: 'instant'})");
+            await screenshot(started ? 'plan-started' : 'plan-finishing');
+        }
+    });
+    await check('dispatch failures explain capability and authentication without transient transport advice', async () => {
+        await page("document.querySelector('[data-managed-task-id=capability] [role=alert]').textContent.includes('Repair or update the runtime')", 'Capability repair is visible');
+        await page("document.querySelector('[data-managed-task-id=authentication] [role=alert]').textContent.includes('Reconnect the provider')", 'Authentication guidance is visible');
+        await page("!document.querySelector('#dispatch-errors').textContent.includes('connection was interrupted')", 'Permanent failures do not suggest interrupted transport');
+        await evaluate(cdp, "document.querySelector('#dispatch-errors').scrollIntoView({block: 'center', behavior: 'instant'})");
+        await screenshot('dispatch-errors');
+    });
+    await check('compact cards retain five files, diagnostics and keyboard actions across themes and widths', async () => {
+        await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
+        await cdp.send('Page.bringToFront');
+        for (const dark of [false, true]) for (const width of [1280, 390]) {
+            await cdp.send('Emulation.setDeviceMetricsOverride', { width, height: 844, deviceScaleFactor: 1, mobile: width < 600 });
+            await evaluate(cdp, `window.__chatFixture.setTheme(${dark}); window.__chatFixture.setCompact({ count: 6, status: 'running', mobile: ${width < 600} })`);
+            await waitFor("document.querySelector('#compact-cards h3')?.textContent === 'Edited 6 files'");
+            await page("document.querySelector('[data-managed-task-id=compact-verification] p').textContent === 'Running...' && !document.querySelector('#compact-cards').textContent.includes('Focused tests') && !document.querySelector('#compact-cards').textContent.includes('Waive')", 'Intermediate failed check remains Running without per-check or waiver controls');
+            await page("document.querySelectorAll('#compact-cards [data-session-changes-rows] button').length === 5 && document.querySelector('#compact-cards [data-session-changes-action=undo]').disabled", 'Five visible files and safe disabled Undo');
+            await page("!document.querySelector('#compact-cards').innerText.includes('could not be verified') && !document.querySelector('#compact-cards').innerText.includes('Capture gaps') && !document.querySelector('#compact-cards').innerText.includes('Content differs')", 'Compact list omits repeated diagnostics');
+            await evaluate(cdp, "document.querySelector('#compact-cards').scrollIntoView({block: 'start', behavior: 'instant'}); document.querySelector('#compact-cards [data-session-changes-action=show-more]').focus()");
+            await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, text: '\r', unmodifiedText: '\r' });
+            await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+            await waitFor("document.querySelectorAll('#compact-cards [data-session-changes-rows] button').length === 6 && document.activeElement?.getAttribute('aria-expanded') === 'true'");
+            await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, text: '\r', unmodifiedText: '\r' });
+            await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+            await waitFor("document.querySelectorAll('#compact-cards [data-session-changes-rows] button').length === 5 && document.activeElement?.getAttribute('aria-expanded') === 'false'");
+            await evaluate(cdp, "document.querySelector('#compact-cards [data-session-changes-rows] button').focus()");
+            await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, text: '\r', unmodifiedText: '\r' });
+            await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+            await waitFor("document.querySelector('#compact-opened-file').textContent.includes('very-long-file-name-')");
+            await evaluate(cdp, "document.querySelector('#compact-opened-file').style.display = 'none'");
+            await page("(() => { const card = document.querySelector('#compact-cards [data-session-changes-card]'); return [...card.querySelectorAll('button')].every(button => button.getBoundingClientRect().right <= card.getBoundingClientRect().right + 1) && document.documentElement.scrollWidth <= innerWidth; })()", 'Long paths and controls fit narrow layout');
+            await screenshot(`compact-${dark ? 'dark' : 'light'}-${width}`);
+            await evaluate(cdp, "document.querySelector('#compact-cards [data-session-changes-action=review]').click()");
+            await waitFor("document.querySelector('[data-session-changes-review]')?.textContent.includes('the author is unknown') && document.querySelector('[data-session-changes-review]')?.textContent.includes('Capture gaps')");
+            await page("document.querySelector('[data-session-changes-review]').textContent.includes('Complete capture records are unavailable') && document.querySelector('[data-session-changes-review] [data-file-verification=uncertain]') !== null", 'Review retains diagnostic authority and file verification');
+            await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+            await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+            await waitFor("!document.querySelector('[data-session-changes-review]')");
+            for (const count of [0, 1, 5, 6, 18]) {
+                await evaluate(cdp, `window.__chatFixture.setCompact({ count: ${count}, status: 'completed' })`);
+                await waitFor(`document.querySelectorAll('#compact-cards [data-session-changes-rows] button').length === ${Math.min(count, 5)}`);
+                await page(`document.querySelector('[data-managed-task-id=compact-verification] p').textContent === 'Failed' && Boolean(document.querySelector('#compact-cards [data-session-changes-action=show-more]')) === ${count > 5}`, 'Live counts and terminal Failed update without stale controls');
+            }
+        }
+        await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 844, deviceScaleFactor: 1, mobile: false });
+        await evaluate(cdp, 'window.__chatFixture.setTheme(false)');
+    });
+    await check('collapsed search contains only the file count; expansion retains targets; command failure and recovery wait stay explicit', async () => {
+        await page("document.querySelector('#search-contract button').textContent.trim() === 'Searched 2 files'", 'Collapsed search has exactly the count label');
+        await page("!document.querySelector('#search-contract').textContent.includes('**/*.ts') && !document.querySelector('#search-contract').textContent.includes('one.ts')", 'Collapsed search hides patterns and paths');
+        await evaluate(cdp, "document.querySelector('#search-contract button').click()");
+        await waitFor("document.querySelector('#search-contract').textContent.includes('one.ts') && document.querySelector('#search-contract').textContent.includes('two.ts')");
+        await page("document.querySelector('#command-failure').textContent.includes('Command exited with code 1') && document.querySelector('#command-failure').textContent.includes('One assertion failed')", 'Failed command retains its output and exit evidence');
+        await page("document.querySelector('#recovery-wait [role=status]').textContent.includes('retained') && [...document.querySelectorAll('#recovery-wait button')].some(button => button.textContent === 'Cancel Recovery' && !button.disabled)", 'Recovery intent is visible and cancellable while waiting');
+        await evaluate(cdp, "document.querySelector('#search-contract').scrollIntoView({ block: 'start', behavior: 'instant' })");
+        await screenshot('search-command-recovery');
+    });
+    if (process.env.DEVRYAN_UI_PERF === '1') await check('repeated synthetic parent and two-child resource comparison with settlement plateau', async () => {
+        const version = await (await fetch(`http://127.0.0.1:${debugPort}/json/version`)).json();
+        const browser = await CdpConnection.connect(version.webSocketDebuggerUrl);
+        const sample = async () => {
+            const [heap, performanceMetrics, processes] = await Promise.all([cdp.send('Runtime.getHeapUsage'), cdp.send('Performance.getMetrics'), browser.send('SystemInfo.getProcessInfo')]);
+            const pids = processes.processInfo.map(item => item.id).filter(id => Number.isSafeInteger(id) && id > 0);
+            const rssKiB = execFileSync('ps', ['-o', 'rss=', '-p', pids.join(',')], { encoding: 'utf8' }).trim().split(/\s+/).reduce((total, value) => total + Number(value), 0);
+            return { heapUsedBytes: heap.usedSize, rssBytes: rssKiB * 1024,
+                rendererTaskSeconds: performanceMetrics.metrics.find(item => item.name === 'TaskDuration')?.value ?? null,
+                ownedProcessCpuSeconds: processes.processInfo.reduce((sum, item) => sum + item.cpuTime, 0) };
+        };
+        try {
+            await cdp.send('Performance.enable');
+            const runs = [];
+            for (let repeat = 0; repeat < 3; repeat++) for (const mode of ['broad-control', 'narrow']) {
+                await evaluate(cdp, 'window.__chatFixture.releaseProfileSessionTree()');
+                await cdp.send('HeapProfiler.collectGarbage');
+                const before = await sample();
+                const start = performance.now();
+                const work = await evaluate(cdp, `window.__chatFixture.profileSessionTree(${JSON.stringify(mode)})`);
+                const workloadMs = performance.now() - start;
+                const after = await sample();
+                const plateau = [];
+                for (let index = 0; index < 3; index++) {
+                    await cdp.send('HeapProfiler.collectGarbage');
+                    assert.equal(await evaluate(cdp, 'window.__chatFixture.profileRetainedRecords()'), 20);
+                    plateau.push(await sample());
+                    await new Promise(resolve => setTimeout(resolve, 200));
+                }
+                assert.equal(work.events, 1500); assert.equal(work.changedEvents, 1500); assert.equal(work.settledRecords, 20);
+                assert.equal(work.rootSnapshotBuilds, mode === 'narrow' ? 0 : 4500);
+                runs.push({ repeat, mode, workloadMs, workloadAndSettlementMs: performance.now() - start, before, after, plateau, work });
+            }
+            const source = execFileSync('git', ['show', 'bb05829c41a3f131b32f0f4ff0145f467148acce:packages/ui/src/components/chat/message/parts/TaskChildSessionSummary.tsx'], { cwd: root, encoding: 'utf8' });
+            assert.match(source, /TASK_TOOL_ACTIVE_FETCH_LIMIT = 160/);
+            const records = Array.from({ length: 500 }, (_, index) => ({ info: { id: `message-${index}` }, parts: [{ type: 'tool', tool: 'read', state: { status: 'completed', output: 'x'.repeat(8192) } }] }));
+            evidence.uiPerformance = { scope: 'synthetic renderer/store control, not a whole-app historical comparison or leak proof',
+                baseline: 'previous broad store.subscribe snapshot dispatch; same current production reducer/data in both arms',
+                legacyChildSummarySourceSha256: createHash('sha256').update(source).digest('hex'),
+                snapshotResponseBytes: { legacyActive160Full: Buffer.byteLength(JSON.stringify(records.slice(-160))),
+                    currentRepair30Omitted: Buffer.byteLength(JSON.stringify(records.slice(-30).map(omitMessageToolOutput))) }, runs };
+            await evaluate(cdp, 'window.__chatFixture.releaseProfileSessionTree()');
+        } finally { browser.close(); }
+    });
     await screenshot('desktop-composer');
     await evaluate(cdp, "document.querySelector('h1').scrollIntoView({ block: 'start', behavior: 'instant' })");
     await screenshot('desktop-preview');
@@ -171,4 +327,5 @@ try {
     await writeFile(path.join(output, 'result.json'), JSON.stringify(evidence, null, 2));
 }
 console.log(JSON.stringify({ outcome: evidence.outcome, evidence: path.join(output, 'result.json'), error: evidence.error }));
+run.finish(evidence.outcome);
 process.exitCode = evidence.outcome === 'passed' ? 0 : 1;

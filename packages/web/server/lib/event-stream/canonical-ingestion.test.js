@@ -1,8 +1,38 @@
 import { describe, expect, it, vi } from 'vitest';
+import { createCommandDeadlineController } from '@devryan/harness-runtime';
 
-import { createCanonicalOpenCodeEventProcessor } from './canonical-ingestion.js';
+import { createCanonicalOpenCodeEventProcessor, createSyntheticOpenCodeEventEmitter } from './canonical-ingestion.js';
 
 describe('createCanonicalOpenCodeEventProcessor', () => {
+  it('registers a native shell event whose directory exists only on the outer envelope', async () => {
+    const records = new Map();
+    const fetchMessage = vi.fn(async () => { throw new Error('Deadline must not expire during registration'); });
+    const abortSession = vi.fn(async () => { throw new Error('Registration must not abort the session'); });
+    const controller = createCommandDeadlineController({
+      store: { initialize: async () => {}, listRecords: async () => [],
+        writeRecord: async (key, value) => records.set(key, value), deleteRecord: async key => records.delete(key), drain: async () => {} },
+      fetchMessage,
+      abortSession,
+      now: () => 1000, setTimeout: () => ({ unref() {} }), clearTimeout: () => {},
+    });
+    const observed = [];
+    const processEvent = createCanonicalOpenCodeEventProcessor({
+      processCommandDeadline: (payload, directory) => {
+        const operation = controller.observe(payload, directory); observed.push(operation); return operation;
+      },
+    });
+    const payload = { type: 'message.part.updated', properties: { part: { type: 'tool', tool: 'bash',
+      id: 'part_1', sessionID: 'ses_1', messageID: 'msg_1', callID: 'call_1',
+      state: { status: 'running', input: { timeout: 0 }, time: { start: 1000 } } } } };
+    processEvent(payload, '/fixture/project');
+    await Promise.all(observed);
+    processEvent(payload, '/fixture/project');
+    await Promise.all(observed);
+    expect([...records.values()]).toMatchObject([{ directory: '/fixture/project', deadlineAt: 241000 }]);
+    expect(fetchMessage).not.toHaveBeenCalled();
+    expect(abortSession).not.toHaveBeenCalled();
+    await controller.drain();
+  });
   it('runs every raw-event side effect once and owns deletion cleanup', async () => {
     const callbacks = {
       cacheSessionInfo: vi.fn(),
@@ -35,11 +65,11 @@ describe('createCanonicalOpenCodeEventProcessor', () => {
       properties: { part: { type: 'tool', tool: 'bash', state: { status: 'running' } } },
     };
 
-    processEvent(payload);
+    processEvent(payload, '/fixture/project');
     await Promise.resolve();
 
     expect(processCommandDeadline).toHaveBeenCalledOnce();
-    expect(processCommandDeadline).toHaveBeenCalledWith(payload);
+    expect(processCommandDeadline).toHaveBeenCalledWith(payload, '/fixture/project');
   });
 
   it('forwards authoritative session events to the title runtime', async () => {
@@ -73,4 +103,56 @@ it('preserves directory scope for managed assistant activity', () => {
   const payload = { type: 'message.updated', properties: { info: { sessionID: 'child' } } };
   process(payload, '/fixture/project');
   expect(processManagedOrchestration).toHaveBeenCalledWith(payload, '/fixture/project');
+});
+
+describe('canonical ingestion observation isolation', () => {
+  it('a sync throw in an observational step never skips later deliveries', async () => {
+    const logger = { warn: vi.fn() }, order = [];
+    const step = (name, fail) => () => { order.push(name); if (fail) throw new Error(`${name} failed`); };
+    const processEvent = createCanonicalOpenCodeEventProcessor({
+      cacheSessionInfo: step('cache', true), sendPush: step('push'), processSessionState: step('state'),
+      processTurnTiming: step('timing', true), recordJournalEvent: step('journal'), processEvidence: step('evidence'),
+      processSessionTitle: step('title'), logger,
+    });
+    processEvent({ type: 'message.updated', properties: {} });
+    expect(order).toEqual(['cache', 'push', 'state', 'timing', 'journal', 'evidence', 'title']);
+    expect(logger.warn).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps authority-bearing session state failures propagating as before', () => {
+    const recordJournalEvent = vi.fn();
+    const processEvent = createCanonicalOpenCodeEventProcessor({
+      processSessionState: () => { throw new Error('state owner failed'); }, recordJournalEvent,
+    });
+    expect(() => processEvent({ type: 'session.status', properties: {} })).toThrow('state owner failed');
+    expect(recordJournalEvent).not.toHaveBeenCalled();
+  });
+});
+
+describe('createSyntheticOpenCodeEventEmitter', () => {
+  it('keeps its order and always reaches the UI broadcast after observational failures', async () => {
+    const logger = { warn: vi.fn() }, order = [];
+    const emit = createSyntheticOpenCodeEventEmitter({
+      processManagedOrchestration: (_payload, directory) => order.push(`orchestration:${directory}`),
+      cacheSessionInfo: () => { order.push('cache'); throw new Error('cache'); },
+      processSessionState: () => order.push('state'),
+      processTurnTiming: () => { order.push('timing'); throw new Error('timing'); },
+      recordJournalEvent: (_payload, directory) => order.push(`journal:${directory}`),
+      recordMultiUserActivity: () => { order.push('activity'); throw new Error('activity'); },
+      processEvidence: async () => { order.push('evidence'); throw new Error('evidence'); },
+      broadcast: (_payload, options) => order.push(`broadcast:${options.directory}`),
+      logger,
+    });
+    emit({ type: 'session.idle', properties: {} }, { directory: '/repo' });
+    await Promise.resolve();
+    expect(order).toEqual(['orchestration:/repo', 'cache', 'state', 'timing', 'journal:/repo', 'activity', 'evidence', 'broadcast:/repo']);
+    expect(logger.warn).toHaveBeenCalledTimes(4);
+  });
+
+  it('keeps authority-bearing orchestration and session state failures propagating', () => {
+    const broadcast = vi.fn();
+    expect(() => createSyntheticOpenCodeEventEmitter({ processManagedOrchestration: () => { throw new Error('owner'); }, broadcast })({})).toThrow('owner');
+    expect(() => createSyntheticOpenCodeEventEmitter({ processSessionState: () => { throw new Error('state'); }, broadcast })({})).toThrow('state');
+    expect(broadcast).not.toHaveBeenCalled();
+  });
 });

@@ -6,6 +6,10 @@ export interface ProviderOption {
   name?: string;
 }
 
+interface ProviderAuthMethod {
+  type?: string;
+}
+
 const ANTHROPIC_PROVIDER_OPTION: ProviderOption = { id: 'anthropic', name: 'Claude' };
 const CURSOR_ACP_PROVIDER_OPTION: ProviderOption = { id: CURSOR_ACP_PROVIDER_ID, name: 'Cursor' };
 const GITHUB_COPILOT_PROVIDER_OPTION: ProviderOption = { id: 'github-copilot', name: 'GitHub Copilot' };
@@ -79,4 +83,24 @@ export const parseProvidersPayload = (payload: unknown): ProviderOption[] => {
     seen.add(entry.id);
     return true;
   });
+};
+
+// Authentication discovery is independent of the account-backed model catalog.
+export const mergeProviderConnectionOptions = (
+  providers: ProviderOption[],
+  authMethods: Readonly<Record<string, readonly ProviderAuthMethod[]>>,
+): ProviderOption[] => {
+  const seen = new Set(providers.map((provider) => provider.id));
+  const additions: ProviderOption[] = [];
+  for (const [id, methods] of Object.entries(authMethods)) {
+    if (!id.trim() || !methods.some((method) => method.type === 'api' || method.type === 'oauth')) {
+      continue;
+    }
+    const option = normalizeProviderOption({ id });
+    if (!seen.has(option.id)) {
+      seen.add(option.id);
+      additions.push(option);
+    }
+  }
+  return additions.length ? [...providers, ...additions] : providers;
 };

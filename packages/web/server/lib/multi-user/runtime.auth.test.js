@@ -6,7 +6,8 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { createMultiUserRuntime } from './runtime.js';
+import { createMultiUserRuntime as createMultiUserRuntimeNative } from './runtime.js';
+import { createNativeConsumerFixture } from '../opencode/test-native-consumer-client.js';
 import { createSessionVault } from './vault.js';
 import { getOpenCodeDataPath } from '../git/service.js';
 
@@ -44,6 +45,34 @@ const registerAdminRoutes = (harness, extras = {}) => {
   ]));
   harness.runtime.registerRoutes(app, extras);
   return handlers;
+};
+
+const createMultiUserRuntime = async (options) => {
+  const runtime = await createMultiUserRuntimeNative(options);
+  const registerRoutes = runtime.registerRoutes;
+  runtime.registerRoutes = (app, dependencies = {}) => registerRoutes({ ...app, use: app.use ?? (() => {}),
+    get: (route, ...handlers) => {
+      app.get(route, ...handlers);
+      if (route === '/api/experimental/session') {
+        // This existing route joins the registration-time reconciliation before
+        // fixture deletion. dispose drains other owners, not this Git writer.
+        fixtureReconciliationDrains.push(() => handlers.at(-1)({
+          principal: { scope: 'managed', id: USER_IDS.developer }, query: {},
+        }, makeResponse(), vi.fn()));
+      }
+    },
+  }, {
+    ...dependencies, openCodeClient: dependencies.openCodeClient ?? createNativeConsumerFixture({ readFixture: options.fetchImpl }),
+  });
+  return runtime;
+};
+
+const domainClient = (harness) => {
+  const client = createNativeConsumerFixture({ readFixture: harness.fetchImpl });
+  const list = client.sessions.list;
+  client.sessions.list = async (query = {}, options) => (await list(query, options))
+    .filter((session) => query.archived === undefined || Boolean(session.time?.archived) === query.archived);
+  return client;
 };
 
 const USER_IDS = {
@@ -159,8 +188,10 @@ const waitForCondition = async (predicate) => {
 
 const temporaryDirectories = [];
 const activeRuntimes = [];
+const fixtureReconciliationDrains = [];
 
 afterEach(async () => {
+  await Promise.all(fixtureReconciliationDrains.splice(0).map((drain) => drain()));
   vi.restoreAllMocks();
   await Promise.all(activeRuntimes.splice(0).map((runtime) => runtime.authController.dispose()));
   await Promise.all(temporaryDirectories.splice(0).map((directory) => (
@@ -195,8 +226,6 @@ const createHarness = async ({
   ownershipWriteFailures = 0,
   ownershipWriteGate = null,
   childOwnershipRetry = {},
-  botHost = { owner: 'unsupported' },
-  encryption = { getKey: null },
 } = {}) => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-runtime-auth-'));
   temporaryDirectories.push(directory);
@@ -252,7 +281,7 @@ const createHarness = async ({
           const session = {
             id: `created-session-${openCodeSessionCreateCount}`,
             title: body?.title || `New session - ${new Date().toISOString()}`,
-            directory: body?.directory || '',
+            directory: url.searchParams.get('directory') || '',
             ...(body?.parentID ? { parentID: body.parentID } : {}),
             time: { created: Date.now(), updated: Date.now() },
           };
@@ -431,9 +460,6 @@ const createHarness = async ({
         }, 404);
       }
       return jsonResponse(userActivityPurgeResult);
-    }
-    if (url.pathname === '/rest/v1/rpc/devryan_bot_schema_version') {
-      return jsonResponse('20260908182901');
     }
     if (!url.pathname.startsWith('/rest/v1/')) return jsonResponse({ message: 'not found' }, 404);
 
@@ -690,7 +716,10 @@ const createHarness = async ({
         return jsonResponse([]);
       }
       const match = [...sessions.values()].find((session) => (
-        !tokenHashFilter || session.session_token_hash === tokenHashFilter.replace(/^eq\./, '')
+        (!tokenHashFilter || session.session_token_hash === tokenHashFilter.replace(/^eq\./, ''))
+        && (!idFilter || session.id === idFilter.replace(/^eq\./, ''))
+        && (!url.searchParams.has('user_id') || session.user_id === url.searchParams.get('user_id').replace(/^eq\./, ''))
+        && (!url.searchParams.has('expires_at') || Date.parse(session.expires_at) > Date.parse(url.searchParams.get('expires_at').replace(/^gt\./, '')))
       ));
       return jsonResponse(match && !match.revoked_at ? [match] : []);
     }
@@ -704,8 +733,6 @@ const createHarness = async ({
     onManagedProjectMetadataChanged,
     onManagedSessionOwnershipCommitted,
     onScheduledTaskAccessChanged,
-    botHost,
-    encryption,
     sessionOwnershipRetryOptions: {
       attempts: 4,
       timeoutMs: 5,
@@ -736,6 +763,7 @@ const createHarness = async ({
     getOwnershipWriteAttemptCount: () => ownershipWriteAttemptCount,
     getProfile: (userId) => profileById(userId),
     getOwnership: (sessionId) => mutableOwnershipRows.find((row) => row.session_id === sessionId) || null,
+    getAppSession: (sessionId) => sessions.get(sessionId),
     getOpenCodeSession: (sessionId) => mutableOpenCodeSessions.find((session) => session.id === sessionId) || null,
     getGitHubAccount: (accountId) => githubAccountsById.get(accountId) || null,
     runtime,
@@ -766,14 +794,17 @@ const passwordLogin = async (harness, { role = 'developer', trustDevice = false 
 };
 
 const waitForAudit = async (harness, action, targetId = null) => {
-  for (let attempt = 0; attempt < 50; attempt += 1) {
-    const event = harness.auditEvents.find((candidate) => (
-      candidate.action === action && (!targetId || candidate.target_id === targetId)
-    ));
-    if (event) return event;
-    await new Promise((resolve) => setTimeout(resolve, 20));
+  try {
+    return await vi.waitFor(() => {
+      const event = harness.auditEvents.find((candidate) => (
+        candidate.action === action && (!targetId || candidate.target_id === targetId)
+      ));
+      if (!event) throw new Error(`audit ${action} not recorded`);
+      return event;
+    }, { timeout: 1000, interval: 2 });
+  } catch {
+    return null;
   }
-  return null;
 };
 
 describe('multi-user failure projection runtime', () => {
@@ -853,6 +884,9 @@ describe('multi-user failure projection runtime', () => {
   it('uses the authoritative managed worktree for paths and appends recovery after continuation and idle', async () => {
     const repositoryPath = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-active-worktree-'));
     temporaryDirectories.push(repositoryPath);
+    // An empty repository has no root commit, so project-ID discovery falls
+    // back to the managed ID instead of discovering the enclosing checkout.
+    await git(repositoryPath, 'init', '-b', 'main');
     const projectId = '43333333-3333-4333-8333-333333333333';
     const activeDirectory = path.join(getOpenCodeDataPath(), 'worktree', projectId, 'massine');
     const missingTarget = path.join(
@@ -1013,7 +1047,7 @@ describe('multi-user failure projection runtime', () => {
 });
 
 describe('multi-user authentication runtime', () => {
-  it('filters managed-task events by root-session ownership', async () => {
+  it.each(['devryan', 'openchamber'])('filters %s managed-task events by root-session ownership', async (eventPrefix) => {
     const repositoryPath = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-managed-task-events-'));
     temporaryDirectories.push(repositoryPath);
     const project = {
@@ -1054,7 +1088,7 @@ describe('multi-user authentication runtime', () => {
       directory: 'global',
     });
     const managedTaskEvent = (task) => ({
-      type: 'openchamber:managed-task',
+      type: `${eventPrefix}:managed-task`,
       properties: { owner: 'devryan', task },
     });
 
@@ -1083,7 +1117,7 @@ describe('multi-user authentication runtime', () => {
     ])).resolves.toEqual([true, true, true]);
 
     await expect(filterGlobalEvent({
-      type: 'openchamber:managed-task-removed',
+      type: `${eventPrefix}:managed-task-removed`,
       properties: {
         owner: 'devryan',
         taskId: 'dvr_task_removed',
@@ -1091,7 +1125,7 @@ describe('multi-user authentication runtime', () => {
       },
     })).resolves.toBe(true);
     await expect(filterGlobalEvent({
-      type: 'openchamber:managed-task-removed',
+      type: `${eventPrefix}:managed-task-removed`,
       properties: {
         owner: 'devryan',
         taskId: 'dvr_task_foreign_removed',
@@ -1102,7 +1136,7 @@ describe('multi-user authentication runtime', () => {
     const deniedSyntheticEvents = [
       managedTaskEvent({ taskId: 'dvr_task_foreign', rootSessionId: 'foreign-root', status: 'running' }),
       {
-        type: 'openchamber:managed-task',
+        type: `${eventPrefix}:managed-task`,
         sessionID: 'developer-root',
         properties: {
           owner: 'another-runtime',
@@ -1110,23 +1144,23 @@ describe('multi-user authentication runtime', () => {
         },
       },
       {
-        type: 'openchamber:managed-task',
+        type: `${eventPrefix}:managed-task`,
         sessionID: 'developer-root',
         properties: { owner: 'devryan', task: { taskId: 'dvr_task_missing_root', status: 'running' } },
       },
       {
-        type: 'openchamber:managed-task-removed',
+        type: `${eventPrefix}:managed-task-removed`,
         sessionID: 'developer-root',
         properties: { owner: 'devryan', taskId: 'dvr_task_missing_removed_root' },
       },
-      { type: 'openchamber:synthetic-event', properties: { owner: 'devryan' } },
+      { type: `${eventPrefix}:synthetic-event`, properties: { owner: 'devryan' } },
     ];
     for (const event of deniedSyntheticEvents) {
       await expect(filterGlobalEvent(event)).resolves.toBe(false);
     }
     await expect(harness.runtime.filterEventForPrincipal(principal, {
       payload: {
-        type: 'openchamber:managed-task',
+        type: `${eventPrefix}:managed-task`,
         properties: {
           owner: 'another-runtime',
           task: { taskId: 'dvr_task_assigned_directory', rootSessionId: 'developer-root', status: 'running' },
@@ -1135,7 +1169,7 @@ describe('multi-user authentication runtime', () => {
       directory: repositoryPath,
     })).resolves.toBe(false);
 
-    await expect(filterGlobalEvent({ type: 'openchamber:heartbeat' })).resolves.toBe(true);
+    await expect(filterGlobalEvent({ type: `${eventPrefix}:heartbeat` })).resolves.toBe(true);
     await expect(filterGlobalEvent({ type: 'server.connected' })).resolves.toBe(true);
     await expect(filterGlobalEvent({
       type: 'session.status',
@@ -1147,7 +1181,7 @@ describe('multi-user authentication runtime', () => {
     })).resolves.toBe(false);
   });
 
-  it('keeps one root session provisional while retrying ownership against the same id', async () => {
+  it.each([2])('keeps one root session provisional while retrying ownership against the same id (generation %s)', async (generation) => {
     const repositoryPath = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-session-create-'));
     temporaryDirectories.push(repositoryPath);
     const project = {
@@ -1179,6 +1213,7 @@ describe('multi-user authentication runtime', () => {
       (route, ...routeHandlers) => handlers.set(`${method.toUpperCase()} ${route}`, routeHandlers.at(-1)),
     ]));
     harness.runtime.registerRoutes(app, {
+      openCodeClient: domainClient(harness),
       buildOpenCodeUrl: (pathname) => `http://opencode.test${pathname}`,
       getOpenCodeAuthHeaders: () => ({}),
     });
@@ -1242,7 +1277,7 @@ describe('multi-user authentication runtime', () => {
     );
   });
 
-  it('fails and rolls back a fork whose ownership write stays unavailable instead of holding the request', async () => {
+  it.each([2])('fails and rolls back a fork whose ownership write stays unavailable instead of holding the request (generation %s)', async (generation) => {
     const repositoryPath = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-session-fork-'));
     temporaryDirectories.push(repositoryPath);
     const project = {
@@ -1265,7 +1300,8 @@ describe('multi-user authentication runtime', () => {
     const app = Object.fromEntries(['get', 'post', 'put', 'patch', 'delete', 'use'].map((method) => [
       method, (route, ...routeHandlers) => handlers.set(`${method.toUpperCase()} ${route}`, routeHandlers.at(-1)),
     ]));
-    harness.runtime.registerRoutes(app, { buildOpenCodeUrl: (pathname) => `http://opencode.test${pathname}`, getOpenCodeAuthHeaders: () => ({}) });
+    harness.runtime.registerRoutes(app, {
+      openCodeClient: domainClient(harness), buildOpenCodeUrl: (pathname) => `http://opencode.test${pathname}`, getOpenCodeAuthHeaders: () => ({}) });
     const principal = { scope: 'managed', id: USER_IDS.admin, role: 'admin', assignments: [{
       projectId: project.id, branchName: 'main', publicDirectory: '/projects/fork/main', repositoryPath, isDefault: true }] };
     const response = makeResponse();
@@ -1385,6 +1421,47 @@ describe('multi-user authentication runtime', () => {
     expect(JSON.stringify(recordCreationTiming.mock.calls)).not.toContain('PRIVATE TITLE');
   });
 
+  it.each([
+    ['revoked', 'ses-owned'], ['expired', 'ses-owned'],
+    ['revoked', undefined], ['expired', undefined],
+  ])('refuses a native caller %s during an awaited grant read (session %s)', async (invalidation, sessionID) => {
+    const repositoryPath = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-native-auth-race-'));
+    temporaryDirectories.push(repositoryPath);
+    const project = { id: '33333333-3333-4333-8333-333333333333', label: 'Native Auth Project',
+      repository_path: repositoryPath, remote_url: null, default_branch: 'main', status: 'active' };
+    const harness = await createHarness({
+      projects: [project],
+      accessRows: [{ user_id: USER_IDS.developer, project_id: project.id, is_default: true, github_account_id: null }],
+      branchRows: [{ user_id: USER_IDS.developer, project_id: project.id, branch_name: 'main',
+        workspace_path: repositoryPath, is_default: true }],
+      ownershipRows: [{ session_id: 'ses-owned', user_id: USER_IDS.developer, project_id: project.id,
+        branch_name: 'main', public_directory: repositoryPath, archived_at: null }],
+    });
+    const login = await passwordLogin(harness);
+    const principal = await harness.runtime.resolvePrincipal(makeRequest({ cookie: login.cookie }));
+    const grantReadStarted = deferred(), grantReadRelease = deferred();
+    const previousFetch = harness.fetchImpl.getMockImplementation();
+    let appSessionReads = 0;
+    harness.fetchImpl.mockImplementation(async (url, options) => {
+      if (String(url).includes('/rest/v1/app_sessions')) appSessionReads += 1;
+      const response = await previousFetch(url, options);
+      if (String(url).includes('/rest/v1/user_project_access')) {
+        grantReadStarted.resolve();
+        await grantReadRelease.promise;
+      }
+      return response;
+    });
+    const pending = harness.runtime.resolveCurrentNativeOperationContext({ principal, sessionID, directory: repositoryPath });
+    await grantReadStarted.promise;
+    expect(appSessionReads).toBe(1);
+    const appSession = harness.getAppSession(principal.appSessionId);
+    if (invalidation === 'revoked') appSession.revoked_at = new Date().toISOString();
+    else appSession.expires_at = new Date(0).toISOString();
+    grantReadRelease.resolve();
+    await expect(pending).resolves.toBeNull();
+    expect(appSessionReads).toBe(2);
+  });
+
   it('allows owned-plan routes for developers without opening generic filesystem access', async () => {
     const repositoryPath = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-plan-policy-'));
     const outsidePath = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-plan-policy-outside-'));
@@ -1474,12 +1551,46 @@ describe('multi-user authentication runtime', () => {
       directory: repositoryPath, projectId: project.id, branchName: 'main',
     });
     await expect(harness.runtime.resolveCurrentOwnedSessionPlanContext(principal, 'ses-foreign', repositoryPath)).resolves.toBeNull();
+    const nativeRequest = { principal, sessionID: 'ses-owned', directory: repositoryPath };
+    const nativeContext = { directory: repositoryPath, projectId: project.id, branchName: 'main' };
+    await expect(harness.runtime.resolveCurrentNativeOperationContext(nativeRequest)).resolves.toEqual(nativeContext);
+    await expect(harness.runtime.resolveCurrentNativeOperationContext({ ...nativeRequest, sessionID: undefined })).resolves.toEqual(nativeContext);
+    const policyFetch = harness.fetchImpl.getMockImplementation();
+    let providerPermission = { read: true, edit: true };
+    harness.fetchImpl.mockImplementation(async (url, options) => String(url).includes('/rest/v1/user_policies')
+      ? jsonResponse([{ user_id: principal.id, settings_permission_overrides: { providers: providerPermission } }])
+      : policyFetch(url, options));
+    const settingsRequest = { ...nativeRequest, settingsAccess: { page: 'providers', mode: 'edit' } };
+    await expect(harness.runtime.resolveCurrentNativeOperationContext(settingsRequest)).resolves.toEqual(nativeContext);
+    providerPermission = { read: true, edit: false };
+    await expect(harness.runtime.resolveCurrentNativeOperationContext(settingsRequest)).resolves.toBeNull();
+    await expect(harness.runtime.resolveCurrentNativeOperationContext({ ...settingsRequest, settingsAccess: { page: 'providers', mode: 'read' } })).resolves.toEqual(nativeContext);
+    providerPermission = { read: false, edit: false };
+    await expect(harness.runtime.resolveCurrentNativeOperationContext({ ...settingsRequest, settingsAccess: { page: 'providers', mode: 'read' } })).resolves.toBeNull();
+    // A settings revocation does not revoke independent chat access.
+    await expect(harness.runtime.resolveCurrentNativeOperationContext(nativeRequest)).resolves.toEqual(nativeContext);
+    await expect(harness.runtime.resolveCurrentNativeOperationContext({ ...settingsRequest, settingsAccess: { page: 'unknown', mode: 'edit' } })).resolves.toBeNull();
+    harness.fetchImpl.mockImplementation(policyFetch);
+    for (const sessionID of ['ses-foreign', 'ses-archived', 'ses-revoked', 'ses-missing']) {
+      await expect(harness.runtime.resolveCurrentNativeOperationContext({ ...nativeRequest, sessionID })).resolves.toBeNull();
+    }
+    await expect(harness.runtime.resolveCurrentNativeOperationContext({ ...nativeRequest, directory: outsidePath })).resolves.toBeNull();
+    await expect(harness.runtime.resolveCurrentNativeOperationContext({ ...nativeRequest,
+      principal: { ...principal, appSessionId: crypto.randomUUID() } })).resolves.toBeNull();
+    const appSession = harness.getAppSession(principal.appSessionId), expiresAt = appSession.expires_at;
+    appSession.expires_at = new Date(0).toISOString();
+    await expect(harness.runtime.resolveCurrentNativeOperationContext(nativeRequest)).resolves.toBeNull();
+    appSession.expires_at = expiresAt; appSession.revoked_at = new Date().toISOString();
+    await expect(harness.runtime.resolveCurrentNativeOperationContext(nativeRequest)).resolves.toBeNull();
+    appSession.revoked_at = null;
+    await expect(harness.runtime.resolveCurrentNativeOperationContext(nativeRequest)).resolves.toEqual(nativeContext);
     const previousFetch = harness.fetchImpl.getMockImplementation();
     harness.fetchImpl.mockImplementation(async (url, options) => String(url).includes('/rest/v1/user_project_access')
       ? jsonResponse([]) : previousFetch(url, options));
     // The request's earlier assignments remain populated after grants change.
     expect(principal.assignments).not.toEqual([]);
     await expect(harness.runtime.resolveCurrentOwnedSessionPlanContext(principal, 'ses-owned', repositoryPath)).resolves.toBeNull();
+    await expect(harness.runtime.resolveCurrentNativeOperationContext(nativeRequest)).resolves.toBeNull();
     harness.fetchImpl.mockImplementation(previousFetch);
 
     const allowedResponse = makeResponse();
@@ -1636,7 +1747,46 @@ describe('multi-user authentication runtime', () => {
     expect(adminMutationResponse.statusCode).toBe(200);
   });
 
-  it('denies every Bot route family when the per-user Bots capability is disabled', async () => {
+  it('keeps provider account listing and credential switch, rename and removal behind Providers settings access', async () => {
+    const harness = await createHarness();
+    const developerLogin = await passwordLogin(harness);
+    for (const request of [
+      { method: 'GET', path: '/provider/openai/accounts' },
+      { method: 'POST', path: '/credential/cred_1/activate' },
+      { method: 'PATCH', path: '/credential/cred_1' },
+      { method: 'DELETE', path: '/credential/cred_1' },
+    ]) {
+      const response = makeResponse();
+      const next = vi.fn();
+      await harness.runtime.authController.requireAuth(
+        makeRequest({ cookie: developerLogin.cookie, method: request.method, path: request.path, csrf: request.method !== 'GET' }),
+        response,
+        next,
+      );
+      expect(next, `${request.method} ${request.path}`).not.toHaveBeenCalled();
+      expect(response.statusCode, `${request.method} ${request.path}`).toBe(403);
+      expect(response.payload.error, `${request.method} ${request.path}`).toBe('Read access to providers settings is disabled by policy');
+    }
+
+    const adminHarness = await createHarness({ signedInRole: 'admin' });
+    const adminLogin = await passwordLogin(adminHarness, { role: 'admin' });
+    for (const request of [
+      { method: 'GET', path: '/provider/openai/accounts' },
+      { method: 'POST', path: '/credential/cred_1/activate' },
+    ]) {
+      const response = makeResponse();
+      const next = vi.fn(() => response.json({ ok: true }));
+      await adminHarness.runtime.authController.requireAuth(
+        makeRequest({ cookie: adminLogin.cookie, method: request.method, path: request.path, csrf: request.method !== 'GET' }),
+        response,
+        next,
+      );
+      expect(next, `${request.method} ${request.path}`).toHaveBeenCalledOnce();
+      expect(response.statusCode, `${request.method} ${request.path}`).toBe(200);
+    }
+  });
+
+  it('ignores a stored capability of the retired Bots feature', async () => {
     const harness = await createHarness({
       userPolicies: [{
         user_id: USER_IDS.developer,
@@ -1648,24 +1798,11 @@ describe('multi-user authentication runtime', () => {
     });
     const login = await passwordLogin(harness);
 
-    for (const path of [
-      '/bots/capabilities',
-      '/bots/events',
-      '/bot-actions/pending',
-      '/bot-channels/channel-1',
-      '/bot-runs/run-1',
-    ]) {
+    for (const path of ['/bots/capabilities', '/bot-runs/run-1']) {
       const response = makeResponse();
-      await harness.runtime.authController.requireAuth(
-        makeRequest({ cookie: login.cookie, path }),
-        response,
-        vi.fn(),
-      );
-      expect(response.statusCode, path).toBe(403);
-      expect(response.payload, path).toMatchObject({
-        error: 'Bots access is disabled by policy',
-        code: 'bots_access_disabled',
-      });
+      const passed = vi.fn(() => response.json({ ok: true }));
+      await harness.runtime.authController.requireAuth(makeRequest({ cookie: login.cookie, path }), response, passed);
+      expect(passed, `${path} has no Bot policy gate`).toHaveBeenCalledOnce();
     }
 
     const agentsResponse = makeResponse();
@@ -1712,7 +1849,7 @@ describe('multi-user authentication runtime', () => {
     expect(deniedResponse.payload.error).toBe('Host configuration is restricted to administrators');
   });
 
-  it('filters global session pages and permits only owner lifecycle mutations for both roles', async () => {
+  it.each([2])('filters global session pages and permits only owner lifecycle mutations for both roles (generation %s)', async (generation) => {
     const lifecycleRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-lifecycle-'));
     temporaryDirectories.push(lifecycleRoot);
     const adminDirectory = path.join(lifecycleRoot, 'admin');
@@ -1775,6 +1912,7 @@ describe('multi-user authentication runtime', () => {
       (route, ...routeHandlers) => handlers.set(`${method.toUpperCase()} ${route}`, routeHandlers.at(-1)),
     ]));
     harness.runtime.registerRoutes(app, {
+      openCodeClient: domainClient(harness),
       buildOpenCodeUrl: (pathname) => `http://opencode.test${pathname}`,
       getOpenCodeAuthHeaders: () => ({}),
     });
@@ -1996,13 +2134,9 @@ describe('multi-user authentication runtime', () => {
       params: { sessionID: 'partial-delete' },
       principal: admin,
     }, recoveryResponse, vi.fn());
-    for (let attempt = 0; attempt < 50; attempt += 1) {
-      const deleteAudits = harness.auditEvents.filter((event) => (
-        event.action === 'session.deleted' && event.target_id === 'partial-delete'
-      ));
-      if (deleteAudits.length >= 2) break;
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    }
+    await vi.waitFor(() => expect(harness.auditEvents.filter((event) => (
+      event.action === 'session.deleted' && event.target_id === 'partial-delete'
+    )).length).toBeGreaterThanOrEqual(2), { timeout: 1000, interval: 2 }).catch(() => {});
     const recoveryAudit = harness.auditEvents.filter((event) => (
       event.action === 'session.deleted' && event.target_id === 'partial-delete'
     )).at(-1);
@@ -2113,13 +2247,9 @@ describe('multi-user authentication runtime', () => {
     });
     expect(harness.openCodeDeleteRequests).toHaveLength(2);
     expect(harness.analyticsRetentionLocks.has(USER_IDS.developer)).toBe(true);
-    for (let attempt = 0; attempt < 50; attempt += 1) {
-      const replayAudits = harness.auditEvents.filter((event) => (
-        event.action === 'session.deleted' && event.target_id === 'current-archived'
-      ));
-      if (replayAudits.length >= 2) break;
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    }
+    await vi.waitFor(() => expect(harness.auditEvents.filter((event) => (
+      event.action === 'session.deleted' && event.target_id === 'current-archived'
+    )).length).toBeGreaterThanOrEqual(2), { timeout: 1000, interval: 2 }).catch(() => {});
     expect(harness.auditEvents.filter((event) => (
       event.action === 'session.deleted' && event.target_id === 'current-archived'
     )).at(-1)?.metadata).toEqual(expect.objectContaining({
@@ -3252,6 +3382,7 @@ describe('multi-user authentication runtime', () => {
       readSettingsFromDiskMigrated: async () => ({
         defaultAgent: 'Orchestrator',
         defaultPlanMode: true,
+        helperModelSelection: { providerID: 'opencode', modelID: 'deepseek-v4.1-flash', revision: 'host' },
         themeId: 'host-theme',
       }),
       listConfigAgents: () => [{
@@ -3345,6 +3476,20 @@ describe('multi-user authentication runtime', () => {
     }, resetFieldResponse);
     expect(resetFieldResponse.payload.defaultAgent).toBe('Orchestrator');
     expect(resetFieldResponse.payload.multiUser.settingsOverrideKeys).not.toContain('defaultAgent');
+
+    const helperModelSelection = { providerID: 'anthropic', modelID: 'personal-helper', revision: 'personal-revision' };
+    const helperResponse = makeResponse();
+    await handlers.get('PUT /api/config/settings')({ body: { helperModelSelection }, principal: refreshed }, helperResponse, vi.fn());
+    expect(helperResponse.statusCode).toBe(200);
+    expect(harness.getUserPolicy(USER_IDS.developer).settings_overrides.helperModelSelection).toEqual(helperModelSelection);
+    expect(helperResponse.payload.helperModelSelection).toEqual(helperModelSelection);
+    expect(helperResponse.payload.multiUser.settingsOverrideKeys).toContain('helperModelSelection');
+    const resetHelperResponse = makeResponse();
+    await handlers.get('DELETE /api/config/settings/overrides/:field')({ params: { field: 'helperModelSelection' }, principal: refreshed }, resetHelperResponse);
+    expect(resetHelperResponse.statusCode).toBe(200);
+    expect(resetHelperResponse.payload.helperModelSelection).toEqual({ providerID: 'opencode', modelID: 'deepseek-v4.1-flash', revision: 'host' });
+    expect(resetHelperResponse.payload.multiUser.settingsOverrideKeys).not.toContain('helperModelSelection');
+    expect(harness.getUserPolicy(USER_IDS.developer).settings_overrides.agentModelSelections.Builder.modelId).toBe('claude-sonnet-4-6');
 
     const missingHostSettingsResponse = makeResponse();
     await put({
@@ -4186,6 +4331,7 @@ describe('multi-user authentication runtime', () => {
     for (const request of [
       makeRequest({ cookie: login.cookie, path: '/admin/users' }),
       makeRequest({ cookie: login.cookie, method: 'POST', path: '/admin/users', csrf: true }),
+      makeRequest({ cookie: login.cookie, method: 'POST', path: '/credential/cred_1/activate', csrf: true }),
     ]) {
       const response = makeResponse();
       const next = vi.fn();
@@ -4397,9 +4543,7 @@ describe('multi-user authentication runtime', () => {
       const accepted = makeResponse();
       await promptHandler(request, accepted, () => accepted.status(202).json({ accepted: true }));
     }
-    for (let attempt = 0; attempt < 50 && harness.auditEvents.filter((event) => event.action === 'prompt.sent').length < 1; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
+    await vi.waitFor(() => expect(harness.auditEvents.filter((event) => event.action === 'prompt.sent').length).toBeGreaterThanOrEqual(1), { timeout: 500, interval: 2 }).catch(() => {});
     const prompts = harness.auditEvents.filter((event) => event.action === 'prompt.sent');
     expect(prompts).toHaveLength(1);
     expect(new Set(prompts.map((event) => event.event_id)).size).toBe(1);
@@ -4691,39 +4835,11 @@ describe('multi-user authentication runtime', () => {
     expect(JSON.stringify(harness.auditEvents)).not.toContain('must be rejected');
   });
 
-  it('composes the focused Bots runtime with Electron-only host capabilities', async () => {
-    const getStatus = vi.fn(async () => ({
-      ok: true,
-      state: 'healthy',
-      code: null,
-      issues: [],
-    }));
-    // The Bot catalog is local and owned by Electron; Supabase is never a Bot
-    // store. An installation that is not set up reports that, not a cloud error.
-    const catalog = {
-      getContext: vi.fn(async () => { throw Object.assign(new Error('not ready'), { code: 'bot_database_unavailable' }); }),
-      ensure: vi.fn(async () => { throw Object.assign(new Error('setup'), { code: 'bot_runtime_setup_required' }); }),
-    };
-    const harness = await createHarness({
-      botHost: { owner: 'electron', getStatus, catalog },
-      encryption: { getKey: () => Buffer.alloc(32, 0x45) },
-    });
-    await harness.runtime.botsRuntime.start();
+  it('composes no Bot runtime, owner or routes', async () => {
+    const harness = await createHarness();
     const handlers = registerAdminRoutes(harness);
-    const response = makeResponse();
-
-    await handlers.get('GET /api/bots/capabilities')({}, response);
-
-    expect(harness.runtime.botsRuntime.enabled).toBe(true);
-    expect(response.payload).toMatchObject({
-      available: false,
-      catalogAvailable: false,
-      database: { state: 'setup_required', code: 'bot_runtime_setup_required' },
-      owner: 'electron',
-      canManageRuntime: true,
-    });
-    expect(catalog.ensure).toHaveBeenCalled();
-    expect(harness.runtime.botOwner.id).toMatch(/^[0-9a-f-]{36}$/);
-    expect(getStatus).toHaveBeenCalledTimes(1);
+    expect([...handlers.keys()].filter(key => / \/api\/bot/.test(key))).toEqual([]);
+    expect(harness.runtime).not.toHaveProperty('botsRuntime');
+    expect(harness.runtime).not.toHaveProperty('botOwner');
   });
 });

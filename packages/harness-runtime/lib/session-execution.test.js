@@ -5,17 +5,62 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { executionSocketDirectory, NODE_SPAWN_PRELOAD, ownedPrivateDirectory, prepareSessionExecution, removeExecutionSocketDirectory,
-  sessionExecutionProfile, sweepExecutionSocketDirectories, sweepSessionTemporaryDirectories, verifySessionExecutionLauncher } from './session-execution.js';
+  sessionExecutionProfile, windowsSessionExecutionProfile, parseWindowsExecutionProcessIdentity, readSessionExecutionReceipt, sweepExecutionSocketDirectories, sweepSessionTemporaryDirectories, startReadOnlySessionExecution, verifySessionExecutionLauncher } from './session-execution.js';
 
 const roots = [], leases = [];
+test('Plan execution disables network grants and cannot restore writable input roots', () => {
+  const paths = { viewDirectory: '/fixture/view', scratchDirectory: '/fixture/scratch', socketDirectory: '/fixture/sockets' };
+  const profile = sessionExecutionProfile({ ...paths, readOnly: true });
+  expect(profile).toContain('(deny network*)');
+  expect(profile).not.toContain('(allow network-outbound');
+  expect(sessionExecutionProfile(paths)).not.toContain('(deny network*)');
+  expect(() => sessionExecutionProfile({ ...paths, readOnly: true, writableDirectories: ['/fixture/project'] })).toThrow('invalid_execution_path');
+});
+test('Windows cancellation identity refuses recycled or widened process observations', () => {
+  const value = { protocol: 'devryan.windows-process-identity/1', pid: 12, startIdentity: 'win32:0123456789abcdef', active: true, inJob: true };
+  expect(parseWindowsExecutionProcessIdentity(JSON.stringify(value), 12)).toEqual(value);
+  for (const change of [{ pid: 13 }, { startIdentity: '12' }, { active: 'true' }, { extra: true }]) {
+    expect(() => parseWindowsExecutionProcessIdentity(JSON.stringify({ ...value, ...change }), 12)).toThrow('mutation_termination_unconfirmed');
+  }
+});
 afterEach(async () => {
-  await Promise.all(leases.splice(0).map((lease) => removeExecutionSocketDirectory(lease)));
+  for (const lease of leases.splice(0)) await removeExecutionSocketDirectory(lease);
   await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));
 });
 const prepareTracked = (root, viewDirectory) => {
   const lease = { viewDirectory }; leases.push(lease);
   return prepareSessionExecution({ launcher: path.join(root, 'launcher'), lease });
 };
+
+test('termination receipt refuses linked, widened and malformed evidence through a held file', async () => {
+  if (process.platform === 'win32') return; // Native ACL/handle cases run in the Windows SDK inventory.
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-receipt-')); roots.push(root);
+  const lease = { viewDirectory: path.join(root, 'view') }, file = path.join(root, 'termination.json');
+  const valid = { terminated: true, confined: true, cancelled: false, exitCode: 0 };
+  await fs.writeFile(file, JSON.stringify(valid), { mode: 0o600 });
+  expect(await readSessionExecutionReceipt(lease)).toEqual(valid);
+  for (const changed of [{ terminated: false }, { exitCode: -1 }, { exitCode: 0x100000000 }, { extra: 'unreviewed' }]) {
+    await fs.writeFile(file, JSON.stringify({ ...valid, ...changed }));
+    await expect(readSessionExecutionReceipt(lease)).rejects.toMatchObject({ code: 'mutation_termination_unconfirmed' });
+  }
+  await fs.writeFile(file, JSON.stringify(valid)); await fs.chmod(file, 0o644);
+  await expect(readSessionExecutionReceipt(lease)).rejects.toMatchObject({ code: 'mutation_termination_unconfirmed' });
+  await fs.chmod(file, 0o600); await fs.link(file, path.join(root, 'linked'));
+  await expect(readSessionExecutionReceipt(lease)).rejects.toMatchObject({ code: 'mutation_termination_unconfirmed' });
+  await fs.unlink(file); await fs.symlink(path.join(root, 'linked'), file);
+  await expect(readSessionExecutionReceipt(lease)).rejects.toBeDefined();
+});
+
+test('Windows policy binds canonical roots without widening the writable scope over its runtime', () => {
+  const roots = { viewDirectory: 'C:\\Private-Δ\\one\\worktree', scratchDirectory: 'C:\\Private-Δ\\one\\scratch', auxiliaryDirectory: 'C:\\Private-Δ\\cache' };
+  const bytes = windowsSessionExecutionProfile(roots);
+  expect(bytes.toString('utf16le').split('\0')).toEqual(['DevRyan-Windows-LPAC-1', ...Object.values(roots), '']);
+  for (const update of [{ auxiliaryDirectory: 'C:\\Private-Δ' }, { auxiliaryDirectory: 'C:\\Private-Δ\\one' },
+    { scratchDirectory: 'C:\\Private-Δ\\one' }, { viewDirectory: 'C:\\Private-Δ\\one\\..\\worktree' },
+    { auxiliaryDirectory: '\\\\server\\share' }, { viewDirectory: 'relative' }, { auxiliaryDirectory: 'C:\\bad\npath' }]) {
+    expect(() => windowsSessionExecutionProfile({ ...roots, ...update })).toThrow('invalid_execution_path');
+  }
+});
 
 test('all confined workers use their scratch home and temporary paths, including QA-preloaded providers', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-execution-home-')); roots.push(root);
@@ -294,4 +339,60 @@ darwinTest('the sweep removes only stale hash-named socket directories', async (
   await fs.utimes(path.join(root, '0123abcd'), old, old); await fs.utimes(path.join(root, 'not-a-lease'), old, old);
   expect(await sweepExecutionSocketDirectories({ root })).toBe(1);
   expect((await fs.readdir(root)).sort()).toEqual(['fedc9876', 'not-a-lease']);
+});
+
+test('explicit lease-local socket policy survives restart and rejects forged cleanup paths', async () => {
+  const root = await fs.realpath(await fs.mkdtemp(path.join(process.env.TMPDIR, 'native-private-socket-'))); roots.push(root);
+  const viewDirectory = path.join(root, 'worktree'); await fs.mkdir(viewDirectory, { mode: 0o700 });
+  const lease = { viewDirectory }, socketDirectory = path.join(root, 'scratch', 's');
+  const prepared = await prepareSessionExecution({ launcher: path.join(root, 'launcher'), lease, socketDirectory, workerBrowsers: false });
+  expect(prepared.socketDirectory).toBe(socketDirectory);
+  expect(await fs.readFile(prepared.profile, 'utf8')).toContain(`(remote unix-socket (subpath ${JSON.stringify(socketDirectory)}))`);
+  expect(JSON.parse(await fs.readFile(path.join(root, 'no-execution-socket.json'), 'utf8'))).toEqual({ version: 1, directory: socketDirectory });
+  await fs.writeFile(path.join(socketDirectory, 'owned-daemon-state'), 'owned');
+  await removeExecutionSocketDirectory(lease); // No constructor option survives a restart.
+  expect(await fs.lstat(socketDirectory).catch(error => error.code)).toBe('ENOENT');
+  await removeExecutionSocketDirectory(lease); // Lost cleanup ACK is idempotent.
+  const outside = await fs.realpath(await fs.mkdtemp(path.join(process.env.TMPDIR, 'foreign-socket-'))); roots.push(outside);
+  await fs.writeFile(path.join(outside, 'preserve'), 'foreign');
+  const policy = path.join(root, 'no-execution-socket.json');
+  await fs.writeFile(policy, JSON.stringify({ version: 1, directory: outside }));
+  await expect(removeExecutionSocketDirectory(lease)).rejects.toMatchObject({ code: 'invalid_execution_path' });
+  expect(await fs.readFile(path.join(outside, 'preserve'), 'utf8')).toBe('foreign');
+  await fs.symlink(outside, socketDirectory);
+  await fs.writeFile(policy, JSON.stringify({ version: 1, directory: socketDirectory }));
+  await expect(removeExecutionSocketDirectory(lease)).rejects.toMatchObject({ code: 'invalid_execution_path' });
+  expect(await fs.readFile(path.join(outside, 'preserve'), 'utf8')).toBe('foreign');
+  await expect(prepareSessionExecution({ launcher: path.join(root, 'launcher'), lease, socketDirectory: outside, workerBrowsers: false }))
+    .rejects.toMatchObject({ code: 'invalid_execution_path' });
+});
+
+test('Windows read-only storage refuses missing authority and propagates private view refusal before launching', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-provider-authority-')); roots.push(root);
+  const launcher = path.join(root, 'fixture-launcher'), storage = path.join(root, 'storage');
+  const bytes = Buffer.from('disposable unit identity; never executed'); await fs.writeFile(launcher, bytes);
+  await fs.writeFile(`${launcher}.json`, JSON.stringify({ version: 1, policy: 3, acceptance: true, platform: 'win32', arch: process.arch,
+    binary: path.basename(launcher), sha256: createHash('sha256').update(bytes).digest('hex') }));
+  const descriptor = Object.getOwnPropertyDescriptor(process, 'platform');
+  const calls = [], refusal = Object.assign(new Error('private view refused'), { code: 'private_windows_file_unverified' });
+  try {
+    Object.defineProperty(process, 'platform', { ...descriptor, value: 'win32' });
+    await expect(startReadOnlySessionExecution({ launcher, storage, command: launcher })).rejects
+      .toMatchObject({ code: 'private_windows_storage_authority_unavailable' });
+    await expect(fs.access(storage)).rejects.toMatchObject({ code: 'ENOENT' });
+    const windowsOwner = {
+      ensureDirectory: async directory => { calls.push(['ensure', directory]); await fs.mkdir(directory); },
+      createDirectory: async directory => {
+        calls.push(['create', directory]);
+        if (path.basename(directory) === 'worktree') throw refusal;
+        await fs.mkdir(directory);
+      },
+    };
+    await expect(startReadOnlySessionExecution({ launcher, storage, windowsOwner, command: launcher })).rejects.toBe(refusal);
+    expect(calls.map(([operation]) => operation)).toEqual(['ensure', 'create', 'create']);
+    expect(calls[0][1]).toBe(storage);
+    expect(path.dirname(calls[1][1])).toBe(await fs.realpath(storage));
+    expect(calls[2][1]).toBe(path.join(calls[1][1], 'worktree'));
+    expect(await fs.readdir(storage)).toEqual([]); // Failed private view leaves no execution root.
+  } finally { Object.defineProperty(process, 'platform', descriptor); }
 });

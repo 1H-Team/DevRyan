@@ -1,5 +1,9 @@
 #!/usr/bin/env node
 
+// First: adopt OPENCHAMBER_* aliases before any module reads its environment.
+import '@devryan/shared-runtime/node/adopt-legacy-environment.js';
+import { setDevRyanEnv } from '@devryan/shared-runtime/lib/legacy-environment.js';
+import { migrateDataRootAtStartup } from '../server/lib/opencode/runtime-host/data-root-startup.js';
 import fs from 'fs';
 import net from 'net';
 import os from 'os';
@@ -7,7 +11,9 @@ import path from 'path';
 import crypto from 'crypto';
 import { spawn, spawnSync } from 'child_process';
 import { fileURLToPath, pathToFileURL } from 'url';
+import {runRuntimeBundleCommand} from './runtime-bundle-command.js';
 import { isModuleCliExecution } from './cli-entry.js';
+import { daemonRecordPaths, daemonRecordPort, daemonLogPath } from './cli-records.js';
 import { prepareLocalOwnerEnrollment } from '../server/lib/multi-user/local-owner-bootstrap.js';
 import { createOwnerAuthenticatedTunnelFetch } from './tunnel-owner-auth.js';
 import { cloudflareTunnelProviderCapabilities } from '../server/lib/tunnels/providers/cloudflare.js';
@@ -30,6 +36,7 @@ import {
   printJson,
   logStatus, formatProviderWithIcon as clackFormatProviderWithIcon,
 } from './cli-output.js';
+import { resolveDevRyanDataRoot } from '@devryan/shared-runtime/node/data-root.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -134,8 +141,8 @@ function isUnsafeBrowserPort(port) {
 }
 
 function resolveApiHost() {
-  const configured = typeof process.env.OPENCHAMBER_HOST === 'string'
-    ? process.env.OPENCHAMBER_HOST.trim()
+  const configured = typeof process.env.DEVRYAN_HOST === 'string'
+    ? process.env.DEVRYAN_HOST.trim()
     : '';
 
   if (!configured) {
@@ -313,7 +320,7 @@ function buildTunnelStartReplayCommand({
   tokenViaStdin,
   tokenFileProvided,
 }) {
-  const parts = ['openchamber', 'tunnel', 'start'];
+  const parts = ['devryan', 'tunnel', 'start'];
   if (Number.isFinite(port) && port > 0) {
     parts.push('--port', String(port));
   }
@@ -361,7 +368,7 @@ function buildTunnelStartReplayCommand({
 
 function buildTunnelProfileAddCommand({ provider, hostname, originPort }) {
   const parts = [
-    'openchamber',
+    'devryan',
     'tunnel',
     'profile',
     'add',
@@ -536,12 +543,12 @@ function hasUiPasswordConfigured(password) {
 
 // Refuse to launch a network-exposed (non-loopback) server without UI auth,
 // unless the operator explicitly accepts the risk via
-// OPENCHAMBER_ALLOW_UNAUTHENTICATED_LAN=true. Closes the accidental
-// `--host 0.0.0.0` (or OPENCHAMBER_HOST) unauthenticated-LAN exposure.
+// DEVRYAN_ALLOW_UNAUTHENTICATED_LAN=true. Closes the accidental
+// `--host 0.0.0.0` (or DEVRYAN_HOST) unauthenticated-LAN exposure.
 function assertAuthenticatedNetworkExposure({ host, uiPassword }) {
   const configured = typeof host === 'string' && host.trim().length > 0
     ? host.trim()
-    : (typeof process.env.OPENCHAMBER_HOST === 'string' ? process.env.OPENCHAMBER_HOST.trim() : '');
+    : (typeof process.env.DEVRYAN_HOST === 'string' ? process.env.DEVRYAN_HOST.trim() : '');
   const bindHost = configured || '127.0.0.1';
   if (hasUiPasswordConfigured(uiPassword)) {
     return;
@@ -626,7 +633,7 @@ function parseArgs(argv = process.argv.slice(2)) {
   const options = {
     port: DEFAULT_PORT,
     host: undefined,
-    uiPassword: process.env.OPENCHAMBER_UI_PASSWORD || undefined,
+    uiPassword: process.env.DEVRYAN_UI_PASSWORD || undefined,
     json: false,
     all: false,
     follow: true,
@@ -658,6 +665,7 @@ function parseArgs(argv = process.argv.slice(2)) {
 
   const removedFlagErrors = [];
   const positional = [];
+  const optionNames=[];
   let helpRequested = false;
   let versionRequested = false;
 
@@ -681,7 +689,11 @@ function parseArgs(argv = process.argv.slice(2)) {
     }
 
     const { name, inlineValue, long } = parsedToken;
+    optionNames.push(name);
     switch (name) {
+      case 'expected-revision': {
+        const consumed=consumeValue(i,inlineValue);i=consumed.nextIndex;options.expectedRevision=consumed.value;break;
+      }
       case 'port':
       case 'p': {
         const { value: consumedValue, nextIndex: consumedIndex } = consumeValue(i, inlineValue);
@@ -876,10 +888,10 @@ function parseArgs(argv = process.argv.slice(2)) {
         // may still pass this when starting a remote server.
         break;
       case 'try-cf-tunnel':
-        removedFlagErrors.push('`--try-cf-tunnel` was removed. Use: openchamber tunnel start --provider cloudflare --mode quick');
+        removedFlagErrors.push('`--try-cf-tunnel` was removed. Use: devryan tunnel start --provider cloudflare --mode quick');
         break;
       case 'tunnel-qr':
-        removedFlagErrors.push('`--tunnel-qr` was removed. Use: openchamber tunnel start ... --qr');
+        removedFlagErrors.push('`--tunnel-qr` was removed. Use: devryan tunnel start ... --qr');
         break;
       case 'tunnel-password-url':
         removedFlagErrors.push('`--tunnel-password-url` was removed. Use UI password auth directly after tunnel start.');
@@ -890,7 +902,7 @@ function parseArgs(argv = process.argv.slice(2)) {
       case 'tunnel-token':
       case 'tunnel-hostname':
       case 'tunnel':
-        removedFlagErrors.push(`\`--${name}\` was removed from top-level serve flow. Use: openchamber tunnel start ...`);
+        removedFlagErrors.push(`\`--${name}\` was removed from top-level serve flow. Use: devryan tunnel start ...`);
         break;
       default:
         if (!long && name.length === 1) {
@@ -903,11 +915,14 @@ function parseArgs(argv = process.argv.slice(2)) {
   }
 
   const command = positional[0] || 'serve';
+  if(command!=='runtime'&&optionNames.includes('expected-revision'))removedFlagErrors.push('`--expected-revision` requires: devryan runtime bundle resume');
   const subcommand = command === 'tunnel' ? (positional[1] || 'help') : null;
   const tunnelAction = command === 'tunnel' ? (positional[2] || null) : null;
 
   return {
     command,
+    positionals:positional,
+    optionNames,
     subcommand,
     tunnelAction,
     options,
@@ -922,7 +937,8 @@ function showHelp() {
  DevRyan - Web interface for the OpenCode AI coding agent
 
 USAGE:
-  openchamber [COMMAND] [OPTIONS]
+  devryan [COMMAND] [OPTIONS]
+  (openchamber is an accepted alias for devryan)
 
 COMMANDS:
   serve          Start the web server (daemon default)
@@ -930,6 +946,7 @@ COMMANDS:
   restart        Stop and start the server
   status         Show server status
   tunnel         Tunnel lifecycle commands
+  runtime bundle resume --expected-revision N   Resume the retained runtime after blocked rollback
   enroll-owner   Create a two-minute local-owner enrollment link (--port)
   logs           Tail DevRyan logs
   update         Check for and install updates
@@ -944,20 +961,20 @@ OPTIONS:
   -v, --version           Show version
 
 ENVIRONMENT:
-  OPENCHAMBER_HOST             Bind address (e.g. 0.0.0.0 for all interfaces)
-  OPENCHAMBER_UI_PASSWORD      Alternative to --ui-password flag
-  OPENCHAMBER_DATA_DIR         Override DevRyan data directory
-  OPENCODE_HOST               External OpenCode server base URL, e.g. http://hostname:4096
-  OPENCODE_PORT               Port of external OpenCode server to connect to
-  OPENCODE_SKIP_START          Skip starting OpenCode, use external server
-  OPENCHAMBER_OPENCODE_HOSTNAME  Bind hostname for managed OpenCode server (default: 127.0.0.1)
+  DEVRYAN_HOST             Bind address (e.g. 0.0.0.0 for all interfaces)
+  DEVRYAN_UI_PASSWORD      Alternative to --ui-password flag
+  DEVRYAN_DATA_DIR         Override DevRyan data directory
+
+RUNTIME:
+  DevRyan serves its bundled native OpenCode 2.1.4 runtime.
+  Update DevRyan to update the bundled runtime.
 
 EXAMPLES:
-  openchamber                    # Start in daemon mode on default port 3000 (or free port)
-  openchamber --port 8080        # Start on port 8080 (daemon)
-  openchamber serve --foreground # Start in foreground (for systemd Type=simple)
-  openchamber tunnel help        # Show tunnel lifecycle help
-  openchamber logs               # Follow logs for latest running instance
+  devryan                    # Start in daemon mode on default port 3000 (or free port)
+  devryan --port 8080        # Start on port 8080 (daemon)
+  devryan serve --foreground # Start in foreground (for systemd Type=simple)
+  devryan tunnel help        # Show tunnel lifecycle help
+  devryan logs               # Follow logs for latest running instance
 `);
 }
 
@@ -966,7 +983,7 @@ function showTunnelHelp() {
  Tunnel Lifecycle Commands
 
 USAGE:
-  openchamber tunnel <SUBCOMMAND> [OPTIONS]
+  devryan tunnel <SUBCOMMAND> [OPTIONS]
 
 SUBCOMMANDS:
   help        Show this tunnel help
@@ -1011,31 +1028,31 @@ BEHAVIOR NOTES:
   - Connect links are one-time; generating a new link revokes the previous unused link.
 
 PROFILE USAGE:
-  openchamber tunnel profile list [--provider <id>] [--json]
-  openchamber tunnel profile show --name <name> [--provider <id>] [--json]
-  openchamber tunnel profile add --provider <id> --mode managed-remote --name <name> --hostname <host> --origin-port <port> --token <token> [--force] [--json]
-  openchamber tunnel profile add --provider <id> --mode managed-remote --name <name> --hostname <host> --origin-port <port> --token-file <path> [--force] [--json]
-  openchamber tunnel profile remove --name <name> [--provider <id>] [--json]
+  devryan tunnel profile list [--provider <id>] [--json]
+  devryan tunnel profile show --name <name> [--provider <id>] [--json]
+  devryan tunnel profile add --provider <id> --mode managed-remote --name <name> --hostname <host> --origin-port <port> --token <token> [--force] [--json]
+  devryan tunnel profile add --provider <id> --mode managed-remote --name <name> --hostname <host> --origin-port <port> --token-file <path> [--force] [--json]
+  devryan tunnel profile remove --name <name> [--provider <id>] [--json]
 
 SHELL COMPLETION:
-  openchamber tunnel completion bash   Generate Bash completion script
-  openchamber tunnel completion zsh    Generate Zsh completion script
-  openchamber tunnel completion fish   Generate Fish completion script
+  devryan tunnel completion bash   Generate Bash completion script
+  devryan tunnel completion zsh    Generate Zsh completion script
+  devryan tunnel completion fish   Generate Fish completion script
 
 EXAMPLES:
-  openchamber tunnel providers
-  openchamber tunnel ready --provider cloudflare
-  openchamber tunnel doctor --provider cloudflare
-  openchamber tunnel status
-  openchamber tunnel start --qr
-  openchamber tunnel start --profile prod-main
-  openchamber tunnel start --provider cloudflare --mode managed-remote --token-file ~/.secrets/cf-token --hostname app.example.com --origin-port 3000
-  openchamber tunnel start --provider cloudflare --mode managed-local --config ~/.cloudflared/config.yml
-  openchamber tunnel start --dry-run --provider cloudflare --mode managed-remote --token-file ~/.secrets/cf-token --hostname app.example.com --origin-port 3000
-  echo "$TOKEN" | openchamber tunnel profile add --provider cloudflare --mode managed-remote --name prod-main --hostname app.example.com --origin-port 3000 --token-stdin
-  openchamber tunnel profile list --provider cloudflare
-  openchamber tunnel profile list --json --show-secrets
-  openchamber tunnel stop --port 3000
+  devryan tunnel providers
+  devryan tunnel ready --provider cloudflare
+  devryan tunnel doctor --provider cloudflare
+  devryan tunnel status
+  devryan tunnel start --qr
+  devryan tunnel start --profile prod-main
+  devryan tunnel start --provider cloudflare --mode managed-remote --token-file ~/.secrets/cf-token --hostname app.example.com --origin-port 3000
+  devryan tunnel start --provider cloudflare --mode managed-local --config ~/.cloudflared/config.yml
+  devryan tunnel start --dry-run --provider cloudflare --mode managed-remote --token-file ~/.secrets/cf-token --hostname app.example.com --origin-port 3000
+  echo "$TOKEN" | devryan tunnel profile add --provider cloudflare --mode managed-remote --name prod-main --hostname app.example.com --origin-port 3000 --token-stdin
+  devryan tunnel profile list --provider cloudflare
+  devryan tunnel profile list --json --show-secrets
+  devryan tunnel stop --port 3000
 `);
 }
 
@@ -1043,9 +1060,9 @@ function generateCompletionScript(shell) {
   const normalized = typeof shell === 'string' ? shell.trim().toLowerCase() : '';
 
   if (normalized === 'bash') {
-    return `# Bash completion for openchamber tunnel
-# Add to ~/.bashrc: eval "$(openchamber tunnel completion bash)"
-_openchamber_tunnel() {
+    return `# Bash completion for devryan tunnel
+# Add to ~/.bashrc: eval "$(devryan tunnel completion bash)"
+_devryan_tunnel() {
   local cur prev commands tunnel_commands profile_commands common_flags start_flags
   COMPREPLY=()
   cur="\${COMP_WORDS[COMP_CWORD]}"
@@ -1086,16 +1103,16 @@ _openchamber_tunnel() {
   COMPREPLY=( $(compgen -W "\${common_flags}" -- "\${cur}") )
   return 0
 }
-complete -F _openchamber_tunnel openchamber
+complete -F _devryan_tunnel devryan openchamber
 `;
   }
 
   if (normalized === 'zsh') {
-    return `#compdef openchamber
-# Zsh completion for openchamber tunnel
-# Add to ~/.zshrc: eval "$(openchamber tunnel completion zsh)"
+    return `#compdef devryan openchamber
+# Zsh completion for devryan tunnel
+# Add to ~/.zshrc: eval "$(devryan tunnel completion zsh)"
 
-_openchamber() {
+_devryan() {
   local -a commands tunnel_commands profile_commands
 
   commands=(
@@ -1152,37 +1169,38 @@ _openchamber() {
   esac
 }
 
-compdef _openchamber openchamber
+compdef _devryan devryan openchamber
 `;
   }
 
   if (normalized === 'fish') {
-    return `# Fish completion for openchamber tunnel
-# Save to ~/.config/fish/completions/openchamber.fish
+    return `# Fish completion for devryan tunnel
+# Save to ~/.config/fish/completions/devryan.fish
 
-complete -c openchamber -n '__fish_use_subcommand' -a 'serve' -d 'Start the web server'
-complete -c openchamber -n '__fish_seen_subcommand_from serve' -l foreground -d 'Run in foreground (for systemd/process managers)'
-complete -c openchamber -n '__fish_seen_subcommand_from serve' -l no-daemon -d 'Run in foreground (alias for --foreground)'
-complete -c openchamber -n '__fish_use_subcommand' -a 'stop' -d 'Stop running instance(s)'
-complete -c openchamber -n '__fish_use_subcommand' -a 'restart' -d 'Stop and start the server'
-complete -c openchamber -n '__fish_use_subcommand' -a 'status' -d 'Show server status'
-complete -c openchamber -n '__fish_use_subcommand' -a 'tunnel' -d 'Tunnel lifecycle commands'
-complete -c openchamber -n '__fish_use_subcommand' -a 'logs' -d 'Tail logs'
-complete -c openchamber -n '__fish_use_subcommand' -a 'update' -d 'Check for updates'
+complete -c openchamber --wraps devryan
+complete -c devryan -n '__fish_use_subcommand' -a 'serve' -d 'Start the web server'
+complete -c devryan -n '__fish_seen_subcommand_from serve' -l foreground -d 'Run in foreground (for systemd/process managers)'
+complete -c devryan -n '__fish_seen_subcommand_from serve' -l no-daemon -d 'Run in foreground (alias for --foreground)'
+complete -c devryan -n '__fish_use_subcommand' -a 'stop' -d 'Stop running instance(s)'
+complete -c devryan -n '__fish_use_subcommand' -a 'restart' -d 'Stop and start the server'
+complete -c devryan -n '__fish_use_subcommand' -a 'status' -d 'Show server status'
+complete -c devryan -n '__fish_use_subcommand' -a 'tunnel' -d 'Tunnel lifecycle commands'
+complete -c devryan -n '__fish_use_subcommand' -a 'logs' -d 'Tail logs'
+complete -c devryan -n '__fish_use_subcommand' -a 'update' -d 'Check for updates'
 
-complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'help' -d 'Show tunnel help'
-complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'providers' -d 'Show providers'
-complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'ready' -d 'Check readiness'
-complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'doctor' -d 'Run diagnostics'
-complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'status' -d 'Show tunnel status'
-complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'start' -d 'Start a tunnel'
-complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'stop' -d 'Stop tunnel'
-complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'profile' -d 'Manage profiles'
-complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'completion' -d 'Generate completions'
+complete -c devryan -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'help' -d 'Show tunnel help'
+complete -c devryan -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'providers' -d 'Show providers'
+complete -c devryan -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'ready' -d 'Check readiness'
+complete -c devryan -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'doctor' -d 'Run diagnostics'
+complete -c devryan -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'status' -d 'Show tunnel status'
+complete -c devryan -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'start' -d 'Start a tunnel'
+complete -c devryan -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'stop' -d 'Stop tunnel'
+complete -c devryan -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'profile' -d 'Manage profiles'
+complete -c devryan -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'completion' -d 'Generate completions'
 
-complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and __fish_seen_subcommand_from start' -l provider -d 'Provider id'
-complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and __fish_seen_subcommand_from start' -l mode -d 'Tunnel mode'
-complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and __fish_seen_subcommand_from start' -l profile -d 'Profile name'
+complete -c devryan -n '__fish_seen_subcommand_from tunnel; and __fish_seen_subcommand_from start' -l provider -d 'Provider id'
+complete -c devryan -n '__fish_seen_subcommand_from tunnel; and __fish_seen_subcommand_from start' -l mode -d 'Tunnel mode'
+complete -c devryan -n '__fish_seen_subcommand_from tunnel; and __fish_seen_subcommand_from start' -l profile -d 'Profile name'
 complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and __fish_seen_subcommand_from start' -l config -d 'Config path'
 complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and __fish_seen_subcommand_from start' -l token -d 'Token'
 complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and __fish_seen_subcommand_from start' -l token-file -d 'Token file path'
@@ -1198,10 +1216,7 @@ complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and __fish_seen_
 }
 
 function getDataDir() {
-  if (typeof process.env.OPENCHAMBER_DATA_DIR === 'string' && process.env.OPENCHAMBER_DATA_DIR.trim().length > 0) {
-    return path.resolve(process.env.OPENCHAMBER_DATA_DIR.trim());
-  }
-  return path.join(os.homedir(), '.config', 'openchamber');
+  return resolveDevRyanDataRoot();
 }
 
 function getLogsDir() {
@@ -1230,8 +1245,9 @@ function ensureLogsDir() {
   fs.mkdirSync(getLogsDir(), { recursive: true });
 }
 
-function getLogFilePath(port) {
-  return path.join(getLogsDir(), `openchamber-${port}.log`);
+function getLogFilePath(port, { readLegacy = false, recordPath } = {}) {
+  return readLegacy ? daemonLogPath(getLogsDir(), port, { recordPath, exists: fs.existsSync })
+    : path.join(getLogsDir(), `devryan-${port}.log`);
 }
 
 function getTunnelProfilesFilePath() {
@@ -1639,7 +1655,7 @@ function resolveProfileByName(profiles, profileName, provider) {
   });
 
   if (matches.length === 0) {
-    return { profile: null, error: `No tunnel profile found for name '${profileName}'. Run 'openchamber tunnel profile list'.` };
+    return { profile: null, error: `No tunnel profile found for name '${profileName}'. Run 'devryan tunnel profile list'.` };
   }
   if (matches.length > 1) {
     return { profile: null, error: `Profile name '${profileName}' exists for multiple providers. Use --provider <id>.` };
@@ -1683,75 +1699,6 @@ const WINDOWS_EXTENSIONS = process.platform === 'win32'
       .filter(Boolean)
       .map((ext) => (ext.startsWith('.') ? ext : `.${ext}`))
   : [''];
-
-function isExecutable(filePath) {
-  try {
-    const stats = fs.statSync(filePath);
-    if (!stats.isFile()) {
-      return false;
-    }
-    if (process.platform === 'win32') {
-      return true;
-    }
-    fs.accessSync(filePath, fs.constants.X_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function resolveExplicitBinary(candidate) {
-  if (!candidate) {
-    return null;
-  }
-  if (candidate.includes(path.sep) || path.isAbsolute(candidate)) {
-    const resolved = path.isAbsolute(candidate) ? candidate : path.resolve(candidate);
-    return isExecutable(resolved) ? resolved : null;
-  }
-  return null;
-}
-
-function searchPathFor(command) {
-  const pathValue = process.env.PATH || '';
-  const segments = pathValue.split(path.delimiter).filter(Boolean);
-  for (const dir of segments) {
-    for (const ext of WINDOWS_EXTENSIONS) {
-      const fileName = process.platform === 'win32' ? `${command}${ext}` : command;
-      const candidate = path.join(dir, fileName);
-      if (isExecutable(candidate)) {
-        return candidate;
-      }
-    }
-  }
-  return null;
-}
-
-async function checkOpenCodeCLI(onNotice) {
-  if (process.env.OPENCODE_BINARY) {
-    const override = resolveExplicitBinary(process.env.OPENCODE_BINARY);
-    if (override) {
-      process.env.OPENCODE_BINARY = override;
-      return override;
-    }
-    const message = `OPENCODE_BINARY="${process.env.OPENCODE_BINARY}" is not an executable file. Falling back to PATH lookup.`;
-    if (typeof onNotice === 'function') {
-      onNotice({ level: 'warning', code: 'OPENCODE_BINARY_INVALID', message });
-    } else {
-      console.warn(`Warning: ${message}`);
-    }
-  }
-
-  const resolvedFromPath = searchPathFor('opencode');
-  if (resolvedFromPath) {
-    process.env.OPENCODE_BINARY = resolvedFromPath;
-    return resolvedFromPath;
-  }
-
-  throw new Error(
-    `Unable to locate the opencode CLI on PATH (${process.env.PATH || '<empty>'}). ` +
-    'Ensure the CLI is installed and reachable, or set OPENCODE_BINARY to its full path.'
-  );
-}
 
 async function isPortAvailable(port, host) {
   if (!Number.isFinite(port) || port <= 0) {
@@ -1805,11 +1752,11 @@ function getRunDir() {
 }
 
 async function getPidFilePath(port) {
-  return path.join(getRunDir(), `openchamber-${port}.pid`);
+  return daemonRecordPaths(getRunDir(), port)[0].pid;
 }
 
 async function getInstanceFilePath(port) {
-  return path.join(getRunDir(), `openchamber-${port}.json`);
+  return daemonRecordPaths(getRunDir(), port)[0].instance;
 }
 
 function readPidFile(pidFilePath) {
@@ -1942,7 +1889,7 @@ function isDevRyanServerCommand(command) {
   if (!normalized) return false;
   const lower = normalized.toLowerCase();
   return /(?:^|[\s"'])\S*\/packages\/web\/server\/index\.js(?:$|[\s"'])/.test(lower)
-    || /(?:^|[\s"'])\S*\/@openchamber\/web\/server\/index\.js(?:$|[\s"'])/.test(lower)
+    || /(?:^|[\s"'])\S*\/@(?:devryan|openchamber)\/web\/server\/index\.js(?:$|[\s"'])/.test(lower)
     || /(?:^|[\s"'])\S*(?:devryan|openchamber)\S*\/server\/index\.js(?:$|[\s"'])/.test(lower);
 }
 
@@ -2076,7 +2023,7 @@ function waitForDaemonReadyMessage(child, {
     const onMessage = (msg) => {
       if (
         msg
-        && msg.type === 'openchamber:ready'
+        && (msg.type === 'devryan:ready' || msg.type === 'openchamber:ready')
         && typeof msg.port === 'number'
         && Number.isFinite(msg.port)
         && msg.port > 0
@@ -2366,7 +2313,7 @@ async function resolveDoctorPortStatuses(options = {}) {
         available: false,
         status: 'warning',
         line: `port ${requestedPort} not available (desktop runtime)`,
-        detail: 'Use a CLI instance port from `openchamber serve` for tunneling.',
+        detail: 'Use a CLI instance port from `devryan serve` for tunneling.',
       });
       return { statuses, availableEntries: [] };
     }
@@ -2376,7 +2323,7 @@ async function resolveDoctorPortStatuses(options = {}) {
       available: false,
       status: 'error',
       line: `port ${requestedPort} not available (no running instance)`,
-      detail: `Start one with \`openchamber serve --port ${requestedPort}\`.`,
+      detail: `Start one with \`devryan serve --port ${requestedPort}\`.`,
     });
     return { statuses, availableEntries: [] };
   }
@@ -2397,7 +2344,7 @@ async function resolveDoctorPortStatuses(options = {}) {
       available: false,
       status: 'warning',
       line: `port ${desktopEntry.port} not available (desktop runtime)`,
-      detail: 'Use a CLI instance port from `openchamber serve` for tunneling.',
+      detail: 'Use a CLI instance port from `devryan serve` for tunneling.',
     });
   }
 
@@ -2407,7 +2354,7 @@ async function resolveDoctorPortStatuses(options = {}) {
       available: false,
       status: 'warning',
       line: 'no CLI ports available for tunneling',
-      detail: 'Start one with `openchamber serve`.',
+      detail: 'Start one with `devryan serve`.',
     });
   }
 
@@ -2419,13 +2366,13 @@ async function discoverRunningInstances() {
   const runDir = getRunDir();
   try {
     const files = fs.readdirSync(runDir);
-    const pidFiles = files.filter((file) => file.startsWith('openchamber-') && file.endsWith('.pid'));
+    const pidFiles = files.filter((file) => daemonRecordPort(file) !== null).sort();
     for (const file of pidFiles) {
-      const port = parseInt(file.replace('openchamber-', '').replace('.pid', ''), 10);
+      const port = daemonRecordPort(file);
       if (!Number.isFinite(port) || port <= 0) continue;
       const pidFilePath = path.join(runDir, file);
       const pid = readPidFile(pidFilePath);
-      const instanceFilePath = path.join(runDir, `openchamber-${port}.json`);
+      const instanceFilePath = path.join(runDir, file.replace(/\.pid$/, '.json'));
       const storedOptions = readInstanceOptions(instanceFilePath);
       const launchMode = storedOptions?.launchMode === 'foreground' ? 'foreground' : 'daemon';
       const identity = await validatePidFileIdentity({ port, pid, launchMode });
@@ -2443,7 +2390,9 @@ async function discoverRunningInstances() {
       if (Number.isFinite(storedOptions?.startedAt)) {
         startedAt = storedOptions.startedAt;
       }
-      instances.push({ port, pid, pidFilePath, instanceFilePath, mtime, startedAt, launchMode });
+      if (!instances.some(instance => instance.port === port && instance.pid === pid)) {
+        instances.push({ port, pid, pidFilePath, instanceFilePath, mtime, startedAt, launchMode });
+      }
     }
   } catch {
   }
@@ -2467,7 +2416,7 @@ async function fetchTunnelProvidersFromPort(port, fetchImpl = globalThis.fetch) 
     return null;
   }
   try {
-    const response = await fetchImpl(buildLocalUrl(port, '/api/openchamber/tunnel/providers'));
+    const response = await fetchImpl(buildLocalUrl(port, '/api/devryan/tunnel/providers'));
     if (!response.ok) return null;
     const body = await response.json().catch(() => null);
     if (!body || !Array.isArray(body.providers)) return null;
@@ -2579,7 +2528,7 @@ async function resolveTargetInstance({
 
   if (options.all && requireAll) {
     if (running.length === 0) {
-      throw new Error('No running DevRyan instance found. Start one with `openchamber serve`.');
+      throw new Error('No running DevRyan instance found. Start one with `devryan serve`.');
     }
     return running;
   }
@@ -2592,7 +2541,7 @@ async function resolveTargetInstance({
         if (!attachability.attachable) {
           if (attachability.reason === 'desktop') {
             throw new Error(
-              `Port ${options.port} is used by DevRyan Desktop app. Tunnel attach requires a CLI instance from \`openchamber serve\`.`
+              `Port ${options.port} is used by DevRyan Desktop app. Tunnel attach requires a CLI instance from \`devryan serve\`.`
             );
           }
           throw new Error(
@@ -2607,7 +2556,7 @@ async function resolveTargetInstance({
       const systemInfo = await fetchSystemInfoFromPort(options.port);
       if (systemInfo?.runtime === 'desktop') {
         throw new Error(
-          `Port ${options.port} is used by DevRyan Desktop app. Tunnel attach requires a CLI instance from \`openchamber serve\`.`
+          `Port ${options.port} is used by DevRyan Desktop app. Tunnel attach requires a CLI instance from \`devryan serve\`.`
         );
       }
     }
@@ -2664,10 +2613,10 @@ async function resolveTargetInstance({
     }
 
     if (sawDesktop) {
-      throw new Error('Only DevRyan Desktop instance(s) detected. Tunnel attach requires a CLI instance from `openchamber serve`.');
+      throw new Error('Only DevRyan Desktop instance(s) detected. Tunnel attach requires a CLI instance from `devryan serve`.');
     }
 
-    throw new Error('No attachable DevRyan instance found. Start one with `openchamber serve`.');
+    throw new Error('No attachable DevRyan instance found. Start one with `devryan serve`.');
   }
 
   if (running.length === 1) {
@@ -2686,7 +2635,7 @@ async function resolveTargetInstance({
       const started = running.find((entry) => entry.port === startedPort) || getLatestInstance(running);
       if (started) return { ...started, autoStarted: true };
     }
-    throw new Error('No running DevRyan instance found. Start one with `openchamber serve`.');
+    throw new Error('No running DevRyan instance found. Start one with `devryan serve`.');
   }
 
   const ports = running.map((entry) => entry.port).join(', ');
@@ -2705,7 +2654,7 @@ async function resolveTunnelReadEntries(options) {
   }
 
   if (running.length === 0) {
-    throw new Error('No running DevRyan instance found. Start one with `openchamber serve`.');
+    throw new Error('No running DevRyan instance found. Start one with `devryan serve`.');
   }
 
   return running;
@@ -2822,10 +2771,10 @@ async function handleTunnelProfileSubcommand(options, action) {
     if (!isQuietMode(options)) {
       clackIntro('Tunnel Profile');
       logStatus('info', 'Available subcommands', 'list, show, add, remove');
-      clackLog.step('List profiles: `openchamber tunnel profile list`');
-      clackLog.step('Show one profile: `openchamber tunnel profile show --name <name>`');
-      clackLog.step('Add profile: `openchamber tunnel profile add --provider cloudflare --mode managed-remote --name <name> --hostname <host> --origin-port 3000 --token <token>`');
-      clackLog.step('Remove profile: `openchamber tunnel profile remove --name <name>`');
+      clackLog.step('List profiles: `devryan tunnel profile list`');
+      clackLog.step('Show one profile: `devryan tunnel profile show --name <name>`');
+      clackLog.step('Add profile: `devryan tunnel profile add --provider cloudflare --mode managed-remote --name <name> --hostname <host> --origin-port 3000 --token <token>`');
+      clackLog.step('Remove profile: `devryan tunnel profile remove --name <name>`');
       clackOutro('Choose a subcommand');
     }
     return;
@@ -3093,7 +3042,7 @@ async function handleTunnelProfileSubcommand(options, action) {
     clackIntro(boldText('Tunnel Profile Saved'));
     logStatus('success', `${added.name} (${added.provider}/${added.mode})`, `${added.hostname} origin:${added.originPort} ${formatProfileTokenStatus(added, options.showSecrets)}`);
     clackOutro('save complete');
-    logStatus('info', '[START_PROFILE]', `openchamber tunnel start --profile ${added.name}`);
+    logStatus('info', '[START_PROFILE]', `devryan tunnel start --profile ${added.name}`);
     clackOutro('');
     return;
   }
@@ -3133,7 +3082,7 @@ async function handleTunnelProfileSubcommand(options, action) {
   const suggestion = findClosestMatch(sub, knownProfileActions);
   const hint = suggestion ? ` Did you mean '${suggestion}'?` : '';
   throw new TunnelCliError(
-    `Unknown tunnel profile subcommand '${sub}'.${hint} Use 'openchamber tunnel help'.`,
+    `Unknown tunnel profile subcommand '${sub}'.${hint} Use 'devryan tunnel help'.`,
     EXIT_CODE.USAGE_ERROR
   );
 }
@@ -3178,18 +3127,20 @@ const commands = {
     }
 
     if (targetPort !== 0) {
-      const pidFilePath = await getPidFilePath(targetPort);
-      const instanceFilePath = await getInstanceFilePath(targetPort);
-      const existingPid = readPidFile(pidFilePath);
-      if (existingPid) {
-        const storedOptions = readInstanceOptions(instanceFilePath);
-        const launchMode = storedOptions?.launchMode === 'foreground' ? 'foreground' : 'daemon';
-        const identity = await validatePidFileIdentity({ port: targetPort, pid: existingPid, launchMode });
-        if (identity.valid) {
-          throw new Error(`DevRyan is already running on port ${targetPort} (PID: ${existingPid})`);
+      for (const record of daemonRecordPaths(getRunDir(), targetPort)) {
+        const pidFilePath = record.pid;
+        const instanceFilePath = record.instance;
+        const existingPid = readPidFile(pidFilePath);
+        if (existingPid) {
+          const storedOptions = readInstanceOptions(instanceFilePath);
+          const launchMode = storedOptions?.launchMode === 'foreground' ? 'foreground' : 'daemon';
+          const identity = await validatePidFileIdentity({ port: targetPort, pid: existingPid, launchMode });
+          if (identity.valid) {
+            throw new Error(`DevRyan is already running on port ${targetPort} (PID: ${existingPid})`);
+          }
+          removePidFile(pidFilePath);
+          removeInstanceFile(instanceFilePath);
         }
-        removePidFile(pidFilePath);
-        removeInstanceFile(instanceFilePath);
       }
 
       if (explicitPort && !(await isPortAvailable(targetPort, options.host))) {
@@ -3200,13 +3151,12 @@ const commands = {
           );
         }
         if (systemInfo?.runtime) {
-          throw new Error(`DevRyan is already running on port ${targetPort}. Use \`openchamber status\` or \`openchamber stop --port ${targetPort}\`.`);
+          throw new Error(`DevRyan is already running on port ${targetPort}. Use \`devryan status\` or \`devryan stop --port ${targetPort}\`.`);
         }
         throw new Error(`Port ${targetPort} is already in use by another process.`);
       }
     }
 
-    const opencodeBinary = await checkOpenCodeCLI(emitNotice);
     const serverPath = path.join(__dirname, '..', 'server', 'index.js');
     const preferredRuntime = getPreferredServerRuntime();
     const runtimeBin = preferredRuntime === 'bun' ? BUN_BIN : process.execPath;
@@ -3223,8 +3173,8 @@ const commands = {
       uiPassword: effectiveUiPassword,
     });
     if (!effectiveUiPassword && !options.suppressUiPasswordWarning) {
-      const warningLine = 'OPENCHAMBER_UI_PASSWORD is not set';
-      const warningDetail = 'browser UI is unsecured. Use --ui-password or OPENCHAMBER_UI_PASSWORD.';
+      const warningLine = 'DEVRYAN_UI_PASSWORD is not set';
+      const warningDetail = 'browser UI is unsecured. Use --ui-password or DEVRYAN_UI_PASSWORD.';
       if (showOutput) {
         logStatus('warning', warningLine, warningDetail);
       } else if (isJsonMode(options)) {
@@ -3251,11 +3201,8 @@ const commands = {
       }
 
       // Propagate resolved values into env before importing the server module.
-      if (opencodeBinary) {
-        process.env.OPENCODE_BINARY = opencodeBinary;
-      }
       if (effectiveUiPassword) {
-        process.env.OPENCHAMBER_UI_PASSWORD = effectiveUiPassword;
+        setDevRyanEnv(process.env, 'DEVRYAN_UI_PASSWORD', effectiveUiPassword);
       }
 
       // In --quiet mode, redirect stdout/stderr to the log file so that
@@ -3370,18 +3317,17 @@ const commands = {
       stdio: ['ignore', logFd, logFd, 'ipc'],
       env: {
         ...process.env,
-        OPENCHAMBER_PORT: String(targetPort),
-        OPENCODE_BINARY: opencodeBinary,
-        ...(effectiveHost ? { OPENCHAMBER_HOST: effectiveHost } : {}),
-        ...(effectiveUiPassword ? { OPENCHAMBER_UI_PASSWORD: effectiveUiPassword } : {}),
-        ...(process.env.OPENCODE_SKIP_START ? { OPENCHAMBER_SKIP_OPENCODE_START: process.env.OPENCODE_SKIP_START } : {}),
+        DEVRYAN_PORT: String(targetPort),
+        ...(effectiveHost ? { DEVRYAN_HOST: effectiveHost } : {}),
+        ...(effectiveUiPassword ? { DEVRYAN_UI_PASSWORD: effectiveUiPassword } : {}),
+        ...(process.env.OPENCODE_SKIP_START ? { DEVRYAN_SKIP_OPENCODE_START: process.env.OPENCODE_SKIP_START } : {}),
       },
     });
 
     child.unref();
     serveSpin?.start(`Starting DevRyan on port ${targetPort === 0 ? 'auto' : targetPort}...`);
 
-    const readyTimeoutMs = normalizeDaemonReadyTimeoutMs(process.env.OPENCHAMBER_DAEMON_READY_TIMEOUT_MS);
+    const readyTimeoutMs = normalizeDaemonReadyTimeoutMs(process.env.DEVRYAN_DAEMON_READY_TIMEOUT_MS);
     const readyResult = await waitForDaemonReadyMessage(child, {
       requestedPort: targetPort,
       timeoutMs: readyTimeoutMs,
@@ -3459,7 +3405,7 @@ const commands = {
       port: resolvedPort,
       pid: child.pid,
       url: buildLocalUrl(resolvedPort, '/'),
-      logs: `openchamber logs -p ${resolvedPort}`,
+      logs: `devryan logs -p ${resolvedPort}`,
       launchMode: 'daemon',
     };
 
@@ -3919,7 +3865,7 @@ const commands = {
         const results = [];
         for (const entry of entries) {
           try {
-            const { response, body } = await requestJson(entry.port, `/api/openchamber/tunnel/check?provider=${encodeURIComponent(provider)}`);
+            const { response, body } = await requestJson(entry.port, `/api/devryan/tunnel/check?provider=${encodeURIComponent(provider)}`);
             if (!response.ok) {
               results.push({ port: entry.port, error: body?.error || `check ${response.status}` });
               continue;
@@ -3975,7 +3921,7 @@ const commands = {
         const results = [];
         for (const entry of entries) {
           try {
-            const { response, body } = await requestJson(entry.port, '/api/openchamber/tunnel/status');
+            const { response, body } = await requestJson(entry.port, '/api/devryan/tunnel/status');
             if (!response.ok) {
               results.push({ port: entry.port, error: body?.error || `status ${response.status}` });
               continue;
@@ -4114,7 +4060,7 @@ const commands = {
               }
               const { response, body } = await requestJson(
                 diagnosticsEntry.port,
-                `/api/openchamber/tunnel/doctor?${query.toString()}`,
+                `/api/devryan/tunnel/doctor?${query.toString()}`,
                 doctorFetchOptions,
               );
               if (response.ok && body?.ok && isValidTunnelDoctorResponse(body)) {
@@ -4219,16 +4165,16 @@ const commands = {
           logStatus('error', `port ${entry.port} — No running instance`);
         }
         if (desktopUnavailablePorts.length > 0) {
-          clackLog.message('Only CLI instances (openchamber serve) support tunneling.');
+          clackLog.message('Only CLI instances (devryan serve) support tunneling.');
         }
 
         if (cliPorts.length === 0 && unavailablePorts.length === 0) {
-          logStatus('warning', 'No running instances found', 'Start one with `openchamber serve`.');
+          logStatus('warning', 'No running instances found', 'Start one with `devryan serve`.');
           clackOutro('No ports available');
           return;
         }
         if (cliPorts.length === 0) {
-          logStatus('warning', 'No CLI instances available for tunneling', 'Start one with `openchamber serve`.');
+          logStatus('warning', 'No CLI instances available for tunneling', 'Start one with `devryan serve`.');
           clackOutro('No CLI ports available');
           return;
         }
@@ -4709,7 +4655,7 @@ const commands = {
 
             if (attachableSafeInstances.length === 0) {
               throw new TunnelCliError(
-                'No attachable DevRyan CLI instances found on safe ports. Start one with `openchamber serve --port 3000`.',
+                'No attachable DevRyan CLI instances found on safe ports. Start one with `devryan serve --port 3000`.',
                 EXIT_CODE.USAGE_ERROR,
               );
             }
@@ -4735,7 +4681,7 @@ const commands = {
           logStatus(
             'info',
             `Using auto-started instance on port ${instance.port}`,
-            `logs: openchamber logs -p ${instance.port}`,
+            `logs: devryan logs -p ${instance.port}`,
           );
         }
 
@@ -4778,8 +4724,8 @@ const commands = {
             throw new Error(
               `DevRyan on port ${instance.port} is still starting after 60s. Startup time can vary by machine performance. ` +
               `Wait another minute, then check health with \`curl -fsS ${buildLocalUrl(instance.port, '/health')}\`. ` +
-              `If health is OK, retry tunnel start with \`openchamber tunnel start --port ${instance.port}\`. ` +
-              `For diagnostics run \`openchamber logs -p ${instance.port}\`.`
+              `If health is OK, retry tunnel start with \`devryan tunnel start --port ${instance.port}\`. ` +
+              `For diagnostics run \`devryan logs -p ${instance.port}\`.`
             );
           }
           healthProgress?.stop(`Instance ${instance.port} is healthy`);
@@ -4793,7 +4739,7 @@ const commands = {
             originPort,
             managedRemoteTunnelToken: token,
           };
-          const { response: presetResponse, body: presetBody } = await requestJson(instance.port, '/api/openchamber/tunnel/managed-remote-token', {
+          const { response: presetResponse, body: presetBody } = await requestJson(instance.port, '/api/devryan/tunnel/managed-remote-token', {
             method: 'PUT',
             body: JSON.stringify(tokenSyncPayload),
           });
@@ -4824,21 +4770,21 @@ const commands = {
         let response;
         let body;
         try {
-          ({ response, body } = await requestJson(instance.port, '/api/openchamber/tunnel/start', {
+          ({ response, body } = await requestJson(instance.port, '/api/devryan/tunnel/start', {
             method: 'POST',
             body: JSON.stringify(payload),
             timeoutMs: 60000,
           }));
         } catch (error) {
-          if (error instanceof Error && /\/api\/openchamber\/tunnel\/start/.test(error.message) && /timed out/.test(error.message)) {
+          if (error instanceof Error && /\/api\/(?:devryan|openchamber)\/tunnel\/start/.test(error.message) && /timed out/.test(error.message)) {
             spin?.error('Tunnel start timed out');
             throw new Error(
-              `Tunnel start timed out after 60s. cloudflared may still be starting; check with \`openchamber tunnel status --port ${instance.port}\`. Run \`openchamber logs -p ${instance.port}\` for details.`
+              `Tunnel start timed out after 60s. cloudflared may still be starting; check with \`devryan tunnel status --port ${instance.port}\`. Run \`devryan logs -p ${instance.port}\` for details.`
             );
           }
           spin?.error('Tunnel start failed');
           const message = error instanceof Error ? error.message : String(error);
-          throw new Error(`${message} Run \`openchamber logs -p ${instance.port}\` for details.`);
+          throw new Error(`${message} Run \`devryan logs -p ${instance.port}\` for details.`);
         }
 
         if (!response.ok || !body?.ok) {
@@ -4848,7 +4794,7 @@ const commands = {
           const userError = isCloudflareTimeout
             ? `Cloudflare quick tunnel request timed out. ${baseError}`
             : baseError;
-          throw new Error(`${userError} Run \`openchamber logs -p ${instance.port}\` for details.`);
+          throw new Error(`${userError} Run \`devryan logs -p ${instance.port}\` for details.`);
         }
 
         // Avoid duplicate "Tunnel started" lines: spinner completion is implied by
@@ -4902,15 +4848,15 @@ const commands = {
           clackOutro('');
 
           const optionalTips = [
-            { line: 'Check status', detail: 'openchamber tunnel status' },
-            { line: 'Stop tunnel', detail: 'openchamber tunnel stop' },
+            { line: 'Check status', detail: 'devryan tunnel status' },
+            { line: 'Stop tunnel', detail: 'devryan tunnel stop' },
             { line: 'If needed, repeat with same settings', detail: replayCommand },
           ];
 
           if (!selectedProfile && mode === 'managed-remote' && typeof hostname === 'string' && hostname.trim().length > 0) {
             const profileSaveCommand = buildTunnelProfileAddCommand({ provider, hostname, originPort });
             optionalTips.push({ line: 'Optional: save reusable profile (stores hostname + token locally)', detail: profileSaveCommand });
-            optionalTips.push({ line: 'Start from saved profile', detail: 'openchamber tunnel start --profile <name>' });
+            optionalTips.push({ line: 'Start from saved profile', detail: 'devryan tunnel start --profile <name>' });
           }
 
           console.log('');
@@ -4953,7 +4899,7 @@ const commands = {
           const tunnelStopSpin = shouldRenderHumanOutput(options) ? createSpinner(options) : null;
           tunnelStopSpin?.start(`Stopping tunnel on port ${entry.port}...`);
           try {
-            const { response, body } = await requestJson(entry.port, '/api/openchamber/tunnel/stop', {
+            const { response, body } = await requestJson(entry.port, '/api/devryan/tunnel/stop', {
               method: 'POST',
             });
             if (!response.ok) {
@@ -5013,7 +4959,7 @@ const commands = {
         const suggestion = findClosestMatch(subcommand, knownTunnelSubcommands);
         const hint = suggestion ? ` Did you mean '${suggestion}'?` : '';
         throw new TunnelCliError(
-          `Unknown tunnel subcommand '${subcommand}'.${hint} Use 'openchamber tunnel help'.`,
+          `Unknown tunnel subcommand '${subcommand}'.${hint} Use 'devryan tunnel help'.`,
           EXIT_CODE.USAGE_ERROR
         );
       }
@@ -5050,10 +4996,10 @@ const commands = {
 
     if (isJsonMode(options)) {
       if (options.follow) {
-        throw new Error('`openchamber logs --json` requires `--no-follow` for deterministic JSON output.');
+        throw new Error('`devryan logs --json` requires `--no-follow` for deterministic JSON output.');
       }
       const entries = targets.map((target) => {
-        const logPath = getLogFilePath(target.port);
+        const logPath = getLogFilePath(target.port, { readLegacy: true, recordPath: target.pidFilePath });
         return {
           port: target.port,
           logPath,
@@ -5069,7 +5015,7 @@ const commands = {
     }
 
     for (const target of targets) {
-      const logPath = getLogFilePath(target.port);
+      const logPath = getLogFilePath(target.port, { readLegacy: true, recordPath: target.pidFilePath });
       const lines = readTailLines(logPath, options.lines);
       if (showFrames) {
         logStatus('info', `port ${target.port}`, logPath);
@@ -5093,7 +5039,7 @@ const commands = {
     }
 
     const unsubs = targets.map((target) => {
-      const logPath = getLogFilePath(target.port);
+      const logPath = getLogFilePath(target.port, { readLegacy: true, recordPath: target.pidFilePath });
       return followFile(logPath, (line) => {
         if (shouldPrefixLines) {
           console.log(`[${target.port}] ${line}`);
@@ -5253,6 +5199,9 @@ async function main() {
     return;
   }
 
+  // One-time move of ~/.config/openchamber to ~/.config/devryan before getDataDir().
+  await migrateDataRootAtStartup({ log: { info: () => {}, warn: () => {} } });
+
   if (removedFlagErrors.length > 0) {
     if (isJsonMode(options)) {
       printJson({
@@ -5281,6 +5230,19 @@ async function main() {
 
   if (command === 'tunnel') {
     await commands.tunnel(options, subcommand, tunnelAction);
+    return;
+  }
+
+  if (command === 'runtime') {
+    try {
+      const result=await runRuntimeBundleCommand({positionals:parsed.positionals,optionNames:parsed.optionNames,expectedRevision:options.expectedRevision});
+      if(isJsonMode(options))printJson({status:'success',...result});
+      else console.log(isQuietMode(options)?String(result.revision):`Retained runtime resumed at revision ${result.revision}. Restart DevRyan to continue.`);
+    }catch(error){
+      const code=/^bundle_[a-z0-9_]+$/.test(error?.code??'')?error.code:'bundle_recovery_failed';
+      if(isJsonMode(options))printJson({status:'error',error:{code,message:code}});else console.error(code);
+      process.exitCode=EXIT_CODE.USAGE_ERROR;
+    }
     return;
   }
 
@@ -5319,7 +5281,7 @@ async function main() {
   await commands[command](options);
 }
 
-const isCliExecution = isModuleCliExecution(process.argv[1], import.meta.url, fs.realpathSync, 'openchamber');
+const isCliExecution = isModuleCliExecution(process.argv[1], import.meta.url, fs.realpathSync, ['devryan', 'openchamber']);
 
 if (isCliExecution) {
   let isHandlingSigint = false;

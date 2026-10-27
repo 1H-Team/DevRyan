@@ -4,34 +4,71 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { readSessionExecutionReceipt, sessionExecutionProfile, startSessionExecution } from '../packages/harness-runtime/lib/session-execution.js';
+import { prepareSessionExecution, readSessionExecutionReceipt, removeExecutionSocketDirectory, startSessionExecution } from '../packages/harness-runtime/lib/session-execution.js';
 import { createSessionMutationRuntime } from '../packages/harness-runtime/lib/session-mutations.js';
 import { createSessionExecutionOwner } from '../packages/harness-runtime/lib/session-execution-owner.js';
 import { createSessionRevertCoordinator } from '../packages/harness-runtime/lib/session-revert-coordinator.js';
 import { git } from '../packages/harness-runtime/lib/session-changes-git.js';
 import { spawnConfinedProvider } from '../packages/web/server/lib/opencode/session-provider-spawn.js';
 import { fileURLToPath } from 'node:url';
+import { createWindowsPrivateFile, createWindowsPrivateFileOwner, ensureWindowsPrivateDirectory, readWindowsPrivateFile } from '../packages/harness-runtime/lib/windows-private-files.js';
+import { randomUUID } from 'node:crypto';
+import { createServer } from 'node:http';
+import { readOnlyShellLease } from '../packages/web/server/lib/opencode/native-readonly-shell.js';
 
 const launcher = process.env.DEVRYAN_TEST_EXECUTION_LAUNCHER;
 if (!launcher) throw new Error('Set DEVRYAN_TEST_EXECUTION_LAUNCHER to the built native helper');
 const native = (name, body, timeout) => test(name, { timeout }, body);
 const roots = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true }))); });
-async function fixture({ scope } = {}) {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-execution-')); roots.push(root);
+async function fixture({ scope, readOnly = false } = {}) {
+  const root = process.platform === 'win32' ? path.join(os.tmpdir(), `devryan-execution-${randomUUID()}`)
+    : await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-execution-'));
+  if (process.platform === 'win32') await ensureWindowsPrivateDirectory(launcher, root);
+  roots.push(root);
   const canonical = await fs.realpath(root), viewDirectory = path.join(canonical, 'worktree');
-  await fs.mkdir(viewDirectory);
-  const lease = { viewDirectory, ...(scope ? { scope } : {}) };
+  if (process.platform === 'win32') await ensureWindowsPrivateDirectory(launcher, viewDirectory);
+  else await fs.mkdir(viewDirectory);
+  const originalLease = { viewDirectory, ...(scope ? { scope } : {}) };
+  const lease = readOnly ? await readOnlyShellLease(originalLease) : originalLease;
   const start = async (command, args, signal) => {
     let stdout = '', stderr = '';
     const handle = await startSessionExecution({ launcher, lease, command, args, env: { PATH: process.env.PATH }, signal,
       onOutput: ({ stream, data }) => { if (stream === 'stdout') stdout += data; else stderr += data; } });
-    return { ...handle, output: () => ({ stdout, stderr }) };
+    const result = handle.result.catch(cause => {
+      // Retain the native operation/error number without printing worker output.
+      const refusal = process.platform === 'win32' ? /^([a-z ]{1,80}) failed \(([0-9]{1,10})\)$/.exec(stderr.trim()) : null;
+      if (cause instanceof Error && refusal) cause.message += `: ${refusal[1]} failed (${refusal[2]})`;
+      throw cause;
+    });
+    return { ...handle, result, output: () => ({ stdout, stderr }) };
   };
   return { root: canonical, viewDirectory, lease, run: (source, signal) => start(process.execPath, ['-e', source], signal),
     // Through /bin/sh, as `npm run` starts scripts: macOS strips DYLD_* here.
     shell: (script, signal) => start('/bin/sh', ['-c', script], signal) };
 }
+
+native('Plan boundary preserves workspace reads and denies writes and localhost POST without changing ordinary execution', async t => {
+  if (process.platform === 'win32') { t.skip('LPAC read-only workspace/network policy unavailable'); return; }
+  const plan = await fixture({readOnly:true}), implementation = await fixture();
+  for (const f of [plan, implementation]) await fs.writeFile(path.join(f.viewDirectory,'tracked'),'original');
+  let requests=0;
+  const server=createServer((_request,response)=>{requests++;response.end('accepted');});
+  await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});
+  try {
+    const endpoint=`http://127.0.0.1:${server.address().port}/fixture`;
+    const source=`const fs=require('node:fs'),http=require('node:http');
+      const result={read:fs.readFileSync('tracked','utf8'),write:false,post:false};
+      try{fs.writeFileSync('tracked','changed');result.write=true;}catch(e){if(!['EPERM','EACCES','EROFS'].includes(e.code))throw e;}
+      const request=http.request(${JSON.stringify(endpoint)},{method:'POST'},response=>{response.resume();response.on('end',()=>{result.post=true;console.log(JSON.stringify(result));});});
+      request.on('error',()=>console.log(JSON.stringify(result)));request.setTimeout(1000,()=>request.destroy());request.end('fixture');`;
+    const blocked=await plan.run(source);assert.equal((await blocked.result).exitCode,0,blocked.output().stderr);
+    assert.deepEqual(JSON.parse(blocked.output().stdout),{read:'original',write:false,post:false});
+    assert.equal(await fs.readFile(path.join(plan.viewDirectory,'tracked'),'utf8'),'original');assert.equal(requests,0);
+    const allowed=await implementation.run(source);assert.equal((await allowed.result).exitCode,0,allowed.output().stderr);
+    assert.deepEqual(JSON.parse(allowed.output().stdout),{read:'original',write:true,post:true});assert.equal(requests,1);
+  } finally {await new Promise(resolve=>server.close(resolve));}
+},20_000);
 
 native('native boundary denies absolute, symlink and hardlink writes while allowing the private view', async () => {
   const f = await fixture(); const original = path.join(f.root, 'original');
@@ -47,6 +84,26 @@ native('native boundary denies absolute, symlink and hardlink writes while allow
   const receipt = await handle.result;
   assert.equal(handle.output().stderr, ''); assert.equal(receipt.terminated, true); assert.equal(receipt.exitCode, 0);
   assert.equal(await fs.readFile(original, 'utf8'), 'preserved');
+  assert.equal(await fs.readFile(path.join(f.viewDirectory, 'owned'), 'utf8'), 'private');
+}, 20_000);
+
+if (process.platform === 'win32') native('LPAC denies private host and other execution reads and cannot rewrite its sealed runtime', async () => {
+  const f = await fixture(), other = await fixture();
+  const secret = path.join(f.root, 'host-secret'), foreign = path.join(other.viewDirectory, 'other-execution');
+  await fs.writeFile(secret, 'private-fixture-only'); await fs.writeFile(foreign, 'other-fixture-only');
+  const handle = await f.run(`const fs = require('node:fs');
+    for (const file of ${JSON.stringify([secret, foreign])}) {
+      try { fs.readFileSync(file); process.exit(2); }
+      catch (error) { if (!['EPERM', 'EACCES'].includes(error.code)) throw error; }
+    }
+    try { fs.writeFileSync(process.execPath, 'changed'); process.exit(3); }
+    catch (error) { if (!['EPERM', 'EACCES', 'EBUSY'].includes(error.code)) throw error; }
+    fs.writeFileSync('owned', 'private'); process.stdout.write('read-boundary-held');`);
+  const receipt = await handle.result;
+  assert.equal(receipt.confined, true); assert.equal(receipt.exitCode, 0, handle.output().stderr);
+  assert.equal(handle.output().stdout, 'read-boundary-held');
+  assert.equal(await fs.readFile(secret, 'utf8'), 'private-fixture-only');
+  assert.equal(await fs.readFile(foreign, 'utf8'), 'other-fixture-only');
   assert.equal(await fs.readFile(path.join(f.viewDirectory, 'owned'), 'utf8'), 'private');
 }, 20_000);
 
@@ -101,33 +158,37 @@ native('background descendants are stopped before the supervisor acknowledges te
 native('the command cannot retain an inherited writable project handle', async () => {
   const f = await fixture(), original = path.join(f.root, 'original');
   await fs.writeFile(original, 'preserved');
+  const prepared = await prepareSessionExecution({ launcher, lease: f.lease });
   const descriptor = await fs.open(original, 'r+');
-  const scratchDirectory = path.join(f.root, 'scratch'); await fs.mkdir(scratchDirectory);
-  const profile = path.join(f.root, 'profile.sb');
-  await fs.writeFile(profile, sessionExecutionProfile({ viewDirectory: f.viewDirectory, scratchDirectory }));
   try {
-    const child = spawn(launcher, [f.viewDirectory, scratchDirectory, profile, path.join(f.root, 'termination.json'), '--',
+    const child = spawn(launcher, [...prepared.arguments,
       process.execPath, '-e', "const fs = require('node:fs'); try { fs.writeSync(3, Buffer.from('overwrite')); } catch {} fs.writeFileSync('ran', 'yes')"],
-    { env: { PATH: process.env.PATH }, stdio: ['ignore', 'pipe', 'pipe', descriptor.fd] });
+    { cwd: prepared.cwd, env: { PATH: process.env.PATH, ...prepared.environment }, stdio: ['ignore', 'pipe', 'pipe', descriptor.fd] });
     child.stdout.resume(); child.stderr.resume();
     const code = await new Promise((resolve, reject) => { child.once('error', reject); child.once('close', resolve); });
-    assert.equal(code, 0); assert.equal((await readSessionExecutionReceipt(f.lease)).terminated, true);
+    assert.equal(code, 0); assert.equal((await readSessionExecutionReceipt(f.lease, { launcher })).terminated, true);
     assert.equal(await fs.readFile(path.join(f.viewDirectory, 'ran'), 'utf8'), 'yes');
     assert.equal(await fs.readFile(original, 'utf8'), 'preserved');
-  } finally { await descriptor.close(); }
+  } finally {
+    await descriptor.close(); await fs.rm(prepared.profile, { force: true });
+    await removeExecutionSocketDirectory(f.lease, prepared.socketDirectory);
+  }
 }, 20_000);
 
 native('name resolution is reachable while other local unix sockets stay denied', async () => {
   const f = await fixture();
   const net = await import('node:net');
   // A host-side socket stands in for any local daemon (Docker, ssh-agent).
-  const socketPath = path.join(f.root, 'daemon.sock');
+  const socketPath = process.platform === 'win32' ? `\\\\.\\pipe\\DevRyan-fixture-${randomUUID()}` : path.join(f.root, 'daemon.sock');
   const server = net.createServer((socket) => socket.end('reached')).listen(socketPath);
-  await new Promise((resolve) => server.once('listening', resolve));
+  await new Promise((resolve, reject) => { server.once('listening', resolve); server.once('error', reject); });
   try {
     const probe = (target) => `new Promise((resolve) => { const s = require('node:net').connect(${JSON.stringify(target)});
       s.once('connect', () => { s.destroy(); resolve('connected'); }); s.once('error', (e) => resolve(e.code)); })`;
-    const handle = await f.run(`Promise.all([${probe('/private/var/run/mDNSResponder')}, ${probe(socketPath)}])
+    const resolver = process.platform === 'win32'
+      ? `require('node:dns').promises.lookup('localhost').then(({ address }) => address ? 'connected' : 'unresolved')`
+      : probe('/private/var/run/mDNSResponder');
+    const handle = await f.run(`Promise.all([${resolver}, ${probe(socketPath)}])
       .then(([resolver, daemon]) => require('node:fs').writeFileSync('probe', JSON.stringify({ resolver, daemon })))`);
     assert.equal((await handle.result).exitCode, 0, handle.output().stderr);
     const probe_ = JSON.parse(await fs.readFile(path.join(f.viewDirectory, 'probe'), 'utf8'));
@@ -156,14 +217,24 @@ native('an execution reaches sockets only in its own short directory, which term
 
 native('metadata writes cannot change the original project through an absolute path', async () => {
   const f = await fixture(), original = path.join(f.root, 'original');
-  await fs.writeFile(original, 'preserved', { mode: 0o600 });
+  if (process.platform === 'win32') await createWindowsPrivateFile(launcher, original, Buffer.from('preserved'));
+  else await fs.writeFile(original, 'preserved', { mode: 0o600 });
+  const before = process.platform === 'win32' ? await readWindowsPrivateFile(launcher, original) : null;
+  const ownedMode = process.platform === 'win32' ? 0o400 : 0o755;
   const handle = await f.run(`const fs = require('node:fs');
-    fs.writeFileSync('owned', 'private'); fs.chmodSync('owned', 0o755);
+    fs.writeFileSync('owned', 'private'); fs.chmodSync('owned', ${ownedMode});
     try { fs.chmodSync(${JSON.stringify(original)}, 0o777); process.exit(2); }
     catch (error) { if (!['EPERM', 'EACCES', 'EROFS'].includes(error.code)) throw error; }`);
   assert.equal((await handle.result).exitCode, 0);
-  assert.equal((await fs.stat(original)).mode & 0o777, 0o600);
-  assert.equal((await fs.stat(path.join(f.viewDirectory, 'owned'))).mode & 0o777, 0o755);
+  if (process.platform === 'win32') {
+    const after = await readWindowsPrivateFile(launcher, original);
+    assert.deepEqual(after.identity, before.identity); assert.deepEqual(after.bytes, before.bytes);
+    assert.equal((await fs.stat(path.join(f.viewDirectory, 'owned'))).mode & 0o222, 0);
+    await fs.chmod(path.join(f.viewDirectory, 'owned'), 0o600); // Allow disposable fixture cleanup.
+  } else {
+    assert.equal((await fs.stat(original)).mode & 0o777, 0o600);
+    assert.equal((await fs.stat(path.join(f.viewDirectory, 'owned'))).mode & 0o777, 0o755);
+  }
 }, 20_000);
 
 native('a detached spawn cannot escape execution ownership', async () => {
@@ -338,33 +409,39 @@ native('cancellation acknowledges only after the command and its children stop',
   assert.equal((await handle.result).cancelled, true);
 }, 20_000);
 
-native('a real command held open across Revert publishes only its surviving contribution', async () => {
+native('a real command held open across Revert publishes only its surviving contribution', async (t) => {
   const f = await fixture(); await git(f.viewDirectory, ['init', '--quiet']);
   const directory = f.viewDirectory;
   const file = path.join(directory, 'x'); await fs.writeFile(file, 'a=1; b=2');
-  const runtime = createSessionMutationRuntime({ directory: path.join(f.root, 'ledger') });
+  const windowsOwner = process.platform === 'win32' ? createWindowsPrivateFileOwner({ launcher }) : undefined;
+  const authorities = { windowsOwner, windowsLauncher: process.platform === 'win32' ? launcher : undefined };
+  const runtime = createSessionMutationRuntime({ directory: path.join(f.root, 'ledger'), ...authorities });
   const owner = createSessionExecutionOwner({ runtime, launcher, verifyLauncher: async () => true,
     stopSessions: async ({ sessions }) => ({ terminated: true, sessions }) });
   const scope = (id) => ({ directory, sessionID: id, userMessageID: `p${id}`, messageID: `m${id}`, callID: `c${id}`,
     command: process.execPath, env: { PATH: process.env.PATH } });
   await owner.execute({ ...scope('a'), args: ['-e', "require('node:fs').writeFileSync('x', 'a=3; b=2')"] });
   let ready; const started = new Promise((resolve) => { ready = resolve; });
-  const release = path.join(f.root, 'release');
-  const b = owner.execute({ ...scope('b'), args: ['-e', `const fs = require('node:fs');
+  const bHandle = await owner.start({ ...scope('b'), signal: t.signal, interactive: true, args: ['-e', `const fs = require('node:fs');
     const base = fs.readFileSync('x', 'utf8'); console.log('ready');
-    const timer = setInterval(() => { if (!fs.existsSync(${JSON.stringify(release)})) return;
-      clearInterval(timer); fs.writeFileSync('x', base.replace('b=2', 'b=4')); }, 10);`],
+    process.stdin.once('data', () => { fs.writeFileSync('x', base.replace('b=2', 'b=4')); process.stdin.destroy(); });`],
   onOutput: ({ data }) => { if (data.toString().includes('ready')) ready(); } });
-  await started;
-  let session = { id: 'a', directory };
-  const coordinator = createSessionRevertCoordinator({ runtime, executions: owner, directory: path.join(f.root, 'coordinator'),
-    conversation: { capabilities: async () => ({ legacyConversationRevert: 1 }), get: async () => session,
-      revert: async ({ messageID, files }) => { session = { ...session, revert: { messageID, fileRestore: files !== false } }; return session; },
-      unrevert: async () => { session = { ...session, revert: undefined }; return session; } } });
-  await coordinator.revert({ directory, sessionID: 'a', messageID: 'pa' });
-  assert.equal(await fs.readFile(file, 'utf8'), 'a=1; b=2');
-  await fs.writeFile(release, 'go'); await b;
-  assert.equal(await fs.readFile(file, 'utf8'), 'a=1; b=4');
+  const b = bHandle.result;
+  try {
+    await Promise.race([started, b.then(() => { throw new Error('Writer exited before readiness'); })]);
+    let session = { id: 'a', directory };
+    const coordinator = createSessionRevertCoordinator({ runtime, executions: owner, directory: path.join(f.root, 'coordinator'), ...authorities,
+      conversation: { capabilities: async () => ({ conversationOnlyRevert: 1 }), get: async () => session,
+        revert: async ({ messageID, files }) => { session = { ...session, revert: { messageID, fileRestore: files !== false } }; return session; },
+        unrevert: async () => { session = { ...session, revert: undefined }; return session; } } });
+    await coordinator.revert({ directory, sessionID: 'a', messageID: 'pa' });
+    assert.equal(await fs.readFile(file, 'utf8'), 'a=1; b=2');
+    bHandle.child.stdin.end('go'); await b;
+    assert.equal(await fs.readFile(file, 'utf8'), 'a=1; b=4');
+  } finally {
+    await owner.cancelAndWait({ directory, sessions: ['b'] });
+    await b.catch(() => {});
+  }
 }, 60_000);
 
 native('the provider transport streams through native confinement and cannot mutate its logical project', async () => {

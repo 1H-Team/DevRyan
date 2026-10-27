@@ -1,10 +1,20 @@
-import { AGENT_BROWSER_VERSION } from '@openchamber/web/server/lib/agent-browser/install.js';
+// First: adopt OPENCHAMBER_* aliases before any module reads its environment.
+import '../shared-runtime/lib/adopt-legacy-environment.js';
+import { adoptLegacyEnvironment, setDevRyanEnv } from '../shared-runtime/lib/legacy-environment.js';
+import { resolveDevRyanDataRoot } from '../shared-runtime/lib/data-root.js';
+import { configureEarlyStartup, createStartupWindowOptions, takeEarlyStartupWindow, takeEarlyAppLinks } from './early-startup.mjs';
+import { artifactDiagnostic, describeArtifactFailure, startupDiagnosticSummary } from '../shared-runtime/startup-diagnostics.js';
+import {createNativeSettingsDirectory,readNativeShellBundleBinding} from './native-settings-directory.mjs';
+import { isWindowsPreview, WINDOWS_PREVIEW_APP_ID, WINDOWS_PREVIEW_NAME, createPreviewUpdater, isPreviewUnsupportedCommand } from './windows-preview.mjs';
+import {selectInheritedShellEnv,selectShellDataRoots} from './shell-env-inheritance.mjs';
+import { AGENT_BROWSER_VERSION } from '@devryan/web/server/lib/agent-browser/install.js';
 import { restartSupabaseHost } from './supabase-host-restart.mjs';
+import {confirmRuntimeBundleResume} from './runtime-bundle-recovery.mjs';
 import { createRuntimeMemoryMonitor } from './runtime-memory-monitor.mjs';
 import { installRendererRecovery } from './renderer-recovery.mjs';
 import { createDesktopMenu } from './desktop-menu.mjs';
 import { createNativeNotifications } from './native-notifications.mjs';
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, powerMonitor, powerSaveBlocker, safeStorage, session, shell, systemPreferences, WebContentsView } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, Notification, powerMonitor, powerSaveBlocker, session, shell, systemPreferences, WebContentsView } from 'electron';
 import contextMenu from 'electron-context-menu';
 import log from 'electron-log/main.js';
 import dgram from 'node:dgram';
@@ -18,46 +28,23 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import updaterPkg from 'electron-updater';
+import { createDesktopUpdater } from './desktop-updater.mjs';
+import { createMacDmgInstaller } from './desktop-updater-macos.mjs';
+import { createWindowsNsisInstaller } from './desktop-updater-windows.mjs';
+import { createWindowsUpdateOwner } from './windows-update-owner.mjs';
+import { verifyWindowsInstalledArtifacts } from './windows-installed-artifacts.mjs';
+import { verifyNativeRuntimeArtifacts, verifyUpdateCandidateArtifacts } from '@devryan/web/server/lib/opencode/runtime-host/native-artifacts.js';
+import { setStartupPhaseListener } from '@devryan/web/server/lib/opencode/startup-timing.js';
 import { ElectronSshManager } from './ssh-manager.mjs';
 import { MacosSpeechManager } from './speech-manager.mjs';
 import { clearElectronRuntimeCaches, getElectronRuntimeCacheInfo } from './cache-maintenance.mjs';
 import { createKeepAwakeController } from './keep-awake-controller.mjs';
-import { createDockerDesktopLauncher } from './docker-desktop-launcher.mjs';
-import {
-  createBotSecretStore,
-  replaceBotEncryptionKeyAndRepair,
-} from './bot-secret-store.mjs';
-import { createBotRecoveryDialog } from './bot-recovery-dialog.mjs';
-import {
-  createBotRuntimeManager,
-  deriveBotRuntimeServiceEnvironment,
-  resolveDockerSocketSupplementalGid,
-} from './bot-runtime-manager.mjs';
-import { BOT_RUNTIME_IMAGE_KEYS, loadBotRuntimeManifest } from './bot-runtime-manifest.mjs';
-import { loadBotDatabaseSql } from '@openchamber/bot-db';
 import { finishQuitAfterCleanup } from './quit-cleanup.mjs';
-import {
-  createRuntimeServiceCoordinator,
-  assertRuntimeServiceDescriptorOwner,
-  isRuntimeServiceProtocolSupported,
-  readRuntimeServiceDescriptor,
-  waitForRuntimeServiceOwnerStopped as waitForOwnerStopped,
-  unsealRuntimeServiceBootstrapToken,
-} from './runtime-service.mjs';
-import {
-  createDesktopHostBroker,
-  createDesktopHostBrokerClient,
-} from './desktop-host-broker.mjs';
+import { createModuleEntryLoader, routeStartupRetry } from './startup-retry.mjs';
+import { createRuntimeServiceCoordinator, waitForRuntimeServiceOwnerStopped as waitForOwnerStopped } from './runtime-service.mjs';
 import { createRuntimeServiceRegistration } from './runtime-service-registration.mjs';
 import { createRuntimeServiceNativeControl } from './runtime-service-native.mjs';
-import {
-  prepareAutomaticRuntimeService,
-  createRuntimeOwnerAcquirer,
-  recoverAppBoundRuntime,
-  retryRuntimeServiceConnection,
-  ensureRuntimeServiceRegistered,
-} from './runtime-service-startup.mjs';
+import { createRuntimeOwnerAcquirer, retireRuntimeServiceRegistration, runStartupPhase } from './runtime-service-startup.mjs';
 import {
   buildQuitRiskSnapshot,
   emptyQuitRisk,
@@ -66,7 +53,6 @@ import {
 } from './quit-risk.mjs';
 import { createDesktopSettings } from './desktop-settings.mjs';
 import {
-  buildBotStartupAttentionHtml as buildBotStartupAttentionHtmlFromSettings,
   buildStartupErrorHtml as buildStartupErrorHtmlFromSettings,
   buildStartupSplashHtml as buildStartupSplashHtmlFromSettings,
   resolveStartupSplashPalette,
@@ -78,11 +64,11 @@ import {
   privilegedOriginGuardJs,
 } from './origin-policy.mjs';
 import {
-  BROWSER_WEBVIEW_PARTITION,
   hardenWebviewAttachParams,
   isAllowedWebviewNavigationUrl,
   isAllowedWebviewSourceUrl,
 } from './browser-webview-policy.mjs';
+import { selectBrowserPartitionIdentity } from './browser-partition-identity.mjs';
 import { createBrowserDevToolsController } from './browser-devtools-controller.mjs';
 import { createBrowserSurfaceManager } from './browser-surface-manager.mjs';
 import { isBenignNavigationAbort } from './browser-navigation-error.mjs';
@@ -99,60 +85,36 @@ import {
 } from './branch-preview-browser.mjs';
 
 const execFileAsync = promisify(execFile);
-const botRecoveryDialog = createBotRecoveryDialog({ dialog });
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const isDev = process.env.OPENCHAMBER_ELECTRON_DEV === '1' || !app.isPackaged;
+const isDev = process.env.DEVRYAN_ELECTRON_DEV === '1' || !app.isPackaged;
+const isPreview = isWindowsPreview({ app });
 const isRuntimeServiceMode = process.argv.includes('--runtime-service');
 const isRuntimeServiceControlProbe = process.argv.includes('--runtime-service-control=status');
 
-const DEEP_LINK_PROTOCOL = 'openchamber';
+// devryan:// is canonical; openchamber:// links from before the rename keep working.
+const DEEP_LINK_PROTOCOLS = Object.freeze(['devryan', 'openchamber']);
+const isDeepLinkProtocol = (protocol) => DEEP_LINK_PROTOCOLS.some((scheme) => protocol === `${scheme}:`);
+const isDeepLinkArg = (arg) => typeof arg === 'string' && DEEP_LINK_PROTOCOLS.some((scheme) => arg.startsWith(`${scheme}://`));
 const STARTUP_RETRY_HOST = 'retry-startup';
-const BOT_RUNTIME_RETRY_HOST = 'retry-bot-runtime';
-const BOT_RUNTIME_CONTINUE_HOST = 'continue-without-bots';
-const APP_USER_MODEL_ID = 'dev.openchamber.desktop';
+const STARTUP_PHASE_STATUS = Object.freeze({
+  bundle_lease_recovery: 'Recovering the runtime…',
+  bundle_artifact_retention: 'Updating the runtime for this version…',
+  bundle_artifact_rebind: 'Updating the runtime for this version…',
+  bundle_database_checkpoint: 'Updating the runtime: saving the database…',
+  bundle_data_copy: 'Updating the runtime: copying your data…',
+  bundle_candidate_preparation: 'Updating the runtime: checking the copy…',
+  bundle_selection: 'Updating the runtime: switching over…',
+  bundle_artifact_verification: 'Verifying the runtime…',
+  application_import: 'Loading DevRyan…',
+  web_host_construction: 'Starting local services…',
+});
+const APP_USER_MODEL_ID = isPreview ? WINDOWS_PREVIEW_APP_ID : 'dev.devryan.desktop';
 
-if (isDev && typeof process.env.OPENCHAMBER_ELECTRON_USER_DATA_DIR === 'string') {
-  const devUserDataDirectory = path.resolve(process.env.OPENCHAMBER_ELECTRON_USER_DATA_DIR);
-  fs.mkdirSync(devUserDataDirectory, { recursive: true });
-  // A packaged development binary otherwise contends with the installed app's
-  // single-instance lock and Chromium profile. Isolate both before acquiring
-  // the lock so visual verification never disrupts the user's running app.
-  app.setPath('userData', devUserDataDirectory);
-}
-
-// The background runtime service and the status probe run from the same app
-// bundle as the foreground window. Without this, macOS registers them as
-// regular apps and shows a second "DevRyan" in the Dock.
-const hideHeadlessProcessFromDock = () => {
-  if (process.platform !== 'darwin') return;
-  try {
-    app.dock?.hide();
-  } catch {
-  }
-};
-
-if (isRuntimeServiceMode || isRuntimeServiceControlProbe) {
-  hideHeadlessProcessFromDock();
-}
-
-if (isRuntimeServiceMode) {
-  const serviceUserDataDirectory = `${app.getPath('userData')}-runtime-service`;
-  fs.mkdirSync(serviceUserDataDirectory, { recursive: true });
-  app.setPath('userData', serviceUserDataDirectory);
-}
-
-if (!isRuntimeServiceControlProbe && !app.requestSingleInstanceLock()) {
-  app.exit(0);
-  process.exit(0);
-}
-
-// Set the product name early so electron-log derives its log directory as
-// ~/Library/Logs/DevRyan/ (not ~/Library/Logs/@openchamber/electron/).
-app.setName('DevRyan');
-app.setAppUserModelId(APP_USER_MODEL_ID);
-app.commandLine.appendSwitch('proxy-bypass-list', '<-loopback>');
+if (!configureEarlyStartup({ app, isPreview, WINDOWS_PREVIEW_NAME, APP_USER_MODEL_ID,
+  isRuntimeServiceMode, isRuntimeServiceControlProbe })) process.exit(0);
+const browserPartitionIdentity = selectBrowserPartitionIdentity({ userDataDirectory: app.getPath('userData') });
 
 try {
   process.chdir(os.homedir());
@@ -205,8 +167,8 @@ const cleanupExpiredDiagnosticsTemps = async (destination) => {
 };
 
 try {
-  if (!app.isDefaultProtocolClient(DEEP_LINK_PROTOCOL)) {
-    app.setAsDefaultProtocolClient(DEEP_LINK_PROTOCOL);
+  for (const scheme of DEEP_LINK_PROTOCOLS) {
+    if (!isPreview && !app.isDefaultProtocolClient(scheme)) app.setAsDefaultProtocolClient(scheme);
   }
 } catch (error) {
   // log.* not yet initialized at this point; fall back to console.
@@ -223,13 +185,13 @@ const readAppMetadata = () => {
     try {
       const raw = fs.readFileSync(candidate, 'utf8');
       const parsed = JSON.parse(raw);
-      if (parsed?.name === '@openchamber/electron' && typeof parsed.version === 'string') {
+      if (['@devryan/electron', '@openchamber/electron'].includes(parsed?.name) && typeof parsed.version === 'string') {
         return { name: parsed.name, version: parsed.version };
       }
     } catch {
     }
   }
-  return { name: '@openchamber/electron', version: app.getVersion() };
+  return { name: '@devryan/electron', version: app.getVersion() };
 };
 
 const APP_METADATA = readAppMetadata();
@@ -252,14 +214,12 @@ const GITHUB_REPOSITORY_NAME = 'DevRyan';
 const GITHUB_REPOSITORY_URL = `https://github.com/${GITHUB_REPOSITORY_OWNER}/${GITHUB_REPOSITORY_NAME}`;
 const GITHUB_REPOSITORY_API_URL =
   `https://api.github.com/repos/${GITHUB_REPOSITORY_OWNER}/${GITHUB_REPOSITORY_NAME}`;
-const UPDATE_METADATA_URL = `${GITHUB_REPOSITORY_API_URL}/releases/latest`;
 const GITHUB_BUG_REPORT_URL = `${GITHUB_REPOSITORY_URL}/issues/new?template=bug_report.yml`;
 const GITHUB_FEATURE_REQUEST_URL = `${GITHUB_REPOSITORY_URL}/issues/new?template=feature_request.yml`;
 const DISCORD_INVITE_URL = 'https://discord.gg/ZYRSdnwwKA';
 const INSTALLED_APPS_CACHE_TTL_SECS = 60 * 60 * 24;
 const INSTALLED_APPS_CACHE_FILE = 'discovered-apps.json';
 
-const { autoUpdater } = updaterPkg;
 const keepAwakeController = createKeepAwakeController({ powerSaveBlocker });
 
 const state = {
@@ -276,7 +236,6 @@ const state = {
   updateCleanupPromise: null,
   updateInstallReady: false,
   installingUpdate: false,
-  pendingUpdate: null,
   unreachableHosts: new Set(),
   windowCounter: 1,
   focusedWindowIds: new Set(),
@@ -293,31 +252,16 @@ const state = {
   agentBrowserSetupPromise: null,
   agentBrowserManagedRuntime: false,
   agentBrowserRuntimeMode: 'pending',
-  botSecretStore: null,
-  botSecretStoreErrorCode: null,
-  botRuntimeManager: null,
-  botRuntimeOperationSnapshot: null,
-  pendingBotStartupContext: null,
-  botRuntimeRetryPromise: null,
   runtimeServiceCoordinator: null,
-  runtimeServiceOwnsServer: false,
-  runtimeServiceClient: false,
-  desktopHostBroker: null,
-  desktopHostBrokerLease: null,
-  desktopHostLeaseRefreshTimer: null,
 };
 
 const runtimeMemoryMonitor = createRuntimeMemoryMonitor({
   log: (sample) => log.info('[runtime-memory]', sample),
-  role: isRuntimeServiceMode ? 'runtime-service' : 'foreground',
+  role: 'foreground',
   version: app.getVersion(),
   getWork: () => ({ ...state.serverHandle?.getSessionChangeReadDiagnostics?.(), ...state.serverHandle?.getHostStallDiagnostics?.() }),
 });
 app.once('will-quit', () => runtimeMemoryMonitor.stop());
-
-const desktopHostBrokerClient = createDesktopHostBrokerClient({
-  getLease: () => state.desktopHostBrokerLease,
-});
 
 let runtimeServiceRegistration = null;
 
@@ -331,6 +275,7 @@ const branchPreviewCredentialsByPartition = new Map();
 let browserPartitionRegistryWrite = Promise.resolve();
 const NATIVE_BROWSER_AUTH_CACHE_MS = 5_000;
 const NATIVE_BROWSER_REVALIDATE_MS = 10_000;
+const MANAGED_BROWSER_SETUP_WAIT_MS = 10_000;
 let nativeBrowserRevalidationTimer = null;
 
 const quitRisk = emptyQuitRisk();
@@ -360,19 +305,16 @@ const performConfirmedQuit = ({ restart = false } = {}) => {
   if (state.quitConfirmed || state.quitCleanupPromise) return;
   prepareForQuit();
   state.quitCleanupPromise = finishQuitAfterCleanup({
-    checkpointBotRuns: () => state.serverHandle?.checkpointBotRuns?.({ reason: 'app_quit' }),
-    stopBotDispatcher: () => state.serverHandle?.stopBotDispatcher?.(),
-    stopBotIndexerRequests: () => state.serverHandle?.stopBotIndexerRequests?.(),
     cleanupOwnedResources: async () => {
       speechManager.shutdown();
       await Promise.all([
-        state.runtimeServiceClient ? stopDesktopHostBroker() : killSidecar(),
+        killSidecar(),
         Promise.resolve(sshManager.shutdownAll()).catch((error) => {
           log.warn('[electron] SSH shutdown failed during quit:', error);
         }),
       ]);
     },
-    relaunch: restart ? () => app.relaunch() : undefined,
+    relaunch: restart ? relaunchWithHostDataRoot : undefined,
     requestQuit: () => {
       state.quitCleanupPromise = null;
       app.quit();
@@ -416,22 +358,12 @@ const requestQuitWithConfirmation = async () => {
       title: 'Quit DevRyan?',
       message: 'Quit DevRyan?',
       detail: quitConfirmationMessage(quitRisk),
-      buttons: ['Wait', 'Cancel', 'Quit Now'],
-      defaultId: 1,
-      cancelId: 1,
+      buttons: ['Cancel', 'Quit Now'],
+      defaultId: 0,
+      cancelId: 0,
     });
     state.quitConfirmationPending = false;
-    if (result.response === 2) {
-      performConfirmedQuit();
-    } else if (result.response === 0) {
-      try {
-        await state.serverHandle?.checkpointBotRuns?.({ reason: 'quit_wait' });
-      } catch (error) {
-        log.warn('[electron] Bot checkpoint request failed while waiting to quit', {
-          code: error?.code || 'bot_checkpoint_failed',
-        });
-      }
-    }
+    if (result.response === 1) performConfirmedQuit();
   } catch (error) {
     state.quitConfirmationPending = false;
     log.warn('[electron] quit confirmation dialog failed:', error);
@@ -447,7 +379,6 @@ const refreshQuitRiskFlags = async () => {
         Object.assign(quitRisk, buildQuitRiskSnapshot({
           scheduledTasks: status.scheduledTasks,
           tunnel: status.tunnel,
-          bots: status?.bots && typeof status.bots === 'object' ? status.bots : undefined,
           scheduledTasksVerified: status.scheduledTasksVerified !== false
             && status.scheduledTasks.verified !== false,
         }));
@@ -466,12 +397,11 @@ const refreshQuitRiskFlags = async () => {
     return;
   }
 
-  const scheduledUrl = `${base}/api/openchamber/scheduled-tasks/status`;
-  const tunnelUrl = `${base}/api/openchamber/tunnel/status`;
-
-  const fetchJson = async (url) => {
+  const fetchJson = async (route) => {
     try {
-      const response = await fetch(url, { signal: AbortSignal.timeout(2_000) });
+      let response = await fetch(`${base}/api/devryan${route}`, { signal: AbortSignal.timeout(2_000) });
+      // A runtime service of an older version serves only the /api/openchamber alias.
+      if (response.status === 404) response = await fetch(`${base}/api/openchamber${route}`, { signal: AbortSignal.timeout(2_000) });
       if (!response.ok) return null;
       return await response.json();
     } catch {
@@ -479,7 +409,7 @@ const refreshQuitRiskFlags = async () => {
     }
   };
 
-  const [scheduled, tunnel] = await Promise.all([fetchJson(scheduledUrl), fetchJson(tunnelUrl)]);
+  const [scheduled, tunnel] = await Promise.all([fetchJson('/scheduled-tasks/status'), fetchJson('/tunnel/status')]);
 
   Object.assign(quitRisk, buildQuitRiskSnapshot({
     scheduledTasks: scheduled,
@@ -489,116 +419,124 @@ const refreshQuitRiskFlags = async () => {
   }));
 };
 
-const { settingsFilePath, readSettingsRoot, mutateSettingsRoot, normalizeHostUrl, readDesktopHostsConfig, writeDesktopHostsConfig, readWindowState, writeWindowState, debounceWindowStatePersist } = createDesktopSettings({
+const SHELL_ENV_TIMEOUT_MS = 5_000;
+let cachedShellEnv = null;
+let shellEnvProbed = false;
+
+const isNushell = (shell) => {
+  const name = path.basename(shell).toLowerCase();
+  return name === 'nu' || name === 'nu.exe';
+};
+
+const parseShellEnv = (buf) => {
+  const result = {};
+  for (const line of buf.toString('utf8').split('\0')) {
+    if (!line) continue;
+    const idx = line.indexOf('=');
+    if (idx <= 0) continue;
+    result[line.slice(0, idx)] = line.slice(idx + 1);
+  }
+  return result;
+};
+
+const probeShellEnv = (shell, mode) => {
+  const result = spawnSync(shell, [mode, '-c', 'env -0'], {
+    stdio: ['ignore', 'pipe', 'ignore'],
+    timeout: SHELL_ENV_TIMEOUT_MS,
+    windowsHide: true,
+  });
+  if (result.error || result.status !== 0) return null;
+  const env = parseShellEnv(result.stdout);
+  return Object.keys(env).length > 0 ? env : null;
+};
+
+// Finder-launched apps on macOS inherit a minimal PATH (no /opt/homebrew, mise, asdf, etc.).
+// Probe the user's login shell once so the sidecar sees the same PATH / tool env as `$SHELL -il`.
+const loadShellEnv = () => {
+  if (shellEnvProbed) return cachedShellEnv;
+  shellEnvProbed = true;
+  if (process.platform === 'win32') return null;
+  const shell = process.env.SHELL || '/bin/sh';
+  if (isNushell(shell)) return null;
+  cachedShellEnv = probeShellEnv(shell, '-il') || probeShellEnv(shell, '-l');
+  return cachedShellEnv;
+};
+
+// The server inherits the login-shell merge before computing its data root and
+// bundle selector. Adopt their shell-only values first so this process's root
+// capture and binding read resolve the same roots as the server.
+if (!isRuntimeServiceControlProbe) {
+  const startedAt = performance.now();
+  Object.assign(process.env, selectShellDataRoots(process.env, loadShellEnv(), { packaged: app.isPackaged }));
+  adoptLegacyEnvironment(process.env);
+  log.info('[electron] startup phase', { phase: 'shell_environment', outcome: 'completed', elapsedMs: Math.round(performance.now() - startedAt) });
+}
+
+// One-time move of ~/.config/openchamber to ~/.config/devryan, after the shell's
+// data-root choice is known and before any reader. It never throws; a folder that
+// cannot move stays in use and the open app shows a notice.
+if (!isRuntimeServiceControlProbe && !isPreview) {
+  const { migrateDataRootAtStartup } = await import('@devryan/web/server/lib/opencode/runtime-host/data-root-startup.js');
+  await migrateDataRootAtStartup({ log });
+}
+
+// The in-process web launcher binds DEVRYAN_DATA_DIR to the selected bundle.
+// Capture shell ownership first; this process only inspects the binding.
+const hostDataRootDirectory=path.resolve(resolveDevRyanDataRoot({env:process.env,home:os.homedir()}));
+const hostRuntimeBundleRoot = process.env.DEVRYAN_RUNTIME_BUNDLE_ROOT;
+let readRuntimeBundleBinding, shellRuntimeBundleBindingError;
+const bindingFailed = () => {
+  shellRuntimeBundleBindingError = Object.assign(new Error('The selected runtime bundle could not be verified.'), { code: 'runtime_bundle_binding_invalid' });
+  return null;
+};
+try {
+  if (!isPreview && !isRuntimeServiceControlProbe) ({readRuntimeBundleBinding}=await import('@devryan/web/server/lib/opencode/runtime-host/runtime-bundle-binding.js'));
+} catch { bindingFailed(); }
+const shellRuntimeBundleBinding=(() => {
+  if (isPreview || shellRuntimeBundleBindingError || isRuntimeServiceControlProbe) return null;
+  try { return readNativeShellBundleBinding({environment:{...process.env},home:os.homedir(),existsSync:fs.existsSync,readRuntimeBundleBinding}); }
+  catch { return bindingFailed(); }
+})();
+const runtimeBundleRecoveryRequired=Boolean(shellRuntimeBundleBindingError)||shellRuntimeBundleBinding?.admission==='held'||shellRuntimeBundleBinding?.selection.reconciliationRequired===true;
+const resolveSettingsDirectory=shellRuntimeBundleBindingError
+  ? () => { throw shellRuntimeBundleBindingError; }
+  : isPreview || isRuntimeServiceControlProbe ? () => hostDataRootDirectory
+    : createNativeSettingsDirectory({environment:{...process.env},home:os.homedir(),existsSync:fs.existsSync,readRuntimeBundleBinding});
+const { settingsFilePath, readSettingsRoot, mutateSettingsRoot, normalizeHostUrl, readDesktopHostsConfig, writeDesktopHostsConfig, readWindowState, writeWindowState, debounceWindowStatePersist, holdForCheckpoint: holdDesktopSettingsForCheckpoint } = createDesktopSettings({
   fs, fsp, os, process, log, getMainWindow: () => state.mainWindow,
-  minWidth: MIN_WINDOW_WIDTH, minHeight: MIN_WINDOW_HEIGHT, LOCAL_HOST_ID,
+  minWidth: MIN_WINDOW_WIDTH, minHeight: MIN_WINDOW_HEIGHT, LOCAL_HOST_ID, resolveDataDirectory:resolveSettingsDirectory,
 });
 
-const dataRootDirectory = () => path.dirname(settingsFilePath());
+// Native bundle binding may relocate settings. Host service identity must
+// retain its original shell-owned root across that application transition.
+const dataRootDirectory = () => hostDataRootDirectory;
 
-const firstExistingPath = (candidates) => (
-  candidates.find((candidate) => fs.existsSync(candidate)) || candidates[0]
-);
-
-const botRuntimeManifestPath = () => (app.isPackaged
-  ? path.join(process.resourcesPath, 'bot-runtime', 'images.release.json')
-  : firstExistingPath([
-      path.join(__dirname, 'resources', 'bot-runtime', 'images.dev.json'),
-      path.join(__dirname, '..', 'resources', 'bot-runtime', 'images.dev.json'),
-    ]));
-
-const botRuntimeComposePath = () => (app.isPackaged
-  ? path.join(process.resourcesPath, 'bot-runtime', 'compose.yml')
-  : firstExistingPath([
-      path.resolve(__dirname, '..', '..', 'docker', 'bots', 'compose.yml'),
-      path.resolve(__dirname, '..', '..', '..', 'docker', 'bots', 'compose.yml'),
-    ]));
-
-// Reviewed local Bot catalog SQL: packaged as resources, read from the checkout
-// in development. Every file is checksum-verified against the inventory.
-const botDatabaseSqlPaths = () => (app.isPackaged
-  ? {
-      supabaseMigrationsDirectory: path.join(process.resourcesPath, 'bot-db', 'supabase-migrations'),
-      sqlDirectory: path.join(process.resourcesPath, 'bot-db', 'sql'),
-    }
-  : {
-      supabaseMigrationsDirectory: firstExistingPath([
-        path.resolve(__dirname, '..', '..', 'supabase', 'migrations'),
-        path.resolve(__dirname, '..', '..', '..', 'supabase', 'migrations'),
-      ]),
-      sqlDirectory: firstExistingPath([
-        path.resolve(__dirname, '..', 'bot-db', 'sql'),
-        path.resolve(__dirname, '..', '..', 'bot-db', 'sql'),
-      ]),
+const relaunchWithHostDataRoot = () => {
+  // Both the DevRyan name and its OPENCHAMBER_* alias are restored exactly.
+  const dataDirectoryNames = ['DEVRYAN_DATA_DIR', 'OPENCHAMBER_DATA_DIR'];
+  const runtimeDataDirectories = dataDirectoryNames.map((name) => process.env[name]);
+  const runtimeBundleRoot = process.env.DEVRYAN_RUNTIME_BUNDLE_ROOT;
+  setDevRyanEnv(process.env, 'DEVRYAN_DATA_DIR', hostDataRootDirectory);
+  if (hostRuntimeBundleRoot === undefined) delete process.env.DEVRYAN_RUNTIME_BUNDLE_ROOT;
+  else process.env.DEVRYAN_RUNTIME_BUNDLE_ROOT = hostRuntimeBundleRoot;
+  try {
+    // Electron synchronously starts its relaunch helper with the current env.
+    app.relaunch();
+  } finally {
+    // Ordinary quit can use bounded cleanup; keep any remaining parent work
+    // bound to its selected runtime even if scheduling the relaunch fails.
+    dataDirectoryNames.forEach((name, index) => {
+      if (runtimeDataDirectories[index] === undefined) delete process.env[name];
+      else process.env[name] = runtimeDataDirectories[index];
     });
-
-let botDatabaseSqlPromise = null;
-const loadBotDatabaseSqlOnce = () => {
-  botDatabaseSqlPromise ||= loadBotDatabaseSql(botDatabaseSqlPaths()).catch((error) => {
-    botDatabaseSqlPromise = null;
-    throw error;
-  });
-  return botDatabaseSqlPromise;
-};
-
-let dockerDesktopLauncher = null;
-const getDockerDesktopLauncher = () => {
-  dockerDesktopLauncher ||= createDockerDesktopLauncher({ execFile: execFileAsync });
-  return dockerDesktopLauncher;
-};
-
-const getBotRuntimeManager = () => {
-  if (state.botRuntimeManager) return state.botRuntimeManager;
-  state.botRuntimeManager = createBotRuntimeManager({
-    composePath: botRuntimeComposePath(),
-    dataDirectory: dataRootDirectory(),
-    baseEnvironment: process.env,
-    loadRuntimeEnvironment: async () => {
-      if (!state.botSecretStore) {
-        const error = new Error('Bot runtime encryption is unavailable');
-        error.code = state.botSecretStoreErrorCode || 'bot_os_encryption_unavailable';
-        throw error;
-      }
-      const deploymentKey = state.botSecretStore.getBotEncryptionKey();
-      try {
-        const dockerSocketGid = await resolveDockerSocketSupplementalGid();
-        return deriveBotRuntimeServiceEnvironment(deploymentKey, {
-          dockerSocketGid,
-          hostRuntimeRoot: path.join(dataRootDirectory(), 'bots', 'runtime'),
-        });
-      } finally {
-        deploymentKey.fill(0);
-      }
-    },
-    loadManifest: () => loadBotRuntimeManifest({
-      manifestPath: botRuntimeManifestPath(),
-      isPackaged: app.isPackaged,
-      architecture: process.arch,
-    }),
-    loadDatabaseSql: loadBotDatabaseSqlOnce,
-    // Catalog backups use their own domain-separated root key; the sealed
-    // deployment key never leaves this process.
-    loadBackupKey: async () => {
-      if (!state.botSecretStore) {
-        const error = new Error('Bot backup encryption is unavailable');
-        error.code = state.botSecretStoreErrorCode || 'bot_os_encryption_unavailable';
-        throw error;
-      }
-      const deploymentKey = state.botSecretStore.getBotEncryptionKey();
-      try {
-        return crypto.createHmac('sha256', deploymentKey)
-          .update('devryan-production-bots/catalog-backup/v1', 'utf8')
-          .digest();
-      } finally {
-        deploymentKey.fill(0);
-      }
-    },
-  });
-  return state.botRuntimeManager;
+    if (runtimeBundleRoot === undefined) delete process.env.DEVRYAN_RUNTIME_BUNDLE_ROOT;
+    else process.env.DEVRYAN_RUNTIME_BUNDLE_ROOT = runtimeBundleRoot;
+  }
 };
 
 const sshManager = new ElectronSshManager({
-  settingsFilePath: settingsFilePath(),
+  settingsFilePath,
+  mutateSettingsRoot,
   appVersion: APP_VERSION,
   emit: (event, detail) => emitToAllWindows(event, detail),
 });
@@ -657,13 +595,13 @@ const waitForHealth = async (url, timeoutMs = 20_000, initialPollMs = 250, maxPo
   let pollMs = initialPollMs;
   while (Date.now() < deadline) {
     try {
-      const response = await fetch(buildHealthUrl(url), { signal: AbortSignal.timeout(Math.min(pollMs * 4, 1500)) });
+      const response = await fetch(buildHealthUrl(url), { signal: AbortSignal.timeout(Math.max(1, Math.min(pollMs * 4, 1500, deadline - Date.now()))) });
       if (response.ok) {
         return true;
       }
     } catch {
     }
-    await new Promise((resolve) => setTimeout(resolve, pollMs));
+    await new Promise((resolve) => setTimeout(resolve, Math.max(0, Math.min(pollMs, deadline - Date.now()))));
     pollMs = Math.min(pollMs * 2, maxPollMs);
   }
   return false;
@@ -746,56 +684,9 @@ const { maybeShowNativeNotification, focusForegroundWindow, isAnyWindowFocused }
   emitToAllWindows: (...args) => emitToAllWindows(...args),
 });
 
-const mapUpdaterProgressEvent = (payload) => ({
-  event: payload.event,
-  data: payload.data,
-});
-
-const SHELL_ENV_TIMEOUT_MS = 5_000;
-let cachedShellEnv = null;
-let shellEnvProbed = false;
-
-const isNushell = (shell) => {
-  const name = path.basename(shell).toLowerCase();
-  return name === 'nu' || name === 'nu.exe';
-};
-
-const parseShellEnv = (buf) => {
-  const result = {};
-  for (const line of buf.toString('utf8').split('\0')) {
-    if (!line) continue;
-    const idx = line.indexOf('=');
-    if (idx <= 0) continue;
-    result[line.slice(0, idx)] = line.slice(idx + 1);
-  }
-  return result;
-};
-
-const probeShellEnv = (shell, mode) => {
-  const result = spawnSync(shell, [mode, '-c', 'env -0'], {
-    stdio: ['ignore', 'pipe', 'ignore'],
-    timeout: SHELL_ENV_TIMEOUT_MS,
-    windowsHide: true,
-  });
-  if (result.error || result.status !== 0) return null;
-  const env = parseShellEnv(result.stdout);
-  return Object.keys(env).length > 0 ? env : null;
-};
-
-// Finder-launched apps on macOS inherit a minimal PATH (no /opt/homebrew, mise, asdf, etc.).
-// Probe the user's login shell once so the sidecar sees the same PATH / tool env as `$SHELL -il`.
-const loadShellEnv = () => {
-  if (shellEnvProbed) return cachedShellEnv;
-  shellEnvProbed = true;
-  if (process.platform === 'win32') return null;
-  const shell = process.env.SHELL || '/bin/sh';
-  if (isNushell(shell)) return null;
-  cachedShellEnv = probeShellEnv(shell, '-il') || probeShellEnv(shell, '-l');
-  return cachedShellEnv;
-};
-
 // Merge the user's login-shell env (PATH, etc.) into this process before we
-import { pathLooksUserConfigured, mergePathValues } from '@openchamber/web/server/lib/opencode/path-utils.js';
+import { pathLooksUserConfigured, mergePathValues } from '@devryan/web/server/lib/opencode/path-utils.js';
+import { PACKAGED_DESKTOP_ENV } from '@devryan/web/server/lib/opencode/login-shell-env-filter.js';
 
 // import/start the server in-process. The server and its children (opencode
 // CLI, git, etc.) inherit process.env directly now — there is no sidecar
@@ -808,12 +699,12 @@ const inheritUserShellEnv = () => {
   const currentPath = process.env.PATH || '';
   const currentPathLooksUserConfigured = pathLooksUserConfigured(currentPath, homeDir, ':');
 
-  for (const [key, value] of Object.entries(shellEnv)) {
-    if (key === 'PATH') continue;
-    if (typeof process.env[key] === 'undefined') {
-      process.env[key] = value;
-    }
-  }
+  // Login-shell values that provisioning would refuse (or that bypass it), and in a
+  // packaged app dev/packaging redirections, are dropped; everything else is inherited.
+  const { inherited, dropped } = selectInheritedShellEnv(process.env, shellEnv, { packaged: app.isPackaged });
+  Object.assign(process.env, inherited);
+  adoptLegacyEnvironment(process.env);
+  if (dropped.length) log.info(`[shell-env] ignored login-shell variables the desktop runtime does not support: ${dropped.join(', ')}`);
 
   const shellPath = typeof shellEnv.PATH === 'string' ? shellEnv.PATH : '';
   if (!currentPathLooksUserConfigured && shellPath) {
@@ -822,21 +713,34 @@ const inheritUserShellEnv = () => {
 };
 
 const acquireRuntimeOwner = createRuntimeOwnerAcquirer({
+  onWaiting: () => updateStartupSplashStatus('Waiting for the previous DevRyan to finish closing…'),
   getCoordinator: () => state.runtimeServiceCoordinator,
   setCoordinator: (coordinator) => { state.runtimeServiceCoordinator = coordinator; },
   createCoordinator: () => createRuntimeServiceCoordinator({
-    dataDirectory: dataRootDirectory(), safeStorage,
+    dataDirectory: dataRootDirectory(),
     onDiagnostic: (detail) => log.warn('[runtime-service] owner recovery', detail),
   }),
 });
 
-const spawnLocalServer = async () => {
-  inheritUserShellEnv();
+// The server entry bootstraps during evaluation; a failed evaluation stays
+// cached, so startup Retry must relaunch instead of importing it again.
+const webServerEntry = createModuleEntryLoader(() => import('@devryan/web/server/index.js'));
 
-  await acquireRuntimeOwner(isRuntimeServiceMode ? 'service' : 'app_bound');
+let localServerStartPromise = null;
+const spawnLocalServer = () => {
+  if (state.quitRequested) return Promise.reject(Object.assign(new Error('The runtime owner is shutting down'), { code: 'runtime_owner_shutting_down' }));
+  if (localServerStartPromise) return localServerStartPromise;
+  const starting = Promise.resolve().then(startLocalServer);
+  localServerStartPromise = starting;
+  void starting.finally(() => { if (localServerStartPromise === starting) localServerStartPromise = null; }).catch(() => {});
+  return starting;
+};
+const startLocalServer = async () => {
+  if(!runtimeBundleRecoveryRequired)inheritUserShellEnv();
+
+  if (!isPreview) await runStartupPhase('ownership_resolved', () => acquireRuntimeOwner('app_bound'), log);
 
   const settings = readSettingsRoot();
-  const productionBotsExecutionDisabled = settings.productionBotsRuntimeMode === 'disabled';
   // NOTE: We intentionally do NOT call preflightMacosProtectedDirectoryAccess
   // here. Stat'ing a path under ~/Documents/Desktop/Downloads triggers the
   // macOS TCC prompt before the user has any UI context for why. Defer to
@@ -848,17 +752,17 @@ const spawnLocalServer = async () => {
   // When the user enables "Desktop Network Access" we bind on all interfaces
   // so phones/tablets on the same Wi-Fi can reach the app. UI shows a clear
   // warning and persists the flag via /api/config/settings.
-  const lanAccessEnabled = !isRuntimeServiceMode && settings.desktopLanAccessEnabled === true;
+  const lanAccessEnabled = !isPreview && !runtimeBundleRecoveryRequired && settings.desktopLanAccessEnabled === true;
   const bindHost = lanAccessEnabled ? '0.0.0.0' : '127.0.0.1';
   // The in-process web server refuses to bind a network-exposed host without UI
   // auth (see server/lib/security/bind-host.js). Desktop Network Access is a
   // deliberate, warned opt-in with no desktop password mechanism, so honor that
   // opt-in here rather than crashing boot.
   if (lanAccessEnabled) {
-    process.env.OPENCHAMBER_ALLOW_UNAUTHENTICATED_LAN = 'true';
+    setDevRyanEnv(process.env, 'DEVRYAN_ALLOW_UNAUTHENTICATED_LAN', 'true');
     log.warn('[desktop] Network Access is enabled; the UI is reachable on your LAN without authentication.');
   } else {
-    delete process.env.OPENCHAMBER_ALLOW_UNAUTHENTICATED_LAN;
+    setDevRyanEnv(process.env, 'DEVRYAN_ALLOW_UNAUTHENTICATED_LAN', undefined);
   }
 
   // Probe before starting the server — main() in the server module sets up a
@@ -876,15 +780,17 @@ const spawnLocalServer = async () => {
     chosenPort = await pickUnusedPort();
   }
 
-  // The server module reads ENV_DESKTOP_NOTIFY / OPENCHAMBER_DIST_DIR /
-  // OPENCHAMBER_RUNTIME at import time (top-level const), so these must be
+  // The server module reads ENV_DESKTOP_NOTIFY / DEVRYAN_DIST_DIR /
+  // DEVRYAN_RUNTIME at import time (top-level const), so these must be
   // set before the first import. After this point, the same env is used by
   // both the Electron main and the server running inside it.
-  process.env.OPENCHAMBER_HOST = bindHost;
-  process.env.OPENCHAMBER_DIST_DIR = resolveWebDistDir();
-  process.env.OPENCHAMBER_RUNTIME = 'desktop';
-  process.env.OPENCHAMBER_DESKTOP_NOTIFY = 'true';
-  process.env.OPENCHAMBER_SKIP_API_COMPRESSION = process.env.OPENCHAMBER_SKIP_API_COMPRESSION || 'true';
+  setDevRyanEnv(process.env, 'DEVRYAN_HOST', bindHost);
+  setDevRyanEnv(process.env, 'DEVRYAN_DIST_DIR', resolveWebDistDir());
+  setDevRyanEnv(process.env, 'DEVRYAN_RUNTIME', 'desktop');
+  setDevRyanEnv(process.env, 'DEVRYAN_DESKTOP_NOTIFY', 'true');
+  // The server's login-shell re-merge applies the packaged filter only on this marker.
+  if (app.isPackaged) process.env[PACKAGED_DESKTOP_ENV] = '1'; else delete process.env[PACKAGED_DESKTOP_ENV];
+  setDevRyanEnv(process.env, 'DEVRYAN_SKIP_API_COMPRESSION', process.env.DEVRYAN_SKIP_API_COMPRESSION || 'true');
   process.env.NO_PROXY = process.env.NO_PROXY || 'localhost,127.0.0.1';
   process.env.no_proxy = process.env.no_proxy || 'localhost,127.0.0.1';
 
@@ -895,56 +801,18 @@ const spawnLocalServer = async () => {
   state.browserCdpDiscoveryUrl = `http://127.0.0.1:${chosenPort}/api/desktop/browser-cdp`;
   state.agentBrowserRuntimeMode = (
     process.env.OPENCODE_SKIP_START === 'true'
-    || process.env.OPENCHAMBER_SKIP_OPENCODE_START === 'true'
+    || process.env.DEVRYAN_SKIP_OPENCODE_START === 'true'
   ) ? 'external' : 'pending';
   delete process.env.DEVRYAN_BROWSER_CDP_DISCOVERY_URL;
   delete process.env.DEVRYAN_BROWSER_CDP_TOKEN;
   delete process.env.DEVRYAN_AGENT_BROWSER_BIN;
 
-  if (!state.botSecretStore) {
-    try {
-      state.botSecretStore = await createBotSecretStore({
-        dataDirectory: dataRootDirectory(),
-        safeStorage,
-      });
-      state.botSecretStoreErrorCode = null;
-    } catch (error) {
-      state.botSecretStoreErrorCode = typeof error?.code === 'string'
-        ? error.code
-        : 'bot_os_encryption_unavailable';
-      log.warn('[bots] OS-sealed credential storage is unavailable', {
-        code: state.botSecretStoreErrorCode,
-      });
-    }
-  }
-
-  // The deployment key crosses only this in-process callback boundary. It is
-  // never placed in process.env, renderer IPC, an HTTP response, or a log.
-  const getBotEncryptionKey = () => {
-    if (state.botSecretStore) return state.botSecretStore.getBotEncryptionKey();
-    const error = new Error('Bot encryption is unavailable');
-    error.code = state.botSecretStoreErrorCode || 'bot_os_encryption_unavailable';
-    throw error;
-  };
-  const replaceBotEncryptionKey = async (key) => {
-    if (!state.botSecretStore) {
-      const error = new Error('Bot encryption is unavailable');
-      error.code = state.botSecretStoreErrorCode || 'bot_os_encryption_unavailable';
-      throw error;
-    }
-    return replaceBotEncryptionKeyAndRepair({
-      secretStore: state.botSecretStore,
-      replacement: key,
-      repair: () => getBotRuntimeManager().repair(),
-    });
-  };
-
-  try {
+  if (!isPreview) try {
     const {
       createAgentBrowserInstaller,
       provisionAgentBrowserSkill,
       withdrawAgentBrowserSkill,
-    } = await import('@openchamber/web/server/lib/agent-browser/install.js');
+    } = await import('@devryan/web/server/lib/agent-browser/install.js');
     const dataRoot = dataRootDirectory();
     const skillOptions = {
       dataRoot,
@@ -969,164 +837,50 @@ const spawnLocalServer = async () => {
     log.warn('[agent-browser] managed setup failed; continuing without browser automation');
   }
 
-  const { startWebUiServer } = await import('@openchamber/web/server/index.js');
-
-  const desktopHostLeaseIsActive = () => (
-    state.desktopHostBrokerLease
-    && Date.parse(state.desktopHostBrokerLease.expiresAt) > Date.now()
-  );
-  const desktopHostUnavailableStatus = () => ({
-    state: 'desktop_host_unavailable',
-    code: 'desktop_host_unavailable',
+  updateStartupSplashStatus('Preparing the runtime…');
+  // The server module prepares the runtime bundle while it is imported; show
+  // which step is running instead of one unchanging line.
+  setStartupPhaseListener((phase) => {
+    const text = STARTUP_PHASE_STATUS[phase];
+    if (text) updateStartupSplashStatus(text);
   });
+  const { startWebUiServer } = await runStartupPhase('server_import', () => webServerEntry.load(), log);
 
-  const handle = await startWebUiServer({
+  const handle = await runStartupPhase('server_listen', () => startWebUiServer({
     port: chosenPort,
     host: bindHost,
     attachSignals: false,
     exitOnShutdown: false,
+    ...(isPreview && process.argv.includes('--devryan-preview-smoke')
+      ? { runtimeConfigFile: path.join(process.env.DEVRYAN_PREVIEW_SMOKE_ROOT, 'project', 'opencode.json') } : {}),
+    onRuntimeBundleCheckpoint: async () => {
+      await holdDesktopSettingsForCheckpoint();
+    },
     onRestartHost: () => restartSupabaseHost({
       handle: state.serverHandle,
       coordinator: state.runtimeServiceCoordinator,
-      serviceMode: isRuntimeServiceMode,
-      relaunch: () => app.relaunch(),
+      serviceMode: false,
+      relaunch: relaunchWithHostDataRoot,
       exit: (code) => app.exit(code),
       onStopped: () => {
         state.serverHandle = null;
         state.sidecarUrl = null;
         state.runtimeServiceCoordinator = null;
-        state.runtimeServiceOwnsServer = false;
       },
     }),
-    onDesktopNotification: (payload) => {
-      if (!isRuntimeServiceMode) return maybeShowNativeNotification(payload);
-      return desktopHostBrokerClient.notify(payload).catch(() => undefined);
-    },
+    onDesktopNotification: (payload) => maybeShowNativeNotification(payload),
     onOpenCodeStartupStatus: (text) => updateStartupSplashStatus(text),
-    getIsWindowFocused: isRuntimeServiceMode ? () => false : isAnyWindowFocused,
-    getBrowserCdpBridgeStatus: isRuntimeServiceMode
-      ? async () => {
-          if (!desktopHostLeaseIsActive()) return desktopHostUnavailableStatus();
-          const status = await desktopHostBrokerClient.status();
-          return status?.browser || desktopHostUnavailableStatus();
-        }
-      : () => resolveBridgeStatusForDiscovery(),
+    getIsWindowFocused: isAnyWindowFocused,
+    getBrowserCdpBridgeStatus: () => resolveBridgeStatusForDiscovery(),
     getBrowserCdpDiscoveryToken: () => state.browserCdpDiscoveryToken || '',
-    getBrowserLeaseObservationSnapshot: isRuntimeServiceMode
-      ? (request) => desktopHostBrokerClient.browserLeaseObservationSnapshot(request)
-      : (request) => getDesktopBrowserLeaseObservationSnapshot(request),
-    openBrowserLeaseObservationStream: isRuntimeServiceMode
-      ? (request) => desktopHostBrokerClient.openBrowserLeaseObservationStream(request)
-      : (request) => openDesktopBrowserLeaseObservationStream(request),
-    createBrowserLease: isRuntimeServiceMode
-      ? (request) => desktopHostBrokerClient.createBrowserLease(request)
-      : (request) => createDesktopBrowserLease(request),
-    touchBrowserLease: isRuntimeServiceMode
-      ? (request) => desktopHostBrokerClient.touchBrowserLease(request)
-      : (request) => touchDesktopBrowserLease(request),
-    releaseBrowserLease: isRuntimeServiceMode
-      ? (request) => desktopHostBrokerClient.releaseBrowserLease(request)
-      : (request) => releaseDesktopBrowserLease(request),
-    runtimeServiceController: isRuntimeServiceMode ? state.runtimeServiceCoordinator : null,
+    getBrowserLeaseObservationSnapshot: (request) => getDesktopBrowserLeaseObservationSnapshot(request),
+    openBrowserLeaseObservationStream: (request) => openDesktopBrowserLeaseObservationStream(request),
+    createBrowserLease: (request) => createDesktopBrowserLease(request),
+    touchBrowserLease: (request) => touchDesktopBrowserLease(request),
+    releaseBrowserLease: (request) => releaseDesktopBrowserLease(request),
     deferOpenCodeStartup: true,
-    productionBotsExecutionDisabled,
-    onDesktopHostLease: isRuntimeServiceMode
-      ? async (lease) => {
-          state.desktopHostBrokerLease = Object.freeze({ ...lease });
-          await state.serverHandle?.resumeDeferredOpenCodeStartup?.();
-        }
-      : null,
-    onDesktopHostRelease: isRuntimeServiceMode
-      ? async (leaseId) => {
-          if (state.desktopHostBrokerLease?.leaseId === leaseId) {
-            state.desktopHostBrokerLease = null;
-          }
-      }
-      : null,
-    runtimeServiceBotRuntimeControl: isRuntimeServiceMode
-      ? {
-          status: () => getBotRuntimeManager().status(),
-          operationStatus: () => state.botRuntimeOperationSnapshot
-            || getBotRuntimeManager().operationStatus(),
-          setup: () => getBotRuntimeManager().setup({ onProgress: publishBotRuntimeProgress }),
-          repair: () => getBotRuntimeManager().repair({ onProgress: publishBotRuntimeProgress }),
-          update: () => getBotRuntimeManager().update({ onProgress: publishBotRuntimeProgress }),
-          rollback: () => getBotRuntimeManager().rollback({ onProgress: publishBotRuntimeProgress }),
-        }
-      : null,
-    onDisableRuntimeService: isRuntimeServiceMode
-      ? async () => {
-          await state.serverHandle?.checkpointBotRuns?.({ reason: 'background_bots_disabled' });
-          await state.serverHandle?.stopBotDispatcher?.();
-          await state.runtimeServiceCoordinator?.update({ health: 'disabled' });
-          setImmediate(() => app.quit());
-      }
-      : null,
-    onPrepareRuntimeServiceUpdate: isRuntimeServiceMode
-      ? async () => {
-          await state.serverHandle?.checkpointBotRuns?.({ reason: 'runtime_service_update' });
-          await state.serverHandle?.stopBotDispatcher?.();
-          await state.runtimeServiceCoordinator?.update({ health: 'updating' });
-          setImmediate(() => app.quit());
-        }
-      : null,
-    getBotEncryptionKey,
-    replaceBotEncryptionKey,
-    getBotRuntimeStatus: () => getBotRuntimeManager().status(),
-    // Automatic startup never installs a fresh runtime; an existing
-    // installation may update or repair itself.
-    ensureBotRuntimeReady: () => getBotRuntimeManager().ensureReady({
-      allowInstall: false,
-      onProgress: (progress) => publishBotRuntimeProgress(progress),
-    }),
-    getBotCatalogContext: () => getBotRuntimeManager().databaseContext(),
-    ensureBotCatalog: () => getBotRuntimeManager().ensureCatalog({
-      onProgress: (progress) => publishBotRuntimeProgress(progress),
-    }),
-    botCatalogMaintenance: {
-      listBackups: () => getBotRuntimeManager().listCatalogBackups(),
-      backup: (options) => getBotRuntimeManager().backupCatalog(options),
-      prepareRestore: (backupId) => getBotRuntimeManager().prepareCatalogRestore(backupId),
-      readCandidate: (operationId, request) => getBotRuntimeManager().readCatalogCandidate(operationId, request),
-      commitRestore: (operationId) => getBotRuntimeManager().commitCatalogRestore(operationId),
-      discardCandidate: (operationId) => getBotRuntimeManager().discardCatalogCandidate(operationId),
-      startEmpty: () => getBotRuntimeManager().startEmptyCatalog(),
-      createImportSource: (marker) => getBotRuntimeManager().createImportSource(marker),
-      migrateImportSource: (handle) => getBotRuntimeManager().migrateImportSource(handle),
-      runImportSql: (target, chunks) => getBotRuntimeManager().runImportSql(target, chunks),
-      exportImportPage: (target, request) => getBotRuntimeManager().exportImportPage(target, request),
-      countRows: (target) => getBotRuntimeManager().countCatalogRows(target),
-      dropImportSource: (handle) => getBotRuntimeManager().dropImportSource(handle),
-    },
-    ensureBotReasoningRuntime: (request) => getBotRuntimeManager().ensureReasoning(request),
-    ensureBotComputerRuntime: (request) => getBotRuntimeManager().ensureComputer(request),
-    probeBotComputerIsolation: (request) => getBotRuntimeManager().probeComputerIsolation(request),
-    inspectBotRuntimeResource: (request) => getBotRuntimeManager().inspect(request),
-    stopBotRuntimeResource: (request) => getBotRuntimeManager().stop(request),
-    resetBotRuntimeResource: (request) => getBotRuntimeManager().reset(request),
-    writeBotWorkspaceFile: (request) => getBotRuntimeManager().writeWorkspace(request),
-    importBotSharedFile: (request) => getBotRuntimeManager().importSharedFile(request),
-    listBotWorkspaceFiles: (request) => getBotRuntimeManager().listWorkspace(request),
-    listBotContainerFiles: (request) => getBotRuntimeManager().listFilesystem(request),
-    exportBotWorkspaceImage: (request) => getBotRuntimeManager().exportWorkspaceImage(request),
-    exportBotBrowserProfiles: (botId, scopes) => (
-      getBotRuntimeManager().exportBrowserProfiles(botId, scopes)
-    ),
-    inspectBotBrowserProfiles: (botId, bytes) => (
-      getBotRuntimeManager().inspectBrowserProfiles(botId, bytes)
-    ),
-    restoreBotBrowserProfiles: (botId, bytes) => (
-      getBotRuntimeManager().restoreBrowserProfiles(botId, bytes)
-    ),
-    deleteBotBrowserProfiles: (botId) => getBotRuntimeManager().deleteBrowserProfiles(botId),
-    requestBotIndexer: (request) => getBotRuntimeManager().requestIndexer(request),
-    requestBotAgentEndpoint: (request) => getBotRuntimeManager().requestAgentEndpoint(request),
     getManagedBrowserEnvironment: async () => {
-      if (isRuntimeServiceMode && !desktopHostLeaseIsActive()) {
-        const error = new Error('The desktop host is not connected');
-        error.code = 'desktop_host_unavailable';
-        throw error;
-      }
+      if (isPreview) return {};
       // This callback is invoked only on the managed-child launch path. Keep
       // installation and ~/.agents skill provisioning lazy so configured
       // external/remote OpenCode runtimes remain completely untouched.
@@ -1139,6 +893,9 @@ const spawnLocalServer = async () => {
             state.agentBrowserSkillStatus = state.agentBrowserInstallStatus?.ok
               ? await state.agentBrowserSkillProvisioner?.()
               : await state.agentBrowserSkillWithdrawer?.();
+            const issueCodes = [...(state.agentBrowserInstallStatus?.issues ?? []),
+              ...(state.agentBrowserInstallStatus?.recording?.issues ?? [])].map((issue) => issue?.code).filter(Boolean);
+            if (issueCodes.length) log.warn('[agent-browser] managed setup issues', { codes: issueCodes });
           } catch (error) {
             state.agentBrowserInstallStatus = {
               ...(state.agentBrowserInstallStatus || {}),
@@ -1159,7 +916,17 @@ const spawnLocalServer = async () => {
           state.agentBrowserSetupPromise = null;
         });
       }
-      await state.agentBrowserSetupPromise;
+      // Runtime startup waits for this, so a slow install or repair continues in
+      // the background and this launch runs without browser automation.
+      let setupTimer;
+      const settled = await Promise.race([
+        state.agentBrowserSetupPromise.then(() => true),
+        new Promise((resolve) => { setupTimer = setTimeout(() => resolve(false), MANAGED_BROWSER_SETUP_WAIT_MS); }),
+      ]).finally(() => clearTimeout(setupTimer));
+      if (!settled) {
+        log.warn('[agent-browser] managed setup still running; starting without browser automation', { waitMs: MANAGED_BROWSER_SETUP_WAIT_MS });
+        return {};
+      }
       const binaryPath = state.agentBrowserInstallStatus?.binaryPath;
       if (state.agentBrowserInstallStatus?.ok !== true
         || !state.browserCdpDiscoveryUrl
@@ -1175,32 +942,27 @@ const spawnLocalServer = async () => {
       };
     },
     getAppMetrics: () => app.getAppMetrics(),
-  });
+  }), log);
 
   const port = handle.getPort();
   const url = buildLocalUrl(port);
 
   state.serverHandle = handle;
-  if (!isRuntimeServiceMode) {
+  // Only hold and reconciliation state gate the window; the UI checks for
+  // runtime updates itself, so artifact verification stays off this path.
+  const bundleStatus = await handle.runtimeBundle?.inspect?.({ checkUpdates: false });
+  const recoveryOnly = bundleStatus?.state === 'held' || bundleStatus?.reconciliationRequired === true;
+  if (recoveryOnly) await holdDesktopSettingsForCheckpoint();
+  if (!recoveryOnly) {
     const ownerCookie = await handle.issueLocalOwnerSession?.();
     if (ownerCookie) await session.defaultSession.cookies.set({
       url, name: ownerCookie.name, value: ownerCookie.value, path: '/', httpOnly: true,
       secure: false, sameSite: 'strict', expirationDate: Math.floor(Date.now() / 1_000) + ownerCookie.maxAge,
     });
-    // The workstation owner's Bot-scoped session, valid in every Supabase
-    // state and only for direct-local Bot routes.
-    const botOwnerCookie = await handle.issueBotOwnerSession?.();
-    if (botOwnerCookie) await session.defaultSession.cookies.set({
-      url, name: botOwnerCookie.name, value: botOwnerCookie.value, path: '/', httpOnly: true,
-      secure: false, sameSite: 'strict', expirationDate: Math.floor(Date.now() / 1_000) + botOwnerCookie.maxAge,
-    });
   }
   state.sidecarUrl = url;
-  state.runtimeServiceOwnsServer = isRuntimeServiceMode;
 
-  if (isRuntimeServiceMode) {
-    await state.runtimeServiceCoordinator.start({ port, health: 'healthy' });
-  }
+  if(recoveryOnly)return url;
 
   // Managed startup invokes getManagedBrowserEnvironment before it can become
   // ready. If readiness arrives without that callback, the lifecycle selected
@@ -1226,9 +988,12 @@ const spawnLocalServer = async () => {
 
 let sidecarStopPromise = null;
 let sidecarStopFailure = null;
-let runtimeServiceShutdownPromise = null;
 
 const killSidecar = ({ strict = false } = {}) => {
+  if (localServerStartPromise) return localServerStartPromise.then(() => killSidecar({ strict }), (error) => {
+    if (strict) throw error;
+    return killSidecar({ strict });
+  });
   if (strict && sidecarStopFailure) return Promise.reject(sidecarStopFailure);
   if (!state.serverHandle) {
     if (state.runtimeServiceCoordinator?.getOwner?.()?.mode === 'app_bound') {
@@ -1259,201 +1024,6 @@ const killSidecar = ({ strict = false } = {}) => {
   return sidecarStopPromise;
 };
 
-const shutdownOwnedRuntimeService = () => {
-  if (runtimeServiceShutdownPromise) return runtimeServiceShutdownPromise;
-  runtimeServiceShutdownPromise = (async () => {
-    await state.runtimeServiceCoordinator?.update({ health: 'disabled' }).catch(() => undefined);
-    await state.serverHandle?.checkpointBotRuns?.({ reason: 'runtime_service_shutdown' }).catch(() => undefined);
-    await state.serverHandle?.stopBotDispatcher?.().catch(() => undefined);
-    await killSidecar();
-    await state.runtimeServiceCoordinator?.release().catch(() => undefined);
-    state.runtimeServiceCoordinator = null;
-    state.runtimeServiceOwnsServer = false;
-  })();
-  return runtimeServiceShutdownPromise;
-};
-
-const runtimeServiceModeEnabled = () => readSettingsRoot().productionBotsRuntimeMode === 'service';
-
-const setRuntimeServiceCookie = async (url, setCookieHeader) => {
-  const match = /(?:^|,\s*)devryan_runtime_service=([^;]+)/.exec(setCookieHeader || '');
-  if (!match) {
-    const error = new Error('Runtime service did not issue a renderer session');
-    error.code = 'runtime_service_cookie_missing';
-    throw error;
-  }
-  await session.defaultSession.cookies.set({
-    url,
-    name: 'devryan_runtime_service',
-    value: match[1],
-    path: '/',
-    httpOnly: true,
-    secure: false,
-    sameSite: 'strict',
-    expirationDate: Math.floor(Date.now() / 1_000) + (12 * 60 * 60),
-  });
-  const owner = /(?:^|,\s*)devryan_local_owner=([^;]+)/.exec(setCookieHeader || '');
-  if (owner) await session.defaultSession.cookies.set({
-    url, name: 'devryan_local_owner', value: owner[1], path: '/', httpOnly: true,
-    secure: false, sameSite: 'strict', expirationDate: Math.floor(Date.now() / 1_000) + (30 * 24 * 60 * 60),
-  });
-  const botOwner = /(?:^|,\s*)devryan_bot_owner=([^;]+)/.exec(setCookieHeader || '');
-  if (botOwner) await session.defaultSession.cookies.set({
-    url, name: 'devryan_bot_owner', value: botOwner[1], path: '/', httpOnly: true,
-    secure: false, sameSite: 'strict', expirationDate: Math.floor(Date.now() / 1_000) + (30 * 24 * 60 * 60),
-  });
-};
-
-const registerDesktopHostLease = async (url, broker) => {
-  const register = (capabilities) => session.defaultSession.fetch(`${url}/api/runtime-service/desktop-host`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-DevRyan-CSRF': '1',
-    },
-    body: JSON.stringify({
-      leaseId: broker.leaseId,
-      brokerPort: broker.port,
-      brokerToken: broker.token,
-      capabilities,
-    }),
-  });
-  let response = await register(broker.capabilities);
-  if (response.status === 400 && broker.capabilities.includes('browser_observation')) {
-    // Previous runtime-service builds reject unknown capabilities. Preserve
-    // their existing desktop-host operations while explicitly leaving remote
-    // observation unavailable for that mixed-version pairing.
-    response = await register(broker.capabilities.filter((value) => value !== 'browser_observation'));
-  }
-  if (!response.ok) {
-    const payload = await response.json().catch(() => null);
-    const error = new Error('Runtime service rejected the desktop host lease');
-    error.code = response.status === 401
-      ? 'runtime_service_session_required'
-      : 'desktop_host_registration_failed';
-    // Bounded, secret-free detail so startup logs say why the service refused.
-    error.rejection = Object.freeze({
-      status: response.status,
-      code: typeof payload?.code === 'string' && /^[a-z][a-z0-9_]{0,99}$/.test(payload.code) ? payload.code : null,
-    });
-    throw error;
-  }
-  return response.json();
-};
-
-const startDesktopHostBroker = async () => {
-  if (state.desktopHostBroker) return state.desktopHostBroker;
-  state.desktopHostBroker = await createDesktopHostBroker({
-    handlers: {
-      status: async () => ({
-        focused: isAnyWindowFocused(),
-        browser: await resolveBridgeStatusForDiscovery(),
-      }),
-      notify: (payload) => maybeShowNativeNotification(payload),
-      createBrowserLease: (request) => createDesktopBrowserLease(request),
-      touchBrowserLease: (request) => touchDesktopBrowserLease(request),
-      releaseBrowserLease: (request) => releaseDesktopBrowserLease(request),
-      browserLeaseObservationSnapshot: (request) => getDesktopBrowserLeaseObservationSnapshot(request),
-      openBrowserLeaseObservationStream: (request) => openDesktopBrowserLeaseObservationStream(request),
-    },
-  });
-  return state.desktopHostBroker;
-};
-
-const stopDesktopHostBroker = async ({ notifyService = true } = {}) => {
-  if (state.desktopHostLeaseRefreshTimer) {
-    clearInterval(state.desktopHostLeaseRefreshTimer);
-    state.desktopHostLeaseRefreshTimer = null;
-  }
-  const broker = state.desktopHostBroker;
-  state.desktopHostBroker = null;
-  if (notifyService && broker && state.sidecarUrl && state.runtimeServiceClient) {
-    await session.defaultSession.fetch(
-      `${state.sidecarUrl}/api/runtime-service/desktop-host/${encodeURIComponent(broker.leaseId)}`,
-      {
-        method: 'DELETE',
-        headers: { 'X-DevRyan-CSRF': '1' },
-      },
-    ).catch(() => undefined);
-  }
-  await broker?.close().catch(() => undefined);
-};
-
-let runtimeServiceReconnectPromise = null;
-const connectToRuntimeService = async ({ reconnecting = false } = {}) => {
-  const descriptor = await readRuntimeServiceDescriptor({ dataDirectory: dataRootDirectory() });
-  if (!isRuntimeServiceProtocolSupported(descriptor.protocolVersion)) {
-    const error = new Error('The background runtime protocol is not supported by this app version');
-    error.code = 'runtime_service_protocol_mismatch';
-    throw error;
-  }
-  await assertRuntimeServiceDescriptorOwner({ dataDirectory: dataRootDirectory(), descriptor });
-  const url = buildLocalUrl(descriptor.port).replace(/\/$/, '');
-  if (!await waitForHealth(url, 5_000, 100)) {
-    const error = new Error('The background runtime is not ready');
-    error.code = 'runtime_service_unavailable';
-    throw error;
-  }
-  await assertRuntimeServiceDescriptorOwner({ dataDirectory: dataRootDirectory(), descriptor });
-  const bootstrapToken = unsealRuntimeServiceBootstrapToken({ descriptor, safeStorage });
-  const bootstrap = await session.defaultSession.fetch(`${url}/auth/runtime-service-bootstrap`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-DevRyan-CSRF': '1',
-    },
-    body: JSON.stringify({ token: bootstrapToken }),
-  });
-  if (!bootstrap.ok) {
-    const error = new Error('The background runtime session could not be established');
-    error.code = 'runtime_service_bootstrap_rejected';
-    throw error;
-  }
-  await setRuntimeServiceCookie(url, bootstrap.headers.get('set-cookie'));
-  const broker = await startDesktopHostBroker();
-  try {
-    const status = await registerDesktopHostLease(url, broker);
-    if (status?.instanceId !== descriptor.instanceId
-      || status?.ownerGeneration !== descriptor.ownerGeneration
-      || status?.protocolVersion !== descriptor.protocolVersion) {
-      const error = new Error('The background runtime changed during connection');
-      error.code = 'runtime_service_generation_changed';
-      throw error;
-    }
-    state.runtimeServiceClient = true;
-    state.sidecarUrl = url;
-    if (state.desktopHostLeaseRefreshTimer) clearInterval(state.desktopHostLeaseRefreshTimer);
-    state.desktopHostLeaseRefreshTimer = setInterval(() => {
-      void registerDesktopHostLease(url, broker).catch((error) => {
-        log.warn('[runtime-service] desktop host lease refresh failed', {
-          code: error?.code || 'desktop_host_registration_failed',
-          ...(error?.rejection ? { rejection: error.rejection } : {}),
-        });
-        if (runtimeServiceReconnectPromise) return;
-        runtimeServiceReconnectPromise = (async () => {
-          const fresh = await readRuntimeServiceDescriptor({ dataDirectory: dataRootDirectory() });
-          if (fresh.instanceId === descriptor.instanceId) return;
-          const nextUrl = await connectToRuntimeService({ reconnecting: true });
-          // Refresh only app windows attached to the replaced local owner.
-          for (const window of BrowserWindow.getAllWindows()) {
-            if (window.isDestroyed()) continue;
-            const previous = window.webContents.getURL();
-            if (!previous.startsWith(`${url}/`)) continue;
-            await window.loadURL(`${nextUrl}${previous.slice(url.length)}`);
-          }
-        })().catch((failure) => {
-          log.warn('[runtime-service] reconnect deferred', { code: failure?.code || 'runtime_service_unavailable' });
-        }).finally(() => { runtimeServiceReconnectPromise = null; });
-      });
-    }, 10_000);
-    state.desktopHostLeaseRefreshTimer.unref?.();
-    return url;
-  } catch (error) {
-    if (!reconnecting) await stopDesktopHostBroker({ notifyService: false });
-    throw error;
-  }
-};
-
 const macosMajorVersion = () => {
   if (process.platform !== 'darwin') return 0;
   const result = spawnSync('/usr/bin/sw_vers', ['-productVersion'], { encoding: 'utf8' });
@@ -1470,7 +1040,7 @@ const getRuntimeServiceRegistration = () => {
   let nativeControlErrorCode = null;
   if (process.platform === 'darwin'
     && app.isPackaged
-    && process.env.OPENCHAMBER_ELECTRON_DEV !== '1') {
+    && process.env.DEVRYAN_ELECTRON_DEV !== '1') {
     try {
       nativeControl = createRuntimeServiceNativeControl({ resourcesPath: process.resourcesPath });
     } catch (error) {
@@ -1485,223 +1055,38 @@ const getRuntimeServiceRegistration = () => {
     executablePath: process.execPath,
     resourcesPath: process.resourcesPath,
     dataDirectory: dataRootDirectory(),
-    developmentMode: process.env.OPENCHAMBER_ELECTRON_DEV === '1',
+    developmentMode: process.env.DEVRYAN_ELECTRON_DEV === '1',
     nativeControl,
     nativeControlErrorCode,
   });
   return runtimeServiceRegistration;
 };
 
-const requestRuntimeService = async (route, { method = 'GET' } = {}) => {
-  if (!state.runtimeServiceClient || !state.sidecarUrl) {
-    const error = new Error('The background runtime is not connected');
-    error.code = 'runtime_service_unavailable';
-    throw error;
-  }
-  const response = await session.defaultSession.fetch(
-    `${state.sidecarUrl.replace(/\/$/, '')}${route}`,
-    {
-      method,
-      headers: method === 'GET' ? {} : { 'X-DevRyan-CSRF': '1' },
-    },
-  );
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) {
-    const error = new Error(payload?.error || 'Background runtime request failed');
-    error.code = payload?.code || 'runtime_service_request_failed';
-    throw error;
-  }
-  return payload;
-};
-
-const runtimeServiceBotRuntimeOperation = (operation, method = 'GET') => (
-  requestRuntimeService(`/api/runtime-service/bot-runtime/${operation}`, { method })
-);
-
-// The user's switch in Settings → Bots. Off keeps the runtime app-bound (it
-// exits with the app) and stops automatic registration on later launches.
-const runtimeServiceOptedOut = () => readSettingsRoot().productionBotsRuntimeServiceOptOut === true;
-
-const runtimeServiceStatus = async () => {
-  const registration = await getRuntimeServiceRegistration().status();
-  const handshake = state.runtimeServiceClient
-    ? await requestRuntimeService('/api/runtime-service/handshake').catch(() => null)
-    : null;
-  const configuredMode = readSettingsRoot().productionBotsRuntimeMode || 'app_bound';
-  return Object.freeze({
-    configuredMode,
-    serviceEnabled: Boolean(handshake) || configuredMode === 'service' || (
-      configuredMode !== 'disabled' && !runtimeServiceOptedOut()
-      && process.platform === 'darwin' && app.isPackaged
-    ),
-    registrationMode: getRuntimeServiceRegistration().mode || 'unsupported',
-    registration,
-    connected: Boolean(handshake),
-    handshake,
-    settingsUrl: getRuntimeServiceRegistration().settingsUrl,
-    canEnable: registration.state === 'not_registered' || registration.state === 'enabled',
-  });
-};
-
-const runtimeServiceCommandResult = async (operation) => {
-  try {
-    return Object.freeze({ ok: true, status: await operation() });
-  } catch (error) {
-    const code = typeof error?.code === 'string' && /^runtime_service_|^smappservice_/.test(error.code)
-      ? error.code
-      : 'runtime_service_request_failed';
-    const message = typeof error?.message === 'string' && error.message.trim()
-      ? error.message.trim().slice(0, 240)
-      : 'Background runtime request failed';
-    log.warn('[runtime-service] desktop command failed', { code });
-    return Object.freeze({
-      ok: false,
-      error: Object.freeze({ code, message }),
-    });
-  }
-};
-
-const waitForRuntimeServiceOwnerStopped = (timeoutMs = 15_000) => waitForOwnerStopped({
-  dataDirectory: dataRootDirectory(), timeoutMs,
-  onDiagnostic: (detail) => log.warn('[runtime-service] owner recovery', detail),
-});
-
-const recoverStartupToAppBound = (connectionError) => recoverAppBoundRuntime({
-  connectionError,
-  unregister: () => getRuntimeServiceRegistration().unregister(),
-  waitForStopped: () => waitForRuntimeServiceOwnerStopped(),
-  acquire: () => acquireRuntimeOwner('app_bound'),
-  setMode: () => mutateSettingsRoot((root) => { root.productionBotsRuntimeMode = 'app_bound'; }),
-  release: async () => {
-    await state.runtimeServiceCoordinator?.release();
-    state.runtimeServiceCoordinator = null;
-  },
+// The background runtime existed only for the removed Bots feature. A registration left by an
+// earlier version is withdrawn once; launchd never starts it again.
+const RUNTIME_SERVICE_RETIRED_MARKER = 'runtime-service/retired.v1';
+const retireBackgroundRuntime = () => retireRuntimeServiceRegistration({
+  platform: process.platform,
+  isPackaged: app.isPackaged,
+  markerPath: path.join(dataRootDirectory(), RUNTIME_SERVICE_RETIRED_MARKER),
+  registration: () => getRuntimeServiceRegistration(),
+  waitForStopped: () => waitForOwnerStopped({
+    dataDirectory: dataRootDirectory(), timeoutMs: 15_000,
+    onDiagnostic: (detail) => log.warn('[runtime-service] owner recovery', detail),
+  }),
+  clearSettings: () => mutateSettingsRoot((root) => {
+    for (const key of ['productionBotsRuntimeMode', 'productionBotsRuntimeServiceOptOut',
+      'productionBotsRuntimeServiceAppVersion', 'productionBotsRuntimeReregisterAfterUpdate']) delete root[key];
+  }),
   log,
 });
-
-const waitForRuntimeServiceConnection = () => retryRuntimeServiceConnection({
-  connect: () => connectToRuntimeService(),
-});
-
-const enableBackgroundBots = async ({ allowLegacy = false } = {}) => {
-  if (state.runtimeServiceClient) return runtimeServiceStatus();
-  await mutateSettingsRoot((root) => {
-    delete root.productionBotsRuntimeServiceOptOut;
-  });
-  const registration = getRuntimeServiceRegistration();
-  const registered = await registration.register({ allowLegacy: allowLegacy === true });
-  if (registered.state !== 'enabled') {
-    return runtimeServiceStatus();
-  }
-
-  try {
-    await state.serverHandle?.checkpointBotRuns?.({ reason: 'runtime_service_handoff' });
-    await state.serverHandle?.stopBotDispatcher?.();
-    await killSidecar();
-    await mutateSettingsRoot((root) => {
-      root.productionBotsRuntimeMode = 'service';
-    });
-    const url = await waitForRuntimeServiceConnection();
-    await activateMainWindow(url, new URL(url).origin, { target: 'local', status: 'ok' });
-    return runtimeServiceStatus();
-  } catch (error) {
-    await recoverStartupToAppBound(error);
-    state.runtimeServiceClient = false;
-    state.sidecarUrl = null;
-    const localUrl = await spawnLocalServer();
-    await activateMainWindow(localUrl, new URL(localUrl).origin, { target: 'local', status: 'ok' });
-    throw error;
-  }
-};
-
-// Switching the service off returns ownership to the app: Bots keep running
-// while DevRyan is open and the runtime exits when the app quits.
-const disableBackgroundBots = async () => {
-  const optOut = (root) => {
-    root.productionBotsRuntimeServiceOptOut = true;
-    if (root.productionBotsRuntimeMode === 'service') root.productionBotsRuntimeMode = 'app_bound';
-  };
-  if (!state.runtimeServiceClient) {
-    await mutateSettingsRoot(optOut);
-    // Withdraw a registration still pending Login Items approval, or one left
-    // behind by a failed handoff, so launchd never starts the service later.
-    const registration = await getRuntimeServiceRegistration().status();
-    if (registration.state === 'enabled' || registration.state === 'requires_approval') {
-      await getRuntimeServiceRegistration().unregister();
-    }
-    return runtimeServiceStatus();
-  }
-  await requestRuntimeService('/api/runtime-service/disable', { method: 'POST' });
-  await getRuntimeServiceRegistration().unregister();
-  await stopDesktopHostBroker({ notifyService: false });
-  const stopped = await waitForRuntimeServiceOwnerStopped();
-  if (!stopped) {
-    const error = new Error('Background runtime is still the active owner');
-    error.code = 'runtime_service_owner_active';
-    throw error;
-  }
-  state.runtimeServiceClient = false;
-  state.sidecarUrl = null;
-  await mutateSettingsRoot(optOut);
-  const localUrl = await spawnLocalServer();
-  await activateMainWindow(localUrl, new URL(localUrl).origin, { target: 'local', status: 'ok' });
-  return runtimeServiceStatus();
-};
-
-const prepareBackgroundRuntimeForAppUpdate = async () => {
-  if (!state.runtimeServiceClient) return;
-  await requestRuntimeService('/api/runtime-service/prepare-update', { method: 'POST' });
-  await getRuntimeServiceRegistration().unregister();
-  await stopDesktopHostBroker({ notifyService: false });
-  const stopped = await waitForRuntimeServiceOwnerStopped();
-  if (!stopped) {
-    const error = new Error('Background runtime did not drain before update');
-    error.code = 'runtime_service_update_owner_active';
-    throw error;
-  }
-  state.runtimeServiceClient = false;
-  await mutateSettingsRoot((root) => {
-    root.productionBotsRuntimeMode = 'service';
-    root.productionBotsRuntimeReregisterAfterUpdate = true;
-  });
-};
-
-const resumeBackgroundRuntimeAfterAppUpdate = async () => {
-  const settings = readSettingsRoot();
-  if (settings.productionBotsRuntimeMode !== 'service'
-    || settings.productionBotsRuntimeReregisterAfterUpdate !== true) return;
-  const result = await getRuntimeServiceRegistration().register({ allowLegacy: true });
-  if (result.state !== 'enabled') {
-    const error = new Error('Background Bots require Login Items approval after the update');
-    error.code = 'runtime_service_approval_required';
-    throw error;
-  }
-  await mutateSettingsRoot((root) => {
-    delete root.productionBotsRuntimeReregisterAfterUpdate;
-  });
-};
-
-const autoEnableBackgroundRuntimeOnFirstLaunch = async () => {
-  const settings = readSettingsRoot();
-  return prepareAutomaticRuntimeService({
-    currentMode: settings.productionBotsRuntimeMode,
-    optedOut: settings.productionBotsRuntimeServiceOptOut === true,
-    platform: process.platform,
-    isPackaged: app.isPackaged,
-    registration: getRuntimeServiceRegistration(),
-    setMode: (mode) => mutateSettingsRoot((root) => {
-      root.productionBotsRuntimeMode = mode;
-    }),
-    log,
-  });
-};
 
 const buildContentOriginPolicy = () => {
   const config = readDesktopHostsConfig();
   return {
     localOrigin: state.localOrigin,
     hostUrls: config.hosts.map((entry) => entry.url),
-    envServerUrl: normalizeHostUrl(process.env.OPENCHAMBER_SERVER_URL || ''),
+    envServerUrl: normalizeHostUrl(process.env.DEVRYAN_SERVER_URL || ''),
   };
 };
 
@@ -1735,7 +1120,8 @@ const loadRegisteredManualBrowserPartitions = () => {
     for (const value of parsed) {
       if (
         typeof value !== 'string'
-        || (!value.startsWith(MANUAL_BROWSER_PARTITION_PREFIX) && !value.startsWith(AGENT_PREVIEW_PARTITION_PREFIX))
+        || (![MANUAL_BROWSER_PARTITION_PREFIX, AGENT_PREVIEW_PARTITION_PREFIX,
+          'persist:openchamber-browser-user-', 'persist:openchamber-browser-agent-'].some(prefix => value.startsWith(prefix)))
       ) continue;
       registeredBrowserPartitions.add(value);
       configureBrowserWebviewPartition(value);
@@ -1771,7 +1157,8 @@ const fetchNativeBrowserContext = async (browserWindow) => {
   if (!response.ok) throw new Error('DevRyan authentication is unavailable');
   const principal = readAuthorizedBrowserPrincipal(await response.json().catch(() => null));
   if (!principal) throw new Error('Browser access is disabled');
-  const context = createManualBrowserContext({ origin, principalId: principal.id });
+  const context = createManualBrowserContext({ origin, principalId: principal.id,
+    partitionPrefix: browserPartitionIdentity.manualPrefix });
   registerBrowserPartition(context.partition);
   return { ...context, verifiedAt: Date.now() };
 };
@@ -1830,7 +1217,7 @@ const buildInitScript = (localOrigin, bootOutcome, serverOrigin = localOrigin) =
   const privilegedGuard = privilegedOriginGuardJs();
   return [
     '(function(){',
-    `try{window.__OPENCHAMBER_MACOS_MAJOR__=${macVersion};window.__OPENCHAMBER_LOCAL_ORIGIN__=${local};var __oc_server=${server};var __oc_origin=location&&location.origin||'';var __oc_local=${local};var __oc_home=${home};var __oc_is_local=${privilegedGuard};if(__oc_is_local){window.__OPENCHAMBER_HOME__=__oc_home;}if(__oc_is_local&&__oc_server){window.__OPENCHAMBER_DESKTOP_SERVER__={origin:__oc_server,apiPrefix:'/api',opencodePort:null,cliAvailable:true};}var __oc_bo=${outcome};if(__oc_bo){window.__OPENCHAMBER_DESKTOP_BOOT_OUTCOME__=__oc_bo;}}catch(_e){}`,
+    `try{var __oc_set=function(n,v){window['__DEVRYAN_'+n+'__']=v;window['__OPENCHAMBER_'+n+'__']=v;};__oc_set('MACOS_MAJOR',${macVersion});__oc_set('LOCAL_ORIGIN',${local});var __oc_server=${server};var __oc_origin=location&&location.origin||'';var __oc_local=${local};var __oc_home=${home};var __oc_is_local=${privilegedGuard};if(__oc_is_local){__oc_set('HOME',__oc_home);}if(__oc_is_local&&__oc_server){__oc_set('DESKTOP_SERVER',{origin:__oc_server,apiPrefix:'/api',opencodePort:null,cliAvailable:true});}var __oc_bo=${outcome};if(__oc_bo){__oc_set('DESKTOP_BOOT_OUTCOME',__oc_bo);}}catch(_e){}`,
     '}())',
   ].join('');
 };
@@ -1862,49 +1249,60 @@ const computeBootOutcome = ({ envTargetUrl, probe, config, localAvailable }) => 
 };
 
 const buildStartupSplashHtml = () => {
-  return buildStartupSplashHtmlFromSettings(readSettingsRoot());
+  return buildStartupSplashHtmlFromSettings(shellRuntimeBundleBindingError ? {} : readSettingsRoot());
 };
 
 const currentStartupSplashPalette = () => (
-  resolveStartupSplashPalette(readSettingsRoot(), nativeTheme.shouldUseDarkColors)
+  resolveStartupSplashPalette(shellRuntimeBundleBindingError ? {} : readSettingsRoot(), nativeTheme.shouldUseDarkColors)
 );
 
+let lastStartupDiagnostic = null;
+let startupRecoveryFailure = null;
+let startupFailurePageUrl = null;
+// A fence whose evidence changed is retired by preparing again.
+const rebootRecoveryPreparable = (code) => code === 'bundle_execution_unsettled' || code === 'bundle_reboot_recovery_changed';
 const startupErrorDetails = (error) => {
+  const diagnostic = artifactDiagnostic(error);
   const cause = error?.cause;
   const message = error instanceof Error ? error.message : String(error || 'Unknown startup error');
   const code = typeof error?.code === 'string'
     ? error.code
     : (typeof cause?.code === 'string' ? cause.code : null);
   const causeMessage = cause instanceof Error ? cause.message : '';
+  const relativePath = typeof error?.relativePath === 'string'
+    ? error.relativePath
+    : (typeof cause?.relativePath === 'string' ? cause.relativePath : null);
   return {
     message,
     code,
     causeMessage,
-    displayMessage: code ? `${message} (${code})` : message,
+    ...(relativePath ? { relativePath } : {}),
+    ...(diagnostic ? { diagnostic } : {}),
+    displayMessage: code === 'native_runtime_artifacts_unverified' ? describeArtifactFailure(diagnostic)
+      : code && message !== code ? `${message} (${code})` : message,
   };
 };
 
-const buildStartupErrorHtml = (error) => {
+const buildStartupErrorHtml = (error, { retainRecovery = false } = {}) => {
+  lastStartupDiagnostic = startupDiagnosticSummary(error);
   const details = startupErrorDetails(error);
-  return buildStartupErrorHtmlFromSettings(readSettingsRoot(), {
+  let settings = {};
+  // A failed runtime binding must not prevent its own error page from rendering.
+  try { if (!shellRuntimeBundleBindingError) settings = readSettingsRoot(); } catch { /* Use the default appearance. */ }
+  return buildStartupErrorHtmlFromSettings(settings, {
     message: details.displayMessage,
-  });
-};
-
-const buildBotStartupAttentionHtml = (error) => {
-  const details = startupErrorDetails(error);
-  return buildBotStartupAttentionHtmlFromSettings(readSettingsRoot(), {
-    message: details.displayMessage,
+    rebootRecovery: !isPreview && process.platform === 'darwin' && (retainRecovery || rebootRecoveryPreparable(details.code)),
+    rebootRequired: details.code === 'bundle_reboot_required',
   });
 };
 
 const startupActionForUrl = (rawUrl) => {
   try {
     const parsed = new URL(rawUrl);
-    if (parsed.protocol !== `${DEEP_LINK_PROTOCOL}:`) return null;
+    if (!isDeepLinkProtocol(parsed.protocol)) return null;
+    if (parsed.hostname === 'prepare-reboot-recovery') return 'prepare-reboot-recovery';
+    if (parsed.hostname === 'copy-startup-diagnostics') return 'copy-startup-diagnostics';
     if (parsed.hostname === STARTUP_RETRY_HOST) return 'retry-startup';
-    if (parsed.hostname === BOT_RUNTIME_RETRY_HOST) return 'retry-bot-runtime';
-    if (parsed.hostname === BOT_RUNTIME_CONTINUE_HOST) return 'continue-without-bots';
     return null;
   } catch {
     return null;
@@ -1926,7 +1324,7 @@ const navigateWindow = async (browserWindow, url, { allowAbort = false } = {}) =
 
 const emitToWindow = (browserWindow, event, detail) => {
   if (!browserWindow || browserWindow.isDestroyed()) return;
-  browserWindow.webContents.send('openchamber:emit', { event, detail });
+  browserWindow.webContents.send('devryan:emit', { event, detail });
 };
 
 const emitToAllWindows = (event, detail) => {
@@ -1943,7 +1341,7 @@ const parseDeepLink = (raw) => {
   if (!trimmed) return null;
   try {
     const url = new URL(trimmed);
-    if (url.protocol !== `${DEEP_LINK_PROTOCOL}:`) return null;
+    if (!isDeepLinkProtocol(url.protocol)) return null;
     const type = url.hostname;
     if (!type) return null;
     const segments = url.pathname.split('/').filter(Boolean);
@@ -1986,11 +1384,11 @@ const dispatchDeepLink = (link) => {
   if (!link) return;
   log.info('[electron] dispatching deep-link', { type: link.type, valueLen: link.value?.length || 0 });
   if (link.type === 'session' && link.value) {
-    emitToAllWindows('openchamber:open-session', { sessionId: link.value });
+    emitToAllWindows('devryan:open-session', { sessionId: link.value });
     return;
   }
   if (link.type === 'project' && link.value) {
-    emitToAllWindows('openchamber:open-project', { projectPath: link.value });
+    emitToAllWindows('devryan:open-project', { projectPath: link.value });
     return;
   }
   if (link.type === 'host' && link.value) {
@@ -2024,7 +1422,7 @@ const handleDeepLinks = (urls) => {
 };
 
 const extractInitialDeepLinks = () =>
-  process.argv.filter((arg) => typeof arg === 'string' && arg.startsWith(`${DEEP_LINK_PROTOCOL}://`));
+  process.argv.filter(isDeepLinkArg);
 
 const { buildMacMenu, dispatchMenuAction, dispatchCheckForUpdates, dispatchDomEventToWindow } = createDesktopMenu({
   BrowserWindow, Menu, app, shell, log, getMainWindow: () => state.mainWindow,
@@ -2395,10 +1793,11 @@ const createDesktopBrowserLease = async ({ leaseId, metadata = {}, previewCreden
   const owner = { ownerWindowId: ownerWindow.id, metadata: { ...metadata } };
   browserLeaseOwners.set(leaseId, owner);
 
-  let browserPartition = '';
+  let browserPartition = browserPartitionIdentity.shared;
   if (metadata?.authoritativeOwner === true && metadata?.previewOrigin) {
     try {
       browserPartition = createAgentPreviewPartition({
+        partitionPrefix: browserPartitionIdentity.agentPrefix,
         ownerUserId: metadata.ownerUserId,
         previewOrigin: metadata.previewOrigin,
       }) || '';
@@ -2756,7 +2155,7 @@ const configureBrowserWebviewPartition = (partition) => {
   return browserSession;
 };
 
-const configureBrowserWebviewSession = () => configureBrowserWebviewPartition(BROWSER_WEBVIEW_PARTITION);
+const configureBrowserWebviewSession = () => configureBrowserWebviewPartition(browserPartitionIdentity.shared);
 
 const configureAgentPreviewPartition = (partition, { expectedOrigin, credential } = {}) => {
   const normalizedCredential = normalizeAgentPreviewCredential(credential, expectedOrigin);
@@ -2791,7 +2190,7 @@ const clearLegacySharedBrowserProfileOnce = async () => {
 // persistent partition; keep both in sync so neither hides disk usage.
 const cacheMaintenanceSessions = () => ({
   defaultSession: session.defaultSession,
-  browserSession: session.fromPartition(BROWSER_WEBVIEW_PARTITION),
+  browserSession: session.fromPartition(browserPartitionIdentity.shared),
   browserSessions: Array.from(registeredBrowserPartitions, (partition) => session.fromPartition(partition)),
 });
 
@@ -2803,43 +2202,13 @@ const createBrowserWindow = ({ label, restoreGeometry, url }) => {
   const desktopHome = os.homedir() || '';
   const desktopMacosMajor = String(macosMajorVersion());
   const startupSplashPalette = currentStartupSplashPalette();
-  const options = {
-    title: 'DevRyan',
-    width: useSaved ? Math.max(saved.width, MIN_RESTORE_WINDOW_WIDTH) : 1280,
-    height: useSaved ? Math.max(saved.height, MIN_RESTORE_WINDOW_HEIGHT) : 800,
-    minWidth: MIN_WINDOW_WIDTH,
-    minHeight: MIN_WINDOW_HEIGHT,
-    show: false,
-    backgroundColor: startupSplashPalette.background,
-    // Tauri used an overlay title bar with explicit traffic-light placement.
-    // Electron's hiddenInset adds its own extra inset, which leaves the controls
-    // visibly lower than the app header. Use a plain hidden title bar instead.
-    titleBarStyle: process.platform === 'darwin' ? 'hidden' : 'default',
-    trafficLightPosition: process.platform === 'darwin' ? { x: 16, y: 17 } : undefined,
-    webPreferences: {
-      additionalArguments: [
-        `--openchamber-local-origin=${desktopLocalOrigin}`,
-        `--openchamber-server-origin=${desktopServerOrigin}`,
-        `--openchamber-home=${desktopHome}`,
-        `--openchamber-macos-major=${desktopMacosMajor}`,
-        `--openchamber-boot-outcome=${JSON.stringify(state.bootOutcome || null)}`,
-      ],
-      preload: isDev ? path.join(__dirname, 'preload.mjs') : path.join(app.getAppPath(), 'preload.mjs'),
-      backgroundThrottling: false,
-      contextIsolation: true,
-      nodeIntegration: false,
-      // sandbox must stay off: the preload uses contextBridge + ipcRenderer
-      // from Electron's Node layer. contextIsolation + nodeIntegration:false
-      // keep the renderer world walled off from Node. Do NOT flip to true —
-      // the preload would fail to load and __TAURI__ would go undefined.
-      sandbox: false,
-      // Required for the context panel's browser pane. Guests are hardened in
-      // will-attach-webview (preload stripped, sandboxed, pinned partition).
-      webviewTag: true,
-    },
-  };
-
-  const browserWindow = new BrowserWindow(options);
+  const options = createStartupWindowOptions({ app, isPreview, palette: startupSplashPalette,
+    localOrigin: desktopLocalOrigin, serverOrigin: desktopServerOrigin,
+    bootOutcome: state.bootOutcome || null, macosMajor: desktopMacosMajor });
+  const early = label === 'main' ? takeEarlyStartupWindow() : null;
+  const browserWindow = early || new BrowserWindow(options);
+  if (early) browserWindow.setBackgroundColor(startupSplashPalette.background);
+  if (useSaved) browserWindow.setSize(Math.max(saved.width, MIN_RESTORE_WINDOW_WIDTH), Math.max(saved.height, MIN_RESTORE_WINDOW_HEIGHT));
   browserWindow.__ocLabel = label || nextWindowLabel();
 
   if (useSaved && Number.isFinite(saved.x) && Number.isFinite(saved.y)) {
@@ -2916,7 +2285,7 @@ const createBrowserWindow = ({ label, restoreGeometry, url }) => {
   // A busy session cost about one core that way with nobody looking.
   const emitWindowVisibility = () => {
     if (browserWindow.isDestroyed()) return;
-    emitToWindow(browserWindow, 'openchamber:window-visibility', {
+    emitToWindow(browserWindow, 'devryan:window-visibility', {
       visible: browserWindow.isVisible() && !browserWindow.isMinimized(),
     });
   };
@@ -2924,7 +2293,7 @@ const createBrowserWindow = ({ label, restoreGeometry, url }) => {
   browserWindow.webContents.on('did-finish-load', emitWindowVisibility);
 
   browserWindow.on('resize', () => {
-    emitToWindow(browserWindow, 'openchamber:window-resized');
+    emitToWindow(browserWindow, 'devryan:window-resized');
     debounceWindowStatePersist(browserWindow, false);
   });
   browserWindow.on('move', () => {
@@ -2986,19 +2355,28 @@ const createBrowserWindow = ({ label, restoreGeometry, url }) => {
 
   browserWindow.webContents.on('will-navigate', (event, url) => {
     const startupAction = startupActionForUrl(url);
+    if (startupAction === 'copy-startup-diagnostics') {
+      event.preventDefault();
+      if (desktopStartupFailed && lastStartupDiagnostic) {
+        // Electron 44+ clipboard writes are asynchronous; a failed copy must not become an unhandled rejection.
+        void clipboard.writeText(lastStartupDiagnostic).catch((error) => log.warn(`[startup] copy diagnostics failed: ${error?.message || error}`));
+      }
+      return;
+    }
+    if (startupAction === 'prepare-reboot-recovery') {
+      event.preventDefault();
+      if (browserWindow === state.mainWindow && browserWindow.webContents.getURL() === startupFailurePageUrl) {
+        void prepareStartupRebootRecovery();
+      }
+      return;
+    }
     if (startupAction === 'retry-startup') {
       event.preventDefault();
-      void startDesktopRuntime();
-      return;
-    }
-    if (startupAction === 'retry-bot-runtime') {
-      event.preventDefault();
-      void retryBotRuntimeStartup();
-      return;
-    }
-    if (startupAction === 'continue-without-bots') {
-      event.preventDefault();
-      void continueWithoutBots();
+      routeStartupRetry({
+        requiresRelaunch: () => Boolean(shellRuntimeBundleBindingError) || webServerEntry.requiresRelaunch(),
+        relaunch: () => performConfirmedQuit({ restart: true }),
+        retryInProcess: startDesktopRuntime,
+      });
       return;
     }
     if (isAllowedNavigationUrl(url)) return;
@@ -3023,7 +2401,7 @@ const createBrowserWindow = ({ label, restoreGeometry, url }) => {
       event.preventDefault();
       return;
     }
-    hardenWebviewAttachParams(webPreferences, params);
+    hardenWebviewAttachParams(webPreferences, params, { partition: browserPartitionIdentity.shared });
   });
 
   browserWindow.webContents.setZoomFactor(1);
@@ -3046,19 +2424,20 @@ const createBrowserWindow = ({ label, restoreGeometry, url }) => {
   });
 
   browserWindow.once('ready-to-show', () => {
-    browserWindow.show();
-    browserWindow.focus();
+    void runStartupPhase('shell_visible', () => { browserWindow.show(); browserWindow.focus(); }, log);
   });
 
   if (url) {
     void navigateWindow(browserWindow, url);
   } else {
     state.startupSplashActive = true;
-    void navigateWindow(
-      browserWindow,
-      `data:text/html;charset=utf-8,${encodeURIComponent(buildStartupSplashHtml())}`,
-      { allowAbort: true },
-    );
+    if (!early) {
+      void navigateWindow(
+        browserWindow,
+        `data:text/html;charset=utf-8,${encodeURIComponent(buildStartupSplashHtml())}`,
+        { allowAbort: true },
+      );
+    }
   }
 
   return browserWindow;
@@ -3078,44 +2457,15 @@ const updateStartupSplashStatus = (text) => {
   void mainWindow.webContents.executeJavaScript(script).catch(() => {});
 };
 
-const botRuntimeProgressText = (progress) => {
-  if (!progress || typeof progress !== 'object') return 'Preparing the private Bot runtime…';
-  if (progress.phase === 'checking') return 'Checking the private Bot runtime…';
-  if (progress.phase === 'downloading_image') {
-    const total = Number.isInteger(progress.total) ? progress.total : BOT_RUNTIME_IMAGE_KEYS.length;
-    const current = Number.isInteger(progress.completed) ? Math.min(total, progress.completed + 1) : 1;
-    return `Downloading Bot runtime image ${current} of ${total}…`;
-  }
-  if (progress.phase === 'verifying_images') return 'Verifying Bot runtime images…';
-  if (progress.phase === 'checking_database') return 'Checking Bot storage…';
-  if (progress.phase === 'initializing_database') return 'Creating Bot storage…';
-  if (progress.phase === 'migrating_database') return 'Updating Bot storage…';
-  if (progress.phase === 'starting_database') return 'Starting Bot storage…';
-  if (progress.phase === 'starting_services') return 'Starting Bot services…';
-  if (progress.phase === 'verifying_health') return 'Verifying Bot service health…';
-  if (progress.phase === 'ready') return 'Private Bot runtime is ready.';
-  return 'Preparing the private Bot runtime…';
-};
-
-const publishBotRuntimeProgress = (progress, browserWindow = null) => {
-  state.botRuntimeOperationSnapshot = progress && typeof progress === 'object'
-    ? Object.freeze({ ...progress })
-    : null;
-  updateStartupSplashStatus(botRuntimeProgressText(progress));
-  if (browserWindow) {
-    emitToWindow(browserWindow, 'openchamber:bot-runtime-progress', progress);
-  } else {
-    emitToAllWindows('openchamber:bot-runtime-progress', progress);
-  }
-};
-
 const activateMainWindow = async (url, localOrigin, bootOutcome) => {
   state.startupSplashActive = false;
   state.localOrigin = localOrigin;
   state.bootOutcome = bootOutcome ?? null;
   state.initScript = buildInitScript(localOrigin, state.bootOutcome, state.sidecarUrl || localOrigin);
   const startupSplashPalette = currentStartupSplashPalette();
-  const startupUrl = withStartupSplashPalette(url, localOrigin, startupSplashPalette);
+  const startupUrl = runtimeBundleRecoveryRequired
+    ? url
+    : withStartupSplashPalette(url, localOrigin, startupSplashPalette);
 
   const mainWindow = state.mainWindow;
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -3184,8 +2534,9 @@ const createBrowserPopoutWindow = async ({ surfaceId = '', workspaceId = '', bas
     trafficLightPosition: process.platform === 'darwin' ? { x: 16, y: 12 } : undefined,
     webPreferences: {
       additionalArguments: [
-        `--openchamber-local-origin=${desktopLocalOrigin}`,
-        `--openchamber-server-origin=${desktopServerOrigin}`,
+        `--devryan-runtime-mode=${isPreview ? 'standard-preview' : 'native'}`,
+        `--devryan-local-origin=${desktopLocalOrigin}`,
+        `--devryan-server-origin=${desktopServerOrigin}`,
       ],
       preload: isDev ? path.join(__dirname, 'preload.mjs') : path.join(app.getAppPath(), 'preload.mjs'),
       backgroundThrottling: false,
@@ -3304,10 +2655,11 @@ const createMiniChatWindow = async ({ mode, sessionId = '', directory = '', proj
     trafficLightPosition: process.platform === 'darwin' ? { x: 16, y: 17 } : undefined,
     webPreferences: {
       additionalArguments: [
-        `--openchamber-local-origin=${desktopLocalOrigin}`,
-        `--openchamber-server-origin=${desktopServerOrigin}`,
-        `--openchamber-home=${desktopHome}`,
-        `--openchamber-macos-major=${desktopMacosMajor}`,
+        `--devryan-runtime-mode=${isPreview ? 'standard-preview' : 'native'}`,
+        `--devryan-local-origin=${desktopLocalOrigin}`,
+        `--devryan-server-origin=${desktopServerOrigin}`,
+        `--devryan-home=${desktopHome}`,
+        `--devryan-macos-major=${desktopMacosMajor}`,
       ],
       preload: isDev ? path.join(__dirname, 'preload.mjs') : path.join(app.getAppPath(), 'preload.mjs'),
       backgroundThrottling: false,
@@ -3396,13 +2748,11 @@ const setMiniChatPinned = (browserWindow, pinned) => {
 };
 
 const resolveInitialUrl = async () => {
-  const localUrl = state.runtimeServiceClient && state.sidecarUrl
-    ? state.sidecarUrl
-    : (isDev && await waitForHealth('http://127.0.0.1:3901', 5_000, 100)
-      ? 'http://127.0.0.1:3901'
-      : await spawnLocalServer());
+  const localUrl = !runtimeBundleRecoveryRequired && isDev && await waitForHealth('http://127.0.0.1:3901', 5_000, 100)
+    ? 'http://127.0.0.1:3901'
+    : await spawnLocalServer();
 
-  const localUiUrl = isDev && await waitForHealth('http://127.0.0.1:5173', 8_000, 100)
+  const localUiUrl = !runtimeBundleRecoveryRequired && isDev && await waitForHealth('http://127.0.0.1:5173', 8_000, 100)
     ? 'http://127.0.0.1:5173'
     : localUrl;
 
@@ -3413,8 +2763,8 @@ const resolveInitialUrl = async () => {
   let initialUrl = localUiUrl;
   let remoteProbe = null;
 
-  const envTarget = normalizeHostUrl(process.env.OPENCHAMBER_SERVER_URL || '');
-  const config = readDesktopHostsConfig();
+  const envTarget = runtimeBundleRecoveryRequired?null:normalizeHostUrl(process.env.DEVRYAN_SERVER_URL || '');
+  const config = runtimeBundleRecoveryRequired?{hosts:[],defaultHostId:LOCAL_HOST_ID,initialHostChoiceCompleted:true}:readDesktopHostsConfig();
   if (envTarget) {
     initialUrl = envTarget;
   } else if (config.defaultHostId && config.defaultHostId !== LOCAL_HOST_ID) {
@@ -3453,32 +2803,44 @@ const installPowerResumeHook = () => {
   if (powerResumeHookInstalled) return;
   powerResumeHookInstalled = true;
   powerMonitor.on('resume', () => {
-    emitToAllWindows('openchamber:system-resume', { timestamp: Date.now() });
+    emitToAllWindows('devryan:system-resume', { timestamp: Date.now() });
   });
 };
 
-const showStartupFailure = async (error) => {
+// `retainRecovery` reports a failed preparation while the launch failure it
+// answers stays recoverable from the same page.
+const showStartupFailure = async (error, { retainRecovery = false } = {}) => {
   const mainWindow = state.mainWindow;
   if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (!retainRecovery) startupRecoveryFailure = error;
+  startupFailurePageUrl = `data:text/html;charset=utf-8,${encodeURIComponent(buildStartupErrorHtml(error, { retainRecovery }))}`;
   await navigateWindow(
     mainWindow,
-    `data:text/html;charset=utf-8,${encodeURIComponent(buildStartupErrorHtml(error))}`,
+    startupFailurePageUrl,
     { allowAbort: true },
   );
   mainWindow.show();
   mainWindow.focus();
 };
 
-const showBotStartupAttention = async (error) => {
-  const mainWindow = state.mainWindow;
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-  await navigateWindow(
-    mainWindow,
-    `data:text/html;charset=utf-8,${encodeURIComponent(buildBotStartupAttentionHtml(error))}`,
-    { allowAbort: true },
-  );
-  mainWindow.show();
-  mainWindow.focus();
+let preparingStartupRebootRecovery = false;
+const prepareStartupRebootRecovery = async () => {
+  if (preparingStartupRebootRecovery || isPreview || process.platform !== 'darwin'
+    || !rebootRecoveryPreparable(startupErrorDetails(startupRecoveryFailure).code)) return;
+  preparingStartupRebootRecovery = true;
+  try {
+    const binding = readNativeShellBundleBinding({ environment: { ...process.env }, home: os.homedir(),
+      existsSync: fs.existsSync, readRuntimeBundleBinding });
+    if (!binding) throw Object.assign(new Error('The retained runtime could not be inspected.'), { code: 'runtime_bundle_binding_invalid' });
+    const { beginNativeBundleRebootRecovery } = await import('@devryan/web/server/lib/opencode/runtime-host/native-bundle-reboot-recovery.js');
+    await beginNativeBundleRebootRecovery({ controlRoot: binding.controlRoot, expectedRevision: binding.selection.revision });
+    await showStartupFailure(Object.assign(new Error('Recovery is prepared and requires a computer restart.'), { code: 'bundle_reboot_required' }));
+  } catch (error) {
+    log.error('[electron] restart recovery preparation failed', startupErrorDetails(error));
+    await showStartupFailure(error, { retainRecovery: true });
+  } finally {
+    preparingStartupRebootRecovery = false;
+  }
 };
 
 const isLocalStartupTarget = ({ initialUrl, localUiUrl }) => {
@@ -3489,140 +2851,38 @@ const isLocalStartupTarget = ({ initialUrl, localUiUrl }) => {
   }
 };
 
-const activatePendingBotStartupContext = async () => {
-  const context = state.pendingBotStartupContext;
-  if (!context) return false;
-  state.pendingBotStartupContext = null;
-  await activateMainWindow(context.initialUrl, context.localOrigin, context.bootOutcome);
-  desktopStartupFailed = false;
-  installPowerResumeHook();
-  return true;
-};
-
-const continueWithoutBots = async () => {
-  if (!state.pendingBotStartupContext) return;
-  log.warn('[bots] continuing current launch without a ready private Bot runtime');
-  await activatePendingBotStartupContext();
-};
-
-const requirePreparedBotRuntime = async () => {
-  const result = await state.serverHandle.prepareBotRuntime();
-  if (result?.state !== 'failed') return result;
-  publishBotRuntimeProgress({
-    id: state.botRuntimeOperationSnapshot?.id || crypto.randomUUID(),
-    action: 'ensure_ready',
-    phase: 'failed',
-    completed: null,
-    total: null,
-    code: result.code || 'bot_runtime_warmup_failed',
-    message: result.message || 'The private Bot runtime could not be prepared.',
-    startedAt: state.botRuntimeOperationSnapshot?.startedAt || new Date().toISOString(),
-  });
-  throw Object.assign(new Error(result.message || 'The private Bot runtime could not be prepared.'), {
-    code: result.code || 'bot_runtime_warmup_failed',
-  });
-};
-
-const retryBotRuntimeStartup = () => {
-  if (state.botRuntimeRetryPromise) return state.botRuntimeRetryPromise;
-  const current = (async () => {
-    const context = state.pendingBotStartupContext;
-    if (!context || typeof state.serverHandle?.prepareBotRuntime !== 'function') return;
-    const mainWindow = state.mainWindow;
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      state.startupSplashActive = true;
-      await navigateWindow(
-        mainWindow,
-        `data:text/html;charset=utf-8,${encodeURIComponent(buildStartupSplashHtml())}`,
-        { allowAbort: true },
-      );
-      updateStartupSplashStatus('Retrying the private Bot runtime…');
-    }
-    try {
-      await requirePreparedBotRuntime();
-      await activatePendingBotStartupContext();
-    } catch (error) {
-      const details = startupErrorDetails(error);
-      log.warn('[bots] startup retry failed', {
-        code: details.code,
-        message: details.message,
-        causeMessage: details.causeMessage,
-      });
-      await showBotStartupAttention(error);
-    }
-  })();
-  state.botRuntimeRetryPromise = current;
-  void current.finally(() => {
-    if (state.botRuntimeRetryPromise === current) state.botRuntimeRetryPromise = null;
-  });
-  return current;
-};
-
-const prepareBotRuntimeInBackground = () => {
-  if (state.botRuntimeRetryPromise || typeof state.serverHandle?.prepareBotRuntime !== 'function') {
-    return;
-  }
-  const current = requirePreparedBotRuntime().catch((error) => {
-    const details = startupErrorDetails(error);
-    log.warn('[bots] background runtime preparation failed', {
-      code: details.code,
-      message: details.message,
-      causeMessage: details.causeMessage,
-    });
-  });
-  state.botRuntimeRetryPromise = current;
-  void current.finally(() => {
-    if (state.botRuntimeRetryPromise === current) state.botRuntimeRetryPromise = null;
-  });
-};
-
 const prepareForegroundRuntime = async () => {
-  if (state.runtimeServiceClient || state.runtimeServiceCoordinator?.getOwner()) return;
-  const automaticRuntime = await autoEnableBackgroundRuntimeOnFirstLaunch();
-  if (automaticRuntime.mode === 'service') {
-    try {
-      await resumeBackgroundRuntimeAfterAppUpdate();
-      await ensureRuntimeServiceRegistered({ registration: getRuntimeServiceRegistration(), log });
-      await waitForRuntimeServiceConnection();
-    } catch (error) {
-      await recoverStartupToAppBound(error);
-      state.runtimeServiceClient = false;
-      state.sidecarUrl = null;
-      log.warn('[runtime-service] startup rolled back to app-bound Bots', {
-        code: error?.code || 'runtime_service_start_failed',
-        ...(error?.rejection ? { rejection: error.rejection } : {}),
-      });
-    }
-  }
+  if(isPreview || runtimeBundleRecoveryRequired)return;
+  await retireBackgroundRuntime();
 };
 
 const startDesktopRuntime = () => {
   if (desktopStartupPromise) return desktopStartupPromise;
   const current = (async () => {
     try {
+      if (shellRuntimeBundleBindingError) throw shellRuntimeBundleBindingError;
       if (desktopStartupFailed) {
         applyDesktopKeepAwake(readDesktopKeepAwakeEnabled());
       }
-      await prepareForegroundRuntime();
-      const startupContext = await resolveInitialUrl();
+      await runStartupPhase('foreground_preparation', () => prepareForegroundRuntime(), log);
+      const startupContext = await runStartupPhase('initial_url', () => resolveInitialUrl(), log);
       const { initialUrl, localOrigin, bootOutcome } = startupContext;
-      state.pendingBotStartupContext = null;
-      await activateMainWindow(initialUrl, localOrigin, bootOutcome);
+      await runStartupPhase('renderer_navigation', () => activateMainWindow(initialUrl, localOrigin, bootOutcome), log);
       desktopStartupFailed = false;
 
-      installPowerResumeHook();
-      if (isLocalStartupTarget(startupContext)) {
+      if(!runtimeBundleRecoveryRequired)installPowerResumeHook();
+      if (!runtimeBundleRecoveryRequired && isLocalStartupTarget(startupContext)) {
         const openCodeStartup = Promise.resolve(
           state.serverHandle?.resumeDeferredOpenCodeStartup?.(),
         );
+        if (desktopDmgInstaller?.isCandidateStartup()) await openCodeStartup;
         void openCodeStartup.catch((error) => {
           log.error('[electron] deferred OpenCode startup failed', startupErrorDetails(error));
         });
-        if (readSettingsRoot().productionBotsRuntimeMode !== 'disabled') {
-          void openCodeStartup.then(() => prepareBotRuntimeInBackground()).catch(() => undefined);
-        }
       }
+      await desktopDmgInstaller?.acceptStartup();
     } catch (error) {
+      if (desktopDmgInstaller?.isCandidateStartup()) { await desktopDmgInstaller.refuseStartup();return; }
       desktopStartupFailed = true;
       const details = startupErrorDetails(error);
       log.error('[electron] startup failed', details);
@@ -3642,63 +2902,57 @@ const startDesktopRuntime = () => {
   return current;
 };
 
-const compareSemver = (left, right) => {
-  const a = String(left || '').replace(/^v/, '').split('.').map((value) => Number.parseInt(value || '0', 10));
-  const b = String(right || '').replace(/^v/, '').split('.').map((value) => Number.parseInt(value || '0', 10));
-  const length = Math.max(a.length, b.length);
-  for (let index = 0; index < length; index += 1) {
-    const diff = (a[index] || 0) - (b[index] || 0);
-    if (diff !== 0) return diff;
-  }
-  return 0;
+const updateCacheDirectory = path.join(app.getPath('userData'), 'updates');
+const windowsUpdateRuntimeDirectory = path.join(process.resourcesPath, 'revert-runtime', `win32-${process.arch}`);
+const windowsUpdateLauncher = path.join(windowsUpdateRuntimeDirectory, `DevRyan-execution-win32-${process.arch}.exe`);
+const verifyWindowsUpdateLauncher = async () => {
+  const manifestPath = path.join(windowsUpdateRuntimeDirectory, 'native-bundle.json');
+  const stat = await fsp.lstat(manifestPath);
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 4 * 1024 * 1024) throw new Error('update_native_manifest_unverified');
+  const bytes = await fsp.readFile(manifestPath);
+  if (bytes.length !== stat.size) throw new Error('update_native_manifest_changed');
+  return verifyNativeRuntimeArtifacts({ manifestPath, manifestSha256: crypto.createHash('sha256').update(bytes).digest('hex'), launcher: windowsUpdateLauncher });
 };
-
-const parseGithubRepo = () => {
-  return { owner: GITHUB_REPOSITORY_OWNER, repo: GITHUB_REPOSITORY_NAME };
+const windowsUpdateOwner = !isPreview && app.isPackaged && process.platform === 'win32' && ['x64', 'arm64'].includes(process.arch)
+  ? createWindowsUpdateOwner({ launcher: windowsUpdateLauncher, verifyLauncher: verifyWindowsUpdateLauncher }) : null;
+const verifyWindowsUpdateArtifacts = () => verifyWindowsInstalledArtifacts({ target: path.dirname(process.execPath), arch: process.arch,
+  owner: windowsUpdateOwner, verifyNativeArtifacts: verifyNativeRuntimeArtifacts });
+const desktopUpdater = isPreview ? createPreviewUpdater() : createDesktopUpdater({ currentVersion: APP_VERSION, cacheDirectory: updateCacheDirectory,
+  windowsOwner: windowsUpdateOwner, verifyWindowsArtifacts: verifyWindowsUpdateArtifacts,
+  onProgress: progress => emitToAllWindows('devryan:update-progress', progress) });
+const desktopDmgInstaller = app.isPackaged && process.platform === 'darwin' && !isRuntimeServiceControlProbe
+  ? createMacDmgInstaller({ installedBundle: path.dirname(path.dirname(path.dirname(process.execPath))),
+    currentVersion: APP_VERSION, cacheDirectory: updateCacheDirectory, verifyNativeArtifacts: verifyUpdateCandidateArtifacts,
+    trashItem: target => shell.trashItem(target), onRollbackRequested: () => rollbackCandidateUpdate() })
+  : windowsUpdateOwner && !isRuntimeServiceControlProbe
+    ? createWindowsNsisInstaller({ installedDirectory: path.dirname(process.execPath), currentVersion: APP_VERSION, cacheDirectory: updateCacheDirectory,
+      owner: windowsUpdateOwner, verifyNativeArtifacts: ({ target, arch }) => verifyWindowsInstalledArtifacts({ target, arch,
+        owner: windowsUpdateOwner, verifyNativeArtifacts: verifyNativeRuntimeArtifacts }), onRollbackRequested: () => rollbackCandidateUpdate() }) : null;
+const cleanupUpdateOwners = async () => {
+  // A startup that has not published its handle still owns native resources.
+  // Never acknowledge candidate shutdown while that construction is pending.
+  if (localServerStartPromise) await localServerStartPromise;
+  speechManager.shutdown();
+  await Promise.all([killSidecar({ strict: true }), sshManager.shutdownAll()]);
 };
-
-const setupAutoUpdater = () => {
-  if (!app.isPackaged) {
-    return;
-  }
-  autoUpdater.autoDownload = false;
-  autoUpdater.autoInstallOnAppQuit = false;
-  autoUpdater.allowPrerelease = false;
-  autoUpdater.fullChangelog = true;
-  autoUpdater.disableWebInstaller = false;
-  autoUpdater.logger = log;
-
-  const { owner, repo } = parseGithubRepo();
-  autoUpdater.setFeedURL({
-    provider: 'github',
-    owner,
-    repo,
-  });
-
-  autoUpdater.on('download-progress', (progress) => {
-    emitToAllWindows('openchamber:update-progress', mapUpdaterProgressEvent({
-      event: 'Progress',
-      data: {
-        chunkLength: Math.max(0, Math.round(progress.bytesPerSecond || 0)),
-        downloaded: Math.round(progress.transferred || 0),
-        total: Math.round(progress.total || 0),
-      },
-    }));
-  });
-
-  autoUpdater.on('update-downloaded', (info) => {
-    log.info(`[electron] update-downloaded version=${info?.version || 'unknown'}`);
-    if (state.pendingUpdate) {
-      state.pendingUpdate.downloaded = true;
+const rollbackCandidateUpdate = async () => {
+  if (state.updateCleanupPromise) return state.updateCleanupPromise;
+  prepareForQuit({ installingUpdate: true });
+  state.updateCleanupPromise = finishQuitAfterCleanup({ owner: 'updater',
+    cleanupOwnedResources: cleanupUpdateOwners, afterCleanup: () => desktopDmgInstaller.recordCandidateStopped(true),
+    requestQuit: () => { state.updateInstallReady = true;app.quit(); }, forceExit: () => {},
+    onCleanupError: error => log.warn('[electron] candidate rollback shutdown refused', { code: error?.code || 'update_cleanup_failed' }),
+  }).then(async outcome => {
+    if (outcome === 'blocked') {
+      await desktopDmgInstaller.recordCandidateStopped(false);
+      state.installingUpdate = false;state.quitRequested = false;state.quitConfirmed = false;
     }
+    return outcome;
   });
-
-  autoUpdater.on('error', (err) => {
-    log.error('[electron] autoUpdater error', err);
-  });
+  return state.updateCleanupPromise;
 };
 
-const buildInstalledAppsCachePath = () => path.join(path.dirname(settingsFilePath()), INSTALLED_APPS_CACHE_FILE);
+const buildInstalledAppsCachePath = () => path.join(hostDataRootDirectory, INSTALLED_APPS_CACHE_FILE);
 
 // Async variants. sips + mdfind via spawnSync blocked the Electron main event
 // loop for 2-3s on boot (22 OPEN_IN_APPS × ~200 ms each). Use execFile promises
@@ -3738,7 +2992,7 @@ const isAppBundleInstalled = async (appName) => Boolean(await resolveAppBundlePa
 const iconToDataUrl = async (iconPath, appName) => {
   if (!iconPath || !(await pathExists(iconPath))) return null;
   const safeName = String(appName || 'app').replace(/[^a-z0-9]/gi, '_');
-  const tempPath = path.join(os.tmpdir(), `openchamber-icon-${safeName}-${Date.now()}.png`);
+  const tempPath = path.join(os.tmpdir(), `devryan-icon-${safeName}-${Date.now()}.png`);
   try {
     await execFileAsync('sips', ['-s', 'format', 'png', '-Z', '32', iconPath, '--out', tempPath], { stdio: 'ignore' });
   } catch {
@@ -3905,6 +3159,9 @@ const runSpecChain = (specs, appName) => {
 };
 
 const handleInvoke = async (browserWindow, command, args = {}) => {
+  if (isPreview && isPreviewUnsupportedCommand(command)) {
+    throw new Error('windows_preview_feature_unavailable');
+  }
   switch (command) {
     case 'desktop_start_window_drag':
       return null;
@@ -3996,71 +3253,6 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
 
     case 'desktop_agent_browser_repair':
       return mutateAgentBrowserInstallation('repair');
-
-    case 'desktop_bot_runtime_status':
-      return state.runtimeServiceClient
-        ? runtimeServiceBotRuntimeOperation('status')
-        : getBotRuntimeManager().status();
-
-    case 'desktop_bot_runtime_operation_status':
-      return state.runtimeServiceClient
-        ? runtimeServiceBotRuntimeOperation('operation')
-        : state.botRuntimeOperationSnapshot || getBotRuntimeManager().operationStatus();
-
-    case 'desktop_bot_runtime_setup':
-      return state.runtimeServiceClient
-        ? runtimeServiceBotRuntimeOperation('setup', 'POST')
-        : getBotRuntimeManager().setup({
-            onProgress: (progress) => publishBotRuntimeProgress(progress, browserWindow),
-          });
-
-    case 'desktop_bot_runtime_repair':
-      return state.runtimeServiceClient
-        ? runtimeServiceBotRuntimeOperation('repair', 'POST')
-        : getBotRuntimeManager().repair({
-            onProgress: (progress) => publishBotRuntimeProgress(progress, browserWindow),
-          });
-
-    case 'desktop_bot_runtime_update':
-      return state.runtimeServiceClient
-        ? runtimeServiceBotRuntimeOperation('update', 'POST')
-        : getBotRuntimeManager().update({
-            onProgress: (progress) => publishBotRuntimeProgress(progress, browserWindow),
-          });
-
-    case 'desktop_bot_runtime_rollback':
-      return state.runtimeServiceClient
-        ? runtimeServiceBotRuntimeOperation('rollback', 'POST')
-        : getBotRuntimeManager().rollback({
-            onProgress: (progress) => publishBotRuntimeProgress(progress, browserWindow),
-          });
-
-    case 'desktop_runtime_service_status':
-      return runtimeServiceCommandResult(() => runtimeServiceStatus());
-
-    case 'desktop_runtime_service_enable':
-      return runtimeServiceCommandResult(() => (
-        enableBackgroundBots({ allowLegacy: args?.allowLegacy === true })
-      ));
-
-    case 'desktop_runtime_service_disable':
-      return runtimeServiceCommandResult(() => disableBackgroundBots());
-
-    case 'desktop_runtime_service_open_settings': {
-      const settingsUrl = getRuntimeServiceRegistration().settingsUrl;
-      if (!settingsUrl) {
-        const error = new Error('Login Items settings are unavailable on this macOS version');
-        error.code = 'runtime_service_settings_unavailable';
-        throw error;
-      }
-      await shell.openExternal(settingsUrl);
-      return { opened: true };
-    }
-
-    // Docker Desktop is a foreground application of the signed-in user, so
-    // this always runs here and is never forwarded to the background service.
-    case 'desktop_open_docker_desktop':
-      return getDockerDesktopLauncher().open();
 
     case 'desktop_browser_capture_page': {
       return getBrowserSurfaceManager().capture(browserWindow, args);
@@ -4210,30 +3402,6 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       };
     }
 
-    case 'desktop_export_bot_recovery': {
-      const localOrigin = state.localOrigin || state.sidecarUrl;
-      const rendererSession = browserWindow?.webContents?.session;
-      return botRecoveryDialog.exportBundle({
-        window: browserWindow,
-        origin: localOrigin,
-        session: rendererSession,
-        botId: args?.botId,
-        request: args?.request,
-      });
-    }
-
-    case 'desktop_restore_bot_recovery': {
-      const localOrigin = state.localOrigin || state.sidecarUrl;
-      const rendererSession = browserWindow?.webContents?.session;
-      return botRecoveryDialog.restoreBundle({
-        window: browserWindow,
-        origin: localOrigin,
-        session: rendererSession,
-        passphrase: args?.passphrase,
-        mode: args?.mode,
-      });
-    }
-
     case 'desktop_read_file': {
       const rawPath = typeof args.path === 'string' ? args.path : '';
       if (!rawPath) throw new Error('Path is required');
@@ -4249,7 +3417,7 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       if (!underHome && !underTmp) {
         throw new Error('File is outside the allowed workspace');
       }
-      const DENIED_SEGMENTS = ['.ssh', '.aws', '.gnupg', '.gpg', '.config/gh', '.config/openchamber/credentials'];
+      const DENIED_SEGMENTS = ['.ssh', '.aws', '.gnupg', '.gpg', '.config/gh', '.config/devryan/credentials', '.config/openchamber/credentials'];
       const relFromHome = underHome ? filePath.slice(home.length + 1) : '';
       const relNormalized = relFromHome.split(path.sep).join('/');
       if (DENIED_SEGMENTS.some((segment) => relNormalized === segment || relNormalized.startsWith(`${segment}/`))) {
@@ -4482,7 +3650,7 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
         const apps = await buildInstalledApps(Array.isArray(args.apps) ? args.apps : []);
         await fsp.mkdir(path.dirname(cachePath), { recursive: true });
         await fsp.writeFile(cachePath, JSON.stringify({ updatedAt: now, apps }, null, 2));
-        emitToAllWindows('openchamber:installed-apps-updated', apps);
+        emitToAllWindows('devryan:installed-apps-updated', apps);
       };
       if (!hasCache || isCacheStale || args.force === true) {
         void refresh();
@@ -4496,7 +3664,7 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
     case 'desktop_hosts_set': {
       await writeDesktopHostsConfig(args.input || args.config || {});
       const updatedConfig = readDesktopHostsConfig();
-      const envTarget = normalizeHostUrl(process.env.OPENCHAMBER_SERVER_URL || '');
+      const envTarget = normalizeHostUrl(process.env.DEVRYAN_SERVER_URL || '');
       state.bootOutcome = computeBootOutcome({
         envTargetUrl: envTarget || null,
         probe: null,
@@ -4559,153 +3727,40 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       return { enabled };
     }
 
-    case 'desktop_check_for_updates': {
-      const currentVersion = APP_VERSION;
-      let payload = null;
-      try {
-        const response = await fetch(UPDATE_METADATA_URL, {
-          headers: {
-            Accept: 'application/vnd.github+json',
-            'User-Agent': `DevRyan/${currentVersion}`,
-            'X-GitHub-Api-Version': '2022-11-28',
-          },
-          signal: AbortSignal.timeout(10_000),
-        });
-        payload = await response.json();
-      } catch {
-      }
-
-      let updateResult = null;
-      try {
-        updateResult = await autoUpdater.checkForUpdates();
-      } catch {
-      }
-
-      const updateInfo = updateResult?.updateInfo;
-      const nextVersion = String(
-        (typeof updateInfo?.version === 'string' && updateInfo.version) ||
-        (typeof payload?.version === 'string' && payload.version) ||
-        (typeof payload?.tag_name === 'string' && payload.tag_name) ||
-        currentVersion
-      ).replace(/^v/, '');
-      const available = compareSemver(nextVersion, currentVersion) > 0;
-      const body =
-        (typeof payload?.notes === 'string' && payload.notes.trim() ? payload.notes : null) ||
-        (typeof payload?.body === 'string' && payload.body.trim() ? payload.body : null) ||
-        (typeof updateInfo?.releaseNotes === 'string' && updateInfo.releaseNotes.trim() ? updateInfo.releaseNotes : null);
-      state.pendingUpdate = available ? { version: nextVersion, metadata: payload, electronUpdate: updateResult } : null;
-      return {
-        available,
-        currentVersion,
-        version: available ? nextVersion : null,
-        body: body || null,
-        date:
-          (typeof updateInfo?.releaseDate === 'string' && updateInfo.releaseDate) ||
-          (typeof payload?.pub_date === 'string' && payload.pub_date) ||
-          (typeof payload?.published_at === 'string' ? payload.published_at : null),
-      };
-    }
+    case 'desktop_check_for_updates':
+      if (!app.isPackaged) throw new Error('Desktop updates require an installed release');
+      return desktopUpdater.check();
 
     case 'desktop_download_and_install_update':
-      if (!state.pendingUpdate) {
-        throw new Error('No pending update');
-      }
-      emitToAllWindows('openchamber:update-progress', mapUpdaterProgressEvent({
-        event: 'Started',
-        data: {
-          contentLength: null,
-        },
-      }));
-      if (!state.pendingUpdate.electronUpdate) {
-        throw new Error('Electron updater metadata is not available for this build');
-      }
-      if (!state.pendingUpdate.downloaded) {
-        await new Promise((resolve, reject) => {
-          let settled = false;
-          const cleanup = () => {
-            autoUpdater.off('update-downloaded', onDownloaded);
-            autoUpdater.off('error', onError);
-          };
-          const finish = (callback, value) => {
-            if (settled) return;
-            settled = true;
-            cleanup();
-            callback(value);
-          };
-          const onDownloaded = () => finish(resolve, null);
-          const onError = (error) => finish(reject, error);
-          autoUpdater.on('update-downloaded', onDownloaded);
-          autoUpdater.on('error', onError);
-          Promise.resolve(autoUpdater.downloadUpdate()).catch((error) => finish(reject, error));
-        });
-      }
-      emitToAllWindows('openchamber:update-progress', mapUpdaterProgressEvent({
-        event: 'Finished',
-        data: {},
-      }));
-      return null;
+      if (!app.isPackaged) throw new Error('Desktop updates require an installed release');
+      return desktopUpdater.download();
 
     case 'desktop_restart': {
-      const applyUpdate = Boolean(state.pendingUpdate?.downloaded && app.isPackaged);
-      log.info(`[electron] desktop_restart applyUpdate=${applyUpdate} packaged=${app.isPackaged}`);
-      if (applyUpdate && process.platform === 'darwin' && typeof app.isInApplicationsFolder === 'function') {
-        try {
-          if (!app.isInApplicationsFolder()) {
-            throw new Error('Desktop update requires DevRyan.app to be installed in /Applications');
-          }
-        } catch (error) {
-          log.warn('[electron] desktop_restart blocked', error);
-          throw error;
-        }
-      }
-      if (applyUpdate) {
-        if (state.updateCleanupPromise) return null;
-        await prepareBackgroundRuntimeForAppUpdate();
-        prepareForQuit({ installingUpdate: true });
-      }
+      const applyUpdate = desktopUpdater.isDownloaded() && app.isPackaged;
+      if (!applyUpdate) { performConfirmedQuit({ restart: true });return null; }
+      if (!desktopDmgInstaller) throw new Error('Installer updates are unavailable on this platform');
+      if (state.updateCleanupPromise) return null;
+      // All integrity, signing, path, space and service-package checks precede
+      // any drain. A refused preflight leaves the running runtime untouched.
+      const prepared = await desktopDmgInstaller.prepare(await desktopUpdater.getDownloaded());
+      prepareForQuit({ installingUpdate: true });
       browserCdpBridge?.closeAll('app_restart');
-      // Defer so the IPC reply flushes before the app starts shutting down.
-      // Without this, quitAndInstall() can race with the renderer's pending
-      // invoke and the restart appears to do nothing from the UI side.
       setImmediate(() => {
-        try {
-          if (applyUpdate) {
-            state.updateCleanupPromise = finishQuitAfterCleanup({
-              owner: 'updater',
-              checkpointBotRuns: () => state.serverHandle?.checkpointBotRuns?.({ reason: 'app_update' }),
-              stopBotDispatcher: () => state.serverHandle?.stopBotDispatcher?.(),
-              stopBotIndexerRequests: () => state.serverHandle?.stopBotIndexerRequests?.(),
-              cleanupOwnedResources: async () => {
-                speechManager.shutdown();
-                await Promise.all([killSidecar({ strict: true }), sshManager.shutdownAll(), stopDesktopHostBroker()]);
-              },
-              requestQuit: () => { state.updateInstallReady = true; autoUpdater.quitAndInstall(); },
-              // Never call app.quit/exit on behalf of electron-updater.
-              forceExit: () => {},
-              onCleanupError: (error) => {
-                log.warn('[electron] update cleanup failed:', error?.code || 'update_cleanup_failed');
-                emitToAllWindows('openchamber:update-progress', { event: 'Error', data: { message: 'Update cleanup did not finish. Quit and reopen DevRyan before retrying the update.' } });
-              },
-            }).then((outcome) => {
-              if (outcome === 'blocked') {
-                state.installingUpdate = false;
-                state.updateInstallReady = false;
-                state.quitRequested = false;
-                state.quitConfirmed = false;
-              }
-            }).catch((error) => {
-              state.installingUpdate = false;
-              state.updateInstallReady = false;
-              state.quitRequested = false;
-              state.quitConfirmed = false;
-              log.error('[electron] update installation failed', error);
-            });
-          } else {
-            performConfirmedQuit({ restart: true });
+        state.updateCleanupPromise = finishQuitAfterCleanup({ owner: 'updater',
+          cleanupOwnedResources: cleanupUpdateOwners, afterCleanup: () => desktopDmgInstaller.launchPrepared(prepared),
+          requestQuit: () => { state.updateInstallReady = true;app.quit(); }, forceExit: () => {},
+          onCleanupError: error => {
+            log.warn('[electron] update cleanup refused', { code: error?.code || 'update_cleanup_failed' });
+            emitToAllWindows('devryan:update-progress', { event: 'Error', data: { message: 'Update shutdown did not finish. Quit and reopen DevRyan before retrying.' } });
+          },
+        }).then(outcome => {
+          if (outcome === 'blocked') {
+            state.installingUpdate = false;state.updateInstallReady = false;state.quitRequested = false;state.quitConfirmed = false;
           }
-        } catch (err) {
-          log.error('[electron] desktop_restart failed', err);
-        }
+        }).catch(error => {
+          state.installingUpdate = false;state.updateInstallReady = false;state.quitRequested = false;state.quitConfirmed = false;
+          log.error('[electron] update installation failed', { code: error?.code || 'update_install_failed' });
+        });
       });
       return null;
     }
@@ -4769,10 +3824,10 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
         const directory = typeof args.directory === 'string' ? args.directory.trim() : '';
         const mode = typeof args.mode === 'string' ? args.mode.trim() : '';
         if (sessionId) {
-          emitToWindow(state.mainWindow, 'openchamber:open-session', { sessionId, directory });
+          emitToWindow(state.mainWindow, 'devryan:open-session', { sessionId, directory });
         } else if (mode === 'draft') {
           const projectId = typeof args.projectId === 'string' ? args.projectId.trim() : '';
-          emitToWindow(state.mainWindow, 'openchamber:open-draft-session', { directory, projectId });
+          emitToWindow(state.mainWindow, 'devryan:open-draft-session', { directory, projectId });
         }
         return { focused: true };
       }
@@ -4902,8 +3957,31 @@ const SENSITIVE_NATIVE_BROWSER_COMMANDS = new Set([
   'desktop_browser_devtools_set_open',
 ]);
 
-ipcMain.handle('openchamber:invoke', async (event, command, args) => {
+ipcMain.handle('devryan:invoke', async (event, command, args) => {
+  if (isPreview && isPreviewUnsupportedCommand(command)) throw new Error('windows_preview_feature_unavailable');
   const browserWindow = BrowserWindow.fromWebContents(event.sender);
+  if(command==='desktop_runtime_bundle_resume'){
+    const handle=state.serverHandle;
+    const assertSender=()=>{
+      if(!runtimeBundleRecoveryRequired||!handle||handle!==state.serverHandle||!browserWindow||browserWindow!==state.mainWindow
+        ||browserWindow.isDestroyed()||event.senderFrame!==event.sender.mainFrame||!isLocalSender(event.sender))throw new Error('bundle_recovery_sender_denied');
+      const url=new URL(event.sender.getURL()),owned=new URL(state.sidecarUrl);
+      if(url.origin!==owned.origin||url.pathname!=='/'||url.search||url.hash)throw new Error('bundle_recovery_sender_denied');
+    };
+    const result=await confirmRuntimeBundleResume({args,handle,assertSender,confirm:async()=>{
+      const answer=await dialog.showMessageBox(browserWindow,{type:'warning',title:'Resume retained runtime',
+        message:'Resume the retained runtime and restart DevRyan?',detail:'Both bundles will be kept. Recovery proceeds only if the original checkpoint and retained runtime still verify.',
+        buttons:['Cancel','Resume and restart'],defaultId:0,cancelId:0,noLink:true});
+      return answer.response===1;
+    }});
+    if(result.state==='restart_required')setImmediate(()=>{
+      void restartSupabaseHost({handle,coordinator:state.runtimeServiceCoordinator,serviceMode:false,
+        relaunch:relaunchWithHostDataRoot,exit:code=>app.exit(code),onStopped:()=>{
+          state.serverHandle=null;state.sidecarUrl=null;state.runtimeServiceCoordinator=null;
+        }}).catch(()=>log.error('[electron] retained runtime selected; restart remains required'));
+    });
+    return result;
+  }
   if (NATIVE_BROWSER_COMMANDS.has(command)) {
     const force = SENSITIVE_NATIVE_BROWSER_COMMANDS.has(command)
       || (command === 'desktop_browser_surface_command'
@@ -4918,7 +3996,7 @@ ipcMain.handle('openchamber:invoke', async (event, command, args) => {
   return handleInvoke(browserWindow, command, args);
 });
 
-ipcMain.handle('openchamber:dialog:open', async (event, options) => {
+ipcMain.handle('devryan:dialog:open', async (event, options) => {
   // Native file dialogs expose absolute local paths; never grant to remote.
   if (!isLocalSender(event.sender)) {
     log.warn(`[ipc] rejected dialog:open from non-local origin: ${event.sender?.getURL?.() || '(unknown)'}`);
@@ -4971,23 +4049,6 @@ app.on('before-quit', (event) => {
     releaseDesktopKeepAwake();
     return;
   }
-  if (isRuntimeServiceMode && !state.quitConfirmed) {
-    event.preventDefault();
-    state.quitRequested = true;
-    state.quitConfirmed = true;
-    void shutdownOwnedRuntimeService().finally(() => app.quit());
-    return;
-  }
-  if (state.runtimeServiceClient && !state.quitConfirmed) {
-    event.preventDefault();
-    state.quitRequested = true;
-    state.quitConfirmed = true;
-    // Detaching from the service is best-effort; an unresponsive broker or
-    // lease release must not keep the app from quitting.
-    void Promise.race([stopDesktopHostBroker(), new Promise((resolve) => setTimeout(resolve, 5_000).unref?.())])
-      .finally(() => app.quit());
-    return;
-  }
   if (state.quitCleanupPromise) {
     event.preventDefault();
     return;
@@ -5004,15 +4065,12 @@ app.on('before-quit', (event) => {
 app.on('will-quit', () => {
   browserCdpBridge?.closeAll('app_quit');
   browserSurfaceManager?.closeAll('app_quit');
-  state.botSecretStore?.dispose();
-  state.botSecretStore = null;
-  if (state.desktopHostLeaseRefreshTimer) clearInterval(state.desktopHostLeaseRefreshTimer);
   releaseDesktopKeepAwake();
 });
 
 app.on('second-instance', (_event, argv) => {
   const urls = Array.isArray(argv)
-    ? argv.filter((arg) => typeof arg === 'string' && arg.startsWith(`${DEEP_LINK_PROTOCOL}://`))
+    ? argv.filter(isDeepLinkArg)
     : [];
   if (urls.length > 0) handleDeepLinks(urls);
   focusForegroundWindow();
@@ -5022,6 +4080,9 @@ app.on('open-url', (event, url) => {
   event.preventDefault();
   handleDeepLinks([url]);
 });
+
+const earlyLinks = takeEarlyAppLinks();
+if (earlyLinks.length) handleDeepLinks(earlyLinks);
 
 app.on('activate', async () => {
   const windows = BrowserWindow.getAllWindows().filter((window) => !window.isDestroyed());
@@ -5052,6 +4113,14 @@ app.whenReady().then(async () => {
     platform: process.platform,
     arch: process.arch,
   });
+  await desktopDmgInstaller?.beginStartup(process.argv.find(arg => arg.startsWith('--devryan-update-attempt='))?.slice('--devryan-update-attempt='.length));
+  if (desktopDmgInstaller?.isRecoveryStartup()) {
+    await holdDesktopSettingsForCheckpoint();
+    prepareForQuit({ installingUpdate: true });
+    state.updateInstallReady = true;
+    app.quit();
+    return;
+  }
   if (isRuntimeServiceControlProbe) {
     const registration = getRuntimeServiceRegistration();
     const result = await registration.status();
@@ -5059,29 +4128,25 @@ app.whenReady().then(async () => {
     app.exit(result.ok && result.state !== 'not_found' ? 0 : 2);
     return;
   }
-  if (isRuntimeServiceMode) {
-    // Accessory (not prohibited): no Dock icon or menu bar, yet a native
-    // dialog raised by the service can still be shown.
-    if (process.platform === 'darwin') app.setActivationPolicy('accessory');
-    await acquireRuntimeOwner('service');
-    await spawnLocalServer();
-    prepareBotRuntimeInBackground();
-    process.once('SIGTERM', () => {
-      void shutdownOwnedRuntimeService().finally(() => app.exit(0));
-    });
-    process.once('SIGINT', () => {
-      void shutdownOwnedRuntimeService().finally(() => app.exit(0));
-    });
-    log.info('[runtime-service] background runtime is healthy', {
-      port: state.serverHandle?.getPort?.(),
-    });
+  if (shellRuntimeBundleBindingError) {
+    await holdDesktopSettingsForCheckpoint();
+    if (desktopDmgInstaller?.isCandidateStartup()) { await desktopDmgInstaller.refuseStartup(); return; }
+    log.error('[electron] runtime bundle inspection failed', { code: shellRuntimeBundleBindingError.code });
+    state.mainWindow=createBrowserWindow({label:'main',restoreGeometry:false,url:null});
+    await showStartupFailure(shellRuntimeBundleBindingError);
     return;
   }
-  // App-bound mode: a termination signal runs the same bounded owned-resource
-  // cleanup as a confirmed quit; the runtime watchdog covers a forced exit.
-  // A runtime-service client quits through before-quit, which detaches it
-  // from the service (lease release, broker close) without a dialog.
-  const quitOnSignal = () => (state.runtimeServiceClient ? app.quit() : performConfirmedQuit());
+  if(runtimeBundleRecoveryRequired){
+    await holdDesktopSettingsForCheckpoint();
+    process.once('SIGTERM',()=>performConfirmedQuit());
+    process.once('SIGINT',()=>performConfirmedQuit());
+    state.mainWindow=createBrowserWindow({label:'main',restoreGeometry:true,url:null});
+    await startDesktopRuntime();
+    return;
+  }
+  // A termination signal runs the same bounded owned-resource cleanup as a
+  // confirmed quit; the runtime watchdog covers a forced exit.
+  const quitOnSignal = () => performConfirmedQuit();
   process.once('SIGTERM', quitOnSignal);
   process.once('SIGINT', quitOnSignal);
   nativeTheme.themeSource = readThemeSource();
@@ -5102,7 +4167,6 @@ app.whenReady().then(async () => {
   } catch (error) {
     log.warn('[electron] failed to apply persisted desktop keep awake setting:', error);
   }
-  setupAutoUpdater();
 
   if (process.platform === 'darwin') {
     Menu.setApplicationMenu(buildMacMenu());
@@ -5119,7 +4183,13 @@ app.whenReady().then(async () => {
   if (initial.length > 0) handleDeepLinks(initial);
 
   await startDesktopRuntime();
-}).catch((error) => {
+  if (isPreview && process.argv.includes('--devryan-preview-smoke')) {
+    const { runPackagedPreviewSmoke } = await import('./windows-preview-smoke.mjs');
+    await runPackagedPreviewSmoke({ app, window: state.mainWindow, session: session.defaultSession, baseUrl: state.sidecarUrl });
+    performConfirmedQuit();
+  }
+}).catch(async (error) => {
+  if (desktopDmgInstaller?.isCandidateStartup()) { await desktopDmgInstaller.refuseStartup();return; }
   const details = startupErrorDetails(error);
   log.error('[electron] app initialization failed', details);
   releaseDesktopKeepAwake();

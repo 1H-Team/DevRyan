@@ -1,0 +1,129 @@
+import { after, test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { applyExceptions, checkImportBoundaries, findViolations, isTestImporter, loadPackages, readExceptions, resolveSpecifier } from './check-import-boundaries.mjs';
+
+const roots = [];
+after(() => { for (const root of roots) rmSync(root, { recursive: true, force: true }); });
+
+function fixture(files) {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'devryan-import-boundaries-'));
+  roots.push(root);
+  for (const [file, content] of Object.entries(files)) {
+    mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
+    writeFileSync(path.join(root, file), typeof content === 'string' ? content : `${JSON.stringify(content)}\n`);
+  }
+  return root;
+}
+
+const base = {
+  'packages/web/package.json': { name: '@devryan/web', main: './server/index.js' },
+  'packages/web/server/index.js': 'export const host = 1;\n',
+  'packages/web/server/private.js': 'export const secret = 1;\n',
+  'packages/shared/package.json': { name: '@devryan/shared', main: './index.js',
+    exports: { '.': './index.js', './lib/portable.js': { types: './lib/portable.d.ts', default: './lib/portable.js' } } },
+  'packages/shared/index.js': 'export * from "./lib/portable.js";\n',
+  'packages/shared/lib/portable.js': 'export const value = 1;\n',
+  'packages/shared/lib/node-only.js': 'import fs from "node:fs"; export const read = fs.readFileSync;\n',
+  'packages/library/package.json': { name: '@devryan/library', main: './index.js' },
+  'packages/library/index.js': 'export const x = 1;\n',
+  'packages/library/lib/deep.js': 'export const y = 1;\n',
+  'packages/electron/package.json': { name: '@devryan/electron' },
+};
+
+test('static, re-export, require and literal dynamic imports of private application files fail', () => {
+  const root = fixture({ ...base,
+    'packages/electron/static.mjs': "import { secret } from '@devryan/web/server/private.js';\n",
+    'packages/electron/reexport.mjs': "export { secret } from '../web/server/private.js';\n",
+    'packages/electron/require.cjs': "const { secret } = require('../web/server/private');\n",
+    'packages/electron/dynamic.mjs': "export const load = () => import('@devryan/web/server/private.js');\n",
+    'packages/electron/allowed.mjs': "import { host } from '@devryan/web';\nimport { host as again } from '../web/server/index.js';\n",
+  });
+  const files = ['static.mjs', 'reexport.mjs', 'require.cjs', 'dynamic.mjs', 'allowed.mjs'].map(file => `packages/electron/${file}`);
+  const violations = findViolations({ root, files });
+  assert.deepEqual(violations.map(violation => [violation.importer, violation.target, violation.rule]), files.slice(0, 4).map(importer =>
+    [importer, 'packages/web/server/private.js', 'private-application-import']));
+});
+
+test('declared exports bind both package-name and relative imports; packages without exports stay open', () => {
+  const root = fixture({ ...base,
+    'packages/electron/a.mjs': [
+      "import { value } from '@devryan/shared/lib/portable.js';",
+      "import { read } from '@devryan/shared/lib/node-only.js';",
+      "import { read as again } from '../shared/lib/node-only.js';",
+      "import { y } from '@devryan/library/lib/deep.js';",
+      "import { y as deep } from '../library/lib/deep.js';",
+    ].join('\n'),
+  });
+  const violations = findViolations({ root, files: ['packages/electron/a.mjs'] });
+  assert.deepEqual(violations.map(violation => [violation.specifier, violation.rule]), [
+    ['@devryan/shared/lib/node-only.js', 'unexported-subpath'],
+    ['../shared/lib/node-only.js', 'unexported-subpath'],
+  ]);
+  const packages = loadPackages(root);
+  assert.equal(resolveSpecifier({ root, packages, importer: 'packages/electron/a.mjs', specifier: '@devryan/shared' }).target, 'packages/shared/index.js');
+  assert.equal(resolveSpecifier({ root, packages, importer: 'packages/electron/a.mjs', specifier: 'react' }), null);
+});
+
+test('exceptions are exact pairs with a stage, and unused ones fail as stale', () => {
+  const exceptionFile = exceptions => ({ 'scripts/import-boundaries.json': { schemaVersion: 1, description: 'fixture', exceptions } });
+  const files = { ...base, 'packages/electron/a.mjs': "import '../web/server/private.js';\n", 'packages/electron/b.mjs': 'export {};\n' };
+  const listed = { importer: 'packages/electron/a.mjs', target: 'packages/web/server/private.js', stage: '4a' };
+  const passing = checkImportBoundaries({ root: fixture({ ...files, ...exceptionFile([listed]) }), files: ['packages/electron/a.mjs', 'packages/electron/b.mjs'] });
+  assert.deepEqual([passing.unexpected, passing.stale], [[], []]);
+  const unlisted = checkImportBoundaries({ root: fixture({ ...files, ...exceptionFile([]) }), files: ['packages/electron/a.mjs'] });
+  assert.equal(unlisted.unexpected.length, 1);
+  const stale = { importer: 'packages/electron/b.mjs', target: 'packages/web/server/private.js', stage: '5' };
+  const staleResult = checkImportBoundaries({ root: fixture({ ...files, ...exceptionFile([listed, stale]) }), files: ['packages/electron/a.mjs', 'packages/electron/b.mjs'] });
+  assert.deepEqual(staleResult.stale, [stale]);
+  const scoped = checkImportBoundaries({ root: fixture({ ...files, ...exceptionFile([listed, stale]) }), files: ['packages/electron/a.mjs'] });
+  assert.deepEqual(scoped.stale, [], 'changed-file runs only judge exceptions of checked importers');
+  const deleted = checkImportBoundaries({ root: fixture({ ...files, ...exceptionFile([listed, { ...stale, importer: 'packages/electron/gone.mjs' }]) }),
+    files: ['packages/electron/a.mjs', 'packages/electron/gone.mjs'] });
+  assert.equal(deleted.stale.length, 1, 'an exception for a deleted importer is stale');
+  assert.deepEqual(applyExceptions([], [listed], null).stale, [listed], 'a full run judges every exception');
+  for (const invalid of [[{ ...listed, stage: 'later' }], [listed, listed], [{ importer: listed.importer, target: listed.target }]]) {
+    assert.throws(() => readExceptions(fixture(exceptionFile(invalid))), /exception/);
+  }
+});
+
+test('an exception never covers a package-name import that the target exports refuse at runtime', () => {
+  const exceptionFile = exceptions => ({ 'scripts/import-boundaries.json': { schemaVersion: 1, description: 'fixture', exceptions } });
+  const exported = { ...base, 'packages/web/package.json': { name: '@devryan/web', main: './server/index.js',
+    exports: { '.': './server/index.js', './server/public.js': './server/public.js' } }, 'packages/web/server/public.js': 'export const value = 1;\n' };
+  const files = { ...exported,
+    'packages/electron/by-name.mjs': "import { secret } from '@devryan/web/server/private.js';\n",
+    'packages/electron/relative.mjs': "import { secret } from '../web/server/private.js';\n",
+    'packages/electron/public.mjs': "import { value } from '@devryan/web/server/public.js';\n" };
+  const listed = ['by-name.mjs', 'relative.mjs'].map(file => ({ importer: `packages/electron/${file}`, target: 'packages/web/server/private.js', stage: 'unscheduled' }));
+  const result = checkImportBoundaries({ root: fixture({ ...files, ...exceptionFile(listed) }),
+    files: ['by-name.mjs', 'relative.mjs', 'public.mjs'].map(file => `packages/electron/${file}`) });
+  assert.deepEqual(result.unexpected.map(violation => [violation.importer, violation.runtimeRefused]), [['packages/electron/by-name.mjs', true]]);
+  assert.deepEqual(result.stale, [listed[0]], 'the refused pair is not a usable exception');
+});
+
+test('tests may import private files across packages, but never a package-name path exports refuse', () => {
+  const root = fixture({ ...base,
+    'packages/web/package.json': { name: '@devryan/web', main: './server/index.js', exports: { '.': './server/index.js' } },
+    'packages/electron/tests/relative.test.mjs': "import { secret } from '../../web/server/private.js';\n",
+    'packages/electron/tests/fixture-main.mjs': "import { secret } from '../../web/server/private.js';\n",
+    'packages/electron/parity.spec.ts': "import { secret } from '../web/server/private.js';\n",
+    'packages/electron/tests/by-name.test.mjs': "import { secret } from '@devryan/web/server/private.js';\n",
+    'packages/electron/production.mjs': "import { secret } from '../web/server/private.js';\n",
+  });
+  const files = ['tests/relative.test.mjs', 'tests/fixture-main.mjs', 'parity.spec.ts', 'tests/by-name.test.mjs', 'production.mjs'].map(file => `packages/electron/${file}`);
+  assert.deepEqual(findViolations({ root, files }).map(violation => [violation.importer, violation.runtimeRefused]), [
+    ['packages/electron/tests/by-name.test.mjs', true],
+    ['packages/electron/production.mjs', false],
+  ]);
+  assert.equal(isTestImporter('packages/ui/src/sync/session-presentation.integration.test.js'), true);
+  assert.equal(isTestImporter('packages/web/server/lib/testing-helpers.js'), false);
+});
+
+test('the repository has no unlisted private imports and no stale exceptions', () => {
+  const result = checkImportBoundaries();
+  assert.deepEqual(result.unexpected, []);
+  assert.deepEqual(result.stale, []);
+});

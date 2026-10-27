@@ -3,9 +3,9 @@ import { createOpencodeClient } from '@opencode-ai/sdk';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { createPrimaryRecoveryHost, createPrimaryRecoveryManagedAdapter } from '@openchamber/harness-runtime';
-import { createManagedTaskScheduler } from '@openchamber/orchestration-runtime';
-import { createCompactResultHeader } from '@openchamber/orchestration-runtime';
+import { createPrimaryRecoveryController, createPrimaryRecoveryManagedAdapter } from '@devryan/harness-runtime';
+import { createManagedTaskScheduler } from '@devryan/orchestration-runtime';
+import { createCompactResultHeader } from '@devryan/orchestration-runtime';
 
 vi.mock('@opencode-ai/plugin', () => {
   const makeSchema = () => {
@@ -27,7 +27,7 @@ vi.mock('@opencode-ai/plugin', () => {
     array: makeSchema,
     object: makeSchema,
     boolean: makeSchema,
-    enum: makeSchema,
+    enum: (values) => { const schema = makeSchema(); schema.values = values; return schema; },
     number: makeSchema,
     string: makeSchema,
   };
@@ -46,7 +46,7 @@ const originalUrl = process.env.DEVRYAN_ORCHESTRATION_URL;
 const originalToken = process.env.DEVRYAN_ORCHESTRATION_TOKEN;
 const originalAccountDefaults = process.env.DEVRYAN_ORCHESTRATION_ACCOUNT_DEFAULTS;
 const originalResultMode = process.env.DEVRYAN_MANAGED_RESULT_MODE;
-const POLICY_ENV_KEYS = ['DEVRYAN_TASK_AGENT_VALIDATION', 'DEVRYAN_MANAGED_WAIT_ANY', 'DEVRYAN_CAPABILITY_TOOL_SCHEMA'];
+const POLICY_ENV_KEYS = ['DEVRYAN_TASK_AGENT_VALIDATION', 'DEVRYAN_MANAGED_WAIT_ANY', 'DEVRYAN_TASK_CONTEXT_PROJECTION', 'DEVRYAN_CAPABILITY_TOOL_SCHEMA'];
 const originalPolicyEnvironment = Object.fromEntries(POLICY_ENV_KEYS.map((key) => [key, process.env[key]]));
 
 // Fixtures without an agent catalog model the provider_id/model_id compatibility
@@ -259,7 +259,31 @@ describe('wait-any collection protocol', () => {
   });
 });
 
-describe('wait_any advertisement', () => {
+describe('capability tool advertisement', () => {
+  it.each([
+    [{}, false, false],
+    [{ DEVRYAN_MANAGED_WAIT_ANY: '1' }, true, false],
+    [{ DEVRYAN_TASK_CONTEXT_PROJECTION: '1' }, false, true],
+    [{ DEVRYAN_CAPABILITY_TOOL_SCHEMA: '0' }, true, true],
+  ])('advertises only enabled actions and their arguments for %j', async (environment, waitAny, contextProjection) => {
+    Object.assign(process.env, environment);
+    const { args, description } = (await DevRyanManagedOrchestrationPlugin()).tool.devryan_task;
+    expect(args.action.values.includes('wait_any')).toBe(waitAny);
+    expect('task_ids' in args).toBe(waitAny);
+    expect('reads' in args).toBe(false);
+    expect('until' in args).toBe(false);
+    for (const action of ['checkpoint', 'decisions', 'remember_decision']) {
+      expect(args.action.values.includes(action)).toBe(contextProjection);
+      expect(args.action.description.includes(action)).toBe(contextProjection);
+      expect(description.includes(action)).toBe(contextProjection);
+      expect(args.task_id.description.includes(action)).toBe(contextProjection);
+    }
+    for (const field of ['query', 'decision', 'source_message_id', 'decision_paths', 'valid_until', 'supersedes']) {
+      expect(field in args).toBe(contextProjection);
+    }
+    expect(args.action.values).toContain('plan_read');
+    expect(args.action.values).toContain('plan_update');
+  });
   const blockedRead = async () => {
     vi.stubGlobal('fetch', vi.fn(async () => rpcResponse({ state: 'active', taskIds: ['dvr_task_live'],
       capabilities: { policies: { waitAny: true } } })));
@@ -847,6 +871,14 @@ describe('Plan authority across managed maintenance', () => {
     await harness.dispatch('designer');
     expect(harness.requests.find(({ method }) => method === 'submit').params.readOnly).toBe(false);
     await expect(harness.dispatch('designer', 'msg_002')).rejects.toMatchObject({ code: 'MANAGED_READ_ONLY_AGENT_UNSUPPORTED' });
+  });
+
+  it('lets canonical Plan OFF override a stale legacy Plan flag', async () => {
+    const user = maintenanceUser('msg_001', [{ type: 'text', text: 'Implement the change.' }]);
+    user.info.metadata = { devryanPlanMode: false, openchamberPlanMode: true };
+    const harness = await createWakeHarness({ records: [user, replyingAssistant('msg_002', 'msg_001')] });
+    await harness.dispatch('designer');
+    expect(harness.requests.find(({ method }) => method === 'submit').params.readOnly).toBe(false);
   });
 
   it.each([
@@ -1789,6 +1821,7 @@ describe('DevRyan managed orchestration plugin', () => {
     expect(requests.every((request) => request.params.rootSessionId === 'ses_root')).toBe(true);
     expect(requests.every((request) => request.params.directory === '/workspace')).toBe(true);
     expect(requests.every((request) => request.params.resultMode === 'reference')).toBe(true);
+    expect(requests.every((request) => request.params.resultContractVersion === 1)).toBe(true);
     expect(requests.find((request) => request.method === 'wait').params.waitTimeoutMs).toBe(25_000);
     expect(requests.find((request) => request.method === 'acknowledge').params.action).toBe('retry');
   });
@@ -3712,7 +3745,7 @@ describe('DevRyan managed orchestration plugin', () => {
     expect(requests.map(({ method }) => method)).toEqual(['wait']);
   });
 
-  it.each([false, true])('incident integration: failed parent survives restart, collects user recovery once (lost acknowledgement=%s)', async lostAcknowledgement => {
+  it.each([false, true])('compatibility collection controller: failed parent survives restart, collects user recovery once (lost acknowledgement=%s)', async lostAcknowledgement => {
     const dataDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-collection-'));
     let time = 1000, taskNumber = 0;
     let savedLedger = null;
@@ -3740,28 +3773,30 @@ describe('DevRyan managed orchestration plugin', () => {
       if (method === 'acknowledge') return scheduler.acknowledgeResult(params.taskId, params);
       throw new Error(`Unexpected fixture RPC ${method}`);
     };
-    const hostOptions = { dataDirectory, mode: 'enforce', isManaged: () => true, authorize: async () => true,
-      buildOpenCodeUrl: pathname => `http://fixture.invalid${pathname}`, ...createPrimaryRecoveryManagedAdapter(rpc),
-      fetchImpl: async raw => {
-        const url = new URL(raw);
-        if (url.pathname === '/global/health') return Response.json({ healthy: true, version: '1.18.31' });
-        if (url.pathname === '/session/ses_root') return Response.json({ id: 'ses_root', directory: '/workspace' });
-        if (url.pathname === '/session/status') return Response.json({});
-        if (url.pathname.endsWith('/message')) return Response.json(records);
-        if (['/permission', '/question'].includes(url.pathname)) return Response.json([]);
-        throw new Error(`Unexpected fixture observation ${url.pathname}`);
+    // This retained plugin protocol uses the legacy error classifier directly.
+    // Native hosts have their own v2 admission/continuation suites; no v1 host
+    // or transport is constructed to exercise this compatibility contract.
+    const managed = createPrimaryRecoveryManagedAdapter(rpc);
+    const hostOptions = { directory: path.join(dataDirectory, 'provider-recovery'), mode: 'enforce',
+      isManaged: () => true, authorize: async () => true, ...managed,
+      observeTurn: async record => {
+        const barrier = await managed.managedBarrier(record.sessionID);
+        return { session: { id: 'ses_root', directory: '/workspace' }, messages: structuredClone(records),
+          complete: records.some(message => message.info.id === record.anchorID && message.info.role === 'user'),
+          status: 'idle', blockedByRequests: false, managedBarrierState: barrier.state,
+          blocked: barrier.state !== 'clear', executionOutcomes: [], executionOutcomesUnavailable: false };
       } };
-    let host = createPrimaryRecoveryHost(hostOptions);
+    let host = createPrimaryRecoveryController(hostOptions);
     try {
       const original = await scheduler.submit({ idempotencyKey: 'initial', rootSessionId: 'ses_root', directory: '/workspace',
         mode: 'orchestrator', dispatchGroupId: 'msg_parent', providerId: 'openai', modelId: 'gpt-5.6', agent: 'oracle', label: 'Review', prompt: 'Review' });
       await scheduler.waitForTask(original.taskId);
       await host.initialize();
-      await host.handleRequest('POST', '/session/ses_root/prompt_async?directory=/workspace', {
-        messageID: 'msg_parentuser', agent: 'orchestrator', model: { providerID: 'openai', modelID: 'gpt-5.6' }, variant: 'xhigh' });
+      await host.admit({ sessionID: 'ses_root', directory: '/workspace', primary: true, body: {
+        messageID: 'msg_parentuser', agent: 'orchestrator', model: { providerID: 'openai', modelID: 'gpt-5.6' }, variant: 'xhigh' } });
       await host.drain(); await scheduler.shutdown(); scheduler = makeScheduler(); await scheduler.initialize();
-      host = createPrimaryRecoveryHost(hostOptions); await host.initialize();
-      await host.plugin({ action: 'hello', instanceID: 'runtime-restarted', policyVersion: 1, transport: 'fetch' });
+      host = createPrimaryRecoveryController(hostOptions); await host.initialize();
+      await host.plugin({ action: 'hello', instanceID: 'runtime-restarted', policyVersion: 1, version: '1.18.31' });
       time = 3000;
       const retry = await scheduler.acknowledgeResult(original.taskId, { action: 'retry_in_place', idempotencyKey: 'user-recovered',
         providerId: 'openai', modelId: 'gpt-5.6', variant: null });
@@ -3784,8 +3819,8 @@ describe('DevRyan managed orchestration plugin', () => {
       // Restart between HTTP acceptance and collection. The canonical synthetic
       // message survives; any watcher retry must reconcile instead of POSTing.
       await host.drain(); await scheduler.shutdown(); scheduler = makeScheduler(); await scheduler.initialize();
-      host = createPrimaryRecoveryHost(hostOptions); await host.initialize();
-      await host.plugin({ action: 'hello', instanceID: 'runtime-restarted', policyVersion: 1, transport: 'fetch' });
+      host = createPrimaryRecoveryController(hostOptions); await host.initialize();
+      await host.plugin({ action: 'hello', instanceID: 'runtime-restarted', policyVersion: 1, version: '1.18.31' });
       await start(); scheduled.splice(0).forEach(callback => callback());
       await vi.waitFor(() => expect(fetch.mock.calls.filter(([, init]) => JSON.parse(init.body).method === 'list_provider_recovery_continuations').length).toBeGreaterThanOrEqual(3));
       expect(client.session.promptAsync).toHaveBeenCalledTimes(1);

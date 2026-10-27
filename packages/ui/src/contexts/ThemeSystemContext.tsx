@@ -22,6 +22,7 @@ import { ThemeSystemContext, type ThemeContextValue } from './theme-system-conte
 
 import {
   migrateThemeCatalogLocalStorage,
+  normalizeThemeId,
   THEME_CATALOG_VERSION,
 } from '@/lib/theme/catalogMigration';
 import { getSafeStorage, isPrincipalStorageEvent } from '@/stores/utils/safeStorage';
@@ -187,11 +188,11 @@ const buildInitialPreferences = (defaultThemeId?: string): ThemePreferences => {
     }
 
     if (typeof storedLightId === 'string' && storedLightId.trim().length > 0) {
-      lightThemeId = storedLightId.trim();
+      lightThemeId = normalizeThemeId(storedLightId.trim());
     }
 
     if (typeof storedDarkId === 'string' && storedDarkId.trim().length > 0) {
-      darkThemeId = storedDarkId.trim();
+      darkThemeId = normalizeThemeId(storedDarkId.trim());
     }
   }
 
@@ -247,7 +248,7 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
   }, [customThemes]);
 
   const getThemeByIdFromAvailable = useCallback(
-    (themeId: string): Theme | undefined => availableThemes.find((theme) => theme.metadata.id === themeId),
+    (themeId: string): Theme | undefined => availableThemes.find((theme) => theme.metadata.id === normalizeThemeId(themeId)),
     [availableThemes],
   );
 
@@ -467,12 +468,12 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
 
         const nextLightRaw = storage.getItem('lightThemeId');
         const nextLight = typeof nextLightRaw === 'string' && nextLightRaw.trim().length > 0
-          ? nextLightRaw.trim()
+          ? normalizeThemeId(nextLightRaw.trim())
           : prev.lightThemeId;
 
         const nextDarkRaw = storage.getItem('darkThemeId');
         const nextDark = typeof nextDarkRaw === 'string' && nextDarkRaw.trim().length > 0
-          ? nextDarkRaw.trim()
+          ? normalizeThemeId(nextDarkRaw.trim())
           : prev.darkThemeId;
 
         if (nextMode === prev.themeMode && nextLight === prev.lightThemeId && nextDark === prev.darkThemeId) {
@@ -500,8 +501,8 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
       return;
     }
 
-    const normalizedLight = light.trim();
-    const normalizedDark = dark.trim();
+    const normalizedLight = normalizeThemeId(light.trim());
+    const normalizedDark = normalizeThemeId(dark.trim());
     if (!normalizedLight || !normalizedDark) {
       return;
     }
@@ -528,14 +529,14 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
     }
 
     const scopedWindow = window as unknown as {
-      __openchamberApplyThemeSync?: (payload: ThemeSyncPayload) => void;
+      __devryanApplyThemeSync?: (payload: ThemeSyncPayload) => void;
     };
 
-    scopedWindow.__openchamberApplyThemeSync = applyIncomingThemeSync;
+    scopedWindow.__devryanApplyThemeSync = applyIncomingThemeSync;
 
     return () => {
-      if (scopedWindow.__openchamberApplyThemeSync === applyIncomingThemeSync) {
-        delete scopedWindow.__openchamberApplyThemeSync;
+      if (scopedWindow.__devryanApplyThemeSync === applyIncomingThemeSync) {
+        delete scopedWindow.__devryanApplyThemeSync;
       }
     };
   }, [applyIncomingThemeSync]);
@@ -555,7 +556,7 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
         payload?: ThemeSyncPayload;
       };
 
-      if (data?.type !== 'openchamber:theme-sync' || !data.payload) {
+      if (data?.type !== 'devryan:theme-sync' || !data.payload) {
         return;
       }
 
@@ -598,12 +599,12 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
 
         let nextLight = prev.lightThemeId;
         if (typeof detail.lightThemeId === 'string' && detail.lightThemeId.length > 0) {
-          nextLight = detail.lightThemeId.trim();
+          nextLight = normalizeThemeId(detail.lightThemeId.trim());
         }
 
         let nextDark = prev.darkThemeId;
         if (typeof detail.darkThemeId === 'string' && detail.darkThemeId.length > 0) {
-          nextDark = detail.darkThemeId.trim();
+          nextDark = normalizeThemeId(detail.darkThemeId.trim());
         }
 
         const same =
@@ -623,13 +624,13 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
       });
     };
 
-    window.addEventListener('openchamber:settings-synced', handleSettingsSynced);
-    return () => window.removeEventListener('openchamber:settings-synced', handleSettingsSynced);
+    window.addEventListener('devryan:settings-synced', handleSettingsSynced);
+    return () => window.removeEventListener('devryan:settings-synced', handleSettingsSynced);
   }, []);
 
   const setTheme = useCallback(
     (themeId: string) => {
-      const theme = availableThemes.find((candidate) => candidate.metadata.id === themeId);
+      const theme = availableThemes.find((candidate) => candidate.metadata.id === normalizeThemeId(themeId));
       if (!theme) {
         return;
       }
@@ -706,7 +707,7 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
     (themeId: string) => {
       const theme = availableThemes.find(
         (candidate) =>
-          candidate.metadata.id === themeId && candidate.metadata.variant === 'light',
+          candidate.metadata.id === normalizeThemeId(themeId) && candidate.metadata.variant === 'light',
       );
       if (!theme) {
         return;
@@ -729,7 +730,7 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
     (themeId: string) => {
       const theme = availableThemes.find(
         (candidate) =>
-          candidate.metadata.id === themeId && candidate.metadata.variant === 'dark',
+          candidate.metadata.id === normalizeThemeId(themeId) && candidate.metadata.variant === 'dark',
       );
       if (!theme) {
         return;

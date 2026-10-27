@@ -1,4 +1,5 @@
-import { ThinkingSlider, ThinkingSliderPopover } from './ThinkingSlider';
+import { ThinkingSlider } from './ThinkingSlider';
+import { MODEL_BADGE_STYLE } from './chatBadgeStyles';
 import { getChatThinkingState, resolveChatThinkingVariant } from '@/lib/providers/chatThinking';
 import React from 'react';
 import type { ComponentType } from 'react';
@@ -101,7 +102,6 @@ import {
 } from '@/lib/providers/variantControls';
 import { sortProviderTreeForPicker } from '@/lib/providers/sorting';
 import { getProviderDisplayName as getSharedProviderDisplayName } from '@/lib/providers/display';
-import { isProviderModelAvailable } from '@/lib/providers/modelAvailability';
 import { useIsTextTruncated } from '@/hooks/useIsTextTruncated';
 import {
     formatAgentLabel,
@@ -329,7 +329,6 @@ const CURRENCY_FORMATTER = new Intl.NumberFormat('en-US', {
     minimumFractionDigits: 2,
 });
 
-const ADD_PROVIDER_ID = '__add_provider__';
 
 const formatTokens = (value?: number | null) => {
     if (typeof value !== 'number' || Number.isNaN(value)) {
@@ -418,7 +417,6 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     const currentVariant = useConfigStore((state) => state.currentVariant);
     const currentAgentName = useConfigStore((state) => state.currentAgentName);
     const settingsDefaultAgent = useConfigStore((state) => state.settingsDefaultAgent);
-    const setSelectedProvider = useConfigStore((state) => state.setSelectedProvider);
     const setProviderModel = useConfigStore((state) => state.setProviderModel);
     const setCurrentVariant = useConfigStore((state) => state.setCurrentVariant);
     const getCurrentModelVariants = useConfigStore((state) => state.getCurrentModelVariants);
@@ -526,13 +524,6 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     // Use global state for model selector (allows Ctrl+M shortcut)
     const agentMenuOpen = isModelSelectorOpen;
     const setAgentMenuOpen = setModelSelectorOpen;
-    const openAddProviderSettings = React.useCallback(() => {
-        setSelectedProvider(ADD_PROVIDER_ID);
-        setSettingsPage('providers');
-        setSettingsDialogOpen(true);
-        setAgentMenuOpen(false);
-        closeMobilePanel();
-    }, [setSelectedProvider, setSettingsPage, setSettingsDialogOpen, setAgentMenuOpen, closeMobilePanel]);
     const openProvidersSettings = React.useCallback(() => {
         setSettingsPage('providers');
         setSettingsDialogOpen(true);
@@ -548,8 +539,6 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     const pendingModelPickerScrollRef = React.useRef<ModelPickerScrollSnapshot | null>(null);
     const keyboardOwnsModelSelectionRef = React.useRef(false);
     const lastModelPointerPositionRef = React.useRef<{ x: number; y: number } | null>(null);
-    const [pendingThinkingVariants, setPendingThinkingVariants] = React.useState<Map<string, string | null | undefined>>(new Map());
-    const [adjustedThinkingModels, setAdjustedThinkingModels] = React.useState<Set<string>>(new Set());
     const favoriteRowSensors = useSensors(
         useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     );
@@ -598,6 +587,13 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         setExpandedMobileModelKey(null);
     }, [mobileModelQuery]);
 
+    // The model panel is the only thinking entry point on mobile, so it opens with the current row's slider expanded.
+    React.useEffect(() => {
+        if (activeMobilePanel === 'model' && currentProviderId && currentModelId) {
+            setExpandedMobileModelKey(buildModelRefKey(currentProviderId, currentModelId));
+        }
+    }, [activeMobilePanel, currentModelId, currentProviderId]);
+
     // Handle model selector close behavior (separate from agent selector)
     const prevModelSelectorOpenRef = React.useRef(isModelSelectorOpen);
     React.useEffect(() => {
@@ -611,8 +607,6 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             setModelSelectedIndex(0);
             keyboardOwnsModelSelectionRef.current = false;
             lastModelPointerPositionRef.current = null;
-            setPendingThinkingVariants(new Map());
-            setAdjustedThinkingModels(new Set());
 
             // Restore focus to chat input when model selector closes
             if (wasOpen && !isCompact) {
@@ -692,15 +686,17 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     const buttonHeight = sizeVariant === 'mobile' ? 'h-9' : 'h-8';
     const editToggleIconClass = sizeVariant === 'mobile' ? 'h-5 w-5' : 'h-4 w-4';
     const controlIconSize = sizeVariant === 'mobile' ? 'h-5 w-5' : 'h-4 w-4';
-    const providerTriggerLogoSize = sizeVariant === 'mobile' ? 'h-[21.6px] w-[21.6px]' : 'h-[17.3px] w-[17.3px]';
+    const providerTriggerLogoSize = sizeVariant === 'mobile' ? 'h-[21.6px] w-[21.6px]' : 'h-4 w-4';
     const controlTextSize = isCompact ? 'typography-micro' : 'typography-meta';
     const agentTriggerIconSize = sizeVariant === 'mobile' ? 'h-[18px] w-[18px]' : 'h-[14.4px] w-[14.4px]';
     const agentTriggerTextSize = isCompact ? 'text-[calc(var(--text-micro)*0.9)]' : 'text-[calc(var(--text-meta)*0.9)]';
     const inlineGapClass = sizeVariant === 'mobile' ? 'gap-x-1' : 'gap-x-3';
-    const variantLabelAlignmentClass = isDesktop
-        ? 'translate-y-[3px]'
-        : 'translate-y-[2px]';
-    const variantGroupSpacingClass = '-ml-1';
+    // Model name and thinking level share a baseline so they stay aligned at every interface font size.
+    const modelLabelRowClass = 'model-controls__model-row flex min-w-0 items-baseline gap-1';
+    // Desktop trigger uses the message header model badge pill (ChatMetadataBadge kind="model"); mobile keeps its touch height.
+    const modelBadgeTriggerClass = 'agent-badge agent-badge-combined h-6 gap-1 rounded-md px-1.5';
+    // 10px at the default 14px meta size; scales with the interface font size like the model name.
+    const variantLabelTextSize = isCompact ? 'text-[calc(var(--text-micro)*0.7143)]' : 'text-[calc(var(--text-meta)*0.7143)]';
     const agentLabelAlignmentClass = isDesktop ? undefined : '-translate-y-px';
     const renderEditModeIcon = React.useCallback((mode: EditPermissionMode, iconClass = editToggleIconClass) => {
         const combinedClassName = cn(iconClass, 'flex-shrink-0');
@@ -879,17 +875,9 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             }
 
             const provider = providers.find(p => p.id === providerId);
-            if (!provider) {
-                return 'provider-missing';
-            }
-
-            const providerModels = Array.isArray(provider.models) ? provider.models : [];
+            const providerModels = Array.isArray(provider?.models) ? provider.models : [];
             const modelExists = providerModels.find((m: ProviderModel) => m.id === modelId);
-            if (!modelExists || !isProviderModelAvailable(modelExists)) {
-                return 'model-missing';
-            }
-
-            if (isHiddenProviderModelRef(hiddenModels, providerId, modelExists)) {
+            if (modelExists && isHiddenProviderModelRef(hiddenModels, providerId, modelExists)) {
                 return 'model-missing';
             }
 
@@ -899,6 +887,9 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                 });
             }
 
+            if (variant === undefined && currentSessionId && agentName) {
+                variant = useSelectionStore.getState().getAgentModelVariantForSession(currentSessionId, agentName, providerId, modelId);
+            }
             const draftModelProvenance = options?.modelProvenance ?? 'agent-default';
             const providerMatches = currentProviderId === providerId;
             const modelMatches = currentModelId === modelId;
@@ -1174,7 +1165,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             return;
         }
 
-        if (!contextHydrated || providers.length === 0 || !currentSessionMessagesResolved || !latestLoadedUserChoice?.providerID || !latestLoadedUserChoice.modelID) {
+        if (!contextHydrated || !currentSessionMessagesResolved || !latestLoadedUserChoice?.providerID || !latestLoadedUserChoice.modelID) {
             return;
         }
 
@@ -1400,6 +1391,10 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             return;
         }
 
+        const liveSelection = useConfigStore.getState();
+        if (liveSelection.currentProviderId !== currentProviderId || liveSelection.currentModelId !== currentModelId
+            || liveSelection.currentVariant !== currentVariant) return;
+
         if (!currentAgentName) {
             // On reload the persisted draft model/variant can hydrate before the
             // draft agent. Preserve that explicit choice until agent restoration
@@ -1474,7 +1469,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                     savedVariant,
                     availableVariants,
                     { providerId: currentProviderId },
-                ))
+                ) ?? savedVariant)
             : resolveProviderModelVariant(provider, currentModelId, savedVariant);
 
         setCurrentVariant(resolvedSaved);
@@ -1598,7 +1593,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     const handleProviderAndModelChange = (
         providerId: string,
         modelId: string,
-        options?: { applyVariant?: boolean; variant?: string | null | undefined; agentName?: string | null },
+        options?: { applyVariant?: boolean; variant?: string | null | undefined; agentName?: string | null; keepOpen?: boolean },
     ) => {
         try {
             const effectiveAgentName = options?.agentName ?? resolveLiveAgentName() ?? undefined;
@@ -1616,6 +1611,11 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                 } else if (result === 'model-missing') {
                     console.error('[ModelControls] Model not available for selection:', { providerId, modelId });
                 }
+                return;
+            }
+            // The desktop picker stays open so the thinking level can be set in its footer;
+            // closing it restores chat input focus.
+            if (options?.keepOpen) {
                 return;
             }
             setAgentMenuOpen(false);
@@ -1702,7 +1702,6 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                 id: providerId,
                 name: providers.find((entry) => entry.id === providerId)?.name,
             }),
-            getModelLabel: getPickerModelLabel,
             isCurrentModel: isCurrentPickerModel,
             getFallbackReleaseDate: hasModelsMetadata
                 ? (providerId, modelId) => getModelMetadata(providerId, modelId)?.release_date
@@ -1711,7 +1710,6 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     }, [
         favoriteModelsList,
         getModelMetadata,
-        getPickerModelLabel,
         isCurrentPickerModel,
         modelsMetadata,
         providers,
@@ -2369,66 +2367,6 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         );
     };
 
-    const renderMobileVariantPanel = () => {
-        if (!isCompact) return null;
-
-        const targetProviderId = currentProviderId;
-        const targetModelId = currentModelId;
-        if (!targetProviderId || !targetModelId) return null;
-
-        const selectedVariant = resolveModelVariantSelection(targetProviderId, targetModelId);
-        const targetProvider = providers.find((entry) => entry.id === targetProviderId);
-        const targetVariants = getChatThinkingState(targetProvider, targetModelId, selectedVariant).levels;
-        const cursorVariantState = getCursorAcpVariantState(targetProvider, targetModelId, selectedVariant);
-        const genericVariantState = cursorVariantState ? null : getGenericModelVariantControlState(targetProvider, targetModelId, selectedVariant);
-        if (targetVariants.length === 0 && !cursorVariantState && !genericVariantState) return null;
-
-        const handleSelect = (variant: string | null | undefined) => {
-            const result = applyModelSelectionWithVariant(targetProviderId, targetModelId, variant, undefined, { modelProvenance: 'explicit' });
-            if (result !== 'applied') {
-                return;
-            }
-        };
-
-        const handleCursorSelect = (updates: { fastEnabled?: boolean; thinkingEnabled?: boolean; effort?: string }) => {
-            if (!targetProvider || !cursorVariantState) {
-                return;
-            }
-            const selection = resolveCursorAcpVariantSelection(targetProvider, targetModelId, selectedVariant, updates);
-            const result = applyModelSelectionWithVariant(targetProviderId, selection.modelId, selection.variant, undefined, { modelProvenance: 'explicit' });
-            if (result !== 'applied') {
-                return;
-            }
-        };
-
-        const handleGenericSelect = (updates: { fastEnabled?: boolean; variant?: string }) => {
-            if (!targetProvider || !genericVariantState) {
-                return;
-            }
-            const selection = resolveGenericModelVariantSelection(targetProvider, targetModelId, selectedVariant, updates);
-            const result = applyModelSelectionWithVariant(targetProviderId, selection.modelId, selection.variant, undefined, { modelProvenance: 'explicit' });
-            if (result !== 'applied') {
-                return;
-            }
-        };
-
-        return (
-            <MobileOverlayPanel
-                open={activeMobilePanel === 'variant'}
-                onClose={closeMobilePanel}
-                title=""
-
-            >
-                <ThinkingSlider levels={targetVariants} value={getChatThinkingState(targetProvider, targetModelId, selectedVariant).selected} providerId={targetProviderId}
-                    onChange={(effort) => cursorVariantState ? handleCursorSelect({ effort }) : genericVariantState ? handleGenericSelect({ variant: effort }) : handleSelect(effort)}
-                    fastMode={(cursorVariantState ?? genericVariantState)?.canToggleFast ? {
-                        enabled: (cursorVariantState ?? genericVariantState)?.fastEnabled ?? false,
-                        onChange: (fastEnabled) => cursorVariantState ? handleCursorSelect({ fastEnabled }) : handleGenericSelect({ fastEnabled }),
-                    } : undefined} />
-            </MobileOverlayPanel>
-        );
-    };
-
     const renderMobileAgentPanel = () => {
         if (!isCompact) return null;
 
@@ -2631,38 +2569,6 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         );
         const isFavorite = isFavoriteModel(providerID, modelID);
         const hiddenRefs = getHiddenModelRefsForProviderModel(providerID, model);
-
-        // Check if model supports thinking variants - variants are on the model object, not metadata
-        const modelVariants = (model as { variants?: Record<string, unknown> } | undefined)?.variants;
-        const hasThinkingVariants = modelVariants && Object.keys(modelVariants).length > 0;
-        const mapKey = buildModelRefKey(providerID, modelID);
-        const wasAdjusted = adjustedThinkingModels.has(mapKey);
-        const pendingVariant = pendingThinkingVariants.get(mapKey);
-        const effectiveVariant = pendingVariant !== undefined ? pendingVariant : (isSelected ? currentVariant : undefined);
-        const rowProvider = providers.find((entry) => entry.id === providerID);
-        const cursorRowVariantState = getCursorAcpVariantState(rowProvider, modelID, effectiveVariant);
-        const genericRowVariantState = cursorRowVariantState ? null : getGenericModelVariantControlState(rowProvider, modelID, effectiveVariant);
-        const genericRowVariantDisplayState = cursorRowVariantState ? null : getModelVariantDisplayState(rowProvider, modelID, effectiveVariant);
-
-        // Build thinking variant display - only show for models that were adjusted with arrow keys
-        let thinkingDisplay: React.ReactNode = null;
-        if (hasThinkingVariants && wasAdjusted && (isHighlighted || isSelected)) {
-            const level = getChatThinkingState(rowProvider, modelID, effectiveVariant).selected;
-            const displayLabel = level ? formatEffortLabel(level, { providerId: providerID }) : 'Fast';
-            const rowFastIcon = (cursorRowVariantState?.fastEnabled || genericRowVariantDisplayState?.fastEnabled || genericRowVariantState?.fastEnabled) ? (
-                <span className="inline-flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center" aria-label="Fast Mode" title="Fast Mode">
-                    <RiFlashlightFill className="h-3.5 w-3.5 text-[var(--status-warning)]" />
-                </span>
-            ) : null;
-            thinkingDisplay = (
-                <span key="thinking" className="typography-micro flex items-center gap-1 text-muted-foreground whitespace-nowrap">
-                    <span>{displayLabel}</span>
-                    {rowFastIcon}
-                </span>
-            );
-        }
-
-        const shouldShowThinking = hasThinkingVariants && wasAdjusted;
         const handlePointerActivity = createModelRowPointerHandler(flatIndex);
         const shortcutNumber = flatIndex < 9 ? flatIndex + 1 : null;
 
@@ -2674,7 +2580,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                     "typography-meta group/model-row flex items-center gap-2.5 px-2.5 py-2 rounded-lg cursor-pointer",
                      isHighlighted ? "bg-interactive-selection" : "hover:bg-interactive-hover/50"
                 )}
-                onClick={() => handleProviderAndModelChange(providerID, modelID)}
+                onClick={() => handleProviderAndModelChange(providerID, modelID, { keepOpen: true })}
                 onMouseEnter={handlePointerActivity}
                 onMouseMove={handlePointerActivity}
             >
@@ -2713,11 +2619,6 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                     </div>
                 </div>
                 <div className="flex items-center gap-1.5 flex-shrink-0">
-                    {shouldShowThinking && (isHighlighted || isSelected) ? (
-                        <div className="sr-only">
-                            {thinkingDisplay}
-                        </div>
-                    ) : null}
                     {isSelected && (
                         <RiCheckLine className="h-4 w-4 text-primary" />
                     )}
@@ -2829,33 +2730,36 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         } = modelSelectorData;
         const legacyEntryHighlighted = showLegacyEntry && modelSelectedIndex === legacyEntryIndex;
 
-        // Check if currently highlighted model supports thinking variants
-        const highlightedItem = flatModelList[modelSelectedIndex];
-        const highlightedSupportsThinking = highlightedItem ? (() => {
-            const modelVariants = (highlightedItem.model as { variants?: Record<string, unknown> } | undefined)?.variants;
-            const highlightedProvider = providers.find((entry) => entry.id === highlightedItem.providerID);
-            const cursorVariantState = getCursorAcpVariantState(highlightedProvider, highlightedItem.modelID, undefined);
-            const genericVariantState = cursorVariantState ? null : getGenericModelVariantControlState(highlightedProvider, highlightedItem.modelID, undefined);
-            return cursorVariantState
-                ? cursorVariantState.visibleVariantOptions.length > 0
-                : genericVariantState
-                    ? genericVariantState.visibleVariantOptions.length > 0 || genericVariantState.canToggleFast
-                    : modelVariants && getOrderedThinkingVariants(
-                        modelVariants,
-                        { providerId: highlightedItem.providerID },
-                    ).length > 0;
-        })() : false;
+        const thinkingControl = getCurrentThinkingControl();
 
-        // Apply a row, carrying a thinking level picked with ←/→ while it was highlighted.
+        // Selecting a row keeps the picker open so its thinking level can be set in the footer.
         const applyPickerItem = ({ providerID, modelID }: { providerID: string; modelID: string }) => {
-            const mapKey = buildModelRefKey(providerID, modelID);
-            const pendingVariant = pendingThinkingVariants.get(mapKey);
-            const wasAdjusted = adjustedThinkingModels.has(mapKey);
-            const effectiveAgentName = resolveLiveAgentName();
+            handleProviderAndModelChange(providerID, modelID, { agentName: resolveLiveAgentName(), keepOpen: true });
+        };
 
-            handleProviderAndModelChange(providerID, modelID, wasAdjusted
-                ? { applyVariant: true, variant: pendingVariant, agentName: effectiveAgentName }
-                : { agentName: effectiveAgentName });
+        // ←/→ selects the highlighted row and steps its thinking level in one move.
+        const stepPickerItemThinking = ({ providerID, modelID }: { providerID: string; modelID: string }, direction: 1 | -1) => {
+            const provider = providers.find((entry) => entry.id === providerID);
+            const isCurrent = currentProviderId === providerID && (
+                currentModelId === modelID
+                || isCursorAcpSelectedModelMatch(providerID, modelID, currentProviderId, currentModelId)
+            );
+            const rowModelId = isCurrent ? currentModelId : modelID;
+            const activeVariant = isCurrent ? currentVariant : resolveModelVariantSelection(providerID, modelID);
+            const { levels, selected } = getChatThinkingState(provider, rowModelId, activeVariant);
+            if (levels.length === 0) return;
+
+            const currentIndex = Math.max(0, levels.indexOf(selected ?? ''));
+            const effort = levels[Math.min(levels.length - 1, Math.max(0, currentIndex + direction))];
+            const selection = getCursorAcpVariantState(provider, rowModelId, activeVariant)
+                ? resolveCursorAcpVariantSelection(provider, rowModelId, activeVariant, { effort })
+                : resolveGenericModelVariantSelection(provider, rowModelId, activeVariant, { variant: effort });
+            handleProviderAndModelChange(providerID, selection.modelId, {
+                applyVariant: true,
+                variant: selection.variant ?? null,
+                agentName: resolveLiveAgentName(),
+                keepOpen: true,
+            });
         };
 
         // Handle keyboard navigation
@@ -2925,68 +2829,9 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
                 e.preventDefault();
                 const selectedItem = flatModelList[modelSelectedIndex];
-                if (!selectedItem) return;
-
-                const { providerID, modelID, model } = selectedItem;
-                const modelVariants = (model as { variants?: Record<string, unknown> } | undefined)?.variants;
-                if (!modelVariants) return;
-
-                const mapKey = buildModelRefKey(providerID, modelID);
-                const currentPending = pendingThinkingVariants.get(mapKey);
-                const activeModelVariant = currentPending !== undefined ? currentPending : (currentProviderId === providerID && currentModelId === modelID ? currentVariant : undefined);
-                const provider = providers.find((entry) => entry.id === providerID);
-                const cursorVariantState = getCursorAcpVariantState(provider, modelID, activeModelVariant);
-                if (cursorVariantState) {
-                    const effortOptions = cursorVariantState.visibleVariantOptions;
-                    if (effortOptions.length === 0) return;
-
-                    const currentEffortIndex = effortOptions.indexOf(getChatThinkingState(provider, modelID, activeModelVariant).selected ?? '');
-                    const safeCurrentEffortIndex = currentEffortIndex >= 0 ? currentEffortIndex : 0;
-                    const direction = e.key === 'ArrowRight' ? 1 : -1;
-                    const nextEffortIndex = Math.min(
-                        effortOptions.length - 1,
-                        Math.max(0, safeCurrentEffortIndex + direction),
-                    );
-                    const selection = resolveCursorAcpVariantSelection(provider, modelID, activeModelVariant, {
-                        effort: effortOptions[nextEffortIndex],
-                    });
-
-                    setPendingThinkingVariants((prev) => {
-                        const next = new Map(prev);
-                        next.set(mapKey, selection.variant);
-                        return next;
-                    });
-                    setAdjustedThinkingModels((prev) => {
-                        const next = new Set(prev);
-                        next.add(mapKey);
-                        return next;
-                    });
-                    return;
+                if (selectedItem) {
+                    stepPickerItemThinking(selectedItem, e.key === 'ArrowRight' ? 1 : -1);
                 }
-
-                const variantKeys = getOrderedThinkingVariants(modelVariants, { providerId: providerID });
-                if (variantKeys.length === 0) return;
-
-                const resolvedActiveVariant = getChatThinkingState(provider, modelID, activeModelVariant).selected;
-                const currentVariantIndex = resolvedActiveVariant ? variantKeys.indexOf(resolvedActiveVariant) : -1;
-                const safeCurrentIndex = currentVariantIndex >= 0 ? currentVariantIndex : 0;
-                const direction = e.key === 'ArrowRight' ? 1 : -1;
-                const nextVariantIndex = Math.min(
-                    variantKeys.length - 1,
-                    Math.max(0, safeCurrentIndex + direction),
-                );
-                const nextVariant = variantKeys[nextVariantIndex];
-
-                setPendingThinkingVariants((prev) => {
-                    const next = new Map(prev);
-                    next.set(mapKey, nextVariant);
-                    return next;
-                });
-                setAdjustedThinkingModels((prev) => {
-                    const next = new Set(prev);
-                    next.add(mapKey);
-                    return next;
-                });
             } else if (e.key === 'Enter') {
                 e.preventDefault();
                 const selectedItem = flatModelList[modelSelectedIndex];
@@ -3023,7 +2868,6 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             setAgentMenuOpen(nextOpen);
         };
 
-        const modifierLabel = getModifierLabel();
         const handleLegacyEntryPointer = createModelRowPointerHandler(legacyEntryIndex);
 
         return (
@@ -3035,9 +2879,10 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                 <button
                                     type="button"
                                     className={cn(
-                                        'model-controls__model-trigger flex items-center gap-1.5 cursor-pointer border-0 bg-transparent p-0 text-left hover:bg-transparent hover:opacity-70 min-w-0',
-                                        buttonHeight
+                                        'model-controls__model-trigger flex items-center cursor-pointer text-left hover:opacity-70 min-w-0',
+                                        isReady ? modelBadgeTriggerClass : cn('gap-1.5 border-0 bg-transparent p-0 hover:bg-transparent', buttonHeight)
                                     )}
+                                    style={isReady ? MODEL_BADGE_STYLE : undefined}
                                 >
                                     {!isReady ? (
                                         <>
@@ -3062,19 +2907,22 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                         <RiPencilAiLine className={cn(controlIconSize, 'text-muted-foreground')} />
                                     )}
                                     {isReady && (
-                                        <span
-                                            ref={modelLabelRef}
-                                            key={`${currentProviderId}-${currentModelId}`}
-                                            className={cn(
-                                                'model-controls__model-label overflow-hidden',
-                                                controlTextSize,
-                                                'font-medium whitespace-nowrap text-foreground min-w-0',
-                                                'max-w-[260px]'
-                                            )}
-                                        >
-                                            <span className={cn('marquee-text', isModelLabelTruncated && 'marquee-text--active')}>
-                                                {currentModelDisplayName}
+                                        <span className={modelLabelRowClass}>
+                                            <span
+                                                ref={modelLabelRef}
+                                                key={`${currentProviderId}-${currentModelId}`}
+                                                className={cn(
+                                                    'model-controls__model-label overflow-hidden',
+                                                    controlTextSize,
+                                                    'font-medium whitespace-nowrap text-foreground min-w-0',
+                                                    'max-w-[260px]'
+                                                )}
+                                            >
+                                                <span className={cn('marquee-text', isModelLabelTruncated && 'marquee-text--active')}>
+                                                    {currentModelDisplayName}
+                                                </span>
                                             </span>
+                                            {renderThinkingLabel()}
                                         </span>
                                     )}
                                 </button>
@@ -3087,10 +2935,8 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                 activeTabId={view?.tab?.id ?? null}
                                 dimmed={view?.mode === 'search'}
                                 onSelectTab={selectDesktopPickerTab}
-                                addProviderLabel={t('chat.modelControls.addNewProvider')}
-                                showAllProvidersLabel={t('chat.modelControls.showAllProviders')}
-                                onAddProvider={openAddProviderSettings}
-                                onShowAllProviders={openProvidersSettings}
+                                settingsLabel={t('chat.modelControls.providerSettings')}
+                                onOpenSettings={openProvidersSettings}
                             />
                             <div className="flex min-h-0 min-w-0 flex-1 flex-col">
                             {/* Search Input */}
@@ -3177,22 +3023,26 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                     ) : null}
                                 </div>
                             </ScrollableOverlay>
-                            </div>
-                            </div>
 
-                            {/* Keyboard hints footer */}
-                            <div className="px-3 pt-1 pb-1.5 border-t border-border/40 typography-micro text-muted-foreground">
-                                <div className="flex items-center gap-x-2 whitespace-nowrap overflow-hidden">
-                                    <span>{t('chat.modelControls.keyboardHintNavigate')}</span>
-                                    <span aria-hidden="true">|</span>
-                                    <span>{t('chat.modelControls.keyboardHintSelect', { modifier: modifierLabel === '⌘' ? '⌘' : `${modifierLabel}+` })}</span>
-                                    <span aria-hidden="true">|</span>
-                                    <span>{t('chat.modelControls.keyboardHintSwitchAgent')}</span>
-                                    <span className={cn('inline-flex items-center gap-x-2', !highlightedSupportsThinking && 'invisible')}>
-                                        <span aria-hidden="true">|</span>
-                                        <span>{t('chat.modelControls.keyboardHintThinking')}</span>
-                                    </span>
+                            {/* Thinking footer for the selected model, pinned under the model list */}
+                            {thinkingControl ? (
+                                <div
+                                    className="model-controls__picker-thinking shrink-0 border-t border-border/40 px-4 pt-2 pb-3"
+                                    onKeyDown={(event) => event.stopPropagation()}
+                                >
+                                    <ThinkingSlider
+                                        levels={thinkingControl.levels}
+                                        value={thinkingControl.selected}
+                                        providerId={currentProviderId}
+                                        onChange={(effort) => thinkingControl.apply({ effort })}
+                                        fastMode={thinkingControl.fastState?.canToggleFast ? {
+                                            enabled: thinkingControl.fastState.fastEnabled,
+                                            onChange: (fastEnabled) => thinkingControl.apply({ fastEnabled }),
+                                        } : undefined}
+                                    />
                                 </div>
+                            ) : null}
+                            </div>
                             </div>
                         </DropdownMenuContent>
                     </DropdownMenu>
@@ -3227,17 +3077,20 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                 ) : (
                                     <RiPencilAiLine className={cn(controlIconSize, 'text-muted-foreground')} />
                                 )}
-                                <span
-                                    ref={modelLabelRef}
-                                    className={cn(
-                                        'model-controls__model-label font-medium overflow-hidden min-w-0',
-                                        controlTextSize,
-                                        isMobile ? 'max-w-[120px]' : 'max-w-[220px]',
-                                    )}
-                                >
-                                    <span className={cn('marquee-text', isModelLabelTruncated && 'marquee-text--active')}>
-                                        {currentModelDisplayName}
+                                <span className={modelLabelRowClass}>
+                                    <span
+                                        ref={modelLabelRef}
+                                        className={cn(
+                                            'model-controls__model-label font-medium overflow-hidden min-w-0',
+                                            controlTextSize,
+                                            isMobile ? 'max-w-[120px]' : 'max-w-[220px]',
+                                        )}
+                                    >
+                                        <span className={cn('marquee-text', isModelLabelTruncated && 'marquee-text--active')}>
+                                            {currentModelDisplayName}
+                                        </span>
                                     </span>
+                                    {renderThinkingLabel()}
                                 </span>
                             </>
                         )}
@@ -3385,33 +3238,40 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         );
     };
 
-    const renderVariantSelector = () => {
-        if (!isReady) return null;
+    // Thinking state and apply for the current model, shared by the composer popover and the model picker footer.
+    const getCurrentThinkingControl = () => {
         const provider = providers.find((entry) => entry.id === currentProviderId);
         const normalized = resolveChatThinkingVariant(provider, currentModelId, currentVariant);
         const cursor = getCursorAcpVariantState(provider, currentModelId, normalized);
         const generic = cursor ? null : getGenericModelVariantControlState(provider, currentModelId, normalized);
         const { levels, selected } = getChatThinkingState(provider, currentModelId, normalized);
         const fastState = cursor ?? generic;
-        if (!levels.length && !fastState?.canToggleFast) return null;
-        const display = selected ? formatEffortLabel(selected, { providerId: currentProviderId }) : 'Fast';
+        const selectedModel = provider?.models.find(model => model.id === currentModelId);
+        // A catalog model without levels has nothing to confirm: a stale level is ignored, not shown.
+        const hasNoLevels = levels.length === 0 && Boolean(selectedModel) && Object.keys(selectedModel?.variants ?? {}).length === 0;
+        const unconfirmed = !hasNoLevels && typeof normalized === 'string' && !Object.hasOwn(selectedModel?.variants ?? {}, normalized);
+        if (!levels.length && !fastState?.canToggleFast && !unconfirmed) return null;
         const apply = (updates: { effort?: string; fastEnabled?: boolean }) => {
             const selection = cursor
                 ? resolveCursorAcpVariantSelection(provider, currentModelId, normalized, updates)
                 : resolveGenericModelVariantSelection(provider, currentModelId, normalized, { variant: updates.effort, fastEnabled: updates.fastEnabled });
             applyModelSelectionWithVariant(currentProviderId, selection.modelId, selection.variant, undefined, { modelProvenance: 'explicit' });
         };
-        const trigger = <button type="button" aria-label={t('chat.modelControls.thinking')}
-            onClick={isCompact ? () => setActiveMobilePanel('variant') : undefined}
-            className={cn('model-controls__variant-trigger flex min-w-0 shrink-0 items-center gap-1 border-0 bg-transparent p-0 text-left text-muted-foreground hover:opacity-70', buttonHeight)}>
-            <span className={cn('model-controls__variant-label truncate text-[10px] font-medium leading-[14px] -my-[2px] py-[2px]', variantLabelAlignmentClass, isDesktop && 'max-w-[90px]')}>{display}</span>
-            {fastState?.fastEnabled ? <RiFlashlightFill aria-label="Fast Mode" className="h-3.5 w-3.5 text-[var(--status-warning)]" /> : null}
-        </button>;
-        if (isCompact) return trigger;
-        return <ThinkingSliderPopover trigger={trigger}>
-            <ThinkingSlider levels={levels} value={selected} providerId={currentProviderId} onChange={(effort) => apply({ effort })}
-                fastMode={fastState?.canToggleFast ? { enabled: fastState.fastEnabled, onChange: (fastEnabled) => apply({ fastEnabled }) } : undefined} />
-        </ThinkingSliderPopover>;
+        return { provider, normalized, levels, selected: hasNoLevels ? undefined : selected, fastState, unconfirmed, apply };
+    };
+
+    // Thinking level shown inside the model trigger; the picker owns the slider, so there is no separate control.
+    const renderThinkingLabel = () => {
+        if (!isReady) return null;
+        const control = getCurrentThinkingControl();
+        if (!control) return null;
+        const { normalized, selected, fastState, unconfirmed } = control;
+        const display = selected ? formatEffortLabel(selected, { providerId: currentProviderId }) : 'Fast';
+        return <span className="model-controls__thinking flex min-w-0 shrink-0 items-baseline gap-1 text-muted-foreground"
+            title={unconfirmed ? `Saved selection: ${normalized}. Availability is not confirmed by the current catalog.` : undefined}>
+            <span className={cn('model-controls__variant-label truncate font-medium', variantLabelTextSize, 'leading-[1.4]',isDesktop && 'max-w-[90px]', unconfirmed && 'text-[var(--status-warning)]')}>{display}{unconfirmed ? ' · Unconfirmed' : ''}</span>
+            {fastState?.fastEnabled ? <RiFlashlightFill aria-label="Fast Mode" className="h-3.5 w-3.5 self-center text-[var(--status-warning)]" /> : null}
+        </span>;
     };
 
     const renderAgentSelector = () => {
@@ -3647,17 +3507,14 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                             isMobile && 'overflow-hidden'
                         )}
                     >
-                        {isCompact ? renderVariantSelector() : null}
                         {!isCompact ? renderAgentSelector() : null}
                         {renderModelSelector()}
-                        {!isCompact ? <div className={cn('flex min-w-0 shrink-0', variantGroupSpacingClass)}>{renderVariantSelector()}</div> : null}
                         {isCompact ? renderAgentSelector() : null}
                     </div>
                 </div>
             ) : null}
 
             {renderMobileModelPanel()}
-            {renderMobileVariantPanel()}
             {renderMobileAgentPanel()}
             {renderMobileModelTooltip()}
             {renderMobileAgentTooltip()}

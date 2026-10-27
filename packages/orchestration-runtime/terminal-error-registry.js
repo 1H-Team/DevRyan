@@ -19,6 +19,7 @@ const terminalErrorFromPayload = (payload, observedAt) => {
     observedAt,
     eventId: text(payload.id) || null,
     errorName: text(error.name) || 'UnknownError',
+    v2Type: text(data.v2Type) || null,
     message: text(data.message) || text(error.message) || text(error.name) || 'Managed child session failed',
     code: text(data.code) || null,
     statusCode: Number.isFinite(data.statusCode ?? data.status) ? Number(data.statusCode ?? data.status) : null,

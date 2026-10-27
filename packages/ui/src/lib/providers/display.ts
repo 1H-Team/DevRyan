@@ -26,6 +26,9 @@ export const getProviderDisplayName = (
   provider: ProviderLike,
   sources?: ProviderSourcesLike
 ) => {
+  if (provider.id === 'openai') {
+    return 'ChatGPT';
+  }
   if (isAnthropicOAuthProviderId(provider.id)) {
     return 'Claude';
   }

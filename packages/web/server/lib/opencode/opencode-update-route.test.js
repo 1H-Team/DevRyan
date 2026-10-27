@@ -1,73 +1,11 @@
-import { describe, expect, it, vi } from 'vitest';
-import { createOpenCodeUpdateCheckHandler } from './routes.js';
-
-const createResponse = () => {
-  const response = {
-    statusCode: 200,
-    body: null,
-    status: vi.fn((statusCode) => {
-      response.statusCode = statusCode;
-      return response;
-    }),
-    json: vi.fn((body) => {
-      response.body = body;
-      return response;
-    }),
-  };
-  return response;
-};
-
-describe('OpenCode update-check route', () => {
-  it.each([
-    ['managed', '1.18.31'],
-    ['external', '1.18.10'],
-  ])('uses the active %s runtime version from the resolution snapshot', async (_mode, version) => {
-    const checkForOpenCodeUpdates = vi.fn(async ({ currentVersion, supportedVersion }) => ({
-      currentVersion,
-      latestVersion: '1.18.31',
-      supportedVersion,
-      updateAvailable: true,
-      supportStatus: currentVersion === supportedVersion ? 'supported' : 'older',
-    }));
-    const handler = createOpenCodeUpdateCheckHandler({
-      readSettingsFromDiskMigrated: vi.fn(async () => ({})),
-      getOpenCodeResolutionSnapshot: vi.fn(async () => ({
-        detectedVersion: version,
-        targetVersion: '1.18.31',
-      })),
-      checkForOpenCodeUpdates,
-    });
-    const response = createResponse();
-
-    await handler({}, response);
-
-    expect(checkForOpenCodeUpdates).toHaveBeenCalledWith({
-      currentVersion: version,
-      supportedVersion: '1.18.31',
-    });
-    expect(response.statusCode).toBe(200);
-    expect(response.body).toMatchObject({
-      currentVersion: version,
-      latestVersion: '1.18.31',
-    });
-  });
-
-  it('returns a non-2xx safe error response when the upstream check fails', async () => {
-    const handler = createOpenCodeUpdateCheckHandler({
-      readSettingsFromDiskMigrated: vi.fn(async () => ({})),
-      getOpenCodeResolutionSnapshot: vi.fn(async () => ({
-        detectedVersion: '1.18.31',
-        targetVersion: '1.18.31',
-      })),
-      checkForOpenCodeUpdates: vi.fn(async () => {
-        throw new Error('OpenCode release check failed with 429');
-      }),
-    });
-    const response = createResponse();
-
-    await handler({}, response);
-
-    expect(response.statusCode).toBe(502);
-    expect(response.body).toEqual({ error: 'OpenCode release check failed with 429' });
-  });
+import express from 'express';
+import {expect,it,vi} from 'vitest';
+import request from '../../test-supertest.js';
+import {registerOpenCodeRoutes} from './routes.js';
+it('has no standalone OpenCode updater while verified bundle metadata remains readable',async()=>{
+ const app=express();const check=vi.fn();
+ registerOpenCodeRoutes(app,{cursorSessionTitleRuntime:{},standardSessionTitleRuntime:{},globalAgentsMdRuntime:{},openCodeClient:{generation:()=>2},
+  readSettingsFromDiskMigrated:async()=>({}),getOpenCodeResolutionSnapshot:async()=>({source:'verified-native-bundle',targetVersion:'2.0.20',detectedVersion:null}),checkForOpenCodeUpdates:check});
+ await request(app).get('/api/opencode/update-check').expect(404);
+ await request(app).get('/api/config/opencode-resolution').expect(200).expect({source:'verified-native-bundle',targetVersion:'2.0.20',detectedVersion:null});expect(check).not.toHaveBeenCalled();
 });

@@ -18,7 +18,6 @@ export default {
         { id: 'assistant-image-gallery-chunk', identities: ['GeneratedImageResult'] },
         { id: 'mini-chat-app-chunk', identities: ['renderElectronMiniChatApp'] },
         { id: 'terminal-view-chunk', identities: ['TerminalView'] },
-        { id: 'usage-gated-bot-panels', identities: ['BotOperationsRail', 'BotSidebarSection'] },
         {
           id: 'lazy-top-level-view-chunks',
           identities: ['DiffView', 'FilesView', 'GitView', 'MultiRunWindow', 'PlanView', 'SettingsView', 'SettingsDataBoundary', 'ManagedSettingsDataBoundary'],

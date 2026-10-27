@@ -6,6 +6,7 @@ import defaultDarkRaw from './devryan-default-dark.json';
 import {
   DEFAULT_DARK_THEME_ID,
   DEFAULT_LIGHT_THEME_ID,
+  normalizeThemeId,
 } from '../catalogMigration';
 
 export { DEFAULT_DARK_THEME_ID, DEFAULT_LIGHT_THEME_ID } from '../catalogMigration';
@@ -31,7 +32,7 @@ export const themes: Theme[] = [
 ];
 
 export function getThemeById(id: string): Theme | undefined {
-  return themes.find(theme => theme.metadata.id === id);
+  return themes.find(theme => theme.metadata.id === normalizeThemeId(id));
 }
 
 export function getDefaultTheme(prefersDark: boolean): Theme {

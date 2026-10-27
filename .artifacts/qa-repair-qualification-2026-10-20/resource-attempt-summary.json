@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "label": "qa-repair-2026-10-20",
+  "gitCommit": "67c7f70aac6e74372671c04e72dfb3046acaa2a6",
+  "createdAt": "2026-10-20T16:04:51.570Z",
+  "startupMode": "natural",
+  "fixtureGeneration": 2,
+  "electronBinary": "<REPOSITORY>/.[REDACTED]:high_entropy QA.app/Contents/MacOS/DevRyan QA",
+  "packageEvidence": {
+    "path": "<REPOSITORY>/.cache/qa/packaged-electron-current/package-evidence.json",
+    "evidenceFileSha256": "[REDACTED]:high_entropy",
+    "sourceSha256": "[REDACTED]:high_entropy",
+    "archiveSha256": "[REDACTED]:high_entropy",
+    "uiArtifactSha256": "[REDACTED]:high_entropy",
+    "backendSha256": "[REDACTED]:high_entropy",
+    "shellSha256": "[REDACTED]:high_entropy",
+    "nativeSha256": "[REDACTED]:high_entropy",
+    "isolatedFixture": true
+  },
+  "runsPerScenario": 3,
+  "warmupMs": 5000,
+  "measureMs": 30000,
+  "sampleIntervalMs": 500,
+  "fixtureSha256": "[REDACTED]:high_entropy",
+  "lifecycleProtocolSha256": "[REDACTED]:high_entropy",
+  "scenarios": {},
+  "integrity": {
+    "passed": true,
+    "errors": []
+  },
+  "workloadError": "DevRyan renderer did not navigate to its loopback origin"
+}

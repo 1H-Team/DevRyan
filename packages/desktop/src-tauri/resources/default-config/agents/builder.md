@@ -1,7 +1,7 @@
 ---
 mode: primary
 description: General-purpose coding agent for implementing changes directly
-model: openai/gpt-5.5
+model: openai/gpt-6.1-sol
 variant: medium
 temperature: 0.2
 permission:

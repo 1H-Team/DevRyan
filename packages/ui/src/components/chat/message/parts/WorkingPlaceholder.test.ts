@@ -1,19 +1,64 @@
 import { readFileSync } from 'node:fs';
-import React from 'react';
+import React, { act } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, test } from 'bun:test';
-import { StatusShimmerText } from './WorkingPlaceholder';
+import { afterEach, describe, expect, setSystemTime, test } from 'bun:test';
+import { withDom, type HostElement } from '@/test/mountedDom';
+import { StatusShimmerText, WorkingPlaceholder } from './WorkingPlaceholder';
 
-const source = readFileSync(new URL('./WorkingPlaceholder.tsx', import.meta.url), 'utf8');
+type PlaceholderProps = React.ComponentProps<typeof WorkingPlaceholder>;
+
+const mountPlaceholder = async (
+    initial: PlaceholderProps,
+    run: (api: {
+        container: HostElement;
+        rerender: (next: PlaceholderProps) => Promise<void>;
+    }) => Promise<void>,
+) => {
+    await withDom(async (container) => {
+        const { createRoot } = await import('react-dom/client');
+        const root = createRoot(container as unknown as Element);
+        const rerender = async (next: PlaceholderProps) => {
+            await act(async () => root.render(React.createElement(WorkingPlaceholder, next)));
+        };
+        try {
+            await rerender(initial);
+            await run({ container, rerender });
+        } finally {
+            await act(async () => root.unmount());
+        }
+    });
+};
+
+const working: PlaceholderProps = { isWorking: true, statusText: 'reading files' };
+const statusRegion = (container: HostElement) => container.find((node) => node.getAttribute('role') === 'status');
+const shimmers = (container: HostElement) => {
+    const found: HostElement[] = [];
+    const walk = (node: HostElement) => {
+        if (node.getAttribute('data-live-status-shimmer') === 'true') found.push(node);
+        for (const child of node.childNodes) if ('attributes' in child) walk(child as HostElement);
+    };
+    walk(container);
+    return found;
+};
+
+afterEach(() => setSystemTime());
 
 describe('WorkingPlaceholder status presentation', () => {
-    test('uses shimmering text without the legacy trailing dots', () => {
-        expect(source).not.toContain('BusyDots');
-        expect(source).not.toContain("`${retryText}...`");
-        expect(source.match(/<StatusShimmerText/g)?.length ?? 0).toBe(2);
+    test('uses shimmering text without the legacy trailing dots', async () => {
+        await mountPlaceholder(working, async ({ container, rerender }) => {
+            expect(shimmers(container)).toHaveLength(1);
+            expect(container.textContent).toBe('Reading files');
+            expect(container.textContent).not.toContain('...');
+
+            await rerender({ isWorking: true, statusText: null, retryInfo: { attempt: 2, message: 'Rate limited' } });
+            expect(shimmers(container)).toHaveLength(1);
+            expect(container.textContent).toContain('Retrying (attempt 2)');
+            expect(container.textContent).toContain('Rate limited');
+            expect(container.textContent).not.toContain('...');
+        });
     });
 
-    test('keeps one accessible label in flow beneath the visual shimmer layer', () => {
+    test('keeps one accessible label in flow beneath the decorative sweep', () => {
         const html = renderToStaticMarkup(React.createElement(StatusShimmerText, {
             text: 'Waiting for subagent output',
             shouldAnimate: true,
@@ -21,44 +66,75 @@ describe('WorkingPlaceholder status presentation', () => {
 
         expect(html).toContain('data-animation-state="running"');
         expect(html).toContain('data-live-status-shimmer="true"');
-        expect(html).toContain('data-shimmer-text="Waiting for subagent output"');
-        expect(html).toContain('>Waiting for subagent output</span>');
+        expect(html).toContain('>Waiting for subagent output<span');
+        // The sweep's copy is generated content: one text node, one announcement.
+        expect(html).toContain('class="oc-text-shimmer-sweep" data-shimmer-text="Waiting for subagent output" aria-hidden="true"></span>');
         expect(html.match(/Waiting for subagent output/g)).toHaveLength(2);
     });
 
-    test('keeps the gradient sweep decorative so the status is announced only once', () => {
+    test('sweeps the highlight with compositor-only transforms', () => {
+        // CSS has no runtime in bun:test; the stylesheet text is the contract.
         const styles = readFileSync(new URL('../../../../index.css', import.meta.url), 'utf8');
-        const shimmerRule = styles.slice(
-            styles.indexOf('@keyframes oc-text-shimmer'),
-            styles.indexOf('@keyframes oc-file-mention-marquee'),
+        const shimmerRules = styles.slice(
+            styles.indexOf('.oc-text-shimmer {'),
+            styles.indexOf('/* The desktop shell reports a hidden or minimized window'),
         );
+        const keyframes = (name: string) => {
+            const start = shimmerRules.indexOf(`@keyframes ${name} {`);
+            return shimmerRules.slice(start, shimmerRules.indexOf('\n}\n', start));
+        };
 
-        expect(shimmerRule).toContain('animation: oc-text-shimmer 2.2s linear infinite;');
-        expect(shimmerRule).toContain('--oc-shimmer-highlight: color-mix(in oklch, var(--foreground) 92%, transparent);');
-        expect(shimmerRule).toContain('content: attr(data-shimmer-text) / "";');
-        expect(shimmerRule).toContain('background-position: 200% 0;');
-        expect(shimmerRule).toContain('background-position: -200% 0;');
-        expect(shimmerRule).toContain('background-clip: text;');
+        expect(shimmerRules).toContain('--oc-shimmer-highlight: color-mix(in oklch, var(--foreground) 92%, transparent);');
+        expect(shimmerRules).toContain('content: attr(data-shimmer-text) / "";');
+        expect(shimmerRules).toContain('animation: oc-text-shimmer-window 2.2s linear infinite;');
+        expect(shimmerRules).toContain('animation: oc-text-shimmer-glint 2.2s linear infinite;');
+        // The window and its copy move by equal and opposite distances, so the
+        // highlighted copy stays on the label; only transform is animated.
+        expect(keyframes('oc-text-shimmer-window')).toContain('transform: translateX(-150%);');
+        expect(keyframes('oc-text-shimmer-window')).toContain('transform: translateX(250%);');
+        expect(keyframes('oc-text-shimmer-glint')).toContain('transform: translateX(150%);');
+        expect(keyframes('oc-text-shimmer-glint')).toContain('transform: translateX(-250%);');
+        for (const name of ['oc-text-shimmer-window', 'oc-text-shimmer-glint']) {
+            const properties = keyframes(name).match(/^\s+([a-z-]+):/gm)?.map((line) => line.trim().slice(0, -1));
+            expect(new Set(properties)).toEqual(new Set(['transform']));
+        }
+        expect(shimmerRules).not.toContain('background-position');
     });
 
-    test('retains readable status text when reduced motion disables shimmer', () => {
+    test('retains readable status text when paused or under reduced motion', () => {
+        const html = renderToStaticMarkup(React.createElement(StatusShimmerText, {
+            text: 'Reading files',
+            shouldAnimate: false,
+        }));
+        expect(html).toContain('data-animation-state="paused"');
+        expect(html).toContain('>Reading files<span');
+
         const styles = readFileSync(new URL('../../../../index.css', import.meta.url), 'utf8');
+        const sweepRule = styles.slice(
+            styles.indexOf('.oc-text-shimmer-sweep {'),
+            styles.indexOf('.oc-text-shimmer-sweep::before {'),
+        );
+        // Only a running status shows the sweep.
+        expect(sweepRule).toContain('display: none;');
         const reducedMotionRule = styles.slice(styles.lastIndexOf('@media (prefers-reduced-motion: reduce)'));
-
-        expect(reducedMotionRule).toContain('.oc-text-shimmer::after');
-        expect(reducedMotionRule).toContain('content: none;');
-        expect(reducedMotionRule).toContain('animation: none;');
-        expect(reducedMotionRule).toContain('background-image: none;');
+        expect(reducedMotionRule).toContain('.oc-text-shimmer-sweep {');
+        expect(reducedMotionRule).toContain('display: none !important;');
     });
 
-    test('keeps the live region and visual label mounted without keyed layout transitions', () => {
-        const statusWrapper = source.indexOf('role="status"', source.indexOf('const label ='));
-        const shimmer = source.indexOf('<StatusShimmerText', statusWrapper);
+    test('keeps the live region and visual label mounted without keyed layout transitions', async () => {
+        await mountPlaceholder(working, async ({ container, rerender }) => {
+            const region = statusRegion(container);
+            const shimmer = shimmers(container)[0];
+            expect(region).not.toBeNull();
+            expect(region?.contains(shimmer)).toBe(true);
 
-        expect(statusWrapper).toBeGreaterThan(-1);
-        expect(shimmer).toBeGreaterThan(statusWrapper);
-        expect(source).not.toContain('AnimatePresence');
-        expect(source).not.toContain('motion.span');
-        expect(source).not.toContain('key={label}');
+            // Past the minimum display time the new label replaces the old one in place.
+            setSystemTime(new Date(Date.now() + 5_000));
+            await rerender({ isWorking: true, statusText: 'editing files' });
+
+            expect(container.textContent).toBe('Editing files');
+            expect(statusRegion(container)).toBe(region);
+            expect(shimmers(container)[0]).toBe(shimmer);
+        });
     });
 });

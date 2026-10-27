@@ -1,0 +1,436 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import os from 'node:os';
+import { createHash } from 'node:crypto';
+import { afterEach, expect, it } from 'vitest';
+import { createNativeConfigurationSnapshotResolver, nativeCatalogModels, nativeCatalogSelections } from './native-configuration-snapshot.js';
+import { buildRuntimeHelperAgents } from '../runtime-helper-agents.js';
+import { readReviewedSkillResource, resolveReviewedSkillAlias, resolveReviewedSkillRequest, reviewedSkillNames, lookupReviewedSkillResourcePath } from './reviewed-skills.js';
+import {parseMdFile} from '../shared.js';
+import {getAgentConfig} from '../agents.js';
+
+const roots = [];
+
+it('requires exact effective selections, command efforts and ordered Council/fallback routes without substitution',()=>{
+ const council=[{model:'xai/grok-4.6',variant:'high'},{model:'openai/gpt-6.1-sol',variant:null}];
+ const compatibility={agents:{council:{councillors:council}},slim:{nativeRuntime:{runtimeChains:{builder:['openai/gpt-6-astra','openai/gpt-6.1-sol']},modelArrays:{builder:[{id:'openai/gpt-6-astra',variant:'medium'},{id:'openai/gpt-6.1-sol',variant:'high'}]}}}};
+ const configuration={model:{providerID:'openai',model:'gpt-6-astra',variant:'low'},agents:{builder:{model:{providerID:'openai',model:'gpt-6-astra',variant:'high'}},disabled:{disabled:true,model:{providerID:'unavailable',model:'ignored'}}},commands:{check:{model:{providerID:'openai',model:'gpt-6-astra',variant:'medium'}}}};
+ expect(nativeCatalogModels(configuration,compatibility)).toEqual([
+  {providerID:'openai',id:'gpt-6-astra',variant:'low'}, {providerID:'openai',id:'gpt-6-astra',variant:'high'},
+  {providerID:'openai',id:'gpt-6-astra',variant:'medium'}, {providerID:'xai',id:'grok-4.6',variant:'high'},
+  {providerID:'openai',id:'gpt-6.1-sol',variant:'default'}, {providerID:'openai',id:'gpt-6-astra',variant:'default'},
+  {providerID:'openai',id:'gpt-6.1-sol',variant:'high'},
+ ]);
+ expect(compatibility.agents.council.councillors).toBe(council);
+});
+it('requires actual enabled role backups without admitting a disabled role backup',()=>{
+ const configuration={agents:{builder:{model:{providerID:'openai',model:'gpt-6-astra'}},disabled:{disabled:true}}};
+ const compatibility={agents:{builder:{backupModel:{providerID:'xai',modelID:'grok-4.6',variant:'high'}},disabled:{backupModel:{providerID:'missing',modelID:'ignored',variant:null}}}};
+ expect(nativeCatalogModels(configuration,compatibility)).toEqual([
+  {providerID:'openai',id:'gpt-6-astra',variant:'default'},
+  {providerID:'xai',id:'grok-4.6',variant:'high'},
+ ]);
+});
+it('keeps disabled Council member routes dormant',()=>{
+ const compatibility={agents:{council:{councillors:[{model:'missing/dormant',variant:'high'}]}}};
+ expect(nativeCatalogModels({agents:{council:{disabled:true}}},compatibility)).toEqual([]);
+});
+it('attributes duplicate unavailable tuples to every saved role, backup, command and Council seat', () => {
+ const ref={providerID:'cursor-acp',model:'composer-2.5',variant:'high'};
+ const configuration={model:ref,agents:{builder:{model:ref}},commands:{review:{model:ref}}};
+ const compatibility={agents:{builder:{backupModel:{providerID:'cursor-acp',modelID:'composer-2.5',variant:'high'}},
+  council:{councillors:[{model:'cursor-acp/composer-2.5',variant:'high'},{model:'cursor-acp/composer-2.5',variant:'high'}]}}};
+ const selections=nativeCatalogSelections(configuration,compatibility);
+ expect(selections.map(row=>row.source)).toEqual([{kind:'model'},{kind:'agent',id:'builder'},{kind:'backup',id:'builder'},
+  {kind:'command',id:'review'},{kind:'councillor',id:'council',index:0},{kind:'councillor',id:'council',index:1}]);
+ expect(selections.every(row=>row.providerID==='cursor-acp'&&row.modelID==='composer-2.5'&&row.variant==='high')).toBe(true);
+ expect(nativeCatalogModels(configuration,compatibility)).toEqual([{providerID:'cursor-acp',id:'composer-2.5',variant:'high'}]);
+ expect(compatibility.agents.council.councillors.map(row=>row.variant)).toEqual(['high','high']);
+});
+
+afterEach(async () => { await Promise.all(roots.splice(0).map(root => fs.rm(root, { recursive: true, force: true }))); });
+async function fixture() {
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'native-settings-'))); roots.push(root);
+  const directory = path.join(root, 'project'), config = path.join(root, 'config'), home = path.join(root, 'home');
+  for (const folder of [directory, config, home]) await fs.mkdir(folder);
+  const skillRoot = path.join(config, 'skills', 'fixture'); await fs.mkdir(skillRoot, { recursive: true });
+  await fs.writeFile(path.join(skillRoot, 'SKILL.md'), 'exact skill body\n');
+  await fs.writeFile(path.join(skillRoot, 'support.txt'), 'exact asset\n');
+  const manifest = JSON.stringify({ schema: 1, plugins: [{ id: 'devryan.fixture', legacySpecs: ['./plugins/fixture.mjs'] }] });
+  const reviewedPluginManifestPath = path.join(root, 'plugins.json'), reviewedNativeConfigPath = path.join(root, 'policy.json');
+  await fs.writeFile(reviewedPluginManifestPath, manifest);
+  await fs.writeFile(reviewedNativeConfigPath, JSON.stringify({ schema: 1, configuration: {}, locations: [{ directory }],
+    catalogRequirements: { agents: [], plugins: ['devryan.fixture'], tools: [], models: [] } }));
+  const loaded = { legacy: { plugin: ['./plugins/fixture.mjs'], mcp: { active: { enabled: true }, dormant: { enabled: false } } },
+    agents: { builder: { model: 'openai/model', variant: null, prompt: 'saved prompt\n', options: { custom: 7 }, permission: { edit: { '*': 'ask', '*.md': 'allow' } } } },
+    commands: { fixture: { template: 'exact command\n', model: 'openai/model', variant: 'medium' } },
+    skills: [{ name: 'fixture', path: path.join(skillRoot, 'SKILL.md'), source: 'opencode' }], slim: { agents: { builder: { variant: null } } },
+    parseMarkdown: file => ({ body: file.endsWith('SKILL.md') ? 'exact skill body\n' : '', frontmatter: {} }) };
+  // The loader is constructor-owned, not request data or authority metadata.
+  const resolver = createNativeConfigurationSnapshotResolver({ loadLocation: async () => ({ ...structuredClone({ ...loaded, parseMarkdown: undefined }), parseMarkdown: loaded.parseMarkdown }) });
+  return { root, directory, skillRoot, loaded, resolver, input: { binding: { descriptor: { generation: 2,
+    launch: { opencodeConfigDirectory: config, global: { home }, reviewedPluginManifestPath, reviewedNativeConfigPath },
+    projectMap: [{ targetDirectory: directory }] } }, revision: 1, expectedRegistrationDigest: createHash('sha256').update(manifest).digest('hex') } };
+}
+
+it('freezes exact effective roles, ordered rules, commands, resources and disabled MCP definitions', async () => {
+  const f = await fixture(), first = await f.resolver(f.input), again = await f.resolver(f.input);
+  expect(first.digest).toBe(again.digest); expect(Object.isFrozen(first.locations[0].compatibility.agents)).toBe(true);
+  expect(first.locations[0].configuration.agents.builder).toMatchObject({ model: { providerID: 'openai', model: 'model', variant: 'default' }, system: 'saved prompt\n', request: { body: { custom: 7 } } });
+  expect(first.locations[0].configuration.agents.builder.permissions).toEqual([{ action: 'edit', resource: '*', effect: 'ask' }, { action: 'edit', resource: '*.md', effect: 'allow' }]);
+  expect(first.locations[0].configuration.commands.fixture.template).toBe('exact command\n');
+  expect(first.locations[0].requiredCatalogs.mcp).toEqual(['active']);
+  expect(first.locations[0].requiredCatalogs.models).toEqual([
+    { providerID: 'openai', id: 'model', variant: 'default' },
+    { providerID: 'openai', id: 'model', variant: 'medium' },
+  ]);
+  expect(first.locations[0].compatibility.mcp.dormant).toEqual({ enabled: false });
+  const skill = first.locations[0].skills[0]; expect(skill.content).toBe('exact skill body\n');
+  expect(await readReviewedSkillResource(first, { snapshotDigest: first.digest, directory: f.directory, skillID: skill.id, relativePath: 'support.txt' })).toEqual(Buffer.from('exact asset\n'));
+  f.loaded.agents.builder.variant = 'high';
+  const changed = await f.resolver({ ...f.input, revision: 2 });
+  expect(changed.digest).not.toBe(first.digest); expect(first.locations[0].configuration.agents.builder.model.variant).toBe('default');
+});
+
+it('carries actual agent frontmatter tools through the settings loader and frozen native snapshot',async()=>{
+ const f=await fixture(),folder=path.join(f.directory,'.opencode','agents');await fs.mkdir(folder,{recursive:true});
+ const file=path.join(folder,'restricted-fixture.md');
+ await fs.writeFile(file,'---\nmode: subagent\ntools:\n  bash: false\n  write: false\n  patch: false\n  task: false\npermission:\n  bash:\n    "git *": allow\n---\nInspect only.\n');
+ expect(parseMdFile(file).frontmatter.tools).toEqual({bash:false,write:false,patch:false,task:false});
+ f.loaded.legacy.tools={edit:false};
+ f.loaded.agents={'restricted-fixture':getAgentConfig('restricted-fixture',f.directory,{userConfigPath:path.join(f.root,'absent.json'),slimConfigDirectory:f.input.binding.descriptor.launch.opencodeConfigDirectory}).config};
+ const location=(await f.resolver(f.input)).locations[0];
+ expect(location.configuration.permissions).toEqual([{action:'edit',resource:'*',effect:'deny'}]);
+ expect(location.configuration.agents['restricted-fixture'].permissions).toEqual([{action:'shell',resource:'git *',effect:'allow'},
+  {action:'edit',resource:'*',effect:'deny'},{action:'subagent',resource:'*',effect:'deny'}]);
+ expect(location.compatibility.agents['restricted-fixture'].tools).toEqual({bash:false,write:false,patch:false,task:false});
+});
+
+it('activates selected Claude catalog metadata only through the registered compatibility owner',async()=>{
+ const f=await fixture(),manifestFile=f.input.binding.descriptor.launch.reviewedPluginManifestPath;
+ const manifest={schema:1,plugins:[{id:'devryan.provider-compat',legacySpecs:['./plugins/fixture.mjs']}]};
+ await fs.writeFile(manifestFile,JSON.stringify(manifest));f.input.expectedRegistrationDigest=createHash('sha256').update(JSON.stringify(manifest)).digest('hex');
+ let configured=true,reads=0;
+ const resolver=createNativeConfigurationSnapshotResolver({hasConfiguredClaudeProfile:async()=>{reads++;return configured;},
+  loadLocation:async()=>({...structuredClone({...f.loaded,parseMarkdown:undefined}),parseMarkdown:f.loaded.parseMarkdown})});
+ expect((await resolver(f.input)).locations[0].configuration.providers.anthropic).toEqual({});expect(reads).toBe(1);
+ f.loaded.legacy.provider={anthropic:{options:{timeout:1234},models:{saved:{name:'Saved model'}}}};
+ const saved=(await resolver({...f.input,revision:2})).locations[0].configuration.providers.anthropic;
+ expect(saved).toMatchObject({settings:{timeout:1234},models:{saved:{name:'Saved model'}}});expect(saved.settings.apiKey).toBeUndefined();
+ delete f.loaded.legacy.provider;
+ for(const policy of [{disabled_providers:['anthropic']},{enabled_providers:['openai']}]){
+  const original=f.loaded.legacy;f.loaded.legacy={...original,...policy};
+  expect((await resolver(f.input)).locations[0].configuration.providers).toBeUndefined();f.loaded.legacy=original;
+ }
+ f.loaded.legacy.plugin=[];
+ const withoutLegacyPlugins=(await resolver(f.input)).locations[0];
+ expect(withoutLegacyPlugins.activeRegistrationIDs).toEqual([]);expect(withoutLegacyPlugins.configuration.providers.anthropic).toEqual({});
+ expect(withoutLegacyPlugins.compatibility.legacy.plugin).toEqual([]);
+ configured=false;expect((await resolver(f.input)).locations[0].configuration.providers).toBeUndefined();
+ const unregistered={schema:1,plugins:[]};await fs.writeFile(manifestFile,JSON.stringify(unregistered));
+ f.input.expectedRegistrationDigest=createHash('sha256').update(JSON.stringify(unregistered)).digest('hex');configured=true;
+ const before=reads;expect((await resolver(f.input)).locations[0].configuration.providers).toBeUndefined();expect(reads).toBe(before);
+});
+
+it('retries Claude selection changes during capture without retaining the prior catalog activation',async()=>{
+ const f=await fixture(),manifest={schema:1,plugins:[{id:'devryan.provider-compat',legacySpecs:['./plugins/fixture.mjs']}]};
+ await fs.writeFile(f.input.binding.descriptor.launch.reviewedPluginManifestPath,JSON.stringify(manifest));
+ f.input.expectedRegistrationDigest=createHash('sha256').update(JSON.stringify(manifest)).digest('hex');
+ const settings=path.join(f.input.binding.descriptor.launch.global.home,'.config','meridian','settings.json');await fs.mkdir(path.dirname(settings),{recursive:true});
+ await fs.writeFile(settings,'selected');let reads=0;
+ const resolver=createNativeConfigurationSnapshotResolver({hasConfiguredClaudeProfile:async()=>{reads++;return reads===1;},
+  loadLocation:async()=>{if(reads===1)await fs.writeFile(settings,'unselected');return {...f.loaded,parseMarkdown:f.loaded.parseMarkdown};}});
+ const snapshot=await resolver(f.input);expect(reads).toBe(2);expect(snapshot.locations[0].configuration.providers).toBeUndefined();
+});
+
+it('derives enabled native agents while preserving every explicit catalog requirement',async()=>{
+ const f=await fixture();
+ f.loaded.agents.title={disabled:true};
+ f.loaded.agents.legacyDormant={disable:true};
+ f.loaded.agents.enabled={disable:true,disabled:false};
+ const snapshot=await f.resolver(f.input),location=snapshot.locations[0];
+ expect(location.configuration.agents.title.disabled).toBe(true);
+ expect(location.configuration.agents.legacyDormant.disabled).toBe(true);
+ expect(location.configuration.agents.enabled.disabled).toBe(false);
+ expect(location.requiredCatalogs.agents).toEqual(['builder','enabled','devryan-title','devryan-commit','devryan-pr','devryan-notify']);
+ const file=f.input.binding.descriptor.launch.reviewedNativeConfigPath;
+ const policy=JSON.parse(await fs.readFile(file,'utf8'));
+ policy.catalogRequirements.agents=['title','explicit-missing','builder'];
+ await fs.writeFile(file,JSON.stringify(policy));
+ const explicitlyRequired=await f.resolver({...f.input,revision:2});
+ expect(explicitlyRequired.locations[0].requiredCatalogs.agents).toEqual(['title','explicit-missing','builder','enabled','devryan-title','devryan-commit','devryan-pr','devryan-notify']);
+});
+
+it('derives enabled agents when the reviewed policy omits its agent list',async()=>{
+ const f=await fixture();
+ f.loaded.agents.title={disabled:true};
+ const file=f.input.binding.descriptor.launch.reviewedNativeConfigPath;
+ const policy=JSON.parse(await fs.readFile(file,'utf8'));
+ policy.catalogRequirements={};
+ await fs.writeFile(file,JSON.stringify(policy));
+ const snapshot=await f.resolver(f.input);
+ expect(snapshot.locations[0].requiredCatalogs.agents).toEqual(['builder','devryan-title','devryan-commit','devryan-pr','devryan-notify']);
+ expect(snapshot.locations[0].configuration.agents.title.disabled).toBe(true);
+});
+
+it('materializes host no-tools helpers and disables native titles after Slim overrides',async()=>{
+ const f=await fixture(),manifest={schema:1,plugins:[{id:'devryan.slim',legacySpecs:['fixture-slim']}]};
+ f.loaded.legacy.plugin=['fixture-slim'];
+ f.loaded.agents.title={model:'missing/title',disabled:false};
+ f.loaded.agents['devryan-title']={model:'missing/helper',permission:{'*':'allow'}};
+ f.loaded.slim={mergedConfig:{}};
+ await fs.writeFile(f.input.binding.descriptor.launch.reviewedPluginManifestPath,JSON.stringify(manifest));
+ f.input.expectedRegistrationDigest=createHash('sha256').update(JSON.stringify(manifest)).digest('hex');
+ const resolver=createNativeConfigurationSnapshotResolver({loadLocation:async()=>({...structuredClone({...f.loaded,parseMarkdown:undefined}),parseMarkdown:f.loaded.parseMarkdown}),
+  resolveSlimAgents:()=>({agents:{builder:f.loaded.agents.builder,title:{disabled:false},'devryan-title':{permission:{'*':'allow'}}}})});
+ const {configuration,compatibility,requiredCatalogs}= (await resolver(f.input)).locations[0];
+ expect(configuration.agents.title).toEqual({disabled:true});
+ expect(compatibility.agents['devryan-title']).toEqual(buildRuntimeHelperAgents()['devryan-title']);
+ for(const name of ['devryan-title','devryan-commit','devryan-pr','devryan-notify']){
+  expect(configuration.agents[name]).toMatchObject({hidden:true,mode:'subagent',permissions:[{action:'*',resource:'*',effect:'deny'}]});
+  expect(configuration.agents[name].model).toBeUndefined();
+  expect(requiredCatalogs.agents).toContain(name);
+ }
+ expect(requiredCatalogs.agents).not.toContain('title');
+ expect(requiredCatalogs.models.some(model=>model.providerID==='missing')).toBe(false);
+});
+
+it('refuses malformed explicit agent requirements instead of dropping them',async()=>{
+ const f=await fixture();
+ const file=f.input.binding.descriptor.launch.reviewedNativeConfigPath;
+ const policy=JSON.parse(await fs.readFile(file,'utf8'));
+ for(const agents of [null,'builder',42,{},['builder',null],['']]){
+  policy.catalogRequirements.agents=agents;
+  await fs.writeFile(file,JSON.stringify(policy));
+  await expect(f.resolver(f.input)).rejects.toMatchObject({code:'native_snapshot_policy_invalid'});
+ }
+});
+
+it('derives separate model requirements from each effective project configuration',async()=>{
+ const f=await fixture(),other=path.join(f.root,'project-b');await fs.mkdir(other);
+ const policyPath=f.input.binding.descriptor.launch.reviewedNativeConfigPath;
+ const policy=JSON.parse(await fs.readFile(policyPath,'utf8'));policy.locations.push({directory:other});await fs.writeFile(policyPath,JSON.stringify(policy));
+ f.input.binding.descriptor.projectMap.push({targetDirectory:other});
+ const resolver=createNativeConfigurationSnapshotResolver({loadLocation:async({directory})=>({
+  ...f.loaded,agents:{builder:{model:directory===other?'xai/grok-4.6':'openai/gpt-6.1-sol',variant:directory===other?null:'high'}},commands:{},skills:[],
+ })});
+ const snapshot=await resolver(f.input);
+ expect(snapshot.locations.map(location=>location.requiredCatalogs.models)).toEqual([
+  [{providerID:'openai',id:'gpt-6.1-sol',variant:'high'}],
+  [{providerID:'xai',id:'grok-4.6',variant:'default'}],
+ ]);
+});
+
+it('captures active local configured skill data below selected node_modules with coherent resource stamps',async()=>{
+ const f=await fixture(),config=f.input.binding.descriptor.launch.opencodeConfigDirectory;
+ const folder=path.join(config,'node_modules','@fixture','skill-pack','skills','local-guide');
+ await fs.mkdir(folder,{recursive:true});await fs.writeFile(path.join(folder,'SKILL.md'),'configured body\n');await fs.writeFile(path.join(folder,'reference.txt'),'support v1');
+ f.loaded.legacy.skills={paths:[path.dirname(folder)],urls:[]};
+ f.loaded.parseMarkdown=file=>({body:file.startsWith(folder)?'configured body\n':'exact skill body\n',frontmatter:file.startsWith(folder)?{name:'local-guide'}:{}});
+ const first=await f.resolver(f.input),skill=first.locations[0].skills.find(value=>value.name==='local-guide');
+ expect(skill.path).toBe(path.join(folder,'SKILL.md'));expect(skill.content).toBe('configured body\n');
+ expect(await readReviewedSkillResource(first,{snapshotDigest:first.digest,directory:f.directory,skillID:skill.id,relativePath:'reference.txt'})).toEqual(Buffer.from('support v1'));
+ await fs.writeFile(path.join(folder,'reference.txt'),'support v2');
+ const next=await f.resolver({...f.input,revision:2});expect(next.sourceStamp).not.toBe(first.sourceStamp);
+ await expect(readReviewedSkillResource(first,{snapshotDigest:first.digest,directory:f.directory,skillID:skill.id,relativePath:'reference.txt'})).rejects.toMatchObject({code:'native_skill_resource_changed'});
+ f.loaded.legacy.skills={paths:[],urls:['https://fixture.invalid/skills']};
+ await expect(f.resolver(f.input)).rejects.toMatchObject({code:'native_skill_remote_source_unqualified'});
+ f.loaded.legacy.skills={paths:[path.dirname(f.root)],urls:[]};
+ await expect(f.resolver(f.input)).rejects.toMatchObject({code:'native_skill_source_unreviewed'});
+});
+
+it('rejects registration changes, unreviewed mutable plugins and escaped skill assets', async () => {
+  const f = await fixture();
+  await expect(f.resolver({ ...f.input, expectedRegistrationDigest: 'a'.repeat(64) })).rejects.toMatchObject({ code: 'native_registration_revision_mismatch' });
+  f.loaded.legacy.plugin.push('./plugins/unknown.mjs');
+  await expect(f.resolver(f.input)).rejects.toMatchObject({ code: 'native_plugin_registration_unreviewed' });
+  f.loaded.legacy.plugin.pop(); await fs.symlink(path.join(f.root, 'policy.json'), path.join(f.skillRoot, 'escape'));
+  await expect(f.resolver(f.input)).rejects.toMatchObject({ code: 'native_skill_resource_escape' });
+});
+
+it('ignores retired DevRyan plugin registrations that an upgraded setup still lists', async () => {
+  const f = await fixture(), baseline = await f.resolver(f.input);
+  // DevRyan <= 2.0.1 provisioned the Superpowers adapter into every profile;
+  // the seeded native setup keeps that registration after its removal.
+  f.loaded.legacy.plugin.push('./plugins/devryan-superpowers.mjs', 'superpowers@git+https://github.com/obra/superpowers.git');
+  const upgraded = await f.resolver(f.input);
+  expect(upgraded.locations[0].activePlugins).toEqual(baseline.locations[0].activePlugins);
+  expect(upgraded.locations[0].activeRegistrationIDs).toEqual(baseline.locations[0].activeRegistrationIDs);
+  expect(upgraded.locations[0].requiredCatalogs.plugins).toEqual(['devryan.fixture']);
+  f.loaded.legacy.plugin.push('./plugins/unknown.mjs');
+  await expect(f.resolver(f.input)).rejects.toMatchObject({ code: 'native_plugin_registration_unreviewed' });
+});
+
+it('rejects changed resource bytes, stale snapshots and name ambiguity without dropping duplicate skills', async () => {
+  const f = await fixture(), other = path.join(f.directory, '.agents', 'skills', 'fixture'); await fs.mkdir(other, { recursive: true });
+  await fs.writeFile(path.join(other, 'SKILL.md'), 'exact skill body\n');
+  f.loaded.skills.push({ name: 'fixture', path: path.join(other, 'SKILL.md'), source: 'agents' });
+  const snapshot = await f.resolver(f.input); expect(snapshot.locations[0].skills).toHaveLength(2); expect(snapshot.locations[0].aliases).toEqual([]);
+  const input = { snapshotDigest: snapshot.digest, directory: f.directory, skillID: snapshot.locations[0].skills[0].id, relativePath: 'support.txt' };
+  await expect(readReviewedSkillResource(snapshot, { ...input, snapshotDigest: '0'.repeat(64) })).rejects.toMatchObject({ code: 'native_skill_resource_unreviewed' });
+  await fs.writeFile(path.join(f.skillRoot, 'support.txt'), 'tampered___\n');
+  await expect(readReviewedSkillResource(snapshot, input)).rejects.toMatchObject({ code: 'native_skill_resource_changed' });
+});
+
+it('preserves names, directory aliases, normalized keys and unambiguous prefixes with stable-ID duplicate disambiguation', async () => {
+  const f=await fixture();f.loaded.skills[0].name='Accessibility (a11y)';
+  const snapshot=await f.resolver(f.input),first=snapshot.locations[0].skills[0];
+  for(const requested of ['Accessibility (a11y)','ACCESSIBILITY-A11Y','accessibility','fixture',first.id]) {
+    expect(resolveReviewedSkillAlias(snapshot,f.directory,requested)).toBe(first.id);
+  }
+  const other=path.join(f.directory,'.agents','skills','project-a11y');await fs.mkdir(other,{recursive:true});await fs.writeFile(path.join(other,'SKILL.md'),'exact skill body\n');
+  f.loaded.skills.push({name:'Accessibility (a11y)',path:path.join(other,'SKILL.md'),source:'agents'});
+  const duplicate=await f.resolver({...f.input,revision:2}),second=duplicate.locations[0].skills[1];
+  expect(resolveReviewedSkillAlias(duplicate,f.directory,'Accessibility (a11y)')).toBeNull();
+  expect(resolveReviewedSkillAlias(duplicate,f.directory,'accessibility')).toBeNull();
+  expect(resolveReviewedSkillAlias(duplicate,f.directory,'fixture')).toBe(first.id);
+  expect(resolveReviewedSkillAlias(duplicate,f.directory,'project-a11y')).toBe(second.id);
+  expect(resolveReviewedSkillAlias(duplicate,f.directory,first.id)).toBe(first.id);
+  expect(resolveReviewedSkillAlias(duplicate,'unreviewed',first.id)).toBeNull();
+});
+
+it('recovers one near-miss reviewed ID or a supplied name and refuses ambiguous or foreign near misses', async () => {
+  const f=await fixture();
+  const snapshot=await f.resolver(f.input),first=snapshot.locations[0].skills[0];
+  const insert=(id,at,text)=>id.slice(0,at)+text+id.slice(at);
+  expect(resolveReviewedSkillRequest(snapshot,f.directory,{id:insert(first.id,16,'d3')})).toBe(first.id);
+  expect(resolveReviewedSkillRequest(snapshot,f.directory,{id:first.id.slice(0,-1)+(first.id.endsWith('0')?'1':'0')})).toBe(first.id);
+  expect(resolveReviewedSkillRequest(snapshot,f.directory,{id:insert(first.id,16,'d3d')})).toBeNull();
+  expect(resolveReviewedSkillRequest(snapshot,f.directory,{id:'devryan-'+'0'.repeat(32),name:'fixture'})).toBe(first.id);
+  expect(resolveReviewedSkillRequest(snapshot,'unreviewed',{id:insert(first.id,16,'d3')})).toBeNull();
+  expect(resolveReviewedSkillRequest(snapshot,f.directory,{id:'not-a-'+first.id})).toBeNull();
+  const one={...first,id:'devryan-'+'a'.repeat(32)},twin={...first,id:'devryan-'+'a'.repeat(30)+'bb',name:'Twin'};
+  const ambiguous={...snapshot,locations:[{...snapshot.locations[0],skills:[one,twin]}]};
+  expect(resolveReviewedSkillRequest(ambiguous,f.directory,{id:'devryan-'+'a'.repeat(31)+'b'})).toBeNull();
+  expect(reviewedSkillNames(ambiguous,f.directory)).toEqual([first.name,'Twin'].sort((a,b)=>a.localeCompare(b)));
+});
+
+it('retries the entire snapshot when settings change during capture and refuses continuously changing sources',async()=>{
+ const f=await fixture(),file=path.join(f.root,'config','settings.json');await fs.writeFile(file,'old');let reads=0;
+ const loader=async()=>{reads++;if(reads===1)await fs.writeFile(file,'changed');return {...f.loaded,agents:{builder:{model:'sim/m1',variant:'high',prompt:'revision-'+reads}}};};
+ const result=await createNativeConfigurationSnapshotResolver({loadLocation:loader})(f.input);
+ expect(reads).toBe(2);expect(result.locations[0].configuration.agents.builder.system).toBe('revision-2');expect(result.sourceStamp).toMatch(/^[a-f0-9]{64}$/);
+ let changes=0;const unstable=async()=>{await fs.writeFile(file,'changing-'+ ++changes);return f.loaded;};
+ await expect(createNativeConfigurationSnapshotResolver({loadLocation:unstable})(f.input)).rejects.toMatchObject({code:'native_configuration_sources_changed'});
+ expect(changes).toBe(3);
+});
+
+it('captures exact prompt/command reference bytes and explicit instruction data without enabling native discovery',async()=>{
+ const f=await fixture(),prompt=path.join(f.root,'config','prompt.txt');await fs.writeFile(prompt,'exact referenced prompt\n');
+ f.loaded.agents.builder.prompt='{file:./prompt.txt}';f.loaded.commands.fixture.template='{file:prompt.txt}';f.loaded.legacy.instructions=[prompt];
+ const snapshot=await f.resolver(f.input),location=snapshot.locations[0];
+ expect(location.configuration.agents.builder.system).toBe('exact referenced prompt\n');expect(location.configuration.commands.fixture.template).toBe('exact referenced prompt\n');
+ expect(location.compatibility.agents.builder.prompt).toBe('{file:./prompt.txt}');expect(location.instructions[0].content).toBe('exact referenced prompt\n');expect(location.configuration.instructions).toBeUndefined();
+ f.loaded.legacy.instructions=['**/rules.md'];await expect(f.resolver(f.input)).rejects.toMatchObject({code:'native_instruction_source_unqualified'});
+ f.loaded.legacy.instructions=[];await fs.mkdir(path.join(f.root,'config','.git'));await fs.writeFile(path.join(f.root,'config','.git','config'),'protected');f.loaded.agents.builder.prompt='{file:.git/config}';
+ await expect(f.resolver(f.input)).rejects.toMatchObject({code:'native_text_source_unreviewed'});
+});
+
+it('grants only exact reviewed main/support file paths with current bytes and location identity',async()=>{
+ const f=await fixture(),snapshot=await f.resolver(f.input),skill=snapshot.locations[0].skills[0];
+ const main=lookupReviewedSkillResourcePath(snapshot,{snapshotDigest:snapshot.digest,directory:f.directory,targetPath:skill.path});
+ expect(main).toMatchObject({skillID:skill.id,relativePath:'SKILL.md'});expect(await readReviewedSkillResource(snapshot,main)).toEqual(Buffer.from('exact skill body\n'));
+ const support=lookupReviewedSkillResourcePath(snapshot,{snapshotDigest:snapshot.digest,directory:f.directory,targetPath:path.join(f.skillRoot,'support.txt')});
+ expect(await readReviewedSkillResource(snapshot,support)).toEqual(Buffer.from('exact asset\n'));
+ for(const targetPath of [path.join(f.skillRoot,'missing.txt'),path.join(f.root,'config','settings.json'),path.join(f.skillRoot,'.git','config')])expect(lookupReviewedSkillResourcePath(snapshot,{snapshotDigest:snapshot.digest,directory:f.directory,targetPath})).toBeNull();
+ expect(lookupReviewedSkillResourcePath(snapshot,{snapshotDigest:'0'.repeat(64),directory:f.directory,targetPath:skill.path})).toBeNull();
+ expect(lookupReviewedSkillResourcePath(snapshot,{snapshotDigest:snapshot.digest,directory:'other',targetPath:skill.path})).toBeNull();
+ await fs.unlink(skill.path);await fs.symlink(path.join(f.skillRoot,'support.txt'),skill.path);
+ await expect(readReviewedSkillResource(snapshot,main)).rejects.toMatchObject({code:'native_skill_resource_changed'});
+});
+
+it('preserves ordered skill effects via stable IDs and actual native wildcard rules',async()=>{
+ const f=await fixture();f.loaded.skills[0].name='Fixture Skill';f.loaded.agents.builder.permission.skill={'*':'deny','fixture':'allow','Fixture?Skill':'ask'};
+ const snapshot=await f.resolver(f.input),id=snapshot.locations[0].skills[0].id,rules=snapshot.locations[0].configuration.agents.builder.permissions.filter(rule=>rule.action==='skill');
+ expect(rules).toEqual([{action:'skill',resource:'*',effect:'deny'},{action:'skill',resource:id,effect:'allow'},{action:'skill',resource:id,effect:'ask'}]);
+ f.loaded.agents.builder.permission.skill={'*':'deny','devryan-*':'allow'};
+ await expect(f.resolver(f.input)).rejects.toMatchObject({code:'native_skill_permission_pattern_unqualified'});
+ const other=path.join(f.directory,'.agents','skills','fixture');await fs.mkdir(other,{recursive:true});await fs.writeFile(path.join(other,'SKILL.md'),'exact skill body\n');
+ f.loaded.skills.push({name:'Fixture Skill',path:path.join(other,'SKILL.md'),source:'agents'});f.loaded.agents.builder.permission.skill={'Fixture Skill':'allow'};
+ await expect(f.resolver(f.input)).rejects.toMatchObject({code:'native_skill_permission_ambiguous'});
+});
+
+it('captures original Slim prompt inputs before the shared snapshot digest and refuses a missing compiled resolver',async()=>{
+ const f=await fixture(),launch=f.input.binding.descriptor.launch;
+ // Built-in agent orchestration: active without any plugin entry; the retired
+ // adapter an upgraded setup still lists is ignored.
+ const manifest=JSON.stringify({schema:1,plugins:[{id:'devryan.slim',legacySpecs:[]}]});
+ await fs.writeFile(launch.reviewedPluginManifestPath,manifest);f.input.expectedRegistrationDigest=createHash('sha256').update(manifest).digest('hex');
+ f.loaded.legacy.plugin=['./plugins/devryan-oh-my-opencode-slim.mjs'];f.loaded.slim={mergedConfig:{preset:'saved',agents:{builder:{model:'openai/model'}}},activePreset:'saved'};
+ await fs.mkdir(path.join(f.directory,'.opencode','prompts','saved'),{recursive:true});await fs.mkdir(path.join(launch.opencodeConfigDirectory,'prompts'),{recursive:true});
+ await fs.writeFile(path.join(f.directory,'.opencode','prompts','saved','builder.md'),'EXACT PROJECT PROMPT\n');
+ await fs.writeFile(path.join(launch.opencodeConfigDirectory,'prompts','builder.md'),'USER PROMPT\n');await fs.writeFile(path.join(launch.opencodeConfigDirectory,'prompts','builder_append.md'),'EXACT USER APPEND\n');
+ await expect(f.resolver(f.input)).rejects.toMatchObject({code:'native_slim_configuration_owner_required'});
+ let captured;const resolver=createNativeConfigurationSnapshotResolver({loadLocation:async()=>({...structuredClone({...f.loaded,parseMarkdown:undefined}),parseMarkdown:f.loaded.parseMarkdown}),resolveSlimAgents:input=>{
+  captured=input;return {agents:{...input.hostConfiguration.agent,builtin:{model:'openai/model',prompt:'ORIGINAL BUILTIN PROMPT\n'}},defaultAgent:'builder',backgroundJobs:{strategy:'checkpoint-compatible',maxRetainedSnapshots:2,readContextMaxFiles:3}};
+ }});
+ const first=await resolver(f.input);expect(first.locations[0].activePlugins).toEqual([]);expect(first.locations[0].activeRegistrationIDs).toEqual(['devryan.slim']);
+ expect(first.locations[0].compatibility.slim.nativeRuntime.backgroundJobs).toEqual({strategy:'checkpoint-compatible',maxRetainedSnapshots:2,readContextMaxFiles:3});expect(captured.prompts.builder).toEqual({prompt:'EXACT PROJECT PROMPT\n',appendPrompt:'EXACT USER APPEND\n'});
+ expect(captured.hostConfiguration.agent.builder.prompt).toBe('saved prompt\n');expect(captured.localSkills).toEqual(['fixture']);
+ expect(first.locations[0].configuration.agents.builtin.system).toBe('ORIGINAL BUILTIN PROMPT\n');expect(first.locations[0].compatibility.agents.builtin.prompt).toBe('ORIGINAL BUILTIN PROMPT\n');
+ expect(first.locations[0].textReferences.map(value=>value.content)).toEqual(['EXACT PROJECT PROMPT\n','EXACT USER APPEND\n']);
+ await fs.writeFile(path.join(launch.opencodeConfigDirectory,'prompts','builder_append.md'),'CHANGED APPEND\n');
+ const second=await resolver({...f.input,revision:2});expect(second.digest).not.toBe(first.digest);expect(captured.prompts.builder.appendPrompt).toBe('CHANGED APPEND\n');
+});
+
+it('uses exact per-location active registrations and ignores retired Ponytail registrations, commands and stored mode files',async()=>{
+ const f=await fixture(),launch=f.input.binding.descriptor.launch,config=launch.opencodeConfigDirectory;
+ // An installed registration manifest from an earlier release still lists the retired origin with its specs.
+ const ponytailSpec='./node_modules/@dietrichgebert/ponytail/.opencode/plugins/ponytail.mjs';
+ const manifest=JSON.stringify({schema:1,plugins:[{id:'devryan.ponytail',legacySpecs:[ponytailSpec,'@dietrichgebert/ponytail']},{id:'devryan.document-reader',legacySpecs:['./plugins/devryan-document-reader.mjs']}]});
+ await fs.writeFile(launch.reviewedPluginManifestPath,manifest);f.input.expectedRegistrationDigest=createHash('sha256').update(manifest).digest('hex');
+ f.loaded.legacy.plugin=[ponytailSpec,'@dietrichgebert/ponytail','./plugins/devryan-document-reader.mjs'];f.loaded.commands.ponytail={template:'saved override'};
+ // Stored mode state an earlier release wrote is never read: an unreadable symlinked default and a mode file stay untouched.
+ const outside=path.join(f.root,'outside.json');await fs.writeFile(outside,'{"defaultMode":"ultra"}');
+ await fs.mkdir(path.join(config,'ponytail'));await fs.symlink(outside,path.join(config,'ponytail','config.json'));
+ await fs.writeFile(path.join(config,'.ponytail-active'),'ultra');
+ const previous=process.env.PONYTAIL_DEFAULT_MODE;process.env.PONYTAIL_DEFAULT_MODE='ultra';
+ try{
+  const loadLocation=async()=>({...structuredClone({...f.loaded,parseMarkdown:undefined}),parseMarkdown:f.loaded.parseMarkdown});
+  const result=await createNativeConfigurationSnapshotResolver({loadLocation})(f.input),location=result.locations[0];
+  expect(location.activePlugins).toEqual(['./plugins/devryan-document-reader.mjs']);
+  expect(location.activeRegistrationIDs).toEqual(['devryan.document-reader']);expect(location.requiredCatalogs.plugins).toEqual(['devryan.document-reader']);
+  // A saved command keeps its own definition; no reviewed declaration overwrites it.
+  expect(location.compatibility.commands.ponytail).toEqual({template:'saved override'});expect(location.configuration.commands.ponytail.template).toBe('saved override');
+  expect(Object.keys(location.compatibility).sort()).toEqual(['agents','commands','legacy','mcp','slim']);
+  expect(location.textReferences.some(reference=>reference.path.includes('ponytail'))).toBe(false);
+  expect(JSON.stringify(location.instructions??[])).not.toMatch(/PONYTAIL/i);
+  expect(await fs.readFile(path.join(config,'.ponytail-active'),'utf8')).toBe('ultra');
+  expect(await fs.readFile(outside,'utf8')).toBe('{"defaultMode":"ultra"}');
+ }finally{if(previous===undefined)delete process.env.PONYTAIL_DEFAULT_MODE;else process.env.PONYTAIL_DEFAULT_MODE=previous;}
+});
+
+it('uses only constructor-owned canonical registered locations and seals their fresh settings',async()=>{
+ const f=await fixture(),second=path.join(f.root,'second');await fs.mkdir(second);
+ const {createNativeProjectLocations}=await import('./native-project-locations.js');
+ const derive=createNativeProjectLocations({baseLocations:[{directory:f.directory}],launch:{...f.input.binding.descriptor.launch,
+  webDataDirectory:path.join(f.root,'private-data'),webConfigDirectory:path.join(f.root,'private-config'),global:{...f.input.binding.descriptor.launch.global,tmp:path.join(f.root,'private-tmp')}},getRegisteredProjects:async()=>[{path:second}]});
+ const resolver=createNativeConfigurationSnapshotResolver({getRuntimeLocations:derive,loadLocation:async()=>({...structuredClone({...f.loaded,parseMarkdown:undefined}),parseMarkdown:f.loaded.parseMarkdown})});
+ const snapshot=await resolver(f.input);expect(snapshot.locations.map(location=>location.directory)).toEqual([f.directory,second]);
+ expect(snapshot.locations[1].configuration.agents.builder.model).toEqual(snapshot.locations[0].configuration.agents.builder.model);
+ expect((await f.resolver({...f.input,runtimeLocations:[{directory:second}]})).locations.map(location=>location.directory)).toEqual([f.directory]);
+});
+
+
+it('activates the built-in browser without a legacy plugin entry only when its origin is registered', async () => {
+  const f = await fixture();
+  const before = await f.resolver(f.input);
+  expect(before.locations[0].activeRegistrationIDs).not.toContain('devryan.browser');
+  const file = f.input.binding.descriptor.launch.reviewedPluginManifestPath;
+  const manifest = JSON.parse(await fs.readFile(file, 'utf8'));
+  manifest.plugins.push({ id: 'devryan.browser', legacySpecs: [] });
+  const bytes = JSON.stringify(manifest);
+  await fs.writeFile(file, bytes);
+  const after = await f.resolver({ ...f.input, revision: 2,
+    expectedRegistrationDigest: createHash('sha256').update(bytes).digest('hex') });
+  expect(after.locations[0].activeRegistrationIDs).toContain('devryan.browser');
+  expect(after.locations[0].activePlugins).toEqual(['./plugins/fixture.mjs']);
+  expect(after.locations[0].requiredCatalogs.plugins).not.toContain('devryan.browser');
+  const policyFile = f.input.binding.descriptor.launch.reviewedNativeConfigPath;
+  const policy = JSON.parse(await fs.readFile(policyFile, 'utf8'));
+  policy.catalogRequirements.plugins.push('devryan.browser');
+  await fs.writeFile(policyFile, JSON.stringify(policy));
+  const required = await f.resolver({ ...f.input, revision: 3,
+    expectedRegistrationDigest: createHash('sha256').update(bytes).digest('hex') });
+  expect(required.locations[0].requiredCatalogs.plugins).toContain('devryan.browser');
+});

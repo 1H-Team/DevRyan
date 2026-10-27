@@ -1,11 +1,11 @@
 import React, { act } from 'react';
-import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test';
 import { useStore } from 'zustand';
-import { createManagedTaskRecord, toManagedTaskEvent, type ManagedTaskRecord } from '@openchamber/orchestration-runtime';
+import { createManagedTaskRecord, toManagedTaskEvent, type ManagedTaskRecord } from '@devryan/orchestration-runtime';
 import { I18nProvider } from '@/lib/i18n';
 import { resolveDisplaySessionTitle } from '@/lib/sessionTitles';
 import { managedTitleFixture } from './managedTaskTestFixture';
-import { HostElement, type HostNode, withDom } from '../bots/chat/botMountedDom';
+import { HostElement, type HostNode, withDom } from '@/test/mountedDom';
 import type { ManagedTaskDispatchFallback, PendingManagedTaskDispatch } from './managedTaskDispatch';
 
 let resyncCalls = 0;
@@ -56,6 +56,12 @@ const title = (value: string, id = 'ses_child') => managedTitleFixture.setState(
 }));
 const pending: PendingManagedTaskDispatch = { partId: 'part_start', dispatchCallId: 'call_start', agent: 'designer', label: 'Managed designer task', status: 'preparing' };
 
+// The shared fixture starts with a default child title; every test owns an empty one.
+beforeEach(() => {
+  store.getState().reset();
+  managedTitleFixture.setState({ session: [] });
+  resyncCalls = 0;
+});
 afterEach(() => {
   store.getState().reset();
   managedTitleFixture.setState({ session: [] });

@@ -2,7 +2,7 @@
 mode: primary
 description: AI coding orchestrator that delegates tasks to specialist agents
   for optimal quality, speed, and cost
-model: openai/gpt-5.5
+model: openai/gpt-6.1-sol
 variant: medium
 temperature: 0.1
 permission:

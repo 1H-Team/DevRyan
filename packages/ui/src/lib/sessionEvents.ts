@@ -35,12 +35,14 @@ export type SessionCreateRequest = {
 
 type DeleteListener = (request: SessionDeleteRequest) => void;
 type CreateListener = (request: SessionCreateRequest) => void;
+type CreatedListener = (sessionId: string) => void;
 type DirectoryListener = () => void;
 type GitRefreshHint = { directory: string; sessionChanges?: boolean; sessionID?: string };
 type GitRefreshListener = (hint: GitRefreshHint) => void;
 
 const deleteListeners = new Set<DeleteListener>();
 const createListeners = new Set<CreateListener>();
+const createdListeners = new Set<CreatedListener>();
 const directoryListeners = new Set<DirectoryListener>();
 const gitRefreshListeners = new Set<GitRefreshListener>();
 
@@ -70,6 +72,16 @@ export const sessionEvents = {
   requestCreate(payload?: SessionCreateRequest) {
     const request = payload ?? {};
     createListeners.forEach((listener) => listener(request));
+  },
+  /** A visible root session this client created; children and git helpers are not announced. */
+  onRootSessionCreated(listener: CreatedListener) {
+    createdListeners.add(listener);
+    return () => {
+      createdListeners.delete(listener);
+    };
+  },
+  notifyRootSessionCreated(sessionId: string) {
+    createdListeners.forEach((listener) => listener(sessionId));
   },
   onDirectoryRequest(listener: DirectoryListener) {
     directoryListeners.add(listener);

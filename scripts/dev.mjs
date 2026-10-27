@@ -12,7 +12,7 @@ import { shouldRestartDevChild } from './dev-restart-policy.mjs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
-const restartDelayMs = Number.parseInt(process.env.OPENCHAMBER_DEV_RESTART_DELAY_MS || '1000', 10);
+const restartDelayMs = Number.parseInt(process.env.DEVRYAN_DEV_RESTART_DELAY_MS || '1000', 10);
 const devDataDirectory = resolveDevDataDirectory({
   env: process.env,
   repoRoot,
@@ -20,11 +20,11 @@ const devDataDirectory = resolveDevDataDirectory({
 });
 
 const baseDevEnv = {
-  OPENCHAMBER_DEV_MODE: 'true',
-  OPENCHAMBER_DEV_SHUTDOWN: 'true',
-  OPENCHAMBER_ALLOW_DEV_SHUTDOWN: 'true',
-  OPENCHAMBER_DEV_ORCHESTRATOR_PID: String(process.pid),
-  OPENCHAMBER_DATA_DIR: devDataDirectory,
+  DEVRYAN_DEV_MODE: 'true',
+  DEVRYAN_DEV_SHUTDOWN: 'true',
+  DEVRYAN_ALLOW_DEV_SHUTDOWN: 'true',
+  DEVRYAN_DEV_ORCHESTRATOR_PID: String(process.pid),
+  DEVRYAN_DATA_DIR: devDataDirectory,
 };
 
 /** @type {Array<{ label: string, command: string, args: string[], cwd?: string }>} */
@@ -114,7 +114,7 @@ for (const spec of childSpecs) {
   spawnSpec(spec);
 }
 
-console.log('[dev] OpenChamber dev stack running (Ctrl+C to stop)');
+console.log('[dev] DevRyan dev stack running (Ctrl+C to stop)');
 console.log('[dev] API default: http://127.0.0.1:3001');
 
 process.on('SIGINT', () => {

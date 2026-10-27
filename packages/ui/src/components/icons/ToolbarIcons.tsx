@@ -81,20 +81,6 @@ export function TerminalPanelIcon(props: ToolbarIconProps) {
   );
 }
 
-export function ServicesIcon(props: ToolbarIconProps) {
-  return (
-    <ToolbarIcon {...props}>
-      <circle cx="12" cy="12" r="3" />
-      <circle cx="6.75" cy="7.25" r="2" />
-      <circle cx="17.25" cy="7.25" r="2" />
-      <circle cx="17.25" cy="16.75" r="2" />
-      <path d="m8.55 8.1 1.7 1.55" />
-      <path d="m15.45 8.1-1.7 1.55" />
-      <path d="m14.25 14.15 1.45 1.3" />
-    </ToolbarIcon>
-  );
-}
-
 export function NewChatIcon(props: ToolbarIconProps) {
   return (
     <ToolbarIcon {...props}>
@@ -102,40 +88,6 @@ export function NewChatIcon(props: ToolbarIconProps) {
       <path d="M8 19.5v2.4l3.25-2.4" />
       <path d="M16.9 5h4.2" />
       <path d="M19 2.9v4.2" />
-    </ToolbarIcon>
-  );
-}
-
-export function AddFolderIcon(props: ToolbarIconProps) {
-  return (
-    <ToolbarIcon {...props}>
-      <path d="M4 8.25v9a2.25 2.25 0 0 0 2.25 2.25h11.5A2.25 2.25 0 0 0 20 17.25v-7a2.25 2.25 0 0 0-2.25-2.25h-6.5L9.4 5.9A2.25 2.25 0 0 0 7.7 5.1H6.25A2.25 2.25 0 0 0 4 7.35" />
-      <path d="M4.5 10.25h15" />
-    </ToolbarIcon>
-  );
-}
-
-export function TuneSlidersIcon(props: ToolbarIconProps) {
-  return (
-    <ToolbarIcon {...props}>
-      <path d="M5 7.5h5" />
-      <path d="M14 7.5h5" />
-      <circle cx="12" cy="7.5" r="2" />
-      <path d="M5 16.5h3" />
-      <path d="M12 16.5h7" />
-      <circle cx="10" cy="16.5" r="2" />
-    </ToolbarIcon>
-  );
-}
-
-export function SoftSettingsIcon(props: ToolbarIconProps) {
-  return (
-    <ToolbarIcon {...props} strokeWidth="1.7">
-      <circle cx="12" cy="12" r="3" fill="none" />
-      <path
-        fill="none"
-        d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 5 15.08 1.65 1.65 0 0 0 3.49 14H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 8.92 1.65 1.65 0 0 0 4.27 7.1l-.06-.06A2 2 0 1 1 7.04 4.2l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09A1.65 1.65 0 0 0 19.4 15Z"
-      />
     </ToolbarIcon>
   );
 }

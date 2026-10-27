@@ -229,10 +229,16 @@ const enforceShellTimeout = (args) => {
 // Process tracking + heavy-check slots
 // ---------------------------------------------------------------------------
 
-const resolveDataDir = (env = process.env) => {
-  const value = typeof env.OPENCHAMBER_DATA_DIR === 'string' ? env.OPENCHAMBER_DATA_DIR.trim() : '';
+const resolveDataDir = (env = process.env, home = os.homedir()) => {
+  // OPENCHAMBER_DATA_DIR is the accepted alias; this plugin runs inside OpenCode.
+  const configured = env.DEVRYAN_DATA_DIR ?? env.OPENCHAMBER_DATA_DIR;
+  const value = typeof configured === 'string' ? configured.trim() : '';
   if (value) return path.resolve(value);
-  return path.join(os.homedir(), '.config', 'openchamber');
+  // Same rule as packages/shared-runtime/lib/data-root.js: a pre-rename folder
+  // that still holds the data stays in use until the startup migration moves it.
+  const legacy = path.join(home, '.config', 'openchamber');
+  try { if (fs.lstatSync(legacy).isDirectory()) return legacy; } catch { /* Migrated or absent. */ }
+  return path.join(home, '.config', 'devryan');
 };
 
 const normalizeDirectory = (value) => {

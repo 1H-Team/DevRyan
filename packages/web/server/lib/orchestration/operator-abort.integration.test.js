@@ -1,5 +1,12 @@
-import { expect, it } from 'vitest';
-import { createWebManagedOrchestrationRuntime } from './runtime.js';
+import { expect, it, vi } from 'vitest';
+import { createWebManagedOrchestrationRuntime as createNativeOrchestrationRuntime } from './runtime.js';
+import { createNativeConsumerFixture } from '../opencode/test-native-consumer-client.js';
+
+const createWebManagedOrchestrationRuntime = options => createNativeOrchestrationRuntime({
+  ...options,
+  openCodeClient: createNativeConsumerFixture({ readFixture: options.fetchImpl, headers: options.getOpenCodeAuthHeaders,
+    baseUrl: () => options.buildOpenCodeUrl('/') }),
+});
 
 // Exercise the current HTTP adapter and operator registry, including Stop
 // arriving after the loop's registry poll while a transcript read is pending.
@@ -9,10 +16,11 @@ it.each(['after-prompt', 'during-transcript-read'])('settles a user Stop %s with
   const prompts = [];
   const messages = [];
   let stopRecorded = false;
-  const recordStop = () => {
+  const recordStop = async () => {
     if (stopRecorded) return;
     stopRecorded = true;
-    runtime.recordOperatorAbort({ sessionId: 'ses_stop', requestedAt: clock });
+    const stop = await runtime.recordOperatorAbort({ sessionId: 'ses_stop', requestedAt: clock });
+    await runtime.acceptOperatorAbort(stop);
   };
   const runtime = createWebManagedOrchestrationRuntime({
     now: () => clock,
@@ -28,6 +36,9 @@ it.each(['after-prompt', 'during-transcript-read'])('settles a user Stop %s with
     getOpenCodeAuthHeaders: () => ({}),
     fetchImpl: async (url, init) => {
       const pathname = new URL(url).pathname;
+      if (pathname === '/config/providers') return Response.json({ providers: [{ id: 'anthropic', models: {
+        'claude-opus-5': { id: 'claude-opus-5', variants: { medium: {} } },
+      } }] });
       if (pathname === '/agent') return Response.json([{ name: 'designer', mode: 'subagent' }]);
       if (pathname === '/session' && init.method === 'POST') return Response.json({ id: 'ses_stop' });
       if (pathname.endsWith('/prompt_async')) {
@@ -36,7 +47,7 @@ it.each(['after-prompt', 'during-transcript-read'])('settles a user Stop %s with
         clock += 100;
         messages.push({ info: { id: 'msg_user', role: 'user', time: { created: clock - 50 } }, parts: body.parts });
         messages.push({ info: { id: 'msg_stopped', parentID: 'msg_user', role: 'assistant', time: { created: clock, completed: clock + 1 } }, parts: [] });
-        if (stopAt === 'after-prompt') recordStop();
+        if (stopAt === 'after-prompt') await recordStop();
         return new Response(null, { status: 204 });
       }
       if (pathname.endsWith('/abort')) return Response.json(true);
@@ -45,7 +56,7 @@ it.each(['after-prompt', 'during-transcript-read'])('settles a user Stop %s with
         const response = Response.json(messages);
         if (stopAt === 'during-transcript-read' && messages.length) {
           await Promise.resolve();
-          recordStop();
+          await recordStop();
         }
         return response;
       }
@@ -60,15 +71,13 @@ it.each(['after-prompt', 'during-transcript-read'])('settles a user Stop %s with
       providerId: 'anthropic', modelId: 'claude-opus-5', agent: 'designer', variant: 'medium',
       label: 'Operator stop', prompt: 'Do the work',
     } });
-    const deadline = Date.now() + 8_000;
-    let state;
-    for (;;) {
-      state = await runtime.getSnapshot({ rootSessionId: 'ses_root' });
-      if (['completed', 'failed', 'aborted', 'interrupted'].includes(state.tasks[0]?.status)) break;
-      if (Date.now() > deadline) throw new Error('Operator stop fixture did not settle');
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
-    expect(state.tasks[0]).toMatchObject({ status: 'aborted', failureReason: 'Stopped by the user' });
+    const state = await vi.waitFor(async () => {
+      const snapshot = await runtime.getSnapshot({ rootSessionId: 'ses_root' });
+      if (!['completed', 'failed', 'aborted', 'interrupted'].includes(snapshot.tasks[0]?.status)) throw new Error('Operator stop fixture did not settle');
+      return snapshot;
+    }, { timeout: 8_000, interval: 2 });
+    expect(state.tasks[0]).toMatchObject({ status: 'aborted', failureReason: 'Stopped by the user',
+      providerId: 'anthropic', modelId: 'claude-opus-5', agent: 'designer', variant: 'medium' });
     expect(prompts).toHaveLength(1);
   } finally {
     await runtime.shutdown();

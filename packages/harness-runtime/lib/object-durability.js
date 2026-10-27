@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { inspectWindowsNamespaceDurability } from './windows-private-files.js';
 
 // New immutable objects are linked into `<root>/objects` with their data
 // already synced. Their directory entries become durable before the next
@@ -21,7 +22,7 @@ export const markObjectIfUnsynced = (directory, ctimeMs) => {
   if (ctimeMs >= (syncStarted.get(directory) ?? 0) - CTIME_SLACK_MS) pending.add(directory);
 };
 
-export async function syncPendingObjectDirectory(root) {
+export async function syncPendingObjectDirectory(root, { windowsLauncher } = {}) {
   const directory = path.join(root, 'objects');
   for (;;) {
     // A sync already in flight may predate this caller's objects: wait for it,
@@ -32,6 +33,19 @@ export async function syncPendingObjectDirectory(root) {
     pending.delete(directory);
     syncStarted.set(directory, Date.now());
     const work = (async () => {
+      if (process.platform === 'win32') {
+        if (typeof windowsLauncher !== 'string' || !windowsLauncher) throw Object.assign(new Error('private_windows_namespace_authority_unavailable'), {
+          code: 'private_windows_namespace_authority_unavailable',
+        });
+        // The SDK anchors and flushes this path's private parent. The leaf is
+        // never opened or created; only a successful objects-directory flush
+        // can let the ledger reference its newly linked objects.
+        const receipt = await inspectWindowsNamespaceDurability(windowsLauncher, path.join(directory, 'object-durability'));
+        if (receipt.directoryFlushed !== true || receipt.windowsError !== 0) throw Object.assign(new Error('private_windows_namespace_durability_unavailable'), {
+          code: 'private_windows_namespace_durability_unavailable',
+        });
+        return;
+      }
       const handle = await fs.open(directory, 'r');
       try { await handle.sync(); } finally { await handle.close(); }
     })();

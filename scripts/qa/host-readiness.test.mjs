@@ -3,7 +3,7 @@ import http from 'node:http';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import test from 'node:test';
-import { waitForQaHostReady } from './host-readiness.mjs';
+import { projectQaStartupHealth, waitForQaHostReady } from './host-readiness.mjs';
 
 const serve = async (handler, action) => {
   const server = http.createServer(handler);
@@ -39,7 +39,7 @@ test('finds the packaged host origin from its actual CDP page and fails on perma
   });
 });
 
-test('Bun retries its ConnectionRefused startup error until the owned host listens', async () => {
+test('Bun retries its connection-refused startup error until the owned host listens', async () => {
   const script = `
     import http from 'node:http';
     import { waitForQaHostReady } from ${JSON.stringify(new URL('./host-readiness.mjs', import.meta.url).href)};
@@ -57,6 +57,38 @@ test('Bun retries its ConnectionRefused startup error until the owned host liste
   `;
   const { stdout } = await promisify(execFile)('bun', ['--eval', script], { timeout: 5000 });
   const result = JSON.parse(stdout);
-  assert.equal(result.initialCode, 'ConnectionRefused');
+  // Bun 1.4 reports the Node code; earlier Bun reported ConnectionRefused.
+  assert.equal(result.initialCode, 'ECONNREFUSED');
   assert.equal(result.openCodeVersion, 'fixture');
+});
+
+test('terminal startup fails immediately with bounded code and attempt instead of raw error text', async () => {
+  let calls = 0;
+  await serve((_req, res) => {
+    calls++;
+    res.end(JSON.stringify({ isOpenCodeReady: false, lastOpenCodeError: 'private token must not leave the host',
+      openCodeStartup: { state: 'failed', attempt: 3, code: 'NATIVE_BOOT_FAILED' } }));
+  }, async origin => {
+    const observed = [];
+    await assert.rejects(waitForQaHostReady({ origin, onHealth: health => observed.push(projectQaStartupHealth(health)) }),
+      { code: 'NATIVE_BOOT_FAILED', attempt: 3, message: 'QA host readiness failed: NATIVE_BOOT_FAILED' });
+    assert.equal(calls, 1);
+    assert.deepEqual(observed, [{ state: 'failed', attempt: 3, code: 'NATIVE_BOOT_FAILED' }]);
+  });
+  assert.equal(projectQaStartupHealth({ openCodeStartup: { state: 'failed', attempt: 3, code: '/private/token' } }).code, null);
+  assert.equal(projectQaStartupHealth({ openCodeStartup: { state: 'failed', attempt: '3', code: null } }), null);
+});
+
+test('health observers see each starting/ready state and their exceptions are not swallowed as transport errors', async () => {
+  let calls = 0;
+  await serve((_req, res) => {
+    calls++;
+    res.end(JSON.stringify({ isOpenCodeReady: calls > 1,
+      openCodeStartup: { state: calls > 1 ? 'ready' : 'starting', attempt: 1, code: null } }));
+  }, async origin => {
+    const states = [];
+    await waitForQaHostReady({ origin, intervalMs: 1, onHealth: health => states.push(health.openCodeStartup.state) });
+    assert.deepEqual(states, ['starting', 'ready']);
+    await assert.rejects(waitForQaHostReady({ origin, onHealth: () => { throw new TypeError('observer failure'); } }), /observer failure/);
+  });
 });

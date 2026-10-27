@@ -12,16 +12,15 @@ import { useDirectorySync } from '@/sync/sync-context';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useDeviceInfo } from '@/lib/device';
 import { opencodeClient } from '@/lib/opencode/client';
-import { RiAddLine, RiAiAgentLine, RiArrowDownSLine, RiCloseLine, RiFlashlightFill, RiInformationLine, RiSaveLine, RiSubtractLine } from '@remixicon/react';
+import { RiAddLine, RiAiAgentLine, RiArrowDownSLine, RiCloseLine, RiInformationLine, RiSaveLine, RiSubtractLine } from '@remixicon/react';
 import { cn } from '@/lib/utils';
-import { ModelSelector } from './ModelSelector';
+import { ControlledModelPicker } from '@/components/chat/ControlledModelPicker';
 import { BehaviorPage } from '@/components/sections/behavior/BehaviorPage';
 import { AgentRuntimePage } from './AgentRuntimePage';
-import { resolveAgentsGlobalView, useSessionDefaultAgentName } from './useAgentsSettingsEntries';
+import { resolveAgentsGlobalView } from './useAgentsSettingsEntries';
 import { SettingsBadge, SettingsDetailHeader, SettingsDetailSection } from '@/components/sections/shared';
 import { getAgentIconColor } from '@/lib/agentColors';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Switch } from '@/components/ui/switch';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { useI18n } from '@/lib/i18n';
 import { formatAgentDisplayName } from '@/lib/agentDisplay';
@@ -37,14 +36,11 @@ import {
   resolveAgentDefaultSelection,
 } from '@/lib/agentDefaultResolution';
 import { parseModelIdentifier } from '@/lib/modelIdentifier';
-import { getModelVariantControlState, getModelVariantDisplayState, getOrderedThinkingVariants } from '@/lib/providers/variantControls';
-import { resolveAgentVariantForModel, resolveAgentVariantForSave, resolveAgentVariantSelection } from './agentVariantSelection';
-import { formatEffortLabel, formatVisibleEffortLabel } from '@/components/chat/mobileControlsUtils';
+import { getAgentVariantSelectionError, resolveAgentVariantForModel, resolveAgentVariantForSave } from './agentVariantSelection';
 import {
   Select,
   SelectContent,
   SelectItem,
-  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
@@ -53,7 +49,6 @@ type PermissionAction = 'allow' | 'ask' | 'deny';
 type PermissionRule = { permission: string; pattern: string; action: PermissionAction };
 type PermissionRuleKey = `${string}::${string}`;
 type AgentMode = 'primary' | 'subagent' | 'all';
-const NO_VARIANT_VALUE = '__no_variant__';
 const COUNCIL_AGENT_NAME = 'council';
 
 const isCouncilAgentName = (name?: string | null): boolean =>
@@ -292,7 +287,6 @@ export const AgentsPage: React.FC = () => {
   })));
 
   const selectedAgent = selectedAgentName ? getAgentByName(selectedAgentName) : null;
-  const sessionDefaultAgentName = useSessionDefaultAgentName();
   const providers = useConfigStore((state) => state.providers);
   const personalAgentSelections = useConfigStore((state) => state.agentModelSelections);
   const persistAgentModelSelection = useConfigStore((state) => state.persistAgentModelSelection);
@@ -316,6 +310,7 @@ export const AgentsPage: React.FC = () => {
   const [pendingRuleName, setPendingRuleName] = React.useState('');
   const [pendingRulePattern, setPendingRulePattern] = React.useState('*');
   const [isToolPermissionsOpen, setIsToolPermissionsOpen] = React.useState(false);
+  const [isSystemPromptOpen, setIsSystemPromptOpen] = React.useState(false);
   const authPrincipal = useAuthPrincipal();
   const permissionsUiHidden = isAgentPermissionsUiHidden(authPrincipal);
   const behaviorUiHidden = isGlobalAgentBehaviorUiHidden(authPrincipal);
@@ -357,17 +352,14 @@ export const AgentsPage: React.FC = () => {
 
   const activeAgentNameForBehavior = selectedAgentName;
   const isCouncilAgent = isCouncilAgentName(activeAgentNameForBehavior);
-  const getAvailableVariantsForModel = React.useCallback((modelRef: string) => {
-    const parsedModel = parseModelIdentifier(modelRef);
-    if (!parsedModel) return [];
-    const provider = providers.find((entry) => entry.id === parsedModel.providerId);
-    const providerModel = provider?.models.find((entry) => entry.id === parsedModel.modelId) as { variants?: Record<string, unknown> } | undefined;
-    return getOrderedThinkingVariants(providerModel?.variants, { providerId: parsedModel.providerId });
-  }, [providers]);
   const getProviderForModelRef = React.useCallback((modelRef: string) => {
     const parsedModel = parseModelIdentifier(modelRef);
     return parsedModel ? providers.find((entry) => entry.id === parsedModel.providerId) : undefined;
   }, [providers]);
+  const primaryModelError = getAgentVariantSelectionError(getProviderForModelRef(model), model, isCouncilAgent ? councilVariants[0] : variant);
+  const councilModelError = isCouncilAgent ? councilModels.some((entry, index) => entry.trim()
+    && getAgentVariantSelectionError(getProviderForModelRef(entry), entry, councilVariants[index])) : false;
+  const backupModelError = getAgentVariantSelectionError(getProviderForModelRef(backupModel), backupModel, backupVariant);
   const resolveVariantForModel = React.useCallback((
     modelRef: string,
     currentVariant: string | undefined,
@@ -423,6 +415,7 @@ export const AgentsPage: React.FC = () => {
   }, []);
 
   const setCouncilVariantAt = React.useCallback((index: number, value: string | undefined) => {
+    if (index === 0) setVariant(value);
     setCouncilVariants((prev) => {
       const next = [...prev];
       while (next.length <= index) {
@@ -737,21 +730,22 @@ export const AgentsPage: React.FC = () => {
       const resolvedVariant = resolveAgentVariantForSave(
         getProviderForModelRef(trimmedModel),
         trimmedModel,
-        variant,
+        isCouncilAgent ? councilVariants[0] : variant,
       );
-      const resolvedCouncillors = councilModels
-        .map((entry, index) => {
-          const trimmedCouncilModel = entry.trim();
+      const resolvedCouncillors = (isCouncilAgent ? councilModels : [])
+        .map((entry, index) => ({ model: entry.trim(), variant: councilVariants[index] }))
+        .filter((entry) => entry.model.length > 0)
+        .map((entry) => {
+          const trimmedCouncilModel = entry.model;
           return {
             model: trimmedCouncilModel,
             variant: resolveAgentVariantForSave(
               getProviderForModelRef(trimmedCouncilModel),
               trimmedCouncilModel,
-              councilVariants[index],
+              entry.variant,
             ),
           };
-        })
-        .filter((entry) => entry.model.length > 0);
+        });
 
       if (isPersonalModelEditor) {
         const parsed = parseModelIdentifier(trimmedModel);
@@ -857,110 +851,40 @@ export const AgentsPage: React.FC = () => {
     return <BehaviorPage />;
   }
 
-  const renderThinkingLevelRow = (
-    key?: React.Key,
-    alignUnderModel = false,
-    modelRef = model,
-    value: string | undefined = variant,
-    onChange: (value: string | undefined) => void = setVariant,
-    onModelChange: (value: string) => void = setModel,
-  ) => {
+  // Every row passes its own model and variant: a default would make an empty
+  // backup or Council variant (`undefined`) display the primary's variant.
+  // The picker is the chat's: model list plus the thinking slider for the selected model.
+  const renderModelPicker = ({
+    modelRef,
+    value,
+    onSelect,
+  }: {
+    modelRef: string;
+    value: string | undefined;
+    onSelect: (modelRef: string, variant: string | undefined) => void;
+  }) => {
     const parsedRowModel = parseModelIdentifier(modelRef);
-    const rowProvider = parsedRowModel ? providers.find((entry) => entry.id === parsedRowModel.providerId) : undefined;
-    const rowVariantControlState = parsedRowModel
-      ? getModelVariantControlState(rowProvider, parsedRowModel.modelId, value)
-      : null;
-    const rowAvailableVariants = rowVariantControlState?.visibleVariantOptions ?? getAvailableVariantsForModel(modelRef);
-    const rowSupportsVariants = rowAvailableVariants.length > 0;
-    const rowCanToggleFast = Boolean(rowVariantControlState?.canToggleFast);
-    const selectedVariant = typeof value === 'string'
-      ? rowAvailableVariants.find((entry) => entry === value.trim())
-        ?? rowAvailableVariants.find((entry) => entry.trim().toLowerCase() === value.trim().toLowerCase())
+    const selectionError = parsedRowModel
+      ? getAgentVariantSelectionError(getProviderForModelRef(modelRef), modelRef, value)
       : undefined;
-    const selectValue = selectedVariant ?? NO_VARIANT_VALUE;
-    const rowVariantDisplayState = parsedRowModel
-      ? getModelVariantDisplayState(rowProvider, parsedRowModel.modelId, value)
-      : null;
-    const rowFastEnabled = Boolean(rowVariantDisplayState?.fastEnabled);
-    const rowEffortLabel = selectedVariant
-      ? formatEffortLabel(selectedVariant, { providerId: parsedRowModel?.providerId })
-      : (
-        rowVariantDisplayState?.selectedVariant && rowAvailableVariants.length > 0
-          ? formatVisibleEffortLabel(rowVariantDisplayState.selectedVariant, rowAvailableVariants, { providerId: parsedRowModel?.providerId })
-          : formatEffortLabel(undefined, { providerId: parsedRowModel?.providerId })
-      );
-    const applyVariantUpdate = (updates: { fastEnabled?: boolean; variant?: string }) => {
-      const selection = resolveAgentVariantSelection(rowProvider, modelRef, value, updates);
-      if (selection.modelRef !== modelRef) {
-        onModelChange(selection.modelRef);
-      }
-      onChange(selection.variant);
-    };
-
+    const retainedVariant = typeof value === 'string' && value.trim() ? value.trim() : undefined;
     return (
-      <div key={key} className="flex flex-col gap-1 py-1 sm:flex-row sm:items-center sm:gap-3">
-        <div className={cn("flex min-w-0 flex-col sm:w-40 shrink-0", alignUnderModel && "hidden sm:block")}>
-          <span className="typography-ui-label text-foreground">{t('settings.agents.page.field.thinkingLevel')}</span>
-        </div>
-        <div className="flex min-w-0 flex-1 flex-col gap-1 sm:w-fit sm:flex-initial">
-          {alignUnderModel && (
-            <span className="typography-ui-label text-foreground sm:hidden">{t('settings.agents.page.field.thinkingLevel')}</span>
+      <div className="flex min-w-0 flex-col gap-1">
+        <ControlledModelPicker
+          providers={providers}
+          value={{ providerId: parsedRowModel?.providerId ?? '', modelId: parsedRowModel?.modelId ?? '', variant: value ?? null }}
+          disabled={!canEditSelectedModel || isSavingModelOverride}
+          onChange={(next) => onSelect(
+            next.providerId && next.modelId ? `${next.providerId}/${next.modelId}` : '',
+            next.variant ?? undefined,
           )}
-          <Select
-            value={selectValue}
-            onValueChange={(nextValue) => {
-              if (nextValue === NO_VARIANT_VALUE) {
-                onChange(undefined);
-                return;
-              }
-              applyVariantUpdate({ variant: nextValue });
-            }}
-            disabled={!canEditSelectedModel || isSavingModelOverride || (!rowSupportsVariants && !rowCanToggleFast)}
-          >
-            <SelectTrigger className="w-fit min-w-[120px]">
-              <SelectValue placeholder={t('settings.agents.page.field.thinkingPlaceholder')}>
-                {(rowEffortLabel || rowFastEnabled) ? (
-                  <span className="inline-flex items-center gap-1">
-                    {rowEffortLabel ?? null}
-                    {rowFastEnabled ? (
-                      <RiFlashlightFill className="h-3.5 w-3.5 text-[var(--status-warning)]" aria-label="Fast Mode" />
-                    ) : null}
-                  </span>
-                ) : t('settings.agents.page.field.thinkingPlaceholder')}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {rowCanToggleFast ? (
-                <>
-                  <div className="flex items-center justify-between gap-4 rounded-lg px-2 py-1.5">
-                    <span className="typography-ui-label text-foreground">Fast</span>
-                    <Switch
-                      checked={rowFastEnabled}
-                      onCheckedChange={(checked) => applyVariantUpdate({ fastEnabled: checked })}
-                      disabled={!canEditSelectedModel || isSavingModelOverride}
-                      aria-label="Fast"
-                    />
-                  </div>
-                  <SelectSeparator />
-                </>
-              ) : null}
-              <SelectItem value={NO_VARIANT_VALUE}>{formatEffortLabel(undefined)}</SelectItem>
-              {rowAvailableVariants.map((availableVariant) => (
-                <SelectItem key={availableVariant} value={availableVariant}>
-                  {formatEffortLabel(availableVariant, { providerId: parsedRowModel?.providerId })}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        />
+        {selectionError ? <span role="alert" className="typography-meta text-[var(--status-error)]">{retainedVariant ? `Saved selection: ${retainedVariant}. ` : ''}{selectionError}</span> : null}
       </div>
     );
   };
 
-  const thinkingLevelRow = renderThinkingLevelRow();
-
   const renderCouncilModelRow = (councilModel: string, index: number) => {
-    const parsedCouncilModel = parseModelIdentifier(councilModel);
     const modelNumber = index + 1;
 
     return (
@@ -972,15 +896,14 @@ export const AgentsPage: React.FC = () => {
             </span>
           </div>
           <div className="flex min-w-0 flex-1 items-center">
-            <ModelSelector
-              providerId={parsedCouncilModel?.providerId ?? ''}
-              modelId={parsedCouncilModel?.modelId ?? ''}
-              className="w-full sm:max-w-[360px]"
-              disabled={!canEditSelectedModel || isSavingModelOverride}
-              onChange={(providerId: string, modelId: string) => {
-                setCouncilModelAt(index, providerId && modelId ? `${providerId}/${modelId}` : '');
-              }}
-            />
+            {renderModelPicker({
+              modelRef: councilModel,
+              value: councilVariants[index],
+              onSelect: (nextModelRef, nextVariant) => {
+                setCouncilModelAt(index, nextModelRef);
+                setCouncilVariantAt(index, nextVariant);
+              },
+            })}
             {index > 0 && (
               <Button
                 type="button"
@@ -996,14 +919,6 @@ export const AgentsPage: React.FC = () => {
             )}
           </div>
         </div>
-        {renderThinkingLevelRow(
-          `council-thinking-${index}`,
-          true,
-          councilModel,
-          councilVariants[index],
-          (nextVariant) => setCouncilVariantAt(index, nextVariant),
-          (nextModelRef) => setCouncilModelAt(index, nextModelRef),
-        )}
       </div>
     );
   };
@@ -1016,11 +931,6 @@ export const AgentsPage: React.FC = () => {
           className="mb-4"
           icon={<RiAiAgentLine style={{ color: `var(${getAgentIconColor(selectedAgentName).var})` }} />}
           title={formatAgentDisplayName(selectedAgentName)}
-          badges={selectedAgentName === sessionDefaultAgentName ? (
-            <SettingsBadge tone="accent" title={t('settings.agents.sidebar.badge.defaultTitle')}>
-              {t('settings.agents.sidebar.badge.default')}
-            </SettingsBadge>
-          ) : null}
         />
 
         {staleModelOverrides.length > 0 && (
@@ -1132,22 +1042,17 @@ export const AgentsPage: React.FC = () => {
                       <span className="typography-ui-label text-foreground">{t('settings.agents.page.field.overrideModel')}</span>
                     </div>
                     <div className="flex min-w-0 flex-1 items-center gap-2">
-                      <ModelSelector
-                        providerId={parseModelIdentifier(model)?.providerId ?? ''}
-                        modelId={parseModelIdentifier(model)?.modelId ?? ''}
-                        className="w-full sm:max-w-[360px]"
-                        disabled={!canEditSelectedModel || isSavingModelOverride}
-                        onChange={(providerId: string, modelId: string) => {
-                          const nextModel = providerId && modelId ? `${providerId}/${modelId}` : '';
+                      {renderModelPicker({
+                        modelRef: model,
+                        value: variant,
+                        onSelect: (nextModel, nextVariant) => {
                           setModel(nextModel);
-                          setVariant((currentVariant) => resolveVariantForModel(nextModel, currentVariant));
-                        }}
-                      />
+                          setVariant(nextVariant);
+                        },
+                      })}
                     </div>
                   </div>
                 )}
-
-                {!isCouncilAgent && thinkingLevelRow}
 
                 {!isCouncilAgent ? (
                   <div className="flex flex-col gap-1 py-1 sm:flex-row sm:items-center sm:gap-3">
@@ -1174,25 +1079,18 @@ export const AgentsPage: React.FC = () => {
                       </div>
                     ) : (
                       <div className="flex min-w-0 flex-1 items-center gap-2">
-                        <ModelSelector
-                          providerId={parseModelIdentifier(backupModel)?.providerId ?? ''}
-                          modelId={parseModelIdentifier(backupModel)?.modelId ?? ''}
-                          className="w-full sm:max-w-[360px]"
-                          disabled={!canEditSelectedModel || isSavingModelOverride}
-                          onChange={(providerId: string, modelId: string) => {
-                            const nextBackupModel = providerId && modelId ? `${providerId}/${modelId}` : '';
+                        {renderModelPicker({
+                          modelRef: backupModel,
+                          value: backupVariant,
+                          onSelect: (nextBackupModel, nextVariant) => {
                             setBackupModel(nextBackupModel);
-                            setBackupVariant((currentVariant) => resolveVariantForModel(nextBackupModel, currentVariant));
-                          }}
-                        />
+                            setBackupVariant(nextVariant);
+                          },
+                        })}
                       </div>
                     )}
                   </div>
                 ) : null}
-
-                {!isCouncilAgent && !isPersonalModelEditor
-                  ? renderThinkingLevelRow('backup-thinking', true, backupModel, backupVariant, setBackupVariant, setBackupModel)
-                  : null}
 
                 {!isCouncilAgent && !isPersonalModelEditor ? (
                   <div className="flex flex-col gap-1 py-1 sm:flex-row sm:items-center sm:gap-3">
@@ -1204,7 +1102,7 @@ export const AgentsPage: React.FC = () => {
                         size="xs"
                         className="!font-normal normal-case"
                         onClick={() => void handleSaveBackupModel()}
-                        disabled={!canEditSelectedModel || isSavingModelOverride || !backupModel.trim()}
+                        disabled={!canEditSelectedModel || isSavingModelOverride || !backupModel.trim() || Boolean(backupModelError)}
                       >
                         <RiSaveLine className="h-3.5 w-3.5" />
                         {t('settings.agents.page.actions.saveBackupModel')}
@@ -1265,7 +1163,7 @@ export const AgentsPage: React.FC = () => {
                       size="xs"
                       className="!font-normal normal-case"
                       onClick={() => void handleSaveModelOverride()}
-                      disabled={!canEditSelectedModel || isSavingModelOverride}
+                      disabled={!canEditSelectedModel || isSavingModelOverride || Boolean(primaryModelError) || councilModelError}
                     >
                       <RiSaveLine className="h-3.5 w-3.5" />
                       {t('settings.agents.page.actions.saveModelOverride')}
@@ -1303,22 +1201,36 @@ export const AgentsPage: React.FC = () => {
               </div>
             </div>
 
-            <div className="py-1.5">
-              <span className="typography-ui-label text-foreground">{t('settings.agents.page.section.systemPrompt')}</span>
-              <div className="mt-1.5">
-                <Textarea
-                  value={prompt}
-                  readOnly
-                  aria-readonly="true"
-                  placeholder={t('settings.agents.page.field.systemPromptPlaceholder')}
-                  rows={8}
-                  outerClassName="bg-[var(--surface-muted)]"
-                  className="w-full font-mono typography-meta min-h-[120px] max-h-[60vh] bg-transparent resize-y cursor-default"
-                />
-              </div>
-            </div>
-
         </SettingsDetailSection>
+
+        {/* System Prompt */}
+        <Collapsible open={isSystemPromptOpen} onOpenChange={setIsSystemPromptOpen} className="mb-2">
+          <CollapsibleTrigger className="group flex w-full items-center justify-between gap-4 rounded-md px-1 py-1 text-left hover:bg-[var(--interactive-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)]">
+            <h3 className="typography-ui-header font-medium text-foreground">
+              {t('settings.agents.page.section.systemPrompt')}
+            </h3>
+            <RiArrowDownSLine
+              className={cn(
+                "h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:text-foreground",
+                isSystemPromptOpen && "rotate-180",
+              )}
+            />
+          </CollapsibleTrigger>
+
+          <CollapsibleContent className="pt-1">
+            <div className="px-1 pb-2">
+              <Textarea
+                value={prompt}
+                readOnly
+                aria-readonly="true"
+                placeholder={t('settings.agents.page.field.systemPromptPlaceholder')}
+                rows={8}
+                outerClassName="bg-[var(--surface-muted)]"
+                className="w-full font-mono typography-meta min-h-[120px] max-h-[60vh] bg-transparent resize-y cursor-default"
+              />
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
 
         {/* Tool Permissions */}
         {!permissionsUiHidden && (

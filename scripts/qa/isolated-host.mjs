@@ -17,6 +17,9 @@ for (const [key, value] of Object.entries(privateEnvironment)) {
 
 if (runtime === 'electron') {
     const { app } = await import('electron');
+    // Private QA homes have no login keychain; never access the user's keychain.
+    app.commandLine.appendSwitch('use-mock-keychain');
+    app.setAppPath(path.join(repositoryRoot, 'packages/electron'));
     const logs = path.join(runtimeRoot, 'logs');
     await mkdir(logs, { recursive: true, mode: 0o700 });
     app.setPath('home', process.env.DEVRYAN_QA_HOME);
@@ -25,7 +28,7 @@ if (runtime === 'electron') {
 } else {
     process.chdir(repositoryRoot);
     const { startWebUiServer } = await import('../../packages/web/server/index.js');
-    const server = await startWebUiServer({ host: '127.0.0.1', port: Number(process.env.OPENCHAMBER_PORT), attachSignals: true });
+    const server = await startWebUiServer({ host: '127.0.0.1', port: Number(process.env.DEVRYAN_PORT), attachSignals: true });
     await writeFile(path.join(runtimeRoot, 'ready.json'), JSON.stringify({
         origin: `http://127.0.0.1:${server.getPort()}`,
         opencodePort: server.getOpenCodePort(),

@@ -110,14 +110,25 @@ describe('Plan Ready notification classifier parity', () => {
     ]);
   });
 
-  test('matches multi-message revisions and selects the latest canonical source', () => {
-    expectParity([
+  test('refuses unproved synthetic replacements and selects the final real human revision', () => {
+    const unproved = [
       user('user_revision', [part('user_revision', 'text', 'Plan it')], { mode: 'plan' }),
       assistant('assistant_v1', 'user_revision', [part('assistant_v1', 'text', `<!--plan-->\n# Plan v1`)]),
       user('user_continue', [part('user_continue', 'text', 'Continue', true)]),
       assistant('assistant_v2', 'user_continue', [part('assistant_v2', 'text', `<!--plan-->\n# Plan v2`)]),
       assistant('assistant_epilogue', 'user_continue', [part('assistant_epilogue', 'text', 'Ready for review.')]),
-    ]);
+    ];
+    expectParity(unproved);
+    expect(detectUi(unproved)).toBeNull();
+    expect(detectPlanReadyRevision(unproved)).toBeNull();
+    const replacement = [
+      user('user_revision', [part('user_revision', 'text', 'Plan it')], { mode: 'plan' }),
+      assistant('assistant_v1', 'user_revision', [part('assistant_v1', 'text', '<!--plan-->\n# Plan v1')]),
+      user('user_replacement', [part('user_replacement', 'text', 'Replace that plan')], { mode: 'plan' }),
+      assistant('assistant_v2', 'user_replacement', [part('assistant_v2', 'text', '<!--plan-->\n# Plan v2')]),
+    ];
+    expectParity(replacement);
+    expect(detectUi(replacement)?.sourceMessageId).toBe('assistant_v2');
   });
 
   test('matches rejection of incomplete, unfinished-tool, and ordinary structured output', () => {

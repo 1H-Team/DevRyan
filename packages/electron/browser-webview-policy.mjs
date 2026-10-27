@@ -10,7 +10,7 @@
 //     guest's URL space to http(s) + about:blank, including later navigations
 //     (which also constrains CDP-initiated navigation).
 
-export const BROWSER_WEBVIEW_PARTITION = 'persist:openchamber-browser';
+export const BROWSER_WEBVIEW_PARTITION = 'persist:devryan-browser';
 
 const parseUrl = (rawUrl) => {
   try {
@@ -33,7 +33,7 @@ export const isAllowedWebviewNavigationUrl = (rawUrl) => isAllowedWebviewSourceU
 // Mutates `webPreferences` and `params` (the will-attach-webview payload) in
 // place and returns them for convenience. Everything here is deny-by-default:
 // no preload, no node, isolated + sandboxed guest, pinned partition.
-export const hardenWebviewAttachParams = (webPreferences, params) => {
+export const hardenWebviewAttachParams = (webPreferences, params, { partition = BROWSER_WEBVIEW_PARTITION } = {}) => {
   const prefs = webPreferences && typeof webPreferences === 'object' ? webPreferences : {};
   const attachParams = params && typeof params === 'object' ? params : {};
 
@@ -55,7 +55,7 @@ export const hardenWebviewAttachParams = (webPreferences, params) => {
   prefs.backgroundThrottling = true;
 
   delete attachParams.preload;
-  attachParams.partition = BROWSER_WEBVIEW_PARTITION;
+  attachParams.partition = partition;
   if (!isAllowedWebviewSourceUrl(attachParams.src)) {
     attachParams.src = 'about:blank';
   }

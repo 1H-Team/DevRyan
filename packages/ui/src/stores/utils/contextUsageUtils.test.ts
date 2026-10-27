@@ -171,7 +171,7 @@ describe("getProviderContextUsageFromMessages", () => {
     expect(usage?.percentage).toBe(10)
   })
 
-  test("shows official context windows for supported OpenAI OAuth models", () => {
+  test("uses catalog input limits consistently for historical and current OpenAI OAuth models", () => {
     const officialModels = [
       ["gpt-5.4", 1_050_000],
       ["gpt-5.4-fast", 1_050_000],
@@ -195,7 +195,7 @@ describe("getProviderContextUsageFromMessages", () => {
       })),
     }]
 
-    for (const [modelID, expectedCapacity] of officialModels) {
+    for (const [modelID] of officialModels) {
       const usage = getProviderContextUsageFromMessages([
         makeMessage({
           id: `assistant-${modelID}`,
@@ -206,8 +206,8 @@ describe("getProviderContextUsageFromMessages", () => {
         }),
       ], oauthProviders)
 
-      expect(usage?.capacityLimit).toBe(expectedCapacity)
-      expect(usage?.capacityBasis).toBe("context")
+      expect(usage?.capacityLimit).toBe(276_000)
+      expect(usage?.capacityBasis).toBe("input")
       expect(usage?.inputLimit).toBe(276_000)
     }
   })

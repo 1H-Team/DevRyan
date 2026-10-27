@@ -1,4 +1,5 @@
 import { computeNextRunAt } from './runtime.js';
+import { resolveEventDialect } from '../event-stream/event-dialect.js';
 
 const asNonEmptyString = (value) => {
   if (typeof value !== 'string') {
@@ -27,7 +28,7 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
     sanitizeProjects,
     projectConfigRuntime,
     scheduledTasksRuntime,
-    getOpenChamberEventClients,
+    getDevRyanEventClients,
     writeSseEvent,
     resolveManagedProject,
   } = dependencies;
@@ -252,7 +253,7 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
     }
   });
 
-  app.get('/api/openchamber/scheduled-tasks/status', async (req, res) => {
+  app.get('/api/devryan/scheduled-tasks/status', async (req, res) => {
     try {
       if (isAdministrator(req.principal) && typeof scheduledTasksRuntime.getStatus === 'function') {
         const status = typeof scheduledTasksRuntime.refreshStatus === 'function'
@@ -303,14 +304,15 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
     }
   });
 
-  app.get('/api/openchamber/events', (req, res) => {
+  app.get('/api/devryan/events', (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders?.();
 
-    const clients = getOpenChamberEventClients();
+    res.devryanEventDialect = resolveEventDialect(req);
+    const clients = getDevRyanEventClients();
     const client = {
       response: res,
       principalId: req.principal?.scope === 'managed' ? req.principal.id : null,
@@ -321,7 +323,7 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
 
     try {
       writeSseEvent(res, {
-        type: 'openchamber:event-stream-ready',
+        type: 'devryan:event-stream-ready',
         properties: {
           connectedAt: Date.now(),
         },
@@ -332,7 +334,7 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
     const heartbeat = setInterval(() => {
       try {
         writeSseEvent(res, {
-          type: 'openchamber:heartbeat',
+          type: 'devryan:heartbeat',
           properties: {
             timestamp: Date.now(),
           },

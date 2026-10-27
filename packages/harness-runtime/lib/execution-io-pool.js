@@ -2,6 +2,14 @@ import { executionSignal, withExecutionSlotWait } from './execution-admission.js
 
 // One FIFO across every preparation/observer of the canonical project. Waiting
 // owns no filesystem operation and can be cancelled without leaving queued work.
+// Eight concurrent operations clone a 13k-file view in 546 ms instead of
+// 966 ms with four (more gained nothing on Node's default thread pool).
+// DEVRYAN_EXECUTION_IO_CAP (1-64, read per use) overrides it.
+const DEFAULT_CAP = 8;
+export const executionIOCap = () => {
+  const value = Number(process.env.DEVRYAN_EXECUTION_IO_CAP);
+  return Number.isSafeInteger(value) && value >= 1 && value <= 64 ? value : DEFAULT_CAP;
+};
 const pools = new Map();
 export async function withExecutionIO(root, action) {
   let pool = pools.get(root);
@@ -10,7 +18,7 @@ export async function withExecutionIO(root, action) {
   await withExecutionSlotWait(() => new Promise((resolve, reject) => {
     const row = { run: () => { signal?.removeEventListener('abort', abort); pool.active++; resolve(); } };
     const abort = () => { const index = pool.pending.indexOf(row); if (index >= 0) pool.pending.splice(index, 1); reject(signal.reason); };
-    if (pool.active < 4) row.run();
+    if (pool.active < executionIOCap()) row.run();
     else { pool.pending.push(row); signal?.addEventListener('abort', abort, { once: true }); }
   }));
   try { signal?.throwIfAborted(); return await action(); }

@@ -1,72 +1,88 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { prepareNotificationLastMessage, truncateNotificationText } from './message.js';
+
+const LONG_MESSAGE = 'a'.repeat(300) + ' long completion output that must be summarized';
 
 describe('notification message helpers', () => {
   it('truncates oversized notification text', () => {
     expect(truncateNotificationText('abcdef', 3)).toBe('abc...');
   });
 
-  it('falls back to original message when summarization fails', async () => {
-    const message = '0123456789';
-    const summarize = async () => {
-      throw new Error('summarization failed');
-    };
-
+  it('summarizes whenever a summarize function is supplied, regardless of stored settings', async () => {
+    let summarizeCalls = 0;
     const result = await prepareNotificationLastMessage({
-      message,
-      summarize,
-      settings: {
-        summarizeLastMessage: true,
-        summaryThreshold: 5,
-        summaryLength: 3,
-        maxLastMessageLength: 4,
+      message: LONG_MESSAGE,
+      summarize: async () => {
+        summarizeCalls += 1;
+        return 'short summary';
       },
+      settings: { summarizeLastMessage: false },
     });
 
-    expect(result).toBe('0123...');
-  });
-
-  it('falls back to original message when summary is empty', async () => {
-    const result = await prepareNotificationLastMessage({
-      message: '0123456789',
-      summarize: async () => '   ',
-      settings: {
-        summarizeLastMessage: true,
-        summaryThreshold: 5,
-        summaryLength: 3,
-        maxLastMessageLength: 4,
-      },
-    });
-
-    expect(result).toBe('0123...');
-  });
-
-  it('uses summary when summarization succeeds', async () => {
-    const result = await prepareNotificationLastMessage({
-      message: '0123456789',
-      summarize: async () => 'short summary',
-      settings: {
-        summarizeLastMessage: true,
-        summaryThreshold: 5,
-        summaryLength: 3,
-        maxLastMessageLength: 100,
-      },
-    });
-
+    expect(summarizeCalls).toBe(1);
     expect(result).toBe('short summary');
+  });
+
+  it('falls back to the truncated message and logs only at debug level', async () => {
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
+    try {
+      const result = await prepareNotificationLastMessage({
+        message: LONG_MESSAGE,
+        summarize: async () => { throw new Error('Notification summary failed: empty_output'); },
+      });
+      expect(result).toBe(`${LONG_MESSAGE.slice(0, 250)}...`);
+      expect(debug).toHaveBeenCalledOnce();
+      expect(String(debug.mock.calls[0])).not.toContain('aaaa');
+    } finally { debug.mockRestore(); }
+  });
+
+  it('keeps messages at or below the built-in threshold unsummarized', async () => {
+    let summarizeCalls = 0;
+    const result = await prepareNotificationLastMessage({
+      message: 'a'.repeat(200),
+      summarize: async () => {
+        summarizeCalls += 1;
+        return 'short summary';
+      },
+    });
+
+    expect(summarizeCalls).toBe(0);
+    expect(result).toBe('a'.repeat(200));
+  });
+
+  it('falls back to plain truncation when summarization fails', async () => {
+    const result = await prepareNotificationLastMessage({
+      message: LONG_MESSAGE,
+      summarize: async () => {
+        throw new Error('summarization failed');
+      },
+    });
+
+    expect(result).toBe(`${'a'.repeat(250)}...`);
+  });
+
+  it('falls back to plain truncation when the summary is empty', async () => {
+    const result = await prepareNotificationLastMessage({
+      message: LONG_MESSAGE,
+      summarize: async () => '   ',
+    });
+
+    expect(result).toBe(`${'a'.repeat(250)}...`);
+  });
+
+  it('truncates without summarizing when no summarize function is supplied', async () => {
+    const result = await prepareNotificationLastMessage({
+      message: LONG_MESSAGE,
+    });
+
+    expect(result).toBe(`${'a'.repeat(250)}...`);
   });
 
   it('normalizes markdown summary to plain text', async () => {
     const result = await prepareNotificationLastMessage({
-      message: '0123456789',
+      message: LONG_MESSAGE,
       summarize: async () => "**Committed.**\n\n- Commit: `85924b9d`\n- Message: `fix desktop notifications`",
-      settings: {
-        summarizeLastMessage: true,
-        summaryThreshold: 5,
-        summaryLength: 80,
-        maxLastMessageLength: 200,
-      },
     });
 
     expect(result).toBe('Committed. Commit: 85924b9d Message: fix desktop notifications');

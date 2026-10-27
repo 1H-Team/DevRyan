@@ -16,3 +16,13 @@ describe('hidden model persistence', () => {
     expect(sanitizeWebSettings({ hiddenModels: [...duplicated, ...duplicated] })?.hiddenModels).toHaveLength(HIDDEN_MODEL_REFS_LIMIT);
   });
 });
+
+test('helper setting survives load/save without inheriting legacy Git or notification selection', () => {
+  const helperModelSelection = { providerID: 'anthropic', modelID: 'chosen', revision: 'saved-revision' };
+  const saved = sanitizeWebSettings({ helperModelSelection, zenModel: 'notification-only', gitModelId: 'legacy' });
+  expect(saved?.helperModelSelection).toEqual(helperModelSelection);
+  expect(sanitizeWebSettings(saved)?.helperModelSelection).toEqual(helperModelSelection);
+  expect(sanitizeWebSettings({ helperModelSelection: { ...helperModelSelection, variant: 'low' } })?.helperModelSelection).toEqual({ ...helperModelSelection, variant: 'low' });
+  expect(sanitizeWebSettings({ helperModelSelection: { ...helperModelSelection, variant: '' } })?.helperModelSelection).toBeUndefined();
+  expect(Object.hasOwn(saved?.helperModelSelection ?? {}, 'variant')).toBe(false);
+});

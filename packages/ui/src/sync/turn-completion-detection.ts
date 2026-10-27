@@ -43,11 +43,13 @@ export function detectTurnCompletedCandidate({
     // A compaction summary is maintenance; its continuation owns completion.
     if (isCompactionSummaryInfo(assistantMessage)) return null
     if (!isFinalAssistantSummaryMessage(assistantMessage, state.part[assistantMessage.id])) continue
+    if (messages.slice(assistantIndex + 1).some((message) => message.role === "user")) return null
     if (planEntry?.sourceMessageId === assistantMessage.id) return null
     if (mayAutoContinueOpenTodos(assistantMessage, state.todo[sessionID])) return null
 
     const userMessage = findOriginatingUserMessage(messages, assistantIndex)
     if (!userMessage) return null
+    if (assistantMessage.parentID && assistantMessage.parentID !== userMessage.id) return null
     if (isRecordedPlanModeUserMessage(userMessage.id)) return null
     if (planEntry?.implementationMessageId === userMessage.id) return null
 

@@ -1,0 +1,1373 @@
+{
+  "scope": "Final frozen protocol only; summed Electron process set; no baseline comparison",
+  "scenarios": {
+    "idle": {
+      "runs": [
+        {
+          "run": 1,
+          "summary": {
+            "sampleCount": 59,
+            "medianTabCpu": 0.09883820006214979,
+            "medianGpuCpu": 0.17689021400914468,
+            "medianTabWorkingSet": 311584,
+            "medianTotalAppWorkingSet": 790256,
+            "p95TotalAppWorkingSet": 1028352,
+            "medianTotalAppCpu": 0.5202976793683081,
+            "medianMainRss": 233996288,
+            "processTypes": [
+              "Browser",
+              "GPU",
+              "Tab",
+              "Utility"
+            ]
+          },
+          "processCpu": {
+            "Browser": 0.2115892883857777,
+            "GPU": 0.17689021400914468,
+            "Tab": 0.09883820006214979,
+            "Utility": 0.0085577304998513
+          },
+          "skeleton": null,
+          "concurrency": {
+            "expectedSessions": 0,
+            "observedSessions": 0
+          },
+          "sampleWindow": [
+            1792516127479,
+            1792516156979
+          ],
+          "retainedBrowserErrorsDuringWindow": 0,
+          "browserErrorCount": 10,
+          "browserDropped": 0,
+          "journal": {
+            "available": true,
+            "complete": true,
+            "gaps": 0,
+            "errors": 0
+          },
+          "cleanup": true,
+          "display": {
+            "href": "http://127.0.0.1:51662/",
+            "visibilityState": "visible",
+            "innerWidth": 1280,
+            "innerHeight": 800,
+            "outerWidth": 1280,
+            "outerHeight": 800,
+            "devicePixelRatio": 1,
+            "screen": {
+              "width": 1920,
+              "height": 1080,
+              "availWidth": 1920,
+              "availHeight": 1050
+            }
+          }
+        },
+        {
+          "run": 2,
+          "summary": {
+            "sampleCount": 59,
+            "medianTabCpu": 0.09874883103411679,
+            "medianGpuCpu": 0.16908778741417893,
+            "medianTabWorkingSet": 345824,
+            "medianTotalAppWorkingSet": 883328,
+            "p95TotalAppWorkingSet": 1087648,
+            "medianTotalAppCpu": 0.5386438445166688,
+            "medianMainRss": 275464192,
+            "processTypes": [
+              "Browser",
+              "GPU",
+              "Tab",
+              "Utility"
+            ]
+          },
+          "processCpu": {
+            "Browser": 0.2463562562844709,
+            "GPU": 0.16908778741417893,
+            "Tab": 0.09874883103411679,
+            "Utility": 0.009187090210717303
+          },
+          "skeleton": null,
+          "concurrency": {
+            "expectedSessions": 0,
+            "observedSessions": 0
+          },
+          "sampleWindow": [
+            1792516194824,
+            1792516224327
+          ],
+          "retainedBrowserErrorsDuringWindow": 0,
+          "browserErrorCount": 10,
+          "browserDropped": 0,
+          "journal": {
+            "available": true,
+            "complete": true,
+            "gaps": 0,
+            "errors": 0
+          },
+          "cleanup": true,
+          "display": {
+            "href": "http://127.0.0.1:51883/",
+            "visibilityState": "visible",
+            "innerWidth": 1280,
+            "innerHeight": 800,
+            "outerWidth": 1280,
+            "outerHeight": 800,
+            "devicePixelRatio": 1,
+            "screen": {
+              "width": 1920,
+              "height": 1080,
+              "availWidth": 1920,
+              "availHeight": 1050
+            }
+          }
+        },
+        {
+          "run": 3,
+          "summary": {
+            "sampleCount": 59,
+            "medianTabCpu": 0.0802173269426196,
+            "medianGpuCpu": 0.12815498617687626,
+            "medianTabWorkingSet": 315936,
+            "medianTotalAppWorkingSet": 857232,
+            "p95TotalAppWorkingSet": 1020736,
+            "medianTotalAppCpu": 0.47937827091087104,
+            "medianMainRss": 280952832,
+            "processTypes": [
+              "Browser",
+              "GPU",
+              "Tab",
+              "Utility"
+            ]
+          },
+          "processCpu": {
+            "Browser": 0.23479236164741288,
+            "GPU": 0.12815498617687626,
+            "Tab": 0.0802173269426196,
+            "Utility": 0.009156461602064694
+          },
+          "skeleton": null,
+          "concurrency": {
+            "expectedSessions": 0,
+            "observedSessions": 0
+          },
+          "sampleWindow": [
+            1792516261568,
+            1792516291070
+          ],
+          "retainedBrowserErrorsDuringWindow": 0,
+          "browserErrorCount": 10,
+          "browserDropped": 0,
+          "journal": {
+            "available": true,
+            "complete": true,
+            "gaps": 0,
+            "errors": 0
+          },
+          "cleanup": true,
+          "display": {
+            "href": "http://127.0.0.1:52118/",
+            "visibilityState": "visible",
+            "innerWidth": 1280,
+            "innerHeight": 800,
+            "outerWidth": 1280,
+            "outerHeight": 800,
+            "devicePixelRatio": 1,
+            "screen": {
+              "width": 1920,
+              "height": 1080,
+              "availWidth": 1920,
+              "availHeight": 1050
+            }
+          }
+        }
+      ],
+      "medianCpu": 0.5202976793683081,
+      "cpuRange": [
+        0.47937827091087104,
+        0.5386438445166688
+      ],
+      "medianWorkingSetMiB": 837.140625,
+      "workingSetRangeMiB": [
+        771.734375,
+        862.625
+      ],
+      "medianP95WorkingSetMiB": 1004.25,
+      "processCpu": {
+        "Browser": 0.23479236164741288,
+        "GPU": 0.16908778741417893,
+        "Tab": 0.09874883103411679,
+        "Utility": 0.009156461602064694
+      },
+      "trace": {
+        "run": 1,
+        "compressedBytes": 778906,
+        "sha256": "09178efc7abaf3c2fe1d068b394d75d676bd90177abfc6507e295870c0e79811",
+        "eventCount": 54320,
+        "nestedDurationWarning": "Durations overlap/nest; do not sum them as CPU or exclusive frame time",
+        "selected": [
+          {
+            "name": "RunTask",
+            "count": 16440,
+            "durationMs": 775.9519999998528
+          },
+          {
+            "name": "Scheduler::RunTask",
+            "count": 214,
+            "durationMs": 83.75699999999999
+          },
+          {
+            "name": "FunctionCall",
+            "count": 26,
+            "durationMs": 10.533999999999999
+          },
+          {
+            "name": "LayerTreeHost::DoUpdateLayers",
+            "count": 60,
+            "durationMs": 9.500000000000004
+          },
+          {
+            "name": "UpdateLayer",
+            "count": 2633,
+            "durationMs": 3.175999999999797
+          },
+          {
+            "name": "Document::UpdateStyleAndLayout",
+            "count": 360,
+            "durationMs": 2.872999999999988
+          },
+          {
+            "name": "LocalFrameView::RunPaintLifecyclePhase",
+            "count": 60,
+            "durationMs": 2.8589999999999987
+          },
+          {
+            "name": "Blink.ForcedStyleAndLayout.UpdateTime",
+            "count": 355,
+            "durationMs": 2.1919999999999895
+          },
+          {
+            "name": "LocalFrameView::RunStyleAndLayoutLifecyclePhases",
+            "count": 60,
+            "durationMs": 1.9179999999999995
+          },
+          {
+            "name": "Blink.Paint.UpdateTime",
+            "count": 60,
+            "durationMs": 1.8829999999999998
+          },
+          {
+            "name": "PageAnimator::serviceScriptedAnimations",
+            "count": 60,
+            "durationMs": 1.518
+          },
+          {
+            "name": "LayerTreeHost::AnimationHost::PushProperties",
+            "count": 60,
+            "durationMs": 1.4409999999999998
+          },
+          {
+            "name": "LocalFrameView::UpdateStyleAndLayout",
+            "count": 356,
+            "durationMs": 1.3089999999999935
+          },
+          {
+            "name": "PrePaint",
+            "count": 60,
+            "durationMs": 1.1890000000000003
+          },
+          {
+            "name": "LocalFrameView::RunPrePaintLifecyclePhase",
+            "count": 60,
+            "durationMs": 0.4610000000000003
+          },
+          {
+            "name": "AnimationHost::TickAnimations",
+            "count": 220,
+            "durationMs": 0.3890000000000003
+          },
+          {
+            "name": "LocalFrameView::pushPaintArtifactToCompositor",
+            "count": 60,
+            "durationMs": 0.3680000000000002
+          },
+          {
+            "name": "Blink.PrePaint.UpdateTime",
+            "count": 60,
+            "durationMs": 0.3290000000000002
+          },
+          {
+            "name": "ImageAnimationController::AnimateImagesForSyncTree",
+            "count": 60,
+            "durationMs": 0.15700000000000008
+          },
+          {
+            "name": "LayoutView::commitPendingSelection",
+            "count": 58,
+            "durationMs": 0.12000000000000006
+          },
+          {
+            "name": "ImageAnimationController::WillActivate",
+            "count": 56,
+            "durationMs": 0.08400000000000005
+          },
+          {
+            "name": "AnimationTimeline::serviceAnimations",
+            "count": 55,
+            "durationMs": 0.08000000000000004
+          },
+          {
+            "name": "UpdateStateFromAnimationDrivers",
+            "count": 55,
+            "durationMs": 0.07300000000000005
+          }
+        ]
+      }
+    },
+    "plan-skeleton": {
+      "runs": [
+        {
+          "run": 1,
+          "summary": {
+            "sampleCount": 59,
+            "medianTabCpu": 1.452111807830791,
+            "medianGpuCpu": 1.2581001274479886,
+            "medianTabWorkingSet": 356960,
+            "medianTotalAppWorkingSet": 894048,
+            "p95TotalAppWorkingSet": 1016528,
+            "medianTotalAppCpu": 3.0569903367200935,
+            "medianMainRss": 262520832,
+            "processTypes": [
+              "Browser",
+              "GPU",
+              "Tab",
+              "Utility"
+            ]
+          },
+          "processCpu": {
+            "Browser": 0.21705189254456986,
+            "GPU": 1.2581001274479886,
+            "Tab": 1.452111807830791,
+            "Utility": 0.010834565401920035
+          },
+          "skeleton": {
+            "lineCount": 48,
+            "runningAnimations": 1
+          },
+          "concurrency": null,
+          "sampleWindow": [
+            1792516329315,
+            1792516358818
+          ],
+          "retainedBrowserErrorsDuringWindow": 0,
+          "browserErrorCount": 13,
+          "browserDropped": 0,
+          "journal": {
+            "available": true,
+            "complete": true,
+            "gaps": 0,
+            "errors": 0
+          },
+          "cleanup": true,
+          "display": {
+            "href": "http://127.0.0.1:52339/",
+            "visibilityState": "visible",
+            "innerWidth": 1280,
+            "innerHeight": 800,
+            "outerWidth": 1280,
+            "outerHeight": 800,
+            "devicePixelRatio": 1,
+            "screen": {
+              "width": 1920,
+              "height": 1080,
+              "availWidth": 1920,
+              "availHeight": 1050
+            }
+          }
+        },
+        {
+          "run": 2,
+          "summary": {
+            "sampleCount": 59,
+            "medianTabCpu": 1.5535244510608115,
+            "medianGpuCpu": 1.373381788096675,
+            "medianTabWorkingSet": 328416,
+            "medianTotalAppWorkingSet": 864960,
+            "p95TotalAppWorkingSet": 1055424,
+            "medianTotalAppCpu": 3.2337009166072352,
+            "medianMainRss": 262488064,
+            "processTypes": [
+              "Browser",
+              "GPU",
+              "Tab",
+              "Utility"
+            ]
+          },
+          "processCpu": {
+            "Browser": 0.2182733346718644,
+            "GPU": 1.373381788096675,
+            "Tab": 1.5535244510608115,
+            "Utility": 0.011702055151510292
+          },
+          "skeleton": {
+            "lineCount": 48,
+            "runningAnimations": 1
+          },
+          "concurrency": null,
+          "sampleWindow": [
+            1792516401942,
+            1792516431446
+          ],
+          "retainedBrowserErrorsDuringWindow": 0,
+          "browserErrorCount": 13,
+          "browserDropped": 0,
+          "journal": {
+            "available": true,
+            "complete": true,
+            "gaps": 0,
+            "errors": 0
+          },
+          "cleanup": true,
+          "display": {
+            "href": "http://127.0.0.1:52552/",
+            "visibilityState": "visible",
+            "innerWidth": 1280,
+            "innerHeight": 800,
+            "outerWidth": 1280,
+            "outerHeight": 800,
+            "devicePixelRatio": 1,
+            "screen": {
+              "width": 1920,
+              "height": 1080,
+              "availWidth": 1920,
+              "availHeight": 1050
+            }
+          }
+        },
+        {
+          "run": 3,
+          "summary": {
+            "sampleCount": 59,
+            "medianTabCpu": 1.4726641811068084,
+            "medianGpuCpu": 1.315012469924301,
+            "medianTabWorkingSet": 334208,
+            "medianTotalAppWorkingSet": 853184,
+            "p95TotalAppWorkingSet": 1021936,
+            "medianTotalAppCpu": 3.0820932151753007,
+            "medianMainRss": 250265600,
+            "processTypes": [
+              "Browser",
+              "GPU",
+              "Tab",
+              "Utility"
+            ]
+          },
+          "processCpu": {
+            "Browser": 0.22745269064424328,
+            "GPU": 1.315012469924301,
+            "Tab": 1.4726641811068084,
+            "Utility": 0.01044047828380517
+          },
+          "skeleton": {
+            "lineCount": 48,
+            "runningAnimations": 1
+          },
+          "concurrency": null,
+          "sampleWindow": [
+            1792516474665,
+            1792516504170
+          ],
+          "retainedBrowserErrorsDuringWindow": 0,
+          "browserErrorCount": 14,
+          "browserDropped": 0,
+          "journal": {
+            "available": true,
+            "complete": true,
+            "gaps": 0,
+            "errors": 0
+          },
+          "cleanup": true,
+          "display": {
+            "href": "http://127.0.0.1:52774/",
+            "visibilityState": "visible",
+            "innerWidth": 1280,
+            "innerHeight": 800,
+            "outerWidth": 1280,
+            "outerHeight": 800,
+            "devicePixelRatio": 1,
+            "screen": {
+              "width": 1920,
+              "height": 1080,
+              "availWidth": 1920,
+              "availHeight": 1050
+            }
+          }
+        }
+      ],
+      "medianCpu": 3.0820932151753007,
+      "cpuRange": [
+        3.0569903367200935,
+        3.2337009166072352
+      ],
+      "medianWorkingSetMiB": 844.6875,
+      "workingSetRangeMiB": [
+        833.1875,
+        873.09375
+      ],
+      "medianP95WorkingSetMiB": 997.984375,
+      "processCpu": {
+        "Browser": 0.2182733346718644,
+        "GPU": 1.315012469924301,
+        "Tab": 1.4726641811068084,
+        "Utility": 0.010834565401920035
+      },
+      "trace": {
+        "run": 3,
+        "compressedBytes": 5458883,
+        "sha256": "b3b1a7c9f0a599d89b7d852d1690a7ec9c4a7c0425c566b7c9267a3f6cbc7ca1",
+        "eventCount": 447176,
+        "nestedDurationWarning": "Durations overlap/nest; do not sum them as CPU or exclusive frame time",
+        "selected": [
+          {
+            "name": "RunTask",
+            "count": 68026,
+            "durationMs": 5360.519000001672
+          },
+          {
+            "name": "Scheduler::RunTask",
+            "count": 3151,
+            "durationMs": 813.4470000000008
+          },
+          {
+            "name": "AnimationHost::TickAnimations",
+            "count": 3215,
+            "durationMs": 58.71400000000074
+          },
+          {
+            "name": "LocalFrameView::UpdateStyleAndLayout",
+            "count": 918,
+            "durationMs": 28.991000000000156
+          },
+          {
+            "name": "UpdateLayoutTree",
+            "count": 222,
+            "durationMs": 24.37600000000001
+          },
+          {
+            "name": "Document::UpdateStyleAndLayout",
+            "count": 930,
+            "durationMs": 19.537
+          },
+          {
+            "name": "Blink.ForcedStyleAndLayout.UpdateTime",
+            "count": 905,
+            "durationMs": 18.198999999999952
+          },
+          {
+            "name": "LocalFrameView::RunStyleAndLayoutLifecyclePhases",
+            "count": 155,
+            "durationMs": 17.463
+          },
+          {
+            "name": "LayerTreeHost::DoUpdateLayers",
+            "count": 60,
+            "durationMs": 9.428999999999998
+          },
+          {
+            "name": "FunctionCall",
+            "count": 26,
+            "durationMs": 8.760000000000003
+          },
+          {
+            "name": "LocalFrameView::RunPaintLifecyclePhase",
+            "count": 155,
+            "durationMs": 7.104999999999998
+          },
+          {
+            "name": "AnimationHost::UpdateAnimationState",
+            "count": 3112,
+            "durationMs": 6.967999999999926
+          },
+          {
+            "name": "PageAnimator::serviceScriptedAnimations",
+            "count": 155,
+            "durationMs": 6.8069999999999995
+          },
+          {
+            "name": "AnimationTimeline::serviceAnimations",
+            "count": 230,
+            "durationMs": 4.921999999999993
+          },
+          {
+            "name": "PrePaint",
+            "count": 155,
+            "durationMs": 4.032999999999997
+          },
+          {
+            "name": "UpdateStateFromAnimationDrivers",
+            "count": 2587,
+            "durationMs": 3.68899999999978
+          },
+          {
+            "name": "Blink.Paint.UpdateTime",
+            "count": 155,
+            "durationMs": 3.382999999999997
+          },
+          {
+            "name": "UpdateLayer",
+            "count": 2661,
+            "durationMs": 3.102999999999811
+          },
+          {
+            "name": "LocalFrameView::ScheduleAnimation",
+            "count": 99,
+            "durationMs": 2.9079999999999964
+          },
+          {
+            "name": "LayerTreeHost::AnimationHost::PushProperties",
+            "count": 60,
+            "durationMs": 1.4860000000000002
+          },
+          {
+            "name": "LocalFrameView::RunPrePaintLifecyclePhase",
+            "count": 155,
+            "durationMs": 1.124
+          },
+          {
+            "name": "Blink.PrePaint.UpdateTime",
+            "count": 155,
+            "durationMs": 0.8840000000000007
+          },
+          {
+            "name": "LocalFrameView::pushPaintArtifactToCompositor",
+            "count": 155,
+            "durationMs": 0.7740000000000005
+          },
+          {
+            "name": "ImageAnimationController::AnimateImagesForSyncTree",
+            "count": 60,
+            "durationMs": 0.1860000000000001
+          }
+        ]
+      }
+    },
+    "one-stream": {
+      "runs": [
+        {
+          "run": 1,
+          "summary": {
+            "sampleCount": 59,
+            "medianTabCpu": 4.932708303341491,
+            "medianGpuCpu": 3.182356512604203,
+            "medianTabWorkingSet": 549184,
+            "medianTotalAppWorkingSet": 1115792,
+            "p95TotalAppWorkingSet": 1135024,
+            "medianTotalAppCpu": 8.358505582244703,
+            "medianMainRss": 269205504,
+            "processTypes": [
+              "Browser",
+              "GPU",
+              "Tab",
+              "Utility"
+            ]
+          },
+          "processCpu": {
+            "Browser": 0.16493798010705407,
+            "GPU": 3.182356512604203,
+            "Tab": 4.932708303341491,
+            "Utility": 0.0788784709618694
+          },
+          "skeleton": null,
+          "concurrency": {
+            "expectedSessions": 1,
+            "observedSessions": 1
+          },
+          "sampleWindow": [
+            1792516546633,
+            1792516576133
+          ],
+          "retainedBrowserErrorsDuringWindow": 0,
+          "browserErrorCount": 11,
+          "browserDropped": 0,
+          "journal": {
+            "available": true,
+            "complete": true,
+            "gaps": 0,
+            "errors": 0
+          },
+          "cleanup": true,
+          "display": {
+            "href": "http://127.0.0.1:52992/",
+            "visibilityState": "visible",
+            "innerWidth": 1280,
+            "innerHeight": 800,
+            "outerWidth": 1280,
+            "outerHeight": 800,
+            "devicePixelRatio": 1,
+            "screen": {
+              "width": 1920,
+              "height": 1080,
+              "availWidth": 1920,
+              "availHeight": 1050
+            }
+          }
+        },
+        {
+          "run": 2,
+          "summary": {
+            "sampleCount": 59,
+            "medianTabCpu": 4.9123167061020165,
+            "medianGpuCpu": 3.173504324843825,
+            "medianTabWorkingSet": 472432,
+            "medianTotalAppWorkingSet": 1149824,
+            "p95TotalAppWorkingSet": 1302288,
+            "medianTotalAppCpu": 8.399811052793055,
+            "medianMainRss": 362545152,
+            "processTypes": [
+              "Browser",
+              "GPU",
+              "Tab",
+              "Utility"
+            ]
+          },
+          "processCpu": {
+            "Browser": 0.1561458531708246,
+            "GPU": 3.173504324843825,
+            "Tab": 4.9123167061020165,
+            "Utility": 0.07851842011756054
+          },
+          "skeleton": null,
+          "concurrency": {
+            "expectedSessions": 1,
+            "observedSessions": 1
+          },
+          "sampleWindow": [
+            1792516622022,
+            1792516651526
+          ],
+          "retainedBrowserErrorsDuringWindow": 0,
+          "browserErrorCount": 13,
+          "browserDropped": 0,
+          "journal": {
+            "available": true,
+            "complete": true,
+            "gaps": 0,
+            "errors": 0
+          },
+          "cleanup": true,
+          "display": {
+            "href": "http://127.0.0.1:53225/",
+            "visibilityState": "visible",
+            "innerWidth": 1280,
+            "innerHeight": 800,
+            "outerWidth": 1280,
+            "outerHeight": 800,
+            "devicePixelRatio": 1,
+            "screen": {
+              "width": 1920,
+              "height": 1080,
+              "availWidth": 1920,
+              "availHeight": 1050
+            }
+          }
+        },
+        {
+          "run": 3,
+          "summary": {
+            "sampleCount": 59,
+            "medianTabCpu": 4.77663515534274,
+            "medianGpuCpu": 3.1484040611499102,
+            "medianTabWorkingSet": 507600,
+            "medianTotalAppWorkingSet": 1229504,
+            "p95TotalAppWorkingSet": 1290176,
+            "medianTotalAppCpu": 8.25651808745096,
+            "medianMainRss": 403587072,
+            "processTypes": [
+              "Browser",
+              "GPU",
+              "Tab",
+              "Utility"
+            ]
+          },
+          "processCpu": {
+            "Browser": 0.15436957825742978,
+            "GPU": 3.1484040611499102,
+            "Tab": 4.77663515534274,
+            "Utility": 0.07922593895588911
+          },
+          "skeleton": null,
+          "concurrency": {
+            "expectedSessions": 1,
+            "observedSessions": 1
+          },
+          "sampleWindow": [
+            1792516696962,
+            1792516726464
+          ],
+          "retainedBrowserErrorsDuringWindow": 0,
+          "browserErrorCount": 15,
+          "browserDropped": 0,
+          "journal": {
+            "available": true,
+            "complete": true,
+            "gaps": 0,
+            "errors": 0
+          },
+          "cleanup": true,
+          "display": {
+            "href": "http://127.0.0.1:53445/",
+            "visibilityState": "visible",
+            "innerWidth": 1280,
+            "innerHeight": 800,
+            "outerWidth": 1280,
+            "outerHeight": 800,
+            "devicePixelRatio": 1,
+            "screen": {
+              "width": 1920,
+              "height": 1080,
+              "availWidth": 1920,
+              "availHeight": 1050
+            }
+          }
+        }
+      ],
+      "medianCpu": 8.358505582244703,
+      "cpuRange": [
+        8.25651808745096,
+        8.399811052793055
+      ],
+      "medianWorkingSetMiB": 1122.875,
+      "workingSetRangeMiB": [
+        1089.640625,
+        1200.6875
+      ],
+      "medianP95WorkingSetMiB": 1259.9375,
+      "processCpu": {
+        "Browser": 0.1561458531708246,
+        "GPU": 3.173504324843825,
+        "Tab": 4.9123167061020165,
+        "Utility": 0.0788784709618694
+      },
+      "trace": {
+        "run": 1,
+        "compressedBytes": 27571931,
+        "sha256": "886802143b2bce136a0a05aece87a34629f390b991c0a753e1ee0830a3ffab0c",
+        "eventCount": 1489816,
+        "nestedDurationWarning": "Durations overlap/nest; do not sum them as CPU or exclusive frame time",
+        "selected": [
+          {
+            "name": "RunTask",
+            "count": 112346,
+            "durationMs": 16775.410000007476
+          },
+          {
+            "name": "Scheduler::RunTask",
+            "count": 12248,
+            "durationMs": 4149.335000000016
+          },
+          {
+            "name": "FunctionCall",
+            "count": 7815,
+            "durationMs": 2976.961000000018
+          },
+          {
+            "name": "LocalFrameView::RunPaintLifecyclePhase",
+            "count": 3001,
+            "durationMs": 1441.0530000000008
+          },
+          {
+            "name": "RendererRasterWorker",
+            "count": 3086,
+            "durationMs": 1242.2049999999983
+          },
+          {
+            "name": "Blink.Paint.UpdateTime",
+            "count": 3001,
+            "durationMs": 747.623000000001
+          },
+          {
+            "name": "Paint",
+            "count": 6002,
+            "durationMs": 694.0879999999978
+          },
+          {
+            "name": "RasterDecoderImpl::DoEndRasterCHROMIUM",
+            "count": 3001,
+            "durationMs": 655.7349999999997
+          },
+          {
+            "name": "RasterDecoderImpl::DoEndRasterCHROMIUM::Flush",
+            "count": 3001,
+            "durationMs": 632.7920000000004
+          },
+          {
+            "name": "LocalFrameView::RunStyleAndLayoutLifecyclePhases",
+            "count": 3001,
+            "durationMs": 545.3029999999984
+          },
+          {
+            "name": "LocalFrameView::pushPaintArtifactToCompositor",
+            "count": 3001,
+            "durationMs": 521.6580000000008
+          },
+          {
+            "name": "LocalFrameView::UpdateStyleAndLayout",
+            "count": 16522,
+            "durationMs": 506.236999999923
+          },
+          {
+            "name": "RasterDecoderImpl::DoRasterCHROMIUM",
+            "count": 3001,
+            "durationMs": 469.4500000000007
+          },
+          {
+            "name": "RasterDecoderImpl::DoRasterCHROMIUM::Deserializing",
+            "count": 3001,
+            "durationMs": 460.25200000000024
+          },
+          {
+            "name": "UpdateLayoutTree",
+            "count": 3001,
+            "durationMs": 440.6110000000009
+          },
+          {
+            "name": "LayerTreeHost::DoUpdateLayers",
+            "count": 3001,
+            "durationMs": 273.692
+          },
+          {
+            "name": "RasterizerTaskImpl::RunOnWorkerThread",
+            "count": 3000,
+            "durationMs": 238.12199999999996
+          },
+          {
+            "name": "RasterTask",
+            "count": 3000,
+            "durationMs": 221.03600000000054
+          },
+          {
+            "name": "GpuRasterBuffer::Playback",
+            "count": 3000,
+            "durationMs": 211.9020000000005
+          },
+          {
+            "name": "RasterImplementation::RasterCHROMIUM",
+            "count": 3000,
+            "durationMs": 182.90400000000022
+          },
+          {
+            "name": "PrePaint",
+            "count": 3001,
+            "durationMs": 173.64099999999996
+          },
+          {
+            "name": "PageAnimator::serviceScriptedAnimations",
+            "count": 3001,
+            "durationMs": 138.33400000000083
+          },
+          {
+            "name": "LocalFrameView::RunPrePaintLifecyclePhase",
+            "count": 3001,
+            "durationMs": 114.30600000000155
+          },
+          {
+            "name": "Blink.PrePaint.UpdateTime",
+            "count": 3001,
+            "durationMs": 110.50800000000145
+          }
+        ]
+      }
+    }
+  },
+  "memory": [
+    {
+      "attempt": 1,
+      "outcome": "failed",
+      "error": "Timed out: Archive confirmation or authoritative acknowledgement",
+      "summary": {
+        "initial": {
+          "naturalMedianRendererWorkingSetBytes": 295239680,
+          "naturalMedianRendererHeapUsedBytes": 36570444,
+          "postGcRendererHeapUsedBytes": 31889888,
+          "postGcDomNodes": 19592,
+          "postGcHeapDeltaFromInitialBytes": 0
+        },
+        "loaded": {
+          "naturalMedianRendererWorkingSetBytes": 330547200,
+          "naturalMedianRendererHeapUsedBytes": 43534156,
+          "postGcRendererHeapUsedBytes": 43115392,
+          "postGcDomNodes": 20135,
+          "postGcHeapDeltaFromInitialBytes": 11225504
+        },
+        "inactive": {
+          "naturalMedianRendererWorkingSetBytes": 251904000,
+          "naturalMedianRendererHeapUsedBytes": 45953520,
+          "postGcRendererHeapUsedBytes": 38755324,
+          "postGcDomNodes": 19592,
+          "postGcHeapDeltaFromInitialBytes": 6865436
+        }
+      },
+      "checkpoints": [
+        {
+          "name": "initial",
+          "samples": 60,
+          "measureMs": 30000,
+          "settleMs": 6000,
+          "structure": {
+            "sessionID": null,
+            "mountedMessageRows": 0
+          },
+          "rendererPid": 77753,
+          "rendererCreatedAt": 1792516802231.807
+        },
+        {
+          "name": "loaded",
+          "samples": 60,
+          "measureMs": 30000,
+          "settleMs": 6000,
+          "structure": {
+            "sessionID": "ses_ea5ac4ea7ffe0000000000000V",
+            "mountedMessageRows": 16,
+            "visibleHistoryText": "History response 1."
+          },
+          "rendererPid": 77753,
+          "rendererCreatedAt": 1792516802231.807
+        },
+        {
+          "name": "inactive",
+          "samples": 60,
+          "measureMs": 30000,
+          "settleMs": 6000,
+          "structure": {
+            "sessionID": null,
+            "mountedMessageRows": 0
+          },
+          "rendererPid": 77753,
+          "rendererCreatedAt": 1792516802231.807
+        }
+      ],
+      "histories": [
+        {
+          "expected": 360,
+          "covered": 360,
+          "pageClicks": 4
+        },
+        {
+          "expected": 360,
+          "covered": 360,
+          "pageClicks": 4
+        },
+        {
+          "expected": 360,
+          "covered": 360,
+          "pageClicks": 4
+        },
+        {
+          "expected": 360,
+          "covered": 360,
+          "pageClicks": 4
+        }
+      ],
+      "receivedPrompts": 0,
+      "archiveError": "[session-actions] archiveSession failed for ses_ea5ac4ebfff20000000000000P Error: archive failed (400): Only title may be updated through the session facade\n    at z9 (http://127.0.0.1:[REDACTED]:high_entropy.js:109:9206)\n    at U9.lt.attempts (http://127.0.0.1:[REDACTED]:high_entropy.js:109:9905)\n    at async lt (http://127.0.0.1:[REDACTED]:high_entropy.js:31:35623)\n    at async U9 (http://127.0.0.1:[REDACTED]:high_entropy.js:109:9764)\n    at async http://127.0.0.1:[REDACTED]:high_entropy.js:109:14008\n    at async http://127.0.0.1:[REDACTED]:high_entropy.js:109:6212\n    at async http://127.0.0.1:[REDACTED]:high_entropy.js:109:2194\n    at async Promise.all (index 0)\n    at async IZ (http://127.0.0.1:[REDACTED]:high_entropy.js:109:2218)\n    at async Gy (http://127.0.0.1:[REDACTED]:high_entropy.js:109:6177)",
+      "journal": {
+        "available": true,
+        "complete": true,
+        "gaps": 0,
+        "errors": 0
+      },
+      "cleanup": true,
+      "integrity": {
+        "passed": true,
+        "errors": []
+      }
+    },
+    {
+      "attempt": 2,
+      "outcome": "failed",
+      "error": "Timed out: Archive confirmation or authoritative acknowledgement",
+      "summary": {
+        "initial": {
+          "naturalMedianRendererWorkingSetBytes": 337248256,
+          "naturalMedianRendererHeapUsedBytes": 36448592,
+          "postGcRendererHeapUsedBytes": 31936876,
+          "postGcDomNodes": 19592,
+          "postGcHeapDeltaFromInitialBytes": 0
+        },
+        "loaded": {
+          "naturalMedianRendererWorkingSetBytes": 240664576,
+          "naturalMedianRendererHeapUsedBytes": 43482204,
+          "postGcRendererHeapUsedBytes": 43187452,
+          "postGcDomNodes": 20135,
+          "postGcHeapDeltaFromInitialBytes": 11250576
+        },
+        "inactive": {
+          "naturalMedianRendererWorkingSetBytes": 178782208,
+          "naturalMedianRendererHeapUsedBytes": 45625148,
+          "postGcRendererHeapUsedBytes": 38823724,
+          "postGcDomNodes": 19592,
+          "postGcHeapDeltaFromInitialBytes": 6886848
+        }
+      },
+      "checkpoints": [
+        {
+          "name": "initial",
+          "samples": 60,
+          "measureMs": 30000,
+          "settleMs": 6000,
+          "structure": {
+            "sessionID": null,
+            "mountedMessageRows": 0
+          },
+          "rendererPid": 82192,
+          "rendererCreatedAt": 1792517069811.082
+        },
+        {
+          "name": "loaded",
+          "samples": 60,
+          "measureMs": 30000,
+          "settleMs": 6000,
+          "structure": {
+            "sessionID": "ses_ea5a83ae9ffe0000000000000V",
+            "mountedMessageRows": 16,
+            "visibleHistoryText": "History response 1."
+          },
+          "rendererPid": 82192,
+          "rendererCreatedAt": 1792517069811.082
+        },
+        {
+          "name": "inactive",
+          "samples": 60,
+          "measureMs": 30000,
+          "settleMs": 6000,
+          "structure": {
+            "sessionID": null,
+            "mountedMessageRows": 0
+          },
+          "rendererPid": 82192,
+          "rendererCreatedAt": 1792517069811.082
+        }
+      ],
+      "histories": [
+        {
+          "expected": 360,
+          "covered": 360,
+          "pageClicks": 4
+        },
+        {
+          "expected": 360,
+          "covered": 360,
+          "pageClicks": 4
+        },
+        {
+          "expected": 360,
+          "covered": 360,
+          "pageClicks": 4
+        },
+        {
+          "expected": 360,
+          "covered": 360,
+          "pageClicks": 4
+        }
+      ],
+      "receivedPrompts": 0,
+      "archiveError": "[session-actions] archiveSession failed for ses_ea5a83af7ff20000000000000P Error: archive failed (400): Only title may be updated through the session facade\n    at z9 (http://127.0.0.1:[REDACTED]:high_entropy.js:109:9206)\n    at U9.lt.attempts (http://127.0.0.1:[REDACTED]:high_entropy.js:109:9905)\n    at async lt (http://127.0.0.1:[REDACTED]:high_entropy.js:31:35623)\n    at async U9 (http://127.0.0.1:[REDACTED]:high_entropy.js:109:9764)\n    at async http://127.0.0.1:[REDACTED]:high_entropy.js:109:14008\n    at async http://127.0.0.1:[REDACTED]:high_entropy.js:109:6212\n    at async http://127.0.0.1:[REDACTED]:high_entropy.js:109:2194\n    at async Promise.all (index 0)\n    at async IZ (http://127.0.0.1:[REDACTED]:high_entropy.js:109:2218)\n    at async Gy (http://127.0.0.1:[REDACTED]:high_entropy.js:109:6177)",
+      "journal": {
+        "available": true,
+        "complete": true,
+        "gaps": 0,
+        "errors": 0
+      },
+      "cleanup": true,
+      "integrity": {
+        "passed": true,
+        "errors": []
+      }
+    },
+    {
+      "attempt": 3,
+      "outcome": "failed",
+      "error": "Timed out: Archive confirmation or authoritative acknowledgement",
+      "summary": {
+        "initial": {
+          "naturalMedianRendererWorkingSetBytes": 414908416,
+          "naturalMedianRendererHeapUsedBytes": 36415128,
+          "postGcRendererHeapUsedBytes": 31923424,
+          "postGcDomNodes": 19592,
+          "postGcHeapDeltaFromInitialBytes": 0
+        },
+        "loaded": {
+          "naturalMedianRendererWorkingSetBytes": 445923328,
+          "naturalMedianRendererHeapUsedBytes": 45357736,
+          "postGcRendererHeapUsedBytes": 43069600,
+          "postGcDomNodes": 20135,
+          "postGcHeapDeltaFromInitialBytes": 11146176
+        },
+        "inactive": {
+          "naturalMedianRendererWorkingSetBytes": 447299584,
+          "naturalMedianRendererHeapUsedBytes": 45912668,
+          "postGcRendererHeapUsedBytes": 38728272,
+          "postGcDomNodes": 19592,
+          "postGcHeapDeltaFromInitialBytes": 6804848
+        }
+      },
+      "checkpoints": [
+        {
+          "name": "initial",
+          "samples": 60,
+          "measureMs": 30000,
+          "settleMs": 6000,
+          "structure": {
+            "sessionID": null,
+            "mountedMessageRows": 0
+          },
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51
+        },
+        {
+          "name": "loaded",
+          "samples": 60,
+          "measureMs": 30000,
+          "settleMs": 6000,
+          "structure": {
+            "sessionID": "ses_ea5a54871ffe0000000000000V",
+            "mountedMessageRows": 16,
+            "visibleHistoryText": "History response 1."
+          },
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51
+        },
+        {
+          "name": "inactive",
+          "samples": 60,
+          "measureMs": 30000,
+          "settleMs": 6000,
+          "structure": {
+            "sessionID": null,
+            "mountedMessageRows": 0
+          },
+          "rendererPid": 86766,
+          "rendererCreatedAt": 1792517262146.51
+        }
+      ],
+      "histories": [
+        {
+          "expected": 360,
+          "covered": 360,
+          "pageClicks": 4
+        },
+        {
+          "expected": 360,
+          "covered": 360,
+          "pageClicks": 4
+        },
+        {
+          "expected": 360,
+          "covered": 360,
+          "pageClicks": 4
+        },
+        {
+          "expected": 360,
+          "covered": 360,
+          "pageClicks": 4
+        }
+      ],
+      "receivedPrompts": 0,
+      "archiveError": "[session-actions] archiveSession failed for ses_ea5a54887ff20000000000000P Error: archive failed (400): Only title may be updated through the session facade\n    at z9 (http://127.0.0.1:[REDACTED]:high_entropy.js:109:9206)\n    at U9.lt.attempts (http://127.0.0.1:[REDACTED]:high_entropy.js:109:9905)\n    at async lt (http://127.0.0.1:[REDACTED]:high_entropy.js:31:35623)\n    at async U9 (http://127.0.0.1:[REDACTED]:high_entropy.js:109:9764)\n    at async http://127.0.0.1:[REDACTED]:high_entropy.js:109:14008\n    at async http://127.0.0.1:[REDACTED]:high_entropy.js:109:6212\n    at async http://127.0.0.1:[REDACTED]:high_entropy.js:109:2194\n    at async Promise.all (index 0)\n    at async IZ (http://127.0.0.1:[REDACTED]:high_entropy.js:109:2218)\n    at async Gy (http://127.0.0.1:[REDACTED]:high_entropy.js:109:6177)",
+      "journal": {
+        "available": true,
+        "complete": true,
+        "gaps": 0,
+        "errors": 0
+      },
+      "cleanup": true,
+      "integrity": {
+        "passed": true,
+        "errors": []
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "label": "idle-1",
+      "complete": true,
+      "remaining": []
+    },
+    {
+      "label": "idle-2",
+      "complete": true,
+      "remaining": []
+    },
+    {
+      "label": "idle-3",
+      "complete": true,
+      "remaining": []
+    },
+    {
+      "label": "plan-skeleton-1",
+      "complete": true,
+      "remaining": []
+    },
+    {
+      "label": "plan-skeleton-2",
+      "complete": true,
+      "remaining": []
+    },
+    {
+      "label": "plan-skeleton-3",
+      "complete": true,
+      "remaining": []
+    },
+    {
+      "label": "one-stream-1",
+      "complete": true,
+      "remaining": []
+    },
+    {
+      "label": "one-stream-2",
+      "complete": true,
+      "remaining": []
+    },
+    {
+      "label": "one-stream-3",
+      "complete": true,
+      "remaining": []
+    },
+    {
+      "label": "memory-1",
+      "complete": true,
+      "remaining": []
+    },
+    {
+      "label": "memory-2",
+      "complete": true,
+      "remaining": []
+    },
+    {
+      "label": "memory-3",
+      "complete": true,
+      "remaining": []
+    }
+  ],
+  "metricDefinitions": {
+    "cpu": "Sum of Electron app.getAppMetrics cpu.percentCPUUsage. Electron41.2.1 divides raw per-process CPU by processor count;100%=all8logicalCPUs on this host. Multiply8 for one-core-equivalent percentage.",
+    "workingSet": "Sum of per-process workingSetSize KiB, divided1024 forMiB; shared pages may be counted more than once. Not unique physical memory. Separate native worker is outside Electron process set.",
+    "cpuSamples": "60raw500ms samples, firstCPU sample excluded,59retained/run",
+    "sources": [
+      "https://raw.githubusercontent.com/electron/electron/v41.2.1/shell/browser/api/electron_api_app.cc",
+      "https://raw.githubusercontent.com/chromium/chromium/146.0.7680.188/base/process/process_metrics.h",
+      "https://www.electronjs.org/docs/latest/api/structures/memory-info"
+    ]
+  },
+  "screenshotReview": {
+    "reviewed": 12,
+    "states": [
+      "initial",
+      "loaded",
+      "inactive",
+      "archive-failure"
+    ],
+    "runs": 3,
+    "recoveryDiffStatesCaptured": false
+  },
+  "traceInterpretation": "Representative median-CPU run per scenario only; nested event durations are not additive CPU. Stream renderer/GPU paint+raster activity dominates these synthetic windows. Minified chunk names cannot identify a specific component; no UI optimization or leak claim proposed."
+}

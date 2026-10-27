@@ -14,6 +14,35 @@ const MODES = new Set(['100644', '100755', '120000']);
 const isObjectEntry = (value) => value !== null && typeof value === 'object'
   && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(value.oid) && MODES.has(value.mode);
 
+// Historical delivery can precede an earlier publication. Join only unique
+// byte-and-mode boundaries; disconnected or branching histories stay segments.
+export function foldSessionChange(previous, change, sessionID, publicationSequence) {
+  const entry = previous ?? { chains: [], hasPatch: false, segmentCount: 0, sessions: new Set() };
+  entry.sessions.add(sessionID); entry.segmentCount++;
+  entry.hasPatch ||= Boolean(change.patchOID);
+  if (!change.patchOID) {
+    const left = entry.chains.filter(chain => equalEntry(chain.after, change.before)
+      && !(publicationSequence !== undefined && chain.lastSequence !== undefined && chain.lastSequence >= publicationSequence));
+    const right = entry.chains.filter(chain => equalEntry(chain.before, change.after)
+      && !(publicationSequence !== undefined && chain.firstSequence !== undefined && chain.firstSequence <= publicationSequence));
+    const joinsBackwards = left[0] && right[0] && left[0] !== right[0]
+      && left[0].lastSequence !== undefined && right[0].firstSequence !== undefined
+      && left[0].lastSequence >= right[0].firstSequence;
+    if (left.length > 1 || right.length > 1 || joinsBackwards) entry.ambiguous = true;
+    if (left.length <= 1 && right.length <= 1 && !joinsBackwards) {
+      const before = left[0] ? left[0].before : change.before;
+      const after = right[0] && right[0] !== left[0] ? right[0].after : change.after;
+      entry.chains = entry.chains.filter(chain => chain !== left[0] && chain !== right[0]);
+      entry.chains.push({ before, after, firstSequence: left[0]?.firstSequence ?? publicationSequence ?? right[0]?.firstSequence,
+        lastSequence: right[0]?.lastSequence ?? publicationSequence ?? left[0]?.lastSequence });
+    } else entry.chains.push({ before: change.before, after: change.after, firstSequence: publicationSequence, lastSequence: publicationSequence });
+  }
+  entry.reviewMode = entry.hasPatch || entry.ambiguous || entry.chains.length !== 1 ? 'segments' : 'net';
+  entry.before = entry.reviewMode === 'net' ? entry.chains[0].before : previous ? previous.before : change.before;
+  entry.after = entry.reviewMode === 'net' ? entry.chains[0].after : change.after;
+  return entry;
+}
+
 // Most history replays repeat the same bounded array of native receipts. Hash
 // their fields without creating a second serialized copy of the file contents
 // so unchanged receipts do not launch Git processes or rewrite private trees.
@@ -28,6 +57,7 @@ export function receiptInputFingerprint(input) {
     digest.update('\0');
   };
   add(input.complete !== false);
+  if (input.publicationSequence !== undefined) { add('publicationSequence'); add(input.publicationSequence); }
   for (const file of input.files) {
     if (!file || typeof file !== 'object') return null;
     if (typeof file.path !== 'string' || typeof file.patch !== 'string'
@@ -100,6 +130,9 @@ export async function storeSessionChangeReceipt(repo, input, existing, canonical
   const patchTree = patches.length ? await makeChangeTree(repo, patches.map((entry) => [`${changeKey(entry.file)}.patch`, { oid: entry.patchOID, mode: '100644' }])) : null;
   patches.sort((left, right) => left.file.localeCompare(right.file));
   const complete = input.complete !== false;
+  const publicationSequence = input.source === 'confined-execution' ? input.publicationSequence ?? existing?.publicationSequence : existing?.publicationSequence;
+  if (publicationSequence !== undefined && (!Number.isSafeInteger(publicationSequence) || publicationSequence < 1)) throw changeError('invalid_change_receipt', 400);
+  if (existing?.publicationSequence !== undefined && publicationSequence !== existing.publicationSequence) throw changeError('receipt_conflict', 409);
   if (existing?.evidence === 'exact') {
     const storedPatches = [];
     for await (const { value } of repo.db.entries(receiptPatchesKey(existing.id))) storedPatches.push(value);
@@ -128,8 +161,9 @@ export async function storeSessionChangeReceipt(repo, input, existing, canonical
     const restoreEvidence = oldModesKnown || newModesKnown;
     const restoreVerified = receiptComplete && !patches.length && restoreEvidence;
     if (existing.receiptComplete === receiptComplete && existing.restoreVerified === restoreVerified
-      && oldModesKnown === restoreEvidence && existing.before === before && existing.after === after) return null;
-    return { ...existing, before, after, hasChanges: before !== after || patches.some((entry) => entry.additions || entry.deletions || entry.status === 'renamed'),
+      && oldModesKnown === restoreEvidence && existing.before === before && existing.after === after
+      && existing.publicationSequence === publicationSequence) return null;
+    return { ...existing, before, after, publicationSequence, hasChanges: before !== after || patches.some((entry) => entry.additions || entry.deletions || entry.status === 'renamed'),
       receiptFingerprint: changeKey(JSON.stringify({ before, after, patches })), receiptComplete, restoreEvidence, restoreVerified,
       receiptInputFingerprint: input.receiptInputFingerprint ?? null };
   }
@@ -139,7 +173,7 @@ export async function storeSessionChangeReceipt(repo, input, existing, canonical
   return { ...existing, id, sessionID: input.sessionID, messageID: input.messageID, callID: input.callID,
     createdAt: existing?.createdAt ?? input.createdAt ?? Date.now(), state: 'complete', before, after, patchTree,
     hasChanges: before !== after || patches.some((entry) => entry.additions || entry.deletions || entry.status === 'renamed'),
-    evidence: 'exact', source: input.source ?? 'native-tool', tool: input.tool ?? null, receiptComplete: complete,
+    evidence: 'exact', publicationSequence, source: input.source ?? 'native-tool', tool: input.tool ?? null, receiptComplete: complete,
     receiptFingerprint: changeKey(JSON.stringify({ before, after, patches })), receiptInputFingerprint: input.receiptInputFingerprint ?? null,
     restoreEvidence: !patches.length && (explicitModes || matchesObservation),
     restoreVerified: complete && !patches.length && (explicitModes || matchesObservation),

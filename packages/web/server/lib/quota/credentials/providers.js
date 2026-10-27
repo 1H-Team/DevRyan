@@ -1,4 +1,4 @@
-import { isOpenCodeConsoleOrgId, isOpenCodeConsoleToken } from '@openchamber/shared-runtime';
+import { isOpenCodeConsoleOrgId, isOpenCodeConsoleToken } from '@devryan/shared-runtime';
 
 import {
   QuotaCredentialError,
@@ -85,11 +85,6 @@ export const managedQuotaCredentialNormalizers = Object.freeze({
   'ollama-cloud': normalizeOllamaCloudCredential,
   'cursor-acp': normalizeCursorCredential,
 });
-
-export const normalizeManagedQuotaCredential = (providerId, value) => {
-  const canonical = canonicalizeManagedQuotaProviderId(providerId);
-  return managedQuotaCredentialNormalizers[canonical](value);
-};
 
 export const assertManagedQuotaCredential = (providerId, value) => {
   const canonical = canonicalizeManagedQuotaProviderId(providerId);

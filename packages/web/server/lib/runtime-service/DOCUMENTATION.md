@@ -1,7 +1,7 @@
 # Local runtime-service HTTP contract
 
 This module exposes the narrow loopback control plane used when the signed
-Electron executable runs as a launchd-owned Production Bots service. Ownership,
+Electron executable runs as a launchd-owned runtime service. Ownership,
 descriptor persistence, protocol generations, and OS-sealed token rotation live
 in `packages/electron/runtime-service.mjs`; this module owns only Express route
 authentication and typed forwarding.
@@ -24,17 +24,9 @@ capabilities unavailable without stopping the service. Observation is
 negotiated independently so a previous foreground host leaves browser control
 working while the remote view reports unavailable.
 
-Bot runtime control forwards only `status`, `operation`, `setup`, `repair`,
-`update`, and `rollback`. Disable and update-preparation routes invoke injected
-checkpoint/drain ownership callbacks. No route accepts Docker arguments, image
-references, paths, ports, data-directory selection, or arbitrary callback
-names.
-
-The windowless owner has no renderer IPC event target. Foreground Bot UI reads
-`operation` repeatedly only while the returned phase is nonterminal, stops on
-`ready` or `failed`, and refreshes `/api/bots/capabilities` after that terminal
-transition. The operation route remains a read-only snapshot; it does not start,
-retry, or cancel Docker work.
+Disable and update-preparation routes invoke injected checkpoint/drain
+ownership callbacks. No route accepts paths, ports, data-directory selection,
+or arbitrary callback names.
 
 Run the contract tests with:
 

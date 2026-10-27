@@ -8,7 +8,6 @@ export type SettingsPageSlug =
   | 'remote-instances'
   | 'providers'
   | 'usage'
-  | 'bots'
   | 'agents'
   | 'behavior'
   | 'commands'
@@ -55,17 +54,6 @@ export interface SettingsPageMeta {
   keywords?: string[];
   isAvailable?: (ctx: SettingsRuntimeContext) => boolean;
 }
-
-export const SETTINGS_GROUP_LABELS: Record<SettingsPageGroup, string> = {
-  appearance: 'Appearance',
-  projects: 'Projects',
-  general: 'General',
-  opencode: 'OpenCode',
-  git: 'Git',
-  skills: 'Skills',
-  usage: 'Usage',
-  advanced: 'Advanced',
-};
 
 export const SETTINGS_PAGE_METADATA: readonly SettingsPageMeta[] = [
   {
@@ -121,14 +109,6 @@ export const SETTINGS_PAGE_METADATA: readonly SettingsPageMeta[] = [
     group: 'usage',
     kind: 'split',
     keywords: ['quota', 'billing', 'tokens', 'usage', 'limits'],
-  },
-  {
-    slug: 'bots',
-    title: 'Bots',
-    group: 'general',
-    kind: 'single',
-    description: 'Manage published Bots, membership, permissions, and lifecycle.',
-    keywords: ['bot', 'bots', 'assistant', 'membership', 'permissions', 'docker', 'lifecycle'],
   },
   {
     slug: 'agents',

@@ -5,26 +5,26 @@ description: Expose DevRyan safely for remote and mobile access.
 
 # Tunnels
 
-Use `openchamber tunnel` to expose a running DevRyan instance.
+Use `devryan tunnel` to expose a running DevRyan instance.
 
 ## Quick start (Cloudflare quick mode)
 
 1. Start DevRyan:
 
 ```bash
-openchamber
+devryan
 ```
 
 2. Start a tunnel:
 
 ```bash
-openchamber tunnel start --provider cloudflare --mode quick
+devryan tunnel start --provider cloudflare --mode quick
 ```
 
 3. Check status:
 
 ```bash
-openchamber tunnel status
+devryan tunnel status
 ```
 
 By default, DevRyan prints a QR code in interactive TTY sessions. Use `--qr` to force QR output, or `--no-qr` to disable it.
@@ -36,7 +36,7 @@ By default, DevRyan prints a QR code in interactive TTY sessions. Use `--qr` to 
 Use a token + hostname managed by Cloudflare:
 
 ```bash
-openchamber tunnel start --provider cloudflare --mode managed-remote --token-file ~/.secrets/cf-token --hostname app.example.com
+devryan tunnel start --provider cloudflare --mode managed-remote --token-file ~/.secrets/cf-token --hostname app.example.com
 ```
 
 With Supabase On, open the hostname and sign in with your individual account.
@@ -51,7 +51,7 @@ after an automatic restart. Supabase outages while On do not enable owner links.
 Use a local `cloudflared` config:
 
 ```bash
-openchamber tunnel start --provider cloudflare --mode managed-local --config ~/.cloudflared/config.yml
+devryan tunnel start --provider cloudflare --mode managed-local --config ~/.cloudflared/config.yml
 ```
 
 ## Profiles (managed-remote)
@@ -59,22 +59,22 @@ openchamber tunnel start --provider cloudflare --mode managed-local --config ~/.
 Save a reusable profile:
 
 ```bash
-openchamber tunnel profile add --provider cloudflare --mode managed-remote --name prod-main --hostname app.example.com --token-file ~/.secrets/cf-token
+devryan tunnel profile add --provider cloudflare --mode managed-remote --name prod-main --hostname app.example.com --token-file ~/.secrets/cf-token
 ```
 
 Start using the saved profile:
 
 ```bash
-openchamber tunnel start --profile prod-main
+devryan tunnel start --profile prod-main
 ```
 
 ## Useful commands
 
 ```bash
-openchamber tunnel providers
-openchamber tunnel ready --provider cloudflare
-openchamber tunnel doctor --provider cloudflare
-openchamber tunnel stop --port 3000
+devryan tunnel providers
+devryan tunnel ready --provider cloudflare
+devryan tunnel doctor --provider cloudflare
+devryan tunnel stop --port 3000
 ```
 
 ## Behavior notes

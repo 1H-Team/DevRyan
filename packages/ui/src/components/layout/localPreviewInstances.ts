@@ -102,14 +102,6 @@ const LOCAL_INSTANCE_POLL_INTERVAL_MS = 3_000;
 const PROJECT_PREVIEW_REGISTRATION_REFRESH_MS = 60_000;
 const ACTION_LABEL_PREFIX = /^Action:\s*/i;
 
-const normalizeDirectory = (directory: string): string => {
-  let normalized = directory.trim();
-  while (normalized.length > 1 && normalized.endsWith('/')) {
-    normalized = normalized.slice(0, -1);
-  }
-  return normalized;
-};
-
 export const projectLocalPreviewInstances = (
   directoryState: DirectoryTerminalState | undefined,
   fallbackLabel: string,
@@ -151,32 +143,6 @@ const instanceSignature = (instances: LocalPreviewInstance[]): string => (
     instance.port,
   ].join('\u0000')).join('\u0001')
 );
-
-export const useLocalPreviewInstances = (
-  directory: string,
-  fallbackLabel: string,
-): LocalPreviewInstance[] => {
-  const cacheRef = React.useRef<{ signature: string; instances: LocalPreviewInstance[] }>({
-    signature: '',
-    instances: [],
-  });
-
-  const getSnapshot = React.useCallback(() => {
-    const normalizedDirectory = normalizeDirectory(directory);
-    const directoryState = normalizedDirectory
-      ? useTerminalStore.getState().getDirectoryState(normalizedDirectory)
-      : undefined;
-    const nextInstances = projectLocalPreviewInstances(directoryState, fallbackLabel);
-    const signature = instanceSignature(nextInstances);
-    if (signature === cacheRef.current.signature) {
-      return cacheRef.current.instances;
-    }
-    cacheRef.current = { signature, instances: nextInstances };
-    return nextInstances;
-  }, [directory, fallbackLabel]);
-
-  return React.useSyncExternalStore(useTerminalStore.subscribe, getSnapshot, getSnapshot);
-};
 
 export const collectProjectPreviewInstances = (
   sessions: Map<string, DirectoryTerminalState>,
@@ -251,14 +217,14 @@ export const ProjectPreviewGrantOwner: React.FC = () => {
       const detail = (event as CustomEvent<{ status?: unknown }>).detail;
       if (detail?.status === 'connected') void synchronize(true);
     };
-    window.addEventListener('openchamber:connection-status', handleConnected);
+    window.addEventListener('devryan:connection-status', handleConnected);
 
     return () => {
       disposed = true;
       controller?.abort();
       unsubscribe();
       window.clearInterval(intervalID);
-      window.removeEventListener('openchamber:connection-status', handleConnected);
+      window.removeEventListener('devryan:connection-status', handleConnected);
     };
   }, [enabled, principal.id]);
 

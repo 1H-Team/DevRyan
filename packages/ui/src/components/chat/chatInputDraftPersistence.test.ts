@@ -66,7 +66,7 @@ describe("chat input draft persistence", () => {
     controller.clear(none)
 
     expect(getComposerDraftStorageKey(none)).toBeNull()
-    expect(storage.getItem("openchamber_chat_input_draft_new")).toBeNull()
+    expect(storage.getItem("devryan_chat_input_draft_new")).toBeNull()
     expect(storage.length).toBe(0)
     expect(updates).toEqual([])
   })
@@ -84,7 +84,7 @@ describe("chat input draft persistence", () => {
     controller.retire(draft)
     controller.save(draft, "after send", new Set())
 
-    expect(storage.getItem("openchamber_chat_input_draft_draft_draft-send")).toBeNull()
+    expect(storage.getItem("devryan_chat_input_draft_draft_draft-send")).toBeNull()
     expect(updates).toEqual([{ draftId: "draft-send", text: "before send" }])
   })
 
@@ -100,7 +100,7 @@ describe("chat input draft persistence", () => {
 
     controller.save(session, "unsent session text", new Set())
 
-    expect(storage.getItem("openchamber_chat_input_draft_session-a")).toBe("unsent session text")
+    expect(storage.getItem("devryan_chat_input_draft_session-a")).toBe("unsent session text")
   })
 
   test("retired session targets suppress target-switch writeback of text and mentions", () => {

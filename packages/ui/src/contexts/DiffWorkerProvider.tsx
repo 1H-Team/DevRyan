@@ -6,6 +6,7 @@ import { useOptionalThemeSystem } from './useThemeSystem';
 import { workerFactory } from '@/lib/diff/workerFactory';
 import { ensurePierreThemeRegistered } from '@/lib/shiki/appThemeRegistry';
 import { getDefaultTheme } from '@/lib/theme/themes';
+import { normalizeThemeId } from '@/lib/theme/catalogMigration';
 // NOTE: keep provider lightweight; avoid main-thread diff parsing here.
 
 // Preload common languages for faster initial diff rendering
@@ -119,10 +120,10 @@ export const DiffWorkerProvider: React.FC<DiffWorkerProviderProps> = ({ children
   const darkThemeId = themeSystem?.darkThemeId ?? fallbackDark.metadata.id;
 
   const lightTheme =
-    themeSystem?.availableThemes.find((theme) => theme.metadata.id === lightThemeId) ??
+    themeSystem?.availableThemes.find((theme) => theme.metadata.id === normalizeThemeId(lightThemeId)) ??
     fallbackLight;
   const darkTheme =
-    themeSystem?.availableThemes.find((theme) => theme.metadata.id === darkThemeId) ??
+    themeSystem?.availableThemes.find((theme) => theme.metadata.id === normalizeThemeId(darkThemeId)) ??
     fallbackDark;
 
   ensurePierreThemeRegistered(lightTheme);

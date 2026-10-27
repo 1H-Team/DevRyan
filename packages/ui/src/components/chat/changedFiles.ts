@@ -1,4 +1,5 @@
 import type { ToolPart } from '@opencode-ai/sdk/v2';
+import type { SessionFileVerification } from '@/lib/opencode/client';
 import {
     extractPatchFileSummariesFromToolPart,
     isPatchToolName,
@@ -26,6 +27,7 @@ export interface GitChangedFile {
     status: string;
     reviewMode?: 'net' | 'segments';
     segmentCount?: number;
+    verification?: SessionFileVerification;
 }
 
 export type ChangedFileEntry = ChangedFile | GitChangedFile;

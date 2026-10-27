@@ -19,7 +19,7 @@ export default defineConfig({
         { find: '@fixture/rich-diff', replacement: path.join(root, 'rich-diff.jsx') },
         { find: '@/hooks/useEffectiveDirectory', replacement: path.join(root, 'directory-context.ts') },
         { find: '@opencode-ai/sdk/v2', replacement: path.resolve(root, '../../node_modules/@opencode-ai/sdk/dist/v2/client.js') },
-        { find: '@openchamber/ui', replacement: path.resolve(root, '../../packages/ui/src') },
+        { find: '@devryan/ui', replacement: path.resolve(root, '../../packages/ui/src') },
         { find: '@', replacement: path.resolve(root, '../../packages/ui/src') },
     ] },
     server: { host: '127.0.0.1', port: 4197, strictPort: true, hmr: false, watch: { ignored: ['**/*'] } },

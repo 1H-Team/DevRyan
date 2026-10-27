@@ -24,7 +24,7 @@ const loopbackUrl = (app, path) => {
 // foreign socket then answers instead of the app: spurious failures, or a
 // foreign 401/403 passing an assertion. An explicit loopback listener is the
 // only possible responder. It binds asynchronously, so `end()` waits for it.
-const pendingListeners = new WeakMap();
+const ownedListeners = new WeakMap();
 
 const listenOnLoopback = (server) => {
   const listening = new Promise((resolve, reject) => {
@@ -33,24 +33,24 @@ const listenOnLoopback = (server) => {
       server.off('error', reject);
       resolve();
     });
-  }).finally(() => pendingListeners.delete(server));
-  pendingListeners.set(server, listening);
+  });
   return listening;
 };
 
 class LoopbackTest extends supertest.Test {
   serverAddress(app, path) {
-    if (app.address()) {
+    let owner = ownedListeners.get(app);
+    if (!owner && app.address()) {
       return loopbackUrl(app, path);
     }
 
-    let listening = pendingListeners.get(app);
-    if (!listening) {
-      // Like supertest, the request that starts the listener closes it.
-      this._server = app;
-      listening = listenOnLoopback(app);
+    if (!owner) {
+      owner = { listening: listenOnLoopback(app), requests: 0 };
+      ownedListeners.set(app, owner);
     }
-    this._loopbackListening = listening.then(() => {
+    owner.requests++;
+    this._loopbackOwner = owner;
+    this._loopbackListening = owner.listening.then(() => {
       this.url = loopbackUrl(app, path);
     });
     return path;
@@ -63,9 +63,20 @@ class LoopbackTest extends supertest.Test {
     }
 
     this._loopbackListening = null;
+    const complete = (error, response) => {
+      // A shared listener belongs to every request, including slower peers.
+      if (--this._loopbackOwner.requests > 0) {
+        return fn?.call(this, error, response);
+      }
+      ownedListeners.delete(this.app);
+      if (!this.app.listening) {
+        return fn?.call(this, error, response);
+      }
+      this.app.close((closeError) => fn?.call(this, error ?? closeError, response));
+    };
     listening.then(
-      () => super.end(fn),
-      (error) => fn?.call(this, error),
+      () => super.end(complete),
+      complete,
     );
     return this;
   }

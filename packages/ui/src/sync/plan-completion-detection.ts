@@ -123,6 +123,7 @@ function findCompletedAssistantAfter(
     const message = messages[index]
     if (message.role !== "assistant") continue
     if (!isFinalAssistantSummaryMessage(message, state.part[message.id])) continue
+    if (messages.slice(index + 1).some((item) => item.role === "user")) return null
     return message
   }
 

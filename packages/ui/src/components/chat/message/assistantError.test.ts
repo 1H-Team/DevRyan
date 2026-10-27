@@ -3,6 +3,26 @@ import { classifyAssistantError, classifySteeredAbortFallback } from "./assistan
 import { PROVIDER_TOKEN_EXPIRED_MESSAGE } from "@/lib/messages/providerTokenExpired"
 
 describe("classifyAssistantError", () => {
+  test("local admission refusals never blame the model provider", () => {
+    const result = classifyAssistantError({ name: "APIError", data: { message: "native_queued_input_blocked" } })
+    expect(result?.text).toContain("session or a subtask")
+    expect(result?.text).not.toContain("provider")
+    expect(result?.retryable).toBe(true)
+  })
+
+  test("keeps recovery ownership failures out of provider blame and automatic retry guidance", () => {
+    for (const name of ['UnknownError', 'SessionRetry']) {
+      const classification = classifyAssistantError({ name, data: {
+        message: 'native_slim_retry_primary_fenced\nprivate stack',
+      } })
+      expect(classification).toEqual({
+        text: 'Automatic recovery could not verify this task\'s execution. Review the task and its recovery options before continuing.',
+        variant: 'error',
+      })
+      expect(classification?.retryable).toBeUndefined()
+    }
+  })
+
   test("classifies transient provider stream failures as retryable with friendly copy", () => {
     expect(classifyAssistantError({
       name: "UnknownError",
@@ -255,6 +275,13 @@ describe("classifyAssistantError", () => {
   })
 })
 
+ test('presents the OpenCode 2.x Claude upstream stall text without generic failure copy', () => {
+   const result = classifyAssistantError({ name: 'APIError', data: { message: 'upstream_timeout: Upstream stalled: no data for 90005ms', statusCode: 200, v2Type: 'provider.unknown' } }, { providerID: 'anthropic' });
+   expect(result?.text).toContain('Claude stopped sending data');
+   expect(result?.text).not.toContain('The model provider could not complete');
+   expect(result?.retryable).toBe(true);
+ });
+
  test('presents the Claude upstream stall without generic failure copy', () => {
    const result = classifyAssistantError({ name: 'UnknownError', data: { message: '{"type":"upstream_timeout","message":"Upstream stalled: no data for 208771ms"}' } }, { providerID: 'anthropic' });
    expect(result?.text).toContain('Claude stopped sending data');
@@ -267,4 +294,49 @@ test("identifies recovery bridge failures as local runtime errors", () => {
   expect(result?.text).toContain("DevRyan could not verify this turn with its recovery service")
   expect(result?.text).not.toContain("The model provider could not complete")
   expect(result?.retryable).toBe(true)
+})
+
+test('canonical user stop overrides Step interrupted provider fallback', () => {
+  const result = classifyAssistantError({name:'UnknownError',data:{message:'Step interrupted'}}, {managedAbortRecovery:{state:'user_stopped'}});
+  expect(result?.text).toContain('Stopped by you');
+  expect(result?.text).not.toContain('provider');
+  expect(result?.abortKind).toBe('manual');
+});
+
+describe('automatic abort sources', () => {
+  const aborted = (source?: unknown) => ({
+    name: 'MessageAbortedError',
+    data: { message: 'Step interrupted', v2Type: 'aborted', ...(source === undefined ? {} : { source }) },
+  })
+  const stopOptions = { manualAbortMessageId: 'msg_1', messageId: 'msg_1', isLatestMessage: true }
+
+  test('names the automatic cause instead of a manual stop', () => {
+    expect(classifyAssistantError(aborted('provider_retry'), stopOptions)).toEqual({
+      text: 'Stopped after repeated provider connection failures.',
+      variant: 'info',
+    })
+    expect(classifyAssistantError(aborted('stall_watchdog'), stopOptions)?.text)
+      .toBe('Stopped because the model provider stopped responding.')
+    expect(classifyAssistantError(aborted('abort_guard'), stopOptions)?.text)
+      .toBe('Stopped a provider retry that started after this turn was stopped.')
+  })
+
+  test('keeps the existing presentation for operator, unknown and missing sources', () => {
+    const operator = { name: 'MessageAbortedError', data: { message: 'Aborted', source: 'stop_button' } }
+    expect(classifyAssistantError(operator, stopOptions)).toEqual({ text: '', variant: 'plain', abortKind: 'manual' })
+    for (const source of ['double_escape', 'forged', 42, undefined]) {
+      expect(classifyAssistantError(aborted(source), stopOptions))
+        .toEqual(classifyAssistantError(aborted(), stopOptions))
+    }
+  })
+
+  test('a canonical managed user stop still wins', () => {
+    expect(classifyAssistantError(aborted('provider_retry'), { managedAbortRecovery: { state: 'user_stopped' } })?.abortKind)
+      .toBe('manual')
+  })
+
+  test('only MessageAbortedError carries a source', () => {
+    const classification = classifyAssistantError({ name: 'UnknownError', data: { message: 'Step interrupted', source: 'provider_retry' } })
+    expect(classification?.text).not.toBe('Stopped after repeated provider connection failures.')
+  })
 })

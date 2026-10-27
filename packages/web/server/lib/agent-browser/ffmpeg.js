@@ -6,7 +6,9 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import assets from './ffmpeg-assets.json' with { type: 'json' };
 
-const identity = (stat) => [stat.dev, stat.ino, stat.size, stat.mtimeMs, stat.ctimeMs].join(':');
+// The device number is left out: APFS renumbers volumes across reboots, which
+// would invalidate every receipt and re-download FFmpeg during startup.
+const identity = (stat) => [stat.ino, stat.size, stat.mtimeMs, stat.ctimeMs].join(':');
 const digest = async (file) => {
   const hash = crypto.createHash('sha256');
   for await (const chunk of createReadStream(file)) hash.update(chunk);
@@ -49,10 +51,19 @@ export function createFfmpegInstaller({ installRoot, runCommand, platform = proc
     try {
       const stat = await fs.lstat(binaryPath);
       if (!stat.isFile() || (platform !== 'win32' && !(stat.mode & 0o111))) throw new Error('invalid executable');
-      const receipt = JSON.parse(await fs.readFile(path.join(root, 'ready.json'), 'utf8'));
+      const receiptPath = path.join(root, 'ready.json');
+      const receipt = JSON.parse(await fs.readFile(receiptPath, 'utf8'));
       const current = identity(stat);
-      if (receipt.release !== manifest.release || receipt.identity !== current || receipt.sha256 !== asset.binary.sha256) {
-        throw new Error('invalid receipt');
+      if (receipt.release !== manifest.release || receipt.sha256 !== asset.binary.sha256) throw new Error('invalid receipt');
+      if (receipt.identity !== current) {
+        // A stale identity (older receipt format or changed metadata) is
+        // re-proved from the pinned checksum instead of forcing a download.
+        if (await digest(binaryPath) !== asset.binary.sha256) throw new Error('checksum mismatch');
+        const refreshed = path.join(root, `.ready.json.${process.pid}.${Date.now()}.tmp`);
+        try {
+          await fs.writeFile(refreshed, JSON.stringify({ ...receipt, identity: current }), { mode: 0o600 });
+          await fs.rename(refreshed, receiptPath);
+        } finally { await fs.rm(refreshed, { force: true }); }
       }
       const notices = [['LICENSE', asset.license], ['README', asset.readme]];
       const noticeIdentities = await Promise.all(notices.map(async ([name]) => {

@@ -18,7 +18,7 @@ function run(label, command, args, options = {}) {
   const child = spawn(command, args, {
     cwd: repoRoot,
     stdio: ['inherit', 'pipe', 'pipe'],
-    env: { ...process.env, OPENCHAMBER_DATA_DIR: devDataDirectory },
+    env: { ...process.env, DEVRYAN_DATA_DIR: devDataDirectory },
     detached: useDetachedChildren,
     ...options,
   });

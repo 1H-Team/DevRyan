@@ -9,11 +9,11 @@ describe('resolveSessionDeleteFailureDescription', () => {
     ], 'Please try again in a moment.')).toBe('OpenCode is restarting');
   });
 
-  test('uses the fallback for mixed or unavailable failure reasons', () => {
+  test('preserves mixed reasons and uses the fallback only when no reason is available', () => {
     expect(resolveSessionDeleteFailureDescription([
       { sessionId: 'session-a', message: 'First failure' },
       { sessionId: 'session-b', message: 'Second failure' },
-    ], 'Please try again in a moment.')).toBe('Please try again in a moment.');
+    ], 'Please try again in a moment.')).toBe('First failure; Second failure');
 
     expect(resolveSessionDeleteFailureDescription([
       { sessionId: 'session-a', message: 'Unknown error' },

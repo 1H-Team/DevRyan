@@ -46,19 +46,19 @@ const row = (text: string, cols: number, flags: Partial<Pick<GhosttyRow, 'isWrap
 describe('terminalLinkAtPositionWithRange', () => {
   test('reconstructs a URL soft-wrapped across two rows', () => {
     const rows = [
-      row('see https://open', 16, { wrapsToNext: true }),
-      row('chamber.dev/docs', 16, { isWrapContinuation: true }),
+      row('see https://devr', 16, { wrapsToNext: true }),
+      row('yan.dev/docs', 16, { isWrapContinuation: true }),
       row('done', 16),
     ];
     const link = terminalLinkAtPositionWithRange(rows, 1, 3);
     expect(link).toEqual({
-      text: 'https://openchamber.dev/docs',
-      range: { start: { x: 4, y: 0 }, end: { x: 15, y: 1 } },
+      text: 'https://devryan.dev/docs',
+      range: { start: { x: 4, y: 0 }, end: { x: 11, y: 1 } },
     });
   });
 
   test('refuses a link whose head scrolled above the viewport', () => {
-    const rows = [row('chamber.dev/docs', 16, { isWrapContinuation: true }), row('', 16)];
+    const rows = [row('yan.dev/docs', 16, { isWrapContinuation: true }), row('', 16)];
     expect(terminalLinkAtPositionWithRange(rows, 0, 2)).toBeNull();
   });
 

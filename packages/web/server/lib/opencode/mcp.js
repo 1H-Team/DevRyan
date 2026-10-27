@@ -1,5 +1,6 @@
 import fs from 'fs';
 import os from 'os';
+import { selectedRuntimeBundle } from './runtime-host/runtime-bundle-binding.js';
 import path from 'path';
 import crypto from 'crypto';
 import { isDeepStrictEqual } from 'node:util';
@@ -12,6 +13,7 @@ import {
   isPlainObject,
   mergeConfigs,
   writeConfig,
+  getFolderConfigPaths,
 } from './shared.js';
 import { isInvalidJsoncError, parseConfigJsonc } from './jsonc-config.js';
 
@@ -33,14 +35,14 @@ function validateMcpName(name) {
  * List all MCP server configs from user-level opencode.json
  */
 const OFFICIAL_USER_CONFIG_FILE = path.join(OPENCODE_CONFIG_DIR, 'opencode.json');
-const OPENCODE_DATA_DIR = path.join(os.homedir(), '.local', 'share', 'opencode');
+const OPENCODE_DATA_DIR = selectedRuntimeBundle?.descriptor.launch.global.data ?? path.join(os.homedir(), '.local', 'share', 'opencode');
 const MCP_AUTH_FILE = path.join(OPENCODE_DATA_DIR, 'mcp-auth.json');
 const USER_CONFIG_PATHS = [
   CONFIG_FILE,
   OFFICIAL_USER_CONFIG_FILE,
   path.join(OPENCODE_CONFIG_DIR, 'opencode.jsonc'),
 ];
-const MCP_RECOVERY_MANIFEST_PATH = path.join(OPENCODE_CONFIG_DIR, '.openchamber', 'mcp-recovery.json');
+const MCP_RECOVERY_MANIFEST_PATH = path.join(OPENCODE_CONFIG_DIR, '.devryan', 'mcp-recovery.json');
 
 function readJsonFileIfPresent(filePath) {
   if (!filePath || !fs.existsSync(filePath)) return {};
@@ -80,24 +82,6 @@ function removeMcpAuthCacheEntry(name) {
       error: error.message || 'Failed to reset MCP OAuth cache',
     };
   }
-}
-
-function getMcpOAuthCredential(name, serverUrl, now = Date.now()) {
-  if (typeof name !== 'string' || !name || typeof serverUrl !== 'string' || !serverUrl) return null;
-  if (!Number.isFinite(now) || !fs.existsSync(MCP_AUTH_FILE)) return null;
-
-  const auth = readJsonFileIfPresent(MCP_AUTH_FILE);
-  const entry = auth?.[name];
-  const tokens = entry?.tokens;
-  if (!isPlainObject(entry) || entry.serverUrl !== serverUrl || !isPlainObject(tokens)
-    || typeof tokens.accessToken !== 'string' || !tokens.accessToken) {
-    return null;
-  }
-  const expiresAt = Number.isFinite(tokens.expiresAt) ? Number(tokens.expiresAt) : null;
-  return Object.freeze({
-    authorization: `Bearer ${tokens.accessToken}`,
-    expired: expiresAt !== null && (expiresAt * 1_000) <= now,
-  });
 }
 
 function identityRelevantMcpFields(entry) {
@@ -177,21 +161,30 @@ function readMcpConfigLayers(workingDirectory) {
     });
   }
 
-  for (const projectPath of getProjectLegacyConfigPaths(workingDirectory)) {
+  for (const projectPath of [...getProjectOfficialConfigPaths(workingDirectory), ...getProjectLegacyConfigPaths(workingDirectory)]) {
     projectPaths.add(projectPath);
-    sources.push({
-      path: projectPath,
-      scope: AGENT_SCOPE.PROJECT,
-      config: readConfigFile(projectPath),
-    });
   }
 
-  for (const projectPath of getProjectOfficialConfigPaths(workingDirectory)) {
-    projectPaths.add(projectPath);
+  // OpenCode 2 reads every opencode.json(c) and .opencode/opencode.json(c)
+  // from the project folder up to the filesystem root, so a server a parent
+  // folder defines runs in this project too. Only the project folder's own
+  // files are project-scoped; a parent folder's file reaches every project
+  // below it, like the global file. A broken parent file is skipped, a broken
+  // project file still fails the read.
+  for (const folderPath of getFolderConfigPaths(workingDirectory)) {
+    const own = projectPaths.has(folderPath);
+    let config;
+    try {
+      config = readConfigFile(folderPath);
+    } catch (error) {
+      if (own) throw error;
+      console.warn('[MCP config] Ignoring unreadable parent folder config', { file: folderPath, code: error?.code });
+      continue;
+    }
     sources.push({
-      path: projectPath,
-      scope: AGENT_SCOPE.PROJECT,
-      config: readConfigFile(projectPath),
+      path: folderPath,
+      scope: own ? AGENT_SCOPE.PROJECT : AGENT_SCOPE.USER,
+      config,
     });
   }
 
@@ -595,6 +588,7 @@ function markMcpRecoveryDeleted(name) {
 
 function backupPathsFor(configPath) {
   return [
+    `${configPath}.devryan.backup`,
     `${configPath}.openchamber.backup`,
     `${configPath}.bak`,
   ];
@@ -750,7 +744,6 @@ function recoverMcpConfigs(workingDirectory) {
 export {
   listMcpConfigs,
   getMcpConfig,
-  getMcpOAuthCredential,
   createMcpConfig,
   updateMcpConfig,
   deleteMcpConfig,

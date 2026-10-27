@@ -18,7 +18,8 @@ import { sortProviderTreeForPicker } from '@/lib/providers/sorting';
 import { isProviderModelAvailable } from '@/lib/providers/modelAvailability';
 import type { ModelMetadata } from '@/types';
 import { useI18n } from '@/lib/i18n';
-import { getOrderedThinkingVariants, resolveThinkingVariant } from '@/lib/providers/variantControls';
+import { getOrderedThinkingVariants } from '@/lib/providers/variantControls';
+import { resolveChatThinkingLevel, resolveChatThinkingVariant } from '@/lib/providers/chatThinking';
 import { formatEffortLabel } from '@/components/chat/mobileControlsUtils';
 
 /** Chip height class - shared between chips and add button */
@@ -164,14 +165,8 @@ export const ModelMultiSelect: React.FC<ModelMultiSelectProps> = ({
 
   const resolveInitialVariantForModel = React.useCallback((providerID: string, modelID: string) => {
     const provider = providers.find((entry) => entry.id === providerID);
-    const providerModel = provider?.models.find((model: Record<string, unknown>) => (model as { id?: string }).id === modelID) as
-      | { variants?: Record<string, unknown> }
-      | undefined;
-    return resolveThinkingVariant(
-      undefined,
-      getOrderedThinkingVariants(providerModel?.variants, { providerId: providerID }),
-      { providerId: providerID },
-    );
+    // A new chip starts on a concrete level (catalog default, else Medium), never an unnamed default.
+    return resolveChatThinkingVariant(provider, modelID, undefined);
   }, [providers]);
 
   const getTruncatedModelDisplayName = (model: Record<string, unknown>) => {
@@ -531,15 +526,11 @@ export const ModelMultiSelect: React.FC<ModelMultiSelectProps> = ({
 
               const provider = providers.find((p) => p.id === model.providerID);
               const providerModel = provider?.models.find((m: Record<string, unknown>) => (m as { id?: string }).id === model.modelID) as
-                | { variants?: Record<string, unknown> }
+                | { variants?: Record<string, unknown>; defaultThinkingLevel?: string }
                 | undefined;
               const variantKeys = getOrderedThinkingVariants(providerModel?.variants, { providerId: model.providerID });
               const hasVariants = variantKeys.length > 0;
-              const variantValue = resolveThinkingVariant(
-                model.variant,
-                variantKeys,
-                { providerId: model.providerID },
-              );
+              const variantValue = resolveChatThinkingLevel(model.variant, variantKeys, providerModel?.defaultThinkingLevel);
 
               return (
                 <div key={model.instanceId} className="flex items-center gap-2 min-w-0">

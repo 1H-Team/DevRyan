@@ -1,5 +1,5 @@
 import React from 'react';
-import { RiAddLine, RiArrowLeftSLine, RiArrowRightSLine, RiEyeLine, RiStarFill } from '@remixicon/react';
+import { RiArrowLeftSLine, RiArrowRightSLine, RiSettings3Line, RiStarFill } from '@remixicon/react';
 
 import { ProviderLogo } from '@/components/ui/ProviderLogo';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -37,7 +37,7 @@ const RailButton: React.FC<{
             >
                 {children}
                 {active ? (
-                    <span aria-hidden="true" className="absolute -right-[7px] top-1.5 bottom-1.5 w-[2px] rounded-full bg-primary" />
+                    <span aria-hidden="true" className="absolute -right-[5px] top-1.5 bottom-1.5 w-[2px] rounded-full bg-primary" />
                 ) : null}
             </button>
         </TooltipTrigger>
@@ -50,19 +50,15 @@ export const ModelPickerRail: React.FC<{
     activeTabId: string | null;
     dimmed: boolean;
     onSelectTab: (tabId: string) => void;
-    addProviderLabel: string;
-    showAllProvidersLabel: string;
-    onAddProvider: () => void;
-    onShowAllProviders: () => void;
+    settingsLabel: string;
+    onOpenSettings: () => void;
 }> = ({
     tabs,
     activeTabId,
     dimmed,
     onSelectTab,
-    addProviderLabel,
-    showAllProvidersLabel,
-    onAddProvider,
-    onShowAllProviders,
+    settingsLabel,
+    onOpenSettings,
 }) => {
     const favoritesTab = tabs.find((tab) => tab.kind === 'favorites');
     const providerTabs = tabs.filter((tab) => tab.kind === 'provider');
@@ -70,7 +66,7 @@ export const ModelPickerRail: React.FC<{
     return (
         <div className="model-picker-rail flex w-12 flex-shrink-0 flex-col items-center border-r border-border/40 py-1.5">
             <div className={cn(
-                'flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
+                'scrollbar-hidden flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-x-hidden overflow-y-auto',
                 dimmed && 'opacity-50'
             )}>
                 {favoritesTab ? (
@@ -99,11 +95,8 @@ export const ModelPickerRail: React.FC<{
                 ))}
             </div>
             <div className="mt-1 flex flex-col items-center gap-1 border-t border-border/40 pt-1.5">
-                <RailButton label={addProviderLabel} onClick={onAddProvider}>
-                    <RiAddLine className="h-4 w-4" />
-                </RailButton>
-                <RailButton label={showAllProvidersLabel} onClick={onShowAllProviders}>
-                    <RiEyeLine className="h-4 w-4" />
+                <RailButton label={settingsLabel} onClick={onOpenSettings}>
+                    <RiSettings3Line className="h-4 w-4" />
                 </RailButton>
             </div>
         </div>

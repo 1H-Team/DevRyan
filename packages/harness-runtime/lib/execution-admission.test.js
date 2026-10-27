@@ -1,6 +1,26 @@
 import { expect, test } from 'bun:test';
 import assert from 'node:assert/strict';
-import { executionPhase, quietExecutionPhase, withExecutionAdmission, withExecutionPreparation, withoutExecutionDeadline, executionProgress, executionProgressMeter, waitForExecutionQueue } from './execution-admission.js';
+import { executionPhase, quietExecutionPhase, withExecutionAdmission, withExecutionPreparation, withExecutionTiming, timedExecutionStep, executionSignal, withoutExecutionDeadline, executionProgress, executionProgressMeter, waitForExecutionQueue } from './execution-admission.js';
+
+test('timing preserves inherited cancellation and original failures without checking its root', async () => {
+  const controller = new AbortController(), records = [];
+  const cause = Object.assign(Error('original lock timeout'), { code: 'LOCK_TIMEOUT', name: 'TimeoutError' });
+  let signal, committed;
+  await expect(withExecutionAdmission({}, async () => {
+    signal = executionSignal();
+    await expect(withExecutionTiming({}, async () => { throw cause; }, { phase: 'finish', onDiagnostic: row => records.push(row) })).rejects.toBe(cause);
+    committed = await withExecutionTiming({}, async () => {
+      expect(executionSignal()).toBe(signal);
+      controller.abort(Error('expired'));
+      return timedExecutionStep('receipt', async () => 'committed');
+    }, { phase: 'finish', minMs: 0, onDiagnostic: row => records.push(row) });
+  }, { signal: controller.signal })).rejects.toThrow('expired');
+  expect(committed).toBe('committed');
+  expect(records).toEqual([
+    expect.objectContaining({ phase: 'finish', state: 'failed' }),
+    expect.objectContaining({ phase: 'finish', state: 'completed', steps: expect.stringContaining('receipt:1/') }),
+  ]);
+});
 
 test('an expired active operation retains ownership until it actually settles', async () => {
   let release;
@@ -67,17 +87,17 @@ test('idle admission survives progressing work, expires idle work, and keeps an 
   const { executionProgress } = await import('./execution-admission.js');
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   await expect(withExecutionAdmission({ sessionID: 'progressing' }, async () => {
-    for (let i = 0; i < 8; i++) { await sleep(30); executionProgress(); }
+    for (let i = 0; i < 12; i++) { await sleep(10); executionProgress(); } // 120 ms of work, past the 100 ms idle window
     return 'done';
   }, { timeoutMs: 2_000, idleMs: 100 })).resolves.toBe('done');
   const idleStarted = Date.now();
-  await expect(withExecutionAdmission({ sessionID: 'idle' }, () => executionPhase('work', () => sleep(400)),
+  await expect(withExecutionAdmission({ sessionID: 'idle' }, () => executionPhase('work', () => sleep(160)),
     { timeoutMs: 2_000, idleMs: 100 })).rejects.toMatchObject({ code: 'local_execution_timeout' });
-  expect(Date.now() - idleStarted).toBeGreaterThanOrEqual(390); // Ownership retained until settled.
+  expect(Date.now() - idleStarted).toBeGreaterThanOrEqual(150); // Ownership retained until settled.
   await expect(withExecutionAdmission({ sessionID: 'capped' }, async () => {
-    for (let i = 0; i < 20; i++) { await sleep(30); executionProgress(); }
+    for (let i = 0; i < 20; i++) { await sleep(10); executionProgress(); }
     return 'late';
-  }, { timeoutMs: 200, idleMs: 100 })).rejects.toMatchObject({ code: 'local_execution_timeout' });
+  }, { timeoutMs: 150, idleMs: 100 })).rejects.toMatchObject({ code: 'local_execution_timeout' });
 });
 
 test('a caller leaving a long queue is credited with progress before its own work', async () => {
@@ -85,16 +105,16 @@ test('a caller leaving a long queue is credited with progress before its own wor
   const holder = { progress: Date.now(), waiters: 0 };
   const queueMeter = { progress: Date.now(), waiters: 0, following: holder };
   let release; const previous = new Promise((resolve) => { release = resolve; });
-  const ticker = setInterval(() => { holder.progress = Date.now(); }, 20);
-  setTimeout(() => { clearInterval(ticker); queueMeter.following = undefined; queueMeter.progress = Date.now(); release(); }, 1_200);
+  const ticker = setInterval(() => { holder.progress = Date.now(); }, 10);
+  setTimeout(() => { clearInterval(ticker); queueMeter.following = undefined; queueMeter.progress = Date.now(); release(); }, 400); // queue wait well past idleMs
   await expect(withExecutionAdmission({ sessionID: 'queued' }, async () => {
     await waitForExecutionQueue(previous, queueMeter);
     // Deterministic: the credit is visible immediately, not only if an idle
     // tick happens to land before the work finishes.
     expect(Date.now() - executionProgressMeter().progress).toBeLessThan(100);
-    await sleep(150);
+    await sleep(40);
     return 'completed';
-  }, { timeoutMs: 10_000, idleMs: 400 })).resolves.toBe('completed');
+  }, { timeoutMs: 10_000, idleMs: 120 })).resolves.toBe('completed');
 });
 
 test('a summarized admission journals one record with per-phase steps, and nothing when fast', async () => {
@@ -113,6 +133,28 @@ test('a summarized admission journals one record with per-phase steps, and nothi
   expect(rest).toEqual([]);
   expect(record).toMatchObject({ event: 'session_execution', sessionID: 's', callID: 'c', phase: 'admission', state: 'completed' });
   expect(record.steps).toMatch(/^identity_lookup:1\/\d+,lease_lookup:2\/\d+,ledger_transaction:1\/\d+$/);
+});
+
+test('a preparation is its own summary root, so its time is journaled once, not as admission plus preparation', async () => {
+  const records = [];
+  await withExecutionPreparation({ sessionID: 's', callID: 'c', kind: 'shell' }, async () => {
+    await executionPhase('reconciliation', async () => {});
+    await executionPhase('view_files', () => delay(60));
+  }, { onDiagnostic: (record) => records.push(record), summary: { minMs: 0, slowMs: 40 } });
+  // The slow view copy is visible as it happens; the summary carries it once.
+  expect(records.map((record) => `${record.phase}:${record.state}`)).toEqual([
+    'preparation:started', 'view_files:started', 'view_files:completed', 'preparation:completed',
+  ]);
+  const summary = records.at(-1);
+  expect(summary).toMatchObject({ sessionID: 's', callID: 'c', executionTier: 'process', phase: 'preparation' });
+  expect(summary.steps).toMatch(/^reconciliation:1\/\d+,view_files:1\/\d+$/);
+  expect(records.some((record) => record.phase === 'admission')).toBe(false);
+  // Unsummarized, a preparation still journals one started/completed pair.
+  const plain = [];
+  await withExecutionPreparation({ sessionID: 's', kind: 'writer' }, async () => {}, { onDiagnostic: (record) => plain.push(record) });
+  expect(plain.map((record) => `${record.phase}:${record.state}:${record.executionTier}`)).toEqual([
+    'preparation:started:process', 'preparation:completed:process',
+  ]);
 });
 
 test('a summarized admission still journals failed and slow phases as they happen', async () => {
@@ -184,4 +226,30 @@ test('summary steps are no-ops outside a summary and never check an aborted admi
     ran = true;
   }, { signal: controller.signal, summary: { minMs: 0 } }).catch(() => {});
   expect(ran).toBe(true);
+});
+
+test('an observation of context-free work journals its summary but keeps the original failure and code', async () => {
+  const { withExecutionObservation, executionReporting, executionSignal } = await import('./execution-admission.js');
+  const records = [];
+  expect(executionReporting()).toBe(false);
+  const lockTimeout = Object.assign(new Error('lock'), { code: 'LOCK_TIMEOUT' });
+  const error = await withExecutionObservation({ sessionID: 'ses_native', action: 'direct-finish', callID: 'call_1' }, async () => {
+    expect(executionReporting()).toBe(true);
+    expect(executionSignal()).toBeUndefined();
+    await executionPhase('identity_lookup', async () => {});
+    return executionPhase('direct_receipt', async () => { throw lockTimeout; });
+  }, { phase: 'direct_finish', minMs: 0, onDiagnostic: (record) => records.push(record) }).catch((value) => value);
+  // Without a prior context the caller received LOCK_TIMEOUT; observing it must not rewrap it.
+  expect(error).toBe(lockTimeout);
+  const summary = records.find((record) => record.phase === 'direct_finish');
+  expect(summary).toMatchObject({ event: 'session_execution', sessionID: 'ses_native', callID: 'call_1', executionTier: 'direct', state: 'failed' });
+  expect(summary.steps).toContain('identity_lookup:1/');
+  expect(records.find((record) => record.phase === 'direct_receipt')).toMatchObject({ state: 'failed' });
+  const completed = [];
+  expect(await withExecutionObservation({}, async () => 'ok', { phase: 'direct_admit', minMs: 0, onDiagnostic: (record) => completed.push(record) })).toBe('ok');
+  expect(completed).toEqual([expect.objectContaining({ phase: 'direct_admit', state: 'completed', steps: '' })]);
+  // Inside an existing admission it is an ordinary summary: timeouts keep their admission meaning.
+  const nested = await withExecutionAdmission({}, () => withExecutionObservation({}, async () => { throw lockTimeout; },
+    { phase: 'direct_finish' })).catch((value) => value);
+  expect(nested.code).toBe('local_execution_timeout');
 });

@@ -32,6 +32,15 @@ describe('packaged delegation permissions', () => {
     expect(frontmatter.permission.devryan_task).toBe('deny');
   });
 
+  it('keeps Oracle read-only in core: every file-mutation tool is denied after its wildcard allow', () => {
+    const { permission } = readFrontmatter('oracle');
+    const keys = Object.keys(permission);
+    for (const tool of ['write', 'edit', 'patch', 'apply_patch', 'ast_grep_replace']) {
+      expect(permission[tool]).toBe('deny');
+      expect(keys.indexOf(tool)).toBeGreaterThan(keys.indexOf('*'));
+    }
+  });
+
   it('hides Slim background-task tools from Orchestrator, which delegates only through devryan_task', () => {
     // Slim's task_status/task_reply/... resolve only Slim-board jobs, which DevRyan never creates.
     const { permission } = readFrontmatter('orchestrator');

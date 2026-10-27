@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdtemp, rm, readdir, copyFile, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, realpath, rm, readdir, copyFile, mkdir, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
@@ -70,12 +71,15 @@ const sdkFixture = `
           run.usage=usage;
           onDelta({type:'turn-ended',usage});
           yield {type:'usage',usage};
-          await new Promise(resolve=>setTimeout(resolve,20));
+          await new Promise(resolve=>setTimeout(resolve,2));
           if(cancelling){const keepAlive=setInterval(()=>{},1000);try{await complete;}finally{clearInterval(keepAlive);}return;}
         }
         run.usage=total; run.status=failing?'error':'finished'; finish();
       },
       async wait(){await complete;if(failing)throw new Error('fixture failure');return {id:run.id,requestId:run.requestId,status:run.status,model,usage:run.usage,result:'done'};},
+      // SDK 1.0.28 result is its last assistantMessage. This usage-only stream
+      // exercises the supported final-only completion with its exact witness.
+      async conversation(){return [{type:'agentConversationTurn',turn:{steps:[{type:'assistantMessage',message:{text:'done'}}]}}];},
       // Deliberately race native success against the already accepted local Stop.
       async cancel(){run.status='finished';finish();}
     }; return run;
@@ -90,9 +94,7 @@ for (const mode of ['direct', 'persistent', 'fallback']) {
     const failing = outcome === 'failure';
     const cancelling = outcome === 'cancellation';
     test(`${mode}: cumulative usage is not doubled or used as context after ${outcome}`, async () => {
-      const qaDirectory = path.resolve(import.meta.dirname, '../../.cache/qa');
-      await mkdir(qaDirectory, { recursive: true });
-      const directory = await mkdtemp(path.join(qaDirectory, 'cursor-usage-unit-'));
+      const directory = await realpath(await mkdtemp(path.join(os.tmpdir(), 'devryan-cursor-usage-unit-')));
       let runtime;
       try {
         for (const name of await readdir(import.meta.dirname)) {
@@ -132,7 +134,7 @@ for (const mode of ['direct', 'persistent', 'fallback']) {
         } });
         if (cancelling) {
           for (let attempt = 0; attempt < 500 && !observations.some(row => row.tokens); attempt++) {
-            await new Promise(resolve => setTimeout(resolve, 10));
+            await new Promise(resolve => setTimeout(resolve, 2));
           }
           expect(observations.some(row => row.tokens)).toBe(true);
           await runtime.abortSession('ses_fixture');
@@ -141,7 +143,7 @@ for (const mode of ['direct', 'persistent', 'fallback']) {
         for (let attempt = 0; attempt < 500; attempt++) {
           assistant = (await runtime.getSessionMessages('ses_fixture')).find(row => row.info.role === 'assistant' && row.info.finish);
           if (assistant) break;
-          await new Promise(resolve => setTimeout(resolve, 10));
+          await new Promise(resolve => setTimeout(resolve, 2));
         }
         expect(assistant).toBeDefined();
         expect(correlations.at(-1)).toEqual({ sessionID: 'ses_fixture', messageID: assistant.info.id, userMessageID: 'msg_fixture', directory });
@@ -154,6 +156,8 @@ for (const mode of ['direct', 'persistent', 'fallback']) {
         expect(assistant.info.finish).toBe(cancelling ? 'cancelled' : failing ? 'error' : 'stop');
         if (!cancelling) expect(assistant.info.cursorUsage.source).toBe(failing ? 'sdk-run-snapshot' : 'sdk-run-result');
         if (!failing && !cancelling) {
+          expect(assistant.info.error).toBeUndefined();
+          expect(assistant.parts.filter(part => part.type === 'text').map(part => part.text)).toEqual(['done']);
           expect(await runtime.generateTitle({ text: 'Generate a title', sessionID: 'ses_fixture', directory })).toBe('Fixture title');
           expect(titleObservations).toHaveLength(1);
           expect(titleObservations[0]).toMatchObject({ sessionID: 'ses_fixture', directory, observation: {

@@ -1,12 +1,12 @@
 import React, { useRef, useEffect } from 'react';
 import { motion, useDragControls, useMotionValue, animate } from 'motion/react';
+import { useRuntimeFeature } from '@/lib/opencode/runtime-capabilities';
 import { Header } from './Header';
 import { BottomTerminalDock } from './BottomTerminalDock';
 import { Sidebar, SIDEBAR_CONTENT_WIDTH } from './Sidebar';
 import { RightSidebar, RIGHT_SIDEBAR_CONTENT_WIDTH } from './RightSidebar';
 import { RightSidebarTabs } from './RightSidebarTabs';
 import { DesktopEdgeChrome } from './DesktopEdgeChrome';
-import { BotSidebarControlButton } from './BotSidebarControlButton';
 import { ContextPanel } from './ContextPanel';
 import { BrowserPanel } from './BrowserPanel';
 import { ErrorBoundary } from '../ui/ErrorBoundary';
@@ -21,8 +21,6 @@ import { DrawerProvider } from '@/contexts/DrawerContext';
 
 import { useUIStore } from '@/stores/useUIStore';
 import { useUpdateStore } from '@/stores/useUpdateStore';
-import { useBotsStore } from '@/stores/useBotsStore';
-import { useMainSidebarAudienceStore } from '@/stores/useMainSidebarAudienceStore';
 import { useDeviceInfo } from '@/lib/device';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useI18n } from '@/lib/i18n';
@@ -35,7 +33,6 @@ import { useSettingsEntryPreload } from '@/components/views/useSettingsEntryPrel
 import { useConfigApplyStatusLifecycle } from '@/components/views/config-apply/useConfigApplyStatusLifecycle';
 import {
     DeferredLazyView,
-    LazyBotView,
     LazyDiffView,
     LazyGitView,
     LazyMultiRunWindow,
@@ -62,17 +59,13 @@ const DESKTOP_RIGHT_SIDEBAR_MAX_WIDTH = 860;
 export const MainLayout: React.FC = () => {
     const { t } = useI18n();
     const principal = useAuthPrincipal();
+    const managedChildTasks = useRuntimeFeature('managedChildTasks');
+    const browser = useRuntimeFeature('browser');
     const canUseTerminal = hasAuthCapability(principal, 'terminal');
-    const canUseBots = hasAuthCapability(principal, 'bots');
     const canManageProjects = hasAuthCapability(principal, 'manageProjects');
     const canCreateWorktrees = hasAuthCapability(principal, 'createWorktrees');
     const canCreateBranches = hasAuthCapability(principal, 'createBranches');
-    const selectedBot = useBotsStore((state) => (
-        state.selectedBotId ? state.botsById[state.selectedBotId] ?? null : null
-    ));
-    const requestedBotMode = useMainSidebarAudienceStore((state) => state.audience === 'bots');
-    const botMode = canUseBots && requestedBotMode;
-    const canLaunchMultiRun = canManageProjects && canCreateWorktrees && canCreateBranches && !botMode;
+    const canLaunchMultiRun = canManageProjects && canCreateWorktrees && canCreateBranches && managedChildTasks;
     const canCheckForUpdates = canReadSettingsPage(principal, 'about');
     const isSidebarOpen = useUIStore((state) => state.isSidebarOpen);
     const isRightSidebarOpen = useUIStore((state) => state.isRightSidebarOpen);
@@ -116,8 +109,12 @@ export const MainLayout: React.FC = () => {
     const responsiveRightSidebarChangeRef = React.useRef<ResponsivePanelAction | null>(null);
     const responsiveBottomTerminalChangeRef = React.useRef<ResponsivePanelAction | null>(null);
 
-    // Mobile drawer state
-    const [mobileLeftDrawerOpen, setMobileLeftDrawerOpen] = React.useState(false);
+    // Header, swipes and session/project actions share the same drawer owner.
+    const mobileLeftDrawerOpen = isSessionSwitcherOpen;
+    const setMobileLeftDrawerOpen = React.useCallback((next: React.SetStateAction<boolean>) => {
+        const state = useUIStore.getState();
+        state.setSessionSwitcherOpen(typeof next === 'function' ? next(state.isSessionSwitcherOpen) : next);
+    }, []);
     const mobileRightDrawerOpenRef = React.useRef(false);
 
     // Left drawer motion value
@@ -140,12 +137,6 @@ export const MainLayout: React.FC = () => {
             setMultiRunLauncherOpen(false);
         }
     }, [canLaunchMultiRun, canUseTerminal, setBottomTerminalOpen, setMultiRunLauncherOpen]);
-
-    React.useEffect(() => {
-        if (!botMode) return;
-        setBottomTerminalOpen(false);
-        setMultiRunLauncherOpen(false);
-    }, [botMode, setBottomTerminalOpen, setMultiRunLauncherOpen]);
 
     // Sync left drawer state and motion value
     React.useLayoutEffect(() => {
@@ -190,13 +181,6 @@ export const MainLayout: React.FC = () => {
         return () => animation.stop();
     }, [isMobile, isRightSidebarOpen, screenWidth, rightDrawerX]);
 
-    // Sync session switcher state to left drawer (one-way)
-    useEffect(() => {
-        if (isMobile) {
-            setMobileLeftDrawerOpen(isSessionSwitcherOpen);
-        }
-    }, [isSessionSwitcherOpen, isMobile]);
-
     // Ensure mobile drawers are closed when opening full-screen settings
     useEffect(() => {
         if (!isMobile || !isSettingsDialogOpen) {
@@ -204,13 +188,10 @@ export const MainLayout: React.FC = () => {
         }
 
         setMobileLeftDrawerOpen(false);
-        if (isSessionSwitcherOpen) {
-            useUIStore.getState().setSessionSwitcherOpen(false);
-        }
         if (isRightSidebarOpen) {
             setRightSidebarOpen(false);
         }
-    }, [isMobile, isSettingsDialogOpen, isSessionSwitcherOpen, isRightSidebarOpen, setRightSidebarOpen]);
+    }, [isMobile, isSettingsDialogOpen, isSessionSwitcherOpen, isRightSidebarOpen, setRightSidebarOpen, setMobileLeftDrawerOpen]);
 
     // Sync right drawer and git sidebar state
     useEffect(() => {
@@ -224,22 +205,21 @@ export const MainLayout: React.FC = () => {
             setRightSidebarOpen(false);
         }
         setMobileLeftDrawerOpen((open) => !open);
-    }, [isRightSidebarOpen, setRightSidebarOpen]);
+    }, [isRightSidebarOpen, setRightSidebarOpen, setMobileLeftDrawerOpen]);
 
     const toggleMobileRightDrawer = React.useCallback(() => {
         if (mobileLeftDrawerOpen) {
             setMobileLeftDrawerOpen(false);
         }
         setRightSidebarOpen(!isRightSidebarOpen);
-    }, [isRightSidebarOpen, mobileLeftDrawerOpen, setRightSidebarOpen]);
+    }, [isRightSidebarOpen, mobileLeftDrawerOpen, setRightSidebarOpen, setMobileLeftDrawerOpen]);
 
-    // Trigger initial update check shortly after mount, then repeat using server-suggested cadence.
+    // Keep update discovery out of launch; use the regular cadence for the first check too.
     const checkForUpdates = useUpdateStore((state) => state.checkForUpdates);
     React.useEffect(() => {
         if (!canCheckForUpdates) {
             return;
         }
-        const initialDelayMs = 3000;
         const defaultIntervalMs = 60 * 60 * 1000;
         const minIntervalMs = 5 * 60 * 1000;
         const maxIntervalMs = 24 * 60 * 60 * 1000;
@@ -262,7 +242,7 @@ export const MainLayout: React.FC = () => {
             }, delayMs);
         };
 
-        scheduleNext(initialDelayMs);
+        scheduleNext(defaultIntervalMs);
 
         return () => {
             disposed = true;
@@ -324,7 +304,7 @@ export const MainLayout: React.FC = () => {
                 isBottomTerminalOpen: state.isBottomTerminalOpen,
                 rightSidebarAutoClosed: rightSidebarAutoClosedRef.current,
                 bottomTerminalAutoClosed: bottomTerminalAutoClosedRef.current,
-                browserPanelOpen: !botMode && browserPanelState?.isOpen === true && contextPanelState?.expanded !== true,
+                browserPanelOpen: browserPanelState?.isOpen === true && contextPanelState?.expanded !== true,
                 browserPanelExpanded: browserPanelState?.expanded === true,
                 browserPanelPreferredWidth: browserPanelState?.width ?? 600,
                 contextPanelWidth: contextPanelState?.isOpen === true && contextPanelState.expanded !== true
@@ -382,7 +362,6 @@ export const MainLayout: React.FC = () => {
         browserPanelState?.expanded,
         browserPanelState?.isOpen,
         browserPanelState?.width,
-        botMode,
         contextPanelState?.expanded,
         contextPanelState?.isOpen,
         contextPanelState?.width,
@@ -433,7 +412,6 @@ export const MainLayout: React.FC = () => {
     }, [isMobile, isTablet, setBottomTerminalOpen, setRightSidebarOpen]);
 
     const secondaryView = React.useMemo(() => {
-        if (botMode) return null;
         switch (activeMainTab) {
             case 'plan':
                 return <LazyViewBoundary><LazyPlanView /></LazyViewBoundary>;
@@ -446,9 +424,9 @@ export const MainLayout: React.FC = () => {
             default:
                 return null;
         }
-    }, [activeMainTab, botMode, canUseTerminal]);
+    }, [activeMainTab, canUseTerminal]);
 
-    const isChatActive = botMode || activeMainTab === 'chat';
+    const isChatActive = activeMainTab === 'chat';
     const visibleSidebarWidth = React.useMemo(() => {
         const rawWidth = sidebarWidth || SIDEBAR_CONTENT_WIDTH;
         return Math.min(DESKTOP_SIDEBAR_MAX_WIDTH, Math.max(DESKTOP_SIDEBAR_MIN_WIDTH, rawWidth));
@@ -502,35 +480,11 @@ export const MainLayout: React.FC = () => {
                 }}>
                     {/* Mobile: header + drawer mode */}
                     {!isSettingsDialogOpen && <Header
-                        botMode={botMode}
-                        bot={selectedBot}
                         onToggleLeftDrawer={toggleMobileLeftDrawer}
                         onToggleRightDrawer={toggleMobileRightDrawer}
                         leftDrawerOpen={mobileLeftDrawerOpen}
                         rightDrawerOpen={isRightSidebarOpen}
                     />}
-                    {!isSettingsDialogOpen && botMode ? (
-                        <div
-                            className="pointer-events-none absolute inset-x-0 top-0 z-20 flex h-[var(--oc-header-height,80px)] items-center justify-between px-2"
-                            style={{ paddingTop: 'var(--oc-safe-area-top, 0px)' }}
-                            role="toolbar"
-                            aria-label={t('bots.header.toolbarAria')}
-                            data-bot-mobile-edge-controls
-                        >
-                            <BotSidebarControlButton
-                                side="left"
-                                open={mobileLeftDrawerOpen}
-                                onToggle={toggleMobileLeftDrawer}
-                                mobile
-                            />
-                            <BotSidebarControlButton
-                                side="right"
-                                open={isRightSidebarOpen}
-                                onToggle={toggleMobileRightDrawer}
-                                mobile
-                            />
-                        </div>
-                    ) : null}
                     
                     {/* Backdrop */}
                     <motion.button
@@ -579,8 +533,10 @@ export const MainLayout: React.FC = () => {
                             } else {
                                 if (currentX > -drawerWidthPx / 2) {
                                     leftDrawerX.set(0);
+                                    setMobileLeftDrawerOpen(true);
                                 } else {
                                     leftDrawerX.set(-drawerWidthPx);
+                                    setMobileLeftDrawerOpen(false);
                                 }
                             }
                         }}
@@ -656,9 +612,9 @@ export const MainLayout: React.FC = () => {
                         )}
                     >
                         <main className="w-full h-full overflow-hidden bg-background relative" data-page-scroll-lock="true">
-                            <div data-chat-surface="true" data-bot-surface={botMode || undefined} className={cn('absolute inset-0', !isChatActive && 'invisible')}>
+                            <div data-chat-surface="true" className={cn('absolute inset-0', !isChatActive && 'invisible')}>
                                 <ErrorBoundary>
-                                    {botMode ? <LazyViewBoundary><LazyBotView /></LazyViewBoundary> : <ChatView />}
+                                    <ChatView />
                                 </ErrorBoundary>
                             </div>
                             {secondaryView && (
@@ -767,8 +723,6 @@ export const MainLayout: React.FC = () => {
                             )} data-page-scroll-lock="true">
                                 <Header
                                     browserActionPortalTarget={browserActionPortalTarget}
-                                    botMode={botMode}
-                                    bot={selectedBot}
                                 />
                                 <div className={cn(
                                     'flex flex-1 min-h-0 overflow-hidden',
@@ -777,9 +731,9 @@ export const MainLayout: React.FC = () => {
                                 )} data-page-scroll-lock="true">
                                     <div className="relative flex flex-1 min-h-0 min-w-0 overflow-hidden" data-page-scroll-lock="true">
                                         <main className="flex-1 overflow-hidden bg-background relative" data-page-scroll-lock="true">
-                                            <div data-chat-surface="true" data-bot-surface={botMode || undefined} className={cn('absolute inset-0', !isChatActive && 'invisible')}>
+                                            <div data-chat-surface="true" className={cn('absolute inset-0', !isChatActive && 'invisible')}>
                                                 <ErrorBoundary>
-                                                    {botMode ? <LazyViewBoundary><LazyBotView /></LazyViewBoundary> : <ChatView />}
+                                                    <ChatView />
                                                 </ErrorBoundary>
                                             </div>
                                             {secondaryView && (
@@ -788,11 +742,11 @@ export const MainLayout: React.FC = () => {
                                                 </div>
                                             )}
                                         </main>
-                                        {!botMode ? <ContextPanel /> : null}
-                                        {!botMode ? <BrowserPanel /> : null}
+                                        <ContextPanel />
+                                        {browser ? <BrowserPanel /> : null}
                                     </div>
                                 </div>
-                                {canUseTerminal && !botMode ? <BottomTerminalDock isOpen={isBottomTerminalOpen} isMobile={isMobile}>
+                                {canUseTerminal ? <BottomTerminalDock isOpen={isBottomTerminalOpen} isMobile={isMobile}>
                                     {isBottomTerminalOpen ? (
                                         <LazyViewBoundary>
                                             <LazyTerminalView />
@@ -802,7 +756,6 @@ export const MainLayout: React.FC = () => {
                             </div>
                             <RightSidebar
                                 isOpen={isRightSidebarOpen}
-                                botMode={botMode}
                                 className="border-0"
                             >
                                 {rightSidebarTabsElement}
@@ -810,7 +763,6 @@ export const MainLayout: React.FC = () => {
                             <DesktopEdgeChrome
                                 hideActions={isSettingsDialogOpen}
                                 isMobile={isMobile}
-                                botMode={botMode}
                                 browserActionPortalRef={setBrowserActionPortalTarget}
                             />
                         </div>

@@ -41,6 +41,17 @@ const renderPanel = (group: RateLimitGroup) => renderToStaticMarkup(
 );
 
 describe('UsageProviderPanel quota warnings and value rows', () => {
+  test('retains weekly limits and reset expiries alongside usage source and account', () => {
+    const markup = renderPanel({ providerId: 'codex', providerName: 'OpenAI', source: 'codex-app-server', connectionId: 'usage-a',
+      account: { email: 'quota@example.test', planType: 'pro' }, usageUpdatedAt: 1,
+      entries: [['weekly', { ...valueOnlyWindow, usedPercent: 20, remainingPercent: 80, windowSeconds: 604800 }]],
+      resetCredits: { availableCount: 1, totalEarnedCount: null, source: 'dedicated', credits: [{ id: 'reset-a', status: 'available',
+        resetType: null, grantedAt: null, grantedAtFormatted: null, expiresAt: 1791936000000, expiresAtFormatted: 'Oct 14, 2026' }] } });
+    expect(markup).toContain('Usage source: Codex'); expect(markup).toContain('quota@example.test'); expect(markup).toContain('Updated now');
+    expect(markup).toContain('Weekly Limit'); expect(markup).toContain('20%'); expect(markup).toContain('Reset Bank'); expect(markup).toContain('Oct 14, 2026');
+    const unknown = renderPanel({ providerId: 'codex', providerName: 'OpenAI', source: 'codex-app-server', entries: [], resetCredits: null });
+    expect(unknown).toContain('Reset Bank'); expect(unknown).toContain('Unavailable'); expect(unknown).not.toContain('0 available');
+  });
   test('renders and orders every Claude subscription limit with Claude-specific labels', () => {
     const progressWindow: UsageWindow = {
       ...valueOnlyWindow,
@@ -78,6 +89,22 @@ describe('UsageProviderPanel quota warnings and value rows', () => {
     expect(markup).toContain('Provider usage warning');
     expect(markup).toContain('Balance is temporarily unavailable.');
     expect(markup).not.toContain('role="progressbar"');
+  });
+
+  test('surfaces a refresh failure in warning styling without removing retained usage rows', () => {
+    const markup = renderPanel({
+      providerId: 'deepseek',
+      providerName: 'DeepSeek',
+      entries: [['USD', valueOnlyWindow]],
+      error: 'Refresh failed: provider timed out',
+    });
+
+    expect(markup).toContain('Refresh failed: provider timed out');
+    expect(markup).toContain('border-[var(--status-warning-border)] bg-[var(--status-warning-background)]');
+    expect(markup).toContain('text-[var(--status-warning)]');
+    // The last good rows stay on screen next to the error.
+    expect(markup).toContain('USD 12.50');
+    expect(markup.indexOf('Refresh failed')).toBeLessThan(markup.indexOf('USD 12.50'));
   });
 
   test('still renders progress for a reported zero-percent window', () => {
@@ -139,5 +166,16 @@ describe('UsageProviderPanel quota warnings and value rows', () => {
     expect(openCodeMarkup).toContain('background-color:var(--status-success)');
     expect(openCodeMarkup).not.toContain('background-color:var(--status-error)');
     expect(adaptiveMarkup).toContain('background-color:var(--status-error)');
+  });
+
+  test('shows the server error text for a configured provider without windows', () => {
+    const markup = renderPanel({
+      providerId: 'codex',
+      providerName: 'OpenAI',
+      entries: [],
+      error: 'Usage is not available with Sign in with ChatGPT',
+    });
+
+    expect(markup).toContain('Usage is not available with Sign in with ChatGPT');
   });
 });

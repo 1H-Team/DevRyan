@@ -5,6 +5,7 @@ import {
   registerAuthAndAccessRoutes,
   registerCommonRequestMiddleware,
   registerServerStatusRoutes,
+  resolveHealthOpenCodeGeneration,
   resolveSharedJsonBodyLimit,
 } from './core-routes.js';
 import { createTunnelAuth } from './tunnel-auth.js';
@@ -45,9 +46,70 @@ describe('core-routes', () => {
     expect(response.body).toMatchObject({
       status: 'ok',
       openCodeRunning: true,
+      devryanVersion: '1.0.0',
+      openchamberVersion: '1.0.0',
     });
     expect(response.headers['x-devryan-instance-id']).toBe('instance-test-id');
     expect(response.text).not.toContain('<!doctype html>');
+  });
+
+  it('adds the OpenCode runtime generation and capability block to the health snapshot', async () => {
+    const { app } = createApp();
+    const response = await request(app).get('/health');
+    expect(response.status).toBe(200);
+    expect(response.body.openCode).toEqual({
+      generation: 2,
+      runtimeIdentity: null,
+      capabilities: { share: false, mcpOAuth: false, sessionShell: false, lsp: false, messageEdit: false },
+    });
+  });
+
+  it('turns every capability off for a gen-2 runtime', async () => {
+    const app = express();
+    registerServerStatusRoutes(app, {
+      express,
+      process,
+      gracefulShutdown: vi.fn(async () => {}),
+      getHealthSnapshot: () => ({ openCodeRunning: true, openCodeGeneration: 2, openCodeRuntimeIdentity: 'server:2' }),
+      openchamberVersion: '1.0.0',
+      runtimeName: 'test',
+      serverStartedAt: '2026-01-01T00:00:00.000Z',
+      runtimeInstanceId: 'instance-test-id',
+      uiAuthController: null,
+    });
+    const response = await request(app).get('/api/health');
+    expect(response.body).toMatchObject({ openCodeRunning: true, openCodeGeneration: 2 });
+    expect(response.body.openCode).toEqual({
+      generation: 2,
+      runtimeIdentity: 'server:2',
+      capabilities: { share: false, mcpOAuth: false, sessionShell: false, lsp: false, messageEdit: false },
+    });
+  });
+
+  it('enables MCP OAuth only for the ready owned native facade and clears it during replacement', async () => {
+    const { app, dependencies } = createApp();
+    let ready = true;
+    dependencies.getHealthSnapshot = () => ({ openCodeRunning: true, openCodeGeneration: 2 });
+    // The route captures dependencies at registration, so construct its owned surface directly.
+    const nativeApp = express();
+    registerServerStatusRoutes(nativeApp, { ...dependencies,
+      getNativeRuntimeOwner: () => ({ isReady: () => ready, getConfigurationSnapshot: () => ({ locations: [] }),
+        withIntegrationOperation: () => {}, credentialOperation: () => {}, credentialMetadata: () => {} }) });
+    expect((await request(nativeApp).get('/health')).body.openCode.capabilities).toEqual({
+      share: false, mcpOAuth: true, sessionShell: false, lsp: false, messageEdit: false,
+    });
+    ready = false;
+    expect((await request(nativeApp).get('/health')).body.openCode.capabilities.mcpOAuth).toBe(false);
+    expect((await request(app).get('/health')).body.openCode.generation).toBe(2);
+  });
+
+  it('resolves the reported generation from the observed runtime, then the external declaration', () => {
+    expect(resolveHealthOpenCodeGeneration({ openCodeGeneration: 2 }, { DEVRYAN_OPENCODE_GENERATION: '1' })).toBe(2);
+    expect(resolveHealthOpenCodeGeneration({}, { DEVRYAN_OPENCODE_GENERATION: '2' })).toBe(2);
+    expect(resolveHealthOpenCodeGeneration({}, {})).toBe(2);
+    expect(resolveHealthOpenCodeGeneration({ openCodeGeneration: 1 }, { DEVRYAN_OPENCODE_GENERATION: '2' })).toBeNull();
+    expect(resolveHealthOpenCodeGeneration({ openCodeGeneration: 'x' }, {})).toBeNull();
+    expect(resolveHealthOpenCodeGeneration({ openCodeGeneration: 'x' }, { DEVRYAN_OPENCODE_GENERATION: 'bad' })).toBeNull();
   });
 
   it.each([
@@ -106,8 +168,8 @@ describe('core-routes', () => {
   });
 
   it('rejects shutdown in dev mode', async () => {
-    const previous = process.env.OPENCHAMBER_DEV_MODE;
-    process.env.OPENCHAMBER_DEV_MODE = 'true';
+    const previous = process.env.DEVRYAN_DEV_MODE;
+    process.env.DEVRYAN_DEV_MODE = 'true';
     try {
       const { app, dependencies } = createApp();
       const response = await request(app)
@@ -120,18 +182,18 @@ describe('core-routes', () => {
       expect(dependencies.gracefulShutdown).not.toHaveBeenCalled();
     } finally {
       if (typeof previous === 'undefined') {
-        delete process.env.OPENCHAMBER_DEV_MODE;
+        delete process.env.DEVRYAN_DEV_MODE;
       } else {
-        process.env.OPENCHAMBER_DEV_MODE = previous;
+        process.env.DEVRYAN_DEV_MODE = previous;
       }
     }
   });
 
   it('rejects dev-shutdown when allow flag is not set', async () => {
-    const previousShutdown = process.env.OPENCHAMBER_DEV_SHUTDOWN;
-    const previousAllow = process.env.OPENCHAMBER_ALLOW_DEV_SHUTDOWN;
-    process.env.OPENCHAMBER_DEV_SHUTDOWN = 'true';
-    delete process.env.OPENCHAMBER_ALLOW_DEV_SHUTDOWN;
+    const previousShutdown = process.env.DEVRYAN_DEV_SHUTDOWN;
+    const previousAllow = process.env.DEVRYAN_ALLOW_DEV_SHUTDOWN;
+    process.env.DEVRYAN_DEV_SHUTDOWN = 'true';
+    delete process.env.DEVRYAN_ALLOW_DEV_SHUTDOWN;
     try {
       const { app } = createApp();
       const response = await request(app)
@@ -144,38 +206,40 @@ describe('core-routes', () => {
       expect(response.body).toEqual({ ok: false, error: 'Dev shutdown is disabled' });
     } finally {
       if (typeof previousShutdown === 'undefined') {
-        delete process.env.OPENCHAMBER_DEV_SHUTDOWN;
+        delete process.env.DEVRYAN_DEV_SHUTDOWN;
       } else {
-        process.env.OPENCHAMBER_DEV_SHUTDOWN = previousShutdown;
+        process.env.DEVRYAN_DEV_SHUTDOWN = previousShutdown;
       }
       if (typeof previousAllow === 'undefined') {
-        delete process.env.OPENCHAMBER_ALLOW_DEV_SHUTDOWN;
+        delete process.env.DEVRYAN_ALLOW_DEV_SHUTDOWN;
       } else {
-        process.env.OPENCHAMBER_ALLOW_DEV_SHUTDOWN = previousAllow;
+        process.env.DEVRYAN_ALLOW_DEV_SHUTDOWN = previousAllow;
       }
     }
   });
 
   it('exposes dev flags on /api/system/info', async () => {
-    const previousMode = process.env.OPENCHAMBER_DEV_MODE;
-    const previousShutdown = process.env.OPENCHAMBER_DEV_SHUTDOWN;
-    const previousAllow = process.env.OPENCHAMBER_ALLOW_DEV_SHUTDOWN;
-    process.env.OPENCHAMBER_DEV_MODE = 'true';
-    process.env.OPENCHAMBER_DEV_SHUTDOWN = 'true';
-    process.env.OPENCHAMBER_ALLOW_DEV_SHUTDOWN = 'true';
+    const previousMode = process.env.DEVRYAN_DEV_MODE;
+    const previousShutdown = process.env.DEVRYAN_DEV_SHUTDOWN;
+    const previousAllow = process.env.DEVRYAN_ALLOW_DEV_SHUTDOWN;
+    process.env.DEVRYAN_DEV_MODE = 'true';
+    process.env.DEVRYAN_DEV_SHUTDOWN = 'true';
+    process.env.DEVRYAN_ALLOW_DEV_SHUTDOWN = 'true';
     try {
       const { app } = createApp();
       const response = await request(app).get('/api/system/info');
       expect(response.status).toBe(200);
       expect(response.body).toMatchObject({
+        devryanVersion: '1.0.0',
+        openchamberVersion: '1.0.0',
         devMode: true,
         devShutdownAllowed: true,
       });
     } finally {
       for (const [key, value] of [
-        ['OPENCHAMBER_DEV_MODE', previousMode],
-        ['OPENCHAMBER_DEV_SHUTDOWN', previousShutdown],
-        ['OPENCHAMBER_ALLOW_DEV_SHUTDOWN', previousAllow],
+        ['DEVRYAN_DEV_MODE', previousMode],
+        ['DEVRYAN_DEV_SHUTDOWN', previousShutdown],
+        ['DEVRYAN_ALLOW_DEV_SHUTDOWN', previousAllow],
       ]) {
         if (typeof value === 'undefined') {
           delete process.env[key];
@@ -191,15 +255,27 @@ describe('common request middleware', () => {
   it.each([
     ['/api/behavior/rules', '1mb'],
     ['/api/config/apply', '16kb'],
-    ['/api/bots/00000000-0000-4000-8000-000000000001', '50mb'],
     ['/api/session/ses_1/prompt_async', '50mb'],
     // Unlisted /api paths stay raw for the OpenCode proxy; body-reading routes
     // there mount their own parser (api-json-body-coverage.test.js).
     ['/api/session', null],
     ['/api/runtime-service/desktop-host', null],
+    ['/api/provider/openai/oauth', null],
+    ['/api/provider/openai/oauth/callback', null],
+    ['/api/provider/openai/oauth-legacy', '50mb'],
     ['/auth/session', '50mb'],
   ])('resolves the shared JSON body limit for %s', (pathname, limit) => {
     expect(resolveSharedJsonBodyLimit(pathname)).toBe(limit);
+  });
+
+  it('leaves JSON and URL-encoded SIWC bodies raw for guarded route parsing', async () => {
+    const app = express();
+    registerCommonRequestMiddleware(app, { express });
+    app.post('/api/provider/openai/oauth/callback', (req, res) => res.json({ parsed: req.body !== undefined }));
+    for (const [contentType, body] of [['application/json', '{'], ['application/x-www-form-urlencoded', 'value=fixture']]) {
+      const response = await request(app).post('/api/provider/openai/oauth/callback').set('Content-Type', contentType).send(body);
+      expect(response.status).toBe(200); expect(response.body).toEqual({ parsed: false });
+    }
   });
 
   it.each([
@@ -209,10 +285,6 @@ describe('common request middleware', () => {
     '/api/config/apply',
     '/api/config/apply/acknowledge-external',
     '/api/admin/users',
-    '/api/bots',
-    '/api/bot-actions/00000000-0000-4000-8000-000000000001/decision',
-    '/api/bot-channels/00000000-0000-4000-8000-000000000001/messages',
-    '/api/bot-runs/00000000-0000-4000-8000-000000000001/cancel',
     '/api/bug-reports',
     '/api/error-logs',
   ])(
@@ -264,9 +336,9 @@ describe('managed tunnel and invitation links', () => {
       uiAuthController: { multiUser: false, requireAuth: (_req, _res, next) => next(new Error('fixture-auth-failure')) },
       readSettingsFromDiskMigrated: async () => ({}), normalizeTunnelSessionTtlMs: (value) => value,
     });
-    app.post('/api/openchamber/session-retention/selection', (_req, res) => res.json({ selected: true }));
+    app.post('/api/devryan/session-retention/selection', (_req, res) => res.json({ selected: true }));
     app.use((error, _req, res, _next) => res.status(503).json({ error: error.message }));
-    const response = await request(app).post('/api/openchamber/session-retention/selection');
+    const response = await request(app).post('/api/devryan/session-retention/selection');
     expect(response.status).toBe(503);
     expect(response.body).toEqual({ error: 'fixture-auth-failure' });
   });

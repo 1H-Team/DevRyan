@@ -6,8 +6,6 @@
  * Version counter invalidates stale inflight requests after eviction.
  */
 
-const SESSION_PREFETCH_TTL = 15_000
-
 type Meta = {
   limit: number
   cursor?: string
@@ -32,29 +30,8 @@ const captureRevision = (id: string) => {
   return revision
 }
 
-/** Check if a prefetch/sync can be skipped (recently fetched). */
-export function shouldSkipSessionPrefetch(input: {
-  hasMessages: boolean
-  info?: Meta
-  pageSize: number
-  now?: number
-}): boolean {
-  if (input.hasMessages) {
-    if (!input.info) return false
-    if (input.info.complete) return true
-    if (input.info.limit > input.pageSize) return true
-  } else {
-    return false
-  }
-  return (input.now ?? Date.now()) - input.info.at < SESSION_PREFETCH_TTL
-}
-
 export function getSessionPrefetch(directory: string, sessionID: string): Meta | undefined {
   return cache.get(compositeKey(directory, sessionID))
-}
-
-export function getSessionPrefetchPromise(directory: string, sessionID: string) {
-  return inflight.get(compositeKey(directory, sessionID))
 }
 
 export function isSessionPrefetchCurrent(directory: string, sessionID: string, value: number) {
@@ -63,13 +40,6 @@ export function isSessionPrefetchCurrent(directory: string, sessionID: string, v
 
 export function captureSessionPrefetchRevision(directory: string, sessionID: string) {
   return captureRevision(compositeKey(directory, sessionID))
-}
-
-export function releaseSessionPrefetchRevision(directory: string, sessionID: string, value: number) {
-  const id = compositeKey(directory, sessionID)
-  if (rev.get(id) === value) {
-    rev.delete(id)
-  }
 }
 
 /** Run a prefetch task with inflight dedup + version tracking. */

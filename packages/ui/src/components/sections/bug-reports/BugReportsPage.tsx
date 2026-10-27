@@ -23,13 +23,8 @@ const LazyErrorLogsPanel = /* @__PURE__ */ lazyWithChunkRecovery(() =>
     default: module.ErrorLogsPanel,
   })),
 );
-const LazyBotAuditPanel = /* @__PURE__ */ lazyWithChunkRecovery(() =>
-  import('./BotAuditPanel').then((module) => ({
-    default: module.BotAuditPanel,
-  })),
-);
 
-type BugReportsTab = 'submit' | 'reports' | 'agent-audit' | 'bot-audit';
+type BugReportsTab = 'submit' | 'reports' | 'agent-audit';
 
 const tabClassName =
   'relative shrink-0 rounded-lg px-3 py-2 typography-ui-label font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)] data-[active]:bg-[var(--surface-elevated)] data-[active]:text-foreground data-[active]:shadow-sm';
@@ -93,11 +88,6 @@ export const BugReportsPage: React.FC = () => {
                     {t('settings.bugReports.tabs.agentAudit')}
                   </Tabs.Tab>
                 ) : null}
-                {isAdmin ? (
-                  <Tabs.Tab className={tabClassName} value="bot-audit">
-                    {t('settings.bugReports.tabs.botAudit')}
-                  </Tabs.Tab>
-                ) : null}
               </Tabs.List>
             </div>
           </div>
@@ -125,15 +115,6 @@ export const BugReportsPage: React.FC = () => {
               {visitedTabs.has('agent-audit') ? (
                 <PanelBoundary>
                   <LazyErrorLogsPanel />
-                </PanelBoundary>
-              ) : null}
-            </Tabs.Panel>
-          ) : null}
-          {isAdmin ? (
-            <Tabs.Panel value="bot-audit" keepMounted className="[[hidden]]:hidden">
-              {visitedTabs.has('bot-audit') ? (
-                <PanelBoundary>
-                  <LazyBotAuditPanel />
                 </PanelBoundary>
               ) : null}
             </Tabs.Panel>

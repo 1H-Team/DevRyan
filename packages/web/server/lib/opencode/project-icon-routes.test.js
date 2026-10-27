@@ -59,7 +59,7 @@ describe('managed project icon routes', () => {
       fsPromises: fs,
       path,
       crypto,
-      openchamberDataDir: dataDirectory,
+      devryanDataDir: dataDirectory,
       sanitizeProjects: () => [],
       readSettingsFromDiskMigrated: async () => ({ projects: [] }),
       persistSettings: vi.fn(),

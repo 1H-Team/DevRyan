@@ -1,6 +1,8 @@
 import type { OpencodeClient, PermissionRequest, Project, QuestionRequest, SessionStatus } from "@opencode-ai/sdk/v2/client"
 import { filterSessionStatusSnapshotThroughAbortGuard } from "./abort-retry-guard"
 import { isTransientError, retry } from "./retry"
+import { parseStartupHealth } from "@/lib/startup/health"
+import { directoryBootstrapRequest } from "./directory-bootstrap-request"
 import { requestSignature } from "./request-signature"
 import { settleStreamingSessions } from "./streaming"
 import type { GlobalState, State } from "./types"
@@ -113,40 +115,48 @@ export async function syncQuestionSnapshot(input: {
 export async function bootstrapGlobal(
   sdk: OpencodeClient,
   set: (patch: Partial<GlobalState>) => void,
+  signal?: AbortSignal,
 ): Promise<{ ready: boolean; retryable: boolean; error?: string }> {
+  signal?.throwIfAborted()
+  const publish = (patch: Partial<GlobalState>) => { if (!signal?.aborted) set(patch) }
   const results = await Promise.allSettled([
-    retry(() => sdk.path.get().then((x) => set({ path: unwrap(x, "path.get") }))),
-    retry(() => sdk.global.config.get().then((x) => set({ config: unwrap(x, "global.config.get") }))),
+    retry(() => sdk.path.get(undefined, { signal }).then((x) => publish({ path: unwrap(x, "path.get") }))),
+    retry(() => sdk.global.config.get({ signal }).then((x) => publish({ config: unwrap(x, "global.config.get") }))),
     retry(() =>
-      sdk.project.list().then((x) => {
+      sdk.project.list(undefined, { signal }).then((x) => {
         const data = unwrap(x, "project.list")
         const projects = data
           .filter((p): p is Project => !!p?.id)
           .filter((p) => !!p.worktree && !p.worktree.includes("opencode-test"))
           .sort((a, b) => cmp(a.id, b.id))
-        set({ projects })
+        publish({ projects })
       }),
     ),
-    retry(() => sdk.provider.list().then((x) => set({ providers: unwrap(x, "provider.list") }))),
+    retry(() => sdk.provider.list(undefined, { signal }).then((x) => publish({ providers: unwrap(x, "provider.list") }))),
   ])
 
+  signal?.throwIfAborted()
   const errors = results
     .filter((r): r is PromiseRejectedResult => r.status === "rejected")
     .map((r) => r.reason)
 
-  // If ALL requests failed, OpenCode is likely down — fetch the OpenChamber
-  // health endpoint (outside the readiness gate) to get the actual error reason.
-  if (errors.length === results.length) {
+  // A partial bootstrap is not ready either: native readiness can change
+  // between the health gate and these requests. Only a terminal health state wins.
+  if (errors.length > 0) {
     let message = errors[0] instanceof Error ? errors[0].message : String(errors[0])
     let hasAuthoritativeHealthFailure = false
     try {
-      const healthRes = await fetch("/health", { signal: AbortSignal.timeout(4000) })
+      const healthRes = await fetch("/health", { signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(4000)]) : AbortSignal.timeout(4000) })
       if (healthRes.ok) {
         const health = await healthRes.json()
-        if (health.lastOpenCodeError) {
+        const startup = parseStartupHealth(health)?.startup
+        if (startup?.state === "failed") {
+          message = startup.code || "OpenCode could not start"
+          hasAuthoritativeHealthFailure = true
+        } else if (!startup && health.lastOpenCodeError) {
           message = health.lastOpenCodeError
           hasAuthoritativeHealthFailure = true
-        } else if (!health.openCodeRunning) {
+        } else if (!startup && health.openCodeRunning === false) {
           message = "OpenCode process is not running"
           hasAuthoritativeHealthFailure = true
         }
@@ -154,19 +164,17 @@ export async function bootstrapGlobal(
     } catch {
       // health endpoint itself unreachable — use the original error
     }
+    signal?.throwIfAborted()
     if (!hasAuthoritativeHealthFailure && errors.every(isTransientError)) {
       console.warn("[bootstrap] global bootstrap transient failure; retrying", message)
-      set({ ready: false, error: undefined })
+      publish({ ready: false, error: undefined })
       return { ready: false, retryable: true, error: message }
     }
     console.error("[bootstrap] global bootstrap failed", errors[0])
-    set({ ready: true, error: { type: "init", message } })
+    publish({ ready: true, error: { type: "init", message } })
     return { ready: false, retryable: false, error: message }
   } else {
-    if (errors.length) {
-      console.error("[bootstrap] global bootstrap partially failed", errors[0])
-    }
-    set({ ready: true, error: undefined })
+    publish({ ready: true, error: undefined })
     return { ready: true, retryable: false }
   }
 }
@@ -185,9 +193,13 @@ export async function bootstrapDirectory(input: {
     projects: Project[]
     providers: { all: unknown[]; connected: unknown[]; default: Record<string, unknown> }
   }
-  loadSessions: (directory: string) => Promise<void> | void
+  signal?: AbortSignal
+  loadSessions: (directory: string, signal: AbortSignal) => Promise<void> | void
 }) {
-  const { directory, sdk, getState, set, global: g } = input
+  const { directory, sdk, getState, global: g } = input
+  const set = (patch: Partial<State>) => { if (!input.signal?.aborted) input.set(patch) }
+  if (input.signal?.aborted) return
+  set({ bootstrapError: undefined })
   const state = getState()
   const loading = state.status !== "complete"
 
@@ -206,25 +218,47 @@ export async function bootstrapDirectory(input: {
   // Phase 1: Critical path — block until these resolve so the UI can render.
   // These are the minimum data needed to show a functional chat interface.
   // ---------------------------------------------------------------------------
+  set({ sessionListStatus: "loading", sessionListError: undefined })
+  const request = <T>(name: Parameters<typeof directoryBootstrapRequest>[0], work: (signal: AbortSignal) => Promise<T>) =>
+    directoryBootstrapRequest(name, work, { signal: input.signal })
+  const statusBefore = getState().session_status
+  // Attach the rejection handler immediately while independent directory requests run.
+  const sessions = request("sessions", signal => Promise.resolve(input.loadSessions(directory, signal)))
+    .then(() => ({ ok: true as const }), error => {
+      const message = error instanceof Error ? error.message : String(error)
+      set({ sessionListStatus: "error", sessionListError: message, bootstrapError: message })
+      return { ok: false as const }
+    })
   const phase1Results = await Promise.allSettled([
     seededProject
       ? Promise.resolve()
-      : retry(() => sdk.project.current().then((x) => set({ project: unwrap(x, "project.current").id }))),
-    retry(() => sdk.provider.list().then((x) => set({ provider: unwrap(x, "provider.list") }))),
-    retry(() => sdk.config.get().then((x) => set({ config: unwrap(x, "config.get") }))),
-    retry(() =>
-      sdk.path.get().then((x) => {
-        const data = unwrap(x, "path.get")
+      : request("project", signal => sdk.project.current({ directory }, { signal }).then(x => unwrap(x, "project.current")))
+        .then(data => set({ project: data.id })),
+    request("providers", signal => sdk.provider.list({ directory }, { signal }).then(x => unwrap(x, "provider.list")))
+      .then(provider => set({ provider })),
+    request("config", signal => sdk.config.get({ directory }, { signal }).then(x => unwrap(x, "config.get")))
+      .then(config => set({ config })),
+    request("path", signal => sdk.path.get({ directory }, { signal }).then(x => unwrap(x, "path.get")))
+      .then(data => {
         set({ path: data })
-        const next = projectID(data?.directory ?? directory, g.projects)
+        const next = projectID(data.directory ?? directory, g.projects)
         if (next) set({ project: next })
       }),
-    ),
-    retry(() => sdk.session.status().then((x) => {
-      const statuses = unwrap(x, "session.status")
-      set({ session_status: filterSessionStatusSnapshotThroughAbortGuard(statuses) })
-    })),
+    request("status", signal => sdk.session.status({ directory }, { signal }).then(x => unwrap(x, "session.status")))
+      .then(statuses => {
+        if (input.signal?.aborted) return
+        const current = getState().session_status
+        const merged = { ...filterSessionStatusSnapshotThroughAbortGuard(statuses) }
+        // Live changes received during this snapshot win, including removal.
+        for (const id of new Set([...Object.keys(statusBefore), ...Object.keys(current)])) {
+          if (current[id] === statusBefore[id]) continue
+          if (current[id]) merged[id] = current[id]
+          else delete merged[id]
+        }
+        set({ session_status: merged })
+      }),
   ])
+  if (input.signal?.aborted) return
 
   const phase1Errors = phase1Results
     .filter((r): r is PromiseRejectedResult => r.status === "rejected")
@@ -238,25 +272,15 @@ export async function bootstrapDirectory(input: {
 
   if (phase1Errors.length === phase1Results.length || criticalPhase1Failed) {
     console.error(`[bootstrap] directory bootstrap failed for ${directory}`, phase1Errors[0])
+    const error = phase1Errors[0]
+    set({ bootstrapError: error instanceof Error ? error.message : String(error) })
     return
   }
 
   // ---------------------------------------------------------------------------
-  // Phase 2: Deferrable — fetch after first paint without blocking.
-  // These enrich the UI but aren't required for basic functionality.
+  // Recover interactive questions and permissions while sessions finish.
   // ---------------------------------------------------------------------------
   void Promise.allSettled([
-    retry(() => sdk.app.agents().then((x) => set({ agent: unwrap(x, "app.agents") }))),
-    retry(() => sdk.lsp.status().then((x) => set({ lsp: unwrap(x, "lsp.status") }))),
-    retry(() =>
-      sdk.vcs.get().then((x) => {
-        const current = getState()
-        if (x.error) {
-          throw new Error(`vcs.get failed: ${String(x.error)}`)
-        }
-        set({ vcs: x.data ?? current.vcs })
-      }),
-    ),
     retry(() => syncQuestionSnapshot({ directory, sdk, getState, set })),
     retry(async () => {
       const before = getState()
@@ -299,12 +323,12 @@ export async function bootstrapDirectory(input: {
   })
 
   // ---------------------------------------------------------------------------
-  // Phase 3: First session list — block readiness until one attempt settles.
+  // Join the first session list before declaring directory readiness.
   // Empty history is valid, but only after a successful session.list response.
   // ---------------------------------------------------------------------------
-  set({ sessionListStatus: "loading", sessionListError: undefined })
   try {
-    await Promise.resolve(input.loadSessions(directory))
+    const sessionResult = await sessions
+    if (input.signal?.aborted || !sessionResult.ok) return
     const loadedState = getState()
     let reconciledStatuses = loadedState.session_status
     const materializedIdleSessionIds: string[] = []
@@ -325,6 +349,14 @@ export async function bootstrapDirectory(input: {
         ? {}
         : { session_status: reconciledStatuses }),
     })
+    void Promise.allSettled([
+      retry(() => sdk.app.agents({ directory }, { signal: input.signal }).then(x => set({ agent: unwrap(x, "app.agents") }))),
+      retry(() => sdk.lsp.status({ directory }, { signal: input.signal }).then(x => set({ lsp: unwrap(x, "lsp.status") }))),
+      retry(() => sdk.vcs.get({ directory }, { signal: input.signal }).then(x => {
+        if (x.error) throw new Error(`vcs.get failed: ${String(x.error)}`)
+        set({ vcs: x.data ?? getState().vcs })
+      })),
+    ])
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error(`[bootstrap] session load failed for ${directory}`, err)

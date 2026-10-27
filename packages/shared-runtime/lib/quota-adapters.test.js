@@ -16,6 +16,7 @@ import {
   XAI_OAUTH_TOKEN_URL,
   ZAI_QUOTA_URL,
   fetchCodexQuotaAdapter,
+  normalizeCodexAppServerQuota,
   fetchDeepSeekQuotaAdapter,
   fetchKimiQuotaAdapter,
   fetchOpenCodeGoQuotaAdapter,
@@ -508,10 +509,33 @@ describe('Kimi shared quota adapter', () => {
 });
 
 describe('ChatGPT shared quota adapter', () => {
+  test('normalizes documented RPC buckets and preserves unknown, zero and capped reset details', () => {
+    const bucket = { limitId: 'codex', primary: { usedPercent: 20, windowDurationMins: 300, resetsAt: 1_800_000_000 },
+      secondary: { usedPercent: 30, windowDurationMins: 10080, resetsAt: 1_800_010_000 } };
+    const countOnly = normalizeCodexAppServerQuota({ rateLimits: bucket, rateLimitResetCredits: { availableCount: 5, credits: null } });
+    expect(countOnly.usage.windows.weekly.usedPercent).toBe(30);
+    expect(countOnly.usage.resetCredits).toMatchObject({ availableCount: 5, credits: [], detailsAvailable: false });
+    expect(normalizeCodexAppServerQuota({ rateLimits: bucket, rateLimitResetCredits: null }).usage.resetCredits).toBeNull();
+    expect(normalizeCodexAppServerQuota({ rateLimits: bucket, rateLimitResetCredits: { availableCount: 0, credits: [] } }).usage.resetCredits)
+      .toMatchObject({ availableCount: 0, credits: [], detailsAvailable: true });
+    const capped = normalizeCodexAppServerQuota({ rateLimits: bucket, rateLimitResetCredits: {
+      availableCount: 8, credits: [{ id: 'reset-1', status: 'available', expiresAt: 1_800_030_000 }],
+    } });
+    expect(capped.usage.resetCredits.availableCount).toBe(8);
+    expect(capped.usage.resetCredits.credits[0].expiresAt).toBe(1_800_030_000_000);
+    const multiple = normalizeCodexAppServerQuota({ rateLimits: bucket, rateLimitsByLimitId: { codex: bucket, other: {
+      limitId: 'other', limitName: 'Other pool', primary: { usedPercent: 45, windowDurationMins: 60, resetsAt: 1_800_010_000 },
+    } } });
+    expect(multiple.usage.windows['Other pool (1h)'].usedPercent).toBe(45);
+    const invalid = normalizeCodexAppServerQuota({ rateLimits: { primary: { usedPercent: '0', windowDurationMins: 300 },
+      secondary: { usedPercent: 110, windowDurationMins: 10080 } }, rateLimitResetCredits: { availableCount: -1 } });
+    expect(invalid.ok).toBe(false); expect(invalid.usage.windows).toEqual({}); expect(invalid.usage.resetCredits).toBeNull();
+  });
   const run = async (usagePayload, resetPayload = null) => fetchCodexQuotaAdapter({
     credential: { accessToken: 'access', accountId: 'account' },
     now,
     fetchImpl: async (url, init) => {
+      expect(init.redirect).toBe('error'); expect(init.signal).toBeInstanceOf(AbortSignal);
       if (url === CODEX_USAGE_URL) {
         expect(init.headers['ChatGPT-Account-Id']).toBe('account');
         return response(usagePayload);
@@ -519,6 +543,21 @@ describe('ChatGPT shared quota adapter', () => {
       expect(url).toBe(CODEX_RESET_CREDITS_URL);
       return resetPayload ? response(resetPayload) : response({}, 404);
     },
+  });
+
+  test('refuses oversized usage and preserves allowance when the optional reset lookup fails', async () => {
+    const payload = { rate_limit: { primary_window: { used_percent: 25, limit_window_seconds: 18000 } } };
+    const result = await fetchCodexQuotaAdapter({ credential: { accessToken: 'access' }, fetchImpl: async url =>
+      url === CODEX_USAGE_URL ? Response.json(payload) : new Response('x'.repeat(65537)) });
+    expect(result.ok).toBe(true); expect(result.usage.windows['5h'].usedPercent).toBe(25);
+    expect(result.usage.resetCredits).toBeUndefined();
+    const large = await fetchCodexQuotaAdapter({ credential: { accessToken: 'access' }, fetchImpl: async () => new Response('x'.repeat(65537)) });
+    expect(large.ok).toBe(false); expect(large.error).toContain('too large');
+  });
+
+  test('never exposes a malformed usage body in its error', async () => {
+    const result = await fetchCodexQuotaAdapter({ credential: { accessToken: 'access' }, fetchImpl: async () => new Response('private-provider-body') });
+    expect(result.ok).toBe(false); expect(JSON.stringify(result)).not.toContain('private-provider-body');
   });
 
   test('preserves both windows and reset credits while adding reached spend control', async () => {
@@ -544,7 +583,8 @@ describe('ChatGPT shared quota adapter', () => {
   });
 
   test.each([
-    [{ credits: { balance: '4.5', available: true } }, '$4.50 available'],
+    [{ credits: { balance: '4.5', available: true } }, '4 Credits'],
+    [{ credits: { balance: '5534.23' } }, '5,534 Credits'],
     [{ credits: { unlimited: true } }, 'Unlimited'],
     [{ credits: { available: false } }, 'Unavailable'],
     [{ credits: {} }, 'No credit balance reported'],

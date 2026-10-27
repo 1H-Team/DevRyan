@@ -52,7 +52,6 @@ export const SETTINGS_NAV_ICONS = {
   plugins: RiPlugLine,
   git: RiGithubLine,
   usage: RiBarChart2Line,
-  bots: RiRobot2Line,
   voice: RiMicLine,
   tunnel: RiGlobalLine,
   about: RiInformationLine,

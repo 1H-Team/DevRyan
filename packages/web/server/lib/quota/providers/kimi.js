@@ -1,4 +1,4 @@
-import { fetchKimiQuotaAdapter } from '@openchamber/shared-runtime';
+import { fetchKimiQuotaAdapter } from '@devryan/shared-runtime';
 
 import { readAuthFile } from '../../opencode/auth.js';
 import { getAuthEntry, normalizeAuthEntry } from '../utils/index.js';

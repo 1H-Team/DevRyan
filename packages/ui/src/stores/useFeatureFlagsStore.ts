@@ -8,6 +8,8 @@ type FeatureFlagsStore = {
    * hatch in case a scroll/anchoring regression shows up in the field.
    */
   messageListVirtualizationEnabled: boolean;
+  longTurnActivityWindowingEnabled: boolean;
+  setLongTurnActivityWindowingEnabled: (enabled: boolean) => void;
   setMessageListVirtualizationEnabled: (enabled: boolean) => void;
   /**
    * Adaptive first-page loading and bounded session intent prefetch. Default
@@ -22,6 +24,8 @@ export const useFeatureFlagsStore = create<FeatureFlagsStore>((set) => ({
   planModeEnabled: false,
   setPlanModeEnabled: (enabled) => set({ planModeEnabled: enabled }),
   messageListVirtualizationEnabled: true,
+  longTurnActivityWindowingEnabled: false,
+  setLongTurnActivityWindowingEnabled: (enabled) => set({ longTurnActivityWindowingEnabled: enabled }),
   setMessageListVirtualizationEnabled: (enabled) => set({ messageListVirtualizationEnabled: enabled }),
   sessionFastLoadEnabled: true,
   setSessionFastLoadEnabled: (enabled) => set({ sessionFastLoadEnabled: enabled }),

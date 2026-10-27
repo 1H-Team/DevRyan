@@ -27,12 +27,15 @@ function Fixture() {
     const [working, setWorking] = React.useState(false);
     const [empty, setEmpty] = React.useState(false);
     const [partial, setPartial] = React.useState(false);
+    const [diverged, setDiverged] = React.useState(false);
     const [selected, setSelected] = React.useState<string | null>(null);
     const [mobile, setMobile] = React.useState(false);
     const [large, setLarge] = React.useState(false);
     const [pageIndex, setPageIndex] = React.useState(0);
     const files = (large ? Array.from({ length: Math.min(128, 513 - pageIndex * 128) }, (_, i) => `src/generated-${String(pageIndex * 128 + i).padStart(5, '0')}.ts`) : session === 'child' ? ['src/child.ts'] : session === 'A' ? ['src/app.ts', 'src/theme.css', 'assets/icon.png', 'tests/app.test.ts'] : ['src/calendar.ts']).map((file, index) => ({
         path: `/fixture/${file}`, relativePath: file, insertions: index === 2 ? 0 : 5, deletions: index === 2 ? 0 : 2, status: 'M', binary: index === 2, reviewMode: segmented ? 'segments' as const : 'net' as const, segmentCount: segmented ? 2 : 0,
+        verification: { state: diverged && index === 0 ? 'uncertain' as const : 'verified' as const,
+            reason: diverged && index === 0 ? 'current_content_diverged' : 'matches_captured_after' },
     }));
     const visibleFiles = undone || empty || summaryState === 'empty-partial' ? [] : files;
     const state = resolveSessionChangesFooterState({
@@ -51,6 +54,7 @@ function Fixture() {
             <button onClick={() => setWorking(!working)}>Toggle working</button>
             <button onClick={() => setEmpty(!empty)}>Toggle empty capture</button>
             <button onClick={() => setPartial(!partial)}>Toggle incomplete</button>
+            <button onClick={() => setDiverged(!diverged)}>Toggle content divergence</button>
             <button onClick={() => setSummaryState('loading')}>Loading summary</button>
             <button onClick={() => setSummaryState('failed')}>Failed summary</button>
             <button onClick={() => setSummaryState('empty-partial')}>Empty incomplete summary</button>

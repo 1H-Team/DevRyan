@@ -117,6 +117,35 @@ const controllerFixture = (overrides = {}) => {
 };
 
 describe('command deadline controller', () => {
+  test('cancels the exact owned command and confirms its terminal part without aborting the session', async () => {
+    const cancelled = [];
+    const fixture = controllerFixture({
+      fetched: [message(), message(terminalPart('error'))],
+      options: { cancelCommand: async input => { cancelled.push(input); return true; } },
+    });
+    await fixture.controller.observe(partEvent(), '/repo');
+    fixture.clock.set(2_000);
+    await fixture.controller.reconcile();
+    expect(cancelled).toEqual([{ directory: '/repo', fingerprint: {
+      sessionID: 'ses_1', messageID: 'msg_1', partID: 'part_1', callID: 'call_1', tool: 'bash',
+    } }]);
+    expect(fixture.calls.abort).toBe(0);
+    expect(fixture.calls.restart).toBe(0);
+    expect(fixture.controller.getStatus().activeCount).toBe(0);
+  });
+
+  test('falls back safely when an owned command cannot be confirmed terminated', async () => {
+    const fixture = controllerFixture({
+      options: { cancelCommand: async () => { throw new Error('termination_unconfirmed'); },
+        listActiveSessions: async () => ['ses_1', 'ses_other'] },
+    });
+    await fixture.controller.observe(partEvent(), '/repo');
+    fixture.clock.set(2_000);
+    await fixture.controller.reconcile();
+    expect(fixture.calls.abort).toBe(1);
+    expect(fixture.calls.restart).toBe(0);
+    expect(fixture.controller.getStatus().unresolvedCount).toBe(1);
+  });
   test('persists a privacy-bounded fingerprint and never extends repeated updates', async () => {
     const fixture = controllerFixture();
     await fixture.controller.observe(partEvent(), '/repo');

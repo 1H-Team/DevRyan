@@ -19,11 +19,11 @@ describe("groupSkillsForSidebar", () => {
     const grouped = groupSkillsForSidebar(
       [
         skill("theme-system", "/tmp/.config/opencode/skills/theme-system/SKILL.md"),
-        skill("writing-plans", "/tmp/.config/opencode/skills/superpowers/writing-plans/SKILL.md", {
-          group: "superpowers",
+        skill("writing-plans", "/tmp/.config/opencode/skills/toolkit/writing-plans/SKILL.md", {
+          group: "toolkit",
         }),
-        skill("brainstorming", "/tmp/.config/opencode/skills/superpowers/brainstorming/SKILL.md", {
-          group: "superpowers",
+        skill("brainstorming", "/tmp/.config/opencode/skills/toolkit/brainstorming/SKILL.md", {
+          group: "toolkit",
         }),
       ],
       (location) => `Location ${location}`,
@@ -38,14 +38,14 @@ describe("groupSkillsForSidebar", () => {
         ],
         folderGroups: [
           {
-            key: "superpowers",
-            label: "Superpowers",
+            key: "toolkit",
+            label: "Toolkit",
             skills: [
-              skill("brainstorming", "/tmp/.config/opencode/skills/superpowers/brainstorming/SKILL.md", {
-                group: "superpowers",
+              skill("brainstorming", "/tmp/.config/opencode/skills/toolkit/brainstorming/SKILL.md", {
+                group: "toolkit",
               }),
-              skill("writing-plans", "/tmp/.config/opencode/skills/superpowers/writing-plans/SKILL.md", {
-                group: "superpowers",
+              skill("writing-plans", "/tmp/.config/opencode/skills/toolkit/writing-plans/SKILL.md", {
+                group: "toolkit",
               }),
             ],
           },
@@ -58,13 +58,13 @@ describe("groupSkillsForSidebar", () => {
   test("keeps same folder names isolated by location and sorts groups deterministically", () => {
     const grouped = groupSkillsForSidebar(
       [
-        skill("zeta", "/project/.opencode/skills/superpowers/zeta/SKILL.md", {
+        skill("zeta", "/project/.opencode/skills/toolkit/zeta/SKILL.md", {
           scope: "project",
-          group: "superpowers",
+          group: "toolkit",
         }),
-        skill("alpha", "/user/.agents/skills/superpowers/alpha/SKILL.md", {
+        skill("alpha", "/user/.agents/skills/toolkit/alpha/SKILL.md", {
           source: "agents",
-          group: "superpowers",
+          group: "toolkit",
         }),
       ],
       (location) => `Location ${location}`,
@@ -77,12 +77,12 @@ describe("groupSkillsForSidebar", () => {
     }))).toEqual([
       {
         key: "project-opencode",
-        folderKeys: ["superpowers"],
+        folderKeys: ["toolkit"],
         skillNames: ["zeta"],
       },
       {
         key: "user-agents",
-        folderKeys: ["superpowers"],
+        folderKeys: ["toolkit"],
         skillNames: ["alpha"],
       },
     ]);

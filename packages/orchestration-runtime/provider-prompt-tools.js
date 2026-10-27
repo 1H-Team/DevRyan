@@ -4,7 +4,6 @@ const COPILOT_PROMPT_TOOL_OVERRIDES = Object.freeze({
 });
 const ORCHESTRATOR_PROMPT_TOOL_OVERRIDES = Object.freeze({
   task: false,
-  invalid: false,
 });
 const COPILOT_ORCHESTRATOR_PROMPT_TOOL_OVERRIDES = Object.freeze({
   ...COPILOT_PROMPT_TOOL_OVERRIDES,
@@ -17,18 +16,10 @@ const READ_ONLY_PROMPT_TOOL_OVERRIDES = Object.freeze({
   // boundary. Disable every tool first, then reopen only inspection surfaces.
   '*': false,
   read: true,
-  oc_read: true,
   glob: true,
-  oc_glob: true,
   grep: true,
-  ls: true,
-  oc_ls: true,
-  stat: true,
-  oc_stat: true,
-  ast_grep_search: true,
   webfetch: true,
-  websearch: true,
-  google_search: true,
+  devryan_plan_read: true,
 });
 
 const normalize = (value) => (
@@ -55,7 +46,8 @@ export const resolveProviderPromptTools = (providerId, agent, options = {}) => {
 
   if (options.readOnly === true) {
     return {
-      ...providerOverrides,
+      // Wildcard denial already covers provider-specific custom namespaces.
+      ...(isOrchestrator ? ORCHESTRATOR_PROMPT_TOOL_OVERRIDES : undefined),
       ...READ_ONLY_PROMPT_TOOL_OVERRIDES,
     };
   }

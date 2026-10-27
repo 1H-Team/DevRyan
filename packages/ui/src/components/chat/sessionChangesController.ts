@@ -3,7 +3,7 @@ import type { Session, SessionStatus } from '@opencode-ai/sdk/v2/client';
 import { toast } from '@/components/ui';
 
 import { useI18n } from '@/lib/i18n';
-import { opencodeClient, ScopedRevertError, type SessionTreeChangedFile } from '@/lib/opencode/client';
+import { opencodeClient, ScopedRevertError, type SessionTreeChangedFile, type SessionChangesCurrent } from '@/lib/opencode/client';
 import {
     getSessionTreeChangesKey,
     refreshSessionTreeChanges,
@@ -126,6 +126,7 @@ export const toGitChangedFile = (file: SessionTreeChangedFile, directory: string
         oldPath: file.oldPath,
         reviewMode: file.reviewMode,
         segmentCount: file.segmentCount,
+        verification: file.verification,
         status: file.status === 'added' ? 'A' : file.status === 'deleted' ? 'D' : file.status === 'renamed' ? 'R' : 'M',
     };
 };
@@ -150,6 +151,8 @@ export const resolveSessionChangesStatusKey = (entry?: Pick<SessionTreeChangesEn
     if (reasons.includes('invalid_change_receipt')) return 'chat.sessionChanges.invalidReceipt';
     if (reasons.includes('execution_delivery_failed')) return 'chat.sessionChanges.deliveryFailed';
     if (reasons.some((reason) => ['missing_capture', 'unverified_tool_changes', 'execution_receipt_unavailable', 'tool_changes_incomplete'].includes(reason))) return 'chat.sessionChanges.executionUnavailable';
+    // A background command (a dev server) records its edits when it ends or a Stop ends it.
+    if (reasons.includes('background_running')) return 'chat.sessionChanges.backgroundRunning';
     if (reasons.some((reason) => ['storage_limit', 'capture_limit', 'historical_capture_unavailable'].includes(reason))) return 'chat.sessionChanges.legacyCapture';
     if (reasons.includes('native_revert_active')) return 'chat.sessionChanges.rewound';
     return 'chat.sessionChanges.incomplete';
@@ -171,6 +174,8 @@ export type SessionChangesController = {
     files: GitChangedFile[];
     fileCount: number;
     totalsMode: 'net' | 'recorded';
+    current?: SessionChangesCurrent;
+    coverageBySession?: { sessionID: string; reasons: string[] }[];
     pageIndex: number;
     pageLoading: boolean;
     nextPage?: () => void;
@@ -284,7 +289,8 @@ export const useSessionChangesController = (): SessionChangesController => {
     const statusKey = resolveSessionChangesStatusKey(entry);
     const statusMessage = statusKey ? t(statusKey) : null;
     state.undoDisabled = state.undoDisabled || Boolean(entry?.loading || entry?.error) || entry?.reconciliationState === 'pending'
-        || entry?.coverage !== 'complete' || !entry?.revision || entry?.restoreAvailable !== true;
+        || entry?.coverage !== 'complete' || !entry?.revision || entry?.restoreAvailable !== true || !entry?.restoreProof
+        || Boolean(!isUndone && entry?.current && (entry.current.state !== 'verified' || entry.current.verifiedFileCount !== entry.fileCount));
 
     const retry = React.useCallback(() => {
         if (!rootSessionId || !directory || entry?.loading) return;
@@ -293,23 +299,27 @@ export const useSessionChangesController = (): SessionChangesController => {
 
     const restore = React.useCallback((action: 'undo' | 'redo') => {
         const revision = entry?.revision;
-        if (!rootSessionId || !revision || busy) return;
+        const restoreProof = entry?.restoreProof;
+        if (!rootSessionId || !revision || !restoreProof || busy) return;
         setBusySelection({ key: entryKey, action });
         void (async () => {
             try {
-                await opencodeClient.sessionChangesAction(rootSessionId, directory, revision, action);
+                await opencodeClient.sessionChangesAction(rootSessionId, directory, revision, action, restoreProof);
                 await refreshSessionTreeChanges(directory, rootSessionId);
             } catch (error) {
                 const code = error instanceof ScopedRevertError ? error.code : null;
                 if (code === 'working_tree_changed') toast.error(t('chat.sessionChanges.error.conflict'));
-                else if (code === 'summary_revision_changed') toast.error(t('chat.sessionChanges.error.revisionChanged'));
+                else if (code === 'summary_revision_changed' || code === 'restore_proof_stale') {
+                    toast.error(t('chat.sessionChanges.error.revisionChanged'));
+                    await refreshSessionTreeChanges(directory, rootSessionId);
+                }
                 else if (code === 'directory_busy') toast.error(t('chat.sessionChanges.footer.undoBlockedTooltip'));
                 else if (code === 'summary_incomplete') toast.error(t('chat.sessionChanges.incomplete'));
                 else if (code === 'rollback_failed') toast.error(t('chat.sessionChanges.error.rollbackFailed'));
                 else toast.error(t(action === 'redo' ? 'chat.sessionChanges.error.redoFailed' : 'chat.sessionChanges.error.undoFailed'));
             } finally { setBusySelection((current) => current?.key === entryKey ? null : current); }
         })();
-    }, [busy, directory, entry?.revision, entryKey, rootSessionId, t]);
+    }, [busy, directory, entry?.revision, entry?.restoreProof, entryKey, rootSessionId, t]);
     const undo = React.useCallback(() => restore('undo'), [restore]);
     const redo = React.useCallback(() => restore('redo'), [restore]);
     const openFile = React.useCallback((file: ChangedFileEntry) => {
@@ -329,6 +339,8 @@ export const useSessionChangesController = (): SessionChangesController => {
         files,
         fileCount: entry?.fileCount ?? files.length,
         totalsMode: entry?.totalsMode ?? 'net',
+        current: entry?.current,
+        coverageBySession: entry?.coverageBySession,
         pageIndex: visiblePage?.pageIndex ?? 0,
         pageLoading,
         nextPage: visiblePage?.nextCursor ? () => requestPage(visiblePage.nextCursor ?? null) : undefined,

@@ -278,7 +278,7 @@ describe('managed orchestration contract', () => {
     const task = createManagedTaskRecord(validInput());
     const event = toManagedTaskEvent(task);
 
-    expect(event.type).toBe('openchamber:managed-task');
+    expect(event.type).toBe('devryan:managed-task');
     expect(event.properties.owner).toBe('devryan');
     expect(event.properties.task.taskId).toBe(task.taskId);
     expect(event.properties.task.dispatchCallId).toBe('call_dispatch_01');
@@ -420,7 +420,7 @@ describe('managed orchestration contract', () => {
     const event = toManagedTaskRemovalEvent(task);
 
     expect(event).toEqual({
-      type: 'openchamber:managed-task-removed',
+      type: 'devryan:managed-task-removed',
       properties: {
         owner: 'devryan',
         taskId: task.taskId,
@@ -432,4 +432,36 @@ describe('managed orchestration contract', () => {
     expect(JSON.stringify(event)).not.toContain(task.prompt);
     expect(JSON.stringify(event)).not.toContain(task.idempotencyKey);
   });
+});
+
+test('user stopped recovery is explicit and independent of the agent retry allowance', () => {
+  const task = { ...createManagedTaskRecord(validInput()), status: 'aborted', childSessionId: 'ses_child',
+    startedAt: 1100, finishedAt: 1200, failureReason: 'Stopped by the user', terminationIntent: 'user_stopped' };
+  const envelope = { owner: 'devryan', taskId: task.taskId, resumable: true, action: null };
+  expect(contract.isUserStoppedRecoveryAvailable(task, envelope)).toBe(true);
+  const projected = toManagedTaskEvent(task, envelope).properties.task;
+  expect(projected.userStoppedRecoveryAvailable).toBe(true);
+  expect(projected.agentRetryAvailable).toBe(false);
+  expect(contract.requiresManualModelRecovery(task, envelope)).toBe(false);
+  expect(contract.isUserStoppedRecoveryAvailable(task, { ...envelope, action: 'continue' })).toBe(false);
+  expect(contract.isUserStoppedRecoveryAvailable({ ...task, terminationIntent: null }, envelope)).toBe(false);
+});
+
+test('model-not-found uses one server recovery policy for retry allowance and manual model selection', () => {
+  const task = { ...createManagedTaskRecord(validInput()), status: 'failed', childSessionId: 'ses_child',
+    failureReason: 'AI Model Not Found Invalid parameters for registry model: "missing"' };
+  const envelope = { owner: 'devryan', taskId: task.taskId, resumable: true, action: null };
+  expect(contract.isManagedTaskAgentRetryAvailable(task)).toBe(false);
+  expect(contract.requiresManualModelRecovery(task, envelope)).toBe(true);
+  expect(toManagedTaskEvent(task, envelope).properties.task).toMatchObject({
+    failureKind: 'model_unavailable', agentRetryAvailable: false, manualRecoveryRequired: true,
+  });
+});
+
+
+test('runtime capability failures are visible and cannot be retried by an agent', () => {
+  const task = createManagedTaskRecord(validInput());
+  task.status = 'failed';
+  task.failureReason = 'admission.prompt: the native permission action for tool todoread is unavailable';
+  expect(toManagedTaskEvent(task).properties.task).toMatchObject({ failureKind: 'runtime_capability', agentRetryAvailable: false });
 });

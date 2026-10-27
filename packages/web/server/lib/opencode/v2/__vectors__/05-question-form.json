@@ -1,0 +1,906 @@
+{
+ "vector": "05-question-form",
+ "title": "D5: question tool form answered, typed form replied, external-field form cancelled",
+ "design": "D5",
+ "opencode": "2.0.20",
+ "capturedWith": "g2trace on the G1 embedded host (ServerFetch.make + Bun listener), simulation backend; see README.md",
+ "normalization": {
+  "ids": 35,
+  "timestamps": 24,
+  "sha256": 4,
+  "sha1": 0,
+  "slugs": 1,
+  "timestampBase": 1767225600000,
+  "timestampStep": 1000
+ },
+ "frames": [
+  "data: {\"id\":\"evt_000000000001normalized0000\",\"created\":1767225601000,\"type\":\"session.created\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"slug\":\"slug-1\",\"version\":\"0.0.0-spike\",\"projectID\":\"global\",\"location\":{\"directory\":\"<home>/workspace\"},\"subpath\":\"\",\"title\":\"Question\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":0,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000002normalized0000\",\"created\":1767225602000,\"type\":\"session.inbox.enqueued\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"inboxID\":\"msg_000000000001normalized0000\",\"sessionID\":\"ses_fffffffffffenormalized0000\",\"item\":{\"type\":\"user\",\"payload\":{\"text\":\"Ask me questions\"},\"delivery\":\"steer\"}},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":1,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000003normalized0000\",\"created\":1767225603000,\"type\":\"session.execution.started\",\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":2,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000004normalized0000\",\"created\":1767225604000,\"metadata\":{\"instructions\":{\"initial\":true}},\"type\":\"session.instructions.updated\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"delta\":{\"core/codemode\":\"0000000000000000000000000000000000000000000000000000000000000001\",\"core/skill-guidance\":\"0000000000000000000000000000000000000000000000000000000000000002\",\"core/date\":\"0000000000000000000000000000000000000000000000000000000000000003\",\"core/environment\":\"0000000000000000000000000000000000000000000000000000000000000004\"}},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":3,\"version\":2}}\n\n",
+  "data: {\"id\":\"evt_000000000005normalized0000\",\"created\":1767225605000,\"type\":\"session.inbox.delivered\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"inboxID\":\"msg_000000000001normalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":4,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000006normalized0000\",\"created\":1767225607000,\"type\":\"session.step.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"agent\":\"build\",\"model\":{\"id\":\"m1\",\"providerID\":\"sim\"},\"assistantMessageID\":\"msg_000000000002normalized0000\",\"started\":1767225606000},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":5,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000007normalized0000\",\"created\":1767225608000,\"type\":\"session.tool.input.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"id\":\"call_s05_question\",\"name\":\"question\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":6,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000008normalized0000\",\"created\":1767225609000,\"type\":\"session.tool.input.ended\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"id\":\"call_s05_question\",\"text\":\"{\\\"questions\\\":[{\\\"question\\\":\\\"Pick a color?\\\",\\\"header\\\":\\\"Color\\\",\\\"options\\\":[{\\\"label\\\":\\\"Red\\\",\\\"description\\\":\\\"warm\\\"},{\\\"label\\\":\\\"Blue\\\",\\\"description\\\":\\\"cool\\\"}]},{\\\"question\\\":\\\"Pick sizes?\\\",\\\"header\\\":\\\"Sizes\\\",\\\"multiple\\\":true,\\\"options\\\":[{\\\"label\\\":\\\"S\\\",\\\"description\\\":\\\"small\\\"},{\\\"label\\\":\\\"M\\\",\\\"description\\\":\\\"medium\\\"}]}]}\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":7,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000009normalized0000\",\"created\":1767225609000,\"type\":\"session.tool.called\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"id\":\"call_s05_question\",\"input\":{\"questions\":[{\"question\":\"Pick a color?\",\"header\":\"Color\",\"options\":[{\"label\":\"Red\",\"description\":\"warm\"},{\"label\":\"Blue\",\"description\":\"cool\"}]},{\"question\":\"Pick sizes?\",\"header\":\"Sizes\",\"multiple\":true,\"options\":[{\"label\":\"S\",\"description\":\"small\"},{\"label\":\"M\",\"description\":\"medium\"}]}]},\"executed\":false},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":8,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000000anormalized0000\",\"created\":1767225610000,\"type\":\"session.step.streamed\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":9,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000000bnormalized0000\",\"created\":1767225611000,\"type\":\"form.created\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"form\":{\"id\":\"frm_000000000001normalized0000\",\"sessionID\":\"ses_fffffffffffenormalized0000\",\"title\":\"Questions\",\"metadata\":{\"kind\":\"question\",\"tool\":{\"messageID\":\"msg_000000000002normalized0000\",\"id\":\"call_s05_question\"}},\"fields\":[{\"key\":\"q0\",\"title\":\"Color\",\"description\":\"Pick a color?\",\"type\":\"string\",\"options\":[{\"value\":\"Red\",\"label\":\"Red\",\"description\":\"warm\"},{\"value\":\"Blue\",\"label\":\"Blue\",\"description\":\"cool\"}],\"custom\":true},{\"key\":\"q1\",\"title\":\"Sizes\",\"description\":\"Pick sizes?\",\"type\":\"multiselect\",\"options\":[{\"value\":\"S\",\"label\":\"S\",\"description\":\"small\"},{\"value\":\"M\",\"label\":\"M\",\"description\":\"medium\"}],\"custom\":true}]}}}\n\n",
+  "data: {\"id\":\"evt_00000000000cnormalized0000\",\"created\":1767225612000,\"type\":\"form.replied\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"id\":\"frm_000000000001normalized0000\",\"sessionID\":\"ses_fffffffffffenormalized0000\",\"answer\":{\"q0\":\"Red\",\"q1\":[\"S\",\"M\"]}}}\n\n",
+  "data: {\"id\":\"evt_00000000000dnormalized0000\",\"created\":1767225612000,\"type\":\"session.tool.success\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"id\":\"call_s05_question\",\"content\":[{\"type\":\"text\",\"text\":\"User has answered your questions: \\\"Pick a color?\\\"=\\\"Red\\\", \\\"Pick sizes?\\\"=\\\"S, M\\\". You can now continue with the user's answers in mind.\"}],\"metadata\":{\"answers\":[[\"Red\"],[\"S\",\"M\"]],\"truncated\":false},\"executed\":false},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":10,\"version\":2}}\n\n",
+  "data: {\"id\":\"evt_00000000000enormalized0000\",\"created\":1767225613000,\"type\":\"session.step.ended\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"finish\":\"tool-calls\",\"rawFinish\":\"tool_calls\",\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":11,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000000fnormalized0000\",\"created\":1767225613000,\"type\":\"session.usage.updated\",\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}}}\n\n",
+  "data: {\"id\":\"evt_000000000010normalized0000\",\"created\":1767225615000,\"type\":\"session.step.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"agent\":\"build\",\"model\":{\"id\":\"m1\",\"providerID\":\"sim\"},\"assistantMessageID\":\"msg_000000000003normalized0000\",\"started\":1767225614000},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":12,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000011normalized0000\",\"created\":1767225616000,\"type\":\"session.text.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000003normalized0000\",\"ordinal\":0},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":13,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000012normalized0000\",\"created\":1767225617000,\"type\":\"session.text.delta\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000003normalized0000\",\"ordinal\":0,\"delta\":\"Thanks for answering.\"}}\n\n",
+  "data: {\"id\":\"evt_000000000013normalized0000\",\"created\":1767225617000,\"type\":\"session.text.ended\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000003normalized0000\",\"ordinal\":0,\"text\":\"Thanks for answering.\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":14,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000014normalized0000\",\"created\":1767225618000,\"type\":\"session.step.streamed\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000003normalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":15,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000015normalized0000\",\"created\":1767225619000,\"type\":\"session.step.ended\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000003normalized0000\",\"finish\":\"stop\",\"rawFinish\":\"stop\",\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":16,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000016normalized0000\",\"created\":1767225619000,\"type\":\"session.usage.updated\",\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}}}\n\n",
+  "data: {\"id\":\"evt_000000000017normalized0000\",\"created\":1767225620000,\"type\":\"session.execution.succeeded\",\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":17,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000018normalized0000\",\"created\":1767225621000,\"type\":\"form.created\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"form\":{\"id\":\"frm_000000000002normalized0000\",\"sessionID\":\"ses_fffffffffffenormalized0000\",\"title\":\"Typed fields\",\"metadata\":{\"kind\":\"probe\"},\"fields\":[{\"key\":\"s\",\"title\":\"Free text\",\"type\":\"string\"},{\"key\":\"c\",\"title\":\"Choice\",\"type\":\"string\",\"options\":[{\"value\":\"a\",\"label\":\"A\"},{\"value\":\"b\",\"label\":\"B\"}]},{\"key\":\"n\",\"title\":\"Number\",\"type\":\"number\"},{\"key\":\"i\",\"title\":\"Integer\",\"type\":\"integer\"},{\"key\":\"b\",\"title\":\"Flag\",\"type\":\"boolean\"},{\"key\":\"m\",\"title\":\"Many\",\"type\":\"multiselect\",\"options\":[{\"value\":\"x\",\"label\":\"X\"},{\"value\":\"y\",\"label\":\"Y\"}]}]}}}\n\n",
+  "data: {\"id\":\"evt_000000000019normalized0000\",\"created\":1767225622000,\"type\":\"form.replied\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"id\":\"frm_000000000002normalized0000\",\"sessionID\":\"ses_fffffffffffenormalized0000\",\"answer\":{\"s\":\"hello\",\"c\":\"a\",\"n\":1.5,\"i\":2,\"b\":true,\"m\":[\"x\"]}}}\n\n",
+  "data: {\"id\":\"evt_00000000001anormalized0000\",\"created\":1767225623000,\"type\":\"form.created\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"form\":{\"id\":\"frm_000000000003normalized0000\",\"sessionID\":\"ses_fffffffffffenormalized0000\",\"title\":\"Connect account\",\"fields\":[{\"key\":\"connect\",\"type\":\"external\",\"url\":\"https://example.invalid/connect\",\"title\":\"Open link\"}]}}}\n\n",
+  "data: {\"id\":\"evt_00000000001bnormalized0000\",\"created\":1767225624000,\"type\":\"form.cancelled\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"id\":\"frm_000000000003normalized0000\",\"sessionID\":\"ses_fffffffffffenormalized0000\"}}\n\n"
+ ],
+ "rest": [
+  {
+   "label": "session.create",
+   "method": "POST",
+   "path": "/api/session",
+   "request": {
+    "location": {
+     "directory": "<home>/workspace"
+    },
+    "title": "Question"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "ses_fffffffffffenormalized0000",
+     "projectID": "global",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "time": {
+      "created": 1767225601000,
+      "updated": 1767225601000
+     },
+     "title": "Question",
+     "location": {
+      "directory": "<home>/workspace"
+     }
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "Ask me questions"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000001normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225602000
+     },
+     "type": "user",
+     "payload": {
+      "text": "Ask me questions"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "form.list.pending",
+   "method": "GET",
+   "path": "/api/form",
+   "headers": {
+    "x-opencode-directory": "%3Chome%3E%2Fworkspace"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "location": {
+     "directory": "<home>/workspace"
+    },
+    "data": [
+     {
+      "id": "frm_000000000001normalized0000",
+      "sessionID": "ses_fffffffffffenormalized0000",
+      "title": "Questions",
+      "metadata": {
+       "kind": "question",
+       "tool": {
+        "messageID": "msg_000000000002normalized0000",
+        "id": "call_s05_question"
+       }
+      },
+      "fields": [
+       {
+        "key": "q0",
+        "title": "Color",
+        "description": "Pick a color?",
+        "type": "string",
+        "options": [
+         {
+          "value": "Red",
+          "label": "Red",
+          "description": "warm"
+         },
+         {
+          "value": "Blue",
+          "label": "Blue",
+          "description": "cool"
+         }
+        ],
+        "custom": true
+       },
+       {
+        "key": "q1",
+        "title": "Sizes",
+        "description": "Pick sizes?",
+        "type": "multiselect",
+        "options": [
+         {
+          "value": "S",
+          "label": "S",
+          "description": "small"
+         },
+         {
+          "value": "M",
+          "label": "M",
+          "description": "medium"
+         }
+        ],
+        "custom": true
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "label": "session.form.list.pending",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffffenormalized0000/form",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": [
+     {
+      "id": "frm_000000000001normalized0000",
+      "sessionID": "ses_fffffffffffenormalized0000",
+      "title": "Questions",
+      "metadata": {
+       "kind": "question",
+       "tool": {
+        "messageID": "msg_000000000002normalized0000",
+        "id": "call_s05_question"
+       }
+      },
+      "fields": [
+       {
+        "key": "q0",
+        "title": "Color",
+        "description": "Pick a color?",
+        "type": "string",
+        "options": [
+         {
+          "value": "Red",
+          "label": "Red",
+          "description": "warm"
+         },
+         {
+          "value": "Blue",
+          "label": "Blue",
+          "description": "cool"
+         }
+        ],
+        "custom": true
+       },
+       {
+        "key": "q1",
+        "title": "Sizes",
+        "description": "Pick sizes?",
+        "type": "multiselect",
+        "options": [
+         {
+          "value": "S",
+          "label": "S",
+          "description": "small"
+         },
+         {
+          "value": "M",
+          "label": "M",
+          "description": "medium"
+         }
+        ],
+        "custom": true
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "label": "session.form.get.pending",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffffenormalized0000/form/frm_000000000001normalized0000",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "frm_000000000001normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "title": "Questions",
+     "metadata": {
+      "kind": "question",
+      "tool": {
+       "messageID": "msg_000000000002normalized0000",
+       "id": "call_s05_question"
+      }
+     },
+     "fields": [
+      {
+       "key": "q0",
+       "title": "Color",
+       "description": "Pick a color?",
+       "type": "string",
+       "options": [
+        {
+         "value": "Red",
+         "label": "Red",
+         "description": "warm"
+        },
+        {
+         "value": "Blue",
+         "label": "Blue",
+         "description": "cool"
+        }
+       ],
+       "custom": true
+      },
+      {
+       "key": "q1",
+       "title": "Sizes",
+       "description": "Pick sizes?",
+       "type": "multiselect",
+       "options": [
+        {
+         "value": "S",
+         "label": "S",
+         "description": "small"
+        },
+        {
+         "value": "M",
+         "label": "M",
+         "description": "medium"
+        }
+       ],
+       "custom": true
+      }
+     ],
+     "state": {
+      "status": "pending"
+     }
+    }
+   }
+  },
+  {
+   "label": "session.messages.pending",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffffenormalized0000/message?order=asc",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": [
+     {
+      "id": "msg_000000000001normalized0000",
+      "time": {
+       "created": 1767225605000
+      },
+      "text": "Ask me questions",
+      "type": "user"
+     },
+     {
+      "id": "msg_000000000002normalized0000",
+      "time": {
+       "created": 1767225606000,
+       "streamed": 1767225610000
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+       "id": "m1",
+       "providerID": "sim"
+      },
+      "content": [
+       {
+        "type": "tool",
+        "id": "call_s05_question",
+        "name": "question",
+        "executed": false,
+        "state": {
+         "status": "running",
+         "input": {
+          "questions": [
+           {
+            "question": "Pick a color?",
+            "header": "Color",
+            "options": [
+             {
+              "label": "Red",
+              "description": "warm"
+             },
+             {
+              "label": "Blue",
+              "description": "cool"
+             }
+            ]
+           },
+           {
+            "question": "Pick sizes?",
+            "header": "Sizes",
+            "multiple": true,
+            "options": [
+             {
+              "label": "S",
+              "description": "small"
+             },
+             {
+              "label": "M",
+              "description": "medium"
+             }
+            ]
+           }
+          ]
+         },
+         "metadata": {}
+        },
+        "time": {
+         "created": 1767225608000,
+         "ran": 1767225609000
+        }
+       }
+      ]
+     }
+    ],
+    "cursor": {
+     "previous": "eyJpZCI6Im1zZ18wMDAwMDAwMDAwMDFub3JtYWxpemVkMDAwMCIsIm9yZGVyIjoiYXNjIiwiZGlyZWN0aW9uIjoicHJldmlvdXMifQ",
+     "next": "eyJpZCI6Im1zZ18wMDAwMDAwMDAwMDJub3JtYWxpemVkMDAwMCIsIm9yZGVyIjoiYXNjIiwiZGlyZWN0aW9uIjoibmV4dCJ9"
+    }
+   }
+  },
+  {
+   "label": "session.form.reply",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/form/frm_000000000001normalized0000/reply",
+   "request": {
+    "answer": {
+     "q0": "Red",
+     "q1": [
+      "S",
+      "M"
+     ]
+    }
+   },
+   "status": 204,
+   "contentType": null,
+   "body": null
+  },
+  {
+   "label": "session.form.get.answered",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffffenormalized0000/form/frm_000000000001normalized0000",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "frm_000000000001normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "title": "Questions",
+     "metadata": {
+      "kind": "question",
+      "tool": {
+       "messageID": "msg_000000000002normalized0000",
+       "id": "call_s05_question"
+      }
+     },
+     "fields": [
+      {
+       "key": "q0",
+       "title": "Color",
+       "description": "Pick a color?",
+       "type": "string",
+       "options": [
+        {
+         "value": "Red",
+         "label": "Red",
+         "description": "warm"
+        },
+        {
+         "value": "Blue",
+         "label": "Blue",
+         "description": "cool"
+        }
+       ],
+       "custom": true
+      },
+      {
+       "key": "q1",
+       "title": "Sizes",
+       "description": "Pick sizes?",
+       "type": "multiselect",
+       "options": [
+        {
+         "value": "S",
+         "label": "S",
+         "description": "small"
+        },
+        {
+         "value": "M",
+         "label": "M",
+         "description": "medium"
+        }
+       ],
+       "custom": true
+      }
+     ],
+     "state": {
+      "status": "answered",
+      "answer": {
+       "q0": "Red",
+       "q1": [
+        "S",
+        "M"
+       ]
+      }
+     }
+    }
+   }
+  },
+  {
+   "label": "session.get",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffffenormalized0000",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "ses_fffffffffffenormalized0000",
+     "projectID": "global",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "outcome": "succeeded",
+     "time": {
+      "created": 1767225601000,
+      "updated": 1767225602000,
+      "idle": 1767225620000
+     },
+     "title": "Question",
+     "location": {
+      "directory": "<home>/workspace"
+     }
+    }
+   }
+  },
+  {
+   "label": "session.messages.asc",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffffenormalized0000/message?limit=200&order=asc",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": [
+     {
+      "id": "msg_000000000001normalized0000",
+      "time": {
+       "created": 1767225605000
+      },
+      "text": "Ask me questions",
+      "type": "user"
+     },
+     {
+      "id": "msg_000000000002normalized0000",
+      "time": {
+       "created": 1767225606000,
+       "streamed": 1767225610000,
+       "completed": 1767225613000
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+       "id": "m1",
+       "providerID": "sim"
+      },
+      "content": [
+       {
+        "type": "tool",
+        "id": "call_s05_question",
+        "name": "question",
+        "executed": false,
+        "state": {
+         "status": "completed",
+         "input": {
+          "questions": [
+           {
+            "question": "Pick a color?",
+            "header": "Color",
+            "options": [
+             {
+              "label": "Red",
+              "description": "warm"
+             },
+             {
+              "label": "Blue",
+              "description": "cool"
+             }
+            ]
+           },
+           {
+            "question": "Pick sizes?",
+            "header": "Sizes",
+            "multiple": true,
+            "options": [
+             {
+              "label": "S",
+              "description": "small"
+             },
+             {
+              "label": "M",
+              "description": "medium"
+             }
+            ]
+           }
+          ]
+         },
+         "content": [
+          {
+           "type": "text",
+           "text": "User has answered your questions: \"Pick a color?\"=\"Red\", \"Pick sizes?\"=\"S, M\". You can now continue with the user's answers in mind."
+          }
+         ],
+         "metadata": {
+          "answers": [
+           [
+            "Red"
+           ],
+           [
+            "S",
+            "M"
+           ]
+          ],
+          "truncated": false
+         }
+        },
+        "time": {
+         "created": 1767225608000,
+         "ran": 1767225609000,
+         "completed": 1767225612000
+        }
+       }
+      ],
+      "finish": "tool-calls",
+      "rawFinish": "tool_calls",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      }
+     },
+     {
+      "id": "msg_000000000003normalized0000",
+      "time": {
+       "created": 1767225614000,
+       "streamed": 1767225618000,
+       "completed": 1767225619000
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+       "id": "m1",
+       "providerID": "sim"
+      },
+      "content": [
+       {
+        "type": "text",
+        "text": "Thanks for answering."
+       }
+      ],
+      "finish": "stop",
+      "rawFinish": "stop",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      }
+     },
+     {
+      "id": "msg_000000000004normalized0000",
+      "time": {
+       "created": 1767225620000
+      },
+      "type": "idle",
+      "outcome": "succeeded"
+     }
+    ],
+    "cursor": {
+     "previous": "eyJpZCI6Im1zZ18wMDAwMDAwMDAwMDFub3JtYWxpemVkMDAwMCIsIm9yZGVyIjoiYXNjIiwiZGlyZWN0aW9uIjoicHJldmlvdXMifQ",
+     "next": "eyJpZCI6Im1zZ18wMDAwMDAwMDAwMDRub3JtYWxpemVkMDAwMCIsIm9yZGVyIjoiYXNjIiwiZGlyZWN0aW9uIjoibmV4dCJ9"
+    }
+   }
+  },
+  {
+   "label": "session.form.create.typed",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/form",
+   "request": {
+    "title": "Typed fields",
+    "metadata": {
+     "kind": "probe"
+    },
+    "fields": [
+     {
+      "key": "s",
+      "type": "string",
+      "title": "Free text"
+     },
+     {
+      "key": "c",
+      "type": "string",
+      "title": "Choice",
+      "options": [
+       {
+        "value": "a",
+        "label": "A"
+       },
+       {
+        "value": "b",
+        "label": "B"
+       }
+      ]
+     },
+     {
+      "key": "n",
+      "type": "number",
+      "title": "Number"
+     },
+     {
+      "key": "i",
+      "type": "integer",
+      "title": "Integer"
+     },
+     {
+      "key": "b",
+      "type": "boolean",
+      "title": "Flag"
+     },
+     {
+      "key": "m",
+      "type": "multiselect",
+      "title": "Many",
+      "options": [
+       {
+        "value": "x",
+        "label": "X"
+       },
+       {
+        "value": "y",
+        "label": "Y"
+       }
+      ]
+     }
+    ]
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "frm_000000000002normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "title": "Typed fields",
+     "metadata": {
+      "kind": "probe"
+     },
+     "fields": [
+      {
+       "key": "s",
+       "title": "Free text",
+       "type": "string"
+      },
+      {
+       "key": "c",
+       "title": "Choice",
+       "type": "string",
+       "options": [
+        {
+         "value": "a",
+         "label": "A"
+        },
+        {
+         "value": "b",
+         "label": "B"
+        }
+       ]
+      },
+      {
+       "key": "n",
+       "title": "Number",
+       "type": "number"
+      },
+      {
+       "key": "i",
+       "title": "Integer",
+       "type": "integer"
+      },
+      {
+       "key": "b",
+       "title": "Flag",
+       "type": "boolean"
+      },
+      {
+       "key": "m",
+       "title": "Many",
+       "type": "multiselect",
+       "options": [
+        {
+         "value": "x",
+         "label": "X"
+        },
+        {
+         "value": "y",
+         "label": "Y"
+        }
+       ]
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "session.form.reply.typed",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/form/frm_000000000002normalized0000/reply",
+   "request": {
+    "answer": {
+     "s": "hello",
+     "c": "a",
+     "n": 1.5,
+     "i": 2,
+     "b": true,
+     "m": [
+      "x"
+     ]
+    }
+   },
+   "status": 204,
+   "contentType": null,
+   "body": null
+  },
+  {
+   "label": "session.form.create.external",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/form",
+   "request": {
+    "title": "Connect account",
+    "fields": [
+     {
+      "key": "connect",
+      "type": "external",
+      "url": "https://example.invalid/connect",
+      "title": "Open link"
+     }
+    ]
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "frm_000000000003normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "title": "Connect account",
+     "fields": [
+      {
+       "key": "connect",
+       "type": "external",
+       "url": "https://example.invalid/connect",
+       "title": "Open link"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "form.list.external",
+   "method": "GET",
+   "path": "/api/form",
+   "headers": {
+    "x-opencode-directory": "%3Chome%3E%2Fworkspace"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "location": {
+     "directory": "<home>/workspace"
+    },
+    "data": [
+     {
+      "id": "frm_000000000003normalized0000",
+      "sessionID": "ses_fffffffffffenormalized0000",
+      "title": "Connect account",
+      "fields": [
+       {
+        "key": "connect",
+        "type": "external",
+        "url": "https://example.invalid/connect",
+        "title": "Open link"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "label": "session.form.cancel.external",
+   "method": "DELETE",
+   "path": "/api/session/ses_fffffffffffenormalized0000/form/frm_000000000003normalized0000",
+   "status": 204,
+   "contentType": null,
+   "body": null
+  }
+ ],
+ "llm": [
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 2,
+   "lastRole": "user",
+   "lastText": "Ask me questions"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 4,
+   "lastRole": "tool",
+   "lastText": "User has answered your questions: \"Pick a color?\"=\"Red\", \"Pick sizes?\"=\"S, M\". You can now continue with the user's answers in mind."
+  }
+ ],
+ "notes": {
+  "formCreatedKeys": [
+   "form"
+  ],
+  "terminal": "session.execution.succeeded"
+ }
+}

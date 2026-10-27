@@ -1,10 +1,80 @@
 # Managed Orchestration Runtime
 
+`tool-output-limits.js` owns explicit native defaults (51,200 bytes / 1,000 lines) and the model result cap: the smaller of 48 KiB or the reviewed native byte limit minus 2 KiB, so 48 KiB at the defaults. The byte default stays at 51,200 because a lower one shrinks every managed reply: at 32 KiB a settled `wait_any` wave of five or eight 6 KiB reports needs one more orchestrator Step than `result-contract-v2.test.js` allows. OpenCode applies the one `tool_output` limit to every tool, `devryan_task` included, and a truncated managed reply fails native publication; every managed reply, inline first page and `wait_any` reply therefore fits this derived budget, never the 48 KiB ceiling. A 24 KiB v2 first page with its metadata fits it intact. Native `devryan_task` emits minified JSON on one line, so `max_lines` never binds a managed reply. `plan_read` returns the whole saved plan under the same budget, so a plan larger than about 48 KiB of escaped JSON is refused with `plan_tool_output_too_large`. Model projections measure minified UTF-8 JSON after escaping. Report pages reuse v1 cursors and shorten only at code-point boundaries; duplicate task payload fields may be suppressed only when equal to the same retained envelope. Required envelope and header references remain intact. Unpageable metadata fails explicitly. Canonical task records are never shortened.
+
+`plan-mode-instructions.js` owns the static planning format shared by reviewed visible primary instruction prefixes and Cursor's primary instructions. Turn metadata carries a short presentation marker. The marker does not grant write permission or prove that a plan completed successfully.
+
 ## Purpose
 
 This package is the single policy owner for DevRyan-managed sub-agent work. It is deliberately separate from OpenCode/provider-native task events, which remain observational and are never admitted, counted, or cancelled by this runtime.
 
 ## Contract boundary
+
+Native removal keeps its exact settled subtree fence. A retained terminal task
+whose child was deleted earlier may settle only when the constructor-owned
+verifier proves that child's completed durable removal; active observations,
+cancellation or acknowledgement still refuse an out-of-scope child. Scope
+conflicts carry HTTP 409 through the web adapter instead of becoming 502.
+
+`inspectManagedModelInCatalog` retains the shared provider/model/variant availability reason; the existing `isManagedModelAvailableInCatalog` remains a boolean-or-null compatibility projection. An unsupported explicit reasoning variant is `variant_missing`, never a request to substitute another effort. The structured refusal carries the exact selected model's supported variants and display name when known. `projectManagedModelValidationFailure` owns the transport allowlist: only model-admission codes and enumerated reasons cross with bounded agent/model identifiers, optional display name, up to sixteen supported variants and a constructed message. Foreign error text and additional details do not cross this boundary.
+
+Mandatory persistence retains its serialized owner until the actual save settles.
+Its independent watchdog reports one content-free `managed_persistence_stalled`
+attention observation at the existing task deadline or after five minutes without
+completed owner I/O. Completed write, sync, rename and final ownership-check
+boundaries renew idle time; queued/finalizing labels, started phases and repeated
+completions do not. A settled follow-up carries the same owner identity. These
+observations never complete, cancel, retry or acknowledge a task. During a pending
+save, public task/envelope/snapshot readers reuse the last committed projection;
+internal locked lease grants still inspect live state. Waiters remain withheld
+until durable task and envelope publication succeeds. No maps are cloned on
+ordinary serialized reads or progress callbacks.
+
+The native prompt-context constructor supplies a readonly dispatch-barrier reader
+while its exact root/directory lock is held. It repeats the captured admission
+check and removal fence, expires when the action ends, and changes no task or
+result state. This lets fresh Plan implementation validation inspect the same
+authoritative barrier without queuing behind its own prompt-admission lock.
+
+Native managed turns advertise a frozen `resultContractVersion: 2`. Existing
+scalar v1 actions and report cursors remain compatible. V2 adds exact task sets
+to `wait_any` with optional `until: "settled"`; this wakes on terminal settlement
+or attention/recovery while default waits still wake on their first change.
+Batch `read_result` uses exact task/cursor pairs, and bulk `continue` returns
+ordered `committed`, `failed` and `notProcessed` receipts.
+
+`managed-result-sections.js` pages oversized metadata and required references
+within the escaped minified response cap. Its typed metadata cursor binds the
+retained task, envelope and metadata digest; report cursors keep their v1 format.
+Both sections stop at code-point boundaries and preserve canonical records.
+Changed metadata invalidates its cursor. No required reference is silently
+removed or represented as truncated metadata.
+
+V2 projection and metadata/report reads may use up to 24 KiB per page. The
+existing fitter shrinks that ceiling against the complete escaped JSON reply,
+including fixed metadata, other batch rows and framing. V1 defaults remain
+8 KiB, and native collection derives its ceiling from the constructor-owned
+result contract rather than a returned version flag. This reduces transport
+volume for the measured two-result fixture; latency qualification remains unmet.
+
+Acknowledgement accepts a constructor-only final authorization callback and a
+durable acknowledgement identity. Duplicate acknowledgement succeeds only for
+the same action and identity, including recollection from a later authorized
+Step. Scheduler submission likewise repeats constructor authorization before
+reservation and durable insertion.
+
+After a submission commits, a failed launch-admission save returns the retained
+queued task rather than refusing admitted work. The existing admission retry
+timer gets one bounded retry; task deadlines and ownership still apply. Earlier
+durable admissions in the same pump launch after lock release, even if a later
+sibling save fails, provided their exact starting lease is still current.
+
+`scheduler.submit(input, { signal })` optionally accepts a local cancellation
+signal. It checks that signal before initialization, after entering the serialized
+queue and immediately before durable task creation, so a cancelled queued call
+cannot allocate or dispatch a task. Once durable creation begins, the accepted
+record and existing idempotency remain authoritative; cancellation does not
+abandon an in-flight save or erase an accepted task.
 
 Managed tasks use `owner: "devryan"` and `dvr_task_` identities. A record carries stable root/parent/child identity, an optional private `dispatchGroupId` derived from the parent assistant message, the originating managed-tool `dispatchCallId`, a display-only `dispatchWaveId` (`dvr_wave_` prefix) naming the parallel dispatch wave — the first grouped start after the root's dispatch barrier last cleared opens a wave, every start submitted while that barrier is still locked joins it, follow-ups inherit their prior's wave, and ungrouped work stays `null`; the label is read from barrier state `submit` already holds and never admits, holds, retries, or times a task — directory, deterministic sequence, builder/orchestrator ownership mode, an immutable private `readOnly` policy, a queue-time provider/model/agent/variant snapshot, attempt lineage, lifecycle timestamps, and explicit partial/failure metadata. Council and legacy records remain ungrouped. Retry, resume, and manual retry-in-place follow-ups inherit the source group, dispatch-call identity, and read-only policy, so recovery stays linked to the original dispatch and cannot acquire write access. Historical records without a dispatch call and `recover_in_place` records hydrate without migration.
 
@@ -14,13 +84,13 @@ Managed tasks use `owner: "devryan"` and `dvr_task_` identities. A record carrie
 
 `isManagedTransientTransportContinuationPrompt(value)` recognizes only the two fixed timeout/connection continuation prompts written by this executor, `isManagedResumeContinuationPrompt(value)` recognizes the fixed active-resume prompt, and `isManagedRetryInPlacePrompt(value)` recognizes the manual same-child recovery prompt, each with or without the exact plan-mode read-only prefix. Shared UI uses those deterministic transcript markers together with the authoritative child-task projection to fold a recovered managed turn for display; arbitrary user text and primary-session failures cannot enter that path.
 
-Queued work must survive application restart, so the private durable record includes its text prompt and read-only policy. Labels are limited to 512 UTF-8 bytes and prompts to 256 KiB. Broadcast task events omit prompt, idempotency key, the raw dispatch group, read-only policy, and lease token; they retain the non-secret `dispatchCallId` and the display-only `dispatchWaveId`, expose only a `dispatchGrouped` boolean for recovery-policy parity, and expose `agentRetryAvailable` plus derived `failureKind`. The flag can therefore change from `true` while an initial grouped Orchestrator attempt runs to `false` when that attempt settles on a provider usage, session, quota, or rate limit. Verified invalid-prompt policy rejections project `failureKind: provider_prompt_rejected`, while scheduler-owned hard deadlines project `failureKind: deadline_exceeded` from their stable reason prefix. Compaction emits an identity-only `openchamber:managed-task-removed` event. Recoverable previews are limited separately to 64 KiB; complete output stays in the canonical OpenCode child session.
+Queued work must survive application restart, so the private durable record includes its text prompt and read-only policy. Labels are limited to 512 UTF-8 bytes and prompts to 256 KiB. Broadcast task events omit prompt, idempotency key, the raw dispatch group, read-only policy, and lease token; they retain the non-secret `dispatchCallId` and the display-only `dispatchWaveId`, expose only a `dispatchGrouped` boolean for recovery-policy parity, and expose `agentRetryAvailable` plus derived `failureKind`. The flag can therefore change from `true` while an initial grouped Orchestrator attempt runs to `false` when that attempt settles on a provider usage, session, quota, or rate limit. Verified invalid-prompt policy rejections project `failureKind: provider_prompt_rejected`, while scheduler-owned hard deadlines project `failureKind: deadline_exceeded` from their stable reason prefix. Compaction emits an identity-only `devryan:managed-task-removed` event. Recoverable previews are limited separately to 64 KiB; complete output stays in the canonical OpenCode child session.
 
-`createKeyedSingleFlight()` coalesces only overlapping operations under an exact caller-supplied key. It stores pending promises, fans out both fulfillment and rejection, and removes the matching entry after settlement. Web/Electron instantiate it once per managed executor and key normal-provider status reads by the already-resolved full `/session/status?directory=...` URL; Cursor remains owned by its SDK runtime.
+`createKeyedSingleFlight()` coalesces only overlapping operations under an exact caller-supplied key. It stores pending promises, fans out both fulfillment and rejection, and removes the matching entry after settlement. Web/Electron instantiate it once per managed executor and key native status reads by directory, runtime start identity and native event URL; Cursor remains owned by its SDK runtime.
 
 `deriveXaiDuplicateToolOverrides(catalog)` removes no capability by inference: an MCP-prefixed Grok tool is disabled only when its canonical ID is simultaneously present with the same normalized description and stable parameter schema. `createXaiToolCatalogCache()` retains those results for 15 minutes under exact directory/provider/model keys; missing, expired, malformed, or unequal evidence fails open. Web/Electron populate their host-local caches outside prompt dispatch.
 
-`projectManagedTaskResult(...)`, `projectManagedResultEnvelope(...)`, and `readManagedResultReference(...)` provide an ephemeral private-RPC view without changing task or envelope records. Eager is the compatibility default. Reference mode leaves previews through 8,192 UTF-8 bytes unchanged; larger matching task/envelope payloads retain failure, disposition, recovery, and canonical-reference metadata inline while replacing both preview copies with one first-page `resultReference`. Pages are at most 8,192 UTF-8 bytes, stop only at Unicode code-point boundaries, and use a bounded versioned stateless cursor containing task/envelope identity plus validated string and byte offsets. A payload mismatch stays fully eager so projection cannot hide a contract violation.
+`projectManagedTaskResult(...)`, `projectManagedResultEnvelope(...)`, and `readManagedResultReference(...)` provide an ephemeral private-RPC view without changing task or envelope records. Eager is the compatibility default. V1 reference mode leaves previews through 8,192 UTF-8 bytes unchanged; larger matching task/envelope payloads retain failure, disposition, recovery, and canonical-reference metadata inline while replacing both preview copies with one first-page `resultReference`. V1 pages are at most 8,192 UTF-8 bytes, stop only at Unicode code-point boundaries, and use a bounded versioned stateless cursor containing task/envelope identity plus validated string and byte offsets. V2 uses these same cursors with its separately bounded page ceiling. Compact mode replaces every preview with an empty reference unless `{ inlineFirstPage: true }` asks for the first page. `resolveHarnessPolicies(...)` turns `waitAny` and `compactResults` on unless their switch is `0`; the other policies need `1`. A payload mismatch stays fully eager so projection cannot hide a contract violation.
 
 ## First assistant activity
 
@@ -34,6 +104,12 @@ observation also retains that control. The host registry buffers only bounded
 message identities for active subscriptions, handles parts preceding metadata,
 and rejects earlier message creation times and the inherited attempt tail.
 
+When the warm projector already knows the current assistant, the subscription
+binds that canonical incomplete identity even before its first text arrives.
+Binding and history snapshots do not count as progress. Only new matching
+activity observed within the attempt boundary advances its watchdog; excluded,
+completed or earlier assistants remain ineligible.
+
 The first successful stamp releases the subscription; rejection of ownership,
 terminal settlement, abort and shutdown also release it. Existing 30-second
 live transcript reads remain the missed-event fallback and use the same semantic
@@ -41,13 +117,34 @@ predicate. The optional `onFirstAssistantActivity` hook reports only task, child
 message identity, observation time and detection source. Diagnostic failures do
 not change task outcomes. Progress fields and wire formats remain compatible.
 
+`subscribeSessionChanges` wakes child observation on session status, idle, error,
+deletion and completed-message events. With `eventDrivenWait()` true (read once
+per observed child), both the live wait and the idle-between-steps wait sleep
+until the next change event, and the reconcile poll backs up a missed event every
+`eventFallbackIntervalMs` (3 s) unless `eventReconcileIntervalMs` is set. Without
+it, the reconcile interval defaults to `pollIntervalMs` (750 ms) and the idle loop
+polls at that interval. Web/Electron enable it unless
+`DEVRYAN_EVENT_DRIVEN_CHILD_WAIT=0`.
+
 ## Scheduler policy
 
 `createManagedTaskScheduler()` serializes every ledger mutation and immediately admits every eligible queued task without imposing an artificial concurrency cap. Queue sequence remains monotonic across the runtime and recovered queued work launches in deterministic order. Idempotency is scoped by root session and key.
 
+The optional `onMutationTiming` observer reports queue wait, exclusive
+hold time and outcome after each mutation settles. Observer failures do not
+alter transactions; returned rejected promises are contained without awaiting
+them, as with persistence observations. These elapsed measurements confer no execution authority or
+watchdog health exemption. The web orchestration owner forwards the same hook.
+
 Designer owns visual/UX implementation, including approved plans and fully specified appearances; Fixer owns behavior under an unchanged presentation. Compact provider contracts preserve this boundary and reserve Designer routing feedback for behavior-only assignments. Designer is implementation-only. The scheduler rejects every new `readOnly + designer` start or recovery with `MANAGED_READ_ONLY_AGENT_UNSUPPORTED`; read-only Explorer and other planning specialists remain eligible. The guard runs after idempotent replay lookup but before persistence or publication, so historical ledger records remain loadable while no new plan-mode Designer execution can begin.
 
 The scheduler owns explicit transitions, per-root builder/orchestrator mode exclusion, child-session and provider-acceptance checkpoints, isolated task/descendant cancellation, bounded provider-abort waits, execution deadlines, and the 60-second starting-lease reconciliation check. Reconciliation distinguishes transient owner unavailability from an authoritative missing child: transient checks schedule a lease-scoped retry against the same child without mutating task state or creating a result envelope, while the existing task deadline remains the upper bound. Both execution checkpoints return authoritative lease ownership: a late launch receives `false` after terminal settlement, lease replacement, or shutdown instead of mistaking an ignored durable write for success. Provider-native workers have no admission path into this package.
+
+`verifyTaskDispatch` rejects an attempt as soon as cancellation begins. The private
+`verifyTaskSettlement` proof retains only the same live attempt's cleanup authority
+during cancellation; terminal status, a changed lease, shutdown, or session removal
+revokes it. Hosts must bind settlement to the existing child and execution selection;
+it cannot authorize child creation, prompts, or tools.
 
 `waitForTask(taskId, { signal, timeoutMs? })` remains an unbounded terminal wait when `timeoutMs` is omitted. A positive finite timeout creates only a polling slice: expiry returns a cloned latest task snapshot, including a still-live `queued`, `starting`, or `running` status, without cancelling or mutating the task and without changing its execution deadline. Slice timers use the scheduler's injected clock and are released on expiry, terminal settlement, caller abort, or shutdown. Dispatch-barrier waits remain unbounded and do not opt into slices.
 
@@ -61,17 +158,19 @@ Grouped Orchestrator work permits one agent-directed `retry` or `resume`: the in
 
 `inspectDispatchBarrier(rootSessionId)` reports `active`, `awaiting_acknowledgement`, or `clear` without waiting or mutating. `inspectAgentHandoff(...)` uses that same grouped Orchestrator scope to prepare an Orchestrator-to-Builder switch without touching Council or legacy ungrouped work. Confirmed handoff temporarily locks the root against new grouped submissions and admissions, cancels nonterminal tasks in scheduler order, abandons terminal-unreviewed envelopes (including parked manual-recovery results), continues after per-task failures, verifies the barrier again, and releases the lock in every outcome. Repeated confirmations with the same key coalesce while in flight and safely retry after a partial result; a conflicting key fails explicitly.
 
+`managedRecoveryInstruction(task, envelope)` (`managed-recovery-instruction.js`) returns the one next-action instruction a collected, undispositioned terminal result needs: `scheduled` while automatic resume is active, `manual` for a Model Recovery or stopped-recovery result awaiting the user, `promptRejected` for a provider prompt rejection (one reframed fresh-child `retry`), and `failed` for other failed, interrupted or aborted results (at most one managed recovery). Completed, live and dispositioned results get `null`. The web runtime adds it as a top-level `instruction` on projected task results, including the v2 metadata fallback, so the packaged Orchestrator prompt carries no recovery procedure of its own.
+
 Durable compaction may remove an old task after its result was acknowledged. The packaged model-facing plugin treats a later reference to that removed identity as stale only when a fresh runtime snapshot is available, bridge ownership is healthy, no recovery warning exists, and `inspectDispatchBarrier(rootSessionId)` is authoritatively `clear`. It then returns `stale_task_reference` as a no-op instead of reconstructing or replaying the child. Retained envelopes with an existing action return `already_dispositioned`. Any snapshot warning, ownership failure, malformed response, or current active/acknowledgement barrier remains fail-closed and preserves the current authoritative task IDs.
 
 Durable mutations and event publication use separate serialized lanes. A slow or reentrant event sink therefore cannot hold the ledger mutation lock, while event invocation order still follows committed task order. Shutdown attempts executor cleanup even when the final durable save fails, and shutdown before initialization never overwrites an existing owner ledger.
 
-Terminal tasks are immutable. Each gets one result envelope retaining status, partial flag, failure reason, bounded preview, canonical child message/tool references, and attempt lineage. Successful completion requires a useful final assistant response after the child leaves live `busy`/`retry` state and every observed tool part is final. Provider `busy` and transient `retry` snapshots remain live and authoritative; observation continues against the same child without aborting or replaying its prompt. A definite usage, session, quota, or rate-limit retry instead settles immediately as a resumable `provider_usage_limit` failure, preserves partial work and canonical references, starts the existing bounded retry-loop cleanup, and projects `agentRetryAvailable: false` so Model Recovery is actionable immediately. The cleanup status cannot hide or auto-acknowledge that user decision. A retry whose message is a provider sign-in failure (`isProviderAuthenticationFailure`: including Anthropic/Meridian `authentication_error`, "token has expired" and Claude Code's "not logged in") cannot heal by retrying either: it settles at the first retry status as a resumable failure with retained partial work, starts the same bounded retry-loop cleanup, writes no transport-recovery receipt (so no backup model is chosen automatically), and classifies as `provider_authentication`, which requires manual Model Recovery. A user Stop is authoritative for a managed child: the host records operator aborts in `createManagedOperatorAbortRegistry` (only explicit user sources, not automatic UI aborts), and while one newer than the attempt baseline exists the executor never continues, recovers, or re-prompts the child. Once the child is idle the task settles as resumable `aborted` ("Stopped by the user"), or `completed` when useful output finished anyway; a child still live after the teardown grace is stopped once. Input the user sends after the Stop (a steered send) continues the child normally, and a new attempt (resume, retry) starts after the old request. When the host supplies `readRuntimeStartedAt`, a child that is idle in an OpenCode runtime started after its latest input, with an unfinished turn, an in-flight tool or a pending continuation for two consecutive polls, ran in a process that exited; it settles as resumable `interrupted` ("the OpenCode runtime restarted while it was running") instead of polling to its hard deadline. Temporary observation timeouts, abort-shaped request failures, network errors, and retryable HTTP responses wait one polling interval before retrying, while the last successful preview and canonical references remain available. Normalized request/header/stream/connection failures use the durable transport recovery policy below, whether first observed in the transcript or through `session.error`. When a provider becomes idle after completed tool activity but its terminal assistant message has no final text, the executor likewise sends one transcript-recorded fixed continuation into the same child using the queue-time execution snapshot. Restart reconciliation keeps only the first empty ending live; a second empty ending or a transcript that already contains that continuation settles as a visible resumable failure, preventing duplicate prompts and recovery loops. A non-retryable observation failure settles as resumable `interrupted` work with that retained partial output. An assistant `finish: "tool-calls"` record is an intermediate handoff even when it has a completed timestamp, and stable idle state alone never promotes tool activity to success. A bare completed assistant-message shell is recorded as a resumable failure with `partial=false` only after the bounded same-child continuation also fails and the child is no longer live with no in-flight tools. A fresh start that loses ownership before prompting, or after a late prompt acknowledgement, aborts and deletes its newly created child and never enters observation. In-place recovery ownership loss aborts without deleting the pre-existing canonical child. Cleanup attempts abort and deletion independently; confirmed deletion is authoritative even when a pre-prompt provider abort has no state to stop. Continue/abandon acknowledge ordinary results without work, but cannot consume a resumable result whose user recovery gate is active; retry creates a new child; resume marks live observation accepted when the canonical child is still active, otherwise sends one transcript-marked same-child continuation with the queue-time execution snapshot. A restart relaunches an unaccepted resume only when that marker is absent and observes it without duplication when the marker is present. `retry_in_place` waits for explicit retry cleanup and sends a fixed continuation into the same child with the selected provider/model/variant snapshot. Every OpenCode-backed managed child prompt disables provider-native `task`, including initial execution and every same-child continuation. Additional delegation therefore stays root-owned regardless of project agent permissions or `readOnly` state. Read-only tasks additionally prepend an explicit inspection-only instruction and disable every shell, workspace mutation, skill, and unrelated MCP surface. Cursor SDK managed tasks fail before child creation when read-only is required because that SDK does not expose enforceable per-prompt write restrictions. Historical `recover_in_place` executions retain the same reconciliation semantics. Manual cancellation and retry-in-place recovery retain their existing bounded abort guards.
+Terminal tasks are immutable. Each gets one result envelope retaining status, partial flag, failure reason, bounded preview, canonical child message/tool references, and attempt lineage. Successful completion requires a useful final assistant response after the child leaves live `busy`/`retry` state and every observed tool part is final. Provider `busy` and transient `retry` snapshots remain live and authoritative; observation continues against the same child without aborting or replaying its prompt. A definite usage, session, quota, or rate-limit retry instead settles immediately as a resumable `provider_usage_limit` failure, preserves partial work and canonical references, starts the existing bounded retry-loop cleanup, and projects `agentRetryAvailable: false` so Model Recovery is actionable immediately. The cleanup status cannot hide or auto-acknowledge that user decision. A retry whose message is a provider sign-in failure (`isProviderAuthenticationFailure`: including Anthropic/Meridian `authentication_error`, "token has expired" and Claude Code's "not logged in") cannot heal by retrying either: it settles at the first retry status as a resumable failure with retained partial work, starts the same bounded retry-loop cleanup, writes no transport-recovery receipt (so no backup model is chosen automatically), and classifies as `provider_authentication`, which requires manual Model Recovery. A user Stop is authoritative for a managed child: the host records operator aborts in `createManagedOperatorAbortRegistry` (only explicit user sources, not automatic UI aborts), and while one newer than the attempt baseline exists the executor never continues, recovers, or re-prompts the child. Once the child is idle the task settles as resumable `aborted` ("Stopped by the user"), or `completed` when useful output finished anyway; a child still live after the teardown grace is stopped once. Input the user sends after the Stop (a steered send) continues the child normally, and a new attempt (resume, retry) starts after the old request. When the host supplies `readRuntimeStartedAt`, a child that is idle in an OpenCode runtime started after its latest input, with an unfinished turn, an in-flight tool or a pending continuation for two consecutive polls, ran in a process that exited; it settles as resumable `interrupted` ("the OpenCode runtime restarted while it was running") instead of polling to its hard deadline. Temporary observation timeouts, abort-shaped request failures, network errors, and retryable HTTP responses wait one polling interval before retrying, while the last successful preview and canonical references remain available. Normalized request/header/stream/connection failures use the durable transport recovery policy below, whether first observed in the transcript or through `session.error`. When a provider becomes idle after completed tool activity but its terminal assistant message has no final text, the executor likewise sends one transcript-recorded fixed continuation into the same child using the queue-time execution snapshot. Restart reconciliation keeps only the first empty ending live; a second empty ending or a transcript that already contains that continuation settles as a visible resumable failure, preventing duplicate prompts and recovery loops. A non-retryable observation failure settles as resumable `interrupted` work with that retained partial output. An assistant `finish: "tool-calls"` record is an intermediate handoff even when it has a completed timestamp, and stable idle state alone never promotes tool activity to success. A bare completed assistant-message shell is recorded as a resumable failure with `partial=false` only after the bounded same-child continuation also fails and the child is no longer live with no in-flight tools. A fresh start that loses ownership before prompting, or after a late prompt acknowledgement, aborts and deletes its newly created child and never enters observation. In-place recovery ownership loss aborts without deleting the pre-existing canonical child. Cleanup attempts abort and deletion independently; confirmed deletion is authoritative even when a pre-prompt provider abort has no state to stop. Continue/abandon acknowledge ordinary results without work, but cannot consume a resumable result whose user recovery gate is active; retry creates a new child; resume marks live observation accepted when the canonical child is still active, otherwise sends one transcript-marked same-child continuation with the queue-time execution snapshot. A restart relaunches an unaccepted resume only when that marker is absent and observes it without duplication when the marker is present. `retry_in_place` waits for explicit retry cleanup and sends a fixed continuation into the same child with the selected provider/model/variant snapshot. Every OpenCode-backed managed child prompt disables provider-native `task`, including initial execution and every same-child continuation. Additional delegation therefore stays root-owned regardless of project agent permissions or `readOnly` state. Read-only tasks additionally prepend an explicit inspection-only instruction and disable every shell, workspace mutation, skill, and unrelated MCP surface. Cursor managed tasks require the host-only `cursorReadOnly` capability for read-only execution; without it they fail before child creation. The native host enforces an SDK allowlist of `read`, `grep`, `glob`, and `ls`, excludes task/MCP delegation, and reapplies the policy on every creation and resume. Historical `recover_in_place` executions retain the same reconciliation semantics. Manual cancellation and retry-in-place recovery retain their existing bounded abort guards.
 
 OpenCode `session.error` events are a separate authoritative terminal channel. Runtime owners retain the newest sanitized event per child session in a bounded registry and each prompt attempt observes only entries at or after its own dispatch boundary, so historical failures cannot terminate a retry or resume. A terminal model-not-found event settles immediately with any readable partial preview and references, projects `failureKind: model_unavailable`, disables agent retry, and parks the result for user-selected Model Recovery instead of waiting for the task deadline. Runtime owners also check an exact directory-scoped provider/model pair against `/config/providers` before child creation when that catalog is readable; catalog transport or shape failure is non-authoritative and falls back to terminal-event observation.
 
-`supportsManagedReadOnlyProvider(providerId)` and `supportsManagedReadOnlyAgent(agent)` are the shared compatibility boundaries. Web/Electron reject an incompatible read-only provider with `MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED` and reject Designer with `MANAGED_READ_ONLY_AGENT_UNSUPPORTED` before scheduler persistence. The scheduler repeats the agent gate for recovery overrides, and the executor retains fail-closed checks before child creation or same-child prompting. The provisioned managed-tool plugin resolves plan policy before execution selection, rejects Designer immediately, and otherwise substitutes the active non-Cursor parent model, then the configured non-Cursor Plan-agent model; if no compatible provider exists, it returns the provider error without creating a managed task.
+`supportsManagedReadOnlyProvider(providerId, { cursorReadOnly })` and `supportsManagedReadOnlyAgent(agent)` are the shared compatibility boundaries. Web/Electron reject an incompatible read-only provider with `MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED` and reject Designer with `MANAGED_READ_ONLY_AGENT_UNSUPPORTED` before scheduler persistence. The scheduler repeats the agent gate for recovery overrides, and the executor retains fail-closed checks before child creation or same-child prompting. The native host preserves the configured Cursor model when its restricted execution capability is enabled. Automatic backup planning carries the task ID and cancellation generation for independently verified catalog access. The compatibility managed-tool plugin resolves plan policy before execution selection, rejects Designer immediately, and otherwise substitutes the active non-Cursor parent model, then the configured non-Cursor Plan-agent model; if no compatible provider exists, it returns the provider error without creating a managed task.
 
-A managed child that remains `busy` with no transcript progress for five minutes is treated as a silent provider-stream stall unless its current attempt has a tool that is actually running or still carries material input. An exact `pending` tool shell with no start time, structured input, or raw input means the provider stopped while constructing the call; it does not exempt the child from recovery and is aborted before any continuation is sent. In-flight tool checks are scoped after the latest recognized same-child continuation, so an abandoned pending tool from an earlier attempt cannot keep a recovered attempt live forever. The executor aborts only that child and sends the existing timeout continuation once in the same canonical session, preserving completed tools and partial work without replaying the original prompt. Provider `retry` backoff and real running tools remain exempt. If the continuation also becomes silent, the child is stopped and settles as a visible resumable failure with a stream-idle-timeout reason instead of remaining busy until its task deadline.
+A managed child that remains `busy` with no canonical transcript or verified live semantic progress for five minutes is treated as a silent provider-stream stall unless its current attempt has a tool that is actually running or still carries material input. An exact `pending` tool shell with no start time, structured input, or raw input means the provider stopped while constructing the call; it does not exempt the child from recovery and is aborted before any continuation is sent. In-flight tool checks are scoped after the latest recognized same-child continuation, so an abandoned pending tool from an earlier attempt cannot keep a recovered attempt live forever. Native text/reasoning fragments are live-only until their end event, so matched current-assistant deltas also advance the in-memory idle watchdog. Exact event IDs distinguish new output from duplicate delivery; growing full snapshots count only content not already observed in deltas. Empty content, unchanged snapshots, busy/reconnect heartbeats, prior assistants and mismatched children or directories do not count. This attempt-scoped subscription survives the one-time first-output stamp and is replaced before same-child recovery; it does not renew the hard deadline or add per-token task writes or status reads. The executor aborts only that child and sends the existing timeout continuation once in the same canonical session, preserving completed tools and partial work without replaying the original prompt. Provider `retry` backoff and real running tools remain exempt. If the continuation also becomes silent, the child is stopped and settles as a visible resumable failure with a stream-idle-timeout reason instead of remaining busy until its task deadline.
 
 Resume waits up to 30 seconds for a just-aborted `busy` turn to finish teardown, then anchors its continuation to the pre-prompt assistant tail. Resume and `retry_in_place` ignore that stale tail until a new assistant message appears, re-post a continuation at most once after a two-minute start grace, and then settle honestly instead of waiting to the hard deadline. Transcript observation restores authoritative `info.time.created` order when complete timestamps expose mixed legacy Cursor and native OpenCode ID ordering, so a newer recovery tail cannot be mistaken for stale work or trigger duplicate prompts. The anchor is per dispatch rather than transcript-lifetime, so a child may be recovered again after an earlier continuation. Aborted-tool boilerplate is excluded from preview selection so the latest substantive assistant text remains visible while canonical references are retained.
 
@@ -168,9 +267,6 @@ probe quota reset times, or enter the quota backoff ladder.
   transitions are published on the existing managed-task event channel; terminal
   Error Log context includes bounded phase/cause/count and message/event IDs.
 
-The September 9 incident and verification are recorded in
-[the investigation](../../docs/audits/2026-09-09-managed-transport-recovery.md).
-
 ### Assignment preservation during recovery
 
 Every same-child resume, model switch, transport recovery, empty-output recovery,
@@ -201,19 +297,43 @@ OpenCode ends a turn without a final answer when the user rejects a permission o
 
 ## Persistence bounds
 
-Owner adapters provide atomic `load()` and `save()` operations. Legacy records missing `dispatchGroupId` or `dispatchWaveId` hydrate to `null`, and records predating plan-mode task policy hydrate with `readOnly: false`, before validation so upgrades do not quarantine historical ledgers or lock old results. Before every save, the core removes the oldest unreferenced terminal history to enforce 2,000 terminal records, 14 days, and 20 MiB of UTF-8 serialized state. Every task transition clones, validates and serializes the whole ledger, so its size is a per-transition cost; 90 days of history had reached 1,670 records and the 20 MiB cap. Each successfully persisted removal is published before the task event whose commit caused it, and a task removed by its own terminal commit is not republished. This lets long-lived renderers release the same projection without polling or retaining tombstones. Nonterminal work, auto-resuming results, unacknowledged grouped results of an active conversation, and retained attempt lineage are never compacted; new work is rejected honestly when protected state alone cannot fit the byte boundary. A conversation is active while it has unfinished work or while any of its tasks or results changed within the age bound; an unacknowledged result in a conversation idle for longer ages out like other history (`expireUnacknowledged: false`, or `DEVRYAN_ORCHESTRATION_UNACKNOWLEDGED_EXPIRY=0` in the scheduler, keeps it until collected).
+Retry/resume follow-up creation and its source result acknowledgement share one
+durable scheduler transaction. Failed writes or final authorization roll both
+back; launches occur only after that commit. Repeated acknowledgement returns
+the same linked child even with a different retry idempotency key. V2 settled
+waits respect their cursor through scheduler, native owner and executor: only
+attention intersecting `changedTaskIds` or full selection settlement returns
+control to the model. An unchanged parked child with a running sibling remains
+attached across bounded private slices. Scalar v1 ready/attention behavior stays
+unchanged. The composed regression is in
+`packages/web/server/lib/opencode/runtime-host/managed-task-attached.test.js`.
+
+Owner adapters provide atomic `load()` and `save()` operations. The codec (below) decodes every loaded ledger, so legacy records missing `dispatchGroupId` or `dispatchWaveId` hydrate to `null`, and records predating plan-mode task policy hydrate with `readOnly: false`, before validation so upgrades do not quarantine historical ledgers or lock old results. Before every save, the core removes the oldest unreferenced terminal history to enforce 2,000 terminal records, 14 days, and 20 MiB of UTF-8 serialized state. Every task transition clones, validates and serializes the whole ledger, so its size is a per-transition cost; 90 days of history had reached 1,670 records and the 20 MiB cap. Each successfully persisted removal is published before the task event whose commit caused it, and a task removed by its own terminal commit is not republished. This lets long-lived renderers release the same projection without polling or retaining tombstones. Nonterminal work, auto-resuming results, unacknowledged grouped results of an active conversation, and retained attempt lineage are never compacted; new work is rejected honestly when protected state alone cannot fit the byte boundary. A conversation is active while it has unfinished work or while any of its tasks or results changed within the age bound; an unacknowledged result in a conversation idle for longer ages out like other history (`expireUnacknowledged: false`, or `DEVRYAN_ORCHESTRATION_UNACKNOWLEDGED_EXPIRY=0` in the scheduler, keeps it until collected).
+
+## Orchestration codec
+
+`codec.js` owns the persisted ledger shape and the host-to-UI wire shapes. Its dependency-free leaf `codec-primitives.js` holds the shared constants and helpers so the record validators (`contract.js`, `result-envelope.js`) can use them without an import cycle; `codec.js` re-exports all of it. Both stay browser-safe (no `Buffer`), because `packages/ui` imports this package.
+
+- **Persisted records.** `decodeManagedTaskRecord` and `decodeResultEnvelope` apply the single legacy-default table and then validate. Decoding spreads the stored record and then sets each default, so stored fields keep their position and absent ones are appended in table order. Saved bytes depend on that order.
+- **Ledgers.** `decodeLedgerSnapshot(value, { requireResultEnvelopes, createError })` checks the version, uniqueness of task ids, idempotency keys and envelopes, and each envelope's match with its task. The atomic ledger uses the default (`requireResultEnvelopes: true`, coded `TypeError`s, which quarantine the file); the scheduler passes `false` and maps the codes onto `ManagedOrchestrationError`. Record-validation failures are thrown as the validators raise them. `encodeLedgerSnapshot(snapshot)` returns the persisted text: the decoded snapshot as one JSON line.
+- **Wire payloads.** `decodeTaskEventRecord`, `decodeResultEnvelopePayload`, `decodeTaskEventPayload` and `decodeSnapshotPayload` take `{ mode: 'strict' | 'lenient' }` (default strict) and bound text for display. A record that cannot be shown decodes to `null`; the snapshot decoder throws `TypeError` instead, because one bad record makes the whole snapshot unusable. Strict mode applies the persisted validator to the envelope's `autoResume` and rejects a malformed `waitingReason` or one on a task that is not queued. Lenient mode, for consumers that must tolerate a newer host, keeps the envelope and reads an unknown `autoResume.reason` as `null`, and any other invalid `autoResume` or `waitingReason` as `null`.
+- **Constants.** Task statuses (all, live, terminal), failure kinds, auto-resume states, active states, reasons and reset sources, the result payload fields an envelope copies from its task and the fields a tool result may compact, and the `dvr_task_`/`dvr_wave_` prefixes. `isManagedTaskId`, `isAutoResumeActiveState` and `findManagedResultPayloadMismatch` are the shared checks. The managed-orchestration plugin cannot import the package; `managed-orchestration-codec-parity.test.mjs` holds its literal copies equal.
+- **Cursor helpers.** `encodeBase64Url`/`decodeBase64Url` with an explicit `pad` flag (`dvr_result_cursor_v1.` restores padding before decoding, `dvr_result_section_v2.` decodes as given; both encode unpadded) and `stableStringify` (object keys in code-unit order; the metadata identity digest and native input hashes depend on it).
+
+`fixtures/` pins the formats through golden bytes: a legacy and a current ledger saved through the scheduler and the atomic ledger, an envelope with `autoResume`, canonical and legacy task-event SSE payloads, an HTTP snapshot, and one cursor of each kind (`dvr_result_cursor_v1.`, `dvr_result_section_v2.`, `dvr_wait_v2:` and legacy `dvr_wait_v1:`). A fixture difference is a format change, never a refactor: persisted ledger bytes, key order and model-visible cursors must stay byte-identical. Each writer has its own expected file: `ledger-legacy.scheduler-saved.json` carries `"transportRecovery":null` on every task while `ledger-legacy.atomic-saved.json` does not, because the scheduler snapshots tasks through `cloneTask`, which always writes the field, while the atomic ledger only decodes and re-encodes the stored record and the codec's `TASK_LEGACY_DEFAULTS` table has no `transportRecovery` entry, so an absent field stays absent. That divergence is accidental drift in the legacy defaults table, pinned as-is; the web atomic-ledger persistence cases live in `web/server/lib/orchestration/atomic-ledger.test.js` and the HTTP snapshot case in `runtime.test.js`.
 
 ## Public entrypoints
 
-- `ABORT_SOURCES` / `ABORT_SOURCE_HEADER` / `normalizeAbortSource(value)`: the single cross-host contract for which UI path requested a session abort. The UI sends it on every `session.abort`, and the web server journals it as `control` `payload.source` and classifies operator stops from it. Unknown values normalize to `'unknown'`.
+- `ABORT_SOURCES` / `ABORT_SOURCE_HEADER` / `normalizeAbortSource(value)`: the single cross-host contract for which UI path requested a session abort. The UI sends it on every `session.abort`, and the web server journals it as `control` `payload.source` and classifies operator stops from it. Unknown values normalize to `'unknown'`. `createAbortSourceRegistry({ now, ttlMs, maximumSessions })` keeps the latest accepted abort source per session (60-second TTL, bounded): `record` replaces it (an `'unknown'` source only clears), `withdraw` removes a rejected request's own entry, `read` returns the source or `null`, and `clear` drops it when the next turn is accepted. OpenCode reports every interrupt as reason `user`, so the web host attaches this source to the projected `MessageAbortedError` as `data.source`.
 - `createManagedTaskRecord(input)`: creates and validates a queued task record.
 - `formatManagedTaskDisplayName(label)`: derives the shared child-session and Agent Dispatch display name without mutating the durable label.
 - `supportsManagedReadOnlyAgent(agent)`: returns false for Designer and missing identities so plan-mode work cannot enter implementation ownership.
 - `MANAGED_READ_ONLY_AGENT_UNSUPPORTED` / `MANAGED_READ_ONLY_AGENT_UNSUPPORTED_MESSAGE`: stable cross-runtime pre-admission failure contract for plan-mode Designer dispatch.
 - `validateManagedTaskRecord(task)`: rejects malformed, provider-owned, non-JSON, or over-limit records.
+- `decodeLedgerSnapshot` / `encodeLedgerSnapshot` / `decodeManagedTaskRecord` / `decodeResultEnvelope` / `decodeTaskEventPayload` / `decodeSnapshotPayload`: the orchestration codec (see above).
 - `isTerminalManagedTaskStatus(status)`: classifies immutable terminal states.
-- `toManagedTaskEvent(task)`: creates the safe `openchamber:managed-task` projection, including `agentRetryAvailable` without exposing the private dispatch group.
-- `toManagedTaskRemovalEvent(task)`: creates the safe identity-only `openchamber:managed-task-removed` projection.
+- `toManagedTaskEvent(task)`: creates the safe `devryan:managed-task` projection, including `agentRetryAvailable` without exposing the private dispatch group.
+- `toManagedTaskRemovalEvent(task)`: creates the safe identity-only `devryan:managed-task-removed` projection.
 - `createManagedTaskScheduler(options)`: creates the runtime scheduler owner.
 - `scheduler.waitForTask(taskId, options)`: waits until terminal by default, or returns the latest cloned snapshot after an optional positive finite polling slice.
 - `scheduler.waitForResultAction(taskId, options)`: waits for a durable result action and returns a cloned acknowledged envelope.
@@ -229,7 +349,7 @@ Owner adapters provide atomic `load()` and `save()` operations. Legacy records m
 - `classifyProviderRetryStatus(status)`: classifies structured retry action metadata before falling back to provider message wording.
 - `isManagedTransientTransportContinuationPrompt(value)`: recognizes the executor's exact timeout/connection continuation transcript records, including their read-only form.
 - `isManagedResumeContinuationPrompt(value)`: recognizes the executor's exact active-resume continuation transcript record, including its read-only form.
-- `resolveProviderPromptTools(providerId, agent?, { readOnly? })`: returns the shared provider/agent prompt-tool override, or `undefined` when none applies. Copilot disables both OpenCode names for the optional Resend MCP namespace. Orchestrator disables provider-native `task` and the invalid placeholder. Read-only managed tasks fail closed to an inspection allowlist. Policies merge when applicable.
+- `resolveProviderPromptTools(providerId, agent?, { readOnly? })`: returns the shared provider/agent prompt-tool override, or `undefined` when none applies. Copilot disables both OpenCode names for the optional Resend MCP namespace. Orchestrator disables provider-native `task`. Native v2 has no executable `invalid` placeholder, so the profile does not inject that unsupported permission action; admission continues to refuse unknown tool actions. Read-only managed tasks deny all actions before allowing native `read`, `glob`, `grep`, `webfetch` and the fixed read-only `devryan_plan_read` assigned-plan tool; other custom aliases remain denied without guessing their permission actions. This wildcard denial supersedes Copilot's custom namespace patterns. Cursor separately applies its host-owned SDK inspection allowlist on creation and recovery.
 - `deriveXaiDuplicateToolOverrides(catalog)` / `createXaiToolCatalogCache(options)`: derive and retain fail-open, schema-verified Grok duplicate-tool disables without provider IO.
 - `createManagedTaskResultEnvelope(task, options)`: creates a terminal parent handoff, carrying `providerResetAt` and an initially null `autoResume` record.
 - `isAutoResumeEligible(task, envelope)` / `isAutoResumeActive(envelope)` / `initialAutoResumeState(input)` / `recordProviderRejection(state, input)` / `planAutoResumeAttempt(input)` / `buildAutoResumeAcknowledgeParams(input)`: the pure automatic-resume planner and its state helpers; `validateManagedTaskAutoResume(value)` validates the durable record.
@@ -250,3 +370,109 @@ A local primary-recovery bridge failure is not a provider usage limit.
 A provider region/privacy-policy rejection (for example the Go Global-region rejection, matched as a normalized bounded phrase) is `provider_configuration`, not a transient transport failure. It creates a safely exhausted recovery receipt, skips a futile same-model prompt, and permits the existing single configured-backup policy. The persisted receipt keeps the v1.2.6+ wire shape (a historical transport `kind`, `sameModelAttempts: 1` recorded as spent, no new fields) so a downgraded build can still load the scheduler; the configuration class is derived at runtime from the failed task's reason, and a backup follow-up reads its predecessor's reason through the scheduler's read-only `readPriorFailureReason()` task control. Configuration failures do not open provider quota breakers. Missing backup leaves the actionable provider reason visible.
 
 `readManagedResultReport` reads the retained child’s terminal marker for presentation only. Completed transport with a blocked report displays “Child reports blocked”; incomplete, missing, or ambiguous reports display “Result needs review”. These reports never establish authoritative execution safety.
+
+New task-event projections use `devryan:*`. The immutable pre-rename golden
+payload remains pinned and is tested through the connection dialect encoder;
+legacy and canonical clients receive identical property bytes.
+
+## Explicit continuation after a user stop
+
+Canonical operator-stop settlement persists `terminationIntent: "user_stopped"` on its immutable terminal task. A retained, resumable, unacknowledged aborted result projects `userStoppedRecoveryAvailable` separately from provider Model Recovery and the agent retry allowance. It is attention, never automatic work. Model RPCs cannot acknowledge or retry that parked result; the authenticated UI supplies a private Symbol grant for explicit resume or dismissal. Resume uses `retry_in_place` with an explicit provider/model/variant and creates one idempotent follow-up in the same child, preserving the assignment and checks. Ordinary child prompts neither mutate the old task nor acknowledge its envelope.
+
+Operator Stop preparation persists a private `pending` request/lease identity before forwarding the native abort. Pending suppresses continuation, settlement, agent retry and automatic recovery; it grants no accepted-stop provenance. A2xx response accepts that exact request and then records `terminationIntent: user_stopped` on an active task. Rejection withdraws only its matching pending/uncertain receipt, preserving earlier accepted intent. Acceptance/withdrawal may resolve the private receipt after an independent terminal outcome without rewriting that outcome or its envelope; `hasAcceptedUserStop` gives all policies one authoritative acceptance predicate.
+
+Pending receipts rearm after restart and expire through the existing `abortTimeoutMs` bound (default5seconds). A lost response becomes `uncertain` and active work settles as resumable `interrupted` with `Stop request outcome could not be confirmed`. It never infers acceptance or re-prompts the provider; only explicit UI-selected Resume/Dismiss may dispose of that result. A late exact response can still resolve its private receipt. New attempts remain isolated by task/lease identity. Legacy aborted/resumable records expose explicit selected-model recovery without claiming user-stop provenance.
+
+Managed child prompts disable `todoread` and `todowrite` alongside provider-native `task` on initial execution and every continuation. The parent retains task tracking; child tracking schemas add no execution authority. Read-only wildcard denial and native admission remain unchanged.
+
+
+### Failure categories and specialist handoffs
+
+Terminal error registry entries retain `v2Type`. Managed execution preserves
+structured `provider.auth`, `ProviderAuthError`, and untyped HTTP 401/403 evidence
+before reducing errors to persisted failure text; transport-looking messages cannot
+turn those permanent access failures into automatic connection recovery. Historical
+OpenCode Go subscription refusals remain classified as authentication failures.
+Native permission capability refusals project `failureKind: runtime_capability`.
+They allow result collection/abandonment but refuse model retry and continuation
+attempts: repair/update the runtime, then start new work. UI explains that repair
+instead of presenting a bare Error or suggesting provider connection recovery.
+
+Managed specialist contracts request narrow searches and relevant source ranges,
+reuse of supplied findings, and concise evidence handoffs naming owners, callers,
+checks and unresolved questions. Rereading decisive source for verification stays
+allowed; no tool-count or context-size limit substitutes for a grounded answer.
+
+
+## Required verification completion
+
+`required-checks.js` owns declared requirements and their existing durable receipts. Public projections use `pending`, `passed`, `failed`, `blocked`, `skipped`, or `waived`; historical `not-observed` receipts project as pending. `projectRequiredCheckCompletion` exposes `ready` and exact `remaining` names, statuses and reasons. No declared requirements preserves legacy readiness. Child text, screenshots alone and result disposition never create a pass. The scheduler refuses `continue` for a task with unmet declared requirements; report/detail reads, corrective work and root check reruns remain available.
+
+Root objectives declare immutable requirements through `declare_checks`; exact
+repetition is idempotent. Objective records live in the existing orchestration
+ledger and use the same command observer, current-content proof, audited runner
+correction and authenticated waiver rules as child tasks. `correct_objective_check`
+retains the original declaration and receipt. The native host supplies current
+root/directory/objective authority; ordinary model or compatibility RPC fields
+cannot grant it. Objective-wide inspection includes root declarations and stale
+requirements from already-collected children.
+Objective records count toward the existing serialized ledger byte limit, with
+no separate lifetime count ceiling. Confirmed native session deletion removes
+its records; a current root may expire its own superseded records only after
+the existing retention age and when no old task remains live or undispositioned.
+Capacity pressure preserves current evidence and fails explicitly.
+
+Optional `taskPrerequisites` reference a same-objective completed producer's
+current passing check, exact declared coverage and content hash. Native start
+uses `prerequisites: [{task_id, check_name, paths, content_hash}]`; the supplied
+hash is only compared with host evidence. Admission and every new launch
+revalidate it. A stale prerequisite holds that dependent with waiting kind
+`prerequisites`, while independent work remains runnable. Observing an already
+live child does not relaunch it. Retention protects producer records needed by
+queued or active dependents rather than discarding their evidence under pressure.
+
+Command checks retain their exact command and bounded project-relative source-file declarations. A pass requires canonical invocation identity, observed exit zero and matching before/after/current content hashes. A later edit invalidates it. A visual declaration adds `kind: "visual"` and `visual: {state: "populated", dataSource: "fixture" | "live", assertions: string[], reportPath: string}`. Its bounded JSON report must name the same state/data source, named assertion results `{name,status}` and nonempty evidence references `{path,sha256}`. The host reads and verifies those project-contained artifacts, retains their hashes, and rechecks them on projection. Fixture evidence establishes fixture coverage only; it does not imply production coverage.
+
+Requirements follow `dispatchGroupId`, the root objective user-message ID. `selectRequiredCheckTasks` supersedes an ancestor only when a retry in that objective retains an equivalent requirement set. Abandonment is not a waiver, and a new human objective does not inherit old groups. UI projections carry `verification.objectiveId` instead of exposing the private raw dispatch group. They include current hashes, readiness and observation time; the wire codec validates both declarations and verification.
+
+Only the authenticated web UI owner can create a waived receipt, with a reason and exact current source hash. Scheduler waiver commits require `USER_CHECK_WAIVER`, a private in-process Symbol grant; ordinary check-recording and model RPC cannot create waivers. A source edit invalidates a waiver just as it invalidates a pass. Source files, tests and prior execution evidence remain intact.
+
+Managed child creation carries the trusted `prewarmExecutionView` transport hint for Cursor (`cursor-acp`) or tasks satisfying `managedTaskMayWrite`. This advisory preparation overlaps private-view setup with dispatch; it does not change `mayWrite`, read-only provider admission, or tool permissions. Other inspection-only children do not request preparation.
+
+Runtime replacement uses `withRuntimeRestart` to hold dispatch while reconciling
+only terminal results and awaiting their atomic task/envelope commits before
+controller teardown. Live, transient, relaunch, or unconfirmed cancellation
+refuses replacement. `recoverStoppedRuntime(assertStopped)` is a private host
+capability: the callback must reprove controller exit and execution drainage (or
+cold absence of previous owners) at each serialized commit. It loads without
+activating the scheduler and settles starting/running records as
+interrupted, or aborted when user stop was accepted. Partial output, references,
+operator stop identity, and history survive. It never calls the executor,
+replays a resume, pumps queued tasks, or arms auto-resume; normal initialization
+after readiness activates queued work. Failed writes retain the original record
+and remain retryable under the same proof.
+
+### Audited check runner correction
+
+`check-correction.js` owns the pure correction contract. `validateCheckCorrection(correction, check)` accepts only the supported Edge runner correction, unchanged name/coverage and a host-pinned runner identity. `applyCheckCorrection({checks,receipts,history}, correction)` returns deeply frozen copies: only the selected command changes, its active receipt is removed, and the complete prior definition plus receipt and runner identity are appended to immutable audit history. It never creates passing evidence. The caller must persist the result atomically through the scheduler's existing authority and compare-and-set boundary. Stale prior commands or receipt mismatches refuse the commit. `validateCheckCorrectionHistory` validates up to 128 archived corrections within 256 KiB; reaching capacity refuses further corrections rather than discarding history.
+
+The bounded contract corrects `npx vitest run supabase/functions/<function>/__tests__ [--maxWorkers=N]` to `npm run test:edge -- --function <function>`. The host must verify the repository-defined runner before supplying the correction; these pure shape validators are not proof of caller authority or script semantics. Arbitrary replacement commands, different function selectors, paths outside the same function and visual requirements are refused. Kind, purpose, prerequisites and paths remain unchanged. A genuine execution with fresh coverage evidence is still required afterward.
+
+The scheduler exposes `correctRequiredCheck` only with the private `REQUIRED_CHECK_CORRECTION` Symbol grant, a live root/directory/objective fence and an authorization recheck inside its atomic commit. Terminal task mutations are limited to the validated appended correction and receipt invalidation; execution outcomes and old history remain immutable. `dispatchObjectiveId` is an optional host-captured original objective, independent of the assistant dispatch group. Legacy absence is preserved byte-for-byte; follow-ups inherit a bound objective. Check selection and duplicate suppression use this binding. Unresolved legacy lineage remains explicit blocked verification rather than disappearing after collection or equivalent-task supersession.
+
+Compaction in `persistence.js` hard-protects collected grouped tasks with declared checks while their conversation remains active under the existing retention policy. A cached passing receipt cannot prove current source freshness, so it does not release this protection. Normal result disposition or idle-conversation expiry restores ordinary compaction. Count, byte and eager lineage limits report pressure rather than silently erasing live verification requirements.
+
+Provider failure classification requires explicit authentication rejection or the
+structured `provider.auth` category. Structured `provider.internal` remains an
+internal failure even when its prose mentions authentication; generic process
+exit/login advice cannot classify it as a sign-in failure. Managed read-only
+prompt tools include read/glob/grep/webfetch and the fixed assigned-plan reader; unsupported native websearch is no
+longer granted or advertised.
+
+## Truthful check execution and assignment continuation
+
+Required checks bind exact command, project-relative `cwd` (default `.`), named `environment` (native by default), and current declared-file bytes into one content identity. The observer accepts only matching canonical bash executions and rejects pipelines or ambiguous shell control as pass evidence. A canonical Docker/UID prerequisite failure may carry `environmentUnavailable` with a bounded diagnostic code and actionable hint; it remains explicitly skipped, keeps its nonzero exit receipt, never passes or waives checks, and does not suppress independent work. SQL, assertion and application failures keep their failed outcome.
+
+Completed approved-plan assignments refuse retry/resume mutation. Managed prompt tool maps expose `devryan_plan_read` only when the task retains an assigned approved snapshot. Acknowledged-result replies explicitly direct the parent to continue remaining work from confirmed evidence under a new closed scope.
+
+Only complete canonical process output can establish an environment skip. Skipped checks permit disposition and closeout with completion status `skipped`, never `passed`; SQL/assertion/application failures remain blocking. Content changes invalidate skip receipts as well as passes.

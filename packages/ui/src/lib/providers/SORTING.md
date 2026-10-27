@@ -5,6 +5,7 @@ All UI surfaces that render a grouped **provider → models** picker must derive
 ## Conventions
 
 - **Providers** sort by `getProviderDisplayName(provider, sources?)` from [`display.ts`](./display.ts). Tie-break on `provider.id` for stable ordering when display names collide (e.g. OAuth-aware relabeling).
+- The built-in `openai` provider displays as **ChatGPT** for both ChatGPT sign-in and API-key connections. Model fields, picker groups, and provider settings use this shared label for display, search, and sorting; execution IDs and stored provider names stay unchanged. Custom provider IDs keep their supplied names, including OpenAI.
 - **Models** sort by `model.name`, falling back to `model.id`. Tie-break on `model.id`.
 - Comparison is **case-insensitive** and uses a shared `Intl.Collator` (`sensitivity: 'base'`, `numeric: true`) so numeric suffixes order naturally (`gpt-4` < `gpt-10`).
 - Helpers always return **new arrays** and shallow-clone providers when re-sorting nested models. Never mutate store/API snapshots.

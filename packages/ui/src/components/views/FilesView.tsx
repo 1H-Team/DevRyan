@@ -275,7 +275,7 @@ const isDirectoryReadError = (error: unknown): boolean => {
 };
 
 const MAX_VIEW_CHARS = 200_000;
-const FILE_EDITOR_AUTO_SAVE_KEY = 'openchamber:files:auto-save-enabled';
+const FILE_EDITOR_AUTO_SAVE_KEY = 'devryan:files:auto-save-enabled';
 
 const getInitialAutoSaveEnabled = (): boolean => {
   if (typeof window === 'undefined') {
@@ -2002,9 +2002,9 @@ export const FilesView: React.FC<{ visible?: boolean }> = ({ visible = true }) =
     }
   }, [canEdit, textViewMode]);
 
-  const MD_VIEWER_MODE_KEY = 'openchamber:files:md-viewer-mode';
-  const HTML_VIEWER_MODE_KEY = 'openchamber:files:html-viewer-mode';
-  const JSON_VIEWER_MODE_KEY = 'openchamber:files:json-viewer-mode';
+  const MD_VIEWER_MODE_KEY = 'devryan:files:md-viewer-mode';
+  const HTML_VIEWER_MODE_KEY = 'devryan:files:html-viewer-mode';
+  const JSON_VIEWER_MODE_KEY = 'devryan:files:json-viewer-mode';
 
   React.useEffect(() => {
     const selectedPath = selectedFile?.path;

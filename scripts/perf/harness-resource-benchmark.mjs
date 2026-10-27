@@ -10,14 +10,12 @@ import { buildHarnessComparison } from './harness-comparison.mjs';
 const script = fileURLToPath(import.meta.url);
 const root = path.resolve(path.dirname(script), '../..');
 const digest = value => createHash('sha256').update(value).digest('hex');
-const fixture = { version: 1, tasks: 500, promptBytes: 2200, vectors: 10_000, dimensions: 64, limit: 10 };
+const fixture = { version: 2, tasks: 500, promptBytes: 2200 };
 const median = values => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)];
 
 async function measure(sourceRoot) {
   const load = relative => import(pathToFileURL(path.join(sourceRoot, relative)).href);
   const { compactManagedOrchestrationState } = await load('packages/orchestration-runtime/persistence.js');
-  const { createHybridSearch, cosineSimilarity, mergeHybridResults } = await load('packages/bot-indexer/src/search.js');
-  const { decodeEmbedding } = await load('packages/bot-indexer/src/embeddings.js');
   const input = { version: 1, tasks: Array.from({ length: fixture.tasks }, (_, i) => ({
     taskId: `task-${i}`, createdAt: i, finishedAt: i, sequence: i, status: 'completed',
     dispatchGroupId: null, priorTaskId: null, parentTaskId: null, prompt: 'x'.repeat(fixture.promptBytes),
@@ -54,41 +52,12 @@ async function measure(sourceRoot) {
     return { serializedBytes, serializations, retainedRecords: result.state.tasks.length };
   });
 
-  let decodedScalars = 0, offsetRows = 0;
-  const rows = Array.from({ length: fixture.vectors }, (_, i) => {
-    const embedding = Buffer.alloc(fixture.dimensions * 4);
-    for (let d = 0; d < fixture.dimensions; d++) embedding.writeFloatLE(((i * 31 + d * 17) % 103) / 103, d * 4);
-    const original = embedding.readFloatLE;
-    embedding.readFloatLE = function (offset) { decodedScalars++; return original.call(this, offset); };
-    return { namespace: 'bot:fixture', documentId: `doc-${String(i).padStart(6, '0')}`, ordinal: 0, embedding };
-  });
-  const query = Array.from({ length: fixture.dimensions }, (_, d) => d / fixture.dimensions);
-  const fullSort = rows.map(row => ({ ...row, vectorScore: cosineSimilarity(query, decodeEmbedding(row.embedding)) }))
-    .sort((a, b) => b.vectorScore - a.vectorScore || a.namespace.localeCompare(b.namespace)
-      || a.documentId.localeCompare(b.documentId) || a.ordinal - b.ordinal).slice(0, 100);
-  const expectedRanking = mergeHybridResults({ ftsResults: [], vectorResults: fullSort, limit: fixture.limit })
-    .map(row => [row.documentId, row.score]);
-  const store = {
-    status: () => ({ state: 'ready', chunkCount: rows.length }), ftsSearch: () => [],
-    vectorCandidates: (_ns, limit, offset) => { offsetRows += offset; return rows.slice(offset, offset + limit); },
-    vectorCandidatesAfter: (_ns, limit, cursor) => {
-      const index = cursor ? Number(cursor.documentId.slice(4)) + 1 : 0;
-      return rows.slice(index, index + limit);
-    },
-  };
-  const search = createHybridSearch({ store, embeddings: { embed: async () => [query], model: 'fixture' } });
-  decodedScalars = 0;
-  const vector = await runCase('vector-retrieval', async () => {
-    const result = await search.search({ query: 'fixture', namespaces: ['bot:fixture'], limit: fixture.limit });
-    assert.deepEqual(result.results.map(row => [row.documentId, row.score]), expectedRanking);
-    return { decodedScalars, offsetRows, candidates: rows.length };
-  });
-  const sourceFiles = ['packages/orchestration-runtime/persistence.js', 'packages/bot-indexer/src/search.js', 'packages/bot-indexer/src/embeddings.js'];
+  const sourceFiles = ['packages/orchestration-runtime/persistence.js'];
   return { schemaVersion: 1, fixtureHash: digest(JSON.stringify(fixture)), protocolHash: digest(await readFile(script)),
     sourceHashes: Object.fromEntries(await Promise.all(sourceFiles.map(async file => [file, digest(await readFile(path.join(sourceRoot, file)))]))),
     runtime: digest(JSON.stringify({ node: process.version, platform: process.platform, arch: process.arch, cpu: cpus()[0]?.model })),
     measurement: { cpu: 'process-cpu-ms', retained: 'whole-worker-heap-after-forced-gc', timing: 'descriptive-not-a-release-threshold' },
-    cases: [ledger, vector] };
+    cases: [ledger] };
 }
 
 const execute = (sourceRoot, output) => new Promise((resolve, reject) => {
@@ -124,7 +93,7 @@ export async function main(argv) {
   const baseline = aggregate(trials.baseline), candidate = aggregate(trials.candidate);
   const result = buildHarnessComparison({ baseline, candidate });
   // Stable operation counts gate PRs; noisy wall time/CPU/heap observations remain descriptive.
-  result.resourceGate = candidate.cases.every((entry, index) => ['serializedBytes', 'decodedScalars', 'offsetRows'].every(key =>
+  result.resourceGate = candidate.cases.every((entry, index) => ['serializedBytes'].every(key =>
     entry.operations[key] === undefined || entry.operations[key] <= baseline.cases[index].operations[key]));
   result.passed &&= result.resourceGate;
   result.trials = trials;

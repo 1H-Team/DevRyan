@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { Part, ToolPart } from '@opencode-ai/sdk/v2';
 
-import { assistantImageSyntaxFixtures } from '../../../../../../shared-runtime/testing/assistant-image-fixtures.js';
+import { assistantImageSyntaxFixtures } from '@devryan/shared-runtime/testing/assistant-image-fixtures.js';
 import { extractAssistantImageCandidates } from './generatedImageResults';
 
 const textPart = (id: string, text: string): Part => ({ id, type: 'text', text } as Part);

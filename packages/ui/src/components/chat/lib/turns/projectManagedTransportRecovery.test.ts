@@ -8,7 +8,7 @@ import {
     MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT,
     type ManagedTaskEventRecord,
     type ManagedTaskStatus,
-} from '@openchamber/orchestration-runtime';
+} from '@devryan/orchestration-runtime';
 
 import { projectManagedTransportRecovery } from './projectManagedTransportRecovery';
 import type { ChatMessageEntry } from './types';

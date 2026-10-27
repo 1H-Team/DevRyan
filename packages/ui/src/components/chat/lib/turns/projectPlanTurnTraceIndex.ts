@@ -1,3 +1,4 @@
+import type { SessionPlanSourceIdentity } from '@/lib/api/types';
 import { resolvePlanTurnIntent, type PlanTurnIntent } from '@/lib/messages/actionablePlan';
 import {
     projectPlanRevisions,
@@ -13,6 +14,8 @@ import type {
 } from './types';
 
 interface ProjectPlanTurnTraceIndexOptions {
+    sourceIdentity?: SessionPlanSourceIdentity;
+    canonicalContent?: string;
     previousIndex?: PlanTurnTraceIndex | null;
     recordedPlanModeMessageIds?: ReadonlySet<string>;
 }
@@ -68,6 +71,7 @@ const areTraceEntriesEqual = (left: PlanTurnTraceEntry, right: PlanTurnTraceEntr
     && left.isLatestPlan === right.isLatestPlan
     && left.isSuperseded === right.isSuperseded
     && left.isSettled === right.isSettled
+    && left.hasTerminalError === right.hasTerminalError
     && left.isActionable === right.isActionable
 );
 
@@ -111,6 +115,7 @@ const toRevisionTurnInput = (
         parentMessageId: getAssistantParentMessageId(message),
         completedAt: getAssistantCompletedAt(message),
         hasError: message.info.role === 'assistant' && message.info.error != null,
+        finish: message.info.role === 'assistant' ? message.info.finish : undefined,
         parts: message.parts,
     })),
 });
@@ -135,6 +140,7 @@ const buildTraceEntry = (
     isLatestPlan,
     isSuperseded: !isLatestPlan,
     isSettled: revision.isSettled,
+    hasTerminalError: revision.hasTerminalError,
     isActionable: isLatestPlan
         && revision.sourceMessageId !== null
         && revision.sourceCompletedAt !== null
@@ -162,7 +168,7 @@ export const projectPlanTurnTraceIndex = (
         return input;
     });
 
-    const revisions = projectPlanRevisions(inputs);
+    const revisions = projectPlanRevisions(inputs, options.sourceIdentity, options.canonicalContent);
     const latestRevision = revisions[revisions.length - 1] ?? null;
 
     const entries: PlanTurnTraceEntry[] = [];
@@ -172,12 +178,21 @@ export const projectPlanTurnTraceIndex = (
     const suppressedTurnIds = new Set<string>();
 
     revisions.forEach((revision, index) => {
-        const entry = buildTraceEntry(
+        const baseEntry = buildTraceEntry(
             revision,
             index + 1,
-            revision === latestRevision,
+            revision === latestRevision && revision.memberTurnIds.includes(inputs.at(-1)?.turnId ?? ''),
             sessionIdByTurnId.get(revision.rootTurnId) ?? null,
         );
+        const proof = options.sourceIdentity;
+        const members = inputs.filter(input => revision.memberTurnIds.includes(input.turnId));
+        const assistantIDs = members.flatMap(input => input.assistants.map(assistant => assistant.id));
+        const validSavedSource = proof?.successful === true && proof.settled === true && proof.current === true
+            && proof.sourceMessageID === revision.sourceMessageId && proof.rootUserMessageID === revision.rootUserMessageId
+            && areStringArraysEqual(proof.memberUserMessageIDs, members.map(input => input.userMessageId))
+            && areStringArraysEqual(proof.memberAssistantMessageIDs, assistantIDs)
+            && proof.currentSourceMessageID === assistantIDs.at(-1);
+        const entry = { ...baseEntry, isActionable: baseEntry.isActionable && validSavedSource };
         entries.push(entry);
         for (const memberTurnId of revision.memberTurnIds) {
             byTurnId.set(memberTurnId, entry);

@@ -1,3 +1,4 @@
+import { isFailedCommandExitCode } from './toolExpandedFallback';
 import React from 'react';
 import { RiArrowDownSLine, RiArrowRightSLine, RiStackLine } from '@remixicon/react';
 import type { TurnActivityRecord as TurnActivityPart } from '../../lib/turns/types';
@@ -235,6 +236,8 @@ interface StaticGroupedToolRowProps {
     activities: TurnActivityPart[];
     animateTailText: boolean;
     animateRows: boolean;
+    onShowPopup?: (content: ToolPopupContent) => void;
+    onContentChange?: (reason?: ContentChangeReason) => void;
 }
 
 const StaticGroupedToolRow: React.FC<StaticGroupedToolRowProps> = ({
@@ -242,12 +245,16 @@ const StaticGroupedToolRow: React.FC<StaticGroupedToolRowProps> = ({
     activities,
     animateTailText,
     animateRows,
+    onShowPopup,
+    onContentChange,
 }) => {
     const content = (
         <StaticToolRow
             toolName={toolName}
             activities={activities}
             animateTailText={animateTailText}
+            onShowPopup={onShowPopup}
+            onContentChange={onContentChange}
         />
     );
 
@@ -268,6 +275,8 @@ const MemoStaticGroupedToolRow = React.memo(StaticGroupedToolRow, (prev, next) =
     return prev.toolName === next.toolName
         && prev.animateTailText === next.animateTailText
         && prev.animateRows === next.animateRows
+        && prev.onShowPopup === next.onShowPopup
+        && prev.onContentChange === next.onContentChange
         && areActivityListsEqual(prev.activities, next.activities);
 });
 
@@ -305,13 +314,16 @@ const GroupedToolActivityRowInner: React.FC<GroupedToolActivityRowProps> = ({
     const summaryCount = React.useMemo(() => {
         return getToolActivityGroupSummaryCount(groupInfo.kind, activities, getActivityToolPart);
     }, [activities, groupInfo.kind]);
-    const failedCount = activities.filter((activity) => ['error', 'failed', 'timeout', 'timedout', 'aborted', 'cancelled', 'canceled']
-        .includes(getToolStateStatus(getActivityToolPart(activity)) ?? '')).length;
+    const failedCount = activities.filter((activity) => {
+        const part = getActivityToolPart(activity);
+        return ['error', 'failed', 'timeout', 'timedout', 'aborted', 'cancelled', 'canceled'].includes(getToolStateStatus(part) ?? '')
+            || (normalizeToolName(part.tool) === 'bash' && part.state.status === 'completed' && isFailedCommandExitCode(part.state.metadata?.exitCode));
+    }).length;
     const label = failedCount > 0
         ? t(failedCount === 1 ? 'chat.toolGroup.failedToolSingle' : 'chat.toolGroup.failedToolPlural', { count: failedCount })
         : t(getToolActivityGroupLabelKey(groupInfo, summaryCount), { count: summaryCount });
     const description = React.useMemo(() => {
-        return getToolActivityGroupDescription(groupInfo.kind, activities.map(getActivityToolPart));
+        return groupInfo.kind === 'search' ? undefined : getToolActivityGroupDescription(groupInfo.kind, activities.map(getActivityToolPart));
     }, [activities, groupInfo.kind]);
     const icon = getToolIcon(groupInfo.representativeToolName);
 
@@ -443,6 +455,8 @@ const GroupedToolActivityRowInner: React.FC<GroupedToolActivityRowProps> = ({
                     toolName={toolName}
                     activities={[activity]}
                     animateTailText={animateTailText}
+                    onShowPopup={onShowPopup}
+                    onContentChange={onContentChange}
                 />
             );
         });
@@ -470,6 +484,8 @@ const GroupedToolActivityRowInner: React.FC<GroupedToolActivityRowProps> = ({
             toolName="devryan_browser"
             activities={activities}
             animateTailText={animateTailText}
+            onShowPopup={onShowPopup}
+            onContentChange={onContentChange}
         />
     ) : (
         <div className="w-full min-w-0">
@@ -754,6 +770,8 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                         activities={row.activities}
                         animateTailText={row.activities.some((activity) => animatedToolIds?.has(activity.id))}
                         animateRows={animateRows}
+                        onShowPopup={onShowPopup}
+                        onContentChange={onContentChange}
                     />
                 );
 

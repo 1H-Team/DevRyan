@@ -1,11 +1,13 @@
 import React, { act } from 'react';
-import { expect, mock, test } from 'bun:test';
+import { beforeEach, expect, mock, test } from 'bun:test';
 import { create } from 'zustand';
-import { withDom } from '../bots/chat/botMountedDom';
+import { withDom } from '@/test/mountedDom';
 import type { ChatMessageEntry, TurnGroupingContext } from './lib/turns/types';
 import { resolveUserMessageVariant } from '@/sync/subtask-agent';
 
 const config = create(() => ({ providers: [{ id: 'openai', models: [{ id: 'gpt-6-sol', name: 'GPT-6 Sol', variants: {} }] }], currentVariant: 'medium' }));
+const initialConfig = config.getState();
+beforeEach(() => config.setState(initialConfig, true));
 mock.module('@/stores/useConfigStore', () => ({ useConfigStore: config }));
 mock.module('@/stores/useFeatureFlagsStore', () => ({ useFeatureFlagsStore: create(() => ({ planModeEnabled: false })) }));
 mock.module('@/stores/useUIStore', () => ({ useUIStore: create(() => ({ showReasoningTraces: true, stickyUserHeader: false })) }));
@@ -79,3 +81,46 @@ for (const grouped of [false, true]) {
     });
   });
 }
+
+test('recovered header uses its assistant and own-parent effort before the original grouped turn', async () => {
+  await withDom(async container => {
+    await act(async () => config.setState({ providers: [{ id: 'cursor-acp', models: [{ id: 'composer-2.5', name: 'Composer 2.5', variants: { medium: {}, high: {} } }] }] }));
+    const { createRoot } = await import('react-dom/client'); const root = createRoot(container as unknown as Element);
+    try {
+      for (const { recorded, parent, parentID = 'recovery-user', title } of [
+        { recorded: 'default', parent: 'medium', title: 'Composer 2.5 Default' },
+        { recorded: '', parent: 'medium', title: 'Composer 2.5' },
+        { recorded: undefined, parent: 'default', title: 'Composer 2.5 Default' },
+        { recorded: undefined, parent: '', title: 'Composer 2.5' },
+        { recorded: undefined, parent: undefined, title: 'Composer 2.5 Medium' },
+        { recorded: undefined, parent: 'default', parentID: 'unrelated-user', title: 'Composer 2.5 Medium' },
+      ]) {
+        if (assistant.info.role !== 'assistant') throw new Error('Expected assistant fixture');
+        const info = { ...assistant.info, id: 'recovered-assistant', parentID: 'recovery-user', providerID: 'cursor-acp', modelID: 'composer-2.5', agent: 'explorer', mode: 'explorer', variant: recorded, finish: 'stop', time: { created: 2, completed: 3 } };
+        const parentInfo = { ...user(parent).info, id: parentID };
+        await act(async () => root.render(<ChatMessage message={{ ...assistant, info }} previousMessage={{ info: parentInfo, parts: [] }}
+          isLatestMessage assistantHeaderMessageId="recovered-assistant" turnGroupingContext={{
+            turnId: 'original-haiku-turn', isFirstAssistantInTurn: false, isLastAssistantInTurn: true,
+            isWorking: false, isTurnWorking: false,
+            hasTools: false, hasReasoning: false, headerMessageId: 'failed-haiku-assistant', userMessageVariant: 'medium',
+          }} />));
+        expect(container.find(node => node.getAttribute('title') === title)).not.toBeNull();
+        expect(container.textContent).toContain('Explorer');
+        if (title !== 'Composer 2.5 Medium') expect(container.find(node => node.getAttribute('title') === 'Composer 2.5 Medium')).toBeNull();
+      }
+    } finally { await act(async () => root.unmount()); }
+  });
+});
+
+test('recorded model identity survives a missing catalog until its friendly name arrives', async () => withDom(async container => {
+  const { createRoot } = await import('react-dom/client'); const root = createRoot(container as unknown as Element);
+  if (assistant.info.role !== 'assistant') throw new Error('Expected assistant fixture');
+  const info = { ...assistant.info, providerID: 'cursor-acp', modelID: 'grok-4.6', variant: 'medium', mode: 'explorer', agent: 'explorer', finish: 'stop', time: { created: 2, completed: 3 } };
+  try {
+    await act(async () => { config.setState({ providers: [] }); root.render(<ChatMessage message={{ ...assistant, info }} previousMessage={user('medium')} isLatestMessage />); });
+    expect(container.find(node => node.getAttribute('title') === 'grok-4.6 Medium')).not.toBeNull();
+    expect(container.textContent).toContain('Explorer'); expect(container.textContent).not.toContain('Assistant');
+    await act(async () => config.setState({ providers: [{ id: 'cursor-acp', models: [{ id: 'grok-4.6', name: 'Grok 4.6', variants: { medium: {} } }] }] }));
+    expect(container.find(node => node.getAttribute('title') === 'Grok 4.6 Medium')).not.toBeNull();
+  } finally { await act(async () => root.unmount()); }
+}));

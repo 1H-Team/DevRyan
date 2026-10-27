@@ -1,11 +1,14 @@
 import express from 'express';
 import crypto from 'node:crypto';
+import { resolveGen2OpenCodeClient } from '../opencode/opencode-client-seam.js';
+import { listFacadeSessionPage, readFacadeSessionQuery, resolveFacadeDirectory, validateFacadeBody } from '../opencode/v2/facade-routes.js';
 import { beginSessionCreationTrace, creationUnknownPayload, creationRestartPayload, creationNotDispatchedPayload } from '../opencode/session-creation.js';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { createDiagnosticSanitizer } from '@openchamber/harness-runtime';
+import { createDiagnosticSanitizer } from '@devryan/harness-runtime';
+import { canonicalDevRyanEventType } from '@devryan/shared-runtime/lib/event-types.js';
 
 import { resolveMultiUserConfig } from './config.js';
 import { createPrincipalCache } from './principal-cache.js';
@@ -125,8 +128,6 @@ import {
   resolveManagedAgentExecution,
   validatePersonalAgentDefault,
 } from './managed-agent-defaults.js';
-import { createBotsRuntime } from '../bots/index.js';
-import { createLocalBotOwner } from '../bots/local-owner.js';
 
 const APP_SESSION_COOKIE = 'oc_app_session';
 const ACCESS_INVITE_COOKIE = 'oc_access_invite';
@@ -164,7 +165,7 @@ const CLIPBOARD_DETAIL_SELECT = [
 ].join(',');
 const STATE_CHANGING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const USER_CAPABILITY_KEYS = new Set([
-  'bots', 'files', 'terminal', 'browser', 'createWorktrees', 'createBranches', 'manageProjects', 'manageUsers', 'manageGlobalSettings',
+  'files', 'terminal', 'browser', 'createWorktrees', 'createBranches', 'manageProjects', 'manageUsers', 'manageGlobalSettings',
   'manageGit', 'push', 'github',
 ]);
 
@@ -332,15 +333,15 @@ const extractSessionId = (payload) => {
 };
 
 const MANAGED_TASK_EVENT_TYPES = new Set([
-  'openchamber:managed-task',
-  'openchamber:managed-task-removed',
+  'devryan:managed-task',
+  'devryan:managed-task-removed',
 ]);
 
 const extractManagedTaskRootSessionId = (payload) => {
-  if (!payload || typeof payload !== 'object' || !MANAGED_TASK_EVENT_TYPES.has(payload.type)) return '';
+  if (!payload || typeof payload !== 'object' || !MANAGED_TASK_EVENT_TYPES.has(canonicalDevRyanEventType(payload.type))) return '';
   const properties = payload.properties;
   if (!properties || typeof properties !== 'object' || properties.owner !== 'devryan') return '';
-  const candidate = payload.type === 'openchamber:managed-task'
+  const candidate = canonicalDevRyanEventType(payload.type) === 'devryan:managed-task'
     ? properties.task?.rootSessionId
     : properties.rootSessionId;
   return typeof candidate === 'string' ? candidate.trim() : '';
@@ -371,12 +372,12 @@ const hostGlobalMutation = (req) => {
     '/browser/instances/register',
     '/browser/local-instances/status',
   ].includes(req.path)) return false;
-  return /^\/(?:config|auth|provider|mcp|openchamber\/tunnel|projects|diagnostics|evidence|desktop|browser)/.test(req.path);
+  return /^\/(?:config|auth|credential|provider|mcp|(?:devryan|openchamber)\/tunnel|projects|diagnostics|evidence|desktop|browser)/.test(req.path);
 };
 
 const hostGlobalRead = (requestPath) => {
-  if (/^\/(?:auth|provider|mcp|openchamber\/tunnel)(?:\/|$)/.test(requestPath)) return true;
-  if (requestPath === '/openchamber/events' || requestPath === '/openchamber/scheduled-tasks/status') return false;
+  if (/^\/(?:auth|credential|provider|mcp|(?:devryan|openchamber)\/tunnel)(?:\/|$)/.test(requestPath)) return true;
+  if (/^\/(?:devryan|openchamber)\/(?:events|scheduled-tasks\/status)$/.test(requestPath)) return false;
   if (/^\/projects\/[^/]+\/icon$/.test(requestPath)) return false;
   if (/^\/projects\/[^/]+\/(?:branch-target|scheduled-tasks(?:\/[^/]+)?(?:\/run)?)$/.test(requestPath)) return false;
   if (/^\/projects(?:\/|$)/.test(requestPath)) return true;
@@ -528,55 +529,35 @@ export async function createMultiUserRuntime({
   onManagedSessionOwnershipCommitted = null,
   onScheduledTaskAccessChanged = null,
   sessionOwnershipRetryOptions = {},
-  botHost = Object.freeze({ owner: 'unsupported' }),
-  encryption = Object.freeze({ getKey: null }),
-  recordDiagnostic = () => {},
-  botsExecutionEnabled = true,
-  oauthCoordinator = null,
 } = {}) {
   const config = resolveMultiUserConfig({ dataDirectory });
   const connection = await createSupabaseConnection({ config, fetchImpl });
   // A failed explicit reconnect uses the same closed local boundary as Off.
   config.enabled = connection.enabled;
-  // The workstation owner's immutable local Bot identity, independent of
-  // every Supabase state (On, Off, absent, unreachable or revoked).
-  const botOwner = await createLocalBotOwner({ vault: connection.vault });
-  // The hosted catalog stays readable for a one-time import even while Off;
-  // an import never enables Supabase and never writes to it. While Off it is
-  // read only on the owner's request, never in the background.
-  const readBotCloudSource = () => (config.configured && config.url && config.secretKey
-    ? { url: config.url, secretKey: config.secretKey }
-    : null);
-  // Imported Bots map to the enrolled cloud owner only when that account is
-  // still an active administrator; never by matching email addresses.
-  const resolveVerifiedBotSourceOwner = async () => {
-    const ownerId = connection.enrolledCloudOwnerId?.();
-    const cloud = readBotCloudSource();
-    if (!ownerId || !cloud) return null;
-    const client = createSupabaseServerClient({ ...cloud, publishableKey: '', fetchImpl, traffic: connection.traffic });
-    const profile = await client.rest('user_profiles', {
-      query: { id: `eq.${escapeFilterValue(ownerId)}`, limit: 1 },
-      select: 'id,role,status',
-      maybeSingle: true,
-    });
-    return profile?.id === ownerId && profile.role === 'admin' && profile.status === 'active' ? ownerId : null;
-  };
-
   const getGitHubAuthById = githubAuthStore.getGitHubAuthById || getStoredGitHubAuthById;
   const getAllGitHubAuthAccounts = githubAuthStore.getAllGitHubAuthAccounts || getAllStoredGitHubAuthAccounts;
   const clearGitHubAuthById = githubAuthStore.clearGitHubAuthById || clearStoredGitHubAuthById;
   const verifiedGitHubAccountId = createVerifiedGitHubAccountId(getGitHubAuthById);
 
+  const legacyAuthorizations = new WeakMap();
+  const authenticatedLocalPrincipal = async (legacy, req) => {
+    const principal = Object.freeze({ ...localAdminPrincipal });
+    const check = typeof legacy.captureAuthorization === 'function' ? await legacy.captureAuthorization(req)
+      : !legacy.enabled ? () => true : null;
+    if (typeof check === 'function') legacyAuthorizations.set(principal, () => connection.isLocalAccessActive() && check());
+    return principal;
+  };
   const wrapLegacyAuthController = (legacy) => connection.configured && !connection.enabled
     ? createDisconnectedAuth(connection) : ({
     ...legacy,
     multiUser: false,
+    captureAuthorization: principal => connection.captureAuthorization(principal) ?? legacyAuthorizations.get(principal) ?? null,
     async resolvePrincipal(req, res) {
       const owner = getTunnelOwnerPrincipal(req);
       if (owner) return owner;
-      if (!legacy.enabled) return isLoopbackRequest(req) ? localAdminPrincipal : null;
+      if (!legacy.enabled) return isLoopbackRequest(req) ? authenticatedLocalPrincipal(legacy, req) : null;
       const token = await legacy.ensureSessionToken(req, res);
-      return token ? localAdminPrincipal : null;
+      return token ? authenticatedLocalPrincipal(legacy, req) : null;
     },
     async requireAuth(req, res, next) {
       const owner = getTunnelOwnerPrincipal(req);
@@ -587,9 +568,9 @@ export async function createMultiUserRuntime({
       if (!legacy.enabled && !isLoopbackRequest(req)) {
         return jsonError(res, 401, 'Local administrator access is loopback-only');
       }
-      return legacy.requireAuth(req, res, () => {
-        req.principal = localAdminPrincipal;
-        return runWithRequestPrincipal(localAdminPrincipal, next);
+      return legacy.requireAuth(req, res, async () => {
+        req.principal = await authenticatedLocalPrincipal(legacy, req);
+        return runWithRequestPrincipal(req.principal, next);
       });
     },
     async handleSessionStatus(req, res) {
@@ -605,11 +586,11 @@ export async function createMultiUserRuntime({
       const owner = getTunnelOwnerPrincipal(req);
       if (owner) { req.principal = owner; return owner.tunnelGrant.sessionId; }
       if (!legacy.enabled) {
-        if (isLoopbackRequest(req)) req.principal = localAdminPrincipal;
+        if (isLoopbackRequest(req)) req.principal = await authenticatedLocalPrincipal(legacy, req);
         return isLoopbackRequest(req) ? 'local-admin' : null;
       }
       const token = await legacy.ensureSessionToken(req, res);
-      if (token || !legacy.enabled) req.principal = localAdminPrincipal;
+      if (token || !legacy.enabled) req.principal = await authenticatedLocalPrincipal(legacy, req);
       return token;
     },
     authorizeSystemRequest(req, res, next) {
@@ -618,27 +599,6 @@ export async function createMultiUserRuntime({
   });
 
   if (!config.enabled) {
-    // Bots live in the local catalog whatever the Supabase state. Without a
-    // cloud connection only the workstation owner can use them.
-    const botsRuntime = createBotsRuntime({
-      oauthCoordinator,
-      localOwner: botOwner,
-      readCloudSource: readBotCloudSource,
-      resolveVerifiedSourceOwner: resolveVerifiedBotSourceOwner,
-      audit: async () => {},
-      principalPolicy: {
-        isGlobalAdmin: (principal) => principal?.role === 'admin' && principal?.scope !== 'tunnel-bot',
-      },
-      dataDirectory: config.dataDirectory,
-      botHost,
-      encryption,
-      recordDiagnostic,
-      executionEnabled: botsExecutionEnabled,
-      isAdmissionPaused: () => connection.status().restartPending === true,
-    });
-    void botsRuntime.start().catch((error) => {
-      logger.warn?.('[MultiUser] Bot catalog startup failed:', summarizeDependencyError(error).message);
-    });
     return {
       enabled: false,
       connection,
@@ -646,9 +606,7 @@ export async function createMultiUserRuntime({
       getControlPlaneStatus: () => ({ state: connection.configured ? connection.status().state : 'disabled', lastErrorCode: connection.status().errorCode, lastSuccessAt: null }),
       localAdminPrincipal,
       wrapLegacyAuthController,
-      botsRuntime,
-      botOwner,
-      registerRoutes(app) { botsRuntime.registerRoutes(app); },
+      registerRoutes() {},
       filterEventForPrincipal: () => true,
       recordOpenCodeActivity: async (payload) => payload?.type === 'session.created'
         ? connection.recordLocalSession(payload.properties?.info) : false,
@@ -1048,64 +1006,6 @@ export async function createMultiUserRuntime({
     else await auditOutbox.enqueue(eventId, record);
     return eventId;
   };
-
-  // Transport jobs have no browser session. Resolve account and effective Bot policy
-  // afresh for every job without loading unrelated project or worktree state.
-  const resolveBotPrincipal = async (userId) => {
-    const profile = await supabase.rest('user_profiles', {
-      query: { id: `eq.${escapeFilterValue(userId)}`, limit: 1 }, maybeSingle: true,
-      select: 'id,role,status',
-    });
-    if (!profile || profile.status !== 'active') return null;
-    const [rolePolicy, userPolicy] = await Promise.all([
-      supabase.rest('role_policies', { query: { role: `eq.${profile.role}`, limit: 1 }, maybeSingle: true }),
-      readUserPolicy(userId, { includeSettings: false }),
-    ]);
-    const policy = normalizeRolePolicy(profile.role, rolePolicy, userPolicy);
-    if (policy.bots !== true) return null;
-    return { id: profile.id, role: profile.role, scope: 'managed', status: profile.status,
-      policy, assignments: [], appSessionId: null };
-  };
-  // Current cloud member directory for Bot Managers (display fields only).
-  const searchBotDirectory = async (query, limit = 20) => {
-    const term = typeof query === 'string' ? query.trim().slice(0, 120).replace(/[\\%,()*]/g, '') : '';
-    const bounded = Math.min(Math.max(Number.parseInt(limit, 10) || 20, 1), 50);
-    const rows = await supabase.rest('user_profiles', {
-      query: {
-        ...(term ? { or: `(display_name.ilike.*${term}*,email.ilike.*${term}*)` } : {}),
-        status: 'eq.active',
-        order: 'display_name.asc',
-        limit: String(bounded),
-      },
-      select: 'id,email,display_name,role,status,account_kind',
-    });
-    return Array.isArray(rows) ? rows : [];
-  };
-  const botsRuntime = createBotsRuntime({
-    oauthCoordinator,
-    localOwner: botOwner,
-    searchCloudDirectory: searchBotDirectory,
-    readCloudSource: readBotCloudSource,
-    discoverCloudSource: true,
-    resolveVerifiedSourceOwner: resolveVerifiedBotSourceOwner,
-    resolvePrincipal: resolveBotPrincipal,
-    audit,
-    principalPolicy: {
-      isGlobalAdmin: (principal) => principal?.scope === 'managed' && principal?.role === 'admin',
-    },
-    dataDirectory: config.dataDirectory,
-    botHost,
-    encryption,
-    recordDiagnostic,
-    executionEnabled: botsExecutionEnabled,
-    // A pending Supabase mode restart drains the whole host; Supabase being
-    // off or unreachable never pauses the owner's local Bots.
-    isAdmissionPaused: () => connection.status().restartPending === true,
-    withAuditDeliveryBarrier: auditOutbox.withFlushedDeliveryBarrier,
-  });
-  void botsRuntime.start().catch((error) => {
-    logger.warn?.('[MultiUser] Bot catalog startup failed:', summarizeDependencyError(error).message);
-  });
 
   const setBoundedProjectionContext = (cache, key, value, maximum = 5_000) => {
     if (!key) return;
@@ -2108,18 +2008,12 @@ export async function createMultiUserRuntime({
       || (requestPath.startsWith('/config/') && STATE_CHANGING_METHODS.has(req.method));
     if (principal.offlineGrace && (
       offlineHostConfig
-      || /^\/(?:admin(?:\/|$)|bug-reports(?:\/|$)|error-logs(?:\/|$)|github\/auth(?:\/|$)|auth(?:\/|$)|provider(?:\/|$)|mcp(?:\/|$)|projects(?:\/|$)|openchamber\/tunnel(?:\/|$)|diagnostics(?:\/|$))/.test(requestPath)
+      || /^\/(?:admin(?:\/|$)|bug-reports(?:\/|$)|error-logs(?:\/|$)|github\/auth(?:\/|$)|auth(?:\/|$)|credential(?:\/|$)|provider(?:\/|$)|mcp(?:\/|$)|projects(?:\/|$)|(?:devryan|openchamber)\/tunnel(?:\/|$)|diagnostics(?:\/|$))/.test(requestPath)
     )) {
       throw Object.assign(new Error('Account and host management are unavailable during offline grace'), {
         statusCode: 503,
         code: OFFLINE_GRACE_RESTRICTED,
         retryable: true,
-      });
-    }
-    if (/^\/(?:bots|bot-actions|bot-channels|bot-runs)(?:\/|$)/.test(requestPath) && !principal.policy.bots) {
-      throw Object.assign(new Error('Bots access is disabled by policy'), {
-        statusCode: 403,
-        code: 'bots_access_disabled',
       });
     }
     if (requestPath.startsWith('/terminal') && !principal.policy.terminal) {
@@ -2734,7 +2628,7 @@ export async function createMultiUserRuntime({
       recentAssistantContextByMessage.clear();
       recentAssistantContextBySession.clear();
       sessionParentIds.clear();
-      await Promise.all([ownershipIndex.drain(), auditOutbox.drain(), botsRuntime.shutdown()]);
+      await Promise.all([ownershipIndex.drain(), auditOutbox.drain()]);
     },
   };
 
@@ -2819,12 +2713,57 @@ export async function createMultiUserRuntime({
     return context ? { ...context, ownerKey: `user:${owner.user_id}` } : null;
   };
 
+  // Constructor-only helper settings: title jobs use the canonical session
+  // owner; foreground Git helpers retain the exact authenticated caller.
+  const resolveNativeHelperSettings = async ({ sessionID, directory, principal, detached = false }) => {
+    let current;
+    if (detached) {
+      const owner = await sessionOwnership(sessionID);
+      if (!owner?.user_id || owner.archived_at) return null;
+      current = await loadPrincipal(owner.user_id, null, { includeSettings: true });
+      if (!current || !await resolveOwnedSessionPlanContext(current, sessionID, directory)) return null;
+    } else {
+      if (!await resolveCurrentNativeOperationContext({ principal, sessionID, directory })) return null;
+      current = await loadPrincipal(principal.id, null, { includeSettings: true });
+      if (!current) return null;
+    }
+    return buildEffectiveSettings({ principal: current, hostSettings: await readSettingsFromDiskMigrated(), userOverrides: current.settingsOverrides || {} });
+  };
+
   const resolveCurrentOwnedSessionPlanContext = async (principal, sessionID, directory = '') => {
     if (principal?.scope !== 'managed' || !principal.id) return null;
     // Never restore authority from the request's cached assignments or from
     // the session owner's identity: only this authenticated caller's grants.
     const current = await loadPrincipal(principal.id, null, { includeSettings: false });
     return current ? resolveOwnedSessionPlanContext(current, sessionID, directory) : null;
+  };
+
+  // Native request capabilities retain this original caller, never the
+  // session owner's identity or cached assignments from the first HTTP check.
+  const resolveCurrentNativeOperationContext = async ({ principal, sessionID, directory, settingsAccess }) => {
+    if (settingsAccess !== undefined && (!settingsAccess || typeof settingsAccess !== 'object'
+      || Object.keys(settingsAccess).some(key => !['page', 'mode'].includes(key))
+      || !['providers', 'mcp'].includes(settingsAccess.page) || !['read', 'edit'].includes(settingsAccess.mode))) return null;
+    if (principal?.scope !== 'managed' || !principal.id || !principal.appSessionId || !path.isAbsolute(directory ?? '')) return null;
+    const readCurrentAppSession = async () => {
+      const session = await supabase.rest('app_sessions', { query: { id: `eq.${escapeFilterValue(principal.appSessionId)}`,
+        user_id: `eq.${escapeFilterValue(principal.id)}`, revoked_at: 'is.null', expires_at: `gt.${new Date().toISOString()}`, limit: 1 }, maybeSingle: true });
+      return session?.id === principal.appSessionId && session.user_id === principal.id
+        && !session.revoked_at && Date.parse(session.expires_at) > Date.now() ? session : null;
+    };
+    const appSession = await readCurrentAppSession();
+    if (!appSession) return null;
+    const current = await loadPrincipal(principal.id, appSession, { includeSettings: false });
+    if (!current) return null;
+    if (settingsAccess && !(settingsAccess.mode === 'edit' ? canEditSettingsPage : canReadSettingsPage)(current, settingsAccess.page)) return null;
+    const context = sessionID ? await resolveOwnedSessionPlanContext(current, sessionID, directory)
+      : resolveAssignmentForValue(current, directory);
+    const assignedDirectory = context?.directory ?? context?.repositoryPath;
+    if (!assignedDirectory || await fs.realpath(assignedDirectory) !== await fs.realpath(directory)) return null;
+    // Grants, ownership and canonical paths above may await remote reads. The
+    // original login must still be live at the final authorization decision.
+    if (!await readCurrentAppSession()) return null;
+    return { directory, projectId: context.projectId, branchName: context.branchName };
   };
 
   const resolveSessionAgentExecution = async ({
@@ -3326,49 +3265,66 @@ export async function createMultiUserRuntime({
     }
     const managedTaskRootSessionId = extractManagedTaskRootSessionId(payload);
     if (managedTaskRootSessionId) return ownsSession(principal, managedTaskRootSessionId);
-    if (MANAGED_TASK_EVENT_TYPES.has(payload?.type)) return false;
+    if (MANAGED_TASK_EVENT_TYPES.has(canonicalDevRyanEventType(payload?.type))) return false;
     const sessionId = extractSessionId(payload);
     if (sessionId) return ownsSession(principal, sessionId);
     if (directory && directory !== 'global') return Boolean(resolveAssignmentForValue(principal, directory));
-    return payload?.type === 'openchamber:heartbeat' || payload?.type === 'server.connected';
-  };
-
-  const fetchUpstreamJson = async ({ req, buildOpenCodeUrl, getOpenCodeAuthHeaders, pathname, method = req.method, body = req.body, timeoutMs = 120_000 }) => {
-    const sourceUrl = new URL(req.originalUrl || req.url, 'http://127.0.0.1');
-    const target = new URL(buildOpenCodeUrl(pathname, ''));
-    for (const [key, value] of sourceUrl.searchParams) target.searchParams.set(key, value);
-    const response = await fetchImpl(target, {
-      method,
-      headers: {
-        Accept: 'application/json',
-        ...(body !== undefined && method !== 'GET' ? { 'Content-Type': 'application/json' } : {}),
-        ...getOpenCodeAuthHeaders(),
-      },
-      body: body !== undefined && method !== 'GET' ? JSON.stringify(body) : undefined,
-      signal: AbortSignal.timeout(Math.max(1, Math.floor(timeoutMs))),
-    });
-    const text = await response.text();
-    let payload = null;
-    try { payload = text ? JSON.parse(text) : null; } catch { payload = text; }
-    return { response, payload };
+    return canonicalDevRyanEventType(payload?.type) === 'devryan:heartbeat' || payload?.type === 'server.connected';
   };
 
   const registerRoutes = (app, {
+    openCodeClient,
     readSettingsFromDiskMigrated,
-    buildOpenCodeUrl,
-    getOpenCodeAuthHeaders,
     listConfigAgents: listConfigAgentsForDirectory,
     getConfigApplyMutationResponse = () => ({ requiresReload: false }),
     isSessionCreationRestarting = () => false,
     recordCreationTiming = () => {},
   } = {}) => {
+    const fetchUpstreamJson = async ({ req, pathname, method = req.method ?? 'GET', body = req.body, timeoutMs = 120_000 }) => {
+      const client = resolveGen2OpenCodeClient(openCodeClient);
+      try {
+        const options = { directory: await resolveFacadeDirectory(req), timeoutMs };
+        let payload;
+        if (pathname === '/session' && method === 'GET') {
+          payload = await client.sessions.list(readFacadeSessionQuery(req), options);
+        } else if (pathname === '/session' && method === 'POST') {
+          const input = validateFacadeBody(body ?? {}, ['id', 'directory', 'title', 'parentID', 'agent', 'model']);
+          if (input.directory !== undefined && (typeof input.directory !== 'string' || !input.directory
+            || (options.directory && options.directory !== input.directory))) {
+            throw Object.assign(new Error('Request directories do not agree'), { statusCode: 400, code: 'opencode_invalid_input' });
+          }
+          payload = await client.sessions.create(input, options);
+        } else if (pathname === '/session/status' && method === 'GET') {
+          payload = await client.sessions.status({ directory: options.directory }, options);
+        } else {
+          const match = /^\/session\/([^/]+)(\/fork)?$/.exec(pathname);
+          if (match && method === 'DELETE' && !match[2]) {
+            payload = await client.sessions.remove(decodeURIComponent(match[1]), options);
+          } else if (match?.[2] && method === 'POST') {
+            payload = await client.sessions.fork(decodeURIComponent(match[1]), validateFacadeBody(body ?? {}, ['messageID']), options);
+          } else {
+            throw Object.assign(new Error('OpenCode 2 does not provide this legacy file route'), {
+              statusCode: 501, code: 'capability_unavailable', capability: 'upstreamFiles',
+            });
+          }
+        }
+        return { response: { ok: true, status: 200 }, payload };
+      } catch (error) {
+        const candidate = error?.statusCode ?? error?.status;
+        const status = Number.isInteger(candidate) && candidate >= 400 && candidate <= 599 ? candidate : 502;
+        return { response: { ok: false, status }, payload: {
+          error: error.message, code: error.code ?? 'opencode_unavailable', retryable: error.retryable === true,
+          ...(error.capability ? { capability: error.capability } : {}),
+        } };
+      }
+    };
+
     if (typeof listConfigAgentsForDirectory === 'function') {
       listManagedConfigAgents = listConfigAgentsForDirectory;
     }
     if (typeof app.use === 'function') {
       app.use(createDotenvVisibilityMiddleware());
     }
-    botsRuntime.registerRoutes(app);
     bugReportsApi.registerRoutes(app);
     const canReviewUsers = (principal) => canReadSettingsPage(principal, 'users');
     const canManageUsers = (principal) => canEditSettingsPage(principal, 'users');
@@ -3549,7 +3505,7 @@ export async function createMultiUserRuntime({
       return res.json({ results });
     });
 
-    if (typeof buildOpenCodeUrl === 'function' && typeof getOpenCodeAuthHeaders === 'function') {
+    {
       abortOwnedSessions = async (userId) => {
         const rows = ownershipIndex.list().filter((row) => row.user_id === userId && !row.archived_at);
         const branchRows = await supabase.rest('user_project_branches', {
@@ -3560,15 +3516,10 @@ export async function createMultiUserRuntime({
           row.workspace_path,
         ]));
         await Promise.allSettled(rows.map(async (row) => {
-          const target = new URL(buildOpenCodeUrl(`/session/${encodeURIComponent(row.session_id)}/abort`, ''));
           const workspacePath = workspaceByBranch.get(`${row.project_id}\0${row.branch_name}`);
           if (typeof workspacePath !== 'string' || !workspacePath) return;
-          target.searchParams.set('directory', workspacePath);
-          await fetchImpl(target, {
-            method: 'POST',
-            headers: { Accept: 'application/json', ...getOpenCodeAuthHeaders() },
-            signal: AbortSignal.timeout(5_000),
-          });
+          const client = resolveGen2OpenCodeClient(openCodeClient);
+          return client.sessions.abort(row.session_id, { directory: workspacePath, timeoutMs: 5_000 });
         }));
       };
 
@@ -3583,26 +3534,11 @@ export async function createMultiUserRuntime({
       };
 
       const fetchExperimentalSessionPage = async ({ archived, cursor = null, limit = 200, query = {} }) => {
-        const target = new URL(buildOpenCodeUrl('/experimental/session', ''));
-        for (const key of ['directory', 'workspace', 'roots', 'start', 'search']) {
-          const value = query?.[key];
-          if (typeof value === 'string' && value) target.searchParams.set(key, value);
-        }
-        target.searchParams.set('archived', String(Boolean(archived)));
-        target.searchParams.set('limit', String(normalizeSessionPageLimit(limit)));
-        if (cursor !== null) target.searchParams.set('cursor', String(cursor));
-        const response = await fetchImpl(target, {
-          headers: { Accept: 'application/json', ...getOpenCodeAuthHeaders() },
-          signal: AbortSignal.timeout(15_000),
-        });
-        const sessions = await response.json().catch(() => []);
-        if (!response.ok) throw new Error(`Failed to enumerate sessions (${response.status})`);
-        const rawCursor = response.headers.get('x-next-cursor');
-        const parsedCursor = rawCursor === null ? null : Number(rawCursor);
-        return {
-          sessions: Array.isArray(sessions) ? sessions : [],
-          nextCursor: Number.isFinite(parsedCursor) ? parsedCursor : null,
-        };
+        const client = resolveGen2OpenCodeClient(openCodeClient);
+        return listFacadeSessionPage(client, { query: {
+          ...query, archived: String(Boolean(archived)), limit: String(normalizeSessionPageLimit(limit)),
+          ...(cursor === null ? { cursor: undefined } : { cursor: String(cursor) }),
+        } }, { timeoutMs: 15_000 });
       };
 
       const enumerateExperimentalSessions = async (archived) => {
@@ -5293,8 +5229,8 @@ export async function createMultiUserRuntime({
       app.delete('/api/config/settings/overrides/:field', async (req, res) => {
         if (!requirePersonalSettingsAccount(req, res)) return;
         const field = String(req.params.field || '');
-        if (!['defaultAgent', 'defaultPlanMode'].includes(field)) {
-          return jsonError(res, 400, 'Only defaultAgent and defaultPlanMode can be reset here');
+        if (!['defaultAgent', 'defaultPlanMode', 'helperModelSelection'].includes(field)) {
+          return jsonError(res, 400, 'Only session defaults can be reset here');
         }
         try {
           const hostSettings = await readSettingsFromDiskMigrated();
@@ -5425,16 +5361,14 @@ export async function createMultiUserRuntime({
       return res.json({ success: true, restarted: false, path: assignment.publicDirectory });
     });
 
-    if (typeof buildOpenCodeUrl === 'function' && typeof getOpenCodeAuthHeaders === 'function') {
+    {
       const registerFilteredFileRead = (pathname) => {
         app.get(`/api${pathname}`, async (req, res, next) => {
           if (!shouldHideProtectedDotenv(req.principal)) return next();
           try {
             const { response, payload } = await fetchUpstreamJson({
               req,
-              buildOpenCodeUrl,
-              getOpenCodeAuthHeaders,
-              pathname,
+                                  pathname,
             });
             if (!response.ok) {
               return res.status(response.status).send(
@@ -5460,9 +5394,7 @@ export async function createMultiUserRuntime({
           ownershipIndex.delete(sessionId),
           fetchUpstreamJson({
             req,
-            buildOpenCodeUrl,
-            getOpenCodeAuthHeaders,
-            pathname: `/session/${encodeURIComponent(sessionId)}`,
+                            pathname: `/session/${encodeURIComponent(sessionId)}`,
             method: 'DELETE',
             body: undefined,
           }).then(({ response }) => {
@@ -5507,7 +5439,7 @@ export async function createMultiUserRuntime({
       app.get('/api/session', async (req, res, next) => {
         if (req.principal?.scope !== 'managed') return next();
         try {
-          const { response, payload } = await fetchUpstreamJson({ req, buildOpenCodeUrl, getOpenCodeAuthHeaders, pathname: '/session' });
+          const { response, payload } = await fetchUpstreamJson({ req, pathname: '/session' });
           if (!response.ok) return res.status(response.status).send(typeof payload === 'string' ? payload : JSON.stringify(payload));
           const sessions = Array.isArray(payload) ? payload : [];
           const visible = [];
@@ -5531,7 +5463,7 @@ export async function createMultiUserRuntime({
         }
         try {
           trace.mark('upstream_create_started');
-          const { response, payload } = await fetchUpstreamJson({ req, buildOpenCodeUrl, getOpenCodeAuthHeaders, pathname: '/session', method: 'POST', timeoutMs: trace.remainingMs() });
+          const { response, payload } = await fetchUpstreamJson({ req, pathname: '/session', method: 'POST', timeoutMs: trace.remainingMs() });
           if (!response.ok) {
             trace.mark('upstream_create_rejected');
             if (response.status >= 500) return res.status(response.status).json(creationUnknownPayload());
@@ -5573,7 +5505,7 @@ export async function createMultiUserRuntime({
       app.get('/api/session/status', async (req, res, next) => {
         if (req.principal?.scope !== 'managed') return next();
         try {
-          const { response, payload } = await fetchUpstreamJson({ req, buildOpenCodeUrl, getOpenCodeAuthHeaders, pathname: '/session/status' });
+          const { response, payload } = await fetchUpstreamJson({ req, pathname: '/session/status' });
           if (!response.ok) return res.status(response.status).send(typeof payload === 'string' ? payload : JSON.stringify(payload));
           const visible = {};
           for (const [sessionId, status] of Object.entries(payload || {})) {
@@ -5589,9 +5521,7 @@ export async function createMultiUserRuntime({
           if (!await ownsSession(req.principal, req.params.sessionID)) return jsonError(res, 404, 'Session not found');
           const { response, payload } = await fetchUpstreamJson({
             req,
-            buildOpenCodeUrl,
-            getOpenCodeAuthHeaders,
-            pathname: `/session/${encodeURIComponent(req.params.sessionID)}/fork`,
+                            pathname: `/session/${encodeURIComponent(req.params.sessionID)}/fork`,
             method: 'POST',
           });
           if (!response.ok) return res.status(response.status).send(typeof payload === 'string' ? payload : JSON.stringify(payload));
@@ -5602,7 +5532,7 @@ export async function createMultiUserRuntime({
           } catch (error) {
             if (typeof payload?.id === 'string') {
               await fetchUpstreamJson({
-                req, buildOpenCodeUrl, getOpenCodeAuthHeaders,
+                req,
                 pathname: `/session/${encodeURIComponent(payload.id)}`, method: 'DELETE', body: undefined,
               }).catch(() => {});
             }
@@ -5682,9 +5612,7 @@ export async function createMultiUserRuntime({
           }
           const { response, payload } = await fetchUpstreamJson({
             req,
-            buildOpenCodeUrl,
-            getOpenCodeAuthHeaders,
-            pathname: `/session/${encodeURIComponent(req.params.sessionID)}`,
+                            pathname: `/session/${encodeURIComponent(req.params.sessionID)}`,
             method: 'DELETE',
             body: undefined,
           });
@@ -5716,7 +5644,7 @@ export async function createMultiUserRuntime({
         } catch { return jsonError(res, 404, 'Session not found'); }
       });
 
-      app.use('/api/openchamber/session/:sessionID', async (req, res, next) => {
+      app.use('/api/devryan/session/:sessionID', async (req, res, next) => {
         if (req.principal?.scope !== 'managed') return next();
         const sessionId = req.params.sessionID;
         try {
@@ -5751,8 +5679,6 @@ export async function createMultiUserRuntime({
     enabled: true,
     connection,
     config,
-    botsRuntime,
-    botOwner,
     getControlPlaneStatus: () => ({ ...controlPlaneStatus }),
     retryControlPlaneSync: refreshOwnershipIndex,
     authController,
@@ -5769,7 +5695,9 @@ export async function createMultiUserRuntime({
     ownsSession,
     resolveOwnedSessionPlanContext,
     resolveCurrentOwnedSessionPlanContext,
+    resolveCurrentNativeOperationContext,
     resolveSessionPlanContext,
+    resolveNativeHelperSettings,
     resolveSessionAgentExecution,
     resolveSessionOwnerKey,
     resolveSessionAgentBackupExecution,

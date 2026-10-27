@@ -1772,6 +1772,8 @@ const AssistantMessageBody = React.memo(({
                                     toolName={singleToolName}
                                     activities={[makeToolActivity(singleToolPart)]}
                                     animateTailText={animatedToolIdsLookup.has(singleToolPart.id)}
+                                    onShowPopup={onShowPopup}
+                                    onContentChange={onContentChange}
                                 />
                             </ToolRevealOnMount>
                         </FadeInOnReveal>
@@ -1872,6 +1874,8 @@ const AssistantMessageBody = React.memo(({
                                     },
                                 ]}
                                 animateTailText={animatedToolIdsLookup.has(toolPart.id)}
+                                onShowPopup={onShowPopup}
+                                onContentChange={onContentChange}
                             />
                         </ToolRevealOnMount>
                     </FadeInOnReveal>

@@ -8,8 +8,8 @@ export type AutoFollowState = 'following' | 'released';
 
 export type ContentChangeReason = 'text' | 'structural' | 'permission';
 
-export const CHAT_PRESERVE_SCROLL_ANCHOR_EVENT = 'openchamber:chat-preserve-scroll-anchor';
-export const CHAT_FORCE_SCROLL_BOTTOM_EVENT = 'openchamber:chat-force-scroll-bottom';
+export const CHAT_PRESERVE_SCROLL_ANCHOR_EVENT = 'devryan:chat-preserve-scroll-anchor';
+export const CHAT_FORCE_SCROLL_BOTTOM_EVENT = 'devryan:chat-force-scroll-bottom';
 
 export interface ChatPreserveScrollAnchorEventDetail {
     durationMs?: number;

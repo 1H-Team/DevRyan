@@ -153,3 +153,11 @@ describe('browser agent lease store', () => {
     ]);
   });
 });
+
+
+test('publishes a surface binding even when all lease activity metadata is unchanged', () => {
+  useBrowserAgentStore.setState({ revision: -1, leasesById: new Map(), leaseIds: [], leaseIdsByRoot: new Map(), activeLeaseCount: 0, observedLeaseId: null });
+  useBrowserAgentStore.getState().applySnapshot({ revision: 1, leases: [{ ...lease('binding'), surfaceId: '' }] });
+  useBrowserAgentStore.getState().applySnapshot({ revision: 2, leases: [{ ...lease('binding'), surfaceId: 'surface-ready' }] });
+  expect(useBrowserAgentStore.getState().leasesById.get('binding')?.surfaceId).toBe('surface-ready');
+});

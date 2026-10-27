@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { createManagedTaskScheduler } from './scheduler.js';
+import { createManagedTaskScheduler, USER_STOPPED_RECOVERY } from './scheduler.js';
 
 const input = (overrides = {}) => ({
   idempotencyKey: 'original',
@@ -158,6 +158,33 @@ describe('managed follow-up timeout windows', () => {
 });
 
 describe('managed scheduler parent actions', () => {
+  test.each(['retry', 'resume'])('%s creation and source acknowledgement share one durable commit', async action => {
+    let saved, failSave = false;
+    const writes = [];
+    const h = await createTerminalHarness({ schedulerOptions: { persistence: {
+      load: async () => saved,
+      save: async state => { if (failSave) throw Error('save refused'); saved = structuredClone(state); writes.push(saved); },
+    } } });
+    try {
+      let checks = 0;
+      await expect(h.scheduler.acknowledgeResult(h.original.taskId, { action, idempotencyKey: 'revoked-followup',
+        authorize: async () => { if (++checks === 3) throw Error('revoked'); } })).rejects.toThrow('revoked');
+      expect(checks).toBe(3);
+      expect(h.scheduler.getSnapshot().tasks).toHaveLength(1);
+      expect(h.scheduler.getResultEnvelope(h.original.taskId).action).toBeNull();
+      expect(h.starts).toHaveLength(1); expect(h.resumes).toHaveLength(0);
+      failSave = true;
+      await expect(h.scheduler.acknowledgeResult(h.original.taskId, { action, idempotencyKey: 'failed-save' })).rejects.toThrow('save refused');
+      expect(h.scheduler.getSnapshot().tasks).toHaveLength(1);
+      expect(h.scheduler.getResultEnvelope(h.original.taskId).action).toBeNull();
+      failSave = false;
+      const result = await h.scheduler.acknowledgeResult(h.original.taskId, { action, idempotencyKey: 'successful-followup' });
+      expect(writes.filter(state => state.tasks.length > 1).every(state => state.resultEnvelopes.find(row => row.taskId === h.original.taskId).followUpTaskId === result.followUpTask.taskId)).toBe(true);
+      const repeated = await h.scheduler.acknowledgeResult(h.original.taskId, { action, idempotencyKey: 'different-retry-key' });
+      expect(repeated.followUpTask.taskId).toBe(result.followUpTask.taskId);
+      expect(h.scheduler.getSnapshot().tasks).toHaveLength(2);
+    } finally { failSave = false; await h.scheduler.shutdown(); }
+  });
   test('retries as one linked attempt and deduplicates repeated action requests', async () => {
     const { original, scheduler, starts } = await createTerminalHarness({
       submitOverrides: { readOnly: true },
@@ -205,6 +232,17 @@ describe('managed scheduler parent actions', () => {
 
     expect(scheduler.getResultEnvelope(original.taskId).action).toBeNull();
     expect(starts).toHaveLength(1);
+  });
+
+  test('v2 acknowledgement binds action identity across repeated calls and rejects revoked final authority',async()=>{
+   const {original,scheduler}=await createTerminalHarness();
+   const identity='a'.repeat(64),options={action:'continue',idempotencyKey:'stable',acknowledgementIdentity:identity};
+   await expect(scheduler.acknowledgeResult(original.taskId,{...options,authorize:async()=>{throw Error('Cancelled at final save');}})).rejects.toThrow('Cancelled at final save');
+   expect(scheduler.getResultEnvelope(original.taskId).action).toBeNull();
+   await scheduler.acknowledgeResult(original.taskId,options);
+   expect((await scheduler.acknowledgeResult(original.taskId,{...options,idempotencyKey:'new-authorized-step'})).envelope.acknowledgementIdentity).toBe(identity);
+   for(const changed of [{...options,acknowledgementIdentity:'b'.repeat(64)},{...options,acknowledgementIdentity:undefined},{...options,action:'abandon'}])
+    await expect(scheduler.acknowledgeResult(original.taskId,changed)).rejects.toMatchObject({code:'result_already_acknowledged'});
   });
 
   test('parks a second grouped failure for user-selected manual recovery', async () => {
@@ -543,6 +581,7 @@ describe('managed scheduler parent actions', () => {
 
     expect(scheduler.listReadyProviderRecoveryContinuations()).toEqual([{
       sourceTaskId: original.taskId,
+      dispatchGroupId: original.dispatchGroupId,
       taskId: recovered.taskId,
       rootSessionId: 'ses_root',
       childSessionId: original.childSessionId,
@@ -574,6 +613,7 @@ describe('managed scheduler parent actions', () => {
 
     expect(scheduler.listReadyProviderRecoveryContinuations()).toEqual([{
       sourceTaskId: null,
+      dispatchGroupId: original.dispatchGroupId,
       taskId: original.taskId,
       rootSessionId: 'ses_root',
       childSessionId: original.childSessionId,
@@ -801,4 +841,182 @@ describe('managed scheduler parent actions', () => {
     expect(action.envelope.acknowledgedAt).not.toBeNull();
     expect(starts).toHaveLength(startCount);
   });
+});
+
+test('user stopped task requires explicit UI disposition and resumes once in the same child', async () => {
+  const h = await createTerminalHarness({startResult:{status:'aborted',terminationIntent:'user_stopped',
+    failureReason:'Stopped by the user',partial:true,recoverablePreview:'saved work',resumable:true},
+    submitOverrides:{dispatchGroupId:'msg_dispatch',dispatchCallId:'call_dispatch'}});
+  try {
+    const original=h.scheduler.getTask(h.original.taskId);
+    expect(original.terminationIntent).toBe('user_stopped');
+    for(const action of ['continue','abandon','resume','retry','retry_in_place']) {
+      await expect(h.scheduler.acknowledgeResult(original.taskId,{action,idempotencyKey:`agent-${action}`,
+        providerId:'openai',modelId:'gpt-5.5',variant:'high'})).rejects.toMatchObject({code:'user_stopped_recovery_required'});
+    }
+    const options={action:'retry_in_place',idempotencyKey:'user-resume',providerId:'openai',modelId:'gpt-5.5',variant:'high',[USER_STOPPED_RECOVERY]:true};
+    const [a,b]=await Promise.all([h.scheduler.acknowledgeResult(original.taskId,options),h.scheduler.acknowledgeResult(original.taskId,options)]);
+    expect(a.followUpTask.taskId).toBe(b.followUpTask.taskId);
+    expect(a.followUpTask).toMatchObject({childSessionId:original.childSessionId,priorTaskId:original.taskId,prompt:original.prompt,providerId:'openai',modelId:'gpt-5.5',variant:'high',attempt:2});
+    await h.scheduler.waitForTask(a.followUpTask.taskId);
+    expect(h.inPlaceRetries).toHaveLength(1);
+    expect(h.scheduler.getTask(original.taskId)).toEqual(original);
+  } finally {await h.scheduler.shutdown();}
+});
+
+test('durable stop request survives restart before terminal settlement and withdrawal is request scoped', async () => {
+  let saved = null;
+  const persistence = { async load() { return saved; }, async save(value) { saved = structuredClone(value); } };
+  const executor = {
+    async start(task, control) { await control.setChildSessionId('ses_crash_stop'); await control.markAccepted(); return new Promise(() => {}); },
+    async abort() { return { aborted: true }; },
+    async reconcile() { return { state: 'transient' }; },
+    async readRecoverableResult() { return {}; },
+    async shutdown() {},
+  };
+  const scheduler = createManagedTaskScheduler({ executor, persistence, now: () => 1000 });
+  let restarted;
+  try {
+    const task = await scheduler.submit(input());
+    await scheduler.flush();
+    const stop = await scheduler.recordOperatorStop({ sessionId: 'ses_crash_stop', directory: '/workspace', requestedAt: 2000 });
+    expect(stop?.taskId).toBe(task.taskId);
+    expect(scheduler.getTask(task.taskId)).toMatchObject({ operatorStop: { state: 'pending' }, status: 'running' });
+    expect(scheduler.getTask(task.taskId).terminationIntent).toBeUndefined();
+    await expect(scheduler.acknowledgeResult(task.taskId, { action: 'retry_in_place', idempotencyKey: 'premature' }))
+      .rejects.toMatchObject({ code: 'operator_stop_pending' });
+    expect(await scheduler.withdrawOperatorStop({ ...stop, requestedAt: 1999 })).toBe(false);
+    expect(await scheduler.withdrawOperatorStop({ ...stop, requestId: 'another_request' })).toBe(false);
+    await scheduler.shutdown();
+    restarted = createManagedTaskScheduler({ executor, persistence, now: () => 2001 });
+    await restarted.initialize();
+    expect(restarted.readOperatorStop({ sessionId: 'ses_crash_stop', directory: '/workspace', after: 1000 })).toEqual({ sessionId: 'ses_crash_stop', requestedAt: 2000, state: 'pending', durable: true });
+    expect(restarted.readOperatorStop({ sessionId: 'ses_crash_stop', directory: '/other' })).toBeNull();
+    expect(await restarted.withdrawOperatorStop(stop)).toBe(true);
+    expect(restarted.readOperatorStop({ sessionId: 'ses_crash_stop' })).toBeNull();
+    expect(restarted.getTask(task.taskId).terminationIntent).toBeUndefined();
+  } finally { await scheduler.shutdown(); await restarted?.shutdown(); }
+});
+
+
+test('explicit user dismissal remains available after unconfirmed stop also meets provider recovery policy', async () => {
+  const h = await createTerminalHarness({ startResult: { status: 'interrupted', terminationIntent: 'user_stopped',
+    failureReason: 'Usage limit reached', partial: true, recoverablePreview: 'partial', resumable: true } });
+  try {
+    await expect(h.scheduler.acknowledgeResult(h.original.taskId, { action: 'abandon', idempotencyKey: 'model-dismiss' }))
+      .rejects.toMatchObject({ code: 'user_stopped_recovery_required' });
+    const result = await h.scheduler.acknowledgeResult(h.original.taskId, { action: 'abandon', idempotencyKey: 'user-dismiss', [USER_STOPPED_RECOVERY]: true });
+    expect(result.envelope.action).toBe('abandon'); expect(result.followUpTask).toBeNull();
+  } finally { await h.scheduler.shutdown(); }
+});
+
+for (const response of ['accepted', 'rejected']) test(`late ${response} HTTP stop resolves private pending receipt on an independently terminal task`, async () => {
+  const h = await createTerminalHarness({ failureReason: 'Usage limit reached' });
+  const terminal = h.scheduler.getTask(h.original.taskId), envelope = h.scheduler.getResultEnvelope(h.original.taskId);
+  await h.scheduler.shutdown();
+  const stop = { sessionId: terminal.childSessionId, taskId: terminal.taskId, leaseToken: terminal.leaseToken, requestedAt: 2000, requestId: 'late-stop' };
+  const task = { ...terminal, operatorStop: { leaseToken: terminal.leaseToken, requestedAt: 2000, requestId: 'late-stop', state: 'pending' } };
+  const scheduler = createManagedTaskScheduler({ now: () => 2001, persistence: {
+    async load() { return { version: 1, tasks: [task], resultEnvelopes: [envelope] }; }, async save() {},
+  }, executor: { async start() { throw new Error('No task may start while stop is pending'); } } });
+  try {
+    await scheduler.initialize();
+    await expect(scheduler.acknowledgeResult(task.taskId, { action: 'retry_in_place', idempotencyKey: 'pending-ui', [USER_STOPPED_RECOVERY]: true,
+      providerId: 'openai', modelId: 'replacement', variant: null })).rejects.toMatchObject({ code: 'operator_stop_pending' });
+    expect(await scheduler.withdrawOperatorStop({ ...stop, requestId: 'wrong' })).toBe(false);
+    if (response === 'accepted') {
+      expect(await scheduler.acceptOperatorStop(stop)).toBe(true);
+      const resolved = scheduler.getTask(task.taskId), { operatorStop, ...outcome } = resolved;
+      expect(operatorStop.state).toBe('accepted'); expect(outcome).toEqual(terminal);
+      const { toManagedTaskEvent, hasAcceptedUserStop } = await import('./contract.js');
+      expect(hasAcceptedUserStop(resolved)).toBe(true);
+      expect(toManagedTaskEvent(resolved, envelope).properties.task).toMatchObject({ agentRetryAvailable: false, userStoppedRecoveryAvailable: true });
+      expect(await scheduler.withdrawOperatorStop(stop)).toBe(false);
+      await expect(scheduler.acknowledgeResult(task.taskId, { action: 'continue', idempotencyKey: 'model-continue' }))
+        .rejects.toMatchObject({ code: 'user_stopped_recovery_required' });
+    } else {
+      expect(await scheduler.withdrawOperatorStop(stop)).toBe(true);
+      expect(scheduler.getTask(task.taskId)).toEqual(terminal);
+      expect(await scheduler.acceptOperatorStop(stop)).toBe(false);
+    }
+    expect(scheduler.getResultEnvelope(task.taskId)).toEqual(envelope);
+  } finally { await scheduler.shutdown(); }
+});
+
+test('restart expires a lost pending HTTP stop into explicit uncertain recovery without provider work', async () => {
+  const h = await createTerminalHarness();
+  const previous = h.scheduler.getTask(h.original.taskId);
+  await h.scheduler.shutdown();
+  const task = { ...previous, status: 'running', finishedAt: null, failureReason: null,
+    operatorStop: { requestedAt: 2000, requestId: 'lost-response', leaseToken: previous.leaseToken, state: 'pending' } };
+  const scheduler = createManagedTaskScheduler({ now: () => 8000, abortTimeoutMs: 5000,
+    persistence: { async load() { return { version: 1, tasks: [task], resultEnvelopes: [] }; }, async save() {} },
+    executor: { async start() { throw new Error('must not dispatch'); }, async reconcile() { return { state: 'transient' }; } },
+  });
+  try {
+    await scheduler.initialize();
+    const result = await scheduler.waitForTask(task.taskId, { timeoutMs: 1000 });
+    expect(result).toMatchObject({ status: 'interrupted', operatorStop: { state: 'uncertain' },
+      failureReason: 'Stop request outcome could not be confirmed' });
+    expect(result.terminationIntent).toBeUndefined();
+    const envelope = scheduler.getResultEnvelope(task.taskId);
+    expect(envelope.resumable).toBe(true);
+    const { toManagedTaskEvent } = await import('./contract.js');
+    expect(toManagedTaskEvent(result, envelope).properties.task).toMatchObject({
+      stoppedRecoveryAvailable: true, agentRetryAvailable: false,
+    });
+    expect(toManagedTaskEvent(result, envelope).properties.task.terminationIntent).toBeUndefined();
+    await expect(scheduler.acknowledgeResult(task.taskId, { action: 'continue', idempotencyKey: 'model-continue' }))
+      .rejects.toMatchObject({ code: 'user_stopped_recovery_required' });
+    const response = await scheduler.acknowledgeResult(task.taskId, { action: 'abandon', idempotencyKey: 'user-dismiss', [USER_STOPPED_RECOVERY]: true });
+    expect(response.envelope.action).toBe('abandon');
+  } finally { await scheduler.shutdown(); }
+});
+
+for (const response of ['accepted', 'rejected']) test(`a late ${response} response fences an already queued expiry settlement`, async () => {
+  const h = await createTerminalHarness();
+  const previous = h.scheduler.getTask(h.original.taskId); await h.scheduler.shutdown();
+  const stop = { sessionId: previous.childSessionId, taskId: previous.taskId, leaseToken: previous.leaseToken,
+    requestedAt: 2000, requestId: 'racing-expiry' };
+  const task = { ...previous, status: 'running', finishedAt: null, failureReason: null,
+    operatorStop: { requestedAt: 2000, requestId: stop.requestId, leaseToken: previous.leaseToken, state: 'pending' } };
+  let resolveUncertain, responsePromise, queued = false;
+  const uncertain = new Promise(resolve => { resolveUncertain = resolve; });
+  const scheduler = createManagedTaskScheduler({ now: () => 8000, abortTimeoutMs: 5000,
+    persistence: {
+      async load() { return { version: 1, tasks: [task], resultEnvelopes: [] }; },
+      async save(state) {
+        if (queued || state.tasks[0]?.operatorStop?.state !== 'uncertain') return;
+        queued = true;
+        responsePromise = response === 'accepted' ? scheduler.acceptOperatorStop(stop) : scheduler.withdrawOperatorStop(stop);
+        resolveUncertain();
+      },
+    }, executor: { async start() { throw new Error('must not dispatch'); }, async reconcile() { return { state: 'transient' }; } },
+  });
+  try {
+    await scheduler.initialize(); await uncertain;
+    expect(await responsePromise).toBe(true); await scheduler.flush();
+    const current = scheduler.getTask(task.taskId);
+    expect(current.status).toBe('running'); expect(scheduler.getResultEnvelope(task.taskId)).toBeNull();
+    if (response === 'accepted') expect(current.operatorStop.state).toBe('accepted');
+    else expect(current.operatorStop).toBeUndefined();
+  } finally { await scheduler.shutdown(); }
+});
+
+
+test('native capability refusal cannot enter model retry or automatic continuation', async () => {
+  const { scheduler, original, starts, resumes, inPlaceRetries } = await createTerminalHarness({
+    failureReason: 'admission.prompt: the native permission action for tool todoread is unavailable',
+  });
+  try {
+    for (const action of ['retry', 'resume', 'retry_in_place', 'recover_in_place']) {
+      await expect(scheduler.acknowledgeResult(original.taskId, { action, idempotencyKey: `capability-${action}`,
+        providerId: 'openai', modelId: 'replacement', prompt: 'Retry the assignment',
+      })).rejects.toMatchObject({ code: 'runtime_capability_repair_required' });
+    }
+    expect(starts).toHaveLength(1);
+    expect(resumes).toHaveLength(0);
+    expect(inPlaceRetries).toHaveLength(0);
+    await scheduler.acknowledgeResult(original.taskId, { action: 'continue', idempotencyKey: 'capability-collected' });
+  } finally { await scheduler.shutdown(); }
 });

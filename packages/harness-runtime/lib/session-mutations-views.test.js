@@ -5,8 +5,8 @@ import path from 'node:path';
 import { git } from './session-changes-git.js';
 import { createSessionMutationRuntime } from './session-mutations.js';
 import { changeKey } from './session-changes-store.js';
-import { createViewMaterializer } from './session-mutation-files.js';
-import { withExecutionAdmission } from './execution-admission.js';
+import { createViewMaterializer, resetVerifiedMutationObjects } from './session-mutation-files.js';
+import { withExecutionAdmission, withExecutionPreparation } from './execution-admission.js';
 
 // Fresh-view materialization clones verified objects straight into a view the
 // preparation created, and reconciliation installs identical-content
@@ -17,14 +17,16 @@ const test = (name, body) => bunTest(name, body, 120_000);
 afterEach(async () => {
   delete process.env.DEVRYAN_VIEW_FAST_MATERIALIZE;
   delete process.env.DEVRYAN_LEDGER_RESTAMP_BATCH;
+  delete process.env.DEVRYAN_PERSISTENT_OBJECT_VERIFY;
+  delete process.env.DEVRYAN_LEDGER_SYNC_WALKS;
   await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));
 });
 
-async function fixture() {
+async function fixture(options = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-views-')); roots.push(root);
   const directory = path.join(root, 'project'), storage = path.join(root, 'private');
   await fs.mkdir(directory); await git(directory, ['init', '--quiet']);
-  const runtime = createSessionMutationRuntime({ directory: storage });
+  const runtime = createSessionMutationRuntime({ directory: storage, ...options });
   const put = async (name, value, mode) => {
     const file = path.join(directory, name);
     await fs.mkdir(path.dirname(file), { recursive: true });
@@ -43,7 +45,7 @@ async function fixture() {
   };
   const finish = async (lease) => {
     await fs.writeFile(path.join(path.dirname(lease.viewDirectory), 'termination.json'),
-      JSON.stringify({ terminated: true, confined: true, cancelled: false, exitCode: 0 }));
+      JSON.stringify({ terminated: true, confined: true, cancelled: false, exitCode: 0 }), { flag: 'wx', mode: 0o600 });
     await runtime.claimLease({ directory, token: lease.token, kind: 'process' });
     return runtime.finish({ directory, token: lease.token });
   };
@@ -151,6 +153,86 @@ test('the materializer never writes through planted links and defers existing en
   const fresh = path.join(f.root, 'fresh');
   await fs.mkdir(fresh);
   await expect(createViewMaterializer(repo, fresh)('c.txt', entry, 0o644)).rejects.toMatchObject({ code: 'invalid_change_record' });
+});
+
+test('synchronous walks (the ledger worker) build the same views, publications and external changes', async () => {
+  const run = async (options) => {
+    const f = await fixture(options);
+    // Input links name the fixture's own project directory.
+    const describe = async (view) => (await describeTree(view)).map((row) => row[1] === 'link'
+      ? [row[0], 'link', row[2].replace(f.directory, '<project>')] : row);
+    for (let index = 0; index < 60; index += 1) await f.put(`d${index % 4}/e${index % 3}/f${index}.txt`, `file ${index}\n`);
+    await f.put('.gitignore', 'build/\n'); await f.put('build/out.js', 'ignored output');
+    await fs.symlink('d0', path.join(f.directory, 'dir-link'));
+    const first = await f.begin();
+    const tree = await describe(first.viewDirectory);
+    await fs.writeFile(path.join(first.viewDirectory, 'd1/e1/f1.txt'), 'edited\n');
+    await fs.rm(path.join(first.viewDirectory, 'd2/e2/f2.txt'));
+    await fs.writeFile(path.join(first.viewDirectory, 'new.txt'), 'new\n');
+    const published = await f.finish(first);
+    // An external change the next reconciliation must observe.
+    await f.put('d3/e0/f3.txt', 'changed outside\n');
+    const second = await f.begin();
+    const later = await describe(second.viewDirectory);
+    await f.finish(second);
+    return { tree, published: published.files, later };
+  };
+  const expected = await run({});
+  const actual = await run({ synchronousWalks: true });
+  expect(actual).toEqual(expected);
+  expect(actual.published.map(row => row.path)).toEqual(['d1/e1/f1.txt', 'd2/e2/f2.txt', 'new.txt']);
+  expect(actual.published).toEqual(expect.arrayContaining([{ path: 'd1/e1/f1.txt', status: 'modified' },
+    { path: 'd2/e2/f2.txt', status: 'deleted' }, { path: 'new.txt', status: 'added' }]));
+  expect(actual.later).toContainEqual(['d3/e0/f3.txt', 'file', 0o644, Buffer.from('changed outside\n').toString('base64')]);
+  process.env.DEVRYAN_LEDGER_SYNC_WALKS = '0';
+  expect(await run({ synchronousWalks: true })).toEqual(expected);
+});
+
+const preparationSteps = async (f, sessionID) => {
+  const records = [];
+  const input = { directory: f.directory, sessionID, userMessageID: `p-${sessionID}`, messageID: `m-${sessionID}`, callID: `c-${sessionID}` };
+  const lease = await withExecutionPreparation(input, () => f.runtime.begin(input),
+    { onDiagnostic: (record) => records.push(record), summary: { minMs: 0 } });
+  const record = records.find((entry) => entry.phase === 'preparation' && entry.state === 'completed');
+  const steps = Object.fromEntries(String(record?.steps ?? '').split(',').filter(Boolean)
+    .map((step) => { const [phase, value] = step.split(':'); return [phase, Number(value.split('/')[0])]; }));
+  return { lease, steps };
+};
+
+test('verified object identities survive a restart, and a changed object is rehashed', async () => {
+  const f = await fixture();
+  for (let index = 0; index < 40; index += 1) await f.put(`many/${index}.txt`, `file ${index}`);
+  await f.finish(await f.begin());
+  const ledger = path.join(f.storage, changeKey(await fs.realpath(f.directory)));
+  const persisted = path.join(ledger, 'verified-objects.v1');
+  expect((await fs.stat(persisted)).mode & 0o777).toBe(0o600);
+
+  // A new process: nothing verified in memory, the persisted identities load.
+  resetVerifiedMutationObjects();
+  const restarted = await preparationSteps(f, 'restarted');
+  expect(restarted.steps.view_copied).toBeGreaterThanOrEqual(40);
+  expect(restarted.steps.object_verify_hashed ?? 0).toBe(0);
+  await f.finish(restarted.lease);
+
+  // A rewritten object changes its identity, so it is hashed and rejected.
+  resetVerifiedMutationObjects();
+  const [objectHash] = (await fs.readdir(path.join(ledger, 'objects'))).filter((name) => /^[a-f0-9]{64}$/.test(name));
+  await fs.writeFile(path.join(ledger, 'objects', objectHash), 'corrupted');
+  const fresh = path.join(f.root, 'fresh-after-restart');
+  await fs.mkdir(fresh);
+  await expect(createViewMaterializer({ root: ledger }, fresh)('c.txt', { hash: objectHash, mode: '100644' }, 0o644))
+    .rejects.toMatchObject({ code: 'invalid_change_record' });
+});
+
+test('the persistent verification kill switch rehashes objects after a restart', async () => {
+  const f = await fixture();
+  for (let index = 0; index < 10; index += 1) await f.put(`few/${index}.txt`, `file ${index}`);
+  await f.finish(await f.begin());
+  process.env.DEVRYAN_PERSISTENT_OBJECT_VERIFY = '0';
+  resetVerifiedMutationObjects();
+  const restarted = await preparationSteps(f, 'switched-off');
+  expect(restarted.steps.object_verify_hashed).toBeGreaterThanOrEqual(10);
+  await f.finish(restarted.lease);
 });
 
 test('a cancelled fast preparation cleans up and the next call prepares normally', async () => {

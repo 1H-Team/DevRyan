@@ -24,9 +24,8 @@ import { installApiFetchSecurity } from '@/lib/apiSecurity';
 import { initializeInteractionAnalytics } from '@/lib/interactionAnalytics';
 import { startAppearanceAutoSave } from '@/lib/appearanceAutoSave';
 import { startModelPrefsAutoSave } from '@/lib/modelPrefsAutoSave';
-import { subscribeOpenchamberEvents } from '@/lib/openchamberEvents';
+import { subscribeDevRyanEvents } from '@/lib/devryanEvents';
 import {
-  authStoragePrincipalId,
   hasAuthCapability,
   registerAuthSessionRetry,
   setAuthOfflineGrace,
@@ -38,7 +37,6 @@ import { fullSettingsPermissions } from '@/lib/settings/permissions';
 import { getDeviceStorage, setStoragePrincipal } from '@/stores/utils/safeStorage';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useUIStore } from '@/stores/useUIStore';
-import { useMainSidebarAudienceStore } from '@/stores/useMainSidebarAudienceStore';
 import {
   buildPrincipalTransitionPath,
   classifySessionResponse,
@@ -52,7 +50,7 @@ import {
 installApiFetchSecurity();
 
 const STATUS_CHECK_ENDPOINT = '/auth/session';
-const TRUST_DEVICE_STORAGE_KEY = 'openchamber.uiAuth.trustDevice';
+const TRUST_DEVICE_STORAGE_KEY = 'devryan.uiAuth.trustDevice';
 
 const fetchSessionStatus = async (): Promise<Response> => {
   const response = await fetch(STATUS_CHECK_ENDPOINT, {
@@ -278,7 +276,7 @@ export const SessionAuthGate: React.FC<SessionAuthGateProps> = ({ children }) =>
       scope: 'local-admin' as const,
       policy: {
         settingsPages: ['*'], settingsPermissions: fullSettingsPermissions(),
-        bots: true, files: true, terminal: true, browser: true, createWorktrees: true, createBranches: true, manageProjects: true,
+        files: true, terminal: true, browser: true, createWorktrees: true, createBranches: true, manageProjects: true,
         manageUsers: true, manageGlobalSettings: true, manageGit: true, push: true, github: true,
       },
       assignments: [],
@@ -286,11 +284,8 @@ export const SessionAuthGate: React.FC<SessionAuthGateProps> = ({ children }) =>
     acceptedPrincipalRef.current = nextPrincipal;
     offlineGraceRef.current = isOfflineGrace;
     setAuthOfflineGrace(isOfflineGrace);
-    const changed = setStoragePrincipal(authStoragePrincipalId(nextPrincipal));
+    const changed = setStoragePrincipal(nextPrincipal.id);
     setAuthPrincipal(nextPrincipal);
-    if (!hasAuthCapability(nextPrincipal, 'bots')) {
-      useMainSidebarAudienceStore.getState().setAudience('coding-agents');
-    }
     if (!hasAuthCapability(nextPrincipal, 'browser')) {
       useUIStore.getState().pruneAllBrowserTabs();
     }
@@ -300,7 +295,7 @@ export const SessionAuthGate: React.FC<SessionAuthGateProps> = ({ children }) =>
       window.location.reload();
       return false;
     }
-    if (nextPrincipal.scope !== 'tunnel-bot') applyPersistedDirectoryPreferences(nextPrincipal);
+    applyPersistedDirectoryPreferences(nextPrincipal);
     return true;
   }, []);
 
@@ -449,15 +444,6 @@ export const SessionAuthGate: React.FC<SessionAuthGateProps> = ({ children }) =>
   }, [checkStatus]);
 
   React.useEffect(() => {
-    if (state !== 'authenticated' || acceptedPrincipalRef.current?.scope !== 'tunnel-bot') return;
-    // Tunnel grants have their own event stream and no host/project stream.
-    const timer = setInterval(() => { void checkStatus(); }, 30_000);
-    const visible = () => { if (document.visibilityState === 'visible') void checkStatus(); };
-    document.addEventListener('visibilitychange', visible);
-    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', visible); };
-  }, [checkStatus, state]);
-
-  React.useEffect(() => {
     if (state !== 'authenticated' || acceptedPrincipalRef.current?.scope !== 'managed') {
       return;
     }
@@ -519,7 +505,7 @@ export const SessionAuthGate: React.FC<SessionAuthGateProps> = ({ children }) =>
       }
     };
 
-    const unsubscribe = subscribeOpenchamberEvents((event) => {
+    const unsubscribe = subscribeDevRyanEvents((event) => {
       if (event.type === 'stream-ready') {
         scheduleRefresh();
         return;
@@ -554,7 +540,6 @@ export const SessionAuthGate: React.FC<SessionAuthGateProps> = ({ children }) =>
 
     if (state === 'authenticated' && !hasResyncedRef.current) {
       hasResyncedRef.current = true;
-      if (acceptedPrincipalRef.current?.scope === 'tunnel-bot') return;
       void (async () => {
         try {
           await syncDesktopSettings();
@@ -988,7 +973,7 @@ export const SessionAuthGate: React.FC<SessionAuthGateProps> = ({ children }) =>
                 <div className="relative">
                   <RiLockLine className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/60" />
                   <Input
-                    id="openchamber-ui-password"
+                    id="devryan-ui-password"
                     ref={passwordInputRef}
                     type="password"
                     autoComplete={isClaiming ? 'new-password' : 'current-password'}

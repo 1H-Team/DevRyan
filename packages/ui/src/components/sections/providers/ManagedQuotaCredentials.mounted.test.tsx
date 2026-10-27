@@ -1,6 +1,6 @@
 import React, { act } from 'react';
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
-import { withDom } from '@/components/bots/chat/botMountedDom';
+import { withDom } from '@/test/mountedDom';
 import { settingsDict } from '@/lib/i18n/messages/en.settings';
 const messages: string[] = [];
 const opened: string[] = [];

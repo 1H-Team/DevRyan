@@ -3,10 +3,12 @@ export type SessionTitleOutboxJob = {
   sessionID: string;
   directory: string;
   sourceHash: string;
+  sourceMessageID?: string;
+  lastAcceptedInputID?: string;
   candidateTitle: string;
   source: 'derived' | 'session_model' | 'free_zen' | 'local_fallback';
   replacesTitle?: string;
-  state: 'pending_idle' | 'persisting';
+  state: 'pending_idle' | 'persisting' | 'paused';
   attemptCount: number;
   nextAttemptAt: number;
   createdAt: number;

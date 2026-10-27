@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import http from 'node:http';
+import { projectManagedModelValidationFailure } from '@devryan/orchestration-runtime';
 
 // A 256 KiB plan can expand sixfold when control characters are JSON-escaped.
 const DEFAULT_MAX_BODY_BYTES = 2 * 1024 * 1024;
@@ -64,6 +65,14 @@ const normalizeRequest = (value) => {
   };
 };
 
+// Best-effort turn attribution for timing only; never an authority input.
+const requestSessionID = (params) => {
+  for (const value of [params?.sessionID, params?.permit?.sessionID, params?.invocation?.sessionID, params?.input?.sessionID, params?.binding?.sessionID]) {
+    if (typeof value === 'string' && value.length > 0 && value.length <= 256) return value;
+  }
+  return null;
+};
+
 export const createManagedOrchestrationPrivateHost = (options = {}) => {
   if (typeof options.handleRpc !== 'function') {
     throw new TypeError('handleRpc is required');
@@ -81,6 +90,13 @@ export const createManagedOrchestrationPrivateHost = (options = {}) => {
   let stopPromise = null;
   let activeRequests = 0;
   const requestControllers = new Set();
+  // Requests already served per connection: a later one reused it.
+  const socketRequests = new WeakMap();
+  // Observer only: one record per authorized RPC once its response settles.
+  const reportTiming = (timing) => {
+    if (typeof options.onRequestTiming !== 'function') return;
+    try { options.onRequestTiming(timing); } catch { /* Observer only. */ }
+  };
 
   const start = () => {
     if (environment) return Promise.resolve(environment);
@@ -92,6 +108,9 @@ export const createManagedOrchestrationPrivateHost = (options = {}) => {
     startPromise = new Promise((resolve, reject) => {
       const token = createToken();
       const nextServer = http.createServer(async (request, response) => {
+        const started = performance.now();
+        const served = socketRequests.get(request.socket) ?? 0;
+        socketRequests.set(request.socket, served + 1);
         if (request.method !== 'POST' || request.url !== '/rpc') {
           writeJson(response, 404, {
             ok: false,
@@ -107,6 +126,15 @@ export const createManagedOrchestrationPrivateHost = (options = {}) => {
           return;
         }
 
+        const timing = { method: null, sessionID: null };
+        response.once('close', () => reportTiming({
+          method: timing.method,
+          sessionID: timing.sessionID,
+          durationMs: performance.now() - started,
+          statusCode: response.writableFinished ? response.statusCode : null,
+          reused: served > 0,
+        }));
+
         const declaredLength = Number.parseInt(request.headers['content-length'] ?? '', 10);
         if (Number.isFinite(declaredLength) && declaredLength > maxBodyBytes) {
           request.resume();
@@ -121,6 +149,9 @@ export const createManagedOrchestrationPrivateHost = (options = {}) => {
         const controller = new AbortController();
         requestControllers.add(controller);
         request.once('aborted', () => controller.abort(new Error('RPC request aborted')));
+        response.once('close', () => {
+          if (!response.writableEnded) controller.abort(new Error('RPC response disconnected'));
+        });
         try {
           const body = await readBody(request, maxBodyBytes);
           if (body.tooLarge) {
@@ -145,6 +176,8 @@ export const createManagedOrchestrationPrivateHost = (options = {}) => {
             return;
           }
 
+          timing.method = parsed.method;
+          timing.sessionID = requestSessionID(parsed.params);
           await options.authorizeRpc?.(parsed);
           const result = await handleRpc(parsed, { signal: controller.signal });
           writeJson(response, 200, { ok: true, result: result ?? null });
@@ -162,6 +195,7 @@ export const createManagedOrchestrationPrivateHost = (options = {}) => {
               message: hasCode && error instanceof Error
                 ? error.message
                 : 'Managed orchestration RPC failed',
+              ...projectManagedModelValidationFailure(error),
             },
           });
         } finally {

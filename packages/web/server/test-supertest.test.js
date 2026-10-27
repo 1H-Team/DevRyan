@@ -76,4 +76,30 @@ describe('Supertest loopback requests', () => {
     expect(responses[0].body.localPort).toBe(responses[1].body.localPort);
     expect(server.listening).toBe(false);
   });
+
+  it('keeps the shared listener open until a slower request finishes', async () => {
+    let releaseSlowResponse;
+    const slowResponse = new Promise((resolve) => { releaseSlowResponse = resolve; });
+    const server = http.createServer((incoming, response) => {
+      if (incoming.url === '/slow') {
+        void slowResponse.then(() => response.end('slow'));
+      } else {
+        response.end('fast');
+      }
+    });
+    const fast = request(server).get('/fast').then((response) => response);
+    const slow = request(server).get('/slow').then((response) => response);
+
+    try {
+      expect((await fast).text).toBe('fast');
+      expect(server.listening).toBe(true);
+      releaseSlowResponse();
+      expect((await slow).text).toBe('slow');
+      expect(server.listening).toBe(false);
+    } finally {
+      releaseSlowResponse();
+      await Promise.allSettled([fast, slow]);
+      if (server.listening) await closeServer(server);
+    }
+  });
 });

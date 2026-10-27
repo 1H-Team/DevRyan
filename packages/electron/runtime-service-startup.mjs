@@ -1,119 +1,89 @@
-export const prepareAutomaticRuntimeService = async ({
-  currentMode,
-  optedOut = false,
-  platform,
-  isPackaged,
-  registration,
-  setMode,
-  log,
-} = {}) => {
-  // A user who switched the background service off keeps app-bound ownership:
-  // the runtime exits with the app and is never re-registered automatically.
-  if (optedOut === true || currentMode === 'disabled' || currentMode === 'service'
-    || platform !== 'darwin' || isPackaged !== true) {
-    return Object.freeze({ mode: currentMode || 'app_bound', state: 'skipped', code: null });
-  }
+import fs from 'node:fs/promises';
+import path from 'node:path';
 
-  const useAppBoundMode = async (state, code) => {
-    if (currentMode !== 'app_bound') await setMode('app_bound');
-    return Object.freeze({ mode: 'app_bound', state, code });
-  };
-
-  const current = await registration.status();
-  if (current.state === 'requires_approval') {
-    return useAppBoundMode(current.state, current.code);
-  }
-  if (current.state === 'not_found' || current.state === 'unavailable' || current.ok === false) {
-    log?.warn?.('[runtime-service] automatic registration preflight unavailable', {
-      state: current.state,
-      code: current.code,
-    });
-    return useAppBoundMode(current.state, current.code);
-  }
-
-  let registered = current;
-  if (current.state === 'not_registered') {
-    try {
-      registered = await registration.register({ allowLegacy: true });
-    } catch (error) {
-      const code = error?.code || 'runtime_service_registration_failed';
-      log?.warn?.('[runtime-service] automatic registration failed', { code });
-      return useAppBoundMode('registration_failed', code);
-    }
-  }
-  if (registered.state !== 'enabled') {
-    return useAppBoundMode(registered.state, registered.code);
-  }
-  await setMode('service');
-  return Object.freeze({ mode: 'service', state: 'enabled', code: null });
-};
-
-// Service mode relies on a launchd registration. Without one nothing will ever
-// start the service, and waiting for its connection only delays startup (65 s
-// before the fallback, observed on 2026-09-29). Register it first; when that
-// is not possible, fail at once so startup falls back to the app-bound
-// runtime. A state that cannot tell (`unknown`, `legacy_required`, a failed
-// status read) keeps the ordinary wait.
-const RUNTIME_SERVICE_UNSTARTABLE_STATES = new Set([
-  'not_registered', 'requires_approval', 'not_found', 'unavailable', 'invalid',
-]);
-export const ensureRuntimeServiceRegistered = async ({ registration, log } = {}) => {
-  let current;
-  try { current = await registration.status(); }
-  catch { return Object.freeze({ state: 'unknown', registered: false }); }
-  if (current?.state === 'not_registered') {
-    try {
-      const registered = await registration.register({ allowLegacy: true });
-      if (registered?.state === 'enabled') {
-        log?.warn?.('[runtime-service] registered at startup', { phase: 'register', code: 'runtime_service_registered_at_startup' });
-        return Object.freeze({ state: 'enabled', registered: true });
-      }
-      current = registered;
-    } catch (error) {
-      current = { state: 'not_registered', code: error?.code };
-    }
-  }
-  if (!RUNTIME_SERVICE_UNSTARTABLE_STATES.has(current?.state)) {
-    return Object.freeze({ state: current?.state ?? 'unknown', registered: false });
-  }
-  throw Object.assign(new Error('Background runtime is not registered, so it cannot start'), {
-    code: 'runtime_service_not_registered', registrationState: current.state,
-  });
-};
-
-// A launchd start runs the service's whole Electron boot before it publishes a
-// live descriptor, and cold boots were observed past 20 s. Only failures that
-// mean the service is not up yet earn the longer budget; any other failure
-// keeps the ordinary bound so a real rejection still falls back promptly.
-const RUNTIME_SERVICE_STARTING_CODES = new Set([
-  'ENOENT',
-  'runtime_service_owner_stale',
-  'runtime_service_unavailable',
-]);
-
-export const retryRuntimeServiceConnection = async ({
-  connect,
-  timeoutMs = 20_000,
-  startingTimeoutMs = 60_000,
-  retryDelayMs = 250,
-  now = Date.now,
-  wait = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); }),
-}) => {
+export const runStartupPhase = async (phase, operation, log, now = () => performance.now()) => {
   const startedAt = now();
-  for (;;) {
-    try {
-      return await connect();
-    } catch (error) {
-      const budgetMs = RUNTIME_SERVICE_STARTING_CODES.has(error?.code) ? startingTimeoutMs : timeoutMs;
-      if (now() - startedAt >= budgetMs) throw error;
+  try {
+    const result = await operation();
+    log?.info?.('[electron] startup phase', { phase, outcome: 'completed', elapsedMs: Math.round(now() - startedAt) });
+    return result;
+  } catch (error) {
+    log?.warn?.('[electron] startup phase', {
+      phase, outcome: 'failed', elapsedMs: Math.round(now() - startedAt),
+      code: diagnosticCode(error?.code) || 'startup_phase_failed',
+    });
+    throw error;
+  }
+};
+
+// The background runtime service existed only for the removed Bots feature. An
+// earlier version may have left it registered with launchd (SMAppService or a
+// legacy LaunchAgent), so it would start at login and claim the data root.
+// Withdraw that registration once, prove its owner stopped, and record a
+// marker so later launches skip the registration query entirely. A failure is
+// logged and retried at the next launch; it never blocks startup, because the
+// app-bound owner acquisition that follows still refuses a live owner.
+export const retireRuntimeServiceRegistration = async ({
+  platform, isPackaged, markerPath, registration, waitForStopped, clearSettings, log, fsPromises = fs,
+} = {}) => {
+  if (platform !== 'darwin' || isPackaged !== true) return Object.freeze({ state: 'skipped' });
+  try {
+    await fsPromises.access(markerPath);
+    return Object.freeze({ state: 'retired' });
+  } catch (error) {
+    if (error?.code !== 'ENOENT') return Object.freeze({ state: 'skipped' });
+  }
+  try {
+    const control = registration();
+    const current = await control.status();
+    // `not_found` means the bundle carries no service definition (QA packages
+    // strip it), so nothing can be registered and nothing stray needs removing.
+    if (current?.ok !== true || !['not_registered', 'not_found', 'enabled', 'requires_approval'].includes(current.state)) {
+      throw Object.assign(new Error('Background runtime registration could not be read'), {
+        code: 'runtime_service_registration_unavailable',
+      });
     }
-    await wait(retryDelayMs);
+    if (current.state === 'enabled' || current.state === 'requires_approval') {
+      const removed = await control.unregister();
+      if (removed?.ok !== true) {
+        throw Object.assign(new Error('Background runtime registration could not be removed'), { code: 'runtime_service_unregister_failed' });
+      }
+      if (await waitForStopped() !== true) {
+        throw Object.assign(new Error('The background runtime is still active'), { code: 'runtime_service_owner_active' });
+      }
+      log?.warn?.('[runtime-service] retired the background runtime registration', {
+        phase: 'retire', code: 'runtime_service_retired', registrationState: current.state,
+      });
+    }
+    await clearSettings?.();
+    await fsPromises.mkdir(path.dirname(markerPath), { recursive: true, mode: 0o700 });
+    await fsPromises.writeFile(markerPath, `${JSON.stringify({ version: 1, retiredAt: new Date().toISOString() })}\n`, { mode: 0o600 });
+    return Object.freeze({ state: 'retired' });
+  } catch (error) {
+    log?.warn?.('[runtime-service] background runtime retirement deferred', {
+      phase: 'retire', code: diagnosticCode(error?.code) || 'runtime_service_retire_failed',
+    });
+    return Object.freeze({ state: 'deferred' });
   }
 };
 
 // Publish only acquired coordinators. A rejected attempt must not make Retry
 // believe it already owns the server, and simultaneous callers share one claim.
-export const createRuntimeOwnerAcquirer = ({ getCoordinator, setCoordinator, createCoordinator }) => {
+export const acquireRuntimeServiceOwnership = async ({ acquire, onWaiting, timeoutMs = 45_000,
+  now = Date.now, wait = ms => new Promise(resolve => setTimeout(resolve, ms)) }) => {
+  const deadline = now() + timeoutMs;
+  onWaiting?.();
+  for (;;) {
+    try { return await acquire({ timeoutMs: Math.max(0, deadline - now()) }); }
+    catch (error) {
+      if (error?.code !== 'runtime_service_owner_busy' || now() >= deadline) throw error;
+      await wait(Math.min(25, deadline - now()));
+      if (now() >= deadline) throw error;
+    }
+  }
+};
+
+export const createRuntimeOwnerAcquirer = ({ getCoordinator, setCoordinator, createCoordinator, onWaiting }) => {
   let pending = null;
   return async (mode) => {
     const existing = getCoordinator();
@@ -121,7 +91,7 @@ export const createRuntimeOwnerAcquirer = ({ getCoordinator, setCoordinator, cre
     if (pending) return pending;
     pending = (async () => {
       const coordinator = await createCoordinator();
-      await coordinator.acquire({ mode });
+      await acquireRuntimeServiceOwnership({ acquire: options => coordinator.acquire({ mode, ...options }), onWaiting });
       setCoordinator(coordinator);
       return coordinator;
     })();
@@ -134,62 +104,4 @@ export const createRuntimeOwnerAcquirer = ({ getCoordinator, setCoordinator, cre
 };
 
 const diagnosticCode = (code) => typeof code === 'string'
-  && (/^(?:runtime_service_|smappservice_)[a-z_]{1,100}$/.test(code)
-    || code === 'desktop_host_registration_failed') ? code : null;
-const diagnosticState = (state) => [
-  'enabled', 'requires_approval', 'not_registered', 'not_found',
-  'unknown', 'unavailable', 'legacy_required', 'invalid',
-].includes(state) ? state : null;
-
-export const recoverAppBoundRuntime = async ({
-  connectionError, unregister, waitForStopped, acquire, setMode, release, log,
-}) => {
-  let acquired = false;
-  let phase = 'unregister';
-  let registrationState = null;
-  let registrationCode = null;
-  try {
-    const result = await unregister();
-    registrationState = diagnosticState(result?.state);
-    registrationCode = diagnosticCode(result?.code);
-    if (result?.ok !== true) {
-      throw Object.assign(new Error('Background runtime could not be unregistered'), {
-        code: 'runtime_service_unregister_failed',
-      });
-    }
-    phase = 'wait_for_owner';
-    if (!await waitForStopped()) {
-      throw Object.assign(new Error('Background runtime is still active. Wait for it to stop and retry.'), {
-        code: 'runtime_service_owner_active',
-      });
-    }
-    phase = 'acquire_app_bound';
-    await acquire();
-    acquired = true;
-    phase = 'persist_app_bound';
-    await setMode();
-    log?.warn?.('[runtime-service] startup recovered', {
-      phase: 'app_bound_acquired', code: 'runtime_service_startup_recovered',
-      registrationState, registrationCode,
-      connectionCode: diagnosticCode(connectionError?.code) || 'runtime_service_connection_failed',
-    });
-  } catch (recoveryError) {
-    if (acquired) await release().catch(() => {
-      log?.warn?.('[runtime-service] rollback release failed', {
-        phase: 'release_app_bound', code: 'runtime_service_release_failed',
-      });
-    });
-    const code = typeof recoveryError?.code === 'string' && /^runtime_service_[a-z_]+$/.test(recoveryError.code)
-      ? recoveryError.code : 'runtime_service_recovery_failed';
-    log?.warn?.('[runtime-service] startup recovery failed', {
-      phase, code,
-      registrationState,
-      registrationCode: registrationCode || (phase === 'unregister'
-        && recoveryError?.code !== 'runtime_service_unregister_failed' ? diagnosticCode(recoveryError?.code) : null),
-      connectionCode: diagnosticCode(connectionError?.code) || 'runtime_service_connection_failed',
-    });
-    const error = new Error(recoveryError.message, { cause: connectionError });
-    error.code = code;
-    throw error;
-  }
-};
+  && /^(?:runtime_service_|smappservice_)[a-z_]{1,100}$/.test(code) ? code : null;

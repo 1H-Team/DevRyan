@@ -3,11 +3,12 @@ import type { Message, Part } from '@opencode-ai/sdk/v2/client';
 type TextLikePart = Part & { text?: string; content?: string; value?: string; synthetic?: boolean };
 type MessageWithPlanModeMetadata = Message & {
   mode?: unknown;
-  metadata?: { openchamberPlanMode?: unknown };
+  metadata?: { devryanPlanMode?: unknown; openchamberPlanMode?: unknown };
 };
 
 export const PLAN_MODE_INSTRUCTION_PREFIX = 'User has requested to enter plan mode';
-export const PLAN_IMPLEMENTATION_REQUEST_PREFIX = '[openchamber-plan-action:v1] ';
+export const PLAN_IMPLEMENTATION_REQUEST_PREFIX = '[devryan-plan-action:v1] ';
+const LEGACY_PLAN_IMPLEMENTATION_REQUEST_PREFIX = '[openchamber-plan-action:v1] ';
 const PROVIDER_RECOVERY_PREFIX = '[devryan-provider-recovery:v1:';
 const OPEN_TODO_CONTINUATION_PREFIX = '[devryan-open-todo-continuation:v1]\n';
 // Compatibility for canonical wakes written before the versioned marker.
@@ -19,6 +20,7 @@ export type PlanImplementationRequest = {
   sourceMessageId: string;
   planIndex: number;
   projectDirectory?: string;
+  version?: string;
 };
 
 const PLAN_MODE_SECTION_HEADINGS = new Set([
@@ -128,6 +130,7 @@ export const buildPlanImplementationRequestMarker = ({
   sourceMessageId,
   planIndex,
   projectDirectory,
+  version,
 }: Omit<PlanImplementationRequest, 'action'>): string => {
   return `${PLAN_IMPLEMENTATION_REQUEST_PREFIX}${JSON.stringify({
     action: 'implement',
@@ -135,6 +138,7 @@ export const buildPlanImplementationRequestMarker = ({
     sourceMessageId,
     planIndex,
     ...(projectDirectory !== undefined ? { projectDirectory } : {}),
+    ...(version !== undefined ? { version } : {}),
   })}`;
 };
 
@@ -146,15 +150,18 @@ export const parsePlanImplementationRequestPart = (
   if (textPart.synthetic !== true) return null;
 
   const text = getPartText(part).trim();
-  if (!text.startsWith(PLAN_IMPLEMENTATION_REQUEST_PREFIX)) return null;
+  const prefix = [PLAN_IMPLEMENTATION_REQUEST_PREFIX, LEGACY_PLAN_IMPLEMENTATION_REQUEST_PREFIX]
+    .find((candidate) => text.startsWith(candidate));
+  if (!prefix) return null;
 
   try {
-    const parsed = JSON.parse(text.slice(PLAN_IMPLEMENTATION_REQUEST_PREFIX.length)) as {
+    const parsed = JSON.parse(text.slice(prefix.length)) as {
       action?: unknown;
       sourceSessionId?: unknown;
       sourceMessageId?: unknown;
       planIndex?: unknown;
       projectDirectory?: unknown;
+      version?: unknown;
     };
     if (parsed.action !== 'implement') return null;
     if (typeof parsed.sourceSessionId !== 'string' || parsed.sourceSessionId.trim().length === 0) {
@@ -173,6 +180,7 @@ export const parsePlanImplementationRequestPart = (
       sourceSessionId: parsed.sourceSessionId,
       sourceMessageId: parsed.sourceMessageId,
       planIndex: parsed.planIndex as number,
+      ...(typeof parsed.version === 'string' ? { version: parsed.version } : {}),
       ...(typeof parsed.projectDirectory === 'string' ? { projectDirectory: parsed.projectDirectory } : {}),
     };
   } catch {
@@ -198,7 +206,7 @@ const isPlanModeMetadata = (message: Message): boolean => {
   const candidate = message as MessageWithPlanModeMetadata;
   const mode = candidate.mode;
   if (typeof mode === 'string' && mode.trim().toLowerCase() === 'plan') return true;
-  return candidate.metadata?.openchamberPlanMode === true;
+  return candidate.metadata?.devryanPlanMode === true || candidate.metadata?.openchamberPlanMode === true;
 };
 
 /**
@@ -214,13 +222,6 @@ export type PlanTurnIntent = 'implement' | 'plan' | 'maintenance' | 'none';
 
 export const hasPlanImplementationRequestPart = (parts: readonly Part[] | undefined): boolean => (
   (parts ?? []).some((part) => parsePlanImplementationRequestPart(part) !== null)
-);
-
-/** A host recovery wake may finish the human's existing planning turn. */
-export const isManagedPlanRecoveryMessage = (parts: readonly Part[] | undefined): boolean => (
-  !hasPlanImplementationRequestPart(parts) && (parts ?? []).some((part) => (
-    part.type === 'text' && part.synthetic === true && getPartText(part).startsWith(PROVIDER_RECOVERY_PREFIX)
-  ))
 );
 
 /** Managed collection/recovery wakes preserve policy but never request a new plan. */
@@ -292,16 +293,6 @@ export const collectAssistantTextParts = (parts: readonly Part[]): string[] => {
     if (text.length > 0) textParts.push(text);
   }
   return textParts;
-};
-
-export const collectAssistantReasoningParts = (parts: readonly Part[]): string[] => {
-  const reasoningParts: string[] = [];
-  for (const part of parts) {
-    if (part.type !== 'reasoning') continue;
-    const text = getPartText(part).trim();
-    if (text.length > 0) reasoningParts.push(text);
-  }
-  return reasoningParts;
 };
 
 const normalizePlanSectionHeading = (heading: string): string => (
@@ -627,6 +618,34 @@ export const resolveMessagePlanCardResolution = (
   options: ResolveMessagePlanCardOptions = {},
 ): MessagePlanCardResolution | null => {
   if (options.turnIntent === 'implement' || options.turnIntent === 'maintenance') return null;
+  // The turn projection, plan revisions and the message body all resolve the
+  // same message on every store commit. Published part arrays are immutable,
+  // so the array identity plus the plan-mode flag determines the result.
+  const isPlanModeSource = options.isPlanModeSource === true;
+  const cached = planCardResolutionCache.get(parts);
+  if (cached && (isPlanModeSource ? cached.planMode : cached.other) !== undefined) {
+    return (isPlanModeSource ? cached.planMode : cached.other) ?? null;
+  }
+  const resolution = computeMessagePlanCardResolution(parts, isPlanModeSource);
+  const entry = cached ?? {};
+  if (isPlanModeSource) entry.planMode = resolution;
+  else entry.other = resolution;
+  if (!cached) planCardResolutionCache.set(parts, entry);
+  return resolution;
+};
+
+type PlanCardResolutionCacheEntry = {
+  planMode?: MessagePlanCardResolution | null;
+  other?: MessagePlanCardResolution | null;
+};
+
+const planCardResolutionCache = new WeakMap<readonly Part[], PlanCardResolutionCacheEntry>();
+
+const computeMessagePlanCardResolution = (
+  parts: readonly Part[],
+  isPlanModeSource: boolean,
+): MessagePlanCardResolution | null => {
+  const options: ResolveMessagePlanCardOptions = { isPlanModeSource };
   const textParts = collectAssistantTextParts(parts);
   if (textParts.length === 0 && options.isPlanModeSource !== true) return null;
 

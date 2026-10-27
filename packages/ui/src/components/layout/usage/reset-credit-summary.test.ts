@@ -23,6 +23,12 @@ const resetCredits = (overrides: Partial<UsageResetCredits>): UsageResetCredits 
 });
 
 describe('reset credit summary helpers', () => {
+  test('unknown inventory remains unknown while a reported zero is known', () => {
+    expect(getResetCreditsAvailableCount(resetCredits({}))).toBeNull();
+    expect(getResetCreditsAvailableCount({ ...resetCredits({}), detailsAvailable: false })).toBeNull();
+    expect(getResetCreditsAvailableCount(resetCredits({ availableCount: 0 }))).toBe(0);
+    expect(getResetCreditsAvailableCount({ ...resetCredits({}), detailsAvailable: true })).toBe(0);
+  });
   test('falls back to counting available credits when available count is absent', () => {
     const count = getResetCreditsAvailableCount(resetCredits({
       credits: [

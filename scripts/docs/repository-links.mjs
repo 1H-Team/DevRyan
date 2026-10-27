@@ -1,10 +1,10 @@
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
-// Audit evidence describes a past checkout. Report its missing targets without
+// The changelog describes past checkouts. Report its missing targets without
 // rewriting the historical record or blocking maintenance of current guidance.
 export function isHistoricalDocument(file) {
-  return file.startsWith('docs/audits/') || file.startsWith('docs/superpowers/plans/') || file === 'CHANGELOG.md' || file === 'BACKPORT.md';
+  return file === 'CHANGELOG.md';
 }
 
 export function withoutCodeBlocks(source) {
@@ -27,7 +27,7 @@ export function documentReferences(source) {
   // commands, globs and illustrative placeholders are deliberately not paths.
   for (const match of text.matchAll(/`([^`\n]+)`/g)) {
     const target = match[1];
-    if (/^(?:packages|scripts|docs|tests|docker|supabase|\.github|\.opencode)\//.test(target)
+    if (/^(?:packages|scripts|docs|tests|supabase|\.github|\.opencode)\//.test(target)
       && !/[\s*{}<>|$]/.test(target) && !target.includes('...')
       && /\.[a-zA-Z0-9]+(?::\d+)?$/.test(target)) {
       references.push({ target: target.replace(/:\d+$/, ''), kind: 'source' });
@@ -64,7 +64,7 @@ export function documentReferences(source) {
 
 function isGeneratedTarget(target) {
   return /(?:^|\/)(?:\.cache|\.tmp|dist|dist-bundle|target|node_modules)\//.test(target)
-    || target.endsWith('/bot-runtime/images.release.json') || target.startsWith('.opencode/plans/');
+    || target.startsWith('.opencode/plans/');
 }
 
 export function validateRepositoryLinks(root, files, { siteRoutes = new Set() } = {}) {
@@ -88,7 +88,7 @@ export function validateRepositoryLinks(root, files, { siteRoutes = new Set() } 
       const relative = kind === 'source' || local.startsWith('/')
         ? local.replace(/^\//, '') : path.join(path.dirname(file), local);
       let resolved = path.resolve(root, relative);
-      // Codemaps also use paths relative to their own package directory.
+      // Source paths may also be relative to the document's own directory (vendored reviewed inputs).
       if (kind === 'source' && !existsSync(resolved)) {
         const nearby = path.resolve(root, path.dirname(file), local);
         if (nearby.startsWith(path.resolve(root) + path.sep) && existsSync(nearby)) resolved = nearby;

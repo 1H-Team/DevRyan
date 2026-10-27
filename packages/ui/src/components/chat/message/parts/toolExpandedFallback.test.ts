@@ -147,3 +147,13 @@ describe('resolveToolExpandedDetails', () => {
         expect(details.showResult).toBe(false);
     });
 });
+
+ test('a completed transport preserves output and reports the failed command exit', () => {
+    const details = resolveToolExpandedDetails({ hasStructuredDetails: false, status: 'completed', isFinalized: true, output: 'test failed', exitCode: 1 });
+    expect(details.isFailure).toBe(true);
+    expect(details.failureReason).toBe('Command exited with code 1');
+    expect(details.hasOutput).toBe(true);
+    for (const exitCode of [undefined, null, '1', 0, NaN, Infinity]) {
+      expect(resolveToolExpandedDetails({ hasStructuredDetails: false, status: 'completed', isFinalized: true, exitCode }).isFailure).toBe(false);
+    }
+ });

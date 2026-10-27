@@ -38,9 +38,13 @@ function isModuleCliExecution(
       return true;
     }
 
-    if (typeof expectedBinName === 'string' && expectedBinName.trim().length > 0) {
+    // One name or several (the `devryan` bin and its `openchamber` alias).
+    const expectedNames = (Array.isArray(expectedBinName) ? expectedBinName : [expectedBinName])
+      .filter((name) => typeof name === 'string' && name.trim().length > 0)
+      .map((name) => name.trim().toLowerCase());
+    if (expectedNames.length > 0) {
       const parsedEntryName = path.parse(normalizedEntryPath).name.toLowerCase();
-      return parsedEntryName === expectedBinName.trim().toLowerCase();
+      return expectedNames.includes(parsedEntryName);
     }
 
     return false;

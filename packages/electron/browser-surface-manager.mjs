@@ -271,7 +271,9 @@ const installCursorOverlay = async (contents, input, visible) => {
     const payload = ${payload};
     const id = '__devryan_agent_browser_cursor';
     let cursor = document.getElementById(id);
+    let pulse = document.getElementById(id + '_pulse');
     if (!payload.visible) {
+      pulse?.remove();
       if (cursor) {
         cursor.style.display = 'none';
         if (cursor.__devryanHideTimer) clearTimeout(cursor.__devryanHideTimer);
@@ -288,6 +290,22 @@ const installCursorOverlay = async (contents, input, visible) => {
       document.documentElement.appendChild(cursor);
     }
     const point = payload.input || {};
+    const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    cursor.style.transition = reducedMotion ? 'none' : 'left 35ms linear,top 35ms linear,transform 70ms ease-out';
+    if ((point.kind === 'down' || point.kind === 'touch' && point.touchType === 'touchStart')
+      && Number.isFinite(point.x) && Number.isFinite(point.y)) {
+      if (pulse) { clearTimeout(pulse.__devryanHideTimer); pulse.remove(); }
+      pulse = document.createElement('div');
+      pulse.id = id + '_pulse';
+      pulse.setAttribute('aria-hidden', 'true');
+      pulse.style.cssText = 'position:fixed;z-index:2147483646;width:32px;height:32px;border:3px solid #60a5fa;border-radius:50%;background:rgba(96,165,250,.28);pointer-events:none;box-sizing:border-box;';
+      pulse.style.left = (point.x - 16) + 'px';
+      pulse.style.top = (point.y - 16) + 'px';
+      document.documentElement.appendChild(pulse);
+      if (!reducedMotion) pulse.animate([{ scale: '.65', opacity: 1 }, { scale: '1.4', opacity: 0 }], { duration: 650 });
+      const currentPulse = pulse;
+      pulse.__devryanHideTimer = setTimeout(() => currentPulse.remove(), 650);
+    }
     if (Number.isFinite(point.x) && Number.isFinite(point.y)) {
       cursor.style.left = point.x + 'px';
       cursor.style.top = point.y + 'px';
@@ -1235,7 +1253,7 @@ export const createBrowserSurfaceManager = ({
   const setAgentCursorVisible = async (leaseId, visible) => {
     const surface = surfaceForLease(leaseId);
     if (!surface) return;
-    await installCursorOverlay(surface.view.webContents, surface.lastAgentInput, visible);
+    await installCursorOverlay(surface.view.webContents, { ...surface.lastAgentInput, kind: 'move' }, visible);
   };
 
   const setAgentCursorSuppressed = async (leaseId, suppressed) => {
@@ -1250,7 +1268,7 @@ export const createBrowserSurfaceManager = ({
     }
     surface.cursorSuppressionCount = Math.max(0, surface.cursorSuppressionCount - 1);
     if (surface.cursorSuppressionCount === 0) {
-      await installCursorOverlay(surface.view.webContents, surface.lastAgentInput, true);
+      await installCursorOverlay(surface.view.webContents, { ...surface.lastAgentInput, kind: 'move' }, true);
     }
   };
 

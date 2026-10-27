@@ -1,8 +1,28 @@
-import { describe, expect, test } from "bun:test"
-import { getSafeSessionStorage, getSafeStorage, setStoragePrincipal } from "./safeStorage"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+
+// safeStorage caches its storage instances and principal at module level, so each test
+// loads a private copy of the module (query string = distinct module record).
+let moduleCounter = 0
+const loadSafeStorage = (): Promise<typeof import("./safeStorage")> =>
+  import(`./safeStorage?isolated=${moduleCounter++}`)
 
 describe("safe storage", () => {
-  test("falls back to memory when storage getters are blocked", () => {
+  let originalWindow: PropertyDescriptor | undefined
+
+  beforeEach(() => {
+    originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window")
+  })
+
+  afterEach(() => {
+    if (originalWindow) {
+      Object.defineProperty(globalThis, "window", originalWindow)
+    } else {
+      delete (globalThis as { window?: unknown }).window
+    }
+  })
+
+  test("falls back to memory when storage getters are blocked", async () => {
+    const { getSafeSessionStorage, getSafeStorage } = await loadSafeStorage()
     Object.defineProperty(globalThis, "window", {
       configurable: true,
       value: {},
@@ -33,7 +53,8 @@ describe("safe storage", () => {
     expect(sessionStorage.length).toBe(1)
   })
 
-  test("isolates persisted values and clear operations by principal", () => {
+  test("isolates persisted values and clear operations by principal", async () => {
+    const { getSafeStorage, setStoragePrincipal } = await loadSafeStorage()
     const storage = getSafeStorage()
     setStoragePrincipal("user-a")
     storage.setItem("draft", "alpha")

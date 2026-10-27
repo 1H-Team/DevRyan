@@ -158,7 +158,7 @@ describe('project preview grant client', () => {
     const fetchImpl = async (input: RequestInfo | URL, init?: RequestInit) => {
       expect(input).toBe('/api/preview/instances/register');
       expect(init?.method).toBe('POST');
-      expect((init?.headers as Record<string, string>)['X-DevRyan-CSRF']).toBe('1');
+      expect((init!.headers as Record<string, string>)['X-DevRyan-CSRF']).toBe('1');
       expect(JSON.parse(String(init?.body))).toEqual({
         directory: '/project',
         terminalSessionId: 'terminal-1',

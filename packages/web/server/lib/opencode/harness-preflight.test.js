@@ -1,14 +1,15 @@
+import { createNativeConsumerFixture } from './test-native-consumer-client.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from '../../test-supertest.js';
 
 import {
   auditPackagedPromptContext,
-  createHarnessAnthropicUsageReader,
-  createHarnessPreflight,
+  createHarnessAnthropicUsageReader as createHarnessAnthropicUsageReaderNative,
+  createHarnessPreflight as createHarnessPreflightNative,
   extractAnthropicUsageFromMessages,
   lintAgentHarness,
   registerHarnessPreflightRoute,
@@ -29,6 +30,72 @@ describe('harness preflight', () => {
       toolManifest: {},
     }).filter((finding) => /^skill-announcement/.test(finding.ruleId));
     expect(findings).toEqual([]);
+  });
+
+  it('ships packaged step caps as positive integers on the bounded specialists', () => {
+    const agents = listPackagedAgents();
+    const findings = lintAgentHarness({ agents, skills: [], hiddenSkills: [], staleOverrides: [], toolManifest: {} })
+      .filter((finding) => finding.ruleId === 'invalid-agent-steps');
+    expect(findings).toEqual([]);
+    const steps = Object.fromEntries(agents.map((agent) => [agent.name, agent.frontmatter.steps]));
+    expect(steps).toMatchObject({ explorer: 35, librarian: 35, fixer: 120, designer: 120 });
+  });
+
+  it('ships no packaged sampling settings the native runtime would drop', () => {
+    const findings = lintAgentHarness({ agents: listPackagedAgents(), skills: [], hiddenSkills: [], staleOverrides: [], toolManifest: {} })
+      .filter((finding) => finding.ruleId === 'agent-sampling-not-applied');
+    expect(findings).toEqual([]);
+  });
+
+  it('warns when an agent sets sampling for a built-in provider that never receives it', () => {
+    const agent = (name, frontmatter) => ({ name, path: `/agents/${name}.md`, frontmatter });
+    const findings = lintAgentHarness({
+      agents: [
+        agent('openai', { model: 'openai/gpt-5.5', temperature: 0.1, top_p: 0.9 }),
+        agent('zen', { model: 'opencode/deepseek-v4-flash', temperature: 0.1 }),
+        agent('compatible', { model: 'local-llm/qwen', temperature: 0.2 }),
+        agent('unsampled', { model: 'openai/gpt-5.5' }),
+      ],
+      skills: [],
+      hiddenSkills: [],
+      staleOverrides: [],
+      toolManifest: {},
+    }).filter((finding) => finding.ruleId === 'agent-sampling-not-applied');
+    expect(findings.map((finding) => [finding.artifact.name, finding.severity])).toEqual([
+      ['openai', 'warning'], ['openai', 'warning'], ['zen', 'warning'],
+    ]);
+    expect(findings[0].summary).toBe('Agent "openai" sets "temperature", which the native runtime does not send to provider "openai"');
+  });
+
+  it('reports step caps that are not positive integers and accepts valid or absent caps', () => {
+    const agent = (name, frontmatter) => ({ name, path: `/agents/${name}.md`, frontmatter });
+    const findings = lintAgentHarness({
+      agents: [
+        agent('valid', { steps: 35 }),
+        agent('absent', {}),
+        agent('unset', { steps: undefined }),
+        agent('zero', { steps: 0 }),
+        agent('negative', { steps: -3 }),
+        agent('fraction', { steps: 2.5 }),
+        agent('text', { steps: '35' }),
+        agent('empty', { steps: null }),
+        agent('legacy', { maxSteps: Number.POSITIVE_INFINITY }),
+      ],
+      skills: [],
+      hiddenSkills: [],
+      staleOverrides: [],
+      toolManifest: {},
+    }).filter((finding) => finding.ruleId === 'invalid-agent-steps');
+
+    expect(findings.map((finding) => finding.artifact.name)).toEqual(['zero', 'negative', 'fraction', 'text', 'empty', 'legacy']);
+    expect(findings[0]).toEqual(expect.objectContaining({
+      severity: 'error',
+      summary: 'Agent "zero" sets "steps" to a number value that is not a positive integer',
+      artifact: { type: 'agent', name: 'zero', path: '/agents/zero.md' },
+    }));
+    expect(findings[3].summary).toBe('Agent "text" sets "steps" to a string value that is not a positive integer');
+    expect(findings[4].summary).toBe('Agent "empty" sets "steps" to a null value that is not a positive integer');
+    expect(findings[5].summary).toContain('"maxSteps"');
   });
 
   it('warns that external runtimes cannot guarantee skill-policy enforcement', () => {
@@ -268,11 +335,6 @@ describe('harness preflight', () => {
         timedOut: true,
         errors: [{ name: 'mcp', status: 'timeout', error: 'Timed out' }],
       },
-      slimRuntime: {
-        expectedMode: 'devryan-wrapper',
-        rawPluginEnabled: true,
-        wrapperPluginEnabled: false,
-      },
       toolManifest: { aliases: { skill: ['skill'] } },
     });
 
@@ -282,7 +344,6 @@ describe('harness preflight', () => {
       'duplicate-skill-name',
       'malformed-skill-frontmatter',
       'warmup-timeout',
-      'slim-raw-mode-active',
     ]));
   });
 
@@ -737,7 +798,7 @@ describe('harness preflight', () => {
     expect(result.harness.status).toBe('warning');
   });
 
-  it('preserves available IDs while marking a rejected model catalog unavailable', async () => {
+  it('marks the whole sealed native snapshot unavailable when its model catalog is rejected', async () => {
     const preflight = createHarnessPreflight({
       getAgents: () => [],
       getSkills: () => [],
@@ -762,9 +823,7 @@ describe('harness preflight', () => {
     });
 
     expect(result.contextBudget.tools.ids).toEqual(expect.objectContaining({
-      availability: 'available',
-      itemCount: 1,
-      byteCount: 4,
+      availability: 'unavailable', itemCount: null, byteCount: null,
     }));
     expect(result.contextBudget.tools.descriptions).toEqual({
       availability: 'unavailable',
@@ -863,7 +922,7 @@ describe('harness preflight', () => {
     expect(JSON.stringify(result)).not.toContain('opencode.test');
   });
 
-  it('times out only the never-settling full catalog endpoint while preserving IDs', async () => {
+  it('times out the whole sealed native snapshot if the catalog never settles', async () => {
     const deadline = Symbol('deadline');
     const signals = new Map();
     const preflight = createHarnessPreflight({
@@ -903,14 +962,11 @@ describe('harness preflight', () => {
 
     expect(result).not.toBe(deadline);
     expect(signals.get('/experimental/tool/ids')).toBeInstanceOf(AbortSignal);
-    expect(signals.get('/experimental/tool/ids').aborted).toBe(false);
+    expect(signals.get('/experimental/tool/ids').aborted).toBe(true);
     expect(signals.get('/experimental/tool')).toBeInstanceOf(AbortSignal);
     expect(signals.get('/experimental/tool').aborted).toBe(true);
     expect(result.contextBudget.tools.ids).toEqual(expect.objectContaining({
-      availability: 'available',
-      itemCount: 1,
-      byteCount: 4,
-      duplicateIds: [],
+      availability: 'unavailable', itemCount: null, byteCount: null,
     }));
     expect(result.toolManifest.availability.catalog).toEqual({
       availability: 'unavailable',
@@ -1347,7 +1403,6 @@ describe('Anthropic context budget projection', () => {
     expect(result.contextBudget.anthropic).toMatchObject({
       fixedPrefix: {
         descriptionLimit: 240,
-        superpowersBootstrapBytes: 0,
         tokens: 2_000,
       },
       requestCount: 40,
@@ -1390,3 +1445,107 @@ describe('Anthropic context budget projection', () => {
     expect(JSON.stringify(journalRecords[0])).not.toContain('/Users/private');
   });
 });
+
+describe('harness preflight on OpenCode 2', () => {
+  const assistantRecords = [{
+    info: {
+      role: 'assistant',
+      providerID: 'anthropic',
+      tokens: { input: 6, output: 14, cache: { read: 0, write: 58_035 } },
+    },
+  }];
+  const meridianFetch = (calls) => async (url) => {
+    calls.push(new URL(url).pathname);
+    if (url.pathname === '/v1/sessions/session-a/recover') {
+      return { ok: true, json: async () => ({ claudeSessionId: 'sdk-session' }) };
+    }
+    if (url.pathname === '/telemetry/requests') {
+      return { ok: true, json: async () => [{ sdkSessionId: 'sdk-session', toolCount: 80, deferredToolCount: 74 }] };
+    }
+    return { ok: false, json: async () => ({}) };
+  };
+  const createClient = ({ generation = 2 } = {}) => ({
+    generation: () => generation,
+    sessions: {
+      messages: vi.fn(async () => ({ records: assistantRecords, cursor: undefined })),
+    },
+    catalog: {
+      providers: vi.fn(async () => ({
+        providers: [{ id: 'anthropic', options: { baseURL: 'http://127.0.0.1:3456' } }],
+        default: {},
+      })),
+      tools: vi.fn(async () => ({ ids: ['read', 'read', 'é_tool'], definitions: null })),
+    },
+  });
+
+  it('reads the session transcript and provider catalog through the client; only Meridian is fetched', async () => {
+    const calls = [];
+    const client = createClient();
+    const reader = createHarnessAnthropicUsageReader({ fetchImpl: meridianFetch(calls), openCodeClient: () => client });
+
+    const usage = await reader({ sessionID: 'session-a', directory: '/repo' });
+
+    expect(usage).toMatchObject({
+      firstTurnProviderUsage: { cacheCreationInputTokens: 58_035 },
+      tooling: { rawToolCount: 80, eagerToolCount: 6, deferredToolCount: 74 },
+    });
+    expect(client.sessions.messages).toHaveBeenCalledWith('session-a', { limit: 500 },
+      expect.objectContaining({ directory: '/repo', signal: expect.any(AbortSignal) }));
+    expect(client.catalog.providers.mock.calls[0][0]).toEqual({ directory: '/repo' });
+    expect(calls).toEqual(['/v1/sessions/session-a/recover', '/telemetry/requests']);
+  });
+
+  it('reads no usage on unknown or generation 1 identities', async () => {
+    const calls = [];
+    const unknown = createHarnessAnthropicUsageReader({
+      fetchImpl: meridianFetch(calls),
+      buildOpenCodeUrl: (pathname) => new URL(pathname, 'http://127.0.0.1:4096'),
+      openCodeClient: { generation: () => { throw new Error('The OpenCode runtime generation is unknown'); } },
+    });
+    expect(await unknown({ sessionID: 'session-a', directory: '/repo' })).toBeNull();
+    expect(calls).toEqual([]);
+
+    const client = createClient({ generation: 1 });
+    const legacy = createHarnessAnthropicUsageReader({
+      fetchImpl: meridianFetch(calls),
+      buildOpenCodeUrl: (pathname) => new URL(pathname, 'http://127.0.0.1:4096'),
+      openCodeClient: client,
+    });
+    await legacy({ sessionID: 'session-a', directory: '/repo' });
+    expect(client.sessions.messages).not.toHaveBeenCalled();
+    expect(calls).toEqual([]);
+  });
+
+  it('builds the runtime tool manifest from the host tool snapshot', async () => {
+    const client = createClient();
+    const preflight = createHarnessPreflight({
+      getAgents: () => [],
+      getSkills: () => [],
+      getHiddenSkills: () => [],
+      getStaleOverrides: () => [],
+      getPackagedAgents: () => [],
+      openCodeClient: () => client,
+    });
+
+    const result = await preflight.run({ directory: '/repo' });
+
+    expect(client.catalog.tools.mock.calls[0][0]).toEqual({ directory: '/repo' });
+    expect(result.toolManifest.toolIds).toEqual(['read', 'read', 'é_tool']);
+    expect(result.toolManifest.availability).toEqual({
+      ids: { availability: 'available' },
+      catalog: { availability: 'notRequested' },
+    });
+  });
+});
+
+const createHarnessPreflight = (options = {}) => createHarnessPreflightNative({
+    ...options, ...(options.openCodeClient || typeof options.fetchImpl !== 'function' ? {} : {
+      openCodeClient: createNativeConsumerFixture({ readFixture: options.fetchImpl, headers: options.getOpenCodeAuthHeaders }),
+    }),
+  });
+
+const createHarnessAnthropicUsageReader = (options = {}) => createHarnessAnthropicUsageReaderNative({
+    ...options, ...(options.openCodeClient || typeof options.fetchImpl !== 'function' ? {} : {
+      openCodeClient: createNativeConsumerFixture({ readFixture: options.fetchImpl, headers: options.getOpenCodeAuthHeaders }),
+    }),
+  });

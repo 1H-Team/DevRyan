@@ -1,0 +1,1227 @@
+import { DEFAULT_COMMAND_TIMEOUT_MS, MAX_COMMAND_TIMEOUT_MS } from '@devryan/harness-runtime/lib/command-deadline.js';
+import { currentObjectiveUser } from '@devryan/harness-runtime/lib/objective-identity.js';
+import { createNativePlanSettlementVerifier } from './native-plan-settlement.js';
+import { createNativePlanDenialOwner } from './native-plan-denial-owner.js';
+import { createNativeManagedTitleOwner } from './native-managed-title-owner.js';
+import { startStartupTiming, timeStartupPhase } from '../startup-timing.js';
+import { artifactDiagnostic } from '@devryan/shared-runtime/startup-diagnostics.js';
+import {captureNativeSetupCredentialSeed} from './native-setup-credential-ack.js';
+import {nativeBundleFileOperations} from './native-bundle-file-operations.js';
+import {createNativeHelperOwner} from './native-helper-owner.js';
+import fs from 'node:fs/promises';
+import {assertRegisteredHostOperationPrerequisites,loadRegisteredHostOperations} from '../../../../../harness-runtime/lib/registered-host-operations.js';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import {bundleContinuationItem} from './bundle-owned-continuations.js';
+import path from 'node:path';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { createManagedOrchestrationPrivateHost } from '../../orchestration/private-host.js';
+import { createRuntimeBundleStore } from './runtime-bundle.js';
+import { verifyNativeRuntimeArtifacts } from './native-artifacts.js';
+import { createNativeControllerProcess } from './native-process.js';
+import { createNativeAdmissionOwner } from './native-admission-owner.js';
+import { parseNativeProviderTiming } from './native-provider-timing.js';
+import { createNativePrimaryStepOwner } from './primary-step-owner.js';
+import {createNativeStreamContinuationOwner} from './native-stream-continuation-owner.js';
+import { createNativeManagedTaskOwner } from './managed-task-owner.js';
+import { createNativePlanReadAdvisory } from './native-plan-read-advisory.js';
+import {createNativeManagedPublicationReader,readManagedPublicationMessages} from './native-managed-publication-owner.js';
+import { createNativeRetention } from './native-retention.js';
+import { createNativeSessionRemoval } from './native-session-removal.js';
+import { createNativeConfigurationSnapshotResolver } from './native-configuration-snapshot.js';
+import { loadNativeReviewedConfiguration } from './native-reviewed-configuration.js';
+import { createNativeIntegrationOwner } from './native-integration-owner.js';
+import { createNativeProviderConfigurationOperation } from './native-provider-configuration-operation.js';
+import { createNativeCouncilOwner } from './council-owner.js';
+import { reviewedCouncilMembers } from './reviewed-council-configuration.js';
+import { createNativeSessionContextOwner } from './native-session-context-owner.js';
+import { createNativeBrowserOwner } from './native-browser-owner.js';
+import { readNativeBrowserAssets } from './native-browser-assets.js';
+import { createPrivilegedOpenCodeClient } from '../opencode-client/privileged.js';
+import { createNativeSlimOwner } from './native-slim-owner.js';
+import { createNativeDocumentOwner } from './native-document-owner.js';
+import { createNativeDocumentParser } from './native-document-parser.js';
+import { createNativeDocumentRuntime } from './native-document-runtime.js';
+import { createNativeImageRuntime } from './native-image-runtime.js';
+import { createNativeSlimContextOwner } from './native-slim-context-owner.js';
+import { createNativeControllerInterview } from './native-controller-interview.js';
+import { createNativeProviderRuntimeOwner,migrateNativeClaudeLegacyFences,createObservedNativeClaudeCredentialCommand } from './native-provider-runtime-owner.js';
+import {nativeWebfetchBinaryDirectory} from './native-read-paths.js';
+import {createNativeProjectLocations} from './native-project-locations.js';
+import {resolveNativeProviderConfiguration,hasConfiguredNativeClaudeProfile} from './native-provider-configuration.js';
+import {createNativeImageGeneration} from './native-image-generation.js';
+import {createNativeCursorOwner} from './native-cursor-owner.js';
+import {createNativeCursorRecovery} from './native-cursor-recovery.js';
+import {createNativeObservationOwner} from './native-observation-owner.js';
+import {createNativeRecoveredInputOwner, recoverAcceptedPromptBoundary} from './native-recovered-input.js';
+import {createNativeClaudeLifecycleClient} from './native-claude-lifecycle-client.js';
+import {CLAUDE_LIFECYCLE_PROTOCOL} from './native-claude-lifecycle.js';
+import {createNativeClaudeSecurityHome} from './native-claude-security-home.js';
+import {createNativeClaudeEnrollmentOwner} from './native-claude-enrollment.js';
+import {resolveNativeClaudeEnrollmentDirectory} from './native-claude-enrollment-location.js';
+import {createNativeClaudeProfilePublication} from './native-claude-profile-publication.js';
+import {projectNativeClaudeWorkerProfiles} from './native-claude-worker-profiles.js';
+
+const fail = code => Object.assign(new Error(code), { code, status: 503, statusCode: 503 });
+const hash = bytes => createHash('sha256').update(bytes).digest('hex');
+const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+const startupFailureCodes = new Set(['native_catalog_mismatch', 'native_clone_evidence_invalid', 'native_configuration_sources_changed',
+  'native_cursor_catalog_invalid', 'native_checkpoint_admission_held', 'native_process_boot_timeout', 'native_process_command_timeout',
+  'native_process_exit_unconfirmed', 'native_process_failed', 'native_controller_termination_unconfirmed',
+  'runtime_bundle_reconciliation_required', 'runtime_bundle_recomposition_required']);
+const catalogCauseCodes = 'helper_directory_denied|helper_denied|helper_timeout_invalid|controller_helper_denied|controller_helper_unavailable|mutation_runtime_unsupported|catalog_unavailable|catalog_file_invalid|model_build_failed|model_read_failed|model_account_failed|model_normalize_failed|provider_location_required|provider_location_expired|openai_method_unsupported|response_schema_invalid|schema_invalid|cause_unavailable';
+const catalogStartupCode = new RegExp(`^native_catalog_(?:construction_failed|read_failed_(?:agent|plugin|model)_(?:http_[45][0-9]{2}|refusal_(?:403|409|503)))_(?:${catalogCauseCodes})$`);
+const startupFailureCode = cause => {
+  const code = cause?.code ?? cause?.message;
+  // Any finite code is journaled; collapsing it hid which step refused.
+  return typeof code === 'string' && (startupFailureCodes.has(code) || catalogStartupCode.test(code) || /^[a-z][a-z0-9_]{1,100}$/.test(code)) ? code : 'native_startup_failed';
+};
+
+/** Every launch rechecks the frozen selection and the complete bundle. */
+export function createRuntimeBundleVerifier(binding, privatePersistence={}) {
+  const store = createRuntimeBundleStore({ controlRoot: binding.controlRoot,
+    allowRecoveredInputStartup:true, ...privatePersistence,
+    withQuiescedSource: async () => { throw fail('runtime_bundle_checkpoint_required'); },
+    runMigration: async () => { throw fail('runtime_bundle_migration_not_requested'); } });
+  return async () => {
+    if (binding.admission === 'held') throw fail('runtime_bundle_reconciliation_required');
+    const selected = await store.readSelected();
+    if (!selected || selected.selection.revision !== binding.selection.revision
+      || selected.selection.selectedBundleID !== binding.descriptor.bundleID
+      || JSON.stringify(selected.descriptor) !== JSON.stringify(binding.descriptor)) throw fail('runtime_bundle_recomposition_required');
+    const verified = await store.verify({ bundleID: binding.descriptor.bundleID, phase: 'resume',
+      ...selected.selection.transition==='rollback'?{artifactPurpose:'bundle-rollback'}:{} });
+    if (selected.selection.reconciliationRequired) throw fail('runtime_bundle_reconciliation_required');
+    return verified;
+  };
+}
+
+/** Resume uses the complete selected bundle and its immutable reviewed configuration.
+ * `verified` is the result of `verify()` that the caller has just awaited, so boot does
+ * not stream every harness ledger or signed artifact twice. It must match the binding, otherwise loading fails closed.
+ * Each launch still runs `verify` again. */
+export async function loadNativeRuntimeBundle({ binding, launcher, verify = createRuntimeBundleVerifier(binding), verified, getRegisteredProjects, listProjectWorktrees, providerEnvironment = {} }) {
+  if (binding.admission === 'held') throw fail('runtime_bundle_reconciliation_required');
+  if (binding.descriptor.generation !== 2) throw fail('native_runtime_generation_mismatch');
+  if (verified === undefined) verified = await verify();
+  if (verified?.integrity !== 'verified' || verified.phase !== 'resume'
+    || verified.descriptor?.bundleID !== binding.descriptor.bundleID) throw fail('runtime_bundle_recomposition_required');
+  const descriptor = binding.descriptor, launch = descriptor.launch;
+  const artifacts = verified.artifacts ?? await verifyNativeRuntimeArtifacts({ manifestPath: launch.artifactManifestPath, manifestSha256: launch.artifactManifestSha256, launcher,
+    ...binding.selection.transition==='rollback'?{purpose:'bundle-rollback'}:{} });
+  if (artifacts.manifestPath !== launch.artifactManifestPath || artifacts.manifestSha256 !== launch.artifactManifestSha256
+    || artifacts.launcher !== launcher || artifacts.controller !== launch.controllerBinary || artifacts.writer !== launch.writerBinary) throw fail('native_runtime_artifacts_unverified');
+  const reviewed = JSON.parse(await fs.readFile(launch.reviewedNativeConfigPath, 'utf8'));
+  const registrationBytes = await fs.readFile(launch.reviewedPluginManifestPath);
+  const plugins = JSON.parse(registrationBytes.toString('utf8'));
+  if (reviewed.schema !== 1 || !reviewed.configuration || !reviewed.catalogRequirements || !Array.isArray(reviewed.locations)
+    || !reviewed.locations.length || plugins.schema !== 1 || !Array.isArray(plugins.plugins)) throw fail('native_reviewed_configuration_invalid');
+  for (const location of reviewed.locations) {
+    if (!descriptor.projectMap.some(mapping => mapping.targetDirectory === location.directory)
+      || await fs.realpath(location.directory) !== location.directory) throw fail('native_location_unreviewed');
+  }
+  if (new Set(reviewed.locations.map(location => location.directory)).size !== descriptor.projectMap.length) throw fail('native_location_unreviewed');
+  const reviewedConfiguration = await loadNativeReviewedConfiguration(artifacts);
+  const locations=reviewed.locations.map(location=>({...location,readRoots:[...(location.readRoots??[location.directory]),
+    nativeWebfetchBinaryDirectory(launch.global.tmp,location.directory)]}));
+  const deriveLocations=typeof getRegisteredProjects==='function'?createNativeProjectLocations({baseLocations:reviewed.locations,launch,getRegisteredProjects,listProjectWorktrees}):undefined;
+  const refreshLocations=async()=>{if(deriveLocations)locations.splice(0,locations.length,...await deriveLocations());};
+  await refreshLocations();
+  const resolveConfiguration=createNativeConfigurationSnapshotResolver({resolveSlimAgents:reviewedConfiguration?.resolveSlimAgents,
+    hasConfiguredClaudeProfile:async()=>{
+      return hasConfiguredNativeClaudeProfile(await resolveNativeProviderConfiguration({globals:launch.global,environment:providerEnvironment,controlRoot:binding.controlRoot}));
+    },
+    ...(deriveLocations?{getRuntimeLocations:()=>deriveLocations()}:{} )});
+  return { descriptor, artifacts, controlRoot: binding.controlRoot, artifactPurpose: binding.selection.transition === 'rollback' ? 'bundle-rollback' : undefined,
+    preparedManifestSha256: binding.selection.preparedManifestSha256, configuration: reviewed.configuration, locations,
+    reviewedConfiguration, refreshLocations, prepareLocations:deriveLocations??(async()=>locations),
+    catalogRequirements: reviewed.catalogRequirements,
+    reviewedPlugins: plugins.plugins.map(({ id, manifestDigest, capabilities }) => ({ id, manifestDigest, capabilities })), verify,
+    resolveConfiguration: revision => resolveConfiguration({ binding, revision, expectedRegistrationDigest: hash(registrationBytes) }) };
+}
+
+/** Compose native transport with the existing ledger, scheduler and primary owner. */
+// This is a derived capability view, never a permission grant or a URL source.
+export async function readNativeCapabilitySnapshot({ scope, artifacts, reviewedBrowser, browserOperation, getBrowserLeaseRuntime, primaryRuntime, policies }) {
+  if (policies?.adaptiveDelegation !== true) return null;
+  const safeID = value => typeof value === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(value) ? value : null;
+  let available = reviewedBrowser && browserOperation ? null : false, previewReady = null;
+  if (available !== false) {
+    try {
+      const primary = await primaryRuntime.readRecord(scope.sessionID);
+      const messageID = primary?.sessionID === scope.sessionID && primary.directory === scope.directory ? currentObjectiveUser(primary) : null;
+      const browser = getBrowserLeaseRuntime?.();
+      if (messageID && typeof browser?.resolvePreview === 'function') {
+        const preview = await browser.resolvePreview({ opencodeSessionID: scope.sessionID, messageID, directory: scope.directory, agent: primary.agent ?? null });
+        available = true; previewReady = typeof preview?.previewUrl === 'string' && preview.previewUrl.length > 0;
+      }
+    } catch (error) {
+      if (['browser_unavailable', 'agent_browser_disabled'].includes(error?.code)) { available = false; previewReady = false; }
+    }
+  } else previewReady = false;
+  return { runtime: { version: safeID(artifacts?.manifest?.opencodeVersion), artifact: safeID(artifacts?.manifest?.buildId) },
+    shell: { defaultDeadlineMs: DEFAULT_COMMAND_TIMEOUT_MS, maxDeadlineMs: MAX_COMMAND_TIMEOUT_MS, sessionScratch: 'session', callScratch: 'call' },
+    browser: { available, previewReady }, policies: Object.fromEntries(['readOverlap', 'waitAny', 'compactResults', 'contextProjection', 'duplicateOutputs', 'adaptiveDelegation']
+      .map(key => [key, policies?.[key] === true])) };
+}
+
+export function createNativeRuntimeOwner(options) {
+  const { bundle, openCodeClient, admission, executionHost, primaryRuntime, taskContext, getManagedRuntime, authorization } = options;
+  if (!bundle?.descriptor || typeof bundle.verify !== 'function' || typeof authorization?.captureWebAuthorization !== 'function'
+    || typeof authorization.authorizeOperation !== 'function') throw fail('native_runtime_dependencies_required');
+  const { descriptor, artifacts } = bundle;
+  const recordStartupDiagnostic = (event, payload) => {
+    try {
+      if (options.recordDiagnostic?.({ type: 'lifecycle', event, payload: {
+        bundleID: descriptor.bundleID, buildId: artifacts.manifest.buildId, ...payload,
+      } }) === false) console.warn('native_observation_unavailable');
+    } catch { console.warn('native_observation_unavailable'); }
+  };
+  const supportsClaudeLifecycle=artifacts.manifest.compiledContracts?.includes(CLAUDE_LIFECYCLE_PROTOCOL)===true;
+  const selectedPreparedManifestSha256 = bundle.preparedManifestSha256;
+  const assertSelectedClone = async () => {
+    if (!descriptor.sourceBundleID) return;
+    if (!/^[a-f0-9]{64}$/.test(selectedPreparedManifestSha256 ?? '')
+      || hash(await fs.readFile(descriptor.preparedManifestPath)) !== selectedPreparedManifestSha256) throw fail('native_clone_evidence_invalid');
+  };
+  const cursorRecovery=createNativeCursorRecovery({directory:path.join(descriptor.launch.webDataDirectory,'harness','native-cursor'),
+    ownerID:descriptor.bundleID,sourceOwnerID:descriptor.sourceBundleID,runtime:executionHost.runtime,...options.privatePersistence});
+  let child, starting, primaryStep,streamContinuation, stopping = false, stopped = false, phase = 'closed', checkpointHeld = false;
+  let recoveredInputs;
+  let settledController;
+  let claudeEnrollment;
+  let httpToken, lastExit, unsettledLaunch, configurationSnapshot, integrations, providers, providerConfiguration, interviews, sessionContext, slim, slimContext, documents, images, cursor, nativeInstanceID, reviewedBrowser, observationOwner, hostOperations;
+  const imageNotices=new Map();
+  const imageGeneration=bundle.reviewedConfiguration?.reviewedImagegenOriginals?createNativeImageGeneration({
+    originals:bundle.reviewedConfiguration.reviewedImagegenOriginals,
+    withImageGeneration:(invocation,action)=>{
+      if(!integrations)throw fail('native_image_generation_owner_required');return integrations.withImageGeneration(invocation,action);
+    },
+  }):undefined;
+  const privileged = options.clientDependencies ? createPrivilegedOpenCodeClient(options.clientDependencies) : undefined;
+  const readSessionMetadata = async ({ sessionID, directory }) => {
+    if (!privileged) throw fail('native_context_metadata_owner_required');
+    return privileged.readSessionMetadata(sessionID, { directory });
+  };
+  let configurationRevision = 0;
+  const reviewedBehaviorCommands = options.reviewedBehaviorCommands ?? bundle.reviewedPlugins.flatMap(origin=>{
+    const declarations=origin.id==='devryan.slim-commands'&&bundle.reviewedConfiguration?{...bundle.reviewedConfiguration.slimCommandDeclarations,interview:bundle.reviewedConfiguration.interviewCommandDeclaration}:undefined;
+    return Object.entries(declarations??{}).map(([name,definition])=>({origin:{kind:'plugin',...origin},name,definition}));
+  });
+  const active = () => { if (!child || child.hasExited()) throw fail('native_controller_unavailable'); return child; };
+  const recordObservationGap = ({ stage, controllerInstanceID = nativeInstanceID, sessionID, directory }) => {
+    try {
+      if (typeof options.recordDiagnostic !== 'function' || options.recordDiagnostic({ type: 'lifecycle', event: 'native_observation_gap',
+        ...(sessionID ? { sessionID, directory } : {}), payload: { stage, controllerInstanceID, code: 'native_observation_unavailable' } }) === false) {
+        console.warn('native_observation_unavailable');
+      }
+    } catch { console.warn('native_observation_unavailable'); }
+  };
+  const claudeCredentialCommand=createObservedNativeClaudeCredentialCommand({onDiagnostic:payload=>options.recordDiagnostic?.({type:'lifecycle',event:'native_claude_credential_command',payload})});
+  let managedTitle;
+  const readPlanPolicy = input => taskContext.readNativePlanPolicy(input, scope => {
+    if (!privileged) throw fail('native_context_metadata_owner_required');
+    return privileged.readUserMessage(scope.sessionID, scope.messageID, { directory: scope.directory });
+  });
+  const planReadAdvisory = createNativePlanReadAdvisory({
+    readManagedState: ({ sessionID, directory }) => getManagedRuntime().handleRpc({ method: 'context_state', params: { rootSessionId: sessionID, directory } }),
+    readPrimaryRecord: sessionID => primaryRuntime.readRecord(sessionID), readPlanPolicy,
+    readObjectiveStart: async ({ sessionID, directory, objectiveID }) =>
+      (await openCodeClient.sessions.message(sessionID, objectiveID, { directory, timeoutMs: 5000 }))?.info?.time?.created,
+    recordDiagnostic: options.recordDiagnostic });
+  const nativeOwner = createNativeAdmissionOwner({ getInstanceID:()=>nativeInstanceID, runtime: executionHost.runtime, directory: bundle.locations[0].directory,
+    sealManagedTitleInput: input => managedTitle.seal(input), captureManagedTitleInput: input => managedTitle.capture(input),
+    captureAcceptedHumanTitleInput: input => managedTitle.captureHuman(input),
+    recordPlanToolDenial: createNativePlanDenialOwner({ runtime: executionHost.runtime,
+      readMessage: (sessionID, messageID, directory) => openCodeClient.sessions.message(sessionID, messageID, { directory, timeoutMs: 5000 }) }),
+    readPlanPolicy: input => readPlanPolicy(input),
+    validatePlanImplementation: accepted => taskContext.validatePlanImplementation(accepted),
+    recordDiagnostic: options.recordDiagnostic,
+    assertRecoveredInputOperation:(request,entry)=>recoveredInputs?.assertOperation(request,entry),
+    verifyRecoveredInputPublication:input=>recoveredInputs.beforePublish(input),
+    withRecoveredPrimaryGrant:(input,record,action,originalRecheck)=>recoveredInputs.has(input.sessionID)
+      ?recoveredInputs.automatic({...input,expectedItem:bundleContinuationItem(record)},record,()=>primaryRuntime.authorizeRecoveredInputOwner(record),action):action(originalRecheck),
+    withRecoveredShellGrant:(input,authorize,action)=>recoveredInputs.automatic(input,null,authorize,action),
+    verifyQueuedPrimaryIdle:input=>active().call({action:'queued-primary-idle-owned',...input}),captureQueuedPrimaryAdmission:sessionID=>primaryRuntime.captureNativePromptAdmission(sessionID),readQueuedPrimaryRecord:sessionID=>primaryRuntime.readRecord(sessionID),
+    ownerID: descriptor.bundleID, protectedRoots: [path.dirname(descriptor.preparedManifestPath)],
+    reviewedConfiguration: structuredClone(bundle.configuration),
+    getReviewedConfiguration: directory => configurationSnapshot
+      ? configurationSnapshot.locations.find(location => location.directory === directory)?.configuration : bundle.configuration,
+    reviewedBehaviorCommands,
+    withSessionLock: admission.withSessionLock, ...authorization,
+    captureCommandPromptAdmission: input => {
+      if (typeof options.captureCommandPromptAdmission !== 'function') throw fail('native_command_admission_owner_required');
+      return options.captureCommandPromptAdmission(input);
+    },
+    reservePromptBoundary: input => executionHost.runtime.reservePromptBoundary(input),
+    registerAcceptedPrompt: input => executionHost.runtime.registerPrompt(input),
+    observeAcceptedUser: input => {
+      if (!observationOwner) throw fail('native_observation_unavailable');
+      return observationOwner.observeAcceptedUser(input);
+    },
+    observeAcceptedUserGap: async ({ sessionID, directory }) => recordObservationGap({ stage: 'accepted-user', sessionID, directory }),
+    captureWebAuthorization: async (...args) => {
+      if (phase !== 'ready' || stopping) throw fail('native_runtime_not_ready');
+      const reauthorize = await authorization.captureWebAuthorization(...args);
+      return async () => {
+        if (phase !== 'ready' || stopping) throw fail('native_runtime_not_ready');
+        await reauthorize();
+        if (phase !== 'ready' || stopping) throw fail('native_runtime_not_ready');
+      };
+    },
+    getSession: sessionID => openCodeClient.sessions.get(sessionID),
+    readSessionMetadata,
+    readUserMessage: async ({sessionID,messageID,directory}) => {
+      if(!privileged)throw fail('native_context_metadata_owner_required');
+      return privileged.readUserMessage(sessionID,messageID,{directory});
+    },
+    bindShellJob: input => executionHost.nativeExecution({ ...input, action: 'bind-shell-job' }),
+    getShellJobReceipt: input => executionHost.nativeShellJobReceipt(input),
+    verifyManagedTaskDispatch: input => getManagedRuntime().verifyNativeTaskDispatch(input),
+    verifyManagedTaskCatalog: input => getManagedRuntime().verifyNativeTaskCatalog(input),
+    verifyPrimaryContinuationDispatch: input => primaryRuntime.captureNativeContinuationDispatch({ ...input, instanceID: nativeInstanceID }),
+    verifyPrimaryRecoveryDispatch:input=>primaryRuntime.captureNativeRecoveryDispatch({...input,instanceID:nativeInstanceID}),
+    bindNativeRecoveryDispatchInput:input=>primaryRuntime.bindNativeRecoveryDispatchInput({...input,instanceID:nativeInstanceID}),
+    onContinuation: async input => {
+      if (input.operation === 'execution.wake') return active().call({ action: 'wake-deferred-owned', sessionID: input.sessionID, permit: input.permit });
+      if (input.operation === 'shell.recover') return active().call({ action: 'recover-shell-owned', sessionID: input.sessionID, jobID: input.jobID });
+      if (input.operation === 'shell.complete') return active().call({ action: 'reconcile-shell-owned', sessionID: input.sessionID, messageID: input.messageID, permit: input.permit });
+      throw fail('native_continuation_unavailable');
+    },
+  });
+  recoveredInputs=createNativeRecoveredInputOwner({databasePath:descriptor.launch.opencodeDatabasePath,primaryRuntime,
+    withSessionLock:admission.withSessionLock,
+    readiness:()=>{if(phase!=='ready'||stopping||stopped||!child||child.hasExited())throw fail('native_runtime_not_ready');},
+    captureAuthorization:input=>authorization.captureWebAuthorization({operation:'recovery.input',sessionID:input.sessionID,directory:input.directory},
+      {id:input.sessionID,directory:input.directory,parentID:input.session.parent_id??undefined}),
+    runOwned:({action,input,recheck})=>nativeOwner.withRecoveredInputOperation({...input,action,recheck},permit=>active().call({
+      action:action==='resume'?'reconcile-primary-owned':'cancel-recovered-input-owned',sessionID:input.sessionID,messageID:input.messageID,
+      ...action==='discard'?{payloadHash:input.payloadHash,enqueuedSeq:input.enqueuedSeq,cancellationReceiptVersion:1}:{},permit})),
+  });
+  primaryRuntime.setRecoveredInputOwner(recoveredInputs);
+  const readCanonicalMessages=async({sessionID,directory},usersOnly=false)=>{
+    const users=[],cursors=new Set();let before,size=0,count=0,latestTurnParent;
+    do{
+      if(usersOnly&&!privileged)throw fail('native_context_metadata_owner_required');
+      const page=usersOnly
+        ? await privileged.readCanonicalUserPage(sessionID,{limit:200,...before?{before}:{}},{directory,maxResponseBytes:64*1024*1024})
+        : await openCodeClient.sessions.messages(sessionID,{limit:200,...before?{before}:{}},{directory,maxResponseBytes:64*1024*1024});
+      if(!Array.isArray(page?.records))throw fail('native_context_messages_invalid');
+      count+=usersOnly?page.scannedCount:page.records.length;if(count>2000)throw fail('native_context_messages_limit');
+      if(usersOnly&&page.latestTurnParent&&!latestTurnParent)latestTurnParent=page.latestTurnParent;
+      const selected=page.records;
+      if(selected.some(row=>row.info.sessionID!==sessionID||!Array.isArray(row.parts)))throw fail('native_context_messages_invalid');
+      size+=usersOnly?Math.max(page.scannedBytes,Buffer.byteLength(JSON.stringify(selected))):Buffer.byteLength(JSON.stringify(selected));if(size>64*1024*1024)throw fail('native_context_messages_limit');
+      users.unshift(...selected);before=page.cursor;
+      if(before){if(cursors.has(before))throw fail('native_context_messages_invalid');cursors.add(before);}
+    }while(before);
+    return usersOnly?{records:users,latestTurnParent}:users;
+  };
+  const readCanonicalContext=input=>readCanonicalMessages(input,true);
+  const readCanonicalUsers=async input=>(await readCanonicalContext(input)).records;
+  managedTitle=createNativeManagedTitleOwner({
+    readConfiguration:()=>{if(phase!=='ready'||!configurationSnapshot||!nativeInstanceID)throw fail('native_runtime_not_ready');
+      return {controllerInstanceID:nativeInstanceID,configurationDigest:configurationSnapshot.digest};},
+    readSession:(sessionID,directory)=>openCodeClient.sessions.get(sessionID,directory?{directory}:{}),
+    readAssignment:input=>getManagedRuntime().readManagedTitleAssignment(input),
+    readPrimary:sessionID=>primaryRuntime.readRecord(sessionID), captureAuthorization:session=>authorization.captureTitleHelperAuthorization(session),
+    readState:input=>executionHost.runtime.nativeAdmissionState(input), readCaptured:input=>executionHost.runtime.capturedSessionState(input),
+    readLease:input=>executionHost.runtime.leaseForCall(input), readUsers:readCanonicalUsers,
+    readUser:input=>{if(!privileged)throw fail('native_context_metadata_owner_required');
+      return privileged.readUserMessage(input.sessionID,input.messageID,{directory:input.directory});},
+  });
+  const readUserAttachments=async scope=>(await readCanonicalUsers(scope)).flatMap(message=>message.parts.filter(part=>part.type==='file')
+    .map(part=>({messageID:message.info.id,part:Object.fromEntries(['id','url','filename','mime','name','mimeType'].filter(key=>part[key]!==undefined).map(key=>[key,part[key]]))})));
+  const captureContextAssets=async input=>{
+    if(!Array.isArray(input?.messageIDs)||input.messageIDs.length>2000||new Set(input.messageIDs).size!==input.messageIDs.length
+      ||!input.messageIDs.every(id=>typeof id==='string'&&/^msg[A-Za-z0-9_-]{1,128}$/.test(id))||!input.messageIDs.includes(input.messageID))throw fail('native_image_scope_invalid');
+    const messageIDs=[...input.messageIDs];
+    const location=configurationSnapshot?.locations.find(row=>row.directory===input.directory);
+    const origin=bundle.reviewedPlugins.find(row=>row.id==='devryan.slim');
+    if(!location||!origin||location.activeRegistrationIDs&&!location.activeRegistrationIDs.includes(origin.id))throw fail('native_slim_inactive');
+    const captured=await nativeOwner.captureSessionHookAuthorization({...input,phase:'context'});
+    const recheck=async()=>{await captured();const session=await openCodeClient.sessions.get(input.sessionID,{directory:input.directory});
+      if(session?.id!==input.sessionID||session.directory!==input.directory||session.revert||session.time?.archived)throw fail('native_context_session_stale');await captured();};
+    await recheck();const snapshot=await readCanonicalContext(input);await recheck();
+    const anchor=snapshot.latestTurnParent;
+    if(!anchor||anchor.id!==input.messageID||!messageIDs.includes(anchor.id))throw fail('native_context_message_stale');
+    const messages=snapshot.records.filter(message=>messageIDs.includes(message.info.id));
+    const recheckSnapshot=async()=>{await recheck();const current=await readCanonicalContext(input);await recheck();
+      if(JSON.stringify(current)!==JSON.stringify(snapshot))throw fail('native_context_message_changed');};
+    await recheckSnapshot();
+    const config=location.compatibility.slim?.mergedConfig;
+    if(!record(config))throw fail('native_slim_configuration_invalid');
+    const disabledAgents=Array.isArray(config.disabled_agents)?config.disabled_agents:['observer'];
+    const imageRouting=config.image_routing??(disabledAgents.includes('observer')?'direct':'auto');
+    if(!['auto','direct'].includes(imageRouting))throw fail('native_slim_configuration_invalid');
+    return {contextAssetID:randomUUID(),recheck:recheckSnapshot,anchor:structuredClone(anchor),messageIDs,messages:structuredClone(messages),imageRouting,disabledAgents,origin:{kind:'plugin',...origin}};
+  };
+  const removal = createNativeSessionRemoval({ runtime: executionHost.runtime, admissionOwner: nativeOwner,
+    ownerID: descriptor.bundleID,
+    recordDiagnostic: options.recordDiagnostic,
+    inspectRemovalOwned: input => active().call({ action: 'inspect-removal-owned', ...input }),
+    removeLeafOwned: input => active().call({ action: 'remove-leaf-owned', ...input }),
+    releaseClaimOwned: input => active().call({ action: 'release-removal-claim-owned', ...input }),
+    cancelManaged: input => getManagedRuntime().cancelSessionsForRemoval(input),
+    cancelAndWait: input => executionHost.executions.cancelAndWait(input),
+    discardStreamReceipts:async intent=>{
+      const scope={directory:intent.directory,sessions:intent.members.map(member=>member.id)};
+      const recheck=async()=>{
+        const current=await executionHost.runtime.nativeRemoval({directory:intent.directory,intentID:intent.id});
+        if(current?.state!=='committed'||current.ownerID!==descriptor.bundleID||current.removed.length!==current.members.length
+          ||JSON.stringify(current.members)!==JSON.stringify(intent.members))throw fail('native_stream_continuation_fenced');
+      };
+      await primaryRuntime.discardNativeStreamContinuationReceipts(scope,recheck);
+      await getManagedRuntime().discardObjectiveChecks(scope,recheck);
+    },
+  });
+  const retention=createNativeRetention({admissionOwner:nativeOwner,controller:active,removal,runtime:executionHost.runtime,ownerID:descriptor.bundleID});
+  const managedCursorCatalog = new AsyncLocalStorage();
+  const publicationConfiguration=input=>{
+    if(phase!=='ready'||stopping||stopped||!configurationSnapshot||!nativeInstanceID||child?.instanceID!==nativeInstanceID||child.hasExited()
+      ||!configurationSnapshot.locations.some(row=>row.directory===input.directory))throw fail('native_task_publication_scope_expired');
+    return {controllerInstanceID:nativeInstanceID,configurationDigest:configurationSnapshot.digest};
+  };
+  const readPublicationPage=(scope,params)=>openCodeClient.sessions.messages(scope.sessionID,params,
+    {directory:scope.directory,timeoutMs:5000,maxResponseBytes:64*1024*1024});
+  const managedTask = createNativeManagedTaskOwner({ admissionOwner: nativeOwner, taskContext, executionHost, getManagedRuntime,
+    onResultDelivery: ({ sessionID, messageID, callID, payload }) => options.recordDiagnostic?.({ type: 'lifecycle',
+      event: 'native_result_delivery', sessionID, assistantMessageID: messageID, payload: { ...payload, messageID, callID } }),
+    readResultPublication:createNativeManagedPublicationReader({readConfiguration:publicationConfiguration,
+      recheckExecution:input=>nativeOwner.recheckExecution(input),readPrimaryRecord:sessionID=>primaryRuntime.readRecord(sessionID),
+      readMessages:(input,messageIDs)=>readManagedPublicationMessages(readPublicationPage,input,messageIDs)}),
+    // Idle review has no live tool call: root-Orchestrator authority, an idle
+    // session and the primary record's completed latest Step stand in for it.
+    readIdleReview:async({sessionID,directory,messageIDs})=>{
+      const configuration=publicationConfiguration({directory});
+      await taskContext.authorizePrivateRpc({method:'submit',params:{rootSessionId:sessionID,directory}});
+      const primary=await primaryRuntime.readRecord(sessionID);
+      if(primary?.sessionID!==sessionID||primary.directory!==directory||typeof primary.stepID!=='string'||!primary.stepID
+        ||!Number.isSafeInteger(primary.cancellationGeneration))throw fail('native_task_idle_review_unavailable');
+      const statuses=await openCodeClient.sessions.status({directory},{directory,timeoutMs:5000});
+      if(!record(statuses)||statuses[sessionID]&&statuses[sessionID].type!=='idle')throw fail('native_task_idle_review_busy');
+      const messages=await readManagedPublicationMessages(readPublicationPage,{sessionID,directory,messageID:primary.stepID},messageIDs);
+      const step=messages.find(message=>message.info.id===primary.stepID);
+      if(step?.info.role!=='assistant'||!Number.isFinite(step.info.time?.completed))throw fail('native_task_idle_review_unavailable');
+      const latest=await primaryRuntime.readRecord(sessionID);
+      if(latest?.revision!==primary.revision||JSON.stringify(publicationConfiguration({directory}))!==JSON.stringify(configuration))throw fail('native_task_idle_review_unavailable');
+      return {messages,identity:{...configuration,objectiveID:primary.objectiveID??primary.anchorID,cancellationGeneration:primary.cancellationGeneration,stepID:primary.stepID}};
+    },
+    withIdleSession:({sessionID},action)=>admission.withSessionLock(sessionID,action),
+    readToolOutputLimits:input=>{
+      if(phase!=='ready'||stopping||stopped||!configurationSnapshot||!nativeInstanceID||child?.instanceID!==nativeInstanceID||child.hasExited())throw fail('native_task_configuration_expired');
+      const location=configurationSnapshot.locations.find(row=>row.directory===input.directory);
+      if(!location)throw fail('native_task_configuration_expired');
+      return Object.freeze(structuredClone(location.configuration.tool_output??{}));
+    } });
+  const council = createNativeCouncilOwner({ admissionOwner: nativeOwner, taskContext, executionHost, getManagedRuntime,
+    readCouncilMembers: async input => reviewedCouncilMembers(configurationSnapshot, input) });
+  const browserOrigin = bundle.reviewedPlugins.find(origin => origin.id === 'devryan.browser');
+  const browserOperation = browserOrigin ? createNativeBrowserOwner({ admissionOwner: nativeOwner, openCodeClient,
+    origin: { kind: 'plugin', ...browserOrigin }, getLeaseRuntime: options.getBrowserLeaseRuntime }) : undefined;
+  const helperText=createNativeHelperOwner({admissionOwner:nativeOwner,current:()=>{
+    if(phase!=='ready'||stopping)throw fail('native_runtime_not_ready');return active();
+  },headers:()=>({authorization:`Bearer ${httpToken}`,...nativeOwner.requestHeaders(),...integrations?.requestHeaders()}),fetchImpl:options.fetchImpl??fetch});
+  const handleRpc = async ({ method, params }, context) => {
+    if(method==='native.helper.assert')return helperText.assert(params);
+    if(method==='native.helper.settled')return helperText.settled(params);
+    if (stopped || typeof method !== 'string') throw fail('native_bridge_stopped');
+    if (method.startsWith('native.admission.')) return nativeOwner.handleRpc(method, params);
+    if(method==='native.recovered-input.settled'){
+      if(params?.instanceID!==nativeInstanceID||typeof params.sessionID!=='string')throw fail('native_recovered_input_fenced');
+      await recoveredInputs.published(params.sessionID);return null;
+    }
+    if (method === 'native.observation' || method === 'native.presentation') {
+      if (!observationOwner) throw fail('native_observation_unavailable');
+      return observationOwner.handleRpc(method, params);
+    }
+    if (method === 'native.provider-timing') {
+      // Turn timing only: no permit, no authority, nothing durable.
+      const timing = parseNativeProviderTiming(params);
+      if (timing.controllerInstanceID !== nativeInstanceID) throw fail('native_provider_timing_expired');
+      try { options.onProviderTiming?.(timing); } catch { /* Observer only. */ }
+      return null;
+    }
+    if (method === 'native.primary-step') {
+      if (!primaryStep) throw fail('native_primary_owner_unavailable');
+      return primaryStep(params);
+    }
+    if(method==='native.stream-continuation'){
+      if(!streamContinuation)throw fail('native_stream_continuation_fenced');
+      return streamContinuation(params);
+    }
+    if (method === 'native.managed-task') return managedTask(params, context);
+    if (method === 'native.council') return council(params, context);
+    if(method.startsWith('native.slim.interview.')){
+      if(!interviews)throw fail('native_interview_owner_unavailable');
+      return interviews.handleRpc(method,params,context);
+    }
+    if(method==='native.slim.secondary.begin')return nativeOwner.beginWebfetchSecondary(params);
+    if(method==='native.cursor.assert'){
+      if(!cursor)throw fail('native_cursor_owner_unavailable');return cursor.assertRecord(params);
+    }
+    if(method==='native.cursor.settle.assert'){
+      if(!cursor)throw fail('native_cursor_owner_unavailable');return cursor.assertSettlement(params);
+    }
+    if(method==='native.cursor.key.assert'){
+      if(!cursor)throw fail('native_cursor_owner_unavailable');return cursor.assertKey(params);
+    }
+    if(method==='native.cursor.readonly.key.assert'){
+      if(!cursor)throw fail('native_cursor_owner_unavailable');return cursor.assertReadOnlyKey(params);
+    }
+    if(method==='native.slim.secondary.end')return nativeOwner.endWebfetchSecondary(params);
+    if(method==='native.slim.images-skipped'){
+      if(!record(params)||Object.keys(params).some(key=>!['directory','sessionID','permit','phase'].includes(key)))throw fail('native_image_context_invalid');
+      const recheck=await nativeOwner.captureSessionHookAuthorization(params);await recheck();
+      const now=Date.now();if(now-(imageNotices.get(params.directory)??0)>60_000){
+        if(typeof options.emitIntegrationEvent!=='function')throw fail('native_image_web_owner_required');
+        await options.emitIntegrationEvent({directory:params.directory,sessionID:params.sessionID,kind:'images-skipped'});
+        imageNotices.set(params.directory,now);
+      }await recheck();return null;
+    }
+    if(method==='native.slim.context'){
+      if(!slimContext||!record(params))throw fail('native_slim_context_unavailable');
+      const {action,...input}=params;
+      if(action==='transform')return slimContext.transformMessages(input,context);
+      if(action==='retry')return slimContext.retry(input,context);
+      throw fail('native_slim_context_unavailable');
+    }
+    if(method==='native.slim.images'||method==='native.slim.images.settle'){
+      if(!images)throw fail('native_image_owner_unavailable');
+      return method==='native.slim.images'?images.transform(params,context):images.settle(params);
+    }
+    if(method==='native.document.context'||method==='native.document.tool'||method==='native.document.settle'){
+      if(!documents)throw fail('native_document_owner_unavailable');
+      if(method==='native.document.settle')return documents.settle(params);
+      return method==='native.document.context'?documents.context(params,context):documents.tool(params,context);
+    }
+    if (['native.slim.hook','native.slim.path','native.slim.accepted-command'].includes(method)) {
+      if(!slim)throw fail('native_slim_owner_unavailable');
+      if(method==='native.slim.path')return slim.path(params,context);
+      if(method==='native.slim.accepted-command')return slim.acceptedCommand(params,context);
+      return slim.hook(params,context);
+    }
+    if (method.startsWith('native.session-context')) {
+      if (!sessionContext) throw fail('native_context_owner_unavailable');
+      if (method === 'native.session-context.tool') return sessionContext.tool(params, context);
+      if (method === 'native.session-context.observe-tool') return sessionContext.observeTool(params, context);
+      if (method === 'native.session-context') return sessionContext.context(params, context);
+      throw fail('native_context_operation_unavailable');
+    }
+    if (method.startsWith('integration.') || method.startsWith('openai.')
+      || ['credential.mutation.commit', 'credential.resolution.commit', 'provider.credential.assert', 'provider.attempt'].includes(method)) {
+      if (!integrations) throw fail('native_integration_owner_unavailable');
+      try { return await integrations.handleRpc(method, params, context); }
+      catch (cause) {
+        // The shared private host serializes error messages. Restrict this
+        // credential boundary to codes, never provider/credential payloads.
+        const code = typeof cause?.code === 'string' && /^[a-z][a-z0-9_]{0,95}$/.test(cause.code)
+          ? cause.code : 'native_integration_failed';
+        throw Object.assign(fail(code), { statusCode: [400, 401, 403, 409, 503].includes(cause?.statusCode ?? cause?.status)
+          ? cause.statusCode ?? cause.status : 503 });
+      }
+    }
+    if(method.startsWith('provider.')){
+      if(!providers)throw fail('native_provider_owner_unavailable');
+      return providers.handleRpc(method,params,context);
+    }
+    if (method.startsWith('execution.native.')) {
+      const action = method.slice('execution.native.'.length);
+      const result = await executionHost.nativeExecution({ ...params, action }, context);
+      // A completed direct read may carry the non-blocking plan-mode advisory.
+      if (action !== 'direct-finish' || !['read', 'grep'].includes(params?.tool)) return result;
+      const advisory = await planReadAdvisory({ sessionID: params.sessionID, directory: params.directory, tool: params.tool });
+      return advisory ? { ...record(result) ? result : {}, advisory } : result;
+    }
+    throw fail('native_rpc_unavailable');
+  };
+  // Every authorized controller RPC's route, duration, status and connection
+  // reuse reaches turn timing (observer only).
+  const bridge = createManagedOrchestrationPrivateHost({ handleRpc, onRequestTiming: options.onBridgeTiming });
+  const recoverStoppedManagedTasks = async () => {
+    await lastExit;
+    const proof = settledController;
+    if (!proof) return;
+    const assertStopped = async () => {
+      if (settledController !== proof || nativeInstanceID !== proof.controllerInstanceID
+        || phase !== 'closed' || !child?.hasExited()) throw fail('native_controller_settlement_unconfirmed');
+    };
+    await assertStopped();
+    await options.recoverStoppedManagedTasks?.(assertStopped);
+  };
+
+  const start = ({ admission: launchAdmission = 'open', beforeConfiguration } = {}) => {
+    if (!['open', 'checkpoint'].includes(launchAdmission) || checkpointHeld && launchAdmission !== 'checkpoint') return Promise.reject(fail('native_checkpoint_admission_held'));
+    if (launchAdmission === 'checkpoint') checkpointHeld = true;
+    if (starting) return starting;
+    if (unsettledLaunch) return Promise.reject(unsettledLaunch);
+    if (stopping || stopped || child && !child.hasExited()) return Promise.reject(fail('native_controller_already_owned'));
+    phase = 'closed'; observationOwner?.retire();
+    const startupStartedAt = Date.now();
+    let startupStage = 'settlement', startupInstanceID, startupFailureRecorded = false;
+    let finishStage = startStartupTiming('native_settlement');
+    const nextStage = (stage) => {
+      finishStage();
+      startupStage = stage;
+      finishStage = startStartupTiming(`native_${stage}`);
+    };
+    const startupDiagnostic = (phase, code, diagnostics) => recordStartupDiagnostic('native_startup', {
+      phase, stage: startupStage, controllerInstanceID: startupInstanceID ?? null,
+      durationMs: Math.max(0, Date.now() - startupStartedAt), ...(code ? { code } : {}),
+      ...(diagnostics ? { diagnostics } : {}),
+    });
+    const recordStartupFailure = cause => {
+      if (startupFailureRecorded) return;
+      startupFailureRecorded = true;
+      finishStage('failed');
+      const diagnostic = artifactDiagnostic(cause);
+      startupDiagnostic('failed', startupFailureCode(cause), diagnostic ? { artifact: diagnostic } : cause?.startupDiagnostics);
+    };
+    startupDiagnostic('starting');
+    starting = (async () => {
+      // A crash's OS event is insufficient: publication and ACK recovery may
+      // still be settling. Every replacement waits for this same barrier.
+      if (child?.hasExited()) await child.killForRecovery();
+      await lastExit;
+      await recoverStoppedManagedTasks();
+      await integrations?.invalidate();
+      await providers?.close();
+      await interviews?.close();
+      await documents?.close();
+      await images?.close();
+      await cursor?.close();
+      lastExit = undefined;
+      nextStage('verification');
+      const verifiedBundle = await bundle.verify();
+      const instanceID=randomUUID();
+      startupInstanceID = instanceID;
+      nextStage('configuration_sync');
+      // The lifecycle synchronizes config inside this verified launch, avoiding a second full bundle scan.
+      await beforeConfiguration?.();
+      nextStage('configuration');
+      const recoveredSessionIDs=await recoveredInputs.install(instanceID);
+      await timeStartupPhase('native_configuration_locations', async () => bundle.refreshLocations?.());
+      configurationSnapshot = await timeStartupPhase('native_configuration_snapshot', async () => bundle.resolveConfiguration?.(++configurationRevision));
+      if(configurationSnapshot&&JSON.stringify(configurationSnapshot.locations.map(location=>location.directory))!==JSON.stringify(bundle.locations.map(location=>location.directory)))throw fail('native_configuration_sources_changed');
+      slim=configurationSnapshot&&bundle.reviewedConfiguration?createNativeSlimOwner({admissionOwner:nativeOwner,openCodeClient,
+        configurationSnapshot,locations:bundle.locations}):undefined;
+      slimContext=configurationSnapshot&&bundle.reviewedConfiguration?createNativeSlimContextOwner({admissionOwner:nativeOwner,openCodeClient,primaryRuntime,
+        getManagedRuntime,getInstanceID:()=>nativeInstanceID===instanceID?instanceID:undefined,originals:bundle.reviewedConfiguration,locations:configurationSnapshot.locations}):undefined;
+      images=configurationSnapshot&&bundle.reviewedPlugins.some(row=>row.id==='devryan.slim')?createNativeImageRuntime({admissionOwner:nativeOwner,executionHost,readContext:readCanonicalContext,locations:configurationSnapshot.locations,
+        onOutcome:({directory,sessionID,...payload})=>options.recordDiagnostic?.({type:'lifecycle',event:'native_image_context',directory,sessionID,payload})}):undefined;
+      const documentOrigin=bundle.reviewedPlugins.find(row=>row.id==='devryan.document-reader');
+      if(documentOrigin&&configurationSnapshot&&bundle.reviewedConfiguration){
+        const documentOwner=createNativeDocumentOwner({locations:bundle.locations,cacheRoot:path.join(descriptor.launch.global.cache,'devryan-documents'),
+          createCache:bundle.reviewedConfiguration.createReviewedDocumentCache,readUserAttachments,
+          readSession:input=>openCodeClient.sessions.get(input.sessionID,{directory:input.directory}),
+          authorizeParent:async input=>{
+            if(typeof authorization.authorizeRelatedSessionRead!=='function')throw fail('native_document_parent_owner_required');
+            const [session,source,parent]=await Promise.all([input.sessionID,input.sourceSessionID,input.parentID].map(id=>openCodeClient.sessions.get(id,{directory:input.directory})));
+            return authorization.authorizeRelatedSessionRead({session,source,parent});
+          },
+          parseAttachment:createNativeDocumentParser({launcher:artifacts.launcher,command:artifacts.writer,windowsOwner:options.privatePersistence?.windowsLedgerOwner,
+            storage:path.join(descriptor.launch.global.state,'document-parser'),deniedReadDirectories:options.supervisedController?.deniedReadDirectories??[]})});
+        documents=createNativeDocumentRuntime({admissionOwner:nativeOwner,documentOwner,reviewedConfiguration:bundle.reviewedConfiguration,
+          readUserAttachments,locations:configurationSnapshot.locations,origin:{kind:'plugin',...documentOrigin}});
+      }else documents=undefined;
+      reviewedBrowser = browserOrigin ? await timeStartupPhase('native_configuration_browser',
+        async () => readNativeBrowserAssets(await options.getManagedBrowserEnvironment?.())) : undefined;
+      const privateEnvironment = await bridge.start();
+      const globals = descriptor.launch.global;
+      nativeInstanceID = instanceID;
+      settledController = undefined;
+      const currentExecution = sessionID => nativeInstanceID === instanceID && !stopping && !stopped && Boolean(child && !child.hasExited())
+        && (phase === 'ready' || phase === 'recovering' && recoveredInputs.hasCurrentGrant(sessionID, instanceID));
+      observationOwner?.retire();
+      observationOwner = configurationSnapshot ? createNativeObservationOwner({ instanceID, snapshot: configurationSnapshot,
+        controller: () => child, isReady: currentExecution,
+        admissionOwner: nativeOwner, openCodeClient, recordDiagnostic: options.recordDiagnostic,
+        onObservation: options.onNativeObservation,readPrimaryRecord:sessionID=>primaryRuntime.readRecord(sessionID),
+        onPresentationProgress:options.onPresentationProgress,onPresentationOwnerRetired:options.onPresentationOwnerRetired }) : undefined;
+      cursor=createNativeCursorOwner({instanceID,admissionOwner:nativeOwner,runtime:executionHost.runtime,controller:active,recovery:cursorRecovery,recordDiagnostic:options.recordDiagnostic,
+        isReady:()=>nativeInstanceID===instanceID&&phase==='ready'&&!stopping,
+        abortAndWait:sessionID=>options.cursorRuntime.abortAndWait(sessionID),onStarted:(scope,recheck)=>primaryStep.external(scope,recheck)});
+      imageNotices.clear();
+      const interviewOrigin=bundle.reviewedPlugins.find(row=>row.id==='devryan.slim');
+      interviews=interviewOrigin&&configurationSnapshot?.locations.some(row=>row.activeRegistrationIDs?.includes('devryan.slim'))?createNativeControllerInterview({
+        instanceID,snapshot:configurationSnapshot,locations:bundle.locations,originals:bundle.reviewedConfiguration.reviewedSlimInterviewOriginals,
+        origin:{kind:'plugin',...interviewOrigin},admissionOwner:nativeOwner,authorization,openCodeClient,readMessages:readCanonicalMessages,
+        controller:active,isCurrent:()=>nativeInstanceID===instanceID&&!stopping&&!stopped&&Boolean(child&&!child.hasExited()),
+        executeDocument:executionHost.nativeInterviewDocument,
+        baseURL:async()=>{if(typeof options.getWebBaseURL!=='function')throw fail('native_interview_web_owner_required');return options.getWebBaseURL();},
+        openBrowser:async(scope,url)=>{if(typeof options.emitIntegrationEvent!=='function')throw fail('native_interview_web_owner_required');
+          await options.emitIntegrationEvent({directory:scope.directory,sessionID:scope.sessionID,kind:'interview-open',path:new URL(url).pathname});},
+      }):undefined;
+      const launchIntegrations = configurationSnapshot ? createNativeIntegrationOwner({ instanceID, snapshot: configurationSnapshot,
+        stateDirectory: globals.state, controller: active, isReady: () => phase === 'ready' && !stopping,
+        withMutationQueue: options.withCredentialMutationQueue,
+        captureWebAuthorization: input => authorization.captureWebAuthorization(input), admissionOwner: nativeOwner,
+        recordDiagnostic: options.recordDiagnostic }) : undefined;
+      integrations = launchIntegrations;
+      httpToken = randomBytes(32).toString('base64url');
+      primaryStep = createNativePrimaryStepOwner({ admissionOwner: nativeOwner, openCodeClient, primaryRuntime, instanceID,
+        allowStopHandoff:artifacts.manifest.compiledContracts?.includes('devryan.primary-step-stop/1')===true,
+        getInstanceID:()=>nativeInstanceID===instanceID?instanceID:undefined });
+      streamContinuation=configurationSnapshot?createNativeStreamContinuationOwner({instanceID,configurationDigest:configurationSnapshot.digest,
+        admissionOwner:nativeOwner,openCodeClient,primaryRuntime,
+        isCurrent:currentExecution,recordRefusal:payload=>options.recordDiagnostic?.({type:'lifecycle',event:'native_stream_continuation_refusal',
+          sessionID:payload.sessionID,payload:{controllerInstanceID:instanceID,...payload}})}):undefined;
+      if (bundle.reviewedPlugins.some(origin => origin.id === 'devryan.harness-context')) {
+        if (!privileged) throw fail('native_context_metadata_owner_required');
+        sessionContext = createNativeSessionContextOwner({ admissionOwner: nativeOwner, taskContext, executionHost, openCodeClient, primaryRuntime, instanceID,getInstanceID:()=>nativeInstanceID===instanceID?instanceID:undefined,getManagedRuntime,
+          onContinuationError:input=>{
+            if(!bundle.locations.some(location=>location.directory===input.directory))return;
+            const codes=['native_collection_continuation_failed','native_collection_watch_failed','native_collection_watch_invalid','native_primary_continuation_controller_stale','native_primary_continuation_owner_required','native_primary_objective_unavailable','native_primary_owner_unavailable','required_verification_pending'];
+            options.recordDiagnostic?.({type:'lifecycle',event:'native_collection_continuation_failed',directory:input.directory,
+              ...(typeof input.sessionID==='string'&&/^ses[A-Za-z0-9_-]{1,128}$/.test(input.sessionID)?{sessionID:input.sessionID}:{}),
+              payload:{code:codes.includes(input.code)?input.code:'native_collection_continuation_failed'}});
+          },
+          getCapabilitySnapshot: scope => readNativeCapabilitySnapshot({ scope, artifacts, reviewedBrowser, browserOperation,
+            getBrowserLeaseRuntime: options.getBrowserLeaseRuntime, primaryRuntime, policies: capabilities?.policies }),
+          inspectVerification: scope => getManagedRuntime().inspectRequiredChecks(scope),
+          readSessionMetadata,
+          isHeld: async scope => { const state = await executionHost.runtime.nativeAdmissionState(scope); return state.held || state.reverting; },
+          authorizeContext: input => nativeOwner.captureContextAuthorization(input),
+          writeTodos: async ({ sessionID, directory, todos, invocation }, recheck) => {
+            // withPermit already owns the existing per-session admission lock.
+            await recheck();
+            const current = await readSessionMetadata({ sessionID, directory });
+            if (current?.id !== sessionID || current.directory !== directory || !record(current.metadata)) throw fail('native_todo_metadata_scope_invalid');
+            const metadata = current.metadata, devryan = record(metadata.devryan) ? metadata.devryan : {};
+            const prior = devryan.todo;
+            const revision = record(prior) && prior.sessionID === sessionID && Number.isSafeInteger(prior.rev) && prior.rev >= 0 ? prior.rev : 0;
+            const todo = { sessionID, items: todos, rev: revision + 1 };
+            const next = { ...metadata, devryan: { ...devryan, todo } };
+            return nativeOwner.withNativeTodoWrite({ invocation, metadata: next }, async () => {
+              await recheck(); await privileged.setMetadata(sessionID, next, { directory }); await recheck();
+              return todo;
+            });
+          },
+          deliverContinuation: async ({ scope, prompt }, recheck) => {
+            await recheck();
+            await nativeOwner.withPrimaryContinuationDispatch(scope, () => openCodeClient.prompts.prompt(scope.sessionID, prompt,
+              { directory: scope.directory, origin: 'managed-primary', objectiveID: prompt.objectiveID }));
+            const current = await primaryRuntime.readRecord(scope.sessionID);
+            if (!current?.nativeContinuation && current?.continuationID === scope.messageID) return;
+            await nativeOwner.withPrimaryContinuationOperation(scope, permit => active().call({ action: 'reconcile-primary-owned', sessionID: scope.sessionID, messageID: scope.messageID, permit }));
+          },
+        });
+      } else sessionContext = undefined;
+      await assertSelectedClone();
+      const receipt = await fs.readFile(descriptor.migrationReceiptPath);
+      const declaredCursor = options.cursorRuntime?.getDeclaredVirtualProvider?.();
+      if (declaredCursor && (declaredCursor.id !== 'cursor-acp' || !record(declaredCursor.models))) throw fail('native_cursor_catalog_invalid');
+      const cursorCatalog = declaredCursor ? { id: 'cursor-acp', models: Object.entries(declaredCursor.models).map(([id, model]) => {
+        if (!record(model) || model.id !== id || model.variants !== undefined && !record(model.variants)) throw fail('native_cursor_catalog_invalid');
+        return { id, variants: Object.keys(model.variants ?? {}) };
+      }) } : undefined;
+      const setupCredentialSeed=process.platform==='win32'?await captureNativeSetupCredentialSeed(path.join(globals.config,'native-setup-credentials.json'),options.privatePersistence?.windowsOwner):undefined;
+      hostOperations=await loadRegisteredHostOperations({file:path.join(bundle.controlRoot,'host-operations.json'),directories:bundle.locations.map(location=>location.directory)});
+      const boot = { ...(setupCredentialSeed?{setupCredentialSeed:setupCredentialSeed.expected}:{}),protocol: 1, type: 'boot', bundleID: descriptor.bundleID, instanceID, buildId: artifacts.manifest.buildId,
+        hostOperations:hostOperations.catalog(),
+        manifestSha256: artifacts.manifestSha256, databasePath: descriptor.launch.opencodeDatabasePath, globals,
+        directory: bundle.locations[0].directory, locations: bundle.locations,
+        bridge: { url: privateEnvironment.DEVRYAN_ORCHESTRATION_URL, token: privateEnvironment.DEVRYAN_ORCHESTRATION_TOKEN }, httpToken,
+        configuration: bundle.configuration, reviewedPlugins: bundle.reviewedPlugins.filter(origin => origin.id !== 'devryan.browser' || reviewedBrowser),
+        ...(configurationSnapshot ? { configurationSnapshot } : {}),
+        ...(cursorCatalog ? { cursorCatalog } : {}),
+        ...(recoveredSessionIDs.length?{recoveredSessionIDs}:{}),
+        migrationEvidence: { path: descriptor.migrationReceiptPath, sha256: hash(receipt),
+          ...(descriptor.sourceBundleID ? { clone: { preparedManifestPath: descriptor.preparedManifestPath,
+            preparedManifestSha256: selectedPreparedManifestSha256 } } : {}) }, catalogRequirements: bundle.catalogRequirements };
+      const capabilities = await getManagedRuntime?.().handleRpc({ method: 'harness_capabilities' });
+      const environment = { PATH: options.environment?.PATH ?? process.env.PATH, LANG: 'en_US.UTF-8', ...options.environment,
+        DEVRYAN_MANAGED_WAIT_ANY: capabilities?.policies?.waitAny === true ? '1' : '0',
+        DEVRYAN_MANAGED_RESULT_CONTRACT_VERSION: capabilities?.resultContractVersion===2?'2':'1',
+        DEVRYAN_TASK_CONTEXT_PROJECTION: capabilities?.policies?.contextProjection === true ? '1' : '0',
+        DEVRYAN_ADAPTIVE_DELEGATION: capabilities?.policies?.adaptiveDelegation === true ? '1' : '0',
+        DEVRYAN_CAPABILITY_TOOL_SCHEMA: process.env.DEVRYAN_CAPABILITY_TOOL_SCHEMA === '0' ? '0' : '1',
+        DEVRYAN_SYSTEM_CACHE_PRESERVE: process.env.DEVRYAN_SYSTEM_CACHE_PRESERVE === '0' ? '0' : '1',
+        DEVRYAN_NATIVE_ARCHIVE: process.env.DEVRYAN_NATIVE_ARCHIVE === '0' ? '0' : '1',
+        HOME: globals.home, XDG_CONFIG_HOME: globals.config, XDG_DATA_HOME: globals.data, XDG_STATE_HOME: globals.state,
+        XDG_CACHE_HOME: globals.cache, TMPDIR: globals.tmp, TMP: globals.tmp, TEMP: globals.tmp };
+      const providerOrigin=bundle.reviewedPlugins.find(row=>row.id==='devryan.provider-compat');
+      if(providerOrigin&&configurationSnapshot){
+        const profiles=await resolveNativeProviderConfiguration({globals,environment:options.providerEnvironment??{},controlRoot:bundle.controlRoot});
+        providerConfiguration=hash(JSON.stringify(profiles));
+        const storage=path.join(globals.state,'provider-transport');await nativeBundleFileOperations(options.privatePersistence).ensureDirectory(storage);
+        if(!artifacts.reviewedClaude)throw fail('native_provider_assets_required');
+        const claudeSupported=supportsClaudeLifecycle;
+        const claudeLifecycle=createNativeClaudeLifecycleClient({controller:active,
+          isCurrent:()=>nativeInstanceID===instanceID&&Boolean(child&&!child.hasExited())});
+        const securityHome=options.getNativeClaudeSecurityHome?.();
+        const bindOwnedCommand=securityHome===undefined?undefined:createNativeClaudeSecurityHome({controlRoot:bundle.controlRoot,home:globals.home,securityHome,execute:claudeCredentialCommand});
+        const providerWorkerInstanceID=randomUUID();
+        providers=createNativeProviderRuntimeOwner({instanceID,snapshot:configurationSnapshot,registrationOrigin:{kind:'plugin',...providerOrigin},
+          claudeSupported,
+          controller:active,isReady:()=>nativeInstanceID===instanceID&&phase!=='closed'&&!checkpointHeld&&!stopping,
+          withMutationQueue:options.withCredentialMutationQueue,admissionOwner:nativeOwner,cursor:options.cursorRuntime,
+          claudeCredentials:{backend:{execFile:claudeCredentialCommand},profiles:profiles.profiles,asset:artifacts.reviewedClaudeCredentials,oauthTokenExpiries:profiles.oauthTokenExpiries,
+            lifecycle:claudeLifecycle,bindOwnedCommand,ownedControlRoot:bundle.controlRoot},
+          prepareMeridianProfiles:context=>projectNativeClaudeWorkerProfiles({profiles:profiles.profiles,globals,
+            controlRoot:bundle.controlRoot,workerInstanceID:providerWorkerInstanceID,lifecycle:claudeLifecycle},context),
+          meridian:{binary:artifacts.controller,cwd:boot.directory,environment,databasePath:boot.databasePath,
+            onDiagnostic:diagnostic=>{try{options.recordDiagnostic?.({type:'lifecycle',event:diagnostic.type==='claude-checkpoint-diagnostic'?'native_claude_checkpoint':'native_claude_process',sessionID:diagnostic.sessionID,directory:diagnostic.directory,
+              payload:{attemptID:diagnostic.attemptID,providerInstanceID:diagnostic.instanceID,...(diagnostic.type==='claude-checkpoint-diagnostic'?diagnostic.checkpoint:diagnostic.receipt)}});}catch{/* Observations cannot change provider settlement. */}},
+            supervisor:{launcher:artifacts.launcher,deniedReadDirectories:options.supervisedController?.deniedReadDirectories??[]},
+            boot:{protocol:1,type:'provider-boot',provider:'anthropic',instanceID:providerWorkerInstanceID,buildId:boot.buildId,
+              requestAuthorization:randomBytes(32).toString('hex'),globals,profiles:profiles.profiles,...profiles.defaultProfile?{defaultProfile:profiles.defaultProfile}:{},
+              assets:artifacts.reviewedClaude,transport:{launcher:artifacts.launcher,storage,directories:bundle.locations.map(location=>location.directory)}}},
+        });
+        if(claudeSupported&&artifacts.reviewedClaudeCredentials){
+          const publication=createNativeClaudeProfilePublication({home:globals.home,controlRoot:bundle.controlRoot,...options.privatePersistence});
+          const snapshot=configurationSnapshot,bindings=new WeakSet();
+          const principalKey=()=>{
+            const principal=options.getRequestPrincipal?.();
+            if(!principal||!['local-admin','managed'].includes(principal.scope)||typeof principal.id!=='string')throw fail('native_claude_enrollment_principal_required');
+            return hash(JSON.stringify({scope:principal.scope,id:principal.id,appSessionId:principal.appSessionId??null,sessionTokenHash:principal.sessionTokenHash??null}));
+          };
+          const enrollmentDirectory=context=>resolveNativeClaudeEnrollmentDirectory({directory:context?.directory,locations:snapshot.locations,projectMap:descriptor.projectMap});
+          const assertAuthority=async(binding,context)=>{
+            if(!bindings.has(binding)||binding.directory!==enrollmentDirectory(context)||binding.principalID!==principalKey()
+              ||phase!=='ready'||stopping||checkpointHeld||configurationSnapshot!==snapshot||nativeInstanceID!==instanceID||!child||child.hasExited())throw fail('native_claude_enrollment_binding_changed');
+            await binding.authorization();
+            if(phase!=='ready'||stopping||checkpointHeld||configurationSnapshot!==snapshot||nativeInstanceID!==instanceID||!child||child.hasExited())throw fail('native_claude_enrollment_binding_changed');
+          };
+          const recheckBinding=async(binding,context)=>{
+            await assertAuthority(binding,context);
+            const current=await resolveNativeProviderConfiguration({globals,environment:options.providerEnvironment??{},controlRoot:bundle.controlRoot});
+            if(hash(JSON.stringify(current))!==binding.providerConfigurationDigest
+              ||JSON.stringify(await publication.snapshot())!==JSON.stringify(binding.profileFilesBaseline))throw fail('native_claude_enrollment_configuration_changed');
+            await assertAuthority(binding,context);
+          };
+          claudeEnrollment=createNativeClaudeEnrollmentOwner({controlRoot:bundle.controlRoot,home:globals.home,
+            asset:artifacts.reviewedClaudeCredentials,lifecycle:claudeLifecycle,withMutationQueue:options.withCredentialMutationQueue,execute:claudeCredentialCommand,bindOwnedCommand,
+            beforeEnrollment:context=>migrateNativeClaudeLegacyFences({profiles:profiles.profiles,home:globals.home,...bindOwnedCommand?{ownedControlRoot:bundle.controlRoot}:{},
+              asset:artifacts.reviewedClaudeCredentials,lifecycle:claudeLifecycle,backend:{execFile:claudeCredentialCommand}},context),
+            captureBinding:async context=>{
+              const directory=enrollmentDirectory(context);
+              if(profiles.sources.profiles==='env'||profiles.sources.defaultProfile==='env')throw fail('native_claude_enrollment_environment_override');
+              const binding={principalID:principalKey(),directory,controllerInstanceID:instanceID,providerConfigurationDigest:providerConfiguration,
+                profileFilesBaseline:await publication.snapshot(),authorization:await authorization.captureWebAuthorization({operation:'provider.configuration',scope:'user',directory})};
+              bindings.add(binding);await recheckBinding(binding,context);return binding;
+            },
+            recheckBinding,
+            withProfileRemoval:action=>{if(!providers)throw fail('native_claude_enrollment_owner_required');return providers.withClaudeProfileRemoval(action);},
+            assertProfileRemoval:async(profile,binding,context)=>{
+              await recheckBinding(binding,context);
+              await publication.assertRemoval(profile,binding.profileFilesBaseline,{recheck:()=>assertAuthority(binding,context)});
+            },
+            removeProfile:async(profile,binding,context)=>{
+              await recheckBinding(binding,context);
+              await publication.remove(profile,binding.profileFilesBaseline,{recheck:()=>assertAuthority(binding,context)});
+              if(!providers)throw fail('native_claude_enrollment_owner_required');providers.invalidateClaudeProfile(profile.id);
+            },
+            recheckAfterRemoval:assertAuthority,
+            publishProfile:async(profile,binding,context)=>{
+              await recheckBinding(binding,context);
+              await publication.publish(profile,binding.profileFilesBaseline,{recheck:()=>assertAuthority(binding,context)});
+            },
+          });
+        }else claudeEnrollment=undefined;
+      }else providers=undefined;
+      nextStage('controller');
+      child = await createNativeControllerProcess({ binary: artifacts.controller, cwd: boot.directory, environment, boot,
+        onObservationUnavailable: controllerInstanceID => recordObservationGap({ stage: 'controller', controllerInstanceID }),
+        supervisor: { launcher: artifacts.launcher,
+          deniedReadDirectories: options.supervisedController?.deniedReadDirectories ?? [] },
+        timeoutMs: options.timeoutMs, logFile: path.join(globals.log, 'native-controller.jsonl'),
+        beforeSpawn: async () => {
+          await verifyNativeRuntimeArtifacts({ manifestPath: artifacts.manifestPath, manifestSha256: artifacts.manifestSha256, launcher: artifacts.launcher,
+            ...(bundle.artifactPurpose?{purpose:bundle.artifactPurpose}:{}) });
+          await assertSelectedClone();
+        },
+        afterExit: exit => {
+          phase = 'closed'; observationOwner?.retire();
+          recordStartupDiagnostic('opencode_process_exit', {
+            controllerInstanceID: instanceID, pid: exit.pid ?? null, code: exit.code ?? null, signal: exit.signal ?? null,
+            expected: exit.expected === true, uptimeMs: Math.max(0, Date.now() - (exit.startedAt ?? startupStartedAt)),
+          });
+          // Do not await this queue here: a reverse credential command may be
+          // waiting for this very exit callback before it releases the queue.
+          void launchIntegrations?.invalidate();
+          lastExit = (async () => {
+            await claudeEnrollment?.close();
+            await cursor?.close();
+            await providers?.close();
+            await interviews?.close();
+            await documents?.close();
+            await images?.close();
+            await executionHost.settleController();
+            await helperText.controllerSettled(instanceID);
+            await nativeOwner.invalidateController();
+            // Exact owner epoch, published only after all controller executions
+            // and provider processes have drained. Retained across save retries.
+            settledController = Object.freeze({ controllerInstanceID: instanceID });
+            await options.onExit?.(exit);
+            unsettledLaunch = undefined;
+          })();
+          return lastExit;
+        },
+      });
+      try {
+        startupDiagnostic('bound', undefined, child.startupDiagnostics);
+        await setupCredentialSeed?.settle(child.bound.setupCredentialSeed);
+        await options.onBound?.(child);
+        if (!child.bound.catalog.asserted) {
+          const missing = child.bound.catalog.missing;
+          const ids = values => Array.isArray(values) ? values.filter(value => typeof value === 'string' && value.length <= 256).slice(0, 128) : [];
+          throw Object.assign(fail('native_catalog_mismatch'), { missingCatalog: {
+            agents: ids(missing?.agents), plugins: ids(missing?.plugins), tools: ids(missing?.tools),
+            models: Array.isArray(missing?.models) ? missing.models.filter(model => typeof model?.providerID === 'string'
+              && model.providerID.length <= 256 && typeof model.id === 'string' && model.id.length <= 256)
+              .slice(0, 128).map(({ providerID, id, variant }) => ({ providerID, id,
+                ...(typeof variant === 'string' && variant.length <= 256 ? { variant } : {}) })) : [],
+          } });
+        }
+        if (checkpointHeld) { phase = 'checkpoint'; return child; }
+        nextStage('recovery');
+        await options.beforeOpen?.();
+        if (checkpointHeld) { phase = 'checkpoint'; return child; }
+        // Private recovery may run while HTTP readiness and fresh web grants
+        // remain closed. This also restores scheduler fences before relaunch.
+        for(const location of bundle.locations)await retention.recover({directory:location.directory,instanceID});
+        if (checkpointHeld) { phase = 'checkpoint'; return child; }
+        await child.call({ action: 'open-recovery' });
+        if (checkpointHeld) throw fail('native_checkpoint_admission_held');
+        phase = 'recovering';
+        for (const location of bundle.locations) {
+          if (checkpointHeld) throw fail('native_checkpoint_admission_held');
+          const inheritance = verifiedBundle?.removalInheritance;
+          const source = inheritance?.refs.find(row => row.ref === 'refs/devryan/state' && (row.directory === location.directory
+            || descriptor.projectMap.some(mapping => mapping.sourceDirectory === row.directory && mapping.targetDirectory === location.directory)));
+          if (source) await executionHost.runtime.recoverNativeRemovalOwnership({ directory: location.directory,
+            ownerID: descriptor.bundleID, checkpointID: inheritance.checkpointID, sourceOID: source.oid,
+            ...(descriptor.sourceBundleID ? { sourceOwnerID: descriptor.sourceBundleID } : {}) });
+          await removal.recover({ directory: location.directory });
+          // The new controller has reaped the original registry and verified
+          // its clone before opening private recovery. Only the current bundle
+          // and its proved immediate checkpoint source own temporary holds.
+          const holdOwners = new Set([descriptor.bundleID]);
+          if (descriptor.checkpoint?.generation === 2) {
+            if (descriptor.checkpoint.ownerID !== descriptor.sourceBundleID) throw fail('native_clone_evidence_invalid');
+            holdOwners.add(descriptor.checkpoint.ownerID);
+          }
+          // Cursor recovery re-pauses a session whose intent it still cannot settle.
+          for (const ownerID of [...holdOwners, ...cursorRecovery.holdOwnerIDs]) await executionHost.runtime.recoverNativeTransientHolds({ directory: location.directory, ownerID });
+          await nativeOwner.recoverTransactionHolds({ directory: location.directory });
+          await nativeOwner.recoverShellContinuations({ directory: location.directory });
+          await cursor.recover({ directory: location.directory });
+          await sessionContext?.recoverContinuations({ directory: location.directory });
+          await nativeOwner.recoverExecutionContinuations({ directory: location.directory });
+        }
+        if (checkpointHeld) throw fail('native_checkpoint_admission_held');
+        nextStage('open');
+        await child.call({ action: 'open' });
+        if (checkpointHeld) throw fail('native_checkpoint_admission_held');
+        phase = 'ready';
+        for(const location of bundle.locations)sessionContext?.startResultWatch({directory:location.directory});
+        launchIntegrations?.markReady();
+        finishStage();
+        startupDiagnostic('ready');
+        return child;
+      } catch (cause) { recordStartupFailure(cause); await child.close(); throw cause; }
+    })().catch(cause => {
+      recordStartupFailure(cause);
+      if (cause?.nativeProcessUnsettled) {
+        unsettledLaunch = cause;
+        if (lastExit) void lastExit.then(() => { if (unsettledLaunch === cause) unsettledLaunch = undefined; }, () => {});
+      }
+      throw cause;
+    }).finally(() => { starting = undefined; });
+    return starting;
+  };
+  const verifyPlanSourceSettled = createNativePlanSettlementVerifier({
+    readControllerPin: () => {
+      if (phase !== 'ready' || stopping || stopped || !child || child.hasExited() || !configurationSnapshot?.digest) throw fail('plan_source_unsettled');
+      return { instanceID: nativeInstanceID, configurationDigest: configurationSnapshot.digest };
+    },
+    readStatus: ({ directory }) => openCodeClient.sessions.status({ directory }, { directory, timeoutMs: 5000 }),
+    readManagedState: ({ sessionID, directory }) => getManagedRuntime().handleRpc({ method: 'context_state', params: { rootSessionId: sessionID, directory } }),
+    readManagedBarrier: ({ sessionID, directory }) => getManagedRuntime().handleRpc({ method: 'barrier_status', params: { rootSessionId: sessionID, directory } }),
+    activeLeases: input => executionHost.runtime.activeLeases(input),
+    readPrimaryRecord: sessionID => primaryRuntime.readRecord(sessionID),
+  });
+  return {
+    recoverAcceptedPromptBoundary: async ({ directory, sessionID, userMessageID }) => {
+      return recoverAcceptedPromptBoundary({ runtime: executionHost.runtime, databasePath: descriptor.launch.opencodeDatabasePath,
+        directory, sessionID, userMessageID });
+    },
+    resolveHostOperation:async(operationID,directory,invocation)=>{
+      if(phase!=='ready'||stopping||!hostOperations)throw fail('host_operation_owner_unavailable');
+      const operation=await hostOperations.resolve(operationID,directory);
+      let objectivePin;
+      const prerequisiteCheck=async()=>{
+        await nativeOwner.recheckExecution(invocation);
+        if(operation.purpose!=='deployment')return;
+        let root=await openCodeClient.sessions.get(invocation.sessionID,{directory,timeoutMs:5000});const seen=new Set();
+        while(root?.parentID){if(seen.has(root.id)||seen.size>256)throw fail('host_operation_scope_invalid');seen.add(root.id);root=await openCodeClient.sessions.get(root.parentID,{directory,timeoutMs:5000});}
+        if(!root?.id||root.directory!==directory)throw fail('host_operation_scope_invalid');
+        const primary=await primaryRuntime.readRecord(root.id),objectiveId=primary?.objectiveID??primary?.anchorID;
+        if(!objectiveId||primary.directory!==directory)throw fail('host_operation_objective_unavailable');
+        const identity=JSON.stringify([root.id,objectiveId]);if(objectivePin&&objectivePin!==identity)throw fail('host_operation_objective_changed');objectivePin=identity;
+        const evidence=await getManagedRuntime().inspectRequiredChecks({rootSessionId:root.id,directory,objectiveId});
+        assertRegisteredHostOperationPrerequisites(operation,evidence.checks);
+      };
+      await prerequisiteCheck();
+      return {...operation,recheck:async executionDirectory=>{await prerequisiteCheck();await operation.recheck(executionDirectory);}};
+    },
+    verifyPlanSourceSettled,
+    readCanonicalPlanSequence: input => {
+      if (!privileged) throw fail('native_context_metadata_owner_required');
+      return privileged.readCanonicalPlanSequence(input.sessionID, {directory:input.directory,timeoutMs:5000});
+    },
+    nativeOwner, handleRpc, start,
+    checkpointController: () => { if (!child) throw fail('bundle_checkpoint_controller_unknown'); return child; },
+    closeAdmissionForCheckpoint: async () => {
+      checkpointHeld = true; phase = 'checkpoint';
+      await starting;
+      await sessionContext?.dispose();
+      if (child && !child.hasExited()) await child.call({ action: 'close-startup' });
+    },
+    assertCheckpointAdmissionClosed: async () => {
+      if (!checkpointHeld || phase === 'ready' || phase === 'recovering' || starting) throw fail('bundle_checkpoint_admission_open');
+    },
+    drainCredentialOwners: async () => {
+      if (!checkpointHeld) throw fail('bundle_checkpoint_admission_open');
+      await claudeEnrollment?.close();
+      await integrations?.invalidate();
+      await providers?.close();
+      await options.withCredentialMutationQueue?.(async () => {});
+    },
+    captureContextAssets,
+    dispatchNativeRecovery:async(record,prompt)=>{
+      if(phase!=='ready'||stopping)throw fail('native_runtime_not_ready');
+      const scope={sessionID:record.sessionID,directory:record.directory,messageID:prompt.messageID};
+      return nativeOwner.withPrimaryRecoveryDispatch(scope,()=>openCodeClient.prompts.prompt(scope.sessionID,prompt,{directory:scope.directory,origin:'provider-recovery'}));
+    },
+    getConfigurationSnapshot: () => configurationSnapshot,
+    getCatalogAvailability: () => child?.bound.catalog.availability ?? { selections: [] },
+    getClaudeEnrollmentOwner: () => phase==='ready'&&!stopping&&!checkpointHeld?claudeEnrollment:null,
+    inspectClaude: async (input, {signal} = {}) => {
+      if(!supportsClaudeLifecycle)throw fail('native_claude_update_required');
+      const owner=providers,snapshot=configurationSnapshot,instanceID=nativeInstanceID,expected=providerConfiguration;
+      const directory=input.directory??snapshot?.locations[0]?.directory;
+      const live=()=>{
+        if(phase!=='ready'||stopping||checkpointHeld||!child||child.hasExited()||!owner||providers!==owner||configurationSnapshot!==snapshot||nativeInstanceID!==instanceID)throw fail('native_runtime_not_ready');
+        signal?.throwIfAborted();
+      };
+      live();
+      if(!snapshot.locations.some(row=>row.directory===directory)||!descriptor.projectMap.some(row=>row.targetDirectory===directory))throw fail('native_provider_configuration_location_unreviewed');
+      const grant=await authorization.captureWebAuthorization({operation:'provider.configuration',scope:'read',directory});
+      const recheck=async()=>{
+        live();await grant();live();
+        const current=await resolveNativeProviderConfiguration({globals:descriptor.launch.global,environment:options.providerEnvironment??{},controlRoot:bundle.controlRoot});
+        live();if(hash(JSON.stringify(current))!==expected)throw fail('native_provider_configuration_changed');
+        await grant();live();
+      };
+      await recheck();
+      return owner.inspectClaude({directory,kind:input.kind},{recheck,signal});
+    },
+    withProviderConfigurationAuthorization: createNativeProviderConfigurationOperation({
+      descriptor, getSnapshot: () => configurationSnapshot,
+      isReady: () => phase === 'ready' && Boolean(child && !child.hasExited()) && !stopping,
+      captureWebAuthorization: input => authorization.captureWebAuthorization(input),
+      credentialMetadata: input => { if (!integrations) throw fail('native_integration_owner_unavailable'); return integrations.credentialMetadata(input); },
+      credentialOperation: (spec, mutation) => { if (!integrations) throw fail('native_integration_owner_unavailable'); return integrations.credentialOperation(spec, mutation); },
+    }),
+    handleInterviewRequest:async(request,response)=>{
+      if(!interviews||phase!=='ready'||stopping)throw fail('native_interview_owner_unavailable');
+      return interviews.handleRequest(request,response);
+    },
+    getReviewedBrowser: () => {
+      if (!reviewedBrowser || phase !== 'ready' || stopping) throw fail('native_browser_host_unavailable');
+      return reviewedBrowser;
+    },
+    browserOperation: (invocation, event, context) => {
+      if (!browserOperation || !reviewedBrowser || phase !== 'ready' || stopping) throw fail('native_browser_host_unavailable');
+      return browserOperation(invocation, event, context);
+    },
+    // Session idle: continue clean reviewed results first, so the barrier is
+    // clear before todo continuation or plan settlement reads it.
+    observeSessionIdle: async input => {
+      if (phase !== 'ready' || stopping) return;
+      if(providers)try{
+        const page=await openCodeClient.sessions.messages(input.sessionID,{limit:1},{directory:input.directory,timeoutMs:5000,maxResponseBytes:1024*1024});
+        if(Array.isArray(page?.records)&&page.records.length===1)providers.observeClaudeResult(input,page.records[0]);
+      }catch{/* Provider health cannot change idle settlement or task recovery. */}
+      try { await managedTask.settleIdle(input); }
+      catch (error) {
+        options.recordDiagnostic?.({ type: 'lifecycle', event: 'native_task_auto_continue_failed', sessionID: input.sessionID,
+          payload: { code: typeof error?.code === 'string' && /^[a-z0-9_]{1,128}$/.test(error.code) ? error.code : 'native_task_auto_continue_failed' } });
+      }
+      if (!sessionContext) return;
+      return sessionContext.continueTodos(input);
+    },
+    configurationForDirectory: directory => {
+      const configuration = configurationSnapshot
+        ? configurationSnapshot.locations.find(location => location.directory === directory)?.configuration : bundle.configuration;
+      if (!configuration || !bundle.locations.some(location => location.directory === directory)) throw fail('native_configuration_location_unreviewed');
+      return configuration;
+    },
+    renameGeneratedTitle:request=>helperText.generate(request,true),
+    verifyTitleAcceptedInput: input => nativeOwner.verifyTitleAcceptedInput(input),
+    captureManagedTitleInput: input => managedTitle.capture(input),
+    captureAcceptedHumanTitleInput: input => managedTitle.captureHuman(input),
+    resolveHelperSelection: async input => {
+      if (phase !== 'ready' || stopping || !bundle.locations.some(row => row.directory === input.directory)) throw fail('native_runtime_not_ready');
+      const session = input.sessionID ? await openCodeClient.sessions.get(input.sessionID, { directory: input.directory }) : undefined;
+      if (session && session.directory !== input.directory) throw fail('native_helper_scope_invalid');
+      const chosen = await authorization.captureHelperSelection(input, session);
+      await chosen.recheck();
+      return Object.freeze({ ...chosen.selection, selectionMode: input.selectionMode ?? 'configured', selectionRevision: chosen.selection.revision });
+    },
+    generateHelperText:async request=>{
+      if(!bundle.locations.some(location=>location.directory===request.directory)||await fs.realpath(request.directory)!==request.directory)throw fail('native_helper_location_unreviewed');
+      return helperText.generate(request);
+    },
+    retainSessions:input=>{if(phase!=='ready'||stopping)throw fail('native_runtime_not_ready');return retention.run(input);},
+    readRetentionSnapshot:async()=>{
+      if(phase!=='ready'||stopping)throw fail('native_runtime_not_ready');
+      const instanceID=nativeInstanceID,current=active();
+      const sessions=await openCodeClient.sessions.list({limit:10001});
+      if(instanceID!==nativeInstanceID||active()!==current||phase!=='ready'||stopping)throw fail('native_retention_epoch_changed');
+      if(!Array.isArray(sessions)||sessions.length>10000)throw fail('native_retention_tree_unbounded');
+      return {protocol:1,complete:true,instanceID,sessions};
+    },
+    removeSession: (sessionID, options = {}) => removal.remove({ sessionID, directory: options.directory }),
+    recoverStoppedManagedTasks,
+    isExecutionReady: () => Boolean(!checkpointHeld && (phase === 'ready' || phase === 'recovering') && child && !child.hasExited() && child.bound.catalog.asserted && !stopping),
+    isReady: () => Boolean(phase === 'ready' && child && !child.hasExited() && child.bound.catalog.asserted && !stopping),
+    getAuthHeaders: () => {
+      if (!httpToken) throw fail('native_controller_unavailable');
+      return { authorization: `Bearer ${httpToken}`, ...nativeOwner.requestHeaders(), ...integrations?.requestHeaders() };
+    },
+    withIntegrationOperation: (input, action) => {
+      if (!integrations) throw fail('native_integration_owner_unavailable');
+      return integrations.withCallerOperation(input, action);
+    },
+    credentialOperation: (operation, mutation) => {
+      if (!integrations) throw fail('native_integration_owner_unavailable');
+      return integrations.credentialOperation(operation, mutation);
+    },
+    getOpenAiOAuthCoordinator: () => {
+      if (!integrations || phase !== 'ready' || stopping) throw fail('native_integration_owner_unavailable');
+      return integrations.getOpenAiOAuthCoordinator();
+    },
+    readOpenAiCredential: (operation, credentialID) => {
+      if (!integrations) throw fail('native_integration_owner_unavailable');
+      return integrations.readOpenAiCredential(operation, credentialID);
+    },
+    readOpenAiSelected: operation => {
+      if (!integrations) throw fail('native_integration_owner_unavailable');
+      return integrations.readOpenAiSelected(operation);
+    },
+    readProviderSelected: operation => {
+      if (!integrations) throw fail('native_integration_owner_unavailable');
+      return integrations.readProviderSelected(operation);
+    },
+    refreshProviderSelected: operation => {
+      if (!integrations) throw fail('native_integration_owner_unavailable');
+      return integrations.refreshProviderSelected(operation);
+    },
+    credentialMetadata: operation => {
+      if (!integrations) throw fail('native_integration_owner_unavailable');
+      return integrations.credentialMetadata(operation);
+    },
+    imageGeneration:(invocation,args,context)=>{
+      if(!imageGeneration)throw fail('native_image_generation_owner_required');return imageGeneration(invocation,args,context);
+    },
+    ownedCursorPrompt:({directory,sessionID,userMessageID,assistantMessageID,agent,modelID,variant})=>{
+      if(!cursor)throw fail('native_cursor_owner_unavailable');return cursor.ownedPrompt({directory,sessionID,userMessageID,assistantMessageID,agent,modelID,...variant?{variant}:{}});
+    },
+    persistCursorRecord:input=>{if(!cursor)throw fail('native_cursor_owner_unavailable');return cursor.persist(input);},
+    withCursorExecution:(input,action)=>{if(!cursor)throw fail('native_cursor_owner_unavailable');return cursor.withExecution(input,action);},
+    resolveCursorApiKey:input=>{if(!cursor)throw fail('native_cursor_owner_unavailable');return cursor.resolveApiKey(input);},
+    withManagedCursorCatalog: (input, action) => managedCursorCatalog.run(Object.freeze(structuredClone(input)), action),
+    withCursorReadOnly:async(input,action)=>{
+      input?.signal?.throwIfAborted();
+      if(!cursor||phase!=='ready'||stopping||!record(input)||!['title','text','catalog','verify'].includes(input.kind)
+        ||!bundle.locations.some(location=>location.directory===input.directory)||await fs.realpath(input.directory)!==input.directory
+        ||(input.kind==='title'?!input.sessionID:input.kind!=='text'&&input.sessionID!==undefined))throw fail('native_cursor_readonly_scope_required');
+      const target=active(),selectedCursor=cursor;
+      const session=input.sessionID?await openCodeClient.sessions.get(input.sessionID,{directory:input.directory}):undefined;
+      if(session&&(session.directory!==input.directory||session.time?.archived||session.revert||(!input.helperAgent&&session.model?.providerID!=='cursor-acp')))throw fail('native_cursor_readonly_scope_required');
+      if(!input.helperAgent&&input.kind==='title'&&input.modelID&&(session.model?.id!==input.modelID||(session.model?.variant??undefined)!==input.variant))throw fail('native_title_selection_changed');
+      const catalogScope=managedCursorCatalog.getStore();
+      if(input.kind==='catalog'&&catalogScope&&catalogScope.directory!==input.directory)throw fail('native_cursor_catalog_scope_invalid');
+      const catalogAuthorization=input.kind==='catalog' ? await nativeOwner.captureManagedCursorCatalogAuthorization(catalogScope ?? input) : null;
+      const reauthorize=catalogAuthorization ?? (input.kind==='title' ? await authorization.captureTitleHelperAuthorization(session) : await authorization.captureWebAuthorization({operation:'cursor.readonly',sessionID:input.sessionID,directory:input.directory},session));
+      const chosen = input.helperAgent ? await authorization.captureHelperSelection({ agent: input.helperAgent, directory: input.directory, sessionID: input.sessionID, selectionMode: input.selectionMode }, session) : null;
+      if (chosen && (chosen.selection.providerID !== 'cursor-acp' || chosen.selection.modelID !== input.modelID || chosen.selection.variant !== input.variant || chosen.selection.revision !== input.selectionRevision)) throw fail('native_helper_selection_changed');
+      const initial=session?await executionHost.runtime.nativeAdmissionState({directory:input.directory,sessionID:input.sessionID}):{revision:0,held:false,reverting:false};
+      const recheck=async()=>{
+        input.signal?.throwIfAborted();
+        if(phase!=='ready'||stopping||child!==target||cursor!==selectedCursor)throw fail('native_cursor_owner_expired');
+        await reauthorize();
+        if(session){
+          const current=await openCodeClient.sessions.get(input.sessionID,{directory:input.directory}),state=await executionHost.runtime.nativeAdmissionState({directory:input.directory,sessionID:input.sessionID});
+          if(current.directory!==input.directory||current.time?.archived||current.revert||(!input.helperAgent&&current.model?.providerID!=='cursor-acp')
+            ||JSON.stringify(current.model)!==JSON.stringify(session.model)||current.agent!==session.agent||state.held||state.reverting||state.revision!==initial.revision)throw fail('native_cursor_scope_revoked');
+        }
+        await chosen?.recheck();
+        await reauthorize();input.signal?.throwIfAborted();if(phase!=='ready'||stopping||child!==target||cursor!==selectedCursor)throw fail('native_cursor_owner_expired');
+      };
+      const scope={kind:input.kind,directory:input.directory,...input.sessionID?{sessionID:input.sessionID}:{}};
+      return selectedCursor.withReadOnly(scope,{revision:initial.revision,recheck},action);
+    },
+    beforeCursorReadOnlyExecution:()=>{if(!cursor)throw fail('native_cursor_owner_unavailable');return cursor.beforeReadOnlyExecution();},
+    withCursorReadOnlyExecution:action=>{if(!cursor)throw fail('native_cursor_owner_unavailable');return cursor.withReadOnlyExecution(action);},
+    dispatchExternalPrompt:async(receipt,request)=>{
+      const metadata=request.metadata?.devryan;
+      if(metadata?.providerID!=='cursor-acp'||request.resume===false)return false;
+      if(!cursor||!options.cursorRuntime||phase!=='ready'||stopping)throw fail('native_cursor_owner_unavailable');
+      const session=await openCodeClient.sessions.get(receipt.sessionID,{directory:receipt.directory});
+      if(session.agent!==metadata.agent||session.model?.providerID!=='cursor-acp'||session.model.id!==metadata.modelID)throw fail('native_cursor_selection_changed');
+      const result=await options.cursorRuntime.handlePromptAsync({sessionID:receipt.sessionID,directory:receipt.directory,
+        body:{...receipt.body,agent:session.agent,model:{providerID:'cursor-acp',modelID:session.model.id},variant:session.model.variant??'default'}});
+      if(!result?.handled||(result.status??200)<200||(result.status??200)>=300)throw fail('native_cursor_prompt_rejected');return true;
+    },
+    cursorPrompt:async input=>{
+      if(input.body?.model?.providerID!=='cursor-acp')return {handled:false};
+      await openCodeClient.prompts.prompt(input.sessionID,input.body,{directory:input.directory});return {handled:true,status:204};
+    },
+    stopSessions: async ({ sessions }) => {
+      for(const sessionID of sessions)await options.cursorRuntime?.abortAndWait(sessionID);
+      for (const sessionID of sessions) await active().call({ action: 'hold', sessionID });
+      return { terminated: true, sessions };
+    },
+    async close() {
+      if (stopped) return;
+      stopping = true; phase = 'closed'; observationOwner?.retire();
+      await sessionContext?.dispose();
+      let startupFailure;
+      try { await starting; } catch (cause) { startupFailure = cause; }
+      // A failed boot can still own an unbound process. Keep its private
+      // authority alive until the real exit/recovery callback settles it.
+      if (unsettledLaunch) throw unsettledLaunch;
+      // Admitted refreshes must finish their durable KV fences while the same
+      // physical controller is still alive. Closing public admission does not
+      // revoke those already-owned finalizers.
+      await claudeEnrollment?.close();
+      await integrations?.invalidate();
+      await providers?.close();
+      await options.withCredentialMutationQueue?.(async () => {});
+      const settlementFailures = [];
+      try {
+        if (child) {
+          if (child.hasExited()) await child.killForRecovery();
+          else await child.close();
+        }
+        await lastExit;
+      } catch (cause) { settlementFailures.push(cause); }
+      // Owner shutdown is terminal even if the old controller's settlement
+      // failed. Replacement uses settleController and never revives old grants.
+      try { await executionHost.drain(); } catch (cause) { settlementFailures.push(cause); }
+      if (settlementFailures.length === 1) throw settlementFailures[0];
+      if (settlementFailures.length) throw new AggregateError(settlementFailures, 'Native final execution settlement failed');
+      await integrations?.invalidate();
+      await providers?.close();
+      await cursor?.close();
+      await cursorRecovery.drain();
+      await interviews?.close();
+      await bridge.stop();
+      nativeOwner.dispose(); stopped = true;
+      if (startupFailure) throw startupFailure;
+    },
+  };
+}

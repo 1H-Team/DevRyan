@@ -1,5 +1,5 @@
 import React from 'react';
-import { BotsEventOwner } from '@/apps/BotsEventOwner';
+import { useRuntimeFeature } from '@/lib/opencode/runtime-capabilities';
 import { ProjectPreviewGrantOwner } from '@/components/layout/localPreviewInstances';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { usePwaManifestSync } from '@/hooks/usePwaManifestSync';
@@ -7,11 +7,9 @@ import { useQueuedMessageAutoSend } from '@/hooks/useQueuedMessageAutoSend';
 import { useProviderErrorRecovery } from '@/hooks/useProviderErrorRecovery';
 import { useSessionAutoCleanup } from '@/hooks/useSessionAutoCleanup';
 import { useWindowControlsOverlayLayout } from '@/hooks/useWindowControlsOverlayLayout';
-import { setOptimisticRefs } from '@/sync/session-actions';
 import { markSessionViewed } from '@/sync/notification-store';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { setExternallyViewedSession, useSyncChildStores } from '@/sync/sync-context';
-import { useSync } from '@/sync/use-sync';
 import { quotaRefreshCoordinator } from '@/stores/useQuotaStore';
 import { useManagedOrchestrationStore } from '@/stores/useManagedOrchestrationStore';
 import {
@@ -20,10 +18,10 @@ import {
   collectBrowserAgentWindowContexts,
 } from '@/stores/useBrowserAgentStore';
 
-const MINI_CHAT_PRESENCE_CHANNEL = 'openchamber:mini-chat-presence';
-const MANAGED_TASK_EVENT = 'openchamber:managed-task';
-const MANAGED_TASK_REMOVED_EVENT = 'openchamber:managed-task-removed';
-const MANAGED_WARNING_EVENT = 'openchamber:managed-orchestration-warning';
+const MINI_CHAT_PRESENCE_CHANNEL = 'devryan:mini-chat-presence';
+const MANAGED_TASK_EVENT = 'devryan:managed-task';
+const MANAGED_TASK_REMOVED_EVENT = 'devryan:managed-task-removed';
+const MANAGED_WARNING_EVENT = 'devryan:managed-orchestration-warning';
 let managedOrchestrationOwnerCount = 0;
 let managedOrchestrationCleanupGeneration = 0;
 
@@ -32,23 +30,6 @@ type MiniChatPresenceMessage = {
   sessionId?: string;
   directory?: string;
   viewed?: boolean;
-};
-
-const SyncOptimisticBridge: React.FC = () => {
-  const sync = useSync();
-  const addRef = React.useRef(sync.optimistic.add);
-  const removeRef = React.useRef(sync.optimistic.remove);
-  addRef.current = sync.optimistic.add;
-  removeRef.current = sync.optimistic.remove;
-
-  React.useEffect(() => {
-    setOptimisticRefs(
-      (input) => addRef.current(input),
-      (input) => removeRef.current(input),
-    );
-  }, []);
-
-  return null;
 };
 
 const MiniChatPresenceBridge: React.FC = () => {
@@ -105,13 +86,13 @@ const ManagedOrchestrationOwner: React.FC = () => {
     window.addEventListener(MANAGED_TASK_EVENT, ingestWindowEvent);
     window.addEventListener(MANAGED_TASK_REMOVED_EVENT, ingestWindowEvent);
     window.addEventListener(MANAGED_WARNING_EVENT, ingestWindowEvent);
-    window.addEventListener('openchamber:connection-status', handleConnectionStatus);
+    window.addEventListener('devryan:connection-status', handleConnectionStatus);
 
     return () => {
       window.removeEventListener(MANAGED_TASK_EVENT, ingestWindowEvent);
       window.removeEventListener(MANAGED_TASK_REMOVED_EVENT, ingestWindowEvent);
       window.removeEventListener(MANAGED_WARNING_EVENT, ingestWindowEvent);
-      window.removeEventListener('openchamber:connection-status', handleConnectionStatus);
+      window.removeEventListener('devryan:connection-status', handleConnectionStatus);
       managedOrchestrationOwnerCount = Math.max(0, managedOrchestrationOwnerCount - 1);
       const cleanupGeneration = ++managedOrchestrationCleanupGeneration;
       queueMicrotask(() => {
@@ -206,7 +187,7 @@ const BrowserLeaseClaimOwner: React.FC = () => {
       if (detail?.status === 'connected') claimKnownContexts(true);
     };
     window.addEventListener('focus', handleFocus);
-    window.addEventListener('openchamber:connection-status', handleConnectionStatus);
+    window.addEventListener('devryan:connection-status', handleConnectionStatus);
 
     return () => {
       disposed = true;
@@ -215,7 +196,7 @@ const BrowserLeaseClaimOwner: React.FC = () => {
       unsubscribeSessions();
       unsubscribeManagedTasks();
       window.removeEventListener('focus', handleFocus);
-      window.removeEventListener('openchamber:connection-status', handleConnectionStatus);
+      window.removeEventListener('devryan:connection-status', handleConnectionStatus);
     };
   }, [childStores]);
 
@@ -229,12 +210,15 @@ export function SyncRuntimeEffects({ embeddedBackgroundWorkEnabled }: {
   useProviderErrorRecovery(embeddedBackgroundWorkEnabled);
   useQueuedMessageAutoSend(embeddedBackgroundWorkEnabled);
 
-  return <SyncOptimisticBridge />;
+  return null;
 }
 
 export function SyncAppEffects({ embeddedBackgroundWorkEnabled }: {
   embeddedBackgroundWorkEnabled: boolean;
 }) {
+  const nativeExecution = useRuntimeFeature('nativeExecution');
+  const managedChildTasks = useRuntimeFeature('managedChildTasks');
+  const browser = useRuntimeFeature('browser');
   usePwaManifestSync();
   useWindowControlsOverlayLayout();
   useKeyboardShortcuts();
@@ -243,11 +227,10 @@ export function SyncAppEffects({ embeddedBackgroundWorkEnabled }: {
     <>
       <SyncRuntimeEffects embeddedBackgroundWorkEnabled={embeddedBackgroundWorkEnabled} />
       <MiniChatPresenceBridge />
-      <QuotaRefreshOwner enabled={embeddedBackgroundWorkEnabled} />
-      <ManagedOrchestrationOwner />
-      <BotsEventOwner />
-      <BrowserLeaseClaimOwner />
-      <ProjectPreviewGrantOwner />
+      <QuotaRefreshOwner enabled={embeddedBackgroundWorkEnabled && nativeExecution} />
+      {managedChildTasks ? <ManagedOrchestrationOwner /> : null}
+      {browser ? <BrowserLeaseClaimOwner /> : null}
+      {browser ? <ProjectPreviewGrantOwner /> : null}
     </>
   );
 }

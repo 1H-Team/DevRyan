@@ -1,1739 +1,413 @@
-import { EventEmitter } from 'node:events';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {expect,it,vi} from 'vitest';
+import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
+import express from 'express';
+import request from '../../test-supertest.js';
+import { createHmrStateRuntime } from './hmr-state-runtime.js';
+import { registerServerStatusRoutes } from './core-routes.js';
+import { registerOpenCodeRoutes } from './routes.js';
+import {createOpenCodeLifecycleRuntime} from './lifecycle.js';
+import {createMemorySessionTitleOutbox} from './session-title-outbox.js';
+import {createStandardSessionTitleRuntime} from './standard-session-title-runtime.js';
+function fixture(overrides={}){
+ const events=[],state=overrides.state??{openCodeWorkingDirectory:process.cwd(),isShuttingDown:false},children=[];
+ const native={isReady:()=>Boolean(children.at(-1)&&!children.at(-1).exited),start:vi.fn(async({beforeConfiguration}={})=>{await (overrides.getRuntimeBundle?.()??bundle).verify();await beforeConfiguration?.();const child={port:43100,url:'http://localhost:43100',hasExited:()=>child.exited,close:async()=>{events.push('exit');child.exited=true;},killForRecovery:async()=>{events.push('settle');child.exited=true;}};children.push(child);return child;})};
+ const bundle={version:'2.1.4',descriptor:{generation:2,projectMap:[{targetDirectory:process.cwd()}]},verify:async()=>events.push('verify')};
+ const runtime=createOpenCodeLifecycleRuntime({state,getNativeRuntime:()=>native,getRuntimeBundle:()=>bundle,
+  // Never migrate or read the real user OpenCode config directory from a test.
+  buildOpenCodeUrl:()=> 'http://localhost:43100',resolveSlimConfiguration:()=>({}),migrateAgentsConfiguration:()=>({migrated:false,reason:'absent'}),
+  syncPackagedAgents:async()=>{events.push('agents');return {changed:false};},syncRuntimeAgentOverlays:async()=>({changed:false}),
+  probeOpenCodeReadiness:async input=>{expect(input.generation).toBe(2);events.push('probe');return {ready:true,generation:2,version:bundle.version};},
+  pauseManagedBrowserLeases:async()=>{events.push('pause');return 'owned';},resumeManagedBrowserLeases:async handle=>{expect(handle).toBe('owned');events.push('resume');},...overrides});
+ return {runtime,state,native,bundle,events,children};
+}
+it('migrates the legacy agent config before resolving it on every configured start',async()=>{const order=[];const f=fixture({migrateAgentsConfiguration:()=>{order.push('migrate');return {migrated:false,reason:'failed',code:'INVALID_JSONC'};},resolveSlimConfiguration:()=>{order.push('resolve');return {};}});await f.runtime.bootstrapOpenCodeAtStartup();expect(order).toEqual(['migrate','resolve']);expect(f.state.isOpenCodeReady).toBe(true);});
+it('starts only a verified native owner and waits for its catalog',async()=>{const f=fixture();await f.runtime.bootstrapOpenCodeAtStartup();expect(f.events).toEqual(['verify','agents','probe']);expect(f.state).toMatchObject({openCodeGeneration:2,openCodeVersion:'2.1.4',isOpenCodeReady:true,isExternalOpenCode:false});expect(f.state.openCodeProcess).toBe(f.children[0]);});
+it('startup deferral exists only inside the original readiness deadline, even if a probe ignores its timeout',async()=>{
+ vi.useFakeTimers();let entered,release;
+ const began=new Promise(resolve=>{entered=resolve;});
+ const f=fixture({probeOpenCodeReadiness:()=>{entered();return new Promise(resolve=>{release=resolve;});}});
+ const boot=f.runtime.startOpenCode();const failure=boot.catch(error=>error);
+ try{
+  expect(f.runtime.isStartupReadinessPending()).toBe(true);await began;
+  expect(f.runtime.isStartupReadinessPending()).toBe(true);
+  await vi.advanceTimersByTimeAsync(19_999);expect(f.runtime.isStartupReadinessPending()).toBe(true);
+  await vi.advanceTimersByTimeAsync(1);expect(f.runtime.isStartupReadinessPending()).toBe(false);
+  release({ready:false,reason:'unreachable'});expect(await failure).toMatchObject({code:'opencode_runtime_not_ready'});
+  expect(f.state.openCodeStartup.state).toBe('failed');expect(f.runtime.isStartupReadinessPending()).toBe(false);
+ }finally{release?.({ready:false,reason:'unreachable'});await failure;vi.useRealTimers();}
+});
+it('pre-bind startup defers restored titles only within the original bounded startup window',async()=>{
+ vi.useFakeTimers();
+ const f=fixture();let reject;f.native.start.mockImplementationOnce(()=>new Promise((_resolve,rejectBoot)=>{reject=rejectBoot;}));
+ const boot=f.runtime.startOpenCode();const failure=boot.catch(error=>error);
+ try{
+  expect(f.state.openCodeStartup.state).toBe('starting');expect(f.runtime.isStartupReadinessPending()).toBe(true);
+  await vi.advanceTimersByTimeAsync(20_000);expect(f.runtime.isStartupReadinessPending()).toBe(false);
+ }finally{
+  reject(Object.assign(Error('native_fixture_startup_failed'),{code:'native_fixture_startup_failed'}));await failure;vi.useRealTimers();
+ }
+});
+it('a repeated readiness check cannot reset the original startup deadline',async()=>{
+ vi.useFakeTimers();const releases=[],entries=[];let wake;
+ const f=fixture({probeOpenCodeReadiness:()=>{entries.push(true);wake?.();return new Promise(resolve=>releases.push(resolve));}});
+ const boot=f.runtime.startOpenCode(),failure=boot.catch(error=>error);let repeated;
+ try{
+  await new Promise(resolve=>{if(entries.length)resolve();else wake=resolve;});
+  await vi.advanceTimersByTimeAsync(10_000);
+  repeated=f.runtime.waitForOpenCodeReady().catch(error=>error);
+  await new Promise(resolve=>{if(entries.length===2)resolve();else wake=resolve;});
+  expect(f.runtime.isStartupReadinessPending()).toBe(true);
+  await vi.advanceTimersByTimeAsync(10_000);expect(f.runtime.isStartupReadinessPending()).toBe(false);
+ }finally{
+  for(const release of releases)release({ready:true,generation:2});await Promise.all([failure,repeated]);vi.useRealTimers();
+ }
+});
+it('restored title jobs survive native pre-bind startup and persist once after readiness',async()=>{
+ vi.useFakeTimers();
+ const f=fixture();let releaseStart;
+ const start=f.native.start.getMockImplementation();
+ f.native.start.mockImplementationOnce(async input=>{await new Promise(resolve=>{releaseStart=resolve;});return start(input);});
+ const session={id:'ses_restored',title:'Untitled Session'};
+ const outbox=createMemorySessionTitleOutbox({initialJobs:[{key:'a'.repeat(64),sessionID:session.id,directory:process.cwd(),sourceHash:'b'.repeat(64),
+  sourceMessageID:'msg_source',candidateTitle:'Restored Model Session Title',source:'session_model',state:'pending_idle',attemptCount:0,nextAttemptAt:0,createdAt:Date.now()}]});
+ const rename=vi.fn(async({title})=>{session.title=title;});
+ const titles=createStandardSessionTitleRuntime({outbox,watchdogEnabled:true,renameGeneratedTitle:rename,
+  isStartupReadinessPending:f.runtime.isStartupReadinessPending,logger:{warn:vi.fn()},
+  openCodeClient:{generation:()=>2,sessions:{get:async()=>{
+   if(!f.state.isOpenCodeReady)throw Object.assign(Error('not ready'),{code:'native_runtime_not_ready'});
+   return {...session};
+  },status:async()=>({[session.id]:{type:'idle'}})}}});
+ const boot=f.runtime.startOpenCode();
+ try{
+  await vi.advanceTimersByTimeAsync(10_000);
+  expect((await outbox.list())[0]).toMatchObject({state:'pending_idle',attemptCount:0});expect(rename).not.toHaveBeenCalled();
+  releaseStart();await boot;await vi.advanceTimersByTimeAsync(5_000);
+  expect(rename).toHaveBeenCalledOnce();expect(await outbox.list()).toEqual([]);
+  await vi.advanceTimersByTimeAsync(30_000);expect(rename).toHaveBeenCalledOnce();
+ }finally{releaseStart();await boot;await titles.dispose();vi.useRealTimers();}
+});
+it('concurrent boot and start calls share the readiness window and native launch',async()=>{
+ let releaseProbe;
+ const f=fixture({probeOpenCodeReadiness:()=>new Promise(resolve=>{releaseProbe=resolve;})});
+ const first=f.runtime.bootstrapOpenCodeAtStartup();
+ await vi.waitFor(()=>expect(releaseProbe).toBeTypeOf('function'));
+ const second=f.runtime.startOpenCode(),third=f.runtime.bootstrapOpenCodeAtStartup();
+ expect(second).toBe(first);expect(third).toBe(first);
+ expect(f.runtime.isStartupReadinessPending()).toBe(true);
+ expect(f.state.openCodeStartup.attempt).toBe(1);
+ releaseProbe({ready:true,generation:2});await Promise.all([first,second,third]);
+ expect(f.native.start).toHaveBeenCalledOnce();expect(f.runtime.isStartupReadinessPending()).toBe(false);
+ expect(f.state.openCodeStartup).toEqual({state:'ready',attempt:1,code:null});
+});
+it('publishes startup attempts and terminal boot failure before any controller binds', async () => {
+ const f=fixture();
+ expect(f.state.openCodeStartup).toEqual({state:'idle',attempt:0,code:null});
+ let rejectBoot;
+ f.native.start.mockImplementationOnce(()=>new Promise((_,reject)=>{rejectBoot=reject;}));
+ const boot=f.runtime.bootstrapOpenCodeAtStartup();
+ await vi.waitFor(()=>expect(rejectBoot).toBeTypeOf('function'));
+ expect(f.state.openCodeStartup).toEqual({state:'starting',attempt:1,code:null});
+ const code='native_catalog_read_failed_model_http_500_cause_unavailable';
+ rejectBoot(Object.assign(new Error(code),{code}));
+ await expect(boot).rejects.toMatchObject({code});
+ expect(f.state.openCodeStartup).toEqual({state:'failed',attempt:1,code});
+ expect(f.state.openCodeProcess).toBeUndefined();
+ await f.runtime.restartOpenCode();
+ expect(f.state.openCodeStartup).toEqual({state:'ready',attempt:2,code:null});
+ expect(f.state.lastOpenCodeError).toBeNull();
+});
+it('does not publish raw failure details in startup status and clears failure before retry work', async () => {
+ const f=fixture();
+ f.bundle.verify=async()=>{throw new Error('secret fixture /private/config');};
+ await expect(f.runtime.startOpenCode()).rejects.toThrow('secret fixture');
+ expect(f.state.openCodeStartup).toEqual({state:'failed',attempt:1,code:'opencode_startup_failed'});
+ let releaseVerification;
+ f.bundle.verify=()=>new Promise(resolve=>{releaseVerification=resolve;});
+ const retry=f.runtime.startOpenCode();
+ expect(f.state.openCodeStartup).toEqual({state:'starting',attempt:2,code:null});
+ expect(f.state.lastOpenCodeError).toBeNull();
+ await vi.waitFor(()=>expect(releaseVerification).toBeTypeOf('function'));
+ releaseVerification();await retry;
+ expect(f.state.openCodeStartup).toEqual({state:'ready',attempt:2,code:null});
+});
+it('a superseded startup failure cannot replace the current attempt status', async () => {
+ const f=fixture();let rejectFirst;
+ f.bundle.verify=vi.fn().mockImplementationOnce(()=>new Promise((_,reject)=>{rejectFirst=reject;})).mockResolvedValue(undefined);
+ const first=f.runtime.startOpenCode();
+ await vi.waitFor(()=>expect(rejectFirst).toBeTypeOf('function'));
+ f.state.openCodeStartup={state:'ready',attempt:2,code:null};f.state.isOpenCodeReady=true;
+ rejectFirst(Object.assign(new Error('late failure'),{code:'native_old_failure'}));
+ await expect(first).rejects.toThrow('late failure');
+ expect(f.state.openCodeStartup).toEqual({state:'ready',attempt:2,code:null});
+ expect(f.state.isOpenCodeReady).toBe(true);
+});
+it('a superseded successful readiness probe cannot clear a newer terminal startup failure', async () => {
+ let releaseProbe;
+ const probe=vi.fn().mockImplementationOnce(()=>new Promise(resolve=>{releaseProbe=resolve;}));
+ const f=fixture({probeOpenCodeReadiness:probe});
+ const first=f.runtime.startOpenCode();
+ await vi.waitFor(()=>expect(releaseProbe).toBeTypeOf('function'));
+ f.state.openCodeStartup={state:'failed',attempt:2,code:'native_replacement_failed'};
+ f.state.isOpenCodeReady=false;f.state.lastOpenCodeError='replacement failed';
+ const current={...f.state};
+ releaseProbe({ready:true,generation:2,version:'old-probe-version'});
+ await expect(first).rejects.toMatchObject({code:'opencode_startup_superseded'});
+ expect(f.state.openCodeStartup).toEqual({state:'failed',attempt:2,code:'native_replacement_failed'});
+ expect(f.state.isOpenCodeReady).toBe(false);
+ expect(f.state.lastOpenCodeError).toBe('replacement failed');
+ expect(f.state.openCodeVersion).toBe(current.openCodeVersion);
+});
+it('a superseded failing readiness probe cannot overwrite the new ready owner', async () => {
+ let rejectProbe;
+ const probe=vi.fn().mockImplementationOnce(()=>new Promise((_,reject)=>{rejectProbe=reject;}))
+  .mockResolvedValue({ready:true,generation:2,version:'2.1.4'});
+ const f=fixture({probeOpenCodeReadiness:probe});
+ const first=f.runtime.startOpenCode();
+ await vi.waitFor(()=>expect(rejectProbe).toBeTypeOf('function'));
+ f.state.openCodeStartup={state:'ready',attempt:2,code:null};f.state.isOpenCodeReady=true;
+ const currentOwner=f.state.openCodeProcess;
+ rejectProbe(new Error('old probe timeout'));
+ await expect(first).rejects.toMatchObject({code:'opencode_startup_superseded'});
+ expect(f.state.openCodeStartup).toEqual({state:'ready',attempt:2,code:null});
+ expect(f.state.isOpenCodeReady).toBe(true);
+ expect(f.state.lastOpenCodeError).toBeNull();
+ expect(f.state.openCodeProcess).toBe(currentOwner);
+});
+it('missing or unsupported verified lifecycle version refuses before the controller starts',async()=>{for(const version of [undefined,'1.18.33','3.0.0','2.1.0-dev']){const f=fixture();f.bundle.version=version;await expect(f.runtime.startOpenCode()).rejects.toMatchObject({code:'native_runtime_bundle_required'});expect(f.native.start).not.toHaveBeenCalled();}});
+it('any other 2.x release requires the pinned upgrade before the controller starts',async()=>{for(const version of ['2.0.20','2.0.25','2.0.27','2.0.30']){const f=fixture();f.bundle.version=version;await expect(f.runtime.startOpenCode()).rejects.toMatchObject({code:'bundle_upgrade_required'});expect(f.native.start).not.toHaveBeenCalled();}});
+it('inspects and restores prompts through their existing owner without applying runtime overlays', async () => {
+ const prompts=[{name:'builder',state:'modified',currentHash:'a'.repeat(64),packagedHash:'b'.repeat(64)}];
+ const sync=vi.fn(async()=>({prompts,changed:false})),overlays=vi.fn();
+ const f=fixture({syncPackagedAgents:sync,syncRuntimeAgentOverlays:overlays});
+ expect(await f.runtime.getPackagedAgentPrompts()).toEqual({prompts});
+ expect(sync).toHaveBeenCalledWith(expect.objectContaining({dryRun:true}));
+ await expect(f.runtime.restorePackagedAgentPrompt({name:'../builder',expectedHash:'a'.repeat(64)})).rejects.toMatchObject({status:400});
+ await f.runtime.restorePackagedAgentPrompt({name:'builder',expectedHash:'a'.repeat(64)});
+ expect(sync).toHaveBeenLastCalledWith(expect.objectContaining({restoreOnly:true,restoreAgentNames:['builder'],expectedAgentHashes:{builder:'a'.repeat(64)}}));
+ expect(overlays).not.toHaveBeenCalled();expect(f.native.start).not.toHaveBeenCalled();
+});
+it('missing/legacy bundle or external flags fail before any owner starts',async()=>{for(const overrides of [{getNativeRuntime:()=>null},{getRuntimeBundle:()=>({descriptor:{generation:1}})},{env:{ENV_SKIP_OPENCODE_START:true}},{env:{ENV_CONFIGURED_OPENCODE_HOST:{origin:'http://localhost:1'}}}]){const f=fixture(overrides);await expect(f.runtime.bootstrapOpenCodeAtStartup()).rejects.toMatchObject({code:'native_runtime_bundle_required'});expect(f.native.start).not.toHaveBeenCalled();}});
+it('artifact failure never falls back to a standalone executable or marks ready',async()=>{const f=fixture({getRuntimeBundle:()=>({version:'2.1.4',descriptor:{generation:2,projectMap:[{targetDirectory:process.cwd()}]},verify:async()=>{throw Object.assign(Error('invalid'),{code:'native_runtime_artifacts_unverified'});}})});await expect(f.runtime.bootstrapOpenCodeAtStartup()).rejects.toMatchObject({code:'native_runtime_artifacts_unverified'});expect(f.children).toHaveLength(0);expect(f.events).not.toContain('agents');expect(f.state.isOpenCodeReady).toBe(false);});
+it('replacement drains the exact child and browser lease before native restart',async()=>{const f=fixture();await f.runtime.startOpenCode();f.events.length=0;await Promise.all([f.runtime.restartOpenCode(),f.runtime.restartOpenCode()]);expect(f.events).toEqual(['pause','exit','verify','agents','probe','resume']);expect(f.native.start).toHaveBeenCalledTimes(2);expect(f.state.isRestartingOpenCode).toBe(false);});
+it('a synchronous pause failure clears restart ownership and the next health check retries',async()=>{
+ const pause=vi.fn().mockImplementationOnce(()=>{throw new Error('pause failed');}).mockResolvedValue('owned');
+ const resume=vi.fn(async()=>{}),f=fixture({pauseManagedBrowserLeases:pause,resumeManagedBrowserLeases:resume});
+ await f.runtime.startOpenCode();
+ await expect(f.runtime.restartOpenCode()).rejects.toThrow('pause failed');
+ expect(f.state).toMatchObject({isRestartingOpenCode:false,currentRestartPromise:null,isOpenCodeReady:false});
+ expect(f.children[0].exited).not.toBe(true);expect(resume).not.toHaveBeenCalled();
+ await f.runtime.triggerHealthCheck();
+ expect(pause).toHaveBeenCalledTimes(2);expect(resume).toHaveBeenCalledWith('owned');expect(f.state.isOpenCodeReady).toBe(true);
+});
+it('a failed resume retains its browser hold and releases restart ownership for recovery',async()=>{
+ const handle={},pause=vi.fn(async()=>handle),resume=vi.fn().mockRejectedValueOnce(new Error('resume failed')).mockResolvedValue(true);
+ const f=fixture({pauseManagedBrowserLeases:pause,resumeManagedBrowserLeases:resume});await f.runtime.startOpenCode();
+ await expect(f.runtime.restartOpenCode()).rejects.toThrow('resume failed');
+ expect(f.state).toMatchObject({isRestartingOpenCode:false,currentRestartPromise:null,isOpenCodeReady:false});
+ await f.runtime.triggerHealthCheck();
+ expect(pause).toHaveBeenCalledTimes(1);expect(resume.mock.calls).toEqual([[handle],[handle]]);
+ expect(f.state).toMatchObject({isRestartingOpenCode:false,currentRestartPromise:null,isOpenCodeReady:true});
+});
+it('a failed replacement keeps browser admission paused until a successful retry',async()=>{
+ const pause=vi.fn(async()=> 'owned'),resume=vi.fn(async()=>{}),f=fixture({pauseManagedBrowserLeases:pause,resumeManagedBrowserLeases:resume});
+ await f.runtime.startOpenCode();f.native.start.mockRejectedValueOnce(new Error('launch failed'));
+ await expect(f.runtime.restartOpenCode()).rejects.toThrow('launch failed');
+ expect(resume).not.toHaveBeenCalled();expect(f.state.currentRestartPromise).toBeNull();
+ await f.runtime.restartOpenCode();expect(pause).toHaveBeenCalledTimes(1);expect(resume).toHaveBeenCalledWith('owned');
+});
+it('readiness failure remains closed and config changes use the same native restart',async()=>{let ready=false;const f=fixture({probeOpenCodeReadiness:async()=>({ready,generation:2,reason:'generation_invalid',version:'2.0.20'})});await expect(f.runtime.startOpenCode()).rejects.toMatchObject({code:'opencode_runtime_not_ready'});expect(f.state.isOpenCodeReady).toBe(false);ready=true;expect(await f.runtime.applyOpenCodeConfigChanges({scopes:['agents'],changes:[{metadata:{agentName:'builder'}}]})).toEqual({runtimeApplied:true,requiresReload:false});expect(f.native.start).toHaveBeenCalledTimes(2);});
+it('dead native children restart while live busy children are preserved',async()=>{let healthy=true;const f=fixture({getActiveSessionCount:()=>1,probeOpenCodeReadiness:async()=>({ready:healthy,generation:2,reason:'unreachable',version:'2.0.20'})});await f.runtime.startOpenCode();healthy=false;await f.runtime.triggerHealthCheck();expect(f.native.start).toHaveBeenCalledTimes(1);f.children[0].exited=true;healthy=true;await f.runtime.triggerHealthCheck();expect(f.events).toContain('settle');expect(f.native.start).toHaveBeenCalledTimes(2);});
 
-const spawnMock = vi.fn();
+it('inherited process identity cannot mark a new native owner ready or start another child',async()=>{const f=fixture({syncFromHmrState:()=>{f.state.openCodeProcess={hasExited:()=>false};f.state.openCodeGeneration=1;f.state.openCodeVersion='1.18.33';f.state.isOpenCodeReady=true;}});await expect(f.runtime.bootstrapOpenCodeAtStartup()).rejects.toMatchObject({code:'native_runtime_owner_mismatch'});expect(f.native.start).not.toHaveBeenCalled();expect(f.state.isOpenCodeReady).toBe(false);expect(f.events).toEqual([]);});
 
-vi.mock('node:child_process', () => ({
-  spawn: spawnMock,
-  spawnSync: vi.fn(),
-}));
 
-const { createOpenCodeLifecycleRuntime, resolveManagedOpenCodeLogLevel } = await import('./lifecycle.js');
-const { readManagedOpenCodeRegistry } = await import('./managed-process-registry.js');
-
-const originalOpencodeBinary = process.env.OPENCODE_BINARY;
-const originalOpenChamberDataDir = process.env.OPENCHAMBER_DATA_DIR;
-const originalOpencodeConfigDir = process.env.OPENCODE_CONFIG_DIR;
-const originalSlimPreset = process.env.OH_MY_OPENCODE_SLIM_PRESET;
-const originalDisableDefaultPlugins = process.env.OPENCODE_DISABLE_DEFAULT_PLUGINS;
-const originalDisableExternalSkills = process.env.OPENCODE_DISABLE_EXTERNAL_SKILLS;
-const originalDisableClaudeCodeSkills = process.env.OPENCODE_DISABLE_CLAUDE_CODE_SKILLS;
-const originalBrowserDiscoveryUrl = process.env.DEVRYAN_BROWSER_CDP_DISCOVERY_URL;
-const originalBrowserToken = process.env.DEVRYAN_BROWSER_CDP_TOKEN;
-const originalAgentBrowserBinary = process.env.DEVRYAN_AGENT_BROWSER_BIN;
-const originalAgentBrowserConfig = process.env.AGENT_BROWSER_CONFIG;
-const originalOpencodeLogLevel = process.env.DEVRYAN_OPENCODE_LOG_LEVEL;
-const originalFetch = globalThis.fetch;
-const tempDirs = [];
-
-beforeEach(() => {
-  const opencodeConfigDir = mkdtempSync(join(tmpdir(), 'openchamber-opencode-config-'));
-  tempDirs.push(opencodeConfigDir);
-  process.env.OPENCODE_CONFIG_DIR = opencodeConfigDir;
-  // Every startOpenCode() here registers its mock child in the managed-process registry, which
-  // resolves to the developer's real ~/.config/openchamber when this is unset — and each write
-  // replaces the file wholesale, wiping the records that orphan reaping depends on.
-  const dataDir = mkdtempSync(join(tmpdir(), 'openchamber-data-'));
-  tempDirs.push(dataDir);
-  process.env.OPENCHAMBER_DATA_DIR = dataDir;
-  delete process.env.OH_MY_OPENCODE_SLIM_PRESET;
-  delete process.env.DEVRYAN_OPENCODE_LOG_LEVEL;
+it('forwards the native lifecycle version into original application health and HMR state', async () => {
+  const source = readFileSync(new URL('../../application.js', import.meta.url), 'utf8');
+  const descriptors = source.slice(
+    source.indexOf('const openCodeLifecycleState = {};'),
+    source.indexOf('const openAiOAuthCoordinator ='),
+  );
+  const sync = source.slice(
+    source.indexOf('const syncToHmrState = () => {'),
+    source.indexOf('// Sync helper - call to restore state from HMR'),
+  );
+  const health = source.slice(
+    source.indexOf('    getHealthSnapshot: () => {'),
+    source.indexOf('    verboseRequestLogs:'),
+  ).trim().replace(/^getHealthSnapshot: /, 'const getHealthSnapshot = ').replace(/,$/, ';');
+  // Execute only the original composition closures, not application initialization.
+  // The native factory below has no process, provider or installed-data access.
+  const bindings = Object.fromEntries(
+    [...descriptors.matchAll(/get: \(\) => (\w+)/g)].map((match) => [match[1], null]),
+  );
+  const hmrState = {};
+  const composition = runInNewContext(`${descriptors}\n${sync}\n${health}\n({
+    state: openCodeLifecycleState, syncToHmrState, getHealthSnapshot,
+  })`, {
+    ...bindings,
+    hmrState,
+    hmrStateRuntime: createHmrStateRuntime({}),
+    invalidateOpenCodeRuntime: () => {},
+    openCodeWorkingDirectory: process.cwd(),
+    openCodeVersion: null,
+    openCodePaths: {},
+    openCodeEpoch: 0,
+    signalsAttached: false,
+    openCodeAuthPassword: null,
+    openCodeAuthSource: null,
+    runtimeInstanceId: 'composition-fixture',
+    isOpenCodeConnectionSecure: () => true,
+    executionReadiness: { state: 'ready' },
+    nativeBundle: { artifacts: { controller: 'fixture-controller' } },
+    resolvedNodeBinary: null,
+    resolvedBunBinary: null,
+    ENV_DESKTOP_NOTIFY: false,
+    PLAN_MODE_EXPERIMENT_ENABLED: false,
+    multiUserRuntime: { enabled: false },
+    startupNotices: () => [],
+  });
+  const f = fixture({ state: composition.state, syncToHmrState: composition.syncToHmrState });
+  expect(composition.getHealthSnapshot()).toMatchObject({ openCodeVersion: null, openCodeRunning: false,
+    openCodeStartup: { state: 'idle', attempt: 0, code: null } });
+  await f.runtime.bootstrapOpenCodeAtStartup();
+  expect(hmrState).toMatchObject({ openCodeVersion: '2.1.4', openCodePort: 43100 });
+  const app = express();
+  registerServerStatusRoutes(app, {
+    express,
+    process,
+    gracefulShutdown: vi.fn(),
+    getHealthSnapshot: composition.getHealthSnapshot,
+    getNativeRuntimeOwner: () => f.native,
+    runtimeInstanceId: 'composition-fixture',
+  });
+  for (const route of ['/health', '/api/health']) {
+    const response = await request(app).get(route);
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      openCodeVersion: '2.1.4', openCodePort: 43100,
+      openCodeGeneration: 2, openCodeRunning: true, isOpenCodeReady: true,
+      openCodeStartup: { state: 'ready', attempt: 1, code: null },
+    });
+  }
+  composition.state.isOpenCodeReady = false;
+  expect(composition.getHealthSnapshot().openCodeRunning).toBe(false);
+  composition.state.isOpenCodeReady = true;
+  composition.state.isRestartingOpenCode = true;
+  expect(composition.getHealthSnapshot().openCodeRunning).toBe(false);
+  composition.state.openCodePort = null;
+  expect(composition.getHealthSnapshot()).toMatchObject({ openCodeVersion: null, openCodeRunning: false });
 });
 
-afterEach(() => {
-  vi.useRealTimers();
-  spawnMock.mockReset();
-  globalThis.fetch = originalFetch;
-  while (tempDirs.length > 0) {
-    const tempDir = tempDirs.pop();
-    rmSync(tempDir, { recursive: true, force: true });
-  }
-  if (typeof originalOpencodeBinary === 'string') {
-    process.env.OPENCODE_BINARY = originalOpencodeBinary;
-  } else {
-    delete process.env.OPENCODE_BINARY;
-  }
-  if (typeof originalOpenChamberDataDir === 'string') {
-    process.env.OPENCHAMBER_DATA_DIR = originalOpenChamberDataDir;
-  } else {
-    delete process.env.OPENCHAMBER_DATA_DIR;
-  }
-  if (typeof originalOpencodeConfigDir === 'string') {
-    process.env.OPENCODE_CONFIG_DIR = originalOpencodeConfigDir;
-  } else {
-    delete process.env.OPENCODE_CONFIG_DIR;
-  }
-  if (typeof originalSlimPreset === 'string') {
-    process.env.OH_MY_OPENCODE_SLIM_PRESET = originalSlimPreset;
-  } else {
-    delete process.env.OH_MY_OPENCODE_SLIM_PRESET;
-  }
-  if (typeof originalDisableDefaultPlugins === 'string') {
-    process.env.OPENCODE_DISABLE_DEFAULT_PLUGINS = originalDisableDefaultPlugins;
-  } else {
-    delete process.env.OPENCODE_DISABLE_DEFAULT_PLUGINS;
-  }
-  if (typeof originalDisableExternalSkills === 'string') {
-    process.env.OPENCODE_DISABLE_EXTERNAL_SKILLS = originalDisableExternalSkills;
-  } else {
-    delete process.env.OPENCODE_DISABLE_EXTERNAL_SKILLS;
-  }
-  if (typeof originalDisableClaudeCodeSkills === 'string') {
-    process.env.OPENCODE_DISABLE_CLAUDE_CODE_SKILLS = originalDisableClaudeCodeSkills;
-  } else {
-    delete process.env.OPENCODE_DISABLE_CLAUDE_CODE_SKILLS;
-  }
-  for (const [key, value] of Object.entries({
-    DEVRYAN_BROWSER_CDP_DISCOVERY_URL: originalBrowserDiscoveryUrl,
-    DEVRYAN_BROWSER_CDP_TOKEN: originalBrowserToken,
-    DEVRYAN_AGENT_BROWSER_BIN: originalAgentBrowserBinary,
-    AGENT_BROWSER_CONFIG: originalAgentBrowserConfig,
-    DEVRYAN_OPENCODE_LOG_LEVEL: originalOpencodeLogLevel,
-  })) {
-    if (typeof value === 'string') process.env[key] = value;
-    else delete process.env[key];
-  }
+it('retained runtime reports its verified bundle version through launch and inherited ownership',async()=>{vi.stubEnv('DEVRYAN_QA_OPENCODE_VERSION','2.0.20');try{const f=fixture();f.bundle.version='2.0.20';await f.runtime.bootstrapOpenCodeAtStartup();expect(f.state.openCodeVersion).toBe('2.0.20');await f.runtime.bootstrapOpenCodeAtStartup();expect(f.native.start).toHaveBeenCalledTimes(1);}finally{vi.unstubAllEnvs();}});
+it('a refused upgrade launches the retained older reviewed runtime for this process; another version still refuses',async()=>{
+ const {recordStartupBundleUpgradeFailure}=await import('./runtime-host/bundle-startup-upgrade-status.js');
+ recordStartupBundleUpgradeFailure('bundle_v2_upgrade_compatibility_required',undefined,'2.0.30');
+ try{
+  const other=fixture();other.bundle.version='2.0.26';
+  await expect(other.runtime.bootstrapOpenCodeAtStartup()).rejects.toMatchObject({code:'bundle_upgrade_required',message:expect.stringContaining('OpenCode 2.0.26 must be upgraded to 2.0.30')});
+  expect(other.native.start).not.toHaveBeenCalled();
+  const f=fixture();f.bundle.version='2.0.30';
+  await f.runtime.bootstrapOpenCodeAtStartup();
+  expect(f.native.start).toHaveBeenCalledTimes(1);expect(f.state.openCodeVersion).toBe('2.0.30');
+ }finally{recordStartupBundleUpgradeFailure(null);}
+ const f=fixture();f.bundle.version='2.0.30';
+ await expect(f.runtime.bootstrapOpenCodeAtStartup()).rejects.toMatchObject({code:'bundle_upgrade_required'});
+});
+it('a supported runtime below the version pin refuses before launch and names the recorded startup upgrade failure',async()=>{
+ const f=fixture();f.bundle.version='2.0.20';
+ await expect(f.runtime.bootstrapOpenCodeAtStartup()).rejects.toMatchObject({code:'bundle_upgrade_required',message:expect.stringContaining('OpenCode 2.0.20 must be upgraded to 2.1.4')});
+ expect(f.native.start).not.toHaveBeenCalled();expect(f.events).toEqual([]);expect(f.state.lastOpenCodeError).toMatch(/Restart DevRyan to retry the upgrade\.$/);
+ const {recordStartupBundleUpgradeFailure}=await import('./runtime-host/bundle-startup-upgrade-status.js');recordStartupBundleUpgradeFailure('bundle_upgrade_owner_active');
+ try{await expect(f.runtime.bootstrapOpenCodeAtStartup()).rejects.toMatchObject({message:expect.stringContaining('the startup upgrade did not complete (bundle_upgrade_owner_active)')});}
+ finally{recordStartupBundleUpgradeFailure(null);}
+ expect(f.native.start).not.toHaveBeenCalled();
 });
 
-const createMockChild = () => {
-  const child = new EventEmitter();
-  child.stdout = new EventEmitter();
-  child.stderr = new EventEmitter();
-  child.exitCode = null;
-  child.signalCode = null;
-  child.pid = 12345;
-  child.kill = vi.fn(() => {
-    child.signalCode = 'SIGTERM';
-    queueMicrotask(() => child.emit('close', null, 'SIGTERM'));
-    return true;
-  });
-  return child;
-};
-
-const createRuntime = (overrides = {}) => {
-  const { initialState = {}, ...dependencyOverrides } = overrides;
-  const state = {
-    openCodeWorkingDirectory: '/tmp/project',
-    openCodeProcess: null,
-    openCodePort: null,
-    openCodeBaseUrl: null,
-    currentRestartPromise: null,
-    isRestartingOpenCode: false,
-    openCodeApiPrefix: '',
-    openCodeApiPrefixDetected: false,
-    openCodeApiDetectionTimer: null,
-    lastOpenCodeError: null,
-    isOpenCodeReady: false,
-    openCodeNotReadySince: 0,
-    isExternalOpenCode: false,
-    isShuttingDown: false,
-    healthCheckInterval: null,
-    expressApp: null,
-    useWslForOpencode: false,
-    resolvedWslBinary: null,
-    resolvedWslOpencodePath: null,
-    resolvedWslDistro: null,
-    ...initialState,
-  };
-
-  const runtime = createOpenCodeLifecycleRuntime({
-    state,
-    env: {
-      ENV_CONFIGURED_OPENCODE_PORT: 45678,
-      ENV_CONFIGURED_OPENCODE_HOST: null,
-      ENV_EFFECTIVE_PORT: 3001,
-      ENV_CONFIGURED_OPENCODE_HOSTNAME: '127.0.0.1',
-      ENV_SKIP_OPENCODE_START: false,
-    },
-    syncToHmrState: vi.fn(),
-    syncFromHmrState: vi.fn(),
-    getOpenCodeAuthHeaders: () => ({}),
-    buildOpenCodeUrl: (route) => `http://127.0.0.1:45678${route}`,
-    waitForReady: vi.fn(async () => true),
-    normalizeApiPrefix: vi.fn(() => ''),
-    applyOpencodeBinaryFromSettings: vi.fn(async () => null),
-    ensureOpencodeCliEnv: vi.fn(),
-    ensureLocalOpenCodeServerPassword: vi.fn(async () => 'password'),
-    buildWslExecArgs: vi.fn((args) => args),
-    resolveWslExecutablePath: vi.fn(),
-    resolveManagedOpenCodeLaunchSpec: vi.fn((binary) => ({ binary, args: [], wrapperType: null })),
-    setOpenCodePort: vi.fn((port) => {
-      state.openCodePort = port;
-    }),
-    setDetectedOpenCodeApiPrefix: vi.fn(),
-    setupProxy: vi.fn(),
-    ensureOpenCodeApiPrefix: vi.fn(),
-    clearResolvedOpenCodeBinary: vi.fn(),
-    buildAugmentedPath: vi.fn(() => '/home/user/.bun/bin:/usr/local/bin:/usr/bin'),
-    buildManagedOpenCodePath: vi.fn(() => '/home/user/.bun/bin:/usr/local/bin:/usr/bin'),
-    getManagedOpenCodeShellEnvSnapshot: vi.fn(() => ({
-      PATH: '/home/user/.bun/bin:/usr/local/bin:/usr/bin',
-      SHELL_ONLY: 'yes',
-      OPENCODE_SERVER_PASSWORD: 'shell-password',
-    })),
-    syncPackagedAgents: vi.fn(async () => ({ changed: false, conflicts: [] })),
-    provisionUserProfile: vi.fn(async () => ({ ok: true, changed: false, conflicts: [] })),
-    syncRuntimeAgentOverlays: vi.fn(async () => ({
-      changed: false,
-      written: [],
-      updated: [],
-      removed: [],
-      targetConfigDirectory: '/tmp/openchamber-runtime-overlays/default',
-    })),
-    // spawn is mocked here; the real watchdog is covered by parent-death-watchdog.test.js.
-    startManagedProcessWatchdog: vi.fn(() => ({ dispose: vi.fn() })),
-    // Mock children use fake PIDs: never signal a real process group.
-    signalManagedProcessGroup: vi.fn(() => { throw Object.assign(new Error('No such group'), { code: 'ESRCH' }); }),
-    ...dependencyOverrides,
-  });
-  runtime.__testState = state;
-  return runtime;
-};
-
-describe('OpenCode lifecycle', () => {
-  it('provisions the user profile before managed agent and overlay sync', async () => {
-    const child = createMockChild();
-    spawnMock.mockImplementationOnce(() => {
-      queueMicrotask(() => child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n'));
-      return child;
-    });
-    const calls = [];
-    const provisionUserProfile = vi.fn(async () => { calls.push('profile'); return { ok: true, changed: true, conflicts: [] }; });
-    const syncPackagedAgents = vi.fn(async () => { calls.push('agents'); return { changed: false, conflicts: [] }; });
-    const syncRuntimeAgentOverlays = vi.fn(async () => {
-      calls.push('overlays');
-      return { changed: false, targetConfigDirectory: '/tmp/overlay', written: [], updated: [], removed: [] };
-    });
-
-    const runtime = createRuntime({ provisionUserProfile, syncPackagedAgents, syncRuntimeAgentOverlays });
-    const server = await runtime.startOpenCode();
-
-    expect(calls).toEqual(['profile', 'agents', 'overlays']);
-    await server.close();
-  });
-
-  it('prepares managed browser provisioning before skill-aware runtime sync', async () => {
-    const child = createMockChild();
-    spawnMock.mockImplementationOnce(() => {
-      queueMicrotask(() => child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n'));
-      return child;
-    });
-    const calls = [];
-    const runtime = createRuntime({
-      getManagedBrowserEnvironment: vi.fn(async () => { calls.push('browser'); return {}; }),
-      provisionUserProfile: vi.fn(async () => { calls.push('profile'); return { ok: true, changed: false, conflicts: [] }; }),
-      syncPackagedAgents: vi.fn(async () => { calls.push('agents'); return { changed: false, conflicts: [] }; }),
-      syncRuntimeAgentOverlays: vi.fn(async () => {
-        calls.push('overlays');
-        return { changed: false, targetConfigDirectory: '/tmp/overlay', conflicts: [] };
-      }),
-    });
-
-    const server = await runtime.startOpenCode();
-
-    expect(calls).toEqual(['browser', 'profile', 'agents', 'overlays']);
-    await server.close();
-  });
-
-  it('fails managed startup when required user plugins cannot be installed', async () => {
-    const provisionUserProfile = vi.fn(async () => ({ ok: false, error: 'network unavailable' }));
-    const runtime = createRuntime({ provisionUserProfile });
-
-    await expect(runtime.startOpenCode()).rejects.toThrow('network unavailable');
-    expect(spawnMock).not.toHaveBeenCalled();
-    // A deterministic provisioning failure is not retried.
-    expect(provisionUserProfile).toHaveBeenCalledTimes(1);
-  });
-
-  it('starts OpenCode and records profile notices that do not block startup', async () => {
-    const child = createMockChild();
-    spawnMock.mockImplementationOnce(() => {
-      queueMicrotask(() => child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n'));
-      return child;
-    });
-    const notice = { code: 'legacy_cursor_plugin_conflict', files: ['/profile/plugin/cursor-acp.js'], message: 'legacy plugin' };
-    const runtime = createRuntime({
-      provisionUserProfile: vi.fn(async () => ({ ok: true, changed: false, conflicts: notice.files, profileNotices: [notice] })),
-    });
-
-    const server = await runtime.startOpenCode();
-
-    expect(spawnMock).toHaveBeenCalledTimes(1);
-    expect(runtime.__testState.openCodeProfileNotices).toEqual([notice]);
-    await server.close();
-  });
-
-  it('exposes the port cleanup helper required by graceful shutdown', () => {
-    const runtime = createRuntime();
-
-    expect(typeof runtime.killProcessOnPort).toBe('function');
-  });
-
-  it('launches managed OpenCode with the managed PATH', async () => {
-    delete process.env.OPENCODE_BINARY;
-    const child = createMockChild();
-    spawnMock.mockImplementationOnce(() => {
-      queueMicrotask(() => {
-        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
-      });
-      return child;
-    });
-
-    const runtime = createRuntime();
-    const server = await runtime.startOpenCode();
-    const [binary, args, options] = spawnMock.mock.calls[0];
-
-    expect(binary).toBe('opencode');
-    expect(args).toEqual(['serve', '--hostname', '127.0.0.1', '--port', '45678', '--log-level', 'WARN']);
-    expect(options.env.PATH).toBe('/home/user/.bun/bin:/usr/local/bin:/usr/bin');
-    expect(options.env.SHELL_ONLY).toBe('yes');
-    expect(options.env.OPENCODE_SERVER_PASSWORD).toBe('password');
-    // v1.0.6 set this to 'true', which disabled the opencode default plugin that
-    // surfaces the OpenAI (ChatGPT/Codex OAuth) provider. openchamber must NOT force it.
-    expect(options.env.OPENCODE_DISABLE_DEFAULT_PLUGINS).toBeUndefined();
-    expect(options.env.OPENCODE_DISABLE_EXTERNAL_SKILLS).toBeUndefined();
-    expect(options.env.OPENCODE_DISABLE_CLAUDE_CODE_SKILLS).toBe('1');
-    // The companion answers unmatched paths locally instead of proxying them out.
-    expect(options.env.DEVRYAN_OPENCODE_UI_DISABLED).toBe('1');
-    expect(options.env).not.toHaveProperty('CONTEXT_MODE_DATA_DIR');
-    expect(options.env).not.toHaveProperty('CONTEXT_MODE_DIR');
-
-    await server.close();
-  });
-
-  it('honours DEVRYAN_OPENCODE_LOG_LEVEL for the managed OpenCode log level', async () => {
-    delete process.env.OPENCODE_BINARY;
-    process.env.DEVRYAN_OPENCODE_LOG_LEVEL = 'debug';
-    const child = createMockChild();
-    spawnMock.mockImplementationOnce(() => {
-      queueMicrotask(() => {
-        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
-      });
-      return child;
-    });
-
-    const runtime = createRuntime();
-    const server = await runtime.startOpenCode();
-    const [, args] = spawnMock.mock.calls[0];
-
-    expect(args).toEqual(['serve', '--hostname', '127.0.0.1', '--port', '45678', '--log-level', 'DEBUG']);
-
-    await server.close();
-  });
-
-  it('falls back to WARN when DEVRYAN_OPENCODE_LOG_LEVEL is not an OpenCode log level', async () => {
-    delete process.env.OPENCODE_BINARY;
-    process.env.DEVRYAN_OPENCODE_LOG_LEVEL = 'verbose';
-    const child = createMockChild();
-    spawnMock.mockImplementationOnce(() => {
-      queueMicrotask(() => {
-        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
-      });
-      return child;
-    });
-
-    const runtime = createRuntime();
-    const server = await runtime.startOpenCode();
-    const [, args] = spawnMock.mock.calls[0];
-
-    expect(args).toEqual(['serve', '--hostname', '127.0.0.1', '--port', '45678', '--log-level', 'WARN']);
-
-    await server.close();
-  });
-
-  it('normalises managed OpenCode log levels case-insensitively', () => {
-    expect(resolveManagedOpenCodeLogLevel(undefined)).toBe('WARN');
-    expect(resolveManagedOpenCodeLogLevel('')).toBe('WARN');
-    expect(resolveManagedOpenCodeLogLevel(' info ')).toBe('INFO');
-    expect(resolveManagedOpenCodeLogLevel('Error')).toBe('ERROR');
-    expect(resolveManagedOpenCodeLogLevel('trace')).toBe('WARN');
-    expect(resolveManagedOpenCodeLogLevel(42)).toBe('WARN');
-  });
-
-  it('removes an ambient default-plugin disable flag from managed OpenCode', async () => {
-    process.env.OPENCODE_DISABLE_DEFAULT_PLUGINS = 'true';
-    const child = createMockChild();
-    spawnMock.mockImplementationOnce(() => {
-      queueMicrotask(() => {
-        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
-      });
-      return child;
-    });
-
-    const runtime = createRuntime();
-    const server = await runtime.startOpenCode();
-    const [, , options] = spawnMock.mock.calls[0];
-
-    expect(options.env.OPENCODE_DISABLE_DEFAULT_PLUGINS).toBeUndefined();
-    await server.close();
-  });
-
-  it('keeps .agents skills enabled while disabling Claude skill discovery', async () => {
-    process.env.OPENCODE_DISABLE_EXTERNAL_SKILLS = 'true';
-    process.env.OPENCODE_DISABLE_CLAUDE_CODE_SKILLS = 'false';
-    const child = createMockChild();
-    spawnMock.mockImplementationOnce(() => {
-      queueMicrotask(() => {
-        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
-      });
-      return child;
-    });
-
-    const runtime = createRuntime();
-    const server = await runtime.startOpenCode();
-    const [, , options] = spawnMock.mock.calls[0];
-
-    expect(options.env.OPENCODE_DISABLE_EXTERNAL_SKILLS).toBeUndefined();
-    expect(options.env.OPENCODE_DISABLE_CLAUDE_CODE_SKILLS).toBe('1');
-    await server.close();
-  });
-
-  it('injects only the private managed orchestration bridge contract before spawn', async () => {
-    const child = createMockChild();
-    spawnMock.mockImplementationOnce(() => {
-      queueMicrotask(() => {
-        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
-      });
-      return child;
-    });
-    const getManagedOrchestrationEnvironment = vi.fn(async () => ({
-      DEVRYAN_ORCHESTRATION_URL: 'http://127.0.0.1:43210/rpc',
-      DEVRYAN_ORCHESTRATION_TOKEN: 'opaque-private-token',
-      DEVRYAN_ORCHESTRATION_ACCOUNT_DEFAULTS: '1',
-      UNTRUSTED_EXTRA_KEY: 'must-not-be-injected',
-    }));
-    const runtime = createRuntime({ getManagedOrchestrationEnvironment });
-
-    const server = await runtime.startOpenCode();
-    const [, , options] = spawnMock.mock.calls[0];
-
-    expect(getManagedOrchestrationEnvironment).toHaveBeenCalledTimes(1);
-    expect(options.env.DEVRYAN_ORCHESTRATION_URL).toBe('http://127.0.0.1:43210/rpc');
-    expect(options.env.DEVRYAN_ORCHESTRATION_TOKEN).toBe('opaque-private-token');
-    expect(options.env.DEVRYAN_ORCHESTRATION_ACCOUNT_DEFAULTS).toBe('1');
-    expect(options.env.UNTRUSTED_EXTRA_KEY).toBeUndefined();
-    await server.close();
-  });
-
-  it('starts OpenCode without the private bridge when managed orchestration is already owned', async () => {
-    const child = createMockChild();
-    spawnMock.mockImplementationOnce(() => {
-      queueMicrotask(() => {
-        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
-      });
-      return child;
-    });
-    const getManagedOrchestrationEnvironment = vi.fn(async () => {
-      throw Object.assign(new Error('Managed orchestration is already owned by another DevRyan runtime using this data directory'), {
-        code: 'managed_orchestration_owner_conflict',
-        statusCode: 409,
-      });
-    });
-    const runtime = createRuntime({ getManagedOrchestrationEnvironment });
-
-    const server = await runtime.startOpenCode();
-    const [, , options] = spawnMock.mock.calls[0];
-
-    expect(getManagedOrchestrationEnvironment).toHaveBeenCalledTimes(1);
-    expect(options.env.DEVRYAN_ORCHESTRATION_URL).toBeUndefined();
-    expect(options.env.DEVRYAN_ORCHESTRATION_TOKEN).toBeUndefined();
-    expect(options.env.DEVRYAN_ORCHESTRATION_ACCOUNT_DEFAULTS).toBeUndefined();
-    expect(runtime.__testState.isOpenCodeReady).toBe(true);
-    await server.close();
-  });
-
-  it('injects only the managed agent-browser contract and scrubs inherited browser config', async () => {
-    process.env.DEVRYAN_BROWSER_CDP_DISCOVERY_URL = 'http://127.0.0.1:9999/untrusted';
-    process.env.DEVRYAN_BROWSER_CDP_TOKEN = 'untrusted-token';
-    process.env.DEVRYAN_AGENT_BROWSER_BIN = '/untrusted/agent-browser';
-    process.env.AGENT_BROWSER_CONFIG = '/untrusted/config.json';
-    const child = createMockChild();
-    spawnMock.mockImplementationOnce(() => {
-      queueMicrotask(() => {
-        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
-      });
-      return child;
-    });
-    const getManagedBrowserEnvironment = vi.fn(async () => ({
-      DEVRYAN_BROWSER_CDP_DISCOVERY_URL: 'http://127.0.0.1:43211/api/desktop/browser-cdp',
-      DEVRYAN_BROWSER_CDP_TOKEN: 'managed-token',
-      DEVRYAN_AGENT_BROWSER_BIN: '/managed/agent-browser',
-      AGENT_BROWSER_CONFIG: '/must/not/pass',
-    }));
-    const runtime = createRuntime({ getManagedBrowserEnvironment,
-      getManagedOrchestrationEnvironment: async () => ({ DEVRYAN_EXECUTION_BROWSER_PLUGIN: 'reviewed-browser-digest' }) });
-
-    const server = await runtime.startOpenCode();
-    const [, , options] = spawnMock.mock.calls[0];
-
-    expect(getManagedBrowserEnvironment).toHaveBeenCalledTimes(1);
-    expect(options.env.DEVRYAN_BROWSER_CDP_DISCOVERY_URL)
-      .toBe('http://127.0.0.1:43211/api/desktop/browser-cdp');
-    expect(options.env.DEVRYAN_BROWSER_CDP_TOKEN).toBe('managed-token');
-    expect(options.env.DEVRYAN_AGENT_BROWSER_BIN).toBe('/managed/agent-browser');
-    expect(options.env.DEVRYAN_EXECUTION_BROWSER_PLUGIN).toBe('reviewed-browser-digest');
-    expect(options.env.AGENT_BROWSER_CONFIG).toBeUndefined();
-    await server.close();
-  });
-
-  it('registers a managed OpenCode process and unregisters it on close', async () => {
-    delete process.env.OPENCODE_BINARY;
-    const registryRoot = mkdtempSync(join(tmpdir(), 'openchamber-managed-registry-'));
-    tempDirs.push(registryRoot);
-    process.env.OPENCHAMBER_DATA_DIR = registryRoot;
-    const child = createMockChild();
-    child.pid = 23456;
-    spawnMock.mockImplementationOnce(() => {
-      queueMicrotask(() => {
-        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
-      });
-      return child;
-    });
-
-    const dispose = vi.fn();
-    const startManagedProcessWatchdog = vi.fn(() => ({ dispose }));
-    const runtime = createRuntime({ startManagedProcessWatchdog });
-    const server = await runtime.startOpenCode();
-    expect(startManagedProcessWatchdog).toHaveBeenCalledWith({ childPid: 23456, port: 45678 });
-
-    const [, , spawnOptions] = spawnMock.mock.calls.at(-1);
-    expect(readManagedOpenCodeRegistry()).toEqual([
-      expect.objectContaining({
-        childPid: 23456,
-        ownerPid: process.pid,
-        port: 45678,
-        binary: 'opencode',
-        hostRuntime: 'web',
-        workingDirectory: spawnOptions.cwd,
-      }),
-    ]);
-
-    await server.close();
-    expect(readManagedOpenCodeRegistry()).toEqual([]);
-    expect(dispose).toHaveBeenCalled();
-  });
-
-  it('refuses a managed server that cannot be tied to this process', async () => {
-    delete process.env.OPENCODE_BINARY;
-    const registryRoot = mkdtempSync(join(tmpdir(), 'openchamber-managed-registry-'));
-    tempDirs.push(registryRoot);
-    process.env.OPENCHAMBER_DATA_DIR = registryRoot;
-    const child = createMockChild();
-    child.pid = 23457;
-    spawnMock.mockImplementation(() => child);
-    const runtime = createRuntime({
-      startManagedProcessWatchdog: vi.fn(() => ({ pid: null, error: { code: 'managed_opencode_watchdog_unavailable', cause: 'EAGAIN' }, dispose: vi.fn() })),
-    });
-    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
-    try {
-      await expect(runtime.startOpenCode()).rejects.toThrow();
-      expect(child.kill).toHaveBeenCalledWith('SIGTERM');
-      expect(readManagedOpenCodeRegistry()).toEqual([]);
-    } finally {
-      errorLog.mockRestore();
-      spawnMock.mockReset();
-    }
-  });
-
-  it('kills the exited server group so its MCP children cannot outlive it', async () => {
-    delete process.env.OPENCODE_BINARY;
-    const child = createMockChild();
-    child.pid = 23458;
-    spawnMock.mockImplementationOnce(() => {
-      queueMicrotask(() => child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n'));
-      return child;
-    });
-    const dispose = vi.fn();
-    const signalManagedProcessGroup = vi.fn();
-    const runtime = createRuntime({ startManagedProcessWatchdog: vi.fn(() => ({ pid: 1, dispose })), signalManagedProcessGroup });
-    await runtime.startOpenCode();
-    child.exitCode = 1;
-    child.emit('exit', 1, null);
-    if (process.platform !== 'win32') expect(signalManagedProcessGroup).toHaveBeenCalledWith(23458, 'SIGKILL');
-    expect(dispose).toHaveBeenCalled();
-  });
-
-  it('awaits beforeManagedSpawn before spawning while no managed process exists', async () => {
-    delete process.env.OPENCODE_BINARY;
-    const child = createMockChild();
-    spawnMock.mockImplementationOnce(() => {
-      queueMicrotask(() => {
-        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
-      });
-      return child;
-    });
-    const order = [];
-    let release;
-    const gate = new Promise((resolve) => {
-      release = resolve;
-    });
-    const beforeManagedSpawn = vi.fn(async (input) => {
-      order.push(['hook', input]);
-      await gate;
-    });
-
-    const runtime = createRuntime({ beforeManagedSpawn });
-    const started = runtime.startOpenCode();
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(beforeManagedSpawn).toHaveBeenCalledTimes(1);
-    expect(spawnMock).not.toHaveBeenCalled();
-    order.push(['release']);
-    release();
-
-    const server = await started;
-    expect(server?.url).toBe('http://127.0.0.1:45678');
-    expect(spawnMock).toHaveBeenCalledTimes(1);
-    expect(order).toEqual([['hook', { reason: 'startup' }], ['release']]);
-    await server.close();
-  });
-
-  it('never launches a fallback when required execution artifacts are unavailable', async () => {
-    const runtime = createRuntime({ assertExecutionReady: () => { throw Object.assign(new Error('Repair runtime'), { code: 'execution_artifacts_unavailable', status: 503 }); } });
-    await expect(runtime.startOpenCode()).rejects.toMatchObject({ code: 'execution_artifacts_unavailable' });
-    expect(spawnMock).not.toHaveBeenCalled();
-    runtime.__testState.isOpenCodeReady = true;
-    await expect(runtime.bootstrapOpenCodeAtStartup()).resolves.toBeUndefined();
-    expect(runtime.__testState.isOpenCodeReady).toBe(false);
-    expect(runtime.__testState.lastOpenCodeError).toBe('Repair runtime');
-    expect(spawnMock).not.toHaveBeenCalled();
-  });
-
-  it('launches anyway when beforeManagedSpawn rejects', async () => {
-    delete process.env.OPENCODE_BINARY;
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const child = createMockChild();
-    spawnMock.mockImplementationOnce(() => {
-      queueMicrotask(() => {
-        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
-      });
-      return child;
-    });
-    const beforeManagedSpawn = vi.fn(async () => {
-      throw new Error('maintenance exploded');
-    });
-
-    try {
-      const runtime = createRuntime({ beforeManagedSpawn });
-      const server = await runtime.startOpenCode();
-      expect(server?.url).toBe('http://127.0.0.1:45678');
-      expect(beforeManagedSpawn).toHaveBeenCalledTimes(1);
-      expect(spawnMock).toHaveBeenCalledTimes(1);
-      expect(warnSpy).toHaveBeenCalledWith(
-        '[OpenCode] Pre-launch hook failed; launching anyway:',
-        'maintenance exploded',
-      );
-      await server.close();
-    } finally {
-      warnSpy.mockRestore();
-    }
-  });
-
-  it('resolves the managed OpenCode working directory from persisted settings before launch', async () => {
-    delete process.env.OPENCODE_BINARY;
-    const persistedDirectory = mkdtempSync(join(tmpdir(), 'openchamber-cursor-workspace-'));
-    tempDirs.push(persistedDirectory);
-    const child = createMockChild();
-    const syncRuntimeAgentOverlays = vi.fn(async () => ({
-      changed: false,
-      written: [],
-      updated: [],
-      removed: [],
-      targetConfigDirectory: '/tmp/openchamber-runtime-overlays/persisted',
-    }));
-    spawnMock.mockImplementationOnce(() => {
-      queueMicrotask(() => {
-        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
-      });
-      return child;
-    });
-
-    const runtime = createRuntime({
-      initialState: {
-        openCodeWorkingDirectory: '/Users/zoubair',
-      },
-      readSettingsFromDisk: vi.fn(async () => ({
-        lastDirectory: persistedDirectory,
-      })),
-      syncRuntimeAgentOverlays,
-    });
-    const server = await runtime.startOpenCode();
-    const [, , options] = spawnMock.mock.calls[0];
-
-    expect(options.cwd).toBe(persistedDirectory);
-    expect(syncRuntimeAgentOverlays).toHaveBeenCalledWith({
-      workingDirectory: persistedDirectory,
-      skillPolicy: expect.any(Object),
-      agentRuntimeSettings: { lsp: false },
-    });
-    await server.close();
-  });
-
-  it('does not set legacy Cursor ACP bridge env vars for managed OpenCode', async () => {
-    delete process.env.OPENCODE_BINARY;
-    const child = createMockChild();
-    spawnMock.mockImplementationOnce(() => {
-      queueMicrotask(() => {
-        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
-      });
-      return child;
-    });
-
-    const runtime = createRuntime();
-    const server = await runtime.startOpenCode();
-    const [, , options] = spawnMock.mock.calls[0];
-
-    expect(options.env.CURSOR_ACP_WORKSPACE).toBeUndefined();
-    expect(options.env.OPENCODE_CURSOR_PROJECT_DIR).toBeUndefined();
-
-    await server.close();
-  });
-
-  it('falls back to buildAugmentedPath when buildManagedOpenCodePath is not provided', async () => {
-    delete process.env.OPENCODE_BINARY;
-    const child = createMockChild();
-    spawnMock.mockImplementationOnce(() => {
-      queueMicrotask(() => {
-        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
-      });
-      return child;
-    });
-
-    const runtime = createRuntime({
-      buildManagedOpenCodePath: undefined,
-      buildAugmentedPath: vi.fn(() => '/home/user/.cargo/bin:/usr/local/bin'),
-    });
-    const server = await runtime.startOpenCode();
-    const [, , options] = spawnMock.mock.calls[0];
-
-    expect(options.env.PATH).toBe('/home/user/.cargo/bin:/usr/local/bin');
-
-    await server.close();
-  });
-
-  it('falls back to process.env.PATH when neither build function is provided', async () => {
-    delete process.env.OPENCODE_BINARY;
-    const originalPath = process.env.PATH;
-    process.env.PATH = '/usr/bin:/bin';
-    const child = createMockChild();
-    spawnMock.mockImplementationOnce(() => {
-      queueMicrotask(() => {
-        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
-      });
-      return child;
-    });
-
-    const runtime = createRuntime({
-      buildManagedOpenCodePath: undefined,
-      buildAugmentedPath: undefined,
-    });
-    const server = await runtime.startOpenCode();
-    const [, , options] = spawnMock.mock.calls[0];
-
-    expect(options.env.PATH).toBe('/usr/bin:/bin');
-    process.env.PATH = originalPath;
-
-    await server.close();
-  });
-
-  it('reports the binary when managed OpenCode exits before becoming ready', async () => {
-    delete process.env.OPENCODE_BINARY;
-    const firstChild = createMockChild();
-    const secondChild = createMockChild();
-    spawnMock.mockImplementationOnce(() => {
-      queueMicrotask(() => {
-        firstChild.emit('exit', null, 'SIGTERM');
-      });
-      return firstChild;
-    });
-    spawnMock.mockImplementationOnce(() => {
-      queueMicrotask(() => {
-        secondChild.emit('exit', null, 'SIGTERM');
-      });
-      return secondChild;
-    });
-
-    const runtime = createRuntime();
-
-    await expect(runtime.startOpenCode()).rejects.toThrow('OpenCode process exited before serving with signal SIGTERM. Binary used: opencode. No stdout/stderr captured');
-    expect(spawnMock).toHaveBeenCalledTimes(2);
-  });
-
-  it('does not retry managed startup when the configured OpenCode binary is invalid', async () => {
-    delete process.env.OPENCODE_BINARY;
-    const error = new Error('Configured OpenCode binary not found: /missing/opencode');
-    error.code = 'OPENCODE_BINARY_INVALID';
-    const applyOpencodeBinaryFromSettings = vi.fn(async () => {
-      throw error;
-    });
-
-    const runtime = createRuntime({ applyOpencodeBinaryFromSettings });
-
-    await expect(runtime.startOpenCode()).rejects.toThrow('Configured OpenCode binary not found: /missing/opencode');
-    expect(applyOpencodeBinaryFromSettings).toHaveBeenCalledTimes(1);
-    expect(applyOpencodeBinaryFromSettings).toHaveBeenCalledWith({ strict: true });
-    expect(spawnMock).not.toHaveBeenCalled();
-  });
-
-  it('does not start managed OpenCode when skip-start is enabled without a configured port', async () => {
-    globalThis.fetch = vi.fn(async () => ({ ok: false }));
-    const runtime = createRuntime({
-      env: {
-        ENV_CONFIGURED_OPENCODE_PORT: null,
-        ENV_CONFIGURED_OPENCODE_HOST: null,
-        ENV_EFFECTIVE_PORT: null,
-        ENV_CONFIGURED_OPENCODE_HOSTNAME: '127.0.0.1',
-        ENV_SKIP_OPENCODE_START: true,
-      },
-    });
-
-    await runtime.bootstrapOpenCodeAtStartup();
-
-    expect(spawnMock).not.toHaveBeenCalled();
-  });
-
-  it('starts managed OpenCode when no explicit external env is set even if default port 4096 responds', async () => {
-    delete process.env.OPENCODE_BINARY;
-    const child = createMockChild();
-    globalThis.fetch = vi.fn(async (input) => {
-      const url = String(input);
-      if (url === 'http://127.0.0.1:4096/global/health') {
-        return {
-          ok: true,
-          json: async () => ({ healthy: true, version: '1.0.0' }),
-        };
-      }
-      return {
-        ok: true,
-        json: async () => (url.includes('/agent') ? [] : {}),
-      };
-    });
-    spawnMock.mockImplementationOnce((_binary, args) => {
-      const port = args[args.indexOf('--port') + 1];
-      queueMicrotask(() => {
-        child.stdout.emit('data', `opencode server listening on http://127.0.0.1:${port}\n`);
-      });
-      return child;
-    });
-
-    const runtime = createRuntime({
-      env: {
-        ENV_CONFIGURED_OPENCODE_PORT: null,
-        ENV_CONFIGURED_OPENCODE_HOST: null,
-        ENV_EFFECTIVE_PORT: null,
-        ENV_CONFIGURED_OPENCODE_HOSTNAME: '127.0.0.1',
-        ENV_SKIP_OPENCODE_START: false,
-      },
-    });
-
-    await runtime.bootstrapOpenCodeAtStartup();
-
-    expect(spawnMock).toHaveBeenCalledTimes(1);
-    expect(runtime.__testState.isExternalOpenCode).toBe(false);
-    expect(runtime.__testState.openCodeProcess).toBeTruthy();
-
-    await runtime.__testState.openCodeProcess.close();
-  });
-
-  it.each([
-    {
-      name: 'configured OPENCODE_PORT',
-      env: {
-        ENV_CONFIGURED_OPENCODE_PORT: 4096,
-        ENV_CONFIGURED_OPENCODE_HOST: null,
-        ENV_EFFECTIVE_PORT: 4096,
-        ENV_CONFIGURED_OPENCODE_HOSTNAME: '127.0.0.1',
-        ENV_SKIP_OPENCODE_START: false,
-      },
-    },
-    {
-      name: 'configured OPENCODE_HOST',
-      env: {
-        ENV_CONFIGURED_OPENCODE_PORT: null,
-        ENV_CONFIGURED_OPENCODE_HOST: { origin: 'http://localhost:4096', port: 4096 },
-        ENV_EFFECTIVE_PORT: 4096,
-        ENV_CONFIGURED_OPENCODE_HOSTNAME: '127.0.0.1',
-        ENV_SKIP_OPENCODE_START: false,
-      },
-    },
-    {
-      name: 'OPENCODE_SKIP_START=true',
-      env: {
-        ENV_CONFIGURED_OPENCODE_PORT: null,
-        ENV_CONFIGURED_OPENCODE_HOST: null,
-        ENV_EFFECTIVE_PORT: null,
-        ENV_CONFIGURED_OPENCODE_HOSTNAME: '127.0.0.1',
-        ENV_SKIP_OPENCODE_START: true,
-      },
-    },
-  ])('attaches to an external OpenCode runtime for $name', async ({ env }) => {
-    globalThis.fetch = vi.fn(async (input) => {
-      const url = String(input);
-      if (url.endsWith('/global/health')) {
-        return {
-          ok: true,
-          json: async () => ({ healthy: true, version: '1.0.0' }),
-        };
-      }
-      return {
-        ok: true,
-        json: async () => (url.includes('/agent') ? [] : {}),
-      };
-    });
-
-    const provisionUserProfile = vi.fn(async () => ({ ok: true, changed: false, conflicts: [] }));
-    const runtime = createRuntime({ env, provisionUserProfile });
-
-    await runtime.bootstrapOpenCodeAtStartup();
-
-    expect(spawnMock).not.toHaveBeenCalled();
-    expect(provisionUserProfile).not.toHaveBeenCalled();
-    expect(runtime.__testState.isExternalOpenCode).toBe(true);
-    expect(runtime.__testState.openCodePort).toBe(4096);
-  });
-
-  it('retries managed OpenCode startup once after a pre-ready exit', async () => {
-    delete process.env.OPENCODE_BINARY;
-    const firstChild = createMockChild();
-    const secondChild = createMockChild();
-    spawnMock.mockImplementationOnce(() => {
-      queueMicrotask(() => {
-        firstChild.emit('exit', null, 'SIGTERM');
-      });
-      return firstChild;
-    });
-    spawnMock.mockImplementationOnce(() => {
-      queueMicrotask(() => {
-        secondChild.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
-      });
-      return secondChild;
-    });
-
-    const runtime = createRuntime();
-    const server = await runtime.startOpenCode();
-
-    expect(spawnMock).toHaveBeenCalledTimes(2);
-    await server.close();
-  });
-
-  it('fires the restart callback after a successful restart', async () => {
-    const child = createMockChild();
-    spawnMock.mockImplementationOnce(() => {
-      queueMicrotask(() => {
-        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
-      });
-      return child;
-    });
-    const onOpenCodeRestarted = vi.fn();
-    const runtime = createRuntime({
-      initialState: { openCodePort: 45678 },
-      onOpenCodeRestarted,
-    });
-
-    await runtime.restartOpenCode();
-
-    expect(onOpenCodeRestarted).toHaveBeenCalledOnce();
-    await runtime.__testState.openCodeProcess.close();
-  });
-
-  it('reports a crashed managed server with its stderr tail and restarts it without waiting for the poll', async () => {
-    const crashed = createMockChild();
-    const replacement = createMockChild();
-    for (const child of [crashed, replacement]) {
-      spawnMock.mockImplementationOnce(() => {
-        queueMicrotask(() => child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n'));
-        return child;
-      });
-    }
-    globalThis.fetch = vi.fn(async () => { throw new Error('connect ECONNREFUSED'); });
-    const onManagedProcessExit = vi.fn();
-    const onOpenCodeRestarted = vi.fn();
-    const runtime = createRuntime({ initialState: { openCodePort: 45678 }, onManagedProcessExit, onOpenCodeRestarted });
-    await runtime.restartOpenCode();
-    const first = runtime.__testState.openCodeProcess;
-    expect(first.startedAt).toEqual(expect.any(Number));
-
-    crashed.stderr.emit('data', 'x'.repeat(20_000));
-    crashed.stderr.emit('data', 'panic(main thread): Segmentation fault at address 0x0\n');
-    crashed.signalCode = 'SIGTRAP';
-    crashed.emit('exit', null, 'SIGTRAP');
-    crashed.emit('close', null, 'SIGTRAP');
-
-    expect(onManagedProcessExit).toHaveBeenCalledOnce();
-    const report = onManagedProcessExit.mock.calls[0][0];
-    expect(report).toMatchObject({ pid: 12345, code: null, signal: 'SIGTRAP', expected: false });
-    expect(report.stderrTail).toContain('panic(main thread)');
-    expect(report.stderrTail.length).toBeLessThanOrEqual(16 * 1024);
-    await vi.waitFor(() => expect(spawnMock).toHaveBeenCalledTimes(2));
-    await vi.waitFor(() => expect(onOpenCodeRestarted).toHaveBeenCalledTimes(2));
-    expect(onOpenCodeRestarted.mock.calls[1][0]).toEqual({ restartStartedAt: expect.any(Number) });
-    expect(runtime.__testState.openCodeProcess).not.toBe(first);
-    await runtime.__testState.openCodeProcess.close();
-  });
-
-  it('reports a requested close as expected and does not restart', async () => {
-    const child = createMockChild();
-    child.kill = vi.fn(() => {
-      child.signalCode = 'SIGTERM';
-      queueMicrotask(() => { child.emit('exit', null, 'SIGTERM'); child.emit('close', null, 'SIGTERM'); });
-      return true;
-    });
-    spawnMock.mockImplementationOnce(() => {
-      queueMicrotask(() => child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n'));
-      return child;
-    });
-    const onManagedProcessExit = vi.fn();
-    const runtime = createRuntime({ initialState: { openCodePort: 45678 }, onManagedProcessExit });
-    await runtime.restartOpenCode();
-    await runtime.__testState.openCodeProcess.close();
-
-    await vi.waitFor(() => expect(onManagedProcessExit).toHaveBeenCalledOnce());
-    expect(onManagedProcessExit.mock.calls[0][0]).toMatchObject({ expected: true, signal: 'SIGTERM' });
-    expect(spawnMock).toHaveBeenCalledTimes(1);
-  });
-
-  it('holds managed browser lease admission closed across managed child replacement', async () => {
-    const order = [];
-    let releasePause;
-    const pauseGate = new Promise((resolve) => { releasePause = resolve; });
-    const resetHandle = { epoch: 2 };
-    const existingProcess = {
-      close: vi.fn(async () => { order.push('process-close'); }),
-    };
-    const child = createMockChild();
-    spawnMock.mockImplementationOnce(() => {
-      order.push('spawn');
-      queueMicrotask(() => {
-        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
-      });
-      return child;
-    });
-    const pauseManagedBrowserLeases = vi.fn(async (reason) => {
-      order.push(`leases:pause:${reason}`);
-      await pauseGate;
-      return resetHandle;
-    });
-    const resumeManagedBrowserLeases = vi.fn(async (handle) => {
-      expect(handle).toBe(resetHandle);
-      order.push('leases:resume');
-      return true;
-    });
-    const runtime = createRuntime({
-      initialState: {
-        openCodeProcess: existingProcess,
-        openCodePort: 45678,
-      },
-      pauseManagedBrowserLeases,
-      resumeManagedBrowserLeases,
-    });
-
-    const restart = runtime.restartOpenCode();
-    await vi.waitFor(() => expect(pauseManagedBrowserLeases).toHaveBeenCalledOnce());
-    expect(existingProcess.close).not.toHaveBeenCalled();
-    expect(spawnMock).not.toHaveBeenCalled();
-    releasePause();
-    await restart;
-
-    expect(order.slice(0, 4)).toEqual([
-      'leases:pause:opencode_restart',
-      'process-close',
-      'spawn',
-      'leases:resume',
-    ]);
-    expect(resumeManagedBrowserLeases).toHaveBeenCalledOnce();
-    await runtime.__testState.openCodeProcess.close();
-  });
-
-  it('does not touch managed browser leases while re-probing an external OpenCode runtime', async () => {
-    globalThis.fetch = vi.fn(async () => ({
-      ok: true,
-      json: async () => ({ healthy: true }),
-    }));
-    const pauseManagedBrowserLeases = vi.fn();
-    const resumeManagedBrowserLeases = vi.fn();
-    const runtime = createRuntime({
-      initialState: {
-        isExternalOpenCode: true,
-        openCodePort: 45678,
-      },
-      pauseManagedBrowserLeases,
-      resumeManagedBrowserLeases,
-    });
-
-    await runtime.restartOpenCode();
-
-    expect(pauseManagedBrowserLeases).not.toHaveBeenCalled();
-    expect(resumeManagedBrowserLeases).not.toHaveBeenCalled();
-    expect(spawnMock).not.toHaveBeenCalled();
-  });
-
-  it('resumes managed browser lease admission after a failed restart', async () => {
-    const onOpenCodeRestarted = vi.fn();
-    const resetHandle = { epoch: 3 };
-    const pauseManagedBrowserLeases = vi.fn(async () => resetHandle);
-    const resumeManagedBrowserLeases = vi.fn(async () => true);
-    const runtime = createRuntime({
-      initialState: { openCodePort: 45678 },
-      provisionUserProfile: vi.fn(async () => ({ ok: false, error: 'profile unavailable' })),
-      pauseManagedBrowserLeases,
-      resumeManagedBrowserLeases,
-      onOpenCodeRestarted,
-    });
-
-    await expect(runtime.restartOpenCode()).rejects.toThrow('profile unavailable');
-
-    expect(pauseManagedBrowserLeases).toHaveBeenCalledWith('opencode_restart');
-    expect(resumeManagedBrowserLeases).toHaveBeenCalledWith(resetHandle);
-    expect(onOpenCodeRestarted).not.toHaveBeenCalled();
-  });
-
-  it('leaves restart scheduling to the host configuration coordinator', () => {
-    const runtime = createRuntime();
-
-    expect(runtime.refreshOpenCodeAfterConfigChange).toBeUndefined();
-    expect(runtime.applyOpenCodeConfigChanges).toBeTypeOf('function');
-  });
-
-  it('preserves a live managed child across repeated failed health checks while a session stays busy', async () => {
-    vi.useFakeTimers();
-    const existingProcess = {
-      exitCode: null,
-      signalCode: null,
-      close: vi.fn(async () => {}),
-      hasExited: vi.fn(() => false),
-    };
-    globalThis.fetch = vi.fn(async () => ({ ok: false }));
-    const runtime = createRuntime({
-      initialState: {
-        openCodeProcess: existingProcess,
-        openCodePort: 45678,
-        isOpenCodeReady: true,
-      },
-      getActiveSessionCount: vi.fn(() => 1),
-    });
-
-    await runtime.triggerHealthCheck();
-    vi.advanceTimersByTime(24 * 60 * 60 * 1000);
-    await runtime.triggerHealthCheck();
-
-    expect(existingProcess.close).not.toHaveBeenCalled();
-    expect(spawnMock).not.toHaveBeenCalled();
-    expect(runtime.__testState.openCodeProcess).toBe(existingProcess);
-    expect(runtime.__testState.isOpenCodeReady).toBe(true);
-    expect(runtime.__testState.openCodeProbe).toMatchObject({ succeeded: false, lastSuccessAt: null });
-    const failedAt = runtime.__testState.openCodeProbe.lastFailureAt;
-    globalThis.fetch = vi.fn(async () => ({ ok: true, json: async () => ({ healthy: true, version: '1.18.26' }) }));
-    await runtime.triggerHealthCheck();
-    expect(runtime.__testState.openCodeProbe).toMatchObject({ succeeded: true, lastFailureAt: failedAt });
-    expect(runtime.__testState.openCodeProbe.lastSuccessAt).toBeTypeOf('number');
-  });
-
-  it('restarts a live idle managed child only after three consecutive failed health checks', async () => {
-    const existingProcess = { exitCode: null, signalCode: null, close: vi.fn(async () => {}), hasExited: vi.fn(() => false) };
-    const child = createMockChild();
-    spawnMock.mockImplementationOnce(() => {
-      queueMicrotask(() => { child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n'); });
-      return child;
-    });
-    const unhealthy = vi.fn(async () => ({ ok: false }));
-    const healthy = vi.fn(async () => ({ ok: true, json: async () => ({ healthy: true, version: '1.18.33' }) }));
-    globalThis.fetch = unhealthy;
-    const runtime = createRuntime({
-      initialState: { openCodeProcess: existingProcess, openCodePort: 45678, isOpenCodeReady: true },
-      getActiveSessionCount: vi.fn(() => 0),
-    });
-
-    await runtime.triggerHealthCheck();
-    await runtime.triggerHealthCheck();
-    // A success in between starts the count again.
-    globalThis.fetch = healthy;
-    await runtime.triggerHealthCheck();
-    globalThis.fetch = unhealthy;
-    await runtime.triggerHealthCheck();
-    await runtime.triggerHealthCheck();
-    expect(existingProcess.close).not.toHaveBeenCalled();
-    expect(spawnMock).not.toHaveBeenCalled();
-
-    await runtime.triggerHealthCheck();
-    expect(existingProcess.close).toHaveBeenCalledTimes(1);
-    expect(spawnMock).toHaveBeenCalledTimes(1);
-    await runtime.__testState.openCodeProcess.close();
-  });
-
-  it('restarts on the first failed health check when configured to', async () => {
-    vi.stubEnv('DEVRYAN_HEALTH_RESTART_FAILURES', '1');
-    const existingProcess = { exitCode: null, signalCode: null, close: vi.fn(async () => {}), hasExited: vi.fn(() => false) };
-    const child = createMockChild();
-    spawnMock.mockImplementationOnce(() => {
-      queueMicrotask(() => { child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n'); });
-      return child;
-    });
-    globalThis.fetch = vi.fn(async () => ({ ok: false }));
-    const runtime = createRuntime({
-      initialState: { openCodeProcess: existingProcess, openCodePort: 45678, isOpenCodeReady: true },
-      getActiveSessionCount: vi.fn(() => 0),
-    });
-    try {
-      await runtime.triggerHealthCheck();
-      expect(existingProcess.close).toHaveBeenCalledTimes(1);
-      await runtime.__testState.openCodeProcess.close();
-    } finally { vi.unstubAllEnvs(); }
-  });
-
-  it('restarts a definitely exited managed child even when session activity is still marked busy', async () => {
-    const existingProcess = {
-      exitCode: 1,
-      signalCode: null,
-      close: vi.fn(async () => {}),
-      hasExited: vi.fn(() => true),
-    };
-    const child = createMockChild();
-    spawnMock.mockImplementationOnce(() => {
-      queueMicrotask(() => {
-        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
-      });
-      return child;
-    });
-    globalThis.fetch = vi.fn(async () => ({ ok: false }));
-    const runtime = createRuntime({
-      initialState: {
-        openCodeProcess: existingProcess,
-        openCodePort: 45678,
-        isOpenCodeReady: true,
-      },
-      getActiveSessionCount: vi.fn(() => 1),
-    });
-
-    await runtime.triggerHealthCheck();
-
-    expect(existingProcess.close).toHaveBeenCalledTimes(1);
-    expect(spawnMock).toHaveBeenCalledTimes(1);
-    expect(runtime.__testState.openCodeProcess).not.toBe(existingProcess);
-    expect(runtime.__testState.isOpenCodeReady).toBe(true);
-    await runtime.__testState.openCodeProcess.close();
-  });
-
-  it('syncs packaged agents before spawning managed OpenCode', async () => {
-    delete process.env.OPENCODE_BINARY;
-    const order = [];
-    const child = createMockChild();
-    const syncPackagedAgents = vi.fn(async () => {
-      order.push('sync');
-      return { changed: false, conflicts: [] };
-    });
-    spawnMock.mockImplementationOnce(() => {
-      order.push('spawn');
-      queueMicrotask(() => {
-        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
-      });
-      return child;
-    });
-
-    const runtime = createRuntime({ syncPackagedAgents });
-    const server = await runtime.startOpenCode();
-
-    expect(order).toEqual(['sync', 'spawn']);
-    expect(syncPackagedAgents).toHaveBeenCalledTimes(1);
-    await server.close();
-  });
-
-  it('syncs runtime agent overlays before spawning managed OpenCode and passes the overlay config directory', async () => {
-    delete process.env.OPENCODE_BINARY;
-    const order = [];
-    const child = createMockChild();
-    const syncRuntimeAgentOverlays = vi.fn(async () => {
-      order.push('overlay');
-      return {
-        changed: true,
-        written: ['builder'],
-        updated: [],
-        removed: [],
-        targetConfigDirectory: '/tmp/openchamber-runtime-overlays/project-hash',
-      };
-    });
-    spawnMock.mockImplementationOnce(() => {
-      order.push('spawn');
-      queueMicrotask(() => {
-        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
-      });
-      return child;
-    });
-
-    const runtime = createRuntime({ syncRuntimeAgentOverlays });
-    const server = await runtime.startOpenCode();
-    const [, args, options] = spawnMock.mock.calls[0];
-
-    expect(order).toEqual(['overlay', 'spawn']);
-    expect(syncRuntimeAgentOverlays).toHaveBeenCalledWith({
-      workingDirectory: '/tmp/project',
-      skillPolicy: expect.any(Object),
-      agentRuntimeSettings: { lsp: false },
-    });
-    expect(args).toEqual(['serve', '--hostname', '127.0.0.1', '--port', '45678', '--log-level', 'WARN']);
-    expect(options.env.OPENCODE_CONFIG_DIR).toBe('/tmp/openchamber-runtime-overlays/project-hash');
-    // v1.0.6 set this to 'true', which disabled the opencode default plugin that
-    // surfaces the OpenAI (ChatGPT/Codex OAuth) provider. openchamber must NOT force it.
-    expect(options.env.OPENCODE_DISABLE_DEFAULT_PLUGINS).toBeUndefined();
-    await server.close();
-  });
-
-  it('passes the active Slim preset and background subagent flag to managed OpenCode', async () => {
-    delete process.env.OPENCODE_BINARY;
-    const opencodeConfigDir = process.env.OPENCODE_CONFIG_DIR;
-    mkdirSync(opencodeConfigDir, { recursive: true });
-    writeFileSync(
-      join(opencodeConfigDir, 'opencode.json'),
-      `${JSON.stringify({ plugin: ['oh-my-opencode-slim'] }, null, 2)}\n`,
-      'utf8',
-    );
-    writeFileSync(
-      join(opencodeConfigDir, 'oh-my-opencode-slim.json'),
-      `${JSON.stringify({
-        preset: 'openai',
-        presets: {
-          openai: {
-            designer: { model: 'openai/gpt-5.4-mini', variant: 'medium' },
-            fixer: { model: 'openai/gpt-5.5', variant: 'low' },
-          },
-        },
-      }, null, 2)}\n`,
-      'utf8',
-    );
-    const child = createMockChild();
-    spawnMock.mockImplementationOnce(() => {
-      queueMicrotask(() => {
-        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
-      });
-      return child;
-    });
-    const syncPackagedAgents = vi.fn(async () => ({ changed: false, conflicts: [] }));
-
-    const runtime = createRuntime({ syncPackagedAgents });
-    const server = await runtime.startOpenCode();
-    const [, , options] = spawnMock.mock.calls[0];
-
-    expect(syncPackagedAgents).toHaveBeenCalledWith({
-      agentOverrides: {},
-      excludedAgentNames: expect.arrayContaining([
-        'councillor',
-        'designer',
-        'fixer',
-        'observer',
-        'orchestrator',
-        'plan',
-      ]),
-      skillPolicy: expect.any(Object),
-    });
-    expect(options.env.OH_MY_OPENCODE_SLIM_PRESET).toBe('openai');
-    expect(options.env.DEVRYAN_OPENCODE_USER_CONFIG_DIR).toBe(opencodeConfigDir);
-    expect(options.env.OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS).toBe('true');
-
-    await server.close();
-  });
-
-  it('does not exclude packaged DevRyan agents for the DevRyan Slim wrapper mode', async () => {
-    delete process.env.OPENCODE_BINARY;
-    const opencodeConfigDir = process.env.OPENCODE_CONFIG_DIR;
-    mkdirSync(opencodeConfigDir, { recursive: true });
-    writeFileSync(
-      join(opencodeConfigDir, 'opencode.json'),
-      `${JSON.stringify({ plugin: ['./plugins/devryan-oh-my-opencode-slim.mjs'] }, null, 2)}\n`,
-      'utf8',
-    );
-    writeFileSync(
-      join(opencodeConfigDir, 'oh-my-opencode-slim.json'),
-      `${JSON.stringify({
-        preset: 'openai',
-        presets: {
-          openai: {
-            orchestrator: { model: 'openai/gpt-5.5', variant: 'medium' },
-          },
-        },
-      }, null, 2)}\n`,
-      'utf8',
-    );
-    const child = createMockChild();
-    spawnMock.mockImplementationOnce(() => {
-      queueMicrotask(() => {
-        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
-      });
-      return child;
-    });
-    const syncPackagedAgents = vi.fn(async () => ({ changed: false, conflicts: [] }));
-
-    const runtime = createRuntime({ syncPackagedAgents });
-    const server = await runtime.startOpenCode();
-    const [, , options] = spawnMock.mock.calls[0];
-
-    expect(syncPackagedAgents).toHaveBeenCalledWith({
-      agentOverrides: {},
-      excludedAgentNames: [],
-      skillPolicy: expect.any(Object),
-    });
-    expect(options.env.OH_MY_OPENCODE_SLIM_PRESET).toBe('openai');
-    expect(options.env.DEVRYAN_OPENCODE_USER_CONFIG_DIR).toBe(opencodeConfigDir);
-    expect(options.env.OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS).toBe('true');
-
-    await server.close();
-  });
-
-  it('keeps packaged agent sync stable and passes visible skill policy into runtime overlays', async () => {
-    delete process.env.OPENCODE_BINARY;
-    const child = createMockChild();
-    const syncPackagedAgents = vi.fn(async () => ({ changed: false, conflicts: [] }));
-    const syncRuntimeAgentOverlays = vi.fn(async () => ({
-      changed: false,
-      written: [],
-      updated: [],
-      removed: [],
-      targetConfigDirectory: '/tmp/openchamber-runtime-overlays/project-hash',
-    }));
-    spawnMock.mockImplementationOnce(() => {
-      queueMicrotask(() => {
-        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
-      });
-      return child;
-    });
-
-    const runtime = createRuntime({
-      syncPackagedAgents,
-      syncRuntimeAgentOverlays,
-      readSettingsFromDisk: vi.fn(async () => ({
-        hiddenSkills: [{ name: 'debugging', path: '/tmp/project/.opencode/skills/debugging/SKILL.md' }],
-      })),
-      sanitizeHiddenSkills: (value) => value,
-      discoverSkills: vi.fn(() => [
-        { name: 'frontend-design', path: '/tmp/project/.opencode/skills/frontend-design/SKILL.md' },
-        { name: 'debugging', path: '/tmp/project/.opencode/skills/debugging/SKILL.md' },
-      ]),
-    });
-    const server = await runtime.startOpenCode();
-
-    expect(syncPackagedAgents).toHaveBeenCalledWith({
-      agentOverrides: {},
-      excludedAgentNames: [],
-      skillPolicy: expect.objectContaining({
-        skillNames: ['frontend-design'],
-        skillDirectories: ['/tmp/project/.opencode/skills/frontend-design'],
-      }),
-    });
-    expect(syncRuntimeAgentOverlays).toHaveBeenCalledWith({
-      workingDirectory: '/tmp/project',
-      agentRuntimeSettings: { lsp: false },
-      skillPolicy: expect.objectContaining({
-        skillNames: ['frontend-design'],
-        skillDirectories: ['/tmp/project/.opencode/skills/frontend-design'],
-      }),
-    });
-    await server.close();
-  });
-
-  it('starts managed OpenCode when packaged agent sync has conflicts', async () => {
-    delete process.env.OPENCODE_BINARY;
-    const child = createMockChild();
-    const syncPackagedAgents = vi.fn(async () => ({
-      changed: false,
-      conflicts: [{ name: 'builder', path: '/tmp/agents/builder.md', reason: 'user-modified' }],
-    }));
-    spawnMock.mockImplementationOnce(() => {
-      queueMicrotask(() => {
-        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
-      });
-      return child;
-    });
-
-    const runtime = createRuntime({ syncPackagedAgents });
-
-    const server = await runtime.startOpenCode();
-
-    expect(syncPackagedAgents).toHaveBeenCalledTimes(1);
-    expect(spawnMock).toHaveBeenCalledTimes(1);
-
-    await server.close();
-  });
-
-  it('restarts a reused managed OpenCode server when packaged agent sync changes files', async () => {
-    delete process.env.OPENCODE_BINARY;
-    const reusedProcess = { close: vi.fn(async () => {}) };
-    const child = createMockChild();
-    const syncPackagedAgents = vi.fn()
-      .mockResolvedValueOnce({ changed: true, conflicts: [] })
-      .mockResolvedValueOnce({ changed: false, conflicts: [] });
-    globalThis.fetch = vi.fn(async () => ({
-      ok: true,
-      json: async () => ({ healthy: true }),
-    }));
-    spawnMock.mockImplementationOnce(() => {
-      queueMicrotask(() => {
-        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
-      });
-      return child;
-    });
-
-    const runtime = createRuntime({
-      initialState: {
-        openCodeProcess: reusedProcess,
-        openCodePort: 45678,
-        isOpenCodeReady: true,
-      },
-      syncPackagedAgents,
-    });
-
-    await runtime.bootstrapOpenCodeAtStartup();
-
-    expect(reusedProcess.close).toHaveBeenCalledTimes(1);
-    expect(spawnMock).toHaveBeenCalledTimes(1);
-    expect(syncPackagedAgents).toHaveBeenCalledTimes(2);
-  });
-
-  it('waits for an overridden agent model after refreshing managed OpenCode', async () => {
-    delete process.env.OPENCODE_BINARY;
-    const child = createMockChild();
-    spawnMock.mockImplementationOnce(() => {
-      queueMicrotask(() => {
-        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
-      });
-      return child;
-    });
-    globalThis.fetch = vi.fn(async (url) => {
-      const href = String(url);
-      if (href.endsWith('/config')) {
-        return { ok: true, json: async () => ({}) };
-      }
-      if (href.endsWith('/agent')) {
-        return {
-          ok: true,
-          json: async () => ([{
-            name: 'fixer',
-            model: { providerID: 'cursor-acp', modelID: 'composer-2.5' },
-          }]),
-        };
-      }
-      return { ok: true, json: async () => ({ healthy: true }) };
-    });
-
-    const runtime = createRuntime();
-
-    await expect(runtime.applyOpenCodeConfigChanges({ scopes: ['agents'], changes: [{ metadata: {
-      agentName: 'fixer',
-      expectedAgentModelRef: 'cursor-acp/composer-2.5',
-      agentReadyTimeoutMs: 50,
-      agentReadyIntervalMs: 1,
-    } }] })).resolves.toMatchObject({ runtimeApplied: true, requiresReload: false });
-  });
-
-  it('accepts an omitted runtime variant for a matching Cursor agent model', async () => {
-    delete process.env.OPENCODE_BINARY;
-    const child = createMockChild();
-    spawnMock.mockImplementationOnce(() => {
-      queueMicrotask(() => {
-        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
-      });
-      return child;
-    });
-    globalThis.fetch = vi.fn(async (url) => {
-      const href = String(url);
-      if (href.endsWith('/config')) {
-        return { ok: true, json: async () => ({}) };
-      }
-      if (href.endsWith('/agent')) {
-        return {
-          ok: true,
-          json: async () => ([{
-            name: 'fixer',
-            model: { providerID: 'cursor-acp', modelID: 'grok-4.5' },
-            variant: '',
-          }]),
-        };
-      }
-      return { ok: true, json: async () => ({ healthy: true }) };
-    });
-
-    const runtime = createRuntime();
-
-    await expect(runtime.applyOpenCodeConfigChanges({ scopes: ['agents'], changes: [{ metadata: {
-      agentName: 'fixer',
-      expectedAgentModelRef: 'cursor-acp/grok-4.5',
-      expectedAgentVariant: 'low',
-      agentReadyTimeoutMs: 20,
-      agentReadyIntervalMs: 1,
-    } }] })).resolves.toMatchObject({ runtimeApplied: true, requiresReload: false });
-  });
-
-  it('rejects an explicit stale runtime variant for a matching Cursor agent model', async () => {
-    delete process.env.OPENCODE_BINARY;
-    const child = createMockChild();
-    spawnMock.mockImplementationOnce(() => {
-      queueMicrotask(() => {
-        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
-      });
-      return child;
-    });
-    globalThis.fetch = vi.fn(async (url) => {
-      const href = String(url);
-      if (href.endsWith('/config')) {
-        return { ok: true, json: async () => ({}) };
-      }
-      if (href.endsWith('/agent')) {
-        return {
-          ok: true,
-          json: async () => ([{
-            name: 'fixer',
-            model: { providerID: 'cursor-acp', modelID: 'grok-4.5' },
-            variant: 'high',
-          }]),
-        };
-      }
-      return { ok: true, json: async () => ({ healthy: true }) };
-    });
-
-    const runtime = createRuntime();
-
-    await expect(runtime.applyOpenCodeConfigChanges({ scopes: ['agents'], changes: [{ metadata: {
-      agentName: 'fixer',
-      expectedAgentModelRef: 'cursor-acp/grok-4.5',
-      expectedAgentVariant: 'low',
-      agentReadyTimeoutMs: 20,
-      agentReadyIntervalMs: 1,
-    } }] })).rejects.toThrow('Agent "fixer" loaded with model "cursor-acp/grok-4.5" and variant "high"; expected variant "low"; expected "cursor-acp/grok-4.5"');
-  });
-
-  it('accepts an omitted runtime variant for a matching native agent model', async () => {
-    delete process.env.OPENCODE_BINARY;
-    const child = createMockChild();
-    spawnMock.mockImplementationOnce(() => {
-      queueMicrotask(() => {
-        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
-      });
-      return child;
-    });
-    globalThis.fetch = vi.fn(async (url) => {
-      const href = String(url);
-      if (href.endsWith('/config')) {
-        return { ok: true, json: async () => ({}) };
-      }
-      if (href.endsWith('/agent')) {
-        return {
-          ok: true,
-          json: async () => ([{
-            name: 'fixer',
-            model: { providerID: 'openai', modelID: 'gpt-5.5' },
-            variant: '',
-          }]),
-        };
-      }
-      return { ok: true, json: async () => ({ healthy: true }) };
-    });
-
-    const runtime = createRuntime();
-
-    await expect(runtime.applyOpenCodeConfigChanges({ scopes: ['agents'], changes: [{ metadata: {
-      agentName: 'fixer',
-      expectedAgentModelRef: 'openai/gpt-5.5',
-      expectedAgentVariant: 'low',
-      agentReadyTimeoutMs: 20,
-      agentReadyIntervalMs: 1,
-    } }] })).resolves.toMatchObject({ runtimeApplied: true, requiresReload: false });
-  });
-
-  it('fails refresh when the runtime loads a stale model for the overridden agent', async () => {
-    delete process.env.OPENCODE_BINARY;
-    const child = createMockChild();
-    spawnMock.mockImplementationOnce(() => {
-      queueMicrotask(() => {
-        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
-      });
-      return child;
-    });
-    globalThis.fetch = vi.fn(async (url) => {
-      const href = String(url);
-      if (href.endsWith('/config')) {
-        return { ok: true, json: async () => ({}) };
-      }
-      if (href.endsWith('/agent')) {
-        return {
-          ok: true,
-          json: async () => ([{
-            name: 'fixer',
-            model: { providerID: 'openai', modelID: 'gpt-5.5' },
-          }]),
-        };
-      }
-      return { ok: true, json: async () => ({ healthy: true }) };
-    });
-
-    const runtime = createRuntime();
-
-    await expect(runtime.applyOpenCodeConfigChanges({ scopes: ['agents'], changes: [{ metadata: {
-      agentName: 'fixer',
-      expectedAgentModelRef: 'cursor-acp/composer-2.5',
-      agentReadyTimeoutMs: 20,
-      agentReadyIntervalMs: 1,
-    } }] })).rejects.toThrow('Agent "fixer" loaded with model "openai/gpt-5.5"; expected "cursor-acp/composer-2.5"');
-  });
+it('a refused same-version upgrade launches the retained runtime; a version below the pin still refuses with its diagnostic',async()=>{
+ const {recordStartupBundleUpgradeFailure}=await import('./runtime-host/bundle-startup-upgrade-status.js');
+ const diagnostic={stage:'reviewed_asset',reason:'reviewed_asset_mismatch',artifact:'DevRyan-Claude-darwin-arm64',purpose:'bundle-source'};
+ recordStartupBundleUpgradeFailure('native_runtime_artifacts_unverified',{diagnostic});
+ try {
+  const f=fixture();
+  await f.runtime.bootstrapOpenCodeAtStartup();
+  expect(f.native.start).toHaveBeenCalledTimes(1);expect(f.state.isOpenCodeReady).toBe(true);
+  const below=fixture();below.bundle.version='2.0.20';
+  await expect(below.runtime.bootstrapOpenCodeAtStartup()).rejects.toMatchObject({code:'native_runtime_artifacts_unverified',diagnostic});
+  expect(below.native.start).not.toHaveBeenCalled();
+  expect(below.state.openCodeStartup).toMatchObject({state:'failed',diagnostic});
+ }finally{recordStartupBundleUpgradeFailure(null);}
 });
 
-describe('managed agent-runtime application snapshots', () => {
-  const provideChild = () => {
-    const child = createMockChild();
-    queueMicrotask(() => child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n'));
-    return child;
-  };
+it.each(['verification','readiness'])('queues one restart behind startup %s',async stage=>{
+ let release;
+ const blocked=new Promise(resolve=>{release=resolve;});
+ const probe=vi.fn().mockImplementationOnce(()=>blocked).mockResolvedValue({ready:true,generation:2});
+ const f=fixture(stage==='readiness'?{probeOpenCodeReadiness:probe}:{});
+ if(stage==='verification')f.bundle.verify=vi.fn().mockImplementationOnce(()=>blocked).mockResolvedValue(undefined);
+ const boot=f.runtime.bootstrapOpenCodeAtStartup();
+ await vi.waitFor(()=>expect(stage==='verification'?f.bundle.verify:probe).toHaveBeenCalledOnce());
+ const restart=f.runtime.restartOpenCode(),duplicate=f.runtime.restartOpenCode();
+ await Promise.resolve();expect(f.state.openCodeStartup.attempt).toBe(1);
+ release({ready:true,generation:2});await Promise.all([boot,restart,duplicate]);
+ expect(f.native.start).toHaveBeenCalledTimes(2);
+ expect(f.children).toHaveLength(2);expect(f.children[0].exited).toBe(true);
+ expect(f.state.openCodeStartup).toEqual({state:'ready',attempt:2,code:null});
+ expect(f.state.currentRestartPromise).toBeNull();
+});
+it('a queued restart recovers a failed boot and retains its own failure for a later retry',async()=>{
+ let rejectBoot;
+ const f=fixture();f.bundle.verify=vi.fn().mockImplementationOnce(()=>new Promise((_,reject)=>{rejectBoot=reject;}))
+  .mockRejectedValueOnce(Object.assign(Error('replacement failed'),{code:'native_replacement_failed'})).mockResolvedValue(undefined);
+ const boot=f.runtime.startOpenCode();const bootFailure=expect(boot).rejects.toThrow('boot failed');
+ await vi.waitFor(()=>expect(rejectBoot).toBeTypeOf('function'));
+ const restart=f.runtime.restartOpenCode();const restartFailure=expect(restart).rejects.toMatchObject({code:'native_replacement_failed'});
+ rejectBoot(Error('boot failed'));await Promise.all([bootFailure,restartFailure]);
+ expect(f.state.openCodeStartup).toEqual({state:'failed',attempt:2,code:'native_replacement_failed'});
+ expect(f.state.currentRestartPromise).toBeNull();await f.runtime.restartOpenCode();
+ expect(f.state.openCodeStartup).toEqual({state:'ready',attempt:3,code:null});
+});
+it.each([true,false])('project preparation joins native verification before checking captured locations: %s',async captured=>{
+ let releaseVerification,starting;const directory=process.cwd();
+ const f=fixture();f.bundle.verify=vi.fn().mockImplementationOnce(()=>new Promise(resolve=>{releaseVerification=resolve;})).mockResolvedValue(undefined);
+ // Match the native owner's single-flight behavior that exposed the original race.
+ const launch=f.native.start.getMockImplementation();
+ f.native.start.mockImplementation(options=>starting??=(launch(options).finally(()=>{starting=undefined;})));
+ let snapshotLocations=[];
+ f.native.getConfigurationSnapshot=()=>({locations:snapshotLocations});
+ const boot=f.runtime.bootstrapOpenCodeAtStartup();
+ await vi.waitFor(()=>expect(releaseVerification).toBeTypeOf('function'));
+ expect(f.runtime.startOpenCode()).toBe(boot);
+ const source=readFileSync(new URL('../../application.js',import.meta.url),'utf8');
+ const composition=source.slice(source.indexOf('  const ensureNativeDirectory='),source.indexOf('  const waitForOpenCodeReady ='));
+ const restartOpenCode=vi.fn(async()=>{await f.runtime.restartOpenCode();snapshotLocations=[{directory}];});
+ const ensure=runInNewContext(composition+';ensureNativeDirectory',{nativeBundle:{prepareLocations:async()=>[{directory}]},
+  nativeRuntime:f.native,openCodeLifecycleRuntime:f.runtime,restartOpenCode,getAuthoritativeActiveSessionCount:async()=>0});
+ const settings={projects:[{path:directory}],lastDirectory:directory};
+ let preparation;
+ const app=express();app.use(express.json());
+ registerOpenCodeRoutes(app,{readSettingsFromDiskMigrated:async()=>settings,persistSettings:async()=>settings,
+  ensureNativeDirectory:value=>{preparation=ensure(value);return preparation;},markConfigChange:async()=>({})});
+ const response=await request(app).put('/api/config/settings').send({lastDirectory:directory});
+ expect(response.status).toBe(200);expect(preparation?.then).toBeTypeOf('function');
+ expect(f.state.openCodeStartup.attempt).toBe(1);
+ if(captured)snapshotLocations=[{directory}];
+ releaseVerification();await Promise.all([boot,preparation]);
+ expect(restartOpenCode).toHaveBeenCalledTimes(captured?0:1);
+ expect(f.native.start).toHaveBeenCalledTimes(captured?1:2);
+ expect(f.state.openCodeStartup).toEqual({state:'ready',attempt:captured?1:2,code:null});
+});
 
-  it('applies the exact overlay snapshot only after readiness, including a save during startup', async () => {
-    let desired = { lsp: true };
-    const readyEntered = Promise.withResolvers();
-    const ready = Promise.withResolvers();
-    const overlays = vi.fn(async () => ({ changed: false, targetConfigDirectory: '/tmp/overlay' }));
-    spawnMock.mockImplementation(provideChild);
-    const runtime = createRuntime({
-      readAgentRuntimeSettings: () => desired,
-      syncRuntimeAgentOverlays: overlays,
-      waitForReady: async () => { readyEntered.resolve(); return await ready.promise; },
-    });
-    const starting = runtime.startOpenCode();
-    await readyEntered.promise;
-    expect(runtime.getAgentRuntimeApplicationState()).toEqual({ runtimeMode: 'managed', appliedLsp: null });
-    desired = { lsp: false };
-    expect(overlays.mock.calls[0][0].agentRuntimeSettings).toEqual({ lsp: true });
-    ready.resolve(true);
-    const server = await starting;
-    try {
-      expect(runtime.getAgentRuntimeApplicationState()).toEqual({ runtimeMode: 'managed', appliedLsp: true });
-      const restored = createRuntime({ initialState: { appliedAgentRuntimeSettings: runtime.__testState.appliedAgentRuntimeSettings } });
-      expect(restored.getAgentRuntimeApplicationState()).toEqual({ runtimeMode: 'managed', appliedLsp: true });
-    } finally { await server.close(); }
-  });
-
-  it('retains the last applied snapshot when every readiness attempt fails', async () => {
-    spawnMock.mockImplementation(provideChild);
-    const runtime = createRuntime({
-      initialState: { appliedAgentRuntimeSettings: { lsp: true } },
-      readAgentRuntimeSettings: () => ({ lsp: false }),
-      waitForReady: async () => false,
-    });
-    await expect(runtime.startOpenCode()).rejects.toThrow('health check failed');
-    expect(runtime.getAgentRuntimeApplicationState()).toEqual({ runtimeMode: 'managed', appliedLsp: true });
-  });
-
-  it('replaces the applied snapshot on a later successful managed launch', async () => {
-    spawnMock.mockImplementation(provideChild);
-    const runtime = createRuntime({
-      initialState: { appliedAgentRuntimeSettings: { lsp: true } },
-      readAgentRuntimeSettings: () => ({ lsp: false }),
-    });
-    const server = await runtime.startOpenCode();
-    try {
-      expect(runtime.getAgentRuntimeApplicationState()).toEqual({ runtimeMode: 'managed', appliedLsp: false });
-    } finally { await server.close(); }
-  });
-
-  it('does not infer application for an external runtime even with an old managed snapshot', () => {
-    const runtime = createRuntime({ initialState: { isExternalOpenCode: true, appliedAgentRuntimeSettings: { lsp: true } } });
-    expect(runtime.getAgentRuntimeApplicationState()).toEqual({ runtimeMode: 'external', appliedLsp: null });
-    const skipped = createRuntime({ env: { ENV_SKIP_OPENCODE_START: true } });
-    expect(skipped.getAgentRuntimeApplicationState()).toEqual({ runtimeMode: 'external', appliedLsp: null });
-  });
+it('managed-task preflight refusal leaves the ready controller and browser admission intact', async () => {
+ const f=fixture({withManagedRuntimeRestart:async()=>{throw Object.assign(Error('Tasks must settle'),{code:'bundle_task_unsettled'});}});
+ await f.runtime.startOpenCode();f.events.length=0;
+ await expect(f.runtime.applyOpenCodeConfigChanges({scopes:['agents']})).rejects.toMatchObject({code:'bundle_task_unsettled'});
+ expect(f.events).toEqual([]);expect(f.children[0].exited).toBeUndefined();
+ expect(f.state.isOpenCodeReady).toBe(true);expect(f.state.openCodeStartup.state).toBe('ready');expect(f.state.currentRestartPromise).toBeNull();
+});
+it('managed-task dispatch stays held across teardown, verification and readiness', async () => {
+ let held=false;const f=fixture({withManagedRuntimeRestart:async action=>{held=true;try{return await action();}finally{held=false;}}});
+ await f.runtime.startOpenCode();f.events.length=0;
+ const start=f.native.start.getMockImplementation();f.native.start.mockImplementation(async options=>{expect(held).toBe(true);return start(options);});
+ await f.runtime.restartOpenCode();expect(held).toBe(false);expect(f.events).toEqual(['pause','exit','verify','agents','probe','resume']);
 });

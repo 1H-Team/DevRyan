@@ -21,10 +21,13 @@ describe("resolveProviderPromptTools", () => {
     expect(resolveProviderPromptTools("cursor-acp")).toBe(undefined);
   });
 
+  test("adds no tool overrides for Plan agent prompts", () => {
+    expect(resolveProviderPromptTools("openai", "plan")).toBe(undefined);
+  });
+
   test("keeps managed delegation root-owned without hiding plugins or MCP tools", () => {
     expect(resolveProviderPromptTools("openai", "orchestrator")).toEqual({
       task: false,
-      invalid: false,
     });
   });
 
@@ -33,7 +36,6 @@ describe("resolveProviderPromptTools", () => {
       "resend_*": false,
       "mcp__resend__*": false,
       task: false,
-      invalid: false,
     });
   });
 });

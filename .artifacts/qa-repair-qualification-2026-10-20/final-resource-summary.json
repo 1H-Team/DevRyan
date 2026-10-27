@@ -1,0 +1,4557 @@
+{
+  "schemaVersion": 1,
+  "label": "[REDACTED]:high_entropy",
+  "gitCommit": "67c7f70aac6e74372671c04e72dfb3046acaa2a6",
+  "createdAt": "2026-10-20T17:08:19.741Z",
+  "startupMode": "natural",
+  "fixtureGeneration": 2,
+  "electronBinary": "<REPOSITORY>/.[REDACTED]:high_entropy QA.app/Contents/MacOS/DevRyan QA",
+  "packageEvidence": {
+    "path": "<REPOSITORY>/.cache/qa/packaged-electron-current/package-evidence.json",
+    "evidenceFileSha256": "[REDACTED]:high_entropy",
+    "sourceSha256": "[REDACTED]:high_entropy",
+    "archiveSha256": "[REDACTED]:high_entropy",
+    "uiArtifactSha256": "[REDACTED]:high_entropy",
+    "backendSha256": "[REDACTED]:high_entropy",
+    "shellSha256": "[REDACTED]:high_entropy",
+    "nativeSha256": "[REDACTED]:high_entropy",
+    "isolatedFixture": true
+  },
+  "runsPerScenario": 3,
+  "warmupMs": 5000,
+  "measureMs": 30000,
+  "sampleIntervalMs": 500,
+  "fixtureSha256": "[REDACTED]:high_entropy",
+  "lifecycleProtocolSha256": "[REDACTED]:high_entropy",
+  "scenarios": {
+    "idle": {
+      "aggregate": {
+        "runCount": 3,
+        "medianTabCpu": 0.09874883103411679,
+        "medianGpuCpu": 0.16908778741417893,
+        "medianTabWorkingSet": 315936,
+        "medianTotalAppWorkingSet": 857232,
+        "medianP95TotalAppWorkingSet": 1028352,
+        "medianTotalAppCpu": 0.5202976793683081,
+        "medianMainRss": 275464192,
+        "processTypes": [
+          "Browser",
+          "GPU",
+          "Tab",
+          "Utility"
+        ]
+      },
+      "startup": {
+        "successfulRuns": 3,
+        "totalRuns": 3,
+        "medianUiReadyMs": 16678.93925000001,
+        "minimumUiReadyMs": 16070.699416999996,
+        "maximumUiReadyMs": 17933.959790999997
+      },
+      "chromium": {
+        "protocolVersion": "1.3",
+        "product": "Chrome/146.0.7680.188",
+        "revision": "@[REDACTED]:high_entropy",
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) DevRyan/2.1.5 Chrome/146.0.7680.188 Electron/41.2.1 Safari/537.36",
+        "jsVersion": "14.6.202.33"
+      },
+      "display": {
+        "visibilityState": "visible",
+        "innerWidth": 1280,
+        "innerHeight": 800,
+        "outerWidth": 1280,
+        "outerHeight": 800,
+        "devicePixelRatio": 1,
+        "screen": {
+          "width": 1920,
+          "height": 1080,
+          "availWidth": 1920,
+          "availHeight": 1050
+        }
+      },
+      "runs": [
+        {
+          "runIndex": 1,
+          "summary": {
+            "sampleCount": 59,
+            "medianTabCpu": 0.09883820006214979,
+            "medianGpuCpu": 0.17689021400914468,
+            "medianTabWorkingSet": 311584,
+            "medianTotalAppWorkingSet": 790256,
+            "p95TotalAppWorkingSet": 1028352,
+            "medianTotalAppCpu": 0.5202976793683081,
+            "medianMainRss": 233996288,
+            "processTypes": [
+              "Browser",
+              "GPU",
+              "Tab",
+              "Utility"
+            ]
+          },
+          "concurrency": {
+            "expectedSessions": 0,
+            "observedSessions": 0
+          },
+          "startup": {
+            "outcome": "passed",
+            "startupMode": "natural",
+            "scope": "fresh isolated packaged process; native local host readiness then deterministic external wire fixture",
+            "clock": "parent performance.now; elapsed milliseconds since spawn invocation",
+            "pollIntervalMs": 100,
+            "forcedNavigations": 0,
+            "documents": [
+              {
+                "observedAtMs": 16770.456875,
+                "timeOrigin": 1792516121077.4,
+                "href": "http://127.0.0.1:51662/",
+                "readyState": "loading",
+                "visibilityState": "visible",
+                "composer": false,
+                "newChat": false,
+                "model": false,
+                "modelLabels": [],
+                "selectedModel": null,
+                "sessionID": null,
+                "navigation": {
+                  "type": "navigate",
+                  "domContentLoadedEventEnd": 0,
+                  "loadEventEnd": 0,
+                  "duration": 0
+                },
+                "readinessGates": [],
+                "directoryRequests": [],
+                "paints": []
+              },
+              {
+                "observedAtMs": 17013.397166,
+                "timeOrigin": 1792516121331,
+                "href": "http://127.0.0.1:51662/",
+                "readyState": "complete",
+                "visibilityState": "visible",
+                "composer": false,
+                "newChat": false,
+                "model": false,
+                "modelLabels": [],
+                "selectedModel": {
+                  "providerId": "",
+                  "modelId": "",
+                  "catalogAvailable": false
+                },
+                "sessionID": null,
+                "navigation": {
+                  "type": "reload",
+                  "domContentLoadedEventEnd": 27.299999997019768,
+                  "loadEventEnd": 28.099999994039536,
+                  "duration": 28.099999994039536
+                },
+                "readinessGates": [],
+                "directoryRequests": [],
+                "paints": []
+              }
+            ],
+            "healthObservations": [
+              {
+                "observedAtMs": 16777.532541,
+                "state": "ready",
+                "attempt": 1,
+                "code": null
+              }
+            ],
+            "nativeStartupObservation": "observed",
+            "cdpTargetMs": 961.6736659999997,
+            "loopbackOriginMs": 16694.682624999998,
+            "lastObservedDocument": {
+              "timeOrigin": 1792516121331,
+              "href": "http://127.0.0.1:51662/",
+              "readyState": "complete",
+              "visibilityState": "visible",
+              "composer": true,
+              "newChat": true,
+              "model": true,
+              "modelLabels": [
+                "Fixture model"
+              ],
+              "selectedModel": {
+                "providerId": "fixture",
+                "modelId": "fixture-model",
+                "agent": "build",
+                "catalogAvailable": true
+              },
+              "sessionID": null,
+              "navigation": {
+                "type": "reload",
+                "domContentLoadedEventEnd": 27.299999997019768,
+                "loadEventEnd": 28.099999994039536,
+                "duration": 28.099999994039536
+              },
+              "readinessGates": [
+                {
+                  "name": "devryan-startup-gate-health-loading",
+                  "elapsedMs": 83.19999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-providers-idle",
+                  "elapsedMs": 83.19999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-agents-idle",
+                  "elapsedMs": 83.19999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-initialization-loading",
+                  "elapsedMs": 83.19999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-globalSync-loading",
+                  "elapsedMs": 83.19999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-directorySync-loading",
+                  "elapsedMs": 83.19999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-sessionList-loading",
+                  "elapsedMs": 83.19999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-responseStyle-loading",
+                  "elapsedMs": 83.19999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-idle",
+                  "elapsedMs": 83.19999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-health-ready",
+                  "elapsedMs": 145.5
+                },
+                {
+                  "name": "devryan-startup-gate-providers-loading",
+                  "elapsedMs": 145.5
+                },
+                {
+                  "name": "devryan-startup-gate-agents-loading",
+                  "elapsedMs": 145.5
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-loading",
+                  "elapsedMs": 148.29999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-ready",
+                  "elapsedMs": 166.19999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-providers-ready",
+                  "elapsedMs": 175.19999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-agents-ready",
+                  "elapsedMs": 177.59999999403954
+                },
+                {
+                  "name": "devryan-startup-gate-responseStyle-ready",
+                  "elapsedMs": 177.59999999403954
+                },
+                {
+                  "name": "devryan-startup-gate-initialization-ready",
+                  "elapsedMs": 178
+                },
+                {
+                  "name": "devryan-startup-gate-sessionList-ready",
+                  "elapsedMs": 192.29999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-directorySync-ready",
+                  "elapsedMs": 199.59999999403954
+                },
+                {
+                  "name": "devryan-startup-gate-globalSync-ready",
+                  "elapsedMs": 320.59999999403954
+                }
+              ],
+              "directoryRequests": [
+                {
+                  "name": "devryan-directory-sessions",
+                  "elapsedMs": 13.399999998509884,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-project",
+                  "elapsedMs": 8.899999998509884,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-providers",
+                  "elapsedMs": 14.899999998509884,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-config",
+                  "elapsedMs": 17.5,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-path",
+                  "elapsedMs": 17.700000002980232,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-status",
+                  "elapsedMs": 19,
+                  "outcome": "completed"
+                }
+              ],
+              "paints": [
+                {
+                  "name": "first-paint",
+                  "startTime": 44
+                },
+                {
+                  "name": "first-contentful-paint",
+                  "startTime": 44
+                }
+              ]
+            },
+            "firstObservedDocument": {
+              "timeOrigin": 1792516121077.4,
+              "href": "http://127.0.0.1:51662/",
+              "readyState": "loading",
+              "visibilityState": "visible",
+              "composer": false,
+              "newChat": false,
+              "model": false,
+              "modelLabels": [],
+              "selectedModel": null,
+              "sessionID": null,
+              "navigation": {
+                "type": "navigate",
+                "domContentLoadedEventEnd": 0,
+                "loadEventEnd": 0,
+                "duration": 0
+              },
+              "readinessGates": [],
+              "directoryRequests": [],
+              "paints": []
+            },
+            "hostAvailableMs": 16777.532541,
+            "nativeStartupReadyMs": 16777.532541,
+            "hostReadyMs": 16777.554165999998,
+            "catalogResponses": [
+              {
+                "status": 200,
+                "elapsedMs": 16795.721999999998
+              }
+            ],
+            "fixtureCatalogReadyMs": 16796.291957999998,
+            "eventStreamReadyMs": 17146.991541,
+            "firstSelectedModel": {
+              "observedAtMs": 17305.588416,
+              "providerId": "fixture",
+              "modelId": "fixture-model",
+              "agent": "build",
+              "catalogAvailable": true
+            },
+            "document": {
+              "timeOrigin": 1792516121331,
+              "href": "http://127.0.0.1:51662/",
+              "readyState": "complete",
+              "visibilityState": "visible",
+              "composer": true,
+              "newChat": true,
+              "model": true,
+              "modelLabels": [
+                "Fixture model"
+              ],
+              "selectedModel": {
+                "providerId": "fixture",
+                "modelId": "fixture-model",
+                "agent": "build",
+                "catalogAvailable": true
+              },
+              "sessionID": null,
+              "navigation": {
+                "type": "reload",
+                "domContentLoadedEventEnd": 27.299999997019768,
+                "loadEventEnd": 28.099999994039536,
+                "duration": 28.099999994039536
+              },
+              "readinessGates": [
+                {
+                  "name": "devryan-startup-gate-health-loading",
+                  "elapsedMs": 83.19999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-providers-idle",
+                  "elapsedMs": 83.19999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-agents-idle",
+                  "elapsedMs": 83.19999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-initialization-loading",
+                  "elapsedMs": 83.19999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-globalSync-loading",
+                  "elapsedMs": 83.19999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-directorySync-loading",
+                  "elapsedMs": 83.19999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-sessionList-loading",
+                  "elapsedMs": 83.19999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-responseStyle-loading",
+                  "elapsedMs": 83.19999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-idle",
+                  "elapsedMs": 83.19999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-health-ready",
+                  "elapsedMs": 145.5
+                },
+                {
+                  "name": "devryan-startup-gate-providers-loading",
+                  "elapsedMs": 145.5
+                },
+                {
+                  "name": "devryan-startup-gate-agents-loading",
+                  "elapsedMs": 145.5
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-loading",
+                  "elapsedMs": 148.29999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-ready",
+                  "elapsedMs": 166.19999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-providers-ready",
+                  "elapsedMs": 175.19999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-agents-ready",
+                  "elapsedMs": 177.59999999403954
+                },
+                {
+                  "name": "devryan-startup-gate-responseStyle-ready",
+                  "elapsedMs": 177.59999999403954
+                },
+                {
+                  "name": "devryan-startup-gate-initialization-ready",
+                  "elapsedMs": 178
+                },
+                {
+                  "name": "devryan-startup-gate-sessionList-ready",
+                  "elapsedMs": 192.29999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-directorySync-ready",
+                  "elapsedMs": 199.59999999403954
+                },
+                {
+                  "name": "devryan-startup-gate-globalSync-ready",
+                  "elapsedMs": 320.59999999403954
+                }
+              ],
+              "directoryRequests": [
+                {
+                  "name": "devryan-directory-sessions",
+                  "elapsedMs": 13.399999998509884,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-project",
+                  "elapsedMs": 8.899999998509884,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-providers",
+                  "elapsedMs": 14.899999998509884,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-config",
+                  "elapsedMs": 17.5,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-path",
+                  "elapsedMs": 17.700000002980232,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-status",
+                  "elapsedMs": 19,
+                  "outcome": "completed"
+                }
+              ],
+              "paints": [
+                {
+                  "name": "first-paint",
+                  "startTime": 44
+                },
+                {
+                  "name": "first-contentful-paint",
+                  "startTime": 44
+                }
+              ]
+            },
+            "controlsReadyMs": 17933.958791,
+            "uiReadyMs": 17933.959790999997,
+            "electronStartupPhases": {
+              "source": "injected-launch-records",
+              "collectedAtMs": 17933.965416,
+              "records": []
+            },
+            "nativeTransitions": [
+              {
+                "elapsedMs": 0.015874999997322448,
+                "url": "http://127.0.0.1:51662/",
+                "loaderId": null,
+                "kind": "initial-cdp-target"
+              },
+              {
+                "elapsedMs": 5.520833999999013,
+                "url": "http://127.0.0.1:51662/",
+                "loaderId": "[REDACTED]:high_entropy",
+                "kind": "native-top-frame-navigation"
+              },
+              {
+                "elapsedMs": 250.03358399999706,
+                "url": "http://127.0.0.1:51662/",
+                "loaderId": "8CB6F0B00031334F637B77B737655163",
+                "kind": "native-top-frame-navigation"
+              }
+            ],
+            "benchmarkNavigationAttempts": [],
+            "nativeDocumentChanges": 1,
+            "measurement": "fixture-ready latency after native readiness and authorized wire navigation; not natural startup latency",
+            "wireSetup": {
+              "localOrigin": "http://127.0.0.1:51661",
+              "facadeOrigin": "http://127.0.0.1:51662",
+              "hostId": "qa-wire",
+              "localReady": {
+                "origin": "http://127.0.0.1:51661",
+                "openCodeVersion": "2.1.0"
+              },
+              "windowSetup": {
+                "method": "desktop_focus_main_window",
+                "acknowledgement": {
+                  "focused": true
+                }
+              },
+              "nativeReadyMs": 16694.682624999998,
+              "fixtureSetupAtMs": 16734.230541,
+              "forcedNavigationsBeforeFixtureReadiness": 1
+            }
+          }
+        },
+        {
+          "runIndex": 2,
+          "summary": {
+            "sampleCount": 59,
+            "medianTabCpu": 0.09874883103411679,
+            "medianGpuCpu": 0.16908778741417893,
+            "medianTabWorkingSet": 345824,
+            "medianTotalAppWorkingSet": 883328,
+            "p95TotalAppWorkingSet": 1087648,
+            "medianTotalAppCpu": 0.5386438445166688,
+            "medianMainRss": 275464192,
+            "processTypes": [
+              "Browser",
+              "GPU",
+              "Tab",
+              "Utility"
+            ]
+          },
+          "concurrency": {
+            "expectedSessions": 0,
+            "observedSessions": 0
+          },
+          "startup": {
+            "outcome": "passed",
+            "startupMode": "natural",
+            "scope": "fresh isolated packaged process; native local host readiness then deterministic external wire fixture",
+            "clock": "parent performance.now; elapsed milliseconds since spawn invocation",
+            "pollIntervalMs": 100,
+            "forcedNavigations": 0,
+            "documents": [
+              {
+                "observedAtMs": 15446.212042,
+                "timeOrigin": 1792516188388.5,
+                "href": "http://127.0.0.1:51883/",
+                "readyState": "loading",
+                "visibilityState": "visible",
+                "composer": false,
+                "newChat": false,
+                "model": false,
+                "modelLabels": [],
+                "selectedModel": null,
+                "sessionID": null,
+                "navigation": {
+                  "type": "navigate",
+                  "domContentLoadedEventEnd": 0,
+                  "loadEventEnd": 0,
+                  "duration": 0
+                },
+                "readinessGates": [],
+                "directoryRequests": [],
+                "paints": []
+              },
+              {
+                "observedAtMs": 15844.375417000003,
+                "timeOrigin": 1792516188697.4,
+                "href": "http://127.0.0.1:51883/",
+                "readyState": "complete",
+                "visibilityState": "visible",
+                "composer": false,
+                "newChat": false,
+                "model": false,
+                "modelLabels": [],
+                "selectedModel": {
+                  "providerId": "",
+                  "modelId": "",
+                  "catalogAvailable": false
+                },
+                "sessionID": null,
+                "navigation": {
+                  "type": "reload",
+                  "domContentLoadedEventEnd": 28.5,
+                  "loadEventEnd": 29.5,
+                  "duration": 29.5
+                },
+                "readinessGates": [
+                  {
+                    "name": "devryan-startup-gate-health-loading",
+                    "elapsedMs": 84.79999999701977
+                  },
+                  {
+                    "name": "devryan-startup-gate-providers-idle",
+                    "elapsedMs": 84.79999999701977
+                  },
+                  {
+                    "name": "devryan-startup-gate-agents-idle",
+                    "elapsedMs": 84.79999999701977
+                  },
+                  {
+                    "name": "devryan-startup-gate-initialization-loading",
+                    "elapsedMs": 84.79999999701977
+                  },
+                  {
+                    "name": "devryan-startup-gate-globalSync-loading",
+                    "elapsedMs": 84.79999999701977
+                  },
+                  {
+                    "name": "devryan-startup-gate-directorySync-loading",
+                    "elapsedMs": 84.79999999701977
+                  },
+                  {
+                    "name": "devryan-startup-gate-sessionList-loading",
+                    "elapsedMs": 84.79999999701977
+                  },
+                  {
+                    "name": "devryan-startup-gate-responseStyle-loading",
+                    "elapsedMs": 84.89999999850988
+                  },
+                  {
+                    "name": "devryan-startup-gate-worktree-idle",
+                    "elapsedMs": 84.89999999850988
+                  }
+                ],
+                "directoryRequests": [],
+                "paints": [
+                  {
+                    "name": "first-paint",
+                    "startTime": 48
+                  },
+                  {
+                    "name": "first-contentful-paint",
+                    "startTime": 48
+                  }
+                ]
+              }
+            ],
+            "healthObservations": [
+              {
+                "observedAtMs": 15451.993042000002,
+                "state": "ready",
+                "attempt": 1,
+                "code": null
+              }
+            ],
+            "nativeStartupObservation": "observed",
+            "cdpTargetMs": 501.47008300000743,
+            "loopbackOriginMs": 15364.073333000008,
+            "lastObservedDocument": {
+              "timeOrigin": 1792516188697.4,
+              "href": "http://127.0.0.1:51883/",
+              "readyState": "complete",
+              "visibilityState": "visible",
+              "composer": true,
+              "newChat": true,
+              "model": true,
+              "modelLabels": [
+                "Fixture model"
+              ],
+              "selectedModel": {
+                "providerId": "fixture",
+                "modelId": "fixture-model",
+                "agent": "build",
+                "catalogAvailable": true
+              },
+              "sessionID": null,
+              "navigation": {
+                "type": "reload",
+                "domContentLoadedEventEnd": 28.5,
+                "loadEventEnd": 29.5,
+                "duration": 29.5
+              },
+              "readinessGates": [
+                {
+                  "name": "devryan-startup-gate-health-loading",
+                  "elapsedMs": 84.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-providers-idle",
+                  "elapsedMs": 84.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-agents-idle",
+                  "elapsedMs": 84.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-initialization-loading",
+                  "elapsedMs": 84.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-globalSync-loading",
+                  "elapsedMs": 84.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-directorySync-loading",
+                  "elapsedMs": 84.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-sessionList-loading",
+                  "elapsedMs": 84.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-responseStyle-loading",
+                  "elapsedMs": 84.89999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-idle",
+                  "elapsedMs": 84.89999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-health-ready",
+                  "elapsedMs": 150.09999999403954
+                },
+                {
+                  "name": "devryan-startup-gate-providers-loading",
+                  "elapsedMs": 150.09999999403954
+                },
+                {
+                  "name": "devryan-startup-gate-agents-loading",
+                  "elapsedMs": 150.09999999403954
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-loading",
+                  "elapsedMs": 151.39999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-ready",
+                  "elapsedMs": 167.89999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-providers-ready",
+                  "elapsedMs": 175.09999999403954
+                },
+                {
+                  "name": "devryan-startup-gate-agents-ready",
+                  "elapsedMs": 177
+                },
+                {
+                  "name": "devryan-startup-gate-responseStyle-ready",
+                  "elapsedMs": 177
+                },
+                {
+                  "name": "devryan-startup-gate-initialization-ready",
+                  "elapsedMs": 177.39999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-sessionList-ready",
+                  "elapsedMs": 188.5
+                },
+                {
+                  "name": "devryan-startup-gate-directorySync-ready",
+                  "elapsedMs": 197.19999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-globalSync-ready",
+                  "elapsedMs": 316.69999999552965
+                }
+              ],
+              "directoryRequests": [
+                {
+                  "name": "devryan-directory-sessions",
+                  "elapsedMs": 10.299999997019768,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-project",
+                  "elapsedMs": 9.200000002980232,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-providers",
+                  "elapsedMs": 13.5,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-config",
+                  "elapsedMs": 14.300000004470348,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-path",
+                  "elapsedMs": 14.899999998509884,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-status",
+                  "elapsedMs": 17.200000002980232,
+                  "outcome": "completed"
+                }
+              ],
+              "paints": [
+                {
+                  "name": "first-paint",
+                  "startTime": 48
+                },
+                {
+                  "name": "first-contentful-paint",
+                  "startTime": 48
+                }
+              ]
+            },
+            "firstObservedDocument": {
+              "timeOrigin": 1792516188388.5,
+              "href": "http://127.0.0.1:51883/",
+              "readyState": "loading",
+              "visibilityState": "visible",
+              "composer": false,
+              "newChat": false,
+              "model": false,
+              "modelLabels": [],
+              "selectedModel": null,
+              "sessionID": null,
+              "navigation": {
+                "type": "navigate",
+                "domContentLoadedEventEnd": 0,
+                "loadEventEnd": 0,
+                "duration": 0
+              },
+              "readinessGates": [],
+              "directoryRequests": [],
+              "paints": []
+            },
+            "hostAvailableMs": 15451.993042000002,
+            "nativeStartupReadyMs": 15451.993042000002,
+            "hostReadyMs": 15452.014708000002,
+            "catalogResponses": [
+              {
+                "status": 200,
+                "elapsedMs": 15465.409375000003
+              }
+            ],
+            "fixtureCatalogReadyMs": 15465.492624999999,
+            "firstSelectedModel": {
+              "observedAtMs": 16025.430083,
+              "providerId": "fixture",
+              "modelId": "fixture-model",
+              "agent": "build",
+              "catalogAvailable": true
+            },
+            "eventStreamReadyMs": 16025.475042000005,
+            "document": {
+              "timeOrigin": 1792516188697.4,
+              "href": "http://127.0.0.1:51883/",
+              "readyState": "complete",
+              "visibilityState": "visible",
+              "composer": true,
+              "newChat": true,
+              "model": true,
+              "modelLabels": [
+                "Fixture model"
+              ],
+              "selectedModel": {
+                "providerId": "fixture",
+                "modelId": "fixture-model",
+                "agent": "build",
+                "catalogAvailable": true
+              },
+              "sessionID": null,
+              "navigation": {
+                "type": "reload",
+                "domContentLoadedEventEnd": 28.5,
+                "loadEventEnd": 29.5,
+                "duration": 29.5
+              },
+              "readinessGates": [
+                {
+                  "name": "devryan-startup-gate-health-loading",
+                  "elapsedMs": 84.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-providers-idle",
+                  "elapsedMs": 84.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-agents-idle",
+                  "elapsedMs": 84.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-initialization-loading",
+                  "elapsedMs": 84.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-globalSync-loading",
+                  "elapsedMs": 84.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-directorySync-loading",
+                  "elapsedMs": 84.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-sessionList-loading",
+                  "elapsedMs": 84.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-responseStyle-loading",
+                  "elapsedMs": 84.89999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-idle",
+                  "elapsedMs": 84.89999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-health-ready",
+                  "elapsedMs": 150.09999999403954
+                },
+                {
+                  "name": "devryan-startup-gate-providers-loading",
+                  "elapsedMs": 150.09999999403954
+                },
+                {
+                  "name": "devryan-startup-gate-agents-loading",
+                  "elapsedMs": 150.09999999403954
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-loading",
+                  "elapsedMs": 151.39999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-ready",
+                  "elapsedMs": 167.89999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-providers-ready",
+                  "elapsedMs": 175.09999999403954
+                },
+                {
+                  "name": "devryan-startup-gate-agents-ready",
+                  "elapsedMs": 177
+                },
+                {
+                  "name": "devryan-startup-gate-responseStyle-ready",
+                  "elapsedMs": 177
+                },
+                {
+                  "name": "devryan-startup-gate-initialization-ready",
+                  "elapsedMs": 177.39999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-sessionList-ready",
+                  "elapsedMs": 188.5
+                },
+                {
+                  "name": "devryan-startup-gate-directorySync-ready",
+                  "elapsedMs": 197.19999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-globalSync-ready",
+                  "elapsedMs": 316.69999999552965
+                }
+              ],
+              "directoryRequests": [
+                {
+                  "name": "devryan-directory-sessions",
+                  "elapsedMs": 10.299999997019768,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-project",
+                  "elapsedMs": 9.200000002980232,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-providers",
+                  "elapsedMs": 13.5,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-config",
+                  "elapsedMs": 14.300000004470348,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-path",
+                  "elapsedMs": 14.899999998509884,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-status",
+                  "elapsedMs": 17.200000002980232,
+                  "outcome": "completed"
+                }
+              ],
+              "paints": [
+                {
+                  "name": "first-paint",
+                  "startTime": 48
+                },
+                {
+                  "name": "first-contentful-paint",
+                  "startTime": 48
+                }
+              ]
+            },
+            "controlsReadyMs": 16678.92358300001,
+            "uiReadyMs": 16678.93925000001,
+            "electronStartupPhases": {
+              "source": "injected-launch-records",
+              "collectedAtMs": 16678.949875000006,
+              "records": []
+            },
+            "nativeTransitions": [
+              {
+                "elapsedMs": 0.02987500000745058,
+                "url": "http://127.0.0.1:51883/",
+                "loaderId": null,
+                "kind": "initial-cdp-target"
+              },
+              {
+                "elapsedMs": 4.2387500000040745,
+                "url": "http://127.0.0.1:51883/",
+                "loaderId": "633775FF49884248DA7F87F83B8FC1C4",
+                "kind": "native-top-frame-navigation"
+              },
+              {
+                "elapsedMs": 304.39537500000733,
+                "url": "http://127.0.0.1:51883/",
+                "loaderId": "[REDACTED]:high_entropy",
+                "kind": "native-top-frame-navigation"
+              }
+            ],
+            "benchmarkNavigationAttempts": [],
+            "nativeDocumentChanges": 1,
+            "measurement": "fixture-ready latency after native readiness and authorized wire navigation; not natural startup latency",
+            "wireSetup": {
+              "localOrigin": "http://127.0.0.1:51882",
+              "facadeOrigin": "http://127.0.0.1:51883",
+              "hostId": "qa-wire",
+              "localReady": {
+                "origin": "http://127.0.0.1:51882",
+                "openCodeVersion": "2.1.0"
+              },
+              "windowSetup": {
+                "method": "desktop_focus_main_window",
+                "acknowledgement": {
+                  "focused": true
+                }
+              },
+              "nativeReadyMs": 15364.073333000008,
+              "fixtureSetupAtMs": 15402.84775,
+              "forcedNavigationsBeforeFixtureReadiness": 1
+            }
+          }
+        },
+        {
+          "runIndex": 3,
+          "summary": {
+            "sampleCount": 59,
+            "medianTabCpu": 0.0802173269426196,
+            "medianGpuCpu": 0.12815498617687626,
+            "medianTabWorkingSet": 315936,
+            "medianTotalAppWorkingSet": 857232,
+            "p95TotalAppWorkingSet": 1020736,
+            "medianTotalAppCpu": 0.47937827091087104,
+            "medianMainRss": 280952832,
+            "processTypes": [
+              "Browser",
+              "GPU",
+              "Tab",
+              "Utility"
+            ]
+          },
+          "concurrency": {
+            "expectedSessions": 0,
+            "observedSessions": 0
+          },
+          "startup": {
+            "outcome": "passed",
+            "startupMode": "natural",
+            "scope": "fresh isolated packaged process; native local host readiness then deterministic external wire fixture",
+            "clock": "parent performance.now; elapsed milliseconds since spawn invocation",
+            "pollIntervalMs": 100,
+            "forcedNavigations": 0,
+            "documents": [
+              {
+                "observedAtMs": 14865.973916999996,
+                "timeOrigin": 1792516255121.1,
+                "href": "http://127.0.0.1:52118/",
+                "readyState": "loading",
+                "visibilityState": "visible",
+                "composer": false,
+                "newChat": false,
+                "model": false,
+                "modelLabels": [],
+                "selectedModel": null,
+                "sessionID": null,
+                "navigation": {
+                  "type": "navigate",
+                  "domContentLoadedEventEnd": 0,
+                  "loadEventEnd": 0,
+                  "duration": 0
+                },
+                "readinessGates": [],
+                "directoryRequests": [],
+                "paints": []
+              },
+              {
+                "observedAtMs": 15122.296959,
+                "timeOrigin": 1792516255397.2,
+                "href": "http://127.0.0.1:52118/",
+                "readyState": "loading",
+                "visibilityState": "visible",
+                "composer": false,
+                "newChat": false,
+                "model": false,
+                "modelLabels": [],
+                "selectedModel": null,
+                "sessionID": null,
+                "navigation": {
+                  "type": "reload",
+                  "domContentLoadedEventEnd": 0,
+                  "loadEventEnd": 0,
+                  "duration": 0
+                },
+                "readinessGates": [],
+                "directoryRequests": [],
+                "paints": []
+              }
+            ],
+            "healthObservations": [
+              {
+                "observedAtMs": 14874.94187499999,
+                "state": "ready",
+                "attempt": 1,
+                "code": null
+              }
+            ],
+            "nativeStartupObservation": "observed",
+            "cdpTargetMs": 490.04750000001513,
+            "loopbackOriginMs": 14801.888291999989,
+            "lastObservedDocument": {
+              "timeOrigin": 1792516255397.2,
+              "href": "http://127.0.0.1:52118/",
+              "readyState": "complete",
+              "visibilityState": "visible",
+              "composer": true,
+              "newChat": true,
+              "model": true,
+              "modelLabels": [
+                "Fixture model"
+              ],
+              "selectedModel": {
+                "providerId": "fixture",
+                "modelId": "fixture-model",
+                "agent": "build",
+                "catalogAvailable": true
+              },
+              "sessionID": null,
+              "navigation": {
+                "type": "reload",
+                "domContentLoadedEventEnd": 27.899999998509884,
+                "loadEventEnd": 28.799999997019768,
+                "duration": 28.799999997019768
+              },
+              "readinessGates": [
+                {
+                  "name": "devryan-startup-gate-health-loading",
+                  "elapsedMs": 73.20000000298023
+                },
+                {
+                  "name": "devryan-startup-gate-providers-idle",
+                  "elapsedMs": 73.20000000298023
+                },
+                {
+                  "name": "devryan-startup-gate-agents-idle",
+                  "elapsedMs": 73.20000000298023
+                },
+                {
+                  "name": "devryan-startup-gate-initialization-loading",
+                  "elapsedMs": 73.20000000298023
+                },
+                {
+                  "name": "devryan-startup-gate-globalSync-loading",
+                  "elapsedMs": 73.20000000298023
+                },
+                {
+                  "name": "devryan-startup-gate-directorySync-loading",
+                  "elapsedMs": 73.20000000298023
+                },
+                {
+                  "name": "devryan-startup-gate-sessionList-loading",
+                  "elapsedMs": 73.20000000298023
+                },
+                {
+                  "name": "devryan-startup-gate-responseStyle-loading",
+                  "elapsedMs": 73.20000000298023
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-idle",
+                  "elapsedMs": 73.20000000298023
+                },
+                {
+                  "name": "devryan-startup-gate-health-ready",
+                  "elapsedMs": 132.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-providers-loading",
+                  "elapsedMs": 132.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-agents-loading",
+                  "elapsedMs": 132.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-loading",
+                  "elapsedMs": 133.70000000298023
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-ready",
+                  "elapsedMs": 147.70000000298023
+                },
+                {
+                  "name": "devryan-startup-gate-providers-ready",
+                  "elapsedMs": 150.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-agents-ready",
+                  "elapsedMs": 152.10000000149012
+                },
+                {
+                  "name": "devryan-startup-gate-responseStyle-ready",
+                  "elapsedMs": 152.10000000149012
+                },
+                {
+                  "name": "devryan-startup-gate-initialization-ready",
+                  "elapsedMs": 152.60000000149012
+                },
+                {
+                  "name": "devryan-startup-gate-sessionList-ready",
+                  "elapsedMs": 164.20000000298023
+                },
+                {
+                  "name": "devryan-startup-gate-directorySync-ready",
+                  "elapsedMs": 170.89999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-globalSync-ready",
+                  "elapsedMs": 287
+                }
+              ],
+              "directoryRequests": [
+                {
+                  "name": "devryan-directory-sessions",
+                  "elapsedMs": 11,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-project",
+                  "elapsedMs": 7.300000004470348,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-providers",
+                  "elapsedMs": 12.900000005960464,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-config",
+                  "elapsedMs": 13.600000001490116,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-path",
+                  "elapsedMs": 15.300000004470348,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-status",
+                  "elapsedMs": 15.899999998509884,
+                  "outcome": "completed"
+                }
+              ],
+              "paints": [
+                {
+                  "name": "first-paint",
+                  "startTime": 48
+                },
+                {
+                  "name": "first-contentful-paint",
+                  "startTime": 48
+                }
+              ]
+            },
+            "firstObservedDocument": {
+              "timeOrigin": 1792516255121.1,
+              "href": "http://127.0.0.1:52118/",
+              "readyState": "loading",
+              "visibilityState": "visible",
+              "composer": false,
+              "newChat": false,
+              "model": false,
+              "modelLabels": [],
+              "selectedModel": null,
+              "sessionID": null,
+              "navigation": {
+                "type": "navigate",
+                "domContentLoadedEventEnd": 0,
+                "loadEventEnd": 0,
+                "duration": 0
+              },
+              "readinessGates": [],
+              "directoryRequests": [],
+              "paints": []
+            },
+            "hostAvailableMs": 14874.94187499999,
+            "nativeStartupReadyMs": 14874.94187499999,
+            "hostReadyMs": 14874.960334000003,
+            "catalogResponses": [
+              {
+                "status": 200,
+                "elapsedMs": 14892.50245900001
+              }
+            ],
+            "fixtureCatalogReadyMs": 14892.612541999988,
+            "firstSelectedModel": {
+              "observedAtMs": 15393.231292000011,
+              "providerId": "fixture",
+              "modelId": "fixture-model",
+              "agent": "build",
+              "catalogAvailable": true
+            },
+            "eventStreamReadyMs": 15393.290917000006,
+            "document": {
+              "timeOrigin": 1792516255397.2,
+              "href": "http://127.0.0.1:52118/",
+              "readyState": "complete",
+              "visibilityState": "visible",
+              "composer": true,
+              "newChat": true,
+              "model": true,
+              "modelLabels": [
+                "Fixture model"
+              ],
+              "selectedModel": {
+                "providerId": "fixture",
+                "modelId": "fixture-model",
+                "agent": "build",
+                "catalogAvailable": true
+              },
+              "sessionID": null,
+              "navigation": {
+                "type": "reload",
+                "domContentLoadedEventEnd": 27.899999998509884,
+                "loadEventEnd": 28.799999997019768,
+                "duration": 28.799999997019768
+              },
+              "readinessGates": [
+                {
+                  "name": "devryan-startup-gate-health-loading",
+                  "elapsedMs": 73.20000000298023
+                },
+                {
+                  "name": "devryan-startup-gate-providers-idle",
+                  "elapsedMs": 73.20000000298023
+                },
+                {
+                  "name": "devryan-startup-gate-agents-idle",
+                  "elapsedMs": 73.20000000298023
+                },
+                {
+                  "name": "devryan-startup-gate-initialization-loading",
+                  "elapsedMs": 73.20000000298023
+                },
+                {
+                  "name": "devryan-startup-gate-globalSync-loading",
+                  "elapsedMs": 73.20000000298023
+                },
+                {
+                  "name": "devryan-startup-gate-directorySync-loading",
+                  "elapsedMs": 73.20000000298023
+                },
+                {
+                  "name": "devryan-startup-gate-sessionList-loading",
+                  "elapsedMs": 73.20000000298023
+                },
+                {
+                  "name": "devryan-startup-gate-responseStyle-loading",
+                  "elapsedMs": 73.20000000298023
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-idle",
+                  "elapsedMs": 73.20000000298023
+                },
+                {
+                  "name": "devryan-startup-gate-health-ready",
+                  "elapsedMs": 132.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-providers-loading",
+                  "elapsedMs": 132.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-agents-loading",
+                  "elapsedMs": 132.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-loading",
+                  "elapsedMs": 133.70000000298023
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-ready",
+                  "elapsedMs": 147.70000000298023
+                },
+                {
+                  "name": "devryan-startup-gate-providers-ready",
+                  "elapsedMs": 150.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-agents-ready",
+                  "elapsedMs": 152.10000000149012
+                },
+                {
+                  "name": "devryan-startup-gate-responseStyle-ready",
+                  "elapsedMs": 152.10000000149012
+                },
+                {
+                  "name": "devryan-startup-gate-initialization-ready",
+                  "elapsedMs": 152.60000000149012
+                },
+                {
+                  "name": "devryan-startup-gate-sessionList-ready",
+                  "elapsedMs": 164.20000000298023
+                },
+                {
+                  "name": "devryan-startup-gate-directorySync-ready",
+                  "elapsedMs": 170.89999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-globalSync-ready",
+                  "elapsedMs": 287
+                }
+              ],
+              "directoryRequests": [
+                {
+                  "name": "devryan-directory-sessions",
+                  "elapsedMs": 11,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-project",
+                  "elapsedMs": 7.300000004470348,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-providers",
+                  "elapsedMs": 12.900000005960464,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-config",
+                  "elapsedMs": 13.600000001490116,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-path",
+                  "elapsedMs": 15.300000004470348,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-status",
+                  "elapsedMs": 15.899999998509884,
+                  "outcome": "completed"
+                }
+              ],
+              "paints": [
+                {
+                  "name": "first-paint",
+                  "startTime": 48
+                },
+                {
+                  "name": "first-contentful-paint",
+                  "startTime": 48
+                }
+              ]
+            },
+            "controlsReadyMs": 16070.698208999995,
+            "uiReadyMs": 16070.699416999996,
+            "electronStartupPhases": {
+              "source": "injected-launch-records",
+              "collectedAtMs": 16070.706542,
+              "records": []
+            },
+            "nativeTransitions": [
+              {
+                "elapsedMs": 0.007000000012340024,
+                "url": "http://127.0.0.1:52118/",
+                "loaderId": null,
+                "kind": "initial-cdp-target"
+              },
+              {
+                "elapsedMs": 5.530958000017563,
+                "url": "http://127.0.0.1:52118/",
+                "loaderId": "9D9227F21D9A21DA76771D9EF5D5A174",
+                "kind": "native-top-frame-navigation"
+              },
+              {
+                "elapsedMs": 277.1107910000137,
+                "url": "http://127.0.0.1:52118/",
+                "loaderId": "2330FB17E900D691972A3AD9915B6466",
+                "kind": "native-top-frame-navigation"
+              }
+            ],
+            "benchmarkNavigationAttempts": [],
+            "nativeDocumentChanges": 1,
+            "measurement": "fixture-ready latency after native readiness and authorized wire navigation; not natural startup latency",
+            "wireSetup": {
+              "localOrigin": "http://127.0.0.1:52117",
+              "facadeOrigin": "http://127.0.0.1:52118",
+              "hostId": "qa-wire",
+              "localReady": {
+                "origin": "http://127.0.0.1:52117",
+                "openCodeVersion": "2.1.0"
+              },
+              "windowSetup": {
+                "method": "desktop_focus_main_window",
+                "acknowledgement": {
+                  "focused": true
+                }
+              },
+              "nativeReadyMs": 14801.888291999989,
+              "fixtureSetupAtMs": 14831.583333999995,
+              "forcedNavigationsBeforeFixtureReadiness": 1
+            }
+          }
+        }
+      ]
+    },
+    "plan-skeleton": {
+      "aggregate": {
+        "runCount": 3,
+        "medianTabCpu": 1.4726641811068084,
+        "medianGpuCpu": 1.315012469924301,
+        "medianTabWorkingSet": 334208,
+        "medianTotalAppWorkingSet": 864960,
+        "medianP95TotalAppWorkingSet": 1021936,
+        "medianTotalAppCpu": 3.0820932151753007,
+        "medianMainRss": 262488064,
+        "processTypes": [
+          "Browser",
+          "GPU",
+          "Tab",
+          "Utility"
+        ]
+      },
+      "startup": {
+        "successfulRuns": 3,
+        "totalRuns": 3,
+        "medianUiReadyMs": 19683.02787499997,
+        "minimumUiReadyMs": 17184.163375000004,
+        "maximumUiReadyMs": 19879.524334000016
+      },
+      "chromium": {
+        "protocolVersion": "1.3",
+        "product": "Chrome/146.0.7680.188",
+        "revision": "@[REDACTED]:high_entropy",
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) DevRyan/2.1.5 Chrome/146.0.7680.188 Electron/41.2.1 Safari/537.36",
+        "jsVersion": "14.6.202.33"
+      },
+      "display": {
+        "visibilityState": "visible",
+        "innerWidth": 1280,
+        "innerHeight": 800,
+        "outerWidth": 1280,
+        "outerHeight": 800,
+        "devicePixelRatio": 1,
+        "screen": {
+          "width": 1920,
+          "height": 1080,
+          "availWidth": 1920,
+          "availHeight": 1050
+        }
+      },
+      "runs": [
+        {
+          "runIndex": 1,
+          "summary": {
+            "sampleCount": 59,
+            "medianTabCpu": 1.452111807830791,
+            "medianGpuCpu": 1.2581001274479886,
+            "medianTabWorkingSet": 356960,
+            "medianTotalAppWorkingSet": 894048,
+            "p95TotalAppWorkingSet": 1016528,
+            "medianTotalAppCpu": 3.0569903367200935,
+            "medianMainRss": 262520832,
+            "processTypes": [
+              "Browser",
+              "GPU",
+              "Tab",
+              "Utility"
+            ]
+          },
+          "startup": {
+            "outcome": "passed",
+            "startupMode": "natural",
+            "scope": "fresh isolated packaged process; native local host readiness then deterministic external wire fixture",
+            "clock": "parent performance.now; elapsed milliseconds since spawn invocation",
+            "pollIntervalMs": 100,
+            "forcedNavigations": 0,
+            "documents": [
+              {
+                "observedAtMs": 15984.434707999986,
+                "timeOrigin": 1792516322829.5,
+                "href": "http://127.0.0.1:52339/",
+                "readyState": "loading",
+                "visibilityState": "visible",
+                "composer": false,
+                "newChat": false,
+                "model": false,
+                "modelLabels": [],
+                "selectedModel": null,
+                "sessionID": null,
+                "navigation": {
+                  "type": "navigate",
+                  "domContentLoadedEventEnd": 0,
+                  "loadEventEnd": 0,
+                  "duration": 0
+                },
+                "readinessGates": [],
+                "directoryRequests": [],
+                "paints": []
+              },
+              {
+                "observedAtMs": 16219.564374999987,
+                "timeOrigin": 1792516323086.7,
+                "href": "http://127.0.0.1:52339/",
+                "readyState": "interactive",
+                "visibilityState": "visible",
+                "composer": false,
+                "newChat": false,
+                "model": false,
+                "modelLabels": [],
+                "selectedModel": null,
+                "sessionID": null,
+                "navigation": {
+                  "type": "reload",
+                  "domContentLoadedEventEnd": 0,
+                  "loadEventEnd": 0,
+                  "duration": 0
+                },
+                "readinessGates": [],
+                "directoryRequests": [],
+                "paints": []
+              }
+            ],
+            "healthObservations": [
+              {
+                "observedAtMs": 15989.143665999989,
+                "state": "ready",
+                "attempt": 1,
+                "code": null
+              }
+            ],
+            "nativeStartupObservation": "observed",
+            "cdpTargetMs": 480.22362499998417,
+            "loopbackOriginMs": 15915.573291000008,
+            "lastObservedDocument": {
+              "timeOrigin": 1792516323086.7,
+              "href": "http://127.0.0.1:52339/",
+              "readyState": "complete",
+              "visibilityState": "visible",
+              "composer": true,
+              "newChat": true,
+              "model": true,
+              "modelLabels": [
+                "Fixture model"
+              ],
+              "selectedModel": {
+                "providerId": "fixture",
+                "modelId": "fixture-model",
+                "agent": "build",
+                "catalogAvailable": true
+              },
+              "sessionID": null,
+              "navigation": {
+                "type": "reload",
+                "domContentLoadedEventEnd": 28.399999998509884,
+                "loadEventEnd": 29.399999998509884,
+                "duration": 29.399999998509884
+              },
+              "readinessGates": [
+                {
+                  "name": "devryan-startup-gate-health-loading",
+                  "elapsedMs": 84.20000000298023
+                },
+                {
+                  "name": "devryan-startup-gate-providers-idle",
+                  "elapsedMs": 84.20000000298023
+                },
+                {
+                  "name": "devryan-startup-gate-agents-idle",
+                  "elapsedMs": 84.20000000298023
+                },
+                {
+                  "name": "devryan-startup-gate-initialization-loading",
+                  "elapsedMs": 84.20000000298023
+                },
+                {
+                  "name": "devryan-startup-gate-globalSync-loading",
+                  "elapsedMs": 84.20000000298023
+                },
+                {
+                  "name": "devryan-startup-gate-directorySync-loading",
+                  "elapsedMs": 84.20000000298023
+                },
+                {
+                  "name": "devryan-startup-gate-sessionList-loading",
+                  "elapsedMs": 84.20000000298023
+                },
+                {
+                  "name": "devryan-startup-gate-responseStyle-loading",
+                  "elapsedMs": 84.20000000298023
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-idle",
+                  "elapsedMs": 84.20000000298023
+                },
+                {
+                  "name": "devryan-startup-gate-health-ready",
+                  "elapsedMs": 147
+                },
+                {
+                  "name": "devryan-startup-gate-providers-loading",
+                  "elapsedMs": 147
+                },
+                {
+                  "name": "devryan-startup-gate-agents-loading",
+                  "elapsedMs": 147
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-loading",
+                  "elapsedMs": 148
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-ready",
+                  "elapsedMs": 168.20000000298023
+                },
+                {
+                  "name": "devryan-startup-gate-providers-ready",
+                  "elapsedMs": 175.80000000447035
+                },
+                {
+                  "name": "devryan-startup-gate-agents-ready",
+                  "elapsedMs": 177.89999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-responseStyle-ready",
+                  "elapsedMs": 177.89999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-initialization-ready",
+                  "elapsedMs": 178.39999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-sessionList-ready",
+                  "elapsedMs": 186.5
+                },
+                {
+                  "name": "devryan-startup-gate-directorySync-ready",
+                  "elapsedMs": 195.30000000447035
+                },
+                {
+                  "name": "devryan-startup-gate-globalSync-ready",
+                  "elapsedMs": 317.6000000014901
+                }
+              ],
+              "directoryRequests": [
+                {
+                  "name": "devryan-directory-sessions",
+                  "elapsedMs": 7.5,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-project",
+                  "elapsedMs": 8.100000001490116,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-providers",
+                  "elapsedMs": 11.299999997019768,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-config",
+                  "elapsedMs": 12.700000002980232,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-path",
+                  "elapsedMs": 13.799999997019768,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-status",
+                  "elapsedMs": 14.399999998509884,
+                  "outcome": "completed"
+                }
+              ],
+              "paints": [
+                {
+                  "name": "first-paint",
+                  "startTime": 48
+                },
+                {
+                  "name": "first-contentful-paint",
+                  "startTime": 48
+                }
+              ]
+            },
+            "firstObservedDocument": {
+              "timeOrigin": 1792516322829.5,
+              "href": "http://127.0.0.1:52339/",
+              "readyState": "loading",
+              "visibilityState": "visible",
+              "composer": false,
+              "newChat": false,
+              "model": false,
+              "modelLabels": [],
+              "selectedModel": null,
+              "sessionID": null,
+              "navigation": {
+                "type": "navigate",
+                "domContentLoadedEventEnd": 0,
+                "loadEventEnd": 0,
+                "duration": 0
+              },
+              "readinessGates": [],
+              "directoryRequests": [],
+              "paints": []
+            },
+            "hostAvailableMs": 15989.143665999989,
+            "nativeStartupReadyMs": 15989.143665999989,
+            "hostReadyMs": 15989.231666000007,
+            "catalogResponses": [
+              {
+                "status": 200,
+                "elapsedMs": 16005.538832999999
+              }
+            ],
+            "fixtureCatalogReadyMs": 16005.630791000003,
+            "eventStreamReadyMs": 16358.75770799999,
+            "firstSelectedModel": {
+              "observedAtMs": 16519.314332999988,
+              "providerId": "fixture",
+              "modelId": "fixture-model",
+              "agent": "build",
+              "catalogAvailable": true
+            },
+            "document": {
+              "timeOrigin": 1792516323086.7,
+              "href": "http://127.0.0.1:52339/",
+              "readyState": "complete",
+              "visibilityState": "visible",
+              "composer": true,
+              "newChat": true,
+              "model": true,
+              "modelLabels": [
+                "Fixture model"
+              ],
+              "selectedModel": {
+                "providerId": "fixture",
+                "modelId": "fixture-model",
+                "agent": "build",
+                "catalogAvailable": true
+              },
+              "sessionID": null,
+              "navigation": {
+                "type": "reload",
+                "domContentLoadedEventEnd": 28.399999998509884,
+                "loadEventEnd": 29.399999998509884,
+                "duration": 29.399999998509884
+              },
+              "readinessGates": [
+                {
+                  "name": "devryan-startup-gate-health-loading",
+                  "elapsedMs": 84.20000000298023
+                },
+                {
+                  "name": "devryan-startup-gate-providers-idle",
+                  "elapsedMs": 84.20000000298023
+                },
+                {
+                  "name": "devryan-startup-gate-agents-idle",
+                  "elapsedMs": 84.20000000298023
+                },
+                {
+                  "name": "devryan-startup-gate-initialization-loading",
+                  "elapsedMs": 84.20000000298023
+                },
+                {
+                  "name": "devryan-startup-gate-globalSync-loading",
+                  "elapsedMs": 84.20000000298023
+                },
+                {
+                  "name": "devryan-startup-gate-directorySync-loading",
+                  "elapsedMs": 84.20000000298023
+                },
+                {
+                  "name": "devryan-startup-gate-sessionList-loading",
+                  "elapsedMs": 84.20000000298023
+                },
+                {
+                  "name": "devryan-startup-gate-responseStyle-loading",
+                  "elapsedMs": 84.20000000298023
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-idle",
+                  "elapsedMs": 84.20000000298023
+                },
+                {
+                  "name": "devryan-startup-gate-health-ready",
+                  "elapsedMs": 147
+                },
+                {
+                  "name": "devryan-startup-gate-providers-loading",
+                  "elapsedMs": 147
+                },
+                {
+                  "name": "devryan-startup-gate-agents-loading",
+                  "elapsedMs": 147
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-loading",
+                  "elapsedMs": 148
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-ready",
+                  "elapsedMs": 168.20000000298023
+                },
+                {
+                  "name": "devryan-startup-gate-providers-ready",
+                  "elapsedMs": 175.80000000447035
+                },
+                {
+                  "name": "devryan-startup-gate-agents-ready",
+                  "elapsedMs": 177.89999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-responseStyle-ready",
+                  "elapsedMs": 177.89999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-initialization-ready",
+                  "elapsedMs": 178.39999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-sessionList-ready",
+                  "elapsedMs": 186.5
+                },
+                {
+                  "name": "devryan-startup-gate-directorySync-ready",
+                  "elapsedMs": 195.30000000447035
+                },
+                {
+                  "name": "devryan-startup-gate-globalSync-ready",
+                  "elapsedMs": 317.6000000014901
+                }
+              ],
+              "directoryRequests": [
+                {
+                  "name": "devryan-directory-sessions",
+                  "elapsedMs": 7.5,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-project",
+                  "elapsedMs": 8.100000001490116,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-providers",
+                  "elapsedMs": 11.299999997019768,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-config",
+                  "elapsedMs": 12.700000002980232,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-path",
+                  "elapsedMs": 13.799999997019768,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-status",
+                  "elapsedMs": 14.399999998509884,
+                  "outcome": "completed"
+                }
+              ],
+              "paints": [
+                {
+                  "name": "first-paint",
+                  "startTime": 48
+                },
+                {
+                  "name": "first-contentful-paint",
+                  "startTime": 48
+                }
+              ]
+            },
+            "controlsReadyMs": 17184.162083000003,
+            "uiReadyMs": 17184.163375000004,
+            "electronStartupPhases": {
+              "source": "injected-launch-records",
+              "collectedAtMs": 17184.172250000003,
+              "records": []
+            },
+            "nativeTransitions": [
+              {
+                "elapsedMs": 0.02808399999048561,
+                "url": "http://127.0.0.1:52339/",
+                "loaderId": null,
+                "kind": "initial-cdp-target"
+              },
+              {
+                "elapsedMs": 7.835958999989089,
+                "url": "http://127.0.0.1:52339/",
+                "loaderId": "1D56B06DE546F0DFF25D1AF7E959030A",
+                "kind": "native-top-frame-navigation"
+              },
+              {
+                "elapsedMs": 259.2278749999823,
+                "url": "http://127.0.0.1:52339/",
+                "loaderId": "13BB0CF4142C48CA9BCA58095293DC38",
+                "kind": "native-top-frame-navigation"
+              }
+            ],
+            "benchmarkNavigationAttempts": [],
+            "nativeDocumentChanges": 1,
+            "measurement": "fixture-ready latency after native readiness and authorized wire navigation; not natural startup latency",
+            "wireSetup": {
+              "localOrigin": "http://127.0.0.1:52338",
+              "facadeOrigin": "http://127.0.0.1:52339",
+              "hostId": "qa-wire",
+              "localReady": {
+                "origin": "http://127.0.0.1:52338",
+                "openCodeVersion": "2.1.0"
+              },
+              "windowSetup": {
+                "method": "desktop_focus_main_window",
+                "acknowledgement": {
+                  "focused": true
+                }
+              },
+              "nativeReadyMs": 15915.573291000008,
+              "fixtureSetupAtMs": 15941.609291,
+              "forcedNavigationsBeforeFixtureReadiness": 1
+            }
+          }
+        },
+        {
+          "runIndex": 2,
+          "summary": {
+            "sampleCount": 59,
+            "medianTabCpu": 1.5535244510608115,
+            "medianGpuCpu": 1.373381788096675,
+            "medianTabWorkingSet": 328416,
+            "medianTotalAppWorkingSet": 864960,
+            "p95TotalAppWorkingSet": 1055424,
+            "medianTotalAppCpu": 3.2337009166072352,
+            "medianMainRss": 262488064,
+            "processTypes": [
+              "Browser",
+              "GPU",
+              "Tab",
+              "Utility"
+            ]
+          },
+          "startup": {
+            "outcome": "passed",
+            "startupMode": "natural",
+            "scope": "fresh isolated packaged process; native local host readiness then deterministic external wire fixture",
+            "clock": "parent performance.now; elapsed milliseconds since spawn invocation",
+            "pollIntervalMs": 100,
+            "forcedNavigations": 0,
+            "documents": [
+              {
+                "observedAtMs": 18719.10475,
+                "timeOrigin": 1792516395481,
+                "href": "http://127.0.0.1:52552/",
+                "readyState": "loading",
+                "visibilityState": "visible",
+                "composer": false,
+                "newChat": false,
+                "model": false,
+                "modelLabels": [],
+                "selectedModel": null,
+                "sessionID": null,
+                "navigation": {
+                  "type": "navigate",
+                  "domContentLoadedEventEnd": 0,
+                  "loadEventEnd": 0,
+                  "duration": 0
+                },
+                "readinessGates": [],
+                "directoryRequests": [],
+                "paints": []
+              },
+              {
+                "observedAtMs": 18953.542874999985,
+                "timeOrigin": 1792516395755.7,
+                "href": "http://127.0.0.1:52552/",
+                "readyState": "complete",
+                "visibilityState": "visible",
+                "composer": false,
+                "newChat": false,
+                "model": false,
+                "modelLabels": [],
+                "selectedModel": {
+                  "providerId": "",
+                  "modelId": "",
+                  "catalogAvailable": false
+                },
+                "sessionID": null,
+                "navigation": {
+                  "type": "reload",
+                  "domContentLoadedEventEnd": 27.299999997019768,
+                  "loadEventEnd": 28.100000001490116,
+                  "duration": 28.100000001490116
+                },
+                "readinessGates": [],
+                "directoryRequests": [],
+                "paints": []
+              }
+            ],
+            "healthObservations": [
+              {
+                "observedAtMs": 18723.065333999984,
+                "state": "ready",
+                "attempt": 1,
+                "code": null
+              }
+            ],
+            "nativeStartupObservation": "observed",
+            "cdpTargetMs": 461.28966700000456,
+            "loopbackOriginMs": 18615.075459000014,
+            "lastObservedDocument": {
+              "timeOrigin": 1792516395755.7,
+              "href": "http://127.0.0.1:52552/",
+              "readyState": "complete",
+              "visibilityState": "visible",
+              "composer": true,
+              "newChat": true,
+              "model": true,
+              "modelLabels": [
+                "Fixture model"
+              ],
+              "selectedModel": {
+                "providerId": "fixture",
+                "modelId": "fixture-model",
+                "agent": "build",
+                "catalogAvailable": true
+              },
+              "sessionID": null,
+              "navigation": {
+                "type": "reload",
+                "domContentLoadedEventEnd": 27.299999997019768,
+                "loadEventEnd": 28.100000001490116,
+                "duration": 28.100000001490116
+              },
+              "readinessGates": [
+                {
+                  "name": "devryan-startup-gate-health-loading",
+                  "elapsedMs": 76.5
+                },
+                {
+                  "name": "devryan-startup-gate-providers-idle",
+                  "elapsedMs": 76.5
+                },
+                {
+                  "name": "devryan-startup-gate-agents-idle",
+                  "elapsedMs": 76.5
+                },
+                {
+                  "name": "devryan-startup-gate-initialization-loading",
+                  "elapsedMs": 76.5
+                },
+                {
+                  "name": "devryan-startup-gate-globalSync-loading",
+                  "elapsedMs": 76.5
+                },
+                {
+                  "name": "devryan-startup-gate-directorySync-loading",
+                  "elapsedMs": 76.5
+                },
+                {
+                  "name": "devryan-startup-gate-sessionList-loading",
+                  "elapsedMs": 76.5
+                },
+                {
+                  "name": "devryan-startup-gate-responseStyle-loading",
+                  "elapsedMs": 76.5
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-idle",
+                  "elapsedMs": 76.5
+                },
+                {
+                  "name": "devryan-startup-gate-health-ready",
+                  "elapsedMs": 93.39999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-providers-loading",
+                  "elapsedMs": 93.39999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-agents-loading",
+                  "elapsedMs": 93.39999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-loading",
+                  "elapsedMs": 94.10000000149012
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-ready",
+                  "elapsedMs": 115.10000000149012
+                },
+                {
+                  "name": "devryan-startup-gate-providers-ready",
+                  "elapsedMs": 117.29999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-agents-ready",
+                  "elapsedMs": 175.5
+                },
+                {
+                  "name": "devryan-startup-gate-responseStyle-ready",
+                  "elapsedMs": 175.5
+                },
+                {
+                  "name": "devryan-startup-gate-initialization-ready",
+                  "elapsedMs": 175.89999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-sessionList-ready",
+                  "elapsedMs": 191.60000000149012
+                },
+                {
+                  "name": "devryan-startup-gate-directorySync-ready",
+                  "elapsedMs": 194.39999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-globalSync-ready",
+                  "elapsedMs": 313.8999999985099
+                }
+              ],
+              "directoryRequests": [
+                {
+                  "name": "devryan-directory-sessions",
+                  "elapsedMs": 15.100000001490116,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-project",
+                  "elapsedMs": 8.899999998509884,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-providers",
+                  "elapsedMs": 9.799999997019768,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-config",
+                  "elapsedMs": 13.199999995529652,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-path",
+                  "elapsedMs": 15,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-status",
+                  "elapsedMs": 16.299999997019768,
+                  "outcome": "completed"
+                }
+              ],
+              "paints": [
+                {
+                  "name": "first-paint",
+                  "startTime": 52
+                },
+                {
+                  "name": "first-contentful-paint",
+                  "startTime": 52
+                }
+              ]
+            },
+            "firstObservedDocument": {
+              "timeOrigin": 1792516395481,
+              "href": "http://127.0.0.1:52552/",
+              "readyState": "loading",
+              "visibilityState": "visible",
+              "composer": false,
+              "newChat": false,
+              "model": false,
+              "modelLabels": [],
+              "selectedModel": null,
+              "sessionID": null,
+              "navigation": {
+                "type": "navigate",
+                "domContentLoadedEventEnd": 0,
+                "loadEventEnd": 0,
+                "duration": 0
+              },
+              "readinessGates": [],
+              "directoryRequests": [],
+              "paints": []
+            },
+            "hostAvailableMs": 18723.065333999984,
+            "nativeStartupReadyMs": 18723.065333999984,
+            "hostReadyMs": 18723.081000000006,
+            "catalogResponses": [
+              {
+                "status": 200,
+                "elapsedMs": 18736.47779199999
+              }
+            ],
+            "fixtureCatalogReadyMs": 18736.585667000036,
+            "firstSelectedModel": {
+              "observedAtMs": 19099.048791999987,
+              "providerId": "fixture",
+              "modelId": "fixture-model",
+              "catalogAvailable": true
+            },
+            "eventStreamReadyMs": 19099.084291999985,
+            "document": {
+              "timeOrigin": 1792516395755.7,
+              "href": "http://127.0.0.1:52552/",
+              "readyState": "complete",
+              "visibilityState": "visible",
+              "composer": true,
+              "newChat": true,
+              "model": true,
+              "modelLabels": [
+                "Fixture model"
+              ],
+              "selectedModel": {
+                "providerId": "fixture",
+                "modelId": "fixture-model",
+                "agent": "build",
+                "catalogAvailable": true
+              },
+              "sessionID": null,
+              "navigation": {
+                "type": "reload",
+                "domContentLoadedEventEnd": 27.299999997019768,
+                "loadEventEnd": 28.100000001490116,
+                "duration": 28.100000001490116
+              },
+              "readinessGates": [
+                {
+                  "name": "devryan-startup-gate-health-loading",
+                  "elapsedMs": 76.5
+                },
+                {
+                  "name": "devryan-startup-gate-providers-idle",
+                  "elapsedMs": 76.5
+                },
+                {
+                  "name": "devryan-startup-gate-agents-idle",
+                  "elapsedMs": 76.5
+                },
+                {
+                  "name": "devryan-startup-gate-initialization-loading",
+                  "elapsedMs": 76.5
+                },
+                {
+                  "name": "devryan-startup-gate-globalSync-loading",
+                  "elapsedMs": 76.5
+                },
+                {
+                  "name": "devryan-startup-gate-directorySync-loading",
+                  "elapsedMs": 76.5
+                },
+                {
+                  "name": "devryan-startup-gate-sessionList-loading",
+                  "elapsedMs": 76.5
+                },
+                {
+                  "name": "devryan-startup-gate-responseStyle-loading",
+                  "elapsedMs": 76.5
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-idle",
+                  "elapsedMs": 76.5
+                },
+                {
+                  "name": "devryan-startup-gate-health-ready",
+                  "elapsedMs": 93.39999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-providers-loading",
+                  "elapsedMs": 93.39999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-agents-loading",
+                  "elapsedMs": 93.39999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-loading",
+                  "elapsedMs": 94.10000000149012
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-ready",
+                  "elapsedMs": 115.10000000149012
+                },
+                {
+                  "name": "devryan-startup-gate-providers-ready",
+                  "elapsedMs": 117.29999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-agents-ready",
+                  "elapsedMs": 175.5
+                },
+                {
+                  "name": "devryan-startup-gate-responseStyle-ready",
+                  "elapsedMs": 175.5
+                },
+                {
+                  "name": "devryan-startup-gate-initialization-ready",
+                  "elapsedMs": 175.89999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-sessionList-ready",
+                  "elapsedMs": 191.60000000149012
+                },
+                {
+                  "name": "devryan-startup-gate-directorySync-ready",
+                  "elapsedMs": 194.39999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-globalSync-ready",
+                  "elapsedMs": 313.8999999985099
+                }
+              ],
+              "directoryRequests": [
+                {
+                  "name": "devryan-directory-sessions",
+                  "elapsedMs": 15.100000001490116,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-project",
+                  "elapsedMs": 8.899999998509884,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-providers",
+                  "elapsedMs": 9.799999997019768,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-config",
+                  "elapsedMs": 13.199999995529652,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-path",
+                  "elapsedMs": 15,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-status",
+                  "elapsedMs": 16.299999997019768,
+                  "outcome": "completed"
+                }
+              ],
+              "paints": [
+                {
+                  "name": "first-paint",
+                  "startTime": 52
+                },
+                {
+                  "name": "first-contentful-paint",
+                  "startTime": 52
+                }
+              ]
+            },
+            "controlsReadyMs": 19879.522708999983,
+            "uiReadyMs": 19879.524334000016,
+            "electronStartupPhases": {
+              "source": "injected-launch-records",
+              "collectedAtMs": 19879.533292000007,
+              "records": []
+            },
+            "nativeTransitions": [
+              {
+                "elapsedMs": 0.016374999948311597,
+                "url": "http://127.0.0.1:52552/",
+                "loaderId": null,
+                "kind": "initial-cdp-target"
+              },
+              {
+                "elapsedMs": 7.585541999957059,
+                "url": "http://127.0.0.1:52552/",
+                "loaderId": "7EB5690C5A41D34D835BD470CB35545E",
+                "kind": "native-top-frame-navigation"
+              },
+              {
+                "elapsedMs": 248.3564170000027,
+                "url": "http://127.0.0.1:52552/",
+                "loaderId": "ACC694C171875D4F54096FA0EE61785A",
+                "kind": "native-top-frame-navigation"
+              }
+            ],
+            "benchmarkNavigationAttempts": [],
+            "nativeDocumentChanges": 1,
+            "measurement": "fixture-ready latency after native readiness and authorized wire navigation; not natural startup latency",
+            "wireSetup": {
+              "localOrigin": "http://127.0.0.1:52551",
+              "facadeOrigin": "http://127.0.0.1:52552",
+              "hostId": "qa-wire",
+              "localReady": {
+                "origin": "http://127.0.0.1:52551",
+                "openCodeVersion": "2.1.0"
+              },
+              "windowSetup": {
+                "method": "desktop_focus_main_window",
+                "acknowledgement": {
+                  "focused": true
+                }
+              },
+              "nativeReadyMs": 18615.075459000014,
+              "fixtureSetupAtMs": 18673.287500000035,
+              "forcedNavigationsBeforeFixtureReadiness": 1
+            }
+          }
+        },
+        {
+          "runIndex": 3,
+          "summary": {
+            "sampleCount": 59,
+            "medianTabCpu": 1.4726641811068084,
+            "medianGpuCpu": 1.315012469924301,
+            "medianTabWorkingSet": 334208,
+            "medianTotalAppWorkingSet": 853184,
+            "p95TotalAppWorkingSet": 1021936,
+            "medianTotalAppCpu": 3.0820932151753007,
+            "medianMainRss": 250265600,
+            "processTypes": [
+              "Browser",
+              "GPU",
+              "Tab",
+              "Utility"
+            ]
+          },
+          "startup": {
+            "outcome": "passed",
+            "startupMode": "natural",
+            "scope": "fresh isolated packaged process; native local host readiness then deterministic external wire fixture",
+            "clock": "parent performance.now; elapsed milliseconds since spawn invocation",
+            "pollIntervalMs": 100,
+            "forcedNavigations": 0,
+            "documents": [
+              {
+                "observedAtMs": 18478.04233299999,
+                "timeOrigin": 1792516468146.9,
+                "href": "http://127.0.0.1:52774/",
+                "readyState": "loading",
+                "visibilityState": "visible",
+                "composer": false,
+                "newChat": false,
+                "model": false,
+                "modelLabels": [],
+                "selectedModel": null,
+                "sessionID": null,
+                "navigation": {
+                  "type": "navigate",
+                  "domContentLoadedEventEnd": 0,
+                  "loadEventEnd": 0,
+                  "duration": 0
+                },
+                "readinessGates": [],
+                "directoryRequests": [],
+                "paints": []
+              },
+              {
+                "observedAtMs": 18712.530249999953,
+                "timeOrigin": 1792516468397.9,
+                "href": "http://127.0.0.1:52774/",
+                "readyState": "loading",
+                "visibilityState": "visible",
+                "composer": false,
+                "newChat": false,
+                "model": false,
+                "modelLabels": [],
+                "selectedModel": null,
+                "sessionID": null,
+                "navigation": {
+                  "type": "reload",
+                  "domContentLoadedEventEnd": 0,
+                  "loadEventEnd": 0,
+                  "duration": 0
+                },
+                "readinessGates": [],
+                "directoryRequests": [],
+                "paints": []
+              }
+            ],
+            "healthObservations": [
+              {
+                "observedAtMs": 18481.180040999956,
+                "state": "ready",
+                "attempt": 1,
+                "code": null
+              }
+            ],
+            "nativeStartupObservation": "observed",
+            "cdpTargetMs": 484.4755829999922,
+            "loopbackOriginMs": 18415.37466599996,
+            "lastObservedDocument": {
+              "timeOrigin": 1792516468397.9,
+              "href": "http://127.0.0.1:52774/",
+              "readyState": "complete",
+              "visibilityState": "visible",
+              "composer": true,
+              "newChat": true,
+              "model": true,
+              "modelLabels": [
+                "Fixture model"
+              ],
+              "selectedModel": {
+                "providerId": "fixture",
+                "modelId": "fixture-model",
+                "agent": "build",
+                "catalogAvailable": true
+              },
+              "sessionID": null,
+              "navigation": {
+                "type": "reload",
+                "domContentLoadedEventEnd": 27.19999999552965,
+                "loadEventEnd": 28.19999999552965,
+                "duration": 28.19999999552965
+              },
+              "readinessGates": [
+                {
+                  "name": "devryan-startup-gate-health-loading",
+                  "elapsedMs": 125.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-providers-idle",
+                  "elapsedMs": 125.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-agents-idle",
+                  "elapsedMs": 125.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-initialization-loading",
+                  "elapsedMs": 125.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-globalSync-loading",
+                  "elapsedMs": 125.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-directorySync-loading",
+                  "elapsedMs": 125.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-sessionList-loading",
+                  "elapsedMs": 125.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-responseStyle-loading",
+                  "elapsedMs": 125.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-idle",
+                  "elapsedMs": 125.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-health-ready",
+                  "elapsedMs": 172.59999999403954
+                },
+                {
+                  "name": "devryan-startup-gate-providers-loading",
+                  "elapsedMs": 172.59999999403954
+                },
+                {
+                  "name": "devryan-startup-gate-agents-loading",
+                  "elapsedMs": 172.59999999403954
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-loading",
+                  "elapsedMs": 173.19999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-ready",
+                  "elapsedMs": 187.19999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-providers-ready",
+                  "elapsedMs": 193.39999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-agents-ready",
+                  "elapsedMs": 196
+                },
+                {
+                  "name": "devryan-startup-gate-responseStyle-ready",
+                  "elapsedMs": 196
+                },
+                {
+                  "name": "devryan-startup-gate-initialization-ready",
+                  "elapsedMs": 196.39999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-sessionList-ready",
+                  "elapsedMs": 205.19999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-directorySync-ready",
+                  "elapsedMs": 211.89999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-globalSync-ready",
+                  "elapsedMs": 327.29999999701977
+                }
+              ],
+              "directoryRequests": [
+                {
+                  "name": "devryan-directory-sessions",
+                  "elapsedMs": 8.200000002980232,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-project",
+                  "elapsedMs": 5.299999997019768,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-providers",
+                  "elapsedMs": 10.100000001490116,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-config",
+                  "elapsedMs": 11.100000001490116,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-path",
+                  "elapsedMs": 12,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-status",
+                  "elapsedMs": 13.100000001490116,
+                  "outcome": "completed"
+                }
+              ],
+              "paints": [
+                {
+                  "name": "first-paint",
+                  "startTime": 48
+                },
+                {
+                  "name": "first-contentful-paint",
+                  "startTime": 48
+                }
+              ]
+            },
+            "firstObservedDocument": {
+              "timeOrigin": 1792516468146.9,
+              "href": "http://127.0.0.1:52774/",
+              "readyState": "loading",
+              "visibilityState": "visible",
+              "composer": false,
+              "newChat": false,
+              "model": false,
+              "modelLabels": [],
+              "selectedModel": null,
+              "sessionID": null,
+              "navigation": {
+                "type": "navigate",
+                "domContentLoadedEventEnd": 0,
+                "loadEventEnd": 0,
+                "duration": 0
+              },
+              "readinessGates": [],
+              "directoryRequests": [],
+              "paints": []
+            },
+            "hostAvailableMs": 18481.180040999956,
+            "nativeStartupReadyMs": 18481.180040999956,
+            "hostReadyMs": 18481.195749999955,
+            "catalogResponses": [
+              {
+                "status": 200,
+                "elapsedMs": 18495.96845799999
+              }
+            ],
+            "fixtureCatalogReadyMs": 18496.060332999972,
+            "firstSelectedModel": {
+              "observedAtMs": 19024.13149999996,
+              "providerId": "fixture",
+              "modelId": "fixture-model",
+              "agent": "build",
+              "catalogAvailable": true
+            },
+            "eventStreamReadyMs": 19024.178124999977,
+            "document": {
+              "timeOrigin": 1792516468397.9,
+              "href": "http://127.0.0.1:52774/",
+              "readyState": "complete",
+              "visibilityState": "visible",
+              "composer": true,
+              "newChat": true,
+              "model": true,
+              "modelLabels": [
+                "Fixture model"
+              ],
+              "selectedModel": {
+                "providerId": "fixture",
+                "modelId": "fixture-model",
+                "agent": "build",
+                "catalogAvailable": true
+              },
+              "sessionID": null,
+              "navigation": {
+                "type": "reload",
+                "domContentLoadedEventEnd": 27.19999999552965,
+                "loadEventEnd": 28.19999999552965,
+                "duration": 28.19999999552965
+              },
+              "readinessGates": [
+                {
+                  "name": "devryan-startup-gate-health-loading",
+                  "elapsedMs": 125.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-providers-idle",
+                  "elapsedMs": 125.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-agents-idle",
+                  "elapsedMs": 125.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-initialization-loading",
+                  "elapsedMs": 125.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-globalSync-loading",
+                  "elapsedMs": 125.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-directorySync-loading",
+                  "elapsedMs": 125.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-sessionList-loading",
+                  "elapsedMs": 125.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-responseStyle-loading",
+                  "elapsedMs": 125.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-idle",
+                  "elapsedMs": 125.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-health-ready",
+                  "elapsedMs": 172.59999999403954
+                },
+                {
+                  "name": "devryan-startup-gate-providers-loading",
+                  "elapsedMs": 172.59999999403954
+                },
+                {
+                  "name": "devryan-startup-gate-agents-loading",
+                  "elapsedMs": 172.59999999403954
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-loading",
+                  "elapsedMs": 173.19999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-ready",
+                  "elapsedMs": 187.19999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-providers-ready",
+                  "elapsedMs": 193.39999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-agents-ready",
+                  "elapsedMs": 196
+                },
+                {
+                  "name": "devryan-startup-gate-responseStyle-ready",
+                  "elapsedMs": 196
+                },
+                {
+                  "name": "devryan-startup-gate-initialization-ready",
+                  "elapsedMs": 196.39999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-sessionList-ready",
+                  "elapsedMs": 205.19999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-directorySync-ready",
+                  "elapsedMs": 211.89999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-globalSync-ready",
+                  "elapsedMs": 327.29999999701977
+                }
+              ],
+              "directoryRequests": [
+                {
+                  "name": "devryan-directory-sessions",
+                  "elapsedMs": 8.200000002980232,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-project",
+                  "elapsedMs": 5.299999997019768,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-providers",
+                  "elapsedMs": 10.100000001490116,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-config",
+                  "elapsedMs": 11.100000001490116,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-path",
+                  "elapsedMs": 12,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-status",
+                  "elapsedMs": 13.100000001490116,
+                  "outcome": "completed"
+                }
+              ],
+              "paints": [
+                {
+                  "name": "first-paint",
+                  "startTime": 48
+                },
+                {
+                  "name": "first-contentful-paint",
+                  "startTime": 48
+                }
+              ]
+            },
+            "controlsReadyMs": 19683.02658299997,
+            "uiReadyMs": 19683.02787499997,
+            "electronStartupPhases": {
+              "source": "injected-launch-records",
+              "collectedAtMs": 19683.03658299998,
+              "records": []
+            },
+            "nativeTransitions": [
+              {
+                "elapsedMs": 0.06170899997232482,
+                "url": "http://127.0.0.1:52774/",
+                "loaderId": null,
+                "kind": "initial-cdp-target"
+              },
+              {
+                "elapsedMs": 6.519417000003159,
+                "url": "http://127.0.0.1:52774/",
+                "loaderId": "924EDF70F7DD5A35773A7BFDBF3E37CD",
+                "kind": "native-top-frame-navigation"
+              },
+              {
+                "elapsedMs": 253.76641699997708,
+                "url": "http://127.0.0.1:52774/",
+                "loaderId": "92C2C303CEBD37945378A87D9063B0A2",
+                "kind": "native-top-frame-navigation"
+              }
+            ],
+            "benchmarkNavigationAttempts": [],
+            "nativeDocumentChanges": 1,
+            "measurement": "fixture-ready latency after native readiness and authorized wire navigation; not natural startup latency",
+            "wireSetup": {
+              "localOrigin": "http://127.0.0.1:52773",
+              "facadeOrigin": "http://127.0.0.1:52774",
+              "hostId": "qa-wire",
+              "localReady": {
+                "origin": "http://127.0.0.1:52773",
+                "openCodeVersion": "2.1.0"
+              },
+              "windowSetup": {
+                "method": "desktop_focus_main_window",
+                "acknowledgement": {
+                  "focused": true
+                }
+              },
+              "nativeReadyMs": 18415.37466599996,
+              "fixtureSetupAtMs": 18442.928541,
+              "forcedNavigationsBeforeFixtureReadiness": 1
+            }
+          }
+        }
+      ]
+    },
+    "one-stream": {
+      "aggregate": {
+        "runCount": 3,
+        "medianTabCpu": 4.9123167061020165,
+        "medianGpuCpu": 3.173504324843825,
+        "medianTabWorkingSet": 507600,
+        "medianTotalAppWorkingSet": 1149824,
+        "medianP95TotalAppWorkingSet": 1290176,
+        "medianTotalAppCpu": 8.358505582244703,
+        "medianMainRss": 362545152,
+        "processTypes": [
+          "Browser",
+          "GPU",
+          "Tab",
+          "Utility"
+        ]
+      },
+      "startup": {
+        "successfulRuns": 3,
+        "totalRuns": 3,
+        "medianUiReadyMs": 15269.045584000007,
+        "minimumUiReadyMs": 15220.210459000082,
+        "maximumUiReadyMs": 19276.321375
+      },
+      "chromium": {
+        "protocolVersion": "1.3",
+        "product": "Chrome/146.0.7680.188",
+        "revision": "@[REDACTED]:high_entropy",
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) DevRyan/2.1.5 Chrome/146.0.7680.188 Electron/41.2.1 Safari/537.36",
+        "jsVersion": "14.6.202.33"
+      },
+      "display": {
+        "visibilityState": "visible",
+        "innerWidth": 1280,
+        "innerHeight": 800,
+        "outerWidth": 1280,
+        "outerHeight": 800,
+        "devicePixelRatio": 1,
+        "screen": {
+          "width": 1920,
+          "height": 1080,
+          "availWidth": 1920,
+          "availHeight": 1050
+        }
+      },
+      "runs": [
+        {
+          "runIndex": 1,
+          "summary": {
+            "sampleCount": 59,
+            "medianTabCpu": 4.932708303341491,
+            "medianGpuCpu": 3.182356512604203,
+            "medianTabWorkingSet": 549184,
+            "medianTotalAppWorkingSet": 1115792,
+            "p95TotalAppWorkingSet": 1135024,
+            "medianTotalAppCpu": 8.358505582244703,
+            "medianMainRss": 269205504,
+            "processTypes": [
+              "Browser",
+              "GPU",
+              "Tab",
+              "Utility"
+            ]
+          },
+          "concurrency": {
+            "expectedSessions": 1,
+            "observedSessions": 1
+          },
+          "startup": {
+            "outcome": "passed",
+            "startupMode": "natural",
+            "scope": "fresh isolated packaged process; native local host readiness then deterministic external wire fixture",
+            "clock": "parent performance.now; elapsed milliseconds since spawn invocation",
+            "pollIntervalMs": 100,
+            "forcedNavigations": 0,
+            "documents": [
+              {
+                "observedAtMs": 17997.11920799996,
+                "timeOrigin": 1792516540202.4,
+                "href": "http://127.0.0.1:52992/",
+                "readyState": "loading",
+                "visibilityState": "visible",
+                "composer": false,
+                "newChat": false,
+                "model": false,
+                "modelLabels": [],
+                "selectedModel": null,
+                "sessionID": null,
+                "navigation": {
+                  "type": "navigate",
+                  "domContentLoadedEventEnd": 0,
+                  "loadEventEnd": 0,
+                  "duration": 0
+                },
+                "readinessGates": [],
+                "directoryRequests": [],
+                "paints": []
+              },
+              {
+                "observedAtMs": 18237.371041000006,
+                "timeOrigin": 1792516540460.9,
+                "href": "http://127.0.0.1:52992/",
+                "readyState": "loading",
+                "visibilityState": "visible",
+                "composer": false,
+                "newChat": false,
+                "model": false,
+                "modelLabels": [],
+                "selectedModel": null,
+                "sessionID": null,
+                "navigation": {
+                  "type": "reload",
+                  "domContentLoadedEventEnd": 0,
+                  "loadEventEnd": 0,
+                  "duration": 0
+                },
+                "readinessGates": [],
+                "directoryRequests": [],
+                "paints": []
+              }
+            ],
+            "healthObservations": [
+              {
+                "observedAtMs": 18001.705749999965,
+                "state": "ready",
+                "attempt": 1,
+                "code": null
+              }
+            ],
+            "nativeStartupObservation": "observed",
+            "cdpTargetMs": 451.0949580000015,
+            "loopbackOriginMs": 17935.227832999954,
+            "lastObservedDocument": {
+              "timeOrigin": 1792516540460.9,
+              "href": "http://127.0.0.1:52992/",
+              "readyState": "complete",
+              "visibilityState": "visible",
+              "composer": true,
+              "newChat": true,
+              "model": true,
+              "modelLabels": [
+                "Fixture model"
+              ],
+              "selectedModel": {
+                "providerId": "fixture",
+                "modelId": "fixture-model",
+                "agent": "build",
+                "catalogAvailable": true
+              },
+              "sessionID": null,
+              "navigation": {
+                "type": "reload",
+                "domContentLoadedEventEnd": 28.399999998509884,
+                "loadEventEnd": 29.5,
+                "duration": 29.5
+              },
+              "readinessGates": [
+                {
+                  "name": "devryan-startup-gate-health-loading",
+                  "elapsedMs": 83.69999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-providers-idle",
+                  "elapsedMs": 83.69999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-agents-idle",
+                  "elapsedMs": 83.69999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-initialization-loading",
+                  "elapsedMs": 83.69999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-globalSync-loading",
+                  "elapsedMs": 83.69999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-directorySync-loading",
+                  "elapsedMs": 83.69999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-sessionList-loading",
+                  "elapsedMs": 83.69999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-responseStyle-loading",
+                  "elapsedMs": 83.69999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-idle",
+                  "elapsedMs": 83.69999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-health-ready",
+                  "elapsedMs": 152.60000000149012
+                },
+                {
+                  "name": "devryan-startup-gate-providers-loading",
+                  "elapsedMs": 152.60000000149012
+                },
+                {
+                  "name": "devryan-startup-gate-agents-loading",
+                  "elapsedMs": 152.60000000149012
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-loading",
+                  "elapsedMs": 155.29999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-ready",
+                  "elapsedMs": 170.19999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-providers-ready",
+                  "elapsedMs": 172.10000000149012
+                },
+                {
+                  "name": "devryan-startup-gate-agents-ready",
+                  "elapsedMs": 190.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-responseStyle-ready",
+                  "elapsedMs": 190.89999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-initialization-ready",
+                  "elapsedMs": 191.29999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-sessionList-ready",
+                  "elapsedMs": 205.69999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-directorySync-ready",
+                  "elapsedMs": 214.69999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-globalSync-ready",
+                  "elapsedMs": 335.79999999701977
+                }
+              ],
+              "directoryRequests": [
+                {
+                  "name": "devryan-directory-sessions",
+                  "elapsedMs": 13.900000005960464,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-project",
+                  "elapsedMs": 9.799999997019768,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-providers",
+                  "elapsedMs": 17,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-config",
+                  "elapsedMs": 18.899999998509884,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-path",
+                  "elapsedMs": 21.19999999552965,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-status",
+                  "elapsedMs": 20.899999998509884,
+                  "outcome": "completed"
+                }
+              ],
+              "paints": [
+                {
+                  "name": "first-paint",
+                  "startTime": 48
+                },
+                {
+                  "name": "first-contentful-paint",
+                  "startTime": 48
+                }
+              ]
+            },
+            "firstObservedDocument": {
+              "timeOrigin": 1792516540202.4,
+              "href": "http://127.0.0.1:52992/",
+              "readyState": "loading",
+              "visibilityState": "visible",
+              "composer": false,
+              "newChat": false,
+              "model": false,
+              "modelLabels": [],
+              "selectedModel": null,
+              "sessionID": null,
+              "navigation": {
+                "type": "navigate",
+                "domContentLoadedEventEnd": 0,
+                "loadEventEnd": 0,
+                "duration": 0
+              },
+              "readinessGates": [],
+              "directoryRequests": [],
+              "paints": []
+            },
+            "hostAvailableMs": 18001.705749999965,
+            "nativeStartupReadyMs": 18001.705749999965,
+            "hostReadyMs": 18001.72737499996,
+            "catalogResponses": [
+              {
+                "status": 200,
+                "elapsedMs": 18012.871207999997
+              }
+            ],
+            "fixtureCatalogReadyMs": 18012.948999999964,
+            "firstSelectedModel": {
+              "observedAtMs": 18562.228957999963,
+              "providerId": "fixture",
+              "modelId": "fixture-model",
+              "agent": "build",
+              "catalogAvailable": true
+            },
+            "eventStreamReadyMs": 18562.278208000003,
+            "document": {
+              "timeOrigin": 1792516540460.9,
+              "href": "http://127.0.0.1:52992/",
+              "readyState": "complete",
+              "visibilityState": "visible",
+              "composer": true,
+              "newChat": true,
+              "model": true,
+              "modelLabels": [
+                "Fixture model"
+              ],
+              "selectedModel": {
+                "providerId": "fixture",
+                "modelId": "fixture-model",
+                "agent": "build",
+                "catalogAvailable": true
+              },
+              "sessionID": null,
+              "navigation": {
+                "type": "reload",
+                "domContentLoadedEventEnd": 28.399999998509884,
+                "loadEventEnd": 29.5,
+                "duration": 29.5
+              },
+              "readinessGates": [
+                {
+                  "name": "devryan-startup-gate-health-loading",
+                  "elapsedMs": 83.69999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-providers-idle",
+                  "elapsedMs": 83.69999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-agents-idle",
+                  "elapsedMs": 83.69999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-initialization-loading",
+                  "elapsedMs": 83.69999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-globalSync-loading",
+                  "elapsedMs": 83.69999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-directorySync-loading",
+                  "elapsedMs": 83.69999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-sessionList-loading",
+                  "elapsedMs": 83.69999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-responseStyle-loading",
+                  "elapsedMs": 83.69999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-idle",
+                  "elapsedMs": 83.69999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-health-ready",
+                  "elapsedMs": 152.60000000149012
+                },
+                {
+                  "name": "devryan-startup-gate-providers-loading",
+                  "elapsedMs": 152.60000000149012
+                },
+                {
+                  "name": "devryan-startup-gate-agents-loading",
+                  "elapsedMs": 152.60000000149012
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-loading",
+                  "elapsedMs": 155.29999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-ready",
+                  "elapsedMs": 170.19999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-providers-ready",
+                  "elapsedMs": 172.10000000149012
+                },
+                {
+                  "name": "devryan-startup-gate-agents-ready",
+                  "elapsedMs": 190.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-responseStyle-ready",
+                  "elapsedMs": 190.89999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-initialization-ready",
+                  "elapsedMs": 191.29999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-sessionList-ready",
+                  "elapsedMs": 205.69999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-directorySync-ready",
+                  "elapsedMs": 214.69999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-globalSync-ready",
+                  "elapsedMs": 335.79999999701977
+                }
+              ],
+              "directoryRequests": [
+                {
+                  "name": "devryan-directory-sessions",
+                  "elapsedMs": 13.900000005960464,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-project",
+                  "elapsedMs": 9.799999997019768,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-providers",
+                  "elapsedMs": 17,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-config",
+                  "elapsedMs": 18.899999998509884,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-path",
+                  "elapsedMs": 21.19999999552965,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-status",
+                  "elapsedMs": 20.899999998509884,
+                  "outcome": "completed"
+                }
+              ],
+              "paints": [
+                {
+                  "name": "first-paint",
+                  "startTime": 48
+                },
+                {
+                  "name": "first-contentful-paint",
+                  "startTime": 48
+                }
+              ]
+            },
+            "controlsReadyMs": 19276.319374999963,
+            "uiReadyMs": 19276.321375,
+            "electronStartupPhases": {
+              "source": "injected-launch-records",
+              "collectedAtMs": 19276.33033299999,
+              "records": []
+            },
+            "nativeTransitions": [
+              {
+                "elapsedMs": 0.012374999991152436,
+                "url": "http://127.0.0.1:52992/",
+                "loaderId": null,
+                "kind": "initial-cdp-target"
+              },
+              {
+                "elapsedMs": 5.90625,
+                "url": "http://127.0.0.1:52992/",
+                "loaderId": "DACC30358810521A21F8A8655A33BBC0",
+                "kind": "native-top-frame-navigation"
+              },
+              {
+                "elapsedMs": 258.61470799997915,
+                "url": "http://127.0.0.1:52992/",
+                "loaderId": "869D3BDFB125909417178A0C7AB1BB61",
+                "kind": "native-top-frame-navigation"
+              }
+            ],
+            "benchmarkNavigationAttempts": [],
+            "nativeDocumentChanges": 1,
+            "measurement": "fixture-ready latency after native readiness and authorized wire navigation; not natural startup latency",
+            "wireSetup": {
+              "localOrigin": "http://127.0.0.1:52991",
+              "facadeOrigin": "http://127.0.0.1:52992",
+              "hostId": "qa-wire",
+              "localReady": {
+                "origin": "http://127.0.0.1:52991",
+                "openCodeVersion": "2.1.0"
+              },
+              "windowSetup": {
+                "method": "desktop_focus_main_window",
+                "acknowledgement": {
+                  "focused": true
+                }
+              },
+              "nativeReadyMs": 17935.227832999954,
+              "fixtureSetupAtMs": 17962.523583000002,
+              "forcedNavigationsBeforeFixtureReadiness": 1
+            }
+          }
+        },
+        {
+          "runIndex": 2,
+          "summary": {
+            "sampleCount": 59,
+            "medianTabCpu": 4.9123167061020165,
+            "medianGpuCpu": 3.173504324843825,
+            "medianTabWorkingSet": 472432,
+            "medianTotalAppWorkingSet": 1149824,
+            "p95TotalAppWorkingSet": 1302288,
+            "medianTotalAppCpu": 8.399811052793055,
+            "medianMainRss": 362545152,
+            "processTypes": [
+              "Browser",
+              "GPU",
+              "Tab",
+              "Utility"
+            ]
+          },
+          "concurrency": {
+            "expectedSessions": 1,
+            "observedSessions": 1
+          },
+          "startup": {
+            "outcome": "passed",
+            "startupMode": "natural",
+            "scope": "fresh isolated packaged process; native local host readiness then deterministic external wire fixture",
+            "clock": "parent performance.now; elapsed milliseconds since spawn invocation",
+            "pollIntervalMs": 100,
+            "forcedNavigations": 0,
+            "documents": [
+              {
+                "observedAtMs": 14139.303375000018,
+                "timeOrigin": 1792516615633.8,
+                "href": "http://127.0.0.1:53225/",
+                "readyState": "loading",
+                "visibilityState": "visible",
+                "composer": false,
+                "newChat": false,
+                "model": false,
+                "modelLabels": [],
+                "selectedModel": null,
+                "sessionID": null,
+                "navigation": {
+                  "type": "navigate",
+                  "domContentLoadedEventEnd": 0,
+                  "loadEventEnd": 0,
+                  "duration": 0
+                },
+                "readinessGates": [],
+                "directoryRequests": [],
+                "paints": []
+              },
+              {
+                "observedAtMs": 14374.23679200001,
+                "timeOrigin": 1792516615867.6,
+                "href": "http://127.0.0.1:53225/",
+                "readyState": "complete",
+                "visibilityState": "visible",
+                "composer": false,
+                "newChat": false,
+                "model": false,
+                "modelLabels": [],
+                "selectedModel": {
+                  "providerId": "",
+                  "modelId": "",
+                  "catalogAvailable": false
+                },
+                "sessionID": null,
+                "navigation": {
+                  "type": "reload",
+                  "domContentLoadedEventEnd": 30.19999999552965,
+                  "loadEventEnd": 31.19999999552965,
+                  "duration": 31.19999999552965
+                },
+                "readinessGates": [],
+                "directoryRequests": [],
+                "paints": []
+              }
+            ],
+            "healthObservations": [
+              {
+                "observedAtMs": 14143.000791999977,
+                "state": "ready",
+                "attempt": 1,
+                "code": null
+              }
+            ],
+            "nativeStartupObservation": "observed",
+            "cdpTargetMs": 465.8360419999808,
+            "loopbackOriginMs": 14074.317334000021,
+            "lastObservedDocument": {
+              "timeOrigin": 1792516615867.6,
+              "href": "http://127.0.0.1:53225/",
+              "readyState": "complete",
+              "visibilityState": "visible",
+              "composer": true,
+              "newChat": true,
+              "model": true,
+              "modelLabels": [
+                "Fixture model"
+              ],
+              "selectedModel": {
+                "providerId": "fixture",
+                "modelId": "fixture-model",
+                "agent": "build",
+                "catalogAvailable": true
+              },
+              "sessionID": null,
+              "navigation": {
+                "type": "reload",
+                "domContentLoadedEventEnd": 30.19999999552965,
+                "loadEventEnd": 31.19999999552965,
+                "duration": 31.19999999552965
+              },
+              "readinessGates": [
+                {
+                  "name": "devryan-startup-gate-health-loading",
+                  "elapsedMs": 84.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-providers-idle",
+                  "elapsedMs": 84.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-agents-idle",
+                  "elapsedMs": 84.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-initialization-loading",
+                  "elapsedMs": 84.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-globalSync-loading",
+                  "elapsedMs": 84.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-directorySync-loading",
+                  "elapsedMs": 84.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-sessionList-loading",
+                  "elapsedMs": 84.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-responseStyle-loading",
+                  "elapsedMs": 84.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-idle",
+                  "elapsedMs": 84.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-health-ready",
+                  "elapsedMs": 146.69999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-providers-loading",
+                  "elapsedMs": 146.69999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-agents-loading",
+                  "elapsedMs": 146.69999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-loading",
+                  "elapsedMs": 149.19999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-ready",
+                  "elapsedMs": 163.10000000149012
+                },
+                {
+                  "name": "devryan-startup-gate-providers-ready",
+                  "elapsedMs": 169.29999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-agents-ready",
+                  "elapsedMs": 169.89999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-responseStyle-ready",
+                  "elapsedMs": 169.89999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-initialization-ready",
+                  "elapsedMs": 170.29999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-sessionList-ready",
+                  "elapsedMs": 178.19999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-directorySync-ready",
+                  "elapsedMs": 183.89999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-globalSync-ready",
+                  "elapsedMs": 304.5
+                }
+              ],
+              "directoryRequests": [
+                {
+                  "name": "devryan-directory-sessions",
+                  "elapsedMs": 7.4000000059604645,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-project",
+                  "elapsedMs": 4.899999998509884,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-providers",
+                  "elapsedMs": 9.100000001490116,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-config",
+                  "elapsedMs": 10.100000001490116,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-path",
+                  "elapsedMs": 10.899999998509884,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-status",
+                  "elapsedMs": 11.299999997019768,
+                  "outcome": "completed"
+                }
+              ],
+              "paints": [
+                {
+                  "name": "first-paint",
+                  "startTime": 52
+                },
+                {
+                  "name": "first-contentful-paint",
+                  "startTime": 52
+                }
+              ]
+            },
+            "firstObservedDocument": {
+              "timeOrigin": 1792516615633.8,
+              "href": "http://127.0.0.1:53225/",
+              "readyState": "loading",
+              "visibilityState": "visible",
+              "composer": false,
+              "newChat": false,
+              "model": false,
+              "modelLabels": [],
+              "selectedModel": null,
+              "sessionID": null,
+              "navigation": {
+                "type": "navigate",
+                "domContentLoadedEventEnd": 0,
+                "loadEventEnd": 0,
+                "duration": 0
+              },
+              "readinessGates": [],
+              "directoryRequests": [],
+              "paints": []
+            },
+            "hostAvailableMs": 14143.000791999977,
+            "nativeStartupReadyMs": 14143.000791999977,
+            "hostReadyMs": 14143.018374999985,
+            "catalogResponses": [
+              {
+                "status": 200,
+                "elapsedMs": 14151.743499999982
+              }
+            ],
+            "fixtureCatalogReadyMs": 14151.837083999999,
+            "eventStreamReadyMs": 14499.054333999986,
+            "firstSelectedModel": {
+              "observedAtMs": 14640.677000000025,
+              "providerId": "fixture",
+              "modelId": "fixture-model",
+              "agent": "build",
+              "catalogAvailable": true
+            },
+            "document": {
+              "timeOrigin": 1792516615867.6,
+              "href": "http://127.0.0.1:53225/",
+              "readyState": "complete",
+              "visibilityState": "visible",
+              "composer": true,
+              "newChat": true,
+              "model": true,
+              "modelLabels": [
+                "Fixture model"
+              ],
+              "selectedModel": {
+                "providerId": "fixture",
+                "modelId": "fixture-model",
+                "agent": "build",
+                "catalogAvailable": true
+              },
+              "sessionID": null,
+              "navigation": {
+                "type": "reload",
+                "domContentLoadedEventEnd": 30.19999999552965,
+                "loadEventEnd": 31.19999999552965,
+                "duration": 31.19999999552965
+              },
+              "readinessGates": [
+                {
+                  "name": "devryan-startup-gate-health-loading",
+                  "elapsedMs": 84.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-providers-idle",
+                  "elapsedMs": 84.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-agents-idle",
+                  "elapsedMs": 84.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-initialization-loading",
+                  "elapsedMs": 84.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-globalSync-loading",
+                  "elapsedMs": 84.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-directorySync-loading",
+                  "elapsedMs": 84.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-sessionList-loading",
+                  "elapsedMs": 84.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-responseStyle-loading",
+                  "elapsedMs": 84.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-idle",
+                  "elapsedMs": 84.79999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-health-ready",
+                  "elapsedMs": 146.69999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-providers-loading",
+                  "elapsedMs": 146.69999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-agents-loading",
+                  "elapsedMs": 146.69999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-loading",
+                  "elapsedMs": 149.19999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-ready",
+                  "elapsedMs": 163.10000000149012
+                },
+                {
+                  "name": "devryan-startup-gate-providers-ready",
+                  "elapsedMs": 169.29999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-agents-ready",
+                  "elapsedMs": 169.89999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-responseStyle-ready",
+                  "elapsedMs": 169.89999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-initialization-ready",
+                  "elapsedMs": 170.29999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-sessionList-ready",
+                  "elapsedMs": 178.19999999552965
+                },
+                {
+                  "name": "devryan-startup-gate-directorySync-ready",
+                  "elapsedMs": 183.89999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-globalSync-ready",
+                  "elapsedMs": 304.5
+                }
+              ],
+              "directoryRequests": [
+                {
+                  "name": "devryan-directory-sessions",
+                  "elapsedMs": 7.4000000059604645,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-project",
+                  "elapsedMs": 4.899999998509884,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-providers",
+                  "elapsedMs": 9.100000001490116,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-config",
+                  "elapsedMs": 10.100000001490116,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-path",
+                  "elapsedMs": 10.899999998509884,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-status",
+                  "elapsedMs": 11.299999997019768,
+                  "outcome": "completed"
+                }
+              ],
+              "paints": [
+                {
+                  "name": "first-paint",
+                  "startTime": 52
+                },
+                {
+                  "name": "first-contentful-paint",
+                  "startTime": 52
+                }
+              ]
+            },
+            "controlsReadyMs": 15269.04370899999,
+            "uiReadyMs": 15269.045584000007,
+            "electronStartupPhases": {
+              "source": "injected-launch-records",
+              "collectedAtMs": 15269.052334000007,
+              "records": []
+            },
+            "nativeTransitions": [
+              {
+                "elapsedMs": 0.015374999959021807,
+                "url": "http://127.0.0.1:53225/",
+                "loaderId": null,
+                "kind": "initial-cdp-target"
+              },
+              {
+                "elapsedMs": 5.533165999979246,
+                "url": "http://127.0.0.1:53225/",
+                "loaderId": "[REDACTED]:high_entropy",
+                "kind": "native-top-frame-navigation"
+              },
+              {
+                "elapsedMs": 237.36929099995177,
+                "url": "http://127.0.0.1:53225/",
+                "loaderId": "76DCDE49C06719CAFCF772F6CA157788",
+                "kind": "native-top-frame-navigation"
+              }
+            ],
+            "benchmarkNavigationAttempts": [],
+            "nativeDocumentChanges": 1,
+            "measurement": "fixture-ready latency after native readiness and authorized wire navigation; not natural startup latency",
+            "wireSetup": {
+              "localOrigin": "http://127.0.0.1:53224",
+              "facadeOrigin": "http://127.0.0.1:53225",
+              "hostId": "qa-wire",
+              "localReady": {
+                "origin": "http://127.0.0.1:53224",
+                "openCodeVersion": "2.1.0"
+              },
+              "windowSetup": {
+                "method": "desktop_focus_main_window",
+                "acknowledgement": {
+                  "focused": true
+                }
+              },
+              "nativeReadyMs": 14074.317334000021,
+              "fixtureSetupAtMs": 14102.444084000017,
+              "forcedNavigationsBeforeFixtureReadiness": 1
+            }
+          }
+        },
+        {
+          "runIndex": 3,
+          "summary": {
+            "sampleCount": 59,
+            "medianTabCpu": 4.77663515534274,
+            "medianGpuCpu": 3.1484040611499102,
+            "medianTabWorkingSet": 507600,
+            "medianTotalAppWorkingSet": 1229504,
+            "p95TotalAppWorkingSet": 1290176,
+            "medianTotalAppCpu": 8.25651808745096,
+            "medianMainRss": 403587072,
+            "processTypes": [
+              "Browser",
+              "GPU",
+              "Tab",
+              "Utility"
+            ]
+          },
+          "concurrency": {
+            "expectedSessions": 1,
+            "observedSessions": 1
+          },
+          "startup": {
+            "outcome": "passed",
+            "startupMode": "natural",
+            "scope": "fresh isolated packaged process; native local host readiness then deterministic external wire fixture",
+            "clock": "parent performance.now; elapsed milliseconds since spawn invocation",
+            "pollIntervalMs": 100,
+            "forcedNavigations": 0,
+            "documents": [
+              {
+                "observedAtMs": 14140.267250000034,
+                "timeOrigin": 1792516690644.2,
+                "href": "http://127.0.0.1:53445/",
+                "readyState": "loading",
+                "visibilityState": "visible",
+                "composer": false,
+                "newChat": false,
+                "model": false,
+                "modelLabels": [],
+                "selectedModel": null,
+                "sessionID": null,
+                "navigation": {
+                  "type": "navigate",
+                  "domContentLoadedEventEnd": 0,
+                  "loadEventEnd": 0,
+                  "duration": 0
+                },
+                "readinessGates": [],
+                "directoryRequests": [],
+                "paints": []
+              },
+              {
+                "observedAtMs": 14370.919875000021,
+                "timeOrigin": 1792516690868.3,
+                "href": "http://127.0.0.1:53445/",
+                "readyState": "complete",
+                "visibilityState": "visible",
+                "composer": false,
+                "newChat": false,
+                "model": false,
+                "modelLabels": [],
+                "selectedModel": {
+                  "providerId": "",
+                  "modelId": "",
+                  "catalogAvailable": false
+                },
+                "sessionID": null,
+                "navigation": {
+                  "type": "reload",
+                  "domContentLoadedEventEnd": 28.599999994039536,
+                  "loadEventEnd": 29.599999994039536,
+                  "duration": 29.599999994039536
+                },
+                "readinessGates": [],
+                "directoryRequests": [],
+                "paints": []
+              }
+            ],
+            "healthObservations": [
+              {
+                "observedAtMs": 14144.138375000097,
+                "state": "ready",
+                "attempt": 1,
+                "code": null
+              }
+            ],
+            "nativeStartupObservation": "observed",
+            "cdpTargetMs": 365.718542000046,
+            "loopbackOriginMs": 14084.437000000034,
+            "lastObservedDocument": {
+              "timeOrigin": 1792516690868.3,
+              "href": "http://127.0.0.1:53445/",
+              "readyState": "complete",
+              "visibilityState": "visible",
+              "composer": true,
+              "newChat": true,
+              "model": true,
+              "modelLabels": [
+                "Fixture model"
+              ],
+              "selectedModel": {
+                "providerId": "fixture",
+                "modelId": "fixture-model",
+                "agent": "build",
+                "catalogAvailable": true
+              },
+              "sessionID": null,
+              "navigation": {
+                "type": "reload",
+                "domContentLoadedEventEnd": 28.599999994039536,
+                "loadEventEnd": 29.599999994039536,
+                "duration": 29.599999994039536
+              },
+              "readinessGates": [
+                {
+                  "name": "devryan-startup-gate-health-loading",
+                  "elapsedMs": 74.39999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-providers-idle",
+                  "elapsedMs": 74.39999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-agents-idle",
+                  "elapsedMs": 74.39999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-initialization-loading",
+                  "elapsedMs": 74.39999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-globalSync-loading",
+                  "elapsedMs": 74.39999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-directorySync-loading",
+                  "elapsedMs": 74.39999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-sessionList-loading",
+                  "elapsedMs": 74.39999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-responseStyle-loading",
+                  "elapsedMs": 74.39999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-idle",
+                  "elapsedMs": 74.39999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-health-ready",
+                  "elapsedMs": 134.29999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-providers-loading",
+                  "elapsedMs": 134.29999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-agents-loading",
+                  "elapsedMs": 134.29999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-loading",
+                  "elapsedMs": 135
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-ready",
+                  "elapsedMs": 150.29999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-providers-ready",
+                  "elapsedMs": 155.59999999403954
+                },
+                {
+                  "name": "devryan-startup-gate-agents-ready",
+                  "elapsedMs": 157.09999999403954
+                },
+                {
+                  "name": "devryan-startup-gate-responseStyle-ready",
+                  "elapsedMs": 157.09999999403954
+                },
+                {
+                  "name": "devryan-startup-gate-initialization-ready",
+                  "elapsedMs": 157.5
+                },
+                {
+                  "name": "devryan-startup-gate-sessionList-ready",
+                  "elapsedMs": 165.09999999403954
+                },
+                {
+                  "name": "devryan-startup-gate-directorySync-ready",
+                  "elapsedMs": 171
+                },
+                {
+                  "name": "devryan-startup-gate-globalSync-ready",
+                  "elapsedMs": 285.79999999701977
+                }
+              ],
+              "directoryRequests": [
+                {
+                  "name": "devryan-directory-sessions",
+                  "elapsedMs": 6.899999998509884,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-project",
+                  "elapsedMs": 5.5,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-providers",
+                  "elapsedMs": 9.100000001490116,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-config",
+                  "elapsedMs": 10.100000001490116,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-path",
+                  "elapsedMs": 10.899999998509884,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-status",
+                  "elapsedMs": 11.200000002980232,
+                  "outcome": "completed"
+                }
+              ],
+              "paints": [
+                {
+                  "name": "first-paint",
+                  "startTime": 52
+                },
+                {
+                  "name": "first-contentful-paint",
+                  "startTime": 52
+                }
+              ]
+            },
+            "firstObservedDocument": {
+              "timeOrigin": 1792516690644.2,
+              "href": "http://127.0.0.1:53445/",
+              "readyState": "loading",
+              "visibilityState": "visible",
+              "composer": false,
+              "newChat": false,
+              "model": false,
+              "modelLabels": [],
+              "selectedModel": null,
+              "sessionID": null,
+              "navigation": {
+                "type": "navigate",
+                "domContentLoadedEventEnd": 0,
+                "loadEventEnd": 0,
+                "duration": 0
+              },
+              "readinessGates": [],
+              "directoryRequests": [],
+              "paints": []
+            },
+            "hostAvailableMs": 14144.138375000097,
+            "nativeStartupReadyMs": 14144.138375000097,
+            "hostReadyMs": 14144.15875000006,
+            "catalogResponses": [
+              {
+                "status": 200,
+                "elapsedMs": 14153.187875000061
+              }
+            ],
+            "fixtureCatalogReadyMs": 14153.27479200007,
+            "firstSelectedModel": {
+              "observedAtMs": 14480.564417000045,
+              "providerId": "fixture",
+              "modelId": "fixture-model",
+              "catalogAvailable": true
+            },
+            "eventStreamReadyMs": 14480.60858400003,
+            "document": {
+              "timeOrigin": 1792516690868.3,
+              "href": "http://127.0.0.1:53445/",
+              "readyState": "complete",
+              "visibilityState": "visible",
+              "composer": true,
+              "newChat": true,
+              "model": true,
+              "modelLabels": [
+                "Fixture model"
+              ],
+              "selectedModel": {
+                "providerId": "fixture",
+                "modelId": "fixture-model",
+                "agent": "build",
+                "catalogAvailable": true
+              },
+              "sessionID": null,
+              "navigation": {
+                "type": "reload",
+                "domContentLoadedEventEnd": 28.599999994039536,
+                "loadEventEnd": 29.599999994039536,
+                "duration": 29.599999994039536
+              },
+              "readinessGates": [
+                {
+                  "name": "devryan-startup-gate-health-loading",
+                  "elapsedMs": 74.39999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-providers-idle",
+                  "elapsedMs": 74.39999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-agents-idle",
+                  "elapsedMs": 74.39999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-initialization-loading",
+                  "elapsedMs": 74.39999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-globalSync-loading",
+                  "elapsedMs": 74.39999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-directorySync-loading",
+                  "elapsedMs": 74.39999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-sessionList-loading",
+                  "elapsedMs": 74.39999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-responseStyle-loading",
+                  "elapsedMs": 74.39999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-idle",
+                  "elapsedMs": 74.39999999850988
+                },
+                {
+                  "name": "devryan-startup-gate-health-ready",
+                  "elapsedMs": 134.29999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-providers-loading",
+                  "elapsedMs": 134.29999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-agents-loading",
+                  "elapsedMs": 134.29999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-loading",
+                  "elapsedMs": 135
+                },
+                {
+                  "name": "devryan-startup-gate-worktree-ready",
+                  "elapsedMs": 150.29999999701977
+                },
+                {
+                  "name": "devryan-startup-gate-providers-ready",
+                  "elapsedMs": 155.59999999403954
+                },
+                {
+                  "name": "devryan-startup-gate-agents-ready",
+                  "elapsedMs": 157.09999999403954
+                },
+                {
+                  "name": "devryan-startup-gate-responseStyle-ready",
+                  "elapsedMs": 157.09999999403954
+                },
+                {
+                  "name": "devryan-startup-gate-initialization-ready",
+                  "elapsedMs": 157.5
+                },
+                {
+                  "name": "devryan-startup-gate-sessionList-ready",
+                  "elapsedMs": 165.09999999403954
+                },
+                {
+                  "name": "devryan-startup-gate-directorySync-ready",
+                  "elapsedMs": 171
+                },
+                {
+                  "name": "devryan-startup-gate-globalSync-ready",
+                  "elapsedMs": 285.79999999701977
+                }
+              ],
+              "directoryRequests": [
+                {
+                  "name": "devryan-directory-sessions",
+                  "elapsedMs": 6.899999998509884,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-project",
+                  "elapsedMs": 5.5,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-providers",
+                  "elapsedMs": 9.100000001490116,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-config",
+                  "elapsedMs": 10.100000001490116,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-path",
+                  "elapsedMs": 10.899999998509884,
+                  "outcome": "completed"
+                },
+                {
+                  "name": "devryan-directory-status",
+                  "elapsedMs": 11.200000002980232,
+                  "outcome": "completed"
+                }
+              ],
+              "paints": [
+                {
+                  "name": "first-paint",
+                  "startTime": 52
+                },
+                {
+                  "name": "first-contentful-paint",
+                  "startTime": 52
+                }
+              ]
+            },
+            "controlsReadyMs": 15220.208375000046,
+            "uiReadyMs": 15220.210459000082,
+            "electronStartupPhases": {
+              "source": "injected-launch-records",
+              "collectedAtMs": 15220.22350000008,
+              "records": []
+            },
+            "nativeTransitions": [
+              {
+                "elapsedMs": 0.012417000019922853,
+                "url": "http://127.0.0.1:53445/",
+                "loaderId": null,
+                "kind": "initial-cdp-target"
+              },
+              {
+                "elapsedMs": 6.14020799996797,
+                "url": "http://127.0.0.1:53445/",
+                "loaderId": "366A7208E6EF9F66339EC71A6387D98B",
+                "kind": "native-top-frame-navigation"
+              },
+              {
+                "elapsedMs": 226.05099999997765,
+                "url": "http://127.0.0.1:53445/",
+                "loaderId": "1C4D942204DC1E8C191AA66C25F0DDDB",
+                "kind": "native-top-frame-navigation"
+              }
+            ],
+            "benchmarkNavigationAttempts": [],
+            "nativeDocumentChanges": 1,
+            "measurement": "fixture-ready latency after native readiness and authorized wire navigation; not natural startup latency",
+            "wireSetup": {
+              "localOrigin": "http://127.0.0.1:53444",
+              "facadeOrigin": "http://127.0.0.1:53445",
+              "hostId": "qa-wire",
+              "localReady": {
+                "origin": "http://127.0.0.1:53444",
+                "openCodeVersion": "2.1.0"
+              },
+              "windowSetup": {
+                "method": "desktop_focus_main_window",
+                "acknowledgement": {
+                  "focused": true
+                }
+              },
+              "nativeReadyMs": 14084.437000000034,
+              "fixtureSetupAtMs": 14106.147042000084,
+              "forcedNavigationsBeforeFixtureReadiness": 1
+            }
+          }
+        }
+      ]
+    }
+  },
+  "integrity": {
+    "passed": true,
+    "errors": []
+  }
+}

@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from 'vitest';
 import plugin from './devryan-session-changes.mjs';
-import { SESSION_CHANGE_READ_ONLY_TOOLS } from '@openchamber/harness-runtime';
+import { SESSION_CHANGE_READ_ONLY_TOOLS } from '@devryan/harness-runtime';
 
 const originalUrl = process.env.DEVRYAN_ORCHESTRATION_URL;
 const originalToken = process.env.DEVRYAN_ORCHESTRATION_TOKEN;

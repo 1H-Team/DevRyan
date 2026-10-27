@@ -1,3 +1,7 @@
+/** Failed drain preserves partial content and uses assistant info.error. */
+export type CursorStreamPartialCode = 'CURSOR_STREAM_DRAIN_TIMEOUT' | 'CURSOR_STREAM_QUEUE_OVERFLOW' | 'CURSOR_STREAM_DRAIN_FAILED' | 'CURSOR_STREAM_FINAL_TIMEOUT' | 'CURSOR_STREAM_STALE_GENERATION' | 'CURSOR_STREAM_FINAL_ASSOCIATION_INVALID';
+export type CursorStreamPartialError = { name: 'CursorStreamPartialError'; message: `Cursor stream incomplete (${CursorStreamPartialCode}).` };
+
 /** Consumption across an SDK run; reasoning is already included in output. */
 export type CursorTokenUsage = {
   inputTokens: number;
@@ -26,7 +30,10 @@ export type CursorRunUsageObservation = {
 export type CursorRuntimeStatus = {
   providerId: string;
   bridge: { kind: 'cursor-sdk' };
+  capabilities: Readonly<{ supported: true; code: null } | { supported: false; code: 'cursor_platform_unsupported' }>;
   sdkAuthConfigured: boolean;
+  authSource?: 'native-credential';
+  authObservation?: 'unknown';
   usageAuthConfigured: boolean;
   ripgrepConfigured?: boolean;
   ripgrepSource?: 'explicit' | 'electron-resources' | 'package' | 'path' | 'unsupported' | 'missing';
@@ -146,7 +153,7 @@ export type CursorQuestionRequest = {
 export type CursorSdkRuntime = {
   reconcileSessionChanges(scope: { sessionID: string; directory: string }): Promise<{ pending: boolean; reasons: string[] }>;
   getRuntimeStatus(): CursorRuntimeStatus;
-  verifyConnection(): Promise<CursorRuntimeStatus & { ok: boolean; configured: boolean }>;
+  verifyConnection(scope?:{directory?:string}): Promise<CursorRuntimeStatus & { ok: boolean; configured: boolean }>;
   prewarm(): Promise<CursorRuntimeStatus & { ok: boolean; configured: boolean }>;
   prewarmSession(input: {
     sessionID: string;
@@ -156,9 +163,12 @@ export type CursorSdkRuntime = {
     agent?: string | null;
     messageID?: string | null;
   }): Promise<{ ok: boolean; agentID?: string; cacheHit?: boolean; error?: string }>;
-  getVirtualProvider(): Promise<{ id: string; name: string; models: Record<string, CursorModelRecord> }>;
+  getVirtualProvider(scope?: {directory?:string}): Promise<{ id: string; name: string; models: Record<string, CursorModelRecord> }>;
   getCachedVirtualProvider(): { id: string; name: string; models: Record<string, CursorModelRecord> };
-  refreshVirtualProvider(options?: { force?: boolean; reason?: string; timeoutMs?: number }): Promise<{ id: string; name: string; models: Record<string, CursorModelRecord> }>;
+  getDeclaredVirtualProvider(): { id: string; name: string; models: Record<string, CursorModelRecord> };
+  refreshVirtualProvider(options?: { force?: boolean; reason?: string; timeoutMs?: number; directory?:string; signal?:AbortSignal }): Promise<{ id: string; name: string; models: Record<string, CursorModelRecord> }>;
+  validateModelSelection(input: { directory?: string; modelID: string; variant?: string | null; signal?: AbortSignal; onFailure?: (failure: { reason: string }) => void }): Promise<boolean | null>;
+  generateText(input: { titleHelper?: boolean; helperAgent?:'devryan-title'|'devryan-commit'|'devryan-pr'; selectionMode?:'configured'|'active'; selectionRevision?:string; text: string; directory: string; sessionID?: string; modelID: string; variant?: string; signal?: AbortSignal; timeoutMs?: number }): Promise<string | null>;
   generateTitle(input: {
     text: string;
     directory?: string | null;
@@ -180,6 +190,10 @@ export type CursorSdkRuntime = {
   dispose(): Promise<void>;
 };
 
+export type CursorAbortOutcome = Readonly<{ sessionID: string; terminated: boolean; transcriptPersisted: boolean }>;
+/** Reads constructor-owned physical settlement evidence from an abort failure. */
+export function readCursorAbortOutcome(error: unknown): CursorAbortOutcome | null;
+
 export type WorkspaceDiffFile = {
   relativePath: string;
   filePath: string;
@@ -189,7 +203,6 @@ export type WorkspaceDiffFile = {
 };
 
 export function filterWorkspaceDiffFilesAgainstBaseline(baselineDiff: string, currentDiff: string): WorkspaceDiffFile[];
-export function isLossyStreamedTextVariant(streamedText: string, finalText: string): boolean;
 export const MAX_UNTRACKED_FILE_BYTES: number;
 export function resetUntrackedDiffCacheForTests(): void;
 export function defaultGetWorkspaceDiff(directory: string): Promise<string>;
@@ -227,7 +240,42 @@ export function resolveCursorSdkWorkerRuntimeConfig(options?: {
   workerCwd: string;
   workerEnv: Record<string, string>;
 };
+export interface CursorPresentationProgress {
+  provider: 'cursor'; ownerID: string; sessionID: string; generation: string; sequence: number;
+  objectiveID: string; assistantID: string; stepID: null; attemptID: null;
+  phase: 'finalizing' | 'cleared'; progress: number;
+}
 export function createCursorSdkRuntime(options: Record<string, unknown> & {
+  /** Trusted presentation observer only; cannot grant execution authority. */
+  onPresentationProgress?: (input: CursorPresentationProgress) => void;
+  onPresentationOwnerRetired?: (ownerID: string) => void;
+  /** Constructor-only host identity; defaults to the actual process. */
+  platform?: NodeJS.Platform;
+  arch?: string;
+  /** Native hosts resolve the current selected key for each operation. No
+   * compatibility auth or environment fallback runs when this is supplied. */
+  resolveApiKey?: (input:
+    | { kind: 'prompt'; sessionID: string; directory: string; userMessageID: string;
+      assistantMessageID: string; agent: string; modelID: string; variant?: string }
+    | { kind: 'title'; directory?: string | null; sessionID?: string | null }
+    | { kind: 'catalog' | 'verify'; directory?:string }
+    | { kind: 'prewarm'; directory?: string; sessionID?: string }
+  ) => Promise<string | null>;
+  ownedReadOnly?: <A>(input:{kind:'title'|'text'|'catalog'|'verify';directory?:string;sessionID?:string;signal?:AbortSignal;modelID?:string;variant?:string;helperAgent?:'devryan-title'|'devryan-commit'|'devryan-pr';selectionMode?:'configured'|'active';selectionRevision?:string},action:()=>Promise<A>)=>Promise<A>;
+  nativeWarming?: false;
+  recordDiagnostic?: (entry: { type: 'lifecycle'; event: 'cursor_catalog'; directory?: string;
+    payload: { phase: 'key_resolved' | 'worker_started' | 'worker_result' | 'settled'; startedAt: number; elapsedMs: number;
+      outcome?: 'completed' | 'cancelled' | 'timeout' | 'failed' } }
+    | { type: 'lifecycle'; event: 'cursor_persistence'; sessionID: string; directory: string;
+      payload: { phase: 'failed' | 'sdk_queued' | 'sdk_started' | 'sdk_owner_started' | 'sdk_owner_returned' | 'sdk_stored' | 'sdk_settled' | 'sdk_failed';
+        userMessageID: string; assistantMessageID: string; startedAt?: number; elapsedMs?: number; reason?: string } }) => void;
+  /** Retain the admitted caller through actual execution and persistence settlement. */
+  ownedPrompt?: (input: { sessionID: string; directory: string; userMessageID: string;
+    assistantMessageID: string; agent: string; modelID: string; variant?: string;
+    modelSelection: CursorSdkModelSelection }) => Promise<{
+      readonly readOnly?: boolean;
+      run<A>(action: () => Promise<A>): Promise<A>; close(): Promise<void>;
+    }>;
   onTitleUsageObservation?: (input: {
     sessionID: string | null; directory: string; observation: CursorRunUsageObservation;
   }) => void;

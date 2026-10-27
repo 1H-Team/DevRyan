@@ -9,9 +9,10 @@ export interface ResetCreditExpirySummary {
   expiresSoon: boolean;
 }
 
-export const getResetCreditsAvailableCount = (resetCredits: UsageResetCredits): number => (
+export const getResetCreditsAvailableCount = (resetCredits: UsageResetCredits): number | null => (
   resetCredits.availableCount
-    ?? resetCredits.credits.filter((credit) => credit.status.toLowerCase() === 'available').length
+    ?? (resetCredits.detailsAvailable === false || !resetCredits.credits.length && resetCredits.detailsAvailable !== true
+      ? null : resetCredits.credits.filter((credit) => credit.status.toLowerCase() === 'available').length)
 );
 
 export const buildResetCreditsSummary = (

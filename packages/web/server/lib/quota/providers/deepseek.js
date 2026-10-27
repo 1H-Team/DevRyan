@@ -1,4 +1,4 @@
-import { fetchDeepSeekQuotaAdapter } from '@openchamber/shared-runtime';
+import { fetchDeepSeekQuotaAdapter } from '@devryan/shared-runtime';
 
 import { readAuthFile } from '../../opencode/auth.js';
 import { getAuthEntry, normalizeAuthEntry } from '../utils/index.js';

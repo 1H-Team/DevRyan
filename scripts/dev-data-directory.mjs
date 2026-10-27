@@ -13,8 +13,8 @@ const normalizeScope = (value) => {
 
 export const resolveDevDataDirectory = (options = {}) => {
   const env = options.env ?? process.env;
-  const configured = typeof env.OPENCHAMBER_DATA_DIR === 'string'
-    ? env.OPENCHAMBER_DATA_DIR.trim()
+  const configured = typeof env.DEVRYAN_DATA_DIR === 'string'
+    ? env.DEVRYAN_DATA_DIR.trim()
     : '';
   if (configured) return path.resolve(configured);
 

@@ -14,13 +14,12 @@
     "noEmit": true,
     "incremental": true,
     "tsBuildInfoFile": "../../.cache/typecheck/web.tsbuildinfo",
-    "baseUrl": ".",
     "types": ["vite/client", "@types/dom-speech-recognition"],
     "paths": {
       "@/*": ["../ui/src/*", "./src/*"],
       "@web/*": ["./src/*"],
-      "@openchamber/ui/*": ["../ui/src/*"],
-      "@openchamber/web/*": ["./src/*"]
+      "@devryan/ui/*": ["../ui/src/*"],
+      "@devryan/web/*": ["./src/*"]
     }
   },
   "include": ["src", "../ui/src", "../ui/src/types/**/*"]

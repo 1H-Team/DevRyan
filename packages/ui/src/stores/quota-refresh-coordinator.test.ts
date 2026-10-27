@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   BASELINE_QUOTA_REFRESH_MS,
+  DISCOVERY_RETRY_MS,
   createQuotaRefreshCoordinator,
   type QuotaRefreshClock,
   type QuotaRefreshOptions,
@@ -202,5 +203,46 @@ describe('quota refresh coordinator', () => {
 
     await waitFor(() => refreshes.length === 2 && clock.delays.length === 1);
     expect(refreshes).toEqual([{ rediscover: true }, { rediscover: true }]);
+  });
+
+  test('retries promptly while discovery is pending, caps at eight, and resets', async () => {
+    const clock = new ManualClock();
+    let pending = true;
+    let refreshes = 0;
+    const coordinator = createQuotaRefreshCoordinator({
+      clock,
+      loadSettings: async () => {},
+      refresh: async () => {
+        refreshes += 1;
+      },
+      getRefreshIntervalMs: () => BASELINE_QUOTA_REFRESH_MS,
+      needsPromptRetry: () => pending,
+    });
+
+    coordinator.start();
+    await waitFor(() => clock.delays.length === 1);
+    expect(clock.delays).toEqual([DISCOVERY_RETRY_MS]);
+
+    for (let retry = 1; retry < 8; retry += 1) {
+      clock.runNext();
+      await waitFor(() => refreshes === retry + 1 && clock.delays.length === 1);
+      expect(clock.delays).toEqual([DISCOVERY_RETRY_MS]);
+    }
+    clock.runNext();
+    await waitFor(() => refreshes === 9 && clock.delays.length === 1);
+    expect(clock.delays).toEqual([BASELINE_QUOTA_REFRESH_MS]);
+
+    pending = false;
+    clock.runNext();
+    await waitFor(() => refreshes === 10 && clock.delays.length === 1);
+    expect(clock.delays).toEqual([BASELINE_QUOTA_REFRESH_MS]);
+
+    pending = true;
+    clock.runNext();
+    await waitFor(() => refreshes === 11 && clock.delays.length === 1);
+    expect(clock.delays).toEqual([DISCOVERY_RETRY_MS]);
+
+    coordinator.stop();
+    expect(clock.delays).toEqual([]);
   });
 });

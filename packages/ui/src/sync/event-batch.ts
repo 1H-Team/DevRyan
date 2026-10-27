@@ -1,3 +1,4 @@
+import { hintPartChange, invalidatePartChangeHints } from "./part-change-hints"
 import { createStore, type StoreApi } from "zustand/vanilla"
 import type { Event } from "@opencode-ai/sdk/v2/client"
 import type { DirectoryStore } from "./child-store"
@@ -39,6 +40,13 @@ export function createEventDraft(current: State, payload: Event, ownedParts?: St
     case "question.replied":
     case "question.rejected": draft.question = { ...current.question }; break
     case "lsp.updated": draft.lsp = [...current.lsp]; break
+  }
+  if (draft.part !== current.part || ownedParts === current.part) {
+    const messageID = payload.type === 'message.part.updated' ? payload.properties.part.messageID
+      : payload.type === 'message.part.delta' || payload.type === 'message.part.removed' || payload.type === 'message.removed'
+        ? payload.properties.messageID : undefined;
+    if (messageID) hintPartChange(draft.part, current.part, messageID);
+    else invalidatePartChangeHints(draft.part);
   }
   return draft
 }

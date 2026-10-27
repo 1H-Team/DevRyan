@@ -1,14 +1,22 @@
-import { createCompactResultHeader } from '@openchamber/orchestration-runtime';
+import { verifyTaskPrerequisites as verifyPrerequisites } from './task-prerequisites.js';
+import { createCompactResultHeader, managedRecoveryInstruction, projectRequiredCheckCompletion, selectRequiredCheckTasks, USER_CHECK_WAIVER, REQUIRED_CHECK_CORRECTION } from '@devryan/orchestration-runtime';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { createRequiredCheckObserver } from './required-check-observer.js';
+import { createRequiredCheckRunnerPolicy, requiredCheckRunnerPolicyFromEnvironment, prepareRequiredCheckDeclarations, resolveRequiredCheckRunnerCorrection, verifyRequiredCheckRunnerIdentity } from './required-check-runner.js';
 import {
   createManagedAssistantActivityRegistry,
   createManagedOperatorAbortRegistry,
   createManagedTerminalErrorRegistry,
   createManagedTaskScheduler,
+  USER_STOPPED_RECOVERY,
+  createManagedTaskRecord,
+  validateTaskPrerequisites,
   formatManagedAssignmentContext,
   MANAGED_OVERLAP_READ_TOOLS,
   resolveHarnessPolicies,
-  isManagedModelAvailableInCatalog,
+  resolveNativeHarnessPolicies,
+  inspectManagedModelInCatalog,
+  projectManagedModelValidationFailure,
   MANAGED_READ_ONLY_AGENT_UNSUPPORTED,
   MANAGED_READ_ONLY_AGENT_UNSUPPORTED_MESSAGE,
   MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED,
@@ -16,17 +24,30 @@ import {
   projectManagedResultEnvelope,
   projectManagedTaskResult as projectManagedTaskResultForMode,
   readManagedResultReference,
+  prepareManagedResultMetadata,
+  isManagedMetadataCursor,
   resolveManagedResultMode,
+  assertManagedToolOutputSize,
+  fitManagedToolOutput,
+  compactManagedTaskToolResult,
+  MANAGED_TOOL_OUTPUT_MAX_BYTES,
+  MANAGED_RESULT_PAGE_MAX_BYTES,
+  MANAGED_RESULT_V2_PAGE_MAX_BYTES,
   supportsManagedReadOnlyAgent,
   supportsManagedReadOnlyProvider,
   toManagedTaskEvent,
-} from '@openchamber/orchestration-runtime';
+  isAutoResumeActive,
+  isManagedTaskId,
+  MANAGED_TASK_ID_PREFIX,
+  MANAGED_WAVE_ID_PREFIX,
+} from '@devryan/orchestration-runtime';
 
 import { createAtomicManagedOrchestrationLedger } from './atomic-ledger.js';
 import {
   createClaudeCompatibilityPreambleResolver,
   resolveManagedTaskTurnBudget,
 } from './claude-compatibility.js';
+import { resolveGen2OpenCodeClient } from '../opencode/opencode-client-seam.js';
 import { createWebManagedOpenCodeExecutor } from './open-code-executor.js';
 import { createManagedOrchestrationPrivateHost } from './private-host.js';
 import { createParentReadFreshness } from './parent-read-freshness.js';
@@ -120,6 +141,7 @@ const ERROR_STATUS_BY_CODE = Object.freeze({
   managed_orchestration_owner_conflict: 409,
   managed_orchestration_ownership_lost: 409,
   managed_runtime_unavailable: 503,
+  native_managed_task_lease_invalid: 403,
   missing_recovery_model: 400,
   missing_idempotency_key: 400,
   mode_lease_active: 409,
@@ -146,6 +168,14 @@ const createRuntimeError = (code, message, statusCode = ERROR_STATUS_BY_CODE[cod
   return error;
 };
 
+const modelValidationResult = (value) => {
+  if (value === true || value?.status === 'available') return { status: 'available', reason: null };
+  if (value?.status === 'unavailable' && ['provider_missing', 'model_missing', 'variant_missing'].includes(value.reason)) return value;
+  return value === false ? { status: 'unavailable', reason: 'selection_unavailable' }
+    : { status: 'unknown', reason: 'catalog_unavailable' };
+};
+const validationIdentity = (value) => typeof value === 'string' ? value.slice(0, 180).replace(/[\x00-\x1f\x7f]/g, '') : null;
+
 // Transport-level failures of a host dependency (Supabase, loopback OpenCode)
 // are retryable: callers must see 503, never a malformed 400/500.
 const TRANSPORT_ERROR_CODES = new Set(['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN', 'ENOTFOUND', 'EPIPE',
@@ -156,6 +186,11 @@ const isDependencyUnavailable = (error) => error?.name === 'TimeoutError' || err
 
 const normalizeRuntimeError = (error) => {
   if (!error || typeof error !== 'object') return error;
+  if (error.nativeProcessUnsettled) return Object.assign(createRuntimeError('native_process_settlement_unconfirmed',
+    'Native execution termination could not be confirmed', 503), { cause: error, nativeProcessUnsettled: true });
+  if (typeof error.code === 'string' && /^native_[a-z_]{1,80}$/.test(error.code)) return Object.assign(
+    createRuntimeError(error.code, error.code, Number.isSafeInteger(error.statusCode) ? error.statusCode
+      : ERROR_STATUS_BY_CODE[error.code] ?? (Number.isSafeInteger(error.status) ? error.status : 503)), { cause: error });
   if (typeof error.code === 'string' && error.code) {
     if (!Number.isSafeInteger(error.statusCode)) {
       const status = Number.isSafeInteger(error.status) && error.status >= 400 && error.status <= 599 ? error.status : null;
@@ -214,7 +249,15 @@ const projectTask = (task, envelope = null) => (
   toManagedTaskEvent(task, envelope).properties.task
 );
 
-const OWNERSHIP_WARNING = 'Managed orchestration is unavailable because another DevRyan runtime owns this data directory. Close the other runtime or configure a separate OPENCHAMBER_DATA_DIR.';
+// Scheduler lineage, timing and transport bookkeeping that v2 tool outputs omit;
+// the UI dispatch fallback still reads the identity fields that remain.
+const MANAGED_TOOL_TASK_OMITTED_FIELDS = new Set(['owner', 'sequence', 'dispatchGrouped', 'dispatchWaveId', 'recoveryLineageId',
+  'priorTaskId', 'executionKind', 'createdAt', 'timeoutAt', 'childPromptedAt', 'firstAssistantPartAt', 'transportRecovery']);
+const trimManagedToolTask = task => Object.fromEntries(Object.entries(task).filter(([key]) => !MANAGED_TOOL_TASK_OMITTED_FIELDS.has(key)));
+// An inline first page shorter than this is left to read_result.
+const MIN_INLINE_PAGE_BYTES = 1024;
+
+const OWNERSHIP_WARNING = 'Managed orchestration is unavailable because another DevRyan runtime owns this data directory. Close the other runtime or configure a separate DEVRYAN_DATA_DIR.';
 
 const isOwnershipError = (error) => (
   error?.code === 'managed_orchestration_owner_conflict'
@@ -262,10 +305,20 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
   const now = options.now ?? Date.now;
   const isManagedOpenCode = options.isManagedOpenCode ?? (() => true);
   const getWorkAdmissionBlock = options.getWorkAdmissionBlock ?? (() => null);
-  const publishEvent = options.publishEvent ?? (() => undefined);
-  const harnessPolicies = Object.freeze(Object.fromEntries(Object.entries(resolveHarnessPolicies(options.environment ?? process.env))
-    .map(([key, enabled]) => [key, typeof options.harnessPolicies?.[key] === 'boolean' ? options.harnessPolicies[key] : enabled])));
-  const policyProjection = () => ({ schemaVersion: 1, policies: harnessPolicies,
+  const emitEvent = options.publishEvent ?? (() => undefined);
+  const publishEvent = async event => {
+    if (event.type === 'devryan:managed-task') {
+      const task = scheduler.getTask(event.properties.task.taskId);
+      if (task?.requiredChecks?.length) event = { ...event, properties: { ...event.properties,
+        task: { ...event.properties.task, verification: await projectVerification(task) } } };
+    }
+    return emitEvent(event);
+  };
+  const cursorReadOnly = options.cursorReadOnly === true && typeof options.nativeTaskDispatch === 'function';
+  const supportsReadOnlyProvider = providerId => supportsManagedReadOnlyProvider(providerId, { cursorReadOnly });
+  const harnessPolicies = Object.freeze(Object.fromEntries(Object.entries((typeof options.nativeTaskDispatch === 'function' ? resolveNativeHarnessPolicies : resolveHarnessPolicies)(options.environment ?? process.env))
+    .map(([key, enabled]) => [key, key === 'readOverlap' && typeof options.nativeTaskDispatch === 'function' ? true : typeof options.harnessPolicies?.[key] === 'boolean' ? options.harnessPolicies[key] : enabled])));
+  const policyProjection = () => ({ schemaVersion: 1, resultContractVersion: 2, policies: harnessPolicies,
     overlapReadTools: harnessPolicies.readOverlap ? [...MANAGED_OVERLAP_READ_TOOLS] : [] });
   const parentReadFreshness = createParentReadFreshness();
   const resolveAgentExecution = typeof options.resolveAgentExecution === 'function'
@@ -286,52 +339,46 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
   const persistence = options.persistence ?? createAtomicManagedOrchestrationLedger({
     dataDirectory: options.dataDirectory,
     logger,
+    windowsLedgerOwner: options.windowsLedgerOwner,
+    windowsLauncher: options.windowsLauncher,
   });
   const terminalErrors = options.terminalErrors ?? createManagedTerminalErrorRegistry({ now });
   const operatorAborts = options.operatorAborts ?? createManagedOperatorAbortRegistry({ now });
   const assistantActivity = createManagedAssistantActivityRegistry({ now });
+  const openCodeClient = options.openCodeClient ?? null;
+  if (openCodeClient !== null && typeof openCodeClient?.generation !== 'function') {
+    throw new TypeError('openCodeClient must be an openCodeClient');
+  }
   const validateAgentExecution = typeof options.validateAgentExecution === 'function'
     ? options.validateAgentExecution
-    : typeof options.buildOpenCodeUrl === 'function'
-      ? async ({ directory, providerId, modelId }) => {
-          if (providerId === 'cursor-acp') return null;
-          try {
-            const url = new URL(String(options.buildOpenCodeUrl('/config/providers', '')));
-            if (directory) url.searchParams.set('directory', directory);
-            const response = await (options.fetchImpl ?? fetch)(url, {
-              headers: {
-                accept: 'application/json',
-                ...options.getOpenCodeAuthHeaders?.(),
-              },
-              signal: AbortSignal.timeout(5_000),
-            });
-            if (!response.ok) return null;
-            return isManagedModelAvailableInCatalog(await response.json(), providerId, modelId);
-          } catch {
-            return null;
-          }
+    : async (input) => {
+      const { signal, ...catalogScope } = input;
+      const { directory, providerId, modelId, variant } = catalogScope;
+      if (providerId === 'cursor-acp') {
+        const onFailure = ({ reason }) => options.onModelValidationFailure?.({ rootSessionId: input.rootSessionId, taskId: input.taskId,
+          directory, agent: input.agent, providerId, modelId, variant, reason });
+        const validate = () => options.cursorSdkRuntime?.validateModelSelection?.({ directory, modelID: modelId, variant, onFailure,
+          ...(signal ? { signal } : {}) }) ?? null;
+        try {
+          return await (options.withManagedCursorCatalog ? options.withManagedCursorCatalog(catalogScope, validate) : validate());
+        } catch (error) {
+          const reason = typeof error?.code === 'string' && /^native_[a-z_]{1,80}$/.test(error.code)
+            ? error.code : 'cursor_model_catalog_unavailable';
+          onFailure({ reason });
+          if (reason.startsWith('native_') || error?.nativeProcessUnsettled) throw error;
+          return null;
         }
-      : null;
-  // A child prompt resolves its agent in the submitting project's OpenCode
-  // instance, so admission reads that directory-scoped catalog, never the
-  // unscoped /agent snapshot.
+      }
+      const client = resolveGen2OpenCodeClient(openCodeClient);
+      try {
+        const catalog = await client.catalog.providers(directory ? { directory } : {}, { timeoutMs: 5_000 });
+        return inspectManagedModelInCatalog(catalog, providerId, modelId, variant);
+      } catch { return { status: 'unknown', reason: 'catalog_unavailable' }; }
+    };
+  // Admission validates the agent against the submitting directory's catalog.
   const readAgentCatalog = typeof options.readAgentCatalog === 'function'
     ? options.readAgentCatalog
-    : typeof options.buildOpenCodeUrl === 'function'
-      ? async ({ directory }) => {
-          const url = new URL(String(options.buildOpenCodeUrl('/agent', '')));
-          url.searchParams.set('directory', directory);
-          const response = await (options.fetchImpl ?? fetch)(url, {
-            headers: {
-              accept: 'application/json',
-              ...options.getOpenCodeAuthHeaders?.(),
-            },
-            signal: AbortSignal.timeout(AGENT_CATALOG_TIMEOUT_MS),
-          });
-          if (!response.ok) throw new Error(`OpenCode agent catalog request failed (${response.status})`);
-          return await response.json();
-        }
-      : null;
+    : async ({ directory }) => resolveGen2OpenCodeClient(openCodeClient).catalog.agents({ directory }, { timeoutMs: AGENT_CATALOG_TIMEOUT_MS });
   // Returns the catalog's canonical agent name, or the submitted value when
   // validation is off: DEVRYAN_TASK_AGENT_VALIDATION=0, no catalog source (an
   // external runtime or fixture), or Council's host-constant private dispatch.
@@ -361,21 +408,28 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
   };
   const resolvePlannedAutoResumeBackup = async (params) => {
     const backup = await resolveAutoResumeBackupExecution(params);
-    if (backup && validateAgentExecution && await validateAgentExecution({
-      directory: params.directory, providerId: backup.providerId, modelId: backup.modelId,
-    }) === false) return null;
+    if (backup && validateAgentExecution && modelValidationResult(await validateAgentExecution({
+      directory: params.directory, providerId: backup.providerId, modelId: backup.modelId, variant: backup.variant ?? null,
+      ...(backup.providerId === 'cursor-acp' ? { rootSessionId: params.rootSessionId, agent: params.agent,
+        taskId: params.taskId, autoResumeGeneration: params.autoResumeGeneration } : {}),
+    })).status !== 'available') return null;
     return backup;
   };
   const executor = options.executor ?? createWebManagedOpenCodeExecutor({
-    buildOpenCodeUrl: options.buildOpenCodeUrl,
-    getOpenCodeAuthHeaders: options.getOpenCodeAuthHeaders,
+    ...(options.eventReconcileIntervalMs === undefined ? {} : { eventReconcileIntervalMs: options.eventReconcileIntervalMs }),
     cursorSdkRuntime: options.cursorSdkRuntime,
+    cursorReadOnly,
     registerExecutionChild: options.registerExecutionChild,
-    fetchImpl: options.fetchImpl,
+    nativeTaskDispatch: options.nativeTaskDispatch,
+    ...(openCodeClient === null ? {} : { openCodeClient }),
     readTerminalError: (input) => terminalErrors.read(input),
-    readOperatorAbort: (input) => operatorAborts.read(input),
+    readOperatorAbort: (input) => scheduler.readOperatorStop(input) ?? operatorAborts.read(input),
     readRuntimeStartedAt: options.readRuntimeStartedAt,
     subscribeAssistantActivity: assistantActivity.subscribe,
+    bindAssistantActivity: assistantActivity.bind,
+    subscribeSessionChanges: assistantActivity.subscribeChanges,
+    // Kill switch, read per observed child: DEVRYAN_EVENT_DRIVEN_CHILD_WAIT=0 restores the 750 ms poll.
+    eventDrivenWait: options.eventDrivenWait ?? (() => process.env.DEVRYAN_EVENT_DRIVEN_CHILD_WAIT !== '0'),
     onFirstAssistantActivity: options.onFirstAssistantActivity,
     now,
     // Claude compatibility mode drops opencode's system prompt for Anthropic-routed
@@ -413,11 +467,13 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
           return { outcome: 'rejected', code: 'backup_changed', message: 'The configured backup changed or was removed' };
         }
         if (validateAgentExecution) {
-          const available = await validateAgentExecution({ directory: task.directory, providerId: params.providerId, modelId: params.modelId });
-          if (available === false) {
+          const available = modelValidationResult(await validateAgentExecution({ directory: task.directory, providerId: params.providerId, modelId: params.modelId, variant: params.variant ?? null,
+            ...(params.providerId === 'cursor-acp' ? { rootSessionId: task.rootSessionId, agent: task.agent,
+              taskId: task.taskId, autoResumeGeneration: params.autoResumeGeneration } : {}) }));
+          if (available.status === 'unavailable') {
             return { outcome: 'rejected', code: 'backup_unavailable', message: 'The configured backup model is unavailable' };
           }
-          if (available === null && params.providerId !== 'cursor-acp') {
+          if (available.status !== 'available') {
             if (envelope.autoResume.trigger !== 'provider_transport') {
               return { outcome: 'deferred', retryAfterMs: AUTO_RESUME_HOST_DEFER_MS, reason: 'backup_availability_unknown' };
             }
@@ -454,8 +510,13 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
   };
 
   const scheduler = options.scheduler ?? createManagedTaskScheduler({
+    inspectRequiredChecks: task => projectVerification(task),
+    verifyTaskPrerequisites: task => verifyTaskPrerequisites(task),
+    cursorReadOnly,
     onBarrierChange: options.onBarrierChange,
     onRequiredCheckReceipt: options.onRequiredCheckReceipt,
+    onPersistenceObservation: options.onPersistenceObservation,
+    onMutationTiming: options.onMutationTiming,
     executor,
     persistence,
     now,
@@ -471,7 +532,67 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     },
   });
 
-  const requiredCheckObserver = createRequiredCheckObserver({ scheduler, now });
+  const verifyCheckRunner = options.requiredCheckRunnerPolicies === undefined ? requiredCheckRunnerPolicyFromEnvironment(options.environment ?? process.env)
+    : createRequiredCheckRunnerPolicy(options.requiredCheckRunnerPolicies);
+  const requiredCheckObserver = createRequiredCheckObserver({ scheduler, now, verifyCheckRunner });
+  const verificationObservedAt = new Map();
+  const nextVerificationTime = taskId => {
+    const at = Math.max(now(), (verificationObservedAt.get(taskId) ?? 0) + 1);
+    verificationObservedAt.delete(taskId); verificationObservedAt.set(taskId, at);
+    while (verificationObservedAt.size > 4096) verificationObservedAt.delete(verificationObservedAt.keys().next().value);
+    return at;
+  };
+  const projectVerification = async task => {
+    const checks = await requiredCheckObserver.project(task);
+    return { ...projectRequiredCheckCompletion(checks), objectiveId: task.dispatchObjectiveId ?? task.dispatchGroupId ?? null, checks, observedAt: nextVerificationTime(task.taskId) };
+  };
+  const verifyTaskPrerequisites = task => verifyPrerequisites(task, {
+    listTasks: rootSessionId => scheduler.listTasks({ rootSessionId }), project: task => requiredCheckObserver.project(task),
+  });
+  const hasVerificationRecovery = async (tasks, barrier) => barrier.state === 'awaiting_acknowledgement'
+    && (await Promise.all(tasks.filter(task => barrier.taskIds.includes(task.taskId) && task.requiredChecks?.length)
+      .map(projectVerification))).some(value => !value.ready);
+  const inspectRequiredChecks = async ({ rootSessionId, directory, objectiveId }) => {
+    const unresolved = new Set();
+    const candidates = await Promise.all(scheduler.listTasks({ rootSessionId }).filter(task => task.directory === directory).map(async task => {
+      if (task.dispatchObjectiveId != null || !task.requiredChecks?.length || task.dispatchGroupId === objectiveId) return task;
+      // Legacy dispatch groups name assistant Steps. Only canonical native
+      // ownership can bind that Step to the requested original objective.
+      try {
+        const client = resolveGen2OpenCodeClient(openCodeClient);
+        const group = await client.sessions.message(rootSessionId, task.dispatchGroupId,
+          { directory, timeoutMs: 5_000, maxResponseBytes: 4 * 1024 * 1024 });
+        if (group.info?.id === task.dispatchGroupId && group.info.sessionID === rootSessionId && group.info.role === 'assistant'
+          && group.info.parentID === objectiveId && group.turnOwnership?.source === 'native-sequence'
+          && group.turnOwnership.userMessageID === objectiveId) return { ...task, dispatchObjectiveId: objectiveId };
+        const ordinaryUser = message => message?.info?.sessionID === rootSessionId && message.info.role === 'user' && !message.nativeStatus
+          && Array.isArray(message.parts) && message.parts.length > 0 && message.parts.every(part => part.synthetic !== true)
+          && message.parts.some(part => ['text', 'file'].includes(part.type));
+        if (group.info?.id === task.dispatchGroupId && ordinaryUser(group) && group.info.id !== objectiveId) return task;
+        if (group.info?.id === task.dispatchGroupId && group.info.sessionID === rootSessionId && group.info.role === 'assistant'
+          && group.info.parentID !== objectiveId && group.turnOwnership?.source === 'native-sequence'
+          && group.turnOwnership.userMessageID === group.info.parentID) {
+          const parent = await client.sessions.message(rootSessionId, group.info.parentID, { directory, timeoutMs: 5_000, maxResponseBytes: 4 * 1024 * 1024 });
+          if (parent.info?.id === group.info.parentID && ordinaryUser(parent)) return task;
+        }
+      } catch { /* Missing legacy lineage must not silently remove requirements. */ }
+      unresolved.add(task.taskId);
+      return { ...task, dispatchObjectiveId: objectiveId };
+    }));
+    const tasks = selectRequiredCheckTasks(candidates, objectiveId);
+    // A new equivalent retry cannot erase requirements whose legacy objective
+    // could not be proved. Resolve that lineage before normal supersession.
+    for (const task of candidates) if (unresolved.has(task.taskId) && !tasks.some(selected => selected.taskId === task.taskId)) tasks.push(task);
+    const projections = await Promise.all(tasks.map(async task => {
+      const projection = await projectVerification(task);
+      return { ...projection, checks: projection.checks.map(check => ({ ...check, source: { kind: 'task', taskId: task.taskId },
+        ...(unresolved.has(task.taskId) ? { status: 'blocked', reason: 'required_check_objective_unverified' } : {}) })) };
+    }));
+    const root = scheduler.getObjectiveRequiredChecks?.({ rootSessionId, directory, objectiveId });
+    const rootChecks = root ? (await requiredCheckObserver.project(root)).map(check => ({ ...check, source: { kind: 'objective', objectiveId } })) : [];
+    const checks = [...rootChecks, ...projections.flatMap(projection => projection.checks)];
+    return { ...projectRequiredCheckCompletion(checks), objectiveId, checks, observedAt: now() };
+  };
 
   let privateHost;
   let bridgeEnvironment = null;
@@ -485,6 +606,9 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
 
   const assertWorkAdmission = () => {
     const block = getWorkAdmissionBlock();
+    if (!block && typeof options.getNativeDispatchReady === 'function' && !options.getNativeDispatchReady()) {
+      throw createRuntimeError('native_dispatch_unavailable', 'The native execution controller is not ready', 503);
+    }
     if (!block) return;
     throw createRuntimeError(
       block.code || 'work_admission_blocked',
@@ -528,7 +652,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
         recoveryWarningPublished = true;
         try {
           await publishEvent({
-            type: 'openchamber:managed-orchestration-warning',
+            type: 'devryan:managed-orchestration-warning',
             properties: { message: recoveryWarning },
           });
         } catch (error) {
@@ -597,22 +721,95 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     return task;
   };
 
-  const projectTaskResult = async (task, resultMode, envelope = scheduler.getResultEnvelope(task.taskId)) => {
-    const result = projectManagedTaskResultForMode(
-      projectTask(task, envelope),
-      envelope,
-      resultMode,
-    );
-    if (resultMode === 'compact' && envelope && result.resultReference) {
+  // Constructor-only native dispatch/settlement proof. Queued tasks never borrow the
+  // original tool's transient permit, and this method is absent from RPC.
+  const verifyNativeTaskDispatch = async (input) => {
+    assertAvailable();
+    if (!initialized || !ownershipAcquired || shutdownPromise) {
+      throw createRuntimeError('native_managed_task_lease_invalid', 'Native managed dispatch owner is unavailable', 403);
+    }
+    await persistence.verifyOwnership?.();
+    const settling = input?.operation === 'settle';
+    const task = typeof input?.taskId === 'string'
+      ? await (settling ? scheduler.verifyTaskSettlement(input.taskId, input.leaseToken) : scheduler.verifyTaskDispatch(input.taskId, input.leaseToken))
+      : null;
+    assertAvailable();
+    if (!settling) assertWorkAdmission();
+    if (shutdownPromise || !ownershipAcquired || !task || task.owner !== 'devryan' || !input.leaseToken || task.leaseToken !== input.leaseToken
+      || !['starting', 'running'].includes(task.status) || task.directory !== input.directory) {
+      throw createRuntimeError('native_managed_task_lease_invalid', 'Native managed dispatch has no current task lease', 403);
+    }
+    if (input.operation === 'create') {
+      if (task.status !== 'starting' || task.childSessionId || task.rootSessionId !== input.parentID
+        || !task.dispatchCallId || task.dispatchCallId !== input.parentCallID) {
+        throw createRuntimeError('native_managed_task_scope_invalid', 'Native child creation does not match its task', 403);
+      }
+    } else if (input.operation === 'prompt' || settling) {
+      if (!task.childSessionId || task.childSessionId !== input.sessionID
+        || ['providerId', 'modelId', 'agent', 'variant'].some(key => task[key] !== input[key])) {
+        throw createRuntimeError('native_managed_task_scope_invalid', 'Native child prompt does not match its task', 403);
+      }
+    } else throw createRuntimeError('native_managed_task_scope_invalid', 'Native task dispatch operation is unavailable', 403);
+    return task;
+  };
+
+  // A recovery catalog read is bound to the current unacknowledged attempt,
+  // never to a caller-supplied root ID or the original tool's expired permit.
+  const verifyNativeTaskCatalog = async (input) => {
+    const check = () => {
+      assertAvailable(); assertWorkAdmission();
+      const task = scheduler.getTask(input?.taskId);
+      const envelope = scheduler.getResultEnvelope(input?.taskId);
+      if (!initialized || !ownershipAcquired || shutdownPromise || !task || task.owner !== 'devryan'
+        || task.rootSessionId !== input.rootSessionId || task.directory !== input.directory || task.agent !== input.agent
+        || input.providerId !== 'cursor-acp' || !Number.isSafeInteger(input.autoResumeGeneration)
+        || !envelope || envelope.action !== null || !isAutoResumeActive(envelope)
+        || envelope.autoResume.cancelGeneration !== input.autoResumeGeneration) {
+        throw createRuntimeError('native_managed_task_catalog_invalid', 'Managed recovery catalog authority expired', 403);
+      }
+      return task;
+    };
+    const task = check();
+    await persistence.verifyOwnership?.();
+    const backup = await resolveAutoResumeBackupExecution({ rootSessionId: task.rootSessionId,
+      directory: task.directory, agent: task.agent, providerId: task.providerId, modelId: task.modelId });
+    check();
+    if (!backup || backup.providerId !== input.providerId || backup.modelId !== input.modelId
+      || (backup.variant ?? null) !== (input.variant ?? null)) {
+      throw createRuntimeError('native_managed_task_catalog_invalid', 'Managed recovery selection changed', 403);
+    }
+    return task;
+  };
+
+  const projectTaskResult = async (task, resultMode, envelope = scheduler.getResultEnvelope(task.taskId), maxOutputBytes, resultContractVersion) => {
+    const v2 = resultContractVersion === 2;
+    const projectResult = (pageBytes, inlineFirstPage = false) => {
+      const value = projectManagedTaskResultForMode(projectTask(task, envelope), envelope, resultMode, pageBytes, { inlineFirstPage });
+      return v2 ? { ...value, task: trimManagedToolTask(value.task) } : value;
+    };
+    const result = projectResult();
+    if (resultMode === 'compact' && harnessPolicies.compactResults && envelope && result.resultReference) {
       result.resultHeader = createCompactResultHeader({ task, envelope,
         checks: await requiredCheckObserver.project(task), observedAt: now() });
     }
-    return Object.values(harnessPolicies).some(Boolean) ? { ...result, capabilities: policyProjection() } : result;
+    const instruction = managedRecoveryInstruction(task, envelope);
+    if (instruction) result.instruction = instruction;
+    // v2 outputs carry no per-result policy copy; wait_any keeps one top-level copy.
+    const capabilities = !v2 && Object.values(harnessPolicies).some(Boolean) ? { capabilities: policyProjection() } : {};
+    const metadata=v2&&envelope?await prepareManagedResultMetadata({...result,...capabilities,resultContractVersion:2}):null;
+    if (maxOutputBytes === undefined) return { ...result, ...capabilities,...v2?{resultContractVersion:2}:{} };
+    // v2 inlines as much of the first report page as the reply budget fits.
+    return fitManagedToolOutput(pageBytes => {
+      const full={...projectResult(pageBytes,v2),
+        ...(result.resultHeader?{resultHeader:result.resultHeader}:{}),...(instruction?{instruction}:{}),...capabilities,...resultContractVersion===2?{resultContractVersion:2}:{}};
+      try{return assertManagedToolOutputSize(full,maxOutputBytes);}
+      catch(error){if(error.code!=='managed_tool_output_metadata_too_large')throw error;return metadata?metadata.project(pageBytes,full.resultReference):full;}
+    },maxOutputBytes,resultContractVersion===2?MANAGED_RESULT_V2_PAGE_MAX_BYTES:MANAGED_RESULT_PAGE_MAX_BYTES);
   };
 
-  const projectEnvelopeResult = async (task, envelope, resultMode) => {
-    if (resultMode !== 'compact') return projectManagedResultEnvelope(task, envelope, resultMode);
-    const { task: _task, ...result } = await projectTaskResult(task, resultMode, envelope);
+  const projectEnvelopeResult = async (task, envelope, resultMode, maxOutputBytes) => {
+    if (maxOutputBytes === undefined && resultMode !== 'compact') return projectManagedResultEnvelope(task, envelope, resultMode);
+    const { task: _task, ...result } = await projectTaskResult(task, resultMode, envelope, maxOutputBytes);
     return result;
   };
 
@@ -628,7 +825,8 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     failures: result.failures,
   });
 
-  const resolveAdmittedAgentExecution = async (params, readOnly) => {
+  const resolveAdmittedAgentExecution = async (params, readOnly, signal) => {
+    signal?.throwIfAborted();
     const requested = {
       providerId: typeof params.providerId === 'string' ? params.providerId.trim() : '',
       modelId: typeof params.modelId === 'string' ? params.modelId.trim() : '',
@@ -645,37 +843,100 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     let admitted = resolved;
     if (
       readOnly
-      && !supportsManagedReadOnlyProvider(resolved.providerId)
+      && !supportsReadOnlyProvider(resolved.providerId)
       && requested.providerId
       && requested.modelId
-      && supportsManagedReadOnlyProvider(requested.providerId)
+      && supportsReadOnlyProvider(requested.providerId)
     ) {
       admitted = requested;
     }
     if (validateAgentExecution) {
-      const available = await validateAgentExecution({
+      const available = modelValidationResult(await validateAgentExecution({
         directory: params.directory,
         providerId: admitted.providerId,
         modelId: admitted.modelId,
-      });
-      if (available === false) {
-        throw createRuntimeError(
-          'managed_agent_model_unavailable',
-          `Managed model is unavailable: ${admitted.providerId}/${admitted.modelId}`,
-          409,
-        );
+        variant: admitted.variant ?? null,
+        ...(signal ? { signal } : {}),
+        ...(admitted.providerId === 'cursor-acp' ? { rootSessionId: params.rootSessionId,
+          agent: params.agent, taskId: params.taskId, autoResumeGeneration: params.autoResumeGeneration } : {}),
+      }));
+      signal?.throwIfAborted();
+      if (available.status !== 'available') {
+        const details = { reason: available.reason, providerId: validationIdentity(admitted.providerId),
+          modelId: validationIdentity(admitted.modelId), variant: validationIdentity(admitted.variant),
+          agent: validationIdentity(params.agent),
+          ...(available.modelName ? { modelName: available.modelName } : {}),
+          ...(available.supportedVariants ? { supportedVariants: available.supportedVariants } : {}) };
+        const projection = projectManagedModelValidationFailure({
+          code: available.status === 'unavailable' ? 'managed_agent_model_unavailable' : 'managed_agent_model_availability_unknown', details });
+        options.onModelValidationFailure?.({ ...projection.details, rootSessionId: validationIdentity(params.rootSessionId),
+          directory: validationIdentity(params.directory), agent: validationIdentity(params.agent),
+          taskId: validationIdentity(params.taskId), callId: validationIdentity(params.dispatchCallId ?? params.callId),
+          messageId: validationIdentity(params.dispatchGroupId) });
+        throw Object.assign(createRuntimeError(
+          projection.code, projection.message,
+          available.status === 'unavailable' ? 409 : 503,
+        ), { details: projection.details });
       }
     }
     return admitted;
   };
 
+  const preparedSubmissions = new AsyncLocalStorage();
+  const nativePromptContexts = new AsyncLocalStorage();
+  const resolveSubmission = async (params, context) => {
+    context.signal?.throwIfAborted();
+    const readOnly = resolveReadOnly(params), submittedAgent = await resolveSubmittedAgent(params);
+    context.signal?.throwIfAborted();
+    const agent = typeof submittedAgent === 'string' ? submittedAgent.trim() : '';
+    const admittedExecution = await resolveAdmittedAgentExecution({ ...params, agent: submittedAgent }, readOnly, context.signal);
+    if (readOnly && agent && !supportsManagedReadOnlyAgent(agent)) throw createRuntimeError(
+      MANAGED_READ_ONLY_AGENT_UNSUPPORTED, MANAGED_READ_ONLY_AGENT_UNSUPPORTED_MESSAGE, 409);
+    if (readOnly && admittedExecution.providerId && !supportsReadOnlyProvider(admittedExecution.providerId)) throw createRuntimeError(
+      MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED, MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED_MESSAGE, 409);
+    context.signal?.throwIfAborted();
+    return Object.freeze({ readOnly, submittedAgent, admittedExecution: Object.freeze({ ...admittedExecution }) });
+  };
+
+  // Constructor-only preparation; the durable submit still owns its original
+  // cancellation, admission and scheduler fences. No wire field grants reuse.
+  const withSubmissionPreparation = async (params, context = {}, action) => {
+    let selection;
+    const signature = JSON.stringify(params);
+    try {
+      if (typeof action !== 'function') throw new TypeError('Submission action is required');
+      assertAvailable(); await ensureInitialized(); assertWorkAdmission();
+      selection = await resolveSubmission(params, context);
+      context.signal?.throwIfAborted(); assertWorkAdmission();
+    } catch (error) { throw normalizeRuntimeError(error); }
+    return preparedSubmissions.run({ signature, selection, used: false }, action);
+  };
+
   const handleRpcInternal = async ({ method, params = {} }, context = {}) => {
+    // Static tool advertising must not reconcile children before their controller starts.
+    if (method === 'harness_capabilities') return policyProjection();
     await ensureInitialized();
     const requestedResultMode = resolveManagedResultMode(params.resultMode);
-    const resultMode = harnessPolicies.compactResults && params.resultContractVersion === 1 && requestedResultMode !== 'eager'
+    const resultMode = params.resultContractVersion===2&&requestedResultMode!=='eager'?'compact':harnessPolicies.compactResults && params.resultContractVersion === 1 && requestedResultMode !== 'eager'
       ? 'compact' : requestedResultMode === 'compact' ? 'reference' : requestedResultMode;
+    const maxOutputBytes = params.maxOutputBytes??(params.resultContractVersion===2?MANAGED_TOOL_OUTPUT_MAX_BYTES:undefined);
+    if (maxOutputBytes !== undefined) assertManagedToolOutputSize({}, maxOutputBytes);
+    const project = (task, envelope = scheduler.getResultEnvelope(task.taskId)) => projectTaskResult(task, resultMode, envelope, maxOutputBytes, params.resultContractVersion);
+    const reserveCommittedReceipt = (identity) => {
+      if (maxOutputBytes !== undefined) assertManagedToolOutputSize({ committed: true, ...identity }, maxOutputBytes);
+    };
+    const committedProjection = async (identity, projection) => {
+      try {
+        const value = await projection();
+        return maxOutputBytes === undefined ? value : assertManagedToolOutputSize(value, maxOutputBytes);
+      }
+      catch (error) {
+        if (maxOutputBytes === undefined) throw error;
+        return assertManagedToolOutputSize({ committed: true, ...identity,
+          projectionError: error?.code === 'managed_tool_output_metadata_too_large' ? error.code : 'managed_result_projection_unavailable' }, maxOutputBytes);
+      }
+    };
     switch (method) {
-      case 'harness_capabilities': return policyProjection();
       case 'context_state': {
         // Read-only and scope-checked; compaction anchors use it regardless of
         // the context-projection policy, which gates only model-visible tools.
@@ -683,33 +944,91 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
         if (typeof rootSessionId !== 'string' || !rootSessionId || typeof directory !== 'string' || !directory) throw createRuntimeError('task_scope_mismatch', 'Context scope is required', 403);
         const tasks = scheduler.listTasks({ rootSessionId });
         for (const task of tasks) assertTaskScope(task, params);
-        return { tasks: tasks.map((task) => ({ taskId: task.taskId, rootSessionId, childSessionId: task.childSessionId,
-          status: task.status, failureReason: task.failureReason,
+        return { ...(params.objectiveId ? { verification: await inspectRequiredChecks({ rootSessionId, directory, objectiveId: params.objectiveId }) } : {}),
+          tasks: tasks.map((task) => ({ taskId: task.taskId, rootSessionId, childSessionId: task.childSessionId,
+          agent: task.agent, createdAt: task.createdAt, status: task.status, failureReason: task.failureReason, readOnly: task.readOnly, waitingReason: task.waitingReason,
+          ...(task.approvedPlanRef ? { approvedPlanRef: { sourceMessageId: task.approvedPlanRef.sourceMessageId, version: task.approvedPlanRef.version, phase: task.approvedPlanRef.phase, paths: task.approvedPlanRef.paths, contentHash: task.approvedPlanRef.contentHash } } : {}),
+          ...(task.taskPrerequisites?.length ? { taskPrerequisites: task.taskPrerequisites } : {}),
           requiredChecks: (task.requiredChecks ?? []).map(({ name }) => ({ name })),
           requiredCheckReceipts: (task.requiredCheckReceipts ?? []).map(({ name, status, callId, messageId }) => ({ name, status, callId, messageId })) })),
           envelopes: scheduler.listResultEnvelopes({ rootSessionId }).map((envelope) => ({ taskId: envelope.taskId,
             rootSessionId, envelopeId: envelope.envelopeId, action: envelope.action, autoResume: envelope.autoResume })) };
       }
+      case 'child_plan':
       case 'child_assignment': {
         // Read-only: the delegated brief a child's compaction summary keeps.
         const childSessionId = typeof params.childSessionId === 'string' ? params.childSessionId.trim() : '';
         const directory = typeof params.directory === 'string' ? params.directory.trim() : '';
         if (!childSessionId || !directory) throw createRuntimeError('task_scope_mismatch', 'childSessionId and directory are required', 403);
         const task = scheduler.getChildAssignment?.(childSessionId, directory) ?? null;
+        if(method==='child_plan')return {approvedPlanRef:task?.approvedPlanRef??null,rootSessionId:task?.rootSessionId??null};
         return { text: task ? formatManagedAssignmentContext(task, { maxBytes: params.maxBytes }) : null };
+      }
+      case 'declare_checks': {
+        const authority = context[REQUIRED_CHECK_CORRECTION];
+        if (!authority || typeof authority.recheck !== 'function' || authority.rootSessionId !== params.rootSessionId || authority.directory !== params.directory || !authority.objectiveId) throw createRuntimeError('required_check_authority_required', 'Current root authority required', 403);
+        const prepared = await prepareRequiredCheckDeclarations({ directory: params.directory, checks: params.requiredChecks, verifyRunner: verifyCheckRunner, now });
+        const scope = { rootSessionId: authority.rootSessionId, directory: authority.directory, objectiveId: authority.objectiveId };
+        reserveCommittedReceipt({ objectiveId: scope.objectiveId, action: 'declare_checks' });
+        const result = await scheduler.declareObjectiveChecks(scope, prepared.checks, prepared.history, async () => {
+          await authority.recheck();
+          for (const correction of prepared.history) await verifyRequiredCheckRunnerIdentity({ directory: params.directory, check: prepared.checks.find(check => check.name === correction.name), correction, verifyRunner: verifyCheckRunner });
+        });
+        return committedProjection({ objectiveId: scope.objectiveId, action: 'declare_checks' }, async () => {
+          const checks = await requiredCheckObserver.project(result);
+          return { objectiveId: scope.objectiveId, verification: { ...projectRequiredCheckCompletion(checks), objectiveId: scope.objectiveId, checks, observedAt: now() } };
+        });
       }
       case 'required_check': {
         if (!harnessPolicies.compactResults) return { tracked: false };
-        if (params.phase === 'before') return await requiredCheckObserver.before(params);
+        if (params.phase === 'before') { const {executionDirectory:_untrusted,objectiveId:_objective,...observation}=params;return await requiredCheckObserver.before(observation); }
         if (params.phase === 'after') return await requiredCheckObserver.after(params);
         throw new TypeError('required check phase must be before or after');
+      }
+      case 'correct_objective_check': {
+        const authority = context[REQUIRED_CHECK_CORRECTION];
+        if (!authority || typeof authority.recheck !== 'function' || authority.rootSessionId !== params.rootSessionId || authority.directory !== params.directory || !authority.objectiveId) throw createRuntimeError('required_check_correction_authority_required', 'A current native root tool invocation is required', 403);
+        const scope = { rootSessionId: authority.rootSessionId, directory: authority.directory, objectiveId: authority.objectiveId };
+        const record = scheduler.getObjectiveRequiredChecks(scope), check = record?.requiredChecks.find(item => item.name === params.checkName);
+        if (!check || check.command !== params.expectedCommand) throw createRuntimeError('required_check_correction_stale', 'Refresh the exact check name and command before correction', 409);
+        const correction = await resolveRequiredCheckRunnerCorrection({ directory: scope.directory, check,
+          previousReceipt: record.requiredCheckReceipts.find(item => item.name === check.name), verifyRunner: verifyCheckRunner, now });
+        reserveCommittedReceipt({ objectiveId: scope.objectiveId, action: 'correct_objective_check', checkName: check.name, command: correction.command });
+        const next = await scheduler.correctRequiredCheck(scope, correction, { ...authority, [REQUIRED_CHECK_CORRECTION]: true, recheck: async () => {
+          await authority.recheck(); await verifyRequiredCheckRunnerIdentity({ directory: scope.directory, check, correction, verifyRunner: verifyCheckRunner });
+        } });
+        return committedProjection({ objectiveId: scope.objectiveId, action: 'correct_objective_check', checkName: check.name, command: correction.command }, async () => {
+          const checks = await requiredCheckObserver.project(next);
+          return { objectiveId: scope.objectiveId, correction, verification: { ...projectRequiredCheckCompletion(checks), objectiveId: scope.objectiveId, checks, observedAt: now() } };
+        });
+      }
+      case 'correct_check': {
+        const authority = context[REQUIRED_CHECK_CORRECTION];
+        if (!authority || typeof authority.recheck !== 'function' || typeof authority.verifyTaskObjective !== 'function') throw createRuntimeError('required_check_correction_authority_required', 'A current native root tool invocation is required', 403);
+        const task = getScopedTask(params);
+        if (authority.rootSessionId !== task.rootSessionId || authority.directory !== task.directory) throw createRuntimeError('task_scope_mismatch', 'Check belongs to another root objective', 403);
+        await authority.verifyTaskObjective(task);
+        const check = task.requiredChecks?.find(check => check.name === params.checkName);
+        if (!check || check.command !== params.expectedCommand) throw createRuntimeError('required_check_correction_stale', 'Refresh the exact check name and command before correction', 409);
+        await authority.recheck();
+        const correction = await resolveRequiredCheckRunnerCorrection({ directory: task.directory, check,
+          previousReceipt: task.requiredCheckReceipts?.find(receipt => receipt.name === check.name), verifyRunner: verifyCheckRunner, now });
+        const committed = { taskId: task.taskId, action: 'correct_check', checkName: check.name, command: correction.command };
+        reserveCommittedReceipt(committed);
+        const next = await scheduler.correctRequiredCheck(task.taskId, correction, { ...authority, [REQUIRED_CHECK_CORRECTION]: true,
+          ...(task.dispatchObjectiveId == null ? { legacyDispatchGroupId: task.dispatchGroupId } : {}),
+          recheck: async () => {
+            await authority.recheck();
+            await authority.verifyTaskObjective(task);
+            await verifyRequiredCheckRunnerIdentity({ directory: task.directory, check, correction, verifyRunner: verifyCheckRunner });
+          } });
+        return committedProjection(committed, async () => ({ taskId: next.taskId, correction, verification: await projectVerification(next) }));
       }
       case 'watch_result_commits': return await scheduler.waitForResultCommit({
         directory: params.directory, afterCursor: params.afterCursor, signal: context.signal,
         timeoutMs: resolveWaitTimeoutMs(params) ?? 25_000,
       });
       case 'parent_tool': {
-        if (!harnessPolicies.readOverlap) return { allowed: false };
         const rootSessionId = typeof params.rootSessionId === 'string' ? params.rootSessionId.trim() : '';
         const directory = typeof params.directory === 'string' ? params.directory.trim() : '';
         if (!rootSessionId || !directory) throw createRuntimeError('task_scope_mismatch', 'rootSessionId and directory are required', 403);
@@ -717,46 +1036,42 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
         if (rootTasks.some((task) => task.directory !== directory)) throw createRuntimeError('task_scope_mismatch', 'parent tool directory does not match managed work', 403);
         const barrier = await scheduler.inspectDispatchBarrier(rootSessionId);
         const clear = barrier.state === 'clear';
-        const input = { rootSessionId, directory, tool: params.tool, args: params.args, callId: params.callId, barrierClear: clear };
+        const verificationRecovery = await hasVerificationRecovery(rootTasks, barrier);
+        if (!harnessPolicies.readOverlap && !verificationRecovery) return { allowed: false };
+        const input = { rootSessionId, directory, tool: params.tool, args: params.args, callId: params.callId, barrierClear: clear || verificationRecovery };
         if (params.phase === 'after') {
           await parentReadFreshness.observeRead(input);
           return { allowed: true, provisional: !clear };
         }
         if (params.phase !== 'before') throw new TypeError('parent tool phase must be before or after');
         await parentReadFreshness.beginRead(input);
-        if (!clear) return { allowed: MANAGED_OVERLAP_READ_TOOLS.includes(params.tool), provisional: true };
+        if (!clear && !verificationRecovery) return { allowed: MANAGED_OVERLAP_READ_TOOLS.includes(params.tool), provisional: true };
         if (rootTasks.some((task) => task.mode === 'orchestrator' && task.dispatchGroupId !== null)) {
           await parentReadFreshness.assertWrite(input);
         }
         return { allowed: true, provisional: false };
       }
       case 'submit': {
+        context.signal?.throwIfAborted();
         assertWorkAdmission();
         const timeoutAt = resolveSubmitTimeoutAt(params, now);
-        const readOnly = resolveReadOnly(params);
-        // The canonical name is what gets resolved, scheduled and fingerprinted.
-        const submittedAgent = await resolveSubmittedAgent(params);
-        const agent = typeof submittedAgent === 'string' ? submittedAgent.trim() : '';
-        const admittedExecution = await resolveAdmittedAgentExecution({ ...params, agent: submittedAgent }, readOnly);
-        const providerId = admittedExecution.providerId;
-        if (readOnly && agent && !supportsManagedReadOnlyAgent(agent)) {
-          throw createRuntimeError(
-            MANAGED_READ_ONLY_AGENT_UNSUPPORTED,
-            MANAGED_READ_ONLY_AGENT_UNSUPPORTED_MESSAGE,
-            409,
-          );
+        const prepared = preparedSubmissions.getStore();
+        if (prepared && (prepared.used || prepared.signature !== JSON.stringify(params))) {
+          throw createRuntimeError('managed_submission_preparation_changed', 'Managed submission preparation expired', 409);
         }
-        if (readOnly && providerId && !supportsManagedReadOnlyProvider(providerId)) {
-          throw createRuntimeError(
-            MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED,
-            MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED_MESSAGE,
-            409,
-          );
-        }
-        const task = await scheduler.submit({
+        if (prepared) prepared.used = true;
+        const { readOnly, submittedAgent, admittedExecution } = prepared?.selection ?? await resolveSubmission(params, context);
+        const required = await prepareRequiredCheckDeclarations({ directory: params.directory, checks: params.requiredChecks, verifyRunner: verifyCheckRunner, now });
+        validateTaskPrerequisites(params.taskPrerequisites);
+        const prerequisiteScope = { rootSessionId: params.rootSessionId, directory: params.directory, dispatchObjectiveId: context.dispatchObjectiveId, taskPrerequisites: params.taskPrerequisites };
+        if (!await verifyTaskPrerequisites(prerequisiteScope)) throw createRuntimeError('task_prerequisites_unverified', 'Producer interface evidence is missing or stale', 409);
+        context.signal?.throwIfAborted();
+        reserveCommittedReceipt({ taskId: MANAGED_TASK_ID_PREFIX.padEnd(256, 'x'), rootSessionId: params.rootSessionId, action: 'start' });
+        const submission = {
           idempotencyKey: params.idempotencyKey,
           rootSessionId: params.rootSessionId,
           dispatchGroupId: params.dispatchGroupId ?? null,
+          ...(context.dispatchObjectiveId ? { dispatchObjectiveId: context.dispatchObjectiveId } : {}),
           dispatchCallId: params.dispatchCallId ?? null,
           parentTaskId: params.parentTaskId ?? null,
           childSessionId: params.childSessionId ?? null,
@@ -769,14 +1084,29 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
           variant: admittedExecution.variant ?? null,
           label: params.label,
           prompt: params.prompt,
-          ...(params.requiredChecks ? { requiredChecks: params.requiredChecks } : {}),
+          ...(params.approvedPlanRef ? { approvedPlanRef: params.approvedPlanRef } : {}),
+          ...(params.requiredChecks ? { requiredChecks: required.checks } : {}),
+          ...(params.taskPrerequisites?.length ? { taskPrerequisites: structuredClone(params.taskPrerequisites) } : {}),
+          ...(required.history.length ? { requiredCheckCorrections: required.history } : {}),
           allowDuplicate: params.allowDuplicate === true,
           // Only Council's private dispatch class reaches the scheduler; it
           // marks independent reviewer seats for the duplicate guard.
           ...(params.deadlineClass === 'council' ? { deadlineClass: 'council' } : {}),
           timeoutAt,
-        });
-        return projectTaskResult(task, resultMode);
+        };
+        if (maxOutputBytes !== undefined) await project(createManagedTaskRecord({ ...submission,
+          taskId: MANAGED_TASK_ID_PREFIX.padEnd(256, 'x'), dispatchWaveId: MANAGED_WAVE_ID_PREFIX.padEnd(256, 'x'),
+          sequence: Number.MAX_SAFE_INTEGER, createdAt: now(), attempt: 1, priorTaskId: null, executionKind: 'start' }), null);
+        const task = await scheduler.submit(submission, { signal: context.signal, authorize: async () => {
+          context.signal?.throwIfAborted(); assertAvailable(); assertWorkAdmission();
+          await persistence.verifyOwnership?.();
+          await context.authorizeSubmission?.();
+          if (!await verifyTaskPrerequisites(prerequisiteScope)) throw createRuntimeError('task_prerequisites_unverified', 'Producer interface evidence changed', 409);
+          for (const correction of required.history) await verifyRequiredCheckRunnerIdentity({ directory: params.directory,
+            check: required.checks.find(check => check.name === correction.name), correction, verifyRunner: verifyCheckRunner });
+          context.signal?.throwIfAborted(); assertAvailable(); assertWorkAdmission();
+        } });
+        return committedProjection({ taskId: task.taskId, rootSessionId: task.rootSessionId, action: 'start', status: task.status }, () => project(task));
       }
       case 'wait': {
         const task = getScopedTask(params);
@@ -785,20 +1115,49 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
           signal: context.signal,
           ...(waitTimeoutMs === undefined ? {} : { timeoutMs: waitTimeoutMs }),
         });
-        return projectTaskResult(settled, resultMode);
+        return project(settled);
       }
       case 'wait_any': {
         if (!harnessPolicies.waitAny) throw createRuntimeError('harness_policy_disabled', 'wait_any is disabled; use wait for an individual task', 409);
         if (!Array.isArray(params.taskIds) || params.taskIds.length === 0) throw new TypeError('taskIds is required');
+        if(params.resultContractVersion===2&&(params.taskIds.some(id=>!isManagedTaskId(id))
+          ||new Set(params.taskIds).size!==params.taskIds.length))throw createRuntimeError('invalid_request','Exact distinct task identifiers are required',400);
         const scopedTasks = [...new Set(params.taskIds)].map((taskId) => getScopedTask({ ...params, taskId }));
         const waitTimeoutMs = resolveWaitTimeoutMs(params);
         const result = await scheduler.waitForAnyTask({ rootSessionId: params.rootSessionId,
           taskIds: scopedTasks.map((task) => task.taskId), afterCursor: params.afterCursor,
+          ...(params.until===undefined?{}:{until:params.until}),
           signal: context.signal, ...(waitTimeoutMs === undefined ? {} : { timeoutMs: waitTimeoutMs }) });
         const returnedIds = new Set([...result.readyTaskIds, ...result.attention.map((entry) => entry.taskId),
           ...(result.settled ? result.unacknowledgedTaskIds : [])]);
-        return { ...result, results: await Promise.all([...returnedIds].map((id) => scheduler.getTask(id)).filter(Boolean)
-          .map((task) => projectTaskResult(task, resultMode))), capabilities: policyProjection() };
+        const selected=scopedTasks.filter(task=>returnedIds.has(task.taskId)).map(task=>getScopedTask({...params,taskId:task.taskId}));
+        if(params.resultContractVersion!==2)return { ...result, results:await Promise.all(selected.map(task=>project(task))),capabilities:policyProjection() };
+        const projected=await Promise.all(selected.map(task=>projectTaskResult(task,resultMode,scheduler.getResultEnvelope(task.taskId),undefined,2)));
+        const full=compactManagedTaskToolResult({...result,results:projected,capabilities:policyProjection(),resultContractVersion:2});
+        let fitted;
+        try{fitted=assertManagedToolOutputSize(full,maxOutputBytes);}catch(error){if(error.code!=='managed_tool_output_metadata_too_large')throw error;}
+        if(fitted){
+          // Spend the remaining reply budget on first report pages, in selection order.
+          for(const [index,task] of selected.entries()){
+            const reference=fitted.results[index]?.resultReference;
+            if(!reference?.nextCursor||reference.returnedBytes!==0)continue;
+            const envelope=scheduler.getResultEnvelope(task.taskId),current=fitted;
+            const withPage=pageBytes=>({...current,results:current.results.map((value,position)=>position!==index?value:{...value,
+              resultReference:projectManagedTaskResultForMode(projectTask(task,envelope),envelope,resultMode,pageBytes,{inlineFirstPage:true}).resultReference})});
+            try{fitted=fitManagedToolOutput(withPage,maxOutputBytes,MANAGED_RESULT_V2_PAGE_MAX_BYTES);}
+            catch(error){if(error.code!=='managed_tool_output_metadata_too_large')throw error;break;}
+            const inline=fitted.results[index].resultReference;
+            if(inline.returnedBytes<Math.min(MIN_INLINE_PAGE_BYTES,inline.totalBytes)){fitted=current;break;}
+          }
+          return fitted;
+        }
+        const metadata=await Promise.all(projected.map(value=>prepareManagedResultMetadata(value)));
+        for(let count=projected.length;count>=0;count--){
+          try{return fitManagedToolOutput(pageBytes=>({...result,results:metadata.slice(0,count).map(section=>section.project(pageBytes)),
+            notReturnedTaskIds:selected.slice(count).map(task=>task.taskId),capabilities:policyProjection(),resultContractVersion:2}),maxOutputBytes,MANAGED_RESULT_V2_PAGE_MAX_BYTES);}
+          catch(error){if(error.code!=='managed_tool_output_metadata_too_large')throw error;}
+        }
+        throw createRuntimeError('managed_tool_output_metadata_too_large','The selected wait metadata exceeds response capacity; use a smaller exact selection',409);
       }
       case 'wait_result_action': {
         const task = getScopedTask(params);
@@ -809,8 +1168,8 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
           ? scheduler.getTask(resultEnvelope.followUpTaskId)
           : null;
         return {
-          ...await projectEnvelopeResult(task, resultEnvelope, resultMode),
-          followUpTask: followUpTask ? await projectTaskResult(followUpTask, resultMode) : null,
+          ...await projectEnvelopeResult(task, resultEnvelope, resultMode, maxOutputBytes),
+          followUpTask: followUpTask ? await project(followUpTask) : null,
         };
       }
       case 'barrier': {
@@ -829,8 +1188,13 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
         if (!rootSessionId) {
           throw createRuntimeError('task_scope_mismatch', 'rootSessionId is required', 403);
         }
-        const barrier = await scheduler.inspectDispatchBarrier(rootSessionId);
-        return Object.values(harnessPolicies).some(Boolean) ? { ...barrier, capabilities: policyProjection() } : barrier;
+        const promptContext = nativePromptContexts.getStore();
+        const barrier = promptContext
+          ? await promptContext.readBarrier({ rootSessionId, directory: params.directory })
+          : await scheduler.inspectDispatchBarrier(rootSessionId);
+        const verificationRecovery = await hasVerificationRecovery(scheduler.listTasks({ rootSessionId }), barrier);
+        return { ...barrier, ...(verificationRecovery ? { verificationRecovery: true } : {}),
+          ...(Object.values(harnessPolicies).some(Boolean) ? { capabilities: policyProjection() } : {}) };
       }
       case 'list_provider_recovery_continuations': {
         const sessionId = typeof params.sessionId === 'string'
@@ -883,7 +1247,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
         return projectHandoffResult(scope, result, resultMode);
       }
       case 'status': {
-        return projectTaskResult(getScopedTask(params), resultMode);
+        return project(getScopedTask(params));
       }
       case 'snapshot': {
         const rootSessionId = typeof params.rootSessionId === 'string'
@@ -896,17 +1260,42 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
       }
       case 'cancel': {
         const task = getScopedTask(params);
+        reserveCommittedReceipt({ taskId: task.taskId, rootSessionId: task.rootSessionId, action: 'cancel' });
         const cancelled = await scheduler.cancelTask(task.taskId, {
           cascade: params.cascade === true,
+          ...(context.userStoppedRecovery === true ? { terminationIntent: 'user_stopped' } : {}),
           ...(typeof params.reason === 'string' && params.reason.trim()
             ? { reason: params.reason.trim() }
             : {}),
         });
-        return Array.isArray(cancelled)
-          ? { tasks: await Promise.all(cancelled.map((entry) => projectTaskResult(entry, resultMode))) }
-          : projectTaskResult(cancelled, resultMode);
+        return committedProjection({ taskId: task.taskId, rootSessionId: task.rootSessionId, action: 'cancel',
+          ...(Array.isArray(cancelled) ? { affectedTaskCount: cancelled.length } : { status: cancelled.status }) },
+        async () => Array.isArray(cancelled) ? { tasks: await Promise.all(cancelled.map(entry => project(entry))) } : project(cancelled));
       }
       case 'read_result': {
+        if(params.reads!==undefined){
+          if(params.resultContractVersion!==2||params.taskId!==undefined||params.resultCursor!==undefined||!Array.isArray(params.reads)||!params.reads.length
+            ||params.reads.some(read=>!read||Object.keys(read).length!==2||typeof read.taskId!=='string'||typeof read.resultCursor!=='string')
+            ||new Set(params.reads.map(read=>read.taskId)).size!==params.reads.length)throw createRuntimeError('invalid_request','Exact distinct result reads are required',400);
+          const reply={resultContractVersion:2,results:[],failed:[],notProcessed:params.reads.map(read=>read.taskId)};
+          if(maxOutputBytes!==undefined)assertManagedToolOutputSize(reply,maxOutputBytes);
+          for(const read of params.reads){
+            if(context.signal?.aborted)break;
+            const rest=reply.notProcessed.slice(1),capacity=maxOutputBytes===undefined?undefined:maxOutputBytes-Buffer.byteLength(JSON.stringify(reply))-512;
+            if(capacity!==undefined&&capacity<1024)break;
+            try{
+              const value=await handleRpcInternal({method:'read_result',params:{...params,reads:undefined,...read,...capacity===undefined?{}:{maxOutputBytes:capacity}}},context);
+              const row={taskId:read.taskId,...value},next={...reply,results:[...reply.results,row],notProcessed:rest};
+              if(maxOutputBytes!==undefined)assertManagedToolOutputSize(next,maxOutputBytes);
+              reply.results.push(row);reply.notProcessed=rest;
+            }catch(error){
+              const failed={taskId:read.taskId,code:typeof error?.code==='string'&&/^[a-z0-9_]{1,128}$/.test(error.code)?error.code:'managed_result_read_failed'};
+              if(maxOutputBytes!==undefined)assertManagedToolOutputSize({...reply,failed:[...reply.failed,failed],notProcessed:rest},maxOutputBytes);
+              reply.failed.push(failed);reply.notProcessed=rest;
+            }
+          }
+          return reply;
+        }
         const task = getResultReadScopedTask(params);
         const resultEnvelope = scheduler.getResultEnvelope(task.taskId);
         if (!resultEnvelope) {
@@ -916,16 +1305,32 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
             404,
           );
         }
-        return {
+        if(params.resultContractVersion===2&&isManagedMetadataCursor(params.resultCursor)){
+          const full=await projectTaskResult(task,resultMode,resultEnvelope,undefined,2),metadata=await prepareManagedResultMetadata(full);
+          return maxOutputBytes===undefined?metadata.read(params.resultCursor):fitManagedToolOutput(pageBytes=>metadata.read(params.resultCursor,pageBytes),maxOutputBytes,MANAGED_RESULT_V2_PAGE_MAX_BYTES);
+        }
+        const projectPage = maxPageBytes => ({
           resultReference: readManagedResultReference({
             task,
             resultEnvelope,
             resultCursor: params.resultCursor,
+            maxPageBytes,
           }),
-        };
+        });
+        return maxOutputBytes === undefined ? projectPage() : fitManagedToolOutput(projectPage, maxOutputBytes,
+          params.resultContractVersion===2?MANAGED_RESULT_V2_PAGE_MAX_BYTES:MANAGED_RESULT_PAGE_MAX_BYTES);
       }
       case 'acknowledge': {
         const task = getScopedTask(params);
+        const review=context.nativeResultReview;
+        if(params.resultContractVersion===2&&(typeof review?.recheck!=='function'||review.taskId!==task.taskId
+          ||review.envelopeId!==scheduler.getResultEnvelope(task.taskId)?.envelopeId||review.action!==params.action
+          ||review.acknowledgementIdentity!==params.acknowledgementIdentity))throw createRuntimeError('managed_result_review_required','Canonical result delivery and a later authorized review Step are required',409);
+        if(params.resultContractVersion===2)await review.recheck();
+        if (maxOutputBytes !== undefined) await project(task);
+        reserveCommittedReceipt({ taskId: task.taskId, rootSessionId: task.rootSessionId, action: params.action,
+          envelopeId: scheduler.getResultEnvelope(task.taskId)?.envelopeId, followUpTaskId: MANAGED_TASK_ID_PREFIX.padEnd(256, 'x'),
+          projectionError: 'managed_tool_output_metadata_too_large' });
         if (['retry', 'resume', 'retry_in_place', 'recover_in_place'].includes(params.action)) {
           assertWorkAdmission();
         }
@@ -947,6 +1352,9 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
         const result = await scheduler.acknowledgeResult(task.taskId, {
           action: params.action,
           idempotencyKey: params.idempotencyKey,
+          ...(context.userStoppedRecovery === true ? { [USER_STOPPED_RECOVERY]: true } : {}),
+          ...(params.resultContractVersion===2?{acknowledgementIdentity:params.acknowledgementIdentity}:{}),
+          ...(params.resultContractVersion===2?{authorize:review.recheck}:{}),
           ...(agentRetryExecution?.providerId
             ? { providerId: agentRetryExecution.providerId }
             : (params.providerId ? { providerId: params.providerId } : {})),
@@ -966,12 +1374,13 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
             ? { autoResumeGeneration: params.autoResumeGeneration }
             : {}),
         });
-        return {
-          ...await projectEnvelopeResult(task, result.envelope, resultMode),
+        return committedProjection({ taskId: task.taskId, rootSessionId: task.rootSessionId, action: result.envelope.action,
+          envelopeId: result.envelope.envelopeId, followUpTaskId: result.followUpTask?.taskId ?? null }, async () => ({
+          ...await projectEnvelopeResult(task, result.envelope, resultMode, maxOutputBytes),
           followUpTask: result.followUpTask
-            ? await projectTaskResult(result.followUpTask, resultMode)
+            ? await project(result.followUpTask)
             : null,
-        };
+        }));
       }
       case 'set_auto_resume': {
         const task = getScopedTask(params);
@@ -1046,8 +1455,11 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     return {
       available: true,
       bridgeReady: Boolean(bridgeEnvironment),
+      dispatchReady: Boolean(initialized && ownershipAcquired && !shutdownPromise && !getWorkAdmissionBlock()
+        && (typeof options.getNativeDispatchReady === 'function' ? options.getNativeDispatchReady() : bridgeEnvironment)),
       recoveryWarning: persistence.getDiagnostics?.().recoveryWarning ?? null,
-      tasks: tasks.map((task) => projectTask(task, scheduler.getResultEnvelope(task.taskId))),
+      tasks: await Promise.all(tasks.map(async task => ({ ...projectTask(task, scheduler.getResultEnvelope(task.taskId)),
+        ...(task.requiredChecks?.length ? { verification: await projectVerification(task) } : {}) }))),
       resultEnvelopes: scheduler.listResultEnvelopes({ rootSessionId }),
     };
   }
@@ -1085,8 +1497,90 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
   return {
     prepareBridge,
     initialize,
+    async recoverStoppedRuntime(assertStopped) {
+      assertAvailable();
+      await ensureOwnership();
+      await scheduler.recoverStoppedRuntime(assertStopped);
+    },
+    async withRuntimeRestart(action) {
+      assertAvailable();
+      await ensureOwnership();
+      return scheduler.withRuntimeRestart(action);
+    },
     handleRpc,
+    withSubmissionPreparation,
     getSnapshot,
+    inspectRequiredChecks,
+    discardObjectiveChecks: (scope, authorize) => scheduler.discardObjectiveChecks(scope, authorize),
+    observeNativeRequiredCheck: input => input.phase === 'before' ? requiredCheckObserver.before(input) : requiredCheckObserver.after(input),
+    async getObjectiveVerification(scope) {
+      await ensureInitialized();
+      const record = scheduler.getObjectiveRequiredChecks(scope);
+      if (!record) return null;
+      const checks = await requiredCheckObserver.project(record);
+      return { ...projectRequiredCheckCompletion(checks), objectiveId: scope.objectiveId, checks, observedAt: now() };
+    },
+    async waiveRequiredChecks(params, authority) {
+      if (typeof authority?.userId !== 'string' || typeof authority.recheck !== 'function') throw createRuntimeError('user_waiver_required', 'Authenticated user waiver required', 403);
+      await ensureInitialized();
+      const rootScope = !params.taskId && params.objectiveId ? { rootSessionId: params.rootSessionId, directory: params.directory, objectiveId: params.objectiveId } : null;
+      const task = rootScope ? scheduler.getObjectiveRequiredChecks(rootScope) : scheduler.getTask(params.taskId);
+      if (!task) throw createRuntimeError('task_not_found', 'Managed task not found', 404);
+      if (!rootScope) assertTaskScope(task, params);
+      if (!Array.isArray(params.checks) || !params.checks.length || params.checks.length > 8 || typeof params.reason !== 'string'
+        || !params.reason.trim() || params.reason.length > 2048) throw createRuntimeError('invalid_check_waiver', 'A reason and exact checks are required', 400);
+      const current = await requiredCheckObserver.project(task);
+      const receipts = params.checks.map(check => {
+        const evidence = current.find(entry => entry.name === check.name);
+        if (!evidence || !evidence.coverage.contentHash || check.contentHash !== evidence.coverage.contentHash) throw createRuntimeError('check_content_changed', 'Check content changed; refresh before waiving', 409);
+        return { name: evidence.name, callId: `user-waiver:${now()}`, messageId: null, exitCode: null, observedAt: now(), status: 'waived',
+          contentHash: evidence.coverage.contentHash, waiver: { source: 'authenticated-user', userId: authority.userId, reason: params.reason.trim() } };
+      });
+      const next = await scheduler.waiveRequiredChecks(rootScope ?? task.taskId, receipts, { [USER_CHECK_WAIVER]: true, recheck: async () => {
+        await authority.recheck();
+        const fresh = await requiredCheckObserver.project(task);
+        if (receipts.some(receipt => fresh.find(entry => entry.name === receipt.name)?.coverage.contentHash !== receipt.contentHash)) throw createRuntimeError('check_content_changed', 'Check content changed; refresh before waiving', 409);
+      } });
+      if (rootScope) { const checks = await requiredCheckObserver.project(next); return { objectiveId: rootScope.objectiveId, verification: { ...projectRequiredCheckCompletion(checks), objectiveId: rootScope.objectiveId, checks, observedAt: now() } }; }
+      return { taskId: task.taskId, verification: await projectVerification(next) };
+    },
+    withNativePromptContext: async (input, action) => {
+      const scope = { rootSessionId: input.rootSessionId, directory: input.directory, authorize: input.authorize };
+      assertAvailable(); await ensureOwnership(); assertWorkAdmission();
+      return scheduler.withNativePromptContext({ ...scope, authorize: async () => {
+        await persistence.verifyOwnership?.(); assertAvailable(); assertWorkAdmission();
+        await scope.authorize();
+      } }, state => nativePromptContexts.run({ readBarrier: state.readBarrier }, () => action(state)));
+    },
+    verifyNativeTaskDispatch: input => verifyNativeTaskDispatch(input).catch(error => { throw normalizeRuntimeError(error); }),
+    readManagedTitleAssignment: async ({ childSessionId, directory }) => {
+      const check = async () => { assertAvailable(); assertWorkAdmission(); await persistence.verifyOwnership?.(); assertAvailable(); assertWorkAdmission();
+        if (!initialized || !ownershipAcquired || shutdownPromise) throw createRuntimeError('native_managed_title_unavailable', 'Managed title owner is unavailable', 403); };
+      await check();
+      const task = scheduler.getChildAssignment(childSessionId, directory);
+      if (!task || task.owner !== 'devryan' || !['starting', 'running', 'completed', 'failed'].includes(task.status)
+        || !task.dispatchCallId || !task.dispatchGroupId) throw createRuntimeError('native_managed_title_unavailable', 'Managed title assignment is unavailable', 403);
+      const parent = task.parentTaskId ? scheduler.getTask(task.parentTaskId)?.childSessionId : task.rootSessionId;
+      if (!parent) throw createRuntimeError('native_managed_title_unavailable', 'Managed title parent is unavailable', 403);
+      const tupleFor = task => ({ taskId: task.taskId, rootSessionId: task.rootSessionId, parentSessionId: parent,
+        childSessionId, directory, dispatchCallId: task.dispatchCallId, dispatchGroupId: task.dispatchGroupId,
+        attempt: task.attempt, sequence: task.sequence, agent: task.agent, providerId: task.providerId,
+        modelId: task.modelId, variant: task.variant ?? 'default', readOnly: task.readOnly });
+      const tuple = tupleFor(task);
+      await check();
+      const current = scheduler.getChildAssignment(childSessionId, directory);
+      if (!current || !['starting', 'running', 'completed', 'failed'].includes(current.status)
+        || JSON.stringify(tupleFor(current)) !== JSON.stringify(tuple)
+        || (current.parentTaskId ? scheduler.getTask(current.parentTaskId)?.childSessionId : current.rootSessionId) !== parent)
+        throw createRuntimeError('native_managed_title_unavailable', 'Managed title assignment changed', 403);
+      return Object.freeze(tuple);
+    },
+    verifyNativeTaskCatalog: input => verifyNativeTaskCatalog(input).catch(error => { throw normalizeRuntimeError(error); }),
+    cancelSessionsForRemoval: async input => {
+      assertAvailable();
+      await ensureOwnership();
+      return scheduler.cancelSessionsForRemoval(input);
+    },
     processOpenCodeEvent: (payload, directory = null) => {
       assistantActivity.observe(payload, directory);
       const observed = terminalErrors.observe(payload);
@@ -1113,8 +1607,21 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     },
     // A user Stop of a managed child: its executor must settle the task as
     // aborted instead of continuing or recovering it automatically.
-    recordOperatorAbort: (input) => operatorAborts.record(input),
-    withdrawOperatorAbort: (input) => operatorAborts.withdraw(input),
+    async recordOperatorAbort(input) {
+      const task = scheduler.getChildAssignment(input.sessionId, input.directory);
+      const request = operatorAborts.record({ ...input, ...(task ? { taskId: task.taskId } : {}), requestId: globalThis.crypto.randomUUID(), state: 'pending' });
+      if (!request) return null;
+      try { return { ...request, ...await scheduler.recordOperatorStop({ ...request, directory: input.directory }) }; }
+      catch (error) { operatorAborts.withdraw(request); throw error; }
+    },
+    async acceptOperatorAbort(input) {
+      const accepted = await scheduler.acceptOperatorStop(input);
+      return operatorAborts.accept(input) || accepted;
+    },
+    async withdrawOperatorAbort(input) {
+      const removed = await scheduler.withdrawOperatorStop(input);
+      return operatorAborts.withdraw(input) || removed;
+    },
     shutdown,
     flush: () => scheduler.flush(),
     getDiagnostics() {

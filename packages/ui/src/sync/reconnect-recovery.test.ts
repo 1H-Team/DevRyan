@@ -164,25 +164,27 @@ describe("getReconnectCandidateSessionIds", () => {
     }).sort()).not.toContain("active")
   })
 
-  test("merges idle only from authoritative server status", () => {
+  test("merges explicit and omitted idle only for captured candidates in a complete status map", () => {
     const current = {
       active: { type: "busy" },
+      omitted: { type: "busy" },
       untouched: { type: "busy" },
     } as Record<string, SessionStatus>
 
     expect(mergeAuthoritativeSessionStatuses({
       current,
-      candidateSessionIds: ["active", "untouched"],
+      candidateSessionIds: ["active", "omitted"],
       authoritative: {
         active: { type: "idle" },
       },
     })).toEqual({
       active: { type: "idle" },
+      omitted: { type: "idle" },
       untouched: { type: "busy" },
     })
   })
 
-  test("keeps the previous status when a reconnect snapshot omits it", () => {
+  test("an empty complete status map settles a stale busy candidate", () => {
     const state = createState({
       session: [createSession("active")],
       session_status: { active: { type: "busy" } as SessionStatus },
@@ -199,10 +201,10 @@ describe("getReconnectCandidateSessionIds", () => {
       candidateSessionIds: ["active"],
       authoritative: {},
       state,
-    })).toBe(state.session_status)
+    })).toEqual({ active: { type: "idle" } })
   })
 
-  test("keeps missing authoritative status busy when no terminal assistant message proves completion", () => {
+  test("omitted idle comes from the complete map, independently of assistant history", () => {
     const state = createState({
       session: [createSession("active")],
       session_status: { active: { type: "busy" } as SessionStatus },
@@ -216,7 +218,37 @@ describe("getReconnectCandidateSessionIds", () => {
       candidateSessionIds: ["active"],
       authoritative: {},
       state,
-    })).toBe(state.session_status)
+    })).toEqual({ active: { type: "idle" } })
+  })
+
+  test("a malformed entry invalidates the whole snapshot before changing any candidate", () => {
+    const current = { active: { type: "busy" }, omitted: { type: "busy" } } as Record<string, SessionStatus>
+    for (const invalid of [
+      undefined,
+      { type: "unavailable" },
+      { type: "retry", attempt: Number.NaN, message: "retry", next: 1 },
+      { type: "retry", attempt: 1, message: "retry", next: Number.POSITIVE_INFINITY },
+    ]) {
+      expect(mergeAuthoritativeSessionStatuses({
+        current,
+        candidateSessionIds: ["active", "omitted"],
+        authoritative: { active: { type: "idle" }, unrelated: invalid },
+      })).toBe(current)
+    }
+    expect(mergeAuthoritativeSessionStatuses({
+      current,
+      candidateSessionIds: ["active", "omitted"],
+      authoritative: { active: { type: "busy" } },
+    })).toEqual({ active: { type: "busy" }, omitted: { type: "idle" } })
+  })
+
+  test("unavailable and non-map snapshots retain the current status reference", () => {
+    const current = { active: { type: "busy" } } as Record<string, SessionStatus>
+    for (const authoritative of [null, undefined, [], "", new Map(), { data: {} }]) {
+      expect(mergeAuthoritativeSessionStatuses({ current, candidateSessionIds: ["active"], authoritative })).toBe(current)
+    }
+    const idle = { active: { type: "idle" } } as Record<string, SessionStatus>
+    expect(mergeAuthoritativeSessionStatuses({ current: idle, candidateSessionIds: ["active"], authoritative: {} })).toBe(idle)
   })
 
   test("preserves SDK response status when wrapping transient errors", () => {

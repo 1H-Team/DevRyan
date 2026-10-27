@@ -11,7 +11,6 @@ import { cn } from '@/lib/utils';
 import type { ProviderRecoverySelection } from '@/stores/useProviderRecoveryStore';
 import {
   ControlledModelPicker,
-  ControlledVariantPicker,
   type ControlledModelPickerProvider,
 } from './ControlledModelPicker';
 
@@ -57,12 +56,17 @@ export function ModelRecoveryCard({
   providers,
   selection,
   pending,
+  waitingForEvents = false,
+  onCancelWaiting,
   actionError,
   failureMessage,
   onSelectionChange,
   onRetry,
   retryLabel,
   retryingLabel,
+  secondaryAction,
+  originalModelCaption,
+  tone = 'warning',
   embedded = false,
   autoResume,
   onAutoResumeChange,
@@ -75,12 +79,20 @@ export function ModelRecoveryCard({
   providers: ControlledModelPickerProvider[];
   selection: ProviderRecoverySelection;
   pending: boolean;
+  waitingForEvents?: boolean;
+  onCancelWaiting?(): void;
   actionError: string | null;
   failureMessage?: string | null;
   onSelectionChange(selection: ProviderRecoverySelection): void;
   onRetry(selection: ProviderRecoverySelection): void | Promise<void>;
   retryLabel?: string;
   retryingLabel?: string;
+  /** A quieter footer action beside the primary button. */
+  secondaryAction?: { label: string; onClick(): void | Promise<void>; disabled?: boolean };
+  /** Replaces the "Failed model" line, e.g. when the user stopped the task. */
+  originalModelCaption?: string;
+  /** Neutral when nothing failed (a user stop). */
+  tone?: 'warning' | 'neutral';
   embedded?: boolean;
   /** Omit (or pass null) to render the card without the auto-resume row. */
   autoResume?: ModelRecoveryAutoResume | null;
@@ -135,7 +147,9 @@ export function ModelRecoveryCard({
           <RiErrorWarningLine
             className={cn(
               'size-3.5',
-              failureMessage ? 'text-[var(--status-error)]' : 'text-[var(--status-warning)]',
+              failureMessage
+                ? 'text-[var(--status-error)]'
+                : tone === 'neutral' ? 'text-muted-foreground' : 'text-[var(--status-warning)]',
             )}
             aria-hidden="true"
           />
@@ -160,19 +174,13 @@ export function ModelRecoveryCard({
                   disabled={pending}
                   align="end"
                 />
-                <ControlledVariantPicker
-                  providers={providers}
-                  value={selection}
-                  onChange={onSelectionChange}
-                  disabled={pending}
-                />
               </div>
             </div>
             {detail ? (
               <p className="typography-micro text-muted-foreground">{detail}</p>
             ) : null}
             <p className="typography-micro text-muted-foreground">
-              {t('chat.modelRecovery.failedModel', { model: originalModelLabel })}
+              {originalModelCaption ?? t('chat.modelRecovery.failedModel', { model: originalModelLabel })}
             </p>
           </div>
           <div
@@ -202,19 +210,35 @@ export function ModelRecoveryCard({
                 ) : null}
               </div>
             ) : null}
-            <Button
-              type="button"
-              size="sm"
-              variant="default"
-              className="h-auto max-w-full whitespace-normal py-2 text-center leading-snug normal-case"
-              disabled={pending}
-              onClick={() => void onRetry({ ...selection, variant: resolveChatThinkingVariant(providers.find((provider) => provider.id === selection.providerId), selection.modelId, selection.variant) ?? null })}
-            >
-              <RiRefreshLine className={pending ? 'size-3.5 animate-spin' : 'size-3.5'} />
-              {pending
-                ? retryingLabel ?? t('chat.modelRecovery.retrying')
-                : retryLabel ?? t('chat.modelRecovery.retry')}
-            </Button>
+            {waitingForEvents ? <p role="status" className="typography-micro">Waiting for live events to reconnect. Your recovery choice is retained.</p> : null}
+            <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+              {waitingForEvents && onCancelWaiting ? <Button type="button" size="sm" variant="ghost" onClick={onCancelWaiting}>Cancel Recovery</Button> : null}
+              {secondaryAction ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="normal-case"
+                  disabled={pending || secondaryAction.disabled}
+                  onClick={() => void secondaryAction.onClick()}
+                >
+                  {secondaryAction.label}
+                </Button>
+              ) : null}
+              <Button
+                type="button"
+                size="sm"
+                variant="default"
+                className="h-auto max-w-full whitespace-normal py-2 text-center leading-snug normal-case"
+                disabled={pending}
+                onClick={() => void onRetry({ ...selection, variant: resolveChatThinkingVariant(providers.find((provider) => provider.id === selection.providerId), selection.modelId, selection.variant) ?? null })}
+              >
+                <RiRefreshLine className={pending ? 'size-3.5 animate-spin' : 'size-3.5'} />
+                {pending
+                  ? retryingLabel ?? t('chat.modelRecovery.retrying')
+                  : retryLabel ?? t('chat.modelRecovery.retry')}
+              </Button>
+            </div>
           </div>
           {actionError ? (
             <p role="alert" className="typography-micro text-[var(--status-error)]">{actionError}</p>

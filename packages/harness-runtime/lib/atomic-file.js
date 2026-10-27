@@ -1,6 +1,8 @@
 import crypto from 'node:crypto';
+import fsSync from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { createExecutionHostOwner } from './execution-host-owner.js';
 
 const DEFAULT_MAX_READ_BYTES = 16 * 1024 * 1024;
 const DEFAULT_STALE_TMP_AGE_MS = 24 * 60 * 60 * 1000;
@@ -11,18 +13,13 @@ const DEFAULT_MALFORMED_LOCK_STALE_MS = 30_000;
 const isNotFound = (error) => error && typeof error === 'object' && error.code === 'ENOENT';
 
 const syncDirectory = async (fsApi, directory) => {
-  let handle;
-  try {
-    handle = await fsApi.open(directory, 'r');
-    await handle.sync();
-  } catch {
-    // Directory fsync is unavailable on some supported filesystems.
-  } finally {
-    await handle?.close().catch(() => undefined);
-  }
+  const handle = await fsApi.open(directory, 'r');
+  try { await handle.sync(); } finally { await handle.close(); }
 };
 
 export const cleanupStaleAtomicFiles = async (filePath, options = {}) => {
+  // Native publication owns its candidate/backup/intent lifetime on Windows.
+  if (process.platform === 'win32') return 0;
   const fsApi = options.fs ?? fs;
   const now = options.now ?? Date.now;
   const staleAfterMs = options.staleAfterMs ?? DEFAULT_STALE_TMP_AGE_MS;
@@ -53,6 +50,20 @@ export const cleanupStaleAtomicFiles = async (filePath, options = {}) => {
 };
 
 export const writeFileAtomic = async (filePath, data, options = {}) => {
+  const observed = async (phase, action) => {
+    const report = state => { try { options.onProgress?.({ phase, state }); } catch { /* Observation only. */ } };
+    report('started');
+    const result = await action();
+    report('completed');
+    return result;
+  };
+  if (process.platform === 'win32') {
+    if (typeof options.windowsOwner?.write !== 'function') throw Object.assign(new Error('private_windows_publication_authority_unavailable'), {
+      code: 'private_windows_publication_authority_unavailable',
+    });
+    const bytes = typeof data === 'string' ? Buffer.from(data, options.encoding ?? 'utf8') : Buffer.from(data);
+    return observed('native_commit', () => options.windowsOwner.write(filePath, bytes));
+  }
   const fsApi = options.fs ?? fs;
   const now = options.now ?? Date.now;
   const randomId = options.randomId ?? (() => crypto.randomUUID().replaceAll('-', ''));
@@ -62,26 +73,86 @@ export const writeFileAtomic = async (filePath, data, options = {}) => {
   const temporaryPath = `${filePath}.tmp-${process.pid}-${now()}-${randomId()}`;
   let handle;
 
-  await fsApi.mkdir(directory, { recursive: true, mode: directoryMode });
-  await cleanupStaleAtomicFiles(filePath, {
+  await observed('directory_create', () => fsApi.mkdir(directory, { recursive: true, mode: directoryMode }));
+  await observed('temporary_cleanup', () => cleanupStaleAtomicFiles(filePath, {
     fs: fsApi,
     now,
     staleAfterMs: options.staleTmpAgeMs,
-  });
+  }));
 
   try {
-    handle = await fsApi.open(temporaryPath, 'wx', mode);
-    await handle.writeFile(data, options.encoding ?? (typeof data === 'string' ? 'utf8' : undefined));
-    await handle.sync();
-    await handle.close();
+    handle = await observed('temporary_open', () => fsApi.open(temporaryPath, 'wx', mode));
+    await observed('write', () => handle.writeFile(data, options.encoding ?? (typeof data === 'string' ? 'utf8' : undefined)));
+    await observed('file_sync', () => handle.sync());
+    await observed('file_close', () => handle.close());
     handle = undefined;
-    await fsApi.rename(temporaryPath, filePath);
-    await fsApi.chmod(filePath, mode).catch(() => undefined);
-    await syncDirectory(fsApi, directory);
+    await observed('rename', () => fsApi.rename(temporaryPath, filePath));
+    await observed('permissions', () => fsApi.chmod(filePath, mode));
+    await observed('directory_sync', () => syncDirectory(fsApi, directory));
   } catch (error) {
     await handle?.close().catch(() => undefined);
     await fsApi.rm(temporaryPath, { force: true }).catch(() => undefined);
     throw error;
+  }
+};
+
+const isTransientWindowsReplaceError = (error) =>
+  process.platform === 'win32' && ['EPERM', 'EACCES', 'EBUSY'].includes(error?.code);
+
+// A symlink keeps pointing at the file that gets replaced, including a link
+// whose file does not exist yet.
+const resolveUserFileWriteTarget = (fsApi, filePath) => {
+  if (fsApi.existsSync(filePath)) return fsApi.realpathSync(filePath);
+  if (!fsApi.lstatSync(filePath, { throwIfNoEntry: false })?.isSymbolicLink()) return filePath;
+  return path.resolve(path.dirname(filePath), fsApi.readlinkSync(filePath));
+};
+
+/**
+ * Synchronous atomic replace for user-owned files that another process
+ * watches (OpenCode config, agent and command files), so a reader or a crash
+ * never sees a partial file. Unlike writeFileAtomic it is not a private-file
+ * writer: an existing file keeps its mode (a new one gets `mode`, default
+ * 0o666 minus the umask), a symlink is followed to its file, and a read-only
+ * file is refused as an in-place write would be. On Windows a rename refused
+ * because another process holds the target falls back to a direct write.
+ */
+export const writeFileAtomicSync = (filePath, data, options = {}) => {
+  const fsApi = options.fs ?? fsSync;
+  const now = options.now ?? Date.now;
+  const randomId = options.randomId ?? (() => crypto.randomUUID().replaceAll('-', ''));
+  const target = resolveUserFileWriteTarget(fsApi, filePath);
+  const directory = path.dirname(target);
+  fsApi.mkdirSync(directory, { recursive: true });
+  const exists = fsApi.existsSync(target);
+  // A rename only needs a writable directory; keep refusing a file the user
+  // made read-only.
+  if (exists) fsApi.accessSync(target, fsSync.constants.W_OK);
+  const existingMode = exists ? fsApi.statSync(target).mode & 0o7777 : null;
+  const temporaryPath = `${target}.tmp-${process.pid}-${now()}-${randomId()}`;
+  try {
+    const descriptor = fsApi.openSync(temporaryPath, 'wx', existingMode ?? options.mode ?? 0o666);
+    try {
+      fsApi.writeFileSync(descriptor, data, options.encoding ?? (typeof data === 'string' ? 'utf8' : undefined));
+      fsApi.fsyncSync(descriptor);
+    } finally {
+      fsApi.closeSync(descriptor);
+    }
+    // openSync's mode is masked by the umask; an existing file keeps its own.
+    if (existingMode !== null && process.platform !== 'win32') fsApi.chmodSync(temporaryPath, existingMode);
+    try {
+      fsApi.renameSync(temporaryPath, target);
+    } catch (error) {
+      if (!isTransientWindowsReplaceError(error)) throw error;
+      fsApi.copyFileSync(temporaryPath, target);
+      fsApi.rmSync(temporaryPath, { force: true });
+    }
+  } catch (error) {
+    try { fsApi.rmSync(temporaryPath, { force: true }); } catch { /* Keep the original failure. */ }
+    throw error;
+  }
+  if (process.platform !== 'win32') {
+    const handle = fsApi.openSync(directory, 'r');
+    try { fsApi.fsyncSync(handle); } finally { fsApi.closeSync(handle); }
   }
 };
 
@@ -127,6 +198,30 @@ const removeObservedLock = async (fsApi, lockPath, observedRaw, observedOwnerTok
   }
 };
 
+const publishLock = async (fsApi, lockPath, owner) => {
+  const temporary = `${lockPath}.tmp-${process.pid}-${crypto.randomUUID()}`;
+  const raw = `${JSON.stringify(owner)}\n`;
+  let handle;
+  try {
+    handle = await fsApi.open(temporary, 'wx', 0o600);
+    await handle.writeFile(raw, 'utf8');
+    await handle.sync();
+    await handle.close();
+    handle = undefined;
+    try { await fsApi.link(temporary, lockPath); }
+    catch (error) {
+      // Permission and I/O errors must not silently change publication semantics.
+      if (!['ENOSYS', 'ENOTSUP', 'EOPNOTSUPP'].includes(error?.code)) throw error;
+      handle = await fsApi.open(lockPath, 'wx', 0o600);
+      await handle.writeFile(raw, 'utf8');
+      await handle.sync();
+    }
+  } finally {
+    try { await handle?.close(); }
+    finally { await fsApi.rm(temporary, { force: true }); }
+  }
+};
+
 export const withCrossProcessFileLock = async (lockPath, callback, options = {}) => {
   if (typeof callback !== 'function') throw new TypeError('Lock callback is required');
   const fsApi = options.fs ?? fs;
@@ -141,19 +236,39 @@ export const withCrossProcessFileLock = async (lockPath, callback, options = {})
   const directory = path.dirname(lockPath);
   const owner = { ownerToken, pid: process.pid, createdAt: startedAt };
 
+  if (process.platform === 'win32') {
+    if (!options.windowsLauncher) throw Object.assign(new Error('private_windows_lock_authority_unavailable'), {
+      code: 'private_windows_lock_authority_unavailable',
+    });
+    while (true) {
+      options.signal?.throwIfAborted();
+      let keeper;
+      try {
+        keeper = await createExecutionHostOwner({ directory, launcher: options.windowsLauncher, lockFile: lockPath });
+      } catch (error) {
+        if (error.code !== 'LOCK_BUSY') throw error;
+        if (now() - startedAt >= timeoutMs) throw Object.assign(new Error('Timed out acquiring cross-process file lock'), {
+          code: 'LOCK_TIMEOUT',
+        });
+        await wait(Math.min(retryMs, Math.max(1, timeoutMs - (now() - startedAt))));
+        continue;
+      }
+      try {
+        options.signal?.throwIfAborted(); keeper.assert();
+        const result = await callback(keeper.signal);
+        keeper.assert(); options.signal?.throwIfAborted();
+        return result;
+      } finally { await keeper.close(); }
+    }
+  }
+
   await fsApi.mkdir(directory, { recursive: true, mode: 0o700 });
   while (true) {
     options.signal?.throwIfAborted();
-    let handle;
     try {
-      handle = await fsApi.open(lockPath, 'wx', 0o600);
-      await handle.writeFile(`${JSON.stringify(owner)}\n`, 'utf8');
-      await handle.sync();
-      await handle.close();
-      handle = undefined;
+      await publishLock(fsApi, lockPath, owner);
       break;
     } catch (error) {
-      await handle?.close().catch(() => undefined);
       if (error?.code !== 'EEXIST') throw error;
 
       let observedRaw = '';
@@ -195,6 +310,14 @@ export const withCrossProcessFileLock = async (lockPath, callback, options = {})
 };
 
 const quarantineInvalidFile = async (filePath, error, options) => {
+  if (process.platform === 'win32') {
+    if (typeof options.windowsOwner?.quarantine !== 'function' || !options.windowsRead) throw Object.assign(new Error('private_windows_quarantine_authority_unavailable'), {
+      code: 'private_windows_quarantine_authority_unavailable',
+    });
+    const destination = await options.windowsOwner.quarantine(filePath, options.windowsRead);
+    options.onQuarantine?.({ filePath, quarantinedPath: destination, error });
+    return destination;
+  }
   const fsApi = options.fs ?? fs;
   const now = options.now ?? Date.now;
   const randomId = options.randomId ?? (() => crypto.randomUUID().replaceAll('-', ''));
@@ -204,6 +327,7 @@ const quarantineInvalidFile = async (filePath, error, options) => {
   await fsApi.mkdir(quarantineDir, { recursive: true, mode: 0o700 });
   await fsApi.rename(filePath, destination);
   await syncDirectory(fsApi, quarantineDir);
+  await syncDirectory(fsApi, path.dirname(filePath));
   options.onQuarantine?.({
     filePath,
     quarantinedPath: destination,
@@ -215,6 +339,22 @@ const quarantineInvalidFile = async (filePath, error, options) => {
 export const readJsonGuarded = async (filePath, options = {}) => {
   const fsApi = options.fs ?? fs;
   const maxBytes = options.maxBytes ?? DEFAULT_MAX_READ_BYTES;
+  if (process.platform === 'win32') {
+    if (typeof options.windowsOwner?.read !== 'function') throw Object.assign(new Error('private_windows_read_authority_unavailable'), {
+      code: 'private_windows_read_authority_unavailable',
+    });
+    let value;
+    try { value = await options.windowsOwner.read(filePath); }
+    catch (error) { if (isNotFound(error)) return null; throw error; }
+    try {
+      if (value.bytes.length > maxBytes) throw new RangeError(`JSON record exceeds ${maxBytes} bytes`);
+      const parsed = JSON.parse(value.bytes.toString('utf8'));
+      return typeof options.validate === 'function' ? options.validate(parsed) : parsed;
+    } catch (error) {
+      await quarantineInvalidFile(filePath, error, { ...options, windowsRead: value });
+      return null;
+    }
+  }
   try {
     const stat = await fsApi.stat(filePath);
     if (!stat.isFile()) {

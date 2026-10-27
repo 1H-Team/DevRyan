@@ -1,4 +1,4 @@
-import { cleanupStaleAtomicFiles } from '@openchamber/harness-runtime';
+import { cleanupStaleAtomicFiles } from '@devryan/harness-runtime';
 
 import { createProjectIdFromPath } from '../projects/project-id.js';
 import { normalizeNotificationTemplates } from './notification-settings.js';
@@ -35,6 +35,27 @@ export const createSettingsRuntime = (deps) => {
   } = deps;
 
   let persistSettingsLock = Promise.resolve();
+  const pendingOperations = new Set();
+  let checkpointHeld = false;
+  let checkpointDrain;
+  const runOwned = (action) => {
+    if (checkpointHeld) return Promise.reject(Object.assign(new Error('settings_checkpoint_held'), { code: 'settings_checkpoint_held' }));
+    const operation = Promise.resolve().then(action);
+    pendingOperations.add(operation);
+    operation.then(() => pendingOperations.delete(operation), () => pendingOperations.delete(operation));
+    return operation;
+  };
+  // Fence entrypoints synchronously; admitted migrations may finish all their
+  // nested writes before the checkpoint copies the owner's files.
+  const holdForCheckpoint = () => {
+    checkpointHeld = true;
+    checkpointDrain ??= (async () => {
+      await Promise.all([...pendingOperations]);
+      await persistSettingsLock;
+      await staleSettingsSweep;
+    })();
+    return checkpointDrain;
+  };
 
   // A process killed between writing and renaming a settings temporary file
   // leaves it behind. Sweep stale ones (older than a day, so concurrent
@@ -775,7 +796,9 @@ export const createSettingsRuntime = (deps) => {
   };
 
   const persistSettings = async (changes) => {
-    persistSettingsLock = persistSettingsLock.then(async () => {
+    // Chain from a settled copy: one failed write (a full disk, say) must not
+    // leave the lock rejected and skip every later write until restart.
+    const write = persistSettingsLock.then(async () => {
       // Key names only: the full body can be large (model lists, projects), and
       // in Electron every log line is a synchronous write on the main thread.
       console.log('[persistSettings] Called with changes:', Object.keys(changes ?? {}).join(', '));
@@ -844,13 +867,15 @@ export const createSettingsRuntime = (deps) => {
       return formatSettingsResponse(next);
     });
 
-    return persistSettingsLock;
+    persistSettingsLock = write.catch(() => undefined);
+    return write;
   };
 
   return {
-    readSettingsFromDisk,
-    readSettingsFromDiskMigrated,
-    writeSettingsToDisk,
-    persistSettings,
+    readSettingsFromDisk: (...args) => runOwned(() => readSettingsFromDisk(...args)),
+    readSettingsFromDiskMigrated: (...args) => runOwned(() => readSettingsFromDiskMigrated(...args)),
+    writeSettingsToDisk: (...args) => runOwned(() => writeSettingsToDisk(...args)),
+    persistSettings: (...args) => runOwned(() => persistSettings(...args)),
+    holdForCheckpoint,
   };
 };

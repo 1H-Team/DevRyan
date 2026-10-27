@@ -1,4 +1,4 @@
-import { normalizePullRequestDraft, runFreeZenModelRotation, sharedFreeZenCooldowns } from '@openchamber/shared-runtime';
+import { normalizePullRequestDraft, runFreeZenModelRotation, sharedFreeZenCooldowns } from '@devryan/shared-runtime';
 import { generateZenText, resolveZenSessionID } from '../text/summarization.js';
 
 // The pinned Zen model took ~15 s for a small live PR, so one attempt may use the whole

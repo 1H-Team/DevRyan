@@ -1,3 +1,5 @@
+import { canonicalDevRyanEventType } from '@devryan/shared-runtime/lib/event-types.js';
+import { isNativeStatusRecord } from '../../shared-runtime/lib/native-message-status.js';
 import { applyObjectiveRejection, applyObjectiveProgress, projectObjectiveProgress } from './objective-progress.js';
 import { planBuilderTodoContinuation } from './builder-todo-continuation.js';
 import { isCollectionTransportFailure, matchesRecoveredCollection, collectionIssueCodes } from './managed-collection-continuation.js';
@@ -9,8 +11,9 @@ import { withCrossProcessFileLock } from './atomic-file.js';
 import { currentObjectiveUser, isManagedMaintenancePrompt, observesNativeContinuation } from './objective-identity.js';
 import {
   classifyPrimaryTransportError, inspectRecoveryTurn, recoveryError,
-  RECOVERY_READ_TOOLS, PROVIDER_PROGRESS_TIMEOUT_MS, validatePrimaryRecoveryRecord,
-  isProviderRecoverySupportedRuntimeVersion, isPrimaryRecoveryProvider, primaryRecoveryMode,
+  RECOVERY_READ_TOOLS, PROVIDER_PROGRESS_TIMEOUT_MS, validatePrimaryRecoveryRecord,validateNativeStreamReceiptRecord,
+  isProviderRecoverySupportedRuntimeVersion, isNativePrimaryRuntimeVersion, isPrimaryRecoveryProvider, primaryRecoveryMode,
+  isNativeTransportRecoveryRuntimeVersion, nativeTransportRecoveryMode, nativeTransportContinuation, recoveryPlanMode,
 } from './provider-recovery-policy.js';
 
 const TERMINAL = new Set(['completed', 'needs_attention', 'cancelled', 'superseded']);
@@ -18,25 +21,51 @@ const COLLECTION_EVIDENCE_ISSUE_AFTER = 5;
 const ACTIVE_RECOVERY = new Set(['stopping', 'reconciling', 'recovery_reserved', 'recovering']);
 const keyFor = (sessionID) => crypto.createHash('sha256').update(sessionID).digest('hex');
 const messageID = (now) => `msg_${(BigInt(now) * 4096n).toString(16).slice(-12).padStart(12, '0')}${crypto.randomBytes(7).toString('hex')}`;
+const nativeWitnessMatches = (witness, attempt, permitSha256) => witness?.attempt?.traceID === attempt?.traceID
+  && witness?.attempt?.spanID === attempt?.spanID && witness?.permitSha256 === permitSha256;
+const validNativeWitness = (attempt, permitSha256) => attempt && Object.keys(attempt).length === 2
+  && ['traceID','spanID'].every(key => typeof attempt[key] === 'string' && /^[a-f0-9]{1,128}$/.test(attempt[key]))
+  && typeof permitSha256 === 'string' && /^[a-f0-9]{64}$/.test(permitSha256);
 const progressSignature = (part) => ['text', 'reasoning'].includes(part.type) ? part.text
   : part.type === 'tool' ? JSON.stringify([part.state?.status, part.state?.input, part.state?.raw]) : null;
 
 export function createPrimaryRecoveryController(options) {
   const now = options.now ?? Date.now;
-  const store = options.store ?? createRecordStore({ directory: options.directory, validateRecord: validatePrimaryRecoveryRecord, maxReadBytes: 128 * 1024 });
+  const store = options.store ?? createRecordStore({ directory: options.directory, validateRecord: validatePrimaryRecoveryRecord, maxReadBytes: 128 * 1024, windowsOwner: options.windowsOwner });
+  const streamReceipts=createRecordStore({directory:path.join(path.dirname(store.directory),'provider-stream'),validateRecord:validateNativeStreamReceiptRecord,
+    maxReadBytes:16*1024,windowsOwner:options.windowsOwner});
+  const streamReceiptKey=(sessionID,objectiveID)=>crypto.createHash('sha256').update(sessionID+'\0'+objectiveID).digest('hex');
+  const archiveNativeStreamReceipts=async r=>{
+    if(!r?.nativeStream)return;
+    const objectiveID=r.objectiveID??r.anchorID,key=streamReceiptKey(r.sessionID,objectiveID);
+    const archived=await streamReceipts.readRecord(key),record={sessionID:r.sessionID,directory:r.directory,objectiveID,
+      consumed:r.nativeStream.consumed,receipts:r.nativeStreamReceipts??[]};
+    if(archived&&(archived.directory!==r.directory||archived.consumed>record.consumed
+      ||archived.receipts.some((receipt,index)=>JSON.stringify(receipt)!==JSON.stringify(record.receipts[index]))))throw recoveryError('native_stream_continuation_fenced');
+    if(!archived||JSON.stringify(archived)!==JSON.stringify(record))await streamReceipts.writeRecord(key,record);
+  };
   if ([options.mode, options.anthropicMode].some((value) => value !== undefined && !['off', 'observe', 'enforce'].includes(value))) throw new TypeError('Invalid provider recovery mode');
   const progressTimeoutMs = options.progressTimeoutMs ?? PROVIDER_PROGRESS_TIMEOUT_MS;
+  const streamProofTimeoutMs=progressTimeoutMs===false?PROVIDER_PROGRESS_TIMEOUT_MS:progressTimeoutMs;
   if (progressTimeoutMs !== false && (!Number.isSafeInteger(progressTimeoutMs) || progressTimeoutMs < 1)) {
     throw new TypeError('Invalid provider progress timeout');
   }
   const records = new Map();
   const live = new Map();
+  const streamProofExpired=r=>{
+    const proof=r?.nativeStream?.committed??r?.nativeStream?.pending;if(!proof)return false;
+    const progress=live.get(r.sessionID)?.nativeStreamProgress;
+    const at=progress&&progress.requestID===proof.preparedRequestID&&nativeWitnessMatches({attempt:progress.attempt,permitSha256:proof.permitSha256},proof.successorAttempt,proof.permitSha256)
+      ?progress.at:proof.preparedAt??proof.reservedAt;
+    return !Number.isFinite(at)||now()-at>=streamProofTimeoutMs;
+  };
   const pending = new Map();
   const reschedule = new Map();
   const generations = new Map();
   // Consecutive unreadable-evidence collection attempts per session and task.
   const evidenceFailures = new Map();
   let handshake = null;
+  let capabilityLogged = null;
   let draining = false;
   let timer;
   let ownsRuntime = false;
@@ -53,6 +82,16 @@ export function createPrimaryRecoveryController(options) {
   const supported = (record) => providerSupported(record) && storageHealthy && ownsRuntime && isProviderRecoverySupportedRuntimeVersion(handshake?.version) && options.isManaged()
     && (!record || (record.requestedAt !== null && record.instanceID === handshake.instanceID));
   const active = (record) => !draining && modeFor(record) === 'enforce' && supported() && providerSupported(record);
+  // Host-owned native transport continuation. It changes no plugin
+  // enforcement, watchdog or Stop behaviour: it only lets the single attempt in
+  // reconcileOne follow a finalized failure of a Step bound by this runtime.
+  const nativeTransportCapable = (record) => Boolean(record) && record.executionGeneration === 2 && !draining
+    && storageHealthy && ownsRuntime && options.isManaged() && isNativeTransportRecoveryRuntimeVersion(handshake?.version)
+    && record.requestedAt !== null && record.instanceID === handshake.instanceID && !record.nativeFallback
+    && providerSupported(record) && nativeTransportRecoveryMode(record.providerID, options) === 'enforce';
+  // While true, the renderer's manual card defers to the host for this turn.
+  const nativeTransportPending = (record) => nativeTransportCapable(record) && !record.attemptCount
+    && !record.recoverySuppressed && ['observing', 'reconciling'].includes(record.state) && record.reason !== 'failure_not_eligible';
   const diagnostic = (event, record, detail = {}) => options.recordIncident?.({
     event, sessionID: record?.sessionID, messageID: record?.anchorID,
     assistantMessageID: record?.failedID ?? record?.stepID ?? null, recoveryMessageID: record?.recoveryID ?? null,
@@ -64,6 +103,7 @@ export function createPrimaryRecoveryController(options) {
   const project = (record) => ({
     schemaVersion: 1, mode: modeFor(record), supported: supported(record),
     enforced: active(record) && supported(record), progressTimeoutMs,
+    automaticRecoveryPending: nativeTransportPending(record),
     record: record ? {
       sessionID: record.sessionID, anchorID: record.anchorID, failedID: record.failedID,
       recoveryID: record.recoveryID, state: record.state, revision: record.revision,
@@ -77,16 +117,17 @@ export function createPrimaryRecoveryController(options) {
     } : null,
   });
   const publish = (record) => options.publishEvent?.({
-    type: 'openchamber:primary-recovery', properties: { sessionID: record.sessionID, recovery: project(record) },
+    type: 'devryan:primary-recovery', properties: { sessionID: record.sessionID, recovery: project(record) },
   }, { directory: record.directory });
   const lock = (id, fn) => (options.withLock
     ? options.withLock(id, fn)
-    : withCrossProcessFileLock(path.join(store.directory, `${keyFor(id)}.lock`), fn));
-  const mutate = (id, fn) => lock(id, async () => {
+    : withCrossProcessFileLock(path.join(store.directory, `${keyFor(id)}.lock`), fn, { windowsLauncher: options.windowsLauncher }));
+  const mutate = (id, fn, authorizeWrite) => lock(id, async () => {
     const existing = await store.readRecord(keyFor(id));
     const next = await fn(existing);
     if (!next || next === existing) return existing;
     const value = { ...next, revision: (existing?.revision ?? 0) + 1, updatedAt: now() };
+    await authorizeWrite?.();
     try { await store.writeRecord(keyFor(id), value); }
     catch (error) { storageHealthy = false; throw error; }
     records.set(id, value);
@@ -114,6 +155,7 @@ export function createPrimaryRecoveryController(options) {
       const removed = await lock(record.sessionID, async () => {
         const current = await store.readRecord(key);
         if (!current || current.revision !== record.revision || pending.has(record.sessionID)) return false;
+        await archiveNativeStreamReceipts(current);
         await store.deleteRecord(key);
         records.delete(record.sessionID); live.delete(record.sessionID); generations.delete(record.sessionID);
         return true;
@@ -127,7 +169,7 @@ export function createPrimaryRecoveryController(options) {
     && (!expected || (r.anchorID === expected.anchorID && r.cancellationGeneration === expected.cancellationGeneration))
     ? { ...r, state: 'needs_attention', reason } : r);
 
-  async function admit(input) {
+  async function admit(input, authorizeWrite) {
     await ready;
     const body = input.body ?? {};
     if (!input.primary || !options.isManaged()) return;
@@ -143,29 +185,42 @@ export function createPrimaryRecoveryController(options) {
     if (![body.messageID, body.model.providerID, body.model.modelID, body.agent].every((value) => typeof value === 'string' && value.length > 0 && value.length <= 256)
       || !/^msg_[a-zA-Z0-9]+$/.test(body.messageID)
       || (body.variant !== undefined && (typeof body.variant !== 'string' || body.variant.length > 256))
+      || (input.executionGeneration !== undefined && (input.executionGeneration !== 2
+        || typeof body.variant !== 'string' || body.variant.length === 0))
       || (body.tools !== undefined && (!body.tools || typeof body.tools !== 'object' || Array.isArray(body.tools)
         || Object.values(body.tools).some((value) => typeof value !== 'boolean')))) throw recoveryError('invalid_recovery_admission', 400);
     if (!records.has(input.sessionID) && !(await prune())) throw recoveryError('recovery_storage_full', 507);
     if (records.get(input.sessionID)?.anchorID === body.messageID) throw recoveryError('prompt_already_admitted');
-    return mutate(input.sessionID, (r) => {
+    return mutate(input.sessionID, async (r) => {
       if (r?.anchorID === body.messageID || r?.guardedIDs.includes(body.messageID)) throw recoveryError('prompt_already_admitted');
       if (r && ['recovery_reserved', 'recovering', 'stopping'].includes(r.state)) throw recoveryError('recovery_in_progress');
       if ((r?.guardedIDs.length ?? 0) >= 128 || Buffer.byteLength(JSON.stringify(body.tools ?? {})) > 16_384) throw recoveryError('recovery_storage_full', 507);
-      invalidate(input.sessionID);
-      live.delete(input.sessionID);
+      await authorizeWrite?.();
       // An explicit continuation is DevRyan-authored text: the objective it
       // continues stays the one compaction re-anchors.
       const objectiveID = typeof input.objectiveID === 'string' && /^msg_[a-zA-Z0-9]+$/.test(input.objectiveID)
         && input.objectiveID !== body.messageID ? input.objectiveID : undefined;
+      const sameObjective=r&&(r.objectiveID??r.anchorID)===(objectiveID??body.messageID);
+      if(sameObjective&&(r.nativeStream?.pending||r.nativeStream?.committed))throw recoveryError('native_stream_continuation_fenced');
+      if(!sameObjective)await archiveNativeStreamReceipts(r);
+      const archived=sameObjective?null:await streamReceipts.readRecord(streamReceiptKey(input.sessionID,objectiveID??body.messageID));
+      if(archived&&archived.directory!==input.directory)throw recoveryError('native_stream_continuation_fenced');
+      const retainedStream=sameObjective?r?.nativeStream:archived;
+      const retainedReceipts=sameObjective?r?.nativeStreamReceipts:archived?.receipts;
+      invalidate(input.sessionID);
+      live.delete(input.sessionID);
       return {
         version: 1, sessionID: input.sessionID, directory: input.directory, anchorID: body.messageID, ...(objectiveID ? { objectiveID } : {}),
+        ...(retainedStream?{nativeStream:{consumed:retainedStream.consumed}}:{}),
+        ...(retainedReceipts?.length?{nativeStreamReceipts:retainedReceipts}:{}),
         providerID: body.model.providerID, modelID: body.model.modelID, agent: body.agent,
         variant: body.variant ?? null, tools: body.tools ?? {}, owner: input.owner ?? null,
+        ...(input.executionGeneration === 2 ? { executionGeneration: 2 } : {}),
         state: 'observing', reason: null, attemptCount: 0, failedID: null, recoveryID: null,
         stepID: null, requestedAt: null, instanceID: null,
-        guardedIDs: r?.guardedIDs ?? [], createdAt: now(), cancellationGeneration: (r?.cancellationGeneration ?? 0) + 1,
+        guardedIDs: r?.guardedIDs ?? [], ...(r?.recoveredInputDispositions?{recoveredInputDispositions:r.recoveredInputDispositions.filter(item=>item.phase==='cancelled'&&r.guardedIDs.includes(item.inputID))}:{}), createdAt: now(), cancellationGeneration: (r?.cancellationGeneration ?? 0) + 1,
       };
-    });
+    }, authorizeWrite);
   }
 
   async function control(id, action, expectedRevision) {
@@ -175,6 +230,7 @@ export function createPrimaryRecoveryController(options) {
       if (!record) return null;
       if (expectedRevision !== undefined && record.revision !== expectedRevision) throw recoveryError('recovery_revision_conflict');
       return { ...record, state: action === 'intent' ? 'observing' : action === 'supersede' ? 'superseded' : 'cancelled', reason: action,
+        ...(record.nativeStream&&action==='stop'?{nativeStream:{consumed:record.nativeStream.consumed}}:{}),
         recoverySuppressed: action === 'intent' || record.recoverySuppressed === true,
         cancellationGeneration: (record.cancellationGeneration ?? 0) + 1 };
     });
@@ -218,15 +274,269 @@ export function createPrimaryRecoveryController(options) {
       })]);
     } finally { clearTimeout(timer); }
   };
+  const verifyOwnedNativeContinuation = async (record, observation, targetUserID) => {
+    // The trusted host proves the actual ledger/termination chain. Metadata
+    // alone never supplies that authority, and partial history cannot do so.
+    inspectRecoveryTurn(record, observation);
+    if (observation.messages.filter(message => message.info?.role === 'user' && !isNativeStatusRecord(message)).at(-1)?.info.id !== targetUserID) return null;
+    const stream=record.nativeStream?.committed;
+    if(stream?.userMessageID===targetUserID&&stream.successorAttempt&&stream.sourceUserMessageID===currentObjectiveUser(record)
+      &&stream.cancellationGeneration===record.cancellationGeneration&&stream.previousStepID===record.stepID)return {kind:'native-stream'};
+    const source = currentObjectiveUser(record) === targetUserID && record.ownedNativeContinuation?.userMessageID === targetUserID
+      ? { ...record, activeUserID: record.ownedNativeContinuation.sourceUserMessageID } : record;
+    if (observesNativeContinuation(source, observation, targetUserID)) return { kind: 'native-compaction' };
+    if (typeof options.verifyOwnedNativeContinuation !== 'function') return null;
+    let timer;
+    try {
+      const proof = await Promise.race([
+        options.verifyOwnedNativeContinuation(structuredClone(source), structuredClone(observation), targetUserID),
+        new Promise((_, reject) => { timer = setTimeout(() => reject(recoveryError('native_continuation_verification_unavailable')), 5000); }),
+      ]);
+      return proof?.kind === 'native-shell' ? { kind: 'native-shell' } : null;
+    } catch { throw recoveryError('native_continuation_verification_unavailable'); }
+    finally { clearTimeout(timer); }
+  };
+
+  // This direct host method is deliberately absent from the plugin action
+  // protocol. It runs at the real next native Step.Started, never on receipt
+  // arrival while the previous assistant still owns its execution deadline.
+  const adoptOwnedNativeContinuation = async (input) => {
+    await ready;
+    if (!storageHealthy || !ownsRuntime || !options.isManaged()) throw recoveryError('recovery_owner_unavailable', 503);
+    if (!/^msg_[a-zA-Z0-9]+$/.test(input?.userMessageID ?? '') || !/^msg_[a-zA-Z0-9]+$/.test(input?.assistantMessageID ?? '')
+      || !handshake || handshake.instanceID !== input.instanceID) throw recoveryError('native_continuation_fenced');
+    const generation = generations.get(input.sessionID) ?? 0;
+    const current = () => !draining && handshake?.instanceID === input.instanceID && (generations.get(input.sessionID) ?? 0) === generation;
+    let expired=false,expiredRecord;
+    const result = await mutate(input.sessionID, async (next) => {
+      const execution=next?.recoveryID&&next.recoveryExecution?next.recoveryExecution:next;
+      if (!next || !current() || next.nativeFallback?.pending || !['observing', 'completed', 'recovering'].includes(next.state)
+        || execution.providerID !== input.execution?.providerID || execution.modelID !== input.execution?.modelID
+        || execution.agent !== input.execution?.agent || execution.variant !== (input.execution?.variant ?? null)) throw recoveryError('native_continuation_fenced');
+      if(streamProofExpired(next)){
+        if(!await authorizeBounded(next)||!current())throw recoveryError('native_stream_continuation_fenced');
+        expired=true;expiredRecord=next;return {...next,state:'needs_attention',reason:'provider_stream_interrupted'};
+      }
+      const observation = await observeBounded(next,undefined,false,Boolean(next.nativeStream?.committed));
+      const proof = await verifyOwnedNativeContinuation(next, observation, input.userMessageID);
+      const assistant = observation.messages.find(message => message.info?.id === input.assistantMessageID);
+      if (!proof || (next.state === 'completed' && proof.kind !== 'native-shell')
+        || !assistant || assistant.info.role !== 'assistant' || assistant.info.sessionID !== next.sessionID
+        || assistant.info.parentID !== input.userMessageID || assistant.turnOwnership?.source !== 'native-sequence'
+        || assistant.turnOwnership.userMessageID !== input.userMessageID || assistant.info.agent !== execution.agent
+        || assistant.info.providerID !== execution.providerID || assistant.info.modelID !== execution.modelID
+        || (assistant.info.variant ?? null) !== execution.variant || !await authorizeBounded(next) || !current()) throw recoveryError('native_continuation_fenced');
+      if (currentObjectiveUser(next) === input.userMessageID) {
+        const receipt = next.ownedNativeContinuation;
+        if (receipt?.kind !== proof.kind || receipt.userMessageID !== input.userMessageID
+          || receipt.assistantMessageID !== input.assistantMessageID) throw recoveryError('native_continuation_fenced');
+        return next;
+      }
+      if (assistant.info.time?.completed || next.guardedIDs.length >= 128) throw recoveryError('native_continuation_fenced');
+      if (proof.kind === 'native-shell'||proof.kind==='native-stream') {
+        const previous = observation.messages.find(message => message.info?.id === next.stepID);
+        if (!previous || previous.info.role !== 'assistant' || previous.info.parentID !== currentObjectiveUser(next)
+          || !previous.info.time?.completed || proof.kind==='native-stream'&&!previous.info.error
+          || observation.messages.indexOf(previous) >= observation.messages.indexOf(assistant)) throw recoveryError('native_continuation_fenced');
+      }
+      if(proof.kind==='native-stream'){
+        const stream=next.nativeStream.committed;
+        const inspected=inspectRecoveryTurn({...next,activeUserID:input.userMessageID},observation,{allowSettledToolFailures:true});
+        if(inspected.superseded||inspected.unresolved||observation.blocked||observation.executionOutcomesUnavailable
+          ||!nativeWitnessMatches({attempt:stream.successorAttempt,permitSha256:stream.permitSha256},input.nativeAttempt,input.nativePermitSha256))throw recoveryError('native_stream_continuation_fenced');
+      }
+      invalidate(next.sessionID);
+      live.delete(next.sessionID);
+      return { ...next, activeUserID: input.userMessageID, stepID: null, requestedAt: null,
+        ...(proof.kind==='native-stream'?{nativeStream:{...next.nativeStream,committed:undefined},
+          nativeStreamReceipts:[...next.nativeStreamReceipts??[],{...next.nativeStream.committed,
+            assistantMessageID:input.assistantMessageID,ordinal:next.nativeStream.consumed}]}:{}),
+        state: next.recoveryID ? 'recovering' : 'observing',
+        ownedNativeContinuation: { kind: proof.kind, sourceUserMessageID: currentObjectiveUser(next), userMessageID: input.userMessageID, assistantMessageID: input.assistantMessageID },
+        guardedIDs: next.recoveryID || next.guardedIDs.length ? [...new Set([...next.guardedIDs, input.userMessageID])] : next.guardedIDs };
+    },async()=>{if(expired&&(!current()||!await authorizeBounded(expiredRecord)||!current()))throw recoveryError('native_stream_continuation_fenced');});
+    if(expired)throw recoveryError('provider_stream_interrupted');
+    diagnostic('objective_owned_native_continued', result, { activeUserMessageID: result.activeUserID });
+    return result;
+  };
+
+  // Only the constructor-owned Prepared.retry/Bus path calls these transitions.
+  // Reservations survive uncertain publication; neither history text nor diagnostics release one.
+  const nativeStreamContinuation=async(input,authorize)=>{
+    await ready;
+    const generation=generations.get(input.sessionID)??0;
+    const current=()=>!draining&&ownsRuntime&&storageHealthy&&options.isManaged()&&['2.0.26','2.0.30','2.0.32','2.1.0','2.1.2','2.1.3','2.1.4'].includes(handshake?.version)
+      &&handshake.instanceID===input.instanceID&&(generations.get(input.sessionID)??0)===generation;
+    const fence=()=>recoveryError('native_stream_continuation_fenced');
+    let allowed=true;
+    const result=await mutate(input.sessionID,async r=>{
+      if(!current())throw fence();
+      // Managed descendants have a separate objective/task owner and never acquire primary replay authority.
+      if(!r){if(input.action==='prepare'||input.action==='send')return r;allowed=false;return r;}
+      const execution=r.recoveryID&&r.recoveryExecution?r.recoveryExecution:r;
+      if(r.executionGeneration!==2||r.directory!==input.directory||TERMINAL.has(r.state)||r.nativeFallback?.pending
+        ||['providerID','modelID','agent','variant'].some(key=>execution[key]!==input.execution[key]))throw fence();
+      await authorize();if(!current()||!await authorizeBounded(r))throw fence();
+      const stream=r.nativeStream??{consumed:0},reservation=stream.pending;
+      if(streamProofExpired(r)){allowed=false;return {...r,state:'needs_attention',reason:'provider_stream_interrupted'};}
+      const exact=p=>p&&p.instanceID===input.instanceID&&p.configurationDigest===input.configurationDigest
+        &&p.permitSha256===input.permitSha256&&p.cancellationGeneration===r.cancellationGeneration
+        &&p.anchorID===r.anchorID&&p.objectiveID===(r.objectiveID??r.anchorID)
+        &&p.sourceUserMessageID===currentObjectiveUser(r)&&p.previousStepID===r.stepID
+        &&p.toolPolicySha256===crypto.createHash('sha256').update(JSON.stringify(r.tools)).digest('hex');
+      const inspect=async target=>{
+        const observation=await observeBounded(r,undefined,false,true);
+        const inspected=inspectRecoveryTurn(target?{...r,activeUserID:target}:r,observation,{allowSettledToolFailures:true});
+        if(inspected.superseded||inspected.unresolved||observation.blocked||observation.executionOutcomesUnavailable
+          ||observation.managedBarrierState!=='clear')throw fence();
+        await authorize();if(!current())throw fence();
+        return {observation,inspected};
+      };
+      if(input.action==='prepare'){
+        if(stream.committed)throw fence();
+        if(!reservation)return r;
+        if(!exact(reservation)||!reservation.eventID||!reservation.userMessageID)throw fence();
+        const {inspected}=await inspect(reservation.userMessageID);
+        if(inspected.last)throw fence();
+        return {...r,nativeStream:{consumed:stream.consumed+1,committed:{...reservation,preparedRequestID:input.requestID,preparedAt:now()},pending:undefined}};
+      }
+      if(input.action==='send'){
+        if(reservation)throw fence();
+        if(!stream.committed)return r;
+        if(!exact(stream.committed)||stream.committed.preparedRequestID!==input.requestID)throw fence();
+        await inspect(stream.committed.userMessageID);
+        return {...r,nativeStream:{...stream,committed:{...stream.committed,successorAttempt:structuredClone(input.attempt)}}};
+      }
+      if(input.action==='progress'){
+        if(reservation||!exact(stream.committed)||stream.committed.preparedRequestID!==input.requestID
+          ||!nativeWitnessMatches({attempt:stream.committed.successorAttempt,permitSha256:stream.committed.permitSha256},input.attempt,input.permitSha256)
+          ||!Number.isSafeInteger(input.observedUnits)||input.observedUnits<=0)throw fence();
+        const activity=remember(r),previous=activity.nativeStreamProgress;
+        if(previous?.requestID===input.requestID&&nativeWitnessMatches({attempt:previous.attempt,permitSha256:input.permitSha256},input.attempt,input.permitSha256)
+          &&input.observedUnits<=previous.units)throw fence();
+        activity.nativeStreamProgress={requestID:input.requestID,attempt:structuredClone(input.attempt),units:input.observedUnits,at:now()};
+        return r;
+      }
+      if(input.action==='reserve'){
+        if(reservation||stream.committed||!validNativeWitness(input.attempt,input.permitSha256)
+          ||!nativeWitnessMatches(r.nativeStepWitness,input.attempt,input.permitSha256)||r.stepID!==input.assistantMessageID)throw fence();
+        await inspect();
+        if(stream.consumed>=2){allowed=false;return {...r,state:'needs_attention',reason:'provider_stream_interrupted'};}
+        if(r.recoverySuppressed){allowed=false;return r;}
+        return {...r,nativeStream:{...stream,pending:{instanceID:input.instanceID,configurationDigest:input.configurationDigest,
+          permitSha256:input.permitSha256,cancellationGeneration:r.cancellationGeneration,anchorID:r.anchorID,objectiveID:r.objectiveID??r.anchorID,
+          sourceUserMessageID:currentObjectiveUser(r),previousStepID:r.stepID,attempt:structuredClone(input.attempt),requestID:input.requestID,
+          outputEventID:input.outputEventID,fingerprint:input.fingerprint,reservedAt:now(),
+          toolPolicySha256:crypto.createHash('sha256').update(JSON.stringify(r.tools)).digest('hex')}}};
+      }
+      if(input.action==='bind'){
+        if(!exact(reservation)||reservation.requestID!==input.requestID||input.userMessageID!==input.eventID?.replace(/^evt_/,'msg_'))throw fence();
+        const {observation}=await inspect(input.userMessageID);
+        const previous=observation.messages.find(message=>message.info?.id===reservation.previousStepID);
+        const synthetic=observation.messages.find(message=>message.info?.id===input.userMessageID);
+        if(!previous?.info.time?.completed||!previous.info.error||previous.info.parentID!==reservation.sourceUserMessageID
+          ||!synthetic||synthetic.info.role!=='user'||!synthetic.parts.length
+          ||synthetic.parts.some(part=>part.type!=='text'||part.synthetic!==true)
+          ||crypto.createHash('sha256').update(synthetic.parts.map(part=>part.text).join('')).digest('hex')!==input.fingerprint)throw fence();
+        if(reservation.eventID&&(reservation.eventID!==input.eventID||reservation.eventSeq!==input.eventSeq
+          ||reservation.userMessageID!==input.userMessageID||reservation.syntheticFingerprint!==input.fingerprint))throw fence();
+        return {...r,nativeStream:{...stream,pending:{...reservation,eventID:input.eventID,eventSeq:input.eventSeq,
+          userMessageID:input.userMessageID,syntheticFingerprint:input.fingerprint}}};
+      }
+      throw fence();
+    },async()=>{await authorize();if(!current())throw fence();});
+    if(result&&input.action!=='progress')diagnostic('native_stream_continuation',result,{action:input.action});
+    return allowed;
+  };
+
+  // Private native hook transition, never a plugin/RPC action. The failed
+  // provider step must settle before the ordinary one-attempt owner dispatches.
+  const nativeFallbackEligible = r => r?.executionGeneration === 2 && ownsRuntime && storageHealthy && !draining
+    && options.isManaged() && isNativePrimaryRuntimeVersion(handshake?.version) && r.instanceID === handshake.instanceID;
+  const nativeChoiceBound = r => nativeFallbackEligible(r) && !r.nativeFallback?.pending
+    && typeof r.nativeFallback?.stepID === 'string' && r.nativeFallback.stepID === r.stepID
+    && r.nativeFallback.userMessageID === currentObjectiveUser(r);
+  async function reserveNativeFallback(input, owner) {
+    await ready;
+    const generation = generations.get(input.sessionID) ?? 0;
+    const current = () => !draining && generation === (generations.get(input.sessionID) ?? 0);
+    const result = await mutate(input.sessionID, async r => {
+      const lazy = input.assistantMessageID === null;
+      const exact = () => r && current() && ownsRuntime && storageHealthy && options.isManaged()
+        && r.executionGeneration === 2 && isNativePrimaryRuntimeVersion(handshake?.version) && input.instanceID === handshake.instanceID
+        && (lazy || nativeFallbackEligible(r))
+        && r.state === 'observing' && !r.recoverySuppressed && !r.attemptCount && !r.recoveryID
+        && (lazy ? r.stepID === input.previousStepID && validNativeWitness(input.attempt,input.permitSha256)
+          : r.stepID === input.assistantMessageID && r.requestedAt !== null)
+        && currentObjectiveUser(r) === input.userMessageID
+        && ['providerID','modelID','agent','variant'].every(key => input.currentExecution?.[key] === r[key]);
+      if (!exact() || typeof options.isNativeFallbackError !== 'function') throw recoveryError('native_fallback_fenced');
+      await owner.authorize();
+      const observation = await observeBounded(r), inspected = inspectRecoveryTurn(r, observation);
+      const canonicalSource = turn => !turn.superseded
+        && (lazy ? (r.stepID === null ? !turn.last : turn.last?.info.id === r.stepID
+          && Number.isFinite(turn.last?.info.time?.completed) && turn.last.info.time.completed > 0
+          && turn.last.turnOwnership?.source === 'native-sequence' && turn.last.turnOwnership.userMessageID === input.userMessageID
+          && ['providerID','modelID','agent','variant'].every(key => turn.last.info[key] === r[key])) : turn.last?.info.id === r.stepID);
+      const canonical = (state, turn) => canonicalSource(turn) && !blocked(r,state);
+      const refusePendingResult = async (state, turn) => {
+        if (!exact() || !canonicalSource(turn) || state.blockedByRequests !== false
+          || state.managedBarrierState !== 'awaiting_acknowledgement'
+          || !lazy && r.nativeStepWitness && !nativeWitnessMatches(r.nativeStepWitness,input.attempt,input.permitSha256)) return;
+        await owner.authorize();
+        if (!exact() || !await authorizeBounded(r) || !current()) throw recoveryError('native_fallback_fenced');
+        throw recoveryError('native_fallback_result_pending');
+      };
+      await refusePendingResult(observation, inspected);
+      if (!exact() || !canonical(observation,inspected)
+        || (!lazy && r.nativeStepWitness && !nativeWitnessMatches(r.nativeStepWitness,input.attempt,input.permitSha256))) throw recoveryError('native_fallback_fenced');
+      if (r.nativeFallback?.pending) {
+        if (!lazy || r.nativeFallback.pending.instanceID !== input.instanceID
+          || !nativeWitnessMatches(r.nativeFallback.pending,input.attempt,input.permitSha256)) throw recoveryError('native_fallback_fenced');
+        return r;
+      }
+      if (!lazy && r.nativeFallback?.stepID === r.stepID) return r;
+      const choice = await owner.choose({tried:r.nativeFallback?.tried ?? [],exhaustion:r.nativeFallback?.exhaustion ?? 0});
+      await owner.authorize();
+      const latest = await observeBounded(r);
+      const latestTurn = inspectRecoveryTurn(r,latest);
+      await refusePendingResult(latest, latestTurn);
+      if (!exact() || !canonical(latest,latestTurn) || !await authorizeBounded(r) || !current()) throw recoveryError('native_fallback_fenced');
+      const execution = choice.execution;
+      if (execution && (!['providerID','modelID','agent','variant'].every(key => typeof execution[key] === 'string' && execution[key].length > 0 && execution[key].length <= 256)
+        || execution.agent !== r.agent || execution.providerID === r.providerID && execution.modelID === r.modelID)) throw recoveryError('native_fallback_selection_invalid');
+      if (!Array.isArray(choice.tried) || choice.tried.length > 128 || choice.tried.some(value => typeof value !== 'string' || value.length > 512)
+        || ![0,1,2].includes(choice.exhaustion)) throw recoveryError('native_fallback_selection_invalid');
+      return {...r,nativeFallback:{stepID:lazy ? null : r.stepID,userMessageID:input.userMessageID,tried:choice.tried,exhaustion:choice.exhaustion,
+        ...(lazy ? {pending:{instanceID:input.instanceID,cancellationGeneration:r.cancellationGeneration,previousStepID:r.stepID,
+          attempt:structuredClone(input.attempt),permitSha256:input.permitSha256,currentExecution:structuredClone(input.currentExecution)}} : {}),
+        ...(execution ? {execution:structuredClone(execution)} : {})},
+        ...(!execution && !lazy ? {state:'needs_attention',reason:choice.exhaustion ? 'native_fallback_exhausted' : 'native_fallback_unavailable'} : {})};
+    }, async()=>{await owner.authorize();if(!current() || handshake?.instanceID!==input.instanceID || !isNativePrimaryRuntimeVersion(handshake.version)
+      || !ownsRuntime || !storageHealthy || !options.isManaged())throw recoveryError('native_fallback_fenced');});
+    return {reserved:Boolean(result.nativeFallback?.execution),record:result};
+  }
 
   async function reconcileOne(id, watchdog = false) {
     const before = records.get(id);
     if (!before || draining || TERMINAL.has(before.state)) return;
+    if (before.nativeFallback?.pending) {
+      if (handshake && before.nativeFallback.pending.instanceID !== handshake.instanceID) await attention(id,'native_fallback_dispatch_uncertain',before);
+      return;
+    }
     // chat.message handshakes before OpenCode persists the admitted user
     // message. A delayed idle event must not mistake that window for lost work.
     if (before.state === 'observing' && !before.requestedAt && !before.failureObserved && !before.recoveryID) return;
     const generation = generations.get(id) ?? 0;
     const current = () => !draining && (generations.get(id) ?? 0) === generation;
+    if(before.nativeStream?.pending||before.nativeStream?.committed){
+      const reservation=before.nativeStream.pending??before.nativeStream.committed;
+      if((reservation.instanceID!==handshake?.instanceID||streamProofExpired(before))&&current()){
+        await attention(id,'provider_stream_interrupted',before);
+        await options.abortSession(before).catch(()=>diagnostic('provider_recovery_abort_failed',before));
+      }
+      return;
+    }
     const liveness = remember(before);
     // A queued watchdog signal may belong to a superseded invocation. Recheck
     // the current step's deadline before any observation or stop decision.
@@ -238,7 +548,15 @@ export function createPrimaryRecoveryController(options) {
     if (!before.requestedAt && !before.recoveryID
       && !observation.messages?.some((m) => m.info?.id === before.anchorID)) return;
     let inspected = inspectRecoveryTurn(before, observation);
-    if (inspected.superseded) { await control(id, 'supersede'); return; }
+    if (inspected.superseded) {
+      const targetUserID = observation.messages.filter(message => message.info?.role === 'user' && !isNativeStatusRecord(message)).at(-1)?.info.id;
+      const proof = await verifyOwnedNativeContinuation(before, observation, targetUserID);
+      // Keep the original step intact until the native runner actually starts
+      // its successor. Shell completion can arrive before that step settles.
+      if (proof) return;
+      if (current()) await control(id, 'supersede');
+      return;
+    }
     if (before.recoveryID && !watchdog) {
       if (inspected.settled) {
         await mutate(id, (r) => r && current() ? { ...r, state: inspected.last.info.error ? 'needs_attention' : 'completed',
@@ -248,19 +566,48 @@ export function createPrimaryRecoveryController(options) {
       } else if (inspected.recoveryAccepted && before.state === 'recovery_reserved') {
         await mutate(id, (r) => current() ? { ...r, state: 'recovering' } : r);
       } else if (!inspected.recoveryAccepted) {
-        await attention(id, 'recovery_dispatch_uncertain', before);
+        const dispatch = liveness.recoveryDispatch;
+        const liveDispatch = dispatch && dispatch.recoveryID === before.recoveryID
+          && dispatch.instanceID === handshake?.instanceID && dispatch.instanceID === before.instanceID
+          && dispatch.cancellationGeneration === before.cancellationGeneration && dispatch.owner === before.owner
+          ? dispatch : undefined;
+        const pendingDispatch = before.executionGeneration === 2 && options.isNativeRecoveryDispatchPending
+          && await options.isNativeRecoveryDispatchPending(before, liveDispatch);
+        if (!current()) return;
+        if (pendingDispatch && await authorizeBounded(before) && current()) return;
+        // A canonical read begun before adoption/Step cannot close its successor.
+        await mutate(id, r => r && current() && r.revision === before.revision
+          && !['cancelled','superseded'].includes(r.state)
+          ? {...r,state:'needs_attention',reason:'recovery_dispatch_uncertain'} : r);
       }
+      if (inspected.recoveryAccepted) delete liveness.recoveryDispatch;
       return;
     }
     // session.error has no reliable invocation identity. It only requests a
     // canonical read; a stale event cannot stop or recover a newer invocation.
-    const failure = classifyPrimaryTransportError(inspected.last?.info.error, handshake?.version);
+    if (nativeChoiceBound(before) && !before.nativeFallback.execution && inspected.settled
+      && inspected.last?.info.id === before.stepID && options.isNativeFallbackError?.(inspected.last.info.error) === true) {
+      await attention(id,before.nativeFallback.exhaustion ? 'native_fallback_exhausted' : 'native_fallback_unavailable',before);
+      return;
+    }
+    const nativeFallback = nativeChoiceBound(before) && before.nativeFallback.execution;
+    const failure = nativeFallback && options.isNativeFallbackError(inspected.last?.info.error) === true
+      ? {kind:'native_model_fallback',source:'owned_native_retry'} : classifyPrimaryTransportError(inspected.last?.info.error, handshake?.version);
     const failureKind = options.classifyFailure?.(inspected.last?.info.error) ?? null;
     if ((before.failureKind ?? null) !== failureKind) await mutate(id, (record) => current()
       && record?.anchorID === before.anchorID ? { ...record, failureKind } : record);
+    // Once declined for this turn, the host never sends: the manual card owns it.
+    const nativeTransport = !nativeFallback && !watchdog && Boolean(failure) && nativeTransportPending(before);
+    // A finalized failure the host will not continue returns the turn to the
+    // renderer's manual card. The state stays unchanged, so explicit, managed
+    // and owned continuations keep their existing fences.
+    const declineNativeTransport = () => nativeTransportPending(before) && inspected.last?.info.error && inspected.last.info.time?.completed
+      ? mutate(id, (r) => r && current() && r.anchorID === before.anchorID && nativeTransportPending(r) ? { ...r, reason: 'failure_not_eligible' } : r)
+      : undefined;
     if ((!failure || before.recoverySuppressed) && !watchdog) {
       if (inspected.settled && !inspected.last.info.error) await mutate(id, (r) => current() ? { ...r, state: 'completed' } : r);
       else if (active(before) && inspected.last?.info.error && inspected.last.info.time?.completed) await attention(id, 'failure_not_eligible', before);
+      else await declineNativeTransport();
       return;
     }
     if (watchdog) {
@@ -286,7 +633,17 @@ export function createPrimaryRecoveryController(options) {
       meaningfulProgressAt: liveness.at, phase: liveness.phase, elapsedWithoutProgressMs: now() - liveness.at,
       executingTools: liveness.calls.size, pendingRequests: liveness.blockers.size, status: observation.status });
     liveness.candidateKey = candidateKey;
-    if (!active(before) || !supported(before) || inspected.last?.info.id !== before.stepID) return;
+    if ((!nativeFallback && !nativeTransport && (!active(before) || !supported(before))) || inspected.last?.info.id !== before.stepID) {
+      await declineNativeTransport();
+      return;
+    }
+    if (nativeTransport) {
+      // Native OpenCode owns its retries and settlement: the host never aborts
+      // a live native turn, and continues only an idle, unblocked, fully
+      // resolved one. Anything else stays with the manual card.
+      if (observation.status !== 'idle') return;
+      if (!inspected.settled || inspected.unresolved || blocked(before, observation)) { await declineNativeTransport(); return; }
+    }
     if (watchdog && (liveness.at !== progressAt || blocked(before, observation) || observation.status !== 'busy')) return;
     if (watchdog && inspected.last?.parts.some((part) => part.type === 'tool' && part.state?.status === 'pending')) {
       // 1.18.25 publishes tool-input-start but drops subsequent input deltas.
@@ -302,7 +659,10 @@ export function createPrimaryRecoveryController(options) {
       if (current()) diagnostic('provider_recovery_tool_outcome_unknown', record, { classification: failure });
       return;
     }
-    if (!await authorizeBounded(before) || !current()) { await attention(id, 'recovery_authorization_unavailable', before); return; }
+    if (!await authorizeBounded(before) || !current()) {
+      if (nativeTransport) await declineNativeTransport(); else await attention(id, 'recovery_authorization_unavailable', before);
+      return;
+    }
     const stopping = await mutate(id, (r) => r && current() && !(watchdog && blocked(r, observation)) ? { ...r, state: watchdog ? 'stopping' : 'reconciling',
       failedID: r.recoveryID ? r.failedID : inspected.last?.info.id ?? r.stepID,
       reason: watchdog ? 'provider_progress_timeout' : failure.kind } : r);
@@ -332,38 +692,54 @@ export function createPrimaryRecoveryController(options) {
       finalizedAt: inspected.last.info.time.completed, blockersCleared: true });
     if (watchdog) { await attention(id, 'provider_progress_timeout', before); return; }
     if (!inspected.last.info.error) { await mutate(id, (r) => current() ? { ...r, state: 'completed' } : r); return; }
-    if (!inspected.recoveryParts.length) { await attention(id, 'recovery_input_unavailable', before); return; }
+    if (!nativeTransport && !inspected.recoveryParts.length) { await attention(id, 'recovery_input_unavailable', before); return; }
     // Reserve under the same lock as ordinary admission. Release it before POST:
     // plugin hooks called during POST must be able to inspect the reservation.
     const reserved = await lock(id, async () => {
       let r = await store.readRecord(keyFor(id));
-      if (!r || !current() || r.attemptCount || r.recoverySuppressed || TERMINAL.has(r.state) || !active(r)) return;
+      if (!r || !current() || r.attemptCount || r.recoverySuppressed || TERMINAL.has(r.state) || (!nativeFallback && !nativeTransport && !active(r))
+        || (nativeFallback && !nativeFallbackEligible(r)) || (nativeTransport && !nativeTransportPending(r))) return;
       const final = await observeBounded(r);
       const check = inspectRecoveryTurn(r, final);
       if (!current() || !check.settled || check.superseded || blocked(r, final) || !await authorizeBounded(r)
-        || !classifyPrimaryTransportError(check.last?.info.error, handshake?.version)) return;
+        || (nativeTransport && check.last?.info.id !== r.stepID)
+        || !(nativeFallback ? r.nativeFallback?.stepID === check.last?.info.id && options.isNativeFallbackError(check.last?.info.error) === true
+          : classifyPrimaryTransportError(check.last?.info.error, handshake?.version))) return;
       const recoveryID = (options.createMessageID ?? (() => messageID(now())))();
       const toolPolicy = options.getToolPolicy ? await options.getToolPolicy(r)
         : { toolIDs: RECOVERY_READ_TOOLS, allowedReadTools: RECOVERY_READ_TOOLS };
       if (!current()) return;
+      const execution = nativeFallback ? r.nativeFallback.execution : r;
+      // The native transport continuation is system-originated: a synthetic
+      // part the chat does not present as a user bubble. The original request
+      // remains in the native history, so it is never resent. A plan-mode
+      // turn keeps its plan marking, so admission plans read-only and the
+      // plan card still publishes.
+      const continuation = nativeTransport ? nativeTransportContinuation(recoveryPlanMode(final,
+        [...new Set([currentObjectiveUser(r), r.objectiveID, r.anchorID].filter(Boolean))])) : { parts: check.recoveryParts };
+      const prompt = {messageID:recoveryID,model:{providerID:execution.providerID,modelID:execution.modelID},agent:execution.agent,
+        ...(execution.variant ? {variant:execution.variant} : {}),...continuation,
+        tools:{...r.tools,...Object.fromEntries(toolPolicy.toolIDs.map(tool=>[tool,false])),'*':false,
+          ...Object.fromEntries(toolPolicy.allowedReadTools.map(tool=>[tool,r.tools['*']!==false&&r.tools[tool]!==false]))}};
       r = { ...r, revision: r.revision + 1, state: 'recovery_reserved', attemptCount: 1,
         activeUserID: undefined, recoverySourceUserID: currentObjectiveUser(r),
-        recoveryID, allowedReadTools: toolPolicy.allowedReadTools, guardedIDs: [...r.guardedIDs, recoveryID], updatedAt: now() };
+        recoveryID, ...(nativeFallback ? {recoveryExecution:r.nativeFallback.execution,recoveryPrompt:prompt} : {}),
+        ...(nativeTransport ? {recoveryKind:'native_transport',recoveryExecution:{providerID:r.providerID,modelID:r.modelID,agent:r.agent,variant:r.variant},recoveryPrompt:prompt} : {}), allowedReadTools: toolPolicy.allowedReadTools, guardedIDs: [...r.guardedIDs, recoveryID], updatedAt: now() };
       await store.writeRecord(keyFor(id), r);
       records.set(id, r); publish(r);
       diagnostic('provider_recovery_reserved', r);
-      return { record: r, parts: check.recoveryParts, toolIDs: toolPolicy.toolIDs };
+      return {record:r,prompt};
     });
     if (!reserved || !current()) return;
     const r = reserved.record;
+    liveness.recoveryDispatch = {recoveryID:r.recoveryID,instanceID:r.instanceID,
+      cancellationGeneration:r.cancellationGeneration,owner:r.owner};
     try {
-        await options.promptSession(r, { messageID: r.recoveryID, model: { providerID: r.providerID, modelID: r.modelID },
-          agent: r.agent, ...(r.variant ? { variant: r.variant } : {}),
-          parts: reserved.parts, tools: { ...r.tools, ...Object.fromEntries(reserved.toolIDs.map((tool) => [tool, false])), '*': false,
-            ...Object.fromEntries(r.allowedReadTools.map((tool) => [tool, r.tools['*'] !== false && r.tools[tool] !== false])) } });
+        await options.promptSession(r,reserved.prompt);
         await mutate(id, (next) => current() && next.state === 'recovery_reserved' ? { ...next, state: 'recovering' } : next);
         diagnostic('provider_recovery_dispatch_acknowledged', r);
     } catch {
+        delete liveness.recoveryDispatch;
         diagnostic('provider_recovery_dispatch_uncertain', r);
         if (current()) await attention(id, 'recovery_dispatch_uncertain', before);
     }
@@ -389,6 +765,8 @@ export function createPrimaryRecoveryController(options) {
           });
           const latest = records.get(id);
           if (active(latest)) await attention(id, 'recovery_observation_unavailable', expected);
+          else if (!sweep && nativeTransportPending(latest)) await mutate(id, (next) => next && next.anchorID === latest.anchorID
+            && nativeTransportPending(next) ? { ...next, reason: 'failure_not_eligible' } : next);
           else if (sweep && error?.sessionMissing === true && latest && !TERMINAL.has(latest.state)
             && latest.updatedAt < sweep.startedAt && latest.instanceID !== handshake?.instanceID) {
             // Only a session the replaced runtime no longer has is retired, so
@@ -413,17 +791,30 @@ export function createPrimaryRecoveryController(options) {
     return operation;
   }
 
-  async function plugin(input) {
+  async function plugin(input, authorizeRejectionWrite, nativePrompt, nativeHelloOwner) {
     await ready;
     if (!storageHealthy) throw recoveryError('recovery_storage_unavailable', 503);
     if (!ownsRuntime) throw recoveryError('recovery_owner_unavailable', 503);
     if (!options.isManaged()) throw recoveryError('provider_recovery_external', 503);
     if (input.action === 'hello') {
       if (typeof input.instanceID !== 'string' || !input.instanceID || input.policyVersion !== 1) throw recoveryError('recovery_plugin_incompatible');
+      if (nativeHelloOwner) {
+        if(typeof nativeHelloOwner.authorize!=='function' || typeof nativeHelloOwner.isCurrent!=='function')throw recoveryError('recovery_owner_mismatch');
+        await nativeHelloOwner.authorize();
+        if(draining || !storageHealthy || !ownsRuntime || !options.isManaged() || nativeHelloOwner.isCurrent()!==true)throw recoveryError('recovery_owner_mismatch');
+      }
       const replaced = !handshake || handshake.instanceID !== input.instanceID;
+      if (!replaced && isNativePrimaryRuntimeVersion(handshake.version)
+        && isNativePrimaryRuntimeVersion(input.version) && handshake.version !== input.version) throw recoveryError('recovery_owner_mismatch');
       if (handshake && replaced) live.clear();
       handshake = { instanceID: input.instanceID, version: input.transport === 'websocket-unverified' ? null : input.version };
-      diagnostic('provider_recovery_capability', null, { supported: supported(), transport: input.transport ?? 'unverified' });
+      // Hellos repeat every few seconds; journal only a new runtime instance or
+      // a changed capability.
+      const capability = { supported: supported(), transport: input.transport ?? 'unverified' };
+      if (replaced || capabilityLogged?.supported !== capability.supported || capabilityLogged.transport !== capability.transport) {
+        capabilityLogged = capability;
+        diagnostic('provider_recovery_capability', null, capability);
+      }
       // Reconcile stored objectives once per runtime instance, not on every
       // plugin hello, and summarize the sweep in one diagnostic.
       if (replaced) {
@@ -451,7 +842,7 @@ export function createPrimaryRecoveryController(options) {
     }
     if (['message', 'step'].includes(input.action) && input.userMessageID !== currentObjectiveUser(r)) {
       r = await mutate(r.sessionID, async (next) => {
-        if (!next) throw recoveryError('provider_recovery_fenced');
+        if (!next || next.nativeFallback?.pending) throw recoveryError('provider_recovery_fenced');
         const observation = await observeBounded(next);
         if (!observesNativeContinuation(next, observation, input.userMessageID)
           || ['cancelled', 'superseded', 'needs_attention', 'stopping'].includes(next.state)
@@ -482,7 +873,7 @@ export function createPrimaryRecoveryController(options) {
         if (result.receipts === next.rejections) return next;
         return { ...next, rejections: result.receipts,
           ...(result.state === 'blocked' ? { state: 'needs_attention', reason: 'managed_repeated_preexecution_rejection' } : {}) };
-      });
+      }, authorizeRejectionWrite);
       // A rejection never ran its tool and cannot keep a phantom running call.
       l.calls.delete(input.callID);
       diagnostic('objective_preexecution_rejection', updated, { reason: input.reason, fingerprint: input.fingerprint,
@@ -498,7 +889,8 @@ export function createPrimaryRecoveryController(options) {
         const fenced = (reason) => Object.assign(recoveryError('managed_continuation_fenced'), { fenceReason: reason });
         const stateFence = (record, proof = true) => (!['observing', 'completed'].includes(record.state) && !(proof && collectionAttention(record))
           ? `state_${/^[a-z_]{1,48}$/.test(record.state ?? '') ? record.state : 'invalid'}` : null);
-        const preFence = !isProviderRecoverySupportedRuntimeVersion(handshake.version) ? 'runtime_unsupported'
+        const nativeSupported = nativePrompt && r.executionGeneration === 2 && isNativePrimaryRuntimeVersion(handshake.version);
+        const preFence = !nativeSupported && !isProviderRecoverySupportedRuntimeVersion(handshake.version) ? 'runtime_unsupported'
           : draining ? 'draining'
             : !/^msg_[a-zA-Z0-9]+$/.test(input.userMessageID ?? '') ? 'invalid_continuation_id'
               : r.attemptCount ? 'recovery_attempted'
@@ -509,16 +901,19 @@ export function createPrimaryRecoveryController(options) {
           if (!next || next.anchorID !== input.anchorUserMessageID || next.directory !== input.directory
             || next.providerID !== input.execution?.providerID || next.modelID !== input.execution?.modelID
             || next.agent !== input.execution?.agent || next.variant !== (input.execution?.variant ?? null)
-            || !['collect', 'orchestrator_todo', 'builder_todo'].includes(input.kind)
+            || !['collect', 'orchestrator_todo', 'builder_todo', 'verification'].includes(input.kind)
+            || (input.kind === 'verification' && (!nativePrompt || !['build', 'builder', 'orchestrator'].includes(next.agent)))
             || (input.kind === 'builder_todo' && !['build', 'builder'].includes(next.agent))
             || (input.kind === 'orchestrator_todo' && next.agent !== 'orchestrator')) throw recoveryError('managed_objective_mismatch');
           const observed = await observeBounded(next, undefined, input.kind === 'builder_todo', input.kind === 'collect');
-          if (input.kind === 'collect' && input.collection?.taskId && next.collectionWake?.taskId === input.collection.taskId) {
-            const delivered = observed.messages?.some(message => message.info?.role === 'user'
-              && message.info.id === next.collectionWake.messageID
+          const priorWake = [...(next.collectionWakes ?? []), ...(next.collectionWake ? [next.collectionWake] : [])]
+            .find(wake => wake.taskId === input.collection?.taskId && wake.generation === next.cancellationGeneration);
+          if (input.kind === 'collect' && input.collection?.taskId && priorWake) {
+            const delivered = observed.messages?.some(message => message.info?.role === 'user' && !isNativeStatusRecord(message)
+              && message.info.id === priorWake.messageID
               && message.parts?.some(part => part.type === 'text' && part.synthetic === true));
-            if (delivered && next.collectionWake.generation === next.cancellationGeneration) {
-              deliveredMessageID = next.collectionWake.messageID;
+            if (delivered) {
+              deliveredMessageID = priorWake.messageID;
               return next.collectionIssue ? { ...next, collectionIssue: null } : next;
             }
             // A prior reservation may have reached OpenCode even if the caller
@@ -550,6 +945,12 @@ export function createPrimaryRecoveryController(options) {
                     : next.attemptCount ? 'recovery_attempted'
                       : next.recoverySuppressed ? 'recovery_suppressed' : stateFence(next, Boolean(collectionProof));
           if (turnFence) throw fenced(turnFence);
+          if (nativePrompt && (next.stepID !== input.assistantMessageID || check.last?.info.id !== input.assistantMessageID
+            || check.last.info.sessionID !== next.sessionID || check.last.turnOwnership?.source !== 'native-sequence'
+            || check.last.turnOwnership.userMessageID !== currentObjectiveUser(next)
+            || check.last.info.parentID !== currentObjectiveUser(next) || check.last.info.agent !== next.agent
+            || check.last.info.providerID !== next.providerID || check.last.info.modelID !== next.modelID
+            || (check.last.info.variant ?? null) !== next.variant)) throw fenced('native_source_changed');
           if (!await authorizeBounded(next)) throw fenced('unauthorized');
           // Collection may run with the child barrier present; ordinary TODO
           // nudges must wait until all results are reconciled and blockers clear.
@@ -562,15 +963,28 @@ export function createPrimaryRecoveryController(options) {
           if (builder && !builder.allowed) throw recoveryError(builder.reason);
           if (handshake.instanceID !== input.instanceID) throw recoveryError('recovery_owner_mismatch');
           if (draining || (generations.get(r.sessionID) ?? 0) !== generation) throw fenced(draining ? 'draining' : 'generation_changed');
+          const collectionWake = (collectionProof || nativePrompt && input.kind === 'collect' && /^dvr_result_[a-zA-Z0-9_]+$/.test(input.collection?.envelopeId ?? ''))
+            ? { taskId: collectionProof?.taskId ?? input.collection.taskId, envelopeId: collectionProof?.envelopeId ?? input.collection.envelopeId,
+              messageID: input.userMessageID, reservedAt: now(), generation: next.cancellationGeneration } : undefined;
+          const collectionWakes = [...(next.collectionWakes ?? []), ...(next.collectionWake && !next.collectionWakes?.some(wake => wake.taskId === next.collectionWake.taskId) ? [next.collectionWake] : [])]
+            .filter(wake => wake.generation === next.cancellationGeneration);
+          // Never evict an unacknowledged wake and turn it into a new automatic
+          // prompt. Long objectives may collect further results explicitly.
+          if (collectionWake && collectionWakes.length >= 256) throw recoveryError('managed_collection_wake_capacity');
           invalidate(r.sessionID);
           return { ...next, continuationID: input.userMessageID, collectionIssue: null,
-            ...(collectionProof ? { collectionWake: { taskId: collectionProof.taskId, envelopeId: collectionProof.envelopeId,
-              messageID: input.userMessageID, reservedAt: now(), generation: next.cancellationGeneration }, reason: null, failureKind: null } : {}),
+            ...(nativePrompt ? { nativeContinuation: { messageID: input.userMessageID,
+              sourceUserMessageID: currentObjectiveUser(next), sourceAssistantMessageID: next.stepID,
+              cancellationGeneration: next.cancellationGeneration, kind: input.kind, prompt: structuredClone(nativePrompt) } } : {}),
+            ...(collectionWake ? { collectionWake, collectionWakes: [...collectionWakes, collectionWake], reason: null, failureKind: null } : {}),
             activeUserID: undefined,
             todoContinuationCount: count + (input.kind === 'collect' ? 0 : 1),
             ...(builder ? { builderTodoGuard: builder.guard } : {}),
             state: 'observing', stepID: null, requestedAt: null, failureObserved: false, failure: null, failedID: null };
-        });
+        }, nativePrompt ? async () => {
+          if (draining || handshake?.instanceID !== input.instanceID
+            || (generations.get(r.sessionID) ?? 0) !== generation + 1 || !await authorizeBounded(r)) throw fenced('unauthorized');
+        } : undefined);
         if (input.collection?.taskId) evidenceFailures.delete(`${r.sessionID}\0${input.collection.taskId}`);
         if (deliveredMessageID) return { allowed: true, deliveredMessageID, anchorUserMessageID: admitted.anchorID, tools: admitted.tools };
         diagnostic('managed_continuation_admitted', admitted, { kind: input.kind,
@@ -620,31 +1034,79 @@ export function createPrimaryRecoveryController(options) {
     if (enforcing && r.state === 'stopping' && input.action === 'tool_before') throw recoveryError('provider_stop_in_progress');
     if (input.action === 'step') {
       if (typeof input.assistantMessageID !== 'string') throw recoveryError('provider_step_unresolved');
-      if (isGuarded && options.getToolPolicy && (input.execution?.providerID !== r.providerID
-        || input.execution?.modelID !== r.modelID || input.execution?.agent !== r.agent
-        || (input.execution?.variant ?? null) !== r.variant)) {
+      const stepExecution = r.recoveryID && r.recoveryExecution && input.userMessageID===currentObjectiveUser(r) ? r.recoveryExecution : r;
+      if (isGuarded && options.getToolPolicy && (input.execution?.providerID !== stepExecution.providerID
+        || input.execution?.modelID !== stepExecution.modelID || input.execution?.agent !== stepExecution.agent
+        || (input.execution?.variant ?? null) !== stepExecution.variant)) {
         await attention(r.sessionID, 'recovery_execution_changed');
         throw recoveryError('recovery_execution_changed');
       }
+      if (r.nativeFallback?.pending && input.assistantMessageID === r.nativeFallback.pending.previousStepID) throw recoveryError('native_fallback_fenced');
       if ((enforcing || isGuarded) && r.stepID === input.assistantMessageID && r.requestedAt !== null) {
         // A provider-native retry of the same model step must return to the owner.
         await attention(r.sessionID, 'native_retry_fenced');
         throw recoveryError('provider_retry_requires_reconciliation');
       }
+      const stepGeneration = generations.get(r.sessionID) ?? 0;
+      let authorizePendingChoice;
       l.phase = 'provider'; l.at = now(); l.signatures.clear(); l.textHashes.clear();
-      await mutate(r.sessionID, (next) => {
+      await mutate(r.sessionID, async (next) => {
         if (next.anchorID !== r.anchorID || TERMINAL.has(next.state)
           || input.userMessageID !== currentObjectiveUser(next)) throw recoveryError('provider_recovery_fenced');
         if ((enforcing || isGuarded) && next.stepID === input.assistantMessageID && next.requestedAt !== null) throw recoveryError('provider_retry_requires_reconciliation');
+        const choice = next.nativeFallback?.pending;
+        if (choice) {
+          const exact = () => stepGeneration === (generations.get(next.sessionID) ?? 0) && !draining
+            && ownsRuntime && storageHealthy && options.isManaged() && isNativePrimaryRuntimeVersion(handshake?.version)
+            && choice.instanceID === input.instanceID && handshake?.instanceID === input.instanceID
+            && choice.cancellationGeneration === next.cancellationGeneration && next.stepID === choice.previousStepID
+            && next.nativeFallback.userMessageID === input.userMessageID && next.state === 'observing' && !next.recoverySuppressed
+            && !next.recoveryID && !next.attemptCount && input.assistantMessageID !== choice.previousStepID
+            && validNativeWitness(input.nativeAttempt,input.nativePermitSha256)
+            && nativeWitnessMatches(choice,input.nativeAttempt,input.nativePermitSha256)
+            && ['providerID','modelID','agent','variant'].every(key => choice.currentExecution[key] === next[key] && input.execution?.[key] === next[key]);
+          authorizePendingChoice = async()=>{if(!exact() || !await authorizeBounded(next) || !exact())throw recoveryError('native_fallback_fenced');};
+          if (!exact() || !await authorizeBounded(next)) throw recoveryError('native_fallback_fenced');
+          const observation = await observeBounded(next), inspected = inspectRecoveryTurn(next,observation);
+          const assistant = inspected.last;
+          const predecessors = observation.messages.filter(message => message.info.role === 'assistant' && message.info.parentID === input.userMessageID);
+          const previous = predecessors.at(-2);
+          if (!await authorizeBounded(next) || !exact() || inspected.superseded || assistant?.info.id !== input.assistantMessageID
+            || assistant.info.time?.completed || assistant.turnOwnership?.source !== 'native-sequence'
+            || assistant.turnOwnership.userMessageID !== input.userMessageID
+            || ['providerID','modelID','agent','variant'].some(key => assistant.info[key] !== next[key])
+            || (choice.previousStepID === null ? predecessors.length !== 1 : previous?.info.id !== choice.previousStepID
+              || !Number.isFinite(previous?.info.time?.completed) || previous.info.time.completed <= 0
+              || previous.turnOwnership?.source !== 'native-sequence' || previous.turnOwnership.userMessageID !== input.userMessageID
+              || ['providerID','modelID','agent','variant'].some(key => previous.info[key] !== next[key]))) throw recoveryError('native_fallback_fenced');
+        }
         return { ...next, stepID: input.assistantMessageID,
+          ...(choice ? {nativeFallback:{...next.nativeFallback,stepID:input.assistantMessageID,pending:undefined}} : {}),
+          ...(next.executionGeneration === 2 && validNativeWitness(input.nativeAttempt,input.nativePermitSha256)
+            ? {nativeStepWitness:{attempt:structuredClone(input.nativeAttempt),permitSha256:input.nativePermitSha256}} : {nativeStepWitness:undefined}),
+          ...(next.nativeContinuation?.messageID === input.userMessageID ? { nativeContinuation: undefined } : {}),
           ...(next.collectionWake?.messageID === input.userMessageID ? { collectionIssue: null } : {}),
           requestedAt: now(), instanceID: input.instanceID, failure: null, failureObserved: false, failureKind: null,
-          reason: next.reason === 'provider_input_progress_unavailable' ? null : next.reason };
-      });
+          // A new native Step may fail again: its predecessor's declined
+          // continuation must not decline this one.
+          reason: next.reason === 'provider_input_progress_unavailable'
+            || (next.executionGeneration === 2 && next.reason === 'failure_not_eligible') ? null : next.reason };
+      },async()=>authorizePendingChoice?.());
       const timeouts = Object.fromEntries(['headers', 'chunk', 'total'].map((key) => [key,
         Number.isFinite(input.timeouts?.[key]) || input.timeouts?.[key] === false ? input.timeouts[key] : null]));
+      // Native Step.Started follows the attempt's first provider output, so
+      // the request's identity and times come from the controller's own
+      // observations of this attempt span, when available.
+      let observed = null;
+      if (input.nativeAttempt) {
+        try { observed = options.resolveProviderRequest?.({ sessionID: r.sessionID, attempt: input.nativeAttempt }) ?? null; }
+        catch { observed = null; }
+      }
       diagnostic('provider_request_prepared', r, { observedTimeoutOptions: timeouts, configurationSource: 'provider_options_hook',
-        transport: 'unverified', requestPreparedAt: now(), meaningfulProgressAt: l.at, phase: l.phase });
+        transport: 'unverified', requestPreparedAt: now(), meaningfulProgressAt: l.at, phase: l.phase,
+        ...(observed && typeof observed.requestID === 'string' ? { providerRequestID: observed.requestID, wireTiming: 'observed',
+          transport: observed.transport ?? 'unverified', requestPreparedAt: observed.preparedAt ?? observed.sentAt ?? now(),
+          requestSentAt: observed.sentAt ?? null } : {}) });
     }
     if (input.action === 'tool_before') { l.calls.add(input.callID); l.phase = 'tool'; }
     return { allowed: true, readOnly: isGuarded };
@@ -671,7 +1133,7 @@ export function createPrimaryRecoveryController(options) {
     const r = records.get(id);
     if (!r) return;
     const l = remember(r);
-    if (payload.type === 'openchamber:managed-task' && p.resultEnvelope && p.resultEnvelope.taskId === p.task?.taskId
+    if (canonicalDevRyanEventType(payload.type) === 'devryan:managed-task' && p.resultEnvelope && p.resultEnvelope.taskId === p.task?.taskId
       && p.resultEnvelope.rootSessionId === id && p.resultEnvelope.status === 'completed') {
       if (Number.isFinite(p.task.createdAt)) void observeProgress({ sessionID: id, kind: 'child-completed',
         identity: p.resultEnvelope.envelopeId, taskCreatedAt: p.task.createdAt });
@@ -684,6 +1146,10 @@ export function createPrimaryRecoveryController(options) {
     }
     if (payload.type === 'message.part.updated' && p.part?.messageID === r.stepID) {
       const part = p.part;
+      // The actual terminal event can arrive when a failed executor never
+      // reached its after hook. Clear liveness only; outcome/receipt checks
+      // still decide whether this turn can recover or continue.
+      if (part.type === 'tool' && ['completed', 'error'].includes(part.state?.status)) l.calls.delete(part.callID);
       if (part.type === 'tool' && part.tool !== 'todowrite'
         && (part.state?.status === 'completed' || (part.state?.status === 'error' && Number.isSafeInteger(part.state?.metadata?.exit)))) {
         l.completedTools ??= new Set();
@@ -748,6 +1214,8 @@ export function createPrimaryRecoveryController(options) {
   async function reconcile() {
     const relaxed = advisory();
     await Promise.allSettled([...records.values()].filter((r) => !TERMINAL.has(r.state)).map((r) => {
+      const streamProof=r.nativeStream?.pending??r.nativeStream?.committed;
+      if(streamProof)return streamProofExpired(r)||streamProof.instanceID!==handshake?.instanceID?schedule(r.sessionID,false):undefined;
       const l = remember(r);
       const watchdog = progressTimeoutMs !== false && l.phase === 'provider' && !l.calls.size && !l.blockers.size
         && now() - l.at >= progressTimeoutMs && (!relaxed || (active(r) && supported(r)));
@@ -756,7 +1224,179 @@ export function createPrimaryRecoveryController(options) {
     }));
   }
   return {
-    admit, control, plugin, observe, observeProgress, reconcile,
+    bindNativeRecoveryDispatchInput({sessionID,messageID,instanceID,itemHash}) {
+      const r=records.get(sessionID),dispatch=live.get(sessionID)?.recoveryDispatch;
+      if(draining || !r || !dispatch || instanceID!==handshake?.instanceID || dispatch.instanceID!==instanceID
+        || !['recovery_reserved','recovering'].includes(r.state)
+        || r.recoveryID!==messageID || dispatch.recoveryID!==messageID || dispatch.owner!==r.owner
+        || dispatch.cancellationGeneration!==r.cancellationGeneration || typeof itemHash!=='string' || !/^[a-f0-9]{64}$/.test(itemHash)
+        || dispatch.itemHash && dispatch.itemHash!==itemHash)throw recoveryError('native_primary_continuation_fenced');
+      dispatch.itemHash=itemHash;
+    },
+    admit, control, plugin, observe, observeProgress, reconcile, adoptOwnedNativeContinuation, reserveNativeFallback,nativeStreamContinuation,
+    async nativeStreamContinuationReceipts(sessionID,objectiveID){
+      await ready;const record=await store.readRecord(keyFor(sessionID));
+      const receipts=(record?.nativeStreamReceipts??[]).filter(receipt=>receipt.objectiveID===objectiveID);
+      if(receipts.length)return structuredClone(receipts);
+      const archived=await streamReceipts.readRecord(streamReceiptKey(sessionID,objectiveID));
+      if(archived&&(archived.sessionID!==sessionID||archived.objectiveID!==objectiveID))throw recoveryError('native_stream_continuation_fenced');
+      return structuredClone(archived?.receipts??[]);
+    },
+    async discardNativeStreamContinuationReceipts({directory,sessions},authorize){
+      await ready;
+      if(typeof authorize!=='function'||typeof directory!=='string'||!Array.isArray(sessions)||sessions.some(id=>!/^ses_[A-Za-z0-9]+$/.test(id)))throw recoveryError('native_stream_continuation_fenced');
+      await authorize();const selected=new Set(sessions);
+      for(const sessionID of selected)await mutate(sessionID,record=>record?.directory===directory&&record.nativeStreamReceipts
+        ?{...record,nativeStreamReceipts:undefined}:record,authorize);
+      const entries=await fs.opendir(streamReceipts.directory).catch(error=>{if(error.code==='ENOENT')return null;throw error;});
+      if(!entries)return;
+      for await(const entry of entries){
+        if(!entry.isFile()||!/^[a-f0-9]{64}\.json$/.test(entry.name))continue;
+        const key=entry.name.slice(0,-5),record=await streamReceipts.readRecord(key);
+        if(record?.directory===directory&&selected.has(record.sessionID)){await authorize();await streamReceipts.deleteRecord(key);}
+      }
+    },
+    async nativeStartupRecords() { await ready; return [...records.values()].filter(r=>r.executionGeneration===2).map(r=>structuredClone(r)); },
+    async adoptRecoveredInput(input, authorizeWrite) {
+      await ready;
+      return mutate(input.sessionID, async r=>{
+        if(!r || r.revision!==input.recordRevision || r.cancellationGeneration!==input.cancellationGeneration
+          || r.owner!==input.previousOwner || r.executionGeneration!==2
+          || ![r.anchorID,r.recoveryID].includes(input.messageID)
+          || r.nativeContinuation || r.activeUserID || input.messageID===r.anchorID&&(r.stepID||r.attemptCount!==0)
+          || input.messageID===r.recoveryID&&(!r.recoveryPrompt||!r.recoveryExecution||r.attemptCount!==1))throw recoveryError('recovery_revision_conflict');
+        await authorizeWrite();
+        return {...r,owner:input.owner,state:input.messageID===r.recoveryID?'recovery_reserved':'observing',reason:null,
+          ...(input.messageID===r.anchorID && r.nativeFallback?.pending ? {nativeFallback:undefined,nativeStepWitness:undefined} : {}),
+          instanceID:input.instanceID,recoveredInput:{inputID:input.messageID,payloadHash:input.payloadHash,
+            enqueuedSeq:input.enqueuedSeq,delivery:input.delivery,phase:'adopted'}};
+      },authorizeWrite);
+    },
+    async requestRecoveredInputDiscard(input, authorizeWrite) {
+      await ready;
+      return mutate(input.sessionID,async r=>{
+        if(!r || r.revision!==input.recordRevision || r.cancellationGeneration!==input.cancellationGeneration
+          || r.owner!==input.previousOwner)throw recoveryError('recovery_revision_conflict');
+        const dispositions=r.recoveredInputDispositions??[];
+        const existing=dispositions.find(item=>item.inputID===input.messageID);
+        if(existing){if(existing.phase!=='requested'||existing.payloadHash!==input.payloadHash||existing.enqueuedSeq!==input.enqueuedSeq||existing.type!==input.type||existing.delivery!==input.delivery)throw recoveryError('recovery_revision_conflict');await authorizeWrite();return r;}
+        if(dispositions.length>=128)throw recoveryError('recovery_revision_conflict');
+        await authorizeWrite();
+        return {...r,recoveredInputDispositions:[...dispositions,{inputID:input.messageID,payloadHash:input.payloadHash,
+          enqueuedSeq:input.enqueuedSeq,type:input.type,delivery:input.delivery,phase:'requested'}]};
+      },authorizeWrite);
+    },
+    async settleRecoveredInputDiscard(input, authorizeWrite) {
+      await ready;
+      return mutate(input.sessionID,async r=>{
+        const intent=r?.recoveredInputDispositions?.find(item=>item.inputID===input.messageID);
+        if(!r||!intent||intent.payloadHash!==input.payloadHash||intent.enqueuedSeq!==input.enqueuedSeq
+          || !Number.isSafeInteger(input.eventSeq)||input.eventSeq<=intent.enqueuedSeq)throw recoveryError('recovery_revision_conflict');
+        await authorizeWrite();
+        const owning=[r.anchorID,r.recoveryID,r.continuationID].includes(input.messageID);
+        return {...r,...owning?{state:'cancelled',reason:'recovered_input_discarded'}:{},...(r.nativeContinuation?.messageID===input.messageID?{nativeContinuation:undefined}:{}),...(r.recoveredInput?.inputID===input.messageID?{recoveredInput:undefined}:{}),
+          recoveredInputDispositions:r.recoveredInputDispositions.map(item=>item===intent?{...item,phase:'cancelled',eventID:input.eventID,eventSeq:input.eventSeq}:item)};
+      },authorizeWrite);
+    },
+    async captureNativeRecoveryDispatch(input) {
+      await ready;
+      const original = await store.readRecord(keyFor(input.sessionID));
+      const generation = generations.get(input.sessionID) ?? 0;
+      const recheck = async () => {
+        const r = await store.readRecord(keyFor(input.sessionID));
+        if (!r || !original || !nativeFallbackEligible(r) || generation !== (generations.get(input.sessionID) ?? 0)
+          || r.anchorID !== original.anchorID || r.cancellationGeneration !== original.cancellationGeneration
+          || r.directory !== input.directory || r.recoveryID !== input.messageID || r.attemptCount !== 1
+          || !r.recoveryExecution || !r.recoveryPrompt || !['recovery_reserved','recovering'].includes(r.state)
+          || input.instanceID !== undefined && input.instanceID !== handshake.instanceID
+          || JSON.stringify(r.recoveryPrompt) !== JSON.stringify(original.recoveryPrompt)) throw recoveryError('native_fallback_fenced');
+        if (!await authorizeBounded(r) || draining || generation !== (generations.get(input.sessionID) ?? 0)) throw recoveryError('native_fallback_fenced');
+      };
+      await recheck();return {record:structuredClone(original),prompt:structuredClone(original.recoveryPrompt),recheck};
+    },
+    async reserveNativeContinuation(input, prompt) {
+      await ready;
+      const record = await store.readRecord(keyFor(input.sessionID));
+      if (record?.executionGeneration !== 2 || record.nativeContinuation || record.stepID !== input.assistantMessageID
+        || prompt?.messageID !== input.userMessageID || prompt.agent !== record.agent
+        || prompt.model?.providerID !== record.providerID || prompt.model?.modelID !== record.modelID
+        || prompt.variant !== record.variant || JSON.stringify(prompt.tools) !== JSON.stringify(record.tools)
+        || prompt.objectiveID !== (record.objectiveID ?? record.anchorID)
+        || !Array.isArray(prompt.parts) || !prompt.parts.length || prompt.parts.some(part => part.type !== 'text'
+          || part.synthetic !== true || typeof part.text !== 'string') || Buffer.byteLength(JSON.stringify(prompt)) > 64 * 1024) {
+        throw recoveryError('native_primary_continuation_invalid');
+      }
+      return plugin({ ...input, action: 'continuation' }, undefined, prompt);
+    },
+    async pendingNativeContinuations({ directory }) {
+      await ready;
+      return [...records.values()].filter(record => record.directory === directory && record.nativeContinuation
+        && record.state === 'observing').map(record => ({ sessionID: record.sessionID,
+          directory: record.directory, messageID: record.nativeContinuation.messageID }));
+    },
+    async captureNativeContinuationDispatch(input) {
+      await ready;
+      const instanceID = input.instanceID ?? handshake?.instanceID;
+      const original = await store.readRecord(keyFor(input.sessionID));
+      const pending = original?.nativeContinuation;
+      if (!pending || original.executionGeneration !== 2 || original.directory !== input.directory
+        || pending.messageID !== input.messageID || original.continuationID !== input.messageID
+        || typeof instanceID !== 'string' || instanceID !== handshake?.instanceID) throw recoveryError('native_primary_continuation_invalid');
+      const generation = generations.get(input.sessionID) ?? 0;
+      const recheck = async () => {
+        const current = await store.readRecord(keyFor(input.sessionID));
+        if (draining || !storageHealthy || !ownsRuntime || !options.isManaged()
+          || handshake?.instanceID !== instanceID || (generations.get(input.sessionID) ?? 0) !== generation
+          || !['observing', 'completed'].includes(current?.state) || current.recoverySuppressed || current.recoveryID
+          || (current.state === 'completed' && current.nativeContinuation)
+          || current.continuationID !== input.messageID || current.directory !== original.directory
+          || current.owner !== original.owner || current.cancellationGeneration !== pending.cancellationGeneration
+          || current.anchorID !== original.anchorID || current.providerID !== original.providerID
+          || current.modelID !== original.modelID || current.agent !== original.agent || current.variant !== original.variant
+          || JSON.stringify(current.tools) !== JSON.stringify(original.tools)
+          || (current.nativeContinuation && JSON.stringify(current.nativeContinuation) !== JSON.stringify(pending))) {
+          throw recoveryError('native_primary_continuation_fenced');
+        }
+        if (!await authorizeBounded(current)) throw recoveryError('native_primary_continuation_fenced');
+        const observation = await observeBounded(current);
+        const users = observation.messages?.filter(message => message.info?.role === 'user' && !isNativeStatusRecord(message));
+        const latest = users?.at(-1)?.info.id;
+        if (!observation.complete || observation.session?.parentID || observation.session?.time?.archived
+          || observation.session?.revert || observation.session?.directory !== original.directory
+          || ![pending.sourceUserMessageID, input.messageID].includes(latest)) throw recoveryError('native_primary_continuation_fenced');
+        const source = observation.messages.find(message => message.info?.id === pending.sourceAssistantMessageID);
+        if (!source || source.info.sessionID !== input.sessionID || source.info.role !== 'assistant'
+          || source.turnOwnership?.source !== 'native-sequence' || source.turnOwnership.userMessageID !== pending.sourceUserMessageID
+          || source.info.parentID !== pending.sourceUserMessageID
+          || !source.info.time?.completed || source.info.error) throw recoveryError('native_primary_continuation_fenced');
+        if (!await authorizeBounded(current) || handshake?.instanceID !== instanceID
+          || (generations.get(input.sessionID) ?? 0) !== generation) throw recoveryError('native_primary_continuation_fenced');
+      };
+      await recheck();
+      return { record: structuredClone(original), prompt: structuredClone(pending.prompt), recheck };
+    },
+    recordRejection(input, authorizeWrite) {
+      if(typeof authorizeWrite!=='function')throw recoveryError('native_rejection_authority_required');
+      return plugin({...input,action:'rejected'},authorizeWrite);
+    },
+    // A lost dispatch acknowledgement never rolls back or silently retries.
+    markPromptDispatchUncertain: ({ sessionID, messageID }) => mutate(sessionID, record => record
+      && record.anchorID === messageID && record.stepID === null && record.state === 'observing'
+      ? { ...record, state: 'needs_attention', reason: 'prompt_dispatch_uncertain' } : record),
+    // Existing admission performs one invalidation between its two guarded
+    // write checks. Stop/supersede invalidation is immediate, before its lock.
+    async captureNativePromptAdmission(id) {
+      await ready;
+      const generation=generations.get(id)??0,original=await store.readRecord(keyFor(id));
+      if((generations.get(id)??0)!==generation||draining||!ownsRuntime||!storageHealthy)throw recoveryError('native_queued_admission_revoked');
+      let began=false;
+      return async()=>{
+        const expected=generation+(began?1:0),current=await store.readRecord(keyFor(id));
+        if(draining||!ownsRuntime||!storageHealthy||(generations.get(id)??0)!==expected
+          ||current?.anchorID!==original?.anchorID||current?.cancellationGeneration!==original?.cancellationGeneration)throw recoveryError('native_queued_admission_revoked');
+        began=true;
+      };
+    },
     readRecord: (id) => store.readRecord(keyFor(id)),
     async getSnapshot(id) {
       const r = await store.readRecord(keyFor(id));
@@ -771,7 +1411,7 @@ export function createPrimaryRecoveryController(options) {
         ownerTask = withCrossProcessFileLock(path.join(store.directory, 'runtime-owner.lock'), async () => {
           ownsRuntime = true;
           await new Promise((release) => { releaseOwner = release; resolve(); });
-        }, { timeoutMs: 0 }).catch(() => { diagnostic('provider_recovery_owner_unavailable'); resolve(); });
+        }, { timeoutMs: 0, windowsLauncher: options.windowsLauncher }).catch(() => { diagnostic('provider_recovery_owner_unavailable'); resolve(); });
       });
       for (const { record } of await store.listRecords()) {
         records.set(record.sessionID, record);
@@ -791,7 +1431,7 @@ export function createPrimaryRecoveryController(options) {
     },
     async drain() {
       draining = true; clearInterval(timer);
-      await Promise.allSettled([...pending.values()]); await store.drain();
+      await Promise.allSettled([...pending.values()]); await store.drain();await streamReceipts.drain();
       releaseOwner?.(); await ownerTask; ownsRuntime = false;
     },
   };

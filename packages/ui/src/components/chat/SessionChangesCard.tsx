@@ -1,3 +1,4 @@
+import { useRuntimeFeature } from '@/lib/opencode/runtime-capabilities';
 import React from 'react';
 import {
     RiArrowDownSLine,
@@ -21,6 +22,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { ContentChangeReason } from '@/hooks/useChatAutoFollow';
 import { useI18n } from '@/lib/i18n';
+import type { SessionChangesCurrent } from '@/lib/opencode/client';
 import { cn } from '@/lib/utils';
 
 import type { ChangedFileEntry, GitChangedFile } from './changedFiles';
@@ -42,8 +44,8 @@ const SESSION_CHANGES_CARD_STYLE: React.CSSProperties & Record<'--managed-task-c
 };
 const SESSION_CHANGES_CARD_CLASS = 'relative isolate overflow-hidden rounded-xl border border-[color:var(--managed-task-card-border)] bg-[color-mix(in_srgb,var(--primary-base)_3%,var(--surface-background))]';
 
-/** Rows shown before "Show N more files". */
-export const SESSION_CHANGES_INITIAL_VISIBLE_FILES = 3;
+/** Rows shown before "Show more". */
+export const SESSION_CHANGES_INITIAL_VISIBLE_FILES = 5;
 
 // ---------------------------------------------------------------------------
 // View
@@ -54,6 +56,8 @@ export interface SessionChangesCardViewProps {
     files: GitChangedFile[];
     fileCount?: number;
     totalsMode?: 'net' | 'recorded';
+    current?: SessionChangesCurrent;
+    coverageBySession?: { sessionID: string; reasons: string[] }[];
     pageIndex?: number;
     pageLoading?: boolean;
     onNextPage?: () => void;
@@ -67,7 +71,7 @@ export interface SessionChangesCardViewProps {
     disabledReason: string | null;
     busy: SessionChangesBusy;
     isMobile?: boolean;
-    /** Rows visible while collapsed; the rest fold behind "Show N more files". */
+    /** Rows visible while collapsed; the rest fold behind "Show more". */
     initialVisible?: number;
     /** The card lives outside the virtualised list: structural changes must reach the auto-follow controller. */
     onContentChange?: (reason?: ContentChangeReason) => void;
@@ -81,6 +85,8 @@ export const SessionChangesCardView: React.FC<SessionChangesCardViewProps> = ({
     files,
     fileCount: totalFileCount,
     totalsMode = 'net',
+    current,
+    coverageBySession,
     pageIndex = 0,
     pageLoading = false,
     onNextPage,
@@ -122,6 +128,17 @@ export const SessionChangesCardView: React.FC<SessionChangesCardViewProps> = ({
     const { visibleFiles, hiddenCount } = resolveVisibleChangedFiles(files, isExpanded, initialVisible);
     const canCollapse = isExpanded && fileCount > Math.max(0, initialVisible);
     const showToggle = mode === 'changes' && (hiddenCount > 0 || canCollapse);
+    const coverageGaps = coverageBySession?.filter((entry) => entry.reasons.length > 0) ?? [];
+    const currentCount = current?.state === 'verified' ? current.verifiedFileCount : current?.uncertainFileCount;
+    const currentMessage = current ? t(current.state === 'restored' ? 'chat.sessionChanges.current.restored'
+        : current.state === 'verified'
+            ? (currentCount === 1 ? 'chat.sessionChanges.current.verifiedOne' : 'chat.sessionChanges.current.verified')
+            : (currentCount === 1 ? 'chat.sessionChanges.current.uncertainOne' : 'chat.sessionChanges.current.uncertain'),
+        { count: currentCount }) : null;
+    const foreignCount = current?.state === 'uncertain' ? current.foreignModifiedCount : 0;
+    const foreignMessage = foreignCount > 0
+        ? t(foreignCount === 1 ? 'chat.sessionChanges.current.foreignOne' : 'chat.sessionChanges.current.foreign', { count: foreignCount })
+        : null;
 
     // Mount, undo/redo flips and expand/collapse all change the height below the
     // last message; stick-to-bottom only stays correct when it hears about them.
@@ -146,7 +163,7 @@ export const SessionChangesCardView: React.FC<SessionChangesCardViewProps> = ({
     const undoButton = (
         <Tooltip>
             <TooltipTrigger asChild>
-                <span className="shrink-0" tabIndex={undoDisabled ? 0 : undefined}>
+                <span className="shrink-0" tabIndex={undoDisabled ? 0 : undefined} title={undoTooltip}>
                     <Button
                         type="button"
                         size="xs"
@@ -221,7 +238,7 @@ export const SessionChangesCardView: React.FC<SessionChangesCardViewProps> = ({
                     <header
                         className={cn(
                             'flex items-start gap-2 px-3 py-2',
-                            (hasRows || showToggle || (mode === 'changes' && statusMessage)) && 'border-b border-border/70',
+                            (hasRows || showToggle) && 'border-b border-border/70',
                         )}
                     >
                         <RiFileEditLine className="mt-0.5 size-3.5 shrink-0 text-[var(--primary-base)]" aria-hidden="true" />
@@ -244,6 +261,7 @@ export const SessionChangesCardView: React.FC<SessionChangesCardViewProps> = ({
                                     <Popover.Portal>
                                         <Popover.Positioner side="top" align="start" sideOffset={4} collisionPadding={8}>
                                             <Popover.Popup
+                                                data-session-changes-review="true"
                                                 style={changedFilesPopoverStyle}
                                                 className={cn(
                                                     changedFilesPopoverClassName,
@@ -256,11 +274,16 @@ export const SessionChangesCardView: React.FC<SessionChangesCardViewProps> = ({
                                                     onOpenFile={handleOpenFile}
                                                 />
                                                 {pagination}
-                                                {statusMessage ? (
-                                                    <div className="px-2 py-1 typography-meta text-muted-foreground">
-                                                        {statusMessage}
-                                                    </div>
-                                                ) : null}
+                                                {currentMessage ? <p className="px-2 py-1 typography-meta text-muted-foreground" data-session-changes-current={current?.state}>{currentMessage}{foreignMessage ? <> <span data-session-changes-foreign={foreignCount}>{foreignMessage}</span></> : null}</p> : null}
+                                                {coverageGaps.length ? <details className="px-2 py-1 typography-meta text-muted-foreground">
+                                                    <summary>{t('chat.sessionChanges.coverageGaps', { count: coverageGaps.length })}</summary>
+                                                    {coverageGaps.map((entry) => <p key={entry.sessionID}>{entry.sessionID}: {entry.reasons.join(', ')}</p>)}
+                                                </details> : null}
+                                                {statusMessage ? <p className="px-2 py-1 typography-meta text-muted-foreground" role="status">
+                                                    {statusMessage}
+                                                    {onRetry ? <button type="button" className="ml-2 underline" data-session-changes-action="retry" onClick={onRetry}>{t('chat.sessionChanges.retry')}</button> : null}
+                                                    {onOpenRepository ? <button type="button" className="ml-2 underline" onClick={onOpenRepository}>{t('chat.sessionChanges.repositoryReview')}</button> : null}
+                                                </p> : null}
                                             </Popover.Popup>
                                         </Popover.Positioner>
                                     </Popover.Portal>
@@ -278,6 +301,7 @@ export const SessionChangesCardView: React.FC<SessionChangesCardViewProps> = ({
                                     currentDirectory={directory}
                                     onOpenFile={onOpenFile}
                                     className="px-3 py-1.5"
+                                    showVerification={false}
                                 />
                             ))}
                         </div>
@@ -303,13 +327,6 @@ export const SessionChangesCardView: React.FC<SessionChangesCardViewProps> = ({
                                 )}
                             </Button>
                         </div>
-                    ) : null}
-                    {statusMessage ? (
-                        <p className="border-t border-border/70 px-3 py-1.5 typography-meta text-muted-foreground">
-                            {statusMessage}
-                            {onRetry ? <button type="button" className="ml-2 underline" data-session-changes-action="retry" onClick={onRetry}>{t('chat.sessionChanges.retry')}</button> : null}
-                            {onOpenRepository ? <button type="button" className="ml-2 underline" onClick={onOpenRepository}>{t('chat.sessionChanges.repositoryReview')}</button> : null}
-                        </p>
                     ) : null}
                 </div>
             </section>
@@ -345,12 +362,12 @@ export interface SessionChangesCardProps {
 }
 
 /**
- * "Edited N files · Review changes · Undo" — the end-of-conversation card for
+ * "Edited N files · View changes · Undo" — the end-of-conversation card for
  * the current session's tree, mounted by `ChatContainer` after the compaction
  * continuity card and before the status row. Visibility is decided solely by
  * `resolveSessionChangesFooterState` inside the controller.
  */
-export const SessionChangesCard: React.FC<SessionChangesCardProps> = React.memo(({ isMobile, onContentChange }) => {
+const AvailableSessionChangesCard: React.FC<SessionChangesCardProps> = React.memo(({ isMobile, onContentChange }) => {
     const controller = useSessionChangesController();
 
     if (!controller.state.visible || !controller.rootSessionId) {
@@ -365,6 +382,8 @@ export const SessionChangesCard: React.FC<SessionChangesCardProps> = React.memo(
             files={controller.files}
             fileCount={controller.fileCount}
             totalsMode={controller.totalsMode}
+            current={controller.current}
+            coverageBySession={controller.coverageBySession}
             pageIndex={controller.pageIndex}
             pageLoading={controller.pageLoading}
             onNextPage={controller.nextPage}
@@ -395,4 +414,9 @@ export const SessionChangesCard: React.FC<SessionChangesCardProps> = React.memo(
     );
 });
 
-SessionChangesCard.displayName = 'SessionChangesCard';
+AvailableSessionChangesCard.displayName = 'SessionChangesCard';
+
+export const SessionChangesCard: React.FC<SessionChangesCardProps> = (props) => {
+    const available = useRuntimeFeature('revert');
+    return available ? <AvailableSessionChangesCard {...props} /> : null;
+};

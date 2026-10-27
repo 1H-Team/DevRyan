@@ -1,0 +1,349 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": [
+    "typescript",
+    "react"
+  ],
+  "categories": {
+    "correctness": "off",
+    "suspicious": "off",
+    "pedantic": "off",
+    "perf": "off",
+    "style": "off",
+    "restriction": "off",
+    "nursery": "off"
+  },
+  "env": {
+    "browser": true,
+    "es2020": true
+  },
+  "ignorePatterns": [
+    "dist",
+    ".openchamber",
+    "**/*.js",
+    "**/*.jsx",
+    "**/*.mjs",
+    "**/*.cjs"
+  ],
+  "rules": {
+    "for-direction": "error",
+    "no-async-promise-executor": "error",
+    "no-case-declarations": "error",
+    "no-compare-neg-zero": "error",
+    "no-cond-assign": "error",
+    "no-constant-binary-expression": "error",
+    "no-constant-condition": "error",
+    "no-control-regex": "error",
+    "no-debugger": "error",
+    "no-delete-var": "error",
+    "no-dupe-else-if": "error",
+    "no-dupe-keys": "error",
+    "no-duplicate-case": "error",
+    "no-empty": "error",
+    "no-empty-character-class": "error",
+    "no-empty-pattern": "error",
+    "no-empty-static-block": "error",
+    "no-ex-assign": "error",
+    "no-extra-boolean-cast": "error",
+    "no-fallthrough": "error",
+    "no-global-assign": "error",
+    "no-invalid-regexp": "error",
+    "no-irregular-whitespace": "error",
+    "no-loss-of-precision": "error",
+    "no-misleading-character-class": "error",
+    "no-nonoctal-decimal-escape": "error",
+    "no-prototype-builtins": "error",
+    "no-regex-spaces": "error",
+    "no-self-assign": "error",
+    "no-shadow-restricted-names": "error",
+    "no-sparse-arrays": "error",
+    "no-unexpected-multiline": "error",
+    "no-unsafe-finally": "error",
+    "no-unsafe-optional-chaining": "error",
+    "no-unused-labels": "error",
+    "no-unused-private-class-members": "error",
+    "no-useless-backreference": "error",
+    "no-useless-catch": "error",
+    "no-useless-escape": "error",
+    "require-yield": "error",
+    "use-isnan": "error",
+    "valid-typeof": "error",
+    "no-var": "error",
+    "prefer-const": "error",
+    "prefer-rest-params": "error",
+    "prefer-spread": "error",
+    "typescript/ban-ts-comment": "error",
+    "typescript/no-array-constructor": "error",
+    "typescript/no-duplicate-enum-values": "error",
+    "typescript/no-empty-object-type": "error",
+    "typescript/no-explicit-any": "error",
+    "typescript/no-extra-non-null-assertion": "error",
+    "typescript/no-misused-new": "error",
+    "typescript/no-namespace": "error",
+    "typescript/no-non-null-asserted-optional-chain": "error",
+    "typescript/no-require-imports": "error",
+    "typescript/no-this-alias": "error",
+    "typescript/no-unnecessary-type-constraint": "error",
+    "typescript/no-unsafe-declaration-merging": "error",
+    "typescript/no-unsafe-function-type": "error",
+    "no-unused-expressions": "error",
+    "no-unused-vars": "error",
+    "typescript/no-wrapper-object-types": "error",
+    "typescript/prefer-as-const": "error",
+    "typescript/prefer-namespace-keyword": "error",
+    "typescript/triple-slash-reference": "error",
+    "react/rules-of-hooks": "error",
+    "react/exhaustive-deps": "warn",
+    "react/only-export-components": [
+      "warn",
+      {
+        "allowConstantExport": true
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": [
+        "packages/ui/src/components/chat/ChatMessage.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "./message/partUtils",
+                "importNames": [
+                  "filterVisibleParts"
+                ],
+                "message": "ChatMessage renders projectAssistantDisplayParts, not partUtils filters"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "packages/ui/src/components/chat/ChatInput.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "(^|/)(PendingChangesBar|QueuedMessageChips)$",
+                "message": "Removed composer surfaces"
+              },
+              {
+                "regex": "(^|/)(GitHubIssuePickerDialog|GitHubPrPickerDialog|StashDialog)$",
+                "message": "Use the lazy wrappers from ./lazyChatDialogs"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "packages/ui/src/components/chat/ChatContainer.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "(^|/)QuestionCard$",
+                "message": "QuestionCard renders inside ChatInput only"
+              },
+              {
+                "regex": "(^|/)TimelineDialog$",
+                "message": "Use LazyTimelineDialog from ./lazyChatDialogs"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "packages/ui/src/components/chat/AgentHandoffGuard.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "(^|/)AgentHandoffDialog$",
+                "message": "Use LazyAgentHandoffDialog from ./lazyChatDialogs"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "packages/ui/src/components/chat/MessageList.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "(^|/)ManagedTaskList$",
+                "message": "ManagedTaskList renders from message/MessageBody only"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "packages/ui/src/components/chat/message/parts/StaticToolRow.tsx",
+        "packages/ui/src/components/chat/message/parts/AssistantTextPart.tsx",
+        "packages/ui/src/components/chat/message/parts/ProgressiveGroup.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "(^|/)(GeneratedImageResult|assistantImageGallery[^/]*)$",
+                "message": "Images render once, from MessageBody"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "packages/ui/src/components/sections/devryan/appearance/AppearancePreview.tsx",
+        "packages/ui/src/components/sections/devryan/appearance/optionIllustrations.tsx",
+        "packages/ui/src/components/sections/devryan/appearance/ThemeSwatch.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "(markdown|shiki|mermaid|diff|@/components/chat/)",
+                "message": "Appearance previews stay static: no chat renderers or heavy graphs"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "packages/ui/src/components/sections/providers/ManagedQuotaCredentials.tsx"
+      ],
+      "rules": {
+        "no-restricted-globals": [
+          "error",
+          {
+            "name": "setInterval",
+            "message": "Quota refresh is owned by the refresh coordinator"
+          },
+          {
+            "name": "setTimeout",
+            "message": "Quota refresh is owned by the refresh coordinator"
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "packages/ui/src/components/session/SessionSidebar.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "useGitHubPrStatusStore$",
+                "message": "The branch-only sidebar does not load PR status"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "packages/ui/src/components/layout/Header.tsx",
+        "packages/ui/src/components/layout/DesktopRightChromeActions.tsx"
+      ],
+      "rules": {
+        "no-restricted-globals": [
+          "error",
+          {
+            "name": "setInterval",
+            "message": "Quota refresh is owned by AppEffects"
+          }
+        ],
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "useQuotaAutoRefresh$",
+                "message": "Quota refresh is owned by AppEffects"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "packages/ui/src/components/layout/ContextPanel.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "./DesktopBrowserPane",
+                "importNames": [
+                  "ManualBrowserWorkspacePane",
+                  "BrowserLeasePane"
+                ],
+                "message": "ContextPanel mounts the browser through BrowserPanel"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "packages/ui/src/components/session/sidebar/SessionNodeItem.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "(useBotsStore$|@/components/bots/)",
+                "message": "Session rows do not depend on Bots"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
