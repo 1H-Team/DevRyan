@@ -770,9 +770,14 @@ debounced settings writer remains for its existing callers.
 Plan file records retain the saved SHA-256 version, canonical content and
 sanitized server source identity. Plan approval requires a successful current
 settled source and the exact saved version. A validation attempt is tied to
-the tail message and authoritative status observation; a transient settlement
-refusal is retried on a new observation, without polling. Late saves/refusals
-from an older attempt cannot replace a newer record. Plan View acknowledges
+the tail message and authoritative status observation. A transient settlement
+refusal (or one naming no reason) is not a failure: the record stays saving with
+`waitingFor: 'settlement'` and the host's reason, the card shows "Waiting for
+the run to settle…" (or "Waiting for subagents to finish…" for a known
+reason), and the save repeats on idle, status and managed-task changes and on a
+2 s to 30 s backoff for about 3 minutes, then fails with Retry. A terminal
+reason fails at once. Late saves/refusals from an older attempt cannot replace
+a newer record. Plan View acknowledges
 actual returned content/version after read or edit.
 
 Session-tree change reads keep their captured runtime/account key through

@@ -43,6 +43,7 @@ import {
   shouldPersistPlanCard,
 } from './planCardReveal';
 import { persistSessionPlanRevision } from '@/lib/plans/sessionPlanPersistence';
+import { planSettlementWaitingText } from '@/lib/plans/planSettlement';
 import { useSessionPlanFileStore } from '@/stores/useSessionPlanFileStore';
 
 const COLLAPSED_MAX_HEIGHT = PLAN_CARD_COLLAPSED_MAX_HEIGHT_PX;
@@ -453,7 +454,10 @@ const PlanCard: React.FC<PlanCardProps> = ({
       </div>
       <div className="flex items-center justify-between gap-3 border-t border-border/60 px-5 py-3">
         <div className="flex min-w-0 items-center gap-2 typography-ui-meta text-muted-foreground">
-          {currentPlanFileRecord?.status === 'saving' ? <span>Saving plan…</span> : null}
+          {currentPlanFileRecord?.status === 'saving' ? (
+            <span>{currentPlanFileRecord.waitingFor === 'settlement'
+              ? planSettlementWaitingText(currentPlanFileRecord.waitingReason) : 'Saving plan…'}</span>
+          ) : null}
           {currentPlanFileRecord?.status === 'error' ? (
             <>
               <span title={currentPlanFileRecord.error ?? undefined}>Couldn’t save plan.</span>

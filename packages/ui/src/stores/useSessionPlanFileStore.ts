@@ -15,6 +15,9 @@ export interface SessionPlanFileRecord {
   canonicalContent?: string;
   version?: string;
   validationAttempt?: string;
+  /** Saving waits for the run to settle; `waitingReason` is the host's reason, if named. */
+  waitingFor?: 'settlement';
+  waitingReason?: string | null;
 }
 
 interface SessionPlanFileState {
@@ -31,6 +34,7 @@ interface SessionPlanFileState {
     validationAttempt?: string,
   ) => void;
   markError: (sessionId: string, sourceMessageId: string, error: string, validationAttempt?: string) => void;
+  markWaiting: (sessionId: string, sourceMessageId: string, reason: string | null, validationAttempt?: string) => void;
   claimAutoReveal: (sessionId: string, sourceMessageId: string) => boolean;
   clearSession: (sessionId: string) => void;
 }
@@ -104,6 +108,24 @@ export const useSessionPlanFileStore = create<SessionPlanFileState>((set) => ({
             error: null,
             autoRevealed: current.autoRevealed === true,
           },
+        },
+      };
+    });
+  },
+
+  markWaiting: (sessionId, sourceMessageId, reason, validationAttempt) => {
+    const id = clean(sessionId);
+    const messageId = clean(sourceMessageId);
+    if (!id || !messageId) return;
+
+    set((state) => {
+      const current = state.recordsBySession[id];
+      if (current?.sourceMessageId !== messageId || validationAttempt !== undefined && current.validationAttempt !== validationAttempt) return state;
+      if (current.status === 'saving' && current.waitingFor === 'settlement' && current.waitingReason === reason) return state;
+      return {
+        recordsBySession: {
+          ...state.recordsBySession,
+          [id]: { ...current, status: 'saving', error: null, waitingFor: 'settlement', waitingReason: reason },
         },
       };
     });

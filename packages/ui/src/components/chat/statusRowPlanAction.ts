@@ -1,3 +1,4 @@
+import { planSettlementWaitingText } from '@/lib/plans/planSettlement';
 import type { SessionPlanFileRecord } from '@/stores/useSessionPlanFileStore';
 import type { PlanIndicatorEntry } from '@/sync/plan-indicator';
 
@@ -89,7 +90,8 @@ export const getStatusRowPlanActionState = ({
   }
 
   if (record?.status === 'saving') {
-    return { visible: true, enabled: false, disabledReason: 'Plan file is still saving.' };
+    return { visible: true, enabled: false, disabledReason: record.waitingFor === 'settlement'
+      ? planSettlementWaitingText(record.waitingReason) : 'Plan file is still saving.' };
   }
 
   if (record?.status === 'error') {

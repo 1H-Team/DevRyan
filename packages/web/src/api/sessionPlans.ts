@@ -27,6 +27,7 @@ const requestJson = async (url: string, init?: RequestInit): Promise<Record<stri
       status: response.status,
       ...(typeof value.code === 'string' ? { code: value.code } : {}),
       ...(typeof value.version === 'string' ? { version: value.version } : {}),
+      ...(typeof value.reason === 'string' && /^[a-z_]{1,64}$/.test(value.reason) ? { reason: value.reason } : {}),
     });
   }
   if (typeof value.path !== 'string' || typeof value.version !== 'string' || !value.version) {

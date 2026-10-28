@@ -35,7 +35,7 @@ describe('plan presentation', () => {
 
   test('hides the saved success label while retaining actionable save states', () => {
     expect(planCardSource).not.toContain('<span>Plan saved</span>');
-    expect(planCardSource).toContain('<span>Saving plan…</span>');
+    expect(planCardSource).toContain("? planSettlementWaitingText(currentPlanFileRecord.waitingReason) : 'Saving plan…'");
     expect(planCardSource).toContain('Couldn’t save plan.');
     expect(planCardSource).toContain('void persistPlan();');
     expect(planCardSource).toContain('if (!shouldPersist || currentPlanFileRecord) return;');

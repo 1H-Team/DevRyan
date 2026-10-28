@@ -122,15 +122,37 @@ describe('session plan persistence coordinator', () => {
     expect(attempts).toBe(2);
   });
 
-  test('retries a transient settlement refusal only after a new authoritative validation attempt', async () => {
+  // Intentional contract change (D4): an unsettled run is waited out, not a failure.
+  test('waits out a transient settlement refusal and retries it without caching a failure', async () => {
     let writes = 0;
-    const storage = createStorage({ writeFile: async () => { if (++writes === 1) throw new Error('plan_source_unsettled'); } });
+    const unsettled = (reason?: string) => Object.assign(new Error('plan_source_unsettled'), { code: 'plan_source_unsettled', ...(reason ? { reason } : {}) });
+    const storage = createStorage({ writeFile: async () => {
+      writes += 1;
+      if (writes === 1) throw unsettled('tasks_active');
+      if (writes === 2) throw unsettled();
+    } });
     const input = { sessionId: 'session-a', identity, markdown: '# Plan' };
-    expect((await persistSessionPlanRevision(input, { storage, validationAttempt: 'tail:busy-1' })).status).toBe('error');
-    expect((await persistSessionPlanRevision(input, { storage, validationAttempt: 'tail:busy-1' })).status).toBe('error');
+    expect(await persistSessionPlanRevision(input, { storage, validationAttempt: 'tail:busy-1' }))
+      .toMatchObject({ status: 'saving', waitingFor: 'settlement', waitingReason: 'tasks_active', error: null });
+    // Same validation attempt: retried, not answered from a cached failure. An older host names no reason.
+    expect(await persistSessionPlanRevision(input, { storage, validationAttempt: 'tail:busy-1' }))
+      .toMatchObject({ status: 'saving', waitingFor: 'settlement', waitingReason: null });
+    expect((await persistSessionPlanRevision(input, { storage, validationAttempt: 'tail:busy-1' })).status).toBe('saved');
+    expect(writes).toBe(3);
+  });
+
+  test('a terminal settlement refusal is a failure, kept until a new attempt or an explicit retry', async () => {
+    let writes = 0;
+    const storage = createStorage({ writeFile: async () => {
+      if (++writes === 1) throw Object.assign(new Error('plan_source_unsettled'), { code: 'plan_source_unsettled', reason: 'superseded' });
+    } });
+    const input = { sessionId: 'session-a', identity, markdown: '# Plan' };
+    const failed = await persistSessionPlanRevision(input, { storage, validationAttempt: 'tail:1' });
+    expect(failed).toMatchObject({ status: 'error', error: 'plan_source_unsettled' });
+    expect(failed.waitingFor).toBeUndefined();
+    expect(await persistSessionPlanRevision(input, { storage, validationAttempt: 'tail:1' })).toEqual(failed);
     expect(writes).toBe(1);
-    expect((await persistSessionPlanRevision(input, { storage, validationAttempt: 'tail:idle-2' })).status).toBe('saved');
-    expect(writes).toBe(2);
+    expect((await persistSessionPlanRevision(input, { storage, validationAttempt: 'tail:1', retry: true })).status).toBe('saved');
   });
 
   test('a late same-source validation cannot overwrite a newer successful settlement', async () => {

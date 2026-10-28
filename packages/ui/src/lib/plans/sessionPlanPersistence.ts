@@ -2,6 +2,7 @@ import { useSessionPlanFileStore, type SessionPlanFileRecord } from '@/stores/us
 import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 import type { RuntimeAPIs, SessionPlansAPI, SessionPlanSourceIdentity } from '@/lib/api/types';
 
+import { planSettlementWait } from './planSettlement';
 import {
   ensureSessionPlanFile,
   type SessionPlanFileIdentity,
@@ -98,8 +99,15 @@ export const persistSessionPlanRevision = (
         options.validationAttempt,
       );
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to save plan file';
-      useSessionPlanFileStore.getState().markError(sessionId, sourceMessageId, message, options.validationAttempt);
+      // An unsettled run is waited out, not cached as a failure: the record
+      // stays saving and the caller's lifecycle retries it.
+      const wait = planSettlementWait(error);
+      if (wait) {
+        useSessionPlanFileStore.getState().markWaiting(sessionId, sourceMessageId, wait.reason, options.validationAttempt);
+      } else {
+        const message = error instanceof Error ? error.message : 'Failed to save plan file';
+        useSessionPlanFileStore.getState().markError(sessionId, sourceMessageId, message, options.validationAttempt);
+      }
     }
 
     return getCurrentRecord(sessionId, sourceMessageId) ?? {

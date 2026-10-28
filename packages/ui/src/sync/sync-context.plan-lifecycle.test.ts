@@ -41,6 +41,7 @@ import {
   retryPendingSessionCompletions,
   setActiveSession,
   setExternallyViewedSession,
+  setPlanSettlementRetryScheduleForTest,
 } from "./sync-context"
 import { sessionEvents, type SessionPlanUpdated } from "@/lib/sessionEvents"
 import { useNotificationStore } from "./notification-store"
@@ -1917,12 +1918,9 @@ describe("sync plan lifecycle on message.part.delta", () => {
     expect(store.getState().session_status[SESSION_ID]).toEqual({ type: "idle" })
   })
 
-  test("revalidates a transient settlement refusal on a new authoritative idle transition", async () => {
-    let attempts = 0
-    registerRuntimeAPIs({ sessionPlans: { ensureRevision: async () => {
-      if (++attempts === 1) throw new Error('plan_source_unsettled')
-      return savedPlanResponse()
-    } } } as unknown as RuntimeAPIs)
+  // Intentional contract change (D4): an unsettled run is waited out, not a failure.
+  const unsettled = (reason?: string) => Object.assign(new Error('plan_source_unsettled'), { code: 'plan_source_unsettled', ...(reason ? { reason } : {}) })
+  const planStore = () => {
     const childStores = new ChildStoreManager()
     const store = childStores.ensureChild(DIRECTORY)
     store.setState({ ...INITIAL_STATE,
@@ -1932,16 +1930,74 @@ describe("sync plan lifecycle on message.part.delta", () => {
       session_status: { [SESSION_ID]: { type: 'idle' } as SessionStatus },
     })
     useSessionUIStore.getState().recordUserMessagePlanMode(SESSION_ID, USER_MESSAGE_ID, true)
-    await restorePersistedSessionIndicatorsForDirectory(DIRECTORY, store)
-    expect(useSessionPlanFileStore.getState().recordsBySession[SESSION_ID]?.status).toBe('error')
-    expect(useSessionUIStore.getState().sessionPlanIndicator.get(SESSION_ID)).toBeUndefined()
-    await restorePersistedSessionIndicatorsForDirectory(DIRECTORY, store)
-    expect(attempts).toBe(1)
-    applySyncEventForTest(DIRECTORY, sessionStatusEvent({ type: 'busy' } as SessionStatus), childStores, routingIndexFor())
-    applySyncEventForTest(DIRECTORY, sessionStatusEvent({ type: 'idle' } as SessionStatus), childStores, routingIndexFor())
-    await flushAsync()
-    expect(attempts).toBe(2)
-    expect(useSessionUIStore.getState().sessionPlanIndicator.get(SESSION_ID)).toEqual({ state: 'proposed', sourceMessageId: ASSISTANT_MESSAGE_ID })
+    return { childStores, store }
+  }
+  const settle = async (rounds = 5) => { for (let round = 0; round < rounds; round += 1) await flushAsync() }
+
+  test("waits out a transient settlement refusal and saves on the next authoritative idle transition", async () => {
+    setPlanSettlementRetryScheduleForTest([60_000])
+    try {
+      let attempts = 0
+      registerRuntimeAPIs({ sessionPlans: { ensureRevision: async () => {
+        if (++attempts === 1) throw unsettled('tasks_active')
+        return savedPlanResponse()
+      } } } as unknown as RuntimeAPIs)
+      const { childStores, store } = planStore()
+      await restorePersistedSessionIndicatorsForDirectory(DIRECTORY, store)
+      expect(useSessionPlanFileStore.getState().recordsBySession[SESSION_ID]).toMatchObject({ status: 'saving', waitingFor: 'settlement',
+        waitingReason: 'tasks_active' })
+      expect(useSessionUIStore.getState().sessionPlanIndicator.get(SESSION_ID)).toBeUndefined()
+      applySyncEventForTest(DIRECTORY, sessionStatusEvent({ type: 'busy' } as SessionStatus), childStores, routingIndexFor())
+      applySyncEventForTest(DIRECTORY, sessionStatusEvent({ type: 'idle' } as SessionStatus), childStores, routingIndexFor())
+      await flushAsync()
+      expect(attempts).toBe(2)
+      expect(useSessionUIStore.getState().sessionPlanIndicator.get(SESSION_ID)).toEqual({ state: 'proposed', sourceMessageId: ASSISTANT_MESSAGE_ID })
+    } finally { setPlanSettlementRetryScheduleForTest(null) }
+  })
+
+  test("a waiting plan is saved again on its own schedule, with no new events", async () => {
+    setPlanSettlementRetryScheduleForTest([0, 0])
+    try {
+      let attempts = 0
+      registerRuntimeAPIs({ sessionPlans: { ensureRevision: async () => {
+        if (++attempts === 1) throw unsettled()
+        return savedPlanResponse()
+      } } } as unknown as RuntimeAPIs)
+      const { store } = planStore()
+      await restorePersistedSessionIndicatorsForDirectory(DIRECTORY, store)
+      await settle()
+      expect(attempts).toBe(2)
+      expect(useSessionUIStore.getState().sessionPlanIndicator.get(SESSION_ID)).toEqual({ state: 'proposed', sourceMessageId: ASSISTANT_MESSAGE_ID })
+    } finally { setPlanSettlementRetryScheduleForTest(null) }
+  })
+
+  test("a plan whose run never settles fails with Retry once its schedule is spent", async () => {
+    setPlanSettlementRetryScheduleForTest([0, 0])
+    try {
+      let attempts = 0
+      registerRuntimeAPIs({ sessionPlans: { ensureRevision: async () => { attempts += 1; throw unsettled('sessions_busy') } } } as unknown as RuntimeAPIs)
+      const { store } = planStore()
+      await restorePersistedSessionIndicatorsForDirectory(DIRECTORY, store)
+      await settle(10)
+      expect(attempts).toBe(3)
+      expect(useSessionPlanFileStore.getState().recordsBySession[SESSION_ID]).toMatchObject({ status: 'error',
+        error: 'The run did not settle, so the plan was not saved.' })
+      expect(useSessionUIStore.getState().sessionPlanIndicator.get(SESSION_ID)).toBeUndefined()
+    } finally { setPlanSettlementRetryScheduleForTest(null) }
+  })
+
+  test("a terminal settlement refusal fails at once, with no retries", async () => {
+    setPlanSettlementRetryScheduleForTest([0, 0])
+    try {
+      let attempts = 0
+      registerRuntimeAPIs({ sessionPlans: { ensureRevision: async () => { attempts += 1; throw unsettled('superseded') } } } as unknown as RuntimeAPIs)
+      const { store } = planStore()
+      await restorePersistedSessionIndicatorsForDirectory(DIRECTORY, store)
+      await settle()
+      await restorePersistedSessionIndicatorsForDirectory(DIRECTORY, store)
+      expect(attempts).toBe(1)
+      expect(useSessionPlanFileStore.getState().recordsBySession[SESSION_ID]?.status).toBe('error')
+    } finally { setPlanSettlementRetryScheduleForTest(null) }
   })
 
   test("renders plan-ready yellow only after part, message, and authoritative idle updates settle the plan", async () => {
