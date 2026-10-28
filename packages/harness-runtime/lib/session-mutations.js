@@ -26,6 +26,16 @@ const permissions = (entry) => !entry || entry.deleted || entry.mode === '120000
 const equal = (a, b) => (a?.hash ?? null) === (b?.hash ?? null) && (a?.mode ?? null) === (b?.mode ?? null)
   && permissions(a) === permissions(b);
 const validID = (id) => typeof id === 'string' && id.length > 0 && id.length <= 1024 && !id.includes('\0');
+// The managed task attempt a lease's run belongs to, so the orchestrator stops
+// exactly that attempt's runs when it settles: `{ taskId, leaseToken }`, or
+// `{ state: 'none' }` between attempts and `{ state: 'unknown' }` before the
+// orchestrator is ready. Absent for roots and unmanaged sessions.
+const validAttempt = (value) => value === undefined || (value !== null && typeof value === 'object' && !Array.isArray(value)
+  && (Object.keys(value).length === 2 && validID(value.taskId) && validID(value.leaseToken)
+    || Object.keys(value).length === 1 && ['none', 'unknown'].includes(value.state)));
+// Who ended a cancelled run: a user Stop, or the orchestrator after its task
+// attempt settled. Neither run's completion restarts the conversation.
+const LEASE_STOPPERS = new Set(['operator', 'task_settled']);
 // Both history coverage and restore use this exact durable no-start proof.
 const neverStartedCall = ({ directory, sessionID, messageID, callID, pointer, lease, cancelled }) => validID(messageID) && (
   !pointer ? cancelled?.sessionID === sessionID && cancelled.messageID === messageID
@@ -1806,6 +1816,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     // and its publication is always empty (see prepareView and finishOwned).
     if (input.preparation !== undefined && (input.preparation !== 'read-only' || input.kind !== 'process'
       || input.publicationPolicy !== undefined)) throw changeError('invalid_capture_identity', 400);
+    if (!validAttempt(input.attempt)) throw changeError('invalid_capture_identity', 400);
     return locked(input.directory, async (repo) => {
       const { session, prompt } = await register(repo, input);
       if (session.pending) throw changeError('session_reverting');
@@ -1838,6 +1849,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         ...(input.publicationPolicy?{publicationPolicy:input.publicationPolicy}:{}),
         ...(input.publicationPath?{publicationPath:input.publicationPath}:{}),
         ...(input.ownerID ? { ownerID: input.ownerID } : {}),
+        ...(input.attempt ? { attempt: { ...input.attempt } } : {}),
         ...(control ? { preparation: 'none' } : input.preparation === 'read-only' ? { preparation: 'read-only' } : {}) };
       repo.db.set(key('leases', token), result);
       repo.db.set(key('calls', scopeKey), { token });
@@ -3090,9 +3102,9 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     const lease = await repo.db.get(key('leases', input.token));
     if (!lease) throw changeError('execution_unavailable');
     if (lease.state === 'published') throw changeError('execution_already_published');
-    if (input.stoppedBy !== undefined && input.stoppedBy !== 'operator') throw changeError('invalid_capture_identity', 400);
+    if (input.stoppedBy !== undefined && !LEASE_STOPPERS.has(input.stoppedBy)) throw changeError('invalid_capture_identity', 400);
     lease.state = 'cancelled'; lease.cleanupPending = !lease.cleaned;
-    if (input.stoppedBy === 'operator') lease.stoppedBy = 'operator';
+    if (input.stoppedBy !== undefined) lease.stoppedBy = input.stoppedBy;
     repo.db.set(key('leases', lease.token), lease);
   });
   const cancelUnstartedCall = (input) => locked(input.directory, async (repo) => {

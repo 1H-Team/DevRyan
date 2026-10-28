@@ -179,6 +179,22 @@ const assertNullableString = (value, field, options) => {
   assertString(value, field, options);
 };
 
+const RUN_CLEANUP_STATES = new Set(['pending', 'failed', 'done']);
+// Stopping a settled attempt's runs (scheduler `runAttemptCleanup`): bound to
+// the envelope's task and child session; a failure carries its code.
+const validateManagedTaskRunCleanup = (envelope, value) => {
+  if (!isRecord(value)) throw new TypeError('result runCleanup must be an object');
+  assertEnum(value.state, 'runCleanup.state', RUN_CLEANUP_STATES);
+  if (value.taskId !== envelope.taskId || typeof value.childSessionId !== 'string' || value.childSessionId !== envelope.childSessionId) {
+    throw new TypeError('result runCleanup must bind its task and child session');
+  }
+  assertString(value.leaseToken, 'runCleanup.leaseToken');
+  assertCount(value.attempts, 'runCleanup.attempts');
+  if (value.stopped !== undefined) assertCount(value.stopped, 'runCleanup.stopped');
+  if (value.code !== undefined) assertString(value.code, 'runCleanup.code');
+  if ((value.state === 'failed') !== (value.code !== undefined)) throw new TypeError('result runCleanup.code must be present exactly when it failed');
+};
+
 export const validateManagedTaskResultEnvelope = (envelope) => {
   if (!envelope || typeof envelope !== 'object' || Array.isArray(envelope)) {
     throw new TypeError('result envelope must be an object');
@@ -248,6 +264,7 @@ export const validateManagedTaskResultEnvelope = (envelope) => {
   if (envelope.autoResume !== undefined) {
     validateManagedTaskAutoResume(envelope.autoResume);
   }
+  if (envelope.runCleanup !== undefined) validateManagedTaskRunCleanup(envelope, envelope.runCleanup);
   JSON.stringify(envelope);
   return envelope;
 };

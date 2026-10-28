@@ -31,7 +31,11 @@ export interface MutationScope {
   /** Process leases only: no private view copy; the publication is always empty. */
   preparation?: 'read-only';
   ownerID?: string;
+  /** The managed task attempt the run belongs to (managed children only). */
+  attempt?: MutationLeaseAttempt;
 }
+/** `none`: between attempts; `unknown`: the orchestrator was not ready. */
+export type MutationLeaseAttempt = { taskId: string; leaseToken: string } | { state: 'none' | 'unknown' };
 export interface ReviewedToolEffectInput { tool: string; origin: { kind: 'native' | 'plugin'; id: string; manifestDigest: string; capabilities: readonly string[] };
   reviewedOrigin: { kind: 'native' | 'plugin'; id: string; manifestDigest: string; capabilities: readonly string[] } }
 export interface MutationFile { path: string; status: 'added' | 'modified' | 'deleted' }
@@ -64,11 +68,12 @@ export interface MutationLease {
   /** Dependency inputs linked read-only into the view (relative paths), classified from the project at preparation. */
   inputs?: string[];
   ownerID?: string;
+  attempt?: MutationLeaseAttempt;
   result?: MutationPublication;
   cleanupPending?: boolean;
   cleaned?: boolean;
-  /** A user Stop ended this run; its shell completion does not restart the conversation. */
-  stoppedBy?: 'operator';
+  /** A user Stop, or the orchestrator after the run's task attempt settled, ended this run; its shell completion does not restart the conversation. */
+  stoppedBy?: 'operator' | 'task_settled';
   /** Terminal uncertain outcome. Its private view and historical Git pin remain evidence. */
   rebootRecovery?: RebootRecoveryProof;
   nativeShellJob?: { jobID: string; command: string; notificationID?: string; itemHash?:string;itemDelivery?:'queue'|'steer'; deliveredID?: string; continuedID?: string; continuedAssistantID?: string };
@@ -163,8 +168,8 @@ export interface SessionMutationRuntime {
     Promise<{ files: Array<{ path: string; status: 'unchanged' | 'added' | 'modified' | 'deleted' }>; conflicts: Array<{ path: string }> }>;
   leaseForCall(input: Pick<MutationScope, 'directory' | 'sessionID' | 'callID'>): Promise<MutationLease | null>;
   executionOutcomes(input: {directory:string;sessionID:string;calls:readonly {callID:string;messageID:string;tool?:string}[]}): Promise<{sessionID:string;messageID:string;callID:string;outcome:'finished'|'never_started'|'uncertain';effect?:'read-only';coveredBy?:string}[]>;
-  /** `stoppedBy: 'operator'` records that a user Stop ended the run. */
-  cancelLease(input: { directory: string; token: string; stoppedBy?: 'operator' }): Promise<void>;
+  /** `stoppedBy` records that a user Stop (`operator`) or a settled task attempt (`task_settled`) ended the run. */
+  cancelLease(input: { directory: string; token: string; stoppedBy?: 'operator' | 'task_settled' }): Promise<void>;
   cancelUnstartedCall(input: { directory: string; sessionID: string; messageID: string; callID: string; token?: string; requireAbsent?: true;
     /** Constructor-only owner fence, checked under the ledger lock and atomic commit. */
     guard?: { readonly assertCurrent: () => void; readonly admissionRevision: number } }): Promise<void>;

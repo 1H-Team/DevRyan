@@ -247,6 +247,17 @@ the durable read view during uncommitted saves; equal creation times use the
 existing sequence so a cancelled newer child assignment cannot reveal an older
 title grant. This read does not change task, control-lease or cancellation state.
 
+## Settled attempts and their runs
+
+The runtime passes `stopAttemptRuns` (the execution host's boundary) and
+`onRunCleanup` to the scheduler, so a settled task attempt's background runs
+stop with it and each outcome is journaled as `task_run_cleanup`
+(`packages/orchestration-runtime/DOCUMENTATION.md`). `childAttempt` answers the
+attempt a child session's runs belong to, `unknown` until this owner is
+initialized; `application.js` treats every session as unmanaged when an
+external OpenCode means the owner never initializes, and resumes the shell
+completions it deferred once initialization finishes.
+
 ## Native dispatch readiness and stopped work
 
 Detached managed aborts use the native task-dispatch owner with `operation: abort`, the exact task lease and canonical child. The runtime verifies settlement authority (so cancellation can clean up its own live attempt), while create/prompt still require dispatch authority. No HTTP principal or expired submitting-tool permit is borrowed.

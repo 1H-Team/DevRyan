@@ -88,7 +88,21 @@ export function createNativeAdmissionOwner(options) {
     if (entry.controllerEpoch !== controllerEpoch || (active.get(entry.permit.token) !== entry
       && retiredExecutions.get(entry.permit.token) !== entry)) throw fail('native_permit_invalid', 403);
   };
-  const clearController = () => { for(const grant of interviewGrants.values())grant.controller.abort(fail('native_permit_revoked'));interviewGrants.clear();controllerEpoch++; active.clear(); retiredExecutions.clear(); sessionBindings.clear(); pendingShellWakes.clear(); pendingExecutionWakes.clear(); };
+  // Completions deferred while managed orchestration could not yet say whether
+  // their child session is managed (`resumeDeferredShellContinuations`).
+  const unclassifiedShellWakes = new Map();
+  const clearController = () => { for(const grant of interviewGrants.values())grant.controller.abort(fail('native_permit_revoked'));interviewGrants.clear();controllerEpoch++; active.clear(); retiredExecutions.clear(); sessionBindings.clear(); pendingShellWakes.clear(); pendingExecutionWakes.clear(); unclassifiedShellWakes.clear(); };
+  // Whether a run's completion may wake its session: roots and unmanaged
+  // subagents always; a managed child only for a run of its current attempt
+  // (`stale`: the notice reaches the model with the next prompt); `unknown`
+  // while managed orchestration is not ready (the intent stays durable).
+  const shellWakeClass = async (session, lease) => {
+    if (!session.parentID || typeof options.childAttempt !== 'function') return 'wake';
+    const attempt = await options.childAttempt({ sessionID: session.id, directory: session.directory });
+    if (!attempt) return 'wake';
+    if (attempt.state === 'unknown') return 'unknown';
+    return attempt.taskId && lease.attempt?.taskId === attempt.taskId && lease.attempt.leaseToken === attempt.leaseToken ? 'wake' : 'stale';
+  };
   const acknowledgeContinuation = async (input) => {
     assertController();
     if (controllerReplacement) throw fail('native_controller_replacing', 503);
@@ -1034,11 +1048,17 @@ export function createNativeAdmissionOwner(options) {
         userMessageID: entry.messageID, assistantMessageID: latest.nativeShellJob.continuedAssistantID, expectedRevision: state.revision });
       return;
     }
-    // A run a user Stop ended (session-execution-host.js stopSessionRuns) must
-    // not restart the stopped conversation. Its notice stays queued, unsent,
-    // and reaches the model with the next prompt; no wake intent is recorded.
-    if (latest.state === 'cancelled' && latest.stoppedBy === 'operator') return;
+    // A run a user Stop ended (session-execution-host.js stopSessionRuns), or
+    // one stopped because its task attempt settled, must not restart the
+    // conversation. Its notice stays queued, unsent, and reaches the model with
+    // the next prompt; no wake intent is recorded. The same holds for a run a
+    // settled or replaced attempt of a managed child left behind.
+    if (latest.state === 'cancelled' && ['operator', 'task_settled'].includes(latest.stoppedBy)) return;
+    const wakeClass = await shellWakeClass(session, latest);
+    assertController();
+    if (wakeClass === 'stale') return;
     await runtime.deferNativeContinuation({ directory: entry.directory, sessionID, operation });
+    if (wakeClass === 'unknown') { unclassifiedShellWakes.set(`${sessionID}\0${jobID}`, entry); return; }
     const state = await runtime.nativeAdmissionState({ directory: entry.directory, sessionID });
     assertController();
     if (state.held || typeof onContinuation !== 'function') return;
@@ -1079,6 +1099,8 @@ export function createNativeAdmissionOwner(options) {
       if(current?.lease?.token!==proof.lease.token||current.lease.nativeShellJob?.deliveredID!==entry.messageID
         ||current.lease.nativeShellJob.itemHash!==proof.lease.nativeShellJob.itemHash||current.lease.nativeShellJob.itemDelivery!==proof.lease.nativeShellJob.itemDelivery
         ||current.receipt?.terminated!==true||current.receipt.confined!==true||admission.held||admission.reverting)throw fail('native_completion_receipt_invalid',403);
+      // The attempt may have settled while the grant waited.
+      if(await shellWakeClass(session,current.lease)!=='wake')throw fail('native_completion_attempt_settled',403);
     };
     return options.withRecoveredShellGrant?options.withRecoveredShellGrant({directory:entry.directory,sessionID,messageID:entry.messageID,shellReceipt:{token:proof.lease.token,jobID,command:proof.lease.nativeShellJob.command,exitCode:proof.receipt.exitCode,itemHash:proof.lease.nativeShellJob.itemHash,itemDelivery:proof.lease.nativeShellJob.itemDelivery}},authorize,run):run(undefined);
   };
@@ -1535,6 +1557,17 @@ export function createNativeAdmissionOwner(options) {
     handleRpc: (method, input) => inController(async () => { if (typeof method !== 'string' || !method.startsWith('native.admission.')) throw fail('native_admission_rpc_unavailable', 403); const key = method.slice('native.admission.'.length); if (!Object.hasOwn(methods, key)) throw fail('native_admission_rpc_unavailable', 403); return methods[key](input); }),
     releaseTransactionHolds: input => inController(() => releaseTransactionHolds(input)),
     acknowledgeStartedContinuation: input => inController(() => acknowledgeStartedContinuation(input)),
+    // Completions deferred while their session could not be classified,
+    // evaluated once managed orchestration is ready; their intents stayed durable.
+    resumeDeferredShellContinuations: () => inController(async () => {
+      if (disposed) throw fail('native_owner_stopped', 503);
+      let first = null;
+      for (const [key, entry] of [...unclassifiedShellWakes]) {
+        unclassifiedShellWakes.delete(key);
+        try { await continueShell(entry); } catch (error) { first ??= error; }
+      }
+      if (first) throw first;
+    }),
     recoverShellContinuations: input => inController(async () => {
       if (disposed) throw fail('native_owner_stopped', 503);
       if (!path.isAbsolute(input.directory ?? '')) throw fail('native_session_directory_mismatch', 403);

@@ -644,6 +644,45 @@ test('an accepted Stop ends the stopped tree\'s running shell, records its cance
   } finally { f.terminated.resolve(f.receipt); await f.host.drain(); }
 });
 
+test('a child\'s run carries its task attempt, and only that settled attempt\'s cleanup stops it, as task_settled', async () => {
+  let attempt = { taskId: 'dvr_task_a', leaseToken: 'lease_a' };
+  const f = await nativePublicationFixture({ attemptFor: async () => attempt }, 'shell');
+  // The ledger stores the stamp on the lease that preparation returns.
+  mocks.runtime.reserve.mockImplementation(async request => ({ ...f.lease, reservedAt: 1_000, ...(request.attempt ? { attempt: request.attempt } : {}) }));
+  mocks.runtime.prepare.mockImplementation(async reserved => reserved);
+  const cleanup = (overrides = {}) => f.host.stopAttemptRuns({ childSessionId: input.sessionID, directory, taskId: 'dvr_task_a', leaseToken: 'lease_a',
+    settledAt: 2_000, reason: 'task_settled', ...overrides });
+  try {
+    await f.start(); await f.launched.promise;
+    expect(mocks.runtime.reserve).toHaveBeenCalledWith(expect.objectContaining({ attempt: { taskId: 'dvr_task_a', leaseToken: 'lease_a' } }));
+    await expect(cleanup({ reason: 'operator' })).rejects.toMatchObject({ code: 'invalid_capture_identity', status: 400 });
+    await expect(cleanup({ settledAt: undefined })).rejects.toMatchObject({ code: 'invalid_capture_identity', status: 400 });
+    // Another attempt's cleanup, and a cleanup while this attempt is still current, stop nothing.
+    expect(await cleanup({ taskId: 'dvr_task_b', leaseToken: 'lease_b' })).toEqual({ stopped: 0 });
+    expect(await cleanup()).toEqual({ stopped: 0 });
+    expect(f.processSignal().aborted).toBe(false);
+    attempt = { state: 'none' };
+    const stopping = cleanup();
+    await vi.waitFor(() => expect(f.processSignal().aborted).toBe(true));
+    f.terminated.resolve({ ...f.receipt, cancelled: true, exitCode: 143 });
+    expect(await stopping).toEqual({ stopped: 1 });
+    expect(mocks.runtime.cancelLease).toHaveBeenCalledWith({ directory, token: f.lease.token, stoppedBy: 'task_settled' });
+    expect(f.host.activeExecutionCalls({ directory, sessionID: input.sessionID })).toEqual([]);
+  } finally { f.terminated.resolve(f.receipt); await f.host.drain(); }
+});
+
+test('an unstamped run reserved after the attempt settled is left running', async () => {
+  const f = await nativePublicationFixture({ attemptFor: async () => ({ state: 'none' }) }, 'shell');
+  mocks.runtime.reserve.mockImplementation(async request => ({ ...f.lease, reservedAt: 3_000, attempt: request.attempt }));
+  mocks.runtime.prepare.mockImplementation(async reserved => reserved);
+  try {
+    await f.start(); await f.launched.promise;
+    expect(await f.host.stopAttemptRuns({ childSessionId: input.sessionID, directory, taskId: 'dvr_task_a', leaseToken: 'lease_a',
+      settledAt: 2_000, reason: 'task_settled' })).toEqual({ stopped: 0 });
+    expect(f.processSignal().aborted).toBe(false);
+  } finally { f.terminated.resolve(f.receipt); await f.host.drain(); }
+});
+
 test('the Stop kill switch leaves running shells untouched', async () => {
   vi.stubEnv('DEVRYAN_STOP_ENDS_BACKGROUND_RUNS', '0');
   const f = await nativePublicationFixture({}, 'shell');

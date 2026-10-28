@@ -205,6 +205,25 @@ event: the SDK event has no turn ID, so receipt time alone is insufficient.
 Missing identity, stale events, changed turns, and failed verification skip the
 extra abort while retaining the failed, resumable result for manual recovery.
 
+### Settled attempts stop their runs
+
+A terminal commit of a task whose child ran under a scheduler lease records a
+durable `runCleanup` intent on its result envelope (`pending`, bound to the
+task, its lease token and child session) when the host provides
+`stopAttemptRuns`. Once the exclusive section is released (`afterCommit`: work a
+commit registers runs after it, never inside it, even if the operation failed
+after that commit), the scheduler asks the host to stop that attempt's runs (a
+dev server, a watcher) with `reason: 'task_settled'` and `settledAt`, then
+records `done` (with the count stopped) or `failed` (with its code) and retries
+a failure after 5 s, 30 s, 2 min, then every 10 min. Initialization re-arms
+unfinished intents. Each outcome reaches `onRunCleanup` (journaled as
+`task_run_cleanup`); cleanup bookkeeping never advances the result's collection
+sequence. `childAttempt(childSessionId, directory)` names the attempt a child's
+runs belong to: the active task's `{ taskId, leaseToken }`, `{ state: 'none' }`
+once its tasks have settled, `{ state: 'unknown' }` before initialization, or
+null for a session no task owns. Leases and shell wakes use it
+(`packages/web/server/lib/opencode/DOCUMENTATION.md`).
+
 ### Cancellation ownership
 
 Every managed prompt uses the same attempt-scoped guard immediately before

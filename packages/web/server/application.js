@@ -893,6 +893,12 @@ async function constructWebHost(options = {}) {
 
   const ENV_SKIP_OPENCODE_START = process.env.OPENCODE_SKIP_START === 'true' ||
                                       process.env.DEVRYAN_SKIP_OPENCODE_START === 'true';
+  // The managed task attempt a child session's runs belong to (lease stamps,
+  // shell wake authorization): `unknown` until the orchestration owner is
+  // initialized. With an external OpenCode it never is: every session is
+  // unmanaged.
+  const childAttemptFor = ({ sessionID, directory }) => (!managedOrchestrationRuntime || isExternalOpenCode || ENV_SKIP_OPENCODE_START
+    || ENV_CONFIGURED_OPENCODE_HOST ? null : managedOrchestrationRuntime.childAttempt?.({ childSessionId: sessionID, directory }) ?? null);
   const ENV_DESKTOP_NOTIFY = (() => {
     if (process.env.DEVRYAN_DESKTOP_NOTIFY === 'true') {
       return true;
@@ -1744,6 +1750,7 @@ async function constructWebHost(options = {}) {
     onDiagnostic: (event) => harnessRuntime.recordSessionExecution(event),
     onLockTiming: (timing) => turnTimingRuntime.recordLedgerLock({ sessionId: timing.sessionID, operation: timing.operation,
       waitMs: timing.waitMs, holdMs: timing.holdMs, failed: timing.failed }),
+    attemptFor: childAttemptFor,
     // A stalled ledger worker delays every session's ledger calls while this
     // event loop runs on, so host_stall never shows it.
     onWorkerStall: (stall) => {
@@ -1758,6 +1765,7 @@ async function constructWebHost(options = {}) {
   }
   if (nativeBundle) {
     nativeRuntime = createNativeRuntimeOwner({ privatePersistence, bundle: nativeBundle, openCodeClient, admission: openCodeAdmission,
+      childAttempt: childAttemptFor,
       onPresentationProgress: input => sessionRuntime.updateSessionPresentation(input),
       onPresentationOwnerRetired: ownerID => sessionRuntime.clearSessionPresentationOwner(ownerID),
       getRequestPrincipal,
@@ -1913,6 +1921,10 @@ async function constructWebHost(options = {}) {
       } catch (error) {
         console.warn('[ManagedOrchestration] Failed to initialize after OpenCode startup:', error?.message || error);
       }
+      // Child shell completions deferred until managed sessions could be told apart.
+      await nativeRuntime?.resumeDeferredShellContinuations?.().catch((error) => {
+        console.warn('[ManagedOrchestration] Deferred shell completions failed:', error?.code || error?.message || error);
+      });
     }
     scheduleOpenCodeApiDetection();
     if (openCodeLifecycleState.openCodeProcess && !openCodeLifecycleState.isExternalOpenCode) {
@@ -2519,6 +2531,11 @@ async function constructWebHost(options = {}) {
             kind: 'required-check', identity: `${task.taskId}:${receipt.name}:${receipt.callId}:${receipt.status}` });
         }
       },
+      // A settled attempt's runs stop with it; each outcome is journaled.
+      stopAttemptRuns: (input) => sessionExecutionHost.stopAttemptRuns(input),
+      onRunCleanup: (row) => harnessRuntime.record({ type: 'lifecycle', event: 'task_run_cleanup', sessionID: row.childSessionId,
+        payload: { taskId: row.taskId, rootSessionId: row.rootSessionId, state: row.state, attempt: row.attempts,
+          ...(row.stopped === undefined ? {} : { count: row.stopped }), ...(row.code ? { code: row.code } : {}) } }),
       onBarrierChange: (state) => harnessRuntime.record({ type: 'lifecycle', event: 'managed_workspace_barrier',
         sessionID: state.rootSessionId, at: state.at, payload: { state: state.state, count: state.taskCount } }),
       onPersistenceObservation: (record) => harnessRuntime.record({ type: 'lifecycle', event: 'managed_persistence',

@@ -262,6 +262,7 @@ in [identity compatibility](../../docs/IDENTITY_COMPATIBILITY.md#data-folder-mig
 ## Operational limits
 
 - `createSessionMutationRuntime({ batching: { install, initialInstall } })` overrides rows per install transaction (defaults 128 and 1024 for a first build; validated positive integers); tests pass small values to cross batch boundaries with ~150 files.
+- A reservation may carry `attempt` (`{ taskId, leaseToken }`, or `{ state: 'none' | 'unknown' }`), stored on the lease so the orchestrator can stop exactly a settled attempt's runs; `cancelLease` records `stoppedBy: 'operator'` (a user Stop) or `'task_settled'` (that cleanup), and neither run's completion restarts the conversation.
 - `createSessionMutationRuntime({ complexity: { warnEntries, warnBytes, ceilingEntries, ceilingBytes } })` overrides the document complexity guard (defaults 250,000 entries / 16 MiB to journal, 1,000,000 / 64 MiB to record whole content; validated positive integers, each warning at most its ceiling). See [Concurrent Revert](../../docs/CONCURRENT_REVERT.md).
 - `openChangeStore(..., { listingLimitBytes })` overrides the 1 MiB in-memory key-listing bound (validated positive integer; default unchanged); tests pass a small value to cross it with a few hundred records.
 - Whole-ledger listings must stream. `openChangeStore().records()` yields every
