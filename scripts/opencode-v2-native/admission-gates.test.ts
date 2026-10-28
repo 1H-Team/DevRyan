@@ -1,3 +1,4 @@
+import type {ReviewedSkill} from '../../packages/web/server/lib/opencode/runtime-host/reviewed-skills.js';
 import { afterAll, expect, test } from 'bun:test';
 import { Cause, Effect, Layer, Schema } from 'effect';
 import { Tool } from '@opencode/core/tool';
@@ -132,7 +133,7 @@ test('deferred wake uses current native inbox/activity and never resurrects cons
   pending = [];
   expect(await observe()).toBe('idle');
 });
-function fixture(overrides: Partial<Pick<NativeAdmissionBridge, 'authorize' | 'release'>> = {}) {
+function fixture(overrides: Partial<Pick<NativeAdmissionBridge, 'authorize' | 'release'>> = {}, skills:readonly ReviewedSkill[]=[]) {
   const requests: OperationRequest[] = [], dispatched: unknown[] = [];
   let unguarded = 0;
   const bridge: NativeAdmissionBridge = { awaitReady: async () => {},
@@ -140,7 +141,7 @@ function fixture(overrides: Partial<Pick<NativeAdmissionBridge, 'authorize' | 'r
     recheck: async () => {}, release: async () => {}, sealPrompt: async () => ({}), verifyAccepted: async () => {},
     registerShellJob: async () => {}, sealSynthetic: async () => ({}),
     deferContinuation: async () => {}, hold: async () => {}, releaseHold: async () => {}, isHeld: async () => false, ...overrides };
-  const gates = createAdmissionGates({ bridge, nativePlugins: new Map(), executeOwned: call => {
+  const gates = createAdmissionGates({ bridge, nativePlugins: new Map(), reviewedSkillsForDirectory:()=>skills, executeOwned: call => {
     dispatched.push(call.input); return call.executeNative();
   } });
   const image: Image.Interface = { normalize: (_resource, content) => Effect.succeed(content),
@@ -157,7 +158,7 @@ function fixture(overrides: Partial<Pick<NativeAdmissionBridge, 'authorize' | 'r
     replacements: [Tool.node.replace(Layer.succeed(Tool.Service, competing)), Image.node.replace(Layer.succeed(Image.Service, image)),
       Model.node.replace(Layer.succeed(Model.Service, models)), Location.node.replace(Layer.succeed(Location.Service, location)), ...gates.overrides],
   });
-  return { gates, layer, bridge, requests, dispatched, unguarded: () => unguarded };
+  return { gates, layer, bridge, requests, dispatched, location, unguarded: () => unguarded };
 }
 
 test('committed native inbox verification releases its lock before synchronous reconciliation and propagates refusal', async () => {
@@ -385,4 +386,19 @@ test('a controller close permanently fences readiness work that was already awai
   f.gates.controls.closePermanently();ready();
   await expect(opening).rejects.toMatchObject({code:'native_controller_stopping'});
   await expect(f.gates.controls.openStartup()).rejects.toMatchObject({code:'native_controller_stopping'});
+});
+
+test('reviewed skill schema advertises readable names without replacing native execution provenance',async()=>{
+ const skill:ReviewedSkill={id:'devryan-'+'a'.repeat(32),name:'Exact Skill',path:'/fixture/project/SKILL.md',content:'owned',description:'owned',source:'fixture',scope:'project',bodySha256:'b'.repeat(64),fileSha256:'c'.repeat(64),resources:[]};
+ const f=fixture({},[skill]);await f.gates.controls.openStartup();
+ const native={...origin,kind:'native' as const,id:'opencode.tool.skill'};
+ await Effect.runPromise(Effect.scoped(Effect.gen(function*(){
+  const tools=yield* Tool.Service;
+  yield* provideRegistrationOrigin(native,tools.transform(editor=>editor.add({name:'skill',input:Schema.Struct({id:Schema.String}),description:'Load a skill',execute:()=>Effect.succeed({content:'owned'})})));
+  const snapshot=yield* tools.snapshot();
+  expect(JSON.stringify(snapshot.definitions[0]?.inputSchema)).toContain('Exact Skill');
+  yield* snapshot.execute({...invocation,call:{...invocation.call,name:'skill',input:{id:'Exact Skill'}}});
+  expect(f.requests[0]?.input).toEqual({toolID:'skill',callID:'call_fixture',provenance:native,input:{id:'Exact Skill'}});
+  expect(f.dispatched).toEqual([{id:'Exact Skill'}]);
+ }).pipe(Effect.provide(f.layer),Effect.provideService(Location.Service,f.location))));
 });

@@ -138,7 +138,7 @@ export interface SessionMutationRuntime {
   begin(input: MutationScope): Promise<MutationLease>;
   reserve(input: MutationScope): Promise<MutationLease>;
   prepare(lease: MutationLease): Promise<MutationLease>;
-  claimLease(input: { directory: string; token: string; kind: 'control' | 'process' }): Promise<MutationLease>;
+  claimLease(input: { directory: string; token: string; kind: 'control' | 'process'; reattach?: true }): Promise<MutationLease>;
   aliasCalls(input: { directory: string; token: string; calls: string[] }): Promise<void>;
   executionReceipt(input: { directory: string; token: string }): Promise<MutationScope & { source: 'confined-execution'; complete: true;
     files: Array<{ path: string; before: { byteStream: AsyncIterable<Uint8Array>; sha256: string; mode: string } | null; after: { byteStream: AsyncIterable<Uint8Array>; sha256: string; mode: string } | null }> }>;

@@ -19,7 +19,9 @@ permission:
     ../../.local/share/opencode/plans/*.md: allow
 ---
 
-Start by determining what is missing or incomplete, then list the necessary steps in a clear, logical sequence to resolve the issue. Refactor the code to be clean and streamlined, considering the existing build. The app must be fully functional. No temporary fixes or fallbacks. We require a proper design that provides value because it works correctly from the start. To ensure our work is complete, inform yourself and make sure the plan is well-informed and complete.
+Start by determining what is missing or incomplete, then list the necessary steps in a clear, logical sequence to resolve the issue. Refactor the code to be clean and streamlined, considering the existing build. The app must be fully functional. No temporary fixes or fallbacks; ground a complete design in repository evidence.
+
+The host compacts context automatically. Preserve objective, plan, decisions, ownership and unfinished checks; never stop or cut verification for context budget. Report only actual runtime failures.
 
 Plan writing: write for an implementer with no context.
 - Ground every step in code you read; give exact paths and `path:line` for functions to reuse. Never guess a path.

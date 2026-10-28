@@ -22,11 +22,24 @@ test('composed scheduler owner and executor stay attached through unchanged park
   await scheduler.waitForTask(tasks[0].taskId);await scheduler.flush();
   const first=await runtime.handleRpc({method:'wait_any',params:{directory:'/project',rootSessionId:'ses_root',taskIds:tasks.map(task=>task.taskId),resultContractVersion:2,until:'settled'}});
   const slices=[],requests=[];
-  const owner=createNativeManagedTaskOwner({admissionOwner:{recheckExecution:async()=>{},withManagedTaskCatalogInvocation:async(_input,action)=>action()},
+  let lease,beginRequests=0,physicalBegins=0,finishes=0,reattachments=0;
+  const executionHost={nativeManagedControl:async({action,invocation,token})=>{
+   const identity=JSON.stringify([invocation.directory,invocation.sessionID,invocation.messageID,invocation.callID,invocation.tool,invocation.input]);
+   if(action==='begin'){
+    beginRequests++;
+    if(!lease){physicalBegins++;lease={token:'control',identity,state:'ready'};return {lease};}
+    if(lease.identity!==identity)throw Object.assign(Error('capture_identity_mismatch'),{code:'capture_identity_mismatch'});
+    if(lease.state!=='published'||!['wait','wait_any','status'].includes(invocation.input.action))throw Object.assign(Error('execution_already_started'),{code:'execution_already_started'});
+    reattachments++;return {lease,reattached:true};
+   }
+   if(!lease||lease.identity!==identity||lease.token!==token||lease.state!=='ready')throw Error('invalid duplicate finish');
+   finishes++;lease.state='published';return {};
+  }};
+  const owner=createNativeManagedTaskOwner({executionHost,admissionOwner:{recheckExecution:async()=>{},withManagedTaskCatalogInvocation:async(_input,action)=>action()},
    taskContext:{authorizeNativeTaskInvocation:async()=>({readOnly:false})},readResultPublication:async()=>({identity:{attempt:{traceID:'trace',spanID:'span'},permitSha256:'permit'}}),
    getManagedRuntime:()=>({handleRpc:async(request,context)=>{
     slices.push(request.params.waitTimeoutMs);const response=runtime.handleRpc(request,context);await scheduler.flush();
-    if(slices.length===3){runs.get(tasks[1].taskId)?.({status:'completed',recoverablePreview:'Finished sibling'});await scheduler.waitForTask(tasks[1].taskId);}
+    if(slices.length===5){runs.get(tasks[1].taskId)?.({status:'completed',recoverablePreview:'Finished sibling'});await scheduler.waitForTask(tasks[1].taskId);}
     else for(const callback of [...timers.values()])callback();
     return response;
    }})});
@@ -39,8 +52,10 @@ test('composed scheduler owner and executor stay attached through unchanged park
   const execute=withManagedTaskExecution({origin,directory:'/project',executeOwned:()=>Effect.die(Error('Unowned tool')),
    rpc:async(_method,request,context)=>{requests.push(request);return owner(request,context);}});
   const result=await Effect.runPromise(execute(call));
-  expect(slices).toEqual([1,25000,1]);expect(requests).toHaveLength(2);
-  expect(requests[0]).toEqual(requests[1]);expect(JSON.parse(String(result.content))).toMatchObject({settled:true,changedTaskIds:[tasks[1].taskId]});
+  expect(slices).toEqual([1,25000,1,25000,1]);expect(requests).toHaveLength(3);
+  expect(requests[0]).toEqual(requests[1]);expect(requests[1]).toEqual(requests[2]);
+  expect({beginRequests,physicalBegins,finishes,reattachments}).toEqual({beginRequests:3,physicalBegins:1,finishes:1,reattachments:2});
+  expect(lease.state).toBe('published');expect(JSON.parse(String(result.content))).toMatchObject({settled:true,changedTaskIds:[tasks[1].taskId]});
  }finally{await runtime.shutdown();}
 });
 
@@ -80,4 +95,20 @@ test('timeouts on non-idempotent actions are typed and not re-issued; start re-i
  const start=attached({action:'start',agent:'fixer',prompt:'Fix it'},[Object.assign(Error('native_task_start_timeout'),{code:'native_task_start_timeout'}),receipt]);
  expect(JSON.parse(String((await start.run).content))).toEqual(receipt);
  expect(start.requests).toHaveLength(2);expect(start.requests[0]).toEqual(start.requests[1]);
+});
+
+test('a rejected correction is handled while control finish is pending',async()=>{
+ let release;const finishing=new Promise(resolve=>{release=resolve;});
+ const unhandled=[];const listener=error=>unhandled.push(error);process.on('unhandledRejection',listener);
+ const stale=Object.assign(Error('required_check_correction_stale'),{code:'required_check_correction_stale',status:409});
+ const owner=createNativeManagedTaskOwner({executionHost:{nativeManagedControl:async({action})=>action==='begin'?{lease:{token:'lease'}}:finishing},
+  admissionOwner:{recheckExecution:async()=>{},withManagedTaskCatalogInvocation:async(_input,run)=>run(),withPermit:async(_input,run)=>run()},
+  taskContext:{authorizeNativeTaskInvocation:async()=>({readOnly:false,objectiveID:'objective'})},
+  getManagedRuntime:()=>({handleRpc:async()=>{throw stale;}})});
+ const invocation={directory:'/project',sessionID:'ses_root',messageID:'msg_assistant',callID:'call',tool:'devryan_task',
+  input:{action:'correct_check',task_id:'dvr_task_one',check_name:'unit',expected_command:'bun test'},authorization:{input:{provenance:retryOrigin}}};
+ try{
+  const result=owner(invocation);const assertion=expect(result).rejects.toMatchObject({code:'required_check_correction_stale',status:409});
+  await new Promise(resolve=>setTimeout(resolve,20));expect(unhandled).toEqual([]);release();await assertion;
+ }finally{release();process.off('unhandledRejection',listener);}
 });

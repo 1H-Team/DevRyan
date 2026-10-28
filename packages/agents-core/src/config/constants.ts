@@ -54,7 +54,7 @@ export const DEFAULT_MODELS: Record<AgentName, string | undefined> = {
 // DevRyan: specialists own implementation (orchestrator.md <Routing>), so the
 // reminder must not invite direct work. Keep it static: it repeats on every
 // orchestrator user message and must stay byte-identical for prompt caching.
-export const PHASE_REMINDER_TEXT = `!IMPORTANT! Scheduler workflow: route the work to its specialists → start independent specialists together in one message → track task IDs → await completion → reconcile terminal results → verify. !END!`;
+export const PHASE_REMINDER_TEXT = `!IMPORTANT! Scheduler workflow: route the work to its specialists → start independent specialists together in one message → track task IDs → await completion → reconcile terminal results → personally verify changed behavior before acceptance; Designer does implementation, not standalone acceptance review. The host compacts context automatically; continue the original objective and unfinished checks. !END!`;
 
 export function formatSystemReminder(text: string): string {
   return `<system-reminder>\n${text}\n</system-reminder>`;

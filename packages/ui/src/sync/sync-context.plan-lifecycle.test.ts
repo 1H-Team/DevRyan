@@ -38,6 +38,7 @@ import {
   resetSessionMaterializationStateForTest,
   restorePersistedSessionIndicatorsForDirectory,
   resyncDirectoryAfterReconnect,
+  retryPendingSessionCompletions,
   setActiveSession,
   setExternallyViewedSession,
 } from "./sync-context"
@@ -71,6 +72,7 @@ import { registerRuntimeAPIs } from "@/contexts/runtimeAPIRegistry"
 import type { RuntimeAPIs } from "@/lib/api/types"
 import { useStreamingStore } from "./streaming"
 import { useSessionPresentationStore } from "./session-presentation"
+import { useObjectiveVerificationStore } from "@/stores/useObjectiveVerificationStore"
 
 const deferred = <T>() => {
   let resolve!: (value: T) => void;
@@ -338,6 +340,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
     resetGlobalSessionLifecycleOverlayForTest()
     resetDirectorySessionLifecycleOverlaysForTest()
     resetSessionMaterializationStateForTest()
+    useObjectiveVerificationStore.setState({ entries: {} })
     useGlobalSessionsStore.setState({
       activeSessions: [],
       archivedSessions: [],
@@ -4192,6 +4195,251 @@ describe("sync plan lifecycle on message.part.delta", () => {
 
     expect(useNotificationStore.getState().list).toHaveLength(0)
   })
+
+  const completedBackgroundSession = (plan: boolean) => {
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(DIRECTORY)
+    store.setState({
+      ...INITIAL_STATE,
+      session: [{ id: SESSION_ID, title: "Completed background work", slug: "background", projectID: "project",
+        directory: DIRECTORY, version: "1", time: { created: 1, updated: 6 } }],
+      message: { [SESSION_ID]: [userMessage(), assistantMessage(), implementingUserMessage(), implementingAssistantMessage()] },
+      part: {
+        [USER_MESSAGE_ID]: plan ? [planModePart()] : [],
+        [ASSISTANT_MESSAGE_ID]: [textPart(plan ? `<!--plan-->\n${structuredPlanBody}` : "Earlier result.")],
+        [IMPLEMENT_USER_MESSAGE_ID]: [],
+        [IMPLEMENT_ASSISTANT_MESSAGE_ID]: [implementTextPart("Finished the requested work.")],
+      },
+      session_status: { [SESSION_ID]: { type: "idle" } },
+    })
+    setActiveSession(DIRECTORY, "ses_other")
+    if (plan) {
+      const ui = useSessionUIStore.getState()
+      ui.recordUserMessagePlanMode(SESSION_ID, USER_MESSAGE_ID, true)
+      ui.markPlanProposed(SESSION_ID, ASSISTANT_MESSAGE_ID)
+      ui.markPlanImplementationRequested(`${SESSION_ID}:${ASSISTANT_MESSAGE_ID}:plan:0`)
+      ui.markPlanImplementing(SESSION_ID, ASSISTANT_MESSAGE_ID, IMPLEMENT_USER_MESSAGE_ID)
+    }
+    const emit = (event: Event) => applySyncEventForTest(DIRECTORY, event, childStores,
+      routingIndexFor([USER_MESSAGE_ID, ASSISTANT_MESSAGE_ID, IMPLEMENT_USER_MESSAGE_ID, IMPLEMENT_ASSISTANT_MESSAGE_ID]))
+    const complete = () => emit(partUpdatedEvent(implementTextPart("Finished the requested work.")))
+    return { childStores, store, emit, complete }
+  }
+
+  const successfulCompletionProof = () => Response.json({
+    objectiveId: IMPLEMENT_USER_MESSAGE_ID, originatingMessageId: IMPLEMENT_USER_MESSAGE_ID, verification: null,
+  })
+  const expectBackgroundGreen = (plan: boolean) => {
+    const ui = useSessionUIStore.getState()
+    const unread = Boolean(useNotificationStore.getState().index.session.unseenHasCompletion[SESSION_ID])
+    expect(unread).toBe(true)
+    expect(resolveSidebarIndicator({
+      isRootSession: true, isActive: false, isWorking: false, pendingQuestionCount: 0, hasErrorStatus: false,
+      hasUnreadCompletion: unread, hasCompletedStatus: ui.sessionCompletionIndicator.has(SESSION_ID),
+      planState: ui.sessionPlanIndicator.get(SESSION_ID)?.state ?? null,
+    })?.className).toBe("bg-status-success")
+    if (plan) expect(ui.sessionPlanIndicator.get(SESSION_ID)?.state).toBe("completed")
+    else expect(ui.sessionCompletionIndicator.has(SESSION_ID)).toBe(true)
+  }
+
+  for (const plan of [false, true]) {
+    test(`older part cannot supersede background completion proof (plan=${plan})`, async () => {
+      const fixture = completedBackgroundSession(plan)
+      const proof = deferred<Response>()
+      let calls = 0
+      globalThis.fetch = async () => { calls++; return proof.promise }
+      fixture.complete()
+      await flushAsync()
+      fixture.emit(partUpdatedEvent(textPart("Earlier result updated late.")))
+      await flushAsync()
+      expect(calls).toBe(1)
+      proof.resolve(successfulCompletionProof())
+      await flushAsync()
+      await waitForCompletionIndicatorSettlement()
+      expectBackgroundGreen(plan)
+      fixture.childStores.disposeAll()
+    })
+
+    test(`failed background proof retries without opening the chat (plan=${plan})`, async () => {
+      const fixture = completedBackgroundSession(plan)
+      const readNow = Date.now
+      let now = readNow()
+      let calls = 0
+      Date.now = () => now
+      globalThis.fetch = async () => {
+        calls++
+        return calls < 4 ? new Response("Unavailable", { status: 503 }) : successfulCompletionProof()
+      }
+      try {
+        fixture.complete()
+        await flushAsync()
+        expect(calls).toBe(1)
+        for (const delay of [5_000, 10_000, 20_000]) {
+          now += delay - 1
+          await retryPendingSessionCompletions(fixture.childStores)
+          expect(calls).toBe([5_000, 10_000, 20_000].indexOf(delay) + 1)
+          now++
+          await retryPendingSessionCompletions(fixture.childStores)
+        }
+        await waitForCompletionIndicatorSettlement()
+        expect(calls).toBe(4)
+        expectBackgroundGreen(plan)
+        now += 100_000
+        await retryPendingSessionCompletions(fixture.childStores, true)
+        expect(calls).toBe(4)
+      } finally { Date.now = readNow; fixture.childStores.disposeAll() }
+    })
+  }
+
+  for (const newerFirst of [false, true]) {
+    test(`overlapping final proof responses cannot overwrite completion (newerFirst=${newerFirst})`, async () => {
+      const fixture = completedBackgroundSession(false)
+      const proofs = [deferred<Response>(), deferred<Response>()]
+      let calls = 0
+      globalThis.fetch = async () => proofs[calls++].promise
+      fixture.complete()
+      await flushAsync()
+      fixture.complete()
+      await flushAsync()
+      expect(calls).toBe(2)
+      proofs[newerFirst ? 1 : 0].resolve(successfulCompletionProof())
+      await flushAsync()
+      proofs[newerFirst ? 0 : 1].resolve(successfulCompletionProof())
+      await flushAsync()
+      await waitForCompletionIndicatorSettlement()
+      expectBackgroundGreen(false)
+      expect(useNotificationStore.getState().list.filter(item => item.type === "turn-complete")).toHaveLength(1)
+      fixture.childStores.disposeAll()
+    })
+  }
+
+  test("automatic proof retries exhaust, then foreground retries the retained failure once", async () => {
+    const fixture = completedBackgroundSession(false)
+    let calls = 0
+    globalThis.fetch = async () => {
+      calls++
+      return calls < 5 ? new Response("Unavailable", { status: 503 }) : successfulCompletionProof()
+    }
+    fixture.complete()
+    await flushAsync()
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await retryPendingSessionCompletions(fixture.childStores, false, Date.now() + 100_000)
+    }
+    expect(calls).toBe(4)
+    await retryPendingSessionCompletions(fixture.childStores, true)
+    await waitForCompletionIndicatorSettlement()
+    expect(calls).toBe(5)
+    expectBackgroundGreen(false)
+    fixture.childStores.disposeAll()
+  })
+
+  test("a failed managed verification snapshot recovers on the same bounded retry path", async () => {
+    const fixture = completedBackgroundSession(false)
+    const originalManaged = useManagedOrchestrationStore.getState()
+    const requiredChecks = [{ name: "unit", command: "bun test unit", paths: ["src/unit.ts"] }]
+    const hash = "a".repeat(64)
+    const checks = projectRequiredCheckEvidence(requiredChecks, [{ name: "unit", callId: "call_unit",
+      messageId: "msg_unit", observedAt: 5, exitCode: 0, status: "passed", contentHash: hash }], { unit: hash })
+    const verification = { ...projectRequiredCheckCompletion(checks), checks, observedAt: 5, objectiveId: IMPLEMENT_USER_MESSAGE_ID }
+    const task = { ...toManagedTaskEvent(createManagedTaskRecord({ taskId: "dvr_task_retry", idempotencyKey: "retry-check",
+      rootSessionId: SESSION_ID, parentTaskId: null, directory: DIRECTORY, sequence: 1, mode: "orchestrator",
+      providerId: "fixture", modelId: "fixture", agent: "fixer", variant: null, label: "Unit", prompt: "Unit",
+      attempt: 1, priorTaskId: null, executionKind: "start", createdAt: 1, timeoutAt: null, requiredChecks })).properties.task,
+      status: "completed" as const, finishedAt: 5, verification }
+    let snapshots = 0
+    useManagedOrchestrationStore.setState({ taskIdsByRootId: { [SESSION_ID]: [task.taskId] }, tasksById: { [task.taskId]: task },
+      loadSnapshot: async () => {
+        snapshots++
+        if (snapshots === 1) throw Error("Snapshot unavailable")
+        useManagedOrchestrationStore.setState({ snapshotStateByScope: { [SESSION_ID]: "confirmed" } })
+      } })
+    globalThis.fetch = async () => successfulCompletionProof()
+    try {
+      fixture.complete()
+      await flushAsync()
+      expect(useNotificationStore.getState().sessionHasCompletion(SESSION_ID)).toBe(false)
+      await retryPendingSessionCompletions(fixture.childStores, false, Date.now() + 5_001)
+      await waitForCompletionIndicatorSettlement()
+      expect(snapshots).toBe(2)
+      expectBackgroundGreen(false)
+    } finally { useManagedOrchestrationStore.setState(originalManaged, true); fixture.childStores.disposeAll() }
+  })
+
+  test("a confirmed incomplete check waits for verification events instead of retry polling", async () => {
+    const fixture = completedBackgroundSession(false)
+    let calls = 0
+    const checks = projectRequiredCheckEvidence([{ name: "check", command: "check", paths: ["file.ts"] }], [], { check: "a".repeat(64) })
+    globalThis.fetch = async () => {
+      calls++
+      return Response.json({ objectiveId: IMPLEMENT_USER_MESSAGE_ID, originatingMessageId: IMPLEMENT_USER_MESSAGE_ID,
+        verification: { ...projectRequiredCheckCompletion(checks), objectiveId: IMPLEMENT_USER_MESSAGE_ID, checks, observedAt: 3 } })
+    }
+    try {
+      fixture.complete()
+      await flushAsync()
+      await retryPendingSessionCompletions(fixture.childStores, true, Date.now() + 100_000)
+      expect(calls).toBe(1)
+      expect(useNotificationStore.getState().list).toHaveLength(0)
+    } finally { fixture.childStores.disposeAll() }
+  })
+
+  test("acknowledging the parent scope retires a child's failed completion proof", async () => {
+    const fixture = completedBackgroundSession(false)
+    fixture.store.setState(state => ({ session: state.session.map(session => ({ ...session, parentID: "ses_parent" })) }))
+    useGlobalSessionsStore.setState({ activeSessions: fixture.store.getState().session })
+    let calls = 0
+    globalThis.fetch = async () => { calls++; return new Response("Unavailable", { status: 503 }) }
+    fixture.complete()
+    await flushAsync()
+    useSessionUIStore.getState().setCurrentSession("ses_parent", DIRECTORY)
+    setActiveSession(DIRECTORY, "ses_other")
+    await retryPendingSessionCompletions(fixture.childStores, true)
+    expect(calls).toBe(1)
+    expect(useNotificationStore.getState().sessionHasCompletion(SESSION_ID)).toBe(false)
+    fixture.childStores.disposeAll()
+  })
+
+  test("acknowledgment during a queued retry's initial yield cannot recreate its wait", async () => {
+    const fixture = completedBackgroundSession(false)
+    let calls = 0
+    globalThis.fetch = async () => { calls++; return new Response("Unavailable", { status: 503 }) }
+    fixture.complete()
+    await flushAsync()
+    const retry = retryPendingSessionCompletions(fixture.childStores, true)
+    setActiveSession(DIRECTORY, SESSION_ID)
+    setActiveSession(DIRECTORY, "ses_other")
+    await retry
+    await retryPendingSessionCompletions(fixture.childStores, true)
+    expect(calls).toBe(1)
+    fixture.childStores.disposeAll()
+  })
+
+  for (const change of ["opened", "external-view", "busy", "new-user", "deleted", "disposed", "question"] as const) {
+    test(`late proof cannot restore unread completion after ${change}`, async () => {
+      const fixture = completedBackgroundSession(false)
+      const proof = deferred<Response>()
+      globalThis.fetch = async () => proof.promise
+      fixture.complete()
+      await flushAsync()
+      if (change === "opened") {
+        setActiveSession(DIRECTORY, SESSION_ID)
+        setActiveSession(DIRECTORY, "ses_other")
+      } else if (change === "external-view") {
+        setExternallyViewedSession(DIRECTORY, SESSION_ID, true)
+        setExternallyViewedSession(DIRECTORY, SESSION_ID, false)
+      } else if (change === "busy") fixture.emit(sessionStatusEvent({ type: "busy" }))
+      else if (change === "new-user") fixture.emit(messageUpdatedEvent({ ...userMessage(), id: "msg_new_user" }))
+      else if (change === "deleted") fixture.emit({ id: "evt_deleted", type: "session.deleted", properties: { sessionID: SESSION_ID, info: fixture.store.getState().session[0] } })
+      else if (change === "disposed") fixture.childStores.disposeAll()
+      else fixture.store.setState({ question: { [SESSION_ID]: [{ id: "question", sessionID: SESSION_ID, questions: [] }] } })
+      proof.resolve(successfulCompletionProof())
+      await flushAsync()
+      await waitForCompletionIndicatorSettlement()
+      expect(useNotificationStore.getState().list.filter(item => item.type === "turn-complete")).toHaveLength(0)
+      expect(useSessionUIStore.getState().sessionCompletionIndicator.has(SESSION_ID)).toBe(false)
+      fixture.childStores.disposeAll()
+    })
+  }
 
   test("deduplicates repeated part update completion notifications for the same message", async () => {
     const childStores = new ChildStoreManager()

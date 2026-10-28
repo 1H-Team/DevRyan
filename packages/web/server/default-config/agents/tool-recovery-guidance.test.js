@@ -5,6 +5,30 @@ import { describe, expect, it } from 'vitest';
 const readAgent = (name) => readFileSync(new URL(`./${name}.md`, import.meta.url), 'utf8');
 
 describe('bundled agent tool recovery guidance', () => {
+  it.each(['fixer', 'designer'])('preserves declared commands and environment-only Docker skips for %s', (name) => {
+    const prompt = readAgent(name);
+    expect(prompt).toContain('Run declared acceptance commands unchanged, with declared cwd/environment');
+    expect(prompt).toContain('supplemental checks never replace receipts');
+    expect(prompt).toContain('Ask Orchestrator to correct mistaken commands');
+    expect(prompt).toContain('Preserve failing receipts/reasons');
+    expect(prompt).toContain('only host-attested Docker daemon/socket or UID-map prerequisites');
+    expect(prompt).toContain('environment_unavailable skips, never passes');
+    expect(prompt).toContain('return `**Status:** complete` with deferred reasons');
+    expect(prompt).toContain('Unproven prerequisites stay pending');
+    expect(prompt).not.toContain('leave verification pending, and continue independent checks');
+    expect(prompt).toContain('SQL, assertions and application errors remain failures');
+    expect(prompt).toContain('retry only affected checks');
+  });
+
+  it('accepts host-attested prerequisite skips without treating defects or missing evidence as passes', () => {
+    const prompt = readAgent('orchestrator');
+    expect(prompt).toContain('Only host-attested Docker daemon/socket or UID-map skips from exact failing receipts');
+    expect(prompt).toContain('allow complete with deferred check reasons after implementation/available checks finish');
+    expect(prompt).toContain('never invent skips or passes');
+    expect(prompt).toContain('Missing evidence stays pending');
+    expect(prompt).toContain('SQL, assertion and application defects remain failures');
+  });
+
   it('keeps parked Orchestrator output brief while the task card owns recovery controls', () => {
     const prompt = readAgent('orchestrator');
     // Recovery wording travels with the failed result, not the static prompt.

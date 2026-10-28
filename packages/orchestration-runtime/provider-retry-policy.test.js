@@ -18,6 +18,18 @@ import {
 } from './provider-retry-policy.js';
 
 describe('managed task deadline classification', () => {
+  it('keeps local authorization refusals distinct from provider sign-in, including retained failures', () => {
+    const message = 'native_web_principal_required';
+    const reason = formatManagedTaskFailureReason({ code: message, message, statusCode: 403 });
+    expect(reason).toBe(message);
+    expect(classifyManagedTaskFailure(reason)).not.toBe('provider_authentication');
+    expect(classifyManagedTaskFailure(`Provider authentication failed: ${message}`)).not.toBe('provider_authentication');
+    expect(classifyManagedTaskFailure(`Stream idle timeout; failed to stop the silent managed child: Provider authentication failed: ${message}`))
+      .not.toBe('provider_authentication');
+    expect(classifyManagedTaskFailure(formatManagedTaskFailureReason({ data: { v2Type: 'provider.auth', message: 'Invalid API key' } })))
+      .toBe('provider_authentication');
+  });
+
   it('does not treat generic process exits or login suggestions as authentication evidence', () => {
     const message = "api_error: Claude Code process exited unexpectedly (code 125). Check proxy logs for details. If this persists, try 'claude login' to refresh authentication.";
     expect(classifyManagedTaskFailure(message)).not.toBe('provider_authentication');

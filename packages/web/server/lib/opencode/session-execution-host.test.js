@@ -288,6 +288,31 @@ test('revocation during native control preparation cancels the unclaimed lease',
   expect(mocks.runtime.cleanupLease).toHaveBeenCalledWith(f.lease);
 });
 
+test.each(['wait', 'wait_any', 'status'])('published %s reattaches only with the original identity', async action => {
+  const f = nativeManagedFixture(); f.invocation.input = { action };
+  const digest = createHash('sha256').update(JSON.stringify(f.invocation.input)).digest('hex');
+  const published = { ...f.lease, state: 'published', executionFingerprint: digest };
+  mocks.runtime.begin.mockResolvedValue(published);
+  expect(await f.host.nativeManagedControl({ action: 'begin', invocation: f.invocation })).toEqual({ lease: published, reattached: true });
+  expect(mocks.runtime.claimLease).toHaveBeenCalledWith({ directory, token: published.token, kind: 'control', reattach: true });
+  mocks.runtime.begin.mockResolvedValue({ ...published, executionFingerprint: 'f'.repeat(64) });
+  await expect(f.host.nativeManagedControl({ action: 'begin', invocation: f.invocation })).rejects.toMatchObject({ code: 'capture_identity_mismatch' });
+  mocks.runtime.begin.mockImplementation(async () => { f.recheck.mockRejectedValue(Object.assign(Error('revoked'), { code: 'native_permit_revoked' })); return published; });
+  await expect(f.host.nativeManagedControl({ action: 'begin', invocation: f.invocation })).rejects.toMatchObject({ code: 'native_permit_revoked' });
+  expect(mocks.runtime.cancelUnstartedCall).not.toHaveBeenCalled(); expect(mocks.runtime.cleanupLease).not.toHaveBeenCalled();
+});
+
+test('published non-read control and already-claimed ready control cannot reattach', async () => {
+  const f = nativeManagedFixture();
+  mocks.runtime.claimLease.mockRejectedValue(Object.assign(Error('started'), { code: 'execution_already_started' }));
+  mocks.runtime.begin.mockResolvedValue({ ...f.lease, state: 'published' });
+  await expect(f.host.nativeManagedControl({ action: 'begin', invocation: f.invocation })).rejects.toMatchObject({ code: 'execution_already_started' });
+  expect(mocks.runtime.claimLease).toHaveBeenLastCalledWith({ directory, token: f.lease.token, kind: 'control' });
+  f.invocation.input = { action: 'wait' }; mocks.runtime.begin.mockResolvedValue(f.lease);
+  await expect(f.host.nativeManagedControl({ action: 'begin', invocation: f.invocation })).rejects.toMatchObject({ code: 'execution_already_started' });
+  expect(mocks.runtime.claimLease).toHaveBeenLastCalledWith({ directory, token: f.lease.token, kind: 'control' });
+});
+
 test('native scheduler child registration derives authority from the durable exact parent control call after tool release', async () => {
   const f = nativeManagedFixture();
   f.lease.state = 'published';

@@ -71,8 +71,13 @@ export async function createNativeControllerProcess(options) {
     || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 300_000) throw failure('native_process_launch_invalid');
   if (!(await fs.promises.stat(binary)).isFile()) throw failure('native_process_launch_invalid');
   const registryOptions = { registryPath: path.join(boot.globals.state, 'managed-opencode-processes.json') };
-  const previous = await reapOrphanedManagedOpenCodeProcesses(registryOptions);
-  if (previous.kept.length || previous.reaped.some(record => !record.terminated)) throw failure('native_process_owner_unsettled');
+  const settleBy = Date.now() + Math.min(timeoutMs, 2000);
+  for (;;) {
+    const previous = await reapOrphanedManagedOpenCodeProcesses(registryOptions);
+    if (!previous.kept.length && !previous.reaped.some(record => !record.terminated)) break;
+    if (Date.now() >= settleBy) throw failure('native_process_owner_unsettled');
+    await new Promise(resolve => setTimeout(resolve, Math.min(100, Math.max(1, settleBy - Date.now()))));
+  }
   await options.beforeSpawn?.();
   const supervised = options.supervisor ? await prepareSupervisedController(boot, options.supervisor) : undefined;
   const command = supervised ? options.supervisor.launcher : binary;

@@ -519,7 +519,7 @@ export interface ManagedOpenCodeTransport {
     state?: 'pending' | 'accepted' | 'uncertain';
     durable?: boolean;
   } | null>;
-  abortSession(input: ManagedOpenCodeTransportInput & { signal?: AbortSignal }): Promise<boolean>;
+  abortSession(input: ManagedOpenCodeTransportInput & { taskId: string; leaseToken?: string | null; signal?: AbortSignal }): Promise<boolean>;
   deleteSession(input: ManagedOpenCodeTransportInput): Promise<boolean>;
 }
 

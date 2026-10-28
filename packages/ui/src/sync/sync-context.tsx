@@ -1318,6 +1318,7 @@ const retireDeletedSessionSyncOwnership = (
   }
 
   const trackingKey = statusTrackingKey(directory, sessionID)
+  clearObjectiveCompletionWait(objectiveVerificationKey(sessionID, directory))
   externallyViewedSessions.delete(trackingKey)
   lastStatusEventAtBySessionKey.delete(trackingKey)
   lastOutputEventAtBySessionKey.delete(trackingKey)
@@ -1341,6 +1342,9 @@ const releaseDirectoryOwnedSyncState = (
   routingIndex: DirectoryRoutingIndex,
   releaseEventPipelineDirectory: (directory: string) => void,
 ) => {
+  for (const [key, wait] of objectiveCompletionWaits) {
+    if (wait.directory === directory) clearObjectiveCompletionWait(key)
+  }
   clearSessionPrefetchDirectory(directory)
   clearSessionMessagePaginationDirectory(directory)
   releaseSessionActionDirectory(directory)
@@ -1418,7 +1422,69 @@ const openSessionFromToast = (sessionID: string, directory: string) => {
   getSessionUIStoreIfInitialized()?.getState().setCurrentSession(sessionID, directory)
 }
 
-const objectiveCompletionWaits = new Map<string, string>()
+type ObjectiveCompletionWait = {
+  sessionID: string
+  directory: string
+  store: StoreApi<DirectoryStore>
+  objectiveId: string
+  originatingMessageId: string
+  completedMessageId: string
+  detectsTurnCompletion: boolean
+  attempts: number
+  nextRetryAt: number
+  inFlight: boolean
+  failedRead: boolean
+  acknowledged: boolean
+  cancelled: boolean
+}
+const objectiveCompletionWaits = new Map<string, ObjectiveCompletionWait>()
+const COMPLETION_RETRY_DELAYS_MS = [5_000, 10_000, 20_000] as const
+
+function clearObjectiveCompletionWait(key: string, acknowledged = false) {
+  const wait = objectiveCompletionWaits.get(key)
+  if (wait) {
+    wait.acknowledged ||= acknowledged
+    wait.cancelled ||= !acknowledged
+    objectiveCompletionWaits.delete(key)
+  }
+}
+
+export function acknowledgeSessionCompletions(sessionIDs: readonly string[]): void {
+  const scope = new Set(sessionIDs)
+  for (const [key, wait] of objectiveCompletionWaits) {
+    if (scope.has(wait.sessionID)) clearObjectiveCompletionWait(key, true)
+  }
+}
+
+// Recover only failed proof reads for observed completions, never historical idle chats.
+export async function retryPendingSessionCompletions(
+  childStores: ChildStoreManager,
+  foreground = false,
+  now = Date.now(),
+): Promise<void> {
+  const retries: Promise<void>[] = []
+  for (const [key, wait] of objectiveCompletionWaits) {
+    const state = wait.store.getState()
+    if (childStores.getChild(wait.directory) !== wait.store
+      || !state.session.some(session => session.id === wait.sessionID)
+      || !isSessionTurnSettledForCompletion({ sessionID: wait.sessionID, state, completedMessageId: wait.completedMessageId })) {
+      clearObjectiveCompletionWait(key)
+      continue
+    }
+    if (isViewedInCurrentSession(wait.directory, wait.sessionID)) {
+      clearObjectiveCompletionWait(key, true)
+      continue
+    }
+    if (wait.inFlight || !wait.failedRead) continue
+    if (!foreground && now < wait.nextRetryAt) continue
+    wait.attempts += 1
+    wait.inFlight = true
+    retries.push(detectAndMarkPlanLifecycle(wait.sessionID, wait.directory, wait.store,
+      wait.detectsTurnCompletion, wait.completedMessageId,
+      () => childStores.getChild(wait.directory) === wait.store, wait).catch(() => undefined))
+  }
+  await Promise.all(retries)
+}
 
 // Plan lifecycle detection runs after reducer state is current. It is pure
 // metadata/message based and never depends on a mounted chat/PlanCard.
@@ -1429,11 +1495,14 @@ async function detectAndMarkPlanLifecycle(
   shouldDetectTurnCompletion: boolean,
   completionMessageId?: string | null,
   isCurrent: () => boolean = () => true,
+  retryOf?: ObjectiveCompletionWait,
 ): Promise<void> {
   // Capture the immutable list before yielding; scan only on settled success.
   const capturedNotifications = useNotificationStore.getState().list
   const { useSessionUIStore } = await import("./session-ui-store")
   if (!isCurrent()) return
+  if (retryOf && (retryOf.acknowledged || retryOf.cancelled
+    || objectiveCompletionWaits.get(objectiveVerificationKey(sessionID, directory)) !== retryOf)) return
   let sessionUI = useSessionUIStore.getState()
   const state = store.getState()
 
@@ -1454,7 +1523,7 @@ async function detectAndMarkPlanLifecycle(
     planEntry = sessionUI.sessionPlanIndicator.get(sessionID)
   }
 
-  const completedCandidate = detectPlanCompletedCandidate({
+  let completedCandidate = detectPlanCompletedCandidate({
     sessionID,
     state,
     planEntry,
@@ -1471,7 +1540,18 @@ async function detectAndMarkPlanLifecycle(
       })
     : null
 
-  const isViewed = isViewedInCurrentSession(directory, sessionID)
+  const eligibleForCompletion = (messageId: string) => (
+    (!completionMessageId || messageId === completionMessageId)
+    && isSessionTurnSettledForCompletion({ sessionID, state, completedMessageId: messageId })
+  )
+  // An old part update must not supersede the final message's proof request.
+  if (completedCandidate && !eligibleForCompletion(completedCandidate.completedMessageId)) completedCandidate = null
+  if (turnCandidate && !eligibleForCompletion(turnCandidate.completedMessageId)) turnCandidate = null
+  if (retryOf && !completedCandidate && !turnCandidate) {
+    clearObjectiveCompletionWait(objectiveVerificationKey(sessionID, directory))
+    return
+  }
+  let completionWait: ObjectiveCompletionWait | undefined
   let verificationObjectiveId = completedCandidate?.implementationMessageId ?? turnCandidate?.originatingUserMessageId
   const completedIndex = completedCandidate ? (state.message[sessionID] ?? []).findIndex(message => message.id === completedCandidate.completedMessageId) : -1
   const precedingUserId = completedIndex >= 0
@@ -1488,21 +1568,38 @@ async function detectAndMarkPlanLifecycle(
     && capability.snapshot.features?.managedChildTasks === false
   if (verificationObjectiveId && !rootChecksUnsupported) {
     const key = objectiveVerificationKey(sessionID, directory)
-    if (objectiveCompletionWaits.get(key) !== verificationObjectiveId) objectiveCompletionWaits.delete(key)
+    const originatingMessageId = completedCandidate ? completedTurnUserId : turnCandidate?.originatingUserMessageId
+    const completedMessageId = completedCandidate?.completedMessageId ?? turnCandidate?.completedMessageId
+    const previous = objectiveCompletionWaits.get(key)
+    const sameCandidate = previous?.store === store && previous.originatingMessageId === originatingMessageId
+      && previous.completedMessageId === completedMessageId
+    clearObjectiveCompletionWait(key)
+    if (originatingMessageId && completedMessageId) {
+      completionWait = { sessionID, directory, store, objectiveId: verificationObjectiveId, originatingMessageId,
+        completedMessageId, detectsTurnCompletion: shouldDetectTurnCompletion || Boolean(sameCandidate && previous.detectsTurnCompletion),
+        attempts: sameCandidate ? previous.attempts : 0, nextRetryAt: Infinity, inFlight: true, failedRead: false,
+        acknowledged: isViewedInCurrentSession(directory, sessionID), cancelled: false }
+      objectiveCompletionWaits.set(key, completionWait)
+      while (objectiveCompletionWaits.size > 256) clearObjectiveCompletionWait(objectiveCompletionWaits.keys().next().value!)
+    }
     const proof = completedCandidate && !completedTurnUserId ? null : await useObjectiveVerificationStore.getState().refresh(sessionID, directory, completedCandidate
       ? { expectedObjectiveId: verificationObjectiveId, originatingMessageId: completedTurnUserId, force: true }
       : { originatingMessageId: verificationObjectiveId, force: true })
-    if (!isCurrent() || store.getState().message[sessionID] !== state.message[sessionID]) return
+    if (!isCurrent() || completionWait?.cancelled || store.getState().message[sessionID] !== state.message[sessionID]) {
+      if (objectiveCompletionWaits.get(key) === completionWait) clearObjectiveCompletionWait(key)
+      return
+    }
     if (proof && turnCandidate) {
       verificationObjectiveId = proof.objectiveId
       turnCandidate = { ...turnCandidate, originatingUserMessageId: proof.objectiveId }
       if (sessionUI.isUserMessagePlanMode(proof.objectiveId) || planEntry?.implementationMessageId === proof.objectiveId) turnCandidate = null
     }
     rootVerificationIncomplete = !proof || proof.verification?.ready === false
-    if (rootVerificationIncomplete) {
-      objectiveCompletionWaits.set(key, verificationObjectiveId)
-      while (objectiveCompletionWaits.size > 256) objectiveCompletionWaits.delete(objectiveCompletionWaits.keys().next().value!)
-    } else if (objectiveCompletionWaits.get(key) === verificationObjectiveId) objectiveCompletionWaits.delete(key)
+    if (completionWait) {
+      completionWait.objectiveId = verificationObjectiveId
+      completionWait.failedRead = !proof && useObjectiveVerificationStore.getState().entries[key]?.status === 'error'
+      if (completionWait.acknowledged) objectiveCompletionWaits.delete(key)
+    }
   }
   if (verificationObjectiveId) {
     const managed = useManagedOrchestrationStore.getState()
@@ -1512,9 +1609,19 @@ async function detectAndMarkPlanLifecycle(
     })
     if (hasRequirements) {
       await managed.loadSnapshot({ rootSessionId: sessionID }).catch(() => { verificationRefreshFailed = true })
-      if (!isCurrent() || store.getState().message[sessionID] !== state.message[sessionID]) return
+      if (!isCurrent() || completionWait?.cancelled || store.getState().message[sessionID] !== state.message[sessionID]) {
+        const key = objectiveVerificationKey(sessionID, directory)
+        if (objectiveCompletionWaits.get(key) === completionWait) clearObjectiveCompletionWait(key)
+        return
+      }
       verificationRefreshFailed ||= useManagedOrchestrationStore.getState().snapshotStateByScope[sessionID] !== 'confirmed'
     }
+  }
+  if (completionWait) {
+    completionWait.inFlight = false
+    completionWait.failedRead ||= !rootVerificationIncomplete && verificationRefreshFailed
+    const retryDelay = COMPLETION_RETRY_DELAYS_MS[completionWait.attempts]
+    completionWait.nextRetryAt = completionWait.failedRead && retryDelay !== undefined ? Date.now() + retryDelay : Infinity
   }
   const hasIncompleteVerification = verificationRefreshFailed || rootVerificationIncomplete || (verificationObjectiveId
     ? managedOrchestrationSelectors.hasIncompleteVerificationForObjective(sessionID, verificationObjectiveId)(
@@ -1526,11 +1633,14 @@ async function detectAndMarkPlanLifecycle(
   const hasActiveManagedChild = managedOrchestrationSelectors.hasActiveTasksForRoot(sessionID)(
     useManagedOrchestrationStore.getState(),
   )
+  const completionState = store.getState()
+  sessionUI = useSessionUIStore.getState()
+  const isViewed = completionWait?.acknowledged || isViewedInCurrentSession(directory, sessionID)
   const turnCandidateMatchesTrigger = turnCandidate && (!completionMessageId || turnCandidate.completedMessageId === completionMessageId)
   const settledTurnCandidate = turnCandidate && turnCandidateMatchesTrigger && !hasActiveManagedChild && !hasIncompleteVerification
     && isSessionTurnSettledForCompletion({
       sessionID,
-      state,
+      state: completionState,
       completedMessageId: turnCandidate.completedMessageId,
     })
     ? turnCandidate
@@ -1540,7 +1650,7 @@ async function detectAndMarkPlanLifecycle(
   const settledPlanCandidate = completedCandidate && planCompletionMatchesTrigger && !hasActiveManagedChild && !hasIncompleteVerification
     && isSessionTurnSettledForCompletion({
       sessionID,
-      state,
+      state: completionState,
       completedMessageId: completedCandidate.completedMessageId,
     })
     ? completedCandidate
@@ -1606,7 +1716,7 @@ async function detectAndMarkPlanLifecycle(
     )
   }
 
-  if (shouldDetectTurnCompletion && !isViewed) {
+  if ((shouldDetectTurnCompletion || completionWait?.detectsTurnCompletion) && !isViewed) {
     const session = state.session.find((item) => item.id === sessionID)
     const isSubtask = Boolean((session as (Session & { parentID?: string | null }) | undefined)?.parentID)
     const shouldRecordCompletion = !isSubtask || useUIStore.getState().notifyOnSubtasks
@@ -1634,6 +1744,11 @@ async function detectAndMarkPlanLifecycle(
 
   if (settledPlanCandidate && !suppressPlanCandidate) {
     sessionUI.markPlanCompleted(sessionID, settledPlanCandidate.sourceMessageId)
+  }
+
+  const completionKey = objectiveVerificationKey(sessionID, directory)
+  if (!rootVerificationIncomplete && !verificationRefreshFailed && objectiveCompletionWaits.get(completionKey) === completionWait) {
+    objectiveCompletionWaits.delete(completionKey)
   }
 
   const candidate = detectPlanProposedCandidate({
@@ -1683,6 +1798,7 @@ export function setActiveSession(directory: string, sessionId: string) {
   const previousSession = _activeSession
   _activeDirectory = directory
   _activeSession = sessionId
+  clearObjectiveCompletionWait(objectiveVerificationKey(sessionId, directory), true)
   if (previousSession && (previousSession !== sessionId || previousDirectory !== directory)) {
     useProviderStallStore.getState().clearStall(previousSession)
     useLongRunningToolStore.getState().clearTool(previousSession)
@@ -1706,6 +1822,7 @@ export function setExternallyViewedSession(directory: string, sessionId: string,
     return
   }
   externallyViewedSessions.set(key, Date.now() + EXTERNAL_VIEW_TTL_MS)
+  clearObjectiveCompletionWait(objectiveVerificationKey(sessionId, directory), true)
 }
 
 function isViewedInCurrentSession(directory: string, sessionId?: string): boolean {
@@ -1754,6 +1871,7 @@ function collectLoadedSessionScopeIds(state: State, rootSessionID: string): stri
 function settleTerminalAttentionForAcceptedWorkingStatus(
   payload: Event,
   store: StoreApi<DirectoryStore>,
+  directory: string,
 ): void {
   if (!isWorkingSessionStatusEvent(payload)) return
 
@@ -1764,6 +1882,7 @@ function settleTerminalAttentionForAcceptedWorkingStatus(
   if (statusType !== "busy" && statusType !== "retry") return
 
   const sessionIDs = collectLoadedSessionScopeIds(store.getState(), sessionID)
+  for (const id of sessionIDs) clearObjectiveCompletionWait(objectiveVerificationKey(id, directory))
   useNotificationStore.getState().markSessionsViewed(sessionIDs)
 
   void import("./session-ui-store")
@@ -1913,6 +2032,7 @@ export const resetDirectorySessionLifecycleOverlaysForTest = (): void => {
 }
 
 export const resetSessionMaterializationStateForTest = (): void => {
+  for (const key of objectiveCompletionWaits.keys()) clearObjectiveCompletionWait(key)
   for (const pending of pendingSessionMaterializations.values()) {
     if (pending.retryTimer) clearTimeout(pending.retryTimer)
   }
@@ -3352,7 +3472,15 @@ function handleEvent(
     }
   }
 
-  settleTerminalAttentionForAcceptedWorkingStatus(payload, store)
+  settleTerminalAttentionForAcceptedWorkingStatus(payload, store, resolvedDirectory)
+
+  if (payload.type === "message.updated") {
+    const info = (payload.properties as { info: Message }).info
+    const key = objectiveVerificationKey(info.sessionID, resolvedDirectory)
+    const wait = objectiveCompletionWaits.get(key)
+    if (info.role === "user" && wait && info.id !== wait.originatingMessageId
+      && store.getState().message[info.sessionID]?.at(-1)?.id === info.id) clearObjectiveCompletionWait(key)
+  }
 
   const managedStore = useManagedOrchestrationStore.getState()
   const managedRecoveryRoot = getManagedTaskRecoveryRootForIdleEvent(
@@ -3367,7 +3495,8 @@ function handleEvent(
         if (managedOrchestrationSelectors.hasActiveTasksForRoot(managedRecoveryRoot)(
           useManagedOrchestrationStore.getState(),
         )) return
-        return detectAndMarkPlanLifecycle(managedRecoveryRoot, resolvedDirectory, store, true)
+        return detectAndMarkPlanLifecycle(managedRecoveryRoot, resolvedDirectory, store, true, undefined,
+          () => childStores.getChild(resolvedDirectory) === store)
       })
       .catch(() => undefined)
   }
@@ -3438,6 +3567,7 @@ function handleEvent(
           || payload.type === "message.updated"
           || payload.type === "message.part.updated",
         payload.type === "message.part.updated" ? getMessageIdFromPayload(payload) : null,
+        () => childStores.getChild(resolvedDirectory) === store,
       ).catch(() => undefined)
     }
   } else if (payload.type === "message.part.delta" && reducerChanged) {
@@ -3452,6 +3582,8 @@ function handleEvent(
         resolvedDirectory,
         store,
         false,
+        undefined,
+        () => childStores.getChild(resolvedDirectory) === store,
       ).catch(() => undefined)
     }
   }
@@ -4065,6 +4197,7 @@ export function SyncProvider(props: {
       })
     }
     const triggerRelevantDirectoryRecovery = () => {
+      void retryPendingSessionCompletions(childStores, true)
       for (const dir of getReconnectRecoveryDirectoryStoreKeys(
         childStores.children.entries(),
         activeDirectoryRef.current,
@@ -4076,7 +4209,10 @@ export function SyncProvider(props: {
       onVisibilityChange,
       onWindowFocus,
     } = createForegroundRecoveryHandlers(triggerRelevantDirectoryRecovery)
-    const activeRecoveryWatchdog = setInterval(triggerActiveSessionRecovery, ACTIVE_SESSION_RECOVERY_CHECK_MS)
+    const activeRecoveryWatchdog = setInterval(() => {
+      triggerActiveSessionRecovery()
+      void retryPendingSessionCompletions(childStores)
+    }, ACTIVE_SESSION_RECOVERY_CHECK_MS)
     ;(activeRecoveryWatchdog as { unref?: () => void }).unref?.()
     if (typeof document !== "undefined") {
       document.addEventListener("visibilitychange", onVisibilityChange)
@@ -4167,14 +4303,12 @@ export function SyncProvider(props: {
     })
     const unsubscribeObjectiveVerification = useObjectiveVerificationStore.subscribe((next, previous) => {
       for (const [key, entry] of Object.entries(next.entries)) {
+        const wait = objectiveCompletionWaits.get(key)
         if (entry === previous.entries[key] || entry.status !== 'confirmed' || !entry.proof
-          || entry.proof.verification?.ready === false || objectiveCompletionWaits.get(key) !== entry.proof.objectiveId) continue
-        const scope: unknown = JSON.parse(key)
-        if (!Array.isArray(scope) || scope.length !== 2 || typeof scope[0] !== 'string' || typeof scope[1] !== 'string') continue
-        const [rootSessionId, directory] = scope
-        objectiveCompletionWaits.delete(key)
+          || entry.proof.verification?.ready === false || !wait || wait.inFlight || wait.objectiveId !== entry.proof.objectiveId) continue
+        const { sessionID: rootSessionId, directory } = wait
         const store = childStores.getChild(directory)
-        if (store) void detectAndMarkPlanLifecycle(rootSessionId, directory, store, true, undefined,
+        if (store === wait.store) void detectAndMarkPlanLifecycle(rootSessionId, directory, store, wait.detectsTurnCompletion, wait.completedMessageId,
           () => childStores.getChild(directory) === store)
       }
     })

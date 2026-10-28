@@ -110,8 +110,8 @@ export function createNativeManagedTaskOwner({ admissionOwner, taskContext, exec
     };
     await recheck();
     const args = parse(assignedPlanRead?{action:'plan_read'}:input.input);
-    const controlLease = args.action !== 'start' && executionHost?.nativeManagedControl
-      ? (await executionHost.nativeManagedControl({ invocation: input, action: 'begin' })).lease : null;
+    const control = args.action !== 'start' && executionHost?.nativeManagedControl
+      ? await executionHost.nativeManagedControl({ invocation: input, action: 'begin' }) : null;
     try {
     const maxOutputBytes = managedToolOutputBudget(await readToolOutputLimits?.(input));
     const scope = { rootSessionId: input.sessionID, directory: input.directory, resultMode: 'reference', resultContractVersion: readResultPublication ? 2 : 1, maxOutputBytes };
@@ -202,7 +202,7 @@ export function createNativeManagedTaskOwner({ admissionOwner, taskContext, exec
         instruction:'This result was already dispositioned. Follow the current barrier task IDs, then explicitly continue remaining work from the last confirmed parent state and evidence. Do not repeat this wait or disposition, or redispatch an unchanged completed approved-plan assignment.'},maxOutputBytes);
     };
     if (args.action === 'plan_read' || args.action === 'plan_update') {
-      return admissionOwner.withPermit(input, async () => {
+      return await admissionOwner.withPermit(input, async () => {
         await taskContext.authorizeNativePlanInvocation(input);
         await recheck();
         return taskContext.handleNativePlanRpc({ action: args.action, tool:input.tool, sessionID: input.sessionID, directory: input.directory,
@@ -215,7 +215,7 @@ export function createNativeManagedTaskOwner({ admissionOwner, taskContext, exec
       if (!policy.objectiveID) throw fail('native_task_objective_required');
       const authority = { rootSessionId: input.sessionID, directory: input.directory, objectiveId: policy.objectiveID,
         recheck: async () => { await recheck(); if (JSON.stringify(await taskContext.authorizeNativeObjectiveCheckInvocation(input)) !== JSON.stringify(policy)) throw fail('native_task_policy_changed'); } };
-      return admissionOwner.withPermit(input, () => rechecked(() => runtime.handleRpc({ method: args.action, params: {
+      return await admissionOwner.withPermit(input, () => rechecked(() => runtime.handleRpc({ method: args.action, params: {
         ...scope, ...(args.action === 'declare_checks' ? { requiredChecks: structuredClone(args.required_checks) } : { checkName: args.check_name, expectedCommand: args.expected_command }),
       } }, { ...context, [REQUIRED_CHECK_CORRECTION]: authority })));
     }
@@ -227,7 +227,7 @@ export function createNativeManagedTaskOwner({ admissionOwner, taskContext, exec
       await recheck();
     }
     if (['checkpoint','decisions','remember_decision'].includes(args.action)) {
-      return admissionOwner.withPermit(input, () => authorized(() => taskContext.handleNativeContextRpc({ action: args.action,
+      return await admissionOwner.withPermit(input, () => authorized(() => taskContext.handleNativeContextRpc({ action: args.action,
         sessionID: input.sessionID, directory: input.directory, query: args.query, statement: args.decision,
         sourceMessageID: args.source_message_id, paths: args.decision_paths, validUntil: args.valid_until, supersedes: args.supersedes }, async () => {
           await taskContext.authorizeNativeTaskInvocation(input); await recheck();
@@ -244,7 +244,7 @@ export function createNativeManagedTaskOwner({ admissionOwner, taskContext, exec
         await recheck();
         if (JSON.stringify(await taskContext.authorizeNativeTaskInvocation(input)) !== JSON.stringify(policy)) throw fail('native_task_policy_changed');
       } };
-      return admissionOwner.withPermit(input, () => authorized(() => runtime.handleRpc({ method: 'correct_check', params: {
+      return await admissionOwner.withPermit(input, () => authorized(() => runtime.handleRpc({ method: 'correct_check', params: {
         ...scope, taskId: text(args.task_id, 'task'), checkName: args.check_name, expectedCommand: args.expected_command,
       } }, { ...context, [REQUIRED_CHECK_CORRECTION]: authority })));
     }
@@ -357,7 +357,7 @@ export function createNativeManagedTaskOwner({ admissionOwner, taskContext, exec
         }
         // One long bounded slice per private RPC; the native executor remains
         // attached and repeats the unchanged sealed invocation when needed.
-        if (!autoContinued.length) return delivered(result,[...returned]);
+        if (!autoContinued.length) return await delivered(result,[...returned]);
         // Marks follow the staged publication, so an undelivered reply leaves none.
         const reply = await delivered({...result,autoContinued},[...returned]);
         for (const taskID of autoContinued) collection.markAutoContinue(scope,taskID);
@@ -365,7 +365,7 @@ export function createNativeManagedTaskOwner({ admissionOwner, taskContext, exec
       }
       throw fail('native_task_wait_any_invalid');
     }
-    if(args.action==='read_result'&&args.reads!==undefined)return resultRead(()=>authorized(async()=>{
+    if(args.action==='read_result'&&args.reads!==undefined)return await resultRead(()=>authorized(async()=>{
       if(!readResultPublication||args.task_id!==undefined||args.result_cursor!==undefined||!Array.isArray(args.reads)||!args.reads.length
         ||args.reads.some(read=>!read||Object.keys(read).length!==2||typeof read.result_cursor!=='string'))throw fail('native_task_input_invalid');
       const ids=selection(args.reads.map(read=>read.task_id)),reply={resultContractVersion:2,results:[],failed:[],notProcessed:[]},reads=[];
@@ -423,8 +423,8 @@ export function createNativeManagedTaskOwner({ admissionOwner, taskContext, exec
     }
     const params = { ...scope, taskId: text(args.task_id, 'task'),
       ...(args.action === 'cancel' ? { cascade: args.cascade === true, ...(args.reason ? { reason: text(args.reason, 'reason') } : {}) } : {}) };
-    if (args.action === 'cancel') return admissionOwner.withPermit(input, () => authorized(() => runtime.handleRpc({ method: 'cancel', params }, context)));
-    if (args.action === 'read_result') return resultRead(() => authorized(async () => {
+    if (args.action === 'cancel') return await admissionOwner.withPermit(input, () => authorized(() => runtime.handleRpc({ method: 'cancel', params }, context)));
+    if (args.action === 'read_result') return await resultRead(() => authorized(async () => {
       const cursor = text(args.result_cursor,'result_cursor'); await published(params.taskId);collection.next(scope,params.taskId,cursor);
       const result = await runtime.handleRpc({ method: 'read_result', params: { ...params,resultCursor:cursor } },context);
       await recheck(); assertManagedToolOutputSize(result,maxOutputBytes);
@@ -439,7 +439,7 @@ export function createNativeManagedTaskOwner({ admissionOwner, taskContext, exec
       try{return await admissionOwner.withPermit(input, () => authorized(async () => {
       let current;
       try { current = await runtime.handleRpc({ method: 'status', params },context); }
-      catch(error) { return recovered(params.taskId,error); }
+      catch(error) { return await recovered(params.taskId,error); }
       await recheck(); validateNativeManagedResult(current,scope,params.taskId);
       const identity=await acknowledgementIdentity(params.taskId,current.resultEnvelope?.envelopeId,args.action);
       if(current.resultEnvelope?.action&&(current.resultEnvelope.action!==args.action||identity!==undefined&&current.resultEnvelope.acknowledgementIdentity!==identity))throw fail('native_task_disposition_conflict');
@@ -467,18 +467,18 @@ export function createNativeManagedTaskOwner({ admissionOwner, taskContext, exec
       let result;
       try { result = await resultRead(()=>runtime.handleRpc({ method: args.action, params: { ...params,
         ...(args.action === 'wait' ? { waitTimeoutMs: 25_000 } : {}) } }, context)); }
-      catch(error) { return recovered(params.taskId,error); }
+      catch(error) { return await recovered(params.taskId,error); }
       await recheck();
       validateNativeManagedResult(result,scope,params.taskId);
       const prior = await dispositioned(result); if (prior) return prior;
       // A terminal status collects and stages exactly like wait, so read_result
       // and disposition may follow either.
-      if (isTerminalManagedTaskStatus(result.task.status)) { collection.collect(result,scope,params.taskId,Boolean(readResultPublication));return delivered(result,[params.taskId]); }
+      if (isTerminalManagedTaskStatus(result.task.status)) { collection.collect(result,scope,params.taskId,Boolean(readResultPublication));return await delivered(result,[params.taskId]); }
       if (args.action === 'wait' && !liveStatuses.has(result.task.status)) throw fail('native_task_wait_status_invalid');
       return result;
     }
     } finally {
-      if (controlLease) await executionHost.nativeManagedControl({ invocation: input, action: 'finish', token: controlLease.token });
+      if (control && !control.reattached) await executionHost.nativeManagedControl({ invocation: input, action: 'finish', token: control.lease.token });
     }
   };
   /** Session idle: continue marked clean results once a later completed

@@ -976,6 +976,18 @@ describe('durable accepted-operation identity and native permissions', () => {
     expect(store.calls).toEqual([]);
   });
 
+  it('denies the pinned native session rename action for a managed child', async () => {
+    const store = nativeAdmissionStore();
+    await store.fresh().prompt(store.session.id, { ...original(), tools: { opencode_session_rename: false } }, originalOptions());
+    expect(store.session.permissions).toContainEqual({action:'opencode_session_rename',resource:'*',effect:'deny'});
+    const root = nativeAdmissionStore();
+    await root.fresh().prompt(root.session.id, { ...original(), tools: resolveProviderPromptTools('openai','orchestrator') }, originalOptions());
+    expect(root.session.permissions.some(rule=>rule.action==='opencode_session_rename')).toBe(false);
+    const grant = nativeAdmissionStore();
+    await expect(grant.fresh().prompt(grant.session.id, { ...original(), tools: { opencode_session_rename: true } }, originalOptions()))
+      .rejects.toMatchObject({code:C.capabilityUnavailable});
+  });
+
   it('admits the shared Orchestrator policy without granting native delegation', async () => {
     const store = nativeAdmissionStore();
     store.session.agent = 'orchestrator';
@@ -1048,7 +1060,9 @@ describe('durable accepted-operation identity and native permissions', () => {
       expect(store.session.permissions).toEqual([
         { action: '*', resource: '*', effect: 'deny' },
         {action:'devryan_plan_read',resource:'*',effect:'deny'},
-        ...['glob', 'grep', 'read'].map(action => ({ action, resource: '*', effect: 'allow' })),
+        ...['glob', 'grep'].map(action => ({ action, resource: '*', effect: 'allow' })),
+        {action:'opencode_session_rename',resource:'*',effect:'deny'},
+        {action:'read',resource:'*',effect:'allow'},
         { action: 'subagent', resource: '*', effect: 'deny' },
         ...['todoread', 'todowrite'].map(action => ({ action, resource: '*', effect: 'deny' })),
         {action:'webfetch',resource:'*',effect:'allow'},
@@ -1094,7 +1108,7 @@ describe('durable accepted-operation identity and native permissions', () => {
       label: 'Implement', prompt: 'Implement and verify the change.' };
     try {
       await expect(executor.start(task, control)).resolves.toMatchObject({ status: 'completed' });
-      const denied = ['subagent', 'todoread', 'todowrite'].map(action => ({ action, resource: '*', effect: 'deny' }));
+      const denied = ['opencode_session_rename', 'subagent', 'todoread', 'todowrite'].map(action => ({ action, resource: '*', effect: 'deny' }));
       expect(store.session.permissions).toEqual([{ action: 'edit', resource: '*', effect: 'allow' }, { action: 'devryan_plan_read', resource: '*', effect: 'deny' }, ...denied]);
       expect(progress).toContainEqual({ childPromptedAt: expect.any(Number) });
 

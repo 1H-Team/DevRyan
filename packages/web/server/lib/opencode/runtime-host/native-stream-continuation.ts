@@ -23,10 +23,14 @@ export function createNativeStreamContinuation(options:{controllerInstanceID:str
  const key=(attempt:NativeAttemptIdentity)=>attempt.traceID+'\0'+attempt.spanID;
  const call=(action:string,scope:PreparedScope,extra:Record<string,unknown>={})=>Effect.gen(function*(){
   const permit=yield* OperationPermitRef;
-  if(!permit)return yield* refuseHost(new HostRefusal('native_stream_continuation_fenced',403,'primary.continue',scope.sessionID));
+  if(!permit){
+   if(action==='reserve')return false;
+   return yield* refuseHost(new HostRefusal('native_stream_continuation_fenced',403,'primary.continue',scope.sessionID));
+  }
   return yield* Effect.tryPromise({try:signal=>options.rpc('native.stream-continuation',{action,controllerInstanceID:options.controllerInstanceID,
    configurationDigest:options.configurationDigest,permit,sessionID:scope.sessionID,requestID:scope.requestID,execution:scope.execution,...extra},{signal}),
-   catch:()=>new HostRefusal('native_stream_continuation_fenced',409,'primary.continue',scope.sessionID)}).pipe(Effect.orDie);
+   catch:()=>new HostRefusal('native_stream_continuation_fenced',409,'primary.continue',scope.sessionID)}).pipe(
+    action==='reserve'?Effect.catch(()=>Effect.succeed(false)):Effect.orDie);
  });
  const override=llmClient.replace(llmClient.mapLayer(layer=>Layer.effect(LLMClient.Service,Effect.gen(function*(){
   const inner=yield* LLMClient.Service;

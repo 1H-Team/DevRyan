@@ -70,6 +70,11 @@ system prefix. `collapseSystemPartsInPlace` joins only neighbouring parts with
 the same cache marker. The runtime host owns the kill switch
 (`runtime-host/DOCUMENTATION.md`, "Prompt cache through compaction").
 
+The stable phase reminder requires Orchestrator to verify changed behavior before
+accepting child work and to continue its objective and unfinished checks through
+host-owned automatic compaction. It does not delegate acceptance to Designer or
+create another compaction/continuation loop.
+
 ## Bundled skills
 
 Only `src/skills/deepwork/SKILL.md` is compiled in (the `/deepwork` prompt

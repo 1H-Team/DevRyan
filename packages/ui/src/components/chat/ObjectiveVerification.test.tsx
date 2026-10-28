@@ -26,7 +26,9 @@ test('shows the current root checks and sends only their exact objective and con
     try {
       await act(async () => root.render(<I18nProvider><ObjectiveVerification sessionId="ses_root" directory="/project" revision="one" /></I18nProvider>));
       expect(container.textContent).toContain('unit');
-      expect(container.find(node => node.attributes['data-objective-verification'] === objective)).not.toBeNull();
+      const section = container.find(node => node.attributes['data-objective-verification'] === objective);
+      expect(section).not.toBeNull();
+      expect(section?.attributes.class).toContain('chat-message-column');
       await act(async () => submit?.([{ name: 'unit', contentHash: 'a'.repeat(64) }], 'accepted limitation'));
       expect(calls).toEqual([{ rootSessionId: 'ses_root', directory: '/project', objectiveId: 'msg_objective',
         checks: [{ name: 'unit', contentHash: 'a'.repeat(64) }], reason: 'accepted limitation' }]);

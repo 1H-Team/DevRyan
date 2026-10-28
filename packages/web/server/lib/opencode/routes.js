@@ -791,12 +791,13 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     {
       try {
         const client = resolveGen2OpenCodeClient(openCodeClient);
-        const parsed = await client.catalog.providers({ directory: await resolveRequestDirectory(req) });
+        const directory = await resolveRequestDirectory(req);
+        const parsed = await client.catalog.providers({ directory });
         if (parsed && typeof parsed === 'object') {
           upstreamPayload = parsed;
           upstreamOk = true;
           void xaiToolCatalogRuntime?.refreshProviderPayload?.({
-            directory: typeof req.query?.directory === 'string' ? req.query.directory : undefined,
+            directory,
             payload: parsed,
           });
         }

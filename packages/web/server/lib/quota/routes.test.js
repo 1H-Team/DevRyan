@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import { createDiagnosticSanitizer } from '@devryan/harness-runtime/lib/sanitizer.js';
 
 import request from '../../test-supertest.js';
 import { assertManagedQuotaCredential } from './credentials/providers.js';
@@ -622,6 +623,59 @@ describe('native quota discovery and fetch', () => {
     const pending = (await request(register({ owner: readyOwner({ isReady: () => false }), quota: { fetchQuotaForProvider } })).get('/api/quota/xai').expect(200)).body;
     expect(pending).toMatchObject({ ok: false, configured: true, errorCode: 'native_runtime_not_ready' });
     expect(fetchQuotaForProvider).not.toHaveBeenCalled();
+  });
+
+  it('retries a transient native read once against the current owner', async () => {
+    const recordDiagnostic = vi.fn();
+    const selected = { directory, integrationID: 'xai', credentialID: 'c', value: { type: 'oauth', access: 'fixture-access' } };
+    const current = readyOwner({ readProviderSelected: vi.fn(async () => selected) });
+    let owner = readyOwner({ readProviderSelected: vi.fn(async () => {
+      owner = current;
+      throw Object.assign(new Error('private credential payload'), { code: 'native_integration_acquisition_expired' });
+    }) });
+    const previous = owner;
+    const fetchQuotaForProvider = vi.fn(async (_id, options) => {
+      expect(options.readAuth()).toEqual({ xai: { type: 'oauth', access: 'fixture-access' } });
+      return { providerId: 'xai', configured: true, ok: true };
+    });
+    const app = register({ getNativeRuntimeOwner: () => owner, quota: { fetchQuotaForProvider }, recordDiagnostic });
+    expect((await request(app).get('/api/quota/xai').expect(200)).body.ok).toBe(true);
+    expect(previous.readProviderSelected).toHaveBeenCalledTimes(1);
+    expect(current.readProviderSelected).toHaveBeenCalledTimes(1);
+    expect(fetchQuotaForProvider).toHaveBeenCalledTimes(1);
+    expect(recordDiagnostic).toHaveBeenCalledExactlyOnceWith({ type: 'lifecycle', event: 'native_quota_read_failed',
+      payload: { providerId: 'xai', stage: 'selected_credential', code: 'native_integration_acquisition_expired' } });
+    const diagnostic = recordDiagnostic.mock.calls[0][0];
+    expect(createDiagnosticSanitizer().sanitizeRecord(diagnostic)).toMatchObject(diagnostic);
+  });
+
+  it.each([
+    ['native_integration_acquisition_expired', 'native_runtime_not_ready', 2],
+    ['native_credential_update_required', 'native_credential_update_required', 1],
+    ['native_credential_changed', 'native_credential_changed', 1],
+    ['native_integration_binding_invalid', 'native_credential_unreadable', 1],
+    ['private-token-in-code', 'native_credential_unreadable', 1],
+  ])('classifies %s without leaking private errors or retrying permanent refusals', async (code, errorCode, reads) => {
+    const recordDiagnostic = vi.fn(), fetchQuotaForProvider = vi.fn();
+    const owner = readyOwner({ readProviderSelected: vi.fn(async () => {
+      throw Object.assign(new Error('private-token-in-message'), { code, response: { access: 'private-token-in-response' } });
+    }) });
+    const body = (await request(register({ owner, quota: { fetchQuotaForProvider }, recordDiagnostic })).get('/api/quota/xai').expect(200)).body;
+    expect(body).toMatchObject({ providerId: 'xai', ok: false, configured: true, errorCode });
+    expect(owner.readProviderSelected).toHaveBeenCalledTimes(reads);
+    expect(fetchQuotaForProvider).not.toHaveBeenCalled();
+    expect(recordDiagnostic).toHaveBeenCalledTimes(reads);
+    expect(JSON.stringify([body, recordDiagnostic.mock.calls])).not.toContain('private-token');
+    expect(body.error).not.toMatch(/reconnect|re-authenticate/i);
+  });
+
+  it.each(['sync', 'async'])('does not let a %s diagnostic sink failure replace the usage result', async (mode) => {
+    const owner = readyOwner({ readProviderSelected: async () => { throw new Error('private'); } });
+    const app = register({ owner, recordDiagnostic: () => {
+      if (mode === 'async') return Promise.reject(new Error('sink unavailable'));
+      throw new Error('sink unavailable');
+    } });
+    expect((await request(app).get('/api/quota/xai').expect(200)).body.errorCode).toBe('native_credential_unreadable');
   });
 
   it('keeps legacy fetch behavior for external runtimes', async () => {

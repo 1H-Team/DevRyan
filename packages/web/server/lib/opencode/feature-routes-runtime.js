@@ -320,6 +320,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
 
     registerQuotaRoutes(app, {
       devryanDataDir,
+      recordDiagnostic: routeDependencies.recordDiagnostic,
       isProviderAdministrator: routeDependencies.isProviderAdministrator,
       getNativeRuntimeOwner: routeDependencies.getNativeRuntimeOwner,
       openCodeClient,

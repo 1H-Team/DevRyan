@@ -171,6 +171,7 @@ const resolveTaskPromptTools = (task) => ({
   // Managed tasks are already child sessions. Keep all further delegation
   // root-owned even when project agent permissions expose OpenCode's task tool.
   task: false,
+  opencode_session_rename: false,
   devryan_plan_read: Boolean(task.approvedPlanRef),
   // The parent owns task tracking; child-only todo schemas add no authority.
   todoread: false,
@@ -1185,6 +1186,8 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
   };
 
   const retryStopInput = (task) => ({
+    taskId: task.taskId,
+    leaseToken: task.leaseToken,
     sessionId: task.childSessionId,
     directory: task.directory,
     providerId: task.providerId,
@@ -1192,6 +1195,8 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
 
   const discardStaleChild = async (task, childSessionId, { deleteSession }) => {
     const input = {
+      taskId: task.taskId,
+      leaseToken: task.leaseToken,
       sessionId: childSessionId,
       directory: task.directory,
       providerId: task.providerId,
@@ -2516,6 +2521,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       }
       if (!task.childSessionId) return { aborted: false, failureReason: 'Managed task has no child session' };
       const aborted = await transport.abortSession({
+        ...retryStopInput(task),
         sessionId: task.childSessionId,
         directory: task.directory,
         providerId: task.providerId,

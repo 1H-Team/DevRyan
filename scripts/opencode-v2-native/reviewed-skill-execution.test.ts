@@ -6,6 +6,7 @@ import {createHash} from 'node:crypto';
 import type {SessionContext} from '@opencode/plugin/effect/session';
 import {Location} from '@opencode/core/location';
 import {Effect,Schema} from 'effect';
+import {reviewedSkillToolInput} from '../../packages/web/server/lib/opencode/runtime-host/native-skills.ts';
 import {createReviewedSkillExecution} from '../../packages/web/server/lib/opencode/runtime-host/native-reviewed-skill-execution.ts';
 import {appendNativeConfiguredInstructions} from '../../packages/web/server/lib/opencode/runtime-host/native-configured-instructions.ts';
 import {WorkerInput} from '../../packages/web/server/lib/opencode/runtime-host/worker-protocol.ts';
@@ -63,4 +64,17 @@ test('mistyped reviewed IDs and a supplied name resolve only inside the reviewed
  expect(byName.metadata).toEqual({name:'Exact Skill',directory:f.root});
  await expect(Effect.runPromise(execute({...f.invocation,input:{id:'devryan-ffffffffffffffffffffffffffffffff'}}))).rejects.toThrow('native_skill_unreviewed: no matching skill. Available skills: Exact Skill');
  await expect(Effect.runPromise(execute({...f.invocation,input:{id:reviewed,path:'/outside'}}))).rejects.toThrow('native_skill_input_invalid');
+});
+
+test('advertises exact readable skill choices and rejects a spliced ID without loading another skill',async()=>{
+ const f=await fixture(),skill=f.snapshot.locations[0].skills[0];
+ const schema=reviewedSkillToolInput(f.snapshot.locations[0].skills);
+ const input=Schema.decodeUnknownSync(schema)({id:'Exact Skill'});
+ const loaded=await Effect.runPromise(f.execute({...f.invocation,input}));
+ expect(loaded.metadata?.name).toBe('Exact Skill');
+ expect(f.permissions).toEqual([expect.objectContaining({resources:[skill.id],save:[skill.id]})]);
+ expect(()=>Schema.decodeUnknownSync(schema)({id:'devryan-55827521417b07eaa0ad92b7b09352'})).toThrow();
+ const duplicate=reviewedSkillToolInput([skill,{...skill,id:'another-id'}]);
+ expect(()=>Schema.decodeUnknownSync(duplicate)({id:'Exact Skill'})).toThrow();
+ expect(Schema.decodeUnknownSync(duplicate)({id:skill.id})).toEqual({id:skill.id});
 });

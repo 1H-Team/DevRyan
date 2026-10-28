@@ -175,7 +175,7 @@ const renderView = (element: React.ReactElement) => renderToStaticMarkup(
   <I18nProvider>{element}</I18nProvider>,
 );
 
-test('dispatch keeps completed execution separate from failed verification', () => {
+test('dispatch shows execution status without verification subtitles', () => {
   const verification: NonNullable<ManagedTaskEventRecord['verification']> = {
     objectiveId: 'implementation', ready: false, status: 'failed', observedAt: 2_000,
     remaining: [{ name: 'Focused tests', status: 'failed', reason: 'command_failed' }],
@@ -191,8 +191,8 @@ test('dispatch keeps completed execution separate from failed verification', () 
   expect(repairing).not.toContain('>Failed</p>');
   const terminal = renderStatus('completed');
   expect(terminal).toContain('>Complete</p>');
-  expect(terminal).toContain('data-task-verification="failed"');
-  expect(terminal).toContain('Checks failed');
+  expect(terminal).not.toContain('data-task-verification');
+  expect(terminal).not.toContain('Checks failed');
   expect(terminal).not.toContain('>Failed</p>');
   for (const html of [repairing, terminal]) {
     expect(html).toContain('Map the Workspace');
@@ -212,7 +212,8 @@ test('dispatch keeps completed execution separate from failed verification', () 
   expect(skipped).not.toContain('Passed');
   expect(skipped).not.toContain('Focused tests');
   expect(skipped).not.toContain('Waive');
-  expect(skipped).toContain('Verification skipped');
+  expect(skipped).not.toContain('Verification skipped');
+  expect(skipped).not.toContain('data-task-verification');
 });
 
 for (const [status, reason, expected] of [
@@ -220,7 +221,7 @@ for (const [status, reason, expected] of [
   ['pending', 'content_changed_or_check_incomplete', 'Checks need rerunning'],
   ['blocked', 'required_evidence_unavailable', 'Verification blocked'],
   ['passed', 'observed_exit_zero_for_current_content', 'Verified'],
-] as const) test(`completed dispatch presents ${expected.toLowerCase()} without changing its execution outcome`, () => {
+] as const) test(`completed dispatch omits ${expected.toLowerCase()} and preserves its execution outcome`, () => {
   const check: NonNullable<ManagedTaskEventRecord['verification']>['checks'][number] = {
     name: 'Focused tests', kind: 'command', status, reason, evidence: null,
     coverage: { kind: 'declared-files', paths: ['src/cards.tsx'], contentHash: 'a'.repeat(64) },
@@ -232,8 +233,20 @@ for (const [status, reason, expected] of [
     onOpenChild={() => undefined}
   />);
   expect(html).toContain('>Complete</p>');
-  expect(html).toContain(expected);
+  expect(html).not.toContain(expected);
+  expect(html).not.toContain('data-task-verification');
   expect(html).not.toContain('>Failed</p>');
+});
+
+for (const [status, partial, label] of [
+  ['failed', true, 'Error'],
+  ['interrupted', true, 'Error'],
+  ['completed', true, 'Result needs review'],
+] as const) test(`dispatch preserves ${status} execution with partial=${partial}`, () => {
+  const task = toManagedTaskEvent(record('dvr_task_execution_outcome', status, { partial })).properties.task;
+  const html = renderView(<ManagedTaskRowView task={task} onOpenChild={() => undefined} />);
+  expect(html).toContain(`>${label}</p>`);
+  expect(html).not.toContain('>Complete</p>');
 });
 
 const transportRecovery: ManagedTransportRecovery = {

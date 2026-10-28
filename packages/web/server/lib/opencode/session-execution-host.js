@@ -1067,15 +1067,18 @@ export function createSessionExecutionHost(options) {
       const { owner } = await preparations(); owner.assert();
       const lease = await executionPhase('lease_preparation', () => withPromptBoundary(() => runtime.begin({ ...input, userMessageID: record.info.parentID, parentID: current.parentID,
         executionFingerprint, ownerID: owner.id })));
+      const reattached = input.protocol === 3 && recheckNative && input.reattach === true && lease.state === 'published';
+      if (reattached && lease.executionFingerprint !== executionFingerprint) throw failure('capture_identity_mismatch');
       try { checkExecutionAdmission(); await recheckNative?.(); }
       catch (cause) {
-        if (recheckNative) {
+        if (recheckNative && lease.state !== 'published') {
           await runtime.cancelUnstartedCall({ ...input, token: lease.token });
           await cleanup(lease);
         }
         throw cause;
       }
-      await runtime.claimLease({ directory: input.directory, token: lease.token, kind: input.kind });
+      await runtime.claimLease({ directory: input.directory, token: lease.token, kind: input.kind, ...(reattached ? { reattach: true } : {}) });
+      if (reattached) return { lease, reattached: true };
       claimed(lease);
       if (input.kind === 'control') return { lease };
       try { return { lease, launch: await launchWatched(lease, input) }; }
@@ -1193,6 +1196,7 @@ export function createSessionExecutionHost(options) {
     const capture = { directory: invocation.directory, sessionID: invocation.sessionID,
       messageID: invocation.messageID, callID: invocation.callID, tool: invocation.tool, kind: 'control', protocol: 3,
       argsDigest: createHash('sha256').update(JSON.stringify(invocation.input)).digest('hex'), action,
+      ...(action === 'begin' && invocation.tool === 'devryan_task' && ['wait', 'wait_any', 'status'].includes(invocation.input.action) ? { reattach: true } : {}),
       ...(action === 'finish' ? { token } : {}) };
     return activity([capture.sessionID], () => dispatchPlugin(capture, async () => {
       await assertNativeManagedAvailable();

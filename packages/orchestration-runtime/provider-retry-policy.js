@@ -16,9 +16,11 @@ const PROVIDER_USAGE_LIMIT_ACTION_REASONS = new Set([
 
 export const PROVIDER_USAGE_LIMIT_FAILURE_KIND = 'provider_usage_limit';
 export const PROVIDER_AUTHENTICATION_FAILURE_KIND = 'provider_authentication';
+const LOCAL_AUTHORIZATION_FAILURE = /\bnative_(?:web_[a-z_]+|managed_task_[a-z_]+|permit_[a-z_]+|session_access_revoked)\b/;
 // Sign-in failures cannot heal by retrying. `authentication_error` is the
 // Anthropic/Meridian type; "not logged in" is Claude Code's own wording.
 export const isProviderAuthenticationFailure = (value) => typeof value === 'string'
+  && !LOCAL_AUTHORIZATION_FAILURE.test(value)
   && !value.startsWith('Provider internal failure: ') && !value.startsWith('Runtime capability unavailable: ')
   && /\b(?:authentication[_ ]?error|authentication (?:failed|failure|expired|invalid)|authorization(?:error| failed| failure)|unauthorized|forbidden|invalid (?:api key|credentials?|access token|authentication)|missing api key|expired (?:access |refresh )?token|(?:oauth |access |refresh )?token (?:has |is )?expired|not logged in|http[ :]+40[13]|an active opencode go subscription is required)\b/i.test(value);
 // Keep structured terminal categories before reducing errors to persisted text.
@@ -32,6 +34,7 @@ export const formatManagedTaskFailureReason = (error) => {
   if (type === 'aborted' || (!type && /^(?:MessageAbortedError|AbortError)$/.test(name ?? ''))) {
     return /\babort(?:ed)?\b/i.test(message) ? message : `Aborted: ${message}`;
   }
+  if (!type && LOCAL_AUTHORIZATION_FAILURE.test(`${error.code ?? ''} ${message}`)) return message;
   if (type === 'provider.auth' || (!type && name === 'ProviderAuthError')
     || (!type && [401, 403].includes(data.statusCode ?? error.statusCode))) {
     return isProviderAuthenticationFailure(message) ? message : `Provider authentication failed: ${message}`;

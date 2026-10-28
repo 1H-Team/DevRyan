@@ -147,6 +147,7 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
     }
     provider = await createHttpProvider({ responder: () => { throw new Error('Unsolicited packaged model request'); },
       ...(managedCorrectness ? { allowStreaming: true, timeoutMs: intervalCorrectnessArmTimeoutMs } : {}),
+      ...(managedInterval?.longWait ? { allowStreaming: true, timeoutMs: 120_000 } : {}),
       onRequest: row => observations.push({ phase: 'http_provider_request', ...row }) });
     if (reviewedSetup) mcpLane = await createCompiledMcpLane();
     const configuration = createHttpProviderConfiguration(provider.baseURL);
@@ -530,7 +531,7 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
         eventReconcileIntervalMs: eventReconcileIntervalMs ?? 750 };
     } else if (managedInterval) {
       const arm = await runCompiledManagedIntervalArm({ ...managedInterval, client, managed, provider, executionHost: host,
-        controller, directory, observations, getAuthHeaders: () => runtimeOwner.getAuthHeaders(),
+        controller, directory, observations, journal, getAuthHeaders: () => runtimeOwner.getAuthHeaders(),
         readCounts: () => ({ ...intervalReads }), writerProcessLauncher: artifacts.launcher });
       // Only the fixture's exact loopback provider address and private root are
       // normalized. Model/tool/plugin selections remain part of the identity.
@@ -831,7 +832,7 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
     sourceCohort: { valid: changedPaths.length === 0, changedPaths } };
   if (cleanupFailures.length || changedPaths.length) result.status = 'failed';
   await fs.writeFile(path.join(root, 'result.json'), JSON.stringify(result, null, 2) + '\n');
-  run.finish(['passed', 'preflight-passed', 'interval-correctness-passed', 'retained-shell-diagnostic-passed', 'model-admission-passed', 'archived-removal-passed'].includes(result.status) ? 'passed' : 'failed');
+  run.finish(['passed', 'preflight-passed', 'interval-diagnostic-passed', 'interval-correctness-passed', 'retained-shell-diagnostic-passed', 'model-admission-passed', 'archived-removal-passed'].includes(result.status) ? 'passed' : 'failed');
   return result;
 }
 

@@ -97,6 +97,55 @@ describe('canonical required checks against final content', () => {
     expect((await observer.project(task))[0]).toMatchObject({ status: 'skipped', reason: 'environment_unavailable',
       environmentUnavailable: { reason: 'uid_mapping_unavailable', hint: expect.stringContaining('UID resolvable') }, evidence: { exitCode: 255 } });
   });
+  it.each(['/var/run/docker.sock', '/run/docker.sock', '/run/user/501/docker.sock', '/Users/test/.docker/run/docker.sock', '/home/test/.docker/run/docker.sock'])(
+    'records a missing Docker socket as skipped with the original receipt: %s', async socket => {
+      await observer.before(input);
+      await observer.after({ ...input, exitCode: 1, outputComplete: true,
+        output: `ENOENT: no such file or directory, stat '${socket}'\n\nExited with code 1` });
+      const projected = (await observer.project(task))[0];
+      expect(projected).toMatchObject({ status: 'skipped', reason: 'environment_unavailable',
+        environmentUnavailable: { reason: 'docker_daemon_unavailable' },
+        evidence: { exitCode: 1, callId: input.callId, messageId: input.messageId } });
+      expect(projectRequiredCheckCompletion([projected])).toMatchObject({ ready: true, status: 'skipped' });
+    },
+  );
+  it('requires complete output and matching command, environment, message and content for a missing-socket skip', async () => {
+    const diagnostic = { exitCode: 1, outputComplete: true, output: "ENOENT: no such file or directory, stat '/var/run/docker.sock'" };
+    expect(await observer.before({ ...input, command: 'docker info' })).toEqual({ tracked: false });
+    expect(await observer.after({ ...input, command: 'docker info', ...diagnostic })).toEqual({ recorded: false });
+    expect(await observer.before({ ...input, environment: 'container' })).toEqual({ tracked: false });
+    expect(await observer.after({ ...input, environment: 'container', ...diagnostic })).toEqual({ recorded: false });
+    expect((await observer.project(task))[0].status).toBe('pending');
+    await observer.before(input);
+    expect(await observer.after({ ...input, ...diagnostic, messageId: 'msg_other' })).toEqual({ recorded: false });
+    expect((await observer.project(task))[0].status).toBe('pending');
+    await observer.before(input);
+    await observer.after({ ...input, ...diagnostic, outputComplete: false });
+    expect((await observer.project(task))[0].status).toBe('failed');
+    await observer.before(input);
+    await fs.writeFile(path.join(directory, 'source.txt'), 'changed');
+    await observer.after({ ...input, ...diagnostic });
+    expect((await observer.project(task))[0]).toMatchObject({ status: 'failed', evidence: { exitCode: 1 } });
+    expect(task.requiredCheckReceipts[0].contentHash).toBeNull();
+    expect(task.requiredCheckReceipts[0].environmentUnavailable).toBeUndefined();
+  });
+  it.each([
+    "ENOENT: no such file or directory, stat '/project/docker.sock'",
+    "ENOENT: no such file or directory, stat '/var/run/docker.sock.backup'",
+    "ENOENT: no such file or directory, open '/var/run/docker.sock'",
+    "ENOENT: no such file or directory, stat '/var/run/docker.sock'\nENOENT: no such file or directory, stat '/project/source.ts'",
+    "ENOENT: no such file or directory, stat '/var/run/docker.sock'\nSQLSTATE 42501 permission denied for table users",
+    "ENOENT: no such file or directory, stat '/var/run/docker.sock'\nAssertionError: expected two rows",
+    "ENOENT: no such file or directory, stat '/var/run/docker.sock'\nError: unrelated application defect",
+  ])('does not skip unrelated or mixed missing-file failures: %s', async output => {
+    await observer.before(input);
+    await observer.after({ ...input, exitCode: 1, outputComplete: true, output });
+    expect((await observer.project(task))[0]).toMatchObject({ status: 'failed', evidence: { exitCode: 1 } });
+  });
+  it('recognizes lstat diagnostics and an optional error prefix for known Docker sockets', () => {
+    expect(diagnoseRequiredCheckEnvironment('Error: ENOENT: no such file or directory, lstat "/var/run/docker.sock"'))
+      .toMatchObject({ reason: 'docker_daemon_unavailable' });
+  });
   it.each([
     'ERROR: column package_id does not exist', 'ERROR: relation public.packages does not exist',
     'FATAL: application initialization failed', 'TypeError: Cannot read properties of undefined',

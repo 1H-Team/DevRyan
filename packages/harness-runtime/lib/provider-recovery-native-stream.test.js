@@ -16,9 +16,10 @@ async function fixture(){
  const directory=await fs.mkdtemp(path.join(os.tmpdir(),'devryan-stream-owner-'));cleanup.push(()=>fs.rm(directory,{recursive:true,force:true}));
  let authorized=true;
  let time=10_000;
- const state={session:{id:'ses_test',directory:'/project'},complete:true,status:'busy',blocked:false,managedBarrierState:'clear',executionOutcomes:[],
+ const incidents=[];
+ const state={session:{id:'ses_test',directory:'/project'},complete:true,status:'busy',blocked:false,blockedByRequests:false,managedBarrierState:'clear',executionOutcomes:[],
   messages:[{info:{id:'msg_original',role:'user'},parts:[{type:'text',text:'Original'}]},assistant('msg_first','msg_original')]};
- const controller=createPrimaryRecoveryController({directory:path.join(directory,'provider-recovery'),now:()=>time,mode:'observe',isManaged:()=>true,authorize:async()=>authorized,observeTurn:async()=>structuredClone(state),
+ const controller=createPrimaryRecoveryController({directory:path.join(directory,'provider-recovery'),now:()=>time,mode:'observe',recordIncident:incident=>incidents.push(incident),isManaged:()=>true,authorize:async()=>authorized,observeTurn:async()=>structuredClone(state),
   abortSession:async()=>{},promptSession:async()=>{throw Error('Legacy recovery must never dispatch');},pollMs:1_000_000,progressTimeoutMs:false});
  await controller.initialize();cleanup.push(()=>controller.drain());
  await controller.plugin({action:'hello',instanceID:'fixture',policyVersion:1,version:'2.2.0'},undefined,undefined,{authorize:async()=>{},isCurrent:()=>true});
@@ -27,7 +28,7 @@ async function fixture(){
  await controller.plugin({action:'step',sessionID:'ses_test',instanceID:'fixture',userMessageID:'msg_original',assistantMessageID:'msg_first',execution,nativeAttempt:attempt,nativePermitSha256:permitSha256});
  const base={sessionID:'ses_test',directory:'/project',instanceID:'fixture',configurationDigest,permitSha256,execution,requestID:'request-first'};
  const transition=(action,extra={})=>controller.nativeStreamContinuation({...base,action,...extra},async()=>{if(!authorized)throw Error('Revoked');});
- return {controller,state,transition,base,revoke:()=>{authorized=false;},advance:ms=>{time+=ms;}};
+ return {controller,state,transition,base,incidents,revoke:()=>{authorized=false;},advance:ms=>{time+=ms;}};
 }
 const reserve=f=>f.transition('reserve',{attempt,outputEventID:'evt_output',assistantMessageID:'msg_first',fingerprint:'e'.repeat(64)});
 function synthetic(f,id='msg_synthetic'){
@@ -109,8 +110,8 @@ test('new humans, unresolved tools, receipts, barriers, selection and permit cha
   if(change==='human')f.state.messages.push({info:{id:'msg_human',role:'user'},parts:[{type:'text',text:'New objective'}]});
   if(change==='tool')f.state.messages.at(-1).parts.push({type:'tool',callID:'call_fixture',state:{status:'error'}});
   if(change==='receipt')f.state.executionOutcomesUnavailable=true;
-  if(change==='barrier')f.state.managedBarrierState='active';
-  if(change==='request')f.state.blocked=true;
+  if(change==='barrier')f.state.managedBarrierState='awaiting_acknowledgement';
+  if(change==='request')f.state.blockedByRequests=true;
   const extra=change==='selection'?{execution:{...execution,variant:'changed'}}:change==='permit'?{permitSha256:'f'.repeat(64)}:change==='controller'?{instanceID:'foreign'}:{};
   if(change==='configuration'){
    await reserve(f);synthetic(f);await bind(f);
@@ -171,4 +172,35 @@ test('expired successor admission and the Step backstop cannot adopt a new assis
  await expect(g.controller.adoptOwnedNativeContinuation({sessionID:'ses_test',instanceID:'fixture',userMessageID:'msg_synthetic',assistantMessageID:'msg_late',execution,nativeAttempt:attempt,nativePermitSha256:permitSha256})).rejects.toMatchObject({code:'provider_stream_interrupted'});
  expect(await g.controller.nativeStreamContinuationReceipts('ses_test','msg_original')).toEqual([]);
  expect(await g.controller.readRecord('ses_test')).toMatchObject({state:'needs_attention',reason:'provider_stream_interrupted',nativeStream:{consumed:1}});
+});
+
+
+test('active managed children do not block a proven native continuation',async()=>{
+ const f=await fixture();f.state.blocked=true;f.state.blockedByRequests=false;f.state.managedBarrierState='active';
+ expect(await reserve(f)).toBe(true);synthetic(f);expect(await bind(f)).toBe(true);
+ expect(await f.transition('prepare',{requestID:'next'})).toBe(true);expect(await f.transition('send',{requestID:'next',attempt})).toBe(true);
+ f.state.messages.push(assistant('msg_next','msg_synthetic'));
+ await f.controller.adoptOwnedNativeContinuation({sessionID:'ses_test',instanceID:'fixture',userMessageID:'msg_synthetic',assistantMessageID:'msg_next',execution,nativeAttempt:attempt,nativePermitSha256:permitSha256});
+ expect((await f.controller.nativeStreamContinuationReceipts('ses_test','msg_original'))).toHaveLength(1);
+});
+
+test('acknowledgement and unknown barriers and unresolved tools remain fenced with bounded reasons',async()=>{
+ for(const barrier of ['awaiting_acknowledgement','unknown']){
+  const f=await fixture();f.state.blocked=true;f.state.managedBarrierState=barrier;
+  await expect(reserve(f)).rejects.toMatchObject({code:'native_stream_continuation_fenced'});
+  expect(f.incidents).toContainEqual(expect.objectContaining({event:'native_stream_continuation_refused',action:'reserve',reason:'managed_barrier'}));
+ }
+ const f=await fixture();f.state.managedBarrierState='active';f.state.messages.at(-1).parts.push({type:'tool',callID:'call_unsettled',state:{status:'running'}});
+ await expect(reserve(f)).rejects.toMatchObject({code:'native_stream_continuation_fenced'});
+ expect(f.incidents).toContainEqual(expect.objectContaining({event:'native_stream_continuation_refused',action:'reserve',reason:'unresolved_tool'}));
+});
+
+test('native-stream adoption fences acknowledgement, unknown barriers and unsettled tools',async()=>{
+ for(const change of ['awaiting_acknowledgement','unknown','tool']){
+  const f=await fixture();await reserve(f);synthetic(f);await bind(f);await f.transition('prepare',{requestID:'next'});await f.transition('send',{requestID:'next',attempt});
+  const next=assistant('msg_next','msg_synthetic');f.state.messages.push(next);
+  if(change==='tool')next.parts.push({type:'tool',callID:'call_unsettled',state:{status:'running'}});
+  else f.state.managedBarrierState=change;
+  await expect(f.controller.adoptOwnedNativeContinuation({sessionID:'ses_test',instanceID:'fixture',userMessageID:'msg_synthetic',assistantMessageID:'msg_next',execution,nativeAttempt:attempt,nativePermitSha256:permitSha256})).rejects.toMatchObject({code:'native_stream_continuation_fenced'});
+ }
 });

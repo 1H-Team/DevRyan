@@ -178,8 +178,8 @@ export function createNativeAdmissionOwner(options) {
     if (input.operation === 'create') {
       if (task.status !== 'starting' || task.childSessionId || task.rootSessionId !== input.parentID
         || task.dispatchCallId !== input.parentCallID) throw fail('native_managed_task_scope_invalid', 403);
-    } else if (['prompt', 'settle'].includes(input.operation)) {
-      if (task.childSessionId !== input.sessionID || ['providerId', 'modelId', 'agent', 'variant'].some(key => task[key] !== input[key])) {
+    } else if (['prompt', 'settle', 'abort'].includes(input.operation)) {
+      if (task.childSessionId !== input.sessionID || input.operation !== 'abort' && ['providerId', 'modelId', 'agent', 'variant'].some(key => task[key] !== input[key])) {
         throw fail('native_managed_task_scope_invalid', 403);
       }
     } else throw fail('native_managed_task_scope_invalid', 403);
@@ -209,7 +209,10 @@ export function createNativeAdmissionOwner(options) {
     const input = entry.managedDispatch;
     await verifyManagedDispatch(input);
     assertEntry(entry);
-    if (input.operation === 'create') {
+    if (input.operation === 'abort') {
+      if (request.operation !== 'session.interrupt' || request.sessionID !== input.sessionID
+        || stable(request.input) !== '{}') throw fail('native_managed_task_scope_invalid', 403);
+    } else if (input.operation === 'create') {
       if (request.operation !== 'session.create' || request.sessionID !== input.parentID
         || !record(request.input) || request.input.parentID !== input.parentID
         || (request.input.location && request.input.location.directory !== input.directory)) throw fail('native_managed_task_scope_invalid', 403);
@@ -1880,14 +1883,15 @@ export function createNativeAdmissionOwner(options) {
       if (!record(input) || !path.isAbsolute(input.directory ?? '')
         || !validID(input.taskId) || typeof input.leaseToken !== 'string' || !input.leaseToken
         || (input.operation === 'create' ? !validID(input.parentID) || !validID(input.parentCallID)
-          : input.operation !== 'prompt' || !validID(input.sessionID) || ['providerId', 'modelId', 'agent'].some(key => typeof input[key] !== 'string' || !input[key])
-            || !(input.variant === null || typeof input.variant === 'string'))) throw fail('native_managed_task_scope_invalid', 403);
+          : !['prompt', 'abort'].includes(input.operation) || !validID(input.sessionID)
+            || input.operation === 'prompt' && (['providerId', 'modelId', 'agent'].some(key => typeof input[key] !== 'string' || !input[key])
+              || !(input.variant === null || typeof input.variant === 'string')))) throw fail('native_managed_task_scope_invalid', 403);
       const sealed = Object.freeze(copy(input));
       const run = () => managedDispatchContext.run(sealed, () => context.run(undefined, async () => {
         const task = await verifyManagedDispatch(sealed);
         const sessionID = sealed.operation === 'create' ? sealed.parentID : sealed.sessionID;
         const session = await canonical(sessionID);
-        if (session.directory !== sealed.directory || (sealed.operation === 'prompt' && session.parentID !== task.rootSessionId)) {
+        if (session.directory !== sealed.directory || (sealed.operation !== 'create' && session.parentID !== task.rootSessionId)) {
           throw fail('native_managed_task_scope_invalid', 403);
         }
         if (sealed.operation === 'prompt') return action();
@@ -1896,12 +1900,12 @@ export function createNativeAdmissionOwner(options) {
         if (state.held || state.reverting) throw fail('native_session_held');
         if (active.size >= PERMIT_MAX) throw fail('native_permit_capacity', 503);
         const permit = Object.freeze({ token: token(), sessionID, revision: state.revision });
-        remember({ permit, directory: sealed.directory, request: { operation: 'session.create', sessionID }, managedDispatch: sealed });
+        remember({ permit, directory: sealed.directory, request: { operation: sealed.operation === 'abort' ? 'session.interrupt' : 'session.create', sessionID }, managedDispatch: sealed });
         try { return await context.run(permit, action); } finally { active.delete(permit.token); }
       }));
       // Child prompt admission already owns the child's existing web lock.
       // Creation shares the parent's lock with hold issuance instead.
-      if (sealed.operation === 'prompt') return run();
+      if (sealed.operation !== 'create') return run();
       if (typeof options.withSessionLock !== 'function') throw fail('native_session_owner_unavailable', 503);
       return options.withSessionLock(sealed.parentID, run);
     }),

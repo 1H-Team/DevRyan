@@ -40,6 +40,7 @@ import { createCommandDerivation,type ReviewedCommandBehavior } from './command-
 import { HostRefusal, refuseHost } from './host-refusal.js';
 import { RegistrationOriginRef, provideRegistrationOrigin, type RegistrationOrigin } from './registration-origin.js';
 import { OperationPermitRef, requestPermit, type ExecuteOwned, type NativeAdmissionBridge, type OperationPermit, type OperationRequest, type NativeExecutor } from './native-admission-contract.js';
+import {reviewedSkillToolInput} from './native-skills.js';
 import { translateNativeSkillPermissionRules } from './native-skill-permissions.js';
 import type { ReviewedSkill } from './reviewed-skills.js';
 import type { NativeDeferredWakeReceipt, NativeShellReconciliation } from './native-admission-owner.js';
@@ -318,7 +319,12 @@ export function createAdmissionGates(options: AdmissionGateOptions) {
         const description = provenance?.kind === 'native' && provenance.id === 'opencode.tool.shell' && effectiveID(tool) === 'shell'
           ? `${tool.description}\n\nDevRyan shell starts in the mapped private project $PWD. Never cd to the absolute logical project path: its live tree is read-only. Use $TMPDIR for per-call scratch or $DEVRYAN_SESSION_TMP across calls; /tmp is read-only. Fail fast if temporary-directory creation or server launch fails; poll readiness only after successful launch and run checks only when ready. Keep a server and its checks in one bounded call; background processes stop at call exit.`
           : tool.description;
-        innerEditor.add({ ...tool, description, options: directOptions(tool.options), execute: wrap(effectiveID(tool), effectiveName(tool), tool.execute, provenance, permission, location) });
+        const skills=provenance?.kind==='native'&&provenance.id==='opencode.tool.skill'&&location
+          ? options.reviewedSkillsForDirectory?.(location.directory):undefined;
+        innerEditor.add({ ...tool, description:skills?.length
+          ? `${description}\nUse an exact readable skill name from the id choices. Do not reconstruct or combine hashed IDs.`:description,
+          ...skills?.length?{input:reviewedSkillToolInput(skills)}:{},
+          options: directOptions(tool.options), execute: wrap(effectiveID(tool), effectiveName(tool), tool.execute, provenance, permission, location) });
       },
       update: (id, update) => innerEditor.update(id, (tool) => {
         update(tool);

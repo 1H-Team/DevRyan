@@ -200,10 +200,14 @@ export const createWebManagedOpenCodeExecutor = (options = {}) => {
         return await cursorSdkRuntime.abortSession(input.sessionId);
       }
       // The caller's signal replaces the request budget.
-      await client.sessions.abort(input.sessionId, {
+      const abort = () => client.sessions.abort(input.sessionId, {
         directory: input.directory,
         ...(input.signal ? { signal: input.signal } : { timeoutMs: requestTimeoutMs }),
       });
+      if (options.nativeTaskDispatch) {
+        await options.nativeTaskDispatch({ operation: 'abort', taskId: input.taskId, leaseToken: input.leaseToken,
+          directory: input.directory, sessionID: input.sessionId }, abort);
+      } else await abort();
       return true;
     },
     async deleteSession(input) {

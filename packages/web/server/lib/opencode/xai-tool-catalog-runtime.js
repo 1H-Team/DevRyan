@@ -45,8 +45,9 @@ const createXaiToolCatalogRuntime = ({
   let disposed = false;
 
   const noteDirectoryUse = (directory) => {
-    if (disposed) return;
-    directoryLastUse.set(normalizeString(directory), Date.now());
+    const normalized = normalizeString(directory);
+    if (disposed || !normalized) return;
+    directoryLastUse.set(normalized, Date.now());
   };
 
   const readWithinDeadline = async (load, callerSignal) => {
@@ -89,7 +90,7 @@ const createXaiToolCatalogRuntime = ({
   const refreshModel = ({ directory, providerID = 'xai', modelID, signal } = {}) => {
     if (signal?.aborted) return Promise.reject(signal.reason);
     const normalizedModelID = normalizeString(modelID);
-    if (disposed || !normalizedModelID || !isXaiProviderID(providerID)) return Promise.resolve(null);
+    if (disposed || !normalizeString(directory) || !normalizedModelID || !isXaiProviderID(providerID)) return Promise.resolve(null);
     const key = [normalizeString(directory), normalizeString(providerID).toLowerCase(), normalizedModelID].join('\n');
     const existing = inflight.get(key);
     if (existing) return waitForSignal(existing, signal);
@@ -111,7 +112,7 @@ const createXaiToolCatalogRuntime = ({
   };
 
   const refreshProviderPayload = async ({ directory, payload, signal } = {}) => {
-    if (disposed || signal?.aborted) return false;
+    if (disposed || signal?.aborted || !normalizeString(directory)) return false;
     const modelIDs = listXaiModelIds(payload);
     if (modelIDs.length === 0) return false;
     const results = await Promise.allSettled(modelIDs.map((modelID) => refreshModel({
@@ -124,7 +125,7 @@ const createXaiToolCatalogRuntime = ({
   };
 
   const refreshDirectory = async ({ directory, signal, trackUse = true } = {}) => {
-    if (disposed || signal?.aborted) return false;
+    if (disposed || signal?.aborted || !normalizeString(directory)) return false;
     // Periodic re-warms pass trackUse:false so they never extend a directory's
     // own active window — only real use (sends, explicit warms) does.
     if (trackUse) noteDirectoryUse(directory);

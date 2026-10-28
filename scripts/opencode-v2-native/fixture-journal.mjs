@@ -32,6 +32,7 @@ export async function createFixtureJournal({ webDataDirectory, label }) {
     ownerDiagnostic: entry => record(entry),
     // OpenCode client/admission dependencies' recordDiagnostic.
     clientDiagnostic: payload => record({ type: 'lifecycle', event: 'opencode_client', payload }),
+    openCodeEvent: (payload, directory) => count(runtime.recordOpenCodeEvent(payload, directory), label),
     // createSessionExecutionHost onDiagnostic.
     sessionExecution: event => count(runtime.recordSessionExecution(event), label),
     turnTiming: entry => count(runtime.recordTurnTiming(entry), label),

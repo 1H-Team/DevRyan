@@ -91,6 +91,24 @@ test('control admission and finish never inspect or copy project files, and pres
   expect(await f.read('input')).toBe('keep');
 });
 
+test('reattachment requires a published control lease and respects revert fencing', async () => {
+  const f = await fixture();
+  const lease = await f.begin('a', 'pa', 'ca', { kind: 'control' });
+  const claim = { directory: f.directory, token: lease.token, kind: 'control', reattach: true };
+  await expect(f.runtime.claimLease(claim)).rejects.toMatchObject({ code: 'execution_already_started' });
+  await f.runtime.claimLease({ directory: f.directory, token: lease.token, kind: 'control' });
+  await f.finish(lease);
+  await expect(f.runtime.claimLease({ ...claim, kind: 'process' })).rejects.toMatchObject({ code: 'execution_already_started' });
+  expect(await f.runtime.claimLease(claim)).toMatchObject({ token: lease.token, state: 'published' });
+  const hold = await f.runtime.holdNativeAdmission({ directory: f.directory, sessionID: 'a', ownerID: 'owner' });
+  await expect(f.runtime.claimLease(claim)).rejects.toMatchObject({ code: 'native_session_held' });
+  await f.runtime.releaseNativeAdmission({ directory: f.directory, sessionID: 'a', ownerID: 'owner', holdID: hold.id, expectedRevision: hold.revision });
+  const tx = await f.runtime.prepareRevert({ directory: f.directory, sessionID: 'a', messageID: 'pa' });
+  await expect(f.runtime.claimLease(claim)).rejects.toMatchObject({ code: 'execution_reverted' });
+  await f.runtime.settleRevert({ directory: f.directory, transactionID: tx.id, commit: true });
+  await expect(f.runtime.claimLease(claim)).rejects.toMatchObject({ code: 'execution_reverted' });
+});
+
 test('whole-content conflicts publish other paths, retain foreign bytes, and remain explicit through Revert', async () => {
   const f = await fixture(); await f.write('binary', Buffer.from([0, 1])); await f.write('text', 'base');
   const a = await f.begin('a', 'pa', 'ca'), b = await f.begin('b', 'pb', 'cb');

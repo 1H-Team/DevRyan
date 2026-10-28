@@ -383,7 +383,7 @@ Operator Stop preparation persists a private `pending` request/lease identity be
 
 Pending receipts rearm after restart and expire through the existing `abortTimeoutMs` bound (default5seconds). A lost response becomes `uncertain` and active work settles as resumable `interrupted` with `Stop request outcome could not be confirmed`. It never infers acceptance or re-prompts the provider; only explicit UI-selected Resume/Dismiss may dispose of that result. A late exact response can still resolve its private receipt. New attempts remain isolated by task/lease identity. Legacy aborted/resumable records expose explicit selected-model recovery without claiming user-stop provenance.
 
-Managed child prompts disable `todoread` and `todowrite` alongside provider-native `task` on initial execution and every continuation. The parent retains task tracking; child tracking schemas add no execution authority. Read-only wildcard denial and native admission remain unchanged.
+Managed child prompts disable `todoread` and `todowrite` alongside provider-native `task` and `opencode_session_rename` on initial execution and every continuation. The parent retains task tracking and child title ownership; child tracking schemas add no execution authority. Read-only wildcard denial and native admission remain unchanged.
 
 
 ### Failure categories and specialist handoffs
@@ -461,6 +461,8 @@ The bounded contract corrects `npx vitest run supabase/functions/<function>/__te
 The scheduler exposes `correctRequiredCheck` only with the private `REQUIRED_CHECK_CORRECTION` Symbol grant, a live root/directory/objective fence and an authorization recheck inside its atomic commit. Terminal task mutations are limited to the validated appended correction and receipt invalidation; execution outcomes and old history remain immutable. `dispatchObjectiveId` is an optional host-captured original objective, independent of the assistant dispatch group. Legacy absence is preserved byte-for-byte; follow-ups inherit a bound objective. Check selection and duplicate suppression use this binding. Unresolved legacy lineage remains explicit blocked verification rather than disappearing after collection or equivalent-task supersession.
 
 Compaction in `persistence.js` hard-protects collected grouped tasks with declared checks while their conversation remains active under the existing retention policy. A cached passing receipt cannot prove current source freshness, so it does not release this protection. Normal result disposition or idle-conversation expiry restores ordinary compaction. Count, byte and eager lineage limits report pressure rather than silently erasing live verification requirements.
+
+Managed abort transport carries the current `taskId` and `leaseToken` alongside the canonical child identity, including silent-stream cleanup and retry preparation. Local native web/permit/task authorization refusals remain runtime failures even if retained text previously labeled them provider authentication.
 
 Provider failure classification requires explicit authentication rejection or the
 structured `provider.auth` category. Structured `provider.internal` remains an

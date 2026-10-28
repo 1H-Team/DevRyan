@@ -98,13 +98,14 @@ export const diagnoseRequiredCheckEnvironment = output => {
   const uidResolution = /^(?:ssh:\s*)?No user exists for uid [0-9]+[.!]?$/i;
   const dockerSocket = /permission denied[^\n]*(?:docker\.sock|docker daemon)|(?:docker\.sock|docker daemon)[^\n]*permission denied/i;
   const dockerDaemon = /cannot connect to the docker daemon|is the docker daemon running|docker daemon is not running|docker[^\n]*daemon[^\n]*unavailable/i;
+  const dockerSocketMissing = /^ENOENT: no such file or directory, l?stat ['"](?:\/(?:var\/)?run\/docker\.sock|\/run\/user\/[0-9]+\/docker\.sock|\/(?:Users|home)\/[^/\r\n]+\/\.docker\/run\/docker\.sock)['"]$/i;
   for (const line of text.split(/\r?\n/)) {
     const diagnostic = line.trim().replace(/^(?:error|fatal):\s*/i, '');
-    const prerequisite = uidMapping.test(diagnostic) || uidResolution.test(diagnostic) || dockerSocket.test(diagnostic) || dockerDaemon.test(diagnostic);
+    const prerequisite = uidMapping.test(diagnostic) || uidResolution.test(diagnostic) || dockerSocket.test(diagnostic) || dockerDaemon.test(diagnostic) || dockerSocketMissing.test(diagnostic);
     // A wrapper's Error: prefix is allowed only on a known prerequisite. Any
     // additional failure line keeps the check failed, even alongside Docker.
     const uidWriteFailure = /^(?:newuidmap|newgidmap): write to (?:uid_map|gid_map) failed: (?:operation not permitted|permission denied)$/i.test(diagnostic);
-    if (!prerequisite && /^\s*(?:error|fatal):/i.test(line)
+    if (!prerequisite && (/^\s*(?:error|fatal):/i.test(line) || /\bENOENT\b/i.test(diagnostic))
       || /\b(?:[a-z]*errors?|fatal|fail(?:ed|ure)?|exception)\b/i.test(diagnostic) && !uidWriteFailure) return null;
   }
   if (text.split(/\r?\n/).some(line => uidResolution.test(line.trim().replace(/^(?:error|fatal):\s*/i, ''))) || uidMapping.test(text)) {
@@ -113,7 +114,7 @@ export const diagnoseRequiredCheckEnvironment = output => {
   if (dockerSocket.test(text)) {
     return { reason: 'docker_socket_denied', hint: 'Use the documented Docker-enabled verification environment or ask the operator to restore daemon access; retain the failed exit and continue independent checks. Do not change socket permissions.' };
   }
-  if (dockerDaemon.test(text)) {
+  if (dockerDaemon.test(text) || text.split(/\r?\n/).some(line => dockerSocketMissing.test(line.trim().replace(/^(?:error|fatal):\s*/i, '')))) {
     return { reason: 'docker_daemon_unavailable', hint: 'Start the documented Docker daemon or use the documented integration runner, then rerun this exact check. Continue independent implementation and checks meanwhile.' };
   }
   return null;

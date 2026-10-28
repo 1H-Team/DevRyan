@@ -249,6 +249,8 @@ title grant. This read does not change task, control-lease or cancellation state
 
 ## Native dispatch readiness and stopped work
 
+Detached managed aborts use the native task-dispatch owner with `operation: abort`, the exact task lease and canonical child. The runtime verifies settlement authority (so cancellation can clean up its own live attempt), while create/prompt still require dispatch authority. No HTTP principal or expired submitting-tool permit is borrowed.
+
 Snapshots expose `dispatchReady` from the injected native controller readiness, ledger ownership, shutdown state and admission hold. `bridgeReady` continues to report only private loopback bridge startup; native consumers must not mistake that legacy diagnostic for native dispatch availability. UI confirmation and native barrier validation use `dispatchReady` when present, with legacy fallback. Every work dispatch independently rechecks native readiness at admission. Authenticated cancellation/disposition routes supply a private context grant; body fields cannot grant user-stopped recovery authority. Explicit Resume as task and dismissal preserve the scheduler's immutable terminal result and create work only through its retained-envelope/idempotent follow-up path.
 
 
@@ -311,3 +313,5 @@ nonzero failure receipts remain available. Declarations and stored ledgers stay
 readable; operators can correct and rerun the check rather than losing history.
 
 Required-check evidence binds the command, project-relative `cwd`, named execution `environment`, and declared content into one hash. Only complete canonical native process output may diagnose a Docker/UID prerequisite as `skipped` with `environment_unavailable`; the original nonzero exit, call/message identity, content hash and actionable hint remain attached. Skips allow closeout with status `skipped`, never `passed`. Truncated output, SQL, assertions and application failures remain unskipped. Native capability replies advertise independent read overlap from native admission rather than a legacy rollout flag.
+
+Missing-socket `ENOENT` diagnostics from `stat`/`lstat` recognize only known Docker locations: `/var/run/docker.sock`, `/run/docker.sock`, `/run/user/<uid>/docker.sock`, and `/Users/<user>/.docker/run/docker.sock` or `/home/<user>/.docker/run/docker.sock`. They retain the `docker_daemon_unavailable` reason. An unrelated missing file or a mixed application failure still fails. A probe or preflight command does not establish evidence for another declared check, even when both name the same environment.

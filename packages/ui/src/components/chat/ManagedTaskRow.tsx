@@ -39,7 +39,7 @@ const reportsBlocked = (report: ReturnType<typeof readManagedResultReport>, prev
 );
 
 const getStatusPresentation = (
-  task: Pick<ManagedTaskRowTask, 'executionKind' | 'status' | 'terminationIntent' | 'childPromptedAt' | 'firstAssistantPartAt' | 'recoverablePreview' | 'partial' | 'verification' | 'waitingReason'>,
+  task: Pick<ManagedTaskRowTask, 'executionKind' | 'status' | 'terminationIntent' | 'childPromptedAt' | 'firstAssistantPartAt' | 'recoverablePreview' | 'partial' | 'waitingReason'>,
   t: ReturnType<typeof useI18n>['t'],
 ) => {
   if (task.status === 'completed') {
@@ -78,24 +78,6 @@ const getStatusPresentation = (
     return { label: t('chat.managedTasks.summary.preparing'), className: 'text-muted-foreground' };
   }
   return { label: t('chat.managedTasks.summary.running'), className: 'text-muted-foreground' };
-};
-
-const getVerificationPresentation = (
-  task: Pick<ManagedTaskRowTask, 'status' | 'verification'>,
-  t: ReturnType<typeof useI18n>['t'],
-) => {
-  const verification = task.verification;
-  if (task.status !== 'completed' || !verification?.checks.length) return null;
-  const key = verification.status === 'passed' ? 'chat.managedTasks.verification.verified'
-    : verification.status === 'failed' ? 'chat.managedTasks.verification.checksFailed'
-      : verification.status === 'blocked' ? 'chat.managedTasks.verification.summaryBlocked'
-        : verification.status === 'skipped' ? 'chat.managedTasks.verification.summarySkipped'
-          : verification.status === 'waived' ? 'chat.managedTasks.verification.summaryWaived'
-            : verification.checks.some((check) => check.reason === 'content_changed_or_check_incomplete')
-              ? 'chat.managedTasks.verification.stale' : 'chat.managedTasks.verification.summaryPending';
-  return { label: t(key), status: verification.status,
-    className: verification.status === 'passed' ? 'text-[var(--status-success)]'
-      : verification.status === 'failed' ? 'text-[var(--status-error)]' : 'text-[var(--status-warning)]' };
 };
 
 const providerModelLabel = (
@@ -355,7 +337,6 @@ export const ManagedTaskRowView = React.memo(({
   const showRecovery = Boolean(onRetryInPlace && manualRecoveryRequired && (!stopped || !childActive));
   const presentedTask = task;
   const status = getStatusPresentation(presentedTask, t);
-  const verification = getVerificationPresentation(presentedTask, t);
   const providerFailurePresentation = getProviderFailurePresentation({
     task,
     recoverySourceTask,
@@ -383,9 +364,6 @@ export const ManagedTaskRowView = React.memo(({
             {displayTitle ?? formatManagedTaskDisplayName(task.label)}
           </h4>
           <p className={`truncate typography-meta ${status.className}`}>{status.label}</p>
-          {verification ? <p data-task-verification={verification.status} className={`typography-micro ${verification.className}`}>
-            {verification.label}
-          </p> : null}
           {providerFailurePresentation && !(showRecovery && task.failureKind === 'deadline_exceeded') ? (
             <p role={providerFailurePresentation.role} className={`mt-1 typography-micro ${providerFailurePresentation.className}`}>
               {providerFailurePresentation.message}

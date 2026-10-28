@@ -39,7 +39,7 @@ test('an unreviewed skill reports a precise reason and a mistyped hash never bec
     const mistyped = 'devryan-abe6dadd3d3fdf0123456789abcdef0123';
     const failed = skill({ status: 'error', input: { id: mistyped, name: mistyped },
         error: 'native_skill_unreviewed: no matching skill. Available skills: Linear', time: { start: 1, end: 2 } });
-    expect(getSkillPresentation([failed]).explanation).toBe('This skill isn\'t available in this workspace. (native_skill_unreviewed)');
+    expect(getSkillPresentation([failed]).explanation).toBe('The skill name or ID was not recognized. Retry using an exact available skill name. (native_skill_unreviewed)');
     expect(getSkillDisplayName(failed)).toBe('Skill');
     expect(getSkillDisplayName(skill({ status: 'running', input: { id: mistyped, name: 'DEVRYAN-ABE6' }, time: { start: 1 } }))).toBe('');
 });

@@ -74,6 +74,11 @@ cannot change context delivery. Direct image routing is unchanged.
 
 ## Mandatory startup contract
 
+Before spawning a controller, `native-process.js` rechecks the managed-process
+registry for up to two seconds (bounded by the launch timeout) while an old owner
+settles. Launch still requires confirmed physical exit; a live or unverified
+owner ends the window with `native_process_owner_unsettled`.
+
 `native-artifacts.js` bounds manifest reads and keeps every integrity check before
 execution. Within one process, a payload's SHA-256 and code-signature results
 are reused while its path, device, inode, size, mode, mtime and ctime are
@@ -248,6 +253,14 @@ siblings therefore cannot exhaust it. An uncommitted start that runs out reports
 `native_task_start_timeout`, and the executor retries it under the same
 idempotency key. A terminal `status` collects and stages exactly like `wait`.
 Reading a result that was never collected reports `native_task_wait_required`.
+
+Later `wait`, `wait_any` and `status` slices reattach to the exact published
+control lease through the host. The ledger rechecks cancellation, admission and
+generation without rewriting the lease; the host rechecks invocation identity
+and the current permit. Only the original slice finishes it. Refused reattachment
+cannot cancel or clean up a published lease, and claimed ready leases remain
+fenced. Async control results settle before lease finish so a delayed finish
+cannot leave a rejected tool promise temporarily unhandled.
 v2 `continue` returns only its committed receipt.
 
 `native-managed-publication-owner.js` reads ordered canonical messages under
@@ -347,7 +360,13 @@ module, `controller-slim.ts`, `controller-webfetch.ts`,
   `native_interview_patch_required`, and `native-interview-owner.js` rethrows
   the original error class so the service's repair flow runs.
 - `native-slim-context-owner.js` maps managed tasks to the 3.x board record
-  (recency from the attempt's timestamps). Its primary fallback hook leaves
+  (recency from the attempt's timestamps). Canonical `interrupted` attempts map
+  to terminal `stopped` rows, including after their retry is dispositioned;
+  acknowledged interrupted attempts never become phantom running/resumed work.
+  Observed, dispositioned attempts are reconciled and excluded from reusable
+  actions. An empty current board explicitly says no managed tasks are running,
+  so retained historical snapshots cannot imply a resumed attempt.
+  Its primary fallback hook leaves
   canonical child sessions without a primary objective to the managed executor:
   native retries stop and publish the original provider failure, preserving
   managed usage-limit backup and manual recovery policy. Missing primary
@@ -456,7 +475,10 @@ tool and resolves it with `reviewed-skills.js.resolveReviewedSkillRequest` again
 the invocation location's reviewed skills only: the exact ID or alias, then a
 supplied `name`, then a single reviewed `devryan-<hex>` ID within edit distance 2
 of a mistyped one. Two or more near IDs refuse. The hashed ID stays the permission
-resource. A refusal reads `native_skill_unreviewed: ...` and lists the reviewed
+resource. The mandatory native Tool owner advertises an enum of unambiguous
+readable names and exact IDs in the skill input schema, keeping native skill
+provenance and permission ownership. Spliced hashes cannot select another skill.
+A refusal reads `native_skill_unreviewed: ...` and lists the reviewed
 skill names (`reviewedSkillNames`, at most 50) so the model's retry can name one.
 
 ## Native Claude checkpoint continuity
@@ -656,7 +678,12 @@ successor preparation/send; Step adoption consumes its proof once. There are
 at most two continuations per original objective. Plain Retry reserves nothing,
 and a third Continue is refused before a physical request. New human input,
 unsettled execution/tools/requests, changed selection or missing proof fail
-closed. Lost publication or Step proofs expire on the existing progress
+closed. An `active` managed barrier permits continuation while children run if
+requests are explicitly unblocked; acknowledgement and unknown barriers and
+unsettled tools still fence both reservation and successor adoption. A refused
+`reserve` RPC declines retry without a defect; `prepare`, `send` and `bind`
+failures remain fatal after reservation. `native_stream_continuation_refused`
+records a bounded action and reason. Lost publication or Step proofs expire on the existing progress
 timeout; exact successor transport I/O can refresh liveness. Stop releases a
 pending reservation, while uncertain failures retain the fence and enter
 `needs_attention` with `provider_stream_interrupted`.
@@ -1041,6 +1068,14 @@ The host owner exposes it as
 reply's instance, directory and integration are verified. Credential metadata
 validation accepts OAuth rows only for OpenAI `chatgpt-*` methods and xAI
 `device`; other providers must be keys.
+
+The quota route records failed selected-credential reads and xAI renewals as
+`native_quota_read_failed`, carrying only provider, stage and an allowlisted
+code. It retries a transient selected-read failure once against the current
+owner, without retrying changed credentials or authorization refusals. Missing
+host capability is reported as `native_credential_update_required`, rather than
+asking the user to reconnect an otherwise usable account. Native scope and
+selected-account checks are unchanged; refresh tokens remain private.
 
 The four `*.integration` caller operations recheck the original web authority
 and controller after their awaited read before returning data. Other operations
@@ -1810,6 +1845,14 @@ retains that proof for Retry Apply; a later controller invalidates it. The stric
 
 `native-session-context-owner.js` watches the managed runtime's durable result-commit cursor. It scans idle roots after a commit, after recovery, and on bounded watch timeouts to retry transient observation failures; it claims one eligible result, and reserves a native `collect` continuation with the existing primary owner. The reservation retains the same message ID across delivery retries; canonical step observation consumes it. The primary owner's durable `collectionWakes` receipts prevent duplicate turns across multiple unacknowledged tasks, including after restart. Receipts are bounded to 256 per cancellation generation; capacity exhaustion requires explicit collection rather than evicting a receipt and repeating a wake. Controller generation, objective, user stop, holds, and the original plan-mode instruction remain authoritative. Disposal aborts the long poll and releases its listener. Collecting a result acknowledges receipt without satisfying its required checks; strict verified completion remains separate.
 
+An authoritative `SessionNotFoundError` stops a collection scan. For an exact
+pending native continuation, the primary owner repeats that proof under its
+mutation lock and checks the current controller and captured revision before
+durably cancelling the reservation. Child results remain unacknowledged and
+available. Other read, location and transport failures remain retryable.
+`native_collection_continuation_failed` retains the bounded, regex-validated
+error code and valid session ID so restart diagnostics preserve the actual cause.
+
 A native task may request `approved_plan` with its selected version, exact phase heading, and bounded logical paths. `harness-task-context.js` captures the selected application plan under root authority, scopes the immutable content to that phase plus shared constraints and verification, and binds its SHA-256 to the objective, source message, and version. The scheduler retains `approvedPlanRef`; dispatch also includes its text so the child need not search the repository. An assigned child can retrieve that exact snapshot through the empty-input `devryan_plan_read` tool, with parent/task ownership and hash validation. This read-only alias does not expose the root `devryan_task` delegation or update actions. It cannot read arbitrary parent history or update the root plan. The task owner rechecks the selected plan before committing dispatch.
 
 ## Host operations and provider launch health
@@ -1874,3 +1917,7 @@ are never rewritten. This receipt states publication, not successful testing.
 Managed child prompt tool maps enable `devryan_plan_read` only for retained `approvedPlanRef` snapshots; the fixed empty-input host reader still validates the immutable assignment. Required-check declarations accept project-relative `cwd` and a named `environment`, both included in check content identities. Canonical Docker/UID prerequisite diagnoses retain failed exits as skipped `environment_unavailable` evidence; they never convert verification to a pass.
 
 Only complete canonical process output can establish an environment skip. Skipped checks permit disposition and closeout with completion status `skipped`, never `passed`; SQL/assertion/application failures remain blocking. Content changes invalidate skip receipts as well as passes.
+
+## Managed child interruption authority
+
+`withManagedTaskDispatch` accepts `abort` for the current scheduler settlement lease and its canonical child. It verifies task identity, parent control-call capture, directory and child ancestry before issuing a permit limited to `session.interrupt` with an empty payload. Every effect rechecks the lease; resume, child removal and selection changes are excluded. This lets detached timeout cleanup and same-child retry stop the old runner without requiring an HTTP principal or retaining the original tool permit.

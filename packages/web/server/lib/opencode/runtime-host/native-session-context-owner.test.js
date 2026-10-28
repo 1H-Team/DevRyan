@@ -196,6 +196,7 @@ it('recovery skips held intents, recovers other sessions, and reuses the exact I
  const pending=new Map(scopes.map(scope=>[scope.sessionID,{sessionID:scope.sessionID,directory:scope.directory,
   continuationID:scope.messageID,nativeContinuation:{messageID:scope.messageID,prompt:{messageID:scope.messageID}}}]));
  const owner=createNativeSessionContextOwner({instanceID:'controller',isHeld:async scope=>held.has(scope.sessionID),
+  openCodeClient:{sessions:{get:async id=>({id,directory:'/project'})}},
   primaryRuntime:{helloNative:async()=>{},pendingNativeContinuations:async()=>scopes,readRecord:async id=>pending.get(id),
    captureNativeContinuationDispatch:async scope=>({record:pending.get(scope.sessionID),prompt:pending.get(scope.sessionID).nativeContinuation.prompt,
     recheck:async()=>{if(held.has(scope.sessionID))throw Error('held');}})},
@@ -266,6 +267,30 @@ it('does not wake a parent for another objective or an already delivered collect
  task.dispatchGroupId='msg_user';f.primary.collectionWake={taskId:task.taskId};
  expect(await f.owner.continueTodos({sessionID:'ses_root',directory:'/project'})).toMatchObject({continued:false,reason:'todos_complete'});
  expect(f.reservations()).toBe(0);
+});
+
+it('settles a missing root scan while leaving location and transport failures retryable',async()=>{
+ for(const [tag,missing] of [['SessionNotFoundError',true],['LocationNotFoundError',false]]){
+  const failure=Object.assign(new Error('not found'),{code:'opencode_not_found',tag});
+  const f=continuationFixture({openCodeClient:{sessions:{get:async()=>{throw failure;}}}});
+  const scan=f.owner.continueTodos({sessionID:'ses_root',directory:'/project'});
+  if(missing)await expect(scan).resolves.toEqual({continued:false,reason:'session_missing'});
+  else await expect(scan).rejects.toBe(failure);
+  expect(f.reservations()).toBe(0);
+ }
+});
+
+it('settles a pending continuation only after repeated missing-session proof',async()=>{
+ let reads=0,settled=0,deliveries=0;
+ const missing=Object.assign(new Error('missing'),{code:'opencode_not_found',tag:'SessionNotFoundError'});
+ const primary={sessionID:'ses_root',directory:'/project',revision:4,continuationID:'msg_pending',nativeContinuation:{messageID:'msg_pending'}};
+ const owner=createNativeSessionContextOwner({instanceID:'controller',getInstanceID:()=> 'controller',
+  primaryRuntime:{helloNative:async()=>{},readRecord:async()=>primary,settleMissingNativeContinuation:async(input,proof)=>{
+   expect(input).toEqual({sessionID:'ses_root',directory:'/project',messageID:'msg_pending',revision:4,instanceID:'controller'});
+   await proof();await proof();settled++;}},
+  openCodeClient:{sessions:{get:async()=>{reads++;throw missing;}}},deliverContinuation:async()=>{deliveries++;}});
+ expect(await owner.continueTodos({sessionID:'ses_root',directory:'/project'})).toEqual({continued:false,reason:'session_missing'});
+ expect({reads,settled,deliveries}).toEqual({reads:3,settled:1,deliveries:0});
 });
 
 it('watches durable result commits after idle and cancels the exact pending watcher on disposal',async()=>{

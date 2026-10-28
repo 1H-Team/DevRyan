@@ -10,6 +10,12 @@ import {
 } from './index';
 
 describe('createPhaseReminderHook', () => {
+  test('keeps parent acceptance and compaction continuity explicit in the stable reminder', () => {
+    expect(PHASE_REMINDER).toContain('personally verify changed behavior before acceptance');
+    expect(PHASE_REMINDER).toContain('Designer does implementation, not standalone acceptance review');
+    expect(PHASE_REMINDER).toContain('The host compacts context automatically; continue the original objective and unfinished checks');
+  });
+
   test('appends reminder as a separate part for orchestrator sessions', async () => {
     const hook = createPhaseReminderHook();
     const output = {

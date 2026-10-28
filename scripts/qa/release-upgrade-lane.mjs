@@ -214,6 +214,7 @@ try {
       if (!response.ok) throw Object.assign(new Error(method + ' ' + route.split('?')[0] + ' HTTP ' + response.status), { code: 'qa_release_upgrade_api' });
       return response.status === 204 ? null : response.json();
     };
+    await api('POST', '/api/opencode/directory', { path: request.workspace });
     const listed = await api('GET', '/api/session?directory=' + directory);
     result.sessions = listed.map(row => row.id);
     if (request.activity) {

@@ -480,6 +480,8 @@ const PINNED_TOOL_PERMISSION_ACTIONS = new Set([
   'todoread', 'todowrite',
   // Fixed, empty-input assigned-plan reader registered by the managed-task owner.
   'devryan_plan_read',
+  // Pinned native opencode.tools session_rename has its own effective action.
+  'opencode_session_rename',
 ]);
 
 const normalizeToolOverrides = (tools, operation) => {
@@ -498,7 +500,7 @@ const normalizeToolOverrides = (tools, operation) => {
     // Plugin tools may set options.permission to a different/shared action.
     // The HTTP catalog does not attest that mapping. Require B's reviewed host
     // registration instead of pretending a same-named rule disables the tool.
-    if (!PINNED_TOOL_PERMISSION_ACTIONS.has(native)) {
+    if (!PINNED_TOOL_PERMISSION_ACTIONS.has(native) || native === 'opencode_session_rename' && enabled) {
       // A final wildcard deny already disables every custom permission action.
       // Unknown false names add no grant and need no guessed action mapping.
       if(enabled===false&&tools['*']===false)continue;

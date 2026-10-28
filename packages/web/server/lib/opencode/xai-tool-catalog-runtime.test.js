@@ -33,6 +33,19 @@ const duplicateCatalog = [
 ];
 
 describe('xAI tool catalog runtime', () => {
+  it('defers catalog refresh until a project directory is available', async () => {
+    const client = createNativeConsumerFixture();
+    client.catalog.tools = vi.fn(async () => ({ definitions: [] }));
+    client.catalog.providers = vi.fn(async () => providerPayload);
+    const runtime = createXaiToolCatalogRuntime({ openCodeClient: client });
+    expect(await runtime.refreshProviderPayload({ payload: providerPayload })).toBe(false);
+    expect(await runtime.refreshDirectory({})).toBe(false);
+    expect(client.catalog.tools).not.toHaveBeenCalled();
+    expect(client.catalog.providers).not.toHaveBeenCalled();
+    expect(await runtime.refreshDirectory({ directory: '/repo' })).toBe(true);
+    expect(client.catalog.tools).toHaveBeenCalledWith(expect.objectContaining({ directory: '/repo' }), expect.anything());
+    runtime.dispose();
+  });
   it('discovers Grok models and caches only verified duplicate overrides', async () => {
     const fetchImpl = vi.fn(async (url) => {
       const target = String(url);

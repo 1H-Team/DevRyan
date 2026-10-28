@@ -78,7 +78,7 @@ import {
   assertSessionPlanSelectionReady,
 } from "./sync-refs"
 import { markSessionsViewed } from "./notification-store"
-import { setActiveSession } from "./sync-context"
+import { acknowledgeSessionCompletions, setActiveSession } from "./sync-context"
 import { isQuestionOrphaned } from "./question-orphan"
 import {
   createSession as createSessionAction,
@@ -1632,6 +1632,7 @@ const applyCurrentSessionSideEffects = (
   if (id) {
     const viewedSessionIds = getSessionIdsWithDescendants([id])
     markSessionsViewed(viewedSessionIds)
+    acknowledgeSessionCompletions(viewedSessionIds)
     get().clearReadCompletionIndicators(viewedSessionIds)
     setActiveSession(resolvedDir ?? "", id)
   } else {

@@ -172,6 +172,7 @@ describe('web managed OpenCode executor transport', () => {
         'resend_*': false,
         'mcp__resend__*': false,
         task: false,
+        opencode_session_rename: false,
         devryan_plan_read: false,
         todoread: false,
         todowrite: false,
@@ -474,7 +475,7 @@ describe('web managed OpenCode executor transport', () => {
           type: 'text',
           text: 'Implement the change.',
         }],
-        tools: { task: false, devryan_plan_read: false, todoread: false, todowrite: false },
+        tools: { task: false, opencode_session_rename: false, devryan_plan_read: false, todoread: false, todowrite: false },
       },
     });
     expect(await executor.abort({ ...task, childSessionId })).toEqual({ aborted: true });

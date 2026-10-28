@@ -321,7 +321,7 @@ describe('managed OpenCode executor', () => {
       'Inspect the authentication flow.',
     );
     expect(prompts[0].tools).toEqual({
-      task: false, devryan_plan_read: false, todoread: false, todowrite: false,
+      task: false, opencode_session_rename: false, devryan_plan_read: false, todoread: false, todowrite: false,
     });
   });
 
@@ -355,7 +355,7 @@ describe('managed OpenCode executor', () => {
     ].join('\n\n'));
     expect(prompts[0].tools).toMatchObject({
       '*': false,
-      task: false, devryan_plan_read: false, todoread: false, todowrite: false,
+      task: false, opencode_session_rename: false, devryan_plan_read: false, todoread: false, todowrite: false,
       read: true,
       glob: true,
       grep: true,
@@ -439,7 +439,7 @@ describe('managed OpenCode executor', () => {
         expect(prompts).toHaveLength(1);
         expect(prompts[0].providerId).toBe('cursor-acp');
         expect(prompts[0].prompt).toStartWith(`${MANAGED_READ_ONLY_PROMPT}\n\n`);
-        expect(prompts[0].tools).toMatchObject({ '*': false, task: false, devryan_plan_read: false, todoread: false, todowrite: false, read: true });
+        expect(prompts[0].tools).toMatchObject({ '*': false, task: false, opencode_session_rename: false, devryan_plan_read: false, todoread: false, todowrite: false, read: true });
       });
     }
   }
@@ -956,7 +956,7 @@ describe('managed OpenCode executor', () => {
       tools: {
         'resend_*': false,
         'mcp__resend__*': false,
-        task: false, devryan_plan_read: false, todoread: false, todowrite: false,
+        task: false, opencode_session_rename: false, devryan_plan_read: false, todoread: false, todowrite: false,
       },
     }]);
   });
@@ -1053,7 +1053,7 @@ describe('managed OpenCode executor', () => {
       tools: {
         'resend_*': false,
         'mcp__resend__*': false,
-        task: false, devryan_plan_read: false, todoread: false, todowrite: false,
+        task: false, opencode_session_rename: false, devryan_plan_read: false, todoread: false, todowrite: false,
       },
     }]);
   });
@@ -1170,7 +1170,7 @@ describe('managed OpenCode executor', () => {
       tools: {
         'resend_*': false,
         'mcp__resend__*': false,
-        task: false, devryan_plan_read: false, todoread: false, todowrite: false,
+        task: false, opencode_session_rename: false, devryan_plan_read: false, todoread: false, todowrite: false,
       },
     }]);
   });
@@ -2196,7 +2196,7 @@ describe('managed OpenCode executor', () => {
       tools: {
         'resend_*': false,
         'mcp__resend__*': false,
-        task: false, devryan_plan_read: false, todoread: false, todowrite: false,
+        task: false, opencode_session_rename: false, devryan_plan_read: false, todoread: false, todowrite: false,
       },
     }]);
   });
@@ -2522,7 +2522,7 @@ describe('managed OpenCode executor', () => {
       tools: {
         'resend_*': false,
         'mcp__resend__*': false,
-        task: false, devryan_plan_read: false, todoread: false, todowrite: false,
+        task: false, opencode_session_rename: false, devryan_plan_read: false, todoread: false, todowrite: false,
       },
     });
     expect(result).toEqual({
@@ -3094,7 +3094,8 @@ describe('managed OpenCode executor', () => {
       async markAccepted() { return true; },
     })).status).toBe('completed');
     expect(await executor.abort(existing)).toEqual({ aborted: true });
-    expect(calls).toEqual([{ sessionId: 'ses_existing', directory: '/workspace', providerId: 'github-copilot' }]);
+    expect(calls).toEqual([{ taskId: existing.taskId, leaseToken: existing.leaseToken,
+      sessionId: 'ses_existing', directory: '/workspace', providerId: 'github-copilot', signal: undefined }]);
   });
 
   test('relaunches a resume after restart when its continuation was never recorded', async () => {
@@ -3316,7 +3317,7 @@ describe('managed task prompt preamble', () => {
       `${prefix}${MANAGED_RETRY_IN_PLACE_PROMPT}\n\n${MANAGED_MODEL_CONTINUATION_NOTICE_PREFIX}github-copilot/gpt-4.1 · fast to continue the previous task.`,
     ]);
     if (readOnly) for (const entry of prompts) expect(entry.tools).toEqual({
-      '*': false, read: true, glob: true, grep: true, webfetch: true, devryan_plan_read: false, task: false, todoread: false, todowrite: false,
+      '*': false, read: true, glob: true, grep: true, webfetch: true, devryan_plan_read: false, task: false, opencode_session_rename: false, todoread: false, todowrite: false,
     });
     expect(hookCalls).toBe(0);
   });

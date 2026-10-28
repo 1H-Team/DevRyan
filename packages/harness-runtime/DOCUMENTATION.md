@@ -350,6 +350,18 @@ exact owned successor attempt. Failure preserves the budget and enters
 `needs_attention`/`provider_stream_interrupted`; Stop clears pending authority.
 Plain native Retry does not reserve a Continue.
 
+Interrupted-stream admission permits a managed barrier of `clear` or `active`
+when requests are explicitly unblocked. Unsettled tools, acknowledgement barriers
+and unknown barrier states remain fenced, including successor Step adoption.
+A refused reservation declines the retry; failures after reservation still fail
+closed. `native_stream_continuation_refused` records the bounded action and reason.
+
+`settleMissingNativeContinuation` cancels an exact pending native continuation
+only under the primary mutation lock, with matching revision, directory, message
+and current controller. It repeats canonical missing-session proof before commit,
+clears the reservation and increments the cancellation generation. Child result
+envelopes are retained; observation or transport failures cannot prove removal.
+
 `nativeStreamContinuationReceipts(sessionID, objectiveID)` reads the consumed
 canonical chain for that exact objective. Current records keep at most two
 receipts; the existing record-store primitive archives each settled objective
@@ -431,6 +443,14 @@ cleanability check in `cleanupLease` also read the last committed snapshot: a
 published lease and its publication rows never change again. An absent or
 unsettled lease in the snapshot falls back to the owner lock, and publication
 and cleanup still re-read the lease under it.
+
+Attached native `devryan_task` `wait`, `wait_any` and `status` slices may reattach
+to their published control lease. `claimLease({ reattach: true })` checks control
+execution with no preparation, cancellation, pending revert, changed generation
+or native admission hold and returns the lease without rewriting it. The host
+also rechecks the exact captured invocation and permit. Only the original slice
+finishes the lease; later slices never publish another receipt or clean up a
+published lease on refusal. Claimed ready leases cannot reattach.
 
 The web server's execution host creates the runtime with
 `createSessionMutationHost` (`lib/session-mutation-host.js`): under Node, as in

@@ -860,6 +860,7 @@ export interface PrimaryRecoveryController {
   /** Constructor-only native continuation reservation and original owner reauthorization. */
   reserveNativeContinuation(input: Record<string, unknown>, prompt: NativePrimaryContinuationPrompt): Promise<unknown>;
   pendingNativeContinuations(input: {directory:string}): Promise<Array<{sessionID:string;directory:string;messageID:string}>>;
+  settleMissingNativeContinuation(input: {sessionID:string;directory:string;messageID:string;revision:number;instanceID:string}, assertMissing: () => Promise<void>): Promise<unknown>;
   captureNativeContinuationDispatch(input: {sessionID:string;directory:string;messageID:string;instanceID?:string}): Promise<{
     record: PrimaryRecoveryExecutionRecord; prompt: NativePrimaryContinuationPrompt; recheck:()=>Promise<void>}>;
   /** Trusted host-only adoption at canonical native Step.Started; absent from plugin/HTTP actions. */

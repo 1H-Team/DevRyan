@@ -29,7 +29,8 @@ export interface NativeManagedDependencies {
     handleNativePlanRpc(input: Readonly<Record<string, unknown>>, recheck: () => Promise<void>, options?: {maxBytes: number}): Promise<unknown>;
     handleNativeContextRpc(input: Readonly<Record<string, unknown>>, recheck: () => Promise<void>): Promise<unknown>;
   };
-  executionHost: {nativeManagedControl(input: {action: 'begin' | 'finish'; invocation: NativeManagedInvocation; token?: string}): Promise<unknown>};
+  executionHost: {nativeManagedControl(input: {action: 'begin'; invocation: NativeManagedInvocation}): Promise<{lease: {token: string}; reattached?: true}>;
+    nativeManagedControl(input: {action: 'finish'; invocation: NativeManagedInvocation; token: string}): Promise<unknown>};
   getManagedRuntime(): {
     handleRpc(input: {method: string; params?: Readonly<Record<string, unknown>>}, context?: {signal?: AbortSignal; authorizeSubmission?: () => Promise<void>;
       dispatchObjectiveId?: string | null; [REQUIRED_CHECK_CORRECTION]?: { rootSessionId: string; directory: string; objectiveId: string;

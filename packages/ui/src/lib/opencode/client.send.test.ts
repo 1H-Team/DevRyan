@@ -193,6 +193,15 @@ describe("opencode client sends", () => {
     expect(requestUrl.searchParams.has("directory")).toBe(false)
   })
 
+  test('explains the native subtree refusal without automatically retrying', async () => {
+    const fetch = mock(async () => Response.json({ error: 'native_queued_input_blocked', code: 'native_queued_input_blocked', retryable: false }, { status: 409 }))
+    globalThis.fetch = fetch
+    await expect(opencodeClient.sendMessage({ id: 'session-a', messageId: 'msg_kept', text: 'continue', providerID: 'fixture', modelID: 'exact', delivery: 'queue' }))
+      .rejects.toMatchObject({ code: 'native_queued_input_blocked', statusCode: 409, retryable: false,
+        message: 'This session or a subtask is still active, or its status could not be confirmed. Wait for it to finish, or stop it, then retry your message.' })
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
   test("sends an explicit queued delivery only when the caller requests it",async()=>{
     await opencodeClient.sendMessage({id:"session-a",text:"Natural",providerID:"fixture",modelID:"exact",delivery:"queue"})
     expect(getPromptBody().delivery).toBe("queue")

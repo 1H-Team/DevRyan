@@ -12,6 +12,7 @@ import { readSessionExecutionReceipt } from '../../packages/harness-runtime/lib/
 import { createProcessSampler } from '../perf/native-upgrade-benchmark.mjs';
 import { repositoryRoot } from './artifacts.mjs';
 import {createRunRoot} from '../qa/run-root.mjs';
+import { collectGapPaths, readRecordsFromPaths, summarizeSessionTree } from '../journal.mjs';
 
 // Prospective diagnostic policy. This never changes the production 750ms default
 // and does not replace the separate 21 calibration + 42 paired workload launches.
@@ -88,11 +89,23 @@ export function isCompiledIntervalParentCompletion(parsed, directory, rootID, re
 /** One actual compiled arm, called only after the existing package catalog gate.
  * readCounts observes the existing client fetch; it must not perform extra reads. */
 export async function runCompiledManagedIntervalArm({ caseID, intervalMs, client, managed, provider,
-  executionHost, controller, directory, observations, getAuthHeaders, readCounts, writerProcessLauncher }) {
+  executionHost, controller, directory, observations, getAuthHeaders, readCounts, writerProcessLauncher, longWait = false, journal }) {
   assert.match(caseID, /^interval-[a-f0-9-]+$/);
   assert.ok([750, 1500].includes(intervalMs));
   const turn = managedTaskTurn(caseID, 'fixer'), abort = new AbortController();
-  const timeout = setTimeout(() => abort.abort(Error('compiled_interval_arm_timeout')), managedIntervalPolicy.armTimeoutMs);
+  const holdMs = longWait ? 65_000 : managedIntervalPolicy.quietHoldMs;
+  const timeoutMs = longWait ? 120_000 : managedIntervalPolicy.armTimeoutMs;
+  const timeout = setTimeout(() => abort.abort(Error('compiled_interval_arm_timeout')), timeoutMs);
+  let beginRequests = 0, initialClaims = 0, reattachments = 0, finishes = 0;
+  const originalControl = executionHost.nativeManagedControl;
+  executionHost.nativeManagedControl = async input => {
+    const result = await originalControl(input);
+    if (input.invocation.callID === turn.callIDs.waitID) {
+      if (input.action === 'begin') { beginRequests++; if (result.reattached) reattachments++; else initialClaims++; }
+      if (input.action === 'finish') finishes++;
+    }
+    return result;
+  };
   let rootID, parentReplyIssued = false, releaseWait, releaseParent, streamFailure, sampler, resources;
   const waitRegistered = new Promise(resolve => { releaseWait = resolve; });
   const parentCompleted = new Promise(resolve => { releaseParent = resolve; });
@@ -153,6 +166,7 @@ export async function runCompiledManagedIntervalArm({ caseID, intervalMs, client
             }
             if (event.type === 'session.tool.called' && data?.sessionID === rootID && data.id === turn.callIDs.waitID) releaseWait();
             for (const projected of projector.project(event)) {
+              if (longWait) journal.openCodeEvent(projected.payload, projected.directory);
               managed.getManagedRuntime().processOpenCodeEvent(projected.payload, projected.directory); forwardedHints++;
             }
           }
@@ -164,15 +178,25 @@ export async function runCompiledManagedIntervalArm({ caseID, intervalMs, client
       const reply = turn.responder(request);
       const signalOwner = AbortSignal.any([abort.signal, signal]);
       if (request.body.messages.some(message => message.role === 'tool' && message.tool_call_id === turn.callIDs.writerID)) {
-        const registrationWait = new AbortController();
-        try { await Promise.race([waitRegistered, delay(managedIntervalPolicy.armTimeoutMs, undefined,
-          { signal: AbortSignal.any([signalOwner, registrationWait.signal]) }).then(() => { throw Error('compiled_interval_wait_unregistered'); })]); }
-        finally { registrationWait.abort(); }
-        signalOwner.throwIfAborted();
-        const start = readCounts();
-        await delay(managedIntervalPolicy.quietHoldMs, undefined, { signal: signalOwner });
-        const end = readCounts();
-        quietReads = { active: end.active - start.active, history: end.history - start.history };
+        const hold = async function* () {
+          const registrationWait = new AbortController();
+          try { await Promise.race([waitRegistered, delay(timeoutMs, undefined,
+            { signal: AbortSignal.any([signalOwner, registrationWait.signal]) }).then(() => { throw Error('compiled_interval_wait_unregistered'); })]); }
+          finally { registrationWait.abort(); }
+          signalOwner.throwIfAborted();
+          const start = readCounts();
+          if (longWait) {
+            for (let elapsed = 0; elapsed < holdMs; elapsed += 5000) {
+              await delay(Math.min(5000, holdMs - elapsed), undefined, { signal: signalOwner });
+              yield { type: 'textDelta', text: 'Working. ' };
+            }
+          } else await delay(holdMs, undefined, { signal: signalOwner });
+          const end = readCounts();
+          quietReads = { active: end.active - start.active, history: end.history - start.history };
+          yield* reply.items;
+        };
+        if (longWait) return { ...reply, items: hold() };
+        for await (const _ of hold()) { /* The ordinary arm keeps its buffered reply. */ }
       }
       if (request.body.messages.some(message => message.role === 'tool' && message.tool_call_id === turn.callIDs.waitID)) parentReplyIssued = true;
       return reply;
@@ -184,7 +208,7 @@ export async function runCompiledManagedIntervalArm({ caseID, intervalMs, client
     await client.prompts.prompt(rootID, { messageID, agent: 'orchestrator', model, variant: 'default',
       parts: [{ type: 'text', text: turn.marker }] }, { directory, origin: 'native_acceptance', delivery: 'queue', timeoutMs: 30_000 });
     const completionWait = new AbortController();
-    try { await Promise.race([parentCompleted, delay(managedIntervalPolicy.armTimeoutMs, undefined,
+    try { await Promise.race([parentCompleted, delay(timeoutMs, undefined,
       { signal: AbortSignal.any([abort.signal, completionWait.signal]) }).then(() => { throw Error('compiled_interval_parent_unsettled'); })]); }
     finally { completionWait.abort(); }
     if (streamFailure) throw streamFailure;
@@ -201,7 +225,7 @@ export async function runCompiledManagedIntervalArm({ caseID, intervalMs, client
       && row.parts.some(part => part.type === 'text' && part.text === `completed ${caseID}`)), 'Actual interval parent final response missing');
     assert.equal((await managed.readPrimaryRecord(rootID)).anchorID, messageID);
     const final = child.records.findLast(row => row.info.role === 'assistant' && row.info.time?.completed
-      && row.parts.some(part => part.type === 'text' && part.text === `managed child completed ${caseID}`));
+      && row.parts.some(part => part.type === 'text' && (longWait ? part.text.endsWith(`managed child completed ${caseID}`) : part.text === `managed child completed ${caseID}`)));
     assert.ok(final, 'Actual interval child final assistant missing');
     for (const callID of [turn.callIDs.startID, turn.callIDs.waitID]) {
       const calls = parent.records.flatMap(row => row.parts).filter(part => part.type === 'tool' && part.callID === callID);
@@ -223,16 +247,31 @@ export async function runCompiledManagedIntervalArm({ caseID, intervalMs, client
     const wait = records.find(row => row.type === 'session.tool.called' && row.sessionID === rootID && row.callID === turn.callIDs.waitID);
     const settled = records.find(row => row.type === 'session.tool.success' && row.sessionID === rootID && row.callID === turn.callIDs.waitID);
     const causal = terminal && wait && settled && wait.at <= terminal.at && settled.at >= terminal.at;
+    let journalProof;
+    if (longWait) {
+      assert.ok(causal && settled.at - wait.at >= 60_000, 'Wait did not remain attached for 60 seconds');
+      assert.equal(initialClaims, 1); assert.equal(finishes, 1); assert.ok(reattachments >= 2);
+      assert.equal(beginRequests, initialClaims + reattachments);
+      await journal.flush();
+      let gaps = 0; for await (const row of readRecordsFromPaths(await collectGapPaths(journal.journalDirectory, { verify: true }))) if (row.type === 'gap') gaps++;
+      const summary = await summarizeSessionTree(journal.journalDirectory, rootID);
+      const tool = summary.tools.find(row => row.tool === 'devryan_task');
+      assert.equal(gaps, 0); assert.ok(tool && tool.calls >= 2, 'Managed tool events absent from journal');
+      assert.equal(tool.errors, 0); assert.equal(tool.unfinished, 0);
+      journalProof = { gaps, toolCalls: tool.calls, toolErrors: tool.errors, unfinished: tool.unfinished };
+    }
     const after = readCounts();
     return { caseID, intervalMs, correctness: 'passed', proof: { rootSessionID: rootID, childSessionID: task.childSessionId,
       taskID: task.taskId, childFinalAssistantID: final.info.id, childWriterCallID: proof.childWriterCallID,
       operationID: lease.result.operationID, receiptToken: lease.token }, quietReads, httpOperations: after.total - before.total,
+      ...(longWait ? { attachedWait: { elapsedMs: settled.at - wait.at, beginRequests, initialClaims, reattachments, finishes, journal: journalProof } } : {}),
       timing: causal ? { status: 'measured', waitSettlementMs: settled.at - terminal.at, terminal, wait, settled }
         : { status: 'inconclusive', reason: 'exact_terminal_wait_order_unavailable' },
       resources, stream: { bytes, eventCount, forwardedHints } };
   } finally {
     clearTimeout(timeout); abort.abort();
     executionHost.nativeExecution = originalExecution;
+    executionHost.nativeManagedControl = originalControl;
     await reader?.cancel().catch(() => {}); await pump; reader?.releaseLock();
     if (sampler) await sampler.stop();
   }
@@ -264,8 +303,16 @@ export async function runCompiledManagedIntervalDiagnostic({ artifactRoot, onArm
 }
 
 async function main() {
-  const { values } = parseArgs({ options: { 'artifact-root': { type: 'string' } } });
+  const { values } = parseArgs({ options: { 'artifact-root': { type: 'string' }, 'long-wait': { type: 'boolean' } } });
   assert.ok(values['artifact-root'], 'Usage: node scripts/opencode-v2-native/package-managed-interval-lane.mjs --artifact-root <verified-repository-artifact>');
+  if (values['long-wait']) {
+    const { runNativePackageAcceptance } = await import('../verify-opencode-v2-package.mjs');
+    const result = await runNativePackageAcceptance({ artifactRoot: path.resolve(values['artifact-root']), diagnostic: true,
+      managedInterval: { intervalMs: 750, caseID: `interval-${randomUUID()}`, longWait: true } });
+    process.stdout.write(JSON.stringify({ status: result.status, attachedWait: result.managedInterval?.attachedWait, error: result.error, cleanupFailures: result.cleanupFailures }) + '\n');
+    if (result.status !== 'interval-diagnostic-passed') process.exitCode = 1;
+    return;
+  }
   const result = await runCompiledManagedIntervalDiagnostic({ artifactRoot: path.resolve(values['artifact-root']) });
   const output = path.join(result.root, 'result.json'); await fs.writeFile(output, JSON.stringify(result, null, 2) + '\n');
   process.stdout.write(JSON.stringify({ status: result.status, diagnosticCriteriaSatisfied: result.diagnosticCriteriaSatisfied, result: output }) + '\n');

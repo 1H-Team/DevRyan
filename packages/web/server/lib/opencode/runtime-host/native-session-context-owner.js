@@ -40,19 +40,38 @@ export function createNativeSessionContextOwner({admissionOwner,taskContext,open
     // canonical Step.Started clears it through the existing primary owner.
     return {continued:true,messageID:scope.messageID};
   };
+  const readSession=async(sessionID,directory)=>{
+    try{const session=await openCodeClient.sessions.get(sessionID,{directory});
+      if(!session)throw fail('native_session_read_invalid');return session;}
+    catch(error){if(error?.code==='opencode_not_found'&&error?.tag==='SessionNotFoundError')return null;throw error;}
+  };
   const scan=async({sessionID,directory,fromChild=false})=>{
     if(!primaryRuntime||typeof deliverContinuation!=='function'||!instanceID)throw fail('native_primary_continuation_owner_required');
     await primaryRuntime.helloNative({instanceID,policyVersion:1},helloOwner);
     const primary=await primaryRuntime.readRecord(sessionID);
     if(!primary||primary.directory!==directory){
-      if(!fromChild&&getManagedRuntime){const child=await openCodeClient.sessions.get(sessionID,{directory});
+      if(!fromChild&&getManagedRuntime){const child=await readSession(sessionID,directory);
+        if(!child)return {continued:false,reason:'session_missing'};
         if(child?.id===sessionID&&child.directory===directory&&child.parentID&&!child.time?.archived) return scan({sessionID:child.parentID,directory,fromChild:true});}
       return {continued:false,reason:'untracked'};
     }
-    if(primary.nativeContinuation)return deliver({sessionID,directory,messageID:primary.nativeContinuation.messageID});
+    if(primary.nativeContinuation){
+      const session=await readSession(sessionID,directory);
+      if(!session){
+        await primaryRuntime.settleMissingNativeContinuation({sessionID,directory,messageID:primary.nativeContinuation.messageID,revision:primary.revision,instanceID},async()=>{
+          await helloOwner.authorize();
+          if(await readSession(sessionID,directory))throw fail('native_primary_continuation_fenced');
+          await helloOwner.authorize();
+        });
+        return {continued:false,reason:'session_missing'};
+      }
+      return deliver({sessionID,directory,messageID:primary.nativeContinuation.messageID});
+    }
     if(!primary.stepID||!['observing','completed'].includes(primary.state)||primary.executionGeneration!==2||primary.recoveryID
       ||primary.recoverySuppressed||!['build','builder','orchestrator'].includes(primary.agent))return {continued:false,reason:'objective_fenced'};
-    const [session,statuses,assistant,anchor]=await Promise.all([openCodeClient.sessions.get(sessionID,{directory}),
+    const session=await readSession(sessionID,directory);
+    if(!session)return {continued:false,reason:'session_missing'};
+    const [statuses,assistant,anchor]=await Promise.all([
       openCodeClient.sessions.status({directory}),openCodeClient.sessions.message(sessionID,primary.stepID,{directory}),
       openCodeClient.sessions.message(sessionID,primary.objectiveID??primary.anchorID,{directory})]);
     if(session?.id!==sessionID||session.directory!==directory||session.parentID||session.time?.archived||session.revert

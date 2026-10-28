@@ -51,6 +51,16 @@ const NATIVE_QUOTA_PROVIDER_NAMES = Object.freeze({ codex: 'ChatGPT', xai: 'xAI'
 const NATIVE_GATED_LIST_IDS = new Set(['claude', ...Object.keys(NATIVE_QUOTA_PROVIDER_NAMES)]);
 // The runtime is between states; discovery answers 503 so the client retries shortly.
 const NATIVE_TRANSIENT_CODES = new Set(['native_runtime_not_ready', 'native_provider_owner_expired', 'native_provider_configuration_changed']);
+const NATIVE_QUOTA_TRANSIENT_CODES = new Set([
+  ...NATIVE_TRANSIENT_CODES, 'native_integration_acquisition_expired', 'native_integration_owner_unavailable',
+  'native_integration_grant_expired', 'native_controller_unavailable',
+]);
+const NATIVE_QUOTA_DIAGNOSTIC_CODES = new Set([
+  ...NATIVE_QUOTA_TRANSIENT_CODES, 'native_credential_invalid', 'native_credential_changed', 'native_credential_update_required',
+  'native_integration_binding_invalid', 'native_integration_scope_invalid',
+  'native_web_principal_required', 'native_web_principal_denied', 'native_session_access_revoked',
+  'native_session_directory_mismatch', 'native_xai_reauthentication_required', 'native_xai_usage_unavailable',
+]);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const nativeQuotaFailure = (providerId, errorCode, error) => buildResult({
@@ -181,6 +191,7 @@ export function registerQuotaRoutes(app, {
   credentialRuntime: credentialRuntimeOverrides,
   runtimeReadinessHoldMs = RUNTIME_READINESS_HOLD_MS,
   runtimeReadinessPollMs = RUNTIME_READINESS_POLL_MS,
+  recordDiagnostic = () => {},
 }) {
   const credentialRuntime = {
     ...defaultCredentialRuntime,
@@ -189,6 +200,13 @@ export function registerQuotaRoutes(app, {
   const claudeContextUsageClient = claudeContextUsageClientOverride
     || createMeridianClaudeContextUsageClient();
   const nativeCredentials = createNativeQuotaCredentials({ getNativeRuntimeOwner, isExternalOpenCode });
+  const recordNativeQuotaFailure = (providerId, stage, error) => {
+    const code = NATIVE_QUOTA_DIAGNOSTIC_CODES.has(error?.code) ? error.code : 'native_credential_unreadable';
+    try {
+      void Promise.resolve(recordDiagnostic({ type: 'lifecycle', event: 'native_quota_read_failed', payload: { providerId, stage, code } })).catch(() => {});
+    } catch { /* Diagnostic failure must not change the usage response. */ }
+    return code;
+  };
 
   // Waits out a native runtime that has not published its first configuration snapshot.
   const awaitNativeMode = async () => {
@@ -251,10 +269,26 @@ export function registerQuotaRoutes(app, {
   const fetchNativeQuota = async ({ fetchQuotaForProvider, providerId, options }) => {
     let auth;
     try {
-      auth = await nativeCredentials.readAuth(providerId);
+      try {
+        auth = await nativeCredentials.readAuth(providerId);
+      } catch (error) {
+        if (!NATIVE_QUOTA_TRANSIENT_CODES.has(error?.code)) throw error;
+        recordNativeQuotaFailure(providerId, 'selected_credential', error);
+        // A configuration reacquisition can overlap a usage poll. Retry once
+        // against the current owner; account changes and refusals never retry.
+        await sleep(runtimeReadinessPollMs);
+        auth = await nativeCredentials.readAuth(providerId);
+      }
     } catch (error) {
-      if (error?.code === 'native_runtime_not_ready') {
+      const code = recordNativeQuotaFailure(providerId, 'selected_credential', error);
+      if (NATIVE_QUOTA_TRANSIENT_CODES.has(code)) {
         return nativeQuotaFailure(providerId, 'native_runtime_not_ready', 'The runtime is still starting. Usage will load shortly.');
+      }
+      if (code === 'native_credential_update_required') {
+        return nativeQuotaFailure(providerId, code, 'Restart DevRyan with the latest app version to load usage.');
+      }
+      if (code === 'native_credential_changed') {
+        return nativeQuotaFailure(providerId, code, 'The selected account changed. Refresh usage again.');
       }
       return { ...nativeQuotaFailure(providerId, 'native_credential_unreadable', 'Usage could not be read from the selected account.'),
         ...(providerId === 'codex' ? { source: null, connectionId: null, account: null } : {}) };
@@ -270,7 +304,11 @@ export function registerQuotaRoutes(app, {
       try {
         auth = await nativeCredentials.refreshXai(auth);
       } catch (error) {
-        return error?.code === 'native_xai_reauthentication_required'
+        const code = recordNativeQuotaFailure(providerId, 'refresh', error);
+        if (code === 'native_credential_update_required') {
+          return nativeQuotaFailure(providerId, code, 'Restart DevRyan with the latest app version to load usage.');
+        }
+        return code === 'native_xai_reauthentication_required'
           ? nativeQuotaFailure(providerId, 'REAUTHENTICATION_REQUIRED', 'Reconnect xAI to load usage.')
           : nativeQuotaFailure(providerId, 'native_xai_usage_unavailable', 'xAI usage is temporarily unavailable. Try refreshing again.');
       }

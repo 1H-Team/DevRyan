@@ -342,8 +342,8 @@ export function createPrimaryRecoveryController(options) {
       if(proof.kind==='native-stream'){
         const stream=next.nativeStream.committed;
         const inspected=inspectRecoveryTurn({...next,activeUserID:input.userMessageID},observation,{allowSettledToolFailures:true});
-        if(inspected.superseded||inspected.unresolved||observation.blocked||observation.executionOutcomesUnavailable
-          ||!nativeWitnessMatches({attempt:stream.successorAttempt,permitSha256:stream.permitSha256},input.nativeAttempt,input.nativePermitSha256))throw recoveryError('native_stream_continuation_fenced');
+        if(inspected.superseded||inspected.unresolved||observation.blockedByRequests!==false||observation.executionOutcomesUnavailable
+          ||!['clear','active'].includes(observation.managedBarrierState)||!nativeWitnessMatches({attempt:stream.successorAttempt,permitSha256:stream.permitSha256},input.nativeAttempt,input.nativePermitSha256))throw recoveryError('native_stream_continuation_fenced');
       }
       invalidate(next.sessionID);
       live.delete(next.sessionID);
@@ -367,16 +367,21 @@ export function createPrimaryRecoveryController(options) {
     const generation=generations.get(input.sessionID)??0;
     const current=()=>!draining&&ownsRuntime&&storageHealthy&&options.isManaged()&&['2.0.26','2.0.30','2.0.32','2.1.0','2.1.2','2.1.3','2.1.4','2.2.0'].includes(handshake?.version)
       &&handshake.instanceID===input.instanceID&&(generations.get(input.sessionID)??0)===generation;
-    const fence=()=>recoveryError('native_stream_continuation_fenced');
-    let allowed=true;
-    const result=await mutate(input.sessionID,async r=>{
-      if(!current())throw fence();
+    let reason,refusedRecord;
+    const fence=why=>{reason=why;return recoveryError('native_stream_continuation_fenced');};
+    const authorizeCurrent=async r=>{try{await authorize();}catch{throw fence('unauthorized');}
+      if(!current())throw fence('not_current');
+      if(r&&!await authorizeBounded(r))throw fence('unauthorized');};
+    let allowed=true,result;
+    try{result=await mutate(input.sessionID,async r=>{
+      refusedRecord=r;
+      if(!current())throw fence('not_current');
       // Managed descendants have a separate objective/task owner and never acquire primary replay authority.
       if(!r){if(input.action==='prepare'||input.action==='send')return r;allowed=false;return r;}
       const execution=r.recoveryID&&r.recoveryExecution?r.recoveryExecution:r;
       if(r.executionGeneration!==2||r.directory!==input.directory||TERMINAL.has(r.state)||r.nativeFallback?.pending
-        ||['providerID','modelID','agent','variant'].some(key=>execution[key]!==input.execution[key]))throw fence();
-      await authorize();if(!current()||!await authorizeBounded(r))throw fence();
+        ||['providerID','modelID','agent','variant'].some(key=>execution[key]!==input.execution[key]))throw fence('record_mismatch');
+      await authorizeCurrent(r);
       const stream=r.nativeStream??{consumed:0},reservation=stream.pending;
       if(streamProofExpired(r)){allowed=false;return {...r,state:'needs_attention',reason:'provider_stream_interrupted'};}
       const exact=p=>p&&p.instanceID===input.instanceID&&p.configurationDigest===input.configurationDigest
@@ -387,39 +392,44 @@ export function createPrimaryRecoveryController(options) {
       const inspect=async target=>{
         const observation=await observeBounded(r,undefined,false,true);
         const inspected=inspectRecoveryTurn(target?{...r,activeUserID:target}:r,observation,{allowSettledToolFailures:true});
-        if(inspected.superseded||inspected.unresolved||observation.blocked||observation.executionOutcomesUnavailable
-          ||observation.managedBarrierState!=='clear')throw fence();
-        await authorize();if(!current())throw fence();
+        if(inspected.superseded)throw fence('superseded');
+        if(inspected.unresolved)throw fence('unresolved_tool');
+        if(observation.blockedByRequests!==false)throw fence('requests_blocked');
+        if(!['clear','active'].includes(observation.managedBarrierState))throw fence('managed_barrier');
+        if(observation.executionOutcomesUnavailable)throw fence('outcomes_unavailable');
+        await authorizeCurrent();
         return {observation,inspected};
       };
       if(input.action==='prepare'){
-        if(stream.committed)throw fence();
+        if(stream.committed)throw fence('reservation_exists');
         if(!reservation)return r;
-        if(!exact(reservation)||!reservation.eventID||!reservation.userMessageID)throw fence();
+        if(!exact(reservation)||!reservation.eventID||!reservation.userMessageID)throw fence('record_mismatch');
         const {inspected}=await inspect(reservation.userMessageID);
-        if(inspected.last)throw fence();
+        if(inspected.last)throw fence('step_mismatch');
         return {...r,nativeStream:{consumed:stream.consumed+1,committed:{...reservation,preparedRequestID:input.requestID,preparedAt:now()},pending:undefined}};
       }
       if(input.action==='send'){
-        if(reservation)throw fence();
+        if(reservation)throw fence('reservation_exists');
         if(!stream.committed)return r;
-        if(!exact(stream.committed)||stream.committed.preparedRequestID!==input.requestID)throw fence();
+        if(!exact(stream.committed)||stream.committed.preparedRequestID!==input.requestID)throw fence('record_mismatch');
         await inspect(stream.committed.userMessageID);
         return {...r,nativeStream:{...stream,committed:{...stream.committed,successorAttempt:structuredClone(input.attempt)}}};
       }
       if(input.action==='progress'){
         if(reservation||!exact(stream.committed)||stream.committed.preparedRequestID!==input.requestID
           ||!nativeWitnessMatches({attempt:stream.committed.successorAttempt,permitSha256:stream.committed.permitSha256},input.attempt,input.permitSha256)
-          ||!Number.isSafeInteger(input.observedUnits)||input.observedUnits<=0)throw fence();
+          ||!Number.isSafeInteger(input.observedUnits)||input.observedUnits<=0)throw fence('witness_mismatch');
         const activity=remember(r),previous=activity.nativeStreamProgress;
         if(previous?.requestID===input.requestID&&nativeWitnessMatches({attempt:previous.attempt,permitSha256:input.permitSha256},input.attempt,input.permitSha256)
-          &&input.observedUnits<=previous.units)throw fence();
+          &&input.observedUnits<=previous.units)throw fence('witness_mismatch');
         activity.nativeStreamProgress={requestID:input.requestID,attempt:structuredClone(input.attempt),units:input.observedUnits,at:now()};
         return r;
       }
       if(input.action==='reserve'){
-        if(reservation||stream.committed||!validNativeWitness(input.attempt,input.permitSha256)
-          ||!nativeWitnessMatches(r.nativeStepWitness,input.attempt,input.permitSha256)||r.stepID!==input.assistantMessageID)throw fence();
+        if(reservation||stream.committed)throw fence('reservation_exists');
+        if(!validNativeWitness(input.attempt,input.permitSha256)
+          ||!nativeWitnessMatches(r.nativeStepWitness,input.attempt,input.permitSha256))throw fence('witness_mismatch');
+        if(r.stepID!==input.assistantMessageID)throw fence('step_mismatch');
         await inspect();
         if(stream.consumed>=2){allowed=false;return {...r,state:'needs_attention',reason:'provider_stream_interrupted'};}
         if(r.recoverySuppressed){allowed=false;return r;}
@@ -430,21 +440,25 @@ export function createPrimaryRecoveryController(options) {
           toolPolicySha256:crypto.createHash('sha256').update(JSON.stringify(r.tools)).digest('hex')}}};
       }
       if(input.action==='bind'){
-        if(!exact(reservation)||reservation.requestID!==input.requestID||input.userMessageID!==input.eventID?.replace(/^evt_/,'msg_'))throw fence();
+        if(!exact(reservation)||reservation.requestID!==input.requestID||input.userMessageID!==input.eventID?.replace(/^evt_/,'msg_'))throw fence('record_mismatch');
         const {observation}=await inspect(input.userMessageID);
         const previous=observation.messages.find(message=>message.info?.id===reservation.previousStepID);
         const synthetic=observation.messages.find(message=>message.info?.id===input.userMessageID);
         if(!previous?.info.time?.completed||!previous.info.error||previous.info.parentID!==reservation.sourceUserMessageID
           ||!synthetic||synthetic.info.role!=='user'||!synthetic.parts.length
           ||synthetic.parts.some(part=>part.type!=='text'||part.synthetic!==true)
-          ||crypto.createHash('sha256').update(synthetic.parts.map(part=>part.text).join('')).digest('hex')!==input.fingerprint)throw fence();
+          ||crypto.createHash('sha256').update(synthetic.parts.map(part=>part.text).join('')).digest('hex')!==input.fingerprint)throw fence('step_mismatch');
         if(reservation.eventID&&(reservation.eventID!==input.eventID||reservation.eventSeq!==input.eventSeq
-          ||reservation.userMessageID!==input.userMessageID||reservation.syntheticFingerprint!==input.fingerprint))throw fence();
+          ||reservation.userMessageID!==input.userMessageID||reservation.syntheticFingerprint!==input.fingerprint))throw fence('record_mismatch');
         return {...r,nativeStream:{...stream,pending:{...reservation,eventID:input.eventID,eventSeq:input.eventSeq,
           userMessageID:input.userMessageID,syntheticFingerprint:input.fingerprint}}};
       }
-      throw fence();
-    },async()=>{await authorize();if(!current())throw fence();});
+      throw fence('invalid_action');
+    },async()=>{await authorizeCurrent();});
+    }catch(error){
+      if(reason)diagnostic('native_stream_continuation_refused',refusedRecord,{action:['prepare','send','progress','reserve','bind'].includes(input.action)?input.action:'invalid_action',reason});
+      throw error;
+    }
     if(result&&input.action!=='progress')diagnostic('native_stream_continuation',result,{action:input.action});
     return allowed;
   };
@@ -1333,6 +1347,25 @@ export function createPrimaryRecoveryController(options) {
       return [...records.values()].filter(record => record.directory === directory && record.nativeContinuation
         && record.state === 'observing').map(record => ({ sessionID: record.sessionID,
           directory: record.directory, messageID: record.nativeContinuation.messageID }));
+    },
+    async settleMissingNativeContinuation(input, assertMissing) {
+      await ready;
+      if(typeof assertMissing!=='function')throw recoveryError('native_primary_continuation_fenced');
+      const authorize=async()=>{
+        if(draining||!storageHealthy||!ownsRuntime||!options.isManaged()||handshake?.instanceID!==input.instanceID)
+          throw recoveryError('native_primary_continuation_fenced');
+        await assertMissing();
+        if(draining||!storageHealthy||!ownsRuntime||!options.isManaged()||handshake?.instanceID!==input.instanceID)
+          throw recoveryError('native_primary_continuation_fenced');
+      };
+      return mutate(input.sessionID,async r=>{
+        if(!r||r.executionGeneration!==2||r.directory!==input.directory||r.revision!==input.revision
+          ||r.state!=='observing'||r.nativeContinuation?.messageID!==input.messageID||r.continuationID!==input.messageID)
+          throw recoveryError('native_primary_continuation_fenced');
+        await authorize();
+        return {...r,state:'cancelled',reason:'native_session_missing',nativeContinuation:undefined,
+          cancellationGeneration:(r.cancellationGeneration??0)+1};
+      },authorize);
     },
     async captureNativeContinuationDispatch(input) {
       await ready;

@@ -1332,6 +1332,25 @@ describe('durable native TODO continuation dispatch', () => {
     await first.recheck();
     expect(await f.controller.pendingNativeContinuations({directory:'/project'})).toEqual([]);
   });
+  test('settles only an exact missing-session continuation after repeated proof and persists cancellation',async()=>{
+    const f=await native();await f.reserve();
+    const before=await f.controller.readRecord(identity.sessionID), input={...scope,revision:before.revision};
+    let checks=0;
+    await expect(f.controller.settleMissingNativeContinuation(input,async()=>{if(++checks===2)throw Error('session returned');})).rejects.toThrow('session returned');
+    expect((await f.controller.readRecord(identity.sessionID)).nativeContinuation.messageID).toBe(scope.messageID);
+    await expect(f.controller.settleMissingNativeContinuation({...input,messageID:'msg_other'},async()=>{})).rejects.toMatchObject({code:'native_primary_continuation_fenced'});
+    await expect(f.controller.settleMissingNativeContinuation(input,async()=>{
+      await f.controller.plugin({action:'hello',instanceID:'replacement',policyVersion:1,version:'2.0.26',transport:'native-v2'});
+    })).rejects.toMatchObject({code:'native_primary_continuation_fenced'});
+    await f.controller.plugin({action:'hello',instanceID:identity.instanceID,policyVersion:1,version:'2.0.26',transport:'native-v2'});
+    checks=0;await f.controller.settleMissingNativeContinuation(input,async()=>{checks++;});expect(checks).toBe(2);
+    await f.controller.drain();
+    const replacement=createPrimaryRecoveryController({directory:f.directory,mode:'enforce',isManaged:()=>true,pollMs:1_000_000,
+      now:()=>10_000,authorize:async()=>true,observeTurn:async()=>structuredClone(f.state),abortSession:async()=>{},promptSession:async()=>{}});
+    await replacement.initialize();cleanups.push(()=>replacement.drain());
+    expect(await replacement.readRecord(identity.sessionID)).toMatchObject({state:'cancelled',reason:'native_session_missing',cancellationGeneration:before.cancellationGeneration+1});
+    expect(await replacement.pendingNativeContinuations({directory:'/project'})).toEqual([]);
+  });
   test('refuses forged scope, replaced selection, missing native ownership, and old controller closures',async()=>{
     const f=await native(); await f.reserve();
     await expect(f.controller.captureNativeContinuationDispatch({...scope,messageID:'msg_forged'})).rejects.toMatchObject({code:'native_primary_continuation_invalid'});

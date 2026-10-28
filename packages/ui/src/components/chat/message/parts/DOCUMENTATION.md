@@ -239,3 +239,10 @@ Pending TODO dependency reasons (`blockedBy`) render beneath their task without
 inventing a blocked terminal status; the status row prefers runnable pending work.
 Managed verification cards retain each check's implementation/integration/
 deployment purpose and named prerequisites without changing pass/waiver rules.
+
+Managed dispatch rows present the authoritative execution outcome only, including
+real failure and partial/blocked-result warnings. Verification pending, failed,
+passed, waived, or skipped states do not add a second status subtitle. Objective
+check details remain in `ObjectiveVerification`/`VerificationDetails`, and host
+verification requirements continue to govern objective completion. Historical
+task outcomes are not relabeled by this presentation.

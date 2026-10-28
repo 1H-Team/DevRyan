@@ -75,6 +75,12 @@ const startupFailureCode = cause => {
   // Any finite code is journaled; collapsing it hid which step refused.
   return typeof code === 'string' && (startupFailureCodes.has(code) || catalogStartupCode.test(code) || /^[a-z][a-z0-9_]{1,100}$/.test(code)) ? code : 'native_startup_failed';
 };
+export const collectionContinuationDiagnostic = (input, locations) => {
+  if(!locations.some(location=>location.directory===input.directory))return null;
+  return {type:'lifecycle',event:'native_collection_continuation_failed',directory:input.directory,
+    ...(typeof input.sessionID==='string'&&/^ses[A-Za-z0-9_-]{1,128}$/.test(input.sessionID)?{sessionID:input.sessionID}:{}),
+    payload:{code:typeof input.code==='string'&&/^[a-z][a-z0-9_]{1,100}$/.test(input.code)?input.code:'native_collection_continuation_failed'}};
+};
 
 /** Every launch rechecks the frozen selection and the complete bundle. */
 export function createRuntimeBundleVerifier(binding, privatePersistence={}) {
@@ -669,11 +675,8 @@ export function createNativeRuntimeOwner(options) {
         if (!privileged) throw fail('native_context_metadata_owner_required');
         sessionContext = createNativeSessionContextOwner({ admissionOwner: nativeOwner, taskContext, executionHost, openCodeClient, primaryRuntime, instanceID,getInstanceID:()=>nativeInstanceID===instanceID?instanceID:undefined,getManagedRuntime,
           onContinuationError:input=>{
-            if(!bundle.locations.some(location=>location.directory===input.directory))return;
-            const codes=['native_collection_continuation_failed','native_collection_watch_failed','native_collection_watch_invalid','native_primary_continuation_controller_stale','native_primary_continuation_owner_required','native_primary_objective_unavailable','native_primary_owner_unavailable','required_verification_pending'];
-            options.recordDiagnostic?.({type:'lifecycle',event:'native_collection_continuation_failed',directory:input.directory,
-              ...(typeof input.sessionID==='string'&&/^ses[A-Za-z0-9_-]{1,128}$/.test(input.sessionID)?{sessionID:input.sessionID}:{}),
-              payload:{code:codes.includes(input.code)?input.code:'native_collection_continuation_failed'}});
+            const entry=collectionContinuationDiagnostic(input,bundle.locations);
+            if(entry)options.recordDiagnostic?.(entry);
           },
           getCapabilitySnapshot: scope => readNativeCapabilitySnapshot({ scope, artifacts, reviewedBrowser, browserOperation,
             getBrowserLeaseRuntime: options.getBrowserLeaseRuntime, primaryRuntime, policies: capabilities?.policies }),

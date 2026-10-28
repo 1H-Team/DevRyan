@@ -497,6 +497,7 @@ mock.module("./sync-refs", () => ({
 }))
 
 mock.module("./sync-context", () => ({
+  acknowledgeSessionCompletions: mock(() => undefined),
   setActiveSession: mock((directory: string, sessionId: string) => {
     activeSessionCalls.push({ directory, sessionId })
   }),

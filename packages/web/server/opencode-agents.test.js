@@ -449,8 +449,8 @@ describe('Packaged DevRyan agents', () => {
 
     expect(builder?.prompt).toContain('structured question tool');
     expect(builder?.prompt).toContain('Inspect repository and system facts that could resolve the ambiguity before asking.');
-    expect(builder?.prompt).toContain('multiple plausible interpretations remain and the user can resolve them');
-    expect(builder?.prompt).toContain('even when the ambiguity is not a hard blocker');
+    expect(builder?.prompt).toContain('Ask before choosing between unresolved user-owned interpretations, even when not blocked');
+    expect(builder?.prompt).toContain('even when not blocked');
     expect(builder?.prompt).toContain('Choose trivial, reversible implementation details yourself.');
     expect(builder?.prompt).toContain('If the user skips a question, continue with best judgment and explicitly state the assumption.');
     expect(builder?.prompt).toContain('Plan or design approval belongs to the plan-card lifecycle');
@@ -566,8 +566,8 @@ describe('Packaged DevRyan agents', () => {
     expect(fixer?.prompt).toContain('Treat outcomes such as "fix all remaining failures"');
     expect(fixer?.prompt).toContain('`scope_too_broad`');
     expect(fixer?.prompt).toContain('do not inspect, edit, or absorb it into this task');
-    expect(fixer?.prompt).toContain('completed changes, verification outcomes, and any deferred failures');
-    expect(fixer?.prompt).toContain('followed by exactly one terminal marker');
+    expect(fixer?.prompt).toContain('Report changes, verification and deferred failures');
+    expect(fixer?.prompt).toContain('end with one terminal marker');
   });
 
   it('keeps assignments bounded and dependency-aware without capping managed launches', () => {
@@ -648,9 +648,14 @@ describe('Packaged DevRyan agents', () => {
         expect(agent.prompt).toContain('No git commands; this research assignment changes no local files.');
         continue;
       }
-      expect(agent.prompt).toContain('Do not run git commands as a default finalization or safety routine.');
+      if (agent.name === 'designer' || agent.name === 'fixer') {
+        expect(agent.prompt).toContain('Run git only when user/parent-authorized or intrinsic to the task.');
+        expect(agent.prompt).toContain('Without an edit receipt, report no changes; do not check git.');
+      } else {
+        expect(agent.prompt).toContain('Do not run git commands as a default finalization or safety routine.');
+        expect(agent.prompt).toContain('If you did not use an edit, write, or patch tool in this turn, report that no code changes were made without checking git.');
+      }
       expect(agent.prompt).toContain('Do not use `git status`, `git diff`, `git diff --stat`, or `git diff --check` to determine whether you made edits.');
-      expect(agent.prompt).toContain('If you did not use an edit, write, or patch tool in this turn, report that no code changes were made without checking git.');
     }
   });
 
@@ -675,13 +680,13 @@ describe('Packaged DevRyan agents', () => {
     expect(orchestrator?.prompt).toContain('Orchestrator owns design-change planning in plan mode;');
     expect(orchestrator?.prompt).toContain('never dispatch Designer from a plan-mode turn');
     expect(designer?.prompt).toContain('End-to-end implementation of an approved design plan or decision-complete brief');
-    expect(designer?.prompt).toContain('do not stop at a plan, mock recommendation, or review findings.');
-    expect(designer?.prompt).toContain('Do not author design plans, propose alternate directions, or take standalone review assignments.');
+    expect(designer?.prompt).toContain('Inspect current UI, implement the brief, update design tests and validate visible behavior.');
+    expect(designer?.prompt).toContain('Orchestrator owns planning; require an approved design plan or decision-complete brief. No alternate directions or standalone reviews.');
     expect(fixer?.prompt).toContain('frontend data/state/logic and component correctness');
     expect(fixer?.prompt).toContain('make no design edits and return a final `**Status:** blocked` line');
     expect(orchestrator?.prompt).toContain('<Subagent Prompt Template>');
-    expect(orchestrator?.prompt).toContain('Include objective, evidence, ownership, dependencies, exclusions, outcome, and acceptance checks.');
-    expect(orchestrator?.prompt).toContain("State sibling ownership and the shared interface contract; tell parallel workers they are not alone and to preserve others' changes.");
+    expect(orchestrator?.prompt).toContain('Brief objective, evidence, ownership, dependencies, exclusions and checks.');
+    expect(orchestrator?.prompt).toContain("State sibling ownership and shared interfaces; tell workers they are not alone and to preserve others' changes.");
     expect(orchestrator?.prompt).toContain('structured question tool');
     expect(orchestrator?.prompt).toContain('Skill announcements are tool activity only');
     expect(orchestrator?.prompt).toContain('do not write assistant text to announce skill use');

@@ -2,6 +2,7 @@ import {expect,test} from 'bun:test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
+import {createRequire} from 'node:module';
 import {Credential} from '@opencode/core/credential';
 import {Integration} from '@opencode/core/integration';
 import {PluginHooks} from '@opencode/core/plugin/hooks';
@@ -24,7 +25,11 @@ import {credentialMutationFingerprint as fingerprint} from '../../packages/web/s
 import {OperationPermitRef} from '../../packages/web/server/lib/opencode/runtime-host/native-admission-contract.ts';
 import {provideRegistrationOrigin} from '../../packages/web/server/lib/opencode/runtime-host/registration-origin.ts';
 import {runWithHostRefusal} from '../../packages/web/server/lib/opencode/runtime-host/host-refusal.ts';
+import request from '../../packages/web/server/test-supertest.js';
+import {registerQuotaRoutes} from '../../packages/web/server/lib/quota/routes.js';
+import {fetchQuota as fetchXaiQuota} from '../../packages/web/server/lib/quota/providers/xai.js';
 
+const express=createRequire(new URL('../../packages/web/package.json',import.meta.url))('express');
 const origin={kind:'native',id:'opencode.provider.xai',manifestDigest:'c'.repeat(64),capabilities:['provider']};
 const id=Schema.decodeUnknownSync(Integration.ID);
 const value=Schema.decodeUnknownSync(Credential.Value);
@@ -381,7 +386,7 @@ for(const status of [400,401,429,503])test('usage renewal HTTP '+status+' retain
 test('usage renewal traverses the original caller grant, reverse mutation queue and native xAI owner',async()=>{
   const config={locations:[{directory:path.resolve('.cache/v2-validation/controller-integrations'),configuration:{},compatibility:{}}]},directory=config.locations[0].directory,location=Schema.decodeUnknownSync(Location.Info)({directory,project:{id:'global',directory,canonical:directory}}),state=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-xai-usage-')));
   const origin={kind:'native',id:'opencode.provider.xai',manifestDigest:'c'.repeat(64),capabilities:['provider']};
-  let queue=Promise.resolve(),fetches=0,commits=0;
+  let queue=Promise.resolve(),fetches=0,commits=0,allowed=true;
   const originalFetch=globalThis.fetch;
   globalThis.fetch=async input=>{
     expect(String(input instanceof Request?input.url:input)).toBe('https://auth.x.ai/oauth2/token');fetches++;
@@ -395,7 +400,7 @@ test('usage renewal traverses the original caller grant, reverse mutation queue 
       throw Error('Unexpected native control');
     },killAndWaitForExit:async()=>{throw Error('Unexpected native process failure');},killAndWaitForTermination:async()=>{throw Error('Unexpected native process failure');}}),isReady:()=>true,
     withMutationQueue:action=>{const result=queue.then(action);queue=result.then(()=>undefined,()=>undefined);return result;},
-    captureWebAuthorization:async()=>async()=>{},
+    captureWebAuthorization:async()=>async()=>{if(!allowed)throw Object.assign(new Error('fixture-private-refusal'),{code:'native_session_access_revoked'});},
     admissionOwner:{withProviderResolution:async(_i,a)=>a(async()=>{}),withProviderAttempt:(_i,a)=>a(async()=>{}),withImageGeneration:async()=>{throw Error('Outside fixture');}}});
   const factory=createControllerIntegrations({controllerInstanceID:'controller-one',configurationSnapshot:config,
     registrationOrigin:{kind:'native',id:'devryan.remote-mcp',manifestDigest:'c'.repeat(64),capabilities:['network']},reviewedConfigurationOrigins:new Map(),reviewedNativeProviderOrigin:origin,
@@ -413,13 +418,34 @@ test('usage renewal traverses the original caller grant, reverse mutation queue 
       const selected=yield* Effect.promise(()=>node.readProviderSelected(scope));
       if(!selected||typeof selected.expectedFingerprint!=='string')throw Error('Selected native receipt missing');
       expect(JSON.stringify(selected)).not.toContain('fixture-private');
-      const operation={...scope,operation:'provider.usage',path:'/api/quota/xai',methodID:'device',credentialID:selected.credentialID,expectedFingerprint:selected.expectedFingerprint,
-        requestedFingerprint:fingerprint({id:selected.credentialID,renew:true})};
-      yield* Effect.promise(()=>node.refreshProviderSelected(operation));
+      const app=express(),diagnostics=[],owner={...node,isReady:()=>true,getConfigurationSnapshot:()=>config};let billingReads=0;
+      registerQuotaRoutes(app,{getNativeRuntimeOwner:()=>owner,
+        recordDiagnostic:record=>diagnostics.push(record),
+        getQuotaProviders:async()=>({resolveProviderId:id=>id,fetchQuotaForProvider:async(provider,options)=>{
+          expect(provider).toBe('xai');
+          return fetchXaiQuota({...options,fetchImpl:async(url,init)=>{
+            if(url.includes('GetRemainingResets'))return new Response(new Uint8Array());
+            billingReads++;
+            if(init.headers.Authorization==='Bearer fixture-old')return Response.json({}, {status:401});
+            expect(init.headers.Authorization).toBe('Bearer fixture-new');
+            return Response.json({config:{creditUsagePercent:25,currentPeriod:{type:'USAGE_PERIOD_TYPE_WEEKLY',end:'2026-11-01T00:00:00Z'}}});
+          }});
+        }})});
+      const usage=yield* Effect.promise(()=>request(app).get('/api/quota/xai').expect(200));
+      expect(diagnostics).toEqual([]);
+      expect(usage.body).toMatchObject({providerId:'xai',configured:true,ok:true,usage:{windows:{weekly:{usedPercent:25}}}});
+      expect(billingReads).toBe(2);
+      expect(JSON.stringify(usage.body)).not.toMatch(/fixture-(old|new|private|next)/);
       expect((yield* credentials.get(Credential.ID.make(selected.credentialID)))?.value).toMatchObject({access:'fixture-new',refresh:'fixture-next'});
       expect(fetches).toBe(1);expect(commits).toBe(1);
       const latest=yield* Effect.promise(()=>node.readProviderSelected(scope));
       expect(latest?.value.access).toBe('fixture-new');
+      allowed=false;
+      const denied=yield* Effect.promise(()=>request(app).get('/api/quota/xai').expect(200));
+      expect(denied.body).toMatchObject({ok:false,configured:true,errorCode:'native_credential_unreadable'});
+      expect(diagnostics).toEqual([{type:'lifecycle',event:'native_quota_read_failed',payload:{providerId:'xai',stage:'selected_credential',code:'native_session_access_revoked'}}]);
+      expect(billingReads).toBe(2);expect(fetches).toBe(1);expect(commits).toBe(1);
+      expect((yield* credentials.get(Credential.ID.make(selected.credentialID)))?.value.access).toBe('fixture-new');
     }).pipe(Effect.provide(layer),Effect.provide(FetchHttpClient.layer),Effect.provideService(Location.Service,location))));
   }finally{globalThis.fetch=originalFetch;await factory.close();await node.invalidate();await fs.rm(state,{recursive:true,force:true});}
 });

@@ -225,6 +225,10 @@ credential without removing the others.
 Tool restrictions preserve unrelated permission rules. Native write/edit/patch
 share the `edit` action: partial writer grants and contradictory aliases are
 explicitly unavailable until the native host enforces per-executor restrictions.
+The pinned native `opencode_session_rename` permission action accepts only an
+explicit deny override, allowing managed children to hide the unavailable tool
+without granting rename authority or changing root prompts.
+
 The reviewed `devryan.harness-context` tools `todoread` and `todowrite` each use
 their own permission action. Admission preserves managed children's explicit
 denies for both while leaving their editing grants intact; unknown plugin

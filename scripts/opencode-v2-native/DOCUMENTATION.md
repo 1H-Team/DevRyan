@@ -18,6 +18,15 @@ the canonical selected agent on every invocation, including reviewed setup.
 
 ## Compiled package lanes
 
+`node scripts/opencode-v2-native/package-managed-interval-lane.mjs --artifact-root
+<fresh-native-artifact-directory> --long-wait` runs one isolated compiled arm
+with a 65-second child hold. It requires one initial control claim/publication,
+at least two published-lease reattachments, successful canonical tool completion,
+and a flushed journal with no `devryan_task` errors or gaps. The controller,
+scheduler and execution ledger are real; the loopback provider is synthetic.
+The run cleans its private profile on every outcome and never uses installed
+accounts. Without `--long-wait`, the existing interval comparison is unchanged.
+
 `native-stream-continuation.graph.test.ts` runs the real pinned 2.2.0
 publisher, retry loop, Synthetic bus and Step with production constructor
 owners against disposable loopback provider fixtures. Run it with

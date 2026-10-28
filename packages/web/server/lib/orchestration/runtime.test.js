@@ -825,40 +825,50 @@ describe('web managed orchestration runtime', () => {
       const prompt = { operation: 'prompt', taskId: task.taskId, leaseToken: task.leaseToken, directory: task.directory,
         sessionID: 'ses_native_child', providerId: task.providerId, modelId: task.modelId, agent: task.agent, variant: task.variant };
       const settle = { ...prompt, operation: 'settle' };
+      const abort = { operation: 'abort', taskId: task.taskId, leaseToken: task.leaseToken, directory: task.directory, sessionID: prompt.sessionID };
       await expect(runtime.verifyNativeTaskDispatch(create)).rejects.toMatchObject({ code: 'native_managed_task_scope_invalid' });
       await expect(runtime.verifyNativeTaskDispatch(prompt)).resolves.toMatchObject({ childSessionId: 'ses_native_child' });
       await control.markAccepted();
       await expect(runtime.verifyNativeTaskDispatch(prompt)).resolves.toMatchObject({ status: 'running' });
       await expect(runtime.verifyNativeTaskDispatch(settle)).resolves.toMatchObject({ status: 'running' });
+      await expect(runtime.verifyNativeTaskDispatch(abort)).resolves.toMatchObject({ status: 'running' });
       for (const key of ['sessionID', 'providerId', 'modelId', 'agent', 'variant']) {
         await expect(runtime.verifyNativeTaskDispatch({ ...prompt, [key]: 'changed' })).rejects.toMatchObject({ code: 'native_managed_task_scope_invalid' });
         await expect(runtime.verifyNativeTaskDispatch({ ...settle, [key]: 'changed' })).rejects.toMatchObject({ code: 'native_managed_task_scope_invalid' });
       }
       for (const patch of [{ taskId: 'dvr_missing' }, { leaseToken: null }, { leaseToken: 'dvr_stale' }, { directory: '/other' }]) {
+        await expect(runtime.verifyNativeTaskDispatch({ ...abort, ...patch })).rejects.toMatchObject({ code: 'native_managed_task_lease_invalid', statusCode: 403 });
         await expect(runtime.verifyNativeTaskDispatch({ ...settle, ...patch })).rejects.toMatchObject({ code: 'native_managed_task_lease_invalid', statusCode: 403 });
       }
       owned = false;
       await expect(runtime.verifyNativeTaskDispatch(prompt)).rejects.toMatchObject({ code: 'owner_lost' });
       await expect(runtime.verifyNativeTaskDispatch(settle)).rejects.toMatchObject({ code: 'owner_lost' });
+      await expect(runtime.verifyNativeTaskDispatch(abort)).rejects.toMatchObject({ code: 'owner_lost' });
       owned = true;
       blocked = true;
       await expect(runtime.verifyNativeTaskDispatch(prompt)).rejects.toMatchObject({ code: 'fixture_hold' });
       await expect(runtime.verifyNativeTaskDispatch(settle)).resolves.toMatchObject({ status: 'running' });
+      await expect(runtime.verifyNativeTaskDispatch(abort)).resolves.toMatchObject({ status: 'running' });
       blocked = false;
       await expect(runtime.handleRpc({ method: 'verifyNativeTaskDispatch', params: prompt })).rejects.toMatchObject({ code: 'rpc_method_not_found' });
       await expect(runtime.handleRpc({ method: 'verifyNativeTaskDispatch', params: settle })).rejects.toMatchObject({ code: 'rpc_method_not_found' });
+      await expect(runtime.verifyNativeTaskDispatch({ ...abort, sessionID: 'ses_other' })).rejects.toMatchObject({ code: 'native_managed_task_scope_invalid' });
+      await expect(runtime.handleRpc({ method: 'verifyNativeTaskDispatch', params: abort })).rejects.toMatchObject({ code: 'rpc_method_not_found' });
       const cancellation = runtime.handleRpc({ method: 'cancel', params: { taskId: task.taskId, rootSessionId: task.rootSessionId, directory: task.directory } });
       await abortEntered.promise;
       expect((await runtime.getSnapshot({ rootSessionId: task.rootSessionId })).tasks[0].status).toBe('running');
       await expect(runtime.verifyNativeTaskDispatch(prompt)).rejects.toMatchObject({ code: 'native_managed_task_lease_invalid', statusCode: 403 });
       await expect(runtime.verifyNativeTaskDispatch(settle)).resolves.toMatchObject({ status: 'running' });
+      await expect(runtime.verifyNativeTaskDispatch(abort)).resolves.toMatchObject({ status: 'running' });
       abortDone.resolve();
       await cancellation;
       await expect(runtime.verifyNativeTaskDispatch(prompt)).rejects.toMatchObject({ code: 'native_managed_task_lease_invalid', statusCode: 403 });
       await expect(runtime.verifyNativeTaskDispatch(settle)).rejects.toMatchObject({ code: 'native_managed_task_lease_invalid', statusCode: 403 });
+      await expect(runtime.verifyNativeTaskDispatch(abort)).rejects.toMatchObject({ code: 'native_managed_task_lease_invalid', statusCode: 403 });
       await runtime.shutdown();
       await expect(runtime.verifyNativeTaskDispatch(prompt)).rejects.toMatchObject({ code: 'native_managed_task_lease_invalid', statusCode: 403 });
       await expect(runtime.verifyNativeTaskDispatch(settle)).rejects.toMatchObject({ code: 'native_managed_task_lease_invalid', statusCode: 403 });
+      await expect(runtime.verifyNativeTaskDispatch(abort)).rejects.toMatchObject({ code: 'native_managed_task_lease_invalid', statusCode: 403 });
     } finally {
       owned = true;
       blocked = false;

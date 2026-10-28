@@ -2781,6 +2781,14 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
   });
   const claimLease = (input) => locked(input.directory, async (repo) => {
     const lease = await repo.db.get(key('leases', input.token));
+    if (input.reattach === true) {
+      if (input.kind !== 'control' || lease?.state !== 'published' || lease.executionKind !== 'control' || lease.preparation !== 'none') throw changeError('execution_already_started');
+      if (await repo.db.get(key('cancelled-calls', `${lease.scope.sessionID}\0${lease.scope.callID}`))) throw changeError('execution_cancelled');
+      const session = await repo.db.get(key('sessions', lease.scope.sessionID));
+      if (session?.pending || session?.generation !== lease.generation) throw changeError('execution_reverted');
+      await assertNativeAdmission(repo, lease.scope.sessionID);
+      return lease;
+    }
     if (!['control', 'process'].includes(input.kind) || lease?.state !== 'ready' || lease.executionKind) throw changeError('execution_already_started');
     if (lease.preparation === 'none' && input.kind !== 'control') throw changeError('capture_identity_mismatch');
     if (lease.preparation === 'read-only' && input.kind !== 'process') throw changeError('capture_identity_mismatch');

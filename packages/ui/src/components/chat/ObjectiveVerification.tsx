@@ -18,7 +18,7 @@ export function ObjectiveVerification({ sessionId, directory, revision }: { sess
   }, [directory, sessionId]);
   React.useEffect(() => { void refresh(); }, [refresh, revision]);
   if (!verification || !directory || !verification.objectiveId || !verification.checks.length) return null;
-  return <section data-objective-verification={verification.objectiveId} className="px-4 py-2">
+  return <section data-objective-verification={verification.objectiveId} className="chat-message-column py-2">
     <h3 className="typography-ui-label font-medium">{t('chat.managedTasks.verification.objectiveTitle')}</h3>
     <VerificationDetails verification={verification} submitWaiver={async (checks, reason) => {
       if (!managedOrchestrationApi.waiveObjectiveVerification || !verification.objectiveId) throw new Error(t('chat.managedTasks.verification.waiverFailed'));

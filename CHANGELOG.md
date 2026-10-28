@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.3] - 2026-10-28
+
+- Keep long-running managed task waits attached to their original control lease, and let cancellation and timeout cleanup stop the exact child attempt safely.
+- Recover interrupted native streams while managed children are active, clear pending continuations when their session is confirmed missing, and show stopped tasks accurately after recovery.
+- Advertise readable reviewed skill names, preserve managed child title ownership, and wait briefly for the previous native process owner to exit before restarting.
+- Show actionable feedback when queued input is blocked, and align objective verification with the chat message column.
+- Keep completion notifications pending until verification is confirmed, retry interrupted verification reads, and preserve viewed-session acknowledgements.
+- Recover transient account usage reads with bounded retries and actionable feedback, and record credential-safe diagnostics.
+- Clarify specialist ownership, verification receipts and recovery guidance, and recognize unavailable Docker prerequisites without masking application failures.
+
 ## [2.0.2] - 2026-10-27
 
 - Run agents on the bundled native OpenCode 2.2.0 host. Its database adds a media blob store and cannot be cloned back into OpenCode 2.1.x; rollback returns to the retained previous bundle and its original database. New experimental routes (file watch, stateless generation, blob media, usage limits and plugin GUI) are denied, and media stays inline in messages.

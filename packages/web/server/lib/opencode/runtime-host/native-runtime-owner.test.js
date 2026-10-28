@@ -5,7 +5,7 @@ import os from 'node:os';
 import {createHash} from 'node:crypto';
 import {verifyNativeBootMigration} from './native-boot-migration.js';
 import {resolveSqliteDriver} from '../sqlite-driver.js';
-import { createNativeRuntimeOwner, loadNativeRuntimeBundle, readNativeCapabilitySnapshot } from './native-runtime-owner.js';
+import { collectionContinuationDiagnostic, createNativeRuntimeOwner, loadNativeRuntimeBundle, readNativeCapabilitySnapshot } from './native-runtime-owner.js';
 import * as nativeArtifacts from './native-artifacts.js';
 import { createNativeCursorRecovery } from './native-cursor-recovery.js';
 import {createCursorSdkRuntime} from '../../../../../cursor-sdk-runtime/index.js';
@@ -47,6 +47,15 @@ const fixture = async (action, cursorRuntime, configure) => {
     await action({ owner, drain, settleController, runtime, root });
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 };
+
+test('collection diagnostics retain bounded codes and session scope without unsafe details',()=>{
+ const locations=[{directory:'/project'}],input={directory:'/project',sessionID:'ses_root'};
+ for(const code of ['provider_recovery_owner_unavailable','execution_reverted'])
+  expect(collectionContinuationDiagnostic({...input,code},locations)).toEqual({type:'lifecycle',event:'native_collection_continuation_failed',directory:'/project',sessionID:'ses_root',payload:{code}});
+ for(const code of ['private detail','/private/path','a'.repeat(102),{secret:'private'}])
+  expect(collectionContinuationDiagnostic({...input,code,sessionID:'ses_/private'},locations)).toEqual({type:'lifecycle',event:'native_collection_continuation_failed',directory:'/project',payload:{code:'native_collection_continuation_failed'}});
+ expect(collectionContinuationDiagnostic({...input,code:'execution_reverted',directory:'/other'},locations)).toBeNull();
+});
 
 test('a coherent clone reseal after verification cannot replace the selected prepared hash or spawn a controller', async () => {
  let verified = false, boot, reseal;

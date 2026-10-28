@@ -729,7 +729,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
       throw createRuntimeError('native_managed_task_lease_invalid', 'Native managed dispatch owner is unavailable', 403);
     }
     await persistence.verifyOwnership?.();
-    const settling = input?.operation === 'settle';
+    const settling = ['settle', 'abort'].includes(input?.operation);
     const task = typeof input?.taskId === 'string'
       ? await (settling ? scheduler.verifyTaskSettlement(input.taskId, input.leaseToken) : scheduler.verifyTaskDispatch(input.taskId, input.leaseToken))
       : null;
@@ -746,7 +746,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
       }
     } else if (input.operation === 'prompt' || settling) {
       if (!task.childSessionId || task.childSessionId !== input.sessionID
-        || ['providerId', 'modelId', 'agent', 'variant'].some(key => task[key] !== input[key])) {
+        || input.operation !== 'abort' && ['providerId', 'modelId', 'agent', 'variant'].some(key => task[key] !== input[key])) {
         throw createRuntimeError('native_managed_task_scope_invalid', 'Native child prompt does not match its task', 403);
       }
     } else throw createRuntimeError('native_managed_task_scope_invalid', 'Native task dispatch operation is unavailable', 403);

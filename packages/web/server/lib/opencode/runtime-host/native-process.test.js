@@ -85,6 +85,20 @@ test('native process correlates concurrent commands and close awaits actual exit
   });
 });
 
+test('restart waits for a previous owner to exit and refuses an unsettled owner', async () => {
+  await fixture(async ({ start }) => {
+    const first = await start();
+    try {
+      await expect(start({ timeoutMs: 50 })).rejects.toMatchObject({ code: 'native_process_owner_unsettled' });
+      const closing = new Promise((resolve, reject) => setTimeout(() => first.close().then(resolve, reject), 100));
+      const second = await start();
+      await closing;
+      expect(first.hasExited()).toBe(true);
+      await second.close();
+    } finally { if (!first.hasExited()) await first.killForRecovery(); }
+  });
+});
+
 test('a timed out native operation refuses reuse until the owned child has exited and recovery settles', async () => {
   await fixture(async ({start}) => {
     let recovered=false;

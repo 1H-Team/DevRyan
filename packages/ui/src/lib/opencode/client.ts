@@ -1790,6 +1790,13 @@ class OpencodeService {
       } catch {
         // ignore
       }
+      let payload: unknown;
+      try { payload = JSON.parse(detail); } catch { /* Non-JSON errors keep their original detail. */ }
+      if (response.status === 409 && isRecord(payload) && payload.code === 'native_queued_input_blocked') {
+        throw Object.assign(new Error('This session or a subtask is still active, or its status could not be confirmed. Wait for it to finish, or stop it, then retry your message.'), {
+          code: 'native_queued_input_blocked', statusCode: 409, retryable: false,
+        });
+      }
       const suffix = detail && detail.trim().length > 0 ? `: ${detail.trim()}` : '';
       const error = new Error(`Failed to send message (${response.status})${suffix}`);
       recordProviderError(params.providerID, response.status);

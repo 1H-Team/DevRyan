@@ -10,7 +10,7 @@ import { renderAgentPromptPolicies } from './packaged-agents.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const AGENTS_DIR = path.resolve(__dirname, '../../default-config/agents');
 const PRE_TASK_ORCHESTRATOR_PROMPT_UTF8_BYTES = 15_902;
-const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 35917;
+const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 35907;
 const DEFAULT_SLIM_PROFILE_PATH = path.resolve(
   __dirname,
   '../../default-config/user-profile/devryan-agents.jsonc',
@@ -60,9 +60,9 @@ describe('packaged agent defaults', () => {
       const { body } = readPackagedAgent(name);
       expect(body).toContain('plan_read');
       expect(body).toContain('plan_update');
-      expect(body).toContain('never for a new Plan proposal');
+      expect(body).toMatch(/never for a new Plan proposal|For an Implement-selected saved revision only/);
       expect(body).toContain('expected_version');
-      expect(body).toContain('persistence failed');
+      expect(body).toMatch(/persistence failed|report persistence failure in chat/);
       expect(body).toContain('wait for readiness');
       expect(body).toContain('clean up on success and failure');
     }
@@ -160,7 +160,7 @@ describe('packaged agent defaults', () => {
     expect(body).toContain('passes exactly `timeout_seconds: 1800`');
     expect(body).toContain('Never dispatch a second Oracle to deepen, follow up, or re-review a usable result.');
     expect(body).toContain('Review target: final plan draft');
-    expect(body).toContain('Draft plan: <complete decision-ready draft or a compact complete rendering of it>');
+    expect(body).toContain('Draft plan: <complete decision-ready draft>');
     expect(body).toContain('Review target: final implementation/task result');
     expect(body).not.toContain('when a focused review returns a precise escalation target');
     expect(body.indexOf(planDraftGate)).toBeLessThan(body.indexOf(planCloseout));
@@ -188,8 +188,8 @@ describe('packaged agent defaults', () => {
     expect(orchestrator.body).not.toContain('Fixer-first implementation gate');
 
     expect(designer.body).toContain('End-to-end implementation of an approved design plan or decision-complete brief');
-    expect(designer.body).toContain('then edit the code, add or update the design-specific tests, and validate the visible result');
-    expect(designer.body).toContain('Do not author design plans, propose alternate directions, or take standalone review assignments.');
+    expect(designer.body).toContain('Inspect current UI, implement the brief, update design tests and validate visible behavior');
+    expect(designer.body).toContain('Orchestrator owns planning; require an approved design plan or decision-complete brief. No alternate directions or standalone reviews.');
     expect(designer.body).toContain('If the assignment is plan-only, review-only, or lacks an implementation brief');
 
     expect(fixer.body).toContain("Implement the Orchestrator's non-design task specification");
@@ -493,8 +493,8 @@ describe('packaged agent defaults', () => {
     const content = fs.readFileSync(path.join(AGENTS_DIR, 'orchestrator.md'), 'utf8');
 
     expect(builder).toContain('Inspect repository and system facts that could resolve the ambiguity before asking.');
-    expect(builder).toContain('multiple plausible interpretations remain and the user can resolve them');
-    expect(builder).toContain('even when the ambiguity is not a hard blocker');
+    expect(builder).toContain('Ask before choosing between unresolved user-owned interpretations, even when not blocked');
+    expect(builder).toContain('even when not blocked');
     expect(content).toContain('Ask unresolved user-owned questions early, before dependent work.');
     expect(content).toContain('unresolved user-owned intent, requirements, preferences, or choices would materially change');
     expect(content).toContain('even when work is not otherwise blocked');
@@ -535,7 +535,7 @@ describe('packaged agent defaults', () => {
     const content = fs.readFileSync(path.join(AGENTS_DIR, 'orchestrator.md'), 'utf8');
     expect(content).toContain('Use one appropriate specialist for one coherent concern');
     expect(content).toContain('Use the same evidence-driven routing in plan mode');
-    expect(content).toContain('Goal: <the user\'s objective in one sentence>');
+    expect(content).toContain('Goal: <user objective>');
     expect(content).not.toContain('An unknown filename alone never requires Explorer.');
     expect(content).not.toContain('direct-first discovery policy');
     expect(content).toContain('Explicit user requests for a specialist take precedence.');
@@ -553,8 +553,8 @@ describe('packaged agent defaults', () => {
     expect(body).toContain('For related missing context, continue the existing Explorer with the unanswered question and supplied findings');
     expect(body).toContain('start another only for a distinct scope, never to reset a read count.');
     expect(body).toContain('Verify a decisive claim or explicit gap with a narrow named read.');
-    expect(body).toContain('concise evidence map: question → finding → path:line; unresolved gap and next action; no raw logs');
-    expect(body).toContain('tell parallel workers they are not alone and to preserve others\' changes');
+    expect(body).toContain('question → finding → path:line; gaps and next action; no logs/transcript');
+    expect(body).toContain('tell workers they are not alone and to preserve others\' changes');
     expect(body).toContain('<!-- devryan:if contextProjection -->\n\n**Task and project context.**');
   });
 
@@ -628,12 +628,18 @@ describe('packaged agent defaults', () => {
     for (const agentName of ['builder', 'designer', 'explorer', 'fixer', 'oracle']) {
       const content = fs.readFileSync(path.join(AGENTS_DIR, `${agentName}.md`), 'utf8');
 
-      expect(content).toContain('Skill announcements are tool activity only');
-      expect(content).toContain('do not write assistant text to announce skill use');
-      expect(content).toContain('Do not write visible reasoning/status lines that restate the same action and target');
-      expect(content).toContain('the tool activity already shows skill loading, file inspection, and specialist routing');
+      if (agentName === 'fixer' || agentName === 'designer') {
+        expect(content).toContain('Skill announcements are tool activity only; do not write assistant text to announce skill use.');
+        expect(content).toContain('Do not repeat tool actions in status prose');
+        expect(content).toContain('or narrate instruction conflicts');
+      } else {
+        expect(content).toContain('Skill announcements are tool activity only');
+        expect(content).toContain('do not write assistant text to announce skill use');
+        expect(content).toContain('Do not write visible reasoning/status lines that restate the same action and target');
+        expect(content).toContain('the tool activity already shows skill loading, file inspection, and specialist routing');
+        expect(content).toContain('Do not write visible reasoning about balancing skill instructions against developer or agent instructions');
+      }
       expect(content).not.toContain('Do not write assistant prose announcing that you are loading a skill, using a skill, or about to invoke a specialist');
-      expect(content).toContain('Do not write visible reasoning about balancing skill instructions against developer or agent instructions');
     }
   });
 });

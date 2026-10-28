@@ -21,6 +21,19 @@ changed host generation prevents stale completion. Failed or malformed reads do
 not mean there are no requirements. Confirmed Standard Preview absence of native
 managed checks retains that runtime's existing completion behavior.
 
+Completion checks reject stale message triggers and unsettled turns before
+requesting objective proof. Failed proof reads for observed completions retry
+through the existing watchdog after 5, 10 and 20 seconds; foreground/reconnect
+may retry retained failures once per event. Only the bounded pending scopes are
+visited, without loading histories or polling confirmed incomplete checks.
+Current store, message and settlement state fence late results. New work,
+deletion, disposal, or acknowledgment retires pending recovery; parent selection
+acknowledges loaded descendants too. Opening and leaving a session while a proof
+is in flight cannot restore its unread completion when that proof returns.
+
+`ObjectiveVerification` renders root checks and their waiver action in the shared
+`chat-message-column`, matching message width and responsive padding.
+
 ## Resource bounds and batch commits
 
 Native Cursor text and reasoning retain the constructor's existing part identity
@@ -1179,3 +1192,5 @@ Claimed input remains in persisted queue storage while hidden from live senders.
 Dispatch saves its canonical message ID and delivery intent before transport;
 acceptance removes the durable claim, while rejection restores the same row.
 Reload therefore recovers ambiguous sends for native idempotent reconciliation.
+
+Queued prompt admission refusals (`native_queued_input_blocked`, HTTP 409) preserve their structured code and show actionable wait/Stop/retry copy. The client does not automatically resend the rejected prompt or count this local admission refusal as a provider failure.

@@ -1,8 +1,34 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { renderAgentPromptPolicies } from '../../lib/opencode/packaged-agents.js';
 const readAgent = name => readFileSync(new URL(`./${name}.md`, import.meta.url), 'utf8');
 
 describe('specialist-owned bundled agent routing', () => {
+  it.each([false, true])('keeps parent acceptance and browser diagnosis with adaptive routing=%s', (adaptiveDelegation) => {
+    const prompt = renderAgentPromptPolicies(readAgent('orchestrator'), { adaptiveDelegation });
+    expect(prompt).toContain('Personally verify changed behavior');
+    expect(prompt).toContain('Never delegate standalone review or acceptance to Designer.');
+    expect(prompt).toContain('representative populated browser state');
+    expect(prompt).toContain('retry only the affected action or check');
+    expect(prompt).toContain('dispatch bounded implementation remediation to its owner');
+    expect(prompt).toContain('honor the managed barrier and Oracle closeout rule');
+  });
+  it.each(['orchestrator', 'builder', 'plan', 'fixer', 'designer'])('keeps %s working through host compaction', (name) => {
+    const prompt = readAgent(name);
+    expect(prompt).toContain('The host compacts context automatically.');
+    expect(prompt).toContain('Preserve objective, plan, decisions, ownership and unfinished checks');
+    expect(prompt).toContain('never stop or cut verification for context budget');
+    expect(prompt).toContain('Report only actual runtime failures');
+  });
+  it.each(['orchestrator', 'builder'])('allows necessary structural corrections in %s without changing authorization', (name) => {
+    const prompt = readAgent(name);
+    expect(prompt).toContain('necessary reversible structural, frontend or backend corrections');
+    expect(prompt).toContain('preserve the approved outcome and public contracts');
+    expect(prompt).toContain('without new permissions, changed data/schema meaning, payments, destructive actions or external side effects');
+    expect(prompt).toContain('Class 2 (ask first):');
+    expect(prompt).toContain('RLS policies or grants');
+  });
+
   it('uses exact search references without stale codemap instructions', () => {
     for (const agent of ['builder', 'explorer', 'fixer', 'orchestrator']) expect(readAgent(agent)).not.toMatch(/codemap/i);
   });

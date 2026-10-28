@@ -5,7 +5,7 @@ import {isNativeStatusRecord} from '../../../../../shared-runtime/lib/native-mes
 import {nativeStepPermitSha256} from './primary-step-owner.js';
 const record=value=>!!value&&typeof value==='object'&&!Array.isArray(value);
 const fail=code=>Object.assign(new Error(code),{code,statusCode:409});
-const terminal=new Set(['completed','failed','aborted','timed_out']);
+const terminal=new Set(['completed','failed','aborted','interrupted']);
 
 /** Existing managed scheduler owns all tasks and prompt-observed receipts. The
  * original Slim renderer owns only transient context presentation. */
@@ -17,13 +17,15 @@ export function createNativeSlimContextOwner({admissionOwner,openCodeClient,prim
  // renderer never reads for host-owned rows keep neutral values.
  const job=(task,envelope)=>{
   const updatedAt=task.finishedAt??task.startedAt??task.createdAt;
+  const terminalUnreconciled=Boolean(envelope&&(envelope.promptObserved?.attempt!==task.attempt||envelope.promptObserved?.sequence!==envelope.sequence));
+  const state=task.status==='failed'?'error':task.status==='aborted'?'cancelled':task.status==='interrupted'?'stopped':terminal.has(task.status)?task.status:'running';
   return {taskID:task.taskId,parentSessionID:task.rootSessionId,alias:task.taskId,agent:task.agent,
-   state:task.status==='failed'?'error':task.status==='aborted'?'cancelled':task.status==='timed_out'?'stopped':terminal.has(task.status)?task.status:'running',
+   state:terminal.has(task.status)&&envelope?.action&&!terminalUnreconciled?'reconciled':state,
    generation:task.attempt,taskGeneration:task.attempt,terminalRevision:envelope?.sequence??0,activityRevision:0,
    description:task.label,objective:task.label,resultSummary:envelope?.recoverablePreview??'',lastStatusError:task.failureReason,
-   background:true,timedOut:task.status==='timed_out',statusUncertain:task.status==='timed_out',recoverableAfterLiveBusy:false,cancellationRequested:false,
-   terminalUnreconciled:Boolean(envelope&&(envelope.promptObserved?.attempt!==task.attempt||envelope.promptObserved?.sequence!==envelope.sequence)),
-   terminalState:task.status==='failed'?'error':task.status==='aborted'?'cancelled':task.status==='completed'?'completed':undefined,
+   background:true,timedOut:false,statusUncertain:false,recoverableAfterLiveBusy:false,cancellationRequested:false,
+   terminalUnreconciled,
+   terminalState:terminal.has(task.status)?state:undefined,
    launchedAt:task.createdAt,lastLaunchedAt:task.startedAt??task.createdAt,runStartedAt:task.startedAt??task.createdAt,
    updatedAt,lastUsedAt:updatedAt,...typeof task.finishedAt==='number'?{completedAt:task.finishedAt}:{},contextFiles:[],
   };
@@ -38,7 +40,7 @@ export function createNativeSlimContextOwner({admissionOwner,openCodeClient,prim
    board:{get:taskID=>active().jobs.get(taskID),formatForPromptWithMetadata:sessionID=>{
     const scope=active();if(scope.sessionID!==sessionID)throw fail('native_slim_context_scope_invalid');
     const jobs=[...scope.jobs.values()];
-    return originals.formatReviewedSlimTaskBoard({...settings?{readContextMaxFiles:settings.readContextMaxFiles}:{},jobs,reusable:jobs.filter(item=>!item.terminalUnreconciled&&scope.envelopes.get(item.taskID)?.resumable===true)});
+    return originals.formatReviewedSlimTaskBoard({...settings?{readContextMaxFiles:settings.readContextMaxFiles}:{},jobs,reusable:jobs.filter(item=>!item.terminalUnreconciled&&scope.envelopes.get(item.taskID)?.action===null&&scope.envelopes.get(item.taskID)?.resumable===true)})??(jobs.length?{text:'### Background Job Board\nNo running managed tasks. Earlier board snapshots are historical.',terminalUnreconciledTaskIDs:[]}:null);
    },markReconciled:(taskID,_at,generation,revision)=>{
     const scope=active(),current=scope.jobs.get(taskID);if(!current||current.generation!==generation||current.terminalRevision!==revision)throw fail('native_slim_context_revision_conflict');
     scope.markPromptObserved({taskId:taskID,attempt:generation,sequence:revision});
