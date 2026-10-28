@@ -65,7 +65,16 @@ const readArtifact = async (directory, target, limit = 8 * 1024 * 1024) => {
   } catch { return null; }
 };
 
-export const readVisualCheckEvidence = async (directory, check) => {
+// Whether the loopback servers a visual check named serve current files
+// (native-served-identity.js): `unknown` for a server DevRyan cannot tie to a
+// current view, `stale` for one whose view fell behind. Only the native
+// execution host supplies it; either keeps the check from passing.
+const SERVED_FRESHNESS = new Set(['fresh', 'unknown', 'stale']);
+const servedFreshnessOf = value => SERVED_FRESHNESS.has(value) ? value : undefined;
+const worseServed = (left, right) => [left, right].includes('stale') ? 'stale' : [left, right].includes('unknown') ? 'unknown' : left ?? right;
+export const PREVIEW_FRESHNESS_HINT = 'This visual check reached a server DevRyan cannot tie to the current files (started outside this call, or by a call whose copy of the project is older). Start the server inside the check command (start it, wait until it answers, check, stop it) and rerun the check.';
+
+export const readVisualCheckEvidence = async (directory, check, servedFreshness) => {
   if (check.kind !== 'visual') return null;
   const report = await readArtifact(directory, check.visual.reportPath, 64 * 1024);
   if (!report) return null;
@@ -84,7 +93,8 @@ export const readVisualCheckEvidence = async (directory, check) => {
       if (!artifact || artifact.sha256 !== reference.sha256 || (bytes += artifact.bytes.length) > 32 * 1024 * 1024) return null;
       evidence.push({ path: reference.path, sha256: artifact.sha256 });
     }
-    return { state: value.state, dataSource: value.dataSource, assertions: value.assertions.map(({ name, status }) => ({ name, status })), evidence, reportHash: report.sha256 };
+    return { state: value.state, dataSource: value.dataSource, assertions: value.assertions.map(({ name, status }) => ({ name, status })), evidence, reportHash: report.sha256,
+      ...(servedFreshnessOf(servedFreshness) ? { servedFreshness } : {}) };
   } catch { return null; }
 };
 
@@ -160,7 +170,7 @@ export const createRequiredCheckObserver = ({ scheduler, now = Date.now, verifyC
       const published = Object.fromEntries(await Promise.all(checks.map(async check => [check.name, await identityFor(task, check)])));
       for(const check of checks)if(content[check.name]!==published[check.name])content[check.name]=null;
       receipt = { owner, taskId: task.taskId, leaseToken: task.leaseToken, directory: task.directory, sessionId: input.sessionId,
-        callId: input.callId, messageId: null, checks, content, executionDirectory, task };
+        callId: input.callId, messageId: null, checks, content, executionDirectory, task, servedFreshness: servedFreshnessOf(input.servedFreshness) };
       pending.set(key, receipt);
       while (pending.size > 256) pending.delete(pending.keys().next().value);
     }
@@ -196,7 +206,8 @@ export const createRequiredCheckObserver = ({ scheduler, now = Date.now, verifyC
           const contentHash = currentCheck?.command === check.command ? await identityFor(current, currentCheck) : null;
           const executionHash = currentCheck?.command === check.command ? await identityFor(current, currentCheck, receipt.executionDirectory) : null;
           const stable = contentHash !== null && contentHash === receipt.content[check.name] && executionHash===contentHash;
-          const visual = check.kind === 'visual' ? await readVisualCheckEvidence(receipt.directory, check) : undefined;
+          const visual = check.kind === 'visual' ? await readVisualCheckEvidence(receipt.directory, check,
+            worseServed(receipt.servedFreshness, servedFreshnessOf(input.servedFreshness))) : undefined;
           const visualPassed = check.kind !== 'visual' || visualCheckPassed(check, visual);
           const commandIssue = requiredCheckCommandIssue(check.command);
           const environmentUnavailable = stable && input.outputComplete === true && exitCode !== null && exitCode !== 0 && !commandIssue
@@ -222,6 +233,8 @@ export const createRequiredCheckObserver = ({ scheduler, now = Date.now, verifyC
         if (['failed', 'waived', 'skipped'].includes(evidence.status)) return evidence;
         const issue = requiredCheckCommandIssue(checks.find(check => check.name === evidence.name).command);
         if (issue) return { ...evidence, status: 'blocked', reason: issue, hint: REQUIRED_CHECK_COMMAND_HINT };
+        const served = evidence.visual?.observation?.servedFreshness;
+        if (evidence.status === 'blocked' && served && served !== 'fresh') return { ...evidence, reason: 'preview_freshness_unproven', hint: PREVIEW_FRESHNESS_HINT };
         return identities[evidence.name] === null && task.requiredCheckCorrections?.some(entry => entry.name === evidence.name)
           ? { ...evidence, status: 'blocked', reason: 'required_check_runner_unverified' } : evidence;
       });

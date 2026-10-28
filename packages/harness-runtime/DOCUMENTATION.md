@@ -542,6 +542,16 @@ and the folder resolves to itself. Its files reach the project unpublished,
 so file tools read the same bytes; deleting `.artifacts/` itself replaces the
 input and is reported in `ignoredInputs`. `DEVRYAN_ARTIFACT_DIR=0` stops both
 steps.
+A process lease also records the ledger's file epoch when its view is copied:
+the count of commits that changed project files (publications, Revert, Redo
+and reconciled outside edits). `viewFreshness({directory, token})` answers
+`fresh`, `stale` (with how many such commits followed) or `unknown` (a lease
+that is not running); a read-only lease runs in the project and is always
+fresh. An outside edit counts once the ledger reconciles it, at the next
+preparation or publication. Every execution's environment carries
+`DEVRYAN_EXECUTION_VIEW`, a 16-hex digest of its lease token
+(`executionViewMarker`) that the servers it starts inherit, so the host can
+tell which view a loopback listener serves.
 Plan shell instead marks its execution lease read-only: preparation suppresses
 all input write grants and browser allowances, macOS denies networking, and the
 Linux launcher creates a private network namespace before its acknowledgement.

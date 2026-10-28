@@ -984,8 +984,8 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
       }
       case 'required_check': {
         if (!harnessPolicies.compactResults) return { tracked: false };
-        if (params.phase === 'before') { const {executionDirectory:_untrusted,objectiveId:_objective,...observation}=params;return await requiredCheckObserver.before(observation); }
-        if (params.phase === 'after') return await requiredCheckObserver.after(params);
+        if (params.phase === 'before') { const {executionDirectory:_untrusted,objectiveId:_objective,servedFreshness:_served,...observation}=params;return await requiredCheckObserver.before(observation); }
+        if (params.phase === 'after') { const {servedFreshness:_served,...observation}=params;return await requiredCheckObserver.after(observation); }
         throw new TypeError('required check phase must be before or after');
       }
       case 'correct_objective_check': {

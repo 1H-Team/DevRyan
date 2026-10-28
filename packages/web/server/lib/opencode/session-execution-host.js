@@ -10,7 +10,8 @@ import {constants as fsConstants, createReadStream} from 'node:fs';
 import path from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import { createSessionMutationHost } from '@devryan/harness-runtime';
-import { prepareSessionExecution, readSessionExecutionReceipt, verifySessionExecutionLauncher, startSessionExecution, startReadOnlySessionExecution, runReadOnlySessionExecution, sweepExecutionSocketDirectories } from '@devryan/harness-runtime/lib/session-execution.js';
+import { prepareSessionExecution, readSessionExecutionReceipt, verifySessionExecutionLauncher, startSessionExecution, startReadOnlySessionExecution, runReadOnlySessionExecution, sweepExecutionSocketDirectories, executionViewMarker } from '@devryan/harness-runtime/lib/session-execution.js';
+import { browserOpenTargets, createServedIdentity, loopbackPorts, previewStaleMessage, publicServedIdentity, servedFreshness } from './native-served-identity.js';
 import { createScopedRevertCoordinator } from './session-revert-coordinator.js';
 import { createSessionExecutionOwner } from '@devryan/harness-runtime/lib/session-execution-owner.js';
 import { CURSOR_PROVIDER_ID } from '@devryan/cursor-sdk-runtime';
@@ -104,8 +105,10 @@ const artifactsOf = async (job) => (job.artifactDirectory ? { artifacts: await a
 const nativeSettledPublication = (publication) => ({ outcome: publication?.outcome === 'partial' ? 'partial' : 'complete',
   conflicts: (publication?.conflicts ?? []).map(item => item.path),
   ...(publication?.ignoredInputs?.length ? { ignoredInputs: publication.ignoredInputs } : {}) });
-const nativePublicationResult = (result, publication, lease, tool) => {
+const nativePublicationResult = (result, publication, lease, tool, served) => {
   result=projectNativeMutationResult(result,publication,lease,tool);
+  // Which process served each loopback address the browser opened.
+  if (result && tool === 'devryan_browser' && served?.length) result = { ...result, metadata: { ...result.metadata, servedIdentity: publicServedIdentity(served) } };
   if(result&&tool==='gpt_imagegen'){
     const canonical=value=>typeof value==='string'?value.split(lease.viewDirectory).join(lease.projectDirectory):value;
     result={...result,output:canonical(result.output),metadata:{...result.metadata,out:canonical(result.metadata?.out)}};
@@ -186,6 +189,7 @@ export function createSessionExecutionHost(options) {
   // minutes (execution-idle-watchdog.js). It never touches a launch.
   const idleWatchdog = options.idleWatchdog ?? createExecutionIdleWatchdog({ onDiagnostic: options.onDiagnostic });
   const launchWatched = async (lease, input) => {
+    rememberServedView(lease, input);
     const launch = await prepareSessionExecution({ launcher: launcher(), lease });
     idleWatchdog.watch({ token: lease.token, profile: launch.profile,
       identity: { sessionID: input.sessionID, messageID: input.messageID, callID: input.callID } });
@@ -260,6 +264,27 @@ export function createSessionExecutionHost(options) {
   // These handles own supervised process lifetimes, not another ledger. The
   // existing mutation runtime owns admission, leases, receipts and publication.
   const nativeHandles = new Map();
+  // The lease behind each execution marker this host handed out, so a
+  // loopback listener can be traced to the view it serves
+  // (native-served-identity.js). Bounded; a marker outliving its lease's
+  // process is reported as orphaned.
+  const servedViews = new Map();
+  const rememberServedView = (lease, input) => {
+    servedViews.set(executionViewMarker(lease.token), { token: lease.token, directory: input.directory, sessionID: input.sessionID, callID: input.callID });
+    while (servedViews.size > 4096) servedViews.delete(servedViews.keys().next().value);
+  };
+  const servedIdentity = createServedIdentity({ ...options.servedIdentity, views: servedViews,
+    freshness: (view) => runtime.viewFreshness({ directory: view.directory, token: view.token }) });
+  // The loopback servers a shell command or browser open names. Kill switch:
+  // DEVRYAN_SERVED_FRESHNESS=0.
+  const servedTargets = async (input, browser) => {
+    if (process.env.DEVRYAN_SERVED_FRESHNESS === '0') return [];
+    const ports = loopbackPorts(browser ? browserOpenTargets(input.input) : input.kind === 'shell' ? input.authorization?.input?.input?.command : undefined);
+    return ports.length ? Promise.all(ports.map((port) => servedIdentity(port))) : [];
+  };
+  // A server whose view fell behind while the check ran fails it too.
+  const servedFreshnessNow = async (targets) => servedFreshness(await Promise.all((targets ?? []).map(async (target) => target.identity !== 'owned' ? target
+    : { ...target, freshness: (await runtime.viewFreshness({ directory: target.view.directory, token: target.view.token }).catch(() => null))?.state ?? 'unknown' })));
   // The original image hook has small presentation maps. A location mutex
   // preserves their order across private workers; process/lease scheduling
   // remains entirely with the existing execution owner.
@@ -616,6 +641,12 @@ export function createSessionExecutionHost(options) {
       activeJob: scope => [...nativeHandles.values()].find(job => job.input.directory === scope.directory
         && job.input.sessionID === scope.sessionID && job.input.messageID === scope.messageID && job.input.callID === scope.callID),
     });
+    // A server another call started serves that call's copy of the project;
+    // verifying against it once later changes are published would pass old
+    // code, so refuse before any lease or view exists.
+    const served = await servedTargets(input, browser);
+    const stale = served.find((target) => target.freshness === 'stale');
+    if (stale) throw Object.assign(new Error(previewStaleMessage(stale)), { code: 'preview_stale', status: 409, statusCode: 409 });
     await nativeRecheck(input);
     const { owner, jobs } = await preparations(); owner.assert(); signal?.throwIfAborted();
     // A read-only (Plan-mode) shell on macOS skips the private view copy and
@@ -628,9 +659,10 @@ export function createSessionExecutionHost(options) {
       parentID: current.parentID, executionFingerprint: fingerprint, ownerID: owner.id, preparation: liveReadOnly ? 'read-only' : undefined,
       attempt: await attemptStamp(input) });
     if (lease.ownerID !== owner.id || lease.executionKind || lease.state === 'published') throw failure('execution_already_started');
+    rememberServedView(lease, input);
     const job = { input, lease, partID: call.id, tool: call.tool, controller: new AbortController(), events: [], cursor: 0, acknowledged: 0,
       delivered: 0, bytes: 0, waiters: new Set(), permissions: new Set(), done: false, child: null, failure: null, result: null,
-      bindingPending: input.kind === 'shell', browserOperations:new Set(), browserIDs:new Set() };
+      bindingPending: input.kind === 'shell', browserOperations:new Set(), browserIDs:new Set(), served };
     job.childReady=new Promise(resolve=>{job.resolveChild=resolve;});
     const handleID = randomUUID(); nativeHandles.set(handleID, job);
     job.settled = (async () => {
@@ -659,7 +691,7 @@ export function createSessionExecutionHost(options) {
           await nativeOptions.observeRequiredCheck?.('after', input,
             receipt?.terminated && receipt.confined && !receipt.cancelled ? receipt.exitCode : null,
             { executionDirectory: job.lease.viewDirectory, objectiveId, output: diagnostic?.buffer.subarray(0, diagnostic.bytes).toString('utf8') ?? '',
-              outputComplete: diagnostic?.complete === true });
+              outputComplete: diagnostic?.complete === true, servedFreshness: job.servedAtExit ?? servedFreshness(job.served) });
         } finally { diagnostic?.buffer.fill(0); }
       })().catch(() => {});
       // Timing only: an admission wrapper would recheck its inherited deadline
@@ -808,7 +840,7 @@ export function createSessionExecutionHost(options) {
         if (shellLike) {
           requiredCheckObjective = await checkObjective();
           const observation = await nativeOptions.observeRequiredCheck?.('before', input, undefined,
-            { executionDirectory: job.lease.viewDirectory, objectiveId: requiredCheckObjective?.objectiveId });
+            { executionDirectory: job.lease.viewDirectory, objectiveId: requiredCheckObjective?.objectiveId, servedFreshness: servedFreshness(job.served) });
           if (observation?.tracked === true) requiredCheckOutput = { buffer: Buffer.alloc(16 * 1024), bytes: 0, complete: true };
         }
         const started = await startSessionExecution({ launcher: launcher(), lease: executionLease,
@@ -823,6 +855,8 @@ export function createSessionExecutionHost(options) {
         nativeEvent(job, { type: 'started', pid: started.pid });
         const receipt = await started.result;
         job.terminationReceipt = receipt;
+        // Read at exit, before this call's own publication can move the epoch.
+        if (shellLike && job.served.length) job.servedAtExit = await servedFreshnessNow(job.served);
         if(receipt.cancelled||!receipt.confined||receipt.exitCode!==0||job.failure)job.controller.abort(job.failure??failure('native_worker_terminated',403));
         await Promise.allSettled([...job.browserOperations]);
         pending += decoder.end();
@@ -840,7 +874,7 @@ export function createSessionExecutionHost(options) {
         const publication = await publish();
         if (shellLike) await settleRequiredCheck();
         await cleanupAfterPublication(job.lease);
-        nativeEvent(job, { type: 'settled', ok: true, receipt, publication: nativeSettledPublication(publication), ...await artifactsOf(job), result: nativePublicationResult(job.result?.result, publication, job.lease,input.tool) }, true);
+        nativeEvent(job, { type: 'settled', ok: true, receipt, publication: nativeSettledPublication(publication), ...await artifactsOf(job), result: nativePublicationResult(job.result?.result, publication, job.lease,input.tool,job.served) }, true);
       } catch (cause) {
         job.resolveChild();
         await Promise.allSettled([...job.browserOperations]);
@@ -861,7 +895,7 @@ export function createSessionExecutionHost(options) {
             const publication = await publish();
             if (shellLike) await settleRequiredCheck();
             await cleanupAfterPublication(job.lease);
-            nativeEvent(job, { type: 'settled', ok: true, receipt, publication: nativeSettledPublication(publication), ...await artifactsOf(job), result: nativePublicationResult(job.result?.result, publication, job.lease,input.tool) }, true);
+            nativeEvent(job, { type: 'settled', ok: true, receipt, publication: nativeSettledPublication(publication), ...await artifactsOf(job), result: nativePublicationResult(job.result?.result, publication, job.lease,input.tool,job.served) }, true);
             return;
           }
           await runtime.cancelLease({ directory: input.directory, token: lease.token, ...stoppedBy(job) });
@@ -1112,6 +1146,7 @@ export function createSessionExecutionHost(options) {
           throw failure('execution_owner_lost');
         }
         if (lease.executionKind || lease.state === 'published') throw failure('execution_already_started');
+        rememberServedView(lease, input);
         jobs.start(lease, input);
         return jobs.poll(lease, false);
       }

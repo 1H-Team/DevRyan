@@ -40,7 +40,7 @@ export const SESSION_MUTATION_METHODS = Object.freeze(['projectDirectories', 'pr
   'reserve', 'prepare', 'warm', 'begin', 'admitDirect', 'finishDirect', 'claimLease', 'finish', 'cleanupLease', 'executionReceipt', 'aliasCalls',
   'prepareRevert', 'prepareRedo', 'previewFileRestore', 'prepareFileRestore', 'settleRevert', 'leaseForCall', 'transaction', 'updateTransaction', 'pendingTransactions',
   'capturedSessionState', 'restoreForeign', 'cancelLease', 'cancelUnstartedCall', 'activeLeases', 'pendingCleanup', 'executionOutcomes',
-  'maintainLedger', 'drain']);
+  'viewFreshness', 'maintainLedger', 'drain']);
 
 export const sessionMutationWorkerEnabled = (options = {}) => {
   const setting = process.env.DEVRYAN_LEDGER_WORKER;

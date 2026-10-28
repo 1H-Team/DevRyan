@@ -9,6 +9,7 @@ export const CI_LANES = Object.freeze(['portable-1', 'portable-2', 'native-1', '
 export const BUILD_JOB_TESTS = Object.freeze(['scripts/built-web-assets.test.mjs']);
 export const MAC_WEB_TESTS = [
   'server/lib/opencode/native-readonly-shell.test.js',
+  'server/lib/opencode/native-served-identity.test.js',
   'server/default-config/plugins/devryan-browser.test.mjs',
   ...['native-artifacts', 'native-process', 'native-setup-seed', 'runtime-bundle-lifecycle']
     .map(name => `server/lib/opencode/runtime-host/${name}.test.js`),

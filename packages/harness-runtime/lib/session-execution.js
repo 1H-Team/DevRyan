@@ -271,6 +271,11 @@ const ledgerStorageOf = (viewDirectory) => {
 // must resolve to exactly that path. macOS only, where write-through exists.
 // Kill switch: DEVRYAN_ARTIFACT_DIR=0.
 export const ARTIFACT_ROOT = '.artifacts';
+// A non-secret name for the lease a process runs under. Servers a command
+// starts inherit it, so the host can tell which view a listener serves and
+// whether that view is still current (native-served-identity.js).
+export const EXECUTION_VIEW_ENV = 'DEVRYAN_EXECUTION_VIEW';
+export const executionViewMarker = (token) => createHash('sha256').update(`devryan-execution-view\0${token}`).digest('hex').slice(0, 16);
 async function prepareArtifactDirectory(lease, writableDirectories) {
   if (process.env.DEVRYAN_ARTIFACT_DIR === '0' || !writableDirectories.length) return null;
   const project = await fs.realpath(lease.projectDirectory).catch(() => null);
@@ -361,6 +366,7 @@ export async function prepareSessionExecution({ launcher, lease, socketDirectory
       ...(process.platform === 'win32' ? { USERPROFILE: scratchDirectory, LOCALAPPDATA: scratchDirectory, APPDATA: scratchDirectory } : {}),
       DEVRYAN_EXECUTION_CWD: lease.logicalWorkingDirectory ?? workingDirectory, DEVRYAN_EXECUTION_CANCEL_EVENT: cancelEvent,
       DEVRYAN_EXECUTION_CACHE: auxiliaryDirectory,
+      ...(typeof lease.token === 'string' && lease.token ? { [EXECUTION_VIEW_ENV]: executionViewMarker(lease.token) } : {}),
       ...(sessionTemporaryDirectory ? { DEVRYAN_SESSION_TMP: sessionTemporaryDirectory } : {}),
       ...(artifactDirectory ? { DEVRYAN_ARTIFACT_DIR: artifactDirectory } : {}),
       ...(socketDirectory ? { XDG_RUNTIME_DIR: shortSocketSpelling(socketDirectory) } : {}),

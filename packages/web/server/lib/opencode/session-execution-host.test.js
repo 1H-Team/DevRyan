@@ -7,7 +7,8 @@ import fs from 'node:fs/promises';
 const mocks = vi.hoisted(() => ({
   runtime: { admitDirect: vi.fn(), finishDirect: vi.fn(), executionReceipt: vi.fn(), reserve: vi.fn(), prepare: vi.fn(),
     begin: vi.fn(), claimLease: vi.fn(), leaseForCall: vi.fn(), finish: vi.fn(), cleanupLease: vi.fn(), drain: vi.fn(),
-    assertAdmission: vi.fn(), registerChild: vi.fn(), prewarmView: vi.fn(), cancelUnstartedCall: vi.fn(), cancelLease: vi.fn(), warm: vi.fn() },
+    assertAdmission: vi.fn(), registerChild: vi.fn(), prewarmView: vi.fn(), cancelUnstartedCall: vi.fn(), cancelLease: vi.fn(), warm: vi.fn(),
+    viewFreshness: vi.fn() },
   classify: vi.fn(),
   resolveGit: vi.fn(),
   runtimeOptions: null,
@@ -17,10 +18,11 @@ vi.mock('@devryan/harness-runtime', () => ({
   createSessionMutationHost: (options) => { mocks.runtimeOptions = options; return mocks.runtime; },
   createSessionRevertCoordinator: () => ({}),
 }));
-vi.mock('@devryan/harness-runtime/lib/session-execution.js', () => ({
-  verifySessionExecutionLauncher: async () => true, sweepExecutionSocketDirectories: async () => 0,
-  prepareSessionExecution: vi.fn(), readSessionExecutionReceipt: vi.fn(), startSessionExecution: vi.fn(), startReadOnlySessionExecution: vi.fn(), runReadOnlySessionExecution: vi.fn(),
-}));
+vi.mock('@devryan/harness-runtime/lib/session-execution.js', async (importOriginal) => {
+  const { EXECUTION_VIEW_ENV, executionViewMarker } = await importOriginal();
+  return { EXECUTION_VIEW_ENV, executionViewMarker, verifySessionExecutionLauncher: async () => true, sweepExecutionSocketDirectories: async () => 0,
+    prepareSessionExecution: vi.fn(), readSessionExecutionReceipt: vi.fn(), startSessionExecution: vi.fn(), startReadOnlySessionExecution: vi.fn(), runReadOnlySessionExecution: vi.fn() };
+});
 vi.mock('@devryan/harness-runtime/lib/execution-host-owner.js', async (importOriginal) => ({
   ...await importOriginal(), createExecutionHostOwner: async () => ({ id: 'owner_fixture', signal: new AbortController().signal,
     assert: () => {}, close: async () => {} }),
@@ -445,6 +447,104 @@ test('a shell settles with a manifest of what it left in its artifact folder, wi
       { path: path.join('test-results', 'login', 'trace.zip'), size: 11, sha256: sha('trace bytes') },
     ] } });
   } finally { f.terminated.resolve(f.receipt); await f.host.drain(); await fs.rm(root, { recursive: true, force: true }); }
+});
+
+// Loopback servers another call started (native-served-identity.js): lsof and
+// ps are faked, the server's lease marker is the real one.
+const servedReceipt = { terminated: true, confined: true, cancelled: false, exitCode: 0 };
+const servedShell = { kind: 'shell', command: '/bin/sh', args: ['-c', 'fixture'], env: {}, cwd: directory };
+const servedLease = (callID, tool = 'bash') => ({ token: `lease_${callID}`, ownerID: 'owner_fixture', directory, projectDirectory: directory,
+  viewDirectory: path.join(directory, `.cache/unused-served-view-${callID}/worktree`), workingDirectory: path.join(directory, `.cache/unused-served-view-${callID}/worktree`),
+  scope: { ...input, callID, tool }, state: 'ready' });
+const servedExec = (native, environment) => async (command) => command === 'lsof' ? 'p4242\nn127.0.0.1:8090\n'
+  : `node serve.js ${environment ?? `DEVRYAN_EXECUTION_VIEW=${native.executionViewMarker('lease_call_server')}`}\n`;
+const startServedShell = (host, callID, command) => host.nativeExecution({ ...input, ...servedShell, tool: 'shell', callID, action: 'start', agent: 'build',
+  authorization: { input: { input: { command } } }, argsDigest: createHash('sha256').update(JSON.stringify(servedShell)).digest('hex') });
+const settledEvent = async (host, handle) => {
+  let batch, cursor = 0; const events = [];
+  do { batch = await host.nativeExecution({ action: 'read', handle, cursor }); cursor = batch.cursor; events.push(...batch.events); } while (!batch.done);
+  return events.at(-1);
+};
+async function servedShellFixture({ environment } = {}) {
+  const native = await import('@devryan/harness-runtime/lib/session-execution.js');
+  const client = createFakeClient(), observed = [], terminations = new Map();
+  client.sessions.message.mockResolvedValue({ info: { id: input.messageID, role: 'assistant', sessionID: input.sessionID, parentID: 'msg_user' },
+    turnOwnership: { source: 'native-sequence', userMessageID: 'msg_user' }, parts: ['call_server', 'call_check']
+      .map(callID => ({ id: `${input.messageID}:tool:${callID}`, type: 'tool', callID, tool: 'bash' })) });
+  mocks.runtime.reserve.mockImplementation(async request => servedLease(request.callID));
+  mocks.runtime.prepare.mockImplementation(async lease => lease);
+  mocks.runtime.finish.mockResolvedValue({ files: [], operationID: 'published_served' });
+  native.startSessionExecution.mockImplementation(async ({ lease }) => {
+    const terminated = Promise.withResolvers(); terminations.set(lease.scope.callID, terminated);
+    return { child: { stdin: { write: vi.fn() } }, pid: 300, result: terminated.promise };
+  });
+  const f = fixture({ openCodeClient: client, admissionSummaryMinMs: 0, servedIdentity: { platform: 'darwin', exec: servedExec(native, environment) },
+    nativeExecution: { workerCommand: '/fixture/bun', workerArgs: ['worker.ts'], recheckPermit: async () => {},
+      observeRequiredCheck: async (phase, request, _exitCode, execution) => {
+        observed.push({ phase, callID: request.callID, servedFreshness: execution?.servedFreshness }); return { tracked: false };
+      } } });
+  const release = async () => { for (const terminated of terminations.values()) terminated.resolve(servedReceipt); await f.host.drain(); };
+  return { ...f, observed, terminations, release, start: (callID, command) => startServedShell(f.host, callID, command) };
+}
+
+test('a command naming a server another call started is refused once that call\'s copy of the project is behind', async () => {
+  const f = await servedShellFixture();
+  mocks.runtime.viewFreshness.mockResolvedValue({ state: 'stale', behind: 2 });
+  try {
+    await f.start('call_server', 'npm run dev -- --port 8090');
+    await expect(f.start('call_check', 'CLINIC_REUSE_SERVER=1 PLAYWRIGHT_BASE_URL=http://127.0.0.1:8090 npx playwright test')).rejects.toMatchObject({
+      code: 'preview_stale', message: expect.stringMatching(/^preview_stale: the server on port 8090 was started by call call_server .* 2 changes have been published since/) });
+    expect(mocks.runtime.viewFreshness).toHaveBeenCalledWith({ directory, token: 'lease_call_server' });
+    // Refused before any lease or view existed for the check.
+    expect(mocks.runtime.reserve.mock.calls.map(([request]) => request.callID)).toEqual(['call_server']);
+    vi.stubEnv('DEVRYAN_SERVED_FRESHNESS', '0');
+    await expect(f.start('call_check', 'curl http://localhost:8090/')).resolves.toMatchObject({ handle: expect.any(String) });
+  } finally { await f.release(); }
+});
+
+test('a check against a current server runs, and fails to prove freshness if the server falls behind meanwhile', async () => {
+  const f = await servedShellFixture();
+  mocks.runtime.viewFreshness.mockResolvedValue({ state: 'fresh', behind: 0 });
+  try {
+    await f.start('call_server', 'npm run dev -- --port 8090');
+    const { handle } = await f.start('call_check', 'curl -fsS http://localhost:8090/health');
+    await vi.waitFor(() => expect(f.terminations.has('call_check')).toBe(true));
+    mocks.runtime.viewFreshness.mockResolvedValue({ state: 'stale', behind: 1 });
+    f.terminations.get('call_check').resolve(servedReceipt);
+    expect(await settledEvent(f.host, handle)).toMatchObject({ type: 'settled', ok: true });
+    expect(f.observed.filter(row => row.callID === 'call_check')).toEqual([
+      { phase: 'before', callID: 'call_check', servedFreshness: 'fresh' }, { phase: 'after', callID: 'call_check', servedFreshness: 'stale' }]);
+  } finally { await f.release(); }
+});
+
+test('a check\'s own publication does not count against the server it verified', async () => {
+  const f = await servedShellFixture();
+  mocks.runtime.viewFreshness.mockResolvedValue({ state: 'fresh', behind: 0 });
+  mocks.runtime.finish.mockImplementation(async () => {
+    mocks.runtime.viewFreshness.mockResolvedValue({ state: 'stale', behind: 1 });
+    return { files: [{ path: 'visual.json', status: 'added' }], operationID: 'published_report' };
+  });
+  try {
+    await f.start('call_server', 'npm run dev -- --port 8090');
+    const { handle } = await f.start('call_check', 'curl -fsS http://localhost:8090/ > visual.json');
+    await vi.waitFor(() => expect(f.terminations.has('call_check')).toBe(true));
+    f.terminations.get('call_check').resolve(servedReceipt);
+    expect(await settledEvent(f.host, handle)).toMatchObject({ type: 'settled', ok: true });
+    expect(f.observed.filter(row => row.callID === 'call_check').map(row => row.servedFreshness)).toEqual(['fresh', 'fresh']);
+  } finally { await f.release(); }
+});
+
+test('a server DevRyan did not start is allowed for ordinary commands but its freshness stays unknown', async () => {
+  const f = await servedShellFixture({ environment: 'PATH=/bin' });
+  try {
+    const { handle } = await f.start('call_check', 'curl http://127.0.0.1:8090/');
+    await vi.waitFor(() => expect(f.terminations.has('call_check')).toBe(true));
+    f.terminations.get('call_check').resolve(servedReceipt);
+    expect(await settledEvent(f.host, handle)).toMatchObject({ type: 'settled', ok: true });
+    expect(f.observed).toEqual([{ phase: 'before', callID: 'call_check', servedFreshness: 'unknown' },
+      { phase: 'after', callID: 'call_check', servedFreshness: 'unknown' }]);
+    expect(mocks.runtime.viewFreshness).not.toHaveBeenCalled();
+  } finally { await f.release(); }
 });
 
 test('deadline cancellation matches the exact live shell and waits for termination', async () => {
@@ -1290,6 +1390,48 @@ test('browser worker privately binds canonical user scope, waits lease callbacks
     expect(mocks.runtime.finish).toHaveBeenCalledTimes(1); expect(mocks.runtime.cancelLease).not.toHaveBeenCalled();
     expect(batch.events.at(-1)).toMatchObject({ type: 'settled', ok: true, result: { metadata: { browserArtifacts: [path.join(directory, '.devryan-browser/owned.png')] } } });
     expect(batch.events.at(-1).result.content).toContain(path.join(directory, '.devryan-browser/owned.png'));
+  } finally { if (host) await host.drain(); await fs.rm(f.root, { recursive: true, force: true }); }
+});
+
+test('the browser refuses to open a server whose copy of the project is behind, and names who served what it opened', async () => {
+  const f = await browserHostFixture(); let host;
+  try {
+    const native = await import('@devryan/harness-runtime/lib/session-execution.js');
+    f.client.sessions.message.mockResolvedValue({ info: { role: 'assistant', sessionID: input.sessionID, parentID: 'msg_user' },
+      turnOwnership: { source: 'native-sequence', userMessageID: 'msg_user' }, parts: [{ type: 'tool', callID: input.callID, tool: 'devryan_browser' },
+        { id: `${input.messageID}:tool:call_server`, type: 'tool', callID: 'call_server', tool: 'bash' }] });
+    mocks.runtime.reserve.mockImplementation(async request => request.callID === 'call_server' ? servedLease('call_server') : f.lease);
+    mocks.runtime.prepare.mockImplementation(async lease => lease);
+    const server = Promise.withResolvers(), browser = Promise.withResolvers();
+    native.startSessionExecution.mockImplementation(async ({ lease, onOutput }) => {
+      if (lease.token === 'lease_call_server') return { pid: 300, result: server.promise, child: { stdin: { write: vi.fn() } } };
+      onOutput({ stream: 'stdout', data: Buffer.from(JSON.stringify({ type: 'result', ok: true, result: { content: 'Opened', metadata: { title: 'Booking' } } }) + '\n') });
+      return { pid: 301, result: browser.promise, child: { stdin: { write: (_line, callback) => callback?.() } } };
+    });
+    ({ host } = fixture({ openCodeClient: f.client, servedIdentity: { platform: 'darwin', exec: servedExec(native) },
+      nativeExecution: { workerCommand: '/fixture/bun', workerArgs: ['worker.ts'], isReady: async () => true, recheckPermit: async () => {},
+        reviewedBrowserOrigin: f.origin, getReviewedBrowser: async () => f.reviewedBrowser, browserOperation: vi.fn(), socketDirectory: null, workerBrowsers: false } }));
+    const open = browserInput => {
+      const specification = { kind: 'writer', tool: 'devryan_browser', input: browserInput };
+      return host.nativeExecution({ ...f.invocation, ...specification, argsDigest: createHash('sha256').update(JSON.stringify(specification)).digest('hex') });
+    };
+    await startServedShell(host, 'call_server', 'npm run dev -- --port 8090');
+    mocks.runtime.viewFreshness.mockResolvedValue({ state: 'stale', behind: 3 });
+    for (const browserInput of [{ command: 'open', args: ['http://localhost:8090/booking'] },
+      { command: 'sequence', steps: [{ command: 'open', args: ['--headed', 'http://127.0.0.1:8090/'] }, { command: 'snapshot' }] }]) {
+      await expect(open(browserInput)).rejects.toMatchObject({ code: 'preview_stale',
+        message: expect.stringContaining('the server on port 8090 was started by call call_server') });
+    }
+    expect(mocks.runtime.reserve.mock.calls.map(([request]) => request.callID)).toEqual(['call_server']);
+    mocks.runtime.viewFreshness.mockResolvedValue({ state: 'fresh', behind: 0 });
+    const { handle } = await open({ command: 'open', args: ['http://localhost:8090/booking'] });
+    browser.resolve(servedReceipt);
+    const settled = await settledEvent(host, handle);
+    expect(settled).toMatchObject({ type: 'settled', ok: true, result: { content: 'Opened', metadata: { title: 'Booking',
+      servedIdentity: [{ port: 8090, pid: 4242, identity: 'owned', sessionID: input.sessionID, callID: 'call_server', freshness: 'fresh' }] } } });
+    // The lease token never reaches tool metadata.
+    expect(JSON.stringify(settled)).not.toContain('lease_call_server');
+    server.resolve(servedReceipt);
   } finally { if (host) await host.drain(); await fs.rm(f.root, { recursive: true, force: true }); }
 });
 
