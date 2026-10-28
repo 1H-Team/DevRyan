@@ -15,9 +15,15 @@ const version = (number, overrides = {}) => `header\n${Array.from({ length: 6 },
 
 const ledgerRoot = async (f) => path.join(f.storage, changeKey(await fs.realpath(f.directory)));
 const store = async (f) => { const root = await ledgerRoot(f); return openChangeStore(root, path.join(root, 'git')); };
-const documentID = async (db) => {
-  for await (const { value } of db.entries('files')) if (value.published?.path === FILE) return value.id;
+const documentRecord = async (db) => {
+  for await (const { value } of db.entries('files')) if (value.published?.path === FILE) return value;
   throw new Error(`no document for ${FILE}`);
+};
+const documentID = async (db) => (await documentRecord(db)).id;
+const lastRevision = async (db) => {
+  let last = null;
+  for await (const revision of db.list(`revisions/${await documentID(db)}`)) last = revision;
+  return last;
 };
 const pagesOf = async (db, id) => {
   const pages = [];
@@ -61,6 +67,8 @@ const plantStoredClosures = async (f) => {
 // Maintenance runs only when a test asks: an automatic pass during setup
 // would find nothing to reduce yet and stamp the ledger done.
 const MANUAL = { maintenance: { commits: Number.POSITIVE_INFINITY } };
+// A complexity guard ceiling above the reduced history and below the stored closures.
+const GUARD = { complexity: { warnEntries: 1_000, ceilingEntries: 1_500 } };
 // Two ledgers given the same history; only `compacted` is maintained.
 const twins = async (options) => {
   const ledgers = { compacted: await fixture({ ...MANUAL, ...options }), uncompacted: await fixture({ ...MANUAL, ...options }) };
@@ -79,7 +87,7 @@ describe('stored-closure ancestry compaction', () => {
   test('maintenance reduces stored closures, skips a concurrently edited document, and keeps every outcome', async () => {
     await withEnv({ DEVRYAN_LEDGER_BASELINE_REFS: '0' }, async () => {
       const diagnostics = [];
-      const { ledgers, each, edit } = await twins({ onDiagnostic: (record) => diagnostics.push(record) });
+      const { ledgers, each, edit } = await twins({ ...GUARD, onDiagnostic: (record) => diagnostics.push(record) });
       const { compacted: f, uncompacted: g } = ledgers;
       // Views prepared before compaction publish after it.
       const stale = await each((ledger) => ledger.begin('u', 'r1', 'r1-call'));
@@ -110,9 +118,12 @@ describe('stored-closure ancestry compaction', () => {
       expect((await g.finish(lease)).files).toEqual([{ path: FILE, status: 'modified' }]);
       const stamp = path.join(await ledgerRoot(f), 'ancestry-compacted');
       await expect(fs.access(stamp)).rejects.toMatchObject({ code: 'ENOENT' });
-      // The writer stored closures and its direct run together, fenced: a mixed layout.
+      // The writer stored closures and its direct run together, fenced: a mixed
+      // layout. Over the guard's ceiling, it stayed granular: the guard waits for compaction.
       const mixed = runsOf(await pagesOf(await store(f), await documentID(await store(f))));
       expect(entries(mixed)).toBeGreaterThan(planted[0]);
+      expect((await documentRecord(await store(f))).runsComplexity.entries).toBe(entries(mixed));
+      expect((await lastRevision(await store(f))).binary).toBe(false);
 
       const before = await ledgerState(f);
       await f.runtime.maintainLedger({ directory: f.directory });
@@ -122,8 +133,10 @@ describe('stored-closure ancestry compaction', () => {
       await expect(formatOneRead(db, id)).rejects.toMatchObject({ code: 'invalid_change_record' });
       const reduced = runsOf(pages);
       expect(entries(reduced)).toBeLessThan(entries(mixed) / 5);
+      // The recorded complexity follows the reduction, so the armed guard does not switch it.
+      expect((await documentRecord(db)).runsComplexity.entries).toBe(entries(reduced));
       expect(diagnostics).toContainEqual(expect.objectContaining({ phase: 'ledger_ancestry_compaction', state: 'completed', count: 1 }));
-      // Same text, revisions and runs apart from their ancestry lists.
+      // Same text, revisions and runs apart from their ancestry lists (and recorded complexity).
       expect(await ledgerState(f)).toEqual(before);
       expect(reduced.map(({ replaces: _replaces, ...run }) => run)).toEqual(mixed.map(({ replaces: _replaces, ...run }) => run));
       const operations = [...new Set(mixed.flatMap((run) => [run.owner, ...run.deletedBy]).filter(Boolean))];
@@ -143,6 +156,7 @@ describe('stored-closure ancestry compaction', () => {
       }));
       expect(results[0].files).toEqual(results[1].files);
       await edit('s', 'p31', version(31, { 2: 'line 2 concurrent\n' }));
+      for (const ledger of Object.values(ledgers)) expect((await lastRevision(await store(ledger))).binary).toBe(false);
       const texts = async () => Promise.all(Object.values(ledgers).map((ledger) => ledger.read(FILE)));
       for (const [sessionID, messageID] of [['s', 'p20'], ['t', 'q1'], ['s', 'p31'], ['u', 'r1'], ['s', 'p30'], ['s', 'p5']]) {
         await each((ledger) => ledger.revert(sessionID, messageID));

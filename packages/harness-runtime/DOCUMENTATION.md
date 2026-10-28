@@ -262,6 +262,7 @@ in [identity compatibility](../../docs/IDENTITY_COMPATIBILITY.md#data-folder-mig
 ## Operational limits
 
 - `createSessionMutationRuntime({ batching: { install, initialInstall } })` overrides rows per install transaction (defaults 128 and 1024 for a first build; validated positive integers); tests pass small values to cross batch boundaries with ~150 files.
+- `createSessionMutationRuntime({ complexity: { warnEntries, warnBytes, ceilingEntries, ceilingBytes } })` overrides the document complexity guard (defaults 250,000 entries / 16 MiB to journal, 1,000,000 / 64 MiB to record whole content; validated positive integers, each warning at most its ceiling). See [Concurrent Revert](../../docs/CONCURRENT_REVERT.md).
 - `openChangeStore(..., { listingLimitBytes })` overrides the 1 MiB in-memory key-listing bound (validated positive integer; default unchanged); tests pass a small value to cross it with a few hundred records.
 - Whole-ledger listings must stream. `openChangeStore().records()` yields every
   `{key, oid, value}` of a snapshot through `gitTokens` plus batched
@@ -542,6 +543,8 @@ documents whose runs replace text are fenced by a format page that older hosts
 reject (`docs/CONCURRENT_REVERT.md`). Ledger maintenance reduces documents an
 older host stored with every run's closure (`minimizeMutationAncestry`, whose
 comment gives the argument that every closure is kept) and rewrites them fenced.
+A document whose runs still reach the complexity ceiling switches to whole
+content, decided before conflict detection.
 `scripts/perf/mutation-ancestry-replay.mjs` replays
 overlapping rewrites of one large file through `applyMutationText` and reports
 per-edit apply and row encode/decode times and run/ancestry growth, with the

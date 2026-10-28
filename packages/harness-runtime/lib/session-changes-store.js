@@ -209,36 +209,41 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF,gitRunner,s
       yield* value;
     }
   };
-  // List pages: at most 128 values and 256 KiB of JSON each.
-  const pagesOf = async function* (values) {
+  // List pages: at most 128 values and 256 KiB of JSON each. `totals.bytes`
+  // counts the values' JSON.
+  const pagesOf = async function* (values, totals = { bytes: 0 }) {
     let page = [], bytes = 0;
     for await (const value of values) {
       const size = Buffer.byteLength(JSON.stringify(value));
       if (page.length && (page.length >= 128 || bytes + size > 256 * 1024)) { yield page; page = []; bytes = 0; }
-      page.push(value); bytes += size;
+      page.push(value); bytes += size; totals.bytes += size;
     }
     if (page.length) yield page;
   };
   // `absent`: the caller knows the prefix is new (a just-generated id), so
   // there is nothing to replace and no listing to read. `firstPage` leaves the
   // lower page names to the caller (a format page that must list first).
+  // Returns the bytes of the values' JSON.
   const setList = async (prefix, values, { absent = false, firstPage = 0 } = {}) => {
     if (!absent) for await (const { key } of entries(prefix)) remove(key);
     let index = firstPage;
-    for await (const page of pagesOf(values)) set(`${prefix}/${String(index++).padStart(10, '0')}.json`, page);
+    const totals = { bytes: 0 };
+    for await (const page of pagesOf(values, totals)) set(`${prefix}/${String(index++).padStart(10, '0')}.json`, page);
+    return totals.bytes;
   };
   // setList in two steps: `writeList` writes the pages as objects ahead of a
-  // transaction (outside any ledger lock) and returns their ids, and
-  // `setListObjects` stages them under `prefix`, so the commit only records
-  // them. Objects never staged are pruned after the grace like any other.
+  // transaction (outside any ledger lock) and returns their ids (`objects`)
+  // and the values' JSON bytes, and `setListObjects` stages them under
+  // `prefix`, so the commit only records them. Objects never staged are
+  // pruned after the grace like any other.
   const writeList = async (values) => {
-    const objectsDir = path.resolve(cwd, gitDir), oids = [];
-    for await (const page of pagesOf(values)) {
+    const objectsDir = path.resolve(cwd, gitDir), objects = [], totals = { bytes: 0 };
+    for await (const page of pagesOf(values, totals)) {
       const data = JSON.stringify(page);
       if (Buffer.byteLength(data) > 512 * 1024) throw changeError('change_record_too_large', 503);
-      oids.push(await writeLooseObject(objectsDir, 'blob', Buffer.from(data), oidLength));
+      objects.push(await writeLooseObject(objectsDir, 'blob', Buffer.from(data), oidLength));
     }
-    return oids;
+    return { objects, bytes: totals.bytes };
   };
   const setListObjects = (prefix, oids, { firstPage = 0 } = {}) => {
     if (!validKey(`${prefix}/page.json`) || !oids.every((oid) => typeof oid === 'string' && oid.length === oidLength && /^[a-f0-9]+$/.test(oid))) {

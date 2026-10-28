@@ -84,6 +84,21 @@ test('runs in a worker under Node and answers exactly like the inline runtime', 
   assert.deepEqual(changes.remote, []);
 });
 
+test('runtime limits reach the worker', async (t) => {
+  const fixture = await project(1);
+  t.after(fixture.remove);
+  const records = [];
+  const host = createSessionMutationHost({ directory: fixture.storage, complexity: { warnEntries: 1, ceilingEntries: 2 },
+    onDiagnostic: (record) => records.push(record) });
+  t.after(() => host.close());
+  const input = { directory: fixture.directory, sessionID: 's', userMessageID: 'u1', messageID: 'u1-assistant', callID: 'edit' };
+  const lease = await host.begin(input);
+  await fs.writeFile(path.join(lease.viewDirectory, 'd0', 'f0.txt'), 'LINE 0\n');
+  await host.finish({ directory: fixture.directory, token: lease.token });
+  // One replacement reaches a one-entry warning bound; the default bound is 250,000.
+  assert.ok(records.some((record) => record.phase === 'ledger_document_complexity' && record.state === 'warning' && record.count >= 1));
+});
+
 test('caller cancellation stops a remote preparation and the next call prepares normally', async (t) => {
   const fixture = await project(400);
   t.after(fixture.remove);
