@@ -6,7 +6,9 @@ const sendRouteError = (res, error, fallback) => {
   const status = Number(error?.statusCode)
     || (error?.code === 'EACCES' || error?.code === 'EPERM' ? 403 : 500);
   return res.status(status).json({ error: error?.message || fallback,
-    ...(error?.code ? { code: error.code } : {}), ...(error?.version ? { version: error.version } : {}) });
+    ...(error?.code ? { code: error.code } : {}), ...(error?.version ? { version: error.version } : {}),
+    // Why a plan source is unsettled (native-plan-settlement.js): waited out or final.
+    ...(typeof error?.reason === 'string' && /^[a-z_]{1,64}$/.test(error.reason) ? { reason: error.reason } : {}) });
 };
 
 export const registerSessionPlanRoutes = (app, {

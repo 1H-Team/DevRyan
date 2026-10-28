@@ -77,6 +77,16 @@ describe('createWebSessionPlansAPI', () => {
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
   });
 
+  test('keeps why a plan source is unsettled, and drops a malformed reason', async () => {
+    globalThis.fetch = vi.fn(async () => Response.json({ error: 'plan_source_unsettled', code: 'plan_source_unsettled', reason: 'tasks_active' }, { status: 409 })) as typeof fetch;
+    await expect(createWebSessionPlansAPI().ensureRevision({ ...identity, markdown: '# Plan' }))
+      .rejects.toMatchObject({ status: 409, code: 'plan_source_unsettled', reason: 'tasks_active' });
+    globalThis.fetch = vi.fn(async () => Response.json({ error: 'plan_source_unsettled', code: 'plan_source_unsettled', reason: 'Not A Reason' }, { status: 409 })) as typeof fetch;
+    const error = await createWebSessionPlansAPI().ensureRevision({ ...identity, markdown: '# Plan' }).catch((cause: unknown) => cause);
+    expect(error).toMatchObject({ code: 'plan_source_unsettled' });
+    expect(error).not.toHaveProperty('reason');
+  });
+
   test('refreshes only the canonical display slug after a typed mismatch, once for each owned operation', async () => {
     const api = createWebSessionPlansAPI();
     for (const operation of ['ensure', 'read', 'update'] as const) {

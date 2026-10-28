@@ -33,3 +33,28 @@ it('an unfinished native retry stub keeps Implement disabled despite an earlier 
  const f=fixture({readStatus:async()=>({ses_plan:{type:'retry'}})});
  await expect(f.verify(f.input)).rejects.toMatchObject({code:'plan_source_unsettled'});
 });
+it('names why a source is unsettled: transient reasons are waited out, terminal ones are final', async () => {
+  const primary = (fields) => async () => ({ sessionID: 'ses_plan', directory: '/fixture', anchorID: 'msg_user', stepID: 'msg_plan', cancellationGeneration: 0, state: 'completed', ...fields });
+  const cases = [
+    [{ readManagedBarrier: async () => ({ state: 'awaiting_acknowledgement' }) }, 'barrier_pending'],
+    [{ readManagedState: async () => ({ tasks: [{ childSessionId: 'ses_child', status: 'running' }], envelopes: [] }) }, 'tasks_active'],
+    [{ readStatus: async () => ({ ses_plan: { type: 'busy' } }) }, 'sessions_busy'],
+    [{ activeLeases: async () => [{}] }, 'leases_active'],
+    [{ readPrimaryRecord: primary({ state: 'recovering' }) }, 'primary_busy'],
+    [{ readPrimaryRecord: primary({ recoveryID: 'recovery_1' }) }, 'primary_busy'],
+    [{ readPrimaryRecord: primary({ anchorID: 'msg_later' }) }, 'source_changed'],
+    [{ readPrimaryRecord: primary({ stepID: 'msg_later' }) }, 'source_changed'],
+    [{ readPrimaryRecord: primary({ state: 'superseded' }) }, 'superseded'],
+    [{ readPrimaryRecord: primary({ state: 'cancelled' }) }, 'cancelled'],
+    [{ readPrimaryRecord: primary({ state: 'needs_attention' }) }, 'needs_attention'],
+    [{ readStatus: async () => null }, 'invalid_state'],
+    [{ readPrimaryRecord: primary({ directory: '/elsewhere' }) }, 'invalid_state'],
+  ];
+  for (const [overrides, reason] of cases) {
+    const f = fixture(overrides);
+    await expect(f.verify(f.input)).rejects.toMatchObject({ code: 'plan_source_unsettled', statusCode: 409, reason });
+  }
+  let calls = 0;
+  const pinned = fixture({ readControllerPin: () => ({ instanceID: calls++ ? 'replacement' : 'original', configurationDigest: 'a'.repeat(64) }) });
+  await expect(pinned.verify(pinned.input)).rejects.toMatchObject({ reason: 'pin_changed' });
+});

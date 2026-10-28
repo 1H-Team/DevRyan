@@ -16,6 +16,15 @@ const revisionIdentity = (sourceMessageId: string) => ({
 });
 
 describe('getStatusRowPlanActionState', () => {
+  test('a save waiting for the run to settle says so, with the host\'s reason when it names one', () => {
+    const waiting = (waitingReason: string | null) => getStatusRowPlanActionState({ showTodos: true, isPlanAvailable: true,
+      record: { sourceMessageId: 'msg-1', path: null, revisionIdentity: null, status: 'saving', error: null, waitingFor: 'settlement', waitingReason } });
+    expect(waiting(null)).toEqual({ visible: true, enabled: false, disabledReason: 'Waiting for the run to settle…' });
+    expect(waiting('primary_busy')).toEqual({ visible: true, enabled: false, disabledReason: 'Waiting for the run to settle…' });
+    expect(waiting('tasks_active')).toEqual({ visible: true, enabled: false, disabledReason: 'Waiting for subagents to finish…' });
+    expect(waiting('leases_active')).toEqual({ visible: true, enabled: false, disabledReason: 'Waiting for running commands to finish…' });
+  });
+
   test('shows the composer action without tasks and enables it only after save or retry recovery', () => {
     expect(getStatusRowPlanActionState({
       showTodos: true,

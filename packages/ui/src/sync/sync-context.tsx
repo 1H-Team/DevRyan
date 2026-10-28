@@ -149,7 +149,8 @@ import { detectPlanCompletedCandidate } from "./plan-completion-detection"
 import { detectPlanImplementationRequestCandidate } from "./plan-implementation-detection"
 import { detectPlanProposedCandidate } from "./plan-proposed-detection"
 import { resolveEffectivePlanIndicatorState } from "./plan-indicator"
-import { persistSessionPlanRevision } from "@/lib/plans/sessionPlanPersistence"
+import { persistSessionPlanRevision, type PersistSessionPlanRevisionInput } from "@/lib/plans/sessionPlanPersistence"
+import { useSessionPlanFileStore } from "@/stores/useSessionPlanFileStore"
 import { resolveProjectForSessionDirectory } from "@/lib/projectResolution"
 import { isStrictlyOlderSession } from "./session-recency"
 import { mergeSessionPreservingMeaningfulTitle } from "../lib/sessionTitles"
@@ -1778,7 +1779,7 @@ async function detectAndMarkPlanLifecycle(
   )
   if (!project || typeof sessionCreated !== "number" || !sessionSlug) return
 
-  const savedPlan = await persistSessionPlanRevision({
+  await savePlanProposal(directory, {
     sessionId: sessionID,
     identity: {
       projectPath: project.path,
@@ -1787,10 +1788,64 @@ async function detectAndMarkPlanLifecycle(
       sourceMessageId: candidate.sourceMessageId,
     },
     markdown: candidate.markdown,
-  }, { validationAttempt: `${state.message[sessionID]?.at(-1)?.id ?? candidate.sourceMessageId}:${lastStatusEventAtBySessionKey.get(statusTrackingKey(directory, sessionID))?.revision ?? 0}` })
-  if (isCurrent() && savedPlan.status === 'saved' && savedPlan.sourceIdentity?.successful === true && savedPlan.sourceIdentity.current === true) {
-    sessionUI.markPlanProposed(sessionID, candidate.sourceMessageId)
+  }, `${state.message[sessionID]?.at(-1)?.id ?? candidate.sourceMessageId}:${lastStatusEventAtBySessionKey.get(statusTrackingKey(directory, sessionID))?.revision ?? 0}`, isCurrent)
+}
+
+// Saves a proposed plan; once its source is current and successful on the
+// server, the session shows it as proposed. A run that had not settled is
+// waited out (sessionPlanPersistence): the same save is repeated on idle,
+// status and managed-task changes and on its own schedule, 2 s doubling to
+// 30 s for about 3 minutes, after which it fails with Retry on the plan card.
+async function savePlanProposal(directory: string, input: PersistSessionPlanRevisionInput, validationAttempt: string,
+  isCurrent: () => boolean): Promise<void> {
+  const sessionID = input.sessionId, sourceMessageId = input.identity.sourceMessageId
+  const savedPlan = await persistSessionPlanRevision(input, { validationAttempt })
+  if (!isCurrent()) return
+  if (savedPlan.status === 'saving' && savedPlan.waitingFor === 'settlement') {
+    schedulePlanSettlementRetry(directory, input, validationAttempt)
+    return
   }
+  clearPlanSettlementRetry(sessionID, directory, sourceMessageId)
+  if (savedPlan.status === 'saved' && savedPlan.sourceIdentity?.successful === true && savedPlan.sourceIdentity.current === true) {
+    const { useSessionUIStore } = await import("./session-ui-store")
+    if (isCurrent()) useSessionUIStore.getState().markPlanProposed(sessionID, sourceMessageId)
+  }
+}
+
+const PLAN_SETTLEMENT_RETRY_MS = [2_000, 4_000, 8_000, 16_000, 30_000, 30_000, 30_000, 30_000, 30_000, 30_000]
+let planSettlementRetrySchedule: readonly number[] = PLAN_SETTLEMENT_RETRY_MS
+const planSettlementRetries = new Map<string, { attempt: number; timer: ReturnType<typeof setTimeout> | null }>()
+const planSettlementKey = (sessionID: string, directory: string, sourceMessageId: string) => `${directory}\u0000${sessionID}\u0000${sourceMessageId}`
+function clearPlanSettlementRetry(sessionID: string, directory: string, sourceMessageId: string): void {
+  const key = planSettlementKey(sessionID, directory, sourceMessageId), entry = planSettlementRetries.get(key)
+  if (entry?.timer) clearTimeout(entry.timer)
+  planSettlementRetries.delete(key)
+}
+function schedulePlanSettlementRetry(directory: string, input: PersistSessionPlanRevisionInput, validationAttempt: string): void {
+  const sessionID = input.sessionId, sourceMessageId = input.identity.sourceMessageId
+  const key = planSettlementKey(sessionID, directory, sourceMessageId)
+  const entry = planSettlementRetries.get(key) ?? { attempt: 0, timer: null }
+  if (entry.timer) return
+  if (entry.attempt >= planSettlementRetrySchedule.length) {
+    planSettlementRetries.delete(key)
+    useSessionPlanFileStore.getState().markError(sessionID, sourceMessageId, 'The run did not settle, so the plan was not saved.')
+    return
+  }
+  // Current while the session's plan record is still this source's.
+  const current = () => useSessionPlanFileStore.getState().recordsBySession[sessionID]?.sourceMessageId === sourceMessageId
+  entry.timer = setTimeout(() => {
+    entry.timer = null
+    entry.attempt += 1
+    if (!current()) { planSettlementRetries.delete(key); return }
+    void savePlanProposal(directory, input, validationAttempt, current).catch(() => undefined)
+  }, planSettlementRetrySchedule[entry.attempt])
+  planSettlementRetries.set(key, entry)
+}
+/** Tests only: replace the settlement retry schedule (and forget pending retries). */
+export function setPlanSettlementRetryScheduleForTest(schedule: readonly number[] | null): void {
+  for (const entry of planSettlementRetries.values()) if (entry.timer) clearTimeout(entry.timer)
+  planSettlementRetries.clear()
+  planSettlementRetrySchedule = schedule ?? PLAN_SETTLEMENT_RETRY_MS
 }
 
 export function setActiveSession(directory: string, sessionId: string) {

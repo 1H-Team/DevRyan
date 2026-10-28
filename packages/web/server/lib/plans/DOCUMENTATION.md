@@ -113,6 +113,11 @@ A current source also requires the native owner's controller/configuration pin,
 primary cancellation generation, idle status, empty execution leases and settled
 managed descendants/envelope barrier. Missing evidence fails closed. Historical
 owned revisions remain readable, but cannot authorize a new Implement action.
+An unsettled source answers 409 `plan_source_unsettled` with a closed `reason`
+(`native-plan-settlement.js`): `barrier_pending`, `tasks_active`,
+`sessions_busy`, `leases_active` and `primary_busy` are transient, and the client
+waits them out and retries; `source_changed`, `superseded`, `cancelled`,
+`needs_attention`, `pin_changed` and `invalid_state` are final.
 Creation stores canonical content; editor updates return the actual saved bytes.
 Observer failures after atomic publication do not turn a committed save into a
 refusal. Fresh Implement admission requires the exact saved SHA-256 version and
