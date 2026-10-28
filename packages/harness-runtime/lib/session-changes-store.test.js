@@ -187,10 +187,12 @@ for (const directTrees of ['1', '0']) test(`list pages written before a transact
       { alone: 'y'.repeat(300_000) }, { after: true }];
     const reference = await s.open();
     reference.set('meta.json', { version: 1 });
-    await reference.setList('lists/reference', values, { firstPage: 1 });
+    expect(await reference.setList('lists/reference', values, { firstPage: 1 }))
+      .toBe(values.reduce((sum, value) => sum + Buffer.byteLength(JSON.stringify(value)), 0));
     await reference.commit();
     const written = await s.open();
-    const oids = await written.writeList(values);
+    const { objects: oids, bytes } = await written.writeList(values);
+    expect(bytes).toBe(values.reduce((sum, value) => sum + Buffer.byteLength(JSON.stringify(value)), 0));
     // Nothing is staged until the ids are, so the objects alone change no state.
     expect(written.pendingCount).toBe(0);
     written.setListObjects('lists/staged', oids, { firstPage: 1 });

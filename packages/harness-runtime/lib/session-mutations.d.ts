@@ -187,6 +187,8 @@ export function createSessionMutationRuntime(options: {
   };
   /** Rows per install transaction (defaults 128 and, for a first build, 1024). Tests shrink them. */
   batching?: { install?: number; initialInstall?: number };
+  /** Document complexity guard bounds (positive integers, each warning at most its ceiling). */
+  complexity?: { warnEntries?: number; warnBytes?: number; ceilingEntries?: number; ceilingBytes?: number };
   onChange?(input: MutationPublication & { directory: string }): void | Promise<void>;
   onMaterialize?(row: { path: string; before: unknown; after: unknown }): void | Promise<void>;
   /** Background failures (ledger maintenance, input classification); codes only. */

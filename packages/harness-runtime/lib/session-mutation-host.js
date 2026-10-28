@@ -135,6 +135,7 @@ export function createSessionMutationHost(options = {}) {
       directory: options.directory,
       ...(options.maintenance ? { maintenance: options.maintenance } : {}),
       ...(options.batching ? { batching: options.batching } : {}),
+      ...(options.complexity ? { complexity: options.complexity } : {}),
       observers: Object.fromEntries(Object.entries(observers).map(([name, fn]) => [name, typeof fn === 'function'])),
     } });
     worker = current;

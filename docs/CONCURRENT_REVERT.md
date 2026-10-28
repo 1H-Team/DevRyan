@@ -187,9 +187,22 @@ The reduction runs off the lock in 5 ms slices, and only while no lock is held
 or queued and no view preparation or publication is in flight. The reduced
 document is rewritten fenced, under the owner lock, only while its subtree still
 matches the snapshot; a concurrently edited one waits for the next pass.
-`ancestry-compacted` is written in the ledger root once nothing remains.
+`ancestry-compacted` is written in the ledger root once nothing remains, and
+the rewrite updates the document's recorded complexity.
 `DEVRYAN_LEDGER_ANCESTRY_COMPACTION=0` stops further passes; compacted
-documents stay fenced and readable. Pinned lease trees keep their inline pages. After
+documents stay fenced and readable.
+
+Each publication records a document's run complexity (ancestry entries and run
+row bytes). Crossing 250,000 entries or 16 MiB is journaled once
+(`ledger_document_complexity`, `warning`). From 1,000,000 entries or 64 MiB on,
+the document's publications record whole content (`whole`): it loses per-hunk
+undo, and a concurrent edit to it conflicts instead of merging. The switch is
+decided before conflict detection, so the first whole publication is checked as
+whole and a stale view cannot overwrite a newer change. A whole revision keeps
+the document whole. The guard arms only once the ledger's ancestry compaction
+has finished (or compaction or maintenance is off), so closures an older host
+stored are reduced before they count. `DEVRYAN_LEDGER_COMPLEXITY_GUARD=0` stops
+new switches; it restores no granular history to a switched document. Pinned lease trees keep their inline pages. After
 packing loose objects, maintenance prunes unreachable ones older than two
 hours. Records themselves have no retention horizon: deleted text, deleted-file
 documents, operations, leases and calls stay, because any operation can be

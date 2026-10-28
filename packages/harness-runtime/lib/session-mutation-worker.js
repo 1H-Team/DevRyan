@@ -33,6 +33,7 @@ const runtime = createSessionMutationRuntime({
   synchronousWalks: true,
   ...(workerData.maintenance ? { maintenance: workerData.maintenance } : {}),
   ...(workerData.batching ? { batching: workerData.batching } : {}),
+  ...(workerData.complexity ? { complexity: workerData.complexity } : {}),
   ...(observers.onChange ? { onChange: (payload) => callHost({ observer: 'onChange' }, [payload]) } : {}),
   ...(observers.onMaterialize ? { onMaterialize: (row) => callHost({ observer: 'onMaterialize' }, [row]) } : {}),
   // Observers only: never awaited, as in the host.

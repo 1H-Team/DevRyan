@@ -123,6 +123,17 @@ const ANCESTRY_ENTRY_MIN_BYTES = 30;
 const ANCESTRY_READ_BYTES = 2 * 1024 * 1024;
 // A foreground step waits at most one slice of compaction work.
 const COMPACTION_SLICE_MS = 5;
+// A document whose stored runs reach a warning bound is journaled once; from a
+// ceiling on (ancestry entries or run page bytes) its publications record whole
+// content: no per-hunk undo, and concurrent edits to it conflict instead of
+// merging. The switch is decided before conflict detection, so the first whole
+// publication is checked as whole, and it persists: a whole revision keeps the
+// document whole. It arms once the ledger's ancestry compaction has finished
+// (or compaction is off), so closures an older host stored are reduced before
+// they count. Kill switch: DEVRYAN_LEDGER_COMPLEXITY_GUARD=0 stops new
+// switches; switched documents stay whole.
+const complexityGuard = () => process.env.DEVRYAN_LEDGER_COMPLEXITY_GUARD !== '0';
+const DOCUMENT_COMPLEXITY = Object.freeze({ warnEntries: 250_000, warnBytes: 16 * 1024 * 1024, ceilingEntries: 1_000_000, ceilingBytes: 64 * 1024 * 1024 });
 // The text of runs that are exactly a document's untouched baseline (stored
 // whole or in 32 KiB rows), or null.
 const baselineText = (runs, id) => {
@@ -239,7 +250,7 @@ const mapBounded = async (items, fn, limit = FILE_CONCURRENCY) => {
 // and stamp files with synchronous calls: on 13k files a stamp pass took
 // 49 ms instead of 311 ms through the thread pool. Chunks still yield between
 // each other. Kill switch, read per use: DEVRYAN_LEDGER_SYNC_WALKS=0.
-export function createSessionMutationRuntime({ directory: storage, onChange = () => {}, onMaterialize, onDiagnostic = () => {}, onLockTiming, maintenance: maintenanceOptions, batching = {}, windowsOwner, windowsLauncher, gitRunner, synchronousWalks = false } = {}) {
+export function createSessionMutationRuntime({ directory: storage, onChange = () => {}, onMaterialize, onDiagnostic = () => {}, onLockTiming, maintenance: maintenanceOptions, batching = {}, complexity = {}, windowsOwner, windowsLauncher, gitRunner, synchronousWalks = false } = {}) {
   const syncWalks = () => synchronousWalks === true && process.env.DEVRYAN_LEDGER_SYNC_WALKS !== '0';
   const listDirectory = (directory) => syncWalks() ? readdirSync(directory, { withFileTypes: true }) : fs.readdir(directory, { withFileTypes: true });
   const lstatEntry = (file) => {
@@ -254,6 +265,11 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
   // Ledger store Git I/O (tests count processes and commits through it).
   const storeOptions = gitRunner ? { gitRunner } : {};
   if (![installBatch, initialInstallBatch].every((value) => Number.isSafeInteger(value) && value > 0)) throw new TypeError('Install batch sizes must be positive integers');
+  const complexityLimits = { ...DOCUMENT_COMPLEXITY, ...complexity };
+  if (!Object.values(complexityLimits).every((value) => Number.isSafeInteger(value) && value > 0)
+    || complexityLimits.warnEntries > complexityLimits.ceilingEntries || complexityLimits.warnBytes > complexityLimits.ceilingBytes) {
+    throw new TypeError('Document complexity limits must be positive integers, each warning at most its ceiling');
+  }
   // Background failures outside any admission context (codes only).
   const diagnostic = (record) => { try { onDiagnostic(record); } catch { /* Observer only. */ } };
   // Every owner-lock acquisition, with or without an execution context:
@@ -629,6 +645,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       }
     }
   };
+  // Returns the stored complexity: ancestry entries and run row bytes.
   const saveRuns = async (repo, id, runs, prefix = 'runs', options) => {
     const baseline = baselineRefs() ? baselineText(runs, id) : null;
     if (baseline !== null) {
@@ -636,18 +653,28 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       const bytes = Buffer.from(baseline, 'latin1'), hash = await putBytes(repo, bytes);
       if (!options?.absent) for await (const { key: page } of repo.db.entries(`${prefix}/${id}`)) repo.db.remove(page);
       repo.db.set(`${prefix}/${id}/${BASELINE_PAGE}`, { baseline: hash, size: bytes.length });
-      return;
+      return { entries: 0, bytes: 0 };
     }
     if (!options?.absent) for await (const { key: page } of repo.db.entries(`${prefix}/${id}`)) repo.db.remove(page);
+    const entries = runs.reduce((sum, run) => sum + run.replaces.length, 0);
     // Only replacement ancestry differs between formats: runs that replace
     // nothing keep format 1 rows, which every host reads alike.
-    if (!runs.some((run) => run.replaces.length)) {
-      await repo.db.setList(`${prefix}/${id}`, formatOneRows(runs), { absent: true });
-      return;
-    }
+    if (!entries) return { entries, bytes: await repo.db.setList(`${prefix}/${id}`, formatOneRows(runs), { absent: true }) };
     repo.db.set(`${prefix}/${id}/${BASELINE_PAGE}`, ANCESTRY_FORMAT);
-    await repo.db.setList(`${prefix}/${id}`, encodeMutationRunRows(runs), { absent: true, firstPage: 1 });
+    return { entries, bytes: await repo.db.setList(`${prefix}/${id}`, encodeMutationRunRows(runs), { absent: true, firstPage: 1 }) };
   };
+  // Ledger roots whose ancestry compaction has finished (it stays finished).
+  const compactedRoots = new Set();
+  // Whether a publication to `doc` records whole content by the complexity guard.
+  const complexityWhole = async (repo, doc) => {
+    const stored = doc?.runsComplexity;
+    if (!complexityGuard() || !(stored?.entries >= complexityLimits.ceilingEntries || stored?.bytes >= complexityLimits.ceilingBytes)) return false;
+    if (compactedRoots.has(repo.root) || !ancestryCompaction() || process.env.DEVRYAN_LEDGER_PACK === '0') return true;
+    if (!await fs.access(path.join(repo.root, ANCESTRY_COMPACTED)).then(() => true, () => false)) return false;
+    compactedRoots.add(repo.root);
+    return true;
+  };
+  const overWarning = (stored) => stored?.entries >= complexityLimits.warnEntries || stored?.bytes >= complexityLimits.warnBytes;
   // Replaces inline baselines written before markers, in batches under the
   // owner lock. Candidates are read lock-free from one snapshot; a batch
   // rewrites a document only while its `runs/<id>` subtree is still that
@@ -792,7 +819,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         }
       };
       // Pages are written before the lock; the locked commit only records them.
-      const objects = await snapshot.db.writeList(encoded());
+      const { objects, bytes } = await snapshot.db.writeList(encoded());
       const prefix = `runs/${id}`;
       const written = await locked(meta.directory, async (repo) => {
         if (!repo || repo.root !== root) return false;
@@ -801,6 +828,9 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         for (const row of document.rows) repo.db.remove(row.key);
         repo.db.set(`${prefix}/${BASELINE_PAGE}`, ANCESTRY_FORMAT);
         repo.db.setListObjects(prefix, objects, { firstPage: 1 });
+        // A complexity recorded before the reduction would trip the guard.
+        const doc = await repo.db.get(key('files', id));
+        if (doc?.runsComplexity) repo.db.set(key('files', id), { ...doc, runsComplexity: { entries: reduction.after, bytes } });
         return true;
       }, { requireExisting: true, operation: 'ledger_compaction' });
       if (written) compacted += 1; else skipped += 1;
@@ -936,7 +966,9 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     }
     return result;
   };
-  const recordFile = async (repo, { doc, beforeRuns, baseEntry, basePath, entry, file, operation, disabled }) => {
+  // `wholeByComplexity`: the guard's decision, made before conflict detection
+  // by callers that check conflicts; others leave it to this function.
+  const recordFile = async (repo, { doc, beforeRuns, baseEntry, basePath, entry, file, operation, disabled, wholeByComplexity }) => {
     // A new document's id was just generated, so it has no stored revisions
     // or runs. Skip their listings: on a large ledger each one is a Git spawn,
     // about three per file in a first build.
@@ -947,6 +979,10 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       // Keep whole-content ancestry once a document crosses the threshold.
       // Earlier granular revisions retain their runs for old-reader Revert.
       let binary = entry.whole || entry.size > GRANULAR_TEXT_BYTES || revisions.some((revision) => revision.binary);
+      if (!binary && (wholeByComplexity ?? await complexityWhole(repo, doc))) {
+        binary = true;
+        diagnostic({ phase: 'ledger_document_complexity', state: 'whole', count: doc.runsComplexity.entries, bytes: doc.runsComplexity.bytes });
+      }
       const bytes = binary ? null : await bytesFor(repo, entry.hash);
       binary ||= entry.mode === '120000' || bytes.includes(0) || !isUtf8(bytes);
       if (!binary) {
@@ -954,7 +990,11 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         const runs = operation === null ? initialMutationRuns(bytes.toString('latin1'), `${doc.id}:baseline`)
           : applyMutationText(before, beforeRuns ?? visibleMutationRuns(before, disabled), bytes.toString('latin1'), operation.id);
         doc.runsUnfiltered = runs.every((run) => run.deletedBy.length === 0);
-        await saveRuns(repo, doc.id, runs, 'runs', { absent: fresh });
+        const previous = doc.runsComplexity;
+        doc.runsComplexity = await saveRuns(repo, doc.id, runs, 'runs', { absent: fresh });
+        if (overWarning(doc.runsComplexity) && !overWarning(previous)) {
+          diagnostic({ phase: 'ledger_document_complexity', state: 'warning', count: doc.runsComplexity.entries, bytes: doc.runsComplexity.bytes });
+        }
       }
       revisions.push({ owner: operation?.id ?? null, sequence: operation?.sequence ?? 0,
         ...(file !== (basePath ?? doc.published?.path) ? { path: file } : {}),
@@ -2449,11 +2489,11 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       const changed = new Map(), moved = new Set(), disabled = await inactive(repo), conflicts = [];
       // Read-only; the tree-identity cache applies only without pending writes.
       const published = repo.db.pendingCount === 0 ? await snapshotPaths(repo) : await activePaths(repo);
-      const conflict = async (file, from, entry, doc) => {
+      const conflict = async (file, from, entry, doc, wholeByComplexity = false) => {
         const before = from?.entry ?? null, current = doc?.published?.deleted ? null : doc?.published ?? null;
         const changesContent = (before?.hash ?? null) !== (entry?.hash ?? null);
         const changesMode = permissions(before) !== permissions(entry);
-        const whole = entry?.whole || before?.whole || (doc && (await revisionsFor(repo, doc.id)).some((revision) => revision.binary));
+        const whole = entry?.whole || before?.whole || wholeByComplexity || (doc && (await revisionsFor(repo, doc.id)).some((revision) => revision.binary));
         const sourceMoved = from && from.path !== file && current?.path !== from.path;
         const destination = published.get(file)?.published;
         const destinationTaken = from && from.path !== file && destination && destination.path !== current?.path;
@@ -2474,9 +2514,12 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         if (from?.path === file && equal(from.entry, entry) || !from && !entry) continue;
         if (!entry) continue;
         const doc = from ? await repo.db.get(key('files', from.documentID)) : null;
-        if (await conflict(file, from, entry, doc ?? published.get(file))) continue;
+        // Decided once, before conflict detection: a document's first whole
+        // publication is checked as whole, so a stale view cannot overwrite.
+        const wholeByComplexity = await complexityWhole(repo, doc ?? published.get(file));
+        if (await conflict(file, from, entry, doc ?? published.get(file), wholeByComplexity)) continue;
         const updated = await recordFile(repo, { doc, entry, file, operation, disabled, baseEntry: from?.entry, basePath: from?.path,
-          beforeRuns: from ? await baseRuns(repo, from.documentID) : [] });
+          beforeRuns: from ? await baseRuns(repo, from.documentID) : [], wholeByComplexity: doc ? wholeByComplexity : false });
         changed.set(updated.id, updated);
       }
       for (const [file, from] of base) {
