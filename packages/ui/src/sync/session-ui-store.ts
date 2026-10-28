@@ -57,6 +57,7 @@ import { isUserVisibleSessionRecord } from "@/lib/sessionVisibility"
 import { assertPdfAttachmentsSupported } from "@/lib/attachments/attachmentCapabilities"
 import {
   hasExplicitDraftModelIntent,
+  normalizeNewChatSendConfig,
   normalizeSendConfigModelProvenance,
   resolveDraftSendSelection,
   resolveSessionSendConfig,
@@ -1533,7 +1534,11 @@ export const restoreLiveConfigForSelectedDraft = (draftId: string, getState: () 
     draftAgentModelSelection,
     draftAgentModelVariant,
     draftSendConfig,
+    agentModelSelections: configState.agentModelSelections,
   })
+  // Restore the effort the composer shows, named, as a send would capture it.
+  const restoredVariant = normalizeNewChatSendConfig({ providerID: draftSelection.providerID, modelID: draftSelection.modelID,
+    variant: draftSelection.variant }, (configState.providers ?? []) as SendConfigProvider[]).variant
 
   if (!draftSelection.agent && !draftSelection.providerID) {
     useConfigStore.getState().applyDefaultsToCurrent({
@@ -1558,7 +1563,7 @@ export const restoreLiveConfigForSelectedDraft = (draftId: string, getState: () 
   }
 
   if (draftSelection.providerID && draftSelection.modelID && draftModelAuthoritative) {
-    configState.setProviderModel(draftSelection.providerID, draftSelection.modelID, draftSelection.variant)
+    configState.setProviderModel(draftSelection.providerID, draftSelection.modelID, restoredVariant)
     selectionState.saveDraftModelSelection(draftId, draftSelection.providerID, draftSelection.modelID)
     if (draftSelection.agent) {
       selectionState.saveDraftAgentModelForSelection(
@@ -1572,7 +1577,7 @@ export const restoreLiveConfigForSelectedDraft = (draftId: string, getState: () 
         draftSelection.agent,
         draftSelection.providerID,
         draftSelection.modelID,
-        draftSelection.variant,
+        restoredVariant,
       )
     }
   }
@@ -2563,11 +2568,15 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         currentProviderID: configState.currentProviderId, currentModelID: configState.currentModelId,
         currentVariant: configState.currentVariant, draftAgentSelection, draftModelSelection,
         draftAgentModelSelection, draftAgentModelVariant, draftSendConfig,
+        agentModelSelections: configState.agentModelSelections,
       })
       const effectiveDraftAgent = draftSelection.agent
       const effectiveProviderID = draftSelection.providerID
       const effectiveModelID = draftSelection.modelID
-      const effectiveVariant = draftSelection.variant
+      // The wire carries the effort the composer showed: an unset variant is
+      // the provider's default thinking variant, named (send-config.ts).
+      const effectiveVariant = normalizeNewChatSendConfig({ providerID: effectiveProviderID, modelID: effectiveModelID,
+        variant: draftSelection.variant }, (configState.providers ?? []) as SendConfigProvider[]).variant
       if (!effectiveProviderID || !effectiveModelID) throw new Error('Cannot send message: provider or model not selected')
       creationAttempt = beginCreationAttempt({ draftId: capturedDraftId ?? draftAbortKey,
         directory: draftDirectoryOverride, text: submittedDraftText, attachments: submittedAttachments,

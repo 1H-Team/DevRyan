@@ -14,6 +14,7 @@ import {
   getPlanSendPlanMode,
   getPlanSendVisiblePromptId,
   resolvePlanImplementationAgent,
+  resolvePlanImplementationVariant,
 } from '@/components/views/planSend';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useSelectionStore } from '@/sync/selection-store';
@@ -329,12 +330,12 @@ const PlanCard: React.FC<PlanCardProps> = ({
       useSelectionStore.getState().setPlanModeSelection(sessionId, false);
       useSessionUIStore.getState().markPlanImplementationRequested(implementationKey);
       useSessionUIStore.getState().markPlanImplementing(sessionId, sourceMessageId);
-      const variant = selection.getAgentModelVariantForSession(
-        sessionId,
-        agent,
-        modelSel.providerId,
-        modelSel.modelId,
-      );
+      const variant = resolvePlanImplementationVariant({
+        savedVariant: selection.getAgentModelVariantForSession(sessionId, agent, modelSel.providerId, modelSel.modelId),
+        providerId: modelSel.providerId,
+        modelId: modelSel.modelId,
+        providers: configState.providers ?? [],
+      });
 
       await useSessionUIStore.getState().sendMessageToSession(
         sessionId,

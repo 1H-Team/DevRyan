@@ -6,6 +6,7 @@ import {
   type AgentSelectionOption,
 } from '@/lib/agentSelection';
 import { buildPlanImplementationRequestMarker } from '@/lib/messages/actionablePlan';
+import { normalizeNewChatSendConfig, type SendConfigProvider } from '@/sync/send-config';
 
 export type PlanSendAction = 'improve' | 'implement';
 
@@ -26,6 +27,21 @@ const cleanAgentName = (value: string | null | undefined): string | undefined =>
  * that resolves to `plan` (or, when the catalog is known, to a non-selectable
  * agent) is skipped.
  */
+// The effort an implementation sends: the saved choice for its agent and
+// model, else that model's default thinking effort, named, as the composer
+// shows it. A bare null would reach the wire as the provider default.
+export const resolvePlanImplementationVariant = ({
+  savedVariant,
+  providerId,
+  modelId,
+  providers,
+}: {
+  savedVariant?: string | null;
+  providerId: string;
+  modelId: string;
+  providers: readonly SendConfigProvider[];
+}): string | null => normalizeNewChatSendConfig({ providerID: providerId, modelID: modelId, variant: savedVariant }, [...providers]).variant ?? null;
+
 export const resolvePlanImplementationAgent = ({
   sessionAgent,
   draftAgent,

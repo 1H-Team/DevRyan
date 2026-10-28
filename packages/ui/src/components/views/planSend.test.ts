@@ -5,6 +5,7 @@ import {
   buildPlanSendPromptVariables,
   getPlanSendPlanMode,
   resolvePlanImplementationAgent,
+  resolvePlanImplementationVariant,
 } from './planSend';
 import { parsePlanImplementationRequestPart } from '@/lib/messages/actionablePlan';
 import type { Part } from '@opencode-ai/sdk/v2/client';
@@ -152,5 +153,20 @@ describe('resolvePlanImplementationAgent', () => {
     expect(resolvePlanImplementationAgent({ sessionAgent: '  custom-agent ', agents: [] })).toBe('custom-agent');
     expect(resolvePlanImplementationAgent({ agents: [] })).toBe(DEFAULT_PLAN_IMPLEMENTATION_AGENT);
     expect(resolvePlanImplementationAgent({})).toBe(DEFAULT_PLAN_IMPLEMENTATION_AGENT);
+  });
+});
+
+describe('resolvePlanImplementationVariant', () => {
+  const providers = [{ id: 'openai', models: [{ id: 'gpt', variants: { low: {}, medium: {}, high: {} } }] }];
+  test('names the default thinking effort the composer shows when none was saved', () => {
+    for (const savedVariant of [undefined, null]) {
+      expect(resolvePlanImplementationVariant({ savedVariant, providerId: 'openai', modelId: 'gpt', providers })).toBe('medium');
+    }
+  });
+  test('keeps a saved effort', () => {
+    expect(resolvePlanImplementationVariant({ savedVariant: 'high', providerId: 'openai', modelId: 'gpt', providers })).toBe('high');
+  });
+  test('leaves a model without thinking efforts on its default', () => {
+    expect(resolvePlanImplementationVariant({ savedVariant: null, providerId: 'openai', modelId: 'other', providers })).toBeNull();
   });
 });

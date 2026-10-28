@@ -1247,6 +1247,32 @@ describe("session-ui-store send routing", () => {
     ])
   })
 
+  test("activating a draft restores the effort the composer shows, named", async () => {
+    mockConfigState = {
+      currentProviderId: "openai",
+      currentModelId: "gpt-5.6",
+      settingsDefaultAgent: "builder",
+      agents: [{ name: "builder", mode: "primary" }],
+      providers: [{ id: "openai", models: [{ id: "gpt-5.6", variants: { low: {}, medium: {}, high: {} } }] }],
+      activateDirectory: mock(() => Promise.resolve()),
+    }
+    const sendConfig = { providerID: "openai", modelID: "gpt-5.6", agent: "builder", variant: null, modelProvenance: "explicit" as const }
+    useSessionUIStore.setState({
+      currentSessionId: null,
+      currentDraftId: "draft-effort",
+      draftsById: { "draft-effort": { id: "draft-effort", text: "hello", createdAt: 1, updatedAt: 1, selectedProjectId: null,
+        directoryOverride: "/repo", parentID: null, sendConfig } },
+      draftOrder: ["draft-effort"],
+      newSessionDraft: { open: true, id: "draft-effort", directoryOverride: "/repo", parentID: null, sendConfig },
+    })
+
+    useSessionUIStore.getState().selectNewSessionDraft("draft-effort")
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(configSetProviderModelCalls).toEqual([{ providerId: "openai", modelId: "gpt-5.6", variant: "medium" }])
+  })
+
   test("opening an explicitly configured draft preserves its selected model", async () => {
     useSessionUIStore.getState().openNewSessionDraft({
       directoryOverride: "/repo",
@@ -2419,6 +2445,33 @@ describe("session-ui-store send routing", () => {
     expect(sendMessageCalls[0]?.modelID).toBe("composer-2.5")
     expect(sendMessageCalls[0]?.agent).toBe("builder")
     expect(sendMessageCalls[0]?.variant).toBe("high")
+  })
+
+  test("a new draft send carries the effort the composer shows, and saves it for the agent", async () => {
+    mockCreatedSession = { id: "session-created", directory: "/repo" }
+    mockConfigState = {
+      currentProviderId: "openai",
+      currentModelId: "gpt-5.6",
+      currentVariant: undefined,
+      currentAgentName: "builder",
+      agents: [{ name: "builder", mode: "primary" }],
+      // The composer shows this model's default thinking effort: medium.
+      providers: [{ id: "openai", models: [{ id: "gpt-5.6", variants: { low: {}, medium: {}, high: {} } }] }],
+    }
+    useSessionUIStore.setState({
+      currentSessionId: null,
+      currentDraftId: "draft-effort",
+      draftsById: {
+        "draft-effort": { id: "draft-effort", text: "start", createdAt: 1, updatedAt: 1, directoryOverride: "/repo", parentID: null },
+      },
+      draftOrder: ["draft-effort"],
+      newSessionDraft: { open: true, id: "draft-effort", directoryOverride: "/repo", parentID: null },
+    })
+
+    await useSessionUIStore.getState().sendMessage("start", "openai", "gpt-5.6", "builder")
+
+    expect(sendMessageCalls[0]?.variant).toBe("medium")
+    expect(savedAgentVariants).toContainEqual({ sessionId: "session-created", agent: "builder", providerID: "openai", modelID: "gpt-5.6", variant: "medium" })
   })
 
   test("new draft sends expose a pending abort target before prompt acceptance", async () => {
