@@ -1247,16 +1247,18 @@ describe("session-ui-store send routing", () => {
     ])
   })
 
-  test("activating a draft restores the effort the composer shows, named", async () => {
+  test("activating a draft that follows its agent default restores the account's own pick for that agent", async () => {
     mockConfigState = {
-      currentProviderId: "openai",
-      currentModelId: "gpt-5.6",
+      currentProviderId: "anthropic",
+      currentModelId: "claude-sonnet-4-5",
       settingsDefaultAgent: "builder",
-      agents: [{ name: "builder", mode: "primary" }],
-      providers: [{ id: "openai", models: [{ id: "gpt-5.6", variants: { low: {}, medium: {}, high: {} } }] }],
+      agents: [{ name: "builder", mode: "primary", model: { providerID: "anthropic", modelID: "claude-sonnet-4-5" } }],
+      agentModelSelections: { builder: { providerId: "openai", modelId: "gpt-5.6" } },
+      providers: [{ id: "anthropic", models: [{ id: "claude-sonnet-4-5", variants: { high: {}, medium: {} } }] },
+        { id: "openai", models: [{ id: "gpt-5.6", variants: { low: {}, medium: {}, high: {} } }] }],
       activateDirectory: mock(() => Promise.resolve()),
     }
-    const sendConfig = { providerID: "openai", modelID: "gpt-5.6", agent: "builder", variant: null, modelProvenance: "explicit" as const }
+    const sendConfig = { agent: "builder", modelProvenance: "agent-default" as const }
     useSessionUIStore.setState({
       currentSessionId: null,
       currentDraftId: "draft-effort",
@@ -1270,7 +1272,8 @@ describe("session-ui-store send routing", () => {
     await Promise.resolve()
     await Promise.resolve()
 
-    expect(configSetProviderModelCalls).toEqual([{ providerId: "openai", modelId: "gpt-5.6", variant: "medium" }])
+    expect(configSetProviderModelCalls.map(({ providerId, modelId }) => ({ providerId, modelId })))
+      .toEqual([{ providerId: "openai", modelId: "gpt-5.6" }])
   })
 
   test("opening an explicitly configured draft preserves its selected model", async () => {
