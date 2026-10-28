@@ -11,7 +11,7 @@ import { Cause, Context, Deferred, Effect, Exit, Layer, Queue, Schema, Sink, Str
 import { systemError } from 'effect/PlatformError';
 import { make as makeSpawner, makeHandle, ProcessId, ExitCode } from 'effect/process/ChildProcessSpawner';
 import type { NativeAdmissionBridge, ExecuteOwned, OwnedToolInvocation } from './native-admission-contract.js';
-import { ExecutionBatch, PlanReadAdvisory, StartResult } from './worker-protocol.js';
+import { ExecutionBatch, PlanReadAdvisory, StartResult, modelFacingRefusal } from './worker-protocol.js';
 import type { ExecutionRpc, ExecutionSpecification } from './worker-protocol.js';
 import { createNativeReadGuard } from './execution-read-guard.js';
 import { HostRefusal, refuseHost } from './host-refusal.js';
@@ -94,7 +94,9 @@ export function createExecutionRouting(options: { readonly rpc: ExecutionRpc; re
     : Effect.succeed(false);
   const handles = new Map<string, { cancel: () => Promise<void>; done: Promise<unknown> }>();
   const shellHandles = new Map<string, string>();
-  type ShellSettlement = { state: 'pending' } | { state: 'uncertain'; code: string }
+  // `refused`: the host refused to start the command with guidance for the
+  // model, which the native shell tool would replace with its generic text.
+  type ShellSettlement = { state: 'pending' } | { state: 'uncertain'; code: string } | { state: 'refused'; code: string; message: string }
     | { state: 'settled'; ok: boolean; receipt?: typeof import('./worker-protocol.js').TerminationReceipt.Type;
       publication?: { readonly outcome: 'complete' | 'partial'; readonly conflicts: readonly string[]; readonly ignoredInputs?: readonly string[] }; error?: string;
       artifacts?: { readonly directory: string; readonly truncated?: boolean;
@@ -239,6 +241,7 @@ export function createExecutionRouting(options: { readonly rpc: ExecutionRpc; re
           if (result.metadata?.status === 'running' && settlement?.state === 'pending') return Effect.succeed(result);
           if (!settlement || settlement.state === 'pending') return Effect.fail(new Tool.Error({ message: 'native_execution_result_missing', metadata: { output: result.content } }));
           if (settlement.state === 'uncertain') return Effect.fail(new Tool.Error({ message: settlement.code, metadata: { output: result.content, termination: 'uncertain' } }));
+          if (settlement.state === 'refused') return Effect.fail(new Tool.Error({ message: settlement.message, metadata: { code: settlement.code } }));
           const receipt = settlement.receipt;
           if (!settlement.ok || !receipt?.terminated || !receipt.confined || receipt.cancelled) {
             // OpenCode's own timer stopped the command: it marks its result
@@ -265,6 +268,9 @@ export function createExecutionRouting(options: { readonly rpc: ExecutionRpc; re
           const content = notice ? withNotice(notice) : result.content;
           return Effect.succeed({ ...result, content, metadata: { ...result.metadata, exitCode: receipt.exitCode, publication: settlement.publication,
             ...(settlement.artifacts ? { artifacts: settlement.artifacts } : {}) } });
+        }), Effect.mapError(error => {
+          const settlement = shellSettlements.get(key);
+          return settlement?.state === 'refused' ? new Tool.Error({ message: settlement.message, metadata: { code: settlement.code } }) : error;
         }), Effect.ensuring(Effect.sync(() => { shellSettlements.delete(key); })));
     }
     if (invocation.toolID === 'skill') return Effect.fail(new Tool.Error({ message: 'native_skill_asset_authority_required' }));
@@ -354,7 +360,10 @@ export function createExecutionRouting(options: { readonly rpc: ExecutionRpc; re
           return yield* Effect.fail(platformFailure(new Error('native_spawn_specification_mismatch')));
         yield* ticket.invocation.recheckPermit();
         const handle = yield* start(ticket.invocation, { kind: readOnly ? 'read' : 'shell', command: command.command,
-          args: [...command.args], env, cwd: command.options.cwd });
+          args: [...command.args], env, cwd: command.options.cwd }).pipe(Effect.tapDefect(defect => Effect.sync(() => {
+          const refusal = modelFacingRefusal(defect), key = callKey(ticket.invocation);
+          if (!readOnly && refusal && shellSettlements.has(key)) shellSettlements.set(key, { state: 'refused', ...refusal });
+        })));
         if (!readOnly) shellHandles.set(callKey(ticket.invocation), handle);
         const output = yield* Queue.bounded<Uint8Array, Cause.Done | ReturnType<typeof platformFailure>>(256);
         // ripgrep's --json stdout is parsed line by line, so its diagnostics must stay on stderr.

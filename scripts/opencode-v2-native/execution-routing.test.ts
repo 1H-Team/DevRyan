@@ -10,7 +10,7 @@ import { LayerNode } from '@opencode/util/effect/layer-node';
 import { ChildProcess } from 'effect/process';
 import { createControllerHelper } from '../../packages/web/server/lib/opencode/runtime-host/controller-processes.ts';
 import { createExecutionRouting } from '../../packages/web/server/lib/opencode/runtime-host/execution-routing.ts';
-import { WorkerInput, WorkerEvent, ExecutionBatch } from '../../packages/web/server/lib/opencode/runtime-host/worker-protocol.ts';
+import { WorkerInput, WorkerEvent, ExecutionBatch, modelFacingRefusal } from '../../packages/web/server/lib/opencode/runtime-host/worker-protocol.ts';
 import { rebaseWriterInput } from '../../packages/web/server/lib/opencode/runtime-host/writer-worker.ts';
 import type { NativeAdmissionBridge, OwnedToolInvocation, ShellJobRegistration } from '../../packages/web/server/lib/opencode/runtime-host/native-admission-contract.ts';
 import { nativeVcsGitFlags } from '../../packages/web/server/lib/opencode/execution-helper-policy.js';
@@ -527,6 +527,48 @@ if (process.env.DEVRYAN_SHELL_FIXTURE === '1') for (const scenario of [
       if (scenario.artifacts) expect(String(result.content)).toContain('Artifacts in /project/.artifacts/devryan/ses/call: report.html.');
       registered();
     }
+  } finally { await routing.close(); await fs.rm(project, { recursive: true, force: true }); }
+});
+
+test('only listed host refusals keep their message for the model', () => {
+  const refusal = (code: string, message: string) => Object.assign(new Error(message), { code });
+  expect(modelFacingRefusal(refusal('preview_stale', 'preview_stale: the server on port 8090 shows old code')))
+    .toEqual({ code: 'preview_stale', message: 'preview_stale: the server on port 8090 shows old code' });
+  expect(modelFacingRefusal({ code: 'native_shell_background_unavailable', message: 'run it in one foreground call' })).toMatchObject({ code: 'native_shell_background_unavailable' });
+  expect(modelFacingRefusal(refusal('mutation_runtime_unavailable', '/private/path detail'))).toBeUndefined();
+  expect(modelFacingRefusal(refusal('preview_stale', 'x'.repeat(2049)))).toBeUndefined();
+  expect(modelFacingRefusal({ code: 'preview_stale', message: '' })).toBeUndefined();
+  expect(modelFacingRefusal('preview_stale')).toBeUndefined();
+});
+
+// The native shell tool replaces any failure with `Unable to execute command`;
+// a host refusal with guidance must reach the model instead.
+if (process.env.DEVRYAN_SHELL_FIXTURE === '1') test('real native shell retains host settlement: a refusal at start keeps its guidance', async () => {
+  const project = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-shell-refusal-')));
+  const guidance = 'preview_stale: the server on port 8090 was started by call call_a and shows old code. Stop it, then start the server and run the check in one foreground call.';
+  let reads = 0;
+  const routing = createExecutionRouting({ directory: project, bridge, rpc: async (method) => {
+    if (method.endsWith('.start')) throw Object.assign(new Error(guidance), { code: 'preview_stale' });
+    if (method.endsWith('.read')) reads++;
+    return {};
+  } });
+  try {
+    const location = Schema.decodeUnknownSync(Location.Info)({ directory: project, project: { id: 'global', directory: project, canonical: project } });
+    const layer = LayerNode.compile(Shell.node, { replacements: [...routing.overrides, Location.node.replace(Layer.succeed(Location.Service, location))] });
+    const call = { ...invocation('shell'), location, input: { command: 'curl http://localhost:8090' },
+      executeNative: () => Effect.gen(function* () {
+        const shell = yield* Shell.Service;
+        const started = yield* shell.create({ command: 'curl http://localhost:8090', shell: '/bin/sh', cwd: project });
+        return { content: (yield* shell.result(started)).capture?.output ?? '' };
+      }).pipe(Effect.provide(layer), Effect.mapError(() => new Tool.Error({ message: 'Unable to execute command: curl http://localhost:8090' }))) };
+    const error = await Effect.runPromise(Effect.flip(routing.executeOwned(call)));
+    expect(error.message).toBe(guidance);
+    expect(error.metadata).toEqual({ code: 'preview_stale' });
+    expect(reads).toBe(0);
+    // Any other failure keeps the tool's own text.
+    const plain = await Effect.runPromise(Effect.flip(routing.executeOwned({ ...call,
+      executeNative: () => Effect.fail(new Tool.Error({ message: 'Unable to execute command: ls' })) })));
+    expect(plain.message).toBe('Unable to execute command: ls');
   } finally { await routing.close(); await fs.rm(project, { recursive: true, force: true }); }
 });
 

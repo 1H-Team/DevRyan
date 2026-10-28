@@ -47,6 +47,18 @@ const PermissionAssertInput = Schema.Struct({
 });
 export const NativeResult = Schema.Struct({ output: Schema.optional(Schema.Unknown),
   content: Schema.optional(Schema.Union([Schema.String, Schema.Array(Tool.Content)])), metadata: Schema.optional(Metadata) });
+// Host refusals whose message is guidance for the model: a server that shows
+// old code, a background shell in a delegated task, verification before an
+// edit is published. The controller keeps their message; any other host error
+// reaches it as its code only.
+export const MODEL_FACING_REFUSALS: ReadonlySet<string> = new Set(['preview_stale', 'native_shell_background_unavailable',
+  'native_verification_publication_pending']);
+export const modelFacingRefusal = (error: unknown): { readonly code: string; readonly message: string } | undefined => {
+  if (error === null || typeof error !== 'object') return undefined;
+  const code: unknown = Reflect.get(error, 'code'), message: unknown = Reflect.get(error, 'message');
+  return typeof code === 'string' && MODEL_FACING_REFUSALS.has(code) && typeof message === 'string' && message.length > 0 && message.length <= 2048
+    ? { code, message } : undefined;
+};
 export const WorkerError = Schema.Struct({ message: Schema.String, code: Schema.optional(Schema.String), metadata: Schema.optional(Metadata),
   error: Schema.optional(Schema.Unknown) });
 export const WorkerEvent = Schema.Union([
