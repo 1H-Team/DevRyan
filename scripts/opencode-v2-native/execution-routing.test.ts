@@ -12,7 +12,7 @@ import { createControllerHelper } from '../../packages/web/server/lib/opencode/r
 import { createExecutionRouting } from '../../packages/web/server/lib/opencode/runtime-host/execution-routing.ts';
 import { WorkerInput, WorkerEvent, ExecutionBatch } from '../../packages/web/server/lib/opencode/runtime-host/worker-protocol.ts';
 import { rebaseWriterInput } from '../../packages/web/server/lib/opencode/runtime-host/writer-worker.ts';
-import type { NativeAdmissionBridge, OwnedToolInvocation } from '../../packages/web/server/lib/opencode/runtime-host/native-admission-contract.ts';
+import type { NativeAdmissionBridge, OwnedToolInvocation, ShellJobRegistration } from '../../packages/web/server/lib/opencode/runtime-host/native-admission-contract.ts';
 import { nativeVcsGitFlags } from '../../packages/web/server/lib/opencode/execution-helper-policy.js';
 import { runWithHostRefusal } from '../../packages/web/server/lib/opencode/runtime-host/host-refusal.ts';
 import fs from 'node:fs/promises';
@@ -400,6 +400,17 @@ test('native shell rejects a zero timeout before native execution or transport a
   } finally { await routing.close(); }
 });
 
+test('native shell rejects a timeout above the watchdog ceiling with a units hint', async () => {
+  let executions = 0, requests = 0;
+  const routing = createExecutionRouting({ directory: '/fixture/project', bridge, rpc: async () => { requests++; return {}; } });
+  const call = { ...invocation('shell'), input: { command: 'pwd', timeout: 3_600_001 },
+    executeNative: () => { executions++; return Effect.succeed({ content: 'must not execute' }); } };
+  try {
+    await expect(Effect.runPromise(routing.executeOwned(call))).rejects.toThrow(/native_shell_timeout_invalid: timeout is in milliseconds, from 1 to 3600000/);
+    expect(executions).toBe(0); expect(requests).toBe(0);
+  } finally { await routing.close(); }
+});
+
 test('the actual native ripgrep consumer accepts a bounded match without end or summary records', async () => {
   const project = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-grep-parser-')));
   const line = JSON.stringify({ type: 'match', data: { path: { text: 'one.txt' }, lines: { text: 'needle\n' },
@@ -448,16 +459,26 @@ if (process.env.DEVRYAN_SHELL_FIXTURE === '1') for (const scenario of [
   { name: 'partial publication', receipt: { terminated: true, confined: true, cancelled: false, exitCode: 0 }, ok: true, output: 'done', partial: true },
   { name: 'missing publication', receipt: { terminated: true, confined: true, cancelled: false, exitCode: 0 }, ok: true, output: 'done', missingPublication: true, error: 'native_publication_result_missing' },
   { name: 'uncertain termination', output: 'partial output', uncertain: true, error: 'mutation_termination_unconfirmed' },
-]) test(`real native shell retains host settlement: ${scenario.name}`, async () => {
+  { name: 'deadline cancellation', receipt: { terminated: true, confined: true, cancelled: true, exitCode: 137 }, ok: false, output: '',
+    timeout: 900_000, eventError: { message: 'command_deadline_exceeded', code: 'command_deadline_exceeded',
+      metadata: { source: 'registered', effectiveTimeoutMs: 900_000, requestedTimeoutMs: 900_000, graceMs: 30_000 } },
+    error: 'command_deadline_exceeded: DevRyan stopped this command 30 s after its 900000 ms timeout. Use a larger timeout (at most 3600000 ms) or split the work.' },
+  { name: 'native timeout', receipt: { terminated: true, confined: true, cancelled: true, exitCode: 137 }, ok: false, output: 'partial output',
+    nativeTimeout: true },
+] as { name: string; receipt?: { terminated: boolean; confined: boolean; cancelled: boolean; exitCode: number }; ok?: boolean; output: string;
+  error?: string; partial?: boolean; missingPublication?: boolean; uncertain?: boolean; timeout?: number;
+  eventError?: { message: string; code?: string; metadata?: Record<string, unknown> }; nativeTimeout?: boolean }[]) test(`real native shell retains host settlement: ${scenario.name}`, async () => {
   const project = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-shell-settlement-')));
-  const routing = createExecutionRouting({ directory: project, bridge, rpc: async (method, params) => {
+  const registrations: ShellJobRegistration[] = [];
+  const routing = createExecutionRouting({ directory: project, bridge: { ...bridge, registerShellJob: async (input: ShellJobRegistration) => {
+    registrations.push(input); } }, rpc: async (method, params) => {
     if (method.endsWith('.start')) return { handle: 'shell-handle' };
     if (method.endsWith('.read') && params.cursor === 0) {
       const events: unknown[] = [{ cursor: 1, type: 'started', pid: 42 }];
       if (scenario.output) events.push({ cursor: 2, type: 'output', stream: 'stdout', data: Buffer.from(scenario.output).toString('base64') });
       const cursor = events.length + 1;
       events.push(scenario.uncertain ? { cursor, type: 'uncertain', error: { code: scenario.error } }
-        : { cursor, type: 'settled', ok: scenario.ok, receipt: scenario.receipt, ...(scenario.ok && !scenario.missingPublication ? { publication: scenario.partial ? { outcome: 'partial', conflicts: ['conflict.txt'] } : { outcome: 'complete', conflicts: [] } } : {}), ...(scenario.error ? { error: { message: scenario.error } } : {}) });
+        : { cursor, type: 'settled', ok: scenario.ok, receipt: scenario.receipt, ...(scenario.ok && !scenario.missingPublication ? { publication: scenario.partial ? { outcome: 'partial', conflicts: ['conflict.txt'] } : { outcome: 'complete', conflicts: [] } } : {}), ...(scenario.eventError ? { error: scenario.eventError } : scenario.error ? { error: { message: scenario.error } } : {}) });
       return { cursor, done: true, events };
     }
     if (method.endsWith('.read')) return { cursor: params.cursor, done: true, events: [] };
@@ -466,13 +487,26 @@ if (process.env.DEVRYAN_SHELL_FIXTURE === '1') for (const scenario of [
   try {
     const location = Schema.decodeUnknownSync(Location.Info)({ directory: project, project: { id: 'global', directory: project, canonical: project } });
     const layer = LayerNode.compile(Shell.node, { replacements: [...routing.overrides, Location.node.replace(Layer.succeed(Location.Service, location))] });
-    const call = { ...invocation('shell'), location, input: { command: 'fixture' }, executeNative: () => Effect.gen(function* () {
-      const shell = yield* Shell.Service;
-      const started = yield* shell.create({ command: 'fixture', shell: '/bin/sh', cwd: project });
-      const result = yield* shell.result(started);
-      return { content: result.capture?.output ?? '', metadata: { status: 'completed' } };
-    }).pipe(Effect.provide(layer), Effect.mapError(error => new Tool.Error({ message: String(error) }))) };
-    if (scenario.error) {
+    const call = { ...invocation('shell'), location, input: { command: 'fixture', ...(scenario.timeout ? { timeout: scenario.timeout } : {}) },
+      executeNative: () => Effect.gen(function* () {
+        const shell = yield* Shell.Service;
+        const started = yield* shell.create({ command: 'fixture', shell: '/bin/sh', cwd: project, ...(scenario.timeout ? { timeout: scenario.timeout } : {}) });
+        const result = yield* shell.result(started);
+        return { content: result.capture?.output ?? '', metadata: { status: 'completed', ...(scenario.nativeTimeout ? { timeout: true } : {}) } };
+      }).pipe(Effect.provide(layer), Effect.mapError(error => new Tool.Error({ message: String(error) }))) };
+    const registered = () => {
+      if (scenario.uncertain) return;
+      expect(registrations).toHaveLength(1);
+      expect(typeof registrations[0]?.startedAt).toBe('number');
+      expect(registrations[0]?.effectiveTimeoutMs).toBe(scenario.timeout ?? 0);
+      expect(registrations[0]?.requestedTimeoutMs).toBe(scenario.timeout);
+    };
+    if (scenario.nativeTimeout) {
+      const result = await Effect.runPromise(routing.executeOwned(call));
+      expect(result.metadata?.timeout).toBe(true);
+      expect(String(result.content)).toContain('not published because it was stopped at its timeout');
+      registered();
+    } else if (scenario.error) {
       const error = await Effect.runPromise(Effect.flip(routing.executeOwned(call)));
       expect(error.message).toBe(scenario.error);
       if (scenario.output) expect(error.metadata?.output).toContain(scenario.output);
@@ -481,6 +515,7 @@ if (process.env.DEVRYAN_SHELL_FIXTURE === '1') for (const scenario of [
       expect(result.metadata?.exitCode).toBe(scenario.receipt?.exitCode);
       expect(result.metadata?.publication).toEqual(scenario.partial ? { outcome: 'partial', conflicts: ['conflict.txt'] } : { outcome: 'complete', conflicts: [] });
       if (scenario.partial) expect(result.content).toContain('conflict.txt');
+      registered();
     }
   } finally { await routing.close(); await fs.rm(project, { recursive: true, force: true }); }
 });

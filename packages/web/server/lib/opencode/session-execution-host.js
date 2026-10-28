@@ -382,6 +382,13 @@ export function createSessionExecutionHost(options) {
         || ['directory', 'sessionID', 'messageID', 'callID'].some(key => input[key] !== job.input[key])) throw failure('native_shell_job_identity_mismatch', 403);
       const binding = await runtime.bindNativeShellJob({ ...input, token: job.lease.token });
       job.bindingPending = false;
+      // The command-deadline watchdog learns the real start and the timeout the
+      // native shell enforces here, instead of inferring them from parts.
+      try {
+        void Promise.resolve(options.onShellJobBound?.({ directory: input.directory, sessionID: input.sessionID, messageID: input.messageID,
+          callID: input.callID, partID: job.partID, tool: job.tool, startedAt: input.startedAt, requestedTimeoutMs: input.requestedTimeoutMs,
+          effectiveTimeoutMs: input.effectiveTimeoutMs })).catch(() => {});
+      } catch { /* Observer only. */ }
       return binding;
     }
     if (input.action === 'direct-admit' || input.action === 'direct-finish') {
@@ -780,7 +787,9 @@ export function createSessionExecutionHost(options) {
           await runtime.cancelLease({ directory: input.directory, token: lease.token, ...(job.operatorStop ? { stoppedBy: 'operator' } : {}) });
           await recordCancelled(job.lease, toV1ToolName(input.tool)); if (shellLike) await settleRequiredCheck(); await cleanup(job.lease);
           try { nativeOptions.onOutcome?.({ ...job.lease.scope, token: lease.token, state: 'cancelled' }); } catch { /* Observer only. */ }
-          nativeEvent(job, { type: 'settled', ok: false, receipt, error: job.result?.error ?? { message: job.failure?.message ?? (receipt.cancelled ? 'execution_cancelled' : !receipt.confined ? 'mutation_termination_unconfirmed' : 'native_execution_failed') } }, true);
+          nativeEvent(job, { type: 'settled', ok: false, receipt, error: job.result?.error ?? (job.failure
+            ? { message: job.failure.message, ...(job.failure.code ? { code: job.failure.code } : {}), ...(job.failure.metadata ? { metadata: job.failure.metadata } : {}) }
+            : { message: receipt.cancelled ? 'execution_cancelled' : !receipt.confined ? 'mutation_termination_unconfirmed' : 'native_execution_failed' }) }, true);
           return;
         }
         await nativeRecheck({ ...input, phase: 'publication', token: lease.token }); // Exact lease authority survives a background Tool return.
@@ -1301,7 +1310,17 @@ export function createSessionExecutionHost(options) {
     return { lease, receipt };
   };
   // Constructor-owned watchdog only; never exposed through the tool RPC.
-  const cancelOwnedCommand = async ({ directory, fingerprint }, { signal } = {}) => {
+  // The command-deadline watchdog's cancellation (command-deadline.js). An
+  // exited command that is still publishing is never aborted: the watchdog
+  // re-checks it (`'publishing'`). Only a live, not yet aborted job takes the
+  // deadline label; an operator stop or removal already under way keeps its own.
+  const deadlineMetadata = (timing) => Object.fromEntries(['source', 'startedAt', 'deadlineAt', 'watchdogAt', 'effectiveTimeoutMs',
+    'requestedTimeoutMs', 'graceMs', 'elapsedMs'].flatMap((name) => {
+    const value = timing?.[name];
+    if (name === 'source') return ['registered', 'observed', 'legacy'].includes(value) ? [[name, value]] : [];
+    return Number.isSafeInteger(value) && value >= 0 ? [[name, value]] : [];
+  }));
+  const cancelOwnedCommand = async ({ directory, fingerprint, reason, timing }, { signal } = {}) => {
     signal?.throwIfAborted();
     if (typeof directory !== 'string' || !path.isAbsolute(directory) || !fingerprint
       || !['bash', 'shell'].includes(fingerprint.tool)
@@ -1313,7 +1332,12 @@ export function createSessionExecutionHost(options) {
       && ['sessionID', 'messageID', 'callID'].every(key => job.input[key] === fingerprint[key]));
     if (matches.length !== 1) return false;
     const job = matches[0];
-    job.controller.abort(failure('command_deadline_exceeded'));
+    if (job.terminationReceipt) return 'publishing';
+    if (!job.controller.signal.aborted) {
+      job.failure ??= Object.assign(failure('command_deadline_exceeded'),
+        { metadata: reason === 'command_deadline_exceeded' ? deadlineMetadata(timing) : {} });
+      job.controller.abort(job.failure);
+    }
     await new Promise((resolve, reject) => {
       const aborted = () => reject(signal.reason);
       signal?.addEventListener('abort', aborted, { once: true });

@@ -29,6 +29,12 @@ export interface ShellJobRegistration {
   readonly messageID: string;
   readonly callID: string;
   readonly tool: 'shell';
+  /** The native shell job's start time, for the command-deadline watchdog. */
+  readonly startedAt?: number;
+  /** The timeout the model requested, when it requested one. */
+  readonly requestedTimeoutMs?: number;
+  /** The timeout the native shell enforces; 0 for a background job. */
+  readonly effectiveTimeoutMs?: number;
 }
 export interface NativeAdmissionBridge {
   readonly queuedAdmissionRejected?: (permit:OperationPermit,messageID:string)=>Promise<void>;

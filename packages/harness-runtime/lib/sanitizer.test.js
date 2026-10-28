@@ -332,6 +332,20 @@ test('retains provider transport failure records with their target host only', (
   expect(sanitizer.sanitizeExportValue(record).payload).toEqual(payload);
 });
 
+test('retains command deadline timing and host stall bounds, and drops negative values', () => {
+  const sanitizer = createDiagnosticSanitizer();
+  const payload = { type: 'command_deadline_exceeded', callID: 'call_1', tool: 'bash', source: 'registered', startedAt: 1_000,
+    deadlineAt: 901_000, watchdogAt: 931_000, requestedTimeoutMs: 900_000, effectiveTimeoutMs: 900_000, graceMs: 30_000, elapsedMs: 930_500 };
+  const record = sanitizer.sanitizeRecord({ type: 'lifecycle', at: 7, event: 'command_deadline_exceeded', sessionID: 'ses_1', payload });
+  expect(record.payload).toEqual(payload);
+  const stall = sanitizer.sanitizeRecord({ type: 'lifecycle', at: 8, event: 'host_stall', sessionID: null,
+    payload: { elapsedMs: 20_231, startedAt: 1_000, finishedAt: 21_231 } });
+  expect(stall.payload).toEqual({ elapsedMs: 20_231, startedAt: 1_000, finishedAt: 21_231 });
+  const negative = sanitizer.sanitizeRecord({ type: 'lifecycle', at: 9, event: 'command_deadline_started', sessionID: 'ses_1',
+    payload: { deadlineAt: -1, graceMs: 30_000 } });
+  expect(negative.payload).toEqual({ graceMs: 30_000 });
+});
+
 
 test('Claude process receipt fields are bounded and scoped to their exact lifecycle event',()=>{
  const sanitizer=createDiagnosticSanitizer();

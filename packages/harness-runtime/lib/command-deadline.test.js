@@ -128,6 +128,9 @@ describe('command deadline controller', () => {
     await fixture.controller.reconcile();
     expect(cancelled).toEqual([{ directory: '/repo', fingerprint: {
       sessionID: 'ses_1', messageID: 'msg_1', partID: 'part_1', callID: 'call_1', tool: 'bash',
+    }, reason: 'command_deadline_exceeded', timing: {
+      source: 'observed', startedAt: 1_000, deadlineAt: 2_000, watchdogAt: 2_000, effectiveTimeoutMs: 1_000,
+      graceMs: 0, requestedTimeoutMs: 1_000, elapsedMs: 1_000,
     } }]);
     expect(fixture.calls.abort).toBe(0);
     expect(fixture.calls.restart).toBe(0);
@@ -289,5 +292,160 @@ describe('command deadline controller', () => {
     expect(fixture.calls.abort).toBe(0);
     expect(store.records.size).toBe(0);
     expect(fixture.controller.getStatus().recoveredCount).toBe(1);
+  });
+});
+
+const FINGERPRINT = { sessionID: 'ses_1', messageID: 'msg_1', partID: 'part_1', callID: 'call_1', tool: 'bash' };
+const pendingPart = () => runningPart({ state: { status: 'pending', input: {}, raw: '' } });
+const longRunningPart = (timeout = 900_000) => runningPart({
+  state: { status: 'running', input: { command: 'npm test', timeout }, time: { start: 1_000 } },
+});
+const incidentTypes = (fixture) => fixture.calls.incidents.map((incident) => incident.type);
+
+describe('command deadline binding', () => {
+  test('arms from the running input, never from the streaming placeholder', async () => {
+    const cancelled = [];
+    const fixture = controllerFixture({
+      fetched: [message(longRunningPart())],
+      options: { cancelCommand: async (input) => { cancelled.push(input); return true; } },
+    });
+    await fixture.controller.observe(partEvent(pendingPart()), '/repo');
+    expect(fixture.controller.getStatus()).toMatchObject({ activeCount: 0, candidateCount: 1 });
+    expect(fixture.store.records.size).toBe(0);
+    await fixture.controller.observe(partEvent(longRunningPart()), '/repo');
+    expect([...fixture.store.records.values()][0]).toMatchObject({
+      source: 'observed', phase: 'active', deadlineAt: 901_000, requestedTimeoutMs: 900_000, effectiveTimeoutMs: 900_000,
+    });
+    fixture.clock.set(271_000);
+    await fixture.controller.reconcile();
+    expect(cancelled).toHaveLength(0);
+    expect(fixture.calls.abort).toBe(0);
+  });
+
+  test('discovers a running call whose running update was never observed', async () => {
+    const cancelled = [];
+    const fixture = controllerFixture({
+      fetched: [message(longRunningPart())],
+      options: { discoveryDelayMs: 5_000, cancelCommand: async (input) => { cancelled.push(input); return true; } },
+    });
+    await fixture.controller.observe(partEvent(pendingPart()), '/repo');
+    fixture.clock.set(6_000);
+    await fixture.controller.reconcile();
+    expect([...fixture.store.records.values()][0]).toMatchObject({ phase: 'active', deadlineAt: 901_000, requestedTimeoutMs: 900_000 });
+    expect(fixture.calls.incidents.find((incident) => incident.type === 'command_deadline_started'))
+      .toMatchObject({ reason: 'discovered', deadlineAt: 901_000, effectiveTimeoutMs: 900_000 });
+    fixture.clock.set(271_000);
+    await fixture.controller.reconcile();
+    expect(cancelled).toHaveLength(0);
+  });
+
+  test('keeps re-checking a still-pending candidate with backoff and expires it', async () => {
+    const fixture = controllerFixture({
+      fetched: [message(pendingPart())],
+      options: { discoveryDelayMs: 1_000, discoveryMaxDelayMs: 4_000, candidateMaxAgeMs: 20_000 },
+    });
+    await fixture.controller.observe(partEvent(pendingPart()), '/repo');
+    fixture.clock.set(2_000);
+    await fixture.controller.reconcile();
+    expect(fixture.controller.getStatus().candidateCount).toBe(1);
+    fixture.clock.set(25_000);
+    await fixture.controller.reconcile();
+    expect(fixture.controller.getStatus().candidateCount).toBe(0);
+    expect(fixture.calls.incidents.at(-1)).toMatchObject({ type: 'command_deadline_cleared', reason: 'candidate_expired' });
+    expect(fixture.calls.abort).toBe(0);
+  });
+
+  test('registration is authoritative and needs no part events at all', async () => {
+    const cancelled = [];
+    const fixture = controllerFixture({
+      fetched: [message(longRunningPart(1_000))],
+      options: { cancelCommand: async (input) => { cancelled.push(input); return true; } },
+    });
+    await fixture.controller.register({ fingerprint: FINGERPRINT, directory: '/repo', startedAt: 1_000,
+      requestedTimeoutMs: 900_000, effectiveTimeoutMs: 900_000 });
+    expect([...fixture.store.records.values()][0]).toMatchObject({ source: 'registered', deadlineAt: 901_000 });
+    await fixture.controller.observe(partEvent(longRunningPart(1_000)), '/repo');
+    expect([...fixture.store.records.values()][0]).toMatchObject({ source: 'registered', deadlineAt: 901_000 });
+    fixture.clock.set(271_000);
+    await fixture.controller.reconcile();
+    expect(cancelled).toHaveLength(0);
+    fixture.clock.set(901_000);
+    await fixture.controller.reconcile();
+    expect(cancelled).toHaveLength(1);
+    expect(cancelled[0].timing).toMatchObject({ source: 'registered', effectiveTimeoutMs: 900_000, requestedTimeoutMs: 900_000 });
+  });
+
+  test('a registration without a native timeout is never watched', async () => {
+    const fixture = controllerFixture();
+    await fixture.controller.observe(partEvent(pendingPart()), '/repo');
+    expect(await fixture.controller.register({ fingerprint: FINGERPRINT, directory: '/repo', startedAt: 1_000,
+      effectiveTimeoutMs: 0 })).toBe(false);
+    await fixture.controller.observe(partEvent(longRunningPart()), '/repo');
+    expect(fixture.controller.getStatus()).toMatchObject({ activeCount: 0, candidateCount: 0 });
+  });
+
+  test('revalidates a legacy 240 s record against the authoritative part before cancelling', async () => {
+    const legacy = validateCommandDeadlineRecord({ fingerprint: FINGERPRINT, directory: '/repo', startedAt: 1_000,
+      deadlineAt: 241_000, phase: 'active', abortRequestedAt: null });
+    expect(legacy).toMatchObject({ version: 2, source: 'legacy', effectiveTimeoutMs: 240_000 });
+    const cancelled = [];
+    const fixture = controllerFixture({
+      store: createMemoryStore([{ key: 'persisted', record: legacy }]),
+      clock: createFakeClock(300_000),
+      fetched: [message(longRunningPart())],
+      options: { cancelCommand: async (input) => { cancelled.push(input); return true; } },
+    });
+    await fixture.controller.initialize();
+    await fixture.controller.reconcile();
+    expect(cancelled).toHaveLength(0);
+    expect(fixture.store.records.get('persisted')).toMatchObject({ source: 'observed', deadlineAt: 901_000 });
+    expect(incidentTypes(fixture)).toContain('command_deadline_rebound');
+  });
+
+  test('journals the deadline before cancelling, so a terminal race is recovered, not cleared', async () => {
+    let controller = null;
+    const fixture = controllerFixture({
+      fetched: [message(), message(terminalPart('error'))],
+      options: {
+        cancelCommand: async () => {
+          await controller.observe(partEvent(terminalPart('error')), '/repo');
+          return true;
+        },
+      },
+    });
+    controller = fixture.controller;
+    await fixture.controller.observe(partEvent(), '/repo');
+    fixture.clock.set(2_000);
+    await fixture.controller.reconcile();
+    expect(incidentTypes(fixture)).toEqual(['command_deadline_started', 'command_deadline_exceeded', 'command_deadline_recovered']);
+    expect(fixture.calls.incidents[1]).toMatchObject({ deadlineAt: 2_000, effectiveTimeoutMs: 1_000, elapsedMs: 1_000 });
+    expect(fixture.calls.incidents[2]).toMatchObject({ reason: 'terminal_event' });
+    expect(fixture.calls.abort).toBe(0);
+  });
+
+  test('never aborts while an exited command is still publishing, and records the intent once across restart', async () => {
+    const store = createMemoryStore();
+    const first = controllerFixture({ store, options: { publishingRecheckMs: 30_000, cancelCommand: async () => 'publishing' } });
+    await first.controller.observe(partEvent(), '/repo');
+    first.clock.set(2_000);
+    await first.controller.reconcile();
+    expect(first.calls.abort).toBe(0);
+    expect(incidentTypes(first)).toEqual(['command_deadline_started', 'command_deadline_exceeded', 'command_deadline_publishing']);
+    expect([...store.records.values()][0]).toMatchObject({ phase: 'recovering', abortRequestedAt: null, nextCheckAt: 32_000 });
+
+    const restarted = controllerFixture({ store, clock: createFakeClock(40_000), fetched: [message(), message(terminalPart())],
+      options: { cancelCommand: async () => true } });
+    await restarted.controller.initialize();
+    await restarted.controller.reconcile();
+    expect(incidentTypes(restarted)).not.toContain('command_deadline_exceeded');
+    expect(restarted.calls.abort).toBe(0);
+    expect(store.records.size).toBe(0);
+  });
+
+  test('clamps timeouts above the maximum instead of shortening them to the default', async () => {
+    const fixture = controllerFixture();
+    await fixture.controller.observe(partEvent(longRunningPart(7_200_000)), '/repo');
+    expect([...fixture.store.records.values()][0]).toMatchObject({ requestedTimeoutMs: 7_200_000, effectiveTimeoutMs: 3_600_000,
+      deadlineAt: 3_601_000 });
   });
 });

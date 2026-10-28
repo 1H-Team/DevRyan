@@ -47,7 +47,8 @@ const PermissionAssertInput = Schema.Struct({
 });
 export const NativeResult = Schema.Struct({ output: Schema.optional(Schema.Unknown),
   content: Schema.optional(Schema.Union([Schema.String, Schema.Array(Tool.Content)])), metadata: Schema.optional(Metadata) });
-export const WorkerError = Schema.Struct({ message: Schema.String, metadata: Schema.optional(Metadata), error: Schema.optional(Schema.Unknown) });
+export const WorkerError = Schema.Struct({ message: Schema.String, code: Schema.optional(Schema.String), metadata: Schema.optional(Metadata),
+  error: Schema.optional(Schema.Unknown) });
 export const WorkerEvent = Schema.Union([
   BrowserOperation,
   Schema.Struct({type:Schema.Literal('image-generation'),id:Schema.String}),

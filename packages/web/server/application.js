@@ -800,6 +800,7 @@ async function constructWebHost(options = {}) {
   // boot progress on the native startup splash.
   let onOpenCodeStartupStatus = null;
   let observeCommandDeadline = () => false;
+  let registerCommandDeadline = () => false;
   let uiAuthController = null;
   let activeTunnelController = null;
   let globalWatcherStartPromise = null;
@@ -1678,7 +1679,7 @@ async function constructWebHost(options = {}) {
   harnessRuntime.setSessionChangeHost(sessionChangeHost);
   const sessionExecutionHost = createSessionExecutionHost({
     ...privatePersistence, assertExecutionReady: executionReadiness.assertReady, dataDirectory: DEVRYAN_DATA_DIR, activityGate: sessionActivityGate,
-    openCodeClient,
+    openCodeClient, onShellJobBound: (input) => registerCommandDeadline(input),
     getLauncher: () => nativeBundle?.artifacts.launcher ?? executionArtifacts().launcher, buildOpenCodeUrl, getOpenCodeAuthHeaders,
     ...(nativeBundle ? { nativeExecution: {
       conversation: createNativeRevertConversation({ openCodeClient, clientDeps: openCodeClientDeps,
@@ -1745,6 +1746,7 @@ async function constructWebHost(options = {}) {
       waitMs: timing.waitMs, holdMs: timing.holdMs, failed: timing.failed }),
   });
   observeCommandDeadline = (payload, directory) => commandDeadlineRuntime.observe(payload, directory);
+  registerCommandDeadline = (input) => commandDeadlineRuntime.registerShellJob(input);
   if (selectedRuntimeBundle && (ENV_SKIP_OPENCODE_START || ENV_CONFIGURED_OPENCODE_HOST)) {
     throw new Error('Selected runtime bundles require their owned controller');
   }
@@ -1806,7 +1808,7 @@ async function constructWebHost(options = {}) {
   // else in the journal would: record every stall of 2 s or more.
   const observeHostStall = (stall) => {
     if (stall.ms < 2_000) return;
-    try { harnessRuntime.record({ type: 'lifecycle', event: 'host_stall', sessionID: null, payload: { ms: stall.ms, from: stall.from, to: stall.to } }); }
+    try { harnessRuntime.record({ type: 'lifecycle', event: 'host_stall', sessionID: null, payload: { elapsedMs: stall.ms, startedAt: stall.from, finishedAt: stall.to } }); }
     catch { /* Observer only. */ }
   };
   const canForceConfigRestart = (principal) => (

@@ -1419,6 +1419,19 @@ ignored-output grants. On macOS its lease is reserved with
 (`view_files`, `view_git`, `view_inputs`), the command runs from the live
 project directory, and publication is always empty. Linux keeps the private
 read-only view. `DEVRYAN_READ_ONLY_SHELL_LIVE=0` restores the view on macOS.
+Shell-job binding also carries the job's start (`info.time.started`), the
+requested timeout and the timeout the native shell arms (`final.timeout` inside
+the `Shell.create` callback: the foreground default when none was requested,
+0 for a background job) through `registerShellJob` and `bind-shell-job`; the
+execution host registers the command deadline from them (`onShellJobBound`).
+Routing refuses `timeout` above 3600000 (milliseconds) with
+`native_shell_timeout_invalid`. A deadline cancellation reaches the model as
+`command_deadline_exceeded` with the enforced and requested timeouts
+(`WorkerError.code`/`metadata`), never as a bare `execution_cancelled`; a job
+that already exited and is still publishing is never aborted. When the native
+shell's own timer stopped the command (OpenCode marks its result `timeout: true`
+before it kills), the call returns that result with a notice that its changes
+were not published.
 Stop, publication and cleanup remain owned by the execution host. A background
 shell completion whose lease a user Stop cancelled (`stoppedBy: 'operator'`) is
 admitted and delivered, but `native-admission-owner.js` neither wakes the
