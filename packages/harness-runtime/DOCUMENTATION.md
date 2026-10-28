@@ -512,7 +512,12 @@ entry, re-synced from the project listing at each preparation, with `.vite`,
 while dependencies, the overlay, and the project's own caches stay read-only
 (`DEVRYAN_MODULE_CACHE_OVERLAY=0` restores the direct link). Walks yield between tree levels and batches;
 diffs and hunk bookkeeping have fixed work budgets past which they emit exact
-but coarser replacements. The background first build (`warm`) is a single
+but coarser replacements. `scripts/perf/mutation-ancestry-replay.mjs` replays
+overlapping rewrites of one large file through `applyMutationText` and reports
+per-edit apply and row encode/decode times and run/ancestry growth, with the
+source, runtime, machine and fixture identity; `--runtime` runs a frozen
+baseline against a candidate, and `--max-apply-ms`/`--max-pages-mib` make it a
+gate. The background first build (`warm`) is a single
 budgeted pass that real calls never treat as their observation. Every 32 rows
 under the ledger lock it checks for a queued call; when one waits, it commits
 what it installed and carries the rest to its next batch, so a new worktree's
