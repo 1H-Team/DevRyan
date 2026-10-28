@@ -99,6 +99,18 @@ test('runtime limits reach the worker', async (t) => {
   assert.ok(records.some((record) => record.phase === 'ledger_document_complexity' && record.state === 'warning' && record.count >= 1));
 });
 
+test('stalls of the worker thread reach the host observer', async (t) => {
+  const fixture = await project(40);
+  t.after(fixture.remove);
+  const stalls = [];
+  // Any tick 1 ms late is a stall here; the shared clock waits for 1 s.
+  const host = createSessionMutationHost({ directory: fixture.storage, stallClock: { tickMs: 5, stallMs: 1 }, onWorkerStall: (stall) => stalls.push(stall) });
+  t.after(() => host.close());
+  await exercise(host, fixture.directory);
+  assert.ok(stalls.length > 0);
+  for (const stall of stalls) assert.ok(Number.isFinite(stall.ms) && stall.ms >= 1 && stall.to > stall.from, JSON.stringify(stall));
+});
+
 test('caller cancellation stops a remote preparation and the next call prepares normally', async (t) => {
   const fixture = await project(400);
   t.after(fixture.remove);

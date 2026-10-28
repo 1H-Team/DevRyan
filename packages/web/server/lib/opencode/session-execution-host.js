@@ -112,7 +112,9 @@ export function createSessionExecutionHost(options) {
     // Ledger maintenance and input-classification failures reach the journal.
     onDiagnostic: (record) => { try { options.onDiagnostic?.({ event: 'session_execution', ...record }); } catch { /* Observer only. */ } },
     // Every ledger lock's wait and hold time (turn timing; observer only).
-    onLockTiming: (timing) => { try { options.onLockTiming?.(timing); } catch { /* Observer only. */ } } });
+    onLockTiming: (timing) => { try { options.onLockTiming?.(timing); } catch { /* Observer only. */ } },
+    // Stalls of the ledger worker's own event loop (observer only).
+    onWorkerStall: (stall) => { try { options.onWorkerStall?.(stall); } catch { /* Observer only. */ } } });
   const generation = () => resolveOpenCodeGeneration(options.openCodeClient);
   const requestSignal = () => AbortSignal.any([AbortSignal.timeout(30_000), ...(executionSignal() ? [executionSignal()] : [])]);
   // Gen 2 reads keep the gen-1 failure codes.
