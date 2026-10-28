@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { executionSocketDirectory, NODE_SPAWN_PRELOAD, ownedPrivateDirectory, prepareSessionExecution, removeExecutionSocketDirectory,
+import { EXECUTION_VIEW_ENV, executionSocketDirectory, executionViewMarker, NODE_SPAWN_PRELOAD, ownedPrivateDirectory, prepareSessionExecution, removeExecutionSocketDirectory,
   sessionExecutionProfile, windowsSessionExecutionProfile, parseWindowsExecutionProcessIdentity, readSessionExecutionReceipt, sweepExecutionSocketDirectories, sweepSessionTemporaryDirectories, startReadOnlySessionExecution, verifySessionExecutionLauncher } from './session-execution.js';
 
 const roots = [], leases = [];
@@ -69,6 +69,18 @@ test('all confined workers use their scratch home and temporary paths, including
   expect(prepared.environment).toMatchObject({ DEVRYAN_EXECUTION_WORKER: '1', HOME: prepared.scratchDirectory,
     TMPDIR: prepared.scratchDirectory, TMP: prepared.scratchDirectory, TEMP: prepared.scratchDirectory,
     TMPPREFIX: path.join(prepared.scratchDirectory, 'zsh') });
+});
+
+test('every execution names its lease with a marker that does not reveal the token', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-execution-marker-')); roots.push(root);
+  const viewDirectory = path.join(root, 'view'); await fs.mkdir(viewDirectory);
+  const lease = { viewDirectory, token: 'lease_token_secret' }; leases.push(lease);
+  const prepared = await prepareSessionExecution({ launcher: path.join(root, 'launcher'), lease });
+  expect(prepared.environment[EXECUTION_VIEW_ENV]).toBe(executionViewMarker('lease_token_secret'));
+  expect(executionViewMarker('lease_token_secret')).toMatch(/^[a-f0-9]{16}$/);
+  expect(executionViewMarker('lease_token_other')).not.toBe(executionViewMarker('lease_token_secret'));
+  expect(JSON.stringify(prepared.environment)).not.toContain('lease_token_secret');
+  expect((await prepareTracked(root, viewDirectory)).environment[EXECUTION_VIEW_ENV]).toBeUndefined();
 });
 
 test('each session gets one durable temporary directory in the execution cache that survives its calls', async () => {

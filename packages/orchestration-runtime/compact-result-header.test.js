@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { createCompactResultHeader } from './compact-result-header.js';
-import { decodeRequiredCheckVerification, projectRequiredCheckCompletion, projectRequiredCheckEvidence, selectRequiredCheckTasks, validateRequiredCheckReceipts, validateRequiredChecks } from './required-checks.js';
+import { decodeRequiredCheckVerification, projectRequiredCheckCompletion, projectRequiredCheckEvidence, selectRequiredCheckTasks, validateRequiredCheckReceipts, validateRequiredChecks, visualCheckPassed } from './required-checks.js';
 
 const task = { taskId: 'dvr_task_header', rootSessionId: 'ses_root', status: 'completed', failureReason: null };
 const checks = [{ name: 'unit', status: 'passed' }];
@@ -69,6 +69,18 @@ describe('typed required verification completion', () => {
     for (const visual of [{ ...check.visual, assertions: [] }, { ...check.visual, state: 'empty' }, { ...check.visual, reportPath: '../report.json' }]) {
       expect(() => validateRequiredChecks([{ ...check, visual }])).toThrow();
     }
+  });
+  test('a visual pass needs the servers the check named to serve current files', () => {
+    const check = { name: 'visual', command: 'bun run visual', paths: ['src.js'], kind: 'visual', visual: { state: 'populated', dataSource: 'fixture', assertions: ['rows visible'], reportPath: 'visual.json' } };
+    const visual = { state: 'populated', dataSource: 'fixture', reportHash: 'c'.repeat(64), assertions: [{ name: 'rows visible', status: 'passed' }],
+      evidence: [{ path: 'screen.png', sha256: 'd'.repeat(64) }] };
+    expect(visualCheckPassed(check, visual)).toBe(true);
+    expect(visualCheckPassed(check, { ...visual, servedFreshness: 'fresh' })).toBe(true);
+    for (const servedFreshness of ['unknown', 'stale', 'guessed']) expect(visualCheckPassed(check, { ...visual, servedFreshness })).toBe(false);
+    const receipt = { name: 'visual', callId: 'call_1', messageId: 'msg_1', exitCode: 0, observedAt: 1, status: 'passed', contentHash: 'a'.repeat(64) };
+    expect(validateRequiredCheckReceipts([{ ...receipt, visual: { ...visual, servedFreshness: 'fresh' } }], [check])).toHaveLength(1);
+    expect(() => validateRequiredCheckReceipts([{ ...receipt, visual: { ...visual, servedFreshness: 'unknown' } }], [check])).toThrow('Visual pass requires');
+    expect(validateRequiredCheckReceipts([{ ...receipt, status: 'blocked', visual: { ...visual, servedFreshness: 'unknown' } }], [check])).toHaveLength(1);
   });
   test('supersession preserves requirements and never treats abandonment or a new objective as a waiver', () => {
     const prior = { taskId: 'old', dispatchGroupId: 'objective', priorTaskId: null, requiredChecks: [{ name: 'unit', command: 'bun test', paths: ['src.js'] }] };

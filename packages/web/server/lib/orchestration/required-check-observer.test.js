@@ -4,7 +4,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createManagedTaskScheduler, decodeRequiredCheckVerification, projectRequiredCheckCompletion } from '@devryan/orchestration-runtime';
-import { createRequiredCheckObserver, diagnoseRequiredCheckEnvironment } from './required-check-observer.js';
+import { createRequiredCheckObserver, diagnoseRequiredCheckEnvironment, PREVIEW_FRESHNESS_HINT } from './required-check-observer.js';
 
 describe('canonical required checks against final content', () => {
   let directory, task, observer, input;
@@ -188,6 +188,29 @@ describe('canonical required checks against final content', () => {
     await fs.writeFile(path.join(directory, 'visual.json'), JSON.stringify({ ...report, dataSource: 'live' }));
     await check();
     expect((await observer.project(task))[0].status).toBe('blocked');
+  });
+  it('passes a visual check only when the servers it named served current files, and says why otherwise', async () => {
+    task.requiredChecks[0] = { ...task.requiredChecks[0], kind: 'visual', visual: {
+      state: 'populated', dataSource: 'fixture', assertions: ['populated rows visible'], reportPath: 'visual.json' } };
+    await fs.writeFile(path.join(directory, 'screen.png'), 'screenshot');
+    await fs.writeFile(path.join(directory, 'visual.json'), JSON.stringify({ state: 'populated', dataSource: 'fixture',
+      assertions: [{ name: 'populated rows visible', status: 'passed' }],
+      evidence: [{ path: 'screen.png', sha256: crypto.createHash('sha256').update('screenshot').digest('hex') }] }));
+    const observe = async (before, after) => {
+      await observer.before({ ...input, servedFreshness: before }); await observer.after({ ...input, exitCode: 0, servedFreshness: after });
+      return (await observer.project(task))[0];
+    };
+    expect(await observe('unknown', 'unknown')).toMatchObject({ status: 'blocked', reason: 'preview_freshness_unproven', hint: PREVIEW_FRESHNESS_HINT,
+      visual: { observation: { servedFreshness: 'unknown' } } });
+    // A server that fell behind while the check ran fails it too, and a later
+    // report cannot clear what the start of the check saw.
+    expect(await observe('fresh', 'stale')).toMatchObject({ status: 'blocked', reason: 'preview_freshness_unproven', visual: { observation: { servedFreshness: 'stale' } } });
+    expect(await observe('unknown', 'fresh')).toMatchObject({ status: 'blocked', reason: 'preview_freshness_unproven' });
+    expect(await observe('fresh', 'fresh')).toMatchObject({ status: 'passed', visual: { observation: { servedFreshness: 'fresh' } } });
+    // A check that named no server is unaffected, and unknown values are ignored.
+    const unnamed = await observe(undefined, 'guessed');
+    expect(unnamed.status).toBe('passed');
+    expect(unnamed.visual.observation.servedFreshness).toBeUndefined();
   });
   it('does not infer success from output prose, unmatched checks, tools, or missing hooks', async () => {
     await observer.after({ ...input, exitCode: 0 });

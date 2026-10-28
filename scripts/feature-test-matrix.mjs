@@ -1,5 +1,14 @@
 export const FEATURE_TEST_MATRIX = Object.freeze([
   {
+    id: 'served-freshness-for-verification',
+    sourcePaths: ['packages/web/server/lib/opencode/native-served-identity.js', 'packages/harness-runtime/lib/session-mutations.js',
+      'packages/web/server/lib/orchestration/required-check-observer.js'],
+    testPaths: ['packages/web/server/lib/opencode/native-served-identity.test.js',
+      'packages/harness-runtime/lib/session-mutations.view-freshness.test.js',
+      'packages/web/server/lib/opencode/session-execution-host.test.js',
+      'packages/web/server/lib/orchestration/required-check-observer.test.js'],
+  },
+  {
     id: 'agent-objective-verification-and-prerequisites',
     sourcePaths: ['packages/orchestration-runtime/task-prerequisites.js',
       'packages/web/server/lib/orchestration/task-prerequisites.js',

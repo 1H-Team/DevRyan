@@ -595,6 +595,10 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     return 'value' in result ? result.value : locked(requested, fn, { ...options, snapshotMiss: result.miss });
   };
   const next = (repo) => ++repo.meta.sequence;
+  // Counts commits that changed project files: publications, Revert and Redo
+  // (materialize) and reconciled outside edits. A process lease records it
+  // with the snapshot its view is copied from (viewFreshness).
+  const advanceFileEpoch = (repo) => { repo.meta.fileEpoch = (repo.meta.fileEpoch ?? 0) + 1; };
   // Parsed records keyed by the immutable subtree identity they were read
   // from, so an unchanged ledger is not re-read and re-parsed on every
   // transaction. Callers mutate records, so every answer is a private copy.
@@ -1122,6 +1126,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       changed.published = entry ? { ...entry, path: file, sequence: operation?.sequence ?? 0 } : null;
       repo.db.set(key('files', changed.id), changed);
       if (operation) { operation.files = [changed.id]; repo.db.set(key('operations', operation.id), operation); }
+      advanceFileEpoch(repo);
     }
     return { inputs: walk.inputs };
   };
@@ -1200,7 +1205,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
                 if (doc?.published && row.entry) { doc.published = { ...doc.published, ...row.entry }; repo.db.set(key('files', doc.id), doc); restamped += 1; }
                 continue;
               }
-              recorded += 1;
+              recorded += 1; advanceFileEpoch(repo);
               const operation = doc ? { id: randomUUID(), sequence: next(repo), active: true, origin: 'external', scope: null } : null;
               const changed = await recordFile(repo, { doc, entry: row.entry, file: row.file, operation, disabled });
               changed.published = row.entry ? { ...row.entry, path: row.file, sequence: operation?.sequence ?? 0 } : null;
@@ -1306,6 +1311,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       const id = randomUUID();
       await repo.db.setList(`materializations/${id}`, rows);
       repo.db.set('materialization.json', { id });
+      advanceFileEpoch(repo);
     }
     const files = rows.map((row) => ({ path: row.path, status: !row.before ? 'added' : !row.after ? 'deleted' : 'modified' }))
       .sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0);
@@ -2231,6 +2237,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         if (current?.state !== 'preparing') throw changeError('execution_cancelled');
         if (session?.generation !== lease.generation || session.pending) throw changeError('execution_reverted');
         lease.baseSequence = repo.meta.sequence;
+        lease.fileEpoch = repo.meta.fileEpoch ?? 0;
         // Classified from the project, never from the agent-editable view:
         // publication skips exactly these paths.
         lease.inputs = inputs;
@@ -3152,6 +3159,18 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     }
     repo.db.set(key('cancelled-calls', scopeKey), { sessionID: input.sessionID, messageID: input.messageID });
   }, { assertCurrent: input.guard?.assertCurrent });
+  // Whether a running process still sees the project's files. Its view was
+  // copied from the snapshot taken at preparation, so any later commit that
+  // changed project files leaves it serving old content; a read-only lease
+  // runs in the project itself. Unknown for a lease that is not running.
+  const viewFreshness = (input) => snapshotOrLocked(input.directory, async (repo) => {
+    const lease = typeof input.token === 'string' && input.token ? await repo.db.get(key('leases', input.token)) : null;
+    if (!lease || !['preparing', 'ready'].includes(lease.state)) return { state: 'unknown' };
+    if (lease.preparation === 'read-only') return { state: 'fresh', behind: 0 };
+    if (!Number.isSafeInteger(lease.fileEpoch)) return { state: 'unknown' };
+    const behind = Math.max(0, (repo.meta.fileEpoch ?? 0) - lease.fileEpoch);
+    return { state: behind ? 'stale' : 'fresh', behind };
+  });
   const activeLeases = (input) => locked(input.directory, async (repo) => {
     const entries = [];
     for await (const { value } of repo.db.entries('leases')) {
@@ -3185,7 +3204,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     bindNativeShellJob, nativeShellJob, bindNativeShellNotification, acknowledgeNativeShellCompletion,
     registerPrompt, reservePromptBoundary, pendingPromptBoundary, registerChild, prewarmView, reserve, prepare, warm, begin, admitDirect, finishDirect, claimLease, finish, cleanupLease, executionReceipt, aliasCalls, prepareRevert, prepareRedo, previewFileRestore, prepareFileRestore, settleRevert, leaseForCall,
     transaction, updateTransaction, pendingTransactions, capturedSessionState, restoreForeign, cancelLease, cancelUnstartedCall, activeLeases, pendingCleanup, executionOutcomes,
-    maintainLedger: ({ directory }) => resolveRepository(directory).then(({ directory: project }) => maintainLedger(rootFor(project))),
+    viewFreshness, maintainLedger: ({ directory }) => resolveRepository(directory).then(({ directory: project }) => maintainLedger(rootFor(project))),
     drain: () => Promise.allSettled([...preparations.values(), ...settlements.values(), ...queues.values(), ...retiring,
       ...[...maintenanceStates.values()].map((state) => state.running).filter(Boolean)]) };
   // Lock timings name the outermost runtime operation; nested calls keep it.

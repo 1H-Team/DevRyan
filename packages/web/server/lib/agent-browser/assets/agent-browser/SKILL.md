@@ -109,7 +109,9 @@ for one-call scratch or `$DEVRYAN_SESSION_TMP` for files needed by later calls,
 and `$DEVRYAN_ARTIFACT_DIR` (when set) for evidence other tools must read;
 never assume `/tmp` is writable. Check temporary-directory creation and server
 launch before polling readiness; stop on setup failure. A shell-owned server
-and its browser checks must finish in the same bounded shell call.
+and its browser checks must finish in the same bounded shell call. Opening a
+loopback URL whose server another call started is refused (`preview_stale`)
+once later changes were published: that server shows old code.
 
 ## Safe DOM inspection
 

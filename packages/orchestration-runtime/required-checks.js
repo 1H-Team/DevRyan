@@ -69,9 +69,12 @@ const validVisualObservation = visual => isRecord(visual) && visual.state === 'p
   && visual.assertions.every(entry => isRecord(entry) && text(entry.name, 256) && ['passed', 'failed'].includes(entry.status))
   && new Set(visual.assertions.map(entry => entry.name)).size === visual.assertions.length
   && Array.isArray(visual.evidence) && visual.evidence.length > 0 && visual.evidence.length <= 16
-  && visual.evidence.every(entry => isRecord(entry) && relativePath(entry.path) && hash(entry.sha256));
+  && visual.evidence.every(entry => isRecord(entry) && relativePath(entry.path) && hash(entry.sha256))
+  && (visual.servedFreshness === undefined || ['fresh', 'unknown', 'stale'].includes(visual.servedFreshness));
 
+// A loopback server the check named must serve current files (servedFreshness).
 export const visualCheckPassed = (check, visual) => validVisualObservation(visual)
+  && (visual.servedFreshness === undefined || visual.servedFreshness === 'fresh')
   && visual.dataSource === check.visual?.dataSource && visual.assertions.length === check.visual.assertions.length
   && check.visual.assertions.every(name => visual.assertions.some(entry => entry.name === name && entry.status === 'passed'));
 

@@ -53,6 +53,8 @@ export interface MutationLease {
   origins: Record<string, number>;
   generation: number;
   baseSequence: number;
+  /** The ledger's count of file-changing commits when the view was copied (viewFreshness). */
+  fileEpoch?: number;
   promptSequence: number;
   viewDirectory: string;
   state: 'preparing' | 'ready' | 'published' | 'cancelled';
@@ -174,6 +176,8 @@ export interface SessionMutationRuntime {
     /** Constructor-only owner fence, checked under the ledger lock and atomic commit. */
     guard?: { readonly assertCurrent: () => void; readonly admissionRevision: number } }): Promise<void>;
   activeLeases(input: { directory: string; sessions?: string[] }): Promise<MutationLease[]>;
+  /** Read-only: whether a running lease's view still matches the project (`stale` once a later commit changed project files). */
+  viewFreshness(input: { directory: string; token: string }): Promise<{ state: 'fresh' | 'stale' | 'unknown'; behind?: number }>;
   pendingCleanup(input: { directory: string }): Promise<MutationLease[]>;
   drain(): Promise<PromiseSettledResult<unknown>[]>;
 }

@@ -1734,7 +1734,7 @@ async function constructWebHost(options = {}) {
         directory: input.directory, sessionId: input.sessionID, messageId: input.messageID, callId: input.callID, tool: 'bash',
         command: input.kind==='host-operation' ? `devryan_operation ${input.operationID}` : input.authorization?.input?.input?.command,
         workdir: input.cwd, exitCode, output: execution?.output, outputComplete: execution?.outputComplete, environment: 'native',
-        executionDirectory: execution?.executionDirectory, objectiveId: execution?.objectiveId }),
+        executionDirectory: execution?.executionDirectory, objectiveId: execution?.objectiveId, servedFreshness: execution?.servedFreshness }),
       recheckPermit: input => nativeRuntime.nativeOwner.recheckExecution(input),
       stopSessions: input => nativeRuntime.stopSessions(input),
     } } : {}),

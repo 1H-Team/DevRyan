@@ -1064,6 +1064,24 @@ reads and non-verification shells retain parallel execution. Sleeping inside an
 already captured view cannot refresh it. The receipt's publication sequence is
 the durable revision, distinct from tool start time.
 
+A shell command or `devryan_browser` open (including the open steps of a
+sequence) that names a loopback address (`http://localhost:8090`,
+`127.0.0.1:5173`, `PLAYWRIGHT_BASE_URL=…`) is checked against the server
+listening there (`native-served-identity.js`): `lsof` finds the listener, and
+the `DEVRYAN_EXECUTION_VIEW` marker in its environment names the call that
+started it. That server serves its call's copy of the project, so once a later
+commit changed project files (the ledger's `viewFreshness`) admission refuses
+with `preview_stale`, before any lease exists, and tells the agent to stop it
+and run the server and the check in one foreground call. A listener without a
+readable marker (started outside DevRyan, or an Apple platform binary) is
+external: allowed, with unknown freshness. A required visual check that named
+one, or whose server fell behind while it ran, cannot pass
+(`preview_freshness_unproven`, orchestration DOCUMENTATION.md). Browser results
+name what served each opened address in `metadata.servedIdentity`, never the
+lease token. Addresses set only in configuration files, navigation by click,
+eval, tab or pushstate, and listeners on Windows are not checked. Kill switch:
+`DEVRYAN_SERVED_FRESHNESS=0`.
+
 Input admission journals bounded delivery intent, requested/accepted/reconciled/
 refused decisions, whether subtree settlement is required, and a refusal category.
 These records contain no message text or attachments. A required settlement field
