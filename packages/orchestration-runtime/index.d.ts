@@ -325,7 +325,22 @@ export interface ManagedTaskResultEnvelope {
   autoResume: ManagedTaskAutoResume | null;
   /** Model prompt observed this terminal revision; never result collection. */
   promptObserved?: { attempt:number;sequence:number;observedAt:number };
+  /** Stopping the settled attempt's runs (a dev server, a watcher); retried while `failed`. */
+  runCleanup?: ManagedTaskRunCleanup;
 }
+export interface ManagedTaskRunCleanup {
+  state: 'pending' | 'failed' | 'done';
+  taskId: string;
+  leaseToken: string;
+  childSessionId: string;
+  attempts: number;
+  /** Runs stopped, once done. */
+  stopped?: number;
+  /** Present exactly while failed. */
+  code?: string;
+}
+/** The managed attempt a child session's runs belong to (`childAttempt`). */
+export type ManagedChildAttempt = { taskId: string; leaseToken: string } | { state: 'none' | 'unknown' } | null;
 
 export type ManagedResultMode = 'eager' | 'reference' | 'compact';
 
@@ -681,6 +696,10 @@ export interface ManagedTaskSchedulerOptions {
   onRequiredCheckReceipt?(input: { task: ManagedTaskRecord; receipt: RequiredCheckReceipt }): void;
   onPersistenceObservation?(input: ManagedPersistenceObservation): void | Promise<void>;
   onMutationTiming?(input: Readonly<{ waitMs: number; holdMs: number; failed: boolean }>): void | Promise<void>;
+  /** Stops a settled attempt's runs; without it no cleanup intent is recorded. */
+  stopAttemptRuns?(input: { childSessionId: string; directory: string; taskId: string; leaseToken: string; settledAt: number; reason: 'task_settled' }): Promise<{ stopped?: number } | void>;
+  /** Observes each committed cleanup outcome (journaled as `task_run_cleanup`). */
+  onRunCleanup?(input: ManagedTaskRunCleanup & { rootSessionId: string; directory: string }): void;
   persistenceStallMs?: number;
   executor: ManagedTaskExecutor;
   persistence?: ManagedOrchestrationPersistence;
@@ -818,6 +837,7 @@ export interface ManagedTaskScheduler {
   acceptOperatorStop(input: { taskId: string; leaseToken: string | null; requestedAt: number; requestId: string }): Promise<boolean>;
   withdrawOperatorStop(input: { taskId: string; leaseToken: string | null; requestedAt: number; requestId: string }): Promise<boolean>;
   readOperatorStop(input: { sessionId: string; directory?: string; taskId?: string; leaseToken?: string | null; after?: number }): { sessionId: string; requestedAt: number; state: 'pending' | 'accepted' | 'uncertain'; durable: true } | null;
+  childAttempt(childSessionId: string, directory: string): ManagedChildAttempt;
   getChildAssignment(childSessionId: string, directory: string): ManagedTaskRecord | null;
   recordRequiredCheck(taskId: string, leaseToken: string, receipt: RequiredCheckReceipt, phase: 'start' | 'bind' | 'complete'): Promise<boolean>;
   recordRequiredChecks(taskId: string | ObjectiveCheckScope, leaseToken: string | undefined, receipts: RequiredCheckReceipt[], phase: 'start' | 'bind' | 'complete'): Promise<boolean>;

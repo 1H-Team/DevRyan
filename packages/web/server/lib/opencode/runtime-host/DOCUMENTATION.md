@@ -1433,10 +1433,20 @@ shell's own timer stopped the command (OpenCode marks its result `timeout: true`
 before it kills), the call returns that result with a notice that its changes
 were not published.
 Stop, publication and cleanup remain owned by the execution host. A background
-shell completion whose lease a user Stop cancelled (`stoppedBy: 'operator'`) is
-admitted and delivered, but `native-admission-owner.js` neither wakes the
-stopped conversation nor retains a `shell.complete` intent; the notice reaches
-the model with the next prompt. Children receive
+shell completion whose lease a user Stop cancelled (`stoppedBy: 'operator'`), or
+that the orchestrator stopped because its task attempt settled
+(`stoppedBy: 'task_settled'`), is admitted and delivered, but
+`native-admission-owner.js` neither wakes the conversation nor retains a
+`shell.complete` intent; the notice reaches the model with the next prompt.
+A managed child's lease names its task attempt (`attempt`), and its completion
+wakes the child only while that attempt is the child's current one
+(`childAttempt`); a run a settled or replaced attempt left behind is delivered
+the same way, never woken (the 2026-10-28 Designer was woken 30 min after its
+task completed). Roots and unmanaged subagents wake as before. While managed
+orchestration cannot yet classify a child (`unknown` during startup), the
+intent is kept durably without a wake, and `resumeDeferredShellContinuations`
+evaluates it once orchestration is initialized. The recovered-grant
+re-authorization checks the attempt again (`native_completion_attempt_settled`). Children receive
 the captured read-only policy; prompt text cannot grant write authority.
 Plan admission requires its canonical-policy and implementation-validation
 hooks; an Implement marker also requires validation. Missing hooks refuse Plan

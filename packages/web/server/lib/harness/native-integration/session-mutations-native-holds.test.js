@@ -626,6 +626,61 @@ test('a background shell a user Stop ended delivers its notice without restartin
   expect(notices).toEqual([]);
 }, 20_000);
 
+test('a managed child wakes only for a run of its current attempt, and an unclassified one waits for orchestration', async () => {
+  const f = await fixture(), notices = [];
+  let current = { taskId: 'dvr_task_a', leaseToken: 'lease_a' };
+  const shell = async (jobID, attempt, stoppedBy) => {
+    const scope = { directory: f.directory, sessionID: 'ses_child', userMessageID: `msg_u_${jobID}`, messageID: `msg_a_${jobID}`, callID: `call_${jobID}`,
+      kind: 'process', attempt };
+    const lease = await f.runtime.begin(scope);
+    await f.runtime.claimLease({ directory: f.directory, token: lease.token, kind: 'process' });
+    await f.runtime.bindNativeShellJob({ ...scope, token: lease.token, jobID, command: 'npm run dev' });
+    await f.runtime.bindNativeShellNotification({ directory: f.directory, sessionID: 'ses_child', jobID, notificationID: `msg_${jobID}_notice` });
+    await f.runtime.cancelLease({ directory: f.directory, token: lease.token, ...(stoppedBy ? { stoppedBy } : {}) });
+  };
+  const owner = createNativeAdmissionOwner({ runtime: f.runtime, directory: f.directory, ownerID: 'shell-attempt-fixture',
+    getSession: async id => ({ id, directory: f.directory, ...(id === 'ses_child' ? { parentID: 'ses_root' } : {}) }),
+    authorizeOperation: async () => {}, withSessionLock: async (_id, action) => action(),
+    childAttempt: async ({ sessionID }) => (sessionID === 'ses_child' ? current : null),
+    getShellJobReceipt: async input => ({ lease: await f.runtime.nativeShellJob(input), receipt: { terminated: true, confined: true, cancelled: true, exitCode: 1 } }),
+    onContinuation: async input => { notices.push(input.jobID); return { kind: 'registered', messageID: input.messageID }; } });
+  const rpc = (method, input) => owner.handleRpc(`native.admission.${method}`, input);
+  const deliver = async (jobID) => {
+    const input = { id: `msg_${jobID}_notice`, sessionID: 'ses_child', description: 'npm run dev',
+      text: `<shell id="${jobID}" state="error" command="npm run dev">\nexit 1\n</shell>`,
+      metadata: { source: 'shell', jobID, shellID: jobID },
+      nativeJob: { id: jobID, type: 'shell', title: 'npm run dev', status: 'error', error: 'exit 1', notificationID: `msg_${jobID}_notice` } };
+    const permit = await rpc('authorize', { operation: 'session.synthetic', sessionID: 'ses_child', messageID: input.id, input });
+    const { nativeShellText, ...metadata } = await rpc('sealSynthetic', { permit, input });
+    const item = { type: 'synthetic', id: input.id, sessionID: input.sessionID, payload: { text: nativeShellText, description: input.description, metadata } };
+    await rpc('verifyAccepted', { permit, accepted: { item, phase: 'committed' } });
+  };
+  const intents = async () => (await f.runtime.nativeContinuations({ directory: f.directory, sessionID: 'ses_child' })).map(row => row.operation ?? row);
+  // A run of the current attempt wakes the child.
+  await shell('job_current', { taskId: 'dvr_task_a', leaseToken: 'lease_a' });
+  await deliver('job_current');
+  expect(notices).toEqual(['job_current']);
+  // After a resume, a run the earlier attempt left neither wakes nor retains an intent.
+  current = { taskId: 'dvr_task_b', leaseToken: 'lease_b' };
+  await shell('job_stale', { taskId: 'dvr_task_a', leaseToken: 'lease_a' });
+  await deliver('job_stale');
+  expect(notices).toEqual(['job_current']);
+  expect(JSON.stringify(await intents())).not.toContain('job_stale');
+  // Stopped because its attempt settled: delivered, never woken.
+  await shell('job_settled', { taskId: 'dvr_task_b', leaseToken: 'lease_b' }, 'task_settled');
+  await deliver('job_settled');
+  expect(notices).toEqual(['job_current']);
+  // While orchestration cannot classify the child, the intent is kept and waits.
+  current = { state: 'unknown' };
+  await shell('job_unknown', { taskId: 'dvr_task_b', leaseToken: 'lease_b' });
+  await deliver('job_unknown');
+  expect(notices).toEqual(['job_current']);
+  expect(JSON.stringify(await intents())).toContain('job_unknown');
+  current = { taskId: 'dvr_task_b', leaseToken: 'lease_b' };
+  await owner.resumeDeferredShellContinuations();
+  expect(notices).toEqual(['job_current', 'job_unknown']);
+}, 30_000);
+
 test('same-owner replacement rebinds current canonical lineage before a retained shell wake enters Store.claim', async () => {
   const f = await fixture();
   const scope = { directory: f.directory, sessionID: 'ses_child', parentID: 'ses_root',

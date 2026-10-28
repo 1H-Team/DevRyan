@@ -517,6 +517,9 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     onRequiredCheckReceipt: options.onRequiredCheckReceipt,
     onPersistenceObservation: options.onPersistenceObservation,
     onMutationTiming: options.onMutationTiming,
+    // A settled attempt's runs stop with it (session-execution-host.js).
+    ...(typeof options.stopAttemptRuns === 'function' ? { stopAttemptRuns: options.stopAttemptRuns } : {}),
+    onRunCleanup: options.onRunCleanup,
     executor,
     persistence,
     now,
@@ -1553,6 +1556,10 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
       } }, state => nativePromptContexts.run({ readBarrier: state.readBarrier }, () => action(state)));
     },
     verifyNativeTaskDispatch: input => verifyNativeTaskDispatch(input).catch(error => { throw normalizeRuntimeError(error); }),
+    // The managed attempt a child session's runs belong to: `unknown` until
+    // this owner is initialized, null for a session no task owns.
+    childAttempt: ({ childSessionId, directory }) => (initialized && ownershipAcquired && !shutdownPromise
+      ? scheduler.childAttempt?.(childSessionId, directory) ?? null : { state: 'unknown' }),
     readManagedTitleAssignment: async ({ childSessionId, directory }) => {
       const check = async () => { assertAvailable(); assertWorkAdmission(); await persistence.verifyOwnership?.(); assertAvailable(); assertWorkAdmission();
         if (!initialized || !ownershipAcquired || shutdownPromise) throw createRuntimeError('native_managed_title_unavailable', 'Managed title owner is unavailable', 403); };

@@ -354,3 +354,24 @@ test('duplicate execution identities must match the original immutable scope', a
   expect((await f.begin('a', 'pa', 'ca')).token).toBe(a.token);
   await expect(f.begin('a', 'other', 'ca')).rejects.toMatchObject({ code: 'capture_identity_mismatch' });
 });
+
+test('a lease records the task attempt its run belongs to, and who stopped it', async () => {
+  const f = await fixture(); await f.write('a.txt', 'one\n');
+  const scope = (callID, attempt) => ({ directory: f.directory, sessionID: 'child', userMessageID: 'u1', messageID: 'u1-assistant', callID,
+    kind: 'process', ...(attempt === undefined ? {} : { attempt }) });
+  const stamped = await f.runtime.reserve(scope('c1', { taskId: 'dvr_task_1', leaseToken: 'lease-1' }));
+  expect(stamped.attempt).toEqual({ taskId: 'dvr_task_1', leaseToken: 'lease-1' });
+  expect((await f.runtime.reserve(scope('c2', { state: 'unknown' }))).attempt).toEqual({ state: 'unknown' });
+  expect((await f.runtime.reserve(scope('c3'))).attempt).toBeUndefined();
+  for (const attempt of [null, {}, { state: 'running' }, { taskId: 'dvr_task_1' }, { taskId: 'dvr_task_1', leaseToken: '' },
+    { taskId: 'dvr_task_1', leaseToken: 'lease-1', state: 'none' }]) {
+    await expect(f.runtime.reserve(scope('c4', attempt))).rejects.toMatchObject({ code: 'invalid_capture_identity', status: 400 });
+  }
+  await f.runtime.cancelLease({ directory: f.directory, token: stamped.token, stoppedBy: 'task_settled' });
+  const [settled] = (await f.runtime.activeLeases({ directory: f.directory })).filter((lease) => lease.token === stamped.token);
+  expect(settled ?? (await f.runtime.leaseForCall({ directory: f.directory, sessionID: 'child', callID: 'c1' }))).toMatchObject({
+    state: 'cancelled', stoppedBy: 'task_settled', attempt: { taskId: 'dvr_task_1', leaseToken: 'lease-1' } });
+  const other = await f.runtime.reserve(scope('c5'));
+  await expect(f.runtime.cancelLease({ directory: f.directory, token: other.token, stoppedBy: 'model' }))
+    .rejects.toMatchObject({ code: 'invalid_capture_identity', status: 400 });
+});

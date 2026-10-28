@@ -235,6 +235,8 @@ export function createNativeRuntimeOwner(options) {
       (await openCodeClient.sessions.message(sessionID, objectiveID, { directory, timeoutMs: 5000 }))?.info?.time?.created,
     recordDiagnostic: options.recordDiagnostic });
   const nativeOwner = createNativeAdmissionOwner({ getInstanceID:()=>nativeInstanceID, runtime: executionHost.runtime, directory: bundle.locations[0].directory,
+    // The managed attempt a child session's runs belong to (shell wake authorization).
+    childAttempt: options.childAttempt,
     sealManagedTitleInput: input => managedTitle.seal(input), captureManagedTitleInput: input => managedTitle.capture(input),
     captureAcceptedHumanTitleInput: input => managedTitle.captureHuman(input),
     recordPlanToolDenial: createNativePlanDenialOwner({ runtime: executionHost.runtime,
@@ -1041,6 +1043,11 @@ export function createNativeRuntimeOwner(options) {
     },
     // Session idle: continue clean reviewed results first, so the barrier is
     // clear before todo continuation or plan settlement reads it.
+    // Shell completions deferred while managed orchestration was starting.
+    resumeDeferredShellContinuations: async () => {
+      if (phase !== 'ready' || stopping) return;
+      await nativeOwner.resumeDeferredShellContinuations();
+    },
     observeSessionIdle: async input => {
       if (phase !== 'ready' || stopping) return;
       if(providers)try{

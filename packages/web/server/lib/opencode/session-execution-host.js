@@ -584,7 +584,8 @@ export function createSessionExecutionHost(options) {
     // Kill switch: DEVRYAN_READ_ONLY_SHELL_LIVE=0.
     const liveReadOnly = readOnly && input.kind === 'shell' && process.platform === 'darwin' && process.env.DEVRYAN_READ_ONLY_SHELL_LIVE !== '0';
     const lease = await runtime.reserve({ ...input, kind: 'process', userMessageID: record.info.parentID,
-      parentID: current.parentID, executionFingerprint: fingerprint, ownerID: owner.id, preparation: liveReadOnly ? 'read-only' : undefined });
+      parentID: current.parentID, executionFingerprint: fingerprint, ownerID: owner.id, preparation: liveReadOnly ? 'read-only' : undefined,
+      attempt: await attemptStamp(input) });
     if (lease.ownerID !== owner.id || lease.executionKind || lease.state === 'published') throw failure('execution_already_started');
     const job = { input, lease, partID: call.id, tool: call.tool, controller: new AbortController(), events: [], cursor: 0, acknowledged: 0,
       delivered: 0, bytes: 0, waiters: new Set(), permissions: new Set(), done: false, child: null, failure: null, result: null,
@@ -786,7 +787,7 @@ export function createSessionExecutionHost(options) {
         pending += decoder.end();
         try { nativeOptions.onTermination?.({ ...job.lease.scope, token: lease.token, receipt }); } catch { /* Observer only. */ }
         if (receipt.cancelled || !receipt.confined || job.failure || (input.kind === 'writer' && (!job.result?.ok || receipt.exitCode !== 0 || pending))) {
-          await runtime.cancelLease({ directory: input.directory, token: lease.token, ...(job.operatorStop ? { stoppedBy: 'operator' } : {}) });
+          await runtime.cancelLease({ directory: input.directory, token: lease.token, ...stoppedBy(job) });
           await recordCancelled(job.lease, toV1ToolName(input.tool)); if (shellLike) await settleRequiredCheck(); await cleanup(job.lease);
           try { nativeOptions.onOutcome?.({ ...job.lease.scope, token: lease.token, state: 'cancelled' }); } catch { /* Observer only. */ }
           nativeEvent(job, { type: 'settled', ok: false, receipt, error: job.result?.error ?? (job.failure
@@ -824,7 +825,7 @@ export function createSessionExecutionHost(options) {
               conflicts: (publication?.conflicts ?? []).map(item => item.path) }, result: nativePublicationResult(job.result?.result, publication, job.lease,input.tool) }, true);
             return;
           }
-          await runtime.cancelLease({ directory: input.directory, token: lease.token, ...(job.operatorStop ? { stoppedBy: 'operator' } : {}) });
+          await runtime.cancelLease({ directory: input.directory, token: lease.token, ...stoppedBy(job) });
           if (shellLike) await settleRequiredCheck();
           await cleanup(job.lease);
           nativeEvent(job, { type: 'settled', ok: false, receipt, error: { message: cause.message, code: cause.code } }, true);
@@ -1062,8 +1063,9 @@ export function createSessionExecutionHost(options) {
       if (input.protocol === 2) {
         if (!['control', 'process'].includes(input.kind)) throw failure('invalid_capture_identity', 400);
         const { owner, jobs } = await preparations(); owner.assert();
+        const attempt = await attemptStamp(input);
         const lease = await withPromptBoundary(() => runtime.reserve({ ...input, userMessageID: record.info.parentID, parentID: current.parentID,
-          executionFingerprint, ownerID: owner.id }));
+          executionFingerprint, ownerID: owner.id, attempt }));
         if (lease.ownerID !== owner.id) {
           if (await executionHostOwnerLost({ directory: ownerDirectory, launcher: launcher(), id: lease.ownerID }) && !lease.executionKind) {
             await runtime.cancelLease({ directory: lease.directory, token: lease.token });
@@ -1358,6 +1360,11 @@ export function createSessionExecutionHost(options) {
   // and its view is removed. No admission hold is taken, unlike
   // `executions.cancelAndWait`, so the next prompt is not blocked.
   // Kill switch: DEVRYAN_STOP_ENDS_BACKGROUND_RUNS=0.
+  // The managed task attempt a child's run belongs to, stamped on its lease;
+  // absent for roots and unmanaged sessions.
+  const attemptStamp = async (input) => (typeof options.attemptFor === 'function'
+    ? await options.attemptFor({ sessionID: input.sessionID, directory: input.directory }) ?? undefined : undefined);
+  const stoppedBy = (job) => (job.operatorStop ? { stoppedBy: 'operator' } : job.taskSettled ? { stoppedBy: 'task_settled' } : {});
   const stopSessionRuns = async ({ sessions } = {}) => {
     if (!Array.isArray(sessions) || !sessions.length || sessions.some(id => !identity(id))) throw failure('invalid_capture_identity', 400);
     if (process.env.DEVRYAN_STOP_ENDS_BACKGROUND_RUNS === '0') return { stopped: 0 };
@@ -1376,13 +1383,38 @@ export function createSessionExecutionHost(options) {
     await Promise.allSettled(selected.map(job => job.settled));
     return { stopped: selected.length };
   };
+  // Ends the runs of a settled managed task attempt (the scheduler's run
+  // cleanup): the child's shell jobs stamped with that attempt, and unstamped
+  // ones (`none`, `unknown`) reserved before it settled. Each is re-checked
+  // right before its abort, so a run of the child's current attempt (a resume)
+  // is never stopped. Cancelled with `stoppedBy: 'task_settled'`, a run's
+  // completion does not restart the conversation (native-admission-owner.js).
+  const stopAttemptRuns = async ({ childSessionId, directory, taskId, leaseToken, settledAt, reason } = {}) => {
+    if (![childSessionId, taskId, leaseToken].every(identity) || reason !== 'task_settled' || !path.isAbsolute(directory ?? '')
+      || !Number.isFinite(settledAt)) throw failure('invalid_capture_identity', 400);
+    const ofAttempt = (job) => {
+      const stamp = job.lease.attempt;
+      if (stamp?.taskId) return stamp.taskId === taskId && stamp.leaseToken === leaseToken;
+      return ['none', 'unknown'].includes(stamp?.state) && job.lease.reservedAt <= settledAt;
+    };
+    const selected = [...nativeHandles.values()].filter(job => !job.done && job.input.kind === 'shell' && job.lease
+      && job.input.sessionID === childSessionId && ofAttempt(job));
+    for (const job of selected) {
+      const current = await attemptStamp(job.input), stamp = job.lease.attempt;
+      if (job.done || current?.taskId && stamp?.taskId === current.taskId && stamp.leaseToken === current.leaseToken) continue;
+      job.taskSettled = true; job.controller.abort(failure('execution_cancelled'));
+    }
+    const stopped = selected.filter(job => job.taskSettled);
+    await Promise.allSettled(stopped.map(job => job.settled));
+    return { stopped: stopped.length };
+  };
   // Calls of a session whose supervised command is still running: the change
   // card reports them as running, not as a missing change record.
   // Session IDs are global; the request directory spelling need not match.
   const activeExecutionCalls = ({ sessionID } = {}) => [...nativeHandles.values()]
     .filter(job => !job.done && job.terminationReceipt?.terminated !== true && job.lease && job.input.sessionID === sessionID)
     .map(job => job.input.callID);
-  return { get retentionReady() { return retentionReady; }, runtime, executions, coordinator, plugin, nativeManagedControl, nativeManagedChild, nativeExecution, nativeContextAssets, nativeInterviewDocument, nativeShellJobReceipt, cancelOwnedCommand, stopSessionRuns, activeExecutionCalls, isConfined, persistCursorRecord, startCursor, assertLegacyRevertAllowed, warmLedger,
+  return { get retentionReady() { return retentionReady; }, runtime, executions, coordinator, plugin, nativeManagedControl, nativeManagedChild, nativeExecution, nativeContextAssets, nativeInterviewDocument, nativeShellJobReceipt, cancelOwnedCommand, stopSessionRuns, stopAttemptRuns, activeExecutionCalls, isConfined, persistCursorRecord, startCursor, assertLegacyRevertAllowed, warmLedger,
     recover: async () => {
       retentionReady = false; let failed = false;
       const report = (cause) => {

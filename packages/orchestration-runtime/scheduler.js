@@ -313,14 +313,21 @@ export const createManagedTaskScheduler = (options = {}) => {
     return timer;
   };
 
+  // Work a transaction's durable commit registers (`afterCommit`) that awaits
+  // other subsystems: it starts once the exclusive section is released, even
+  // if the operation failed after that commit, and is never awaited by it.
+  let afterCommitWork = [];
+  const afterCommit = (work) => { afterCommitWork.push(work); };
   const runExclusive = (operation) => {
     const queuedAt = options.onMutationTiming ? performance.now() : 0;
+    let registered = [];
     const run = async () => {
       const startedAt = options.onMutationTiming ? performance.now() : 0;
       let failed = true;
       try { const result = await operation(); failed = false; return result; }
       finally {
         uncommittedRead = false;
+        registered = afterCommitWork; afterCommitWork = [];
         if (options.onMutationTiming) {
           try { void Promise.resolve(options.onMutationTiming(Object.freeze({ waitMs: startedAt - queuedAt, holdMs: performance.now() - startedAt, failed }))).catch(() => {}); }
           catch { /* Timing never changes the transaction outcome. */ }
@@ -329,6 +336,14 @@ export const createManagedTaskScheduler = (options = {}) => {
     };
     const result = mutationTail.then(run, run);
     mutationTail = result.catch(() => undefined);
+    const release = () => {
+      for (const work of registered) {
+        void Promise.resolve().then(work).catch((error) => {
+          logger.warn?.('[ManagedOrchestration] After-commit work failed', { error: error instanceof Error ? error.message : String(error) });
+        });
+      }
+    };
+    void result.then(release, release);
     return result;
   };
 
@@ -676,12 +691,17 @@ export const createManagedTaskScheduler = (options = {}) => {
   const commitTerminalTaskLocked = async (previous, next, { resumable = false, providerResetAt = null } = {}) => {
     assertManagedTaskTransition(previous, next);
     const existingEnvelope = resultEnvelopes.get(next.taskId);
-    const envelope = existingEnvelope ?? createManagedTaskResultEnvelope(next, {
+    let envelope = existingEnvelope ?? createManagedTaskResultEnvelope(next, {
       sequence: nextResultSequenceLocked(),
       createdAt: next.finishedAt ?? now(),
       resumable,
       providerResetAt,
     });
+    // The settled attempt's runs (a dev server, a watcher) stop with it: a
+    // durable intent, carried out once the commit is released and re-armed on
+    // restart, so a failure stays visible and is retried.
+    const cleanup = runCleanupFor(next, envelope);
+    if (cleanup) envelope = { ...envelope, runCleanup: cleanup };
     tasks.set(next.taskId, next);
     resultEnvelopes.set(next.taskId, envelope);
     try {
@@ -694,9 +714,59 @@ export const createManagedTaskScheduler = (options = {}) => {
     clearTaskTimeout(next.taskId);
     clearStartingLease(next.taskId);
     clearReconciliationRetry(next.taskId);
+    if (cleanup) afterCommit(() => runAttemptCleanup(next.taskId));
     if (tasks.has(next.taskId)) queueTaskPublication(next);
     notifyTaskWaiters(next);
     notifyResultCollectionWaiters(next.rootSessionId);
+  };
+  // A child that ran under a scheduler lease leaves runs to stop.
+  const runCleanupFor = (task, envelope) => (typeof options.stopAttemptRuns === 'function' && !envelope.runCleanup
+    && typeof task.childSessionId === 'string' && task.childSessionId && typeof task.leaseToken === 'string' && task.leaseToken
+    ? { state: 'pending', taskId: task.taskId, leaseToken: task.leaseToken, childSessionId: task.childSessionId, attempts: 0 } : null);
+  // Retries back off to every ten minutes; each outcome is journaled.
+  const RUN_CLEANUP_RETRY_MS = [5_000, 30_000, 120_000, 600_000];
+  const runCleanupTimers = new Map();
+  const clearRunCleanup = (taskId) => {
+    const timer = runCleanupTimers.get(taskId);
+    if (timer) cancelTimeout(timer);
+    runCleanupTimers.delete(taskId);
+  };
+  const scheduleRunCleanup = (taskId, delayMs) => {
+    clearRunCleanup(taskId);
+    if (shutDown) return;
+    runCleanupTimers.set(taskId, unrefTimer(scheduleTimeout(() => {
+      runCleanupTimers.delete(taskId);
+      void runAttemptCleanup(taskId);
+    }, delayMs)));
+  };
+  const runAttemptCleanup = async (taskId) => {
+    const envelope = resultEnvelopes.get(taskId), intent = envelope?.runCleanup;
+    if (shutDown || !intent || intent.state === 'done' || typeof options.stopAttemptRuns !== 'function') return;
+    let outcome;
+    try {
+      const result = await options.stopAttemptRuns({ childSessionId: intent.childSessionId, directory: envelope.directory,
+        taskId: intent.taskId, leaseToken: intent.leaseToken, settledAt: envelope.createdAt, reason: 'task_settled' });
+      outcome = { state: 'done', stopped: Number.isSafeInteger(result?.stopped) && result.stopped >= 0 ? result.stopped : 0 };
+    } catch (error) {
+      outcome = { state: 'failed', code: typeof error?.code === 'string' && error.code ? error.code : 'task_run_cleanup_failed',
+        attempts: (intent.attempts ?? 0) + 1 };
+    }
+    const committed = await runExclusive(async () => {
+      const current = resultEnvelopes.get(taskId);
+      if (shutDown || !current?.runCleanup || current.runCleanup.state === 'done') return null;
+      const { code: _code, ...rest } = current.runCleanup;
+      const next = { ...current, runCleanup: { ...rest, ...outcome } };
+      await commitEnvelopeUpdateLocked(current, next);
+      return next;
+    });
+    if (!committed) return;
+    try {
+      options.onRunCleanup?.({ taskId, rootSessionId: committed.rootSessionId, childSessionId: committed.runCleanup.childSessionId,
+        directory: committed.directory, ...committed.runCleanup });
+    } catch { /* Observer only. */ }
+    if (committed.runCleanup.state === 'failed') {
+      scheduleRunCleanup(taskId, RUN_CLEANUP_RETRY_MS[Math.min(committed.runCleanup.attempts, RUN_CLEANUP_RETRY_MS.length) - 1]);
+    }
   };
 
   const commitEnvelopeUpdateLocked = async (previous, next, followUpTask = null) => {
@@ -2042,6 +2112,10 @@ export const createManagedTaskScheduler = (options = {}) => {
         scheduleTaskDeadline(task);
         scheduleStartingLease(task);
       }
+      // Run cleanups a restart interrupted, or that had failed.
+      for (const envelope of resultEnvelopes.values()) {
+        if (envelope.runCleanup && envelope.runCleanup.state !== 'done') scheduleRunCleanup(envelope.taskId, 0);
+      }
       activated = true;
       await pump();
     }).finally(() => {
@@ -3023,6 +3097,7 @@ export const createManagedTaskScheduler = (options = {}) => {
       for (const taskId of [...startingLeaseTimers.keys()]) clearStartingLease(taskId);
       for (const taskId of [...reconciliationRetryTimers.keys()]) clearReconciliationRetry(taskId);
       for (const taskId of [...autoResumeTimers.keys()]) clearAutoResumeTimer(taskId);
+      for (const taskId of [...runCleanupTimers.keys()]) clearRunCleanup(taskId);
       clearAdmissionRetry();
       const shutdownError = new ManagedOrchestrationError(
         'scheduler_shut_down',
@@ -3828,6 +3903,20 @@ export const createManagedTaskScheduler = (options = {}) => {
           requiredChecks: structuredClone(task.requiredChecks) };
       }
       return null;
+    },
+    // The attempt a child session's runs belong to: the active task's
+    // { taskId, leaseToken }, { state: 'none' } when its tasks have all
+    // settled, { state: 'unknown' } before initialization, or null for a
+    // session no task owns.
+    childAttempt(childSessionId, directory) {
+      if (!initialized) return { state: 'unknown' };
+      let owned = false;
+      for (const task of uncommittedRead ? committedReadState.tasks : tasks.values()) {
+        if (task.childSessionId !== childSessionId || task.directory !== directory) continue;
+        if (ACTIVE_STATUSES.has(task.status) && task.leaseToken) return { taskId: task.taskId, leaseToken: task.leaseToken };
+        owned = true;
+      }
+      return owned ? { state: 'none' } : null;
     },
     // The task owning a child session: an active one first, else the latest.
     getChildAssignment(childSessionId, directory) {

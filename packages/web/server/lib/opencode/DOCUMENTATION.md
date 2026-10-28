@@ -12,6 +12,14 @@ and hold) and `onWorkerStall` (stalls of 1 s or more of the ledger worker's
 event loop, which `application.js` journals as `ledger_worker_stall` beside the
 host's own `host_stall`).
 
+`session-execution-host.stopAttemptRuns` is the constructor-only boundary the
+managed scheduler calls when a task attempt settles (its durable `runCleanup`):
+it cancels the child's shell jobs stamped with that attempt, and unstamped ones
+(`none`, `unknown`) reserved before it settled, re-checking each against the
+child's current attempt right before its abort, with `stoppedBy: 'task_settled'`.
+Leases of managed children carry the attempt (`attemptFor`, from
+`childAttempt`); roots and unmanaged sessions carry none.
+
 `session-execution-host.stopSessionRuns` is the constructor-only Stop boundary.
 After an accepted user Stop (`OPERATOR_STOP_SOURCES` in `application.js`), it
 ends every supervised shell run of the stopped session and its descendants
