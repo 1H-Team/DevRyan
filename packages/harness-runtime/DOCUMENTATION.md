@@ -531,6 +531,17 @@ hidden folders other than known output locations (so `.husky/_`, `.opencode/`
 and `.claude/` stay read-only), and anything resolving elsewhere stay
 read-only; Linux and Windows keep every input read-only
 (`DEVRYAN_IGNORED_WRITE_THROUGH=0` restores that on macOS).
+The supported place for a call's evidence is `$DEVRYAN_ARTIFACT_DIR`. On
+macOS, preparation creates a missing `.artifacts/` when Git ignores it, so it
+is a write-through input before any command writes there (an ignored folder a
+call creates is published like other output). `prepareArtifactDirectory`
+(`lib/session-execution.js`) then creates the call's own
+`.artifacts/devryan/<session>/<call>/` inside that granted directory, one
+component at a time, and sets the variable only when no component is a link
+and the folder resolves to itself. Its files reach the project unpublished,
+so file tools read the same bytes; deleting `.artifacts/` itself replaces the
+input and is reported in `ignoredInputs`. `DEVRYAN_ARTIFACT_DIR=0` stops both
+steps.
 Plan shell instead marks its execution lease read-only: preparation suppresses
 all input write grants and browser allowances, macOS denies networking, and the
 Linux launcher creates a private network namespace before its acknowledgement.

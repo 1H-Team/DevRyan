@@ -1400,8 +1400,15 @@ receipt separately from tool transport completion. A completed tool can therefor
 report a failed command. Shell commands begin in a mapped private view; an
 absolute `cd` to the logical project selects the read-only live tree instead.
 Use the mapped `$PWD`, `$TMPDIR` for one-call scratch and
-`$DEVRYAN_SESSION_TMP` across calls. Temporary directory and server launch
-failure must stop verification before readiness polling. Shell bodies are not
+`$DEVRYAN_SESSION_TMP` across calls; both are shell-only. Evidence goes to
+`$DEVRYAN_ARTIFACT_DIR` when set: this call's own folder in the project's
+ignored `.artifacts/` (macOS, when the project ignores it), written through
+unpublished, so file tools read the same bytes. The settled call carries a
+manifest of what it left there (path, size, SHA-256; at most 200 files and
+256 MiB hashed, links never followed) in `metadata.artifacts`, with a notice.
+Deleting `.artifacts/` itself replaces the input and is reported as dropped.
+Temporary directory and server launch failure must stop verification before
+readiness polling. Shell bodies are not
 rewritten, and no write grants are added for absolute paths.
 
 Native admission captures canonical Plan mode from the original accepted user

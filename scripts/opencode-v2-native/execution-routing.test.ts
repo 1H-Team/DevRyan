@@ -458,6 +458,8 @@ if (process.env.DEVRYAN_SHELL_FIXTURE === '1') for (const scenario of [
   { name: 'success', receipt: { terminated: true, confined: true, cancelled: false, exitCode: 0 }, ok: true, output: 'done' },
   { name: 'partial publication', receipt: { terminated: true, confined: true, cancelled: false, exitCode: 0 }, ok: true, output: 'done', partial: true },
   { name: 'dropped ignored inputs', receipt: { terminated: true, confined: true, cancelled: false, exitCode: 0 }, ok: true, output: 'done', ignored: ['test-results'] },
+  { name: 'artifact manifest', receipt: { terminated: true, confined: true, cancelled: false, exitCode: 1 }, ok: true, output: 'failed',
+    artifacts: { directory: '/project/.artifacts/devryan/ses/call', files: [{ path: 'report.html', size: 13, sha256: 'a'.repeat(64) }] } },
   { name: 'missing publication', receipt: { terminated: true, confined: true, cancelled: false, exitCode: 0 }, ok: true, output: 'done', missingPublication: true, error: 'native_publication_result_missing' },
   { name: 'uncertain termination', output: 'partial output', uncertain: true, error: 'mutation_termination_unconfirmed' },
   { name: 'deadline cancellation', receipt: { terminated: true, confined: true, cancelled: true, exitCode: 137 }, ok: false, output: '',
@@ -468,6 +470,7 @@ if (process.env.DEVRYAN_SHELL_FIXTURE === '1') for (const scenario of [
     nativeTimeout: true },
 ] as { name: string; receipt?: { terminated: boolean; confined: boolean; cancelled: boolean; exitCode: number }; ok?: boolean; output: string;
   error?: string; partial?: boolean; ignored?: string[]; missingPublication?: boolean; uncertain?: boolean; timeout?: number;
+  artifacts?: { directory: string; files: { path: string; size: number; sha256: string }[] };
   eventError?: { message: string; code?: string; metadata?: Record<string, unknown> }; nativeTimeout?: boolean }[]) test(`real native shell retains host settlement: ${scenario.name}`, async () => {
   const project = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-shell-settlement-')));
   const registrations: ShellJobRegistration[] = [];
@@ -479,7 +482,7 @@ if (process.env.DEVRYAN_SHELL_FIXTURE === '1') for (const scenario of [
       if (scenario.output) events.push({ cursor: 2, type: 'output', stream: 'stdout', data: Buffer.from(scenario.output).toString('base64') });
       const cursor = events.length + 1;
       events.push(scenario.uncertain ? { cursor, type: 'uncertain', error: { code: scenario.error } }
-        : { cursor, type: 'settled', ok: scenario.ok, receipt: scenario.receipt, ...(scenario.ok && !scenario.missingPublication ? { publication: scenario.partial ? { outcome: 'partial', conflicts: ['conflict.txt'] } : { outcome: 'complete', conflicts: [], ...(scenario.ignored ? { ignoredInputs: scenario.ignored } : {}) } } : {}), ...(scenario.eventError ? { error: scenario.eventError } : scenario.error ? { error: { message: scenario.error } } : {}) });
+        : { cursor, type: 'settled', ok: scenario.ok, receipt: scenario.receipt, ...(scenario.ok && !scenario.missingPublication ? { publication: scenario.partial ? { outcome: 'partial', conflicts: ['conflict.txt'] } : { outcome: 'complete', conflicts: [], ...(scenario.ignored ? { ignoredInputs: scenario.ignored } : {}) } } : {}), ...(scenario.artifacts ? { artifacts: scenario.artifacts } : {}), ...(scenario.eventError ? { error: scenario.eventError } : scenario.error ? { error: { message: scenario.error } } : {}) });
       return { cursor, done: true, events };
     }
     if (method.endsWith('.read')) return { cursor: params.cursor, done: true, events: [] };
@@ -520,6 +523,8 @@ if (process.env.DEVRYAN_SHELL_FIXTURE === '1') for (const scenario of [
       // Dropped output is reported, never passed off as published.
       if (scenario.ignored) expect(String(result.content)).toContain('so what it wrote inside them was dropped: test-results.');
       else expect(String(result.content)).not.toContain('Not published');
+      expect(result.metadata?.artifacts).toEqual(scenario.artifacts);
+      if (scenario.artifacts) expect(String(result.content)).toContain('Artifacts in /project/.artifacts/devryan/ses/call: report.html.');
       registered();
     }
   } finally { await routing.close(); await fs.rm(project, { recursive: true, force: true }); }

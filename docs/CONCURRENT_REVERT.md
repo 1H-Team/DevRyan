@@ -32,7 +32,8 @@ are linked into views and never ingested or published (a replaced link is
 reported as `ignoredInputs`). Dependencies stay read-only. On macOS, ignored
 output folders such as `.artifacts/` or `dist/` are written through to the
 project instead (`packages/harness-runtime/lib/execution-inputs.js`), so those
-writes are neither recorded nor reverted. Ignored standalone files such as `.env` are still
+writes are neither recorded nor reverted; each call's
+`$DEVRYAN_ARTIFACT_DIR` is its own folder under an ignored `.artifacts/`. Ignored standalone files such as `.env` are still
 ingested. Records ingested before a directory became an input are no longer
 observed; Revert, Redo and file restore leave those paths untouched and report
 an `ignored_input` conflict. Private views preserve HEAD and the

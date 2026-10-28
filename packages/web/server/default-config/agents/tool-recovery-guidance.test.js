@@ -121,7 +121,8 @@ describe('bundled agent tool recovery guidance', () => {
 
   it.each(['builder', 'fixer', 'orchestrator'])('names confined write locations and forbids stopping on EPERM for %s', (agent) => {
     const prompt = readAgent(agent);
-    expect(prompt).toContain('including gitignored output folders such as `.artifacts/`');
+    expect(prompt).toContain('Put evidence (reports, traces, screenshots) in `$DEVRYAN_ARTIFACT_DIR` when set');
+    expect(prompt).toContain('never delete `.artifacts/` itself');
     expect(prompt).toContain('`$DEVRYAN_SESSION_TMP` (kept for the session)');
     expect(prompt).toContain('`/tmp`, and paths outside the workspace are read-only');
     expect(prompt).toContain('retry once with the log, output, or cache in a writable location');

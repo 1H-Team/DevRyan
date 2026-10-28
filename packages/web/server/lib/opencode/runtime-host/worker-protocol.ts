@@ -75,6 +75,9 @@ export const ExecutionEvent = Schema.Union([
     receipt: Schema.optional(TerminationReceipt), result: Schema.optional(NativeResult), error: Schema.optional(WorkerError),
     publication: Schema.optional(Schema.Struct({ outcome: Schema.Literals(['complete', 'partial']), conflicts: Schema.Array(Schema.String),
       ignoredInputs: Schema.optional(Schema.Array(Schema.String)) })),
+    // This call's $DEVRYAN_ARTIFACT_DIR and the files it left there.
+    artifacts: Schema.optional(Schema.Struct({ directory: Schema.String, truncated: Schema.optional(Schema.Boolean),
+      files: Schema.Array(Schema.Struct({ path: Schema.String, size: Schema.Number, sha256: Schema.optional(Schema.String) })) })),
     truncated: Schema.optional(Schema.Literal(true)), truncation: Schema.optional(SearchTruncation) }),
   Schema.Struct({ cursor: Schema.Int, type: Schema.Literal('uncertain'), error: Schema.Struct({ code: Schema.String }) }),
 ]);
