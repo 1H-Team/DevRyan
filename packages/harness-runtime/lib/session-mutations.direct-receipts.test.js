@@ -25,6 +25,11 @@ describe('baseline content references', () => {
     return { root, db, byPath };
   };
   const sha = (text) => createHash('sha256').update(text).digest('hex');
+  // Granular runs: row pages, behind the direct-ancestry fence when any run
+  // replaced text. A baseline marker is never granular.
+  const FENCE = { format: 'ancestry', version: 2 };
+  const granular = (pages) => pages.length > 0
+    && pages.every(({ page }, index) => Array.isArray(page) || (index === 0 && JSON.stringify(page) === JSON.stringify(FENCE)));
   // Longer than one 32 KiB inline row, with multibyte text across a row boundary.
   const large = `${'α'.repeat(20_000)}\nmiddle\n${'ω'.repeat(20_000)}\n`;
 
@@ -59,8 +64,10 @@ describe('baseline content references', () => {
     // A host predating references reads runs as arrays and fails closed.
     await expect((async () => { for await (const _ of db.list(`runs/${byPath['large.txt'].id}`)); })())
       .rejects.toMatchObject({ code: 'invalid_change_record' });
-    // Edited documents keep granular inline runs.
-    expect((await documents(f)).byPath['large.txt'].pages.every(({ page }) => Array.isArray(page))).toBe(true);
+    // Edited documents keep granular inline runs, fenced because they replaced text.
+    const editedPages = (await documents(f)).byPath['large.txt'].pages;
+    expect(granular(editedPages)).toBe(true);
+    expect(editedPages[0]).toEqual({ key: '0000000000.json', page: FENCE });
   }, 600_000);
 
   test('maintenance compacts inline baselines in place; pinned leases and concurrent edits stay exact', async () => {
@@ -75,7 +82,8 @@ describe('baseline content references', () => {
     });
     const inline = await documents(f);
     expect(inline.byPath['large.txt'].pages.map(({ page }) => page.length)).toEqual([3]);
-    expect(Object.values(inline.byPath).some(({ pages }) => pages.some(({ page }) => !Array.isArray(page)))).toBe(false);
+    // With references off, no document stores a baseline marker.
+    expect(Object.values(inline.byPath).some(({ pages }) => pages.some(({ page }) => !Array.isArray(page) && page.baseline !== undefined))).toBe(false);
 
     // A writer lands while candidates are read outside the lock: its document
     // must keep the writer's runs, and the pass must not claim completion.
@@ -98,8 +106,8 @@ describe('baseline content references', () => {
     const stamp = path.join(inline.root, 'baseline-refs');
     await expect(fs.access(stamp)).rejects.toMatchObject({ code: 'ENOENT' });
     const compacted = await documents(f);
-    expect(compacted.byPath['large.txt'].pages.every(({ page }) => Array.isArray(page))).toBe(true);
-    expect(compacted.byPath['d1/e1/f1.txt'].pages.every(({ page }) => Array.isArray(page))).toBe(true);
+    expect(granular(compacted.byPath['large.txt'].pages)).toBe(true);
+    expect(granular(compacted.byPath['d1/e1/f1.txt'].pages)).toBe(true);
     expect(compacted.byPath['d0/e0/f0.txt'].pages).toEqual([{ key: '0000000000.json',
       page: { baseline: sha('line 0\n'), size: 7 } }]);
     expect(await f.read('large.txt')).toBe(large.replace('middle', 'concurrent'));

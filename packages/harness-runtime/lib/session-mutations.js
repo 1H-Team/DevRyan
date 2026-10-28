@@ -10,7 +10,7 @@ import { git, gitTokens, changeError } from './session-changes-git.js';
 import { openChangeStore, changeKey } from './session-changes-store.js';
 import { safeChangePath, verifyAncestors } from './session-changes-snapshot.js';
 import { withCrossProcessFileLock, writeFileAtomic } from './atomic-file.js';
-import { applyMutationText, initialMutationRuns, mutationText, visibleMutationRuns } from './session-mutation-text.js';
+import { applyMutationText, decodeMutationRunRows, encodeMutationRunRows, initialMutationRuns, mutationText, visibleMutationRuns } from './session-mutation-text.js';
 import { reviewedToolEffect } from './session-tool-effects.js';
 import { inspectMutationFile, copyMutationObject, createViewMaterializer, mutationFileStamp, mutationFileStampSync, mutationStatStamp, GRANULAR_TEXT_BYTES } from './session-mutation-files.js';
 import { withExecutionIO } from './execution-io-pool.js';
@@ -97,6 +97,17 @@ const BASELINE_COMPACTED = 'baseline-refs';
 const COMPACT_BATCH = 1024;
 const baselineMarker = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
   && Object.keys(value).length === 2 && /^[a-f0-9]{64}$/.test(value.baseline) && Number.isSafeInteger(value.size) && value.size > 0;
+// Runs written with direct ancestry (session-mutation-text.js) are fenced by a
+// format page at `BASELINE_PAGE`, ahead of their rows. A host predating direct
+// ancestry would read the rows but derive a shallower closure, so it must fail
+// closed (`invalid_change_record`, as for baseline markers) rather than order
+// boundary inserts differently after multi-level undo. Fenced rows store a
+// run's metadata once (`continues` rows carry only text). The transition is
+// one-way per document; format 1 documents stay readable. Runs that replace
+// nothing (a baseline, pure insertions) keep format 1 rows and need no fence.
+const ANCESTRY_FORMAT = Object.freeze({ format: 'ancestry', version: 2 });
+const ancestryFormatPage = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
+  && Object.keys(value).length === 2 && value.format === 'ancestry' && value.version === 2;
 // The text of runs that are exactly a document's untouched baseline (stored
 // whole or in 32 KiB rows), or null.
 const baselineText = (runs, id) => {
@@ -558,9 +569,17 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
   };
   const inactive = (repo) => cachedRecords(repo, 'operations', readInactive, (ids) => new Set(ids));
   const runsFor = async (repo, id, prefix = 'runs') => {
-    const runs = [];
-    let marker = false;
+    const runs = [], rows = [];
+    let marker = false, fenced = false, first = true;
     for await (const { value } of repo.db.entries(`${prefix}/${id}`)) {
+      // The format page is valid only as a document's first page.
+      if (first && ancestryFormatPage(value)) { fenced = true; first = false; continue; }
+      first = false;
+      if (fenced) {
+        if (!Array.isArray(value)) throw changeError('invalid_change_record');
+        rows.push(...value);
+        continue;
+      }
       // A marker is the document's only page.
       if (marker || (baselineMarker(value) && runs.length)) throw changeError('invalid_change_record');
       if (baselineMarker(value)) {
@@ -573,7 +592,17 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       if (!Array.isArray(value)) throw changeError('invalid_change_record');
       for (const run of value) runs.push({ ...run, text: Buffer.from(run.bytes, 'base64').toString('latin1') });
     }
-    return runs;
+    if (!fenced) return runs;
+    try { return decodeMutationRunRows(rows); } catch { throw changeError('invalid_change_record'); }
+  };
+  // Format 1 rows: one per 32 KiB of text, each repeating the run's metadata.
+  const formatOneRows = function* (runs) {
+    for (const run of runs) {
+      for (let offset = 0; offset < run.text.length; offset += 32_768) {
+        const { text, bytes: _bytes, ...metadata } = run;
+        yield { ...metadata, start: run.start + offset, bytes: Buffer.from(text.slice(offset, offset + 32_768), 'latin1').toString('base64') };
+      }
+    }
   };
   const saveRuns = async (repo, id, runs, prefix = 'runs', options) => {
     const baseline = baselineRefs() ? baselineText(runs, id) : null;
@@ -584,15 +613,15 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       repo.db.set(`${prefix}/${id}/${BASELINE_PAGE}`, { baseline: hash, size: bytes.length });
       return;
     }
-    const rows = function* () {
-      for (const run of runs) {
-        for (let offset = 0; offset < run.text.length; offset += 32_768) {
-          const { text, bytes: _bytes, ...metadata } = run;
-          yield { ...metadata, start: run.start + offset, bytes: Buffer.from(text.slice(offset, offset + 32_768), 'latin1').toString('base64') };
-        }
-      }
-    };
-    await repo.db.setList(`${prefix}/${id}`, rows(), options);
+    if (!options?.absent) for await (const { key: page } of repo.db.entries(`${prefix}/${id}`)) repo.db.remove(page);
+    // Only replacement ancestry differs between formats: runs that replace
+    // nothing keep format 1 rows, which every host reads alike.
+    if (!runs.some((run) => run.replaces.length)) {
+      await repo.db.setList(`${prefix}/${id}`, formatOneRows(runs), { absent: true });
+      return;
+    }
+    repo.db.set(`${prefix}/${id}/${BASELINE_PAGE}`, ANCESTRY_FORMAT);
+    await repo.db.setList(`${prefix}/${id}`, encodeMutationRunRows(runs), { absent: true, firstPage: 1 });
   };
   // Replaces inline baselines written before markers, in batches under the
   // owner lock. Candidates are read lock-free from one snapshot; a batch

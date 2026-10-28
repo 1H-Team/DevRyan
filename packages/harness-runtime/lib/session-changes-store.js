@@ -210,10 +210,11 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF,gitRunner,s
     }
   };
   // `absent`: the caller knows the prefix is new (a just-generated id), so
-  // there is nothing to replace and no listing to read.
-  const setList = async (prefix, values, { absent = false } = {}) => {
+  // there is nothing to replace and no listing to read. `firstPage` leaves the
+  // lower page names to the caller (a format page that must list first).
+  const setList = async (prefix, values, { absent = false, firstPage = 0 } = {}) => {
     if (!absent) for await (const { key } of entries(prefix)) remove(key);
-    let page = [], bytes = 0, index = 0;
+    let page = [], bytes = 0, index = firstPage;
     const flush = () => { if (page.length) set(`${prefix}/${String(index++).padStart(10, '0')}.json`, page); page = []; bytes = 0; };
     for await (const value of values) {
       const size = Buffer.byteLength(JSON.stringify(value));
