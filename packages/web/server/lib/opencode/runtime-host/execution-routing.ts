@@ -97,6 +97,8 @@ export function createExecutionRouting(options: { readonly rpc: ExecutionRpc; re
   type ShellSettlement = { state: 'pending' } | { state: 'uncertain'; code: string }
     | { state: 'settled'; ok: boolean; receipt?: typeof import('./worker-protocol.js').TerminationReceipt.Type;
       publication?: { readonly outcome: 'complete' | 'partial'; readonly conflicts: readonly string[]; readonly ignoredInputs?: readonly string[] }; error?: string;
+      artifacts?: { readonly directory: string; readonly truncated?: boolean;
+        readonly files: readonly { readonly path: string; readonly size: number; readonly sha256?: string }[] };
       code?: string; errorMetadata?: Readonly<Record<string, unknown>> };
   const shellSettlements = new Map<string, ShellSettlement>();
   const callKey = (call: OwnedToolInvocation) => JSON.stringify([call.nativeContext.sessionID, call.nativeContext.messageID, call.nativeContext.id]);
@@ -256,9 +258,13 @@ export function createExecutionRouting(options: { readonly rpc: ExecutionRpc; re
             ...(settlement.publication.outcome === 'partial'
               ? [`Some changes were not published because these files changed during execution: ${settlement.publication.conflicts.join(', ')}. Proposed contents were retained for recovery.`] : []),
             ...(ignored.length ? [`Not published: this command replaced these ignored folders, so what it wrote inside them was dropped: ${ignored.slice(0, 20).join(', ')}${ignored.length > 20 ? ` (${ignored.length - 20} more)` : ''}. Write output to a new path instead of deleting and recreating these folders.`] : []),
+            // Evidence the call left in $DEVRYAN_ARTIFACT_DIR, readable byte for byte.
+            ...(settlement.artifacts?.files.length ? [`Artifacts in ${settlement.artifacts.directory}: ${settlement.artifacts.files.slice(0, 20)
+              .map(file => file.path).join(', ')}${settlement.artifacts.files.length > 20 ? ` (${settlement.artifacts.files.length - 20} more)` : ''}${settlement.artifacts.truncated ? ' (manifest truncated)' : ''}. Sizes and SHA-256 are in this call's metadata.`] : []),
           ].join('\n\n') || undefined;
           const content = notice ? withNotice(notice) : result.content;
-          return Effect.succeed({ ...result, content, metadata: { ...result.metadata, exitCode: receipt.exitCode, publication: settlement.publication } });
+          return Effect.succeed({ ...result, content, metadata: { ...result.metadata, exitCode: receipt.exitCode, publication: settlement.publication,
+            ...(settlement.artifacts ? { artifacts: settlement.artifacts } : {}) } });
         }), Effect.ensuring(Effect.sync(() => { shellSettlements.delete(key); })));
     }
     if (invocation.toolID === 'skill') return Effect.fail(new Tool.Error({ message: 'native_skill_asset_authority_required' }));
@@ -378,6 +384,7 @@ export function createExecutionRouting(options: { readonly rpc: ExecutionRpc; re
                 done = true; yield* read(handle, cursor);
                 if (!readOnly && shellSettlements.has(callKey(ticket.invocation))) shellSettlements.set(callKey(ticket.invocation),
                   { state: 'settled', ok: event.ok, receipt: event.receipt, publication: event.publication, error: event.error?.message,
+                    ...(event.artifacts ? { artifacts: event.artifacts } : {}),
                     ...(event.error?.code ? { code: event.error.code } : {}), ...(event.error?.metadata ? { errorMetadata: event.error.metadata } : {}) });
                 if (!event.ok || !event.receipt?.terminated || !event.receipt.confined || (!readOnly && event.receipt.cancelled)) return yield* Effect.fail(platformFailure(new Error(event.error?.message ?? 'native_execution_failed')));
                 if (event.truncated && (!readOnly || !event.truncation)) return yield* Effect.fail(platformFailure(new Error('native_search_truncation_invalid')));

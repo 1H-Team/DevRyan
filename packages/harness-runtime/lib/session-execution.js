@@ -263,6 +263,30 @@ const ledgerStorageOf = (viewDirectory) => {
   return path.basename(views) === 'views' ? path.dirname(path.dirname(views)) : path.dirname(viewDirectory);
 };
 
+// $DEVRYAN_ARTIFACT_DIR: this call's own folder in the project's ignored
+// `.artifacts/` (created before inputs were classified, session-mutations.js),
+// granted write-through, so its files reach the project unpublished and file
+// tools read the same bytes. The agent can write inside `.artifacts/`, so each
+// component is created and checked without following links, and the result
+// must resolve to exactly that path. macOS only, where write-through exists.
+// Kill switch: DEVRYAN_ARTIFACT_DIR=0.
+export const ARTIFACT_ROOT = '.artifacts';
+async function prepareArtifactDirectory(lease, writableDirectories) {
+  if (process.env.DEVRYAN_ARTIFACT_DIR === '0' || !writableDirectories.length) return null;
+  const project = await fs.realpath(lease.projectDirectory).catch(() => null);
+  const root = project && writableDirectories.find((directory) => path.relative(project, directory) === ARTIFACT_ROOT);
+  const parts = ['devryan', lease.scope?.sessionID, lease.scope?.callID];
+  if (!root || !parts.every((part) => typeof part === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(part))) return null;
+  let current = root;
+  for (const part of parts) {
+    current = path.join(current, part);
+    await fs.mkdir(current, { mode: 0o755 }).catch((cause) => { if (cause.code !== 'EEXIST') throw cause; });
+    const stat = await fs.lstat(current);
+    if (!stat.isDirectory() || stat.isSymbolicLink()) return null;
+  }
+  return await fs.realpath(current).catch(() => null) === current ? current : null;
+}
+
 export async function prepareSessionExecution({ launcher, lease, socketDirectory: requestedSocketDirectory, workerBrowsers = true, deniedReadDirectories = [], hostOperationGrant }) {
   if(hostOperationGrant){assertRegisteredHostOperationGrant(hostOperationGrant);if(lease.readOnly===true)throw error('native_plan_write_denied');if(process.platform!=='darwin')throw error('host_operation_platform_unavailable');}
   if (!['darwin', 'linux', 'win32'].includes(process.platform)) throw error('mutation_platform_unsupported');
@@ -317,6 +341,7 @@ export async function prepareSessionExecution({ launcher, lease, socketDirectory
     inputs: lease.inputs, projectDirectory: lease.projectDirectory,
     protectedDirectories: [ledgerStorageOf(viewDirectory), auxiliaryDirectory],
   }) : [];
+  const artifactDirectory = await prepareArtifactDirectory(lease, writableDirectories);
   const profile = path.join(root, `sandbox-${randomUUID()}.sb`);
   if (process.platform === 'win32') {
     for (const denied of deniedRoots) for (const granted of [viewDirectory, scratchDirectory, auxiliaryDirectory]) {
@@ -330,13 +355,14 @@ export async function prepareSessionExecution({ launcher, lease, socketDirectory
     deniedReadDirectories: deniedRoots, chromiumRendezvous: browsers, readOnly: lease.readOnly === true, hostOperationGrant }));
   const cancelEvent = `Local\\DevRyan-execution-${randomUUID()}`;
   return { launcher, arguments: [viewDirectory, scratchDirectory, profile, path.join(root, 'termination.json'), '--'],
-    cwd: workingDirectory, profile, scratchDirectory, socketDirectory,
+    cwd: workingDirectory, profile, scratchDirectory, socketDirectory, artifactDirectory,
     environment: { DEVRYAN_EXECUTION_WORKER: '1', HOME: scratchDirectory,
       DEVRYAN_EXECUTION_READ_ONLY: lease.readOnly === true ? '1' : '0',
       ...(process.platform === 'win32' ? { USERPROFILE: scratchDirectory, LOCALAPPDATA: scratchDirectory, APPDATA: scratchDirectory } : {}),
       DEVRYAN_EXECUTION_CWD: lease.logicalWorkingDirectory ?? workingDirectory, DEVRYAN_EXECUTION_CANCEL_EVENT: cancelEvent,
       DEVRYAN_EXECUTION_CACHE: auxiliaryDirectory,
       ...(sessionTemporaryDirectory ? { DEVRYAN_SESSION_TMP: sessionTemporaryDirectory } : {}),
+      ...(artifactDirectory ? { DEVRYAN_ARTIFACT_DIR: artifactDirectory } : {}),
       ...(socketDirectory ? { XDG_RUNTIME_DIR: shortSocketSpelling(socketDirectory) } : {}),
       ...(process.platform === 'darwin' ? { DYLD_INSERT_LIBRARIES: `${launcher}-spawn.dylib`,
         ZDOTDIR: scratchDirectory, BASH_ENV: path.join(scratchDirectory, '.bash-env') } : {}),
@@ -576,7 +602,7 @@ export async function startSessionExecution({ launcher, lease, command, args = [
     await fs.rm(prepared.profile, { force: true });
     await removeExecutionSocketDirectory(lease, prepared.socketDirectory).catch(() => {});
   });
-  return { pid: child.pid, child, cancel, result };
+  return { pid: child.pid, child, cancel, result, artifactDirectory: prepared.artifactDirectory };
 }
 
 /** Provider transports and title generation have no file contribution. They

@@ -105,7 +105,8 @@ not available through this tool.
 
 Shell verification starts in the mapped private project `$PWD`. Do not `cd` to
 the absolute logical project path: that live tree is read-only. Use `$TMPDIR`
-for one-call scratch or `$DEVRYAN_SESSION_TMP` for files needed by later calls;
+for one-call scratch or `$DEVRYAN_SESSION_TMP` for files needed by later calls,
+and `$DEVRYAN_ARTIFACT_DIR` (when set) for evidence other tools must read;
 never assume `/tmp` is writable. Check temporary-directory creation and server
 launch before polling readiness; stop on setup failure. A shell-owned server
 and its browser checks must finish in the same bounded shell call.

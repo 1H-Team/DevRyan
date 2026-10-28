@@ -424,6 +424,29 @@ test('a shell whose command replaced ignored folders settles with them named, ne
   } finally { f.terminated.resolve(f.receipt); await f.host.drain(); }
 });
 
+test('a shell settles with a manifest of what it left in its artifact folder, without following links', async () => {
+  const native = await import('@devryan/harness-runtime/lib/session-execution.js');
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-artifacts-host-')));
+  const artifacts = path.join(root, 'call'), elsewhere = path.join(root, 'elsewhere');
+  await fs.mkdir(path.join(artifacts, 'test-results', 'login'), { recursive: true }); await fs.mkdir(elsewhere);
+  await fs.writeFile(path.join(artifacts, 'test-results', 'login', 'trace.zip'), 'trace bytes');
+  await fs.writeFile(path.join(artifacts, 'report.html'), '<p>report</p>');
+  await fs.writeFile(path.join(elsewhere, 'secret.txt'), 'not evidence');
+  await fs.symlink(elsewhere, path.join(artifacts, 'linked'));
+  const f = await nativePublicationFixture({}, 'shell');
+  const start = native.startSessionExecution.getMockImplementation();
+  native.startSessionExecution.mockImplementation(async (request) => ({ ...await start(request), artifactDirectory: artifacts }));
+  const sha = (text) => createHash('sha256').update(text).digest('hex');
+  try {
+    const { handle } = await f.start(); await f.launched.promise;
+    f.terminated.resolve(f.receipt);
+    expect(await f.settled(handle)).toMatchObject({ type: 'settled', ok: true, artifacts: { directory: artifacts, files: [
+      { path: 'report.html', size: 13, sha256: sha('<p>report</p>') },
+      { path: path.join('test-results', 'login', 'trace.zip'), size: 11, sha256: sha('trace bytes') },
+    ] } });
+  } finally { f.terminated.resolve(f.receipt); await f.host.drain(); await fs.rm(root, { recursive: true, force: true }); }
+});
+
 test('deadline cancellation matches the exact live shell and waits for termination', async () => {
   const f = await nativePublicationFixture({}, 'shell');
   const fingerprint = { sessionID: input.sessionID, messageID: input.messageID, callID: input.callID, partID: `${input.messageID}:tool:${input.callID}`, tool: 'bash' };

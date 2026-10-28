@@ -411,3 +411,49 @@ test('replacing an input directory with a file (and back) between calls follows 
   expect(await kind(path.join(third.viewDirectory, 'out'))).toBe('link');
   expect(await f.ledgerPaths()).not.toContain('out/b');
 });
+
+test('a project that ignores .artifacts gets it created before classification, so each call writes evidence through it', async () => {
+  if (process.platform !== 'darwin') return; // Write-through exists only in the macOS profile.
+  const f = await fixture();
+  await f.put('.gitignore', '.artifacts/\n'); await f.put('a.txt', 'a');
+  const lease = await f.begin('ses_a', 'p1', 'call_1');
+  expect(lease.inputs).toContain('.artifacts');
+  expect(await kind(path.join(f.directory, '.artifacts'))).toBe('directory');
+  expect(await kind(path.join(lease.viewDirectory, '.artifacts'))).toBe('link');
+  const prepare = async (scope) => {
+    const prepared = await prepareSessionExecution({ launcher: path.join(f.root, 'launcher'), lease: { ...lease, scope: { ...lease.scope, ...scope } } });
+    await removeExecutionSocketDirectory(lease, prepared.socketDirectory).catch(() => {});
+    return prepared;
+  };
+  const project = await fs.realpath(f.directory);
+  const first = await prepare({}), second = await prepare({ callID: 'call_2' });
+  expect(first.environment.DEVRYAN_ARTIFACT_DIR).toBe(path.join(project, '.artifacts', 'devryan', 'ses_a', 'call_1'));
+  expect(second.environment.DEVRYAN_ARTIFACT_DIR).toBe(path.join(project, '.artifacts', 'devryan', 'ses_a', 'call_2'));
+  expect(first.artifactDirectory).toBe(first.environment.DEVRYAN_ARTIFACT_DIR);
+  expect(await kind(first.artifactDirectory)).toBe('directory');
+  // Evidence lands in the project, byte for byte, and nothing is published from it.
+  await fs.writeFile(path.join(first.artifactDirectory, 'report.txt'), 'evidence');
+  expect((await f.finish(lease)).files ?? []).toEqual([]);
+  expect(await f.read('.artifacts/devryan/ses_a/call_1/report.txt')).toBe('evidence');
+  // A link the agent planted inside .artifacts is never followed by the host.
+  const outside = path.join(f.root, 'outside'); await fs.mkdir(outside);
+  await fs.rm(path.join(project, '.artifacts', 'devryan'), { recursive: true });
+  await fs.symlink(outside, path.join(project, '.artifacts', 'devryan'));
+  expect((await prepare({ callID: 'call_3' })).environment.DEVRYAN_ARTIFACT_DIR).toBeUndefined();
+  expect(await fs.readdir(outside)).toEqual([]);
+});
+
+test('a project that does not ignore .artifacts, or the kill switch, gets no artifact folder', async () => {
+  if (process.platform !== 'darwin') return;
+  const f = await fixture(); await f.put('a.txt', 'a');
+  const lease = await f.begin('ses_a', 'p1', 'call_1');
+  expect(lease.inputs ?? []).not.toContain('.artifacts');
+  expect(await kind(path.join(f.directory, '.artifacts'))).toBe('missing');
+  const previous = process.env.DEVRYAN_ARTIFACT_DIR;
+  process.env.DEVRYAN_ARTIFACT_DIR = '0';
+  try {
+    const g = await fixture(); await g.put('.gitignore', '.artifacts/\n'); await g.put('a.txt', 'a');
+    await g.begin('ses_a', 'p1', 'call_1');
+    expect(await kind(path.join(g.directory, '.artifacts'))).toBe('missing');
+  } finally { if (previous === undefined) delete process.env.DEVRYAN_ARTIFACT_DIR; else process.env.DEVRYAN_ARTIFACT_DIR = previous; }
+});

@@ -6,7 +6,7 @@ import { reviewedToolEffect } from '@devryan/harness-runtime/lib/session-tool-ef
 import { cleanupExecutionLease } from '@devryan/harness-runtime/lib/execution-cleanup.js';
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
-import {constants as fsConstants} from 'node:fs';
+import {constants as fsConstants, createReadStream} from 'node:fs';
 import path from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import { createSessionMutationHost } from '@devryan/harness-runtime';
@@ -72,6 +72,35 @@ const guardedNativeReadArgs = (tool, args, { projectDirectory, readDirectory }) 
 // Playwright does with test-results/): what it wrote inside them is never
 // published, so the model must be told rather than look for it later.
 const ignoredInputsNotice = (ignored) => `Not published: this command replaced these ignored folders, so what it wrote inside them was dropped: ${ignored.slice(0, 20).join(', ')}${ignored.length > 20 ? ` (${ignored.length - 20} more)` : ''}. Write output to a new path instead of deleting and recreating these folders.`;
+// The files a call left in its own artifact folder ($DEVRYAN_ARTIFACT_DIR,
+// session-execution.js): path, size and SHA-256, so evidence read back later can
+// be checked byte for byte. Links are not followed; at most 200 files, eight
+// levels and 256 MiB are hashed (`truncated` past that).
+const ARTIFACT_MANIFEST_FILES = 200, ARTIFACT_MANIFEST_DEPTH = 8, ARTIFACT_MANIFEST_BYTES = 256 * 1024 * 1024;
+const artifactManifest = async (directory) => {
+  const files = [];
+  let bytes = 0, truncated = false;
+  const walk = async (relative, depth) => {
+    if (depth > ARTIFACT_MANIFEST_DEPTH) { truncated = true; return; }
+    const entries = await fs.readdir(path.join(directory, relative), { withFileTypes: true }).catch(() => []);
+    for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+      const name = relative ? path.join(relative, entry.name) : entry.name;
+      if (entry.isDirectory()) { await walk(name, depth + 1); continue; }
+      if (!entry.isFile()) continue;
+      if (files.length >= ARTIFACT_MANIFEST_FILES) { truncated = true; return; }
+      const stat = await fs.lstat(path.join(directory, name)).catch(() => null);
+      if (!stat?.isFile()) continue;
+      if (bytes + stat.size > ARTIFACT_MANIFEST_BYTES) { truncated = true; files.push({ path: name, size: stat.size }); continue; }
+      bytes += stat.size;
+      const hash = createHash('sha256');
+      try { for await (const chunk of createReadStream(path.join(directory, name))) hash.update(chunk); } catch { continue; }
+      files.push({ path: name, size: stat.size, sha256: hash.digest('hex') });
+    }
+  };
+  await walk('', 0);
+  return { directory, files, ...(truncated ? { truncated: true } : {}) };
+};
+const artifactsOf = async (job) => (job.artifactDirectory ? { artifacts: await artifactManifest(job.artifactDirectory) } : {});
 const nativeSettledPublication = (publication) => ({ outcome: publication?.outcome === 'partial' ? 'partial' : 'complete',
   conflicts: (publication?.conflicts ?? []).map(item => item.path),
   ...(publication?.ignoredInputs?.length ? { ignoredInputs: publication.ignoredInputs } : {}) });
@@ -789,7 +818,7 @@ export function createSessionExecutionHost(options) {
           input: workerInput, interactive: input.kind === 'writer', socketDirectory: browser ? path.join(scratch,'s') : nativeOptions.socketDirectory,
           workerBrowsers: nativeOptions.workerBrowsers ?? false, deniedReadDirectories: nativeOptions.deniedReadDirectories,
           ...(registeredOperation?{hostOperationGrant:registeredOperation.grant}:{}) });
-        launched = true; job.child = started.child;job.resolveChild();
+        launched = true; job.child = started.child; job.artifactDirectory = started.artifactDirectory ?? null; job.resolveChild();
         if (workerInput) started.child.stdin.write(workerInput);
         nativeEvent(job, { type: 'started', pid: started.pid });
         const receipt = await started.result;
@@ -811,7 +840,7 @@ export function createSessionExecutionHost(options) {
         const publication = await publish();
         if (shellLike) await settleRequiredCheck();
         await cleanupAfterPublication(job.lease);
-        nativeEvent(job, { type: 'settled', ok: true, receipt, publication: nativeSettledPublication(publication), result: nativePublicationResult(job.result?.result, publication, job.lease,input.tool) }, true);
+        nativeEvent(job, { type: 'settled', ok: true, receipt, publication: nativeSettledPublication(publication), ...await artifactsOf(job), result: nativePublicationResult(job.result?.result, publication, job.lease,input.tool) }, true);
       } catch (cause) {
         job.resolveChild();
         await Promise.allSettled([...job.browserOperations]);
@@ -832,7 +861,7 @@ export function createSessionExecutionHost(options) {
             const publication = await publish();
             if (shellLike) await settleRequiredCheck();
             await cleanupAfterPublication(job.lease);
-            nativeEvent(job, { type: 'settled', ok: true, receipt, publication: nativeSettledPublication(publication), result: nativePublicationResult(job.result?.result, publication, job.lease,input.tool) }, true);
+            nativeEvent(job, { type: 'settled', ok: true, receipt, publication: nativeSettledPublication(publication), ...await artifactsOf(job), result: nativePublicationResult(job.result?.result, publication, job.lease,input.tool) }, true);
             return;
           }
           await runtime.cancelLease({ directory: input.directory, token: lease.token, ...stoppedBy(job) });

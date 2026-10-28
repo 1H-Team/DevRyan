@@ -13,6 +13,7 @@ import { withCrossProcessFileLock, writeFileAtomic } from './atomic-file.js';
 import { applyMutationText, decodeMutationRunRows, encodeMutationRunRows, initialMutationRuns, minimizeMutationAncestry, mutationText,
   visibleMutationRuns } from './session-mutation-text.js';
 import { reviewedToolEffect } from './session-tool-effects.js';
+import { ARTIFACT_ROOT } from './session-execution.js';
 import { inspectMutationFile, copyMutationObject, createViewMaterializer, mutationFileStamp, mutationFileStampSync, mutationStatStamp, GRANULAR_TEXT_BYTES } from './session-mutation-files.js';
 import { withExecutionIO } from './execution-io-pool.js';
 import { markObjectIfUnsynced, syncPendingObjectDirectory } from './object-durability.js';
@@ -2163,6 +2164,22 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     await move(standby.directory, view);
     return kept;
   };
+  // The supported place for a run's evidence ($DEVRYAN_ARTIFACT_DIR,
+  // session-execution.js) is the project's `.artifacts/`. Where Git ignores it
+  // and it is missing, a process lease creates it before inputs are
+  // classified, so it links into the view write-through and is never
+  // published. macOS only, where write-through exists. Kill switch:
+  // DEVRYAN_ARTIFACT_DIR=0.
+  const ensureArtifactRoot = async (lease) => {
+    if (process.platform !== 'darwin' || process.env.DEVRYAN_ARTIFACT_DIR === '0' || lease.preparation !== undefined || !lease.vcs) return;
+    const root = path.join(lease.projectDirectory, ARTIFACT_ROOT);
+    if (await fs.lstat(root).then(() => true, (cause) => { if (cause.code === 'ENOENT') return false; throw cause; })) return;
+    // A convenience: if Git cannot say, the call simply has no artifact folder.
+    const ignored = await git(lease.projectDirectory, ['check-ignore', '--', `${ARTIFACT_ROOT}/`], { acceptExitCodes: [1] })
+      .then((output) => output.toString().trim(), () => '');
+    if (!ignored) return;
+    await fs.mkdir(root, { mode: 0o755 }).catch((cause) => { if (cause.code !== 'EEXIST') throw cause; });
+  };
   const preparations = new Map();
   const prepare = (lease) => {
     if (lease.state === 'ready' || lease.state === 'published') return Promise.resolve(lease);
@@ -2206,6 +2223,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
           lease.state = 'ready'; repo.db.set(key('leases', lease.token), lease); return lease;
         });
       }
+      await ensureArtifactRoot(lease);
       const { inputs } = await executionPhase('reconciliation', () => observe(lease));
       await locked(lease.directory, async (repo) => {
         const current = await repo.db.get(key('leases', lease.token));
