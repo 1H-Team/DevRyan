@@ -23,8 +23,29 @@ cancellation from its constructor-owned execution host, then confirms the
 canonical tool part. Unavailable or unconfirmed command cancellation retains
 bounded session abort and the existing sole-active-session restart restriction.
 Repeated updates never extend the absolute deadline. New command admission
-rejects zero timeouts; the observer defensively defaults malformed historical
-input to four minutes so it cannot disable recovery.
+rejects zero timeouts and timeouts above one hour; the observer defensively
+defaults malformed or missing input to four minutes so it cannot disable
+recovery, and clamps values above the maximum instead of shortening them.
+
+The deadline is bound to the running call, never to the streaming placeholder.
+The execution host registers each native shell job when it binds it
+(`register`): the real start and the timeout the native shell enforces
+(`effectiveTimeoutMs`; 0 for a background job, which is not watched). A
+registered deadline is authoritative. Without a registration, a `running` part
+arms the deadline; a `pending` part only creates an in-memory candidate that is
+never cancelled, re-checked against the exact message with backoff until it
+runs, ends or expires (30 minutes). Before cancelling, observed and version 1
+(`legacy`) deadlines are recomputed from the authoritative running part and
+rescheduled when later. Records keep `requestedTimeoutMs`,
+`effectiveTimeoutMs`, `deadlineAt` (start plus the effective timeout) apart;
+the watchdog fires at `deadlineAt + grace`. The cancellation intent
+(`command_deadline_exceeded`, with those values) is persisted and journaled
+before any effect, so a kill whose terminal update arrives first is journaled
+as `recovered`, not as a normal completion; the escalation to a session abort
+is its own incident (`command_deadline_session_abort`). A command that already
+exited and is still publishing is never aborted: the execution host answers
+`'publishing'` and the watchdog re-checks it 30 seconds later
+(`command_deadline_publishing`).
 
 `lib/atomic-file.js` also exports a dependency-free cross-process lock. Locks
 on POSIX publish a synced private temporary inode with exclusive `link()`, so a
@@ -157,7 +178,8 @@ in [identity compatibility](../../docs/IDENTITY_COMPATIBILITY.md#data-folder-mig
   `409 WORKTREE_DIRECTORY_BUSY`, and active setup prevents removal.
 - `command-deadline.js`: exact shell-call deadline ownership. It fingerprints
   the session, assistant message, part, call, and tool; persists no command
-  text; preserves the first absolute deadline across repeated updates; and
+  text; prefers the execution host's registration and never arms from a
+  streaming placeholder; preserves the first absolute deadline across repeated updates; and
   immediately reconciles overdue records after restart or system sleep. Thirty
   seconds after the declared deadline it fetches the exact message, issues at
   most one session abort, and waits up to ten seconds for authoritative

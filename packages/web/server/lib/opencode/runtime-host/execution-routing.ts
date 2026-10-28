@@ -22,6 +22,25 @@ const TrustedToolInvocationRef = Context.Reference<OwnedToolInvocation | undefin
   'DevRyan/TrustedToolInvocation', { defaultValue: () => undefined });
 const TICKET = 'DEVRYAN_NATIVE_SHELL_TICKET';
 const writers = new Set(['write', 'edit', 'patch']);
+// The command-deadline watchdog's ceiling (MAX_COMMAND_TIMEOUT_MS in
+// @devryan/harness-runtime/lib/command-deadline.js); larger requests are refused
+// here rather than silently shortened there.
+const MAX_SHELL_TIMEOUT_MS = 3_600_000;
+const numberField = (metadata: Readonly<Record<string, unknown>> | undefined, name: string) => {
+  const value = metadata?.[name];
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+};
+// The deadline watchdog's own cancellation names what it enforced, so a model
+// can adapt instead of retrying the same command.
+const shellFailureMessage = (settlement: { readonly error?: string; readonly code?: string; readonly errorMetadata?: Readonly<Record<string, unknown>> }) => {
+  if (settlement.code !== 'command_deadline_exceeded') return settlement.error ?? 'native_execution_failed';
+  const effective = numberField(settlement.errorMetadata, 'effectiveTimeoutMs');
+  const grace = numberField(settlement.errorMetadata, 'graceMs');
+  const requested = numberField(settlement.errorMetadata, 'requestedTimeoutMs');
+  const enforced = effective === undefined ? 'its deadline' : `its ${effective} ms timeout${requested === undefined ? ' (the default; no timeout was requested)' : ''}`;
+  return `command_deadline_exceeded: DevRyan stopped this command ${grace === undefined ? '' : `${Math.round(grace / 1000)} s `}after ${enforced}. `
+    + `Use a larger timeout (at most ${MAX_SHELL_TIMEOUT_MS} ms) or split the work.`;
+};
 const platformFailure = (cause: unknown) => systemError({ _tag: 'Unknown', module: 'DevRyanExecution', method: 'spawn',
   description: cause instanceof Error ? cause.message : 'native_execution_failed' });
 const toolFailure = (cause: unknown) => new Tool.Error({ message: cause instanceof Error ? cause.message : 'native_execution_failed' });
@@ -77,7 +96,8 @@ export function createExecutionRouting(options: { readonly rpc: ExecutionRpc; re
   const shellHandles = new Map<string, string>();
   type ShellSettlement = { state: 'pending' } | { state: 'uncertain'; code: string }
     | { state: 'settled'; ok: boolean; receipt?: typeof import('./worker-protocol.js').TerminationReceipt.Type;
-      publication?: { readonly outcome: 'complete' | 'partial'; readonly conflicts: readonly string[] }; error?: string };
+      publication?: { readonly outcome: 'complete' | 'partial'; readonly conflicts: readonly string[] }; error?: string;
+      code?: string; errorMetadata?: Readonly<Record<string, unknown>> };
   const shellSettlements = new Map<string, ShellSettlement>();
   const callKey = (call: OwnedToolInvocation) => JSON.stringify([call.nativeContext.sessionID, call.nativeContext.messageID, call.nativeContext.id]);
   const searchTruncations = new Map<string, typeof import('./worker-protocol.js').SearchTruncation.Type>();
@@ -204,25 +224,34 @@ export function createExecutionRouting(options: { readonly rpc: ExecutionRpc; re
     }
     if (invocation.toolID === 'shell') {
       const timeout: unknown = invocation.input !== null && typeof invocation.input === 'object' ? Reflect.get(invocation.input, 'timeout') : undefined;
-      if (timeout !== undefined && (typeof timeout !== 'number' || !Number.isSafeInteger(timeout) || timeout <= 0)) {
-        return Effect.fail(new Tool.Error({ message: 'native_shell_timeout_invalid: use a positive integer timeout; zero does not disable the deadline' }));
+      if (timeout !== undefined && (typeof timeout !== 'number' || !Number.isSafeInteger(timeout) || timeout <= 0 || timeout > MAX_SHELL_TIMEOUT_MS)) {
+        return Effect.fail(new Tool.Error({ message: `native_shell_timeout_invalid: timeout is in milliseconds, from 1 to ${MAX_SHELL_TIMEOUT_MS}; zero does not disable the deadline` }));
       }
       const key = callKey(invocation);
       return Effect.sync(() => { shellSettlements.set(key, { state: 'pending' }); }).pipe(Effect.andThen(invocation.executeNative()),
         Effect.provideService(TrustedToolInvocationRef, invocation),
         Effect.flatMap(result => {
+          const withNotice = (notice: string) => typeof result.content === 'string' ? `${result.content}\n\n${notice}`
+            : [...(result.content ?? []), { type: 'text' as const, text: notice }];
           const settlement = shellSettlements.get(key);
           if (result.metadata?.status === 'running' && settlement?.state === 'pending') return Effect.succeed(result);
           if (!settlement || settlement.state === 'pending') return Effect.fail(new Tool.Error({ message: 'native_execution_result_missing', metadata: { output: result.content } }));
           if (settlement.state === 'uncertain') return Effect.fail(new Tool.Error({ message: settlement.code, metadata: { output: result.content, termination: 'uncertain' } }));
           const receipt = settlement.receipt;
-          if (!settlement.ok || !receipt?.terminated || !receipt.confined || receipt.cancelled)
-            return Effect.fail(new Tool.Error({ message: settlement.error ?? 'native_execution_failed', metadata: { output: result.content, ...(receipt ? { receipt } : {}) } }));
+          if (!settlement.ok || !receipt?.terminated || !receipt.confined || receipt.cancelled) {
+            // OpenCode's own timer stopped the command: it marks its result
+            // (`timeout: true`) before it kills, so the cause is established.
+            if (receipt?.terminated && receipt.cancelled && result.metadata?.timeout === true)
+              return Effect.succeed({ ...result, content: withNotice('Changes from this command were not published because it was stopped at its timeout.'),
+                metadata: { ...result.metadata, receipt } });
+            return Effect.fail(new Tool.Error({ message: shellFailureMessage(settlement), metadata: { output: result.content,
+              ...(receipt ? { receipt } : {}), ...(settlement.code ? { code: settlement.code } : {}),
+              ...(settlement.errorMetadata ? { deadline: settlement.errorMetadata } : {}) } }));
+          }
           if (!settlement.publication) return Effect.fail(new Tool.Error({ message: 'native_publication_result_missing', metadata: { output: result.content, receipt } }));
           const notice = settlement.publication.outcome === 'partial'
             ? `Some changes were not published because these files changed during execution: ${settlement.publication.conflicts.join(', ')}. Proposed contents were retained for recovery.` : undefined;
-          const content = !notice ? result.content : typeof result.content === 'string' ? `${result.content}\n\n${notice}`
-            : [...(result.content ?? []), { type: 'text' as const, text: notice }];
+          const content = notice ? withNotice(notice) : result.content;
           return Effect.succeed({ ...result, content, metadata: { ...result.metadata, exitCode: receipt.exitCode, publication: settlement.publication } });
         }), Effect.ensuring(Effect.sync(() => { shellSettlements.delete(key); })));
     }
@@ -262,8 +291,14 @@ export function createExecutionRouting(options: { readonly rpc: ExecutionRpc; re
         const invocation = yield* TrustedToolInvocationRef;
         if (!invocation || closed) return yield* Effect.die(new Error('native_shell_ownership_required'));
         let ticket: string | undefined;
+        // The timeout the native shell arms after `before` (its foreground
+        // default when none was requested, 0 for background): what the
+        // command-deadline watchdog must not cut short.
+        let effectiveTimeoutMs: number | undefined;
         const info = yield* inner.create(input, (final) => Effect.gen(function* () {
           if (before) yield* before(final); // Native final-command permission runs first.
+          const finalTimeout: unknown = Reflect.get(final, 'timeout');
+          effectiveTimeoutMs = typeof finalTimeout === 'number' && Number.isSafeInteger(finalTimeout) && finalTimeout >= 0 ? finalTimeout : undefined;
           yield* invocation.recheckPermit();
           if (tickets.size >= 128) return yield* Effect.die(new Error('native_shell_ticket_capacity'));
           ticket = randomUUID();
@@ -274,10 +309,16 @@ export function createExecutionRouting(options: { readonly rpc: ExecutionRpc; re
         const handle = shellHandles.get(callKey(invocation));
         if (!handle) return yield* Effect.die(new Error('native_shell_execution_binding_missing'));
         yield* invocation.recheckPermit();
+        const requested: unknown = invocation.input !== null && typeof invocation.input === 'object' ? Reflect.get(invocation.input, 'timeout') : undefined;
+        const time: unknown = Reflect.get(info, 'time');
+        const started: unknown = time !== null && typeof time === 'object' ? Reflect.get(time, 'started') : undefined;
         yield* Effect.promise(() => options.bridge.registerShellJob({ permit: invocation.existingPermit,
           authorization: requestFor(invocation), jobID: info.id, command: info.command, handle,
           directory: invocation.location.directory, sessionID: invocation.nativeContext.sessionID,
-          messageID: invocation.nativeContext.messageID, callID: invocation.nativeContext.id, tool: 'shell' }));
+          messageID: invocation.nativeContext.messageID, callID: invocation.nativeContext.id, tool: 'shell',
+          startedAt: typeof started === 'number' && Number.isFinite(started) ? started : Date.now(),
+          ...(typeof requested === 'number' && Number.isSafeInteger(requested) ? { requestedTimeoutMs: requested } : {}),
+          ...(effectiveTimeoutMs === undefined ? {} : { effectiveTimeoutMs }) }));
         shellHandles.delete(callKey(invocation));
         return info;
       }) });
@@ -330,7 +371,8 @@ export function createExecutionRouting(options: { readonly rpc: ExecutionRpc; re
               else if (event.type === 'settled') {
                 done = true; yield* read(handle, cursor);
                 if (!readOnly && shellSettlements.has(callKey(ticket.invocation))) shellSettlements.set(callKey(ticket.invocation),
-                  { state: 'settled', ok: event.ok, receipt: event.receipt, publication: event.publication, error: event.error?.message });
+                  { state: 'settled', ok: event.ok, receipt: event.receipt, publication: event.publication, error: event.error?.message,
+                    ...(event.error?.code ? { code: event.error.code } : {}), ...(event.error?.metadata ? { errorMetadata: event.error.metadata } : {}) });
                 if (!event.ok || !event.receipt?.terminated || !event.receipt.confined || (!readOnly && event.receipt.cancelled)) return yield* Effect.fail(platformFailure(new Error(event.error?.message ?? 'native_execution_failed')));
                 if (event.truncated && (!readOnly || !event.truncation)) return yield* Effect.fail(platformFailure(new Error('native_search_truncation_invalid')));
                 if (readOnly && event.truncated && event.truncation) searchTruncations.set(callKey(ticket.invocation), event.truncation);

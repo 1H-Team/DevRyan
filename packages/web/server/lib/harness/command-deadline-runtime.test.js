@@ -76,6 +76,19 @@ describe('web command deadline adapter on gen 2 (openCodeClient)', () => {
     return { runtime, fetchImpl, publishEvent, clock };
   };
 
+  it('registers the host shell-job binding as the authoritative deadline for the observed part', async () => {
+    const incidents = [];
+    const client = createClient();
+    const { runtime } = createRuntime(client, { recordIncident: incident => incidents.push(incident) });
+    expect(await runtime.registerShellJob({ directory: '/repo', sessionID: 'ses/1', messageID: 'msg/1', callID: 'call/1',
+      partID: 'part/1', tool: 'bash', startedAt: 1_000, requestedTimeoutMs: 900_000, effectiveTimeoutMs: 900_000 })).toBe(true);
+    await runtime.observe(event, '/repo');
+    expect(incidents.filter(incident => incident.type === 'command_deadline_started')).toEqual([expect.objectContaining({
+      reason: 'registered', source: 'registered', partID: 'part/1', deadlineAt: 901_000, effectiveTimeoutMs: 900_000,
+      requestedTimeoutMs: 900_000 })]);
+    expect(runtime.getStatus()).toMatchObject({ activeCount: 1, candidateCount: 0 });
+  });
+
   it('rejects an injected client that is not an openCodeClient', () => {
     expect(() => createRuntime({ sessions: {} })).toThrow('openCodeClient must be an openCodeClient');
   });

@@ -29,7 +29,7 @@ export const createWebCommandDeadlineRuntime = (options = {}) => {
   if (openCodeClient !== null && typeof openCodeClient?.generation !== 'function') {
     throw new TypeError('openCodeClient must be an openCodeClient');
   }
-  return createCommandDeadlineController({
+  const controller = createCommandDeadlineController({
     store,
     cancelCommand: typeof options.cancelCommand === 'function'
       ? (input) => options.cancelCommand(input, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
@@ -62,4 +62,16 @@ export const createWebCommandDeadlineRuntime = (options = {}) => {
     sanitizeError: options.sanitizeError,
     ...options.controllerOptions,
   });
+  return {
+    ...controller,
+    // From the execution host's shell-job binding: the projected part identity
+    // the controller also observes, the real start and the enforced timeout.
+    registerShellJob: (input) => controller.register({
+      fingerprint: { sessionID: input.sessionID, messageID: input.messageID, partID: input.partID, callID: input.callID, tool: input.tool },
+      directory: input.directory,
+      startedAt: input.startedAt,
+      requestedTimeoutMs: input.requestedTimeoutMs,
+      effectiveTimeoutMs: input.effectiveTimeoutMs,
+    }),
+  };
 };

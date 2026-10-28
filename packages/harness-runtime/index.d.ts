@@ -22,17 +22,37 @@ export interface CommandDeadlineFingerprint {
 }
 
 export interface CommandDeadlineRecord {
-  version: 1;
+  version: 2;
   fingerprint: CommandDeadlineFingerprint;
   directory: string;
+  /** `registered`: from the execution owner; `observed`: from parts; `legacy`: a version 1 record. */
+  source: 'registered' | 'observed' | 'legacy';
+  /** `candidate`: a streaming call, never cancelled and never persisted. */
+  phase: 'candidate' | 'active' | 'recovering' | 'unresolved';
   startedAt: number;
+  /** Start plus the effective timeout; the watchdog fires at `deadlineAt + grace`. */
   deadlineAt: number;
-  phase: 'active' | 'recovering' | 'unresolved';
+  requestedTimeoutMs: number | null;
+  effectiveTimeoutMs: number | null;
   abortRequestedAt: number | null;
+  nextCheckAt: number | null;
+  checks: number;
+}
+
+export interface CommandDeadlineTiming {
+  source: CommandDeadlineRecord['source'];
+  startedAt: number;
+  deadlineAt?: number;
+  watchdogAt?: number;
+  effectiveTimeoutMs?: number;
+  requestedTimeoutMs?: number;
+  graceMs: number;
+  elapsedMs?: number;
 }
 
 export interface CommandDeadlineRecoveryStatus {
   activeCount: number;
+  candidateCount: number;
   recoveredCount: number;
   unresolvedCount: number;
   lastOutcome: 'recovered' | 'cleared' | 'unresolved' | null;
@@ -44,12 +64,27 @@ export const DEFAULT_COMMAND_TIMEOUT_MS: 240000;
 export const MAX_COMMAND_TIMEOUT_MS: 3600000;
 export const COMMAND_DEADLINE_GRACE_MS: 30000;
 export const COMMAND_ABORT_CONFIRMATION_MS: 10000;
+export const COMMAND_DISCOVERY_DELAY_MS: 5000;
+export const COMMAND_DISCOVERY_MAX_DELAY_MS: 60000;
+export const COMMAND_CANDIDATE_MAX_AGE_MS: 1800000;
+export const COMMAND_PUBLISHING_RECHECK_MS: 30000;
 
+export function normalizeCommandTimeout(value: unknown): number;
 export function validateCommandDeadlineRecord(value: unknown): CommandDeadlineRecord;
+
+export interface CommandDeadlineRegistration {
+  fingerprint: CommandDeadlineFingerprint;
+  directory: string;
+  startedAt: number;
+  requestedTimeoutMs?: number | null;
+  /** The timeout the native shell enforces; 0 or absent (a background job) is not watched. */
+  effectiveTimeoutMs?: number | null;
+}
 
 export interface CommandDeadlineController {
   initialize(): Promise<void>;
   observe(payload: unknown, directory?: string | null): Promise<boolean>;
+  register(input: CommandDeadlineRegistration): Promise<boolean>;
   reconcile(): Promise<void>;
   getStatus(): CommandDeadlineRecoveryStatus;
   drain(): Promise<void>;
@@ -60,6 +95,9 @@ export function createCommandDeadlineController(options: {
   fetchMessage(input: CommandDeadlineFingerprint & { directory: string }): Promise<unknown>;
   abortSession(input: { sessionID: string; directory: string }): Promise<unknown>;
   publishPart?(input: { record: CommandDeadlineRecord; part: unknown }): unknown;
+  /** `true`: terminated; `'publishing'`: already exited and still publishing (re-checked, never aborted). */
+  cancelCommand?(input: { directory: string; fingerprint: CommandDeadlineFingerprint; reason: 'command_deadline_exceeded';
+    timing: CommandDeadlineTiming }): Promise<boolean | 'publishing'>;
   listActiveSessions?(input: { directory: string }): Promise<Array<string | { sessionID?: string; sessionId?: string }>>;
   restartManagedRuntime?(input: { sessionID: string; directory: string }): Promise<unknown>;
   isExternalRuntime?(): boolean | Promise<boolean>;
@@ -72,6 +110,10 @@ export function createCommandDeadlineController(options: {
   graceMs?: number;
   confirmationMs?: number;
   confirmationPollMs?: number;
+  discoveryDelayMs?: number;
+  discoveryMaxDelayMs?: number;
+  candidateMaxAgeMs?: number;
+  publishingRecheckMs?: number;
 }): CommandDeadlineController;
 
 export interface PromptAdmissionBlock {

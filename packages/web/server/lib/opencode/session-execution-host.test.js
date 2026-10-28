@@ -666,6 +666,54 @@ test('deadline cancellation never attests termination from a resolved task witho
   } finally { f.terminated.resolve(f.receipt); await f.host.drain(); }
 });
 
+const deadlineFingerprint = () => ({ sessionID: input.sessionID, messageID: input.messageID, callID: input.callID,
+  partID: `${input.messageID}:tool:${input.callID}`, tool: 'bash' });
+const deadlineTiming = { source: 'registered', startedAt: 1_000, deadlineAt: 901_000, watchdogAt: 931_000, effectiveTimeoutMs: 900_000,
+  requestedTimeoutMs: 900_000, graceMs: 30_000, elapsedMs: 930_000 };
+
+test('shell job binding reports the projected call identity and the enforced timeout to the deadline watchdog', async () => {
+  const bound = [];
+  const f = await nativePublicationFixture({ onShellJobBound: value => { bound.push(value); } }, 'shell');
+  mocks.runtime.bindNativeShellJob = vi.fn(async args => ({ token: args.token, nativeShellJob: { jobID: args.jobID, command: args.command },
+    scope: { sessionID: args.sessionID, messageID: args.messageID, callID: args.callID } }));
+  try {
+    const { handle } = await f.start(); await f.launched.promise;
+    await f.host.nativeExecution({ ...input, tool: 'shell', action: 'bind-shell-job', handle, jobID: 'job_fixture', command: 'fixture',
+      startedAt: 5_000, requestedTimeoutMs: 900_000, effectiveTimeoutMs: 900_000 });
+    expect(bound).toEqual([{ directory, sessionID: input.sessionID, messageID: input.messageID, callID: input.callID,
+      partID: deadlineFingerprint().partID, tool: 'bash', startedAt: 5_000, requestedTimeoutMs: 900_000, effectiveTimeoutMs: 900_000 }]);
+  } finally { f.terminated.resolve(f.receipt); await f.host.drain(); delete mocks.runtime.bindNativeShellJob; }
+});
+
+test('a deadline cancellation settles with its code and only the known timing fields', async () => {
+  const f = await nativePublicationFixture({}, 'shell');
+  try {
+    const { handle } = await f.start(); await f.launched.promise;
+    const cancelled = f.host.cancelOwnedCommand({ directory, fingerprint: deadlineFingerprint(), reason: 'command_deadline_exceeded',
+      timing: { ...deadlineTiming, injected: 'value' } });
+    f.terminated.resolve({ ...f.receipt, cancelled: true, exitCode: 137 });
+    expect(await cancelled).toBe(true);
+    const event = await f.settled(handle);
+    expect(event).toMatchObject({ type: 'settled', ok: false,
+      error: { message: 'command_deadline_exceeded', code: 'command_deadline_exceeded', metadata: deadlineTiming } });
+    expect(event.error.metadata).not.toHaveProperty('injected');
+  } finally { f.terminated.resolve(f.receipt); await f.host.drain(); }
+});
+
+test('a deadline cancellation never relabels an operator stop already under way', async () => {
+  const f = await nativePublicationFixture({}, 'shell');
+  try {
+    const { handle } = await f.start(); await f.launched.promise;
+    const stopping = f.host.stopSessionRuns({ sessions: [input.sessionID] });
+    for (let turn = 0; turn < 50 && !f.processSignal().aborted; turn++) await new Promise(resolve => setTimeout(resolve, 0));
+    expect(f.processSignal().aborted).toBe(true);
+    const cancelled = f.host.cancelOwnedCommand({ directory, fingerprint: deadlineFingerprint(), reason: 'command_deadline_exceeded', timing: deadlineTiming });
+    f.terminated.resolve({ ...f.receipt, cancelled: true, exitCode: 137 });
+    await stopping; await cancelled;
+    expect((await f.settled(handle)).error).toEqual({ message: 'execution_cancelled' });
+  } finally { f.terminated.resolve(f.receipt); await f.host.drain(); }
+});
+
 test('native writer finish observation follows durable receipt and precedes independently owned cleanup', async () => {
   const f = await nativePublicationFixture({ onDiagnostic: record => { if (record.phase === 'finish') throw Error('observer unavailable'); } });
   const publishing = Promise.withResolvers(), publication = Promise.withResolvers(), recording = Promise.withResolvers(), recorded = Promise.withResolvers(), cleaned = Promise.withResolvers();

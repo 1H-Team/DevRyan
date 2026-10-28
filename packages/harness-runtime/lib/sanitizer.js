@@ -96,6 +96,9 @@ const NESTED_FIELDS = new Set([
   'queueMs', 'waitMs', 'holdMs', 'maxWaitMs', 'maxHoldMs', 'requestPreparedAt', 'requestSentAt',
   // Provider transport failures: target hostname/port and probe outcome only.
   'host', 'port', 'sinceLastByteMs', 'probe',
+  // Command deadlines (command-deadline.js): requested and enforced timeouts
+  // and the deadline the watchdog acted on, milliseconds and timestamps only.
+  'deadlineAt', 'watchdogAt', 'previousDeadlineAt', 'requestedTimeoutMs', 'effectiveTimeoutMs', 'graceMs',
 ]);
 
 const TOKEN_FIELDS = new Set(['total', 'input', 'output', 'reasoning', 'cache']);
@@ -117,7 +120,8 @@ const STABLE_IDENTIFIER_FIELDS = new Set([
   'recoveryLineageId', 'recoveryMessageID', 'runtimeInstanceID', 'providerRequestID',
 ]);
 
-const NON_NEGATIVE_NUMBER_FIELDS = new Set(['elapsedMs']);
+const NON_NEGATIVE_NUMBER_FIELDS = new Set(['elapsedMs', 'deadlineAt', 'watchdogAt', 'previousDeadlineAt', 'requestedTimeoutMs',
+  'effectiveTimeoutMs', 'graceMs']);
 const REVERT_FIELDS = new Set(['requestID', 'transactionID', 'sessionID', 'messageID', 'phase', 'errorID', 'code']);
 
 const SECRET_PATTERNS = [
