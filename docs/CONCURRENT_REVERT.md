@@ -163,7 +163,14 @@ directory does not block later executions. Writes into the project still refuse
 such paths. Symlink targets are captured and restored as raw bytes.
 
 Granular text history (`runs/<document>`) is stored as inline base64 pages,
-except for a document still at its first observed text. That document stores one
+except for a document still at its first observed text. A replacement run
+stores only the ranges its hunk replaced directly; undo follows that ancestry
+through older runs instead of reading a closure copied onto every run, which
+grew quadratically (two often-rewritten files held 120-154 MB of runs in one
+ledger). A document whose runs replace text is fenced by a
+`{ format: 'ancestry', version: 2 }` first page, and its rows carry a run's
+metadata once (`continues` rows carry only further 32 KiB of text). Runs that
+replace nothing keep format 1 rows. The fence is one-way per document. That document stores one
 `{ baseline, size }` page naming its content object, because the object
 already holds those bytes and objects are never collected
 (`DEVRYAN_LEDGER_BASELINE_REFS=0` writes inline pages again; references stay
@@ -258,10 +265,13 @@ records `required_unavailable` and returns `execution_artifacts_unavailable`
 and Cursor starts. Explicitly external or unsupported runtime modes retain their
 documented ordinary behavior.
 Deploy or roll back the host and companion together. A preparation rollback must
-retain a host that can read whole-content revisions, retained conflict objects and
-baseline references; a host predating references fails closed
-(`invalid_change_record`) on every document stored by reference. Do not point a
-pre-migration ledger implementation at new history.
+retain a host that can read whole-content revisions, retained conflict objects,
+baseline references and the direct-ancestry format; a host predating references
+fails closed (`invalid_change_record`) on every document stored by reference, and
+a host predating direct ancestry fails closed on every fenced document and its
+base copies (it would otherwise derive a shallower closure and order boundary
+inserts differently after multi-level undo). Do not point a pre-migration ledger
+implementation at new history.
 
 The real dispatcher journey is `scripts/verify-concurrent-revert-execution.mjs`.
 Its isolated bootstrap uses a mock OS keychain, private profile and home, and

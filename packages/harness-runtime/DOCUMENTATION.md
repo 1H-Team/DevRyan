@@ -534,7 +534,10 @@ entry, re-synced from the project listing at each preparation, with `.vite`,
 while dependencies, the overlay, and the project's own caches stay read-only
 (`DEVRYAN_MODULE_CACHE_OVERLAY=0` restores the direct link). Walks yield between tree levels and batches;
 diffs and hunk bookkeeping have fixed work budgets past which they emit exact
-but coarser replacements. `scripts/perf/mutation-ancestry-replay.mjs` replays
+but coarser replacements. Replacement runs store only their direct ancestry and
+hunk bookkeeping indexes runs by id (no whole-run-list scan per ancestor);
+documents whose runs replace text are fenced by a format page that older hosts
+reject (`docs/CONCURRENT_REVERT.md`). `scripts/perf/mutation-ancestry-replay.mjs` replays
 overlapping rewrites of one large file through `applyMutationText` and reports
 per-edit apply and row encode/decode times and run/ancestry growth, with the
 source, runtime, machine and fixture identity; `--runtime` runs a frozen

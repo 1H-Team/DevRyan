@@ -42,7 +42,11 @@ export async function ledgerState(f) {
     let revisions = 0; for await (const _ of db.list(`revisions/${value.id}`)) revisions += 1;
     const text = [];
     for await (const { value: page } of db.entries(`runs/${value.id}`)) {
-      if (!Array.isArray(page)) { text.push((await fs.readFile(path.join(root, 'objects', page.baseline))).toString('latin1')); continue; }
+      if (!Array.isArray(page)) {
+        // A format page (direct ancestry) precedes rows; only a baseline marker carries text.
+        if (page.format === 'ancestry') continue;
+        text.push((await fs.readFile(path.join(root, 'objects', page.baseline))).toString('latin1')); continue;
+      }
       for (const run of page) text.push(Buffer.from(run.bytes, 'base64').toString('latin1'));
     }
     state[value.published.path] = { hash: value.published.hash, mode: value.published.mode, deleted: Boolean(value.published.deleted), revisions, text: text.join('') };

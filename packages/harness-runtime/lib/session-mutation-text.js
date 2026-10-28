@@ -115,15 +115,22 @@ export const visibleMutationRuns = (runs, inactive = new Set()) => runs.filter((
 export const mutationText = (runs, inactive = new Set()) => visibleMutationRuns(runs, inactive).map((run) => run.text).join('');
 export const initialMutationRuns = (text, id) => text ? [{ id, start: 0, text, owner: null, deletedBy: [], replaces: [] }] : [];
 
-function splitAt(runs, id, offset) {
-  for (let i = 0; i < runs.length; i++) {
-    const run = runs[i];
-    if (run.id !== id || offset <= run.start || offset >= run.start + run.text.length) continue;
-    const cut = offset - run.start;
-    runs.splice(i, 1, { ...run, text: run.text.slice(0, cut), deletedBy: [...run.deletedBy] },
-      { ...run, start: offset, text: run.text.slice(cut), deletedBy: [...run.deletedBy] });
-    return;
-  }
+// Runs sharing an id partition that id's text, so (id, offset) names one run.
+const indexRuns = (runs) => {
+  const byId = new Map();
+  for (const run of runs) { const list = byId.get(run.id); if (list) list.push(run); else byId.set(run.id, [run]); }
+  return byId;
+};
+
+function splitAt(runs, byId, id, offset) {
+  const list = byId.get(id) ?? [];
+  const k = list.findIndex((run) => offset > run.start && offset < run.start + run.text.length);
+  if (k < 0) return;
+  const run = list[k], cut = offset - run.start;
+  const left = { ...run, text: run.text.slice(0, cut), deletedBy: [...run.deletedBy] };
+  const right = { ...run, start: offset, text: run.text.slice(cut), deletedBy: [...run.deletedBy] };
+  runs.splice(runs.indexOf(run), 1, left, right);
+  list.splice(k, 1, left, right);
 }
 
 function baseRange(base, start, length) {
@@ -150,16 +157,35 @@ function anchorAt(base, offset) {
   return { left, right: null };
 }
 
-function pastReplaced(runs, at) {
-  const owner = runs[at - 1];
-  while (at < runs.length && owner.replaces.some((range) => runs[at].id === range.id
-    && runs[at].start >= range.start && runs[at].start < range.start + range.length)) at++;
+const inRange = (run, range) => run.id === range.id && run.start >= range.start && run.start < range.start + range.length;
+
+// Runs keep only the ranges they replaced directly; ancestry is the closure
+// through those ranges' runs, derived when needed instead of copied per run.
+function replacedClosure(byId, owner) {
+  const ranges = [], seen = new Set();
+  const add = (range) => {
+    const key = `${range.id}:${range.start}:${range.length}`;
+    if (seen.has(key)) return;
+    seen.add(key); ranges.push(range);
+    for (const run of byId.get(range.id) ?? []) if (inRange(run, range)) for (const ancestor of run.replaces) add(ancestor);
+  };
+  for (const range of owner.replaces) add(range);
+  return ranges;
+}
+
+function pastReplaced(runs, byId, at) {
+  const ranges = replacedClosure(byId, runs[at - 1]);
+  while (at < runs.length && ranges.some((range) => inRange(runs[at], range))) at++;
   return at;
 }
 
 /** Record changes from a private base, including when that base has since been
- * reverted. Tombstones and replacement ancestry remain addressable forever
- * while any execution or undo record references them. */
+ * reverted. Tombstones remain addressable while any execution or undo record
+ * references them. A replacement run stores only the ranges its hunk replaced
+ * directly; `visit` follows that ancestry through older runs (marking every
+ * ancestor deleted by the operation), and `pastReplaced` derives the closure
+ * when it needs it. Storing the closure on every run grew quadratically: two
+ * often-rewritten files held 120-154 MB of run pages in one ledger. */
 // Each hunk scans the run list (split, anchor, ownership). Past this many
 // hunk × run steps, every hunk merges into one replacement spanning the first
 // to the last change: the same text, with coarser ownership.
@@ -175,8 +201,10 @@ const coalesceChanges = (changes) => {
     ...(inserted ? [{ kind: 'insert', text: inserted }] : []), ...changes.slice(last + 1)];
 };
 
-export function applyMutationText(runs, base, after, operationID, { hunkBudget = MUTATION_HUNK_WORK_BUDGET } = {}) {
+// `onHunk` (tests) observes the runs and their id index after each hunk.
+export function applyMutationText(runs, base, after, operationID, { hunkBudget = MUTATION_HUNK_WORK_BUDGET, onHunk } = {}) {
   const result = runs.map((run) => ({ ...run, deletedBy: [...run.deletedBy] }));
+  const byId = indexRuns(result);
   let changes = mutationDiff(base.map((run) => run.text).join(''), after);
   const hunks = changes.reduce((count, change, index) => count + (change.kind !== 'equal' && changes[index - 1]?.kind !== 'delete'
     && changes[index - 1]?.kind !== 'insert' ? 1 : 0), 0);
@@ -199,9 +227,12 @@ export function applyMutationText(runs, base, after, operationID, { hunkBudget =
       const key = `${range.id}:${range.start}:${range.length}`;
       if (covered.has(key)) return;
       covered.set(key, range);
-      splitAt(result, range.id, range.start); splitAt(result, range.id, range.start + range.length);
-      for (const run of result) {
-        if (run.id !== range.id || run.start < range.start || run.start >= range.start + range.length) continue;
+      splitAt(result, byId, range.id, range.start); splitAt(result, byId, range.id, range.start + range.length);
+      // Ancestry only names strictly older ids, so recursion never edits this list.
+      const list = byId.get(range.id) ?? [];
+      for (let j = 0; j < list.length; j++) {
+        const run = list[j];
+        if (run.start < range.start || run.start >= range.start + range.length) continue;
         if (!run.deletedBy.includes(operationID)) run.deletedBy.push(operationID);
         // A later replacement must keep suppressing the replaced value when an
         // earlier replacement is undone. It is not a new insertion beside it.
@@ -209,21 +240,65 @@ export function applyMutationText(runs, base, after, operationID, { hunkBudget =
       }
     };
     for (const range of ranges) visit(range);
+    const direct = [...new Map(ranges.map((range) => [`${range.id}:${range.start}:${range.length}`, range])).values()];
     if (inserted) {
-      if (anchor.left) splitAt(result, anchor.left.id, anchor.left.offset);
-      if (anchor.right) splitAt(result, anchor.right.id, anchor.right.offset);
+      if (anchor.left) splitAt(result, byId, anchor.left.id, anchor.left.offset);
+      if (anchor.right) splitAt(result, byId, anchor.right.id, anchor.right.offset);
       const boundary = !removed && anchor.left && (!anchor.right || anchor.left.id !== anchor.right.id
         || anchor.left.offset !== anchor.right.offset);
-      let at = !boundary && anchor.right ? result.findIndex((run) => run.id === anchor.right.id && run.start === anchor.right.offset) : -1;
+      const position = (id, match) => { const run = (byId.get(id) ?? []).find(match); return run ? result.indexOf(run) : -1; };
+      let at = !boundary && anchor.right ? position(anchor.right.id, (run) => run.start === anchor.right.offset) : -1;
       if (at < 0 && anchor.left) {
-        const left = result.findIndex((run) => run.id === anchor.left.id && run.start + run.text.length === anchor.left.offset);
-        if (left >= 0) at = boundary ? pastReplaced(result, left + 1) : left + 1;
+        const left = position(anchor.left.id, (run) => run.start + run.text.length === anchor.left.offset);
+        if (left >= 0) at = boundary ? pastReplaced(result, byId, left + 1) : left + 1;
       }
       if (at < 0) at = result.length;
-      result.splice(at, 0, { id: `${operationID}:${index++}`, start: 0, text: inserted,
-        owner: operationID, deletedBy: [], replaces: [...covered.values()] });
+      const created = { id: `${operationID}:${index++}`, start: 0, text: inserted,
+        owner: operationID, deletedBy: [], replaces: direct };
+      result.splice(at, 0, created);
+      byId.set(created.id, [created]);
     }
     offset += removed.length;
+    onHunk?.(result, byId);
   }
   return result;
+}
+
+// Stored run rows. A run's first 32 KiB chunk carries its metadata; further
+// chunks carry only text (`continues`). Format 1 rows repeated the metadata,
+// `replaces` included, on every chunk. Decoding yields the same runs either way:
+// one run per chunk, each chunk starting where the previous one ends.
+export const MUTATION_RUN_CHUNK = 32_768;
+
+export function encodeMutationRunRows(runs) {
+  const rows = [];
+  for (const run of runs) {
+    const { text, ...metadata } = run;
+    for (let offset = 0; offset < text.length; offset += MUTATION_RUN_CHUNK) {
+      const bytes = Buffer.from(text.slice(offset, offset + MUTATION_RUN_CHUNK), 'latin1').toString('base64');
+      rows.push(offset === 0 ? { ...metadata, bytes } : { continues: true, bytes });
+    }
+  }
+  return rows;
+}
+
+export function decodeMutationRunRows(rows) {
+  const runs = [];
+  for (const row of rows) {
+    if (row === null || typeof row !== 'object' || Array.isArray(row) || typeof row.bytes !== 'string') {
+      throw new TypeError('invalid mutation run row');
+    }
+    const text = Buffer.from(row.bytes, 'base64').toString('latin1');
+    if (row.continues === true) {
+      const previous = runs.at(-1);
+      if (!previous || Object.keys(row).length !== 2) throw new TypeError('invalid mutation run row');
+      runs.push({ ...previous, start: previous.start + previous.text.length, text, deletedBy: [...previous.deletedBy] });
+      continue;
+    }
+    const { bytes: _bytes, ...metadata } = row;
+    if (typeof metadata.id !== 'string' || !Number.isSafeInteger(metadata.start) || !Array.isArray(metadata.deletedBy)
+      || !Array.isArray(metadata.replaces)) throw new TypeError('invalid mutation run row');
+    runs.push({ ...metadata, text });
+  }
+  return runs;
 }
