@@ -412,6 +412,18 @@ async function nativePublicationFixture(options = {}, kind = 'writer') {
     finishes: () => diagnostics.filter(row => row.phase === 'finish') };
 }
 
+test('a shell whose command replaced ignored folders settles with them named, never as published', async () => {
+  const f = await nativePublicationFixture({}, 'shell');
+  mocks.runtime.finish.mockResolvedValue({ files: [{ path: 'src/app.ts', status: 'modified' }], operationID: 'published_dropped',
+    ignoredInputs: ['test-results'] });
+  try {
+    const { handle } = await f.start(); await f.launched.promise;
+    f.terminated.resolve(f.receipt);
+    expect(await f.settled(handle)).toMatchObject({ type: 'settled', ok: true,
+      publication: { outcome: 'complete', conflicts: [], ignoredInputs: ['test-results'] } });
+  } finally { f.terminated.resolve(f.receipt); await f.host.drain(); }
+});
+
 test('deadline cancellation matches the exact live shell and waits for termination', async () => {
   const f = await nativePublicationFixture({}, 'shell');
   const fingerprint = { sessionID: input.sessionID, messageID: input.messageID, callID: input.callID, partID: `${input.messageID}:tool:${input.callID}`, tool: 'bash' };

@@ -1431,7 +1431,10 @@ Routing refuses `timeout` above 3600000 (milliseconds) with
 that already exited and is still publishing is never aborted. When the native
 shell's own timer stopped the command (OpenCode marks its result `timeout: true`
 before it kills), the call returns that result with a notice that its changes
-were not published.
+were not published. A command that replaced an ignored input folder (deleting
+and recreating it, as Playwright does with `test-results/`) settles with those
+folders in `publication.ignoredInputs` and a notice that what it wrote inside
+them was dropped; a check that needed that output stays incomplete.
 Stop, publication and cleanup remain owned by the execution host. A background
 shell completion whose lease a user Stop cancelled (`stoppedBy: 'operator'`), or
 that the orchestrator stopped because its task attempt settled

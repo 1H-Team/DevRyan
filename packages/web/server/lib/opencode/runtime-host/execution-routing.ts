@@ -96,7 +96,7 @@ export function createExecutionRouting(options: { readonly rpc: ExecutionRpc; re
   const shellHandles = new Map<string, string>();
   type ShellSettlement = { state: 'pending' } | { state: 'uncertain'; code: string }
     | { state: 'settled'; ok: boolean; receipt?: typeof import('./worker-protocol.js').TerminationReceipt.Type;
-      publication?: { readonly outcome: 'complete' | 'partial'; readonly conflicts: readonly string[] }; error?: string;
+      publication?: { readonly outcome: 'complete' | 'partial'; readonly conflicts: readonly string[]; readonly ignoredInputs?: readonly string[] }; error?: string;
       code?: string; errorMetadata?: Readonly<Record<string, unknown>> };
   const shellSettlements = new Map<string, ShellSettlement>();
   const callKey = (call: OwnedToolInvocation) => JSON.stringify([call.nativeContext.sessionID, call.nativeContext.messageID, call.nativeContext.id]);
@@ -249,8 +249,14 @@ export function createExecutionRouting(options: { readonly rpc: ExecutionRpc; re
               ...(settlement.errorMetadata ? { deadline: settlement.errorMetadata } : {}) } }));
           }
           if (!settlement.publication) return Effect.fail(new Tool.Error({ message: 'native_publication_result_missing', metadata: { output: result.content, receipt } }));
-          const notice = settlement.publication.outcome === 'partial'
-            ? `Some changes were not published because these files changed during execution: ${settlement.publication.conflicts.join(', ')}. Proposed contents were retained for recovery.` : undefined;
+          const ignored = settlement.publication.ignoredInputs ?? [];
+          // Dropped output is reported, never passed off as published: a check
+          // that needed it stays incomplete.
+          const notice = [
+            ...(settlement.publication.outcome === 'partial'
+              ? [`Some changes were not published because these files changed during execution: ${settlement.publication.conflicts.join(', ')}. Proposed contents were retained for recovery.`] : []),
+            ...(ignored.length ? [`Not published: this command replaced these ignored folders, so what it wrote inside them was dropped: ${ignored.slice(0, 20).join(', ')}${ignored.length > 20 ? ` (${ignored.length - 20} more)` : ''}. Write output to a new path instead of deleting and recreating these folders.`] : []),
+          ].join('\n\n') || undefined;
           const content = notice ? withNotice(notice) : result.content;
           return Effect.succeed({ ...result, content, metadata: { ...result.metadata, exitCode: receipt.exitCode, publication: settlement.publication } });
         }), Effect.ensuring(Effect.sync(() => { shellSettlements.delete(key); })));

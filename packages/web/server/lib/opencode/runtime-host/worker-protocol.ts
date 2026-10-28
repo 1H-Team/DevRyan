@@ -73,7 +73,8 @@ export const ExecutionEvent = Schema.Union([
   Schema.Struct({ cursor: Schema.Int, type: Schema.Literal('progress'), update: Metadata }),
   Schema.Struct({ cursor: Schema.Int, type: Schema.Literal('settled'), ok: Schema.Boolean,
     receipt: Schema.optional(TerminationReceipt), result: Schema.optional(NativeResult), error: Schema.optional(WorkerError),
-    publication: Schema.optional(Schema.Struct({ outcome: Schema.Literals(['complete', 'partial']), conflicts: Schema.Array(Schema.String) })),
+    publication: Schema.optional(Schema.Struct({ outcome: Schema.Literals(['complete', 'partial']), conflicts: Schema.Array(Schema.String),
+      ignoredInputs: Schema.optional(Schema.Array(Schema.String)) })),
     truncated: Schema.optional(Schema.Literal(true)), truncation: Schema.optional(SearchTruncation) }),
   Schema.Struct({ cursor: Schema.Int, type: Schema.Literal('uncertain'), error: Schema.Struct({ code: Schema.String }) }),
 ]);

@@ -68,6 +68,13 @@ const guardedNativeReadArgs = (tool, args, { projectDirectory, readDirectory }) 
     .flatMap(component => [`--iglob=!**/${component}`, `--iglob=!**/${component}/**`]);
   return [...args.slice(0, index), '--no-ignore', ...exclusions, ...args.slice(index)];
 };
+// Ignored folders a command replaced (an input root deleted and recreated, as
+// Playwright does with test-results/): what it wrote inside them is never
+// published, so the model must be told rather than look for it later.
+const ignoredInputsNotice = (ignored) => `Not published: this command replaced these ignored folders, so what it wrote inside them was dropped: ${ignored.slice(0, 20).join(', ')}${ignored.length > 20 ? ` (${ignored.length - 20} more)` : ''}. Write output to a new path instead of deleting and recreating these folders.`;
+const nativeSettledPublication = (publication) => ({ outcome: publication?.outcome === 'partial' ? 'partial' : 'complete',
+  conflicts: (publication?.conflicts ?? []).map(item => item.path),
+  ...(publication?.ignoredInputs?.length ? { ignoredInputs: publication.ignoredInputs } : {}) });
 const nativePublicationResult = (result, publication, lease, tool) => {
   result=projectNativeMutationResult(result,publication,lease,tool);
   if(result&&tool==='gpt_imagegen'){
@@ -84,6 +91,11 @@ const nativePublicationResult = (result, publication, lease, tool) => {
       result = { ...result, content: Array.isArray(result.content) ? [...result.content, { type: 'text', text: notice }]
         : `${result.content ?? ''}\n\n${notice}`, metadata: { ...result.metadata, browserArtifacts: artifacts } };
     }
+  }
+  if (result && publication?.ignoredInputs?.length) {
+    const notice = ignoredInputsNotice(publication.ignoredInputs);
+    result = { ...result, content: Array.isArray(result.content) ? [...result.content, { type: 'text', text: notice }]
+      : `${result.content ?? ''}\n\n${notice}`, metadata: { ...result.metadata, ignoredInputs: publication.ignoredInputs } };
   }
   if (!result || publication?.outcome !== 'partial') return result;
   const notice = `Some changes were not published because these files changed during execution: ${(publication.conflicts ?? []).map(item => item.path).join(', ')}. Proposed contents were retained for recovery.`;
@@ -799,8 +811,7 @@ export function createSessionExecutionHost(options) {
         const publication = await publish();
         if (shellLike) await settleRequiredCheck();
         await cleanupAfterPublication(job.lease);
-        nativeEvent(job, { type: 'settled', ok: true, receipt, publication: { outcome: publication?.outcome === 'partial' ? 'partial' : 'complete',
-          conflicts: (publication?.conflicts ?? []).map(item => item.path) }, result: nativePublicationResult(job.result?.result, publication, job.lease,input.tool) }, true);
+        nativeEvent(job, { type: 'settled', ok: true, receipt, publication: nativeSettledPublication(publication), result: nativePublicationResult(job.result?.result, publication, job.lease,input.tool) }, true);
       } catch (cause) {
         job.resolveChild();
         await Promise.allSettled([...job.browserOperations]);
@@ -821,8 +832,7 @@ export function createSessionExecutionHost(options) {
             const publication = await publish();
             if (shellLike) await settleRequiredCheck();
             await cleanupAfterPublication(job.lease);
-            nativeEvent(job, { type: 'settled', ok: true, receipt, publication: { outcome: publication?.outcome === 'partial' ? 'partial' : 'complete',
-              conflicts: (publication?.conflicts ?? []).map(item => item.path) }, result: nativePublicationResult(job.result?.result, publication, job.lease,input.tool) }, true);
+            nativeEvent(job, { type: 'settled', ok: true, receipt, publication: nativeSettledPublication(publication), result: nativePublicationResult(job.result?.result, publication, job.lease,input.tool) }, true);
             return;
           }
           await runtime.cancelLease({ directory: input.directory, token: lease.token, ...stoppedBy(job) });
