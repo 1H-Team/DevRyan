@@ -4,6 +4,7 @@ import {bootstrapNativeSetupCredentials} from './native-setup-credentials.js';
 import {createControllerHelperText} from './controller-helper-text.js';
 import { createNativeRuntimeHost } from './bootstrap.js';
 import { createExecutionRouting } from './execution-routing.js';
+import { modelFacingRefusal } from './worker-protocol.js';
 import {createNativeHostOperations,HOST_OPERATION_ORIGIN} from './native-host-operations.js';
 import { createControllerHelper } from './controller-processes.js';
 import { createRemoteNativeAdmissionBridge } from './native-admission-bridge.js';
@@ -48,7 +49,8 @@ export async function startNativeController(boot:NativeProcessBoot,identity:{cor
     if(!body.parsed || !record(body.value) || !response.ok || body.value.ok!==true) {
       const code=record(body.value)&&record(body.value.error)&&typeof body.value.error.code==='string'?body.value.error.code:'native_bridge_failed';
       const failure = record(body.value) && record(body.value.error) ? projectManagedModelValidationFailure(body.value.error) : null;
-      throw Object.assign(new Error(failure?.message ?? code),{code,status:response.ok?503:response.status,...failure ? {details:failure.details} : {}});
+      const refusal = record(body.value) ? modelFacingRefusal(body.value.error) : undefined;
+      throw Object.assign(new Error(failure?.message ?? refusal?.message ?? code),{code,status:response.ok?503:response.status,...failure ? {details:failure.details} : {}});
     }
     return body.value.result;
   };

@@ -1442,6 +1442,13 @@ were not published. A command that replaced an ignored input folder (deleting
 and recreating it, as Playwright does with `test-results/`) settles with those
 folders in `publication.ignoredInputs` and a notice that what it wrote inside
 them was dropped; a check that needed that output stays incomplete.
+A host error reaches the controller as its code only, except the refusals in
+`MODEL_FACING_REFUSALS` (`worker-protocol.ts`: `preview_stale`,
+`native_shell_background_unavailable`, `native_verification_publication_pending`),
+whose message is guidance for the model (at most 2 KiB). The controller's RPC
+client keeps that message, and when one refuses a shell's start the shell
+route returns it with its code in place of the native tool's generic
+`Unable to execute command`, which drops the cause.
 Stop, publication and cleanup remain owned by the execution host. A background
 shell completion whose lease a user Stop cancelled (`stoppedBy: 'operator'`), or
 that the orchestrator stopped because its task attempt settled
