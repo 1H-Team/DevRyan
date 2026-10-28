@@ -1536,9 +1536,6 @@ export const restoreLiveConfigForSelectedDraft = (draftId: string, getState: () 
     draftSendConfig,
     agentModelSelections: configState.agentModelSelections,
   })
-  // Restore the effort the composer shows, named, as a send would capture it.
-  const restoredVariant = normalizeNewChatSendConfig({ providerID: draftSelection.providerID, modelID: draftSelection.modelID,
-    variant: draftSelection.variant }, (configState.providers ?? []) as SendConfigProvider[]).variant
 
   if (!draftSelection.agent && !draftSelection.providerID) {
     useConfigStore.getState().applyDefaultsToCurrent({
@@ -1563,7 +1560,7 @@ export const restoreLiveConfigForSelectedDraft = (draftId: string, getState: () 
   }
 
   if (draftSelection.providerID && draftSelection.modelID && draftModelAuthoritative) {
-    configState.setProviderModel(draftSelection.providerID, draftSelection.modelID, restoredVariant)
+    configState.setProviderModel(draftSelection.providerID, draftSelection.modelID, draftSelection.variant)
     selectionState.saveDraftModelSelection(draftId, draftSelection.providerID, draftSelection.modelID)
     if (draftSelection.agent) {
       selectionState.saveDraftAgentModelForSelection(
@@ -1577,7 +1574,7 @@ export const restoreLiveConfigForSelectedDraft = (draftId: string, getState: () 
         draftSelection.agent,
         draftSelection.providerID,
         draftSelection.modelID,
-        restoredVariant,
+        draftSelection.variant,
       )
     }
   }

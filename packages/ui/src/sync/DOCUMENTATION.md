@@ -1050,10 +1050,12 @@ draft JSON, draft-to-session promotion, context selection maps, queued rollback,
 and manual retry preserve `null`. Only missing legacy queue configuration may
 use a current fallback. New chat captures (`captureCurrentSendConfig` and `resolveCurrentDraftSendConfig`)
 apply the chat-only native-level policy after inheritance: Medium when supported,
-otherwise the lower middle level. So do a new draft's first send and its
-activation (both also resolve the per-agent model selections), and Implement on a
-plan card (`resolvePlanImplementationVariant`): in the 2026-10-28 QA the composer
-showed Medium while a new draft sent the provider default. Stored defaults, canonical restoration and
+otherwise the lower middle level. So do a new draft's first send and Implement
+on a plan card (`resolvePlanImplementationVariant`): in the 2026-10-28 QA the
+composer showed Medium while a new draft sent the provider default. Draft
+activation resolves the same per-agent model selections as a send, but restores
+the variant as stored: the live configuration keeps `null` for the provider
+default, and only the send capture names it. Stored defaults, canonical restoration and
 already-captured queue/retry configurations keep their existing semantics; the
 normalizer never rewrites historical messages or previously captured rows.
 
