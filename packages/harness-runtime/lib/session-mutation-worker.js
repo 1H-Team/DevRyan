@@ -6,6 +6,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { parentPort, workerData } from 'node:worker_threads';
 import { runInRemoteExecutionContext } from './execution-admission.js';
+import { createHostStallClock, onHostStall } from './host-stall-clock.js';
 import { createSessionMutationRuntime } from './session-mutations.js';
 import { decodeWireError, decodeWireValue, encodeWireError, encodeWireValue } from './session-mutation-wire.js';
 
@@ -40,6 +41,14 @@ const runtime = createSessionMutationRuntime({
   ...(observers.onDiagnostic ? { onDiagnostic: (record) => observe('onDiagnostic', record) } : {}),
   ...(observers.onLockTiming ? { onLockTiming: (timing) => observe('onLockTiming', timing) } : {}),
 });
+// A stall of this thread delays every session's ledger calls while the host's
+// event loop, and so its own stall clock, runs on. `stallClock` (tests) tunes a
+// dedicated clock.
+if (observers.onWorkerStall) {
+  const report = (stall) => observe('onWorkerStall', { ms: stall.ms, from: stall.from, to: stall.to });
+  if (workerData.stallClock) createHostStallClock({ ...workerData.stallClock, onStall: report }).start();
+  else onHostStall(report);
+}
 // A rejection nothing awaited is reported, not fatal: on the host's own event
 // loop (Electron's main process) it only logs, and a worker exit would fail
 // every call in flight.

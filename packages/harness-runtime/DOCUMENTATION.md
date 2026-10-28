@@ -491,7 +491,16 @@ run on the caller's thread, inside the AsyncLocalStorage context of the call
 that caused them (a native permit guard asserts its controller there), so a
 guard check is asynchronous; and receipt byte streams are pulled on demand. A
 rejection nothing awaited inside the worker is reported as a `ledger_worker`
-diagnostic instead of ending the thread, as on the host's own event loop. A worker exit fails pending calls with
+diagnostic instead of ending the thread, as on the host's own event loop. The
+worker runs its own stall clock: a stall of 1 s or more of its event loop
+delays every session's ledger calls while the host's loop, and so
+`host_stall`, runs on, so it reaches the host's `onWorkerStall` observer, which
+the web server journals as `ledger_worker_stall` (`stallClock` tunes that clock
+for tests; inline, the host clock covers the ledger). A publication's
+`ledger_transaction` is attributed to exclusive steps of its summary
+(`finish_lookup`, `finish_reconcile`, `finish_publish`, `finish_receipt`,
+`finish_materialize`), so its lock hold is read directly, never by
+subtraction; a finish summary carries 21 of the 32 step names a summary keeps. A worker exit fails pending calls with
 `mutation_runtime_unavailable` (503); the next call starts a new worker and
 the next lock runs durable recovery, as after a host crash. The worker
 inherits the host's Node flags except inline-entry ones (`--input-type`,
@@ -503,7 +512,8 @@ launcher, with an injected Git runner, and under Bun unless
 `DEVRYAN_LEDGER_WORKER=1` (`bun test` ends a test body early around
 `expect(promise).rejects` and then terminates the worker under the pending
 call). `scripts/harness-session-mutation-host.test.mjs` checks under Node that
-the worker answers like the inline runtime. The worker creates its runtime
+the worker answers like the inline runtime, receives the host's runtime limits
+and reports its stalls. The worker creates its runtime
 with `synchronousWalks: true`: project and view walks (reconciliation, the
 finish pass over a view, directory stamps) list directories and stamp files
 with synchronous calls, chunk by chunk, since only that thread waits; on

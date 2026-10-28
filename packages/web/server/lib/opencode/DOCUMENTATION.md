@@ -6,6 +6,12 @@ directory/session/message/call identity and waits for supervised settlement;
 it never resolves processes by name or a caller-supplied PID. The web deadline
 adapter bounds that wait before falling back to existing session recovery.
 
+`createSessionExecutionHost` forwards the ledger's observers: `onDiagnostic`
+(maintenance and classification failures), `onLockTiming` (every lock's wait
+and hold) and `onWorkerStall` (stalls of 1 s or more of the ledger worker's
+event loop, which `application.js` journals as `ledger_worker_stall` beside the
+host's own `host_stall`).
+
 `session-execution-host.stopSessionRuns` is the constructor-only Stop boundary.
 After an accepted user Stop (`OPERATOR_STOP_SOURCES` in `application.js`), it
 ends every supervised shell run of the stopped session and its descendants

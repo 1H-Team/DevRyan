@@ -2440,6 +2440,9 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       for (const file of base.keys()) if (!files.has(file)) files.set(file, null);
     }
     const result = await locked(directory, async (repo) => {
+      // The transaction's exclusive steps: finish_lookup, finish_reconcile,
+      // finish_publish, finish_receipt and finish_materialize.
+      let stepStarted = Date.now();
       const lease = await repo.db.get(key('leases', token));
       if (!lease) throw changeError('execution_unavailable');
       if (lease.state === 'published') return lease.result;
@@ -2474,7 +2477,9 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         if(touched.some(file=>!allowed(file)||files.get(file)?.mode==='120000')||ignoredInputs.length)throw changeError(lease.publicationPolicy==='interview-document'?'interview_document_output_denied':'context_asset_output_denied');
       }
       executionStep('finish_touched', 0, touched.length);
+      executionStep('finish_lookup', Date.now() - stepStarted);
       await timedExecutionStep('finish_reconcile', () => reconcile(repo, touched));
+      stepStarted = Date.now();
       const renamed = new Map(), sources = new Set();
       if (!Array.isArray(renames)) throw changeError('invalid_rename_receipt');
       for (const move of renames) {
@@ -2529,6 +2534,8 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         const updated = await recordFile(repo, { doc, entry: null, file, operation, disabled });
         changed.set(updated.id, updated);
       }
+      executionStep('finish_publish', Date.now() - stepStarted);
+      stepStarted = Date.now();
       operation.files = [...changed.keys()];
       if (conflicts.length) {
         // Old readers project every normal revision. Conflicting proposals must
@@ -2544,6 +2551,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       }
       await repo.db.setList(`publications/${token}/files`, receipt);
       repo.db.set(key('operations', operation.id), operation);
+      executionStep('finish_receipt', Date.now() - stepStarted);
       await timedExecutionStep('finish_materialize', () => materialize(repo, [...changed.values()], (files) => {
         lease.state = 'published'; lease.cleanupPending = true; lease.result = { operationID: operation.id, sequence: operation.sequence, files,
           ...(conflicts.length ? { outcome: 'partial', conflicts: conflicts.map(({ path, source }) => ({ path, ...(source ? { source } : {}) })) } : {}),

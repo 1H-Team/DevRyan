@@ -1744,6 +1744,12 @@ async function constructWebHost(options = {}) {
     onDiagnostic: (event) => harnessRuntime.recordSessionExecution(event),
     onLockTiming: (timing) => turnTimingRuntime.recordLedgerLock({ sessionId: timing.sessionID, operation: timing.operation,
       waitMs: timing.waitMs, holdMs: timing.holdMs, failed: timing.failed }),
+    // A stalled ledger worker delays every session's ledger calls while this
+    // event loop runs on, so host_stall never shows it.
+    onWorkerStall: (stall) => {
+      try { harnessRuntime.record({ type: 'lifecycle', event: 'ledger_worker_stall', sessionID: null, payload: { elapsedMs: stall.ms, startedAt: stall.from, finishedAt: stall.to } }); }
+      catch { /* Observer only. */ }
+    },
   });
   observeCommandDeadline = (payload, directory) => commandDeadlineRuntime.observe(payload, directory);
   registerCommandDeadline = (input) => commandDeadlineRuntime.registerShellJob(input);

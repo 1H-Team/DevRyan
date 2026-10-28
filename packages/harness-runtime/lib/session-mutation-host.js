@@ -19,6 +19,9 @@ import { decodeWireError, decodeWireValue, encodeWireError, encodeWireValue } fr
 // and stall timers see remote work exactly like local work. Functions in an
 // input (a native permit guard, a removal's `beforeCommit`) and the observers
 // run here; result streams (receipt bytes) are pulled on demand.
+// `onWorkerStall` observes stalls of 1 s or more of the worker's own event
+// loop (`stallClock: { tickMs, stallMs }` tunes that clock for tests); inline,
+// the host's stall clock already covers the ledger.
 //
 // If the worker exits, pending calls fail with `mutation_runtime_unavailable`
 // and the next call starts a new worker; durable recovery runs under the next
@@ -69,8 +72,8 @@ const unavailable = (cause) => Object.assign(new Error('mutation_runtime_unavail
 
 export function createSessionMutationHost(options = {}) {
   if (!sessionMutationWorkerEnabled(options)) return createSessionMutationRuntime(options);
-  const { onChange, onMaterialize, onDiagnostic, onLockTiming } = options;
-  const observers = { onChange, onMaterialize, onDiagnostic, onLockTiming };
+  const { onChange, onMaterialize, onDiagnostic, onLockTiming, onWorkerStall } = options;
+  const observers = { onChange, onMaterialize, onDiagnostic, onLockTiming, onWorkerStall };
   let worker = null, nextCall = 1, nextFunction = 1;
   const calls = new Map(), pulls = new Map();
   let closed = false;
@@ -136,6 +139,7 @@ export function createSessionMutationHost(options = {}) {
       ...(options.maintenance ? { maintenance: options.maintenance } : {}),
       ...(options.batching ? { batching: options.batching } : {}),
       ...(options.complexity ? { complexity: options.complexity } : {}),
+      ...(options.stallClock ? { stallClock: options.stallClock } : {}),
       observers: Object.fromEntries(Object.entries(observers).map(([name, fn]) => [name, typeof fn === 'function'])),
     } });
     worker = current;
