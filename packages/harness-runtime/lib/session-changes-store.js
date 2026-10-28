@@ -209,19 +209,42 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF,gitRunner,s
       yield* value;
     }
   };
+  // List pages: at most 128 values and 256 KiB of JSON each.
+  const pagesOf = async function* (values) {
+    let page = [], bytes = 0;
+    for await (const value of values) {
+      const size = Buffer.byteLength(JSON.stringify(value));
+      if (page.length && (page.length >= 128 || bytes + size > 256 * 1024)) { yield page; page = []; bytes = 0; }
+      page.push(value); bytes += size;
+    }
+    if (page.length) yield page;
+  };
   // `absent`: the caller knows the prefix is new (a just-generated id), so
   // there is nothing to replace and no listing to read. `firstPage` leaves the
   // lower page names to the caller (a format page that must list first).
   const setList = async (prefix, values, { absent = false, firstPage = 0 } = {}) => {
     if (!absent) for await (const { key } of entries(prefix)) remove(key);
-    let page = [], bytes = 0, index = firstPage;
-    const flush = () => { if (page.length) set(`${prefix}/${String(index++).padStart(10, '0')}.json`, page); page = []; bytes = 0; };
-    for await (const value of values) {
-      const size = Buffer.byteLength(JSON.stringify(value));
-      if (page.length >= 128 || bytes + size > 256 * 1024) flush();
-      page.push(value); bytes += size;
+    let index = firstPage;
+    for await (const page of pagesOf(values)) set(`${prefix}/${String(index++).padStart(10, '0')}.json`, page);
+  };
+  // setList in two steps: `writeList` writes the pages as objects ahead of a
+  // transaction (outside any ledger lock) and returns their ids, and
+  // `setListObjects` stages them under `prefix`, so the commit only records
+  // them. Objects never staged are pruned after the grace like any other.
+  const writeList = async (values) => {
+    const objectsDir = path.resolve(cwd, gitDir), oids = [];
+    for await (const page of pagesOf(values)) {
+      const data = JSON.stringify(page);
+      if (Buffer.byteLength(data) > 512 * 1024) throw changeError('change_record_too_large', 503);
+      oids.push(await writeLooseObject(objectsDir, 'blob', Buffer.from(data), oidLength));
     }
-    flush();
+    return oids;
+  };
+  const setListObjects = (prefix, oids, { firstPage = 0 } = {}) => {
+    if (!validKey(`${prefix}/page.json`) || !oids.every((oid) => typeof oid === 'string' && oid.length === oidLength && /^[a-f0-9]+$/.test(oid))) {
+      throw changeError('invalid_change_record');
+    }
+    for (const [index, oid] of oids.entries()) pending.set(`${prefix}/${String(firstPage + index).padStart(10, '0')}.json`, { oid });
   };
   // Moves the ref from `tree` to `next` (compare-and-swap) and records the
   // transaction; a guard revoked meanwhile undoes the move.
@@ -384,6 +407,6 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF,gitRunner,s
   // kept values by object id reads only rows whose object changed.
   const committedRows = async function* (prefix) { if (tree) yield* treeRows(tree, prefix); };
   const readRows = (rows) => values(rows);
-  return { get, set, remove, entries, records, list, setList, commit, committedRows, readRows, stage, leaseRef, pin, release, importPrefix, prefixIdentity, prefixIdentities, committedIdentity, staged,
+  return { get, set, remove, entries, records, list, setList, writeList, setListObjects, commit, committedRows, readRows, stage, leaseRef, pin, release, importPrefix, prefixIdentity, prefixIdentities, committedIdentity, staged,
     get tree() { return tree; }, get exists() { return tree !== null; }, get pendingCount() { return pending.size; } };
 }

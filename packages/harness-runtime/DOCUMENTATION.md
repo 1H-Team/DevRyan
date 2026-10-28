@@ -269,8 +269,10 @@ in [identity compatibility](../../docs/IDENTITY_COMPATIBILITY.md#data-folder-mig
   Never list a whole tree through `git()`: its stdout cap is 1 MiB, and a ledger
   with tens of thousands of keys exceeds it (`change_record_too_large` at boot).
 - Mutation ledger size follows the project, not its history, for untouched
-  files: their baseline runs are one content-reference page. Edited documents,
-  operations, leases and calls have no retention horizon yet. Superseded Git
+  files: their baseline runs are one content-reference page. Replacement
+  ancestry grows with direct ranges only; maintenance reduces closures older
+  hosts stored. Edited documents, operations, leases and calls have no
+  retention horizon yet. Superseded Git
   trees and pages are pruned after a two-hour grace. See
   [Concurrent Revert](../../docs/CONCURRENT_REVERT.md).
 - Journal writes are ordered through a bounded O(1) enqueue path. Per-session
@@ -537,12 +539,19 @@ diffs and hunk bookkeeping have fixed work budgets past which they emit exact
 but coarser replacements. Replacement runs store only their direct ancestry and
 hunk bookkeeping indexes runs by id (no whole-run-list scan per ancestor);
 documents whose runs replace text are fenced by a format page that older hosts
-reject (`docs/CONCURRENT_REVERT.md`). `scripts/perf/mutation-ancestry-replay.mjs` replays
+reject (`docs/CONCURRENT_REVERT.md`). Ledger maintenance reduces documents an
+older host stored with every run's closure (`minimizeMutationAncestry`, whose
+comment gives the argument that every closure is kept) and rewrites them fenced.
+`scripts/perf/mutation-ancestry-replay.mjs` replays
 overlapping rewrites of one large file through `applyMutationText` and reports
 per-edit apply and row encode/decode times and run/ancestry growth, with the
 source, runtime, machine and fixture identity; `--runtime` runs a frozen
 baseline against a candidate, and `--max-apply-ms`/`--max-pages-mib` make it a
-gate. The background first build (`warm`) is a single
+gate. `scripts/perf/ancestry-compaction-load.mjs` plants that history as stored
+closures and times another session's direct admissions, confined calls and
+lease cleanups before, during and after the compaction pass, with timer
+lateness, lock timings and machine load; it gates direct admission, its finish
+and lease cleanup p99 and the lateness. The background first build (`warm`) is a single
 budgeted pass that real calls never treat as their observation. Every 32 rows
 under the ledger lock it checks for a queued call; when one waits, it commits
 what it installed and carries the rest to its next batch, so a new worktree's

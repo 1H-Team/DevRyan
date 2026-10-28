@@ -10,7 +10,8 @@ import { git, gitTokens, changeError } from './session-changes-git.js';
 import { openChangeStore, changeKey } from './session-changes-store.js';
 import { safeChangePath, verifyAncestors } from './session-changes-snapshot.js';
 import { withCrossProcessFileLock, writeFileAtomic } from './atomic-file.js';
-import { applyMutationText, decodeMutationRunRows, encodeMutationRunRows, initialMutationRuns, mutationText, visibleMutationRuns } from './session-mutation-text.js';
+import { applyMutationText, decodeMutationRunRows, encodeMutationRunRows, initialMutationRuns, minimizeMutationAncestry, mutationText,
+  visibleMutationRuns } from './session-mutation-text.js';
 import { reviewedToolEffect } from './session-tool-effects.js';
 import { inspectMutationFile, copyMutationObject, createViewMaterializer, mutationFileStamp, mutationFileStampSync, mutationStatStamp, GRANULAR_TEXT_BYTES } from './session-mutation-files.js';
 import { withExecutionIO } from './execution-io-pool.js';
@@ -108,6 +109,20 @@ const baselineMarker = (value) => value !== null && typeof value === 'object' &&
 const ANCESTRY_FORMAT = Object.freeze({ format: 'ancestry', version: 2 });
 const ancestryFormatPage = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
   && Object.keys(value).length === 2 && value.format === 'ancestry' && value.version === 2;
+// Documents written before direct ancestry store every run's closure; those
+// with at least this many stored entries are reduced (`compactAncestry`). An
+// entry is at least `{"id":"","start":0,"length":0}`, so a document whose pages
+// are smaller is passed over from the listing alone. Pages are parsed
+// synchronously, so they are read in short batches. Kill switch:
+// DEVRYAN_LEDGER_ANCESTRY_COMPACTION=0 stops further passes; documents
+// already compacted stay fenced and readable.
+const ancestryCompaction = () => process.env.DEVRYAN_LEDGER_ANCESTRY_COMPACTION !== '0';
+const ANCESTRY_COMPACTED = 'ancestry-compacted';
+const ANCESTRY_COMPACTION_ENTRIES = 1024;
+const ANCESTRY_ENTRY_MIN_BYTES = 30;
+const ANCESTRY_READ_BYTES = 2 * 1024 * 1024;
+// A foreground step waits at most one slice of compaction work.
+const COMPACTION_SLICE_MS = 5;
 // The text of runs that are exactly a document's untouched baseline (stored
 // whole or in 32 KiB rows), or null.
 const baselineText = (runs, id) => {
@@ -277,6 +292,9 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       // Its loose objects are packed below; a failure leaves inline pages.
       await compactBaselines(root).catch((cause) => {
         diagnostic({ phase: 'ledger_compaction', state: 'failed', code: cause?.code ?? 'ledger_compaction_failed' });
+      });
+      await compactAncestry(root).catch((cause) => {
+        diagnostic({ phase: 'ledger_ancestry_compaction', state: 'failed', code: cause?.code ?? 'ledger_compaction_failed' });
       });
       const stats = Object.fromEntries((await run(['count-objects', '-v'])).toString().trim().split('\n')
         .map((line) => line.split(': ')).map(([name, value]) => [name, Number(value)]));
@@ -513,8 +531,15 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
   // or error falls back to the locked path, which stays authoritative; this
   // only removes queueing for reads that would not change state (per-step
   // prompt registration, admission, lease and outcome lookups) behind long
-  // reconciliation or publication work.
-  const readSnapshot = async (requested, fn) => {
+  // reconciliation or publication work. Reads in flight are foreground work
+  // that ledger maintenance yields to.
+  const snapshotReads = new Set();
+  const readSnapshot = (requested, fn) => {
+    const work = readLedgerSnapshot(requested, fn), settled = () => snapshotReads.delete(work);
+    snapshotReads.add(work); work.then(settled, settled);
+    return work;
+  };
+  const readLedgerSnapshot = async (requested, fn) => {
     const { logicalDirectory, directory, vcs } = await resolveRepository(requested);
     const root = rootFor(directory), gitDir = path.join(root, 'git');
     try { await fs.access(path.join(gitDir, 'HEAD')); }
@@ -678,6 +703,110 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       await new Promise((resolve) => setTimeout(resolve, WARM_BATCH_GAP_MS));
     }
     // Skipped documents changed meanwhile; the next maintenance retries them.
+    if (!skipped) await fs.writeFile(stamp, '');
+  };
+  // Reduces closures stored before direct ancestry to the ranges that generate
+  // them (`minimizeMutationAncestry` shows every closure is kept), one document
+  // at a time. Documents are found from one lock-free snapshot listing, read in
+  // short batches and reduced off the lock in time slices. Foreground ledger
+  // work comes first: a slice starts only when no lock of this runtime is held
+  // or queued and no snapshot read, view preparation or publication is in
+  // flight, so a call waits at most one slice instead of once per step (beside
+  // a 1.8M-entry document's pass, a begin otherwise took 1.2 s, not 0.13 s).
+  // The new pages are written before the lock; under it, the document (fenced,
+  // format 2) only swaps its page list, and only while its `runs/<id>` subtree
+  // is still the snapshot's, so a concurrent edit is never replaced and is
+  // retried by the next maintenance. Projected text is unchanged.
+  const compactAncestry = async (root) => {
+    if (!ancestryCompaction()) return;
+    const stamp = path.join(root, ANCESTRY_COMPACTED);
+    try { await fs.access(stamp); return; }
+    catch (cause) { if (cause.code !== 'ENOENT') throw cause; }
+    const started = Date.now();
+    const snapshot = { root, db: await openChangeStore(root, path.join(root, 'git'), { ...storeOptions, syncObjects }) };
+    const meta = await snapshot.db.get('meta.json');
+    if (meta?.version !== 1 || !path.isAbsolute(meta.directory ?? '')) return;
+    // A moved or deleted project resolves elsewhere; never lock another root.
+    const resolved = await resolveRepository(meta.directory).catch(() => null);
+    if (!resolved || rootFor(resolved.directory) !== root) return;
+    const foreground = () => [...queues.values(), ...snapshotReads, ...preparations.values(), ...settlements.values()];
+    const yieldToForeground = async () => {
+      await yieldToEventLoop();
+      for (let busy = foreground(); busy.length; busy = foreground()) await Promise.allSettled(busy);
+    };
+    let sliceStarted = Date.now();
+    const pace = async () => {
+      if (Date.now() - sliceStarted < COMPACTION_SLICE_MS) return;
+      await yieldToForeground(); sliceStarted = Date.now();
+    };
+    const documents = new Map();
+    for await (const row of snapshot.db.committedRows('runs')) {
+      const id = row.key.slice('runs/'.length, row.key.lastIndexOf('/'));
+      const document = documents.get(id) ?? { rows: [], bytes: 0 };
+      document.rows.push(row); document.bytes += row.size;
+      documents.set(id, document);
+      await pace();
+    }
+    for (const [id, document] of documents) {
+      if (document.bytes < ANCESTRY_COMPACTION_ENTRIES * ANCESTRY_ENTRY_MIN_BYTES) documents.delete(id);
+    }
+    // Read while the snapshot is still the published tree.
+    const expected = await snapshot.db.prefixIdentities([...documents.keys()].map((id) => `runs/${id}`));
+    // A document's runs, or null when it holds too little ancestry or a
+    // baseline marker. Its pages and rows are released before the reduction.
+    const runsOf = async (document) => {
+      const pages = [];
+      for (let start = 0; start < document.rows.length;) {
+        const batch = [];
+        for (let bytes = 0; start < document.rows.length && (!batch.length || bytes + document.rows[start].size <= ANCESTRY_READ_BYTES); start++) {
+          batch.push(document.rows[start]); bytes += document.rows[start].size;
+        }
+        for await (const { value } of snapshot.db.readRows(batch)) pages.push(value);
+        await pace();
+      }
+      const body = pages.slice(ancestryFormatPage(pages[0]) ? 1 : 0);
+      if (body.some((page) => !Array.isArray(page))) return null;
+      const rows = body.flat();
+      if (rows.reduce((sum, row) => sum + (Array.isArray(row?.replaces) ? row.replaces.length : 0), 0) < ANCESTRY_COMPACTION_ENTRIES) return null;
+      return decodeMutationRunRows(rows);
+    };
+    let skipped = 0, compacted = 0;
+    for (const [id, document] of documents) {
+      let reduction;
+      try {
+        const runs = await runsOf(document);
+        if (!runs) continue;
+        reduction = await minimizeMutationAncestry(runs, { yieldNow: yieldToForeground, sliceMs: COMPACTION_SLICE_MS });
+      } catch (cause) {
+        // Read failures end the pass, which the next maintenance retries.
+        if (cause?.code && cause.code !== 'invalid_change_record') throw cause;
+        // Malformed or cyclic ancestry stays as stored; reading it is unchanged.
+        diagnostic({ phase: 'ledger_ancestry_compaction', state: 'failed', code: 'ledger_ancestry_unsupported' });
+        continue;
+      }
+      if (!reduction.changed) continue;
+      const encoded = async function* () {
+        for (let start = 0; start < reduction.runs.length; start += 256) {
+          yield* encodeMutationRunRows(reduction.runs.slice(start, start + 256));
+          await pace();
+        }
+      };
+      // Pages are written before the lock; the locked commit only records them.
+      const objects = await snapshot.db.writeList(encoded());
+      const prefix = `runs/${id}`;
+      const written = await locked(meta.directory, async (repo) => {
+        if (!repo || repo.root !== root) return false;
+        const current = await repo.db.prefixIdentities([prefix]);
+        if (!expected.get(prefix) || current.get(prefix) !== expected.get(prefix)) return false;
+        for (const row of document.rows) repo.db.remove(row.key);
+        repo.db.set(`${prefix}/${BASELINE_PAGE}`, ANCESTRY_FORMAT);
+        repo.db.setListObjects(prefix, objects, { firstPage: 1 });
+        return true;
+      }, { requireExisting: true, operation: 'ledger_compaction' });
+      if (written) compacted += 1; else skipped += 1;
+      await new Promise((resolve) => setTimeout(resolve, WARM_BATCH_GAP_MS));
+    }
+    if (compacted) diagnostic({ phase: 'ledger_ancestry_compaction', state: 'completed', count: compacted, elapsedMs: Date.now() - started });
     if (!skipped) await fs.writeFile(stamp, '');
   };
   const revisionsFor = async (repo, id) => {

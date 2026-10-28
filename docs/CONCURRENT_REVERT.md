@@ -163,22 +163,33 @@ directory does not block later executions. Writes into the project still refuse
 such paths. Symlink targets are captured and restored as raw bytes.
 
 Granular text history (`runs/<document>`) is stored as inline base64 pages,
-except for a document still at its first observed text. A replacement run
-stores only the ranges its hunk replaced directly; undo follows that ancestry
-through older runs instead of reading a closure copied onto every run, which
-grew quadratically (two often-rewritten files held 120-154 MB of runs in one
-ledger). A document whose runs replace text is fenced by a
-`{ format: 'ancestry', version: 2 }` first page, and its rows carry a run's
-metadata once (`continues` rows carry only further 32 KiB of text). Runs that
-replace nothing keep format 1 rows. The fence is one-way per document. That document stores one
-`{ baseline, size }` page naming its content object, because the object
+except for a document still at its first observed text. That document stores
+one `{ baseline, size }` page naming its content object, because the object
 already holds those bytes and objects are never collected
 (`DEVRYAN_LEDGER_BASELINE_REFS=0` writes inline pages again; references stay
-readable). Background maintenance (`DEVRYAN_LEDGER_PACK=0` turns it off)
-converts older inline baselines in batches of 1024 under the owner lock. It
-replaces a document only while its `runs/<document>` subtree still matches the
-snapshot the candidate was read from, and writes `baseline-refs` in the ledger
-root once nothing remains. Pinned lease trees keep their inline pages. After
+readable). A replacement run stores only the ranges its hunk replaced directly;
+undo follows that ancestry through older runs instead of reading a closure
+copied onto every run, which grew quadratically (two often-rewritten files held
+120-154 MB of runs in one ledger). A document whose runs replace text is fenced
+by a `{ format: 'ancestry', version: 2 }` first page, and its rows carry a run's
+metadata once (`continues` rows carry only further 32 KiB of text). Runs that
+replace nothing keep format 1 rows. The fence is one-way per document.
+
+Background maintenance (`DEVRYAN_LEDGER_PACK=0` turns it off) converts older
+inline baselines in batches of 1024 under the owner lock. It replaces a
+document only while its `runs/<document>` subtree still matches the snapshot
+the candidate was read from, and writes `baseline-refs` in the ledger root once
+nothing remains. It then reduces each document an older host stored with every
+run's closure (1024 or more stored entries) to the ranges that generate those
+closures: a range is dropped only when the other kept ranges already reach it,
+so every closure, and with it every undo and stale-base edit, is unchanged.
+The reduction runs off the lock in 5 ms slices, and only while no lock is held
+or queued and no view preparation or publication is in flight. The reduced
+document is rewritten fenced, under the owner lock, only while its subtree still
+matches the snapshot; a concurrently edited one waits for the next pass.
+`ancestry-compacted` is written in the ledger root once nothing remains.
+`DEVRYAN_LEDGER_ANCESTRY_COMPACTION=0` stops further passes; compacted
+documents stay fenced and readable. Pinned lease trees keep their inline pages. After
 packing loose objects, maintenance prunes unreachable ones older than two
 hours. Records themselves have no retention horizon: deleted text, deleted-file
 documents, operations, leases and calls stay, because any operation can be
@@ -268,9 +279,10 @@ Deploy or roll back the host and companion together. A preparation rollback must
 retain a host that can read whole-content revisions, retained conflict objects,
 baseline references and the direct-ancestry format; a host predating references
 fails closed (`invalid_change_record`) on every document stored by reference, and
-a host predating direct ancestry fails closed on every fenced document and its
-base copies (it would otherwise derive a shallower closure and order boundary
-inserts differently after multi-level undo). Do not point a pre-migration ledger
+a host predating direct ancestry fails closed on every fenced document, including
+documents ancestry compaction rewrote, and their base copies (it would otherwise
+derive a shallower closure and order boundary inserts differently after
+multi-level undo). Do not point a pre-migration ledger
 implementation at new history.
 
 The real dispatcher journey is `scripts/verify-concurrent-revert-execution.mjs`.

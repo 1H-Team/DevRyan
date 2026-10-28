@@ -117,7 +117,8 @@ const optional = async (command, args, cwd) => {
   try { return (await execute(command, args, { cwd, timeout: 10_000 })).stdout.trim(); } catch { return null; }
 };
 
-async function identity(options, moduleFile, fixtureText) {
+// Source, runtime, machine and fixture identity of a benchmark run.
+export async function benchmarkIdentity(options, moduleFile, fixtureText) {
   const cpus = os.cpus();
   const status = await optional('git', ['status', '--porcelain'], options.runtime);
   return {
@@ -158,7 +159,7 @@ export async function runReplay(options) {
     edits.push({ edit, target: fixture.target(edit), ...ancestryCounts(runs), applyMs: Math.round(applyMs * 10) / 10,
       encodeMs: Math.round(encodeMs * 10) / 10, decodeMs: Math.round(decodeMs * 10) / 10, pageBytes: Buffer.byteLength(serialized) });
   }
-  return { identity: await identity(options, moduleFile, initial), encoding: encode === encodeV1Rows ? 'v1-replica' : 'runtime',
+  return { identity: await benchmarkIdentity(options, moduleFile, initial), encoding: encode === encodeV1Rows ? 'v1-replica' : 'runtime',
     summary: summarizeReplay(edits, options), edits };
 }
 
