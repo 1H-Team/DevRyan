@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test';
-import { applyMutationText, decodeMutationRunRows, encodeMutationRunRows, initialMutationRuns, mutationDiff, mutationText, visibleMutationRuns } from './session-mutation-text.js';
+import { applyMutationText, decodeMutationRunRows, encodeMutationRunRows, initialMutationRuns, minimizeMutationAncestry, mutationDiff, mutationText,
+  visibleMutationRuns } from './session-mutation-text.js';
 
 const sequentialCases = [
   ['ac', ['abc', 'aXbc'], [[0, 'aXc']]],
@@ -413,4 +414,134 @@ test('format 2 rows store run metadata once and decode to the same runs as forma
     .toEqual(formatOne);
   expect(() => decodeMutationRunRows([{ continues: true, bytes: '' }])).toThrow('invalid mutation run row');
   expect(() => decodeMutationRunRows([{ id: 'a', start: 0, deletedBy: [], replaces: [] }])).toThrow('invalid mutation run row');
+});
+
+// Every (id, offset) unit a list reaches, as `replacedClosure` derives it:
+// through the lists of the runs starting inside each reached range.
+const closureUnits = (runs, list) => {
+  const byId = new Map();
+  for (const run of runs) { const same = byId.get(run.id); if (same) same.push(run); else byId.set(run.id, [run]); }
+  const seen = new Set(), units = new Set(), stack = [...list];
+  while (stack.length) {
+    const range = stack.pop(), key = `${range.id}:${range.start}:${range.length}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    for (let offset = range.start; offset < range.start + range.length; offset++) units.add(`${range.id}@${offset}`);
+    for (const run of byId.get(range.id) ?? []) if (run.start >= range.start && run.start < range.start + range.length) stack.push(...run.replaces);
+  }
+  return [...units].sort();
+};
+const rangeKey = (range) => `${range.id}:${range.start}:${range.length}`;
+const isSubsequence = (part, whole) => {
+  let at = 0;
+  for (const range of whole) if (at < part.length && rangeKey(part[at]) === rangeKey(range)) at++;
+  return at === part.length;
+};
+// Stored and read back: format 1 repeats a run's list on every 32 KiB chunk
+// (equal, separate arrays); format 2 stores it once per run.
+const storedRuns = (runs, format) => decodeMutationRunRows(JSON.parse(JSON.stringify(format === 2 ? encodeMutationRunRows(runs)
+  : runs.flatMap(({ text, ...metadata }) => Array.from({ length: Math.ceil(text.length / 32_768) }, (_, chunk) => ({ ...metadata,
+    start: metadata.start + chunk * 32_768, bytes: Buffer.from(text.slice(chunk * 32_768, (chunk + 1) * 32_768), 'latin1').toString('base64') }))))));
+const expectSameClosures = (original, compacted) => {
+  expect(compacted.map(({ replaces: _replaces, ...run }) => run)).toEqual(original.map(({ replaces: _replaces, ...run }) => run));
+  for (const [index, run] of original.entries()) {
+    expect(isSubsequence(compacted[index].replaces, run.replaces)).toBe(true);
+    expect(closureUnits(compacted, compacted[index].replaces)).toEqual(closureUnits(original, run.replaces));
+  }
+};
+
+test('compaction keeps every closure and every later edit, from stored closures and mixed layouts', async () => {
+  let seed = 9157;
+  const random = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0);
+  const pieces = ['a', 'b', 'X', '\n', 'line '];
+  let reduced = 0;
+  for (let sequence = 0; sequence < 12; sequence++) {
+    // Some documents hold a run longer than one stored chunk, which itself
+    // gets replaced in part.
+    const initial = `line one\nline two\n${sequence % 3 === 0 ? `${'z'.repeat(34_000)}\n` : ''}line three\n`;
+    const snapshots = [initial ? initialMutationRuns(initial, 'base') : []], operations = [];
+    const edit = (lines, applyAll) => {
+      const fromIndex = random() % snapshots.length, undone = new Set(operations.filter(() => random() % 4 === 0));
+      const bases = Object.fromEntries(Object.entries(lines).map(([line]) => [line,
+        visibleMutationRuns((snapshots[fromIndex][line] ?? snapshots[fromIndex]), undone)]));
+      const text = Object.values(bases)[0].map((run) => run.text).join('');
+      for (const base of Object.values(bases)) expect(base.map((run) => run.text).join('')).toBe(text);
+      const offset = random() % (text.length + 1), removed = random() % (Math.min(6, text.length - offset) + 1);
+      const inserted = Array.from({ length: random() % 6 }, () => pieces[random() % pieces.length]).join('');
+      const operation = `op-${operations.length}`;
+      operations.push(operation);
+      return applyAll(bases, text.slice(0, offset) + inserted + text.slice(offset + removed), operation);
+    };
+    // Stored closures (an older host), then direct ancestry on top in some documents.
+    let runs = snapshots[0];
+    const legacyEdits = 10 + (random() % 10), directEdits = sequence % 2 ? 4 + (random() % 6) : 0;
+    for (let index = 0; index < legacyEdits + directEdits; index++) {
+      runs = edit({ runs }, ({ runs: base }, after, operation) => (index < legacyEdits
+        ? reference.applyMutationText(runs, base, after, operation) : applyMutationText(runs, base, after, operation)));
+      snapshots.push(runs);
+    }
+    const stored = storedRuns(runs, sequence % 4 < 2 ? 1 : 2);
+    const result = await minimizeMutationAncestry(stored);
+    expectSameClosures(stored, result.runs);
+    expect(result.after).toBeLessThanOrEqual(result.before);
+    reduced += result.before - result.after;
+    // Continue from views of any snapshot under any undo set, with and without
+    // compaction (and, for stored closures only, as the older host would).
+    let lines = { uncompacted: stored, compacted: result.runs, ...(directEdits ? {} : { legacy: stored }) };
+    for (let index = 0; index < 12; index++) {
+      lines = edit(lines, (bases, after, operation) => Object.fromEntries(Object.entries(lines).map(([line, current]) => [line,
+        line === 'legacy' ? reference.applyMutationText(current, bases[line], after, operation)
+          : applyMutationText(current, bases[line], after, operation)])));
+      snapshots.push(lines);
+      const sets = [new Set(), ...operations.slice(-6).map((id) => new Set([id])),
+        ...Array.from({ length: 10 }, () => new Set(operations.filter(() => random() % 3 === 0)))];
+      for (const disabled of sets) {
+        const expected = mutationText(lines.uncompacted, disabled);
+        for (const current of Object.values(lines)) expect(mutationText(current, disabled)).toBe(expected);
+      }
+    }
+  }
+  expect(reduced).toBeGreaterThan(0);
+}, 60_000);
+
+test('compaction keeps partially overlapping ranges and drops a range covered by several', async () => {
+  const run = (id, start, text, replaces = [], owner = id.split(':')[0]) => ({ id, start, text, owner, deletedBy: [], replaces });
+  const runs = [
+    run('base', 0, 'abc', [], null), run('base', 3, 'defghij', [], null),
+    run('op1:0', 0, 'XY', [{ id: 'base', start: 0, length: 3 }]),
+    run('op2:0', 0, 'ZW', [{ id: 'base', start: 3, length: 4 }]),
+    // Neither range contains the other: both stay.
+    run('op3:0', 0, 'P', [{ id: 'base', start: 0, length: 5 }, { id: 'base', start: 3, length: 7 }]),
+    // (base, 2, 4) lies across what op1:0 and op2:0 replaced, so only together do they cover it.
+    run('op4:0', 0, 'Q', [{ id: 'base', start: 2, length: 4 }, { id: 'op1:0', start: 0, length: 2 }, { id: 'op2:0', start: 0, length: 2 },
+      { id: 'base', start: 0, length: 3 }, { id: 'base', start: 3, length: 0 }]),
+  ];
+  const result = await minimizeMutationAncestry(runs);
+  expect(result.runs[4].replaces).toBe(runs[4].replaces);
+  expect(result.runs[5].replaces).toEqual([{ id: 'op1:0', start: 0, length: 2 }, { id: 'op2:0', start: 0, length: 2 }]);
+  expect([result.before, result.after, result.changed]).toEqual([9, 6, true]);
+  expectSameClosures(runs, result.runs);
+});
+
+test('compaction refuses cyclic or malformed ancestry', async () => {
+  const run = (id, replaces) => ({ id, start: 0, text: 'x', owner: id, deletedBy: [], replaces });
+  await expect(minimizeMutationAncestry([run('a', [{ id: 'b', start: 0, length: 1 }]), run('b', [{ id: 'a', start: 0, length: 1 }])]))
+    .rejects.toThrow('mutation_ancestry_cycle');
+  await expect(minimizeMutationAncestry([run('a', [{ id: 'b', start: -1, length: 1 }])])).rejects.toThrow('mutation_ancestry_invalid');
+  await expect(minimizeMutationAncestry([run('a', [{ id: 'b', start: 0 }])])).rejects.toThrow('mutation_ancestry_invalid');
+});
+
+test('compaction reduces a stored-closure chain to direct ranges and yields within its work budget', async () => {
+  let runs = initialMutationRuns('head\nvalue 0\ntail\n', 'base');
+  for (let index = 1; index <= 150; index++) {
+    runs = reference.applyMutationText(runs, visibleMutationRuns(runs), `head\nvalue ${index}\ntail\n`, `op${index}`);
+  }
+  const stored = storedRuns(runs, 1);
+  let yields = 0;
+  const result = await minimizeMutationAncestry(stored, { sliceMs: 0, yieldNow: async () => { yields += 1; } });
+  expect(result.before).toBeGreaterThan(10_000);
+  expect(result.after).toBeLessThan(result.before / 20);
+  expect(yields).toBeGreaterThanOrEqual(Math.floor(result.before / 1024));
+  expectSameClosures(stored, result.runs);
+  expect((await minimizeMutationAncestry(stored)).runs).toEqual(result.runs);
 });

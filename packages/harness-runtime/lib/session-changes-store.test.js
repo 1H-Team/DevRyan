@@ -176,3 +176,36 @@ test('persistent object reader: reads settling together never leave a timer that
   expect(await read('0'.repeat(oid.length))).toBeNull();
   expect(await readGitObject(root, args, oid, { check: true, idleMs: 40 })).toEqual({ oid, type: 'blob', size: 7 });
 });
+
+for (const directTrees of ['1', '0']) test(`list pages written before a transaction commit like setList's (direct trees ${directTrees})`, async () => {
+  const previous = process.env.DEVRYAN_LEDGER_DIRECT_TREES;
+  process.env.DEVRYAN_LEDGER_DIRECT_TREES = directTrees;
+  try {
+    const s = await store();
+    // 128-value and 256 KiB page breaks, and one value larger than a page alone.
+    const values = [...Array.from({ length: 300 }, (_, index) => ({ index })), ...Array.from({ length: 6 }, (_, index) => ({ wide: 'x'.repeat(60_000 + index) })),
+      { alone: 'y'.repeat(300_000) }, { after: true }];
+    const reference = await s.open();
+    reference.set('meta.json', { version: 1 });
+    await reference.setList('lists/reference', values, { firstPage: 1 });
+    await reference.commit();
+    const written = await s.open();
+    const oids = await written.writeList(values);
+    // Nothing is staged until the ids are, so the objects alone change no state.
+    expect(written.pendingCount).toBe(0);
+    written.setListObjects('lists/staged', oids, { firstPage: 1 });
+    await written.commit();
+    const reopened = await s.open(), pages = async (prefix) => {
+      const result = [];
+      for await (const { key, value } of reopened.entries(prefix)) result.push([key.slice(prefix.length), value]);
+      return result;
+    };
+    const expected = await pages('lists/reference');
+    expect(expected.map(([key]) => key)).toEqual(['/0000000001.json', '/0000000002.json', '/0000000003.json', '/0000000004.json', '/0000000005.json', '/0000000006.json']);
+    expect(await pages('lists/staged')).toEqual(expected);
+    expect(() => written.setListObjects('lists/bad', ['not-an-oid'])).toThrow();
+    expect(() => written.setListObjects('../escape', oids)).toThrow();
+  } finally {
+    if (previous === undefined) delete process.env.DEVRYAN_LEDGER_DIRECT_TREES; else process.env.DEVRYAN_LEDGER_DIRECT_TREES = previous;
+  }
+});

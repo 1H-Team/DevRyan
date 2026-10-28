@@ -302,3 +302,153 @@ export function decodeMutationRunRows(rows) {
   }
   return runs;
 }
+
+// Compaction of runs written before direct ancestry, which stored the closure
+// of every replaced range. A list keeps a range only when its kept ranges do
+// not already reach it in one step (their own units and the lists of the runs
+// starting inside them). Ranges are examined in decreasing ancestry height, so
+// a listed range is examined after every listed range that can reach it, and a
+// stored closure keeps about its hunk's direct ranges. A dropped range lies in
+// the closure of the kept ones, so the list's closure is unchanged; with
+// acyclic ancestry (checked) that holds for every run by induction on height.
+// Each reduction is re-checked in one batch, apart from the incremental pass.
+// Projected text is no evidence: `mutationText` never reads `replaces`.
+// The work yields every `sliceMs`, so a shared event loop is never held long.
+const validRange = (range) => range !== null && typeof range === 'object' && typeof range.id === 'string'
+  && Number.isSafeInteger(range.start) && range.start >= 0 && Number.isSafeInteger(range.length) && range.length >= 0;
+const sameRanges = (left, right) => left === right || (left.length === right.length && left.every((range, index) =>
+  range.id === right[index].id && range.start === right[index].start && range.length === right[index].length));
+
+// Sorted, merged [start, end) intervals per id.
+const addInterval = (intervals, id, start, end) => {
+  if (end <= start) return;
+  const list = intervals.get(id);
+  if (!list) { intervals.set(id, [[start, end]]); return; }
+  let low = 0;
+  while (low < list.length && list[low][1] < start) low++;
+  let high = low;
+  for (; high < list.length && list[high][0] <= end; high++) { start = Math.min(start, list[high][0]); end = Math.max(end, list[high][1]); }
+  list.splice(low, high - low, [start, end]);
+};
+const containsInterval = (intervals, id, start, end) => {
+  const list = intervals.get(id) ?? [];
+  let low = 0, high = list.length;
+  while (low < high) { const middle = (low + high) >> 1; if (list[middle][0] <= start) low = middle + 1; else high = middle; }
+  return low > 0 && list[low - 1][1] >= end;
+};
+
+export async function minimizeMutationAncestry(runs, { yieldNow = () => new Promise((resolve) => setImmediate(resolve)), sliceMs = 25 } = {}) {
+  // `due` counts work without allocating; `pause` yields once a slice is spent.
+  let sliceStarted = performance.now(), work = 0;
+  const due = (units = 1) => (work += units) >= 256;
+  const pause = async () => {
+    work = 0;
+    if (performance.now() - sliceStarted < sliceMs) return;
+    await yieldNow(); sliceStarted = performance.now();
+  };
+  // Format 1 rows repeat a run's list on every chunk: one array per distinct list.
+  const lists = new Map(), canonical = new Map(), pieces = new Map();
+  let before = 0;
+  for (const run of runs) {
+    if (!run.replaces.every(validRange)) throw new Error('mutation_ancestry_invalid');
+    before += run.replaces.length;
+    const known = lists.get(run.id) ?? [];
+    let list = known.find((candidate) => sameRanges(candidate, run.replaces));
+    if (!list) { list = run.replaces; known.push(list); lists.set(run.id, known); }
+    canonical.set(run, list);
+    const same = pieces.get(run.id);
+    if (same) same.push(run); else pieces.set(run.id, [run]);
+    if (due(1 + run.replaces.length)) await pause();
+  }
+  for (const same of pieces.values()) same.sort((left, right) => left.start - right.start);
+  // Runs starting inside `range`, as `inRange` selects them.
+  const starting = (range) => {
+    const same = pieces.get(range.id) ?? [];
+    let low = 0, high = same.length;
+    while (low < high) { const middle = (low + high) >> 1; if (same[middle].start < range.start) low = middle + 1; else high = middle; }
+    const result = [];
+    for (let index = low; index < same.length && same[index].start < range.start + range.length; index++) result.push(same[index]);
+    return result;
+  };
+  // One step of reach: the range itself and every ancestor its runs list.
+  const reach = function* (range) {
+    yield range;
+    const seen = new Set();
+    for (const run of starting(range)) {
+      const list = canonical.get(run);
+      if (seen.has(list)) continue;
+      seen.add(list);
+      yield* list;
+    }
+  };
+  // Height: 0 without ancestry, else one above the highest id it lists.
+  const heights = new Map();
+  const children = (id) => [...new Set((lists.get(id) ?? []).flatMap((list) => list.map((range) => range.id)))];
+  for (const id of lists.keys()) {
+    if (heights.has(id)) continue;
+    const stack = [{ id, children: children(id), next: 0, height: 0 }], active = new Set([id]);
+    while (stack.length) {
+      const frame = stack.at(-1);
+      if (frame.next < frame.children.length) {
+        const child = frame.children[frame.next++];
+        if (due()) await pause();
+        if (heights.has(child)) { frame.height = Math.max(frame.height, heights.get(child) + 1); continue; }
+        if (active.has(child)) throw new Error('mutation_ancestry_cycle');
+        active.add(child);
+        stack.push({ id: child, children: children(child), next: 0, height: 0 });
+        continue;
+      }
+      heights.set(frame.id, frame.height); active.delete(frame.id); stack.pop();
+      if (stack.length) stack.at(-1).height = Math.max(stack.at(-1).height, frame.height + 1);
+    }
+  }
+  const reductions = new Map();
+  for (const known of lists.values()) {
+    for (const list of known) {
+      const order = list.map((range, index) => ({ range, index, height: heights.get(range.id) ?? 0 }))
+        .sort((left, right) => right.height - left.height || right.range.length - left.range.length || left.index - right.index);
+      const covered = new Map(), kept = [];
+      for (const entry of order) {
+        if (due()) await pause();
+        const { range } = entry;
+        if (!range.length || containsInterval(covered, range.id, range.start, range.start + range.length)) continue;
+        kept.push(entry);
+        for (const reached of reach(range)) {
+          addInterval(covered, reached.id, reached.start, reached.start + reached.length);
+          if (due()) await pause();
+        }
+      }
+      const check = new Map();
+      for (const { range } of kept) for (const reached of reach(range)) {
+        if (due()) await pause();
+        if (!reached.length) continue;
+        const intervals = check.get(reached.id);
+        if (intervals) intervals.push([reached.start, reached.start + reached.length]);
+        else check.set(reached.id, [[reached.start, reached.start + reached.length]]);
+      }
+      for (const intervals of check.values()) {
+        intervals.sort((left, right) => left[0] - right[0]);
+        let write = 0;
+        for (const interval of intervals) {
+          if (write && interval[0] <= intervals[write - 1][1]) intervals[write - 1][1] = Math.max(intervals[write - 1][1], interval[1]);
+          else intervals[write++] = interval;
+        }
+        intervals.length = write;
+      }
+      for (const range of list) {
+        if (due()) await pause();
+        if (range.length && !containsInterval(check, range.id, range.start, range.start + range.length)) {
+          throw new Error('mutation_ancestry_verification_failed');
+        }
+      }
+      reductions.set(list, kept.length === list.length ? list : kept.sort((left, right) => left.index - right.index).map(({ range }) => range));
+    }
+  }
+  let after = 0;
+  const result = runs.map((run) => {
+    const replaces = reductions.get(canonical.get(run));
+    after += replaces.length;
+    return replaces.length === run.replaces.length ? run : { ...run, replaces };
+  });
+  return { runs: result, before, after, changed: after < before };
+}
