@@ -1,5 +1,13 @@
 export const FEATURE_TEST_MATRIX = Object.freeze([
   {
+    id: 'delegated-background-shell-refusal',
+    sourcePaths: ['packages/web/server/lib/opencode/session-execution-host.js',
+      'packages/web/server/lib/opencode/runtime-host/native-admission-owner.js'],
+    testPaths: ['packages/web/server/lib/opencode/session-execution-host.test.js',
+      'packages/web/server/lib/harness/native-integration/session-mutations-native-holds.test.js',
+      'scripts/opencode-v2-native/one-call-verification.test.ts'],
+  },
+  {
     id: 'served-freshness-for-verification',
     sourcePaths: ['packages/web/server/lib/opencode/native-served-identity.js', 'packages/harness-runtime/lib/session-mutations.js',
       'packages/web/server/lib/orchestration/required-check-observer.js'],

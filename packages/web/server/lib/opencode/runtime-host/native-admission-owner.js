@@ -103,6 +103,16 @@ export function createNativeAdmissionOwner(options) {
     if (attempt.state === 'unknown') return 'unknown';
     return attempt.taskId && lease.attempt?.taskId === attempt.taskId && lease.attempt.leaseToken === attempt.leaseToken ? 'wake' : 'stale';
   };
+  // Whether a session may move a shell to the background: refused for a
+  // managed task child (session-execution-host.js refuses starting one
+  // there), unknown before the orchestration owner is ready.
+  const backgroundPolicy = async (sessionID) => {
+    if (process.env.DEVRYAN_REFUSE_DELEGATED_BACKGROUND === '0' || typeof options.childAttempt !== 'function') return 'allowed';
+    const session = sessionBindings.get(sessionID) ?? await canonical(sessionID);
+    if (!session.parentID) return 'allowed';
+    const attempt = await options.childAttempt({ sessionID: session.id, directory: session.directory });
+    return !attempt ? 'allowed' : attempt.state === 'unknown' ? 'unknown' : 'refused';
+  };
   const acknowledgeContinuation = async (input) => {
     assertController();
     if (controllerReplacement) throw fail('native_controller_replacing', 503);
@@ -994,7 +1004,16 @@ export function createNativeAdmissionOwner(options) {
       await runtime.bindNativeShellNotification({ directory: entry.directory, sessionID: request.sessionID,
         jobID: input.jobID, notificationID: input.notificationID });
       assertEntry(entry);
-    } else if (request.operation !== 'job.shell.background') throw fail('native_shell_job_capability_required', 403);
+    } else if (request.operation === 'job.shell.background') {
+      // A shell started in the background (its role then unknown) stays there.
+      if (entry.request.input?.input?.background !== true) {
+        const policy = await backgroundPolicy(request.sessionID);
+        assertEntry(entry);
+        if (policy === 'refused') throw fail('native_shell_background_unavailable', 403);
+        if (policy === 'unknown') options.recordDiagnostic?.({ type: 'lifecycle', event: 'background_policy_unknown', sessionID: request.sessionID,
+          payload: { operation: 'job.shell.background' } });
+      }
+    } else throw fail('native_shell_job_capability_required', 403);
     return entry.permit;
   };
   const authorizeShellCompletion = async (request) => {

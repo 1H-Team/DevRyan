@@ -1463,7 +1463,21 @@ task completed). Roots and unmanaged subagents wake as before. While managed
 orchestration cannot yet classify a child (`unknown` during startup), the
 intent is kept durably without a wake, and `resumeDeferredShellContinuations`
 evaluates it once orchestration is initialized. The recovered-grant
-re-authorization checks the attempt again (`native_completion_attempt_settled`). Children receive
+re-authorization checks the attempt again (`native_completion_attempt_settled`).
+A managed child cannot keep a server past its call (D2): the execution host
+refuses its `background: true` shell before any lease exists, and
+`authorizeShellJob` refuses moving its running shell to the background
+(`job.shell.background`), both with `native_shell_background_unavailable`,
+also once its task settled (`childAttempt` `none`). The refusal tells the
+model to run the server and its checks in one foreground call (timeout up to
+3600000 ms): start it inside the command, stop it on exit (`trap … EXIT`), wait
+until it answers, check, and write evidence to `$DEVRYAN_ARTIFACT_DIR`
+(`scripts/opencode-v2-native/one-call-verification.test.ts` runs that call
+under the real launcher). Roots and unmanaged subagents keep background shells.
+While orchestration cannot classify the child (`unknown`) the shell runs and
+`background_policy_unknown` is journaled; P0.3 attempt fencing still applies to
+it, and a shell started in the background stays there. Kill switch:
+`DEVRYAN_REFUSE_DELEGATED_BACKGROUND=0`. Children receive
 the captured read-only policy; prompt text cannot grant write authority.
 Plan admission requires its canonical-policy and implementation-validation
 hooks; an Implement marker also requires validation. Missing hooks refuse Plan
