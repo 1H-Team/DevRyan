@@ -43,8 +43,10 @@ test('the gate bounds direct admission, its finish and lease cleanup, not confin
 });
 
 test('a short run compacts the planted closures, keeps the text and removes its scratch', { timeout: 120_000 }, async () => {
+  // Other benchmarks share this parent and may run concurrently: look only at this run's own prefix.
   const parent = scratchParent('perf');
-  const before = new Set(fs.existsSync(parent) ? fs.readdirSync(parent) : []);
+  const own = () => (fs.existsSync(parent) ? fs.readdirSync(parent) : []).filter((name) => name.startsWith('ancestry-compaction-'));
+  const before = new Set(own());
   const report = await runCompactionLoad(parseCompactionLoadArgs(['--edits', '12', '--blocks', '8', '--baseline-calls', '2', '--label', 'test']));
   assert.equal(report.identity.source.label, 'test');
   assert.ok(report.ancestry.before >= 1024, `planted ${report.ancestry.before} entries`);
@@ -53,5 +55,5 @@ test('a short run compacts the planted closures, keeps the text and removes its 
   for (const phase of ['alone', 'after']) assert.equal(report[phase].cleanupMs.count, 2);
   assert.ok(report.during.cleanupMs.count >= 1);
   assert.equal(report.loadAverage.start.length, 3);
-  assert.deepEqual((fs.existsSync(parent) ? fs.readdirSync(parent) : []).filter((name) => !before.has(name)), []);
+  assert.deepEqual(own().filter((name) => !before.has(name)), []);
 });
