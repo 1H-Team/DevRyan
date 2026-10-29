@@ -155,7 +155,9 @@ reported instead:
   A ledger's derived `context-cache/`, `module-overlays/` and `view-standby/`
   (parked execution views, adoptable only by the process that parked them) are
   not copied; the rollback file inventory skips `context-cache/` and
-  `view-standby/` the same way.
+  `view-standby/` the same way. A Codex CLI home's scratch
+  (`quota/codex-usage/<id>/.tmp/`, its plugin checkout cache) is not copied
+  either; its auth file and databases are.
 - A synthetic `session_inbox` item queued to an archived session (a
   background shell's completion notice that arrived after its task finished)
   is never delivered. The clone's source check tolerates exactly those rows
@@ -1263,6 +1265,24 @@ CLI and the shell), `native-artifacts.js`, `native-bundle-reboot-recovery.js`,
 `agent-browser/install.js`. Node refuses any other package-name subpath at runtime,
 and Electron externalizes `@devryan/web/*` in its bundle, so a new import must
 be added there first; the boundary check reports it before it can ship.
+
+Per-file tree rows never sit inside a bundle document, because their size
+grows with the user's data while documents are capped. Schema 2 records (all new
+writes) keep them in canonical NDJSON sidecars written by `saveBundleRows` and
+read by `readBundleRows` (`bundle-migration-inventory.js`): one canonical
+`{path,sha256}` per line in tree order, unique paths, bound by the document's
+`{protocol:'devryan.bundle.tree-rows/1',count,sha256}` reference. No row is
+trusted before the whole file matches. `sources/preparation.json` binds
+`sources/copied-files.ndjson` as `copiedFiles`. `prepared.json` keeps the
+immutable rows (`descriptor.json`, `sources/`, `config/reviewed-*`) inline as
+`immutableFiles` and binds every other row in `prepared-files.ndjson` as
+`dataFiles`. An artifact rebind reseals only immutable documents, so it never
+rewrites a sidecar. Prepared-phase verification hashes the actual tree, without
+the seal and its sidecar, and compares both halves in tree order. Schema 1
+records with inline `copiedFiles`/`initialFiles` arrays (bundles sealed before
+this change) still verify, select and act as clone sources. A refused oversized
+document carries `detail: {document, bytes}`, its file name and size only. Each
+clone logs a `startup measure` line with its copied file count.
 
 Startup binding reads sealed bundle documents with the same 32 MiB
 `BUNDLE_DOCUMENT_MAX_BYTES` limit used by bundle storage and native boot

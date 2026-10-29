@@ -15,7 +15,7 @@ import { verifyBundleOwnedContinuations } from './bundle-owned-continuations.js'
 import { inspectBundleHarness } from './bundle-harness-integrity.js';
 import { buildV2PromptContent, buildV2PromptFingerprint, buildDevryanPromptMetadata } from '../v2/admission.js';
 import { createRuntimeBundleStore, readRuntimeBundleDescriptor } from './runtime-bundle.js';
-import { assertNoPendingMigration, assertBundlePendingInput, verifyMigrationReferences, sha256,canonicalJSON } from './bundle-migration-inventory.js';
+import { assertNoPendingMigration, assertBundlePendingInput, verifyMigrationReferences, sha256,canonicalJSON, readBundleRows, saveBundleRows, saveBundleJSON } from './bundle-migration-inventory.js';
 import { readRuntimeBundleBinding, getRuntimeHome } from './runtime-bundle-binding.js';
 import { git } from '../../../../../harness-runtime/lib/session-changes-git.js';
 import { openChangeStore, changeKey } from '../../../../../harness-runtime/lib/session-changes-store.js';
@@ -27,6 +27,9 @@ import { TARGET_OPENCODE_VERSION } from '../version-policy.js';
 import { BUNDLE_DOCUMENT_MAX_BYTES } from './bundle-document-limits.js';
 import { readStartupFindings, recordStartupFindings, resetStartupFindings, startupNotices } from './startup-notices.js';
 
+// Every prepared row: inline immutable rows plus the hash-bound data sidecar.
+const preparedRows=async file=>{const manifest=JSON.parse(await fs.readFile(file,'utf8'));
+ return [...manifest.immutableFiles,...await readBundleRows(path.join(path.dirname(file),'prepared-files.ndjson'),manifest.dataFiles)];};
 const execute=promisify(execFile), roots=[];
 // Git and SQLite fixtures need headroom on hosted macOS runners.
 vi.setConfig({testTimeout:30_000});
@@ -295,6 +298,86 @@ test('a selected V2 source clones its current database, settings and globals wit
  const receiptBytes=await fs.readFile(copied.migrationReceiptPath);
  await expect(verifyNativeBootMigration({bundleID:copied.bundleID,databasePath:copied.launch.opencodeDatabasePath,manifestSha256:copied.launch.artifactManifestSha256,
   migrationEvidence:{path:copied.migrationReceiptPath,sha256:sha256(receiptBytes),clone:{preparedManifestPath:copied.preparedManifestPath,preparedManifestSha256:sha256(await fs.readFile(copied.preparedManifestPath))}}})).resolves.toMatchObject({bundleID:'baseline'});
+});
+// The bundle tree in walk order, as the store's own manifest lists it.
+const treeOrder=async(root,relative='')=>{const rows=[];
+ for(const entry of (await fs.readdir(path.join(root,relative),{withFileTypes:true})).sort((a,b)=>a.name.localeCompare(b.name))){
+  const name=relative?relative+'/'+entry.name:entry.name;
+  if(entry.isDirectory())rows.push(...await treeOrder(root,name));else rows.push(name);}
+ return rows;};
+test('sealed bundle documents stay the same size however many files a clone copies',async()=>{
+ const f=await fixture(),baseline=await f.store.prepare(f.baselineInput);await f.store.select({bundleID:'baseline',expectedRevision:0});
+ const small=await f.store.prepare({...f.baselineInput,bundleID:'small',source:{kind:'bundle',bundleID:'baseline'}});
+ const bulk=path.join(baseline.launch.webDataDirectory,'bulk');await fs.mkdir(bulk);
+ for(let index=0;index<3000;index+=1)await fs.writeFile(path.join(bulk,`file-${index}.json`),String(index));
+ const codex=path.join(baseline.launch.webDataDirectory,'quota','codex-usage','account');
+ await fs.mkdir(path.join(codex,'.tmp','plugins'),{recursive:true});
+ await fs.writeFile(path.join(codex,'.tmp','plugins','cache.json'),'regenerable');await fs.writeFile(path.join(codex,'auth.json'),'{}');
+ const large=await f.store.prepare({...f.baselineInput,bundleID:'large',source:{kind:'bundle',bundleID:'baseline'}});
+ const size=async(value,file)=>(await fs.stat(path.join(path.dirname(value.preparedManifestPath),file))).size;
+ // A document that embedded per-file rows would grow by ~3000 rows (~300 KB).
+ for(const file of ['prepared.json','sources/preparation.json'])expect(Math.abs(await size(large,file)-await size(small,file))).toBeLessThan(4096);
+ const rows=await preparedRows(large.preparedManifestPath);
+ expect(rows.filter(row=>row.path.startsWith('web-data/bulk/'))).toHaveLength(3000);
+ expect(rows.map(row=>row.path)).toContain('web-data/quota/codex-usage/account/auth.json');
+ expect(rows.some(row=>row.path.includes('/.tmp/'))).toBe(false);
+ const copied=JSON.parse(await fs.readFile(path.join(path.dirname(large.preparedManifestPath),'sources','preparation.json'),'utf8'));
+ expect(copied).toMatchObject({schema:2,copiedFiles:{protocol:'devryan.bundle.tree-rows/1'}});
+ expect(copied.copiedFiles.count).toBeGreaterThanOrEqual(3000);
+ expect((await f.store.verify({bundleID:'large',phase:'prepared'})).integrity).toBe('verified');
+ // The data rows are still verified: a changed file, sidecar row or sidecar seal refuses.
+ const root=path.dirname(large.preparedManifestPath),sidecar=path.join(root,'prepared-files.ndjson'),file=path.join(root,'web-data','bulk','file-7.json');
+ await fs.writeFile(file,'changed');
+ await expect(f.store.verify({bundleID:'large',phase:'prepared'})).rejects.toMatchObject({code:'bundle_snapshot_changed'});
+ await fs.writeFile(file,'7');
+ expect((await f.store.verify({bundleID:'large',phase:'prepared'})).integrity).toBe('verified');
+ const sealed=await fs.readFile(sidecar,'utf8');
+ await fs.writeFile(sidecar,sealed.replace(/"sha256":"[a-f0-9]{64}"/,`"sha256":"${'0'.repeat(64)}"`));
+ await expect(f.store.verify({bundleID:'large',phase:'prepared'})).rejects.toMatchObject({code:'bundle_snapshot_changed'});
+ await fs.rm(sidecar);
+ await expect(f.store.verify({bundleID:'large',phase:'prepared'})).rejects.toMatchObject({code:'ENOENT'});
+ await fs.writeFile(sidecar,sealed);
+ expect((await f.store.verify({bundleID:'large',phase:'prepared'})).integrity).toBe('verified');
+});
+test('a schema 1 bundle with inline rows still verifies and is a clone source for a sidecar bundle',async()=>{
+ const f=await fixture(),baseline=await f.store.prepare(f.baselineInput),root=path.dirname(baseline.preparedManifestPath);
+ const manifest=JSON.parse(await fs.readFile(baseline.preparedManifestPath,'utf8'));
+ const hashes=new Map((await preparedRows(baseline.preparedManifestPath)).map(row=>[row.path,row.sha256]));
+ const initialFiles=(await treeOrder(root)).filter(name=>hashes.has(name)).map(name=>({path:name,sha256:hashes.get(name)}));
+ expect(initialFiles).toHaveLength(hashes.size);
+ const {dataFiles:_dataFiles,...inline}=manifest;
+ await fs.writeFile(baseline.preparedManifestPath,canonicalJSON({...inline,schema:1,initialFiles})+'\n');await fs.rm(path.join(root,'prepared-files.ndjson'));
+ expect((await f.store.verify({bundleID:'baseline',phase:'prepared'})).integrity).toBe('verified');
+ await fs.writeFile(path.join(baseline.launch.webDataDirectory,'settings.json'),'{"changed":true}');
+ await expect(f.store.verify({bundleID:'baseline',phase:'prepared'})).rejects.toMatchObject({code:'bundle_snapshot_changed'});
+ await f.store.select({bundleID:'baseline',expectedRevision:0});
+ expect(readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:f.controlRoot}).descriptor.bundleID).toBe('baseline');
+ const successor=await f.store.prepare({...f.baselineInput,bundleID:'successor',source:{kind:'bundle',bundleID:'baseline'}});
+ expect(JSON.parse(await fs.readFile(successor.preparedManifestPath,'utf8'))).toMatchObject({schema:2,dataFiles:{protocol:'devryan.bundle.tree-rows/1'}});
+ await f.store.select({bundleID:'successor',expectedRevision:1});
+ expect((await f.store.verify({bundleID:'successor',phase:'resume'})).integrity).toBe('verified');
+});
+test('tree row sidecars refuse duplicate, non-canonical, miscounted and unsealed rows',async()=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'devryan-bundle-rows-'));roots.push(root);
+ const file=path.join(root,'rows.ndjson'),row=index=>({path:`dir/file-${index}`,sha256:sha256(String(index))});
+ const reference=await saveBundleRows(file,[row(1),row(2)]);
+ await expect(readBundleRows(file,reference)).resolves.toEqual([row(1),row(2)]);
+ await expect(saveBundleRows(file,[row(1),row(1)])).rejects.toMatchObject({code:'bundle_manifest_invalid'});
+ await expect(saveBundleRows(file,[{path:'../escape',sha256:sha256('x')}])).rejects.toMatchObject({code:'bundle_manifest_invalid'});
+ await expect(readBundleRows(file,{...reference,count:3})).rejects.toMatchObject({code:'bundle_manifest_invalid'});
+ await expect(readBundleRows(file,{...reference,extra:true})).rejects.toMatchObject({code:'bundle_manifest_invalid'});
+ for(const body of [`${canonicalJSON(row(1))}\n${canonicalJSON(row(1))}\n`,`{"sha256":"${row(1).sha256}", "path":"dir/file-1"}\n`,canonicalJSON(row(1))]){
+  await fs.writeFile(file,body);
+  await expect(readBundleRows(file,{...reference,count:body.split('\n').length-1,sha256:sha256(body)})).rejects.toMatchObject({code:'bundle_manifest_invalid'});
+ }
+ await fs.writeFile(file,`${canonicalJSON(row(1))}\n`);
+ await expect(readBundleRows(file,{...reference,count:1})).rejects.toMatchObject({code:'bundle_snapshot_changed'});
+});
+test('an oversized bundle document names itself and its size, never its contents',async()=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'devryan-bundle-limit-'));roots.push(root);
+ await expect(saveBundleJSON(path.join(root,'preparation.json'),{rows:'x'.repeat(BUNDLE_DOCUMENT_MAX_BYTES)}))
+  .rejects.toMatchObject({code:'bundle_document_too_large',detail:{document:'preparation.json',bytes:expect.any(Number)}});
+ await expect(fs.lstat(path.join(root,'preparation.json'))).rejects.toMatchObject({code:'ENOENT'});
 });
 test('a clone leaves an archived session\'s undeliverable shell notice behind while other queued input still refuses',async()=>{
  resetStartupFindings();
@@ -619,10 +702,10 @@ test('baseline and native candidate preserve only existing global skill data roo
   const candidate=await f.store.prepare({...f.baselineInput,bundleID:'candidate',generation:2});
   await assertMigratedFixture({fixture:f.seed,descriptor:candidate});
   for(const value of [baseline,candidate]){
-    const manifest=JSON.parse(await fs.readFile(value.preparedManifestPath,'utf8'));
+    const rows=await preparedRows(value.preparedManifestPath);
     for(const [relative,bytes]of records){
       expect(await fs.readFile(path.join(value.launch.global.home,relative))).toEqual(bytes);
-      expect(manifest.initialFiles).toContainEqual({path:'global/home/'+relative,sha256:sha256(bytes)});
+      expect(rows).toContainEqual({path:'global/home/'+relative,sha256:sha256(bytes)});
     }
     for(const relative of ['.agents/private-state.json','.opencode/auth.json'])await expect(fs.lstat(path.join(value.launch.global.home,relative))).rejects.toMatchObject({code:'ENOENT'});
     expect((await f.store.verify({bundleID:value.bundleID,phase:'resume'})).integrity).toBe('verified');
@@ -1468,9 +1551,9 @@ test('a sealed default draft whose migrated database was reopened before selecti
  expect(readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot}).descriptor.bundleID).toBe('default-native');
  expect(await fs.readFile(path.join(draftRoot(home),'sources','preparation.json'))).toEqual(preparation);
  // Shared memory is not snapshot content; committed WAL pages still are.
- const manifest=JSON.parse(await fs.readFile(path.join(draftRoot(home),'prepared.json'),'utf8'));
- expect(manifest.initialFiles.map(row=>row.path)).toEqual(expect.arrayContaining(['opencode/opencode.db','opencode/opencode.db-wal']));
- expect(manifest.initialFiles.some(row=>row.path.endsWith('.db-shm'))).toBe(false);
+ const rows=await preparedRows(path.join(draftRoot(home),'prepared.json'));
+ expect(rows.map(row=>row.path)).toEqual(expect.arrayContaining(['opencode/opencode.db','opencode/opencode.db-wal']));
+ expect(rows.some(row=>row.path.endsWith('.db-shm'))).toBe(false);
  const store=createRuntimeBundleStore({controlRoot,runMigration:async()=>{throw Error('fixture no import');},
   withQuiescedSource:async()=>{throw Error('fixture no checkpoint');},verifyArtifacts:async()=>{}});
  await fs.appendFile(path.join(opencode,'opencode.db-wal'),'\0');

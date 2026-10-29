@@ -36,6 +36,11 @@ export function sha256(value: string | Uint8Array): string;
 export function containsPath(root: string, value: string): boolean;
 export function saveBundleJSON(file: string, value: unknown, options?:{readonly windowsOwner?:WindowsPrivateFileOwner}): Promise<string>;
 export function readBundleJSON(file: string, options?:{readonly windowsOwner?:WindowsPrivateFileOwner}): Promise<unknown>;
+export interface BundleFileRow { readonly path: string; readonly sha256: string }
+export interface BundleRowsReference { readonly protocol: 'devryan.bundle.tree-rows/1'; readonly count: number; readonly sha256: string }
+export const BUNDLE_ROWS_PROTOCOL: 'devryan.bundle.tree-rows/1';
+export function saveBundleRows(file: string, rows: readonly BundleFileRow[], options?:{readonly windowsOwner?:WindowsPrivateFileOwner}): Promise<BundleRowsReference>;
+export function readBundleRows(file: string, reference: unknown, options?:{readonly windowsOwner?:WindowsPrivateFileOwner}): Promise<BundleFileRow[]>;
 export function hasMigrationTable(db: MigrationDatabase, name: string): boolean;
 export function migrationMarker(db: MigrationDatabase): { readonly phase: 'sessions' | 'completed'; readonly cursor?: string } | null;
 export function undeliverableInboxIDs(db: MigrationDatabase): string[];

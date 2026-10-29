@@ -16,7 +16,9 @@ export const sha256 = value => createHash('sha256').update(value).digest('hex');
 export const containsPath = (root, value) => value === root || value.startsWith(root + path.sep);
 export const saveBundleJSON = async (file, value, options={}) => {
   const bytes = canonicalJSON(value) + '\n';
-  if (Buffer.byteLength(bytes)>BUNDLE_DOCUMENT_MAX_BYTES) throw bundleFailure('bundle_document_too_large');
+  // The document's name and size, never its contents, say which record outgrew the cap.
+  if (Buffer.byteLength(bytes)>BUNDLE_DOCUMENT_MAX_BYTES) throw Object.assign(bundleFailure('bundle_document_too_large'),
+    { detail: { document: path.basename(file), bytes: Buffer.byteLength(bytes) } });
   await writeFileAtomic(file, bytes, { mode: 0o600, directoryMode: 0o700, windowsOwner:options.windowsOwner });
   return sha256(bytes);
 };
@@ -30,6 +32,50 @@ export const readBundleJSON = async (file,options={}) => {
   const stat = await fs.lstat(file);
   if (!stat.isFile() || stat.isSymbolicLink() || stat.size > BUNDLE_DOCUMENT_MAX_BYTES) throw bundleFailure('bundle_document_invalid');
   return JSON.parse(await fs.readFile(file, 'utf8'));
+};
+/** A file-tree manifest grows with the user's data, so its rows never sit
+ * inside a bounded bundle document. They live in a canonical NDJSON sidecar
+ * (one canonical `{path,sha256}` per line, in tree order) that the document
+ * binds by protocol, count and digest. Paths are unique; no row is trusted
+ * before the whole file matches its reference. */
+export const BUNDLE_ROWS_PROTOCOL = 'devryan.bundle.tree-rows/1';
+const BUNDLE_ROW_MAX_BYTES = 64 * 1024;
+const validRowPath = value => typeof value === 'string' && value.length > 0 && !value.split('/').some(part => !part || part === '.' || part === '..');
+const validRowHash = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+export const saveBundleRows = async (file, rows, options={}) => {
+  const seen = new Set(), lines = [];
+  for (const row of rows) {
+    if (!isRecord(row) || !validRowPath(row.path) || !validRowHash(row.sha256) || seen.has(row.path)) throw bundleFailure('bundle_manifest_invalid');
+    seen.add(row.path); lines.push(canonicalJSON({ path: row.path, sha256: row.sha256 }) + '\n');
+  }
+  const bytes = lines.join('');
+  await writeFileAtomic(file, bytes, { mode: 0o600, directoryMode: 0o700, windowsOwner:options.windowsOwner });
+  return { protocol: BUNDLE_ROWS_PROTOCOL, count: lines.length, sha256: sha256(bytes) };
+};
+export const readBundleRows = async (file, reference, options={}) => {
+  if (!isRecord(reference) || Object.keys(reference).sort().join() !== 'count,protocol,sha256' || reference.protocol !== BUNDLE_ROWS_PROTOCOL
+    || !Number.isSafeInteger(reference.count) || reference.count < 0 || !validRowHash(reference.sha256)) throw bundleFailure('bundle_manifest_invalid');
+  let bytes;
+  if (process.platform === 'win32') {
+    if (typeof options.windowsOwner?.read !== 'function') throw bundleFailure('private_windows_read_authority_unavailable');
+    ({ bytes } = await options.windowsOwner.read(file));
+  } else {
+    const stat = await fs.lstat(file);
+    if (!stat.isFile() || stat.isSymbolicLink()) throw bundleFailure('bundle_manifest_invalid');
+    bytes = await fs.readFile(file);
+  }
+  if (sha256(bytes) !== reference.sha256) throw bundleFailure('bundle_snapshot_changed');
+  const body = bytes.toString('utf8'), rows = [], seen = new Set();
+  if (body && !body.endsWith('\n')) throw bundleFailure('bundle_manifest_invalid');
+  for (const line of body ? body.slice(0, -1).split('\n') : []) {
+    if (Buffer.byteLength(line) > BUNDLE_ROW_MAX_BYTES) throw bundleFailure('bundle_manifest_invalid');
+    let row; try { row = JSON.parse(line); } catch { throw bundleFailure('bundle_manifest_invalid'); }
+    if (!isRecord(row) || canonicalJSON(row) !== line || Object.keys(row).length !== 2 || !validRowPath(row.path) || !validRowHash(row.sha256)
+      || seen.has(row.path)) throw bundleFailure('bundle_manifest_invalid');
+    seen.add(row.path); rows.push(row);
+  }
+  if (rows.length !== reference.count) throw bundleFailure('bundle_manifest_invalid');
+  return rows;
 };
 const text = value => { if (typeof value !== 'string' || !value) throw bundleFailure('migration_source_invalid'); return value; };
 const parse = value => value === null || value === undefined ? null : JSON.parse(text(value));

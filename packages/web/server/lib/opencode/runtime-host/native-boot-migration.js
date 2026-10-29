@@ -28,7 +28,7 @@ async function cloneOrigin(boot) {
   const preparedBytes = await readCanonical(proof.preparedManifestPath, BUNDLE_DOCUMENT_MAX_BYTES);
   if (hash(preparedBytes) !== proof.preparedManifestSha256) throw fail();
   const prepared = JSON.parse(preparedBytes.toString('utf8'));
-  if (!record(prepared) || prepared.schema !== 1 || prepared.bundleID !== boot.bundleID || !digest(prepared.descriptorSha256)
+  if (!record(prepared) || ![1, 2].includes(prepared.schema) || prepared.bundleID !== boot.bundleID || !digest(prepared.descriptorSha256)
     || !Array.isArray(prepared.immutableFiles)) throw fail();
   const rows = new Map();
   for (const row of prepared.immutableFiles) {

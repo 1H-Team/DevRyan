@@ -5,7 +5,7 @@ import {relocateNativeSetupProfiles} from './native-setup-profiles.js';
 import fs from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { timeStartupPhase } from '../startup-timing.js';
+import { recordStartupMeasure, timeStartupPhase } from '../startup-timing.js';
 import path from 'node:path';
 import { resolveSqliteDriver } from '../sqlite-driver.js';
 import { executionArtifacts } from '../execution-artifacts.js';
@@ -13,7 +13,7 @@ import { verifyNativeRuntimeArtifacts } from './native-artifacts.js';
 import { withCrossProcessFileLock, writeFileAtomic } from '../../../../../harness-runtime/lib/atomic-file.js';
 import { parseNativeMigrationReceipt } from './native-process-protocol.js';
 import { assertNoPendingMigration, assertBundlePendingInput, undeliverableInboxIDs, bundleFailure, canonicalJSON, captureMigrationInventory, containsPath, isRecord,
-  readBundleJSON as readBundleJSONOwned, saveBundleJSON as saveBundleJSONOwned, sha256, verifyMigrationReferences } from './bundle-migration-inventory.js';
+  readBundleJSON as readBundleJSONOwned, readBundleRows, saveBundleJSON as saveBundleJSONOwned, saveBundleRows, sha256, verifyMigrationReferences } from './bundle-migration-inventory.js';
 import { verifyBundleOwnedContinuations } from './bundle-owned-continuations.js';
 import {verifyBundleRecoveredInputs} from './bundle-recovered-inputs.js';
 import {verifiedNativeUserCancellations} from './native-input-cancellation.js';
@@ -124,6 +124,9 @@ const ignored = relative => relative === 'orchestration/owner.lock' || relative 
   || /^harness\/session-mutations\/[a-f0-9]{64}\/(context-cache|module-overlays|view-standby)(\/|$)/.test(relative)
   || /^harness\/session-mutations\/[a-f0-9]{64}\/(owner\.lock|git\/index[^/]*)$/.test(relative)
   || /^harness\/(provider-recovery|context)\/[^/]+\.lock$/.test(relative)
+  // A Codex CLI home's scratch (its plugin checkout cache, ~5k files) is
+  // rebuilt by the CLI; its auth and databases are still copied.
+  || /^quota\/codex-usage\/[^/]+\/\.tmp(\/|$)/.test(relative)
   || /(^|\/)[^/]+\.tmp-[^/]+$/.test(relative);
 // Links inside a project ledger are derived by its owner and rebuilt on use.
 const derivedLedgerPath = relative => /^harness\/session-mutations\/[a-f0-9]{64}\//.test(relative);
@@ -205,6 +208,14 @@ const treeManifestOwned = async (root,options={}) => {
   if(options.windowsOwner){const rows=[];for(const {path:name,file} of files)rows.push({path:name,sha256:(await options.windowsOwner.largeFile(file)).token.split(':')[2]});return rows;}
   return mapBounded(files,async ({path:name,file})=>({path:name,sha256:await fileHashOwned(file)}));
 };
+// Since schema 2 the per-file rows live in sidecars (see `saveBundleRows`): the
+// copied tree beside the preparation record, and the prepared tree's rows outside
+// the immutable set beside prepared.json. The immutable rows stay inline, so an
+// artifact rebind, which reseals only immutable documents, never rewrites a sidecar.
+const PREPARED_ROWS='prepared-files.ndjson', COPIED_ROWS=['sources','copied-files.ndjson'];
+const immutablePath = relative => /^(descriptor\.json|sources\/|config\/reviewed-)/.test(relative);
+// The seal and its sidecar are written after the tree they describe.
+const unsealed = rows => rows.filter(row => row.path !== 'prepared.json' && row.path !== PREPARED_ROWS);
 // The bundle database's SQLite wal-index (opencode.db-shm) is rebuildable shared memory
 // that every connection, including verify's read-only one, rewrites (read marks), so it
 // is never snapshot content. Any other *.db-shm is ordinary content. *.db-wal stays
@@ -363,6 +374,31 @@ export function createRuntimeBundleStore(options) {
   const documentOptions={...options,windowsOwner:options.windowsLedgerOwner??options.windowsOwner};
   const readBundleJSON=file=>readBundleJSONOwned(file,documentOptions);
   const saveBundleJSON=(file,value)=>saveBundleJSONOwned(file,value,documentOptions);
+  const saveRows=(file,rows)=>saveBundleRows(file,rows,documentOptions);
+  const readRows=(file,reference)=>readBundleRows(file,reference,documentOptions);
+  const copiedRows=(root,draft)=>draft.schema===1?draft.copiedFiles:readRows(path.join(root,...COPIED_ROWS),draft.copiedFiles);
+  /** The bundle tree is still exactly its sealed prepared rows (both schemas). */
+  const assertPreparedTree=async(root,manifest,launch,code)=>{
+    if (manifest.schema === 1) {
+      if (!Array.isArray(manifest.initialFiles)) throw fail(code);
+      const initial=durable(manifest.initialFiles,root,launch);
+      await verifyTree(root,initial);
+      const actual=durable(unsealed(await treeManifest(root)),root,launch);
+      if (JSON.stringify(actual)!==JSON.stringify(initial)) throw fail(code);
+      return;
+    }
+    const data=durable(await readRows(path.join(root,PREPARED_ROWS),manifest.dataFiles),root,launch);
+    if (data.some(row=>immutablePath(row.path))) throw fail('bundle_manifest_invalid');
+    // Hashing the actual tree is the verification; both halves keep tree order.
+    const actual=durable(unsealed(await treeManifest(root)),root,launch);
+    if (JSON.stringify(actual.filter(row=>immutablePath(row.path)))!==JSON.stringify(durable(manifest.immutableFiles,root,launch))
+      || JSON.stringify(actual.filter(row=>!immutablePath(row.path)))!==JSON.stringify(data)) throw fail(code);
+  };
+  const savePreparation=async(root,record,rows)=>{
+    const copiedFiles=await saveRows(path.join(root,...COPIED_ROWS),rows);
+    recordStartupMeasure('bundle_copy',{files:copiedFiles.count});
+    await saveBundleJSON(path.join(root,'sources','preparation.json'),{...record,schema:2,copiedFiles});
+  };
   const fileHash=file=>operations.windows&&containsPath(controlRoot,file)?options.windowsOwner.largeFile(file).then(value=>value.token.split(':')[2]):fileHashOwned(file);
   const inspectHarness=async(directory,input,artifacts)=>{const result=await inspectBundleHarnessOwned(directory,input,artifacts);recordStartupFindings('bundle_verifier',result?.findings);return result;};
   const inspectBundleHarnessOwned=(directory,input,artifacts)=>inspectBundleHarness(directory,{...input,windowsOwner:options.windowsOwner,windowsLedgerOwner:options.windowsLedgerOwner,
@@ -389,11 +425,14 @@ export function createRuntimeBundleStore(options) {
     if (artifactPurpose !== undefined && (phase !== 'resume' || !['bundle-source','bundle-rollback'].includes(artifactPurpose))) throw fail('bundle_artifact_generation_mismatch');
     const value = await readDescriptor(bundleID), root = path.join(controlRoot,'bundles',bundleID);
     const manifest = await readBundleJSON(value.preparedManifestPath);
-    if (!isRecord(manifest) || manifest.schema !== 1 || manifest.bundleID !== bundleID || manifest.checkpointID !== value.checkpoint.checkpointID
+    if (!isRecord(manifest) || ![1,2].includes(manifest.schema) || manifest.bundleID !== bundleID || manifest.checkpointID !== value.checkpoint.checkpointID
       || manifest.descriptorSha256 !== await fileHash(path.join(root,'descriptor.json'))) throw fail('bundle_manifest_invalid');
-    if (!Array.isArray(manifest.initialFiles) || !Array.isArray(manifest.immutableFiles)
+    if (!Array.isArray(manifest.immutableFiles) || manifest.immutableFiles.some(row=>!isRecord(row)||typeof row.path!=='string'||!immutablePath(row.path))
+      || new Set(manifest.immutableFiles.map(row=>row.path)).size!==manifest.immutableFiles.length) throw fail('bundle_manifest_invalid');
+    if (manifest.schema === 1 ? !Array.isArray(manifest.initialFiles) || Object.hasOwn(manifest,'dataFiles')
       || new Set(manifest.initialFiles.map(row=>row.path)).size!==manifest.initialFiles.length
-      || canonicalJSON(manifest.immutableFiles)!==canonicalJSON(manifest.initialFiles.filter(row=>/^(descriptor\.json|sources\/|config\/reviewed-)/.test(row.path)))) throw fail('bundle_manifest_invalid');
+      || canonicalJSON(manifest.immutableFiles)!==canonicalJSON(manifest.initialFiles.filter(row=>immutablePath(row.path)))
+      : Object.hasOwn(manifest,'initialFiles') || !isRecord(manifest.dataFiles)) throw fail('bundle_manifest_invalid');
     const required=['descriptor.json','sources/baseline.json','sources/preparation.json','config/reviewed-native.json','config/reviewed-plugins.json',
       ...(value.sourceBundleID?['sources/clone.json']:[]),
       ...(value.generation===2 ? ['sources/migration.json','sources/migration.json.source.json','sources/migration.json.verification.json']:[])];
@@ -405,12 +444,7 @@ export function createRuntimeBundleStore(options) {
       || manifest.artifactFiles.find(row=>row.path===value.launch.artifactManifestPath)?.sha256!==value.launch.artifactManifestSha256) throw fail('bundle_manifest_invalid');
     for (const row of manifest.artifactFiles) if (!isRecord(row) || !validHash(row.sha256) || await fileHash(absolute(row.path))!==row.sha256) throw fail('bundle_artifact_changed');
     const verifiedArtifacts = await verifyArtifacts({generation:value.generation,launch:value.launch,...artifactPurpose?{purpose:artifactPurpose}:{}});
-    if (phase === 'prepared') {
-      const initial=durable(manifest.initialFiles,root,value.launch);
-      await verifyTree(root,initial);
-      const actual=durable(await treeManifest(root),root,value.launch).filter(row=>row.path!=='prepared.json');
-      if (JSON.stringify(actual)!==JSON.stringify(initial)) throw fail('bundle_snapshot_changed');
-    }
+    if (phase === 'prepared') await assertPreparedTree(root,manifest,value.launch,'bundle_snapshot_changed');
     let removalInheritance;
     const db = sqlite(value.launch.opencodeDatabasePath);
     try {
@@ -475,11 +509,12 @@ export function createRuntimeBundleStore(options) {
     }
     descriptor(controlRoot,value.bundleID,value);
     await saveBundleJSON(path.join(root,'descriptor.json'),value);
-    const files=durable(await treeManifest(root),root,value.launch);
-    await saveBundleJSON(value.preparedManifestPath,{schema:1,bundleID:value.bundleID,checkpointID:value.checkpoint.checkpointID,
+    const files=durable(unsealed(await treeManifest(root)),root,value.launch);
+    const dataFiles=await saveRows(path.join(root,PREPARED_ROWS),files.filter(row=>!immutablePath(row.path)));
+    await saveBundleJSON(value.preparedManifestPath,{schema:2,bundleID:value.bundleID,checkpointID:value.checkpoint.checkpointID,
       descriptorSha256:await fileHash(path.join(root,'descriptor.json')),
       artifactFiles:await Promise.all([artifacts.controllerBinary,artifacts.writerBinary,artifacts.artifactManifestPath].filter(Boolean).map(async file=>({path:absolute(file),sha256:options.windowsOwner?(await options.windowsOwner.largeFile(file)).token.split(':')[2]:await fileHashOwned(file)}))),
-      immutableFiles:files.filter(row=>/^(descriptor\.json|sources\/|config\/reviewed-)/.test(row.path)),initialFiles:files});
+      immutableFiles:files.filter(row=>immutablePath(row.path)),dataFiles});
     await verify({bundleID:value.bundleID,phase:'prepared'}); return value;
   };
   const prepareV2=async input=>{
@@ -510,7 +545,7 @@ export function createRuntimeBundleStore(options) {
       if(prior){
         if(prior.inputSha256!==inputSha256||prior.sourceBundleID!==source.bundleID)throw fail('bundle_preparation_identity_conflict');
         try{return (await verify({bundleID:input.bundleID,phase:'prepared'})).descriptor;}catch(error){if(error.code!=='ENOENT')throw error;}
-        await verifyTree(root,prior.copiedFiles);return finishPreparation(prior.descriptor,artifacts);
+        await verifyTree(root,await copiedRows(root,prior));return finishPreparation(prior.descriptor,artifacts);
       }
       try{await createCandidate(root);}catch(error){if(error.code==='EEXIST')throw fail('bundle_candidate_exists');throw error;}
       const globals=Object.fromEntries(Object.keys(source.launch.global).map(key=>[key,key==='config'?path.join(root,'config','opencode'):path.join(root,'global',key)]));
@@ -566,7 +601,7 @@ export function createRuntimeBundleStore(options) {
           reviewedNativeConfigPath:path.join(root,'config','reviewed-native.json'),reviewedPluginManifestPath:path.join(root,'config','reviewed-plugins.json')},
         projectMap:source.projectMap,preparedManifestPath:path.join(root,'prepared.json'),migrationReceiptPath:path.join(root,'sources','migration.json')};
       await inspectHarness(value.launch.webDataDirectory,{projectMap:value.projectMap,relocate:true,sourceWebDataDirectory:source.launch.webDataDirectory,checkpointID:sourceCheckpoint.checkpointID},value.launch);
-      await saveBundleJSON(path.join(root,'sources','preparation.json'),{schema:1,inputSha256,sourceBundleID:source.bundleID,descriptor:value,copiedFiles:await treeManifest(root)});
+      await savePreparation(root,{inputSha256,sourceBundleID:source.bundleID,descriptor:value},await treeManifest(root));
       return finishPreparation(value,artifacts);
     });
   };
@@ -592,11 +627,11 @@ export function createRuntimeBundleStore(options) {
       let draft;
       try { draft=await readBundleJSON(path.join(root,'sources','preparation.json')); }
       catch (cause) { if (cause.code==='ENOENT') throw fail('bundle_candidate_exists'); throw cause; }
-      if (!isRecord(draft) || draft.schema!==1 || draft.inputSha256!==sha256(canonicalJSON(input))) throw fail('bundle_preparation_identity_conflict');
+      if (!isRecord(draft) || ![1,2].includes(draft.schema) || draft.inputSha256!==sha256(canonicalJSON(input))) throw fail('bundle_preparation_identity_conflict');
       const selected=await readSelected();
       if (selected?.descriptor.bundleID===input.bundleID) throw fail('bundle_candidate_selected');
       descriptor(controlRoot,input.bundleID,draft.descriptor);
-      await verifyTree(root,draft.copiedFiles);
+      await verifyTree(root,await copiedRows(root,draft));
       let sealed=false;
       try { await fs.lstat(draft.descriptor.preparedManifestPath); sealed=true; }
       catch (cause) { if (cause.code!=='ENOENT') throw cause; }
@@ -654,7 +689,7 @@ export function createRuntimeBundleStore(options) {
       }
       descriptor(controlRoot,input.bundleID,value);
       const copiedFiles=(await treeManifest(root)).filter(row=>!/^opencode\//.test(row.path));
-      await saveBundleJSON(path.join(root,'sources','preparation.json'),{schema:1,inputSha256:sha256(canonicalJSON(input)),descriptor:value,request:request??null,copiedFiles});
+      await savePreparation(root,{inputSha256:sha256(canonicalJSON(input)),descriptor:value,request:request??null},copiedFiles);
       return finishPreparation(value,artifacts,request);
     });
   };
@@ -829,11 +864,11 @@ export function createRuntimeBundleStore(options) {
     await options.assertNoLiveOwner(candidate.launch); await options.assertNoLiveOwner(source.launch);
     if (await fileHash(source.preparedManifestPath) !== previous.preparedManifestSha256) throw fail('bundle_claude_recovery_changed');
     const root = path.join(controlRoot, 'bundles', candidate.bundleID), prepared = await readBundleJSON(candidate.preparedManifestPath);
-    if (prepared.descriptorSha256 !== await fileHash(path.join(root, 'descriptor.json')) || !Array.isArray(prepared.initialFiles)) throw fail('bundle_claude_recovery_changed');
-    const initial = durable(prepared.initialFiles, root, candidate.launch);
-    await verifyTree(root, initial);
-    if (canonicalJSON(durable(await treeManifest(root), root, candidate.launch).filter(row => row.path !== 'prepared.json')) !== canonicalJSON(initial)
-      || canonicalJSON(intent.sourceFiles) !== canonicalJSON(await captureRollbackFiles(path.join(controlRoot, 'bundles', source.bundleID)))) throw fail('bundle_claude_recovery_changed');
+    if (!isRecord(prepared) || ![1, 2].includes(prepared.schema) || prepared.descriptorSha256 !== await fileHash(path.join(root, 'descriptor.json'))
+      || !Array.isArray(prepared.immutableFiles)) throw fail('bundle_claude_recovery_changed');
+    await assertPreparedTree(root, prepared, candidate.launch, 'bundle_claude_recovery_changed').catch(error => {
+      throw error.code === 'bundle_snapshot_changed' || error.code === 'bundle_manifest_invalid' ? fail('bundle_claude_recovery_changed') : error; });
+    if (canonicalJSON(intent.sourceFiles) !== canonicalJSON(await captureRollbackFiles(path.join(controlRoot, 'bundles', source.bundleID)))) throw fail('bundle_claude_recovery_changed');
     if (rollbackIntentUnresolved(readRollbackIntentSync(controlRoot), current.selection)) throw fail('bundle_recovery_resume_required');
     await verify({ bundleID: source.bundleID, phase: 'resume', artifactPurpose: 'bundle-rollback', allowOwnedContinuations: false });
     await options.assertNoLiveOwner(candidate.launch); await options.assertNoLiveOwner(source.launch);
@@ -899,7 +934,7 @@ export function createRuntimeBundleStore(options) {
         const preparedBytes = Buffer.from(canonicalJSON({ ...prepared, descriptorSha256: replaced['descriptor.json'],
           artifactFiles: await Promise.all([artifacts.controllerBinary, artifacts.writerBinary, artifacts.artifactManifestPath]
             .map(async file => ({ path: absolute(file), sha256: await fileHashOwned(file) }))),
-          immutableFiles: rows(prepared.immutableFiles), initialFiles: rows(prepared.initialFiles) }) + '\n');
+          immutableFiles: rows(prepared.immutableFiles), ...(Array.isArray(prepared.initialFiles) ? { initialFiles: rows(prepared.initialFiles) } : {}) }) + '\n');
         const next = { ...selected.selection, revision: selected.selection.revision + 1, transition: 'activate',
           reconciliationRequired: false, preparedManifestSha256: sha256(preparedBytes) };
         const rebound = { 'descriptor.json': descriptorBytes, 'config/reviewed-plugins.json': plugins, 'prepared.json': preparedBytes,

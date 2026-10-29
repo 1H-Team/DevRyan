@@ -62,7 +62,7 @@ const resetStaleDefaultDraft=async({controlRoot,sourceRoot,inputSha256,verifySea
   await owned(bundles,controlRoot);await owned(root,bundles);
   let draft;try{draft=await readBundleJSON(path.join(root,'sources','preparation.json'),options);}
   catch(error){if(!['ENOENT','ENOTDIR','bundle_document_invalid'].includes(error.code)&&!(error instanceof SyntaxError))throw error;}
-  if(isRecord(draft)&&draft.schema===1&&draft.inputSha256===inputSha256){
+  if(isRecord(draft)&&[1,2].includes(draft.schema)&&draft.inputSha256===inputSha256){
    if(!await exists(path.join(root,'prepared.json')))return false;
    try{await verifySealed();return false;}catch{}
   }

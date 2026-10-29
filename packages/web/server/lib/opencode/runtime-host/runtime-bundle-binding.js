@@ -71,7 +71,7 @@ export function readRuntimeBundleBinding(environment = process.env,{allowHeldIns
   for (const key of ['databasePath','webDataDirectory','webConfigDirectory','opencodeConfigDirectory']) absolute(descriptor.checkpoint[key]);
   const manifest=read(descriptor.preparedManifestPath);
   if (selection.preparedManifestSha256!==createHash('sha256').update(fs.readFileSync(descriptor.preparedManifestPath)).digest('hex')) throw fail();
-  if (manifest?.schema!==1 || manifest.bundleID!==descriptor.bundleID || manifest.checkpointID!==descriptor.checkpoint.checkpointID
+  if (![1,2].includes(manifest?.schema) || manifest.bundleID!==descriptor.bundleID || manifest.checkpointID!==descriptor.checkpoint.checkpointID
     || manifest.descriptorSha256!==createHash('sha256').update(fs.readFileSync(path.join(bundleRoot,'descriptor.json'))).digest('hex')) throw fail();
   for (const mapping of descriptor.projectMap) {
     absolute(mapping.sourceDirectory); absolute(mapping.targetDirectory);

@@ -16,6 +16,13 @@ export const startStartupTiming = (phase) => {
   };
 };
 
+/** A size measured during a phase (counts only, never names or contents), so
+ * data growth is visible in the log before it reaches a limit. */
+export const recordStartupMeasure = (phase, values) => {
+  console.log('[runtime-bundle] startup measure', JSON.stringify({ phase, ...Object.fromEntries(
+    Object.entries(values).filter(([, value]) => Number.isSafeInteger(value) && value >= 0)) }));
+};
+
 export const timeStartupPhase = async (phase, operation) => {
   const finish = startStartupTiming(phase);
   try {
