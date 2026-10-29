@@ -50,6 +50,20 @@ package lanes.
 
 3. `bun run validate`.
 
+## Seams in 2.2.1 → 2.2.2
+
+- `@opencode/*` 2.2.2 depends on `effect` 4.0.6; DevRyan's root and web `effect` pins must
+  match or type-check and the native host graph fail on duplicate Effect types.
+- The PTY package moved from `@opencode-ai/pty` 0.3.1 to `@opencode/pty` 0.3.3; the core
+  source signature, build resolution and the PTY binary SHA-256 moved with it.
+- `session_part` exists and is read, but nothing writes it yet; assistant content still
+  lives in `session_message.data`. Check the writer before the next upgrade: once it
+  writes parts, every host SQL reader of `session_message` content must join parts.
+- `session_v2.time_busy` changes the session row on each execution start without
+  touching `time_updated`.
+- Core sources, Photon worker and Windows PTY resolver changed only in chunk paths
+  and minified identifiers.
+
 ## Seams in 2.2.0 → 2.2.1
 
 - All four pinned core sources changed only in chunk import paths and minified

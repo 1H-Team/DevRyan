@@ -104,7 +104,7 @@ export const verifyNativeAcceptanceArtifacts = async ({ rg = DEFAULT_RG, launche
         break;
       }
     }
-    assert.equal(manifest?.version, '2.2.1', `Native ${name} pin mismatch`);
+    assert.equal(manifest?.version, '2.2.2', `Native ${name} pin mismatch`);
     packages[name] = manifest;
   }
   const effectDirectory = path.join(repositoryRoot, 'node_modules/effect');

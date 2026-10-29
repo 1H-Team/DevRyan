@@ -1,4 +1,4 @@
-export const TARGET_OPENCODE_VERSION = '2.2.1';
+export const TARGET_OPENCODE_VERSION = '2.2.2';
 
 // Any OpenCode 2.x release can run natively: each bundle is admitted through its own
 // verified artifact manifest, and a retained bundle uses its matching compiled

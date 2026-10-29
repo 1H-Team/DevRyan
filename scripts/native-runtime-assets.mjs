@@ -18,8 +18,8 @@ const resolvePinnedJsonc=async resolved=>{
  if(await fs.realpath(modulePath)!==modulePath)throw new Error('Pinned JSONC module escaped package');
  return {modulePath,packagePath,packageBytes};
 };
-export const NATIVE_ASSET_SOURCE_SHA=Object.freeze({pty:'fe38312cd4acdfb067f520d3917daf52add098bb267e33bf7a8f7f44fc74ac8f',photon:'d60656705f0d59baa79e36b0381eb023f1864eeb57e92956cf21dcd9fb8f879f'});
-export const NATIVE_WINDOWS_PTY_SOURCE_SHA256='83a7926a19b004fb39176bc1cf96e3b903257ec9c0fedc8b01d11ba545018dbe';
+export const NATIVE_ASSET_SOURCE_SHA=Object.freeze({pty:'5902fc8958dfa8b535a1c048af6f6a9140656d06d642dbbfb32a70136364a86c',photon:'d60656705f0d59baa79e36b0381eb023f1864eeb57e92956cf21dcd9fb8f879f'});
+export const NATIVE_WINDOWS_PTY_SOURCE_SHA256='bcca2657b9d550ddb78e48bb0d3c7f2d44056d40b24c40cb132e7d79c7dc03aa';
 /** Windows has no approved persistent PTY. Refuse before resolving a command,
  * creating an installation directory, or reading an environment override. */
 export function rewriteUnavailableNativePty(source) {
@@ -30,8 +30,8 @@ export function rewriteUnavailableNativePty(source) {
 export function rewriteNativeAsset(kind,source,{assetPath,assetSha256}={}) {
  if(!Object.hasOwn(NATIVE_ASSET_SOURCE_SHA,kind)||hash(source)!==NATIVE_ASSET_SOURCE_SHA[kind]) throw new Error('Pinned native asset resolver changed');
  if(kind==='pty') {
-  if(typeof assetPath!=='string'||!assetPath.startsWith('/')||!/^b54a98832ec070c22383f8b1695a4850a44d753e8ea99751ccec659b4a598927$/.test(assetSha256)) throw new Error('Pinned native PTY asset changed');
-  return `import embedded from ${JSON.stringify(assetPath)} with {type:'file'};\nconst pty_binding_default={path:embedded,version:'0.3.1',sha256:${JSON.stringify(assetSha256)}};\nexport {pty_binding_default};\n`;
+  if(typeof assetPath!=='string'||!assetPath.startsWith('/')||!/^6d557e7eb38a24c3c24e822e141de0c7d8dc38aa3ee4d86a0892377e02bcb922$/.test(assetSha256)) throw new Error('Pinned native PTY asset changed');
+  return `import embedded from ${JSON.stringify(assetPath)} with {type:'file'};\nconst pty_binding_default={path:embedded,version:'0.3.3',sha256:${JSON.stringify(assetSha256)}};\nexport {pty_binding_default};\n`;
  }
  const original="const path = require('path').join(__dirname, 'photon_rs_bg.wasm');";
  const text=Buffer.from(source).toString('utf8');
@@ -47,7 +47,7 @@ export function rewriteNativeAgentDefaults(source) {
  if(hash(source)!==NATIVE_AGENT_DEFAULTS_SOURCE_SHA256||text.split(anchor).length!==2) throw new Error('Pinned native agent defaults changed');
  return text.replace(anchor,anchor+'            { action: "external_directory", resource: "*", effect: "ask" },\n');
 }
-export const NATIVE_PHOTON_WORKER_SOURCE_SHA256='a5c3ca79435212f0abe12bf47af91a06ea9aafd478516a6421ea837a60a0d897';
+export const NATIVE_PHOTON_WORKER_SOURCE_SHA256='64102a7a304bb76668d0327a68a2e4491a9d3bf04b0447598d44582a2b63bfe6';
 /** 2.2.0 resizes images in a worker thread that loads Photon outside the sealed
  * WASM resolver, from a file a compiled bundle does not contain. Keep the reviewed
  * main-thread Photon path, which never logs its worker fallback to stdout. */

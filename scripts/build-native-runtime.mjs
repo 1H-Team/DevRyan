@@ -67,7 +67,7 @@ const photonFile=createRequire(path.join(coreRoot,'package.json')).resolve('@sil
 let ptySource;
 if(windowsCandidate)ptySource=rewriteUnavailableNativePty(await fs.readFile(ptyBinding));
 else{
-  const ptyPackage=createRequire(path.join(coreRoot,'package.json')).resolve('@opencode-ai/pty-darwin-arm64/package.json');
+  const ptyPackage=createRequire(path.join(coreRoot,'package.json')).resolve('@opencode/pty-darwin-arm64/package.json');
   const ptyBinary=path.join(path.dirname(ptyPackage),'bin/opencode-pty');
   ptySource=rewriteNativeAsset('pty',await fs.readFile(ptyBinding),{assetPath:ptyBinary,assetSha256:hash(await fs.readFile(ptyBinary))});
 }
@@ -161,7 +161,7 @@ try {
   const inputs={buildSources,lockSha256:hash(lockBytes),coreDigest,hostDigest,sourceFiles,resolvedPackages,
     reviewedInputProvenance:reviewed.provenance,
     nativeRegistrations:[...createReviewedNativePluginRegistry(coreDigest,{hostDigest}).values()].map(({id,manifestDigest,capabilities})=>({id,manifestDigest,capabilities})),reviewedPlugins,transforms};
-  const identity={bunVersion:Bun.version,bunRevision:Bun.revision,opencodeVersion:'2.2.1',target:`bun-${target}`,compiledContracts:[NATIVE_BUNDLE_CREDENTIAL_CONTRACT,CLAUDE_LIFECYCLE_PROTOCOL,'devryan-v2-clone/1','devryan.primary-step-stop/1','devryan.bundle.credential-owners/2'],inputs,
+  const identity={bunVersion:Bun.version,bunRevision:Bun.revision,opencodeVersion:'2.2.2',target:`bun-${target}`,compiledContracts:[NATIVE_BUNDLE_CREDENTIAL_CONTRACT,CLAUDE_LIFECYCLE_PROTOCOL,'devryan-v2-clone/1','devryan.primary-step-stop/1','devryan.bundle.credential-owners/2'],inputs,
     ...(windowsGitResource?{windowsGit:windowsGitResource.windowsGit}:{})};
   const buildId=hash(JSON.stringify(identity));
   const files=[];

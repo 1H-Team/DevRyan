@@ -1,6 +1,6 @@
 import {createHash} from 'node:crypto';
 import path from 'node:path';
-export const NATIVE_COMPACTION_SOURCE_SHA256='c609a7b75ac8f4b1783d79fe8fb9e69430302d425bb410af866ec951ec299fee';
+export const NATIVE_COMPACTION_SOURCE_SHA256='f82037d65953757d4ec3ae39ce2109fac1670ed5ef855be18b813b5753df56d9';
 const hash=value=>createHash('sha256').update(value).digest('hex');
 const anchor='    const budget = trigger.reason === "overflow" ? Math.min(model.cap, Math.floor(total(trigger.estimate ?? estimatePrompt2(context)) * SHRINK_STEPS[0])) : model.cap;\n';
 // 2.2.0 keeps the selected model's ceiling inside selectModel; the evidence

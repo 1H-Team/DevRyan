@@ -5,7 +5,7 @@ import path from 'node:path';
 // hashed chunk filenames, which change with every OpenCode release. Discovery only
 // locates a file: each rewrite still requires its exact reviewed SHA-256.
 export const NATIVE_CORE_SOURCE_SIGNATURES = Object.freeze({
-  pty: 'import { binaryPath } from "@opencode-ai/pty";',
+  pty: 'import { binaryPath } from "@opencode/pty";',
   compaction: 'Effect.fn("SessionCompaction.compact")',
   finalization: 'if (llmFailure && llmError && retry?.retry && record.outputStarted',
 });

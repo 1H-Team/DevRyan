@@ -1117,15 +1117,15 @@ const startupUpgradeFixture=async name=>{
  const baseline=readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot});
  const database=resolveSqliteDriver().open(baseline.descriptor.launch.opencodeDatabasePath);
  try{database.exec("ALTER TABLE project DROP COLUMN time_archived; DELETE FROM migration WHERE id IN ('20261007190000_azure_cli_external_credential','20261010180456_project_time_archived')");
-  // Undo 2.2.1's schedule table, 2.2.0's blob store and its session_pending drop (reviewed 2.0.32 DDL).
-  database.exec(`DROP TABLE schedule; DROP TABLE blob_ref; DROP TABLE blob;
+  // Undo 2.2.2's session_part table and time_busy column, 2.2.1's schedule table, 2.2.0's blob store and its session_pending drop (reviewed 2.0.32 DDL).
+  database.exec(`DROP TABLE session_part; ALTER TABLE session_v2 DROP COLUMN time_busy; DROP TABLE schedule; DROP TABLE blob_ref; DROP TABLE blob;
    CREATE TABLE \`session_pending\` (\`id\` text PRIMARY KEY, \`session_id\` text NOT NULL, \`type\` text NOT NULL, \`data\` text NOT NULL, \`delivery\` text,
     \`admitted_seq\` integer NOT NULL, \`time_created\` integer NOT NULL,
     CONSTRAINT \`fk_session_pending_session_id_session_v2_id_fk\` FOREIGN KEY (\`session_id\`) REFERENCES \`session_v2\`(\`id\`) ON DELETE CASCADE);
    CREATE INDEX \`session_pending_session_delivery_seq_idx\` ON \`session_pending\` (\`session_id\`,\`delivery\`,\`admitted_seq\`);
    CREATE UNIQUE INDEX \`session_pending_session_compaction_idx\` ON \`session_pending\` (\`session_id\`) WHERE "session_pending"."type" = 'compaction';
    CREATE UNIQUE INDEX \`session_pending_session_admitted_seq_idx\` ON \`session_pending\` (\`session_id\`,\`admitted_seq\`);
-   DELETE FROM migration WHERE id IN ('20261024002554_session_allowance','20261024175301_drop_session_allowance','20261025123711_blob','20261025154125_drop_session_pending','20261026223005_schedule');`);
+   DELETE FROM migration WHERE id IN ('20261024002554_session_allowance','20261024175301_drop_session_allowance','20261025123711_blob','20261025154125_drop_session_pending','20261026223005_schedule','20261029002625_session_part','20261029073502_session_time_busy','20261029165540_schedule_checks');`);
  }finally{database.close();}
  return {f,home,older,pinned,controlRoot,captures,credentialProcess,launch:(release,process=credentialProcess)=>launchPinned(f,home,release,process),
   binding:()=>readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot})};
