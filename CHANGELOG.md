@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.6] - 2026-10-30
+
+- Upgrade the bundled native OpenCode host to 2.2.2 and preserve the previous runtime and database for rollback.
+- Keep large bundle file manifests outside size-capped documents so runtime setup and upgrades can verify every bundled file.
+- Keep mutation ledger Git stores packed in short-lived runtimes to reduce storage growth.
+
 ## [2.0.5] - 2026-10-29
 
 - Allow runtime upgrades to proceed when an archived session retains a cancelled shell notice that never became a message, while preserving integrity checks for live sessions.
