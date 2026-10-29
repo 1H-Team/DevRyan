@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { isUtf8 } from 'node:buffer';
 import { randomUUID, createHash } from 'node:crypto';
-import { git, gitTokens, changeError } from './session-changes-git.js';
+import { git, gitTokens, changeError, gitFailure } from './session-changes-git.js';
 import { openChangeStore, changeKey } from './session-changes-store.js';
 import { safeChangePath, verifyAncestors } from './session-changes-snapshot.js';
 import { withCrossProcessFileLock, writeFileAtomic } from './atomic-file.js';
@@ -307,9 +307,11 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
   // Kill switch: DEVRYAN_LEDGER_PACK=0.
   const maintenanceLimits = { ...LEDGER_MAINTENANCE, ...maintenanceOptions };
   const maintenanceStates = new Map();
+  const countObjects = async (root) => Object.fromEntries((await git(root, ['--git-dir', path.join(root, 'git'), 'count-objects', '-v'])).toString().trim().split('\n')
+    .map((line) => line.split(': ')).map(([name, value]) => [name, Number(value)]));
   const maintainLedger = (root) => {
     if (process.env.DEVRYAN_LEDGER_PACK === '0') return null;
-    const state = maintenanceStates.get(root) ?? { commits: 0, running: null };
+    const state = maintenanceStates.get(root) ?? { commits: 0, running: null, check: null };
     maintenanceStates.set(root, state);
     if (state.running) return state.running;
     state.commits = 0;
@@ -323,8 +325,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       await compactAncestry(root).catch((cause) => {
         diagnostic({ phase: 'ledger_ancestry_compaction', state: 'failed', code: cause?.code ?? 'ledger_compaction_failed' });
       });
-      const stats = Object.fromEntries((await run(['count-objects', '-v'])).toString().trim().split('\n')
-        .map((line) => line.split(': ')).map(([name, value]) => [name, Number(value)]));
+      const stats = await countObjects(root);
       if (stats.count >= maintenanceLimits.looseObjects) {
         await run(['repack', '-d', '-q', '--no-write-bitmap-index']);
         // What stays loose is unreachable: superseded trees (each commit
@@ -339,14 +340,29 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       }
     }).catch((cause) => {
       // Still best effort (an unpacked ledger is only slower), but visible.
-      diagnostic({ phase: 'ledger_maintenance', state: 'failed', code: cause?.code ?? 'ledger_maintenance_failed' });
+      diagnostic({ phase: 'ledger_maintenance', state: 'failed', code: cause?.code ?? 'ledger_maintenance_failed', ...gitFailure(cause) });
     })
       .finally(() => { state.running = null; });
     return state.running;
   };
+  // The commit count lives in this process only, and runtimes are often
+  // shorter than `commits` commits: a ledger left with tens of thousands of
+  // loose objects (too young to prune at its last run) was never maintained
+  // again. The first commit of each process therefore reads the store itself.
+  const checkLooseObjects = async (root) => {
+    if (process.env.DEVRYAN_LEDGER_PACK === '0') return;
+    const { count } = await countObjects(root);
+    if (count >= maintenanceLimits.looseObjects) await maintainLedger(root);
+  };
   const noteLedgerCommit = (root) => {
-    const state = maintenanceStates.get(root) ?? { commits: 0, running: null };
-    maintenanceStates.set(root, state);
+    let state = maintenanceStates.get(root);
+    if (!state) {
+      state = { commits: 0, running: null, check: null };
+      maintenanceStates.set(root, state);
+      const checking = state.check = new Promise(setImmediate).then(() => checkLooseObjects(root)).catch((cause) => {
+        diagnostic({ phase: 'ledger_maintenance', state: 'failed', code: cause?.code ?? 'ledger_maintenance_failed', ...gitFailure(cause) });
+      }).finally(() => { if (state.check === checking) state.check = null; });
+    }
     if (++state.commits >= maintenanceLimits.commits && !state.running) setImmediate(() => maintainLedger(root));
   };
   const rootFor = (directory) => path.join(storage, changeKey(directory));
@@ -3206,7 +3222,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     transaction, updateTransaction, pendingTransactions, capturedSessionState, restoreForeign, cancelLease, cancelUnstartedCall, activeLeases, pendingCleanup, executionOutcomes,
     viewFreshness, maintainLedger: ({ directory }) => resolveRepository(directory).then(({ directory: project }) => maintainLedger(rootFor(project))),
     drain: () => Promise.allSettled([...preparations.values(), ...settlements.values(), ...queues.values(), ...retiring,
-      ...[...maintenanceStates.values()].map((state) => state.running).filter(Boolean)]) };
+      ...[...maintenanceStates.values()].flatMap((state) => [state.running, state.check]).filter(Boolean)]) };
   // Lock timings name the outermost runtime operation; nested calls keep it.
   for (const [name, method] of Object.entries(runtime)) {
     if (typeof method !== 'function' || name === 'drain') continue;

@@ -251,8 +251,9 @@ uncommitted migration objects are harmless, and retry resumes from that original
 until the new state is published.
 
 Completed operations retain before/after trees containing their changed paths.
-Every 128 settled operations, maintenance removes obsolete snapshot references
-and runs private Git packing/collection under the worktree lock. It retains
+Every 128 settled operations, or sooner once the store holds 1,000 loose Git
+objects (`maintenanceLooseObjects`), maintenance removes obsolete snapshot
+references and runs private Git packing/collection under the worktree lock. It retains
 pending capture trees and all objects needed by completed operations and recorded
 revisions, including receipt patch trees and immutable segment metadata. Derived patch files and stat caches may be discarded and regenerated.
 Maintenance failure does not invalidate a successfully persisted capture.

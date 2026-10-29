@@ -1029,6 +1029,8 @@ export type SessionChangeExecution = {
 export interface SessionChangeDiagnostic {
   code: string; phase: string; sessionID: string; callID?: string; source?: string; evidence?: SessionChangeEvidenceKind;
   hasChanges?: boolean;
+  /** A failed Git step: its subcommand and a bounded failure class (`timeout`, `lock`, `corrupt`, `no_space`, `exit_<code>`, ...). */
+  command?: string; failure?: string;
 }
 export interface SessionChangePage {
   nextCursor: string | null; previousCursor: string | null; pageIndex: number;
@@ -1080,7 +1082,7 @@ export interface SessionOwnedRestoreRequest { directory: string; sessionID: stri
 export function createSessionChangeRuntime(options: { directory: string; maxBytes?: number; maxOperations?: number;
   previewOwned?: (input: SessionOwnedRestoreRequest) => Promise<{ version: 1; digest: string }>;
   restoreOwned?: (input: SessionOwnedRestoreRequest & { proof: { version: 1; digest: string } }) => Promise<unknown>;
-  maxCaptureBytes?: number; maxRevisions?: number; maintenanceEvery?: number;
+  maxCaptureBytes?: number; maxRevisions?: number; maintenanceEvery?: number; maintenanceLooseObjects?: number;
   onDiagnostic?: (event: SessionChangeDiagnostic) => void | Promise<void>;
   onChange?: (scope: { directory: string; sessionID: string }) => void | Promise<void> }): SessionChangeRuntime;
 export interface SessionChangeHost {

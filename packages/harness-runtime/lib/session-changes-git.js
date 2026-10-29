@@ -17,6 +17,9 @@ export function createOwnedGitRunner({binary,environment,argumentsPrefix=[],asse
 }
 
 export const changeError = (code, status = 409) => Object.assign(new Error(code), { code, status });
+// The failed Git subcommand and failure class of an error, for diagnostics.
+export const gitFailure = (cause) => ({ ...(typeof cause?.command === 'string' ? { command: cause.command } : {}),
+  ...(typeof cause?.failure === 'string' ? { failure: cause.failure } : {}) });
 
 // Never inherit a caller's index or object-store overrides. All mutation callers
 // supply the private repository explicitly; checkout commands are read-only.
@@ -24,6 +27,24 @@ const gitEnvironment = (base, env) => ({ ...base,
   GIT_DIR: undefined, GIT_COMMON_DIR: undefined, GIT_INDEX_FILE: undefined, GIT_WORK_TREE: undefined,
   GIT_OBJECT_DIRECTORY: undefined, GIT_ALTERNATE_OBJECT_DIRECTORIES: undefined,
   GIT_OPTIONAL_LOCKS: '0', ...env });
+// The Git subcommand of an argument list: the first word after global options
+// and their values. Only a plain command name is reported, never an argument.
+const GLOBAL_OPTIONS_WITH_VALUE = new Set(['--git-dir', '--work-tree', '--namespace', '-C', '-c']);
+const gitCommand = (args) => {
+  for (let index = 0; index < args.length; index++) {
+    if (GLOBAL_OPTIONS_WITH_VALUE.has(args[index])) { index++; continue; }
+    if (args[index].startsWith('-')) continue;
+    return /^[a-z][a-z-]{0,31}$/.test(args[index]) ? args[index] : 'unknown';
+  }
+  return 'unknown';
+};
+const LOCK_FAILURE = /\.lock'?: File exists|Unable to create '[^']*\.lock'|cannot lock ref|unable to lock/i;
+const CORRUPT_FAILURE = /bad object|missing (blob|tree|commit|object)|is corrupt|corrupt (loose )?object|unable to read [0-9a-f]{7,}|object file .* is empty|bad packed object|packfile .* (cannot|does not)|inflate: data stream error|did not receive expected object/i;
+// A bounded failure class for diagnostics. Stderr is matched, never reported.
+const failureClass = ({ timedOut, diskFull, notRepository, stderr, code, signal }) => timedOut ? 'timeout'
+  : diskFull ? 'no_space' : notRepository ? 'not_git' : LOCK_FAILURE.test(stderr) ? 'lock'
+    : CORRUPT_FAILURE.test(stderr) ? 'corrupt' : signal ? 'signal'
+      : Number.isSafeInteger(code) && code >= 0 && code < 256 ? `exit_${code}` : 'exit_unknown';
 const start = (cwd, args, { env, input, timeoutMs = 30_000, stdout = 'pipe', acceptExitCodes = [],ownedRunner } = {}) => {
   const signal = executionSignal();
   signal?.throwIfAborted();
@@ -38,22 +59,28 @@ const start = (cwd, args, { env, input, timeoutMs = 30_000, stdout = 'pipe', acc
   let diskFull = false;
   let notRepository = false;
   let stderrTail = '';
+  let stderrHead = '';
   const timer = setTimeout(() => { timedOut = true; child.kill('SIGKILL'); }, timeoutMs);
   // Classify only; never include file contents, Git configuration or paths in errors.
   child.stderr.on('data', (chunk) => {
     stderrTail = (stderrTail + chunk.toString()).slice(-1024);
+    // `fatal:` lines usually come first; keep them for classification too.
+    if (stderrHead.length < 1024) stderrHead = (stderrHead + chunk.toString()).slice(0, 1024);
     if (/No space left on device|Disk quota exceeded/i.test(stderrTail)) diskFull = true;
     if (/not a git repository/i.test(stderrTail)) notRepository = true;
   });
   const done = new Promise((resolve, reject) => {
     child.on('error', reject);
-    child.on('close', (code) => {
+    child.on('close', (code, exitSignal) => {
+      // Which command failed and how, as bounded identifiers only.
+      const failed = (errorCode, status) => Object.assign(changeError(errorCode, status), { command: gitCommand(owned ? [...owned.argumentsPrefix, ...args] : args),
+        failure: failureClass({ timedOut, diskFull, notRepository, stderr: `${stderrHead}\n${stderrTail}`, code, signal: exitSignal }) });
       if (signal?.aborted) reject(signal.reason);
-      else if (timedOut) reject(changeError('capture_timeout', 503));
-      else if (diskFull) reject(changeError('storage_unavailable', 503));
+      else if (timedOut) reject(failed('capture_timeout', 503));
+      else if (diskFull) reject(failed('storage_unavailable', 503));
       // Some commands report an answer by status, e.g. check-ignore's 1 for "none ignored".
-      else if (code !== 0 && !acceptExitCodes.includes(code) && notRepository) reject(changeError('capture_not_git', 409));
-      else if (code !== 0 && !acceptExitCodes.includes(code)) reject(changeError('capture_git_failed', 503));
+      else if (code !== 0 && !acceptExitCodes.includes(code) && notRepository) reject(failed('capture_not_git', 409));
+      else if (code !== 0 && !acceptExitCodes.includes(code)) reject(failed('capture_git_failed', 503));
       else { executionProgress(); resolve(); }
     });
   }).finally(() => { clearTimeout(timer); signal?.removeEventListener('abort', abort); });

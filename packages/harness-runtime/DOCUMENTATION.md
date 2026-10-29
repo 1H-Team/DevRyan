@@ -591,7 +591,15 @@ budgeted pass that real calls never treat as their observation. Every 32 rows
 under the ledger lock it checks for a queued call; when one waits, it commits
 what it installed and carries the rest to its next batch, so a new worktree's
 first build no longer holds tool receipts for 10–15 s. Maintenance and
-input-classification failures reach `onDiagnostic` as codes.
+input-classification failures reach `onDiagnostic` as codes; a failed Git step
+adds its subcommand (`command`) and a bounded class (`failure`: `timeout`,
+`lock`, `corrupt`, `no_space`, `not_git`, `signal` or `exit_<code>`), never a
+path or stderr. Ledger maintenance (pack, then prune past a 2-hour grace) runs
+every 64 ledger commits of a process and, because a runtime process often
+commits far fewer times, also when a process's first commit to a ledger finds
+1,000 or more loose objects. Session-change stores collect every 128 settled
+operations or as soon as they hold 1,000 loose objects
+(`maintenanceLooseObjects`).
 
 `createSessionRevertCoordinator` requires both the legacy conversation-only API
 capability and a confined execution owner. It persists target-tree fences,

@@ -200,8 +200,9 @@ export function createSessionMutationRuntime(options: {
   complexity?: { warnEntries?: number; warnBytes?: number; ceilingEntries?: number; ceilingBytes?: number };
   onChange?(input: MutationPublication & { directory: string }): void | Promise<void>;
   onMaterialize?(row: { path: string; before: unknown; after: unknown }): void | Promise<void>;
-  /** Background failures (ledger maintenance, input classification); codes only. */
-  onDiagnostic?(record: { phase: string; state: 'failed' | 'completed'; code?: string; elapsedMs?: number; slow?: boolean; action?: string; sessionID?: string; steps?: string; reason?: string }): void;
+  /** Background failures (ledger maintenance, input classification); codes only. A failed Git
+   * step adds its subcommand and a bounded failure class (`timeout`, `lock`, `corrupt`, `no_space`, `signal`, `exit_<code>`). */
+  onDiagnostic?(record: { phase: string; state: 'failed' | 'completed'; code?: string; elapsedMs?: number; slow?: boolean; action?: string; sessionID?: string; steps?: string; reason?: string; command?: string; failure?: string }): void;
   /** Every owner-lock acquisition (observer only): queue and lock wait from the call, then hold time
    * (transaction and commit). `operation` is the outermost runtime method, or the install pass.
    * `snapshotMiss`: why a snapshot-first read fell back to this lock. */

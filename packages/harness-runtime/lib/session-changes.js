@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { withCrossProcessFileLock } from './atomic-file.js';
 import { executionStep, timedExecutionStep } from './execution-admission.js';
-import { git, gitToFile, gitTokens, changeError as failure } from './session-changes-git.js';
+import { git, gitToFile, gitTokens, changeError as failure, gitFailure } from './session-changes-git.js';
 import { openChangeStore, changeKey as hash } from './session-changes-store.js';
 import { captureSnapshot, changedEntries, changeTreeEntries, equalEntry as equal,
   makeChangeTree as makeTree, safeChangePath as safePath, verifyAncestors, observeChangeEntry } from './session-changes-snapshot.js';
@@ -186,7 +186,13 @@ export function createSessionChangeRuntime(options) {
     const meta = await repo.db.get('meta.json');
     meta.completedSinceMaintenance = (meta.completedSinceMaintenance ?? 0) + 1;
     repo.db.set('meta.json', meta); await repo.db.commit();
-    if (meta.completedSinceMaintenance < (options.maintenanceEvery ?? 128)) return;
+    // Each capture writes loose objects and collection is the only packing:
+    // a store whose captures are large or settle unevenly reached 18k loose
+    // objects between the every-128 runs, so their number triggers it too.
+    if (meta.completedSinceMaintenance < (options.maintenanceEvery ?? 128)) {
+      const loose = Number(/^count: (\d+)$/m.exec((await repo.run(['count-objects', '-v'])).toString())?.[1] ?? 0);
+      if (loose < (options.maintenanceLooseObjects ?? 1_000)) return;
+    }
     await collect(repo);
     meta.completedSinceMaintenance = 0; repo.db.set('meta.json', meta); await repo.db.commit();
   };
@@ -274,7 +280,7 @@ export function createSessionChangeRuntime(options) {
         sessionID: op.sessionID, callID: op.callID, source: op.source, evidence: 'snapshot' });
       await notifyChanges(repo, [input.sessionID]);
       // Collection failure does not turn a durably captured change into a gap.
-      await maintain(repo).catch(async (error) => diagnostic({ code: normalizedError(error), phase: 'maintenance', sessionID: input.sessionID }));
+      await maintain(repo).catch(async (error) => diagnostic({ code: normalizedError(error), phase: 'maintenance', sessionID: input.sessionID, ...gitFailure(error) }));
     });
   };
   const recordReceipts = async (inputs, historical) => {
