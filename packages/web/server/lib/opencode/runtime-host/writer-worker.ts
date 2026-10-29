@@ -121,7 +121,7 @@ async function run() {
   void receive.catch((cause: Error) => { browserController.abort(cause);for(const pending of browserReplies.values())pending.reject(cause);for(const pending of imageReplies.values())pending.reject(cause);for (const pending of replies.values()) pending.reject(cause); });
   const denied = () => Effect.die(new Error('native_worker_permission_method_unavailable'));
   const permissions: Permission.Interface = {
-    close: Effect.void, ask: denied, reply: denied, get: denied, forSession: denied, list: denied,
+    close: Effect.void, ask: denied, assertNotDenied: denied, reply: denied, get: denied, forSession: denied, list: denied,
     assert: (input) => Effect.gen(function* () {
       // Restore the controller's session/call identity. The worker's private
       // session exists only to acquire native registrations and owns no policy.

@@ -5,11 +5,11 @@ import path from 'node:path';
 import { resolveSqliteDriver } from '../sqlite-driver.js';
 import { assertReviewedNativeCoreDigest, inspectNativeCloneLayout, isReviewedNativeClonePair, REVIEWED_NATIVE_CLONE_RELEASES, REVIEWED_NATIVE_CLONE_LAYOUT,
   REVIEWED_NATIVE_FRESH_CLONE_LAYOUT, REVIEWED_NATIVE_CLONE_MIGRATION_LEVEL, REVIEWED_NATIVE_CLONE_REBUILDS, REVIEWED_NATIVE_PROJECT_ARCHIVE_CLONE_LAYOUT,
-  REVIEWED_NATIVE_PROJECT_ARCHIVE_FRESH_CLONE_LAYOUT, REVIEWED_NATIVE_BLOB_STORE_FRESH_CLONE_LAYOUT, reviewedNativeCloneSourceLayout, verifyNativeCloneCompatibility } from './native-bundle-compatibility.js';
+  REVIEWED_NATIVE_PROJECT_ARCHIVE_FRESH_CLONE_LAYOUT, REVIEWED_NATIVE_BLOB_STORE_FRESH_CLONE_LAYOUT, REVIEWED_NATIVE_SCHEDULE_FRESH_CLONE_LAYOUT, reviewedNativeCloneSourceLayout, verifyNativeCloneCompatibility } from './native-bundle-compatibility.js';
 
 const manifest = version => ({ opencodeVersion: version, inputs: { coreDigest: REVIEWED_NATIVE_CLONE_RELEASES[version] },
   compiledContracts: ['devryan-v2-clone/1', 'devryan.bundle.credentials/2', 'devryan.bundle.credential-owners/2'] });
-test.each([['2.0.20', '2.0.24'], ['2.0.24', '2.0.20'], ['2.0.20', '2.0.26'], ['2.0.24', '2.0.26'], ['2.0.20', '2.0.30'], ['2.0.24', '2.0.30'], ['2.0.26', '2.0.30'], ['2.0.20', '2.0.32'], ['2.0.26', '2.0.32'], ['2.0.30', '2.0.32', '2.1.0'], ['2.0.32', '2.0.30'], ['2.0.32', '2.1.0'], ['2.0.26', '2.1.0'], ['2.1.0', '2.1.2'], ['2.1.2', '2.1.0'], ['2.0.32', '2.1.2'], ['2.0.26', '2.1.2'], ['2.1.2', '2.1.3'], ['2.1.3', '2.1.2'], ['2.1.0', '2.1.3'], ['2.1.3', '2.1.0'], ['2.0.26', '2.1.3'], ['2.1.3', '2.1.4'], ['2.1.4', '2.1.3'], ['2.1.2', '2.1.4'], ['2.1.4', '2.1.0'], ['2.0.26', '2.1.4'], ['2.1.4', '2.2.0'], ['2.1.0', '2.2.0'], ['2.0.32', '2.2.0'], ['2.0.26', '2.2.0']])('only the reviewed exact release graphs and layout permit %s to %s', (source, target) => {
+test.each([['2.0.20', '2.0.24'], ['2.0.24', '2.0.20'], ['2.0.20', '2.0.26'], ['2.0.24', '2.0.26'], ['2.0.20', '2.0.30'], ['2.0.24', '2.0.30'], ['2.0.26', '2.0.30'], ['2.0.20', '2.0.32'], ['2.0.26', '2.0.32'], ['2.0.30', '2.0.32', '2.1.0'], ['2.0.32', '2.0.30'], ['2.0.32', '2.1.0'], ['2.0.26', '2.1.0'], ['2.1.0', '2.1.2'], ['2.1.2', '2.1.0'], ['2.0.32', '2.1.2'], ['2.0.26', '2.1.2'], ['2.1.2', '2.1.3'], ['2.1.3', '2.1.2'], ['2.1.0', '2.1.3'], ['2.1.3', '2.1.0'], ['2.0.26', '2.1.3'], ['2.1.3', '2.1.4'], ['2.1.4', '2.1.3'], ['2.1.2', '2.1.4'], ['2.1.4', '2.1.0'], ['2.0.26', '2.1.4'], ['2.1.4', '2.2.0'], ['2.1.0', '2.2.0'], ['2.0.32', '2.2.0'], ['2.0.26', '2.2.0'], ['2.1.4', '2.2.1'], ['2.0.32', '2.2.1']])('only the reviewed exact release graphs and layout permit %s to %s', (source, target) => {
   const left = manifest(source), right = manifest(target);
   const reviewed = reviewedNativeCloneSourceLayout(source, 'legacy');
   expect(isReviewedNativeClonePair(left, right, reviewed)).toBe(true);
@@ -125,6 +125,8 @@ test('a release keeps the source DDL of its own migration level', () => {
   // No legacy-imported 2.2.0 database has been measured, so none is a reviewed source.
   expect(reviewedNativeCloneSourceLayout('2.2.0', 'legacy')).toBeUndefined();
   expect(reviewedNativeCloneSourceLayout('2.2.0', 'fresh-install')).toBe(REVIEWED_NATIVE_BLOB_STORE_FRESH_CLONE_LAYOUT);
+  expect(reviewedNativeCloneSourceLayout('2.2.1', 'legacy')).toBeUndefined();
+  expect(reviewedNativeCloneSourceLayout('2.2.1', 'fresh-install')).toBe(REVIEWED_NATIVE_SCHEDULE_FRESH_CLONE_LAYOUT);
   for (const version of ['2.0.31', '2.0.33', undefined]) expect(reviewedNativeCloneSourceLayout(version, 'legacy')).toBeUndefined();
   expect(reviewedNativeCloneSourceLayout('2.0.30', 'imported')).toBeUndefined();
   // A project-archive database never passes as a pre-archive layout, nor the reverse.
@@ -176,4 +178,15 @@ test('2.2.0 blob-store databases cannot clone back into 2.1.x readers', () => {
   // A 2.1.x source is checked against its own level 3 layout, never the 2.2.0 one.
   expect(isReviewedNativeClonePair(manifest('2.1.4'), manifest('2.2.0'), REVIEWED_NATIVE_BLOB_STORE_FRESH_CLONE_LAYOUT)).toBe(false);
   expect(isReviewedNativeClonePair(manifest('2.1.4'), manifest('2.2.0'), REVIEWED_NATIVE_PROJECT_ARCHIVE_FRESH_CLONE_LAYOUT)).toBe(true);
+});
+
+test('2.2.1 schedule databases cannot clone back into 2.2.0 readers', () => {
+  for (const layout of [REVIEWED_NATIVE_SCHEDULE_FRESH_CLONE_LAYOUT, REVIEWED_NATIVE_BLOB_STORE_FRESH_CLONE_LAYOUT]) {
+    expect(isReviewedNativeClonePair(manifest('2.2.1'), manifest('2.2.0'), layout)).toBe(false);
+  }
+  expect(() => verifyNativeCloneCompatibility({ left: manifest('2.2.1'), right: manifest('2.2.0'), databasePath: '/does-not-exist' }))
+    .toThrow('bundle_v2_upgrade_compatibility_required');
+  // A 2.2.0 source is checked against its own level 4 layout, never the 2.2.1 one.
+  expect(isReviewedNativeClonePair(manifest('2.2.0'), manifest('2.2.1'), REVIEWED_NATIVE_SCHEDULE_FRESH_CLONE_LAYOUT)).toBe(false);
+  expect(isReviewedNativeClonePair(manifest('2.2.0'), manifest('2.2.1'), REVIEWED_NATIVE_BLOB_STORE_FRESH_CLONE_LAYOUT)).toBe(true);
 });

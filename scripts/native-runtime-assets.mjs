@@ -19,7 +19,7 @@ const resolvePinnedJsonc=async resolved=>{
  return {modulePath,packagePath,packageBytes};
 };
 export const NATIVE_ASSET_SOURCE_SHA=Object.freeze({pty:'fe38312cd4acdfb067f520d3917daf52add098bb267e33bf7a8f7f44fc74ac8f',photon:'d60656705f0d59baa79e36b0381eb023f1864eeb57e92956cf21dcd9fb8f879f'});
-export const NATIVE_WINDOWS_PTY_SOURCE_SHA256='75e0c596f41f8b2e745c7fbee3dacff6a1013e923c2b10cf67b37ef433933772';
+export const NATIVE_WINDOWS_PTY_SOURCE_SHA256='83a7926a19b004fb39176bc1cf96e3b903257ec9c0fedc8b01d11ba545018dbe';
 /** Windows has no approved persistent PTY. Refuse before resolving a command,
  * creating an installation directory, or reading an environment override. */
 export function rewriteUnavailableNativePty(source) {
@@ -47,7 +47,7 @@ export function rewriteNativeAgentDefaults(source) {
  if(hash(source)!==NATIVE_AGENT_DEFAULTS_SOURCE_SHA256||text.split(anchor).length!==2) throw new Error('Pinned native agent defaults changed');
  return text.replace(anchor,anchor+'            { action: "external_directory", resource: "*", effect: "ask" },\n');
 }
-export const NATIVE_PHOTON_WORKER_SOURCE_SHA256='8ca4b0972af2ea05b80234e48fe85728d5818673c431c27dc780cd1a4bd14b32';
+export const NATIVE_PHOTON_WORKER_SOURCE_SHA256='a5c3ca79435212f0abe12bf47af91a06ea9aafd478516a6421ea837a60a0d897';
 /** 2.2.0 resizes images in a worker thread that loads Photon outside the sealed
  * WASM resolver, from a file a compiled bundle does not contain. Keep the reviewed
  * main-thread Photon path, which never logs its worker fallback to stdout. */

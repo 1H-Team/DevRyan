@@ -1,7 +1,7 @@
 import type { RegistrationCapability, RegistrationOrigin } from './registration-origin.js';
 
-/** Exact PluginInternal pre/post inventory reviewed from @opencode/core 2.2.0. */
-export const NATIVE_PLUGIN_VERSION = '2.2.0';
+/** Exact PluginInternal pre/post inventory reviewed from @opencode/core 2.2.1. */
+export const NATIVE_PLUGIN_VERSION = '2.2.1';
 export const REVIEWED_NATIVE_PLUGIN_IDS: readonly string[] = Object.freeze([
   'opencode.tool.input.repair',
   'opencode.config.worktree',
@@ -12,6 +12,7 @@ export const REVIEWED_NATIVE_PLUGIN_IDS: readonly string[] = Object.freeze([
   'opencode.agent',
   'opencode.plan',
   'opencode.command',
+  'opencode.goal',
   'opencode.skill',
   'opencode.vcs.hg',
   'opencode.models.dev',
@@ -21,7 +22,6 @@ export const REVIEWED_NATIVE_PLUGIN_IDS: readonly string[] = Object.freeze([
   'opencode.provider.chatgpt',
   'opencode.provider.cloudflare.ai.gateway',
   'opencode.provider.cloudflare.workers.ai',
-  'opencode.provider.cohere',
   'opencode.provider.databricks',
   'opencode.provider.digitalocean',
   'opencode.provider.github.copilot',
@@ -39,11 +39,9 @@ export const REVIEWED_NATIVE_PLUGIN_IDS: readonly string[] = Object.freeze([
   'opencode.provider.openai',
   'opencode.provider.openai-context-caps',
   'opencode.provider.openrouter',
-  'opencode.provider.perplexity',
   'opencode.provider.poe',
   'opencode.provider.prompt-cache-key',
   'opencode.provider.sap.ai.core',
-  'opencode.provider.vercel',
   'opencode.provider.vllm',
   'opencode.provider.xai',
   'opencode.provider.zenmux',
@@ -64,10 +62,12 @@ export const REVIEWED_NATIVE_PLUGIN_IDS: readonly string[] = Object.freeze([
   'opencode.tool.edit',
   'opencode.tool.glob',
   'opencode.tool.grep',
+  'opencode.tool.image-generate',
   'opencode.tools',
   'opencode.tools.mcp-resources',
   'opencode.tool.question',
   'opencode.tool.read',
+  'opencode.tool.schedule',
   'opencode.tool.shell',
   'opencode.tool.skill',
   'opencode.tool.subagent',
@@ -101,6 +101,8 @@ const toolCapabilities: Readonly<Record<string, readonly RegistrationCapability[
   'opencode.tool.subagent': [], 'opencode.tool.webfetch': ['network'], 'opencode.tool.websearch': [],
   'opencode.browser': [], 'opencode.tools.mcp-resources': [], 'opencode.tools': [],
   'opencode.tool.question': ['control'],
+  // Opt-in experimental tools; execution routing has no owned path for them.
+  'opencode.tool.image-generate': [], 'opencode.tool.schedule': [],
 });
 export function createReviewedNativePluginRegistry(manifestDigest: string, options: { readonly disableTools?: boolean; readonly hostDigest?: string } = {}): ReadonlyMap<string, RegistrationOrigin> {
   if (!/^[a-f0-9]{64}$/.test(manifestDigest)) throw new TypeError('native manifest digest must be SHA-256');

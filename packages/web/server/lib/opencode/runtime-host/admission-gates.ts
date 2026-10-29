@@ -516,7 +516,8 @@ export function createAdmissionGates(options: AdmissionGateOptions) {
         closed = true;
         if (key && permissionOwners.get(key) === owner) permissionOwners.delete(key);
       }));
-      return Permission.Service.of({ ...inner, assert: owner.assert, ask: input => scoped(input, inner.ask(input)), reply: input => Effect.gen(function* () {
+      return Permission.Service.of({ ...inner, assert: owner.assert, ask: input => scoped(input, inner.ask(input)),
+        assertNotDenied: input => scoped(input, inner.assertNotDenied(input)), reply: input => Effect.gen(function* () {
         const pending = yield* inner.get(input.requestID);
         if (!pending) return yield* inner.reply(input);
         // Native 'always' replies reevaluate other pending sessions in this

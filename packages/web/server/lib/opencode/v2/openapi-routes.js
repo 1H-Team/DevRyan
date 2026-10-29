@@ -4,7 +4,7 @@
 // and by the runtime drift check (`diffLiveSpec` in route-policy.js), which
 // compares a live host's `/openapi.json` with that table. Pure: no I/O.
 
-export const OPENCODE_V2_OPENAPI_VERSION = '2.2.0';
+export const OPENCODE_V2_OPENAPI_VERSION = '2.2.1';
 export const OPENCODE_V2_OPENAPI_FILENAME = `openapi-${OPENCODE_V2_OPENAPI_VERSION}.json`;
 export const OPENCODE_V2_ROUTES_GENERATED_FILENAME = 'routes.generated.js';
 

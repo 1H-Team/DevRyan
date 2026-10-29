@@ -671,7 +671,7 @@ the lightweight retry-decorator tests do not substitute for that graph.
 
 The private `native.stream-continuation` owner binds the exact controller,
 configuration, permit, cancellation generation, physical attempt, original
-objective and canonical failed predecessor. The pinned OpenCode 2.2.0
+objective and canonical failed predecessor. The pinned OpenCode 2.2.1
 Synthetic event supplies its committed event ID, sequence, derived user ID and
 payload fingerprint. The durable pending reservation becomes consumed before
 successor preparation/send; Step adoption consumes its proof once. There are
@@ -1721,7 +1721,7 @@ and 2.1.4 export `AssertInput` only as a type; worker events retain the same val
 
 ## MCP elicitation (Form gate)
 
-OpenCode 2.1.4 and 2.2.0 own every MCP elicitation form with the sentinel session
+OpenCode 2.1.4 through 2.2.1 own every MCP elicitation form with the sentinel session
 `global`, so no client can tell which turn asked. DevRyan attributes it on the
 host, in `native-mcp-elicitation.ts`:
 

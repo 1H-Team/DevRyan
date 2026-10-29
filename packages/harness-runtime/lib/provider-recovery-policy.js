@@ -15,13 +15,13 @@ export const RECOVERY_CONTINUATION = 'Continue from the existing progress and co
 export const PROVIDER_RECOVERY_SUPPORTED_OPENCODE_VERSIONS = Object.freeze(['1.18.25', '1.18.26', '1.18.27', '1.18.29', '1.18.30', '1.18.31', '1.18.32', '1.18.33']);
 // Native Step/continuation ownership has separate conformance from legacy
 // transport recovery. Keep exact canonical versions for retained rollback.
-export const NATIVE_PRIMARY_SUPPORTED_OPENCODE_VERSIONS = Object.freeze(['2.0.20', '2.0.24', '2.0.26', '2.0.30', '2.0.32','2.1.0','2.1.2','2.1.3','2.1.4','2.2.0']);
+export const NATIVE_PRIMARY_SUPPORTED_OPENCODE_VERSIONS = Object.freeze(['2.0.20', '2.0.24', '2.0.26', '2.0.30', '2.0.32','2.1.0','2.1.2','2.1.3','2.1.4','2.2.0','2.2.1']);
 export const isNativePrimaryRuntimeVersion = version => NATIVE_PRIMARY_SUPPORTED_OPENCODE_VERSIONS.includes(version);
 // Native transport class: the host's single read-only continuation after a
 // bound native primary Step finalizes with a typed transient transport failure.
 // It reuses the reviewed native recovery dispatch of model fallback, and the
 // typed `provider.transport`/`provider.timeout` errors OpenCode 2.1 reports.
-export const NATIVE_TRANSPORT_RECOVERY_OPENCODE_VERSIONS = Object.freeze(['2.1.0','2.1.2','2.1.3','2.1.4','2.2.0']);
+export const NATIVE_TRANSPORT_RECOVERY_OPENCODE_VERSIONS = Object.freeze(['2.1.0','2.1.2','2.1.3','2.1.4','2.2.0','2.2.1']);
 export const isNativeTransportRecoveryRuntimeVersion = version => NATIVE_TRANSPORT_RECOVERY_OPENCODE_VERSIONS.includes(version);
 // The bundled companion runtime is a pinned upstream release plus DevRyan's
 // execution patch, which does not touch provider transport; it reports

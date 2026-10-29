@@ -18,6 +18,7 @@ export const REVIEWED_NATIVE_CLONE_RELEASES = Object.freeze({
   '2.1.3': '65c5ed2e7a3d9b23738d7256989b0989b78454a392dcea75c51130de4fd3be22',
   '2.1.4': '5d1face783a648c12be33db9ff08b9d33ab71fa127861f6a203a9d24c91545d3',
   '2.2.0': '06fc02814588210524a7b7269a0a17fa3b81811864fcc1d963047024cb5933e0',
+  '2.2.1': 'c2eae3bf1a70feaab6380dc5ffe84462985bbe09af4696e41a0f20ebc45af3ef',
 });
 // The later 2.0.26 build adds observation transforms without changing database layout.
 export const REVIEWED_NATIVE_CLONE_REBUILDS = Object.freeze({
@@ -38,13 +39,14 @@ export function assertReviewedNativeCoreDigest(manifest, target = TARGET_OPENCOD
 // 2.0.26 adds the data-only migration 20261007190000_azure_cli_external_credential,
 // whose `external` credential values older releases cannot decode. The DDL layout
 // is unchanged, so a clone never moves a database to a lower migration level.
-export const REVIEWED_NATIVE_CLONE_MIGRATION_LEVEL = Object.freeze({ '2.0.20': 0, '2.0.24': 0, '2.0.26': 1, '2.0.30': 2, '2.0.32': 2, '2.1.0': 3, '2.1.2': 3, '2.1.3': 3, '2.1.4': 3, '2.2.0': 4 });
+export const REVIEWED_NATIVE_CLONE_MIGRATION_LEVEL = Object.freeze({ '2.0.20': 0, '2.0.24': 0, '2.0.26': 1, '2.0.30': 2, '2.0.32': 2, '2.1.0': 3, '2.1.2': 3, '2.1.3': 3, '2.1.4': 3, '2.2.0': 4, '2.2.1': 5 });
 // 2.0.30 adds project.time_archived; its migrated database cannot clone backwards.
 // 2.1.0 writes native compaction windows and drops required legacy message fields.
 // Its logical level 3 prevents clones into older readers despite identical DDL.
 // 2.1.2, 2.1.3 and 2.1.4 add no migration and stay at level 3.
 // 2.2.0 adds the blob/blob_ref media store and drops the unused session_pending
 // table (level 4); its databases cannot clone into 2.1.x readers.
+// 2.2.1 adds the schedule table (level 5); its databases cannot clone into 2.2.0.
 // A layout is the database's structure (`inspectNativeCloneLayout`), not its DDL
 // text: a database created by an earlier release and migrated in place stores
 // `ALTER TABLE … ADD` text with the column last, a fresh one has it inside
@@ -86,12 +88,21 @@ export const REVIEWED_NATIVE_BLOB_STORE_FRESH_CLONE_LAYOUT = Object.freeze({
   migrationsSha256: null,
   userVersion: 0,
 });
+// A level 5 (2.2.1) database adds the schedule table to the level 4 structure.
+// A 2.2.1 controller's fresh database and the retained 2.0.32 schema it migrates
+// in place share this structure. No legacy-imported level 5 layout is measured.
+export const REVIEWED_NATIVE_SCHEDULE_FRESH_CLONE_LAYOUT = Object.freeze({
+  structureSha256: '9c64f188433b2286f8bccd9c29102496030f86d9d49faf08ede9ddcff2967c6a',
+  migrationsSha256: null,
+  userVersion: 0,
+});
 const REVIEWED_SOURCE_LAYOUTS = Object.freeze({
   0: Object.freeze({ legacy: REVIEWED_NATIVE_CLONE_LAYOUT, 'fresh-install': REVIEWED_NATIVE_FRESH_CLONE_LAYOUT }),
   1: Object.freeze({ legacy: REVIEWED_NATIVE_CLONE_LAYOUT, 'fresh-install': REVIEWED_NATIVE_FRESH_CLONE_LAYOUT }),
   2: Object.freeze({ legacy: REVIEWED_NATIVE_PROJECT_ARCHIVE_CLONE_LAYOUT, 'fresh-install': REVIEWED_NATIVE_PROJECT_ARCHIVE_FRESH_CLONE_LAYOUT }),
   3: Object.freeze({ legacy: REVIEWED_NATIVE_PROJECT_ARCHIVE_CLONE_LAYOUT, 'fresh-install': REVIEWED_NATIVE_PROJECT_ARCHIVE_FRESH_CLONE_LAYOUT }),
   4: Object.freeze({ 'fresh-install': REVIEWED_NATIVE_BLOB_STORE_FRESH_CLONE_LAYOUT }),
+  5: Object.freeze({ 'fresh-install': REVIEWED_NATIVE_SCHEDULE_FRESH_CLONE_LAYOUT }),
 });
 /** The reviewed `kind` ('legacy' | 'fresh-install') layout a source release's database has. */
 export const reviewedNativeCloneSourceLayout = (version, kind) => Object.hasOwn(REVIEWED_NATIVE_CLONE_MIGRATION_LEVEL, version)

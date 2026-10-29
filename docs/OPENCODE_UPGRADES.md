@@ -50,6 +50,17 @@ package lanes.
 
 3. `bun run validate`.
 
+## Seams in 2.2.0 → 2.2.1
+
+- All four pinned core sources changed only in chunk import paths and minified
+  identifiers; their bodies matched, so only the SHA-256 pins moved.
+- `@opencode/ai` moved Vertex and Bedrock Mantle subpaths under
+  `providers/google-vertex/*` and `providers/amazon-bedrock/mantle/*`.
+- `Permission.Interface` gained `assertNotDenied`; every hand-built or wrapped
+  permission service must implement or scope it.
+- New builtin plugins (`goal`, `tool.image-generate`, `tool.schedule`) must be
+  registered or the host refuses their activation (`native_plugin_unreviewed`).
+
 ## Seams that broke in 2.1.4 → 2.2.0
 
 A first look for the next upgrade:
