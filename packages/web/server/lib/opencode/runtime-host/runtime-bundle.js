@@ -104,6 +104,7 @@ const sqlite = file => {
   return { raw, backup:target => raw.prepare('VACUUM INTO ?').run(target),
     all:(sql,params=[]) => raw.prepare(sql).all(...params), run:() => { throw fail('bundle_read_only'); } };
 };
+const archivedSessions = db => db.all('SELECT id FROM session_v2 WHERE time_archived IS NOT NULL ORDER BY id').map(row => row.id);
 /** Removes exactly the notices the source check set aside from the fresh copy;
  * the source, which stays the rollback target, is never written. */
 const dropUndeliverableInbox = (file,ids) => {
@@ -456,7 +457,7 @@ export function createRuntimeBundleStore(options) {
         });
         await inspectHarness(value.launch.webDataDirectory,{projectMap:value.projectMap,preservedRefs,
           sessionIDs:graph.sessionIDs,messageIDs:graph.nativeMessageIDs,verifiedContinuations,nativeUsers,
-          verifiedCancellations:verifiedNativeUserCancellations(db)},value.launch);
+          verifiedCancellations:verifiedNativeUserCancellations(db),archivedSessionIDs:archivedSessions(db)},value.launch);
         if (phase==='resume') assertBundlePendingInput(db,verifiedContinuations,setAside);
       }
     } finally { db.raw.close(); }
@@ -516,7 +517,7 @@ export function createRuntimeBundleStore(options) {
       const db=sqlite(source.launch.opencodeDatabasePath);let harness;
       try{
         const sessionIDs=db.all('SELECT id FROM session_v2').map(row=>row.id),messageIDs=db.all('SELECT id FROM session_message').map(row=>row.id);
-        harness=await inspectHarness(source.launch.webDataDirectory,{sessionIDs,messageIDs},source.launch);
+        harness=await inspectHarness(source.launch.webDataDirectory,{sessionIDs,messageIDs,archivedSessionIDs:archivedSessions(db)},source.launch);
         const setAside=undeliverableInboxIDs(db);
         await timeStartupPhase('bundle_database_checkpoint',()=>operations.withSqliteOutput(path.join(root,'opencode','opencode.db'),file=>{
           db.backup(file);dropUndeliverableInbox(file,setAside);}));

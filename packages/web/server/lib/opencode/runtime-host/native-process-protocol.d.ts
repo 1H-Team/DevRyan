@@ -77,6 +77,7 @@ export interface NativeHarnessRequest {
  readonly verifiedContinuations?:readonly import('./bundle-owned-continuations.js').VerifiedBundleContinuation[];
  readonly nativeUsers?:readonly {id:string;sessionID:string;fingerprint:string}[];
  readonly verifiedCancellations?:readonly {id:string;sessionID:string;directory:string;payloadHash:string}[];
+ readonly archivedSessionIDs?:readonly string[];
 }
 export interface NativeHarnessResult {readonly protocol:'devryan-native-harness-relocation/1';readonly requestID:string;readonly status:'relocated'|'inspected';readonly harness:import('./bundle-harness-integrity.js').BundleHarnessInventory}
 export function parseNativeHarnessRequest(value:unknown):NativeHarnessRequest;

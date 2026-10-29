@@ -272,12 +272,12 @@ export function parseNativeAssetRequest(value) {
 export function parseNativeHarnessRequest(value){
  bounded(value,NATIVE_HARNESS_LIMITS.requestBytes);
  const fixedAbsolute=value=>{absolute(value);if(path.normalize(value)!==value)throw invalid();};
- keys(value,['protocol','requestID','webDataDirectory','sourceWebDataDirectory','checkpointID','projectMap','relocate','sessionIDs','messageIDs','preservedRefs','verifiedContinuations','nativeUsers','verifiedCancellations']);
+ keys(value,['protocol','requestID','webDataDirectory','sourceWebDataDirectory','checkpointID','projectMap','relocate','sessionIDs','messageIDs','preservedRefs','verifiedContinuations','nativeUsers','verifiedCancellations','archivedSessionIDs']);
  if(value.protocol!=='devryan-native-harness-relocation/1'||typeof value.relocate!=='boolean')throw invalid();
  string(value.requestID);fixedAbsolute(value.webDataDirectory);fixedAbsolute(value.sourceWebDataDirectory);string(value.checkpointID);
  if(!/^[a-zA-Z0-9_-]{1,128}$/.test(value.checkpointID))throw invalid();
  array(value.projectMap,mapping=>{keys(mapping,['sourceDirectory','targetDirectory','mode']);fixedAbsolute(mapping.sourceDirectory);fixedAbsolute(mapping.targetDirectory);if(!['identity','synthetic-copy'].includes(mapping.mode))throw invalid();});
- for(const field of ['sessionIDs','messageIDs'])if(value[field]!==undefined){if(!Array.isArray(value[field])||value[field].length>10000||new Set(value[field]).size!==value[field].length)throw invalid();value[field].forEach(string);}
+ for(const field of ['sessionIDs','messageIDs','archivedSessionIDs'])if(value[field]!==undefined){if(!Array.isArray(value[field])||value[field].length>10000||new Set(value[field]).size!==value[field].length)throw invalid();value[field].forEach(string);}
  const refs=rows=>array(rows,row=>{keys(row,['directory','ref','oid']);absolute(row.directory);string(row.ref);if(row.ref.length>1024||!/^refs\//.test(row.ref)||typeof row.oid!=='string'||!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(row.oid))throw invalid();});
  if(value.preservedRefs!==undefined){keys(value.preservedRefs,['checkpointID','refs']);string(value.preservedRefs.checkpointID);refs(value.preservedRefs.refs);}
  if(value.verifiedContinuations!==undefined)array(value.verifiedContinuations,row=>{

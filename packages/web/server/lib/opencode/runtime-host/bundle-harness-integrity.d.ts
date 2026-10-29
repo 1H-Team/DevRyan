@@ -13,6 +13,7 @@ export interface BundleHarnessOptions {
   readonly sessionIDs?: readonly string[]; readonly messageIDs?: readonly string[]; readonly sourceWebDataDirectory?: string;
   readonly nativeUsers?: readonly { readonly id:string; readonly sessionID:string; readonly fingerprint:string }[];
   readonly verifiedCancellations?: readonly {readonly id:string;readonly sessionID:string;readonly directory:string;readonly payloadHash:string}[];
+  readonly archivedSessionIDs?: readonly string[];
   readonly preservedRefs?: { readonly checkpointID: string; readonly refs: readonly BundleHarnessRef[] };
   readonly verifiedContinuations?: readonly VerifiedBundleContinuation[];
 }

@@ -133,7 +133,7 @@ const registeredIdentityDirectories=async(readJSON,webDataDirectory,sourceWebDat
 };
 /** Reads/reconciles the existing stores; it never creates an execution ledger. */
 export async function inspectBundleHarness(webDataDirectory,{projectMap=[],relocate=false,checkpointID='checkpoint',sessionIDs,messageIDs,
-  sourceWebDataDirectory=webDataDirectory,preservedRefs,verifiedContinuations=[],nativeUsers=[],verifiedCancellations=[],windowsOwner,windowsLedgerOwner,gitRunner,nativeFiles,runWindowsInspection,storeOptions={}}={}) {
+  sourceWebDataDirectory=webDataDirectory,preservedRefs,verifiedContinuations=[],nativeUsers=[],verifiedCancellations=[],archivedSessionIDs=[],windowsOwner,windowsLedgerOwner,gitRunner,nativeFiles,runWindowsInspection,storeOptions={}}={}) {
   const windows=process.platform==='win32'||windowsOwner!==undefined||nativeFiles!==undefined;
   const documentOptions={windowsOwner:windowsLedgerOwner??windowsOwner};
   const readBundleJSON=nativeFiles?.readJSON??(file=>readBundleJSONOwned(file,documentOptions)),saveBundleJSON=nativeFiles?.saveJSON??((file,value)=>saveBundleJSONOwned(file,value,documentOptions));
@@ -154,7 +154,7 @@ export async function inspectBundleHarness(webDataDirectory,{projectMap=[],reloc
   const storesToInspect=(await entries(storage)).filter(entry=>!windows||!isWindowsPrivateControlName(entry.name));
   if(windows&&!gitRunner&&storesToInspect.length){
    if(typeof runWindowsInspection!=='function')throw bundleFailure('private_windows_git_relocation_unavailable');
-   return runWindowsInspection({projectMap,relocate,checkpointID,sessionIDs,messageIDs,sourceWebDataDirectory,preservedRefs,verifiedContinuations,nativeUsers,verifiedCancellations});
+   return runWindowsInspection({projectMap,relocate,checkpointID,sessionIDs,messageIDs,sourceWebDataDirectory,preservedRefs,verifiedContinuations,nativeUsers,verifiedCancellations,archivedSessionIDs});
   }
   let registered;
   const getRegistered=()=>registered??=registeredIdentityDirectories(readBundleJSON,webDataDirectory,sourceWebDataDirectory,projectMap);
@@ -347,9 +347,13 @@ export async function inspectBundleHarness(webDataDirectory,{projectMap=[],reloc
         }
         // A cancelled shell run never delivers its completion notice, so the
         // message ID it reserved for that notice is reported, not required.
+        // A notice OpenCode accepted into an archived session's inbox never
+        // becomes a message either: a clone leaves exactly that row behind.
         const cancelledShell=record.nativeShellJob;
         if (!shellException && record.state==='cancelled' && isRecord(cancelledShell) && typeof cancelledShell.notificationID==='string'
-          && cancelledShell.deliveredID===undefined && typeof record.scope?.sessionID==='string') {
+          && typeof record.scope?.sessionID==='string' && (cancelledShell.deliveredID===undefined
+            || cancelledShell.deliveredID===cancelledShell.notificationID && archivedSessionIDs.includes(record.scope.sessionID)
+              && Array.isArray(messageIDs) && !messageIDs.includes(cancelledShell.notificationID))) {
           finding('bundle_shell_notice_undelivered',entry.name,key);
           shellException=[{id:cancelledShell.notificationID,sessionID:record.scope.sessionID,paths:['nativeShellJob.notificationID']}];
         }

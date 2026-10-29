@@ -163,7 +163,11 @@ reported instead:
   only, and each is reported as `bundle_inbox_notice_undelivered`. The source
   bundle keeps them unchanged as the rollback target. Any other queued input,
   including user input in an archived session and notices in a live session,
-  still refuses with `migration_pending_input_unsupported`.
+  still refuses with `migration_pending_input_unsupported`. The cancelled
+  shell lease behind such a notice records it as delivered (`deliveredID`)
+  although it never became a message; the harness check receives the archived
+  session IDs and reports that lease as `bundle_shell_notice_undelivered`
+  instead of `bundle_message_reference_lost`.
 - Cursor recovery pauses the one session whose intent it cannot settle
   (invalid, foreign owner, scope mismatch, unconfirmed termination) with a
   `<bundleID>-cursor-recovery` hold, keeps the intent, and continues. The

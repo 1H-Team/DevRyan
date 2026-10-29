@@ -237,6 +237,12 @@ test('a cancelled shell run reports its undelivered notice instead of refusing l
  // Once delivered, the notice is a real message and must exist.
  f.db.set(key,{...lease,nativeShellJob:{...lease.nativeShellJob,deliveredID:'msg_never_delivered'}});await f.db.commit();
  await expect(verify()).rejects.toMatchObject({code:'bundle_message_reference_lost'});
+ // Accepted into an archived session's inbox, it never becomes a message;
+ // a clone drops that row, so the lease reports it instead of refusing.
+ const archived=()=>inspectBundleHarness(f.web,{sessionIDs:[sessionID],messageIDs:['msg_source','msg_assistant'],archivedSessionIDs:[sessionID]});
+ expect((await archived()).findings.map(row=>row.code)).toContain('bundle_shell_notice_undelivered');
+ f.db.set(key,{...lease,nativeShellJob:{...lease.nativeShellJob,deliveredID:'msg_other'}});await f.db.commit();
+ await expect(archived()).rejects.toMatchObject({code:'bundle_message_reference_lost'});
  // A published (not cancelled) run without a verified queued notice still refuses.
  f.db.set(key,{...lease,state:'published'});await f.db.commit();
  await expect(verify()).rejects.toMatchObject({code:'bundle_message_reference_lost'});
