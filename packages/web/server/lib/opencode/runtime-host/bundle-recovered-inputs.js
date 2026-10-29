@@ -16,9 +16,9 @@ const referencePaths=(record,id)=>{
 };
 /** Constructor-only startup integrity. The installed epoch fence, never this
  * read-only proof, decides whether any retained input can execute. */
-export async function verifyBundleRecoveredInputs(db,webDataDirectory,{cancelledOnly=false}={}) {
+export async function verifyBundleRecoveredInputs(db,webDataDirectory,{cancelledOnly=false,setAside=[]}={}) {
  try {
-  if(cancelledOnly)assertBundlePendingInput(db);
+  if(cancelledOnly)assertBundlePendingInput(db,[],setAside);
   const inputs=cancelledOnly?[]:readRecoveredNativeInputs(db),proofs=inputs.filter(input=>input.location==='queued').map(input=>({
     id:input.messageID,sessionID:input.sessionID,directory:input.directory,itemProof:{type:input.type,delivery:input.delivery,hash:input.payloadHash},inboxSha256:input.rowHash,sessionSha256:input.sessionHash,
     ...(typeof input.item?.payload?.metadata?.devryan?.admission?.fingerprint==='string'

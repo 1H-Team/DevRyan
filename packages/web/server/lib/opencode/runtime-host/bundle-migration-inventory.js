@@ -47,14 +47,26 @@ export const migrationMarker = db => {
     || (value.cursor !== undefined && (typeof value.cursor !== 'string' || !value.cursor))) throw bundleFailure('migration_marker_invalid');
   return value;
 };
-export const assertBundlePendingInput = (db, verifiedContinuations=[]) => {
+const MAX_UNDELIVERABLE_INBOX = 1024;
+/** Synthetic notices queued to an archived session (a background shell's
+ * completion that arrived after its task finished) are never delivered. A
+ * clone leaves them behind instead of refusing; user input always refuses. */
+export const undeliverableInboxIDs = db => {
+  if (!table(db,'session_inbox') || !table(db,'session_v2')) return [];
+  const ids = db.all(`SELECT i.id FROM session_inbox i JOIN session_v2 s ON s.id=i.session_id
+    WHERE i.type='synthetic' AND s.time_archived IS NOT NULL ORDER BY i.id LIMIT ${MAX_UNDELIVERABLE_INBOX+1}`).map(row => row.id);
+  if (ids.length > MAX_UNDELIVERABLE_INBOX) throw bundleFailure('migration_pending_input_unsupported');
+  return ids;
+};
+export const assertBundlePendingInput = (db, verifiedContinuations=[], setAside=[]) => {
   const invalid=()=>{throw bundleFailure('migration_pending_input_unsupported');};
   if (table(db,'session_pending') && db.all('SELECT 1 FROM session_pending LIMIT 1').length) invalid();
+  const kept = row => !setAside.includes(row.id);
   if (!verifiedContinuations.length) {
-    if (table(db,'session_inbox') && db.all('SELECT 1 FROM session_inbox LIMIT 1').length) invalid();
+    if (table(db,'session_inbox') && db.all(`SELECT id FROM session_inbox LIMIT ${setAside.length+1}`).some(kept)) invalid();
     return;
   }
-  const rows=table(db,'session_inbox') ? db.all('SELECT * FROM session_inbox ORDER BY session_id,enqueued_seq LIMIT 129') : [];
+  const rows=table(db,'session_inbox') ? db.all(`SELECT * FROM session_inbox ORDER BY session_id,enqueued_seq LIMIT ${129+setAside.length}`).filter(kept) : [];
   if (rows.length>128 || verifiedContinuations.length>128 || new Set(verifiedContinuations.map(row=>row.id)).size!==verifiedContinuations.length) invalid();
   for (const row of rows) if (!verifiedContinuations.some(proof=>proof.id===row.id && proof.sessionID===row.session_id
     && proof.inboxSha256===sha256(canonicalJSON(row)))) invalid();
@@ -207,10 +219,10 @@ export const restoreMigrationPermissions = (db, inventory) => {
   for (const rule of inventory.remembered) db.run('INSERT OR IGNORE INTO permission(id,project_id,action,resource,time_created,time_updated) VALUES(?,?,?,?,?,?)',
     [`per_${sha256(canonicalJSON(rule)).slice(0,24)}`, rule.projectID, rule.action, rule.resource, 0, 0]);
 };
-export const verifyMigrationReferences = (db, inventory, {phase='prepared',projectMap=[],verifiedContinuations=[],migrationReceiptMarker='completed'}={}) => {
+export const verifyMigrationReferences = (db, inventory, {phase='prepared',projectMap=[],verifiedContinuations=[],migrationReceiptMarker='completed',setAside=[]}={}) => {
   if (phase === 'prepared') assertNoPendingMigration(db);
   else if (phase === 'resume') {
-    assertBundlePendingInput(db,verifiedContinuations);
+    assertBundlePendingInput(db,verifiedContinuations,setAside);
     const marker=migrationMarker(db);
     const freshSource=migrationReceiptMarker==='not-needed'&&['sessions','projects','messages','parts','remembered','attachments'].every(key=>Array.isArray(inventory[key])&&!inventory[key].length);
     if (!(marker?.phase==='completed'||freshSource&&marker===null)) throw bundleFailure('migration_marker_invalid');

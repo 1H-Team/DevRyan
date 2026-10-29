@@ -15,8 +15,9 @@ export function recordStartupFindings(source, rows = [], log = console) {
 
 export const readStartupFindings = () => [...findings.values()];
 // Expected leftovers that need no action stay in the log, not the open app:
-// a cancelled background run (a dev server ended by Stop) never delivers its notice.
-const QUIET_FINDINGS = new Set(['bundle_shell_notice_undelivered']);
+// a cancelled background run (a dev server ended by Stop) never delivers its
+// notice, in the ledger or in an archived session's OpenCode inbox.
+const QUIET_FINDINGS = new Set(['bundle_shell_notice_undelivered', 'bundle_inbox_notice_undelivered']);
 export const resetStartupFindings = () => findings.clear();
 
 /** What the open app tells its owner about a startup that continued. */

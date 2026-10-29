@@ -156,6 +156,14 @@ reported instead:
   (parked execution views, adoptable only by the process that parked them) are
   not copied; the rollback file inventory skips `context-cache/` and
   `view-standby/` the same way.
+- A synthetic `session_inbox` item queued to an archived session (a
+  background shell's completion notice that arrived after its task finished)
+  is never delivered. The clone's source check tolerates exactly those rows
+  (`undeliverableInboxIDs`), the copy deletes them from the candidate database
+  only, and each is reported as `bundle_inbox_notice_undelivered`. The source
+  bundle keeps them unchanged as the rollback target. Any other queued input,
+  including user input in an archived session and notices in a live session,
+  still refuses with `migration_pending_input_unsupported`.
 - Cursor recovery pauses the one session whose intent it cannot settle
   (invalid, foreign owner, scope mismatch, unconfirmed termination) with a
   `<bundleID>-cursor-recovery` hold, keeps the intent, and continues. The
@@ -168,7 +176,8 @@ reader (Electron main, the server entry outside Electron, the CLI); a merged or
 unmovable folder becomes a `data_root` startup notice. `startup-notices.js`
 collects these for the process. The health snapshot
 exposes them as `startupNotices`, and the UI shows a persistent warning.
-Expected leftovers that need no action (`bundle_shell_notice_undelivered`) are
+Expected leftovers that need no action (`bundle_shell_notice_undelivered`,
+`bundle_inbox_notice_undelivered`) are
 logged but never become a notice.
 
 A refused cold upgrade is recorded, not thrown. When the selected runtime
@@ -966,6 +975,11 @@ An explicit rollback selector grants its historical purpose at load and before
 spawn. Cold upgrades use `upgradeSelectedNativeBundleAtStartup` inside the existing
 bootstrap file lock, before any controller or data owner starts, preserving the
 verified source and credential checkpoint through the ordinary lifecycle.
+
+Cross-release clone admission uses the source's reviewed legacy or fresh-install
+layout, then checks the actual database layout. Releases with only a reviewed
+fresh-install layout (2.2.x) remain eligible for forward upgrades; unreviewed
+graphs, changed source layouts and lower migration levels still refuse.
 
 An upgrade whose shipped manifest keeps the selected `opencodeVersion` and
 `inputs.coreDigest` does not clone (`runtime-bundle-lifecycle.js` `applyCandidate`,

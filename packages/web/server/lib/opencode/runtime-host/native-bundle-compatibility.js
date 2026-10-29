@@ -161,7 +161,9 @@ export function verifyNativeCloneCompatibility({ left, right, databasePath }) {
   if (left?.opencodeVersion === right.opencodeVersion && /^[a-f0-9]{64}$/.test(left?.inputs?.coreDigest ?? '')
     && left.inputs.coreDigest === right.inputs?.coreDigest) return;
   try {
-    if (!isReviewedNativeClonePair(left, right, reviewedNativeCloneSourceLayout(left?.opencodeVersion, 'legacy'))) throw fail();
+    const reviewed = reviewedNativeCloneSourceLayout(left?.opencodeVersion, 'legacy')
+      ?? reviewedNativeCloneSourceLayout(left?.opencodeVersion, 'fresh-install');
+    if (!isReviewedNativeClonePair(left, right, reviewed)) throw fail();
     for (const manifest of [left, right]) {
       if (!['devryan-v2-clone/1', 'devryan.bundle.credentials/2', 'devryan.bundle.credential-owners/2']
         .every(contract => manifest.compiledContracts?.includes(contract))) throw fail();

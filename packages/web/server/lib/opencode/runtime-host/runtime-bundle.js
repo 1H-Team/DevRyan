@@ -12,7 +12,7 @@ import { executionArtifacts } from '../execution-artifacts.js';
 import { verifyNativeRuntimeArtifacts } from './native-artifacts.js';
 import { withCrossProcessFileLock, writeFileAtomic } from '../../../../../harness-runtime/lib/atomic-file.js';
 import { parseNativeMigrationReceipt } from './native-process-protocol.js';
-import { assertNoPendingMigration, assertBundlePendingInput, bundleFailure, canonicalJSON, captureMigrationInventory, containsPath, isRecord,
+import { assertNoPendingMigration, assertBundlePendingInput, undeliverableInboxIDs, bundleFailure, canonicalJSON, captureMigrationInventory, containsPath, isRecord,
   readBundleJSON as readBundleJSONOwned, saveBundleJSON as saveBundleJSONOwned, sha256, verifyMigrationReferences } from './bundle-migration-inventory.js';
 import { verifyBundleOwnedContinuations } from './bundle-owned-continuations.js';
 import {verifyBundleRecoveredInputs} from './bundle-recovered-inputs.js';
@@ -103,6 +103,18 @@ const sqlite = file => {
   // pages, without copying or modifying the source database files.
   return { raw, backup:target => raw.prepare('VACUUM INTO ?').run(target),
     all:(sql,params=[]) => raw.prepare(sql).all(...params), run:() => { throw fail('bundle_read_only'); } };
+};
+/** Removes exactly the notices the source check set aside from the fresh copy;
+ * the source, which stays the rollback target, is never written. */
+const dropUndeliverableInbox = (file,ids) => {
+  if (!ids.length) return;
+  const raw = resolveSqliteDriver().open(file);
+  try {
+    raw.transaction(() => {
+      if (canonicalJSON(undeliverableInboxIDs({all:(sql,params=[])=>raw.prepare(sql).all(...params)}))!==canonicalJSON(ids)) throw fail('bundle_snapshot_changed');
+      for (const id of ids) raw.prepare('DELETE FROM session_inbox WHERE id=?').run(id);
+    })();
+  } finally { raw.close(); }
 };
 const ignored = relative => relative === 'orchestration/owner.lock' || relative === 'harness/provider-recovery/runtime-owner.lock'
   // Derived per-project state: execution caches, dependency link overlays
@@ -371,7 +383,7 @@ export function createRuntimeBundleStore(options) {
     if (await fileHash(value.preparedManifestPath)!==current.preparedManifestSha256) throw fail('bundle_selected_evidence_changed');
     return {selection:current,descriptor:value};
   };
-  const verify = async ({bundleID,phase,allowOwnedContinuations=true,artifactPurpose}) => {
+  const verify = async ({bundleID,phase,allowOwnedContinuations=true,artifactPurpose,cloneSource=false}) => {
     if (!['prepared','resume'].includes(phase)) throw fail('bundle_verification_phase_invalid');
     if (artifactPurpose !== undefined && (phase !== 'resume' || !['bundle-source','bundle-rollback'].includes(artifactPurpose))) throw fail('bundle_artifact_generation_mismatch');
     const value = await readDescriptor(bundleID), root = path.join(controlRoot,'bundles',bundleID);
@@ -422,6 +434,8 @@ export function createRuntimeBundleStore(options) {
         const source = await readBundleJSON(value.migrationReceiptPath+'.source.json');
         if (!isRecord(source) || !isRecord(source.inventory)) throw fail('bundle_migration_evidence_invalid');
         const selected=phase==='resume' && allowOwnedContinuations ? await readSelected() : null;
+        // Only a clone's quiesced source tolerates notices the copy leaves behind.
+        const setAside=cloneSource&&phase==='resume'&&!allowOwnedContinuations?undeliverableInboxIDs(db):[];
         let verifiedContinuations;
         if(selected?.descriptor.bundleID===bundleID&&!selected.selection.reconciliationRequired&&selected.selection.transition==='activate'){
           if(options.allowRecoveredInputStartup===true)verifiedContinuations=await verifyBundleRecoveredInputs(db,value.launch.webDataDirectory);
@@ -430,9 +444,9 @@ export function createRuntimeBundleStore(options) {
             const owned=await verifyBundleOwnedContinuations(db,value.launch.webDataDirectory,{cancelledContinuations:cancelled});
             verifiedContinuations=[...owned.filter(proof=>!cancelled.some(item=>item.id===proof.id)),...cancelled];
           }
-        }else verifiedContinuations=await verifyBundleRecoveredInputs(db,value.launch.webDataDirectory,{cancelledOnly:true});
+        }else verifiedContinuations=await verifyBundleRecoveredInputs(db,value.launch.webDataDirectory,{cancelledOnly:true,setAside});
         if(value.sourceBundleID&&phase==='prepared')assertNoPendingMigration(db);
-        const graph = verifyMigrationReferences(db,source.inventory,{phase:value.sourceBundleID?'resume':phase,projectMap:value.projectMap,verifiedContinuations,migrationReceiptMarker:receipt.marker});
+        const graph = verifyMigrationReferences(db,source.inventory,{phase:value.sourceBundleID?'resume':phase,projectMap:value.projectMap,verifiedContinuations,migrationReceiptMarker:receipt.marker,setAside});
         const nativeUsers = db.all("SELECT id,session_id,data FROM session_message WHERE type='user'").flatMap(row => {
           try {
             const admission = JSON.parse(row.data)?.metadata?.devryan?.admission;
@@ -443,7 +457,7 @@ export function createRuntimeBundleStore(options) {
         await inspectHarness(value.launch.webDataDirectory,{projectMap:value.projectMap,preservedRefs,
           sessionIDs:graph.sessionIDs,messageIDs:graph.nativeMessageIDs,verifiedContinuations,nativeUsers,
           verifiedCancellations:verifiedNativeUserCancellations(db)},value.launch);
-        if (phase==='resume') assertBundlePendingInput(db,verifiedContinuations);
+        if (phase==='resume') assertBundlePendingInput(db,verifiedContinuations,setAside);
       }
     } finally { db.raw.close(); }
     const result = {descriptor:value,phase,integrity:'verified',admission:'held'};
@@ -483,7 +497,7 @@ export function createRuntimeBundleStore(options) {
     const root=path.join(controlRoot,'bundles',input.bundleID),inputSha256=sha256(canonicalJSON(input));
     return options.withQuiescedSource(input.source,async (stamp,scope)=>{
       const sourceCheckpoint=checkpoint(source.launch,2,stamp);
-      await verify({bundleID:source.bundleID,phase:'resume',allowOwnedContinuations:false,artifactPurpose:'bundle-source'});
+      await verify({bundleID:source.bundleID,phase:'resume',allowOwnedContinuations:false,artifactPurpose:'bundle-source',cloneSource:true});
       if(typeof scope?.assertHeld!=='function')throw fail('bundle_credential_checkpoint_required');
       await scope.assertHeld();
       const credentials=await options.captureCredentials?.({descriptor:source,checkpoint:sourceCheckpoint,assertHeld:scope.assertHeld});
@@ -503,7 +517,10 @@ export function createRuntimeBundleStore(options) {
       try{
         const sessionIDs=db.all('SELECT id FROM session_v2').map(row=>row.id),messageIDs=db.all('SELECT id FROM session_message').map(row=>row.id);
         harness=await inspectHarness(source.launch.webDataDirectory,{sessionIDs,messageIDs},source.launch);
-        await timeStartupPhase('bundle_database_checkpoint',()=>operations.withSqliteOutput(path.join(root,'opencode','opencode.db'),file=>db.backup(file)));
+        const setAside=undeliverableInboxIDs(db);
+        await timeStartupPhase('bundle_database_checkpoint',()=>operations.withSqliteOutput(path.join(root,'opencode','opencode.db'),file=>{
+          db.backup(file);dropUndeliverableInbox(file,setAside);}));
+        recordStartupFindings('bundle_copy',setAside.map(key=>({code:'bundle_inbox_notice_undelivered',scope:'opencode',key})));
       }finally{db.raw.close();}
       await timeStartupPhase('bundle_data_copy',async()=>{
         const skipped=scope=>relative=>recordStartupFindings('bundle_copy',[{code:'bundle_copy_entry_skipped',scope,key:relative}]);
@@ -945,5 +962,5 @@ export function createRuntimeBundleStore(options) {
       });
     });
   };
-  return {prepare,verify,readSelected,select,rollback,resume,restoreUnstartedClaude,rebindArtifacts,rebindRestorable,restoreRebind};
+  return {prepare,verify:({cloneSource:_cloneSource,...input})=>verify(input),readSelected,select,rollback,resume,restoreUnstartedClaude,rebindArtifacts,rebindRestorable,restoreRebind};
 }

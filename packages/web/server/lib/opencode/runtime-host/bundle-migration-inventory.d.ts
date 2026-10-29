@@ -38,9 +38,10 @@ export function saveBundleJSON(file: string, value: unknown, options?:{readonly 
 export function readBundleJSON(file: string, options?:{readonly windowsOwner?:WindowsPrivateFileOwner}): Promise<unknown>;
 export function hasMigrationTable(db: MigrationDatabase, name: string): boolean;
 export function migrationMarker(db: MigrationDatabase): { readonly phase: 'sessions' | 'completed'; readonly cursor?: string } | null;
-export function assertBundlePendingInput(db: MigrationDatabase, verifiedContinuations?: readonly VerifiedBundleContinuation[]): void;
+export function undeliverableInboxIDs(db: MigrationDatabase): string[];
+export function assertBundlePendingInput(db: MigrationDatabase, verifiedContinuations?: readonly VerifiedBundleContinuation[], setAside?: readonly string[]): void;
 export function assertNoPendingMigration(db: MigrationDatabase): void;
 export function captureMigrationInventory(db: MigrationDatabase): MigrationInventory;
 export function applyMigrationProjectMap(db: MigrationDatabase, inventory: MigrationInventory, maps: readonly ProjectMapping[], protectedRoots?: readonly string[]): Promise<void>;
 export function restoreMigrationPermissions(db: MigrationDatabase, inventory: MigrationInventory): void;
-export function verifyMigrationReferences(db: MigrationDatabase, inventory: MigrationInventory, options?: { readonly phase?: 'prepared' | 'resume'; readonly projectMap?: readonly ProjectMapping[]; readonly verifiedContinuations?: readonly VerifiedBundleContinuation[]; readonly migrationReceiptMarker?: 'completed' | 'not-needed' }): MigrationVerification;
+export function verifyMigrationReferences(db: MigrationDatabase, inventory: MigrationInventory, options?: { readonly phase?: 'prepared' | 'resume'; readonly projectMap?: readonly ProjectMapping[]; readonly verifiedContinuations?: readonly VerifiedBundleContinuation[]; readonly migrationReceiptMarker?: 'completed' | 'not-needed'; readonly setAside?: readonly string[] }): MigrationVerification;

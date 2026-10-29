@@ -6,7 +6,7 @@ import path from 'node:path';
 import {Effect,Layer} from 'effect';
 import {Database} from '@opencode/core/database/database';
 import {Global} from '@opencode/util/global';
-import {inspectNativeCloneLayout,REVIEWED_NATIVE_SCHEDULE_FRESH_CLONE_LAYOUT} from '../../packages/web/server/lib/opencode/runtime-host/native-bundle-compatibility.js';
+import {inspectNativeCloneLayout,REVIEWED_NATIVE_CLONE_RELEASES,REVIEWED_NATIVE_BLOB_STORE_FRESH_CLONE_LAYOUT,REVIEWED_NATIVE_SCHEDULE_FRESH_CLONE_LAYOUT,verifyNativeCloneCompatibility} from '../../packages/web/server/lib/opencode/runtime-host/native-bundle-compatibility.js';
 
 test('2.2.1 migrates the retained 2.0.32 schema in place to its fresh layout, adding only its five migrations',async()=>{
  const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-clone-layout-')));
@@ -17,6 +17,14 @@ test('2.2.1 migrates the retained 2.0.32 schema in place to its fresh layout, ad
  try{
   const fresh=path.join(root,'fresh.sqlite');await initialize(fresh);
   expect(inspectNativeCloneLayout(fresh)).toEqual(REVIEWED_NATIVE_SCHEDULE_FRESH_CLONE_LAYOUT);
+  const previous=path.join(root,'previous.sqlite');await fs.copyFile(fresh,previous);
+  const previousDB=new Sqlite(previous);try{previousDB.exec("DROP TABLE schedule; DELETE FROM migration WHERE id = '20261026223005_schedule'");}finally{previousDB.close();}
+  expect(inspectNativeCloneLayout(previous)).toEqual(REVIEWED_NATIVE_BLOB_STORE_FRESH_CLONE_LAYOUT);
+  const manifest=(opencodeVersion:keyof typeof REVIEWED_NATIVE_CLONE_RELEASES)=>({opencodeVersion,inputs:{coreDigest:REVIEWED_NATIVE_CLONE_RELEASES[opencodeVersion]},compiledContracts:['devryan-v2-clone/1','devryan.bundle.credentials/2','devryan.bundle.credential-owners/2']});
+  expect(()=>verifyNativeCloneCompatibility({left:manifest('2.2.0'),right:manifest('2.2.1'),databasePath:previous})).not.toThrow();
+  await initialize(previous);
+  expect(inspectNativeCloneLayout(previous)).toEqual(REVIEWED_NATIVE_SCHEDULE_FRESH_CLONE_LAYOUT);
+  expect(()=>verifyNativeCloneCompatibility({left:manifest('2.2.0'),right:manifest('2.2.1'),databasePath:previous})).toThrow('bundle_v2_upgrade_compatibility_required');
   const retained=path.join(root,'retained.sqlite'),db=new Sqlite(retained);
   try{db.exec(await fs.readFile(path.join(import.meta.dirname,'../../packages/web/server/lib/opencode/runtime-host/test-fixtures/native-clone-layouts/2.0.32-fresh.sql'),'utf8'));
    const ids: string[]=JSON.parse(await fs.readFile(path.join(import.meta.dirname,'../../packages/web/server/lib/opencode/runtime-host/test-fixtures/native-clone-layouts/2.0.32-migrations.json'),'utf8'));

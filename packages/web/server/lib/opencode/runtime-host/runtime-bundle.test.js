@@ -296,6 +296,37 @@ test('a selected V2 source clones its current database, settings and globals wit
  await expect(verifyNativeBootMigration({bundleID:copied.bundleID,databasePath:copied.launch.opencodeDatabasePath,manifestSha256:copied.launch.artifactManifestSha256,
   migrationEvidence:{path:copied.migrationReceiptPath,sha256:sha256(receiptBytes),clone:{preparedManifestPath:copied.preparedManifestPath,preparedManifestSha256:sha256(await fs.readFile(copied.preparedManifestPath))}}})).resolves.toMatchObject({bundleID:'baseline'});
 });
+test('a clone leaves an archived session\'s undeliverable shell notice behind while other queued input still refuses',async()=>{
+ resetStartupFindings();
+ const f=await fixture(),baseline=await f.store.prepare(f.baselineInput);await f.store.select({bundleID:'baseline',expectedRevision:0});
+ const [live,archived]=f.seed.expected.sessions.map(row=>row.id);
+ const db=resolveSqliteDriver().open(baseline.launch.opencodeDatabasePath);
+ const enqueue=(id,sessionID,type,seq)=>db.prepare('INSERT INTO session_inbox(id,session_id,type,payload,delivery,enqueued_seq,time_created) VALUES(?,?,?,?,?,?,?)')
+  .run(id,sessionID,type,JSON.stringify({text:'<shell id="sh_a" state="cancelled" command="npm run dev">'}),'steer',seq,1);
+ db.prepare('UPDATE session_v2 SET time_archived=? WHERE id=?').run(1,archived);
+ enqueue('msg_notice_archived',archived,'synthetic',1000);
+ // A live session's notice and an archived session's user input still refuse.
+ for(const [id,sessionID,type] of [['msg_notice_live',live,'synthetic'],['msg_user_archived',archived,'user']]){
+  enqueue(id,sessionID,type,1001);
+  await expect(f.store.prepare({...f.baselineInput,bundleID:'successor',source:{kind:'bundle',bundleID:'baseline'}})).rejects.toMatchObject({code:'migration_pending_input_unsupported'});
+  db.prepare('DELETE FROM session_inbox WHERE id=?').run(id);
+ }
+ db.close();
+ const before=sha256(await fs.readFile(baseline.launch.opencodeDatabasePath));
+ const copied=await f.store.prepare({...f.baselineInput,bundleID:'successor',source:{kind:'bundle',bundleID:'baseline'}});
+ const target=resolveSqliteDriver().open(copied.launch.opencodeDatabasePath,{readonly:true});
+ expect(target.prepare('SELECT count(*) AS count FROM session_inbox').get().count).toBe(0);target.close();
+ await expect(fs.lstat(copied.launch.opencodeDatabasePath+'-wal')).rejects.toMatchObject({code:'ENOENT'});
+ expect(sha256(await fs.readFile(baseline.launch.opencodeDatabasePath))).toBe(before);
+ expect(readStartupFindings()).toContainEqual({source:'bundle_copy',code:'bundle_inbox_notice_undelivered',scope:'opencode',key:'msg_notice_archived'});
+ expect(startupNotices()).toEqual([]);
+ await f.store.select({bundleID:'successor',expectedRevision:1});
+ expect((await f.store.verify({bundleID:'successor',phase:'resume'})).integrity).toBe('verified');
+ // The public verifier never grants the clone-source exemption.
+ await expect(f.store.verify({bundleID:'baseline',phase:'resume',allowOwnedContinuations:false,cloneSource:true}))
+  .rejects.toMatchObject({code:'migration_pending_input_unsupported'});
+ resetStartupFindings();
+});
 test('blocked projection remains inspectable and resumes only unchanged retained B',async()=>{
  const f=await fixture();await f.store.prepare(f.baselineInput);await f.store.select({bundleID:'baseline',expectedRevision:0});
  await f.store.prepare({...f.baselineInput,bundleID:'candidate',source:{kind:'bundle',bundleID:'baseline'}});await f.store.select({bundleID:'candidate',expectedRevision:1});

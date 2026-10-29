@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.4] - 2026-10-29
+
+- Upgrade the bundled native OpenCode host to 2.2.1, preserve runtime recovery compatibility, and deny unreviewed experimental routes.
+- Admit reviewed fresh database upgrades from 2.2.0, and leave archived sessions' undeliverable completion notices behind in the upgraded copy while retaining the original database for rollback.
+- Compact mutation ledger ancestry, bound command deadlines to the running call, and improve diagnostics for publication locks and worker stalls.
+- Stop settled attempts' owned runs, wake managed children only for their current attempt, and refuse background shells in delegated tasks.
+- Let plan saves wait for unsettled runs and preserve the thinking effort shown in the composer when sending or activating drafts.
+- Give each tool call a readable artifact folder, explain dropped command output and host refusals, and reject verification against an outdated server copy.
+
 ## [2.0.3] - 2026-10-28
 
 - Keep long-running managed task waits attached to their original control lease, and let cancellation and timeout cleanup stop the exact child attempt safely.
