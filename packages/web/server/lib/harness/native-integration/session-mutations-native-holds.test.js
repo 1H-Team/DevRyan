@@ -510,6 +510,44 @@ test('shell job identity persists in the same ledger and released tool permits r
   expect((await f.runtime.nativeShellJob({ directory: f.directory, sessionID: 'ses_root', jobID: 'shell_a' })).state).toBe('published');
 });
 
+test('a managed child cannot move a running shell to the background; roots, unmanaged subagents and an unknown role can', async () => {
+  const f = await fixture(), diagnostics = [], tokens = new Map();
+  await f.runtime.registerNativeSession({ directory: f.directory, sessionID: 'ses_subagent', parentID: 'ses_root' });
+  let current = { taskId: 'dvr_task_a', leaseToken: 'lease_a' };
+  const owner = createNativeAdmissionOwner({ runtime: f.runtime, directory: f.directory, ownerID: 'background-fixture',
+    getSession: async id => ({ id, directory: f.directory, ...(['ses_child', 'ses_subagent'].includes(id) ? { parentID: 'ses_root' } : {}) }),
+    authorizeOperation: async () => {}, withSessionLock: async (_id, action) => action(),
+    childAttempt: async ({ sessionID }) => (sessionID === 'ses_child' ? current : null),
+    recordDiagnostic: record => diagnostics.push(record),
+    bindShellJob: input => f.runtime.bindNativeShellJob({ ...input, token: tokens.get(input.callID) }) });
+  const rpc = (method, input) => owner.handleRpc(`native.admission.${method}`, input);
+  const background = async (sessionID, callID, toolInput) => {
+    const scope = { directory: f.directory, sessionID, userMessageID: `msg_u_${callID}`, messageID: `msg_a_${callID}`, callID, kind: 'process' };
+    const lease = await f.runtime.begin(scope); tokens.set(callID, lease.token);
+    await f.runtime.claimLease({ directory: f.directory, token: lease.token, kind: 'process' });
+    const authorization = { operation: 'tool.execute', sessionID, messageID: scope.messageID,
+      input: { toolID: 'shell', callID, provenance: { kind: 'native', id: 'opencode.tool.shell' }, input: toolInput } };
+    const permit = await rpc('authorize', authorization);
+    await rpc('registerShellJob', { permit, authorization, directory: f.directory, sessionID, messageID: scope.messageID, callID, tool: 'shell',
+      jobID: `job_${callID}`, command: toolInput.command, handle: `handle_${callID}` });
+    return rpc('authorize', { operation: 'job.shell.background', sessionID, existingPermit: permit, input: { jobID: `job_${callID}` } });
+  };
+  // The running foreground shell of a managed child stays in the foreground,
+  // also once its task settled.
+  await expect(background('ses_child', 'call_fg', { command: 'npm run dev' })).rejects.toMatchObject({ code: 'native_shell_background_unavailable' });
+  current = { state: 'none' };
+  await expect(background('ses_child', 'call_settled', { command: 'npm run dev' })).rejects.toMatchObject({ code: 'native_shell_background_unavailable' });
+  // Roots, unmanaged subagents and a shell started in the background are unaffected.
+  await expect(background('ses_root', 'call_root', { command: 'npm run dev' })).resolves.toMatchObject({ sessionID: 'ses_root' });
+  await expect(background('ses_subagent', 'call_sub', { command: 'npm run dev' })).resolves.toMatchObject({ sessionID: 'ses_subagent' });
+  await expect(background('ses_child', 'call_bg', { command: 'npm run dev', background: true })).resolves.toMatchObject({ sessionID: 'ses_child' });
+  expect(diagnostics).toEqual([]);
+  // Before orchestration can classify the child: allowed and journaled.
+  current = { state: 'unknown' };
+  await expect(background('ses_child', 'call_unknown', { command: 'npm run dev' })).resolves.toMatchObject({ sessionID: 'ses_child' });
+  expect(diagnostics).toEqual([{ type: 'lifecycle', event: 'background_policy_unknown', sessionID: 'ses_child', payload: { operation: 'job.shell.background' } }]);
+}, 30_000);
+
 test('shell synthetic admission requires actual terminal lease proof and commits a separate owned wake capability', async () => {
   const f = await fixture(), notices = [];
   const scope = { directory: f.directory, sessionID: 'ses_root', userMessageID: 'msg_u', messageID: 'msg_a', callID: 'call_a', kind: 'process' };

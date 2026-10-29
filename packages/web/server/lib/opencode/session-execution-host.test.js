@@ -459,15 +459,15 @@ const servedLease = (callID, tool = 'bash') => ({ token: `lease_${callID}`, owne
 const servedExec = (native, environment) => async (command) => command === 'lsof' ? 'p4242\nn127.0.0.1:8090\n'
   : `node serve.js ${environment ?? `DEVRYAN_EXECUTION_VIEW=${native.executionViewMarker('lease_call_server')}`}\n`;
 const startServedShell = (host, callID, command) => host.nativeExecution({ ...input, ...servedShell, tool: 'shell', callID, action: 'start', agent: 'build',
-  authorization: { input: { input: { command } } }, argsDigest: createHash('sha256').update(JSON.stringify(servedShell)).digest('hex') });
+  authorization: { input: { input: typeof command === 'string' ? { command } : command } }, argsDigest: createHash('sha256').update(JSON.stringify(servedShell)).digest('hex') });
 const settledEvent = async (host, handle) => {
   let batch, cursor = 0; const events = [];
   do { batch = await host.nativeExecution({ action: 'read', handle, cursor }); cursor = batch.cursor; events.push(...batch.events); } while (!batch.done);
   return events.at(-1);
 };
-async function servedShellFixture({ environment } = {}) {
+async function servedShellFixture({ environment, session, attemptFor } = {}) {
   const native = await import('@devryan/harness-runtime/lib/session-execution.js');
-  const client = createFakeClient(), observed = [], terminations = new Map();
+  const client = createFakeClient(session ? { session } : {}), observed = [], terminations = new Map();
   client.sessions.message.mockResolvedValue({ info: { id: input.messageID, role: 'assistant', sessionID: input.sessionID, parentID: 'msg_user' },
     turnOwnership: { source: 'native-sequence', userMessageID: 'msg_user' }, parts: ['call_server', 'call_check']
       .map(callID => ({ id: `${input.messageID}:tool:${callID}`, type: 'tool', callID, tool: 'bash' })) });
@@ -479,6 +479,7 @@ async function servedShellFixture({ environment } = {}) {
     return { child: { stdin: { write: vi.fn() } }, pid: 300, result: terminated.promise };
   });
   const f = fixture({ openCodeClient: client, admissionSummaryMinMs: 0, servedIdentity: { platform: 'darwin', exec: servedExec(native, environment) },
+    ...(attemptFor ? { attemptFor } : {}),
     nativeExecution: { workerCommand: '/fixture/bun', workerArgs: ['worker.ts'], recheckPermit: async () => {},
       observeRequiredCheck: async (phase, request, _exitCode, execution) => {
         observed.push({ phase, callID: request.callID, servedFreshness: execution?.servedFreshness }); return { tracked: false };
@@ -545,6 +546,40 @@ test('a server DevRyan did not start is allowed for ordinary commands but its fr
       { phase: 'after', callID: 'call_check', servedFreshness: 'unknown' }]);
     expect(mocks.runtime.viewFreshness).not.toHaveBeenCalled();
   } finally { await f.release(); }
+});
+
+test('a delegated task cannot start a background shell; roots, unmanaged subagents and an unknown role can', async () => {
+  const child = { id: input.sessionID, directory, parentID: 'ses_parent' };
+  const cases = [
+    { name: 'active task', session: child, attempt: { taskId: 'dvr_task_a', leaseToken: 'dvr_lease_a' }, refused: true },
+    { name: 'settled task', session: child, attempt: { state: 'none' }, refused: true },
+    { name: 'unmanaged subagent', session: child, attempt: null, refused: false },
+    { name: 'unknown role', session: child, attempt: { state: 'unknown' }, refused: false, journaled: true },
+    { name: 'root', session: { id: input.sessionID, directory }, attempt: { taskId: 'dvr_task_a', leaseToken: 'dvr_lease_a' }, refused: false },
+  ];
+  for (const entry of cases) {
+    mocks.runtime.reserve.mockClear();
+    const f = await servedShellFixture({ session: entry.session, attemptFor: async () => entry.attempt });
+    try {
+      const started = f.start('call_server', { command: 'npm run dev', background: true });
+      if (entry.refused) {
+        await expect(started, entry.name).rejects.toMatchObject({ code: 'native_shell_background_unavailable', status: 403,
+          message: expect.stringMatching(/^native_shell_background_unavailable: a delegated task cannot leave a process running after its call\..*\$DEVRYAN_ARTIFACT_DIR/) });
+        expect(mocks.runtime.reserve, entry.name).not.toHaveBeenCalled();
+        // The same task's foreground shell runs.
+        await expect(f.start('call_check', 'npm run dev -- --port 4173 & server=$!; trap \'kill $server\' EXIT; curl -fs localhost:4173'), entry.name)
+          .resolves.toMatchObject({ handle: expect.any(String) });
+      } else await expect(started, entry.name).resolves.toMatchObject({ handle: expect.any(String) });
+      expect(f.diagnostics.filter(row => row.code === 'background_policy_unknown'), entry.name).toEqual(entry.journaled
+        ? [{ event: 'session_execution', phase: 'background_policy', state: 'unknown', code: 'background_policy_unknown',
+          sessionID: input.sessionID, messageID: input.messageID, callID: 'call_server' }] : []);
+    } finally { await f.release(); }
+  }
+  // Kill switch: the earlier behavior.
+  vi.stubEnv('DEVRYAN_REFUSE_DELEGATED_BACKGROUND', '0');
+  const f = await servedShellFixture({ session: child, attemptFor: async () => ({ taskId: 'dvr_task_a', leaseToken: 'dvr_lease_a' }) });
+  try { await expect(f.start('call_server', { command: 'npm run dev', background: true })).resolves.toMatchObject({ handle: expect.any(String) }); }
+  finally { await f.release(); }
 });
 
 test('deadline cancellation matches the exact live shell and waits for termination', async () => {

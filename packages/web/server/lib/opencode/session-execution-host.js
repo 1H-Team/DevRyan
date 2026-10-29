@@ -31,6 +31,13 @@ import { createNativeSearchOutput } from './native-search-output.js';
 import {projectNativeMutationResult} from './native-mutation-result.js';
 
 const failure = (code, status = 409) => Object.assign(new Error(code), { code, status, statusCode: status });
+// A delegated task's background shell would outlive the call that started it:
+// its runs end with the task attempt and never wake it (D2).
+const BACKGROUND_UNAVAILABLE = 'native_shell_background_unavailable: a delegated task cannot leave a process running after its call. '
+  + 'Run the server and its checks in one foreground call (timeout up to 3600000 ms): start the server inside the command, stop it on exit, '
+  + 'wait until it answers, then check, writing evidence to $DEVRYAN_ARTIFACT_DIR. Example: '
+  + '`npm run dev -- --port 4173 & server=$!; trap \'kill $server\' EXIT; for i in $(seq 60); do curl -fs localhost:4173 >/dev/null && break; sleep 1; done; '
+  + 'PLAYWRIGHT_BASE_URL=http://localhost:4173 npx playwright test --output "$DEVRYAN_ARTIFACT_DIR/test-results"`';
 // Built-in tools the companion may run with a direct receipt: audited
 // read-only. The companion selects them by object
 // identity; the name check here is defense in depth.
@@ -641,6 +648,17 @@ export function createSessionExecutionHost(options) {
       activeJob: scope => [...nativeHandles.values()].find(job => job.input.directory === scope.directory
         && job.input.sessionID === scope.sessionID && job.input.messageID === scope.messageID && job.input.callID === scope.callID),
     });
+    // A managed task child may not start a background shell; before the
+    // orchestration owner is ready its role is unknown: allowed and journaled.
+    // Kill switch: DEVRYAN_REFUSE_DELEGATED_BACKGROUND=0.
+    if (input.kind === 'shell' && input.authorization?.input?.input?.background === true && current.parentID
+      && process.env.DEVRYAN_REFUSE_DELEGATED_BACKGROUND !== '0') {
+      const attempt = await attemptStamp(input);
+      if (attempt?.state === 'unknown') {
+        try { options.onDiagnostic?.({ event: 'session_execution', phase: 'background_policy', state: 'unknown', code: 'background_policy_unknown',
+          sessionID: input.sessionID, messageID: input.messageID, callID: input.callID }); } catch { /* Observer only. */ }
+      } else if (attempt) throw Object.assign(new Error(BACKGROUND_UNAVAILABLE), { code: 'native_shell_background_unavailable', status: 403, statusCode: 403 });
+    }
     // A server another call started serves that call's copy of the project;
     // verifying against it once later changes are published would pass old
     // code, so refuse before any lease or view exists.

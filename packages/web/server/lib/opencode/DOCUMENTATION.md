@@ -1082,6 +1082,12 @@ lease token. Addresses set only in configuration files, navigation by click,
 eval, tab or pushstate, and listeners on Windows are not checked. Kill switch:
 `DEVRYAN_SERVED_FRESHNESS=0`.
 
+A managed task child's `background: true` shell is refused at the same point
+with `native_shell_background_unavailable` and the one-call workflow as
+guidance (runtime-host DOCUMENTATION.md); a root's or an unmanaged subagent's
+runs as before, and one whose role orchestration cannot tell yet runs and is
+journaled (`background_policy_unknown`).
+
 Input admission journals bounded delivery intent, requested/accepted/reconciled/
 refused decisions, whether subtree settlement is required, and a refusal category.
 These records contain no message text or attachments. A required settlement field
