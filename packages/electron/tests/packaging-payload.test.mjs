@@ -67,7 +67,7 @@ const RUNTIME_FILES = [
 ];
 
 /** Paths electron-builder's own node-module matcher keeps for a target. */
-const packedFor = (os, arch) => {
+const packedFor = (os, arch, files = [...PLATFORM_NATIVES, ...RUNTIME_FILES]) => {
   const builderRequire = createRequire(createRequire(import.meta.url).resolve('electron-builder'));
   const { FileMatcher } = builderRequire('app-builder-lib/out/fileMatcher.js');
   const { expandMacro } = builderRequire('app-builder-lib/out/util/macroExpander.js');
@@ -75,8 +75,18 @@ const packedFor = (os, arch) => {
   const matcher = new FileMatcher('/app', '/out', (pattern) => expandMacro(pattern, arch, { productName: 'DevRyan' }, { os }), ['**/*', ...excludes]);
   const keep = matcher.createFilter();
   const stat = { isDirectory: () => false };
-  return [...PLATFORM_NATIVES, ...RUNTIME_FILES].filter((file) => keep(`/app/${file}`, stat));
+  return files.filter((file) => keep(`/app/${file}`, stat));
 };
+
+test('packages omit vendored OpenAPI documents and captured test vectors but keep runtime routes', () => {
+  const root = 'node_modules/@devryan/web/server/lib/opencode/v2';
+  const runtime = [`${root}/routes.generated.js`, `${root}/openapi-routes.js`, `${root}/route-policy.js`];
+  const files = [...runtime, `${root}/openapi-2.2.2.json`, `${root}/openapi-2.0.20.json`,
+    `${root}/__vectors__/openapi.json`, `${root}/__vectors__/01-two-step-tool-turn.json`];
+  for (const [os, arch] of [['mac', 'arm64'], ['mac', 'x64'], ['win', 'x64']]) {
+    assert.deepEqual(packedFor(os, arch, files), runtime);
+  }
+});
 
 test('each package ships only its own platform and arch natives', () => {
   // `${os}` and `${arch}` are the target's, so the Windows preview keeps its

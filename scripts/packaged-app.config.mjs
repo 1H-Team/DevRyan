@@ -38,7 +38,7 @@ export default {
   // each carries under 5% headroom.
   ceiling: {
     resourcesBytes: 835_000_000,
-    asarBytes: 165_000_000,
+    asarBytes: 160_000_000,
     unpackedBytes: 58_000_000,
   },
 };

@@ -65,6 +65,8 @@
       "!node_modules/@devryan/web/runtime/linux-*{,/**}",
       "!node_modules/@devryan/web/runtime/reviewed-inputs{,/**}",
       "!node_modules/@devryan/web/dist{,/**}",
+      "!node_modules/@devryan/web/server/lib/opencode/v2/openapi-*.json",
+      "!node_modules/@devryan/web/server/lib/opencode/v2/__vectors__{,/**}",
       "!**/*.map",
       "!**/*.{test,spec}.*",
       "!**/__tests__{,/**}",

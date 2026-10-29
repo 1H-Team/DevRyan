@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file.
 - Upgrade the bundled native OpenCode host to 2.2.2 and preserve the previous runtime and database for rollback.
 - Keep large bundle file manifests outside size-capped documents so runtime setup and upgrades can verify every bundled file.
 - Keep mutation ledger Git stores packed in short-lived runtimes to reduce storage growth.
+- Exclude build-time OpenAPI documents and captured test vectors from the desktop app.
 
 ## [2.0.5] - 2026-10-29
 
