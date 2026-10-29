@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.5] - 2026-10-29
+
+- Allow runtime upgrades to proceed when an archived session retains a cancelled shell notice that never became a message, while preserving integrity checks for live sessions.
+
 ## [2.0.4] - 2026-10-29
 
 - Upgrade the bundled native OpenCode host to 2.2.1, preserve runtime recovery compatibility, and deny unreviewed experimental routes.
