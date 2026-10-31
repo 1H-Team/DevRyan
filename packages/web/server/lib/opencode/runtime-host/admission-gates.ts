@@ -39,6 +39,7 @@ import { makeGlobalNode, makeLocationNode } from '@opencode/util/effect/app-node
 import { createCommandDerivation,type ReviewedCommandBehavior } from './command-derivation.js';
 import { HostRefusal, refuseHost } from './host-refusal.js';
 import { RegistrationOriginRef, provideRegistrationOrigin, type RegistrationOrigin } from './registration-origin.js';
+import { INERT_NATIVE_PLUGIN_IDS } from './native-plugin-registry.js';
 import { OperationPermitRef, requestPermit, type ExecuteOwned, type NativeAdmissionBridge, type OperationPermit, type OperationRequest, type NativeExecutor } from './native-admission-contract.js';
 import {reviewedSkillToolInput} from './native-skills.js';
 import { translateNativeSkillPermissionRules } from './native-skill-permissions.js';
@@ -361,6 +362,8 @@ export function createAdmissionGates(options: AdmissionGateOptions) {
             return admission ? admission(input).pipe(Effect.andThen(() => snapshot.execute(input))) : snapshot.execute(input);
           } } satisfies Tool.Snapshot;
       }),
+      // Runs a Code Mode program (native schedule checks); Code Mode is disabled.
+      check: () => refuseHost(new HostRefusal('native_code_mode_disabled', 403, 'tool.check')),
     });
   };
   const OwnedInterrupt = Context.Reference<boolean>('DevRyan/OwnedInterrupt', { defaultValue: () => false });
@@ -517,7 +520,8 @@ export function createAdmissionGates(options: AdmissionGateOptions) {
         if (key && permissionOwners.get(key) === owner) permissionOwners.delete(key);
       }));
       return Permission.Service.of({ ...inner, assert: owner.assert, ask: input => scoped(input, inner.ask(input)),
-        assertNotDenied: input => scoped(input, inner.assertNotDenied(input)), reply: input => Effect.gen(function* () {
+        assertNotDenied: input => scoped(input, inner.assertNotDenied(input)), allows: input => scoped(input, inner.allows(input)),
+        reply: input => Effect.gen(function* () {
         const pending = yield* inner.get(input.requestID);
         if (!pending) return yield* inner.reply(input);
         // Native 'always' replies reevaluate other pending sessions in this
@@ -671,6 +675,7 @@ export function createAdmissionGates(options: AdmissionGateOptions) {
       if(location) pluginCatalogs.set(location.directory,inner);
       return Plugin.Service.of({ ...inner, activate: (plugins, failures) => inner.activate(plugins.map((plugin) => {
         if (plugin.source?.type !== 'builtin' || plugin.revision !== 'internal') return plugin;
+        if (INERT_NATIVE_PLUGIN_IDS.includes(plugin.id)) return { ...plugin, effect: () => Effect.void };
         const provenance = options.nativePlugins.get(plugin.id);
         return { ...plugin, effect: (context) => provenance ? provideRegistrationOrigin(provenance, plugin.effect(helperPluginContext(context)))
           : refuseHost(new HostRefusal('native_plugin_unreviewed', 403, 'plugin.activate')) };

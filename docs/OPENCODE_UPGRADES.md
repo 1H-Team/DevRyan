@@ -50,6 +50,27 @@ package lanes.
 
 3. `bun run validate`.
 
+## Seams in 2.2.2 → 2.2.5
+
+- `opencode.provider.claude-agent` is declared through a constant (`id: ID2`); the report
+  now follows such constants. It drives the local `claude` CLI through the optional
+  `@anthropic-ai/claude-agent-sdk` peer, which DevRyan does not install: the build stubs
+  the `#claude-agent-sdk` entry and `INERT_NATIVE_PLUGIN_IDS` activates the provider
+  without running it. An unreviewed builtin fails the native `agent` catalog read.
+- `@opencode/ai/effect` exports `LLM` as a type only; use `ai.request`. The `Tool`,
+  `Image`, `Video`, `Speech`, `Transcription` and `Decision` namespaces are gone.
+- New interface members: `Permission.allows` (scoped like `assertNotDenied`; the writer
+  worker answers `false`), `Tool.check` (Code Mode schedule checks, refused),
+  `PersistentPty.rename`, and the plugin context's `experimental.artifact` (withheld from Slim).
+- The `job` table replaces the `kv` `job.background/*` markers (clone level 7); the
+  package restart lanes read it.
+- Compaction `buffer` may be a percentage string; the observation contract accepts it.
+- `@opencode/pty` 0.4.0 changes only the binary; its JS API matches 0.3.3. The PTY
+  resolver chunk, Photon worker, Windows PTY resolver and finalization source changed
+  only in chunk paths and identifiers; compaction now takes `min(input, context)` as its
+  window and percent buffers, without moving the observation anchor.
+- `session_part` is still written only where part rows already exist.
+
 ## Seams in 2.2.1 → 2.2.2
 
 - `@opencode/*` 2.2.2 depends on `effect` 4.0.6; DevRyan's root and web `effect` pins must

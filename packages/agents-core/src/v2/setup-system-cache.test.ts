@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { Auth, CacheHint, LLM, Message, SystemPart } from '@opencode/ai/effect';
+import { ai, Auth, CacheHint, Message, SystemPart } from '@opencode/ai/effect';
 import * as Anthropic from '@opencode/ai/providers/anthropic';
 import * as OpenAI from '@opencode/ai/providers/openai';
 import { compileRequest } from '@opencode/ai/testing';
@@ -148,7 +148,7 @@ async function wire(
   event: SessionContext,
   tail: readonly Message[] = [],
 ): Promise<Record<string, unknown>> {
-  const request = LLM.request({
+  const request = ai.request({
     model,
     system: event.system,
     messages: [...event.messages, ...tail],

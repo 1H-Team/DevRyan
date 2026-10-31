@@ -1,6 +1,6 @@
 import {createHash} from 'node:crypto';
 import path from 'node:path';
-export const NATIVE_FINALIZATION_SOURCE_SHA256='03de49a58f0ed29923af59526f18d9548538f57aaebadd5b556027e62748871b';
+export const NATIVE_FINALIZATION_SOURCE_SHA256='3babae748032845c897229122c1e42953a13956105ce46c40885e666dc67d451';
 const hash=value=>createHash('sha256').update(value).digest('hex');
 const start='      if (record.finish || record.failure) {\n';
 const end='      if (llmFailure && llmError && retry?.retry && record.outputStarted';

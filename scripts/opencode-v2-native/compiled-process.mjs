@@ -10,7 +10,7 @@ export function assertCompiledAssetReply(reply, buildId) {
   assert.deepEqual(reply.parser, { bash: true, powershell: true });
   assert.deepEqual(reply.photon, { width: 1, height: 1, mime: 'image/png' });
   assert.deepEqual(reply.ffi, { loaded: true });
-  assert.equal(reply.pty.sha256, '6d557e7eb38a24c3c24e822e141de0c7d8dc38aa3ee4d86a0892377e02bcb922');
+  assert.equal(reply.pty.sha256, 'a274eedcbaed5e38da8f9ed5c2db4a67ee361f03dc54841e18579e57437b114d');
   assert.equal(reply.pty.executable, true); assert.ok(Number.isSafeInteger(reply.pty.size) && reply.pty.size > 0);
 }
 

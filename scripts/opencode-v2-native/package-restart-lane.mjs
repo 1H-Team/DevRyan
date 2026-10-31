@@ -49,10 +49,8 @@ export async function runTrackedCompiledReplacement({ provider, client, managed,
   const db = resolveSqliteDriver().open(databasePath, { readonly: true });
   const markers = new Map(); let dbClosed = false;
   const sample = () => {
-    for (const row of db.prepare("SELECT key,value FROM kv WHERE substr(key,1,15)='job.background/'").all()) {
-      const value = JSON.parse(row.value);
-      if (value.recovery?.sessionID === session.id) markers.set(row.key, { jobID: value.id,
-        notificationID: value.notificationID, status: value.status });
+    for (const row of db.prepare('SELECT notification_id,id,status FROM job WHERE session_id=?').all(session.id)) {
+      markers.set(row.notification_id, { jobID: row.id, notificationID: row.notification_id, status: row.status });
     }
   };
   const sampler = setInterval(sample, 5);
@@ -65,13 +63,13 @@ export async function runTrackedCompiledReplacement({ provider, client, managed,
     const lease = await waitFor(() => runtime.leaseForCall({ directory, sessionID: session.id, callID: driver.callID }),
       value => value?.state === 'published' && value.nativeShellJob?.deliveredID, 'Tracked compiled lease has no canonical delivered notice');
     await assertWriterOutcome({ runtime, directory, sessionID: session.id, callID: driver.callID, observations, succeeded: true });
-    const binding = lease.nativeShellJob, markerKey = `job.background/${binding.notificationID}`;
+    const binding = lease.nativeShellJob;
     assert.equal(binding.jobID, driver.state().shellID); assert.equal(binding.deliveredID, binding.notificationID);
     assert.equal(binding.continuedID, undefined); assert.equal(binding.continuedAssistantID, undefined);
-    const observed = markers.get(markerKey); assert.ok(observed, 'Exact original native KV marker was never observed');
+    const observed = markers.get(binding.notificationID); assert.ok(observed, 'Exact original native job row was never observed');
     assert.equal(observed.jobID, binding.jobID); assert.equal(observed.notificationID, binding.notificationID);
-    await waitFor(() => db.prepare('SELECT COUNT(*) AS n FROM kv WHERE key=?').get(markerKey).n,
-      value => value === 0, 'Native completeBackground retained its original marker');
+    await waitFor(() => db.prepare('SELECT COUNT(*) AS n FROM job WHERE notification_id=?').get(binding.notificationID).n,
+      value => value === 0, 'Native completeBackground retained its original job row');
     const intent = `shell.complete:${binding.jobID}`;
     assert.equal((await runtime.nativeShellContinuations({ directory })).some(row => row.sessionID === session.id && row.operation === intent), true);
     const before = (await client.sessions.messages(session.id, {}, { directory })).records;

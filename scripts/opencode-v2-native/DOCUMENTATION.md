@@ -27,7 +27,7 @@ scheduler and execution ledger are real; the loopback provider is synthetic.
 The run cleans its private profile on every outcome and never uses installed
 accounts. Without `--long-wait`, the existing interval comparison is unchanged.
 
-`native-stream-continuation.graph.test.ts` runs the real pinned 2.2.2
+`native-stream-continuation.graph.test.ts` runs the real pinned 2.2.5
 publisher, retry loop, Synthetic bus and Step with production constructor
 owners against disposable loopback provider fixtures. Run it with
 `bun test scripts/opencode-v2-native/native-stream-continuation.graph.test.ts`.

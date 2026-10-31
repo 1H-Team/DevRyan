@@ -116,7 +116,7 @@ export function nativeSlimPlugin(options: NativeSlimOptions) {
       provider: restricted(context.provider, []), model: restricted(context.model, []), aisdk: restricted(context.aisdk, []),
       integration: restricted(context.integration, []), reference: restricted(context.reference, []),
       skill: restricted(context.skill, ['list', 'get']), websearch: restricted(context.websearch, []), vcs: restricted(context.vcs, []),
-      experimental: { terminal: restricted(context.experimental.terminal, []), generate: restricted(context.experimental.generate, []) },
+      experimental: { terminal: restricted(context.experimental.terminal, []), generate: restricted(context.experimental.generate, []), artifact: restricted(context.experimental.artifact, []) },
     };
     const saved=location.compatibility.slim;
     if(!saved || typeof saved!=='object' || !('mergedConfig' in saved) || !saved.mergedConfig || typeof saved.mergedConfig!=='object' || Array.isArray(saved.mergedConfig)) throw new Error('native_slim_snapshot_invalid');

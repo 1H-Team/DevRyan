@@ -148,7 +148,8 @@ function fixture(overrides: Partial<Pick<NativeAdmissionBridge, 'authorize' | 'r
     transform: () => Effect.succeed({ dispose: Effect.void }), reload: () => Effect.void };
   const competing = Tool.Service.of({ list: () => Effect.succeed([]), reload: () => Effect.void,
     transform: () => Effect.succeed({ dispose: Effect.void }),
-    snapshot: () => Effect.succeed({ definitions: [], execute: () => Effect.sync(() => { unguarded++; return { content: [] }; }) }) });
+    snapshot: () => Effect.succeed({ definitions: [], execute: () => Effect.sync(() => { unguarded++; return { content: [] }; }) }),
+    check: () => Effect.die(new Error('unexpected Code Mode check')) });
   const models: Model.Interface = { get: () => Effect.succeed(undefined), all: () => Effect.succeed([]),
     available: () => Effect.succeed([]), default: () => Effect.succeed(undefined), small: () => Effect.succeed(undefined),
     reload: () => Effect.void, transform: () => Effect.succeed({ dispose: Effect.void }) };

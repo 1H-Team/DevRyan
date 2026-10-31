@@ -1623,9 +1623,9 @@ test('a step without an observed native request keeps the explicit unavailable i
   expect(prepared).toMatchObject({ providerRequestID: 'unavailable', wireTiming: 'unavailable', transport: 'unverified', requestPreparedAt: 10_000 });
 });
 
-test('native primary runtime conformance accepts exact retained and current releases only',()=>{for(const version of ['2.0.20','2.0.24','2.0.26','2.0.30','2.0.32','2.1.0','2.1.2','2.1.3','2.1.4','2.2.0','2.2.1','2.2.2'])expect(isNativePrimaryRuntimeVersion(version)).toBe(true);for(const version of ['2.0.21','2.0.25','2.0.27','2.0.24-dev','2.0.26-dev',' 2.0.26 ',null,2])expect(isNativePrimaryRuntimeVersion(version)).toBe(false);});
+test('native primary runtime conformance accepts exact retained and current releases only',()=>{for(const version of ['2.0.20','2.0.24','2.0.26','2.0.30','2.0.32','2.1.0','2.1.2','2.1.3','2.1.4','2.2.0','2.2.1','2.2.2','2.2.5'])expect(isNativePrimaryRuntimeVersion(version)).toBe(true);for(const version of ['2.0.21','2.0.25','2.0.27','2.0.24-dev','2.0.26-dev',' 2.0.26 ',null,2])expect(isNativePrimaryRuntimeVersion(version)).toBe(false);});
 test('a native runtime instance cannot change between supported release identities',async()=>{
-  for(const version of ['2.0.20','2.0.24','2.0.26','2.0.30','2.0.32','2.1.0','2.1.2','2.1.3','2.1.4','2.2.0','2.2.1','2.2.2']){
+  for(const version of ['2.0.20','2.0.24','2.0.26','2.0.30','2.0.32','2.1.0','2.1.2','2.1.3','2.1.4','2.2.0','2.2.1','2.2.2','2.2.5']){
     const f=await fixture();
     await f.controller.plugin({action:'hello',policyVersion:1,instanceID:'native-version-owner',version});
     await expect(f.controller.plugin({action:'hello',policyVersion:1,instanceID:'native-version-owner',version:version==='2.0.20'?'2.0.26':'2.0.20'})).rejects.toMatchObject({code:'recovery_owner_mismatch'});
@@ -1638,8 +1638,8 @@ describe('host-owned native transport continuation', () => {
   const transport = { name: 'APIError', data: { message: 'fetch failed', v2Type: 'provider.transport' } };
   const getToolPolicy = async () => ({ toolIDs: ['read', 'glob', 'grep', 'shell'], allowedReadTools: ['read', 'glob', 'grep'] });
   const idle = f => f.controller.observe({ type: 'session.status', properties: { sessionID: identity.sessionID, status: { type: 'idle' } } });
-  // The production default: no explicit host mode, native 2.2.2, a bound Step.
-  const native = async (overrides = {}, { providerID = 'openai', version = '2.2.2', error = transport } = {}) => {
+  // The production default: no explicit host mode, native 2.2.5, a bound Step.
+  const native = async (overrides = {}, { providerID = 'openai', version = '2.2.5', error = transport } = {}) => {
     const f = await fixture({ mode: undefined, getToolPolicy, ...overrides }, providerID, 'orchestrator', 2);
     await f.controller.plugin({ action: 'hello', instanceID: identity.instanceID, policyVersion: 1, version, transport: 'native-v2' });
     await f.controller.plugin({ action: 'step', ...identity, execution });
@@ -1711,7 +1711,7 @@ describe('host-owned native transport continuation', () => {
       authorize: async () => true, observeTurn: async () => structuredClone(f.state), getToolPolicy,
       abortSession: async () => {}, promptSession: async () => { throw new Error('second owner sent'); } });
     await second.initialize(); cleanups.push(() => second.drain());
-    await expect(second.plugin({ action: 'hello', instanceID: identity.instanceID, policyVersion: 1, version: '2.2.2', transport: 'native-v2' }))
+    await expect(second.plugin({ action: 'hello', instanceID: identity.instanceID, policyVersion: 1, version: '2.2.5', transport: 'native-v2' }))
       .rejects.toMatchObject({ code: 'recovery_owner_unavailable' });
     expect((await second.getSnapshot(identity.sessionID)).automaticRecoveryPending).toBe(false);
     const failed = f.state.messages[1].info;
@@ -1733,7 +1733,7 @@ describe('host-owned native transport continuation', () => {
       authorize: async () => true, observeTurn: async () => structuredClone(f.state), getToolPolicy,
       abortSession: async () => {}, promptSession: async (_r, body) => { sent.push(body); } });
     await restarted.initialize(); cleanups.push(() => restarted.drain());
-    await restarted.plugin({ action: 'hello', instanceID: 'runtime-restarted', policyVersion: 1, version: '2.2.2', transport: 'native-v2' });
+    await restarted.plugin({ action: 'hello', instanceID: 'runtime-restarted', policyVersion: 1, version: '2.2.5', transport: 'native-v2' });
     await restarted.observe({ type: 'session.status', properties: { sessionID: identity.sessionID, status: { type: 'idle' } } });
     expect(await restarted.readRecord(identity.sessionID)).toMatchObject({ state: 'needs_attention', reason: 'recovery_dispatch_uncertain',
       attemptCount: 1, recoveryID: 'msg_recovery' });
@@ -1849,6 +1849,7 @@ test('native typed transport errors classify only on native runtimes and without
   expect(isNativeTransportRecoveryRuntimeVersion('2.2.0')).toBe(true);
   expect(isNativeTransportRecoveryRuntimeVersion('2.2.1')).toBe(true);
   expect(isNativeTransportRecoveryRuntimeVersion('2.2.2')).toBe(true);
+  expect(isNativeTransportRecoveryRuntimeVersion('2.2.5')).toBe(true);
   for (const version of ['2.0.26', '2.0.32', '1.18.33', '2.1.5', null]) expect(isNativeTransportRecoveryRuntimeVersion(version)).toBe(false);
 });
 

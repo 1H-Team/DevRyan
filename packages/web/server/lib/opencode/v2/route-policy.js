@@ -123,6 +123,15 @@ export const OPENCODE_V2_ROUTE_CLASSES = Object.freeze({
   'DELETE /api/experimental/schedule/{scheduleID}': D,
   'POST /api/experimental/schedule/{scheduleID}/pause': D,
   'POST /api/experimental/schedule/{scheduleID}/resume': D,
+  // Publishes session files to an external artifact provider; DevRyan keeps
+  // `experimental.artifacts` off and has no review of the provider egress.
+  'GET /api/experimental/artifacts': D,
+  'POST /api/experimental/artifacts': D,
+  'GET /api/experimental/artifacts/providers': D,
+  'GET /api/experimental/artifacts/{artifactID}': D,
+  'PATCH /api/experimental/artifacts/{artifactID}': D,
+  'DELETE /api/experimental/artifacts/{artifactID}': D,
+  'GET /api/experimental/artifacts/{artifactID}/view/*': D,
 
   // Events.
   'GET /api/event': S,

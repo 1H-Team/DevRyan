@@ -1,7 +1,7 @@
 import type { RegistrationCapability, RegistrationOrigin } from './registration-origin.js';
 
-/** Exact PluginInternal pre/post inventory reviewed from @opencode/core 2.2.2. */
-export const NATIVE_PLUGIN_VERSION = '2.2.2';
+/** Exact PluginInternal pre/post inventory reviewed from @opencode/core 2.2.5. */
+export const NATIVE_PLUGIN_VERSION = '2.2.5';
 export const REVIEWED_NATIVE_PLUGIN_IDS: readonly string[] = Object.freeze([
   'opencode.tool.input.repair',
   'opencode.config.worktree',
@@ -67,6 +67,7 @@ export const REVIEWED_NATIVE_PLUGIN_IDS: readonly string[] = Object.freeze([
   'opencode.tools.mcp-resources',
   'opencode.tool.question',
   'opencode.tool.read',
+  'opencode.tool.artifact',
   'opencode.tool.schedule',
   'opencode.tool.shell',
   'opencode.tool.skill',
@@ -94,6 +95,13 @@ export const REVIEWED_NATIVE_PLUGIN_IDS: readonly string[] = Object.freeze([
   'opencode.config.websearch',
   'opencode.config.policy',
 ]);
+/** Reviewed builtins DevRyan keeps inert: activation succeeds without running them. */
+export const INERT_NATIVE_PLUGIN_IDS: readonly string[] = Object.freeze([
+  // 2.2.5 drives the local Claude Code CLI through the optional
+  // @anthropic-ai/claude-agent-sdk peer, which DevRyan does not install. Running it
+  // would probe and spawn `claude` outside owned execution.
+  'opencode.provider.claude-agent',
+]);
 const toolCapabilities: Readonly<Record<string, readonly RegistrationCapability[]>> = Object.freeze({
   'opencode.tool.read': ['read'], 'opencode.tool.glob': ['read'], 'opencode.tool.grep': ['read'],
   'opencode.tool.skill': ['read'], 'opencode.tool.write': ['write'], 'opencode.tool.edit': ['write'],
@@ -102,7 +110,7 @@ const toolCapabilities: Readonly<Record<string, readonly RegistrationCapability[
   'opencode.browser': [], 'opencode.tools.mcp-resources': [], 'opencode.tools': [],
   'opencode.tool.question': ['control'],
   // Opt-in experimental tools; execution routing has no owned path for them.
-  'opencode.tool.image-generate': [], 'opencode.tool.schedule': [],
+  'opencode.tool.artifact': [], 'opencode.tool.image-generate': [], 'opencode.tool.schedule': [],
 });
 export function createReviewedNativePluginRegistry(manifestDigest: string, options: { readonly disableTools?: boolean; readonly hostDigest?: string } = {}): ReadonlyMap<string, RegistrationOrigin> {
   if (!/^[a-f0-9]{64}$/.test(manifestDigest)) throw new TypeError('native manifest digest must be SHA-256');

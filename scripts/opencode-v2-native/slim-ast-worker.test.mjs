@@ -21,7 +21,7 @@ test('actual original AST tools run in supervised private views with permission,
  const ptyAsset=path.join(path.dirname(require.resolve('@opencode/pty-darwin-arm64/package.json')),'bin/opencode-pty');
  const photon=require.resolve('@silvia-odwyer/photon-node');
  const rewrites=new Map(inputs.rewrites);
- rewrites.set(pty,rewriteNativeAsset('pty',await fs.readFile(pty),{assetPath:ptyAsset,assetSha256:'6d557e7eb38a24c3c24e822e141de0c7d8dc38aa3ee4d86a0892377e02bcb922'}));
+ rewrites.set(pty,rewriteNativeAsset('pty',await fs.readFile(pty),{assetPath:ptyAsset,assetSha256:'a274eedcbaed5e38da8f9ed5c2db4a67ee361f03dc54841e18579e57437b114d'}));
  rewrites.set(photon,rewriteNativeAsset('photon',await fs.readFile(photon)));
  try{
   const build=await Bun.build({entrypoints:[path.join(repository,'packages/web/server/lib/opencode/runtime-host/writer-worker.ts')],

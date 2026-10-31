@@ -117,12 +117,12 @@ test('launch verifies once before lifecycle configuration and refuses its failur
 
 test('adaptive capability snapshot uses owner evidence and never exposes preview URL', async () => {
  const scope = { sessionID: 'ses_root', directory: '/project' }, resolvePreview = vi.fn(async () => ({ previewUrl: 'http://127.0.0.1:1234/private' }));
- const input = { scope, artifacts: { manifest: { opencodeVersion: '2.2.2', buildId: 'build-a' } }, reviewedBrowser: {}, browserOperation: () => {},
+ const input = { scope, artifacts: { manifest: { opencodeVersion: '2.2.5', buildId: 'build-a' } }, reviewedBrowser: {}, browserOperation: () => {},
    getBrowserLeaseRuntime: () => ({ resolvePreview }), primaryRuntime: { readRecord: async () => ({ sessionID: 'ses_root', directory: '/project', anchorID: 'msg_user', agent: 'builder' }) },
    policies: { adaptiveDelegation: true, contextProjection: false, untrusted: 'secret' } };
  expect(await readNativeCapabilitySnapshot({ ...input, policies: {} })).toBeNull();
  const snapshot = await readNativeCapabilitySnapshot(input);
- expect(snapshot).toMatchObject({ runtime: { version: '2.2.2', artifact: 'build-a' }, shell: { defaultDeadlineMs: 240000, maxDeadlineMs: 3600000, sessionScratch: 'session', callScratch: 'call' }, browser: { available: true, previewReady: true }, policies: { adaptiveDelegation: true, contextProjection: false } });
+ expect(snapshot).toMatchObject({ runtime: { version: '2.2.5', artifact: 'build-a' }, shell: { defaultDeadlineMs: 240000, maxDeadlineMs: 3600000, sessionScratch: 'session', callScratch: 'call' }, browser: { available: true, previewReady: true }, policies: { adaptiveDelegation: true, contextProjection: false } });
  expect(resolvePreview).toHaveBeenCalledWith({ opencodeSessionID: 'ses_root', messageID: 'msg_user', directory: '/project', agent: 'builder' });
  expect(JSON.stringify(snapshot)).not.toContain('127.0.0.1'); expect(snapshot.policies).not.toHaveProperty('untrusted');
  expect((await readNativeCapabilitySnapshot({ ...input, getBrowserLeaseRuntime: () => ({ resolvePreview: async () => ({ previewUrl: null }) }) })).browser).toEqual({ available: true, previewReady: false });

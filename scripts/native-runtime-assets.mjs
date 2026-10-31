@@ -19,19 +19,28 @@ const resolvePinnedJsonc=async resolved=>{
  return {modulePath,packagePath,packageBytes};
 };
 export const NATIVE_ASSET_SOURCE_SHA=Object.freeze({pty:'5902fc8958dfa8b535a1c048af6f6a9140656d06d642dbbfb32a70136364a86c',photon:'d60656705f0d59baa79e36b0381eb023f1864eeb57e92956cf21dcd9fb8f879f'});
-export const NATIVE_WINDOWS_PTY_SOURCE_SHA256='bcca2657b9d550ddb78e48bb0d3c7f2d44056d40b24c40cb132e7d79c7dc03aa';
+export const NATIVE_WINDOWS_PTY_SOURCE_SHA256='f13f34163cd007d86916b1fe1589961c896ca4c0991ba4f973f46916f0eb77c8';
 /** Windows has no approved persistent PTY. Refuse before resolving a command,
  * creating an installation directory, or reading an environment override. */
 export function rewriteUnavailableNativePty(source) {
  if(hash(source)!==NATIVE_WINDOWS_PTY_SOURCE_SHA256)throw new Error('Pinned native PTY resolver changed');
  return 'async function resolveBinary(){throw new Error("native_pty_platform_unsupported");}\nexport {resolveBinary};\n';
 }
+export const NATIVE_CLAUDE_AGENT_SDK_SOURCE_SHA256='af7edd9794c526108bf56e947776ce5b10f8f63408f3ff40ca1075574301919c';
+/** 2.2.5 re-exports the optional @anthropic-ai/claude-agent-sdk peer, which DevRyan
+ * does not install. Refuse on load, as core's workerd entry does; core's lazy
+ * loader reports the SDK as not installed. */
+export const isNativeClaudeAgentSdkSource=file=>/@opencode[\\/]core[\\/]dist[\\/]plugin[\\/]provider[\\/]claude-agent[\\/]claude[\\/]agent-sdk\.js$/.test(file);
+export function rewriteUnavailableClaudeAgentSdk(source) {
+ if(hash(source)!==NATIVE_CLAUDE_AGENT_SDK_SOURCE_SHA256)throw new Error('Pinned native Claude Agent SDK entry changed');
+ return 'throw new Error("native_claude_agent_sdk_unavailable");\n';
+}
 /** Build-only transformations require the exact pinned bytes before rewriting. */
 export function rewriteNativeAsset(kind,source,{assetPath,assetSha256}={}) {
  if(!Object.hasOwn(NATIVE_ASSET_SOURCE_SHA,kind)||hash(source)!==NATIVE_ASSET_SOURCE_SHA[kind]) throw new Error('Pinned native asset resolver changed');
  if(kind==='pty') {
-  if(typeof assetPath!=='string'||!assetPath.startsWith('/')||!/^6d557e7eb38a24c3c24e822e141de0c7d8dc38aa3ee4d86a0892377e02bcb922$/.test(assetSha256)) throw new Error('Pinned native PTY asset changed');
-  return `import embedded from ${JSON.stringify(assetPath)} with {type:'file'};\nconst pty_binding_default={path:embedded,version:'0.3.3',sha256:${JSON.stringify(assetSha256)}};\nexport {pty_binding_default};\n`;
+  if(typeof assetPath!=='string'||!assetPath.startsWith('/')||!/^a274eedcbaed5e38da8f9ed5c2db4a67ee361f03dc54841e18579e57437b114d$/.test(assetSha256)) throw new Error('Pinned native PTY asset changed');
+  return `import embedded from ${JSON.stringify(assetPath)} with {type:'file'};\nconst pty_binding_default={path:embedded,version:'0.4.0',sha256:${JSON.stringify(assetSha256)}};\nexport {pty_binding_default};\n`;
  }
  const original="const path = require('path').join(__dirname, 'photon_rs_bg.wasm');";
  const text=Buffer.from(source).toString('utf8');
@@ -47,7 +56,7 @@ export function rewriteNativeAgentDefaults(source) {
  if(hash(source)!==NATIVE_AGENT_DEFAULTS_SOURCE_SHA256||text.split(anchor).length!==2) throw new Error('Pinned native agent defaults changed');
  return text.replace(anchor,anchor+'            { action: "external_directory", resource: "*", effect: "ask" },\n');
 }
-export const NATIVE_PHOTON_WORKER_SOURCE_SHA256='64102a7a304bb76668d0327a68a2e4491a9d3bf04b0447598d44582a2b63bfe6';
+export const NATIVE_PHOTON_WORKER_SOURCE_SHA256='e8433552e0900dcb7719c8ce6c9cf9639178deb2ce2de48060bb0eb884c6c68f';
 /** 2.2.0 resizes images in a worker thread that loads Photon outside the sealed
  * WASM resolver, from a file a compiled bundle does not contain. Keep the reviewed
  * main-thread Photon path, which never logs its worker fallback to stdout. */
@@ -246,8 +255,10 @@ export function reviewedNativeInputPlugin({rewrites,virtualModules,inputFiles,re
    const contents=virtualModules.get(event.path);if(contents===undefined)throw new Error('Unknown reviewed build module');
    return {contents,loader:'js'};
   });
-  builder.onLoad({filter:/\.(?:mjs|js)$/},event=>{
-   const contents=rewrites.get(path.resolve(event.path));return contents===undefined?undefined:{contents,loader:'js'};
+  builder.onLoad({filter:/\.(?:mjs|js)$/},async event=>{
+   const contents=rewrites.get(path.resolve(event.path));
+   if(contents===undefined&&isNativeClaudeAgentSdkSource(event.path))return {contents:rewriteUnavailableClaudeAgentSdk(await fs.readFile(event.path)),loader:'js'};
+   return contents===undefined?undefined:{contents,loader:'js'};
   });
  }};
 }

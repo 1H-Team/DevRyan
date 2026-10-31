@@ -124,7 +124,7 @@ export async function createNativeRuntimeHost(options: NativeRuntimeHostOptions)
       fs: { filewatcher: false, fff: false },
       models: { fetch: false, snapshot: false },
       simulation: false,
-      app: { name: 'DevRyan', version: '2.2.2', channel: 'native-candidate' },
+      app: { name: 'DevRyan', version: '2.2.5', channel: 'native-candidate' },
     }, { overrides }).pipe(Scope.provide(scope), Effect.provide(diagnostics.context), Effect.onError(cause => Effect.sync(() => diagnostics.capture(cause))), Effect.provide(Logger.layer([Logger.withConsoleError(Logger.formatLogFmt), nativeCatalogEncodeLogger], { mergeWithExisting:false })))).catch(() => {
       throw new Error(`native_catalog_construction_failed_${diagnostics.cause() ?? 'cause_unavailable'}`);
     });
@@ -145,7 +145,7 @@ export async function createNativeRuntimeHost(options: NativeRuntimeHostOptions)
         if (new URL(request.url).pathname === '/devryan/ready' && options.readiness) {
           if (request.method !== 'GET') return new Response(null,{status:405});
           if (!opened || !catalog.asserted || closePromise) return Response.json({ready:false,phase:closePromise?'stopping':!catalog.asserted?'catalog_mismatch':'booting',retryAfterMs:100}, {status:503});
-          return Response.json({ready:true,generation:2,opencode:{version:'2.2.2'},host:{version:options.readiness.hostVersion,buildId:options.readiness.buildId},migration:{v1:options.readiness.migration},catalog:{asserted:true,availability:catalog.availability}});
+          return Response.json({ready:true,generation:2,opencode:{version:'2.2.5'},host:{version:options.readiness.hostVersion,buildId:options.readiness.buildId},migration:{v1:options.readiness.migration},catalog:{asserted:true,availability:catalog.availability}});
         }
         const result = await runWithHostRefusal(() => runWithIntegrationGrant(request.headers, () => runWithRequestPermit(request.headers, () =>
           ['/devryan/helper-text','/devryan/helper-text/cancel','/devryan/helper-title'].includes(new URL(request.url).pathname) && options.helperText

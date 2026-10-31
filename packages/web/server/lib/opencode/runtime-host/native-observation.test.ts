@@ -1,7 +1,7 @@
 import {expect,test} from 'vitest';
 import {Cause} from 'effect';
 import {AIError,HttpContext,RateLimitError,TimeoutError,TransportError} from '@opencode/ai/effect';
-import {LLM} from '@opencode/ai/effect';
+import {ai} from '@opencode/ai/effect';
 import {model as compatibleModel} from '@opencode/ai/providers/openai-compatible';
 import {nativeProviderFailureCode,nativeProviderFailureTarget,projectNativeProviderFailure,withNativeHeaderDeadline} from './native-observation.js';
 
@@ -58,19 +58,19 @@ test('targets keep only the hostname and port',()=>{
 
 test('requests left on the core header default get the DevRyan header deadline; configured waits are kept',()=>{
  const zen=compatibleModel('deepseek-v4.1-flash',{baseURL:'http://127.0.0.1:1/v1',provider:'opencode'});
- const unset=LLM.request({model:zen,prompt:'hi'});
+ const unset=ai.request({model:zen,prompt:'hi'});
  expect(withNativeHeaderDeadline(unset).http).toMatchObject({headerTimeout:45_000});
  expect(withNativeHeaderDeadline(unset).http?.chunkTimeout).toBeUndefined();
- const coreDefault=LLM.request({model:zen,prompt:'hi',http:{headerTimeout:300_000,chunkTimeout:900_000}});
+ const coreDefault=ai.request({model:zen,prompt:'hi',http:{headerTimeout:300_000,chunkTimeout:900_000}});
  expect(withNativeHeaderDeadline(coreDefault).http).toMatchObject({headerTimeout:45_000,chunkTimeout:900_000});
- const configured=LLM.request({model:zen,prompt:'hi',http:{headerTimeout:60_000}});
+ const configured=ai.request({model:zen,prompt:'hi',http:{headerTimeout:60_000}});
  expect(withNativeHeaderDeadline(configured)).toBe(configured);
- const disabled=LLM.request({model:zen,prompt:'hi',http:{headerTimeout:false}});
+ const disabled=ai.request({model:zen,prompt:'hi',http:{headerTimeout:false}});
  expect(withNativeHeaderDeadline(disabled)).toBe(disabled);
 });
 
 test('the Meridian anthropic route keeps its own idle guard and gets no header deadline',()=>{
  const meridian=compatibleModel('claude-opus-5-5',{baseURL:'http://127.0.0.1:3456/v1',provider:'anthropic'});
- const request=LLM.request({model:meridian,prompt:'hi'});
+ const request=ai.request({model:meridian,prompt:'hi'});
  expect(withNativeHeaderDeadline(request)).toBe(request);
 });

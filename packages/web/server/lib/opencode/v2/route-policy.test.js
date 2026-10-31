@@ -83,6 +83,8 @@ const C3_RULES = [
   [DENY, /^POST \/api\/experimental\/voice\/session$/],
   // deny: durable session schedules
   [DENY, /^\w+ \/api\/experimental\/schedule(\/|$)/],
+  // deny: external artifact publishing
+  [DENY, /^\w+ \/api\/experimental\/artifacts(\/|$)/],
   // deny: pairing and search
   [DENY, /^POST \/api\/pair$/],
   [DENY, /^GET \/auth\/connect\/\{code\}$/],
@@ -110,6 +112,7 @@ const PARAM_VALUES = {
   requestID: 'per_test1',
   ptyID: 'pty_test1',
   scheduleID: 'sch_test1',
+  artifactID: 'art_test1',
   key: 'entry.key',
   hash: 'a'.repeat(64),
 };
@@ -134,13 +137,13 @@ const BODY_FOR = {
 };
 
 describe('route table coverage', () => {
-  it('knows the 162 OpenAPI operations of 2.2.2 plus GET /openapi.json', () => {
-    expect(OPENCODE_V2_ROUTES_VERSION).toBe('2.2.2');
-    expect(OPENCODE_V2_ROUTES).toHaveLength(162);
+  it('knows the 169 OpenAPI operations of 2.2.5 plus GET /openapi.json', () => {
+    expect(OPENCODE_V2_ROUTES_VERSION).toBe('2.2.5');
+    expect(OPENCODE_V2_ROUTES).toHaveLength(169);
     expect(OPENCODE_V2_EXTRA_ROUTES.map(keyOf)).toEqual(['GET /openapi.json']);
     const known = listOpenCodeV2KnownRoutes().map(keyOf);
-    expect(known).toHaveLength(163);
-    expect(new Set(known).size).toBe(163);
+    expect(known).toHaveLength(170);
+    expect(new Set(known).size).toBe(170);
   });
 
   it('classifies every known route explicitly with a valid class and nothing else', () => {
@@ -500,7 +503,7 @@ describe('location binding', () => {
 
 describe('diffLiveSpec', () => {
   it('reports no drift for the vendored document, as an object or as text', () => {
-    expect(diffLiveSpec(vendoredDoc())).toMatchObject({ ok: true, version: '2.2.2', error: null, added: [], removed: [], changed: [] });
+    expect(diffLiveSpec(vendoredDoc())).toMatchObject({ ok: true, version: '2.2.5', error: null, added: [], removed: [], changed: [] });
     expect(diffLiveSpec(VENDORED_TEXT).ok).toBe(true);
   });
 

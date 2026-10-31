@@ -30,7 +30,7 @@ export async function verifyNativeAssets(request:NativeAssetRequest,buildId:stri
   const width=output.readUInt32BE(16),height=output.readUInt32BE(20);
   if(width!==1||height!==1) throw new Error('native_photon_asset_invalid');
   const pty=await resolveBinary(request.globals.bin),bytes=await fs.readFile(pty),stat=await fs.stat(pty);
-  const digest=hash(bytes);if(digest!=='6d557e7eb38a24c3c24e822e141de0c7d8dc38aa3ee4d86a0892377e02bcb922'||(stat.mode&0o111)===0) throw new Error('native_pty_asset_invalid');
+  const digest=hash(bytes);if(digest!=='a274eedcbaed5e38da8f9ed5c2db4a67ee361f03dc54841e18579e57437b114d'||(stat.mode&0o111)===0) throw new Error('native_pty_asset_invalid');
   const ffiBytes=new Uint8Array(await Bun.file(ffiAsset).arrayBuffer());
   if(hash(ffiBytes)!=='280ee7412cf45bb77587fed9d757ec5826408b44fd27f136d69dd1a86f3b83fc') throw new Error('native_ffi_asset_invalid');
   const library=dlopen(ffiAsset,{bun_pty_get_pid:{args:['i32'],returns:'i32'}});

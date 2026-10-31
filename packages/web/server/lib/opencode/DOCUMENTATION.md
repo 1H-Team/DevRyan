@@ -949,7 +949,7 @@ passes fresh verified artifacts privately to the bundle loader; this receipt
 never extends the serialized verification result. Reviewed config bytes and
 the controller's immediate pre-spawn artifacts still receive their own checks.
 
-The current package and compiled host pin is OpenCode 2.2.2.
+The current package and compiled host pin is OpenCode 2.2.5.
 Cold startup compares the selected and shipped artifact manifest digests even
 when their OpenCode versions match, so a repaired DevRyan host is activated once
 through the existing verified clone, credential checkpoint and selector CAS.
@@ -961,7 +961,7 @@ accepts a retained bundle of any OpenCode 2.x release for rollback
 (`isNativeOpenCodeVersion`), each using its matching controller; startup never runs
 one above the host pin. Cross-version credential capture or projection cannot
 substitute a controller: exact OpenCode version, core digest and existing manifest
-checks still apply. The build pins PTY 0.3.3 bytes (`@opencode/pty`, renamed from `@opencode-ai/pty`) and the 2.2.2 compaction and finalization observation sources,
+checks still apply. The build pins PTY 0.4.0 bytes (`@opencode/pty`, renamed from `@opencode-ai/pty`) and the 2.2.5 compaction and finalization observation sources,
 found by content (`scripts/native-core-sources.mjs`) and gated by exact SHA-256, and
 keeps Photon image resizing on the main thread in every installed core copy. 2.2.0 resolves the compaction
 model's ceiling inside `selectModel`, so the compaction observer recomputes it with
@@ -998,8 +998,8 @@ binding; physical exits are recorded before fallible owner cleanup.
 
 Native managed catalog reads use verified tool or recovery authority rather than a browser principal. Catalog access grants no execution rights. Managed Cursor prompt grants derive immutable read-only policy from the durable task; SDK create/resume permits only `read`, `grep`, `glob`, and `ls`, excludes task/MCP delegation, and includes policy in agent cache identity. Worker payloads carry this host-owned boolean, never a prompt-body override. Model discovery preserves SDK `reasoning_effort` choices; saved Medium resolves only to an actual Medium variant and never falls back to High or generic thinking.
 
-OpenCode 2.0.30 and 2.0.32 use Effect 4.0.1 and its stable HTTP/process/socket exports. 2.2.2 moves to Effect 4.0.6; DevRyan's own `effect` pin follows it, or two Effect copies split every service type.
-The host pins 2.2.2; its plugin inventory matches 2.2.1. Native plugin registration order
+OpenCode 2.0.30 and 2.0.32 use Effect 4.0.1 and its stable HTTP/process/socket exports. 2.2.2 moves to Effect 4.0.6 (2.2.5 keeps it); DevRyan's own `effect` pin follows it, or two Effect copies split every service type.
+The host pins 2.2.5. Native plugin registration order
 matches the installed core inventory. 2.2.1 adds `opencode.goal` (the `/goal`
 command), `opencode.tool.image-generate` and `opencode.tool.schedule`, and drops the
 Cohere, Perplexity and Vercel provider plugins. The image and schedule tools need
@@ -1030,7 +1030,7 @@ retained database. 2.1.2, 2.1.3 and 2.1.4 add no migration and stay at level 3, 
 and provider/model references through `SessionHistory`; helper webfetch history
 uses the resolved model reference. The reviewed compaction observer follows
 `isNativeCompaction` and the finalization observer retains the original native
-Step writes. The generated 2.2.2 OpenAPI inventory has 162 operations; the saved-permission list, PATCH and DELETE are server-only, reached through the Saved Approvals route (`v2/saved-permission-facade.js`).
+Step writes. The generated 2.2.5 OpenAPI inventory has 169 operations; the saved-permission list, PATCH and DELETE are server-only, reached through the Saved Approvals route (`v2/saved-permission-facade.js`).
 
 OpenCode 2.2.0 is clone level 4. It adds the `blob`/`blob_ref` media store and
 drops `session_pending`, which 2.1.x declared but never wrote; host reads of
@@ -1062,6 +1062,23 @@ and then stores `content: []` in `session_message.data`, but it never creates pa
 rows, so `session_message.data.content` stays authoritative and host SQL readers of
 assistant content are unchanged. A release that starts writing `session_part` breaks
 those readers and must be reviewed first.
+
+OpenCode 2.2.5 is clone level 7. It adds the `job` table, moves background-job
+markers out of `kv` (`job.background/*`) into it and deletes the old rows; a 2.2.5
+database cannot clone into a 2.2.2 reader, and a 2.2.2 source is still checked against
+its own level 6 layout. 2.2.5 still writes `session_part` only where part rows already
+exist, so `session_message.data.content` stays authoritative. It adds
+`opencode.tool.artifact` (opt-in through `experimental.artifacts`, no capabilities)
+and the experimental artifact routes, which are denied, and `opencode.provider.claude-agent`,
+which drives the local Claude Code CLI through the optional
+`@anthropic-ai/claude-agent-sdk` peer. DevRyan does not install that SDK: the build
+replaces its entry with a refusal and the provider is an inert native plugin
+(`INERT_NATIVE_PLUGIN_IDS`), activated without running, so it never probes or spawns `claude`.
+`Permission.allows` (edit adds a file-content hint to a missed match when reads are
+allowed) is evaluated in the location permission view; the writer worker answers
+`false`. `Tool.check` runs Code Mode schedule conditions and is refused. Compaction
+`buffer` may be a percentage string such as `"20%"`; the observation accepts it and
+`nativeCompactionReserve` treats it as no token reserve.
 
 Under ChatGPT browser or headless sign-in, 2.1.4 enables only `gpt-5.6-*` and
 later OpenAI models (not `gpt-5.6` itself); `gpt-5.5` and `gpt-5.3-codex-spark`

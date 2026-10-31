@@ -9,12 +9,12 @@ import { waitFor } from './process-lanes.mjs';
 
 const runFile = promisify(execFile);
 
-// The fixture owns this database. Read its actual native KV row without adding
+// The fixture owns this database. Read its actual native job row without adding
 // a product debug endpoint or replacing native background-job behavior.
 export async function nativeBackgroundMarkerCount(databasePath, notificationID, environment) {
   assert.match(notificationID, /^msg_[A-Za-z0-9]+$/);
   const { stdout } = await runFile('/usr/bin/sqlite3', ['-readonly', databasePath,
-    `SELECT count(*) FROM kv WHERE key='job.background/${notificationID}';`],
+    `SELECT count(*) FROM job WHERE notification_id='${notificationID}';`],
   { env: environment, timeout: 5_000, maxBuffer: 4096 });
   assert.match(stdout.trim(), /^(?:0|1)$/);
   return Number(stdout.trim());

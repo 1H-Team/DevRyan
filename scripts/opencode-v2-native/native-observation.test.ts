@@ -23,9 +23,10 @@ const budget={auto:true,buffer:7500,keep:15000,ceiling:8884,budget:8884,estimate
 const trigger:Extract<NativeObservation,{stage:'compaction-trigger'}>={...common,stage:'compaction-trigger',triggerID:'trigger_1',reason:'manual',inputID:'msg_1',entered:10,orderedInputDigest:'b'.repeat(64),inputCount:1,budget,anchorMessageID:'msg_0',checkpointMessageID:null};
 test('finite private and sanitized contracts retain exact witnesses and reject alternate paths/raw controls',()=>{
  expect(parseNativeObservation(trigger)).toEqual(trigger);
+ const percentBudget={...trigger,budget:{...budget,buffer:'20%'}};expect(parseNativeObservation(percentBudget)).toEqual(percentBudget);
  expect(parseNativeJournalObservation({...trigger,directory:'<WORKTREE_123456abcdef>'}).directory).toBe('<WORKTREE_123456abcdef>');
  for(const directory of ['~','relative','<WORKTREE_notahash>','/owned/project'])expect(()=>parseNativeJournalObservation({...trigger,directory})).toThrow('native_observation_invalid');
- for(const changed of [{rawContext:'private'}, {budget:{...budget,prompt:'private'}},{budget:{...budget,anchorIndex:1}},{reason:'auto'}])expect(()=>parseNativeObservation({...trigger,...changed})).toThrow('native_observation_invalid');
+ for(const changed of [{rawContext:'private'}, {budget:{...budget,prompt:'private'}},{budget:{...budget,anchorIndex:1}},{budget:{...budget,buffer:'20'}},{reason:'auto'}])expect(()=>parseNativeObservation({...trigger,...changed})).toThrow('native_observation_invalid');
  expect(()=>parseNativeObservation({...common,stage:'physical',requestID:'req_1',kind:'primary',transport:'http',ordinal:1,attempt:null,wireOptions:{authorization:'private'}})).toThrow('native_observation_invalid');
 });
 test('provider refusals preserve only finite kind, hook and local code through the observation owner',async()=>{

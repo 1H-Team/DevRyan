@@ -22,3 +22,6 @@ export interface ReviewedNativeInputs {
 }
 export function prepareReviewedNativeInputs(repository:string,options?:{target?:'darwin-arm64'|'win32-x64'|'win32-arm64'}):Promise<ReviewedNativeInputs>;
 export function reviewedNativeInputPlugin(input:Pick<ReviewedNativeInputs,'rewrites'|'virtualModules'|'inputFiles'|'resolutions'|'workspaceResolutions'>):BunPlugin;
+export const NATIVE_CLAUDE_AGENT_SDK_SOURCE_SHA256:string;
+export function isNativeClaudeAgentSdkSource(file:string):boolean;
+export function rewriteUnavailableClaudeAgentSdk(source:Uint8Array):string;

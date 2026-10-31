@@ -51,7 +51,7 @@ export function controllerProcessOverrides({ helper }: { readonly helper?: Contr
   };
   const persistentPty: PersistentPty.Interface = {
     list: denied, get: denied, create: denied, write: denied, resize: denied,
-    control: denied, input: denied, snapshot: denied, read: denied, remove: denied,
+    control: denied, input: denied, snapshot: denied, read: denied, rename: denied, remove: denied,
     shutdown: () => Effect.void, handoff: denied, attach: denied,
   };
   return [

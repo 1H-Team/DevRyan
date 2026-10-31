@@ -3,6 +3,8 @@ const object = value => value !== null && typeof value === 'object' && !Array.is
 const id = value => typeof value === 'string' && /^[a-zA-Z0-9_.:/-]{1,256}$/.test(value);
 const hash = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 const number = value => typeof value === 'number' && Number.isFinite(value) && value >= 0;
+// OpenCode 2.2.5 compaction buffers may be a share of the window, such as "20%".
+const percent = value => typeof value === 'string' && /^\d+(?:\.\d+)?%$/.test(value);
 const exact = (value, required, optional = []) => {
   if (!object(value) || required.some(key => !Object.hasOwn(value, key))
     || Object.keys(value).some(key => !required.includes(key) && !optional.includes(key))) throw failure();
@@ -95,7 +97,7 @@ function parse(value, journal) {
         exact(b,['auto','buffer','keep','ceiling','budget','estimatePrompt','estimateContext','limits','anchorIndex','checkpointIndex','stateRevision','due']);
         exact(b.estimatePrompt,['measured','estimated']);exact(b.limits,['context','input','output']);
         if(typeof b.auto!=='boolean'||typeof b.due!=='boolean'||[b.keep,b.estimateContext,b.estimatePrompt.measured,b.estimatePrompt.estimated,b.limits.context,b.limits.output].some(item=>!number(item))
-          ||b.buffer!==null&&!number(b.buffer)||b.limits.input!==null&&!number(b.limits.input)
+          ||b.buffer!==null&&!number(b.buffer)&&!percent(b.buffer)||b.limits.input!==null&&!number(b.limits.input)
           ||b.ceiling!==null&&(typeof b.ceiling!=='number'||!Number.isFinite(b.ceiling))||typeof b.budget!=='number'||!Number.isFinite(b.budget)
           ||![b.anchorIndex,b.checkpointIndex].every(item=>Number.isSafeInteger(item)&&item>=-1&&item<value.inputCount)
           ||!Number.isSafeInteger(b.stateRevision)||b.stateRevision<0)throw failure();

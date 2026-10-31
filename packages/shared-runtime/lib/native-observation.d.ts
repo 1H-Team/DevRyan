@@ -4,7 +4,7 @@ export interface NativeObservationAttempt {readonly traceID:string;readonly span
 interface Common {readonly schema:1;readonly controllerInstanceID:string;readonly configurationDigest:string;readonly sessionID:string;readonly directory:string}
 interface NativeHelperObservation {readonly toolCount?:number;readonly helperSelectionMode?:'configured'|'active';readonly helperSelectionRevision?:string}
 export interface NativeCompactionBudget {
- readonly auto:boolean;readonly buffer:number|null;readonly keep:number;readonly ceiling:number|null;readonly budget:number;
+ readonly auto:boolean;readonly buffer:number|string|null;readonly keep:number;readonly ceiling:number|null;readonly budget:number;
  readonly estimatePrompt:{readonly measured:number;readonly estimated:number};readonly estimateContext:number;
  readonly limits:{readonly context:number;readonly input:number|null;readonly output:number};
  readonly anchorIndex:number;readonly checkpointIndex:number;readonly stateRevision:number;readonly due:boolean;
