@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.7] - 2026-10-31
+
+- Upgrade the bundled native OpenCode host to 2.2.5, migrate background jobs to its new database layout, and preserve the previous runtime and database for rollback.
+- Keep the optional Claude CLI provider inactive and block unreviewed experimental artifact routes.
+- Accept percentage-based compaction buffers in runtime observations.
+
 ## [2.0.6] - 2026-10-30
 
 - Upgrade the bundled native OpenCode host to 2.2.2 and preserve the previous runtime and database for rollback.
