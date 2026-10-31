@@ -143,7 +143,7 @@ export async function startNativeController(boot:NativeProcessBoot,identity:{cor
   const integrations=boot.configurationSnapshot?createControllerIntegrations({controllerInstanceID:boot.instanceID,mcpElicitationCalls,
     configurationSnapshot:boot.configurationSnapshot,rpc,registrationOrigin:remoteMcpOrigin,
     providerCompatibilityOrigin:providerOrigin,
-    reviewedNativeProviderOrigin:nativePlugins.get('opencode.provider.xai'),
+    reviewedNativeProviderOrigins:new Map([...nativePlugins].filter(([id])=>id.startsWith('opencode.provider.'))),
     reviewedNativeOpenAiOrigin:nativePlugins.get('opencode.provider.chatgpt'),
     reviewedNativeCodexOrigin:nativePlugins.get('opencode.provider.openai'),
     reviewedConfigurationOrigins:new Map([...nativePlugins].filter(([id])=>['opencode.config.mcp','opencode.mcp.codemode.defaults','opencode.provider.opencode','opencode.config.policy'].includes(id))),

@@ -1,6 +1,7 @@
 import {isNativeOpenCodeVersion} from '../version-policy.js';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { isCatalogProviderIntegration, isProviderFormAnswer } from './native-provider-integrations.js';
 
 export const NATIVE_PROCESS_PROTOCOL = 1;
 export const NATIVE_PROCESS_LIMITS = Object.freeze({ bootBytes: 4 * 1024 * 1024, messageBytes: 64 * 1024, recordBytes:32*1024*1024, inFlight: 32 });
@@ -58,10 +59,12 @@ const credentialMutation = value => {
   if (value?.operation === 'create') {
     keys(value, ['operation', 'input']);
     keys(value.input, ['integrationID', 'value', 'id', 'label', 'activate']);
-    if (!['openai', 'cursor-acp', 'xai', 'opencode', 'opencode-go'].includes(value.input.integrationID)) throw invalid();
-    keys(value.input.value, ['type', 'key']);
+    if (!['openai', 'cursor-acp'].includes(value.input.integrationID) && !isCatalogProviderIntegration(value.input.integrationID)) throw invalid();
+    keys(value.input.value, ['type', 'key', 'metadata']);
     if (value.input.value.type !== 'key') throw invalid();
     string(value.input.value.key);
+    // A key method's form answer, stored as the key's metadata (Azure resource name and similar).
+    if (value.input.value.metadata !== undefined && (!isCatalogProviderIntegration(value.input.integrationID) || !isProviderFormAnswer(value.input.value.metadata))) throw invalid();
     if (value.input.id !== undefined) identifier(value.input.id);
     if (value.input.label !== undefined) label(value.input.label);
     if (value.input.activate !== undefined && typeof value.input.activate !== 'boolean') throw invalid();

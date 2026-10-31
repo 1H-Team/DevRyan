@@ -210,9 +210,31 @@ private. MCP OAuth availability requires the ready owned runtime. Config-wide
 provider disconnect remains unavailable where prepared configuration removal
 has not been qualified.
 
-`GET /api/provider/:providerID/accounts` lists one provider's saved accounts
-(`openai`, `cursor-acp`, `xai`, `opencode`, `opencode-go`) for Settings →
-Providers. It reads the owner's credential metadata under the same integration
+Providers lists every provider OpenCode supports natively. `GET /api/provider/auth`
+reads `/api/integration` once and returns each model provider with its connect
+methods: API keys and OAuth methods, in OpenCode's order, with OpenCode's name as
+`providerName`. A method whose form has only string fields (free text or a choice of
+options) and checkboxes, optionally shown by `when` rules, carries a redacted copy as
+`fields`; methods needing other field types are left out. Key saves and OAuth starts
+accept an `answer` that the facade checks the way OpenCode does (known, active fields
+only; required fields present; choices from their options). An OAuth answer is
+forwarded with the method; a key answer is stored as the key's `metadata`, as
+OpenCode's own key connect does. Host authorization and the process protocol accept
+only the bounded shape `isProviderFormAnswer`. Web-search tools, MCP servers, `anthropic`
+(its selections run through claude-agent) and integrations without such a method are
+left out. The rule is `isCatalogProviderIntegration`
+(`runtime-host/native-provider-integrations.js`): every integration except the
+delegated `openai`, `cursor-acp`, `claude-agent`, `anthropic` and `mcp_<hash>`
+servers uses the generic `provider` scope. xAI signs in only by device code, OpenAI
+only by `chatgpt-browser`, and OpenCode Console OAuth stays off; the controller admits
+OAuth only from a reviewed native plugin (see `runtime-host/DOCUMENTATION.md`). The
+browser picks an OAuth method by its index among the provider's OAuth entries; start,
+callback and cancel reread the provider's methods and answer 400 for an index it does
+not have. `PUT /api/auth/:providerID` saves a key only for a model provider whose
+methods include a plain key.
+
+`GET /api/provider/:providerID/accounts` lists one provider's saved accounts for
+Settings → Providers. It reads the owner's credential metadata under the same integration
 grant and returns `{ providerID, accounts: [{ id, label, method, active,
 needsAuth? }] }` through `toProviderAccountList`, which copies only those
 allowlisted primitives: no key, token, refresh grant, credential value, method

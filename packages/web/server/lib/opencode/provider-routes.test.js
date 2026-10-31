@@ -382,6 +382,15 @@ describe('OpenCode provider routes', () => {
     expect(dependencies.getProviderSources).toHaveBeenCalledWith('anthropic', null);
   });
 
+  // The auth.json alias, Antigravity and env-var cases below describe a runtime without a
+  // native owner; on a native runtime catalog providers use the owner (next test).
+  it('routes a catalog provider disconnect through the native owner on a native runtime', async () => {
+    const f = nativeFixture(), response = await request(f.app).delete('/api/provider/deepseek/auth?scope=all&directory=/tmp/project');
+    expect(response.status).toBe(200); expect(response.body.removedSources).toEqual({ auth: true, user: true, project: false, custom: false });
+    expect(f.run).toHaveBeenCalledWith({ providerID: 'deepseek', scope: 'all', directory: '/tmp/project' }, expect.any(Function));
+    expect(f.dependencies.removeProviderConfig).not.toHaveBeenCalled(); expect(authModule.removeProviderAuth).not.toHaveBeenCalled();
+  });
+
   it('reports GitHub Copilot source auth from canonical or legacy auth aliases', async () => {
     getProviderAuth.mockImplementation((providerId) => {
       if (providerId === 'copilot') {
@@ -390,7 +399,7 @@ describe('OpenCode provider routes', () => {
       return null;
     });
 
-    const { app } = createApp();
+    const { app } = createApp({ getNativeRuntimeOwner: () => null });
 
     const response = await request(app)
       .get('/api/provider/github-copilot/source')
@@ -425,7 +434,7 @@ describe('OpenCode provider routes', () => {
 
   it('removes the active project provider config when disconnect-all supplies a directory', async () => {
     const removeProviderConfig = vi.fn(() => true);
-    const { app, dependencies } = createApp({ removeProviderConfig });
+    const { app, dependencies } = createApp({ removeProviderConfig, getNativeRuntimeOwner: () => null });
 
     const response = await request(app)
       .delete('/api/provider/google/auth?scope=all&directory=%2Ftmp%2Fproject')
@@ -449,7 +458,7 @@ describe('OpenCode provider routes', () => {
     authModule.removeProviderAuth.mockImplementation((providerId) => (
       providerId === 'google.oauth'
     ));
-    const { app } = createApp();
+    const { app } = createApp({ getNativeRuntimeOwner: () => null });
 
     const response = await request(app).delete('/api/provider/google/auth?scope=all').expect(200);
 
@@ -459,7 +468,7 @@ describe('OpenCode provider routes', () => {
   });
 
   it('invalidates provider runtime state for an idempotent disconnect', async () => {
-    const { app, dependencies } = createApp();
+    const { app, dependencies } = createApp({ getNativeRuntimeOwner: () => null });
 
     const response = await request(app)
       .delete('/api/provider/antigravity/auth?scope=all')
@@ -488,6 +497,7 @@ describe('OpenCode provider routes', () => {
       return accountPath;
     });
     const { app } = createApp({
+      getNativeRuntimeOwner: () => null,
       listAntigravityAccountsPaths: vi.fn(async () => [join(tempDir, 'missing.json'), ...accountPaths]),
     });
 
@@ -503,6 +513,7 @@ describe('OpenCode provider routes', () => {
   it('reports every config file and credential env var that still provides a disconnected provider', async () => {
     const listProviderConfigFiles = vi.fn(() => ['/tmp/home/.config/opencode/opencode.json']);
     const { app, dependencies } = createApp({
+      getNativeRuntimeOwner: () => null,
       listProviderConfigFiles,
       getProviderEnvironmentSnapshot: () => ({ GEMINI_API_KEY: 'secret-fixture-value' }),
     });

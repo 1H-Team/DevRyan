@@ -278,7 +278,11 @@ export const createOpenCodeV2FacadeRouter = (deps) => {
   for (const [path, operation] of Object.entries({
     agent: 'agents', command: 'commands', skill: 'skills', provider: 'providerList', 'config/providers': 'providers',
     config: 'config', 'global/config': 'config', mcp: 'mcp', path: 'path', 'project/current': 'project', vcs: 'vcs',
-  })) route('get', `/${path}`, (client, _req, _res, options) => client.catalog[operation]({ directory: options.directory }, options));
+  })) route('get', `/${path}`, async (client, _req, _res, options) => {
+    // The model catalog is where Claude first matters: connect it once if Claude Code is installed.
+    if (operation === 'providers' || operation === 'providerList') await integrations.claudeAutoConnect?.(options).catch(() => false);
+    return client.catalog[operation]({ directory: options.directory }, options);
+  });
   route('get', '/project', async (_client, _req, _res, options) => toV1Projects(unwrapList(await request({ ...options, label: 'browser.projects', path: '/api/project' }))));
   route('get', '/lsp', () => []);
   for (const suffix of ['', '/ids']) route('get', `/experimental/tool${suffix}`, async (client, req, _res, options) => {

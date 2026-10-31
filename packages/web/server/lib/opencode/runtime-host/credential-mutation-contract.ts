@@ -1,9 +1,10 @@
 import { Context, type Effect } from 'effect';
 import type { OperationPermit } from './native-admission-contract.js';
+import { isCatalogProviderIntegration } from './native-provider-integrations.js';
 
-export type OwnedProviderIntegration = 'xai' | 'opencode' | 'opencode-go';
-export const isOwnedProviderIntegration = (value: string): value is OwnedProviderIntegration =>
-  value === 'xai' || value === 'opencode' || value === 'opencode-go';
+/** Any catalog provider integration (see `native-provider-integrations.js`). */
+export type OwnedProviderIntegration = string;
+export const isOwnedProviderIntegration = (value: string): value is OwnedProviderIntegration => isCatalogProviderIntegration(value);
 
 /** Opaque original-caller authorization, privately captured before async OAuth. */
 export const CredentialAuthorizationRef = Context.Reference<string | undefined>('DevRyan/CredentialAuthorization', { defaultValue: () => undefined });
@@ -34,7 +35,7 @@ export type CredentialResolutionBinding = {
   readonly sessionID: string; readonly permit: OperationPermit;
   readonly credentialID: string; readonly expectedFingerprint: string;
 } & ({ readonly kind: 'provider'; readonly integrationID: OwnedProviderIntegration; readonly valueType: 'key'; readonly methodID?: never }
-  | { readonly kind: 'provider'; readonly valueType: 'oauth'; readonly integrationID: 'xai'; readonly methodID: 'device' }
+  | { readonly kind: 'provider'; readonly valueType: 'oauth'; readonly integrationID: OwnedProviderIntegration; readonly methodID: string }
   | { readonly kind: 'openai'; readonly valueType: 'oauth'; readonly integrationID: 'openai'; readonly methodID: 'chatgpt-token-sharing' | 'chatgpt-browser' });
 
 export type WithCredentialMutation = <A, E, R>(binding: CredentialMutationBinding,

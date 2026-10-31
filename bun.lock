@@ -42,7 +42,7 @@
     },
     "packages/agents-core": {
       "name": "@devryan/agents-core",
-      "version": "2.0.7",
+      "version": "2.0.8",
       "dependencies": {
         "@mozilla/readability": "0.6.0",
         "@opencode-ai/plugin": "1.18.33",
@@ -57,7 +57,7 @@
     },
     "packages/cursor-sdk-runtime": {
       "name": "@devryan/cursor-sdk-runtime",
-      "version": "2.0.7",
+      "version": "2.0.8",
       "dependencies": {
         "@cursor/sdk": "1.0.28",
         "@modelcontextprotocol/sdk": "1.29.0",
@@ -66,7 +66,7 @@
     },
     "packages/desktop": {
       "name": "@devryan/desktop",
-      "version": "2.0.7",
+      "version": "2.0.8",
       "devDependencies": {
         "@tauri-apps/cli": "^2",
         "@types/node": "^24.3.1",
@@ -75,7 +75,7 @@
     },
     "packages/electron": {
       "name": "@devryan/electron",
-      "version": "2.0.7",
+      "version": "2.0.8",
       "dependencies": {
         "@devryan/web": "workspace:*",
         "electron-context-menu": "^5.1.0",
@@ -90,25 +90,25 @@
     },
     "packages/harness-runtime": {
       "name": "@devryan/harness-runtime",
-      "version": "2.0.7",
+      "version": "2.0.8",
       "dependencies": {
         "@devryan/shared-runtime": "workspace:*",
       },
     },
     "packages/orchestration-runtime": {
       "name": "@devryan/orchestration-runtime",
-      "version": "2.0.7",
+      "version": "2.0.8",
     },
     "packages/shared-runtime": {
       "name": "@devryan/shared-runtime",
-      "version": "2.0.7",
+      "version": "2.0.8",
       "dependencies": {
         "adm-zip": "^0.6.0",
       },
     },
     "packages/ui": {
       "name": "@devryan/ui",
-      "version": "2.0.7",
+      "version": "2.0.8",
       "dependencies": {
         "@base-ui/react": "^1.8.0",
         "@codemirror/autocomplete": "^6.20.3",
@@ -195,7 +195,7 @@
     },
     "packages/web": {
       "name": "@devryan/web",
-      "version": "2.0.7",
+      "version": "2.0.8",
       "bin": {
         "devryan": "./bin/cli.js",
         "openchamber": "./bin/cli.js",

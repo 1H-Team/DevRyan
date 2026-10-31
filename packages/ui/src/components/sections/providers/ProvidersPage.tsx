@@ -29,6 +29,7 @@ import {
   isHiddenProviderModelRef,
 } from '@/lib/providers/modelVisibility';
 import { mergeProviderConnectionOptions, parseProvidersPayload, type ProviderOption } from './providerOptions';
+import { ProviderMethodFields, parseProviderFormFields, providerFormAnswer, providerFormComplete, type ProviderFormAnswer } from './ProviderMethodFields';
 import { isRetiredProviderId, withRetiredProviderEntries } from './retiredProviders';
 import { getProviderModelsForDisplay } from './providerSorting';
 import {
@@ -160,10 +161,12 @@ const parseAuthPayload = (payload: unknown): Record<string, AuthMethod[]> => {
 };
 
 // Claude is Claude Code's own login (claude-agent); DevRyan accepts no Anthropic key.
-const providerSupportsApiKey = (providerId: string, nativeOAuth = true) => (
+// Once the runtime lists a provider's methods, a key field shows only if one of them is a key.
+const providerSupportsApiKey = (providerId: string, nativeOAuth = true, methods?: readonly AuthMethod[]) => (
   !isRetiredProviderId(providerId)
   && providerId !== CLAUDE_AGENT_PROVIDER_ID
   && (!nativeOAuth || !isAnthropicOAuthProviderId(providerId))
+  && (!methods?.length || methods.some((method) => normalizeAuthType(method) === 'api'))
 );
 
 const ProvidersPageContent: React.FC = () => {
@@ -189,8 +192,28 @@ const ProvidersPageContent: React.FC = () => {
   const toggleHiddenModelRefs = useUIStore((state) => state.toggleHiddenModelRefs);
 
   const [authMethodsByProvider, setAuthMethodsByProvider] = React.useState<Record<string, AuthMethod[]>>({});
+  const methodFields = React.useCallback((providerId: string, type: 'api' | 'oauth', index: number) => parseProviderFormFields(
+    (authMethodsByProvider[providerId] ?? []).filter((method) => normalizeAuthType(method) === type)[index]?.fields,
+  ), [authMethodsByProvider]);
+  const answerKey = (providerId: string, type: 'api' | 'oauth', index: number) => `${providerId}:${type}:${index}`;
+  const renderMethodFields = (providerId: string, type: 'api' | 'oauth', index: number) => {
+    const key = answerKey(providerId, type, index);
+    return (
+      <ProviderMethodFields
+        fields={methodFields(providerId, type, index)}
+        answer={methodAnswers[key] ?? {}}
+        onChange={(next) => setMethodAnswers((prev) => ({ ...prev, [key]: next }))}
+        disabled={authBusyKey !== null}
+      />
+    );
+  };
+  const methodReady = (providerId: string, type: 'api' | 'oauth', index: number) => providerFormComplete(
+    methodFields(providerId, type, index), methodAnswers[answerKey(providerId, type, index)] ?? {},
+  );
   const [authLoading, setAuthLoading] = React.useState(false);
   const [apiKeyInputs, setApiKeyInputs] = React.useState<Record<string, string>>({});
+  // Form answers some connect methods need (Azure resource name, GitHub deployment), by `${provider}:${method}`.
+  const [methodAnswers, setMethodAnswers] = React.useState<Record<string, ProviderFormAnswer>>({});
   const [authBusyKey, setAuthBusyKey] = React.useState<string | null>(null);
   const oauthAbort = React.useRef<AbortController | null>(null);
   React.useEffect(() => () => oauthAbort.current?.abort(), []);
@@ -471,7 +494,7 @@ const ProvidersPageContent: React.FC = () => {
   const selectedProvider = providers.find((provider) => provider.id === selectedProviderId);
   const selectedSources = selectedProviderId ? providerSources[selectedProviderId] : undefined;
   const selectedProviderName = selectedProvider ? getProviderDisplayName(selectedProvider) : '';
-  const selectedProviderSupportsApiKey = selectedProvider ? providerSupportsApiKey(selectedProvider.id, providerOAuth) : false;
+  const selectedProviderSupportsApiKey = selectedProvider ? providerSupportsApiKey(selectedProvider.id, providerOAuth, authMethodsByProvider[selectedProvider.id]) : false;
   const selectedProviderIsCursor = isCursorAcpProviderId(selectedProvider?.id);
   const selectedCursorUnavailable = selectedProviderIsCursor && cursorRuntimeStatus?.platformUnavailable === true;
   const cursorSdkConfigured = cursorRuntimeStatus?.sdkAuthConfigured === true;
@@ -574,13 +597,15 @@ const ProvidersPageContent: React.FC = () => {
     }
 
     const busyKey = `api:${providerId}`;
+    const answer = providerFormAnswer(methodFields(providerId, 'api', 0), methodAnswers[answerKey(providerId, 'api', 0)] ?? {});
+    const apiAnswer = answer ? { answer } : {};
     setAuthBusyKey(busyKey);
 
     try {
       const response = await fetch(`/api/auth/${encodeURIComponent(providerId)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'api', key: apiKey }),
+        body: JSON.stringify({ type: 'api', key: apiKey, ...apiAnswer }),
       });
 
       const payload = await response.json().catch(() => null);
@@ -687,13 +712,15 @@ const ProvidersPageContent: React.FC = () => {
   const handleOAuthStart = async (providerId: string, methodIndex: number) => {
     assertRuntimeFeatureAvailable('providerOAuth');
     const busyKey = `oauth:${providerId}:${methodIndex}`;
+    const answer = providerFormAnswer(methodFields(providerId, 'oauth', methodIndex), methodAnswers[answerKey(providerId, 'oauth', methodIndex)] ?? {});
+    const oauthAnswer = answer ? { answer } : {};
     setAuthBusyKey(busyKey);
 
     try {
       const response = await fetch(`/api/provider/${encodeURIComponent(providerId)}/oauth/authorize`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-DevRyan-CSRF': '1' },
-        body: JSON.stringify({ method: methodIndex }),
+        body: JSON.stringify({ method: methodIndex, ...oauthAnswer }),
       });
 
       const payload = await response.json().catch(() => null);
@@ -1067,7 +1094,7 @@ const ProvidersPageContent: React.FC = () => {
                 <p className="typography-meta text-muted-foreground px-2">{t('settings.providers.page.auth.loadingMethods')}</p>
               ) : (
                 <section className="px-2 pb-2 pt-0 space-y-4">
-                  {providerSupportsApiKey(candidateProviderId, providerOAuth) && (
+                  {providerSupportsApiKey(candidateProviderId, providerOAuth, authMethodsByProvider[candidateProviderId]) && (
                   <div className="py-1.5">
                     <label className="typography-ui-label text-foreground flex items-center gap-1.5">
                       {t('settings.providers.page.auth.apiKeyLabel')}
@@ -1080,6 +1107,7 @@ const ProvidersPageContent: React.FC = () => {
                         </TooltipContent>
                       </Tooltip>
                     </label>
+                    <div className="mt-1.5">{renderMethodFields(candidateProviderId, 'api', 0)}</div>
                     <div className="flex flex-col sm:flex-row sm:items-center gap-2 mt-1.5">
                       <Input
                         type="password"
@@ -1097,7 +1125,7 @@ const ProvidersPageContent: React.FC = () => {
                         size="xs"
                         className="!font-normal shrink-0"
                         onClick={() => handleSaveApiKey(candidateProviderId)}
-                        disabled={authBusyKey === `api:${candidateProviderId}`}
+                        disabled={authBusyKey === `api:${candidateProviderId}` || !methodReady(candidateProviderId, 'api', 0)}
                       >
                         {authBusyKey === `api:${candidateProviderId}` ? t('settings.providers.page.actions.saving') : t('settings.providers.page.actions.saveKey')}
                       </Button>
@@ -1131,7 +1159,7 @@ const ProvidersPageContent: React.FC = () => {
                   )}
 
                   {(() => {
-                    const candidateSupportsApiKey = providerSupportsApiKey(candidateProviderId, providerOAuth);
+                    const candidateSupportsApiKey = providerSupportsApiKey(candidateProviderId, providerOAuth, authMethodsByProvider[candidateProviderId]);
                     const candidateAuthMethods = authMethodsByProvider[candidateProviderId] ?? [];
                     const candidateOAuthMethods = !providerOAuth || isCursorAcpProviderId(candidateProviderId) || candidateProviderId === 'openai' && !canSignInOpenAi
                       ? []
@@ -1154,6 +1182,7 @@ const ProvidersPageContent: React.FC = () => {
 
                           return (
                             <div key={`${candidateProviderId}-${methodLabel}`} className="space-y-3">
+                              {renderMethodFields(candidateProviderId, 'oauth', index)}
                               <div className="flex items-center justify-between gap-2">
                                 <div>
                                   <div className="typography-ui-label text-foreground">{methodLabel}</div>
@@ -1168,7 +1197,7 @@ const ProvidersPageContent: React.FC = () => {
                                   size="xs"
                                   className="!font-normal"
                                   onClick={() => handleOAuthStart(candidateProviderId, index)}
-                                  disabled={authBusyKey !== null || Boolean(isAttemptInProgress)}
+                                  disabled={authBusyKey !== null || Boolean(isAttemptInProgress) || !methodReady(candidateProviderId, 'oauth', index)}
                                 >
                                   {activeAttempt?.phase === 'error'
                                     ? t('settings.providers.page.actions.retry')
@@ -1339,6 +1368,7 @@ const ProvidersPageContent: React.FC = () => {
                       </TooltipContent>
                     </Tooltip>
                   </label>
+                  <div className="mt-1.5">{renderMethodFields(selectedProvider.id, 'api', 0)}</div>
                   <div className="flex flex-col sm:flex-row sm:items-center gap-2 mt-1.5">
                     <Input
                       type="password"
@@ -1356,7 +1386,7 @@ const ProvidersPageContent: React.FC = () => {
                       size="xs"
                       className="!font-normal shrink-0"
                       onClick={() => handleSaveApiKey(selectedProvider.id)}
-                      disabled={authBusyKey === `api:${selectedProvider.id}`}
+                      disabled={authBusyKey === `api:${selectedProvider.id}` || !methodReady(selectedProvider.id, 'api', 0)}
                     >
                       {authBusyKey === `api:${selectedProvider.id}` ? t('settings.providers.page.actions.saving') : t('settings.providers.page.actions.saveKey')}
                     </Button>
@@ -1401,6 +1431,7 @@ const ProvidersPageContent: React.FC = () => {
 
                       return (
                         <div key={`${selectedProvider.id}-${methodLabel}`} className="space-y-3">
+                          {renderMethodFields(selectedProvider.id, 'oauth', index)}
                           <div className="flex items-center justify-between gap-2">
                             <div>
                               <div className="typography-ui-label text-foreground">{methodLabel}</div>
@@ -1415,7 +1446,7 @@ const ProvidersPageContent: React.FC = () => {
                               size="xs"
                               className="!font-normal"
                               onClick={() => handleOAuthStart(selectedProvider.id, index)}
-                              disabled={authBusyKey !== null || Boolean(isAttemptInProgress)}
+                              disabled={authBusyKey !== null || Boolean(isAttemptInProgress) || !methodReady(selectedProvider.id, 'oauth', index)}
                             >
                               {activeAttempt?.phase === 'error'
                                 ? t('settings.providers.page.actions.retry')

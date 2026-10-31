@@ -30,7 +30,8 @@ export interface ControllerIntegrationsOptions {
   readonly rpc:(method:string,input:unknown,options?:{readonly signal:AbortSignal})=>Promise<unknown>;
   readonly registrationOrigin:RegistrationOrigin;
   readonly providerCompatibilityOrigin?:RegistrationOrigin;
-  readonly reviewedNativeProviderOrigin?:RegistrationOrigin;
+  /** Reviewed native `opencode.provider.*` plugin origins by plugin ID. */
+  readonly reviewedNativeProviderOrigins?:ReadonlyMap<string,RegistrationOrigin>;
   readonly reviewedNativeOpenAiOrigin?:RegistrationOrigin;
   readonly reviewedNativeCodexOrigin?:RegistrationOrigin;
   readonly reviewedConfigurationOrigins:ReadonlyMap<string,RegistrationOrigin>;
@@ -101,11 +102,12 @@ export function createControllerIntegrations(options:ControllerIntegrationsOptio
   const providerBinding=(directory:string,integrationID:OwnedProviderIntegration,methodID?:string):NativeIntegrationBinding=>{
     const acquisition=acquisitions.get(directory);if(!acquisition)return refuse('native_integration_acquisition_expired');
     assertAcquisition(acquisition);
-    if(methodID!==undefined&&(integrationID!=='xai'||methodID!=='device'))return refuse('native_provider_method_unsupported');
+    if(!isOwnedProviderIntegration(integrationID))return refuse('native_integration_binding_invalid');
+    if(methodID!==undefined&&(!/^[A-Za-z0-9_-]{1,256}$/.test(methodID)||integrationID==='xai'&&methodID!=='device'))return refuse('native_provider_method_unsupported');
     const configuration=snapshot.locations.find(location=>location.directory===directory)?.configuration;
     return {kind:'provider',directory,integrationID,controllerInstanceID:options.controllerInstanceID,acquisitionID:acquisition.id,
       configurationDigest:credentialMutationFingerprint(record(configuration?.providers)?configuration.providers[integrationID]??{}:{}),
-      ...(methodID==='device'?{methodID:'device'}:{})};
+      ...(methodID!==undefined?{methodID}:{})};
   };
   const fullBinding=(binding:CredentialMutationBinding):NativeIntegrationBinding=>{
     if(binding.kind==='openai'){
@@ -182,8 +184,8 @@ export function createControllerIntegrations(options:ControllerIntegrationsOptio
     },
     assertAttempt:input=>Effect.promise(()=>options.rpc('provider.attempt',input)).pipe(Effect.asVoid),
     assertResolution:binding=>Effect.promise(()=>options.rpc('provider.credential.assert',binding)).pipe(Effect.asVoid),
-    captureOAuthGrant:directory=>capture(providerBinding(directory,'xai','device'),'oauth'),
-    reviewedNativeProviderOrigin:options.reviewedNativeProviderOrigin,
+    captureOAuthGrant:(directory,integrationID,methodID)=>capture(providerBinding(directory,integrationID,methodID),'oauth'),
+    reviewedNativeProviderOrigins:options.reviewedNativeProviderOrigins??new Map(),
     ownsDelegatedIntegration:id=>id==='openai'||id==='cursor-acp'||id===CLAUDE_AGENT_INTEGRATION||mcp.ownsCredentialIntegration(id),
   });
   const closeAcquisition=(acquisition:Acquisition)=>Effect.gen(function*(){
@@ -240,12 +242,13 @@ export function createControllerIntegrations(options:ControllerIntegrationsOptio
       assertAcquisition(acquisition);
       const store=acquisition.credentials;
       if(mutationInput.operation==='create'){
-        if(!['openai','cursor-acp','xai','opencode','opencode-go'].includes(mutationInput.input.integrationID))return refuse('native_credential_mutation_denied');
+        const created=mutationInput.input.integrationID;
+        if(created!=='openai'&&created!=='cursor-acp'&&!isOwnedProviderIntegration(created))return refuse('native_credential_mutation_denied');
         const result=yield* store.create(mutationInput.input);assertAcquisition(acquisition);return {credentialID:result.id};
       }
       const record=yield* store.get(mutationInput.id);assertAcquisition(acquisition);
       if(!record)return refuse('native_credential_changed');
-      if(!['openai','cursor-acp','xai','opencode','opencode-go'].includes(record.integrationID)){
+      if(record.integrationID!=='openai'&&record.integrationID!=='cursor-acp'&&!isOwnedProviderIntegration(record.integrationID)){
         if(mutationInput.operation!=='remove')return refuse('native_credential_mutation_denied');
         yield* mcp.removeCredentialOwned(acquisition.mcpInner,acquisition.location,store,mutationInput.id);
       }else if(mutationInput.operation==='update')yield* store.update(mutationInput.id,mutationInput.updates);

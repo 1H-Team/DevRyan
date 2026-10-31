@@ -29,7 +29,7 @@ describe('selected native provider configuration owner',()=>{
     expect(f.credentialOperation.mock.calls[0][0]).toMatchObject({operation:'openai.credential.remove',expectedFingerprint:f.row.expectedFingerprint,directory:f.project});
   });
   it.each([
-    ['xai', 'device', true], ['xai', 'chatgpt-siwc', false], ['openai', 'chatgpt-token-sharing', true], ['openai', 'chatgpt-browser', true], ['openai', 'chatgpt-siwc', true], ['openai', 'device', false], ['opencode-go', 'device', false],
+    ['xai', 'device', true], ['xai', 'chatgpt-siwc', false], ['openai', 'chatgpt-token-sharing', true], ['openai', 'chatgpt-browser', true], ['openai', 'chatgpt-siwc', true], ['openai', 'device', false], ['github-copilot', 'device', true], ['opencode-go', 'a/b', false],
   ])('validates oauth credential metadata by provider: %s %s accepted=%s',async(providerID,methodID,accepted)=>{
     const f=fixture(providerID);f.row.valueType='oauth';f.row.methodID=methodID;
     const result=f.run({providerID,scope:'all'},owner=>owner.readAuthenticationSource());
@@ -86,7 +86,7 @@ describe('selected native provider configuration owner',()=>{
     await f.run({providerID:'openai',scope:'read'},async owner=>{retained=owner;});
     await expect(retained.readAuthenticationSource()).rejects.toMatchObject({code:'native_provider_configuration_runtime_changed'});expect(()=>retained.readSources()).toThrow();expect(f.credentialMetadata).not.toHaveBeenCalled();
   });
-  it.each([{providerID:'foreign',scope:'all'},{providerID:'openai',scope:'bad'},{providerID:'openai',scope:'project'},{providerID:'openai',scope:'all',directory:'/unreviewed'}])('refuses unreviewed request %j',async input=>{
+  it.each([{providerID:'mcp_0123456789abcdef',scope:'all'},{providerID:'anthropic',scope:'all'},{providerID:'../x',scope:'all'},{providerID:'openai',scope:'bad'},{providerID:'openai',scope:'project'},{providerID:'openai',scope:'all',directory:'/unreviewed'}])('refuses unreviewed request %j',async input=>{
     const f=fixture();await expect(f.run(input,()=>null)).rejects.toBeTruthy();expect(f.credentialMetadata).not.toHaveBeenCalled();expect(f.credentialOperation).not.toHaveBeenCalled();
   });
 });

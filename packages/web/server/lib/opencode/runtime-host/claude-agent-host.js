@@ -130,18 +130,48 @@ export function claudeAgentUsageFromEvent(info, previous, now = Date.now()) {
   }
   const overage = ['allowed', 'allowed_warning', 'rejected'].includes(info.overageStatus)
     ? { status: info.overageStatus, using: info.isUsingOverage === true } : previous?.overage;
-  return { version: 1, updatedAt: now, ...(overage ? { overage } : {}), windows };
+  return { version: 1, updatedAt: now, ...(overage ? { overage } : {}), windows, ...(previous?.models ? { models: previous.models } : {}) };
 }
+
+const REPORT_WINDOWS = Object.freeze(['five_hour', 'seven_day', 'seven_day_opus', 'seven_day_sonnet']);
+const MODEL_NAME = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$/;
+// The `/usage` report gives percentages and ISO resets; the record keeps event units.
+const reportWindow = value => usageWindow({
+  utilization: typeof value?.utilization === 'number' ? value.utilization / 100 : undefined,
+  resetsAt: typeof value?.resets_at === 'string' ? Math.floor(Date.parse(value.resets_at) / 1000) : undefined,
+});
+/** Reduces Claude Code's `/usage` answer to the usage record; the answer replaces every window it covers. */
+export function claudeAgentUsageFromReport(report, previous, now = Date.now()) {
+  const limits = report?.rate_limits;
+  if (report?.rate_limits_available !== true || !limits || typeof limits !== 'object') return previous;
+  const windows = {};
+  for (const name of REPORT_WINDOWS) {
+    const window = reportWindow(limits[name]);
+    // The report carries no limit status; a turn's event does, and it stays until the window resets.
+    const status = previous?.windows?.[name]?.resetsAt === window?.resetsAt ? previous?.windows?.[name]?.status : undefined;
+    if (window) windows[name] = status ? { ...window, status } : window;
+  }
+  const models = (Array.isArray(limits.model_scoped) ? limits.model_scoped : []).slice(0, 8).flatMap(value => {
+    const window = reportWindow(value);
+    return window && typeof value.display_name === 'string' && MODEL_NAME.test(value.display_name) ? [{ name: value.display_name, ...window }] : [];
+  });
+  return { version: 1, updatedAt: now, ...(previous?.overage ? { overage: previous.overage } : {}), windows, ...(models.length ? { models } : {}) };
+}
+
+const USAGE_REFRESH_MS = 60_000;
+const USAGE_REPORT_TIMEOUT_MS = 15_000;
 
 /** Stateless owner of host-launched Claude Code processes for one controller instance. */
 export function createClaudeAgentHost({ usageFile, resolveExecutable = resolveClaudeExecutable, spawnImpl = nodeSpawn,
-  environment = buildClaudeAgentEnvironment, loadSessions = defaultSessions, onDiagnostic = () => {}, now = Date.now }) {
+  environment = buildClaudeAgentEnvironment, loadSessions = defaultSessions, readUsageReport = defaultUsageReport,
+  onDiagnostic = () => {}, now = Date.now }) {
   const processes = new Map();
-  let closed = false, usage, usageWrite = Promise.resolve(), send;
+  let closed = false, usage, usageWrite = Promise.resolve(), send, refreshing, lastReport = -Infinity;
   const reply = value => { const frame = parseClaudeAgentReply({ protocol: 1, type: 'claude-agent-reply', ...value }); send?.(frame); };
-  const recordUsage = info => {
-    usage = claudeAgentUsageFromEvent(info, usage ?? readClaudeAgentUsage(usageFile), now());
-    if (!usageFile) return;
+  const recordUsage = info => persistUsage(claudeAgentUsageFromEvent(info, usage ?? readClaudeAgentUsage(usageFile), now()));
+  const persistUsage = next => {
+    usage = next;
+    if (!usageFile || !usage) return;
     const snapshot = JSON.stringify(usage);
     usageWrite = usageWrite.then(async () => {
       await fs.promises.mkdir(path.dirname(usageFile), { recursive: true, mode: 0o700 });
@@ -239,6 +269,27 @@ export function createClaudeAgentHost({ usageFile, resolveExecutable = resolveCl
     },
     /** Usage from Claude Code's last reported rate-limit event, in memory or persisted. */
     usage: () => usage ?? readClaudeAgentUsage(usageFile),
+    /**
+     * Asks Claude Code for its `/usage` numbers when the record is older than a minute
+     * (or `force`). No model turn runs; Claude Code reads its own plan limits. At most
+     * one report per minute, and a failed one leaves the last record in place.
+     */
+    refreshUsage({ force = false } = {}) {
+      const current = usage ?? readClaudeAgentUsage(usageFile);
+      if (closed || refreshing) return refreshing ?? Promise.resolve(current);
+      if (now() - lastReport < USAGE_REFRESH_MS || !force && current && now() - current.updatedAt < USAGE_REFRESH_MS) return Promise.resolve(current);
+      const executable = resolveExecutable();
+      if (!executable) return Promise.resolve(current);
+      lastReport = now();
+      refreshing = (async () => {
+        try {
+          const report = await readUsageReport({ executable, env: environment({}), cwd: os.tmpdir(), timeoutMs: USAGE_REPORT_TIMEOUT_MS });
+          if (!closed) persistUsage(claudeAgentUsageFromReport(report, usage ?? readClaudeAgentUsage(usageFile), now()));
+        } catch { onDiagnostic({ event: 'claude_agent_usage_report_failed' }); }
+        return usage ?? readClaudeAgentUsage(usageFile);
+      })().finally(() => { refreshing = undefined; });
+      return refreshing;
+    },
     async close() {
       closed = true;
       const children = [...processes.values()].filter(state => state.child);
@@ -266,10 +317,49 @@ async function defaultSessions() {
   };
 }
 
+/**
+ * Claude Code's structured `/usage` answer from a session that never sends a prompt:
+ * the SDK starts the user's `claude`, asks for its plan limits and closes it. The
+ * session has no tools, settings or persistence; Claude Code reads its own login.
+ */
+async function defaultUsageReport({ executable, env, cwd, timeoutMs }) {
+  const { query } = await import('@anthropic-ai/claude-agent-sdk');
+  const abortController = new AbortController();
+  const ended = new Promise(resolve => abortController.signal.addEventListener('abort', resolve, { once: true }));
+  const session = query({ prompt: (async function* () { await ended; })(), options: { pathToClaudeCodeExecutable: executable, env, cwd,
+    abortController, tools: [], settingSources: [], persistSession: false, strictMcpConfig: true, permissionMode: 'dontAsk' } });
+  let timer;
+  try {
+    return await Promise.race([session.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({ skipBehaviors: true }),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(fail('claude_agent_usage_timeout')), timeoutMs); })]);
+  } finally {
+    clearTimeout(timer); abortController.abort(); session.close();
+  }
+}
+
 export function readClaudeAgentUsage(usageFile) {
   if (!usageFile) return undefined;
   try {
     const value = JSON.parse(fs.readFileSync(usageFile, 'utf8'));
     return value?.version === 1 && value.windows && typeof value.windows === 'object' ? value : undefined;
   } catch { return undefined; }
+}
+
+/**
+ * Whether DevRyan may connect claude-agent on its own: absent until someone presses
+ * Connect or Disconnect. After a Disconnect it stays `disconnected`, so Claude is
+ * never reconnected behind the user's back.
+ */
+export function readClaudeAgentConnectionChoice(choiceFile) {
+  try {
+    const value = JSON.parse(fs.readFileSync(choiceFile, 'utf8'));
+    return value?.version === 1 && ['connected', 'disconnected'].includes(value.choice) ? value.choice : undefined;
+  } catch { return undefined; }
+}
+export async function writeClaudeAgentConnectionChoice(choiceFile, choice) {
+  if (!['connected', 'disconnected'].includes(choice)) throw fail('claude_agent_choice_invalid');
+  await fs.promises.mkdir(path.dirname(choiceFile), { recursive: true, mode: 0o700 });
+  const temporary = `${choiceFile}.${process.pid}.tmp`;
+  await fs.promises.writeFile(temporary, JSON.stringify({ version: 1, choice }), { mode: 0o600 });
+  await fs.promises.rename(temporary, choiceFile);
 }

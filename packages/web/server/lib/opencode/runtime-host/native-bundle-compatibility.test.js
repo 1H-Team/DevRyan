@@ -150,6 +150,30 @@ test('the exact rebuilt 2.0.26 graph upgrades while unknown rebuilds refuse', ()
   expect(isReviewedNativeClonePair({ ...source, inputs: { coreDigest: 'a'.repeat(64) } }, manifest('2.0.30'), REVIEWED_NATIVE_FRESH_CLONE_LAYOUT)).toBe(false);
 });
 
+test('reviewed rebuilds at the same version require the exact source layout and contracts', () => {
+  for (const version of ['2.0.26', '2.2.5']) {
+    const original = manifest(version);
+    const rebuilt = { ...original, inputs: { coreDigest: REVIEWED_NATIVE_CLONE_REBUILDS[version] } };
+    const layout = reviewedNativeCloneSourceLayout(version, 'fresh-install');
+    for (const [left, right] of [[original, rebuilt], [rebuilt, original]]) {
+      expect(isReviewedNativeClonePair(left, right, layout)).toBe(true);
+      expect(isReviewedNativeClonePair(left, right, { ...layout, structureSha256: '0'.repeat(64) })).toBe(false);
+      expect(isReviewedNativeClonePair(left, { ...right, inputs: { coreDigest: 'a'.repeat(64) } }, layout)).toBe(false);
+      expect(() => verifyNativeCloneCompatibility({ left, right, databasePath: '/does-not-exist' }))
+        .toThrow('bundle_v2_upgrade_compatibility_required');
+      expect(() => verifyNativeCloneCompatibility({ left, right: { ...right, compiledContracts: [] } }))
+        .toThrow('bundle_v2_upgrade_compatibility_required');
+    }
+  }
+  const directory = mkdtempSync(path.join(os.tmpdir(), 'native-clone-rebuild-'));
+  try {
+    fixtureLayout(directory, '2.0.26-fresh');
+    const left = manifest('2.0.26');
+    const right = { ...left, inputs: { coreDigest: REVIEWED_NATIVE_CLONE_REBUILDS['2.0.26'] } };
+    expect(() => verifyNativeCloneCompatibility({ left, right, databasePath: path.join(directory, '2.0.26-fresh.db') })).not.toThrow();
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
 test('a production build must carry the reviewed core graph of the host pin', async () => {
   const { TARGET_OPENCODE_VERSION } = await import('../version-policy.js');
   expect(Object.hasOwn(REVIEWED_NATIVE_CLONE_RELEASES, TARGET_OPENCODE_VERSION)).toBe(true);

@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { assertClaudeAgentArgs, buildClaudeAgentEnvironment, claudeAgentUsageFromEvent, createClaudeAgentHost, readClaudeAgentUsage } from './claude-agent-host.js';
+import { assertClaudeAgentArgs, buildClaudeAgentEnvironment, claudeAgentUsageFromEvent, claudeAgentUsageFromReport, createClaudeAgentHost, readClaudeAgentUsage } from './claude-agent-host.js';
 import { createClaudeAgentChannel } from './claude-agent-io.js';
 import { CLAUDE_AGENT_EXECUTABLE } from './claude-agent-protocol.js';
 
@@ -48,6 +48,52 @@ test('rate-limit events reduce to persisted subscription windows', () => {
   expect(next?.windows.five_hour).toEqual({ utilization: 0.81, resetsAt: 1793800000, status: 'allowed_warning' });
   expect(next?.windows.seven_day?.utilization).toBe(0.55);
   expect(claudeAgentUsageFromEvent({ rateLimitType: 'unknown', utilization: 0.5 }, undefined, 3000)?.windows).toEqual({});
+});
+
+// Claude Code 2.1.311's `/usage` answer for a plan with no 5-hour window (trimmed).
+const REPORT = { subscription_type: 'max', rate_limits_available: true, rate_limits: {
+  five_hour: null, seven_day: { utilization: 64, resets_at: '2026-11-04T22:00:00.737110+00:00' }, seven_day_opus: null,
+  model_scoped: [{ display_name: 'Fable', utilization: 28, resets_at: '2026-11-04T21:59:59.737260+00:00' }, { display_name: '../x', utilization: 1, resets_at: null }] } };
+
+test('the /usage report replaces the recorded windows', () => {
+  const previous = claudeAgentUsageFromEvent(RATE, undefined, 1000);
+  const usage = claudeAgentUsageFromReport(REPORT, previous, 5000);
+  expect(usage).toEqual({ version: 1, updatedAt: 5000, overage: { status: 'rejected', using: false },
+    windows: { seven_day: { utilization: 0.64, resetsAt: 1793829600, status: 'allowed' } }, models: [{ name: 'Fable', utilization: 0.28, resetsAt: 1793829599 }] });
+  // A turn's limit status stays while its window is the same one.
+  const blocked = claudeAgentUsageFromEvent({ rateLimitType: 'seven_day', utilization: 1, resetsAt: 1793829600, status: 'rejected' }, usage, 6000);
+  expect(blocked?.models).toEqual(usage?.models);
+  expect(claudeAgentUsageFromReport(REPORT, blocked, 7000)?.windows.seven_day).toEqual({ utilization: 0.64, resetsAt: 1793829600, status: 'rejected' });
+  // API-key and signed-out sessions report no plan limits; the last record stays.
+  expect(claudeAgentUsageFromReport({ rate_limits_available: false, rate_limits: null }, usage, 8000)).toBe(usage);
+});
+
+test('usage refresh asks Claude Code at most once a minute and persists the answer', async () => {
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-claude-agent-')));
+  try {
+    const usageFile = path.join(root, 'runtime', 'claude-agent-usage.json');
+    let clock = 10_000, calls = 0, fail = false;
+    const requests: unknown[] = [];
+    const host = createClaudeAgentHost({ usageFile, resolveExecutable: () => '/opt/claude', now: () => clock,
+      environment: () => ({ HOME: '/Users/person' }),
+      readUsageReport: async request => { calls++; requests.push(request); if (fail) throw new Error('signed out'); return REPORT; } });
+    const [first, second] = await Promise.all([host.refreshUsage(), host.refreshUsage()]);
+    expect(first).toBe(second);
+    expect(calls).toBe(1);
+    expect(requests[0]).toMatchObject({ executable: '/opt/claude', env: { HOME: '/Users/person' }, timeoutMs: 15_000 });
+    expect(first?.windows.seven_day?.utilization).toBe(0.64);
+    clock += 30_000;
+    await host.refreshUsage({ force: true });
+    expect(calls).toBe(1);
+    clock += 31_000; fail = true;
+    expect((await host.refreshUsage())?.updatedAt).toBe(10_000);
+    expect(calls).toBe(2);
+    await host.close();
+    expect(readClaudeAgentUsage(usageFile)?.models?.[0]?.name).toBe('Fable');
+    const missing = createClaudeAgentHost({ resolveExecutable: () => undefined, readUsageReport: async () => { calls++; return REPORT; } });
+    expect(await missing.refreshUsage({ force: true })).toBeUndefined();
+    expect(calls).toBe(2);
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
 
 const connect = (options: Parameters<typeof createClaudeAgentHost>[0]) => {

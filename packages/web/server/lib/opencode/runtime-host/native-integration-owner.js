@@ -5,6 +5,7 @@ import { createNativeIntegrationAuthorization } from './native-integration-autho
 import { createNativeCredentialMutationOwner, credentialMutationFingerprint, parseCredentialResolutionBinding } from './native-credential-mutation-owner.js';
 import { reviewedMcpConfiguration } from './reviewed-mcp-configuration.js';
 import { NativeCommandRefusal } from './native-command-refusal.js';
+import { isCatalogProviderIntegration } from './native-provider-integrations.js';
 
 const fail = (code, status = 403) => Object.assign(new Error(code), { code, status, statusCode: status });
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -28,7 +29,7 @@ export function createNativeIntegrationOwner({ instanceID, snapshot, stateDirect
       const server = mcp.get(binding.directory)?.get(binding.server);
       if (!server || server.config.disabled || server.configurationDigest !== binding.configurationDigest) throw fail('native_mcp_server_unreviewed');
     } else if (binding.kind === 'provider') {
-      if (!['xai','opencode','opencode-go'].includes(binding.integrationID) || binding.configurationDigest !== undefined && binding.configurationDigest !== credentialMutationFingerprint(location.configuration.providers?.[binding.integrationID] ?? {})) throw fail('native_integration_binding_invalid');
+      if (!isCatalogProviderIntegration(binding.integrationID) || binding.configurationDigest !== undefined && binding.configurationDigest !== credentialMutationFingerprint(location.configuration.providers?.[binding.integrationID] ?? {})) throw fail('native_integration_binding_invalid');
     } else if (!['openai', 'cursor'].includes(binding.kind) || binding.integrationID !== (binding.kind === 'cursor' ? 'cursor-acp' : 'openai')
       || binding.configurationDigest !== undefined && binding.configurationDigest !== credentialMutationFingerprint(location.configuration.providers?.[binding.integrationID] ?? {})) {
       throw fail('native_integration_binding_invalid');
@@ -87,7 +88,7 @@ export function createNativeIntegrationOwner({ instanceID, snapshot, stateDirect
     if (method === 'credential.mutation.commit' || method === 'credential.resolution.commit') return mutations.handleRpc(method, input, context);
     if (method === 'provider.attempt') {
       if (!isReady() || input.controllerInstanceID !== instanceID || !locations.has(input.directory)
-        || !['xai','opencode','opencode-go'].includes(input.integrationID)
+        || !isCatalogProviderIntegration(input.integrationID)
         || Object.keys(input).some(key => !['controllerInstanceID','directory','sessionID','integrationID','kind','permit'].includes(key))) throw fail('native_provider_attempt_invalid');
       const {integrationID,...attempt}=input;void integrationID;
       return admissionOwner.withProviderAttempt(attempt,async()=>{context.signal?.throwIfAborted();live();return null;});

@@ -207,13 +207,23 @@ xAI native usage renewal binds the initial in-memory auth snapshot to its select
 
 ## Claude through claude-agent
 
-`providers/claude-agent.js` reports Claude subscription usage from the
-`rate_limit_event` messages Claude Code itself emits on each claude-agent turn. The
-native host records them (`runtime-host/claude-agent-host.js`) to
-`<webDataDirectory>/runtime/claude-agent-usage.json`; `GET /api/quota/claude-agent`
-reads that record through the runtime owner (`readClaudeAgentUsage`). Utilization is a
-0–1 fraction mapped to `5h`, `7d`, `7d-opus` and `7d-sonnet` windows; only windows
-Claude Code reports appear (some plans report no five-hour window). Before the first
-turn the result is `claude_agent_usage_pending`. DevRyan never reads Claude Code's login
-or calls Anthropic's OAuth usage endpoint for this provider. The provider is listed in
-native mode once usage is recorded or a `claude` executable resolves.
+`providers/claude-agent.js` reports Claude subscription usage as Claude Code itself
+reports it, recorded by the native host (`runtime-host/claude-agent-host.js`) to
+`<webDataDirectory>/runtime/claude-agent-usage.json`:
+
+- `GET /api/quota/claude-agent` first calls the runtime owner's
+  `refreshClaudeAgentUsage`. When the record is older than a minute (or
+  `refresh=true`), the host starts the user's `claude` through the Agent SDK with no
+  prompt, tools, settings or persistence and asks for its structured `/usage` answer
+  (`usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET`, `skipBehaviors`). No
+  model turn runs. At most one report per minute; a failed or signed-out report keeps
+  the last record. So usage shows as soon as Claude Code is installed and signed in.
+- Each claude-agent turn's `rate_limit_event` updates the same record and carries the
+  limit status (`rejected` adds a warning).
+
+Utilization is a 0–1 fraction mapped to `5h`, `7d`, `7d-opus` and `7d-sonnet`, plus
+one `7d-<model>` window per model-scoped weekly limit the report lists (for example
+`7d-fable`). Only windows Claude Code reports appear (some plans have no five-hour
+window). With no record the result is `claude_agent_usage_pending`. DevRyan never reads
+Claude Code's login or calls Anthropic's usage endpoints itself. The provider is listed
+in native mode once usage is recorded or a `claude` executable resolves.

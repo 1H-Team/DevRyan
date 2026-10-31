@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import path from 'node:path';
+import { isCatalogProviderIntegration } from './native-provider-integrations.js';
 
 const fail = (code, status = 403) => Object.assign(new Error(code), { code, status, statusCode: status });
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -20,8 +21,8 @@ export function parseCredentialMutationBinding(value) {
     || !['create', 'update', 'activate', 'remove'].includes(value.operation)
     || !['key', 'oauth'].includes(value.valueType) || !['openai', 'mcp', 'cursor', 'provider'].includes(value.kind)
     || value.kind === 'cursor' && value.valueType !== 'key'
-    || value.kind === 'provider' && (!['xai', 'opencode', 'opencode-go'].includes(value.integrationID)
-      || value.valueType === 'oauth' && (value.integrationID !== 'xai' || value.methodID !== 'device'))
+    || value.kind === 'provider' && (!isCatalogProviderIntegration(value.integrationID)
+      || value.valueType === 'oauth' && value.integrationID === 'xai' && value.methodID !== 'device')
     || (value.valueType === 'oauth' ? !id(value.methodID) : value.methodID !== undefined)
     || (value.credentialID !== undefined && !id(value.credentialID))
     || (value.expectedFingerprint !== undefined && !digest(value.expectedFingerprint))
@@ -38,9 +39,9 @@ export function parseCredentialResolutionBinding(value) {
   const fields = ['kind', 'integrationID', 'methodID', 'controllerInstanceID', 'directory', 'acquisitionID',
     'configurationDigest', 'sessionID', 'permit', 'credentialID', 'expectedFingerprint', 'valueType'];
   if (!record(value) || Object.keys(value).some(key => !fields.includes(key))
-    || !(value.kind === 'provider' && ['xai','opencode','opencode-go'].includes(value.integrationID) || value.kind === 'openai' && value.integrationID === 'openai' && value.valueType === 'oauth')
+    || !(value.kind === 'provider' && isCatalogProviderIntegration(value.integrationID) || value.kind === 'openai' && value.integrationID === 'openai' && value.valueType === 'oauth')
     || !['key','oauth'].includes(value.valueType)
-    || (value.valueType === 'key' ? value.methodID !== undefined : !(value.kind === 'provider' && value.integrationID === 'xai' && value.methodID === 'device' || value.kind === 'openai' && value.integrationID === 'openai' && ['chatgpt-token-sharing','chatgpt-browser'].includes(value.methodID)))
+    || (value.valueType === 'key' ? value.methodID !== undefined : !(value.kind === 'provider' && id(value.methodID) && (value.integrationID !== 'xai' || value.methodID === 'device') || value.kind === 'openai' && value.integrationID === 'openai' && ['chatgpt-token-sharing','chatgpt-browser'].includes(value.methodID)))
     || !id(value.controllerInstanceID) || !id(value.acquisitionID) || !id(value.credentialID)
     || !/^ses[A-Za-z0-9_-]{1,128}$/.test(value.sessionID ?? '')
     || typeof value.directory !== 'string' || !path.isAbsolute(value.directory) || /[\u0000-\u001f]/.test(value.directory) || value.directory.length > 4096

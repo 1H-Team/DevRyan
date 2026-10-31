@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash, randomBytes } from 'node:crypto';
 import path from 'node:path';
+import { isCatalogProviderIntegration, isProviderFormAnswer } from './native-provider-integrations.js';
 
 const fail = code => Object.assign(new Error(code), { code, status: 403, statusCode: 403 });
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -17,8 +18,8 @@ function operation(spec) {
   if (!record(spec) || !path.isAbsolute(spec.directory ?? '') || !['mcp', 'openai', 'cursor', 'provider', 'claude'].includes(spec.kind)
     || !sha(spec.configurationDigest) || spec.kind === 'mcp' && (typeof spec.server !== 'string' || !spec.server
       || spec.server.length > 256 || /[\u0000-\u001f]/.test(spec.server))
-    || spec.kind === 'provider' && (!['xai', 'opencode', 'opencode-go'].includes(spec.integrationID)
-      || spec.methodID !== undefined && (spec.integrationID !== 'xai' || spec.methodID !== 'device'))
+    || spec.kind === 'provider' && (!isCatalogProviderIntegration(spec.integrationID)
+      || spec.methodID !== undefined && (!id(spec.methodID) || spec.integrationID === 'xai' && spec.methodID !== 'device'))
     || spec.kind === 'openai' && spec.integrationID !== 'openai'
     || spec.kind === 'cursor' && (spec.integrationID !== 'cursor-acp' || spec.methodID !== undefined)
     || spec.kind === 'claude' && (spec.integrationID !== 'claude-agent' || spec.methodID !== undefined && spec.methodID !== 'claude-login')) throw fail('native_integration_scope_invalid');
@@ -47,7 +48,13 @@ function operation(spec) {
     case 'mcp.connect': case 'mcp.disconnect':
       method = 'POST'; route = `/api/experimental/mcp/${encodeURIComponent(spec.server)}/${spec.operation.slice(4)}`; break;
     case 'mcp.oauth.start': case 'openai.oauth.start': case 'provider.oauth.start':
-      method = 'POST'; route = `${integration()}/connect/oauth`; encoded(spec.methodID); body = { methodID: spec.methodID }; break;
+      method = 'POST'; route = `${integration()}/connect/oauth`; encoded(spec.methodID); body = { methodID: spec.methodID };
+      // Only provider sign-ins carry a form answer (for example GitHub's deployment type).
+      if (record(spec.body) && spec.body.answer !== undefined) {
+        if (spec.kind !== 'provider' || !isProviderFormAnswer(spec.body.answer)) throw fail('native_integration_scope_invalid');
+        body = { methodID: spec.methodID, answer: spec.body.answer };
+      }
+      break;
     case 'mcp.oauth.status': case 'openai.oauth.status': case 'provider.oauth.status': method = 'GET'; route = attempt(); break;
     case 'mcp.oauth.cancel': case 'openai.oauth.cancel': case 'provider.oauth.cancel': method = 'DELETE'; route = attempt(); break;
     case 'mcp.oauth.complete': case 'openai.oauth.complete': case 'provider.oauth.complete':
@@ -75,13 +82,13 @@ function operation(spec) {
       break;
     default: throw fail('native_integration_scope_invalid');
   }
-  if (spec.kind === 'provider' && spec.operation.startsWith('provider.oauth.') && (spec.integrationID !== 'xai' || spec.methodID !== 'device')) throw fail('native_integration_scope_invalid');
+  if (spec.kind === 'provider' && spec.operation.startsWith('provider.oauth.') && !id(spec.methodID)) throw fail('native_integration_scope_invalid');
   if (!spec.operation.startsWith(`${spec.kind}.`)
     || spec.kind === 'openai' && spec.operation.startsWith('openai.oauth.')
       && spec.methodID !== undefined && spec.methodID !== 'chatgpt-browser') throw fail('native_integration_scope_invalid');
   if (['openai', 'cursor', 'provider'].includes(spec.kind) && spec.operation.startsWith(`${spec.kind}.credential.`) && (!['key', 'oauth'].includes(spec.valueType)
     || spec.kind === 'cursor' && spec.valueType !== 'key'
-    || spec.valueType === 'oauth' && (spec.kind === 'provider' ? spec.integrationID !== 'xai' || spec.methodID !== 'device' : !['chatgpt-token-sharing', 'chatgpt-browser', ...(spec.operation === 'openai.credential.remove' ? ['chatgpt-siwc', 'chatgpt-headless'] : [])].includes(spec.methodID))
+    || spec.valueType === 'oauth' && (spec.kind === 'provider' ? !id(spec.methodID) || spec.integrationID === 'xai' && spec.methodID !== 'device' : !['chatgpt-token-sharing', 'chatgpt-browser', ...(spec.operation === 'openai.credential.remove' ? ['chatgpt-siwc', 'chatgpt-headless'] : [])].includes(spec.methodID))
     || !spec.operation.endsWith('.credential.create') && !sha(spec.expectedFingerprint))) throw fail('native_integration_scope_invalid');
   if (method !== spec.method || route !== spec.path || stable(body) !== stable(spec.body)) throw fail('native_integration_scope_invalid');
   // The constructor-owned guard stays private and retains its original closure.
@@ -96,8 +103,8 @@ const bindingScope = binding => {
     || !sha(binding.configurationDigest) || !id(binding.acquisitionID)
     || binding.kind === 'mcp' && (!id(binding.methodID) || typeof binding.server !== 'string' || !binding.server || binding.server.length > 256)
     || binding.kind === 'cursor' && (binding.integrationID !== 'cursor-acp' || binding.methodID !== undefined || binding.server !== undefined)
-    || binding.kind === 'provider' && (!['xai', 'opencode', 'opencode-go'].includes(binding.integrationID) || binding.server !== undefined
-      || binding.methodID !== undefined && (binding.integrationID !== 'xai' || binding.methodID !== 'device'))
+    || binding.kind === 'provider' && (!isCatalogProviderIntegration(binding.integrationID) || binding.server !== undefined
+      || binding.methodID !== undefined && (!id(binding.methodID) || binding.integrationID === 'xai' && binding.methodID !== 'device'))
     || binding.kind === 'openai' && (binding.integrationID !== 'openai'
       || binding.methodID !== undefined && !['chatgpt-token-sharing', 'chatgpt-siwc', 'chatgpt-browser', 'chatgpt-headless'].includes(binding.methodID))) throw fail('native_integration_binding_invalid');
   return { kind: binding.kind, controllerInstanceID: binding.controllerInstanceID, directory: binding.directory,

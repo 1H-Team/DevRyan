@@ -26,7 +26,7 @@ async function setup() {
   const context = new AsyncLocalStorage();
   const original = { active: true, directories: new Set(['/owned']) }, replacement = { active: true, directories: new Set(['/owned']) };
   let epoch = 1, ready = true, revokeBeforeMutation = false, starts = 0;
-  const nativeCalls = [], nativeLocations = [], mutations = [], attempts = new Map();
+  const nativeCalls = [], nativeLocations = [], mutations = [], attempts = new Map(), oauthBodies = [];
   let releaseStart, startEntered;
   const startBarrier = new Promise(resolve => { startEntered = resolve; });
   let startPause, loseStartAcknowledgement = false, allowStart = true;
@@ -38,9 +38,23 @@ async function setup() {
     ['credential_openai', { id: 'credential_openai', integrationID: 'openai', label: 'Account', value: { type: 'oauth', methodID: 'chatgpt-token-sharing', access: 'synthetic-access', refresh: 'synthetic-refresh' } }],
     ['credential_mcp', { id: 'credential_mcp', integrationID: 'mcp_remote', label: 'Remote', value: { type: 'oauth', methodID: 'mcp_method', access: 'synthetic-mcp-access' } }],
   ]);
-  const info = id => ({ id, name: id === 'openai' ? 'OpenAI' : id === 'cursor-acp' ? 'Cursor' : 'remote', metadata: id === 'mcp_remote' ? { source: 'mcp' } : {},
+  // Catalog providers as OpenCode registers them: keys (with env names), plugin OAuth, form-bound
+  // methods, a web-search tool and the retired Anthropic provider.
+  const catalog = {
+    deepseek: [{ type: 'key' }, { type: 'env', names: ['DEEPSEEK_API_KEY'] }],
+    'github-copilot': [{ id: 'device', type: 'oauth', label: 'GitHub Copilot', form: [
+      { type: 'string', key: 'deploymentType', title: 'Deployment', required: true, options: [{ label: 'GitHub.com', value: 'github.com' }, { label: 'Enterprise', value: 'enterprise' }] },
+      { type: 'string', key: 'enterpriseUrl', required: true, when: [{ key: 'deploymentType', op: 'eq', value: 'enterprise' }] }] }],
+    snowflake: [{ type: 'key', form: [{ type: 'integer', key: 'port' }] }],
+    azure: [{ type: 'key', label: 'API key', form: [{ type: 'string', key: 'resourceName', required: true }] }],
+    tinyfish: [{ type: 'key' }], anthropic: [{ type: 'key' }],
+  };
+  const names = { openai: 'OpenAI', 'cursor-acp': 'Cursor', mcp_remote: 'remote', deepseek: 'DeepSeek', 'github-copilot': 'GitHub Copilot' };
+  const info = id => ({ id, name: names[id] ?? id, metadata: id === 'mcp_remote' ? { source: 'mcp' } : {},
     methods: id === 'openai' ? [{ id: 'key', type: 'key', label: 'API key' }, { id: 'chatgpt-browser', type: 'oauth', label: 'Codex browser (legacy)' }]
-      : ['cursor-acp', 'opencode', 'opencode-go'].includes(id) ? [{ id: 'key', type: 'key', label: 'API key' }]
+      : catalog[id] ? catalog[id]
+      : id === 'opencode' ? [{ id: 'key', type: 'key', label: 'API key' }, { id: 'console', type: 'oauth', label: 'OpenCode Console' }]
+      : ['cursor-acp', 'opencode-go'].includes(id) ? [{ id: 'key', type: 'key', label: 'API key' }]
       : id === 'xai' ? [{ id: 'device', type: 'oauth', label: 'SuperGrok Subscription' }, { type: 'key', label: 'Manually enter API Key' }] : [{ id: 'mcp_method', type: 'oauth', label: 'Remote OAuth' }],
     connections: [...records.values()].filter(row => row.integrationID === id).map(row => ({ type: 'credential', id: row.id, label: row.label, method: row.value.type })) });
   const grants = createNativeIntegrationAuthorization({ controllerIdentity: () => ready ? 'owned_controller' : null,
@@ -64,7 +78,8 @@ async function setup() {
       if (!['/owned', '/foreign'].includes(directory)) throw denied('fixture_native_location_required');
       if (req.headers.authorization !== 'Bearer owned-native-http') throw denied('fixture_native_auth');
       if (req.method === 'GET' && req.path === '/api/mcp') return res.json([{ name: 'remote', integrationID: 'mcp_remote' }]);
-      if (req.method === 'GET' && req.path === '/api/integration') return res.json([info('openai'), info('cursor-acp'), info('xai'), info('opencode'), info('opencode-go'), info('mcp_remote')]);
+      if (req.method === 'GET' && req.path === '/api/integration') return res.json(['openai', 'cursor-acp', 'xai', 'opencode', 'opencode-go', 'mcp_remote', ...Object.keys(catalog)].map(info));
+      if (req.method === 'GET' && req.path === '/api/websearch/provider') return res.json([{ id: 'tinyfish', name: 'TinyFish' }]);
       if (req.method === 'GET' && req.path.includes('/connect/oauth/')) {
         const attempt = attempts.get(req.path.split('/').at(-1));
         await grants.reauthorize({ authorizationID: attempt.grant.authorizationID, binding: attempt.bound });
@@ -77,7 +92,8 @@ async function setup() {
         return res.json(true);
       }
       if (req.path.endsWith('/connect/oauth')) {
-        const kind = req.path.includes('/openai/') ? 'openai' : req.path.includes('/xai/') ? 'provider' : 'mcp', bound = binding(kind, req.body.methodID, directory);
+        const integrationID = req.path.split('/')[3]; oauthBodies.push(req.body);
+        const kind = integrationID === 'openai' ? 'openai' : integrationID === 'mcp_remote' ? 'mcp' : 'provider', bound = binding(kind, req.body.methodID, directory, integrationID);
         const grant = await grants.capture({ binding: bound, operation: 'oauth', requestAuthorization: req.headers['x-devryan-native-integration-grant'] });
         if (startPause) { startEntered(); await startPause; }
         const attemptID = `attempt_${++starts}`; attempts.set(attemptID, { grant, bound });
@@ -123,7 +139,7 @@ async function setup() {
   app.use('/api', createOpenCodeV2FacadeRouter({ openCodeClient: { generation: () => 2 }, getOpenCodeRuntime: runtime,
     getNativeRuntimeOwner: () => owner, resolveRequestDirectory: () => '/owned',
     getOpenCodeAuthHeaders: () => ({ Authorization: 'Bearer owned-native-http', ...grants.requestHeaders() }) }));
-  return { app, original, records, completeOAuth: status => { for(const attempt of attempts.values()) attempt.status = status; }, nativeCalls, nativeLocations, mutations, starts: () => starts,
+  return { app, original, records, oauthBodies, completeOAuth: status => { for(const attempt of attempts.values()) attempt.status = status; }, nativeCalls, nativeLocations, mutations, starts: () => starts,
     pauseStart: () => { startPause = new Promise(resolve => { releaseStart = resolve; }); return { entered: startBarrier, release: () => releaseStart() }; },
     allowStart: value => { allowStart = value; },
     allowForeign: () => { original.directories.add('/foreign'); },
@@ -161,9 +177,35 @@ describe('native integration public facade with original caller grants', () => {
   });
   it('maps provider methods and key creation without a public secret credential route', async () => {
     const f = await setup();
-    expect((await request(f.app).get('/api/provider/auth')).body).toEqual({ openai: [{ type: 'api', label: 'API key' }, { type: 'oauth', label: 'Codex browser (legacy)' }],
+    // Every connectable catalog provider; no web-search tool, MCP server, form-only method,
+    // retired Anthropic or OpenCode Console OAuth.
+    // OpenCode's provider name rides on each method when it differs from the ID.
+    expect((await request(f.app).get('/api/provider/auth')).body).toEqual({
+      openai: [{ type: 'api', label: 'API key', providerName: 'OpenAI' }, { type: 'oauth', label: 'Codex browser (legacy)', providerName: 'OpenAI' }],
       xai: [{ type: 'oauth', label: 'SuperGrok Subscription' }, { type: 'api', label: 'Manually enter API Key' }],
-      opencode: [{ type: 'api', label: 'API key' }], 'opencode-go': [{ type: 'api', label: 'API key' }], 'cursor-acp': [{ type: 'api', label: 'API key' }] });
+      opencode: [{ type: 'api', label: 'API key' }], 'opencode-go': [{ type: 'api', label: 'API key' }], 'cursor-acp': [{ type: 'api', label: 'API key', providerName: 'Cursor' }],
+      deepseek: [{ type: 'api', label: '', providerName: 'DeepSeek' }],
+      // Forms Providers can render travel with the method; snowflake's integer field cannot, so it is left out.
+      azure: [{ type: 'api', label: 'API key', fields: [{ key: 'resourceName', type: 'string', required: true }] }],
+      'github-copilot': [{ type: 'oauth', label: 'GitHub Copilot', providerName: 'GitHub Copilot', fields: [
+        { key: 'deploymentType', type: 'string', title: 'Deployment', required: true, options: [{ value: 'github.com', label: 'GitHub.com' }, { value: 'enterprise', label: 'Enterprise' }] },
+        { key: 'enterpriseUrl', type: 'string', required: true, when: [{ key: 'deploymentType', op: 'eq', value: 'enterprise' }] }] }] });
+    expect((await request(f.app).put('/api/auth/deepseek').send({ type: 'api', key: 'synthetic-deepseek' })).status).toBe(200);
+    expect(f.records.get('created_key')).toMatchObject({ integrationID: 'deepseek' });
+    for (const providerID of ['github-copilot', 'azure', 'tinyfish', 'anthropic', 'mcp_remote', 'claude-agent'])
+      expect([providerID, (await request(f.app).put('/api/auth/' + providerID).send({ type: 'api', key: 'synthetic' })).status]).not.toEqual([providerID, 200]);
+    // Form answers are checked as OpenCode checks them, then forwarded with the method.
+    for (const answer of [undefined, {}, { deploymentType: 'gitlab.com' }, { deploymentType: 'enterprise' }, { deploymentType: 'github.com', enterpriseUrl: 'x.ghe.com' }, { deploymentType: 'github.com', extra: 'x' }])
+      expect((await request(f.app).post('/api/provider/github-copilot/oauth/authorize').send({ method: 0, ...(answer ? { answer } : {}) })).status).toBe(400);
+    const copilot = await request(f.app).post('/api/provider/github-copilot/oauth/authorize').send({ method: 0, answer: { deploymentType: 'enterprise', enterpriseUrl: 'co.ghe.com' } });
+    expect(copilot.status).toBe(200); expect(copilot.body).toMatchObject({ url: 'http://127.0.0.1:9/owned-issuer' });
+    expect(f.oauthBodies.at(-1)).toEqual({ methodID: 'device', answer: { deploymentType: 'enterprise', enterpriseUrl: 'co.ghe.com' } });
+    expect((await request(f.app).put('/api/auth/azure').send({ type: 'api', key: 'synthetic-azure', answer: { resourceName: 'my-models' } })).status).toBe(200);
+    expect(f.records.get('created_key')).toMatchObject({ integrationID: 'azure', value: { type: 'key', key: 'synthetic-azure', metadata: { resourceName: 'my-models' } } });
+    expect((await request(f.app).put('/api/auth/deepseek').send({ type: 'api', key: 'synthetic', answer: { resourceName: 'x' } })).status).toBe(400);
+    expect((await request(f.app).post('/api/provider/github-copilot/oauth/authorize').send({ method: 1 })).status).toBe(400);
+    expect((await request(f.app).post('/api/provider/opencode/oauth/authorize').send({ method: 0 })).status).toBe(400);
+    f.mutations.splice(0);
     expect((await request(f.app).post('/api/provider/openai/oauth/authorize').send({ method: 1 })).status).toBe(400);
     expect((await request(f.app).post('/api/provider/openai/oauth/callback').send({ method: 1, code: 'owned-code' })).status).toBe(400);
     expect((await request(f.app).put('/api/auth/openai').send({ type: 'api', key: 'synthetic-fixture-key' })).body).toEqual({ success: true, configured: true });
@@ -213,17 +255,18 @@ describe('native integration public facade with original caller grants', () => {
     expect((await request(f.app).post('/api/provider/xai/oauth/authorize?directory=/foreign').send({ method: 0 })).status).toBe(200);
     expect((await request(f.app).post('/api/provider/xai/oauth/callback?directory=/foreign').send({ method: 0, code: 'owned-code' })).status).toBe(200);
     expect(f.nativeLocations).toEqual([
-      { path: '/api/integration/openai', directory: '/foreign' },
-      { path: '/api/integration/cursor-acp', directory: '/foreign' },
-      { path: '/api/integration/xai', directory: '/foreign' },
-      { path: '/api/integration/opencode', directory: '/foreign' },
-      { path: '/api/integration/opencode-go', directory: '/foreign' },
+      { path: '/api/integration', directory: '/foreign' },
+      { path: '/api/websearch/provider', directory: '/foreign' },
+      // Starting OAuth first confirms xai is a model provider, not a web-search tool.
+      { path: '/api/websearch/provider', directory: '/foreign' },
       { path: '/api/integration/xai', directory: '/foreign' },
       { path: '/api/integration/xai/connect/oauth', directory: '/foreign' },
+      // The callback rereads the provider's methods to check the OAuth index before completing.
+      { path: '/api/integration/xai', directory: '/foreign' },
       { path: '/api/integration/xai/connect/oauth/attempt_1/complete', directory: '/foreign' },
     ]);
     expect((await request(f.app).get('/api/provider/auth')).status).toBe(200);
-    expect(f.nativeLocations.slice(-5)).toEqual(['openai','cursor-acp','xai','opencode','opencode-go'].map(id=>({path:'/api/integration/'+id,directory:'/owned'})));
+    expect(f.nativeLocations.slice(-2)).toEqual(['/api/integration','/api/websearch/provider'].map(path=>({path,directory:'/owned'})));
   });
   it('uses current credential fingerprints for account actions and exact MCP removal', async () => {
     const f = await setup();
@@ -256,7 +299,7 @@ describe('native integration public facade with original caller grants', () => {
   });
   it('uses native Cursor key grants for create, label, selection and disconnect', async () => {
     const f = await setup(); f.enableCursor();
-    expect((await request(f.app).get('/api/provider/auth')).body['cursor-acp']).toEqual([{ type: 'api', label: 'API key' }]);
+    expect((await request(f.app).get('/api/provider/auth')).body['cursor-acp']).toEqual([{ type: 'api', label: 'API key', providerName: 'Cursor' }]);
     expect((await request(f.app).put('/api/auth/cursor-acp').send({ type: 'api', key: 'synthetic-cursor' })).status).toBe(200);
     expect(f.records.get('created_key').integrationID).toBe('cursor-acp');
     expect((await request(f.app).patch('/api/credential/created_key').send({ label: 'Cursor account' })).status).toBe(200);

@@ -92,11 +92,16 @@ test('private credential commands bind controller, directory and method without 
 test('manual credential commands accept only key creation, labels and exact account operations',()=>{
  const base={protocol:1,id:'credential',action:'credential-operation-owned',directory:'/project/a',controllerInstanceID:'controller-one',requestAuthorization:'c'.repeat(64)};
  const input={integrationID:'openai',value:{type:'key',key:'synthetic-fixture'},label:'',activate:false};
- const mutations=[{operation:'create',input},{operation:'update',id:'credential-one',updates:{label:''}},{operation:'activate',id:'credential-one'},{operation:'remove',id:'credential-one'}];
+ const mutations:Record<string,unknown>[]=[{operation:'create',input},{operation:'update',id:'credential-one',updates:{label:''}},{operation:'activate',id:'credential-one'},{operation:'remove',id:'credential-one'}];
  const cursor={operation:'create',input:{...input,integrationID:'cursor-acp'}};
- mutations.push(cursor);
+ // Any catalog provider takes a key; delegated, MCP and retired IDs never come through here.
+ mutations.push(cursor,{operation:'create',input:{...input,integrationID:'deepseek'}},
+  // A catalog key method's form answer rides as the key's metadata.
+  {operation:'create',input:{...input,integrationID:'azure',value:{...input.value,metadata:{resourceName:'my-models',private:true}}}});
  for(const mutation of mutations)expect<unknown>(parseNativeCommand({...base,mutation})).toEqual({...base,mutation});
- const invalid=[{operation:'create',input:{...input,integrationID:'other'}},{operation:'create',input:{...input,value:{type:'oauth',access:'fixture'}}},
+ const invalid=[...['claude-agent','anthropic','mcp_0123456789abcdef','other/id'].map(integrationID=>({operation:'create',input:{...input,integrationID}})),
+  ...[{},{'bad key':'x'},{resourceName:''},{resourceName:{nested:true}},Object.fromEntries(Array.from({length:17},(_,index)=>['f'+index,'x']))]
+    .map(metadata=>({operation:'create',input:{...input,integrationID:'azure',value:{...input.value,metadata}}})),{operation:'create',input:{...input,value:{type:'oauth',access:'fixture'}}},
   {operation:'create',input:{...input,value:{...input.value,metadata:{unreviewed:true}}}},{operation:'create',input:{...input,activate:'false'}},
   {operation:'update',id:'credential-one',updates:{label:'new',value:input.value}},{operation:'update',id:'credential-one',updates:{}},
   {operation:'remove',id:'credential/other'},{operation:'activate',id:'credential-one',directory:'/project/b'}];

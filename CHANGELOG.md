@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.8] - 2026-10-31
+
+- Show Claude plan usage as soon as Claude Code is installed and signed in, without waiting for a first Claude reply, including model-specific weekly limits.
+- Connect Claude automatically when Claude Code is installed, so its models appear in the model selector; a Disconnect in Settings → Providers is remembered.
+- List every provider OpenCode supports in Settings → Providers, connecting with an API key or the provider's own sign-in (for example GitHub Copilot, GitLab and xAI), including the extra fields some need such as an Azure resource name or a GitHub Enterprise URL.
+
+- Fix protected read paths, worktree file reads, and actionable tool and Plan-mode refusals in the native runtime; preserve the original execution error when a call fails.
 - Run Claude through OpenCode's built-in Claude provider with your own Claude Code login (`claude auth login`). Connect it in Settings → Providers → Claude; usage comes from what Claude Code reports with each reply.
 - Remove the Meridian Claude proxy, dedicated Claude profile sign-in, Claude compatibility mode, the bundled Claude Code binary and its updater. Saved Claude model selections keep working through the new provider.
 

@@ -416,10 +416,24 @@ describe('Claude quota runtime resolution', () => {
     expect((await request(register()).get('/api/quota/anthropic').expect(200)).body).toMatchObject({
       providerId: 'claude-agent', ok: false, configured: true, errorCode: 'claude_agent_usage_pending',
     });
+    // With the runtime up, Claude Code's own `/usage` answer fills usage before any Claude turn.
+    let reported;
+    owner.refreshClaudeAgentUsage = vi.fn(async () => {
+      reported = { windows: { seven_day: { utilization: 0.64, resetsAt: 1_793_829_600 } }, models: [{ name: 'Fable', utilization: 0.28 }], updatedAt: 456 };
+      return reported;
+    });
+    owner.readClaudeAgentUsage = vi.fn(() => reported);
+    const fresh = (await request(register()).get('/api/quota/claude-agent?refresh=true').expect(200)).body;
+    expect(owner.refreshClaudeAgentUsage).toHaveBeenCalledWith({ force: true });
+    expect(fresh).toMatchObject({ ok: true, configured: true, usageUpdatedAt: 456 });
+    expect(fresh.usage.windows['7d']).toMatchObject({ usedPercent: 64 });
+    expect(fresh.usage.windows['7d-fable']).toMatchObject({ usedPercent: 28 });
     claudeInstalled(false);
+    owner.refreshClaudeAgentUsage.mockClear(); owner.readClaudeAgentUsage = vi.fn(() => undefined);
     expect((await request(register()).get('/api/quota/claude').expect(200)).body).toMatchObject({
       providerId: 'claude-agent', ok: false, configured: false, errorCode: 'claude_agent_missing',
     });
+    expect(owner.refreshClaudeAgentUsage).not.toHaveBeenCalled();
   });
 
   it('never reads native Claude usage or resolves a local proxy for external OpenCode', async () => {

@@ -115,6 +115,17 @@ test('each package ships only its own platform and arch natives', () => {
   ]);
 });
 
+test('Claude uses the installed CLI and keeps only the server SDK entrypoints', () => {
+  const root = 'node_modules/@anthropic-ai';
+  const runtime = ['sdk.mjs', 'core.mjs', 'core-6z7brxfa.mjs', 'core-x118ntbh.mjs', 'package.json']
+    .map(file => `${root}/claude-agent-sdk/${file}`);
+  const files = [...runtime, `${root}/claude-agent-sdk/bridge.mjs`, `${root}/claude-agent-sdk/browser-sdk.js`,
+    ...['darwin-arm64', 'darwin-x64', 'linux-x64', 'win32-x64'].map(target => `${root}/claude-agent-sdk-${target}/claude`)];
+  for (const [os, arch] of [['mac', 'arm64'], ['mac', 'x64'], ['win', 'x64']]) {
+    assert.deepEqual(packedFor(os, arch, files), runtime);
+  }
+});
+
 test('afterPack checks packaged content before signing', () => {
   const source = fs.readFileSync(new URL('../scripts/adhoc-sign-macos-app.mjs', import.meta.url), 'utf8');
   assert.equal(build.afterPack, './scripts/adhoc-sign-macos-app.mjs');

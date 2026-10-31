@@ -1,6 +1,6 @@
 {
   "name": "@devryan/electron",
-  "version": "2.0.7",
+  "version": "2.0.8",
   "private": true,
   "description": "Electron desktop runtime for DevRyan",
   "author": "DevRyan",
@@ -67,6 +67,8 @@
       "!node_modules/@devryan/web/dist{,/**}",
       "!node_modules/@devryan/web/server/lib/opencode/v2/openapi-*.json",
       "!node_modules/@devryan/web/server/lib/opencode/v2/__vectors__{,/**}",
+      "!**/node_modules/@anthropic-ai/claude-agent-sdk-*{,/**}",
+      "!**/node_modules/@anthropic-ai/claude-agent-sdk/{bridge.mjs,browser-sdk.js}",
       "!**/*.map",
       "!**/*.{test,spec}.*",
       "!**/__tests__{,/**}",

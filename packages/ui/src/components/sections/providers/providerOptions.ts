@@ -8,6 +8,8 @@ export interface ProviderOption {
 
 interface ProviderAuthMethod {
   type?: string;
+  /** OpenCode's name for the provider, carried on its methods by the native runtime. */
+  providerName?: unknown;
 }
 
 const CLAUDE_AGENT_PROVIDER_OPTION: ProviderOption = { id: 'claude-agent', name: 'Claude' };
@@ -96,7 +98,8 @@ export const mergeProviderConnectionOptions = (
     if (!id.trim() || !methods.some((method) => method.type === 'api' || method.type === 'oauth')) {
       continue;
     }
-    const option = normalizeProviderOption({ id });
+    const name = methods.find((method) => typeof method.providerName === 'string' && method.providerName.trim())?.providerName;
+    const option = normalizeProviderOption(typeof name === 'string' ? { id, name } : { id });
     if (!seen.has(option.id)) {
       seen.add(option.id);
       additions.push(option);

@@ -484,7 +484,10 @@ export function registerQuotaRoutes(app, {
       // Claude, under any earlier provider alias, is Claude Code's own reported usage.
       if (providerId === 'claude-agent' || isAnthropicProviderId(providerId)) {
         const owner = nativeCredentials.mode() === 'legacy' ? null : getNativeRuntimeOwner();
-        return res.json(await fetchClaudeAgentQuota({ readUsage: () => owner?.readClaudeAgentUsage?.(), available: Boolean(resolveClaudeExecutable()) }));
+        const available = Boolean(resolveClaudeExecutable());
+        // Claude Code answers its own `/usage` without a model turn, so usage shows before the first Claude prompt.
+        if (available) await owner?.refreshClaudeAgentUsage?.({ force: req.query.refresh === 'true' });
+        return res.json(await fetchClaudeAgentQuota({ readUsage: () => owner?.readClaudeAgentUsage?.(), available }));
       }
       const { fetchQuotaForProvider, resolveProviderId } = await getQuotaProviders();
       const forceRefresh = req.query.refresh === 'true';

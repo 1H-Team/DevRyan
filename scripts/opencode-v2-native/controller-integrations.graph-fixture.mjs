@@ -159,7 +159,9 @@ const rpc = async (method, input, context) => {
 };
 const bridge = createRemoteNativeAdmissionBridge({ rpc });
 const factory = createControllerIntegrations({ controllerInstanceID: controller.instanceID, configurationSnapshot: snapshot, rpc,
-  registrationOrigin: nativePlugins.get('devryan.remote-mcp'), reviewedNativeOpenAiOrigin:nativePlugins.get('opencode.provider.chatgpt'), reviewedNativeCodexOrigin:nativePlugins.get('opencode.provider.openai'), reviewedConfigurationOrigins: new Map([...nativePlugins].filter(([id]) => ['opencode.config.mcp', 'opencode.mcp.codemode.defaults', 'opencode.provider.opencode', 'opencode.config.policy'].includes(id))),
+  registrationOrigin: nativePlugins.get('devryan.remote-mcp'), reviewedNativeOpenAiOrigin:nativePlugins.get('opencode.provider.chatgpt'), reviewedNativeCodexOrigin:nativePlugins.get('opencode.provider.openai'),
+  // As controller-startup: reviewed native provider plugins may register provider OAuth.
+  reviewedNativeProviderOrigins: new Map([...nativePlugins].filter(([id]) => id.startsWith('opencode.provider.'))), reviewedConfigurationOrigins: new Map([...nativePlugins].filter(([id]) => ['opencode.config.mcp', 'opencode.mcp.codemode.defaults', 'opencode.provider.opencode', 'opencode.config.policy'].includes(id))),
   isBound: () => Boolean(nativeURL), isExecutionReady: () => ready, executeOwnedFallback: () => Effect.die(new Error('Unexpected executable tool')),
   authorizeMcpCall: (_invocation, _binding, action) => action });
 const gates = createAdmissionGates({ bridge, nativePlugins, providerHooks: inner => { const actual=factory.providerHooks(inner); return {...actual,trigger:(domain,name,event)=>actual.trigger(domain,name,event).pipe(Effect.tap(result=>Effect.promise(async()=>{

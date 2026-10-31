@@ -85,10 +85,14 @@ it('finite provider identities never alias accounts or authorize foreign OAuth m
   const { parseCredentialMutationBinding, parseCredentialResolutionBinding } = await import('./native-credential-mutation-owner.js');
   const key = {kind:'provider',valueType:'key',directory:'/owned/project',controllerInstanceID:instance,
     integrationID:'xai',operation:'create',requestedFingerprint:'a'.repeat(64)};
-  for (const integrationID of ['xai','opencode','opencode-go']) expect(parseCredentialMutationBinding({...key,integrationID})).toEqual({...key,integrationID});
+  // Any catalog provider; the controller decides which OAuth methods its reviewed plugins registered.
+  for (const integrationID of ['xai','opencode','opencode-go','deepseek','openrouter']) expect(parseCredentialMutationBinding({...key,integrationID})).toEqual({...key,integrationID});
   expect(parseCredentialMutationBinding({...key,valueType:'oauth',methodID:'device'}).methodID).toBe('device');
-  for (const change of [{integrationID:'foreign'}, {integrationID:'opencode',valueType:'oauth',methodID:'device'},
-    {integrationID:'opencode-go',valueType:'oauth',methodID:'device'}, {valueType:'oauth',methodID:'browser'}, {valueType:'key',methodID:'device'}]) {
+  expect(parseCredentialMutationBinding({...key,integrationID:'github-copilot',valueType:'oauth',methodID:'device'}).integrationID).toBe('github-copilot');
+  // Delegated integrations, MCP servers, retired Anthropic and malformed IDs never use the provider scope; xAI stays device-only.
+  for (const change of [{integrationID:'openai'}, {integrationID:'cursor-acp'}, {integrationID:'claude-agent'}, {integrationID:'anthropic'},
+    {integrationID:'mcp_0123456789abcdef'}, {integrationID:'wafer.ai'}, {integrationID:'../x'},
+    {valueType:'oauth',methodID:'browser'}, {integrationID:'github-copilot',valueType:'oauth',methodID:'bad/method'}, {valueType:'key',methodID:'device'}]) {
     expect(()=>parseCredentialMutationBinding({...key,...change})).toThrow('native_credential_mutation_binding_invalid');
   }
   const resolution={kind:'provider',valueType:'oauth',integrationID:'xai',methodID:'device',directory:'/owned/project',controllerInstanceID:instance,
@@ -99,7 +103,8 @@ it('finite provider identities never alias accounts or authorize foreign OAuth m
   expect(parseCredentialResolutionBinding(openai)).toEqual(openai);
   expect(parseCredentialResolutionBinding({...openai,methodID:'chatgpt-browser'}).methodID).toBe('chatgpt-browser');
   for(const methodID of ['chatgpt-siwc','chatgpt-headless','device']) expect(()=>parseCredentialResolutionBinding({...openai,methodID})).toThrow('native_credential_resolution_binding_invalid');
-  for (const change of [{methodID:'browser'},{integrationID:'opencode-go'},{permit:{...resolution.permit,revision:-1}},
+  expect(parseCredentialResolutionBinding({...resolution,integrationID:'github-copilot'}).integrationID).toBe('github-copilot');
+  for (const change of [{methodID:'browser'},{integrationID:'mcp_0123456789abcdef'},{integrationID:'anthropic'},{kind:'provider',integrationID:'openai'},{permit:{...resolution.permit,revision:-1}},
     {permit:{...resolution.permit,sessionID:'ses_other'}},{credential:'secret-not-permitted'},{directory:42},{directory:{}},{directory:null}]) {
     expect(()=>parseCredentialResolutionBinding({...resolution,...change})).toThrow('native_credential_resolution_binding_invalid');
   }

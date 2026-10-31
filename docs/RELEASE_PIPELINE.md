@@ -190,6 +190,7 @@ The run root is removed on success, failure and interruption. The workflow runs 
 
 ## Owner decisions
 
+- **v2.0.8 replacement (2026-10-31).** The owner explicitly authorized replacing the published v2.0.8 release, its version and ledger tags, and its release commit with the current changes under a new `release v2.0.8` commit, published as `DevRyan v2.0.8`. This is a one-time exception to published-release immutability; CI, dry-run qualification, database migration deployment when required, asset verification and the normal publication pipeline still apply.
 - **v2.0.4 replacement (2026-10-29).** The owner explicitly authorized replacing the published v2.0.4 release, its version and ledger tags, and its release commit with the current fixes under a new `release v2.0.4` commit. This is a one-time exception to published-release immutability; CI, dry-run qualification, asset verification and the normal publication pipeline still apply.
 - **Immutable Releases** (repository setting, currently off: `GET /repos/1H-Team/DevRyan/immutable-releases` → `{"enabled":false}`). Turning it on makes published bytes final at the platform level and adds release attestations. It is compatible with the draft-first upload: assets are attached while the release is a draft. The ledger stays as the cross-check. The pipeline never changes repository settings.
 - **Installed QA cost.** Installed in-app upgrade QA is no longer run by the workflow (owner decision 2026-10-26). Record visual QA durations separately from tag-to-discovery latency.

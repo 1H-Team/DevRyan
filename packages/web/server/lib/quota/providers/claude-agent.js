@@ -1,9 +1,10 @@
 import { buildResult, toUsageWindow } from '../utils/index.js';
 
 /**
- * Claude subscription usage as Claude Code itself reports it: the `rate_limit_event`
- * windows the native host records from each claude-agent turn. DevRyan never reads
- * Claude Code's login or calls Anthropic's usage endpoints.
+ * Claude subscription usage as Claude Code itself reports it: its `/usage` answer,
+ * which the native host asks for without a model turn, and the `rate_limit_event`
+ * windows of each claude-agent turn. DevRyan never reads Claude Code's login or
+ * calls Anthropic's usage endpoints.
  */
 export const providerId = 'claude-agent';
 export const providerName = 'Claude';
@@ -25,6 +26,17 @@ export const buildClaudeAgentUsage = usage => {
       resetAt: Number.isSafeInteger(window.resetsAt) ? window.resetsAt * 1000 : null,
     });
   }
+  // Model-scoped weekly limits Claude Code's `/usage` lists, such as `7d-fable`.
+  for (const model of Array.isArray(usage?.models) ? usage.models : []) {
+    if (typeof model?.utilization !== 'number' || typeof model.name !== 'string') continue;
+    const label = `7d-${model.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`;
+    if (label === '7d-' || windows[label]) continue;
+    windows[label] = toUsageWindow({
+      usedPercent: Math.round(model.utilization * 1000) / 10,
+      windowSeconds: SEVEN_DAY_WINDOW_SECONDS,
+      resetAt: Number.isSafeInteger(model.resetsAt) ? model.resetsAt * 1000 : null,
+    });
+  }
   return { windows };
 };
 
@@ -40,6 +52,6 @@ export const fetchQuota = async ({ readUsage, available = true } = {}) => {
       ...(rejected ? { warnings: ['Claude Code reported a subscription limit. It resets at the time shown.'] } : {}) });
   }
   return buildResult({ providerId, providerName, ok: false, configured: available, usage: null,
-    error: available ? 'Usage appears after your first Claude turn.' : 'Claude Code is not installed.',
+    error: available ? 'Claude Code has not reported usage yet. Check that it is signed in (claude auth login).' : 'Claude Code is not installed.',
     errorCode: available ? 'claude_agent_usage_pending' : 'claude_agent_missing' });
 };

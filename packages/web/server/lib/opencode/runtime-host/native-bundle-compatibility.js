@@ -136,7 +136,7 @@ const REVIEWED_SOURCE_LAYOUTS = Object.freeze({
 export const reviewedNativeCloneSourceLayout = (version, kind) => Object.hasOwn(REVIEWED_NATIVE_CLONE_MIGRATION_LEVEL, version)
   ? REVIEWED_SOURCE_LAYOUTS[REVIEWED_NATIVE_CLONE_MIGRATION_LEVEL[version]]?.[kind] : undefined;
 export function isReviewedNativeClonePair(left, right, layout) {
-  return left?.opencodeVersion !== right?.opencodeVersion
+  return (left?.opencodeVersion !== right?.opencodeVersion || left?.inputs?.coreDigest !== right?.inputs?.coreDigest)
     && Object.hasOwn(REVIEWED_NATIVE_CLONE_RELEASES, left?.opencodeVersion)
     && Object.hasOwn(REVIEWED_NATIVE_CLONE_RELEASES, right?.opencodeVersion)
     && reviewedGraph(left)

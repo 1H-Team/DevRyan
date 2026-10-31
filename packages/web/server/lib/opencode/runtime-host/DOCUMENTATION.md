@@ -142,6 +142,9 @@ reported instead:
   excused. Reused identities or unrelated references still refuse startup.
   The queued, discarded and clipped prompt exceptions do not apply during
   relocation; unrelated lost references continue to refuse startup.
+- Reviewed rebuilds of the same OpenCode version use the same exact graph,
+  source layout, migration level and credential-contract checks as cross-version
+  clones; a version match alone never admits a different core digest.
 - The clone copy leaves behind sockets and FIFOs anywhere, and symlinks inside
   a project ledger and under `global/{cache,tmp,log}`. Links under config,
   `global/home` and `global/data` still refuse with `bundle_symlink_source`.
@@ -931,8 +934,25 @@ the access token and its expiry — the refresh grant never leaves the controlle
 The host owner exposes it as
 `readProviderSelected` under a `provider.integration` caller grant, and the
 reply's instance, directory and integration are verified. Credential metadata
-validation accepts OAuth rows only for OpenAI `chatgpt-*` methods and xAI
-`device`; other providers must be keys.
+validation accepts OAuth rows for OpenAI `chatgpt-*` methods, xAI `device` and any
+well-formed method of another catalog provider; the controller decides which are
+usable (below).
+
+Catalog providers: the generic `provider` scope covers every integration
+`isCatalogProviderIntegration` (`native-provider-integrations.js`) admits, which is
+every OpenCode integration except `openai`, `cursor-acp`, `claude-agent`,
+`anthropic` and MCP servers (`mcp_<sha1 prefix>`). Host authorization, credential
+bindings, the process protocol, provider attempts and configuration removal all use
+that rule, and every credential change still needs the original caller's grant. In
+the controller (`controller-provider-credentials.ts`), keys are accepted for all of
+them. An OAuth method is admitted only when a reviewed native plugin registered it
+(`reviewedNativeProviderOrigins`, the `opencode.provider.*` entries of the reviewed
+registry, matched by origin fingerprint) and the policy allows it: xAI `device` only,
+OpenCode Console never. An unreviewed plugin's OAuth registers as unusable, except
+xAI, whose unreviewed registration still refuses. OAuth grants, attempts and
+resolution bindings carry the provider's own ID and method, and admitted refreshes run
+under the same resolution commit as xAI. Removing an account never requires its
+method to be admitted.
 
 The quota route records failed selected-credential reads and xAI renewals as
 `native_quota_read_failed`, carrying only provider, stage and an allowlisted
@@ -1732,12 +1752,18 @@ per-controller `claude-agent-host.js` created by `native-runtime-owner.js`, and 
   macOS finds the login keychain. A host running under another `HOME` (isolated QA)
   sets `CLAUDE_CONFIG_DIR=<HOME>/.claude` instead of moving the keychain;
 - queues stdin, end and kill frames that arrive before the asynchronous spawn finishes;
-- records `rate_limit_event` usage (see `../../quota/DOCUMENTATION.md`) and terminates
-  its processes when the controller exits.
+- records `rate_limit_event` usage, and on request (`refreshUsage`) asks a prompt-less
+  Agent SDK session for Claude Code's `/usage` answer (see `../../quota/DOCUMENTATION.md`);
+- terminates its processes when the controller exits.
 
 Connecting uses OpenCode's external `claude-login` method. The facade
 (`v2/native-integration-facade.js` `claudeStatus/claudeConnect/claudeDisconnect`,
 routes `/api/provider/claude-agent/status|connect`) runs under the `claude` integration
 kind, which admits only reading the integration, `connect/external` with
-`claude-login`, and removing its connection. The controller delegates claude-agent
+`claude-login`, and removing its connection. `claudeAutoConnect` runs before the
+`/provider` and `/config/providers` catalog reads, once per configuration snapshot:
+when a `claude` executable resolves and nobody pressed Disconnect, it connects
+`claude-login` so Claude models are listed without visiting Providers. Connect and
+Disconnect record the choice in `<webDataDirectory>/runtime/claude-agent-connection.json`
+(owner `claudeAgentConnectionChoice`); after a Disconnect it never reconnects on its own. The controller delegates claude-agent
 credentials and accepts only an external `claude-login` value without metadata.

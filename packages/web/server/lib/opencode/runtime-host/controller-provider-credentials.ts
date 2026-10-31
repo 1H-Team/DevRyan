@@ -27,8 +27,9 @@ export interface ControllerProviderCredentialsOptions {
   readonly captureLocation: (directory: string, integrationID: OwnedProviderIntegration) => ProviderCredentialLocation;
   readonly assertAttempt: (input: ProviderPhysicalAttempt) => Effect.Effect<void>;
   readonly assertResolution: (binding: CredentialResolutionBinding) => Effect.Effect<void>;
-  readonly captureOAuthGrant: (directory: string) => Effect.Effect<{ readonly authorizationID: string; readonly reauthorize: Effect.Effect<void> }>;
-  readonly reviewedNativeProviderOrigin?: RegistrationOrigin;
+  readonly captureOAuthGrant: (directory: string, integrationID: OwnedProviderIntegration, methodID: string) => Effect.Effect<{ readonly authorizationID: string; readonly reauthorize: Effect.Effect<void> }>;
+  /** Reviewed native plugin origins by plugin ID; only these may register provider OAuth. */
+  readonly reviewedNativeProviderOrigins: ReadonlyMap<string, RegistrationOrigin>;
   readonly ownsDelegatedIntegration: (id: string) => boolean;
 }
 interface ResolutionCommit {
@@ -38,6 +39,10 @@ interface ResolutionCommit {
 }
 const Commit = Context.Reference<ResolutionCommit | undefined>('DevRyan/ProviderCredentialCommit', { defaultValue: () => undefined });
 const refuse = (code: string): never => { throw new HostRefusal(code, 403, 'credential.provider'); };
+// Per-provider OAuth policy over reviewed plugins: xAI signs in only by device code, and
+// OpenCode Console OAuth stays off (Zen connects with a key). Others allow every reviewed method.
+const OAUTH_POLICY: Readonly<Record<string, string | null>> = Object.freeze({ xai: 'device', opencode: null });
+const oauthPolicyAllows = (integrationID: string, methodID: string) => OAUTH_POLICY[integrationID] === undefined || OAUTH_POLICY[integrationID] === methodID;
 
 /** Original native OAuth implementations remain registered. Only their exact
  * admitted resolution may refresh, and all writes share the existing queue. */
@@ -62,10 +67,15 @@ export function createControllerProviderCredentials(options: ControllerProviderC
   const selections = new WeakMap<OperationPermit, Map<OwnedProviderIntegration, {
     readonly directory: string; readonly acquisitionID: string; readonly record: Credential.Info;
   }>>();
-  const oauth = Context.Reference<{ readonly directory: string; readonly grant: { readonly authorizationID: string; readonly reauthorize: Effect.Effect<void> } } | undefined>(
+  const oauth = Context.Reference<{ readonly directory: string; readonly integrationID: OwnedProviderIntegration; readonly grant: { readonly authorizationID: string; readonly reauthorize: Effect.Effect<void> } } | undefined>(
     'DevRyan/ProviderOAuthGrant', { defaultValue: () => undefined });
+  // OAuth methods registered by a reviewed native provider plugin; no other OAuth value is accepted.
+  const reviewedOAuth = new Set<string>();
+  const oauthMethod = (integrationID: string, methodID: string) => JSON.stringify([integrationID, methodID]);
+  const oauthAdmitted = (integrationID: OwnedProviderIntegration, methodID: string) =>
+    reviewedOAuth.has(oauthMethod(integrationID, methodID)) && oauthPolicyAllows(integrationID, methodID);
   const validateValue = (integrationID: OwnedProviderIntegration, value: Credential.Value) => {
-    if (value.type === 'oauth' && (integrationID !== 'xai' || value.methodID !== 'device' || !value.refresh)) refuse('native_provider_method_unsupported');
+    if (value.type === 'oauth' && (!oauthAdmitted(integrationID, value.methodID) || integrationID === 'xai' && !value.refresh)) refuse('native_provider_method_unsupported');
   };
   const decorateSessionRunnerModel = (inner: SessionRunnerModel.Interface, location: Location.Interface): SessionRunnerModel.Interface => ({
     resolve: (session, available) => Effect.gen(function* () {
@@ -87,11 +97,12 @@ export function createControllerProviderCredentials(options: ControllerProviderC
     credentials = inner;
     const mutate = <A,E,R>(operation: CredentialMutationBinding['operation'], before: Credential.Info | undefined,
       integrationID: OwnedProviderIntegration, value: Credential.Value, request: unknown, action: Effect.Effect<A,E,R>) => Effect.gen(function* () {
-      validateValue(integrationID, value);
+      // Removing an account never needs its method to be admitted.
+      if (operation !== 'remove') validateValue(integrationID, value);
       const location = Option.getOrUndefined(Context.getOption(yield* Effect.context(), Location.Service));
       if (!location) return refuse('native_provider_location_required');
       const captured = options.captureLocation(location.directory, integrationID), grant = yield* oauth;
-      if (grant && (integrationID !== 'xai' || value.type !== 'oauth' || grant.directory !== location.directory)) return refuse('native_provider_oauth_scope_invalid');
+      if (grant && (grant.integrationID !== integrationID || value.type !== 'oauth' || grant.directory !== location.directory)) return refuse('native_provider_oauth_scope_invalid');
       captured.assertCurrent();
       const original = before ? structuredClone(before) : undefined;
       const binding: CredentialMutationBinding = { kind: 'provider', integrationID, directory: location.directory,
@@ -163,20 +174,26 @@ export function createControllerProviderCredentials(options: ControllerProviderC
       return yield* inner.transform(editor => callback({ ...editor, method: { ...editor.method,
       update: implementation => {
         if (!isOwnedProviderIntegration(implementation.integrationID) || !('authorize' in implementation)) return editor.method.update(implementation);
-        if (implementation.integrationID !== 'xai' || implementation.method.id !== 'device') return editor.method.update({ ...implementation,
+        const integrationID = implementation.integrationID, methodID = implementation.method.id;
+        const refused = () => editor.method.update({ ...implementation,
           authorize: () => Effect.sync(() => refuse('native_provider_method_unsupported')),
           ...implementation.refresh ? { refresh: () => Effect.sync(() => refuse('native_provider_method_unsupported')) } : {},
         });
-        const reviewed = options.reviewedNativeProviderOrigin;
-        if (!origin || !reviewed || origin.kind !== 'native' || origin.id !== 'opencode.provider.xai'
-          || fingerprint(origin) !== fingerprint(reviewed)) return refuse('native_provider_registration_unreviewed');
+        if (!oauthPolicyAllows(integrationID, methodID)) return refused();
+        const reviewed = origin?.kind === 'native' ? options.reviewedNativeProviderOrigins.get(origin.id) : undefined;
+        if (!origin || !reviewed || fingerprint(origin) !== fingerprint(reviewed)) {
+          // The xAI device method has always required its reviewed plugin; other unreviewed OAuth stays unusable.
+          if (integrationID === 'xai') return refuse('native_provider_registration_unreviewed');
+          return refused();
+        }
+        reviewedOAuth.add(oauthMethod(integrationID, methodID));
         const original = implementation, refresh = implementation.refresh;
         const wrapped: Integration.OAuthImplementation = { ...original,
           authorize: answer => Effect.gen(function* () {
             const grant = yield* oauth;
-            if (!grant || grant.directory !== location.directory) return refuse('native_provider_oauth_scope_invalid');
-            yield* grant.grant.reauthorize; current('xai').assertCurrent();
-            const captured = options.captureLocation(location.directory,'xai'); captured.assertCurrent();
+            if (!grant || grant.directory !== location.directory || grant.integrationID !== integrationID) return refuse('native_provider_oauth_scope_invalid');
+            yield* grant.grant.reauthorize; current(integrationID).assertCurrent();
+            const captured = options.captureLocation(location.directory, integrationID); captured.assertCurrent();
             const authorization = yield* original.authorize(answer);
             yield* grant.grant.reauthorize; captured.assertCurrent();
             const checked = <A,E,R>(action: Effect.Effect<A,E,R>) => Effect.gen(function* () {
@@ -189,13 +206,15 @@ export function createControllerProviderCredentials(options: ControllerProviderC
           }),
           ...(refresh ? { refresh: value => Effect.gen(function* () {
             const commit = yield* Commit;
-            if (!commit?.active || commit.original.value.type !== 'oauth' || fingerprint(value) !== fingerprint(commit.original.value)) return refuse('native_provider_resolution_scope_required');
+            if (!commit?.active || commit.original.integrationID !== integrationID || commit.original.value.type !== 'oauth'
+              || fingerprint(value) !== fingerprint(commit.original.value)) return refuse('native_provider_resolution_scope_required');
             yield* commit.reauthorize; commit.assertCurrent();
             const result = yield* refresh(value);
-            validateValue('xai', result); yield* commit.reauthorize; commit.assertCurrent();
+            validateValue(integrationID, result); yield* commit.reauthorize; commit.assertCurrent();
             commit.result = structuredClone(result); return result;
           }) } : {}),
         };
+        if (integrationID !== 'xai') return editor.method.update(wrapped);
         if (wrapped.refresh) usageRefreshers.set(location.directory, wrapped.refresh);
         else usageRefreshers.delete(location.directory);
         editor.method.update(wrapped);
@@ -219,7 +238,7 @@ export function createControllerProviderCredentials(options: ControllerProviderC
       if (!scope?.active || scope.directory !== location.directory || scope.permit.sessionID !== scope.sessionID) return yield* Effect.fail(new Integration.AuthorizationError({cause:new HostRefusal('native_provider_resolution_scope_required',403,'credential.provider')}));
       const capture = current(integrationID); capture.assertCurrent();
       let binding: CredentialResolutionBinding = { kind: 'provider', integrationID,
-        ...(original.value.type === 'key' ? {valueType:'key' as const} : {valueType:'oauth' as const,integrationID:'xai' as const,methodID:'device' as const}),
+        ...(original.value.type === 'key' ? {valueType:'key' as const} : {valueType:'oauth' as const,methodID:original.value.methodID}),
         directory: location.directory, controllerInstanceID: options.controllerInstanceID, acquisitionID: capture.acquisitionID,
         configurationDigest: capture.configurationDigest, sessionID: scope.sessionID, permit: scope.permit,
         credentialID: original.id, expectedFingerprint: fingerprint(original) };
@@ -260,11 +279,11 @@ export function createControllerProviderCredentials(options: ControllerProviderC
       return result;
       }).pipe(Effect.ensuring(Effect.sync(() => { if (pending) pendingOAuthResolutions.delete(pending); })));
     });
-    const attempts = new Map<Integration.AttemptID, { readonly directory: string; readonly grant: { readonly authorizationID: string; readonly reauthorize: Effect.Effect<void> } }>();
+    const attempts = new Map<Integration.AttemptID, { readonly directory: string; readonly integrationID: OwnedProviderIntegration; readonly grant: { readonly authorizationID: string; readonly reauthorize: Effect.Effect<void> } }>();
     const ownedAttempt = (input: { integrationID: Integration.ID; attemptID: Integration.AttemptID }) => Effect.gen(function* () {
       const attempt = attempts.get(input.attemptID);
-      if (input.integrationID !== 'xai' || !attempt) return refuse('native_provider_attempt_scope_required');
-      current('xai').assertCurrent(); yield* attempt.grant.reauthorize; current('xai').assertCurrent(); return attempt;
+      if (!attempt || attempt.integrationID !== input.integrationID) return refuse('native_provider_attempt_scope_required');
+      current(attempt.integrationID).assertCurrent(); yield* attempt.grant.reauthorize; current(attempt.integrationID).assertCurrent(); return attempt;
     });
     const scoped = <A,E,R>(action: Effect.Effect<A,E,R>) => Effect.sync(acquired.assertCurrent).pipe(Effect.andThen(action),Effect.tap(() => Effect.sync(acquired.assertCurrent)),Effect.provideService(Location.Service, location));
     const existingMutation = <A,E,R>(id: Credential.ID, action: Effect.Effect<A,E,R>) => Effect.gen(function* () {
@@ -277,30 +296,31 @@ export function createControllerProviderCredentials(options: ControllerProviderC
       update: (id, updates) => existingMutation(id, inner.connection.update(id, updates)),
       remove: id => existingMutation(id, inner.connection.remove(id)),
     }, oauth: { ...inner.oauth,
-      connect: input => input.integrationID !== 'xai' ? isOwnedProviderIntegration(input.integrationID) ? Effect.sync(() => refuse('native_provider_method_unsupported')) : inner.oauth.connect(input) : Effect.gen(function* () {
-        if (input.methodID !== 'device') return refuse('native_provider_method_unsupported');
-        const grant = yield* options.captureOAuthGrant(location.directory); yield* grant.reauthorize; current('xai').assertCurrent();
-        const scope = { directory: location.directory, grant };
+      connect: input => !isOwnedProviderIntegration(input.integrationID) ? inner.oauth.connect(input) : Effect.gen(function* () {
+        const integrationID = input.integrationID;
+        if (!oauthAdmitted(integrationID, input.methodID)) return refuse('native_provider_method_unsupported');
+        const grant = yield* options.captureOAuthGrant(location.directory, integrationID, input.methodID); yield* grant.reauthorize; current(integrationID).assertCurrent();
+        const scope = { directory: location.directory, integrationID, grant };
         const attempt = yield* inner.oauth.connect(input).pipe(Effect.provideService(oauth, scope),
           Effect.provideService(CredentialAuthorizationRef, grant.authorizationID), Effect.provideService(Location.Service, location));
         let retained = false;
         return yield* Effect.gen(function* () {
-          yield* grant.reauthorize; current('xai').assertCurrent(); attempts.set(attempt.attemptID, scope); retained = true; return attempt;
+          yield* grant.reauthorize; current(integrationID).assertCurrent(); attempts.set(attempt.attemptID, scope); retained = true; return attempt;
         }).pipe(Effect.ensuring(Effect.suspend(() => retained ? Effect.void : inner.oauth.cancel({ integrationID: input.integrationID, attemptID: attempt.attemptID }))));
       }),
-      status: input => input.integrationID !== 'xai' ? isOwnedProviderIntegration(input.integrationID) ? Effect.sync(() => refuse('native_provider_method_unsupported')) : inner.oauth.status(input) : Effect.gen(function* () {
+      status: input => !isOwnedProviderIntegration(input.integrationID) ? inner.oauth.status(input) : Effect.gen(function* () {
         const attempt = yield* ownedAttempt(input); const result = yield* inner.oauth.status(input);
-        yield* attempt.grant.reauthorize; current('xai').assertCurrent(); return result;
+        yield* attempt.grant.reauthorize; current(attempt.integrationID).assertCurrent(); return result;
       }),
-      complete: input => input.integrationID !== 'xai' ? isOwnedProviderIntegration(input.integrationID) ? Effect.sync(() => refuse('native_provider_method_unsupported')) : inner.oauth.complete(input) : Effect.gen(function* () {
+      complete: input => !isOwnedProviderIntegration(input.integrationID) ? inner.oauth.complete(input) : Effect.gen(function* () {
         const attempt = yield* ownedAttempt(input);
         yield* inner.oauth.complete(input).pipe(Effect.provideService(oauth, attempt),
           Effect.provideService(CredentialAuthorizationRef, attempt.grant.authorizationID), Effect.provideService(Location.Service, location));
-        yield* attempt.grant.reauthorize; current('xai').assertCurrent();
+        yield* attempt.grant.reauthorize; current(attempt.integrationID).assertCurrent();
       }),
-      cancel: input => input.integrationID !== 'xai' ? isOwnedProviderIntegration(input.integrationID) ? Effect.sync(() => refuse('native_provider_method_unsupported')) : inner.oauth.cancel(input) : Effect.gen(function* () {
+      cancel: input => !isOwnedProviderIntegration(input.integrationID) ? inner.oauth.cancel(input) : Effect.gen(function* () {
         const attempt = yield* ownedAttempt(input); yield* inner.oauth.cancel(input);
-        yield* attempt.grant.reauthorize; current('xai').assertCurrent(); attempts.delete(input.attemptID);
+        yield* attempt.grant.reauthorize; current(attempt.integrationID).assertCurrent(); attempts.delete(input.attemptID);
       }),
     } };
   };

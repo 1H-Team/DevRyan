@@ -3,6 +3,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { parseConfigJsonc, collapseRemovalKeyPaths, removeJsoncKeyPaths } from '../jsonc-config.js';
 import { credentialMutationFingerprint } from './native-credential-mutation-owner.js';
+import { isCatalogProviderIntegration } from './native-provider-integrations.js';
 
 const fail = (code, status = 409) => Object.assign(new Error(code), { code, status, statusCode: status });
 const scopes = new Set(['read', 'auth', 'user', 'project', 'custom', 'all']);
@@ -62,7 +63,7 @@ function temporary(file, bytes, mode) {
 export function createNativeProviderConfigurationOperation({ descriptor, getSnapshot, isReady, captureWebAuthorization, credentialMetadata, credentialOperation }) {
   return async (input, action) => {
     input = Object.freeze({ providerID: input?.providerID, scope: input?.scope, directory: input?.directory ?? null });
-    if (!['openai', 'cursor-acp', 'xai', 'opencode', 'opencode-go'].includes(input.providerID) || !scopes.has(input.scope)) throw fail('native_provider_configuration_scope_invalid', 400);
+    if (!['openai', 'cursor-acp'].includes(input.providerID) && !isCatalogProviderIntegration(input.providerID) || !scopes.has(input.scope)) throw fail('native_provider_configuration_scope_invalid', 400);
     const snapshot = getSnapshot();
     if (!isReady() || descriptor.generation !== 2 || !snapshot) throw fail('native_runtime_not_ready', 503);
     const requested = input.directory ?? null;
@@ -98,7 +99,7 @@ export function createNativeProviderConfigurationOperation({ descriptor, getSnap
       await recheck();
       if (!Array.isArray(rows) || rows.length > 256 || rows.some(row => !row || row.integrationID !== integrationID || !/^[A-Za-z0-9_-]{1,256}$/.test(row.id ?? '')
         || !/^[a-f0-9]{64}$/.test(row.expectedFingerprint ?? '') || !['key', 'oauth'].includes(row.valueType)
-        || kind === 'cursor' && row.valueType !== 'key' || row.valueType === 'oauth' && !(kind === 'openai' ? ['chatgpt-token-sharing', 'chatgpt-siwc', 'chatgpt-browser', 'chatgpt-headless'].includes(row.methodID) : kind === 'provider' && integrationID === 'xai' && row.methodID === 'device'))
+        || kind === 'cursor' && row.valueType !== 'key' || row.valueType === 'oauth' && !(kind === 'openai' ? ['chatgpt-token-sharing', 'chatgpt-siwc', 'chatgpt-browser', 'chatgpt-headless'].includes(row.methodID) : kind === 'provider' && /^[A-Za-z0-9_-]{1,256}$/.test(row.methodID ?? '') && (integrationID !== 'xai' || row.methodID === 'device')))
         || new Set(rows.map(row => row.id)).size !== rows.length) throw fail('native_credential_metadata_invalid', 502);
       return rows;
     };

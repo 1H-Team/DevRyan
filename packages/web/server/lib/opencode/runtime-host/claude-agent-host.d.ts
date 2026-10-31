@@ -7,7 +7,10 @@ export interface ClaudeAgentUsage {
   readonly updatedAt: number;
   readonly overage?: { readonly status: 'allowed' | 'allowed_warning' | 'rejected'; readonly using: boolean };
   readonly windows: Readonly<Partial<Record<'five_hour' | 'seven_day' | 'seven_day_opus' | 'seven_day_sonnet' | 'seven_day_overage_included' | 'overage', ClaudeAgentUsageWindow>>>;
+  /** Per-model weekly windows from Claude Code's `/usage` report, by its display name. */
+  readonly models?: readonly (ClaudeAgentUsageWindow & { readonly name: string })[];
 }
+export interface ClaudeAgentUsageReportRequest { readonly executable: string; readonly env: Record<string, string>; readonly cwd: string; readonly timeoutMs: number }
 export interface ClaudeAgentSessions {
   readonly exists: (sessionID: string) => Promise<boolean>;
   readonly remove: (sessionID: string) => Promise<void>;
@@ -18,11 +21,15 @@ export declare function buildClaudeAgentEnvironment(requested: Readonly<Record<s
   readonly hostEnv?: NodeJS.ProcessEnv; readonly home?: string; readonly accountHome?: string; readonly tmpdir?: string }): Record<string, string>;
 export declare function resolveClaudeExecutable(options?: { readonly env?: NodeJS.ProcessEnv; readonly home?: string }): string | undefined;
 export declare function claudeAgentUsageFromEvent(info: unknown, previous: ClaudeAgentUsage | undefined, now?: number): ClaudeAgentUsage | undefined;
+export declare function claudeAgentUsageFromReport(report: unknown, previous: ClaudeAgentUsage | undefined, now?: number): ClaudeAgentUsage | undefined;
+export declare function readClaudeAgentConnectionChoice(choiceFile: string): 'connected' | 'disconnected' | undefined;
+export declare function writeClaudeAgentConnectionChoice(choiceFile: string, choice: 'connected' | 'disconnected'): Promise<void>;
 export declare function readClaudeAgentUsage(usageFile: string | undefined): ClaudeAgentUsage | undefined;
 export interface ClaudeAgentHost {
   readonly attach: (send: (value: unknown) => void) => void;
   readonly accept: (value: unknown) => void;
   readonly usage: () => ClaudeAgentUsage | undefined;
+  readonly refreshUsage: (options?: { readonly force?: boolean }) => Promise<ClaudeAgentUsage | undefined>;
   readonly close: () => Promise<void>;
 }
 export declare function createClaudeAgentHost(options: {
@@ -31,6 +38,7 @@ export declare function createClaudeAgentHost(options: {
   readonly spawnImpl?: typeof spawn;
   readonly environment?: (requested: Readonly<Record<string, string>>) => Record<string, string>;
   readonly loadSessions?: () => Promise<ClaudeAgentSessions>;
+  readonly readUsageReport?: (request: ClaudeAgentUsageReportRequest) => Promise<unknown>;
   readonly onDiagnostic?: (detail: Record<string, unknown>) => void;
   readonly now?: () => number;
 }): ClaudeAgentHost;

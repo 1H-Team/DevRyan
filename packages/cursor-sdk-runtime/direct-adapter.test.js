@@ -327,7 +327,11 @@ describe('Cursor SDK runtime', () => {
 
     const records = await waitFor(async () => {
       const current = await runtime.getSessionMessages('ses_wait_before_stream');
-      return current.some((record) => record.info?.role === 'assistant' && record.info?.finish)
+      // The stored finish can be visible before persistence and event publication settle.
+      const idle = emitted.some((event) => event?.type === 'session.status'
+        && event.properties?.sessionID === 'ses_wait_before_stream'
+        && event.properties?.status?.type === 'idle');
+      return idle && current.some((record) => record.info?.role === 'assistant' && record.info?.finish)
         ? current
         : null;
     });

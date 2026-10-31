@@ -5,7 +5,7 @@ export type NativeIntegrationBinding = {
 } & ({readonly kind:'mcp';readonly server:string;readonly methodID:string}
   | {readonly kind:'openai';readonly methodID?:'chatgpt-token-sharing'|'chatgpt-siwc'|'chatgpt-browser'|'chatgpt-headless'}
   | {readonly kind:'cursor';readonly methodID?:never}
-  | {readonly kind:'provider';readonly integrationID:'xai'|'opencode'|'opencode-go';readonly methodID?:'device'});
+  | {readonly kind:'provider';readonly integrationID:string;readonly methodID?:string});
 export interface NativeIntegrationOperation {
   readonly kind:'mcp'|'openai'|'cursor'|'provider'|'claude';readonly directory:string;readonly configurationDigest:string;
   readonly server?:string;readonly integrationID?:string;readonly operation:string;

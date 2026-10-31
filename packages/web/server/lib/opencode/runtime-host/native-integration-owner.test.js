@@ -107,14 +107,14 @@ test('finite physical and resolution checks use the original admitted caller, ex
       withProviderResolution:async(input,action)=>{expect(input).toEqual({directory:root,sessionID:'ses_fixture',permit});recheck();resolutions++;return action(recheck);}}});
   const attempt={controllerInstanceID:instanceID,directory:root,sessionID:'ses_fixture',permit,kind:'primary',integrationID:'xai'};
   try{
-    for(const integrationID of ['xai','opencode','opencode-go'])expect(await owner.handleRpc('provider.attempt',{...attempt,integrationID})).toBeNull();
+    for(const integrationID of ['xai','opencode','opencode-go','deepseek'])expect(await owner.handleRpc('provider.attempt',{...attempt,integrationID})).toBeNull();
     const resolution={kind:'provider',valueType:'key',integrationID:'xai',directory:root,controllerInstanceID:instanceID,
       acquisitionID:'acquisition-fixture',configurationDigest:fingerprint({options:{}}),credentialID:'credential-fixture',expectedFingerprint:'b'.repeat(64),sessionID:'ses_fixture',permit};
     expect(await owner.handleRpc('provider.credential.assert',resolution)).toBeNull();expect(resolutions).toBe(1);
-    for(const changes of [{integrationID:'foreign'},{directory:root+'/foreign'},{controllerInstanceID:'old'},{metadata:{permission:'admin'}}]){
+    for(const changes of [{integrationID:'mcp_0123456789abcdef'},{integrationID:'openai'},{integrationID:'anthropic'},{integrationID:'../x'},{directory:root+'/foreign'},{controllerInstanceID:'old'},{metadata:{permission:'admin'}}]){
       await expect(owner.handleRpc('provider.attempt',{...attempt,...changes})).rejects.toMatchObject({code:'native_provider_attempt_invalid'});
     }
-    expect(attempts).toBe(3);revoked=true;
+    expect(attempts).toBe(4);revoked=true;
     await expect(owner.handleRpc('provider.attempt',attempt)).rejects.toMatchObject({code:'caller_revoked'});
     await expect(owner.handleRpc('provider.credential.assert',resolution)).rejects.toMatchObject({code:'caller_revoked'});
     revoked=false;ready=false;await expect(owner.handleRpc('provider.attempt',attempt)).rejects.toMatchObject({code:'native_provider_attempt_invalid'});

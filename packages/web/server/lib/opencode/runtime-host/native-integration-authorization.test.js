@@ -162,7 +162,7 @@ test('direct existing OpenAI mutations bind canonical ID/value and reject secret
   await expect(f.owner.withCallerOperation({...direct,operation:'openai.credential.update',method:'PATCH',path:'/api/credential/owned-credential',body:{value:{type:'key',key:'synthetic'}}},async()=>{})).rejects.toMatchObject({code:'native_integration_scope_invalid'});
 });
 
-test('native XAI device acquisition pins its original caller while Go OAuth and sessionless provider refresh refuse', async()=>{
+test('native XAI device acquisition pins its original caller while foreign OAuth scopes and sessionless provider refresh refuse', async()=>{
   const f=fixture(),owned={...openaiBinding,kind:'provider',integrationID:'xai',methodID:'device'};
   let authorizationID;
   await f.owner.withCallerOperation({...owned,operation:'provider.oauth.start',method:'POST',path:'/api/integration/xai/connect/oauth',body:{methodID:'device'}},async()=>{
@@ -173,8 +173,20 @@ test('native XAI device acquisition pins its original caller while Go OAuth and 
   f.changeCaller();const grant=await f.owner.resolveMutation({authorizationID,binding:mutation});await grant.reauthorize();
   expect(new Set(f.checked)).toEqual(new Set(['original']));
   await expect(f.owner.capture({binding:owned,operation:'connection'})).rejects.toMatchObject({code:'native_integration_scope_invalid'});
-  for(const integrationID of ['opencode','opencode-go'])await expect(f.owner.withCallerOperation({...owned,integrationID,operation:'provider.oauth.start',method:'POST',
-    path:`/api/integration/${integrationID}/connect/oauth`,body:{methodID:'device'}},async()=>{})).rejects.toMatchObject({code:'native_integration_scope_invalid'});
+  // Any catalog provider may start OAuth (the controller admits only reviewed plugin methods);
+  // xAI stays device-only, and MCP, delegated and retired IDs or malformed methods never use the provider scope.
+  await expect(f.owner.withCallerOperation({...owned,integrationID:'github-copilot',operation:'provider.oauth.start',method:'POST',
+    path:'/api/integration/github-copilot/connect/oauth',body:{methodID:'device'}},async()=>'started')).resolves.toBe('started');
+  // A provider sign-in may carry a bounded form answer; other kinds and malformed answers refuse.
+  const answer={deploymentType:'github.com'};
+  await expect(f.owner.withCallerOperation({...owned,integrationID:'github-copilot',operation:'provider.oauth.start',method:'POST',
+    path:'/api/integration/github-copilot/connect/oauth',body:{methodID:'device',answer}},async()=>'answered')).resolves.toBe('answered');
+  for(const body of [{methodID:'device',answer:{}},{methodID:'device',answer:{deploymentType:{nested:true}}},{methodID:'device',answer:'github.com'}])
+    await expect(f.owner.withCallerOperation({...owned,integrationID:'github-copilot',operation:'provider.oauth.start',method:'POST',
+      path:'/api/integration/github-copilot/connect/oauth',body},async()=>{})).rejects.toMatchObject({code:'native_integration_scope_invalid'});
+  for(const [integrationID,methodID] of [['xai','browser'],['mcp_0123456789abcdef','device'],['anthropic','device'],['openai','device'],['claude-agent','device'],['github-copilot','a/b']])
+    await expect(f.owner.withCallerOperation({...owned,integrationID,methodID,operation:'provider.oauth.start',method:'POST',
+      path:`/api/integration/${encodeURIComponent(integrationID)}/connect/oauth`,body:{methodID}},async()=>{})).rejects.toMatchObject({code:'native_integration_scope_invalid'});
   await expect(f.owner.reauthorize({authorizationID,binding:{...owned,acquisitionID:'replacement'}})).rejects.toMatchObject({code:'native_integration_grant_mismatch'});
   f.revoke();await expect(grant.reauthorize()).rejects.toThrow('original_caller_revoked');
 });

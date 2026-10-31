@@ -30,6 +30,7 @@ import {fetchQuota as fetchXaiQuota} from '../../packages/web/server/lib/quota/p
 
 const express=createRequire(new URL('../../packages/web/package.json',import.meta.url))('express');
 const origin={kind:'native',id:'opencode.provider.xai',manifestDigest:'c'.repeat(64),capabilities:['provider']};
+const copilotOrigin={kind:'native',id:'opencode.provider.github-copilot',manifestDigest:'c'.repeat(64),capabilities:['provider']};
 const id=Schema.decodeUnknownSync(Integration.ID);
 const value=Schema.decodeUnknownSync(Credential.Value);
 const permit={token:'a'.repeat(64),revision:0,sessionID:'ses_fixture'};
@@ -49,7 +50,7 @@ async function fixture(action,{fetchResponse,reauthorize,beforeRead,beforeResolu
     return fetchResponse?fetchResponse({url,options}):Response.json({access_token:'fixture-rotated',refresh_token:'fixture-next',expires_in:3600});
   };
   const assert=Effect.promise(async()=>{checks++;if(!allowed)throw Error('fixture_revoked');await reauthorize?.();});
-  const adapter=createControllerProviderCredentials({controllerInstanceID:'fixture-controller',reviewedNativeProviderOrigin:origin,
+  const adapter=createControllerProviderCredentials({controllerInstanceID:'fixture-controller',reviewedNativeProviderOrigins:new Map([[origin.id,origin],[copilotOrigin.id,copilotOrigin]]),
     withCredentialMutation:(_binding,body)=>resolutionQueue.withPermits(1)(body.pipe(Effect.provideService(CredentialMutationReauthorizeRef,assert))),
     withCredentialResolution:(_binding,check,body)=>{
       const ordinal=++queued;
@@ -159,7 +160,7 @@ test('concurrent unchanged provider key resolutions remain read-only and dispatc
 
 test('provider key accounts use native mutation/selection and unsupported raw credential writes refuse',async()=>{
   await fixture(({credentials,integration})=>Effect.gen(function*(){
-    for(const provider of ['xai','opencode','opencode-go']){
+    for(const provider of ['xai','opencode','opencode-go','deepseek']){
       const created=yield* credentials.create({integrationID:id(provider),value:value({type:'key',key:'fixture-'+provider})});
       expect((yield* credentials.get(created.id)).integrationID).toBe(provider);
       yield* credentials.update(created.id,{label:'Account one'});
@@ -169,7 +170,9 @@ test('provider key accounts use native mutation/selection and unsupported raw cr
       yield* credentials.remove(created.id);
       expect(yield* credentials.get(created.id)).toBeUndefined();
     }
-    for(const [provider,token] of [['foreign',value({type:'key',key:'fixture'})],['opencode',stale],['xai',value({...stale,methodID:'browser'})]]){
+    // Delegated, MCP and retired IDs never use the provider scope; OAuth needs a reviewed, policy-allowed method.
+    for(const [provider,token] of [['mcp_0123456789abcdef',value({type:'key',key:'fixture'})],['anthropic',value({type:'key',key:'fixture'})],
+      ['opencode',stale],['xai',value({...stale,methodID:'browser'})],['github-copilot',stale]]){
       const result=yield* refusal(credentials.create({integrationID:id(provider),value:token}));expect(result.ok).toBe(false);
     }
     const forged=yield* refusal(integration.transform(editor=>editor.method.update({integrationID:id('xai'),method:{type:'oauth',id:'device',label:'forged'},authorize:()=>Effect.die('must not execute')})));
@@ -263,6 +266,28 @@ test('refresh rechecks original policy AFTER the final selected-account reread b
   }),{beforeRead:async reads=>{if(reads===5){entered();await gate;}}});
 });
 
+test('catalog provider OAuth is admitted only from a reviewed native plugin under the policy',async()=>{
+  const copilot=value({type:'oauth',methodID:'device',access:'fixture-copilot',refresh:'fixture-copilot-refresh',expires:0});
+  const register=(registrationOrigin,integration)=>provideRegistrationOrigin(registrationOrigin,integration.transform(editor=>editor.method.update({
+    integrationID:id('github-copilot'),method:{type:'oauth',id:'device',label:'GitHub'},authorize:()=>Effect.die('fixture authorize not reached')})));
+  // An unreviewed plugin's OAuth registers as unusable: no account, no sign-in.
+  await fixture(({credentials,integration})=>Effect.gen(function*(){
+    yield* register({...copilotOrigin,manifestDigest:'e'.repeat(64)},integration);
+    expect((yield* refusal(credentials.create({integrationID:id('github-copilot'),value:copilot}))).ok).toBe(false);
+    const connect=yield* refusal(integration.oauth.connect({integrationID:id('github-copilot'),methodID:'device'}));
+    expect(connect.ok).toBe(false);if(connect.ok)throw Error('unreviewed OAuth accepted');
+    expect(connect.refusal.code).toBe('native_provider_method_unsupported');
+  }));
+  // The reviewed native plugin's method is admitted under the same mutation grant as keys.
+  await fixture(({credentials,integration})=>Effect.gen(function*(){
+    yield* register(copilotOrigin,integration);
+    const created=yield* credentials.create({integrationID:id('github-copilot'),value:copilot});
+    expect((yield* integration.connection.active(id('github-copilot')))?.id).toBe(created.id);
+    expect((yield* refusal(credentials.create({integrationID:id('github-copilot'),value:value({...copilot,methodID:'browser'})}))).ok).toBe(false);
+    yield* credentials.remove(created.id);
+  }));
+});
+
 test('original OpenCode builtin can activate with a key while Console OAuth remains refused',async()=>{
   let requests=0;
   await fixture(({raw,integration,hooks})=>Effect.gen(function*(){
@@ -287,7 +312,7 @@ test('original OpenCode builtin can activate with a key while Console OAuth rema
 test('key resolution is scope-bound, read-only and rejects switched accounts or cloned permits at physical dispatch',async()=>{
   await fixture(state=>Effect.gen(function*(){
     const {raw,integration,resolve,hooks,permit}=state;
-    for(const provider of ['xai','opencode','opencode-go']){
+    for(const provider of ['xai','opencode','opencode-go','deepseek']){
       const created=yield* raw.create({integrationID:id(provider),value:value({type:'key',key:'fixture-key'})});
       const selected=yield* integration.connection.active(id(provider));
       expect((yield* Effect.result(integration.connection.resolve(selected)))._tag).toBe('Failure');
@@ -385,6 +410,7 @@ for(const status of [400,401,429,503])test('usage renewal HTTP '+status+' retain
 test('usage renewal traverses the original caller grant, reverse mutation queue and native xAI owner',async()=>{
   const config={locations:[{directory:path.resolve('.cache/v2-validation/controller-integrations'),configuration:{},compatibility:{}}]},directory=config.locations[0].directory,location=Schema.decodeUnknownSync(Location.Info)({directory,project:{id:'global',directory,canonical:directory}}),state=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-xai-usage-')));
   const origin={kind:'native',id:'opencode.provider.xai',manifestDigest:'c'.repeat(64),capabilities:['provider']};
+const copilotOrigin={kind:'native',id:'opencode.provider.github-copilot',manifestDigest:'c'.repeat(64),capabilities:['provider']};
   let queue=Promise.resolve(),fetches=0,commits=0,allowed=true;
   const originalFetch=globalThis.fetch;
   globalThis.fetch=async input=>{
@@ -402,7 +428,7 @@ test('usage renewal traverses the original caller grant, reverse mutation queue 
     captureWebAuthorization:async()=>async()=>{if(!allowed)throw Object.assign(new Error('fixture-private-refusal'),{code:'native_session_access_revoked'});},
     admissionOwner:{withProviderResolution:async(_i,a)=>a(async()=>{}),withProviderAttempt:(_i,a)=>a(async()=>{}),withImageGeneration:async()=>{throw Error('Outside fixture');}}});
   const factory=createControllerIntegrations({controllerInstanceID:'controller-one',configurationSnapshot:config,
-    registrationOrigin:{kind:'native',id:'devryan.remote-mcp',manifestDigest:'c'.repeat(64),capabilities:['network']},reviewedConfigurationOrigins:new Map(),reviewedNativeProviderOrigin:origin,
+    registrationOrigin:{kind:'native',id:'devryan.remote-mcp',manifestDigest:'c'.repeat(64),capabilities:['network']},reviewedConfigurationOrigins:new Map(),reviewedNativeProviderOrigins:new Map([[origin.id,origin]]),
     bootstrapCredentials:()=>Effect.gen(function*(){const credentials=yield* Credential.Service;
       yield* credentials.create({integrationID:Integration.ID.make('xai'),value:{type:'oauth',methodID:'device',access:'fixture-old',refresh:'fixture-private',expires:1}});}),
     isBound:()=>true,isExecutionReady:()=>true,rpc:(method,input,context)=>node.handleRpc(method,input,context),

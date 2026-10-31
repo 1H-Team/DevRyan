@@ -25,6 +25,15 @@ describe('provider options', () => {
     expect(options.every((option) => Object.keys(option).every((key) => key === 'id' || key === 'name'))).toBe(true);
   });
 
+  test('names catalog providers from the runtime method list', () => {
+    const options = mergeProviderConnectionOptions([], {
+      deepseek: [{ type: 'api', providerName: 'DeepSeek' }],
+      'github-copilot': [{ type: 'oauth', providerName: 'Copilot' }],
+      nameless: [{ type: 'api' }],
+    });
+    expect(options).toEqual([{ id: 'deepseek', name: 'DeepSeek' }, { id: 'github-copilot', name: 'GitHub Copilot' }, { id: 'nameless' }]);
+  });
+
   test('preserves catalog labels and references when authentication repeats providers', () => {
     const catalog = parseProvidersPayload({ all: [
       { id: 'openai', name: 'OpenAI' },

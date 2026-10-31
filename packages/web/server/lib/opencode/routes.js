@@ -29,6 +29,7 @@ import { registerGlobalAgentsMdRoutes } from './global-agents-md-routes.js';
 import { createOpenCodeUpdateCheckHandler } from './opencode-update-check.js';
 
 import { ANTHROPIC_PROVIDER_IDS } from './anthropic-provider-ids.js';
+import { isCatalogProviderIntegration } from './runtime-host/native-provider-integrations.js';
 const ANTIGRAVITY_PROVIDER_ID = 'antigravity';
 const CURSOR_ACP_PROVIDER_ID = 'cursor-acp';
 const CURSOR_USAGE_TOKEN_MAX_LENGTH = 16_384;
@@ -191,9 +192,12 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
   };
 
   const nativeProviderOwner = (providerId) => {
-    if (!['openai', CURSOR_ACP_PROVIDER_ID, 'xai', 'opencode', 'opencode-go'].includes(providerId)) return null;
+    const pinned = ['openai', CURSOR_ACP_PROVIDER_ID, 'xai', 'opencode', 'opencode-go'].includes(providerId);
+    if (!pinned && !isCatalogProviderIntegration(providerId)) return null;
     resolveGen2OpenCodeClient(openCodeClient);
     const owner = getNativeRuntimeOwner();
+    // Other catalog providers keep the legacy auth.json path on a runtime without a native owner.
+    if (!pinned && !owner) return null;
     if (typeof owner?.withProviderConfigurationAuthorization !== 'function') {
       throw Object.assign(new Error('Native provider configuration owner unavailable'), { code: 'native_provider_configuration_owner_required', statusCode: 503 });
     }

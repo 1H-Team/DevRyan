@@ -18,7 +18,7 @@ import { createManagedOrchestrationPrivateHost } from '../../orchestration/priva
 import { createRuntimeBundleStore } from './runtime-bundle.js';
 import { verifyNativeRuntimeArtifacts } from './native-artifacts.js';
 import { createNativeControllerProcess } from './native-process.js';
-import { createClaudeAgentHost, readClaudeAgentUsage } from './claude-agent-host.js';
+import { createClaudeAgentHost, readClaudeAgentConnectionChoice, readClaudeAgentUsage, writeClaudeAgentConnectionChoice } from './claude-agent-host.js';
 import { createNativeCopilotCatalog } from './native-copilot-catalog.js';
 import { createNativeAdmissionOwner } from './native-admission-owner.js';
 import { parseNativeProviderTiming } from './native-provider-timing.js';
@@ -185,6 +185,7 @@ export function createNativeRuntimeOwner(options) {
   let settledController;
   let claudeAgentHost, copilotCatalog;
   const claudeAgentUsageFile = path.join(descriptor.launch.webDataDirectory, 'runtime', 'claude-agent-usage.json');
+  const claudeAgentChoiceFile = path.join(descriptor.launch.webDataDirectory, 'runtime', 'claude-agent-connection.json');
   let httpToken, lastExit, unsettledLaunch, configurationSnapshot, integrations, interviews, sessionContext, slim, slimContext, documents, images, cursor, nativeInstanceID, reviewedBrowser, observationOwner, hostOperations;
   const imageNotices=new Map();
   const imageGeneration=bundle.reviewedConfiguration?.reviewedImagegenOriginals?createNativeImageGeneration({
@@ -866,6 +867,11 @@ export function createNativeRuntimeOwner(options) {
   return {
     /** Claude Code's last reported subscription windows; survives controller restarts. */
     readClaudeAgentUsage: () => claudeAgentHost?.usage() ?? readClaudeAgentUsage(claudeAgentUsageFile),
+    /** The last explicit Connect or Disconnect of claude-agent; the facade connects on its own only when there is none. */
+    claudeAgentConnectionChoice: () => readClaudeAgentConnectionChoice(claudeAgentChoiceFile),
+    recordClaudeAgentConnectionChoice: choice => writeClaudeAgentConnectionChoice(claudeAgentChoiceFile, choice),
+    /** Fresh `/usage` numbers from Claude Code while the controller runs; otherwise the last record. */
+    refreshClaudeAgentUsage: async options => await claudeAgentHost?.refreshUsage(options) ?? readClaudeAgentUsage(claudeAgentUsageFile),
     recoverAcceptedPromptBoundary: async ({ directory, sessionID, userMessageID }) => {
       return recoverAcceptedPromptBoundary({ runtime: executionHost.runtime, databasePath: descriptor.launch.opencodeDatabasePath,
         directory, sessionID, userMessageID });
