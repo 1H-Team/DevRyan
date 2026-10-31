@@ -1,5 +1,7 @@
 import {inspectClaudeRequest,isClaudeAccountAbsent,isClaudeInspectionUnavailable,unavailableClaudeInspection,sendClaudeInspectionError} from '../opencode/runtime-host/native-claude-inspection.js';
 import express from 'express';
+import { resolveClaudeExecutable } from '../opencode/runtime-host/claude-agent-host.js';
+import { fetchQuota as fetchClaudeAgentQuota } from './providers/claude-agent.js';
 
 import { createNativeQuotaCredentials } from './native-credentials.js';
 import { buildResult } from './utils/formatters.js';
@@ -256,8 +258,13 @@ export function registerQuotaRoutes(app, {
       // an authorization refusal or an absent account is not listed.
       claudeListed = isClaudeInspectionUnavailable(error?.code) && !isClaudeAccountAbsent(error?.code);
     }
+    // Claude Code's own usage: listed once it has reported a window or is installed.
+    const owner = getNativeRuntimeOwner();
+    const claudeAgentListed = typeof owner?.readClaudeAgentUsage === 'function'
+      && Boolean(owner.readClaudeAgentUsage() || resolveClaudeExecutable());
     // Registry order: claude, codex, xai lead; opencode-go closes the list.
     return [
+      ...(claudeAgentListed ? ['claude-agent'] : []),
       ...(claudeListed ? ['claude'] : []),
       ...['codex', 'xai'].filter((id) => configured.has(id)),
       ...base,
@@ -543,6 +550,10 @@ export function registerQuotaRoutes(app, {
     try {
       const { providerId } = req.params;
       if (!providerId) return res.status(400).json({ error: 'Provider ID is required' });
+      if (providerId === 'claude-agent') {
+        const owner = nativeCredentials.mode() === 'legacy' ? null : getNativeRuntimeOwner();
+        return res.json(await fetchClaudeAgentQuota({ readUsage: () => owner?.readClaudeAgentUsage?.(), available: Boolean(resolveClaudeExecutable()) }));
+      }
       if(isAnthropicProviderId(providerId)){
         try{
           const directory=await resolveQuotaDirectory(req);

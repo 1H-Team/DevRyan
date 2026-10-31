@@ -20,6 +20,8 @@ export const REVIEWED_NATIVE_PLUGIN_IDS: readonly string[] = Object.freeze([
   'opencode.provider.azure',
   'opencode.provider.cerebras',
   'opencode.provider.chatgpt',
+  // Drives the user's own Claude Code CLI through @anthropic-ai/claude-agent-sdk.
+  'opencode.provider.claude-agent',
   'opencode.provider.cloudflare.ai.gateway',
   'opencode.provider.cloudflare.workers.ai',
   'opencode.provider.databricks',
@@ -94,13 +96,6 @@ export const REVIEWED_NATIVE_PLUGIN_IDS: readonly string[] = Object.freeze([
   'opencode.config.provider',
   'opencode.config.websearch',
   'opencode.config.policy',
-]);
-/** Reviewed builtins DevRyan keeps inert: activation succeeds without running them. */
-export const INERT_NATIVE_PLUGIN_IDS: readonly string[] = Object.freeze([
-  // 2.2.5 drives the local Claude Code CLI through the optional
-  // @anthropic-ai/claude-agent-sdk peer, which DevRyan does not install. Running it
-  // would probe and spawn `claude` outside owned execution.
-  'opencode.provider.claude-agent',
 ]);
 const toolCapabilities: Readonly<Record<string, readonly RegistrationCapability[]>> = Object.freeze({
   'opencode.tool.read': ['read'], 'opencode.tool.glob': ['read'], 'opencode.tool.grep': ['read'],

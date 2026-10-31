@@ -206,8 +206,9 @@ export const OPENCODE_V2_ROUTE_CLASSES = Object.freeze({
   'POST /api/integration/{integrationID}/connect/command': D,
   'GET /api/integration/{integrationID}/connect/command/{attemptID}': D,
   'DELETE /api/integration/{integrationID}/connect/command/{attemptID}': D,
-  // 2.0.26 external sources (e.g. Azure CLI) run outside DevRyan's credential owners: denied.
-  'POST /api/integration/{integrationID}/connect/external': D,
+  // 2.0.26 external sources (e.g. Azure CLI) run outside DevRyan's credential owners. The
+  // server owner admits only claude-agent's `claude-login`, whose processes the host launches.
+  'POST /api/integration/{integrationID}/connect/external': S,
   'POST /api/experimental/integration/wellknown': D,
   'GET /api/credential': P,
   'POST /api/credential': S,

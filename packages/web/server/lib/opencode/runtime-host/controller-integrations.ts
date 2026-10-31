@@ -52,6 +52,18 @@ const refuse=(code:string):never=>{throw new HostRefusal(code,403,'controller.in
 /** One Credential service and one location-owned Integration service. Original
  * browser grant handles are transported explicitly; the private RPC bearer is
  * never an integration or credential grant. */
+const CLAUDE_AGENT_INTEGRATION='claude-agent';
+/** claude-agent holds only Claude Code's own login: one external `claude-login` reference, never a key or token. */
+const decorateClaudeAgentCredential=(inner:Credential.Interface):Credential.Interface=>Credential.Service.of({...inner,
+  create:input=>input.integrationID!==CLAUDE_AGENT_INTEGRATION?inner.create(input)
+    :input.value.type==='external'&&input.value.methodID==='claude-login'&&input.value.metadata===undefined?inner.create(input)
+      :Effect.sync(()=>refuse('native_credential_mutation_denied')),
+  update:(id,updates)=>Effect.gen(function*(){
+    const record=yield* inner.get(id);
+    if(record?.integrationID===CLAUDE_AGENT_INTEGRATION&&updates.value!==undefined)return refuse('native_credential_mutation_denied');
+    return yield* inner.update(id,updates);
+  }),
+});
 export function createControllerIntegrations(options:ControllerIntegrationsOptions){
   const snapshot=structuredClone(options.configurationSnapshot);
   const configurations=decodeNativeConfigurationSnapshot(snapshot);
@@ -174,7 +186,7 @@ export function createControllerIntegrations(options:ControllerIntegrationsOptio
     assertResolution:binding=>Effect.promise(()=>options.rpc('provider.credential.assert',binding)).pipe(Effect.asVoid),
     captureOAuthGrant:directory=>capture(providerBinding(directory,'xai','device'),'oauth'),
     reviewedNativeProviderOrigin:options.reviewedNativeProviderOrigin,
-    ownsDelegatedIntegration:id=>id==='openai'||id==='cursor-acp'||mcp.ownsCredentialIntegration(id),
+    ownsDelegatedIntegration:id=>id==='openai'||id==='cursor-acp'||id===CLAUDE_AGENT_INTEGRATION||mcp.ownsCredentialIntegration(id),
   });
   const closeAcquisition=(acquisition:Acquisition)=>Effect.gen(function*(){
     acquisition.closed=true;
@@ -190,7 +202,7 @@ export function createControllerIntegrations(options:ControllerIntegrationsOptio
       const inner=yield* Credential.Service;
       claudeLifecycle=createControllerClaudeLifecycle({controllerInstanceID:options.controllerInstanceID,kv:yield* KV.Service,database:yield* Database.Service,isCurrent:()=>!closed&&options.isBound()});
       if(options.bootstrapCredentials)yield* options.bootstrapCredentials().pipe(Effect.orDie);
-      composedCredentials=provider.decorateCredential(mcp.decorateCredential(openai.decorateCredential(cursor.decorateCredential(inner))));return composedCredentials;
+      composedCredentials=provider.decorateCredential(mcp.decorateCredential(openai.decorateCredential(cursor.decorateCredential(decorateClaudeAgentCredential(inner)))));return composedCredentials;
     }))})),
     Integration.node.replace(Integration.node.mapLayer(original=>Layer.effect(Integration.Service,Effect.gen(function*(){
       const inner=yield* Integration.Service;

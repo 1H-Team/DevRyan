@@ -23,8 +23,11 @@ export const REVIEWED_NATIVE_CLONE_RELEASES = Object.freeze({
   '2.2.5': '24c76a7a479dc5bdd317d83bbfe2a5758bdb62daf4674aaa033969c6cb26f6a0',
 });
 // The later 2.0.26 build adds observation transforms without changing database layout.
+// The later 2.2.5 build bundles the claude-agent provider's Agent SDK instead of a
+// refusing stub; it adds no migration and keeps the 2.2.5 layout.
 export const REVIEWED_NATIVE_CLONE_REBUILDS = Object.freeze({
   '2.0.26': '287c56936f4c31fdff506e655a599a7ef277e384c144c1548ec48ba9e918b464',
+  '2.2.5': '48e3baf48abd53eb322b0fa82b7931abe11a67a23d015e01c8857768630d6f39',
 });
 const reviewedGraph = manifest => manifest.inputs?.coreDigest === REVIEWED_NATIVE_CLONE_RELEASES[manifest.opencodeVersion]
   || Object.hasOwn(REVIEWED_NATIVE_CLONE_REBUILDS, manifest.opencodeVersion)

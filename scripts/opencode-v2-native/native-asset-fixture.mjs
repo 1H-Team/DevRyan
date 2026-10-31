@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {createRequire} from 'node:module';
-import {isNativeClaudeAgentSdkSource,rewriteNativeAsset,rewriteNativeAgentDefaults,rewriteNativePhotonWorker,rewriteUnavailableClaudeAgentSdk} from '../native-runtime-assets.mjs';
+import {rewriteNativeAsset,rewriteNativeAgentDefaults,rewriteNativePhotonWorker} from '../native-runtime-assets.mjs';
 import {findNativeCoreSources,isNativePhotonWorkerSource,nativeCoreSourceFilter} from '../native-core-sources.mjs';
 
 // Test bundles use the same guarded native asset resolvers as production.
@@ -19,11 +19,10 @@ export async function createNativeAssetFixturePlugin(repository){
   [agentDefaults,rewriteNativeAgentDefaults(await fs.readFile(agentDefaults))],
  ]);
  return {name:'production-pinned-native-assets',setup(builder){
-  const filter=new RegExp([nativeCoreSourceFilter(ptyBinding).source,/(?:photon_rs|@opencode[\\/]schema[\\/]dist[\\/]agent|@opencode[\\/]core[\\/]dist[\\/]image[\\/]photon|@opencode[\\/]core[\\/]dist[\\/]plugin[\\/]provider[\\/]claude-agent[\\/]claude[\\/]agent-sdk)\.js$/.source].join('|'));
+  const filter=new RegExp([nativeCoreSourceFilter(ptyBinding).source,/(?:photon_rs|@opencode[\\/]schema[\\/]dist[\\/]agent|@opencode[\\/]core[\\/]dist[\\/]image[\\/]photon)\.js$/.source].join('|'));
   builder.onLoad({filter},async event=>{
    // Every installed core copy shares the pinned Photon worker bytes.
    if(isNativePhotonWorkerSource(event.path))return {contents:rewriteNativePhotonWorker(await fs.readFile(event.path)),loader:'js'};
-   if(isNativeClaudeAgentSdkSource(event.path))return {contents:rewriteUnavailableClaudeAgentSdk(await fs.readFile(event.path)),loader:'js'};
    const contents=rewrites.get(path.resolve(event.path));
    if(contents===undefined)throw Error('Unexpected native asset resolver');
    return {contents,loader:'js'};

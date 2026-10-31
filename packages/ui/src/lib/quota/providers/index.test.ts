@@ -8,6 +8,8 @@ describe('quota provider metadata', () => {
 
     expect(sorted.map((provider) => provider.name)).toEqual([
       'ChatGPT',
+      // Claude through Meridian and through Claude Code's own login (claude-agent).
+      'Claude',
       'Claude',
       'Cursor',
       'DeepSeek',

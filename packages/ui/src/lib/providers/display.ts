@@ -29,7 +29,7 @@ export const getProviderDisplayName = (
   if (provider.id === 'openai') {
     return 'ChatGPT';
   }
-  if (isAnthropicOAuthProviderId(provider.id)) {
+  if (isAnthropicOAuthProviderId(provider.id) || provider.id === 'claude-agent') {
     return 'Claude';
   }
   if (provider.id === 'cursor-acp') {

@@ -8,6 +8,7 @@ import { SessionEvent } from '@opencode/schema/session-event';
 import { runControllerEffect } from './controller-effects.js';
 import { Cause, Context, Deferred, Effect, Exit, Fiber, Layer, Option, Scope, Schema } from 'effect';
 import { Command } from '@opencode/core/command';
+import type { make as makeClaudeAgentPlugin } from '@opencode/core/plugin/provider/claude-agent/index';
 import { Location } from '@opencode/core/location';
 import { Permission } from '@opencode/core/permission';
 import { PermissionSaved } from '@opencode/core/permission/saved';
@@ -39,7 +40,6 @@ import { makeGlobalNode, makeLocationNode } from '@opencode/util/effect/app-node
 import { createCommandDerivation,type ReviewedCommandBehavior } from './command-derivation.js';
 import { HostRefusal, refuseHost } from './host-refusal.js';
 import { RegistrationOriginRef, provideRegistrationOrigin, type RegistrationOrigin } from './registration-origin.js';
-import { INERT_NATIVE_PLUGIN_IDS } from './native-plugin-registry.js';
 import { OperationPermitRef, requestPermit, type ExecuteOwned, type NativeAdmissionBridge, type OperationPermit, type OperationRequest, type NativeExecutor } from './native-admission-contract.js';
 import {reviewedSkillToolInput} from './native-skills.js';
 import { translateNativeSkillPermissionRules } from './native-skill-permissions.js';
@@ -70,7 +70,10 @@ export interface AdmissionGateOptions {
   readonly captureSessionStore?: (inner: SessionStore.Interface) => Effect.Effect<SessionStore.Interface, never, Scope.Scope>;
   /** In-flight remote MCP calls shared with the owned MCP service (elicitation attribution). */
   readonly mcpElicitationCalls?: McpElicitationCalls;
+  /** OpenCode's claude-agent provider rebuilt over host-relayed Claude Code IO; without it the builtin stays inert. */
+  readonly claudeAgentPlugin?: ReturnType<typeof makeClaudeAgentPlugin>;
 }
+const CLAUDE_AGENT_PLUGIN_ID = 'opencode.provider.claude-agent';
 const record = (input: unknown): input is Record<string, unknown> => typeof input === 'object' && input !== null && !Array.isArray(input);
 const isPrompt = (input: unknown): input is SessionPrompt => record(input) && typeof input.sessionID === 'string'
   && typeof input.messageID === 'string' && record(input.prompt) && typeof input.prompt.text === 'string';
@@ -671,13 +674,20 @@ export function createAdmissionGates(options: AdmissionGateOptions) {
     })).pipe(Layer.provide(layer)))),
     Plugin.node.replace(Plugin.node.mapLayer((layer) => Layer.effect(Plugin.Service, Effect.gen(function* () {
       const inner = yield* Plugin.Service;
-      const location = Option.getOrUndefined(Context.getOption(yield* Effect.context(), Location.Service));
+      const ambient = yield* Effect.context();
+      const location = Option.getOrUndefined(Context.getOption(ambient, Location.Service));
       if(location) pluginCatalogs.set(location.directory,inner);
+      // Core provides its internal plugins' services at list time; the rebuilt claude-agent needs the same bus.
+      const bus = Context.getOption(ambient, Bus.Service);
       return Plugin.Service.of({ ...inner, activate: (plugins, failures) => inner.activate(plugins.map((plugin) => {
         if (plugin.source?.type !== 'builtin' || plugin.revision !== 'internal') return plugin;
-        if (INERT_NATIVE_PLUGIN_IDS.includes(plugin.id)) return { ...plugin, effect: () => Effect.void };
+        // Core's own IO would spawn `claude` inside this confined controller, without its keychain login.
+        const replacement = plugin.id === CLAUDE_AGENT_PLUGIN_ID ? options.claudeAgentPlugin : undefined;
+        if (plugin.id === CLAUDE_AGENT_PLUGIN_ID && (!replacement || Option.isNone(bus))) return { ...plugin, effect: () => Effect.void };
+        const effect: typeof plugin.effect = replacement && Option.isSome(bus)
+          ? (host) => replacement.effect(host).pipe(Effect.provideService(Bus.Service, bus.value)) : plugin.effect;
         const provenance = options.nativePlugins.get(plugin.id);
-        return { ...plugin, effect: (context) => provenance ? provideRegistrationOrigin(provenance, plugin.effect(helperPluginContext(context)))
+        return { ...plugin, effect: (context) => provenance ? provideRegistrationOrigin(provenance, effect(helperPluginContext(context)))
           : refuseHost(new HostRefusal('native_plugin_unreviewed', 403, 'plugin.activate')) };
       }), failures) });
     })).pipe(Layer.provide(layer)))),

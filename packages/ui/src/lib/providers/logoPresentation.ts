@@ -2,6 +2,7 @@ const COLOR_PRESERVING_PROVIDER_IDS = new Set([
     'anthropic',
     'anthropic-oauth',
     'claude',
+    'claude-agent',
     'opencode-with-claude',
 ]);
 

@@ -55,6 +55,8 @@ import { useUsageOnlySelectionAvailable } from './useProviderUsage';
 import { useI18n } from '@/lib/i18n';
 import { useAuthPrincipal } from '@/lib/authSession';
 import { ClaudeDedicatedEnrollment } from './ClaudeDedicatedEnrollment';
+import { ClaudeAgentConnection } from './ClaudeAgentConnection';
+import { CLAUDE_AGENT_PROVIDER_ID } from './claudeAgentApi';
 import { getProviderModelUnavailability } from '@/lib/providers/modelAvailability';
 import { BundledRuntimeUpdate } from './BundledRuntimeUpdate';
 import { ProviderAccounts } from './ProviderAccounts';
@@ -1366,6 +1368,10 @@ const ProvidersPageContent: React.FC = () => {
                     </>
                   )}
 
+                  {candidateProviderId === CLAUDE_AGENT_PROVIDER_ID && (
+                    <ClaudeAgentConnection directory={currentDirectory} onChanged={() => { void loadProviders({ directory: null }); }} />
+                  )}
+
 
                   {activeCursorAcpProviderId === candidateProviderId && (
                     <div className="flex items-center justify-between gap-3 py-1.5">
@@ -1625,6 +1631,10 @@ const ProvidersPageContent: React.FC = () => {
 
                 {providerOAuth && isAnthropicOAuthProviderId(selectedProvider.id) && (
                   renderClaudeCodeAuth()
+                )}
+
+                {selectedProvider.id === CLAUDE_AGENT_PROVIDER_ID && (
+                  <ClaudeAgentConnection key={selectedProvider.id} directory={currentDirectory} onChanged={() => { void loadProviders({ directory: null }); }} />
                 )}
 
                 {activeCursorAcpProviderId === selectedProvider.id && (

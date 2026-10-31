@@ -91,11 +91,16 @@ try {
     for(const [name,directory] of Object.entries(env)) if(!process.env[name] || await fs.realpath(process.env[name]!)!==await fs.realpath(directory)) throw new Error('native_global_environment_mismatch');
     const migration=await verifyNativeBootMigration(boot);
     const {startNativeController}=await import('./controller-startup.js');
-    const host=await startNativeController(boot,{coreDigest:DEVRYAN_CORE_DIGEST,hostDigest:DEVRYAN_HOST_DIGEST,reviewedPlugins:DEVRYAN_REVIEWED_PLUGIN_ORIGINS,migration:migration.marker});
-    close=host.close;
+    const {createClaudeAgentChannel}=await import('./claude-agent-io.js');
+    const claudeAgent=createClaudeAgentChannel(write);
+    const host=await startNativeController(boot,{coreDigest:DEVRYAN_CORE_DIGEST,hostDigest:DEVRYAN_HOST_DIGEST,reviewedPlugins:DEVRYAN_REVIEWED_PLUGIN_ORIGINS,migration:migration.marker,claudeAgentIO:claudeAgent.io});
+    close=async()=>{claudeAgent.close();await host.close();};
     write({protocol:1,type:'bound',bundleID:boot.bundleID,instanceID:boot.instanceID,url:host.url,port:host.port,buildId:boot.buildId,catalog:host.catalog,migration:{v1:migration.marker},...(host.setupCredentialSeed?{setupCredentialSeed:host.setupCredentialSeed}:{})});
     const dispatcher=createNativeCommandDispatcher({run:host.command,closeStartup:host.closeStartup,respond:(id,result)=>write({protocol:1,id,...result})});
-    for await(const value of lines) dispatcher.dispatch(parseNativeCommand(value));
+    for await(const value of lines){
+      if(value&&typeof value==='object'&&'type'in value&&value.type==='claude-agent-reply'){claudeAgent.accept(value);continue;}
+      dispatcher.dispatch(parseNativeCommand(value));
+    }
     host.closeStartup();await close();await dispatcher.drain();
   }
 } catch(error) {

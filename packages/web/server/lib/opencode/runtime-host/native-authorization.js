@@ -51,7 +51,7 @@ export function createNativeAuthorization({ locations, manifest, getRequestPrinc
       if (request.operation === 'provider.configuration') {
         if (!['read', 'auth', 'user', 'project', 'custom', 'all'].includes(request.scope)) throw fail('native_settings_scope_invalid');
         settingsAccess = { page: 'providers', mode: request.scope === 'read' ? 'read' : 'edit' };
-      } else if (['mcp', 'openai', 'cursor', 'provider'].includes(request.kind)) {
+      } else if (['mcp', 'openai', 'cursor', 'provider', 'claude'].includes(request.kind)) {
         if (!['GET', 'POST', 'PATCH', 'DELETE'].includes(request.method)) throw fail('native_settings_scope_invalid');
         settingsAccess = { page: request.kind === 'mcp' ? 'mcp' : 'providers', mode: request.method === 'GET' ? 'read' : 'edit' };
       }

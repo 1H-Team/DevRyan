@@ -223,3 +223,16 @@ measuring refresh behavior. Request counts and status codes are sufficient.
 
 
 xAI native usage renewal binds the initial in-memory auth snapshot to its selected credential ID and fingerprint through a private WeakMap. `refreshXai` rejects copied snapshots or a replaced runtime owner. The existing startup quota coordinator invokes this same path; it creates no session or model request. Legacy/external-runtime OAuth renewal retains its existing fetcher behavior.
+
+## Claude through claude-agent
+
+`providers/claude-agent.js` reports Claude subscription usage from the
+`rate_limit_event` messages Claude Code itself emits on each claude-agent turn. The
+native host records them (`runtime-host/claude-agent-host.js`) to
+`<webDataDirectory>/runtime/claude-agent-usage.json`; `GET /api/quota/claude-agent`
+reads that record through the runtime owner (`readClaudeAgentUsage`). Utilization is a
+0–1 fraction mapped to `5h`, `7d`, `7d-opus` and `7d-sonnet` windows; only windows
+Claude Code reports appear (some plans report no five-hour window). Before the first
+turn the result is `claude_agent_usage_pending`. DevRyan never reads Claude Code's login
+or calls Anthropic's OAuth usage endpoint for this provider. The provider is listed in
+native mode once usage is recorded or a `claude` executable resolves.

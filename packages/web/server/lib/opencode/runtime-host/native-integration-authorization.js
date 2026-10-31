@@ -14,13 +14,14 @@ const HEADER = 'x-devryan-native-integration-grant';
 
 /** Only the constructor-owned browser adapter may issue an HTTP grant. */
 function operation(spec) {
-  if (!record(spec) || !path.isAbsolute(spec.directory ?? '') || !['mcp', 'openai', 'cursor', 'provider'].includes(spec.kind)
+  if (!record(spec) || !path.isAbsolute(spec.directory ?? '') || !['mcp', 'openai', 'cursor', 'provider', 'claude'].includes(spec.kind)
     || !sha(spec.configurationDigest) || spec.kind === 'mcp' && (typeof spec.server !== 'string' || !spec.server
       || spec.server.length > 256 || /[\u0000-\u001f]/.test(spec.server))
     || spec.kind === 'provider' && (!['xai', 'opencode', 'opencode-go'].includes(spec.integrationID)
       || spec.methodID !== undefined && (spec.integrationID !== 'xai' || spec.methodID !== 'device'))
     || spec.kind === 'openai' && spec.integrationID !== 'openai'
-    || spec.kind === 'cursor' && (spec.integrationID !== 'cursor-acp' || spec.methodID !== undefined)) throw fail('native_integration_scope_invalid');
+    || spec.kind === 'cursor' && (spec.integrationID !== 'cursor-acp' || spec.methodID !== undefined)
+    || spec.kind === 'claude' && (spec.integrationID !== 'claude-agent' || spec.methodID !== undefined && spec.methodID !== 'claude-login')) throw fail('native_integration_scope_invalid');
   if (spec.expectedActiveFingerprint !== undefined && (spec.kind !== 'openai' || !sha(spec.expectedActiveFingerprint))) throw fail('native_integration_scope_invalid');
   if (spec.assertCurrent !== undefined && typeof spec.assertCurrent !== 'function') throw fail('native_integration_scope_invalid');
   const encoded = value => { if (!id(value)) throw fail('native_integration_scope_invalid'); return encodeURIComponent(value); };
@@ -29,7 +30,15 @@ function operation(spec) {
   let method, route, body;
   switch (spec.operation) {
     case 'mcp.status': method = 'GET'; route = '/api/mcp'; break;
-    case 'mcp.integration': case 'openai.integration': case 'cursor.integration': case 'provider.integration': method = 'GET'; route = integration(); break;
+    case 'mcp.integration': case 'openai.integration': case 'cursor.integration': case 'provider.integration': case 'claude.integration': method = 'GET'; route = integration(); break;
+    // Claude Code's own login: the connection stores no secret, only that the host may launch `claude`.
+    case 'claude.connect':
+      if (spec.methodID !== 'claude-login') throw fail('native_integration_scope_invalid');
+      method = 'POST'; route = `${integration()}/connect/external`; body = { methodID: 'claude-login' }; break;
+    case 'claude.credential.remove':
+      method = 'DELETE'; route = `/api/credential/${encoded(spec.credentialID)}`;
+      if (digest({ id: spec.credentialID }) !== spec.requestedFingerprint) throw fail('native_integration_scope_invalid');
+      break;
     case 'provider.usage':
       if (spec.kind !== 'provider' || spec.integrationID !== 'xai' || spec.methodID !== 'device'
         || !id(spec.credentialID) || !sha(spec.expectedFingerprint)

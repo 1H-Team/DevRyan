@@ -4,7 +4,7 @@ import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
 import {createRequire} from 'node:module';
-import {rewriteNativeAsset,rewriteNativeAgentDefaults,rewriteNativePhotonWorker,rewriteUnavailableNativePty,rewriteUnavailableClaudeAgentSdk,isNativeClaudeAgentSdkSource,prepareReviewedNativeInputs,reviewedNativeInputPlugin,rewriteSealedNodeRequire} from './native-runtime-assets.mjs';
+import {rewriteNativeAsset,rewriteNativeAgentDefaults,rewriteNativePhotonWorker,rewriteUnavailableNativePty,prepareReviewedNativeInputs,reviewedNativeInputPlugin,rewriteSealedNodeRequire} from './native-runtime-assets.mjs';
 import {REVIEWED_WINDOWS_LIBSQL_EVIDENCE} from '../packages/web/server/lib/opencode/runtime-host/reviewed-windows-assets.js';
 import {hydrateWindowsReviewedExecutables} from './build-windows-reviewed-executables.mjs';
 import {hydrateWindowsGit} from './build-windows-git.mjs';
@@ -78,11 +78,10 @@ const finalizationFile=coreSources.finalization;
 const finalization=rewriteNativeFinalizationObservation(await fs.readFile(finalizationFile,'utf8'),path.join(host,'native-finalization-observation.ts'));
 // Core's own @opencode/schema dependency; its exports are import-only.
 const agentDefaultsFile=await fs.realpath(path.join(path.dirname(coreRoot),'schema/dist/agent.js'));
-const claudeAgentSdkFile=path.join(coreRoot,'dist/plugin/provider/claude-agent/claude/agent-sdk.js');
-const rewrites=new Map([[ptyBinding,ptySource],[photonFile,photonSource],[compactionFile,compaction.contents],[finalizationFile,finalization.contents],[agentDefaultsFile,rewriteNativeAgentDefaults(await fs.readFile(agentDefaultsFile))],[claudeAgentSdkFile,rewriteUnavailableClaudeAgentSdk(await fs.readFile(claudeAgentSdkFile))]]);
+const rewrites=new Map([[ptyBinding,ptySource],[photonFile,photonSource],[compactionFile,compaction.contents],[finalizationFile,finalization.contents],[agentDefaultsFile,rewriteNativeAgentDefaults(await fs.readFile(agentDefaultsFile))]]);
 for(const [file,contents] of rewrites) transforms.push({path:path.relative(repository,file),sha256:hash(await fs.readFile(file)),outputSha256:hash(contents),
-  reason:file===ptyBinding?(windowsCandidate?'windows-persistent-pty-unavailable':'compiled-dynamic-package-resolve-unavailable'):file===compactionFile?'pinned-native-compaction-read-only-observation':file===finalizationFile?'pinned-native-finalization-read-only-observation':file===agentDefaultsFile?'pinned-native-external-directory-default-ask':file===claudeAgentSdkFile?'compiled-claude-agent-sdk-unavailable':'compiled-photon-source-wasm-read-denied'});
-const assetFilter=new RegExp([nativeCoreSourceFilter(ptyBinding,compactionFile,finalizationFile).source,/(?:photon_rs|@opencode[\\/]schema[\\/]dist[\\/]agent)\.js$/.source,/@opencode[\\/]core[\\/]dist[\\/]image[\\/]photon\.js$/.source,/@opencode[\\/]core[\\/]dist[\\/]plugin[\\/]provider[\\/]claude-agent[\\/]claude[\\/]agent-sdk\.js$/.source].join('|'));
+  reason:file===ptyBinding?(windowsCandidate?'windows-persistent-pty-unavailable':'compiled-dynamic-package-resolve-unavailable'):file===compactionFile?'pinned-native-compaction-read-only-observation':file===finalizationFile?'pinned-native-finalization-read-only-observation':file===agentDefaultsFile?'pinned-native-external-directory-default-ask':'compiled-photon-source-wasm-read-denied'});
+const assetFilter=new RegExp([nativeCoreSourceFilter(ptyBinding,compactionFile,finalizationFile).source,/(?:photon_rs|@opencode[\\/]schema[\\/]dist[\\/]agent)\.js$/.source,/@opencode[\\/]core[\\/]dist[\\/]image[\\/]photon\.js$/.source].join('|'));
 // Every installed core copy (peer-dependency variants) shares the pinned Photon worker bytes.
 const photonWorkers=new Map();
 const plugin={name:'devryan-pinned-asset-resolvers',setup(builder){builder.onLoad({filter:assetFilter},async event=>{
@@ -92,8 +91,6 @@ const plugin={name:'devryan-pinned-asset-resolvers',setup(builder){builder.onLoa
     photonWorkers.set(file,{path:path.relative(repository,file),sha256:hash(source),outputSha256:hash(contents),reason:'pinned-native-photon-main-thread'});
     return {contents,loader:'js'};
   }
-  // Every installed core copy shares the pinned Claude Agent SDK entry bytes.
-  if(!rewrites.has(file)&&isNativeClaudeAgentSdkSource(file))return {contents:rewriteUnavailableClaudeAgentSdk(await fs.readFile(file)),loader:'js'};
   const contents=rewrites.get(file);if(contents===undefined) throw new Error('Unexpected native asset resolver');return {contents,loader:'js'};});}};
 const settings={target:'bun',minify:true,conditions:['bun'],sourcemap:'none',metafile:true,plugins:[plugin,reviewedNativeInputPlugin(reviewed)]};
 await fs.mkdir(path.dirname(output),{recursive:true});

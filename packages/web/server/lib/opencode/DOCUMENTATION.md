@@ -1070,10 +1070,10 @@ its own level 6 layout. 2.2.5 still writes `session_part` only where part rows a
 exist, so `session_message.data.content` stays authoritative. It adds
 `opencode.tool.artifact` (opt-in through `experimental.artifacts`, no capabilities)
 and the experimental artifact routes, which are denied, and `opencode.provider.claude-agent`,
-which drives the local Claude Code CLI through the optional
-`@anthropic-ai/claude-agent-sdk` peer. DevRyan does not install that SDK: the build
-replaces its entry with a refusal and the provider is an inert native plugin
-(`INERT_NATIVE_PLUGIN_IDS`), activated without running, so it never probes or spawns `claude`.
+which drives the user's own Claude Code through the `@anthropic-ai/claude-agent-sdk`
+peer (pinned to core's 0.3.301). The confined controller cannot reach the keychain or
+`~/.claude`, so admission rebuilds the plugin over host-relayed IO; see
+"Claude Code through claude-agent" in `runtime-host/DOCUMENTATION.md`.
 `Permission.allows` (edit adds a file-content hint to a missed match when reads are
 allowed) is evaluated in the location permission view; the writer worker answers
 `false`. `Tool.check` runs Code Mode schedule conditions and is refused. Compaction

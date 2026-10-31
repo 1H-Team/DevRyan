@@ -298,6 +298,14 @@ export const createOpenCodeV2FacadeRouter = (deps) => {
     validateFacadeBody(req.body ?? {}, []); return integrations.mcpRemove(req.params.name, options);
   });
   route('get', '/provider/auth', (_client, _req, _res, options) => integrations.providerMethods(options));
+  // Claude Code's own login (`claude auth login`); DevRyan only records that Claude may be used.
+  route('get', '/provider/claude-agent/status', (_client, _req, _res, options) => integrations.claudeStatus(options));
+  route('post', '/provider/claude-agent/connect', (_client, req, _res, options) => {
+    validateFacadeBody(req.body ?? {}, []); return integrations.claudeConnect(options);
+  });
+  route('delete', '/provider/claude-agent/connect', (_client, req, _res, options) => {
+    validateFacadeBody(req.body ?? {}, []); return integrations.claudeDisconnect(options);
+  });
   // Metadata only (toProviderAccountList); the secret-bearing native credential list stays unrouted.
   route('get', '/provider/:providerID/accounts', (_client, req, _res, options) => integrations.providerAccounts(req.params.providerID, options));
   route('post', '/provider/:providerID/oauth/authorize', (_client, req, _res, options) => integrations.providerStart(req.params.providerID, req.body ?? {}, options));

@@ -30,7 +30,7 @@ const { TARGET_OPENCODE_VERSION } = await load('packages/web/server/lib/opencode
 const { OPENCODE_V2_OPENAPI_FILENAME, extractOpenCodeV2Operations } = await load('packages/web/server/lib/opencode/v2/openapi-routes.js');
 const { OPENCODE_V2_ROUTE_CLASSES } = await load('packages/web/server/lib/opencode/v2/route-policy.js');
 const { REVIEWED_NATIVE_CLONE_RELEASES, REVIEWED_NATIVE_CLONE_MIGRATION_LEVEL } = await load('packages/web/server/lib/opencode/runtime-host/native-bundle-compatibility.js');
-const { INERT_NATIVE_PLUGIN_IDS, REVIEWED_NATIVE_PLUGIN_IDS } = await load('packages/web/server/lib/opencode/runtime-host/native-plugin-registry.ts');
+const { REVIEWED_NATIVE_PLUGIN_IDS } = await load('packages/web/server/lib/opencode/runtime-host/native-plugin-registry.ts');
 const { isReviewedControllerGitArgs, nativeVcsGitFlags } = await load('packages/web/server/lib/opencode/execution-helper-policy.js');
 
 const webModules = pathFor('packages/web/node_modules/@opencode');
@@ -162,7 +162,7 @@ try {
       }
       for (const match of text.matchAll(/"(opencode\.[A-Za-z0-9._-]+)"/g)) mentioned.add(match[1]);
     }
-    const reviewed = new Set([...REVIEWED_NATIVE_PLUGIN_IDS, ...INERT_NATIVE_PLUGIN_IDS]);
+    const reviewed = new Set(REVIEWED_NATIVE_PLUGIN_IDS);
     section('Native plugin IDs', [
       ...[...declared].filter((id) => !reviewed.has(id)).map((id) => ({ status: 'action', what: `unreviewed ${id}` })),
       ...[...reviewed].filter((id) => !mentioned.has(id)).map((id) => ({ status: 'action', what: `missing ${id}` })),

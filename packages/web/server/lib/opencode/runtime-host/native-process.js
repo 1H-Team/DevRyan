@@ -87,6 +87,8 @@ export async function createNativeControllerProcess(options) {
       DYLD_INSERT_LIBRARIES: `${command}-spawn.dylib` } : {}) },
     stdio: ['pipe', 'pipe', 'pipe'], detached: process.platform !== 'win32', windowsHide: true,
   });
+  // Reply frames carry fork maps above the command bound; claude-agent-protocol bounds them itself.
+  options.claudeAgent?.attach(value => { if (child.stdin.writable) child.stdin.write(`${JSON.stringify(value)}\n`, cause => { if (cause) fail(cause); }); });
   const startedAt = Date.now(), pending = new Map(), decoder = new StringDecoder('utf8');
   let buffer = '', bound, fatal, closing = false, closeWork, exitResult;
   let resolveBound, rejectBound, resolveExit, rejectExit;
@@ -159,7 +161,10 @@ export async function createNativeControllerProcess(options) {
       while ((end = buffer.indexOf('\n')) !== -1) {
         const line = buffer.slice(0, end); buffer = buffer.slice(end + 1);
         if (Buffer.byteLength(line) > NATIVE_PROCESS_LIMITS.messageBytes) throw failure('native_process_protocol_overflow');
-        const reply = parseNativeReply(JSON.parse(line));
+        const value = JSON.parse(line);
+        // Claude Code process frames go to the host that launches the user's own `claude`.
+        if (bound && value?.type === 'claude-agent' && options.claudeAgent) { options.claudeAgent.accept(value); continue; }
+        const reply = parseNativeReply(value);
         if (reply.type === 'bound') {
           if (bound || reply.bundleID !== boot.bundleID || reply.instanceID !== boot.instanceID || reply.buildId !== boot.buildId) throw failure('native_process_identity_mismatch');
           bound = reply; resolveBound(reply); continue;

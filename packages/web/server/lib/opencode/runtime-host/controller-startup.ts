@@ -31,6 +31,8 @@ import {createNativeCursorIngress} from './native-cursor-ingress.js';
 import * as slimOriginals from '@devryan/agents-core';
 import {scrubOpencodeFingerprints} from 'devryan:reviewed-claude-scrub';
 import {Effect,Schema} from 'effect';
+import { make as makeClaudeAgentPlugin } from '@opencode/core/plugin/provider/claude-agent/index';
+import type { ClaudeIO } from '@opencode/core/plugin/provider/claude-agent/claude/io';
 import {HostRefusal,refuseHost} from './host-refusal.js';
 import type {Plugin} from '@opencode/plugin/effect/plugin';
 import { OperationPermitRef,runWithRequestPermit, type ExecuteOwned } from './native-admission-contract.js';
@@ -39,7 +41,7 @@ import type { RegistrationOrigin } from './registration-origin.js';
 import { readResponseBody } from '../opencode-client/envelope.js';
 
 const record=(value:unknown):value is Record<string,unknown>=>value!==null&&typeof value==='object'&&!Array.isArray(value);
-export async function startNativeController(boot:NativeProcessBoot,identity:{coreDigest:string;hostDigest:string;reviewedPlugins:readonly Omit<RegistrationOrigin,'kind'>[];migration:'completed'|'not-needed'}) {
+export async function startNativeController(boot:NativeProcessBoot,identity:{coreDigest:string;hostDigest:string;reviewedPlugins:readonly Omit<RegistrationOrigin,'kind'>[];migration:'completed'|'not-needed';claudeAgentIO?:ClaudeIO.Interface}) {
   const rpc: (method:string,params:unknown,options?:{readonly signal?:AbortSignal})=>Promise<unknown> = async(method,params,options)=>{
     const timeout=AbortSignal.timeout(method==='native.council'?240_000:method.startsWith('native.document.')||method.startsWith('native.slim.interview.')||method.startsWith('native.slim.images')?120_000
       :method==='native.managed-task'?MANAGED_TASK_RPC_TIMEOUT_MS:30_000);
@@ -197,6 +199,7 @@ export async function startNativeController(boot:NativeProcessBoot,identity:{cor
       sessionHooks:(inner,location,owners)=>{const decorated=sessionContext?.decorateHooks(inner,location)??inner;return slim?.decorateHooks(decorated,location,owners)??decorated;},
       executionOverrides:[...routing.overrides,...(webfetch?.overrides??[]),...(integrations?.overrides??[]),...(providers?.catalogOverrides??[]),...observation.overrides,primaryStepOverride(rpc,cursor.captureBus,(event,disposition)=>observation.observePublished(event,disposition).pipe(Effect.andThen(recoveredSettled(event)),Effect.andThen(wakeQueuedParents(event))),recoveredPublication,event=>host.persistRecoveredCancellation(event),event=>host.dropRecoveredCancellationReceipts(event),event=>host.assertHelperTitleCAS(event),prepareQueuedPublication,assertQueuedPublication,sessionID=>host.interruptStoppedHandoff(sessionID))],controllerHelper:createControllerHelper({rpc}),
       executeOwned,mcpElicitationCalls,
+      ...(identity.claudeAgentIO?{claudeAgentPlugin:makeClaudeAgentPlugin(identity.claudeAgentIO)}:{}),
       bridge,drainExecutions:routing.close,readiness:{hostVersion:'1.2.22',buildId:boot.buildId,migration:identity.migration,
         directories:boot.locations.map(row=>row.directory),requirements:boot.catalogRequirements}});
     bound=true;

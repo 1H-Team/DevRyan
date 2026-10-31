@@ -18,6 +18,7 @@ import { createManagedOrchestrationPrivateHost } from '../../orchestration/priva
 import { createRuntimeBundleStore } from './runtime-bundle.js';
 import { verifyNativeRuntimeArtifacts } from './native-artifacts.js';
 import { createNativeControllerProcess } from './native-process.js';
+import { createClaudeAgentHost, readClaudeAgentUsage } from './claude-agent-host.js';
 import { createNativeAdmissionOwner } from './native-admission-owner.js';
 import { parseNativeProviderTiming } from './native-provider-timing.js';
 import { createNativePrimaryStepOwner } from './primary-step-owner.js';
@@ -194,7 +195,8 @@ export function createNativeRuntimeOwner(options) {
   let child, starting, primaryStep,streamContinuation, stopping = false, stopped = false, phase = 'closed', checkpointHeld = false;
   let recoveredInputs;
   let settledController;
-  let claudeEnrollment;
+  let claudeEnrollment, claudeAgentHost;
+  const claudeAgentUsageFile = path.join(descriptor.launch.webDataDirectory, 'runtime', 'claude-agent-usage.json');
   let httpToken, lastExit, unsettledLaunch, configurationSnapshot, integrations, providers, providerConfiguration, interviews, sessionContext, slim, slimContext, documents, images, cursor, nativeInstanceID, reviewedBrowser, observationOwner, hostOperations;
   const imageNotices=new Map();
   const imageGeneration=bundle.reviewedConfiguration?.reviewedImagegenOriginals?createNativeImageGeneration({
@@ -825,7 +827,10 @@ export function createNativeRuntimeOwner(options) {
         }else claudeEnrollment=undefined;
       }else providers=undefined;
       nextStage('controller');
-      child = await createNativeControllerProcess({ binary: artifacts.controller, cwd: boot.directory, environment, boot,
+      const claudeAgent = createClaudeAgentHost({ usageFile: claudeAgentUsageFile,
+        onDiagnostic: detail => recordStartupDiagnostic('claude_agent', { controllerInstanceID: instanceID, ...detail }) });
+      claudeAgentHost = claudeAgent;
+      child = await createNativeControllerProcess({ binary: artifacts.controller, cwd: boot.directory, environment, boot, claudeAgent,
         onObservationUnavailable: controllerInstanceID => recordObservationGap({ stage: 'controller', controllerInstanceID }),
         supervisor: { launcher: artifacts.launcher,
           deniedReadDirectories: options.supervisedController?.deniedReadDirectories ?? [] },
@@ -845,6 +850,7 @@ export function createNativeRuntimeOwner(options) {
           // waiting for this very exit callback before it releases the queue.
           void launchIntegrations?.invalidate();
           lastExit = (async () => {
+            await claudeAgent.close();
             await claudeEnrollment?.close();
             await cursor?.close();
             await providers?.close();
@@ -947,6 +953,8 @@ export function createNativeRuntimeOwner(options) {
     readPrimaryRecord: sessionID => primaryRuntime.readRecord(sessionID),
   });
   return {
+    /** Claude Code's last reported subscription windows; survives controller restarts. */
+    readClaudeAgentUsage: () => claudeAgentHost?.usage() ?? readClaudeAgentUsage(claudeAgentUsageFile),
     recoverAcceptedPromptBoundary: async ({ directory, sessionID, userMessageID }) => {
       return recoverAcceptedPromptBoundary({ runtime: executionHost.runtime, databasePath: descriptor.launch.opencodeDatabasePath,
         directory, sessionID, userMessageID });

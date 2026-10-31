@@ -7,7 +7,7 @@ export type NativeIntegrationBinding = {
   | {readonly kind:'cursor';readonly methodID?:never}
   | {readonly kind:'provider';readonly integrationID:'xai'|'opencode'|'opencode-go';readonly methodID?:'device'});
 export interface NativeIntegrationOperation {
-  readonly kind:'mcp'|'openai'|'cursor'|'provider';readonly directory:string;readonly configurationDigest:string;
+  readonly kind:'mcp'|'openai'|'cursor'|'provider'|'claude';readonly directory:string;readonly configurationDigest:string;
   readonly server?:string;readonly integrationID?:string;readonly operation:string;
   readonly method:'GET'|'POST'|'PATCH'|'DELETE';readonly path:string;readonly body?:unknown;
   readonly methodID?:string;readonly attemptID?:string;readonly credentialID?:string;

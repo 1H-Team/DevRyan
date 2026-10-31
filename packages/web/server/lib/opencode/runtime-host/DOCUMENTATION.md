@@ -2040,3 +2040,39 @@ Only complete canonical process output can establish an environment skip. Skippe
 ## Managed child interruption authority
 
 `withManagedTaskDispatch` accepts `abort` for the current scheduler settlement lease and its canonical child. It verifies task identity, parent control-call capture, directory and child ancestry before issuing a permit limited to `session.interrupt` with an empty payload. Every effect rechecks the lease; resume, child removal and selection changes are excluded. This lets detached timeout cleanup and same-child retry stop the old runner without requiring an HTTP principal or retaining the original tool permit.
+
+## Claude Code through claude-agent
+
+OpenCode's `opencode.provider.claude-agent` runs the user's own Claude Code through the
+Agent SDK. The controller runs under Seatbelt (no mach lookups, writes only inside the
+bundle), so a `claude` it spawned could neither read the login keychain nor write
+`~/.claude`. Admission therefore activates the reviewed builtin only with
+`claudeAgentPlugin`: core's `make(io)` over `claude-agent-io.ts`, provided the ambient
+Bus core gives its internal plugins. Without that IO the builtin stays inert.
+
+`claude-agent-io.ts` reports the sentinel executable `CLAUDE_AGENT_EXECUTABLE` and an
+empty environment, and relays every SDK spawn and every Claude session-file operation
+(`exists`, `fork`, `remove`) as `claude-agent` frames on the controller's stdio
+(`claude-agent-protocol.js`). `native-process.js` hands those frames to the
+per-controller `claude-agent-host.js` created by `native-runtime-owner.js`, and writes
+`claude-agent-reply` frames back. The host:
+
+- resolves the real executable itself (`DEVRYAN_CLAUDE_PATH`/`OPENCODE_CLAUDE_PATH`,
+  `PATH`, then `~/.local/bin`, `~/.claude/local`, Homebrew and `/usr/local/bin`);
+- refuses any argument outside the tool-less SDK invocation (`assertClaudeAgentArgs`:
+  `--tools=`, `--allowedTools=mcp__opencode__*`, `--permission-mode=dontAsk`,
+  `--setting-sources=`, `--strict-mcp-config`, only the in-process `opencode` MCP server,
+  `{"disableAllHooks":true}` settings), so every action is an OpenCode tool DevRyan executes;
+- builds the environment from an allowlist with the account home (`os.userInfo()`), so
+  macOS finds the login keychain. A host running under another `HOME` (isolated QA)
+  sets `CLAUDE_CONFIG_DIR=<HOME>/.claude` instead of moving the keychain;
+- queues stdin, end and kill frames that arrive before the asynchronous spawn finishes;
+- records `rate_limit_event` usage (see `../../quota/DOCUMENTATION.md`) and terminates
+  its processes when the controller exits.
+
+Connecting uses OpenCode's external `claude-login` method. The facade
+(`v2/native-integration-facade.js` `claudeStatus/claudeConnect/claudeDisconnect`,
+routes `/api/provider/claude-agent/status|connect`) runs under the `claude` integration
+kind, which admits only reading the integration, `connect/external` with
+`claude-login`, and removing its connection. The controller delegates claude-agent
+credentials and accepts only an external `claude-login` value without metadata.

@@ -12,6 +12,21 @@ const bodyFields = (body, fields) => {
   return body;
 };
 const providerOAuthMethod = { xai: 'device', openai: 'chatgpt-browser' };
+const CLAUDE_AGENT = 'claude-agent', CLAUDE_LOGIN = 'claude-login';
+const CONNECTION_STATUSES = new Set(['needs_auth', 'error']);
+/** Browser projection of OpenCode's claude-agent integration: login state only, no credential fields. */
+export const toClaudeAgentStatus = info => {
+  const connection = info.connections.find(item => record(item) && item.type === 'credential' && item.method === 'external' && identifier(item.id));
+  const problem = record(connection?.status) && CONNECTION_STATUSES.has(connection.status.status) ? connection.status : undefined;
+  return {
+    providerID: CLAUDE_AGENT,
+    available: info.methods.some(method => method.type === 'external' && method.id === CLAUDE_LOGIN),
+    connected: Boolean(connection),
+    ...(problem ? { problem: { status: problem.status,
+      message: typeof problem.message === 'string' ? problem.message.slice(0, 1024) : '',
+      ...(typeof problem.url === 'string' && /^https:\/\//.test(problem.url) ? { url: problem.url.slice(0, 2048) } : {}) } } : {}),
+  };
+};
 const oauthMethods = info => info.methods.filter(method => method.type === 'oauth');
 const segment = value => { if (!identifier(value)) throw fail('native_integration_invalid_response', 502); return encodeURIComponent(value); };
 
@@ -75,8 +90,8 @@ export function createNativeIntegrationFacade({ getNativeRuntimeOwner, getOpenCo
     return { kind: 'mcp', directory: selected.location.directory, server, configurationDigest: definition.configurationDigest };
   };
   const providerScope = (selected, providerID) => {
-    if (!['openai', 'cursor-acp', 'xai', 'opencode', 'opencode-go'].includes(providerID)) throw unavailable('providerAuthentication');
-    return { kind: providerID === 'openai' ? 'openai' : providerID === 'cursor-acp' ? 'cursor' : 'provider', directory: selected.location.directory, integrationID: providerID,
+    if (!['openai', 'cursor-acp', 'xai', 'opencode', 'opencode-go', CLAUDE_AGENT].includes(providerID)) throw unavailable('providerAuthentication');
+    return { kind: providerID === 'openai' ? 'openai' : providerID === 'cursor-acp' ? 'cursor' : providerID === CLAUDE_AGENT ? 'claude' : 'provider', directory: selected.location.directory, integrationID: providerID,
       configurationDigest: credentialMutationFingerprint(selected.location.configuration.providers?.[providerID] ?? {}) };
   };
   const openAiScope = selected => providerScope(selected, 'openai');
@@ -293,6 +308,24 @@ export function createNativeIntegrationFacade({ getNativeRuntimeOwner, getOpenCo
       if (!providerOAuthMethod[providerID] || body.method !== 0) throw fail('opencode_invalid_input', 400);
       const scope = providerScope(selected, providerID);
       await cancel(selected, keyFor(options.directory, scope.kind, providerID, body.method), options); return true;
+    }),
+    claudeStatus: options => run(options.directory, 'providerAuthentication', async selected => toClaudeAgentStatus(await providerInfo(selected, CLAUDE_AGENT, options))),
+    claudeConnect: options => run(options.directory, 'providerAuthentication', async selected => {
+      const info = await providerInfo(selected, CLAUDE_AGENT, options);
+      if (!info.methods.some(method => method.type === 'external' && method.id === CLAUDE_LOGIN)) throw fail('native_provider_method_unsupported');
+      if (!info.connections.some(connection => connection.type === 'credential' && connection.method === 'external')) {
+        const scope = { ...providerScope(selected, CLAUDE_AGENT), methodID: CLAUDE_LOGIN };
+        await scopedRequest(selected, scope, 'claude.connect', `/api/integration/${CLAUDE_AGENT}/connect/external`, options, 'POST', { methodID: CLAUDE_LOGIN });
+      }
+      return toClaudeAgentStatus(await providerInfo(selected, CLAUDE_AGENT, options));
+    }),
+    claudeDisconnect: options => run(options.directory, 'providerAuthentication', async selected => {
+      const info = await providerInfo(selected, CLAUDE_AGENT, options), scope = providerScope(selected, CLAUDE_AGENT);
+      for (const connection of info.connections.filter(item => item.type === 'credential' && identifier(item.id))) {
+        await scopedRequest(selected, { ...scope, credentialID: connection.id, requestedFingerprint: credentialMutationFingerprint({ id: connection.id }) },
+          'claude.credential.remove', `/api/credential/${segment(connection.id)}`, options, 'DELETE');
+      }
+      return toClaudeAgentStatus(await providerInfo(selected, CLAUDE_AGENT, options));
     }),
     saveKey: (providerID, body, options) => run(options.directory, 'providerAuthentication', async selected => {
       bodyFields(body, ['type', 'key']); if (!['openai', 'cursor-acp', 'xai', 'opencode', 'opencode-go'].includes(providerID) || body.type !== 'api' || typeof body.key !== 'string' || !body.key.trim() || body.key.length > 16384) throw fail('opencode_invalid_input', 400);

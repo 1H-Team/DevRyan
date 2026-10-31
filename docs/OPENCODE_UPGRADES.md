@@ -54,10 +54,11 @@ package lanes.
 ## Seams in 2.2.2 → 2.2.5
 
 - `opencode.provider.claude-agent` is declared through a constant (`id: ID2`); the report
-  now follows such constants. It drives the local `claude` CLI through the optional
-  `@anthropic-ai/claude-agent-sdk` peer, which DevRyan does not install: the build stubs
-  the `#claude-agent-sdk` entry and `INERT_NATIVE_PLUGIN_IDS` activates the provider
-  without running it. An unreviewed builtin fails the native `agent` catalog read.
+  now follows such constants. It drives the user's own `claude` through the
+  `@anthropic-ai/claude-agent-sdk` peer; DevRyan pins the SDK to core's peer version and
+  rebuilds the plugin over host-relayed IO (`runtime-host/claude-agent-io.ts`). On an
+  upgrade, recheck `ClaudeIO.Interface`, the SDK's argv against `assertClaudeAgentArgs`,
+  and the `rate_limit_event` shape. An unreviewed builtin fails the native `agent` catalog read.
 - `@opencode/ai/effect` exports `LLM` as a type only; use `ai.request`. The `Tool`,
   `Image`, `Video`, `Speech`, `Transcription` and `Decision` namespaces are gone.
 - New interface members: `Permission.allows` (scoped like `assertNotDenied`; the writer

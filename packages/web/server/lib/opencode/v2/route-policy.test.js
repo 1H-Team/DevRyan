@@ -55,7 +55,8 @@ const C3_RULES = [
   [DENY, /^POST \/api\/experimental\/client-mcp\/token$/],
   [DENY, /^POST \/api\/vcs\/init$/],
   // deny: integrations and workspace
-  [DENY, /^\w+ \/api\/integration\/\{integrationID\}\/connect\/(command|external)/],
+  // External connections are server-only: the owner admits only claude-agent's `claude-login`.
+  [DENY, /^\w+ \/api\/integration\/\{integrationID\}\/connect\/command/],
   [DENY, /^POST \/api\/experimental\/integration\/wellknown$/],
   [DENY, /^\w+ \/api\/worktree(\/|$)/],
   [DENY, /^PATCH \/api\/project\/\{projectID\}$/],

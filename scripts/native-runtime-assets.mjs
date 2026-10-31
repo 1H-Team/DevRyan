@@ -26,15 +26,6 @@ export function rewriteUnavailableNativePty(source) {
  if(hash(source)!==NATIVE_WINDOWS_PTY_SOURCE_SHA256)throw new Error('Pinned native PTY resolver changed');
  return 'async function resolveBinary(){throw new Error("native_pty_platform_unsupported");}\nexport {resolveBinary};\n';
 }
-export const NATIVE_CLAUDE_AGENT_SDK_SOURCE_SHA256='af7edd9794c526108bf56e947776ce5b10f8f63408f3ff40ca1075574301919c';
-/** 2.2.5 re-exports the optional @anthropic-ai/claude-agent-sdk peer, which DevRyan
- * does not install. Refuse on load, as core's workerd entry does; core's lazy
- * loader reports the SDK as not installed. */
-export const isNativeClaudeAgentSdkSource=file=>/@opencode[\\/]core[\\/]dist[\\/]plugin[\\/]provider[\\/]claude-agent[\\/]claude[\\/]agent-sdk\.js$/.test(file);
-export function rewriteUnavailableClaudeAgentSdk(source) {
- if(hash(source)!==NATIVE_CLAUDE_AGENT_SDK_SOURCE_SHA256)throw new Error('Pinned native Claude Agent SDK entry changed');
- return 'throw new Error("native_claude_agent_sdk_unavailable");\n';
-}
 /** Build-only transformations require the exact pinned bytes before rewriting. */
 export function rewriteNativeAsset(kind,source,{assetPath,assetSha256}={}) {
  if(!Object.hasOwn(NATIVE_ASSET_SOURCE_SHA,kind)||hash(source)!==NATIVE_ASSET_SOURCE_SHA[kind]) throw new Error('Pinned native asset resolver changed');
@@ -257,7 +248,6 @@ export function reviewedNativeInputPlugin({rewrites,virtualModules,inputFiles,re
   });
   builder.onLoad({filter:/\.(?:mjs|js)$/},async event=>{
    const contents=rewrites.get(path.resolve(event.path));
-   if(contents===undefined&&isNativeClaudeAgentSdkSource(event.path))return {contents:rewriteUnavailableClaudeAgentSdk(await fs.readFile(event.path)),loader:'js'};
    return contents===undefined?undefined:{contents,loader:'js'};
   });
  }};
