@@ -5,7 +5,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createHarnessToolManifestReader } from './harness-tool-manifest.js';
 import { createHarnessRunFingerprintReader } from './harness-run-fingerprint.js';
 import { createHarnessTaskContextHost } from './harness-task-context.js';
-import { createClaudeProxyBaseUrlResolver } from '../quota/providers/claude-meridian.js';
 import { createServerUtilsRuntime } from './server-utils-runtime.js';
 
 const roots = [];
@@ -23,8 +22,6 @@ describe('native-only application consumer identity', () => {
     expect(manifest.availability.ids).toMatchObject({ availability: 'unavailable', error: { kind: 'requestFailed' } });
     const fingerprint = await createHarnessRunFingerprintReader(dependencies).read({ directory: '/project' });
     expect(fingerprint).toMatchObject({ runtimeVersion: null, catalog: { availability: 'unavailable' } });
-    await expect(createClaudeProxyBaseUrlResolver(dependencies).resolve('/project'))
-      .rejects.toMatchObject({ code: 'opencode_generation_invalid', statusCode: 503 });
     const runtime = createServerUtilsRuntime({ ...dependencies, os: { homedir: () => '/fixture' }, getOpenCodePort: () => 3000 });
     await expect(runtime.fetchAgentsSnapshot({ directory: '/project' }))
       .rejects.toMatchObject({ code: 'opencode_generation_invalid', statusCode: 503 });

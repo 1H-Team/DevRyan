@@ -7,6 +7,7 @@ import {withNativeProviderDeadlines} from './native-provider-deadlines.js';
 export const NATIVE_LOCATION_IDLE_TIMEOUT = '15 minutes';
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const fail = code => Object.assign(new Error(code), { code, status: 503 });
+const RETIRED_CLAUDE_PROVIDER_IDS = new Set(['anthropic', 'claude', 'anthropic-oauth', 'opencode-with-claude']);
 
 export function nativeModelSelection(model, variant, hasVariant = false) {
   let providerID, id;
@@ -14,6 +15,9 @@ export function nativeModelSelection(model, variant, hasVariant = false) {
   else if (record(model)) { providerID = model.providerID ?? model.providerId; id = model.modelID ?? model.modelId ?? model.model; }
   else throw fail('native_model_invalid');
   if (typeof providerID !== 'string' || !providerID || typeof id !== 'string' || !id) throw fail('native_model_invalid');
+  // Saved Claude selections from the Meridian era name the retired proxy provider;
+  // Claude now runs through claude-agent, whose catalog keeps the same model IDs.
+  if (RETIRED_CLAUDE_PROVIDER_IDS.has(providerID)) providerID = 'claude-agent';
   const result = { providerID, model: id };
   if (hasVariant) {
     if (!(variant === null || typeof variant === 'string')) throw fail('native_variant_invalid');
@@ -120,9 +124,18 @@ function providerModel(info) {
   return result;
 }
 export { NATIVE_PROVIDER_DEADLINES, nativeProviderDeadlines } from './native-provider-deadlines.js';
+// The Meridian-era stanza DevRyan wrote: a loopback proxy with a placeholder key.
+// Claude now runs through claude-agent, so that dead route is dropped, not served.
+const isRetiredClaudeProxy = (id, provider) => {
+  if (id !== 'anthropic' || !record(provider?.options) || provider.options.apiKey !== 'dummy' || typeof provider.options.baseURL !== 'string') return false;
+  try {
+    const url = new URL(provider.options.baseURL);
+    return url.protocol === 'http:' && ['127.0.0.1', 'localhost'].includes(url.hostname) && Boolean(url.port);
+  } catch { return false; }
+};
 export function nativeProviderConfigurations(input) {
   if (!record(input)) throw fail('native_providers_invalid');
-  return Object.fromEntries(Object.entries(input).map(([id, provider]) => {
+  return Object.fromEntries(Object.entries(input).filter(([id, provider]) => !isRetiredClaudeProxy(id, provider)).map(([id, provider]) => {
     if (!id || !record(provider)) throw fail('native_provider_invalid');
     const result = {};
     for (const key of ['name', 'env']) if (provider[key] !== undefined) result[key] = clone(provider[key]);

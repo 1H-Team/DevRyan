@@ -1,4 +1,3 @@
-import {inspectClaudeRequest,isClaudeInspectionUnavailable,unavailableClaudeInspection,sendClaudeInspectionError} from './runtime-host/native-claude-inspection.js';
 import express from 'express';
 import { isDirectLocalRequest } from '../security/direct-local-request.js';
 import { createProjectIdFromPath } from '../projects/project-id.js';
@@ -28,11 +27,6 @@ import { readFacadeMessagePage, resolveFacadeDirectory, sendOpenCodeFacadeError,
 import { createGlobalAgentsMdRuntime } from './global-agents-md-runtime.js';
 import { registerGlobalAgentsMdRoutes } from './global-agents-md-routes.js';
 import { createOpenCodeUpdateCheckHandler } from './opencode-update-check.js';
-import { createClaudeUpdateCheckHandler, readBundledClaudeResolution } from './claude-runtime-update.js';
-import {
-  readMeridianPromptMode,
-  setMeridianPromptCompatibilityMode,
-} from './meridian-sdk-features.js';
 
 import { ANTHROPIC_PROVIDER_IDS } from './anthropic-provider-ids.js';
 const ANTIGRAVITY_PROVIDER_ID = 'antigravity';
@@ -103,7 +97,6 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     openCodeClient,
     getNativeRuntimeOwner = () => null,
     isStartupReadinessPending = null,
-    getClaudeEnrollmentOwner = () => null,
     isProviderAdministrator = () => false,
     getOpenCodeAuthHeaders = () => ({}),
     getOpenCodeWorkingDirectory = () => null,
@@ -117,8 +110,6 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     resolveZenModel = async () => undefined,
     resolveZenModelNonBlocking = () => ({}),
     authLibrary: injectedAuthLibrary = null,
-    readClaudePromptMode = readMeridianPromptMode,
-    setClaudePromptCompatibilityMode = setMeridianPromptCompatibilityMode,
   } = dependencies;
 
   const standardSessionTitleRuntime = injectedStandardSessionTitleRuntime || createStandardSessionTitleRuntime({
@@ -299,7 +290,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       return next();
     }
 
-    return res.status(400).json({ error: 'Anthropic API key authentication is not supported in DevRyan. Use Anthropic OAuth instead.' });
+    return res.status(400).json({ error: 'Anthropic API keys are not supported in DevRyan. Connect Claude Code in Settings → Providers → Claude.' });
   });
 
   const pruneExpiredPendingMcpAuthContexts = () => {
@@ -334,19 +325,6 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
 
   // Read-only latest upstream release lookup; installs nothing.
   app.get('/api/config/opencode-update-check', createOpenCodeUpdateCheckHandler({ fetchImpl: openCodeUpdateCheckFetch }));
-  app.get('/api/config/claude-update-check', createClaudeUpdateCheckHandler({ fetchImpl: dependencies.claudeUpdateCheckFetch }));
-  app.get('/api/config/claude-resolution', async (_req, res) => {
-    res.setHeader('Cache-Control', 'no-store');
-    try {
-      if (isExternalOpenCode()) return res.json({ source: 'unavailable', version: null });
-      if (dependencies.readBundledClaudeVersion) {
-        const version = await dependencies.readBundledClaudeVersion();
-        return res.json({ source: version ? 'verified-native-bundle' : 'unavailable', version });
-      }
-      res.json(await readBundledClaudeResolution());
-    } catch { res.status(503).json({ code: 'claude_runtime_version_unavailable' }); }
-  });
-
   // A project added through settings (the Add Project dialog), or selected
   // as the last directory, needs the native runtime to know its location:
   // before, its agent catalog failed (500) until the app restarted. The
@@ -468,109 +446,11 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     }
   });
 
-  app.get('/api/provider/anthropic/claude-cli', async (req, res) => {
-    try {
-      const directory=await resolveRequestDirectory(req);
-      return res.json(await inspectClaudeRequest({req,res,kind:'status',directory,getNativeRuntimeOwner,isExternalOpenCode}));
-    } catch(error) {
-      if(isClaudeInspectionUnavailable(error?.code))return res.json(unavailableClaudeInspection('status',error.code));
-      return sendClaudeInspectionError(res,error);
-    }
-  });
-
-  const enrollmentAdmin=(req,res,next)=>isProviderAdministrator(req)?next():res.status(403).json({code:'native_claude_enrollment_administrator_required'});
-  const enrollmentCsrf=(req,res,next)=>req.get('x-devryan-csrf')==='1'?next():res.status(403).json({code:'native_claude_enrollment_csrf_required'});
-  const enrollmentBody=limit=>{const parse=express.json({limit});return(req,res,next)=>parse(req,res,error=>error?res.status(400).json({code:'native_claude_enrollment_request_invalid'}):next());};
-  const emptyEnrollmentBody=body=>body===undefined||body!==null&&typeof body==='object'&&!Array.isArray(body)&&Object.keys(body).length===0;
-  // Failures are journaled by typed code only; request bodies, codes and URLs never are.
-  const enrollmentReply=async(req,res,operation,action)=>{
-    try{
-      const owner=getClaudeEnrollmentOwner();if(!owner) return res.status(409).json({code:'native_claude_enrollment_update_required'});
-      const context={request:req,directory:await resolveRequestDirectory(req)};
-      res.json(await action(owner,context));
-    }catch(error){
-      const code=/^native_claude_enrollment_[a-z_]+$/.test(error?.code??'')?error.code:'native_claude_enrollment_refused';
-      const statusCode=[400,403,404,409,503].includes(error?.status)?error.status:409;
-      try{recordDiagnostic({type:'lifecycle',event:'claude_enrollment_failed',payload:{action:operation,code,statusCode}});}catch{/* observation is best effort */}
-      res.status(statusCode).json({code});
-    }
-  };
-  app.get('/api/provider/anthropic/enrollment',enrollmentAdmin,(req,res)=>enrollmentReply(req,res,'list',async(owner,context)=>({accounts:await owner.list(context)})));
-  app.post('/api/provider/anthropic/enrollment',enrollmentAdmin,enrollmentCsrf,enrollmentBody('12kb'),(req,res)=>enrollmentReply(req,res,'begin',async(owner,context)=>{
-    if(!emptyEnrollmentBody(req.body))throw Object.assign(new Error('native_claude_enrollment_request_invalid'),{code:'native_claude_enrollment_request_invalid',status:400});
-    return owner.begin(context);
-  }));
-  app.post('/api/provider/anthropic/enrollment/:id/complete',enrollmentAdmin,enrollmentCsrf,enrollmentBody('12kb'),(req,res)=>enrollmentReply(req,res,'complete',(owner,context)=>owner.complete(req.params.id,req.body,context)));
-  app.post('/api/provider/anthropic/enrollment/:id/select',enrollmentAdmin,enrollmentCsrf,enrollmentBody('1kb'),(req,res)=>enrollmentReply(req,res,'select',(owner,context)=>{
-    if(!emptyEnrollmentBody(req.body))throw Object.assign(new Error('native_claude_enrollment_request_invalid'),{code:'native_claude_enrollment_request_invalid',status:400});
-    return owner.select(req.params.id,context);
-  }));
-  app.delete('/api/provider/anthropic/enrollment/:id',enrollmentAdmin,enrollmentCsrf,enrollmentBody('1kb'),(req,res)=>enrollmentReply(req,res,'delete',(owner,context)=>{
-    if(!emptyEnrollmentBody(req.body))throw Object.assign(new Error('native_claude_enrollment_request_invalid'),{code:'native_claude_enrollment_request_invalid',status:400});
-    return owner.remove(req.params.id,context);
-  }));
-
   app.use('/api/provider/openai/oauth', (req, res, next) => {
     if (!isDirectLocalRequest(req)) return res.status(403).json({ code: 'native_openai_oauth_local_required' });
     if (!isProviderAdministrator(req)) return res.status(403).json({ code: 'native_openai_oauth_administrator_required' });
     if (req.get('x-devryan-csrf') !== '1') return res.status(403).json({ code: 'native_openai_oauth_csrf_required' });
     return express.json({ limit: '4kb' })(req, res, next);
-  });
-
-  app.get('/api/provider/anthropic/prompt-mode', (_req, res) => {
-    if (isExternalOpenCode()) {
-      return res.json({
-        mode: 'external',
-        compatibilityMode: false,
-        editable: false,
-      });
-    }
-    const result = readClaudePromptMode();
-    if (!result.ok) {
-      return res.status(500).json({ code: result.code, error: result.error });
-    }
-    return res.json({
-      mode: result.mode,
-      compatibilityMode: result.compatibilityMode,
-      editable: true,
-    });
-  });
-
-  app.put('/api/provider/anthropic/prompt-mode', (req, res) => {
-    if (isExternalOpenCode()) {
-      return res.status(409).json({
-        code: 'external_opencode_read_only',
-        error: 'Claude prompt mode is managed by the configured external OpenCode runtime.',
-      });
-    }
-    if (typeof req.body?.compatibilityMode !== 'boolean') {
-      return res.status(400).json({
-        code: 'invalid_compatibility_mode',
-        error: 'compatibilityMode must be a boolean',
-      });
-    }
-    const result = setClaudePromptCompatibilityMode(req.body.compatibilityMode);
-    if (!result.ok) {
-      return res.status(500).json({ code: result.code, error: result.error });
-    }
-    return res.json({
-      success: true,
-      changed: result.changed,
-      mode: result.mode,
-      compatibilityMode: result.compatibilityMode,
-      editable: true,
-    });
-  });
-
-  app.post('/api/provider/anthropic/check-oauth', async (req, res) => {
-    try {
-      const directory=await resolveRequestDirectory(req);
-      const auth=await inspectClaudeRequest({req,res,kind:'status',directory,getNativeRuntimeOwner,isExternalOpenCode});
-      return res.json({success:true,configured:true,changed:false,auth});
-    } catch(error) {
-      if(isClaudeInspectionUnavailable(error?.code))return res.status(400).json({code:error.code,error:'Selected Claude account is unavailable.'});
-      return sendClaudeInspectionError(res,error);
-    }
   });
 
   app.get('/api/provider/cursor-acp/runtime-status', async (req, res) => {

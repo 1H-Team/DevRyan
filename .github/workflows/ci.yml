@@ -50,8 +50,6 @@ jobs:
         env:
           DEVRYAN_SKIP_INSTALL_PREPARE: '1'
         run: bun install --frozen-lockfile
-      - name: Restore reviewed Claude executable
-        run: node scripts/hydrate-reviewed-claude.mjs
       - name: Build, bundle budgets and built-asset tests
         run: node scripts/validate.mjs build
 
@@ -83,8 +81,6 @@ jobs:
         env:
           DEVRYAN_SKIP_INSTALL_PREPARE: '1'
         run: bun install --frozen-lockfile
-      - name: Restore reviewed Claude executable
-        run: node scripts/hydrate-reviewed-claude.mjs
       - name: Run every suite assigned to this lane and check scratch cleanup
         env:
           DEVRYAN_TEST_TIMINGS: ${{ runner.temp }}/test-timings/${{ matrix.lane }}.json
@@ -130,8 +126,6 @@ jobs:
         env:
           DEVRYAN_SKIP_INSTALL_PREPARE: '1'
         run: bun install --frozen-lockfile
-      - name: Restore reviewed Claude executable
-        run: node scripts/hydrate-reviewed-claude.mjs
       - name: Build and verify native v2 runtime
         timeout-minutes: 20
         run: bun scripts/build-native-runtime.mjs

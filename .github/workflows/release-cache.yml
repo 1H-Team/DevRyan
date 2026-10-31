@@ -26,9 +26,5 @@ jobs:
         env:
           DEVRYAN_SKIP_INSTALL_PREPARE: '1'
         run: bun install --frozen-lockfile --cpu '*' --os darwin
-      # Missing reviewed assets fail visibly; an old companion or development
-      # manifest cannot substitute for verified native release inputs.
-      - name: Restore exact reviewed Claude executable
-        run: node scripts/hydrate-reviewed-claude.mjs
       - name: Build and verify native v2 runtime
         run: bun scripts/build-native-runtime.mjs

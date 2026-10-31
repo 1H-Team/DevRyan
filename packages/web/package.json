@@ -142,7 +142,6 @@
     "runtime/*/DevRyan-native-*",
     "runtime/*/DevRyan-execution-*",
     "runtime/*/DevRyan-ast-grep-*",
-    "runtime/*/DevRyan-Claude-*",
     "runtime/*/DevRyan-libsql-*",
     "server/**",
     "!server/default-config/user-profile/**/test-*.md",

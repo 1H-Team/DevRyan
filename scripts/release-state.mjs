@@ -238,7 +238,6 @@ export const PIN_FREE_INSTALLER_SINCE = '2.0.0';
 export const CANDIDATE_PIN_SOURCES = Object.freeze({
   main: 'packages/electron/main.mjs',
   artifacts: 'packages/web/server/lib/opencode/runtime-host/native-artifacts.js',
-  claude: 'packages/web/server/lib/opencode/runtime-host/reviewed-claude-transform.js',
   ast: 'packages/web/server/lib/opencode/runtime-host/reviewed-ast-asset.js',
 });
 const CANDIDATE_PINS = new URL('candidate-pins.json', SHIPPED_ROOT);
@@ -247,12 +246,9 @@ const CANDIDATE_PINS = new URL('candidate-pins.json', SHIPPED_ROOT);
 export function readRuntimePins(sources) {
   const bunVersion = /export const NATIVE_BUNDLE_BUN_VERSION = '(\d+\.\d+\.\d+)';/.exec(sources.artifacts ?? '')?.[1];
   const assets = {};
-  for (const [, file, sha256] of (sources.claude ?? '').matchAll(/\b(?:claude|libsql): Object\.freeze\(\{path:'([^']+)',sha256:'([a-f0-9]{64})'/g)) assets[file] = sha256;
-  const credentials = /REVIEWED_CLAUDE_CREDENTIALS = Object\.freeze\(\{path:'([^']+)',sourceSha256:'[a-f0-9]{64}',sha256:'([a-f0-9]{64})'/.exec(sources.claude ?? '');
-  if (credentials) assets[credentials[1]] = credentials[2];
   const ast = /REVIEWED_AST_ASSET_SHA256\s*=\s*'([a-f0-9]{64})'/.exec(sources.ast ?? '')?.[1];
   if (ast) assets['DevRyan-ast-grep-darwin-arm64'] = ast;
-  if (!bunVersion || Object.keys(assets).length !== 4) throw new Error('Cannot read the native runtime pins (Bun version and four reviewed asset digests)');
+  if (!bunVersion || Object.keys(assets).length !== 1) throw new Error('Cannot read the native runtime pins (Bun version and the reviewed AST asset digest)');
   return { bunVersion, assets: Object.fromEntries(Object.entries(assets).sort(([left], [right]) => left.localeCompare(right))) };
 }
 

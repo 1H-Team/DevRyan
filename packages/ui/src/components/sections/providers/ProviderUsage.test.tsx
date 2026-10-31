@@ -40,10 +40,10 @@ const render = (node: React.ReactNode) => renderToStaticMarkup(<I18nProvider>{no
 describe('provider usage in Settings → Providers', () => {
   beforeEach(() => {
     const state: Partial<ReturnType<typeof useQuotaStore.getState>> = {
-      results: [result('claude', { '5h': usageWindow(58), '7d': usageWindow(27) })],
-      configuredProviderIds: ['claude'],
+      results: [result('claude-agent', { '5h': usageWindow(58), '7d': usageWindow(27) })],
+      configuredProviderIds: ['claude-agent'],
       providerRefreshState: {},
-      dropdownProviderIds: ['claude'],
+      dropdownProviderIds: ['claude-agent'],
       displayMode: 'usage',
       showPredictionValues: false,
       isLoading: false,
@@ -60,6 +60,7 @@ describe('provider usage in Settings → Providers', () => {
   });
 
   test('renders an inline Usage section for a provider whose usage has a different id', () => {
+    expect(render(<ProviderUsageSection providerId="claude-agent" />)).toContain('5-Hour Limit');
     const markup = render(<ProviderUsageSection providerId="anthropic" />);
 
     expect(markup).toContain('Usage');
@@ -130,8 +131,31 @@ describe('provider usage in Settings → Providers', () => {
     expect(render(<ProviderUsageSection providerId="openai" connected />)).toBe('');
   });
 
+  test('presents claude_agent_usage_pending as an informational notice, not a provider failure', () => {
+    const pending = (errorCode: string): ProviderResult => ({
+      providerId: 'claude-agent', providerName: 'Claude', ok: false, configured: true, usage: null,
+      fetchedAt: Date.now(), error: 'No Claude reply has reported usage yet.', errorCode,
+    });
+    const renderWith = (entry: ProviderResult) => {
+      const state: Partial<ReturnType<typeof useQuotaStore.getState>> = { results: [entry], configuredProviderIds: ['claude-agent'] };
+      useQuotaStore.setState(state);
+      Object.assign(useQuotaStore.getInitialState(), state);
+      return render(<ProviderUsageSection providerId="claude-agent" />);
+    };
+
+    const markup = renderWith(pending('claude_agent_usage_pending'));
+    expect(markup).toContain('Claude usage appears after a turn');
+    expect(markup).toContain('No Claude reply has reported usage yet.');
+    expect(markup).not.toContain('Provider usage unavailable');
+
+    // The retired Meridian code is an ordinary provider error now.
+    const legacy = renderWith(pending('claude_code_usage_pending'));
+    expect(legacy).toContain('Provider usage unavailable');
+    expect(legacy).not.toContain('Claude usage appears after a turn');
+  });
+
   test('shows the most-used window as a sidebar meter', () => {
-    const markup = render(<ProviderUsageMeter quotaProviderId="claude" />);
+    const markup = render(<ProviderUsageMeter quotaProviderId="claude-agent" />);
 
     expect(markup).toContain('role="meter"');
     expect(markup).toContain('aria-valuenow="58"');
@@ -141,7 +165,7 @@ describe('provider usage in Settings → Providers', () => {
   });
 
   test('renders a usage-only provider view with its own header', () => {
-    const markup = render(<UsageOnlyProviderView quotaProviderId="claude" />);
+    const markup = render(<UsageOnlyProviderView quotaProviderId="claude-agent" />);
 
     expect(markup).toContain('Claude');
     expect(markup).toContain('without a matching provider');

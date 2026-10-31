@@ -8,8 +8,6 @@ describe('quota provider metadata', () => {
 
     expect(sorted.map((provider) => provider.name)).toEqual([
       'ChatGPT',
-      // Claude through Meridian and through Claude Code's own login (claude-agent).
-      'Claude',
       'Claude',
       'Cursor',
       'DeepSeek',
@@ -28,6 +26,6 @@ describe('quota provider metadata', () => {
       'Zhipu AI Coding Plan',
     ]);
     expect(new Set(QUOTA_PROVIDERS.map((provider) => provider.id)).size).toBe(QUOTA_PROVIDERS.length);
-    expect(QUOTA_PROVIDERS[0]).toEqual({ id: 'claude', name: 'Claude' });
+    expect(QUOTA_PROVIDERS[0]).toEqual({ id: 'claude-agent', name: 'Claude' });
   });
 });

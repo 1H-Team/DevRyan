@@ -78,7 +78,7 @@ describe('Provider usage panel rows', () => {
     expect(pageSource).toContain("selectedProviderId === 'cursor-acp'");
     const ids = (results: Parameters<typeof getVisibleUsageProviders>[0]) => getVisibleUsageProviders(results).map((provider) => provider.id);
     expect(ids([{ providerId: 'cursor-acp', configured: false }])).toContain('cursor-acp');
-    expect(ids([{ providerId: 'claude', configured: false }])).not.toContain('claude');
+    expect(ids([{ providerId: 'claude-agent', configured: false }])).not.toContain('claude-agent');
     expect(ids([])).not.toContain('cursor-acp');
   });
 

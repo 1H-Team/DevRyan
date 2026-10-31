@@ -136,27 +136,27 @@ describe('ModelRecoveryCard', () => {
     expect(html).not.toContain('disabled=""');
   });
 
-  test('renders the explicit Claude compatibility recovery action', () => {
+  test('renders caller-supplied retry labels and lets long copy wrap', () => {
     const html = renderToStaticMarkup(
       <I18nProvider>
         <ModelRecoveryCard
-          title="Retry this turn with Claude compatibility mode:"
-          originalModelLabel="anthropic / claude-opus-4-1"
+          title="Resume this stopped task:"
+          originalModelLabel="claude-agent / claude-opus-4-1"
           providers={[]}
-          selection={{ providerId: 'anthropic', modelId: 'claude-opus-4-1', variant: null }}
+          selection={{ providerId: 'claude-agent', modelId: 'claude-opus-4-1', variant: null }}
           pending={false}
           actionError={null}
-          failureMessage="Anthropic classified this turn as third-party usage."
-          retryLabel="Enable Compatibility & Try Again"
-          retryingLabel="Enabling Compatibility…"
+          failureMessage="The task stopped before it finished & can be resumed."
+          retryLabel="Resume as Task & Try Again"
+          retryingLabel="Resuming…"
           onSelectionChange={() => undefined}
           onRetry={() => undefined}
         />
       </I18nProvider>,
     );
 
-    expect(html).toContain('Enable Compatibility &amp; Try Again');
-    expect(html).toContain('Anthropic classified this turn as third-party usage.');
+    expect(html).toContain('Resume as Task &amp; Try Again');
+    expect(html).toContain('The task stopped before it finished &amp; can be resumed.');
     expect(html).toContain('max-w-full whitespace-normal');
     expect(html).toContain('w-full min-w-0 flex-wrap');
   });

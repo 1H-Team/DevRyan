@@ -8,8 +8,6 @@ import {nativeBundleCredentialFingerprint as hash,NATIVE_BUNDLE_CREDENTIAL_CONTR
 import {credentialMutationFingerprint} from '../../packages/web/server/lib/opencode/runtime-host/native-credential-mutation-owner.js';
 import {createHeldSourceCredentials} from './held-source-credentials.mjs';
 import {createCredentialLeakProbe} from './credential-leak-probe.mjs';
-import {createAccessOnlyAnthropic} from './access-only-anthropic.mjs';
-import {claudeKeychainService} from '../../packages/web/server/lib/opencode/claude-credential-projection.js';
 
 // Constructor contracts only. Real compiled projection/host startup is exercised
 // by live-credential-rehearsal; these dummy files never confer native admission.
@@ -96,46 +94,6 @@ test('keyed leakage windows detect raw, encoded and unaligned fragments across c
   }
   await fs.unlink(file);await fs.symlink('/never/read/account',file);await assert.rejects(probe.scan(root),{code:'qa_leak_probe_path_invalid'});
 });
-async function accessOnlyFixture(t){
-  const f=await fixture(t),profileID='qa-independent-cli';
-  const directoryFor=binding=>path.join(binding.descriptor.launch.global.home,'.config/meridian/accounts',createHash('sha256').update(profileID).digest('hex'));
-  const service=claudeKeychainService(directoryFor(f.source),f.source.descriptor.launch.global.home);
-  const configure=async(binding,keychainService=service)=>{
-    const directory=directoryFor(binding);await fs.mkdir(directory,{recursive:true,mode:0o700});
-    await fs.writeFile(path.join(binding.descriptor.launch.global.home,'.config/meridian/profiles.json'),JSON.stringify([{id:profileID,type:'claude-max',claudeConfigDir:directory,keychainService}]),{mode:0o600});
-    await fs.writeFile(path.join(binding.descriptor.launch.global.home,'.config/meridian/settings.json'),JSON.stringify({activeProfile:profileID}),{mode:0o600});
-  };
-  await configure(f.source);await configure(f.candidate);
-  let value={claudeAiOauth:{accessToken:f.canary,refreshToken:f.canary+'-refresh',expiresAt:Date.now()+3600000}},reads=0;
-  const access=createAccessOnlyAnthropic({sourceBinding:f.source,credentialProcess:f.credentialProcess,
-    verifyArtifacts:async()=>({reviewedClaudeCredentials:{},reviewedClaude:{claude:{path:path.join(f.root,'DevRyan-Claude')}}}),
-    loadReviewedModule:async()=>({ensureFreshToken:()=>assert.fail('refresh forbidden'),refreshOAuthToken:()=>assert.fail('exchange forbidden'),
-      createPlatformCredentialStore:options=>{assert.equal(options.serviceName,service);return {read:async()=>{reads++;return structuredClone(value);},write:()=>assert.fail('write forbidden')};}})});
-  const owner=createHeldSourceCredentials({grant:f.grant,sourceBinding:f.source,credentialProcess:f.credentialProcess,
-    verifyAdditionalCredentials:access.verifyLogin,admitCandidate:access.admitCandidate});
-  return {...f,access,owner,configure,value:()=>value,setValue:next=>{value=next;},reads:()=>reads};
-}
-test('access-only Claude uses the exact source service in both holds and returns expiring profile metadata without refresh or writes',async t=>{
-  const f=await accessOnlyFixture(t),requiredProviders=['xai','anthropic'];
-  const verified=await f.owner.verify({requiredProviders,timeoutMs:1000});
-  const candidate=await f.owner.bootstrap({binding:f.candidate,requiredProviders,preparedSource:f.preparedSource,cellTimeoutMs:1000});
-  assert.equal(verified.anthropic.authKind,'claude-max');assert.equal(candidate.credentials.anthropic.bundleID,'candidate');assert.ok(f.reads()>1);
-  assert.equal(JSON.stringify({verified,candidate}).includes(f.canary),false);
-  const command=await f.access.loginCommand(f.root);
-  assert.ok(command.includes('env -i'));assert.ok(command.includes("'DevRyan-Claude'")===false);assert.ok(command.includes(path.join(f.root,'DevRyan-Claude')));assert.ok(command.endsWith(' auth login'));
-  assert.equal(command.includes(f.canary),false);assert.equal(command.includes('ANTHROPIC_API_KEY'),false);
-});
-test('a changed Claude record, foreign candidate service and insufficient token lifetime refuse access-only admission',async t=>{
-  const f=await accessOnlyFixture(t),requiredProviders=['xai','anthropic'];await f.owner.verify({requiredProviders,timeoutMs:1000});
-  const input={binding:f.candidate,requiredProviders,preparedSource:f.preparedSource,cellTimeoutMs:1000};
-  const original=f.value();f.setValue({...original,claudeAiOauth:{...original.claudeAiOauth,accessToken:f.canary+'-changed'}});
-  await assert.rejects(f.owner.bootstrap(input),{code:'qa_access_only_login_changed'});
-  f.setValue(original);await f.configure(f.candidate,'Claude Code-credentials-12345678');
-  await assert.rejects(f.owner.bootstrap(input),{code:'qa_access_only_service_changed'});
-  const g=await accessOnlyFixture(t);g.setValue({...g.value(),claudeAiOauth:{...g.value().claudeAiOauth,expiresAt:Date.now()+120000}});
-  await assert.rejects(g.owner.verify({requiredProviders,timeoutMs:1000}),{code:'qa_native_credential_expiry'});
-});
-
 test('Cursor admission uses the held native owner and candidate CAS with no vendor credential file', async t => {
   const f = await fixture(t);
   f.row.integrationID = 'cursor-acp';

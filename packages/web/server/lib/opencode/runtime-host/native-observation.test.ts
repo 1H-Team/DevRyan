@@ -69,8 +69,11 @@ test('requests left on the core header default get the DevRyan header deadline; 
  expect(withNativeHeaderDeadline(disabled)).toBe(disabled);
 });
 
-test('the Meridian anthropic route keeps its own idle guard and gets no header deadline',()=>{
- const meridian=compatibleModel('claude-opus-5-5',{baseURL:'http://127.0.0.1:3456/v1',provider:'anthropic'});
- const request=ai.request({model:meridian,prompt:'hi'});
+test('the claude-agent route keeps Claude Code\'s own timeouts and gets no header deadline',()=>{
+ const claude=compatibleModel('claude-opus-5-5',{baseURL:'http://127.0.0.1:1/v1',provider:'claude-agent'});
+ const request=ai.request({model:claude,prompt:'hi'});
  expect(withNativeHeaderDeadline(request)).toBe(request);
+ // The retired Meridian `anthropic` route is no longer exempt.
+ const anthropic=ai.request({model:compatibleModel('claude-opus-5-5',{baseURL:'http://127.0.0.1:3456/v1',provider:'anthropic'}),prompt:'hi'});
+ expect(withNativeHeaderDeadline(anthropic).http).toMatchObject({headerTimeout:45_000});
 });

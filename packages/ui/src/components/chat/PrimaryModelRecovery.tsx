@@ -4,11 +4,6 @@ import React from 'react';
 import { INTERRUPTED_PROVIDER_RESPONSE_REASON } from '@/hooks/providerErrorRecoveryDecision';
 import { useI18n } from '@/lib/i18n';
 import { getProviderUsageLimitDisplayReason } from '@/lib/messages/providerRecovery';
-import {
-  executeClaudeAwareProviderRecovery,
-  requiresClaudeCompatibilityRecovery,
-} from '@/lib/messages/claudeCompatibilityRecovery';
-import { isClaudeThirdPartyUsageClassificationError } from '@/lib/messages/claudeThirdPartyUsage';
 import { useConfigStore } from '@/stores/useConfigStore';
 import {
   providerRecoverySelector,
@@ -46,11 +41,6 @@ export const PrimaryModelRecovery = React.memo(({
   if (!recovery || defersToHost) return <><SessionFailureNotice sessionId={sessionId} /><HostPrimaryRecovery sessionId={sessionId} /></>;
 
   const usageLimitReason = getProviderUsageLimitDisplayReason(recovery.reason);
-  const isClaudeClassificationError = isClaudeThirdPartyUsageClassificationError(recovery.reason);
-  const needsClaudeCompatibility = requiresClaudeCompatibilityRecovery(
-    recovery.reason,
-    recovery.selection.providerId,
-  );
   const setSelection = (selection: ProviderRecoverySelection) => {
     useProviderRecoveryStore.getState().setSelection(sessionId, selection);
   };
@@ -59,7 +49,7 @@ export const PrimaryModelRecovery = React.memo(({
     if (!current || current.pending) return;
     useProviderRecoveryStore.getState().setActionState(sessionId, true, null);
     try {
-      const sent = await executeClaudeAwareProviderRecovery({ ...current, selection }, executeProviderRecovery);
+      const sent = await executeProviderRecovery({ ...current, selection });
       if (!sent) throw new Error('The failed turn could not be retried.');
       useProviderRecoveryStore.getState().clearRecovery(sessionId, current);
     } catch (error) {
@@ -73,17 +63,13 @@ export const PrimaryModelRecovery = React.memo(({
 
   return (
     <><SessionFailureNotice sessionId={sessionId} /><HostPrimaryRecovery sessionId={sessionId} showAvailability /><ModelRecoveryCard
-      title={isClaudeClassificationError
-        ? t('chat.modelRecovery.claudeCompatibilityPrompt')
-        : t('chat.modelRecovery.primaryPrompt')}
+      title={t('chat.modelRecovery.primaryPrompt')}
       originalModelLabel={`${recovery.providerId} / ${recovery.modelId}`}
       providers={providers}
       selection={recovery.selection}
       pending={recovery.pending}
       actionError={recovery.actionError}
-      failureMessage={isClaudeClassificationError
-        ? t('chat.modelRecovery.claudeThirdPartyUsage')
-        : usageLimitReason
+      failureMessage={usageLimitReason
         ? t('chat.modelRecovery.usageLimitStopped', { detail: usageLimitReason })
         : recovery.reason === INTERRUPTED_PROVIDER_RESPONSE_REASON
           ? t('chat.modelRecovery.interrupted')
@@ -94,12 +80,6 @@ export const PrimaryModelRecovery = React.memo(({
         : null}
       onSelectionChange={setSelection}
       onRetry={retry}
-      retryLabel={needsClaudeCompatibility
-        ? t('chat.modelRecovery.enableCompatibilityRetry')
-        : undefined}
-      retryingLabel={needsClaudeCompatibility
-        ? t('chat.modelRecovery.enablingCompatibility')
-        : undefined}
     /></>
   );
 });

@@ -174,30 +174,35 @@ test('retained handoff profile stays in the private cache across process lifetim
 });
 
 test('status exposes only fixed provider flags/model counts and incomplete state, never catalog metadata', () => {
-  const value = { connected: ['openai', 'cursor-acp', 'anthropic', 'private-provider'], cookie: 'private', all: [
-    { id: 'anthropic', models: { first: { credential: 'private' }, second: { account: 'private' } }, credential: 'private' },
+  const value = { connected: ['openai', 'cursor-acp', 'claude-agent', 'anthropic', 'private-provider'], cookie: 'private', all: [
+    { id: 'claude-agent', models: { first: { credential: 'private' }, second: { account: 'private' } }, credential: 'private' },
+    { id: 'anthropic', models: { retired: {} } },
     { id: 'openai', models: { only: { name: 'private' } } }, { id: 'private-provider', models: { secret: {} } },
   ] };
-  const expected = { catalogConnected: { openai: true, 'cursor-acp': true, opencode: false, anthropic: true },
-    modelCounts: { openai: 1, 'cursor-acp': 0, opencode: 0, anthropic: 2 }, catalogIncomplete: false };
+  // Claude is reported through OpenCode's claude-agent provider; the retired anthropic id is not a handoff flag.
+  const expected = { catalogConnected: { openai: true, 'cursor-acp': true, opencode: false, 'claude-agent': true },
+    modelCounts: { openai: 1, 'cursor-acp': 0, opencode: 0, 'claude-agent': 2 }, catalogIncomplete: false };
   assert.deepEqual(projectHandoffProviderStatus(value), expected);
   assert.deepEqual(projectHandoffProviderStatus({ ...value, catalogIncomplete: true }), { ...expected, catalogIncomplete: true });
   for (const input of [null, {}, { ...value, connected: 'openai' }, { ...value, connected: [7] }, { ...value, all: {} },
-    { ...value, all: [null] }, { ...value, all: [{ id: 'anthropic', models: [] }] }, { ...value, all: [value.all[0], value.all[0]] },
+    { ...value, all: [null] }, { ...value, all: [{ id: 'claude-agent', models: [] }] }, { ...value, all: [value.all[0], value.all[0]] },
     { ...value, catalogIncomplete: 'private' }]) assert.throws(() => projectHandoffProviderStatus(input), /qa_handoff_catalog_invalid/);
 });
 
-test('Claude status projects strict booleans and known enums without accounts, credentials or raw errors', () => {
+test('Claude status projects strict booleans and known problem states without accounts, credentials or raw messages', () => {
   const extra = { path: 'private', account: 'private', details: { accessToken: 'private' }, error: 'private', authMethod: 'oauth' };
-  assert.deepEqual(projectHandoffClaudeStatus({ ...extra, installed: true, loggedIn: true, authStatus: 'authenticated' }),
-    { installed: true, loggedIn: true, authStatus: 'authenticated' });
-  assert.deepEqual(projectHandoffClaudeStatus({ ...extra, installed: true, loggedIn: false, authStatus: 'unavailable', errorCode: 'claude_credentials_expired' }),
-    { installed: true, loggedIn: false, authStatus: 'unavailable', errorCode: 'claude_credentials_expired' });
-  for (const value of [null, [], {}, { installed: 'private', loggedIn: true, authStatus: 'authenticated' },
-    { installed: false, loggedIn: true, authStatus: 'authenticated' }, { installed: true, loggedIn: false, authStatus: 'authenticated' },
-    { installed: true, loggedIn: true, authStatus: 'authenticated', errorCode: 'private' },
-    { installed: true, loggedIn: false, authStatus: 'private' }, { installed: true, loggedIn: true, authStatus: 'unavailable', errorCode: 'claude_credentials_expired' },
-    { installed: true, loggedIn: false, authStatus: 'unavailable', errorCode: 'private' }]) assert.throws(() => projectHandoffClaudeStatus(value), /qa_handoff_claude_status_invalid/);
+  const base = { providerID: 'claude-agent', available: true };
+  assert.deepEqual(projectHandoffClaudeStatus({ ...extra, ...base, connected: true }), { available: true, connected: true });
+  assert.deepEqual(projectHandoffClaudeStatus({ ...base, available: false, connected: false }), { available: false, connected: false });
+  for (const status of ['needs_auth', 'error']) {
+    assert.deepEqual(projectHandoffClaudeStatus({ ...extra, ...base, connected: true, problem: { status, message: 'private account message', url: 'https://private.example' } }),
+      { available: true, connected: true, problem: status });
+  }
+  for (const value of [null, [], {}, { ...base, connected: true, providerID: 'anthropic' }, { available: true, connected: true },
+    { ...base, available: 'private', connected: true }, { ...base, connected: 'private' }, { ...base, connected: true, problem: null },
+    { ...base, connected: true, problem: { status: 'private' } }, { ...base, connected: true, problem: 'needs_auth' },
+    // The retired Meridian CLI inspection shape is refused, not reinterpreted.
+    { installed: true, loggedIn: true, authStatus: 'authenticated' }]) assert.throws(() => projectHandoffClaudeStatus(value), /qa_handoff_claude_status_invalid/);
 });
 
 test('reusable profile retention remains pinned after ordinary run completion and rejects foreign ownership', async t => {

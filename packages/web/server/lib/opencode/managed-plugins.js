@@ -3,7 +3,6 @@ import { pathToFileURL } from 'node:url';
 
 export const DEVRYAN_MANAGED_PLUGIN_IDS = Object.freeze({
   OPEN_CURSOR: '@rama_nigg/open-cursor',
-  CLAUDE: 'opencode-with-claude',
   GPT_IMAGEGEN: 'opencode-gpt-imagegen',
   SKILL_CONTEXT: 'devryan-skill-context',
   DOCUMENT_READER: 'devryan-document-reader',
@@ -22,19 +21,6 @@ const definitions = [
     registrationPath: './plugins/devryan-open-cursor.mjs',
     legacySpecs: ['@rama_nigg/open-cursor', '@rama_nigg/open-cursor@latest'],
     legacyRegistrationPaths: ['./node_modules/@rama_nigg/open-cursor/dist/plugin-entry.js'],
-    delivery: 'installed-local',
-    sourcePath: 'default-config/user-profile/package.json',
-    profileRegistration: true,
-    public: true,
-  },
-  {
-    id: DEVRYAN_MANAGED_PLUGIN_IDS.CLAUDE,
-    displayName: 'OpenCode with Claude',
-    packageName: 'opencode-with-claude',
-    version: '1.11.2',
-    entrypoint: 'dist/index.js',
-    registrationPath: './node_modules/opencode-with-claude/dist/index.js',
-    legacySpecs: ['opencode-with-claude', 'opencode-with-claude@1.6.18', 'opencode-with-claude@1.8.0', 'opencode-with-claude@1.11.2'],
     delivery: 'installed-local',
     sourcePath: 'default-config/user-profile/package.json',
     profileRegistration: true,
@@ -159,6 +145,18 @@ const RETIRED_PONYTAIL_PACKAGE_SPECS = Object.freeze([
   '@dietrichgebert/ponytail@4.10.0',
 ]);
 
+// OpenCode with Claude and Meridian (removed 2026-10): Claude runs through OpenCode's
+// built-in claude-agent provider and the user's own Claude Code, so the proxy plugin,
+// its transport adapter and every pinned spec an upgraded setup still lists load nothing.
+const RETIRED_CLAUDE_REGISTRATION_PATH = './node_modules/opencode-with-claude/dist/index.js';
+const RETIRED_CLAUDE_TRANSPORT_REGISTRATION_PATH = './plugins/devryan-claude-transport.mjs';
+const RETIRED_CLAUDE_PACKAGE_SPECS = Object.freeze([
+  'opencode-with-claude',
+  'opencode-with-claude@1.6.18',
+  'opencode-with-claude@1.8.0',
+  'opencode-with-claude@1.11.2',
+]);
+
 export const RETIRED_DEVRYAN_PLUGIN_SPECS = Object.freeze([
   'cursor-acp',
   'context-mode',
@@ -174,6 +172,9 @@ export const RETIRED_DEVRYAN_PLUGIN_SPECS = Object.freeze([
   RETIRED_SLIM_REGISTRATION_PATH,
   ...RETIRED_PONYTAIL_PACKAGE_SPECS,
   RETIRED_PONYTAIL_REGISTRATION_PATH,
+  ...RETIRED_CLAUDE_PACKAGE_SPECS,
+  RETIRED_CLAUDE_REGISTRATION_PATH,
+  RETIRED_CLAUDE_TRANSPORT_REGISTRATION_PATH,
 ]);
 
 // Registration paths also retired in absolute or file:// form (matched by path suffix).
@@ -184,6 +185,8 @@ const RETIRED_DEVRYAN_PLUGIN_REGISTRATION_SUFFIXES = Object.freeze([
   RETIRED_SLIM_REGISTRATION_PATH.replace(/^\.\//, '/'),
   '/node_modules/oh-my-opencode-slim/dist/index.js',
   RETIRED_PONYTAIL_REGISTRATION_PATH.replace(/^\.\//, '/'),
+  RETIRED_CLAUDE_REGISTRATION_PATH.replace(/^\.\//, '/'),
+  RETIRED_CLAUDE_TRANSPORT_REGISTRATION_PATH.replace(/^\.\//, '/'),
 ]);
 
 // Profile dependencies DevRyan pinned and now removes, keyed by package name with the exact pinned version.
@@ -191,6 +194,8 @@ export const RETIRED_DEVRYAN_PROFILE_DEPENDENCIES = Object.freeze({
   'context-mode': '1.0.169',
   'opencode-antigravity-auth': '1.6.0',
   'oh-my-opencode-slim': '2.2.25',
+  'opencode-with-claude': '1.11.2',
+  '@rynfar/meridian': '1.79.0',
 });
 
 const normalizeSpec = (value) => {

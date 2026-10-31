@@ -88,8 +88,7 @@ export default async function adhocSignMacosApp(context) {
   } finally {
     await rename(signingHold, runtimeRoot)
   }
-  const preserved = new Set([revert.native.reviewedAst?.path,
-    ...Object.values(revert.native.reviewedClaude ?? {}).map(asset => asset.path)])
+  const preserved = new Set([revert.native.reviewedAst?.path])
   for (const file of revert.manifest.files) {
     const target = join(revert.location, file.path)
     if ((file.mode & 0o111) && !preserved.has(target)) run("codesign", ["--force", "--sign", "-", target])

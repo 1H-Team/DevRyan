@@ -5,15 +5,13 @@ import {createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
 import {createRequire} from 'node:module';
 import {rewriteNativeAsset,rewriteNativeAgentDefaults,rewriteNativePhotonWorker,rewriteUnavailableNativePty,prepareReviewedNativeInputs,reviewedNativeInputPlugin,rewriteSealedNodeRequire} from './native-runtime-assets.mjs';
-import {REVIEWED_WINDOWS_LIBSQL_EVIDENCE} from '../packages/web/server/lib/opencode/runtime-host/reviewed-windows-assets.js';
 import {hydrateWindowsReviewedExecutables} from './build-windows-reviewed-executables.mjs';
 import {hydrateWindowsGit} from './build-windows-git.mjs';
-import {assertWindowsBinaryArchitecture,readWindowsReviewedLibsqlAsset} from './build-windows-reviewed-libsql.mjs';
+import {assertWindowsBinaryArchitecture} from './build-windows-reviewed-libsql.mjs';
 import {createReviewedNativePluginRegistry} from '../packages/web/server/lib/opencode/runtime-host/native-plugin-registry.ts';
 import {rewriteNativeFinalizationObservation} from './native-finalization-observation-transform.mjs';
 import {rewriteNativeCompactionObservation} from './native-compaction-observation-transform.mjs';
 import {findNativeCoreSources,isNativePhotonWorkerSource,nativeCoreSourceFilter} from './native-core-sources.mjs';
-import {CLAUDE_LIFECYCLE_PROTOCOL} from '../packages/web/server/lib/opencode/runtime-host/native-claude-lifecycle.js';
 import {NATIVE_BUNDLE_CREDENTIAL_CONTRACT} from '../packages/web/server/lib/opencode/runtime-host/native-bundle-credential-contract.js';
 
 const repository=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
@@ -39,7 +37,6 @@ const buildSources=await Promise.all(['scripts/build-native-runtime.mjs','script
   'packages/web/server/lib/opencode/runtime-host/reviewed-ast-asset.js',
   'packages/web/server/lib/opencode/runtime-host/reviewed-document-transform.js',
   'packages/web/server/lib/opencode/runtime-host/reviewed-browser-transform.js',
-  'packages/web/server/lib/opencode/runtime-host/reviewed-claude-transform.js',
 ].map(async file=>({path:file,sha256:hash(await fs.readFile(path.join(repository,file)))})));
 const lockBytes=await fs.readFile(path.join(repository,'bun.lock')),lock=parseJsonc(lockBytes.toString());
 const loaded=new Map(),transforms=[];
@@ -51,13 +48,10 @@ if(windowsCandidate){
   windowsGitResource=await hydrateWindowsGit({repository,arch:process.arch,fetchImpl:async()=>{throw new Error('Pinned Windows Git must be qualified before compilation');}});
   for(const row of windowsGitResource.files)reviewed.inputFiles.set(path.join(windowsGitResource.directory,row.path.slice(4)),row.sha256);
   const {directory,assets}=await hydrateWindowsReviewedExecutables({repository,arch:process.arch,fetchImpl:async()=>{throw new Error('Windows reviewed inputs must be qualified before compilation');}});
-  const ast=assets.find(asset=>asset.kind==='ast'),claude=assets.find(asset=>asset.kind==='claude');
-  if(!ast||!claude)throw new Error('Windows reviewed input inventory incomplete');
-  const libsql=await readWindowsReviewedLibsqlAsset({repository,arch:process.arch});
+  const ast=assets.find(asset=>asset.kind==='ast');
+  if(!ast)throw new Error('Windows reviewed input inventory incomplete');
   reviewed.ast={source:path.join(directory,ast.path),path:ast.path,sha256:ast.sha256};
-  reviewed.claudeAssets={claude:{source:path.join(directory,claude.path),path:claude.path,sha256:claude.sha256,version:claude.version,mode:0o755},libsql};
-  for(const asset of [reviewed.ast,...Object.values(reviewed.claudeAssets)])reviewed.inputFiles.set(asset.source,asset.sha256);
-  reviewed.inputFiles.set(libsql.evidencePath,libsql.evidenceSha256);
+  reviewed.inputFiles.set(reviewed.ast.source,reviewed.ast.sha256);
 }
 const entries=[['controller',path.join(host,'controller-entry.ts')],['writer',path.join(host,'writer-entry.ts')]];
 const configurationEntry=path.join(host,'reviewed-configuration-entry.ts');
@@ -161,7 +155,7 @@ try {
   const inputs={buildSources,lockSha256:hash(lockBytes),coreDigest,hostDigest,sourceFiles,resolvedPackages,
     reviewedInputProvenance:reviewed.provenance,
     nativeRegistrations:[...createReviewedNativePluginRegistry(coreDigest,{hostDigest}).values()].map(({id,manifestDigest,capabilities})=>({id,manifestDigest,capabilities})),reviewedPlugins,transforms};
-  const identity={bunVersion:Bun.version,bunRevision:Bun.revision,opencodeVersion:'2.2.5',target:`bun-${target}`,compiledContracts:[NATIVE_BUNDLE_CREDENTIAL_CONTRACT,CLAUDE_LIFECYCLE_PROTOCOL,'devryan-v2-clone/1','devryan.primary-step-stop/1','devryan.bundle.credential-owners/2'],inputs,
+  const identity={bunVersion:Bun.version,bunRevision:Bun.revision,opencodeVersion:'2.2.5',target:`bun-${target}`,compiledContracts:[NATIVE_BUNDLE_CREDENTIAL_CONTRACT,'devryan-v2-clone/1','devryan.primary-step-stop/1','devryan.bundle.credential-owners/2'],inputs,
     ...(windowsGitResource?{windowsGit:windowsGitResource.windowsGit}:{})};
   const buildId=hash(JSON.stringify(identity));
   const files=[];
@@ -177,10 +171,6 @@ try {
   const configurationBytes=await fs.readFile(configurationOutput);
   await fs.chmod(path.join(stage,configurationFilename),0o644);
   files.push({role:'asset',path:configurationFilename,size:configurationBytes.length,sha256:hash(configurationBytes),mode:0o644,signing:{mode:'unsigned',verified:false}});
-  const credentialAsset=reviewed.claudeCredentials;
-  if(hash(credentialAsset.contents)!==credentialAsset.sha256)throw new Error('Reviewed Claude credential module changed');
-  await fs.writeFile(path.join(stage,credentialAsset.path),credentialAsset.contents,{mode:credentialAsset.mode});
-  files.push({role:'asset',path:credentialAsset.path,size:Buffer.byteLength(credentialAsset.contents),sha256:credentialAsset.sha256,mode:credentialAsset.mode,signing:{mode:'unsigned',verified:false}});
   for(const [role,entry] of entries) {
     const filename=`DevRyan-native-${role}${windowsCandidate?'.exe':''}`,destination=path.join(stage,filename);
     const result=await Bun.build({...settings,entrypoints:[entry],compile:{target:compileTarget,outfile:destination,autoloadDotenv:false,autoloadBunfig:false,autoloadTsconfig:false,autoloadPackageJson:false},
@@ -220,25 +210,7 @@ try {
   astSigning={mode:'adhoc',verified:true,cdhash:/^CDHash=(.+)$/m.exec(astInfo.stderr)?.[1]};
   }
   files.push({role:'asset',path:reviewed.ast.path,size:astBytes.length,sha256:reviewed.ast.sha256,mode:0o755,signing:astSigning});
-  for(const asset of Object.values(reviewed.claudeAssets)){
-    const destination=path.join(stage,asset.path);await fs.copyFile(asset.source,destination);await fs.chmod(destination,asset.mode);
-    const bytes=await fs.readFile(destination);if(hash(bytes)!==asset.sha256)throw new Error('Copied Claude asset changed');
-    let signing={mode:'unsigned',verified:false};
-    if(windowsCandidate)assertWindowsBinaryArchitecture(bytes,process.arch);
-    else{
-    const info=spawnSync('/usr/bin/codesign',['-d','--verbose=4',destination],{encoding:'utf8'});
-    const verified=spawnSync('/usr/bin/codesign',['--verify','--strict',destination],{encoding:'utf8'});
-    if(info.status!==0||verified.status!==0)throw new Error('Reviewed Claude asset signature invalid');
-    const teamID=/^TeamIdentifier=(.+)$/m.exec(info.stderr)?.[1];
-    signing={mode:teamID&&teamID!=='not set'?'release':'adhoc',verified:true,cdhash:/^CDHash=(.+)$/m.exec(info.stderr)?.[1],...(teamID&&teamID!=='not set'?{teamID}:{})};
-    }
-    files.push({role:'asset',path:asset.path,size:bytes.length,sha256:asset.sha256,mode:asset.mode,signing});
-  }
   if(windowsCandidate){
-    const libsqlEvidence=await fs.readFile(reviewed.claudeAssets.libsql.evidencePath);
-    if(hash(libsqlEvidence)!==reviewed.claudeAssets.libsql.evidenceSha256)throw new Error('Windows libsql source evidence changed');
-    await fs.writeFile(path.join(stage,REVIEWED_WINDOWS_LIBSQL_EVIDENCE),libsqlEvidence,{flag:'wx'});
-    files.push({role:'asset',path:REVIEWED_WINDOWS_LIBSQL_EVIDENCE,size:libsqlEvidence.length,sha256:hash(libsqlEvidence),mode:0o644,signing:{mode:'unsigned',verified:false}});
     // Keep the entire official MinGit loader/runtime inventory and licenses.
     // Every byte is a manifest asset; no user's installed Git or PATH enters it.
     for(const row of windowsGitResource.files){

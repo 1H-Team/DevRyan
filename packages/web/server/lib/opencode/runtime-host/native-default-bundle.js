@@ -1,6 +1,5 @@
 import {readDevRyanEnv} from '@devryan/shared-runtime/lib/legacy-environment.js';
 import {resolveDevRyanDataRoot} from '@devryan/shared-runtime/node/data-root.js';
-import { recoverClaudeActivationAtStartup } from './claude-activation-recovery.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
@@ -36,7 +35,7 @@ const fail=code=>Object.assign(new Error(code),{code,status:503});
 const BOOTSTRAP_LOCK_TIMEOUT_MS=5*60_000;
 const exists=async file=>{try{await fs.lstat(file);return true;}catch(error){if(error.code==='ENOENT')return false;throw error;}};
 const nativePluginIDs={
- '@rama_nigg/open-cursor':['devryan.provider-compat'], 'opencode-with-claude':['devryan.provider-compat'],
+ '@rama_nigg/open-cursor':['devryan.provider-compat'],
  'opencode-gpt-imagegen':['opencode-gpt-imagegen'],
  'devryan-skill-context':['devryan.reviewed-skills'],'devryan-document-reader':['devryan.document-reader'],
 };
@@ -93,9 +92,8 @@ const optionalJSON=async file=>{try{return await readBundleJSON(file);}catch(err
 /** Inside selection.lock of an unheld selection. Each clone upgrade leaves its source
  * bundle behind (a full copy of the user's data), so bundles nothing can select again
  * are removed. Kept: the selected bundle, its rollback target (previousBundleID), any
- * bundle created at or after the selected one (a pending upgrade candidate), both
- * bundles of a pending Claude activation's source selection (its restore needs them),
- * and every entry without a valid descriptor (an interrupted or concurrent copy).
+ * bundle created at or after the selected one (a pending upgrade candidate), and
+ * every entry without a valid descriptor (an interrupted or concurrent copy).
  * Nothing is pruned while a rebind is unsettled. Clone origins and source bundle IDs
  * are only compared as strings, never opened. Removal renames aside first, so an
  * interrupted removal is swept as a stale draft at the next launch. */
@@ -106,14 +104,6 @@ export const pruneSupersededBundles=async(controlRoot,options={})=>{
  const selection=await readBundleJSON(path.join(controlRoot,'selection.json'));
  if(!isRecord(selection)||typeof selection.selectedBundleID!=='string'||selection.reconciliationRequired)return [];
  const keep=new Set([selection.selectedBundleID,selection.previousBundleID].filter(id=>typeof id==='string'));
- const activation=await optionalJSON(path.join(controlRoot,'claude-activation.json'));
- if(activation!==null){
-  if(!isRecord(activation))return [];
-  if(activation.state==='pending'){
-   if(!isRecord(activation.sourceSelection))return [];
-   for(const id of [activation.sourceSelection.selectedBundleID,activation.sourceSelection.previousBundleID])if(typeof id==='string')keep.add(id);
-  }
- }
  const bundles=path.join(controlRoot,'bundles');
  const descriptors=new Map();
  for(const name of (await fs.readdir(bundles)).sort()){
@@ -199,7 +189,6 @@ export async function provisionDefaultNativeBundle({env=process.env,home=os.home
   if(await exists(path.join(controlRoot,'selection.json'))){
    // A crash inside an artifact rebind leaves documents the binding below refuses.
    if (!operations.windows) await recoverRuntimeBundleRebind({ controlRoot });
-   if (!operations.windows) await recoverClaudeActivationAtStartup({ controlRoot, verifyArtifacts });
    const selected=readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot},{allowHeldInspection:true});
    if(selected.admission==='held'||selected.selection.reconciliationRequired)return controlRoot;
    if(!operations.windows)await finishNativeBundleRebootRecoveryAtStartup({controlRoot,verifyArtifacts});

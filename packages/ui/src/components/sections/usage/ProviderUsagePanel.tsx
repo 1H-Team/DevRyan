@@ -31,8 +31,7 @@ import type { QuotaProviderId, UsageWindows } from '@/types';
 import { UsageCard } from './UsageCard';
 import { UsageOptionsMenu } from './UsageOptionsMenu';
 
-const CLAUDE_CODE_USAGE_PENDING_CODE = 'claude_code_usage_pending';
-const CLAUDE_CODE_SESSION_LIMIT_CODE = 'claude_code_session_limit';
+const CLAUDE_USAGE_PENDING_CODE = 'claude_agent_usage_pending';
 
 const formatTime = (timestamp: number | null) => {
   if (!timestamp) return '-';
@@ -126,8 +125,7 @@ export const ProviderUsagePanel: React.FC<ProviderUsagePanelProps> = ({
   const showStaleNotice = Boolean(result?.ok && (
     refreshStatus.isStale || hasRetainedUsageAfterFailure
   ));
-  const isClaudeUsagePending = result?.errorCode === CLAUDE_CODE_USAGE_PENDING_CODE;
-  const isClaudeSessionLimited = result?.errorCode === CLAUDE_CODE_SESSION_LIMIT_CODE;
+  const isClaudeUsagePending = result?.errorCode === CLAUDE_USAGE_PENDING_CODE;
   const showInDropdown = dropdownProviderIds.includes(quotaProviderId);
 
   const handleDropdownToggle = React.useCallback((enabled: boolean) => {
@@ -250,10 +248,7 @@ export const ProviderUsagePanel: React.FC<ProviderUsagePanelProps> = ({
       body: providerError ?? t('settings.usage.page.state.claudeUsagePendingDescription'),
     });
   }
-  if (isClaudeSessionLimited && showProviderError) {
-    notices.push({ tone: 'warning', title: t('settings.usage.page.state.claudeSessionLimitTitle'), body: providerError });
-  }
-  if (showProviderError && !isClaudeUsagePending && !isClaudeSessionLimited) {
+  if (showProviderError && !isClaudeUsagePending) {
     notices.push({ tone: 'error', title: t('settings.usage.page.state.providerErrorTitle'), body: providerError });
   }
   if (result && !result.configured) {

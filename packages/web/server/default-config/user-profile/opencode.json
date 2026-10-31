@@ -2,7 +2,6 @@
   "$schema": "https://opencode.ai/config.json",
   "plugin": [
     "./plugins/devryan-open-cursor.mjs",
-    "./node_modules/opencode-with-claude/dist/index.js",
     "./node_modules/opencode-gpt-imagegen/dist/index.js",
     "./plugins/devryan-skill-context.mjs",
     "./plugins/devryan-document-reader.mjs"

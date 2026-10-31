@@ -358,6 +358,20 @@ describe('useQuotaStore refresh ownership', () => {
     expect(calls).toContain('/api/quota/cursor-acp?refresh=true');
   });
 
+  test('migrates a saved Meridian claude dropdown entry to claude-agent and drops unknown ids', async () => {
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.pathname : input.url;
+      if (url === '/api/config/settings') {
+        return Response.json({ usageDropdownProviders: ['claude', 'codex', 'retired-provider'] });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    }) as typeof fetch;
+
+    await useQuotaStore.getState().loadSettings();
+
+    expect(useQuotaStore.getState().dropdownProviderIds).toEqual(['claude-agent', 'codex']);
+  });
+
   test('derives stale state from the active cadence without a second timer', () => {
     const refreshedAt = 1_000;
     const refreshState = {

@@ -29,7 +29,6 @@ import { createControllerProviders } from './controller-providers.js';
 import {nativeImagegenPlugin,NATIVE_IMAGEGEN_PLUGIN_ID} from './native-imagegen-plugin.js';
 import {createNativeCursorIngress} from './native-cursor-ingress.js';
 import * as slimOriginals from '@devryan/agents-core';
-import {scrubOpencodeFingerprints} from 'devryan:reviewed-claude-scrub';
 import {Effect,Schema} from 'effect';
 import { make as makeClaudeAgentPlugin } from '@opencode/core/plugin/provider/claude-agent/index';
 import type { ClaudeIO } from '@opencode/core/plugin/provider/claude-agent/claude/io';
@@ -155,7 +154,7 @@ export async function startNativeController(boot:NativeProcessBoot,identity:{cor
     authorizeCursorReadOnlyKey:input=>Effect.promise(()=>rpc('native.cursor.readonly.key.assert',input)).pipe(Effect.asVoid),
   }):undefined;
   const providers=providerOrigin&&integrations&&boot.configurationSnapshot?createControllerProviders({controllerInstanceID:boot.instanceID,
-    configurationSnapshot:boot.configurationSnapshot,origin:providerOrigin,integrations,rpc,scrubSystem:scrubOpencodeFingerprints,collapseSystemParts:slimOriginals.collapseSystemPartsInPlace,isBound:()=>bound,isExecutionReady:()=>executionReady}):undefined;
+    configurationSnapshot:boot.configurationSnapshot,origin:providerOrigin,integrations,isBound:()=>bound,isExecutionReady:()=>executionReady}):undefined;
   const whenConfigured=(plugin:Plugin):Plugin=>({id:plugin.id,effect:context=>{
     const location=boot.configurationSnapshot?.locations.find(row=>row.directory===context.location.directory);
     return location&&(!location.activeRegistrationIDs||location.activeRegistrationIDs.includes(plugin.id))?plugin.effect(context):Effect.void;
@@ -245,8 +244,6 @@ export async function startNativeController(boot:NativeProcessBoot,identity:{cor
       case 'credential-commit-owned':await requireIntegrations(input.controllerInstanceID).commitCredentialOwned(input);return null;
       case 'credential-operation-owned':return requireIntegrations(input.controllerInstanceID).credentialOwned(input);
       case 'credential-metadata-owned':return requireIntegrations(input.controllerInstanceID).credentialMetadataOwned(input);
-      case 'claude-lifecycle-read-owned':return requireIntegrations(input.controllerInstanceID).readClaudeLifecycleOwned(input);
-      case 'claude-lifecycle-transition-owned':return requireIntegrations(input.controllerInstanceID).transitionClaudeLifecycleOwned(input);
       case 'openai-read-credential-owned':return requireIntegrations(input.controllerInstanceID).readOpenAiCredentialOwned(input);
       case 'openai-read-selected-owned':return requireIntegrations(input.controllerInstanceID).readSelectedOwned(input);
       case 'provider-refresh-selected-owned':return requireIntegrations(input.controllerInstanceID).refreshProviderSelectedOwned(input);

@@ -106,8 +106,8 @@ message measurement instead of repeatedly sampling a still-changing SDK
 session. The first mounted consumer may bootstrap one snapshot when none is
 cached. `session.compacted` synchronously invalidates the previous provider
 value and triggers a mapping refresh; no UI fallback may reuse a token-bearing
-message before the latest compaction part. Web/Electron prefer Meridian, while
-External OpenCode settle on the bounded post-compaction message
+message before the latest compaction part. No provider currently reports live
+context, so Web/Electron and external OpenCode settle on the bounded post-compaction message
 fallback without failing bootstrap.
 
 The composer subscribes to the selected session's message metadata and only

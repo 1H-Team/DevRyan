@@ -1,5 +1,7 @@
 # Plugin upgrade qualification — 2026-10-25
 
+Historical record. On 2026-10-31 the Claude proxy/Meridian components below were removed: Claude runs through OpenCode's built-in `claude-agent` provider.
+
 Release follow-up: the user subsequently requested committing and pushing the pending changes and releasing DevRyan 2.1.14. The acceptance record below describes the earlier qualification work; live provider qualification and cache/quota parity remain unverified. Release preparation uses the required validation, main CI and packaged upgrade dry-run gates.
 
 Status: **implemented locally; both candidates held from promotion**. Live qualification is deferred at the user’s request; no live inference has run.
@@ -28,8 +30,8 @@ Cursor candidate source: [exact upstream commit](https://github.com/Nomadcxx/ope
 | --- | --- |
 | `packages/web/server/lib/opencode/managed-plugins.js` | `1606476d8ec5163bd9f0bbf4f0903781e827128d43363562f59acdd55b2ebef5` |
 | `packages/web/server/default-config/user-profile/package.json` | `af40df85b6c6a66c64b5043113cae3d7e3a1a952ad86f5600ad910c99aadb285` |
-| `packages/web/server/lib/opencode/claude-runtime-compatibility.js` | `d3f1152bd8279ed3f53add0ef5166c2ec43d23df4026f2b9e48b3ef89878f5f6` |
-| `packages/web/server/lib/opencode/runtime-host/reviewed-claude-transform.js` | `0294c1287468ec72dedd4063ec447d18401b1aaf21ddc2db173d13df6cc568e0` |
+| claude-runtime-compatibility.js (removed 2026-10-31) | `d3f1152bd8279ed3f53add0ef5166c2ec43d23df4026f2b9e48b3ef89878f5f6` |
+| reviewed-claude-transform.js (removed 2026-10-31) | `0294c1287468ec72dedd4063ec447d18401b1aaf21ddc2db173d13df6cc568e0` |
 
 ## Cursor review and verification
 

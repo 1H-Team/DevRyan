@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Run Claude through OpenCode's built-in Claude provider with your own Claude Code login (`claude auth login`). Connect it in Settings → Providers → Claude; usage comes from what Claude Code reports with each reply.
+- Remove the Meridian Claude proxy, dedicated Claude profile sign-in, Claude compatibility mode, the bundled Claude Code binary and its updater. Saved Claude model selections keep working through the new provider.
+
 ## [2.0.7] - 2026-10-31
 
 - Upgrade the bundled native OpenCode host to 2.2.5, migrate background jobs to its new database layout, and preserve the previous runtime and database for rollback.

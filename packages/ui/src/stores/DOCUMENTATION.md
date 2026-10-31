@@ -234,7 +234,8 @@ Persisted context usage is version 2. Legacy `totalTokens` entries migrate to
 `activeInputTokens` from input/cache components when available; otherwise the
 old measured value is retained as a marked message fallback until live data
 arrives. `useProviderContextUsageStore.ts` separately owns low-frequency,
-non-persisted Meridian snapshots so provider refreshes do not widen the render
+non-persisted provider snapshots (the server currently reports none, so
+the message fallback applies) so provider refreshes do not widen the render
 fanout of the session or context stores. It coalesces requests per session,
 caps retained entries, and removes the old snapshot synchronously at a native
 compaction boundary.
@@ -806,8 +807,7 @@ retire the intent; cancellation after transport begins is not offered. A failed
 POST remains explicit and is never automatically replayed. Pending intent does
 not persist across account changes or reloads.
 
-Provider Settings reads optional finite `lastSuccessfulInferenceAt` and
-`lastLaunchFailure` metadata from the existing Claude status response. Saved
-sign-in status remains independent; a failed process launch does not infer a
-signed-out credential. Both provider summaries show safe category/timestamp
-information, drop unknown codes, and retain older-host behavior when absent.
+Provider Settings shows Claude through `ClaudeAgentConnection`: Claude Code's own
+login state as OpenCode's `claude-agent` integration reports it (connected, or a
+`needs_auth`/`error` problem with its message), with connect, disconnect and
+check-again actions.

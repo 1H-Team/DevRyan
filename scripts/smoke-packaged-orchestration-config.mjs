@@ -9,7 +9,6 @@ import { listDefaultConfigAssets, listRuntimePluginAssets } from '../packages/we
 import {
   OPENAI_TOOL_SCHEMA_SANITIZER_SPEC,
 } from '../packages/web/server/lib/opencode/default-plugins.js';
-import { ANTHROPIC_OAUTH_PLUGIN_SPEC } from '../packages/web/server/lib/opencode/anthropic-oauth-plugin.js';
 import {
   DEVRYAN_MANAGED_PLUGINS,
   DEVRYAN_MANAGED_PLUGIN_IDS,
@@ -65,8 +64,8 @@ export const smokePackagedOrchestrationConfig = async ({ configRoot }) => {
   if (profileConfig.plugin.some((entry) => isRetiredDevRyanPluginSpec(entry))) {
     throw new Error('User profile registers a retired plugin; the agent orchestration is built in');
   }
-  if (!profileConfig.plugin.includes(ANTHROPIC_OAUTH_PLUGIN_SPEC)) {
-    throw new Error(`Missing default Claude registration: ${ANTHROPIC_OAUTH_PLUGIN_SPEC}`);
+  if (profileConfig.plugin.some((spec) => typeof spec === 'string' && spec.includes('opencode-with-claude'))) {
+    throw new Error('User profile registers the retired Claude proxy plugin');
   }
   if (JSON.stringify(profileConfig.plugin) !== JSON.stringify(DEVRYAN_MANAGED_PROFILE_PLUGIN_SPECS)) {
     throw new Error('User profile plugin declarations do not match the managed local registrations');
@@ -74,8 +73,8 @@ export const smokePackagedOrchestrationConfig = async ({ configRoot }) => {
   if (Object.hasOwn(profilePackage.dependencies, 'oh-my-opencode-slim')) {
     throw new Error('User profile installs the retired Slim package; the agent orchestration is built in');
   }
-  if (profilePackage.dependencies['opencode-with-claude'] !== '1.11.2') {
-    throw new Error(`Missing default Claude dependency: ${ANTHROPIC_OAUTH_PLUGIN_SPEC}`);
+  for (const retired of ['opencode-with-claude', '@rynfar/meridian']) {
+    if (Object.hasOwn(profilePackage.dependencies, retired)) throw new Error(`User profile installs the retired Claude proxy package ${retired}`);
   }
   // The packaged plugin SDK follows its compatibility dependency pin.
   for (const [packageName, version] of Object.entries({
@@ -107,8 +106,7 @@ export const smokePackagedOrchestrationConfig = async ({ configRoot }) => {
       profileRoot,
       configDirectory,
       // This installer checks placeholder entrypoints only. Real source-hash acceptance and
-      // runtime behavior remain covered by the Meridian and image hotfix suites.
-      applyMeridianHttpHotfix: () => ({ ok: true, changed: false }),
+      // runtime behavior remain covered by the image hotfix suite.
       applyImagegenModelHotfix: () => ({ ok: true, changed: false }),
       runCommand: async (_command, _args, { cwd }) => {
         const dependencies = readJson(path.join(cwd, 'package.json')).dependencies || {};
@@ -145,7 +143,6 @@ export const smokePackagedOrchestrationConfig = async ({ configRoot }) => {
     });
     const provisioned = await runtime.provision();
     if (!provisioned.ok) throw new Error(provisioned.error || 'Clean-user provisioning failed');
-    requireFile(path.join(configDirectory, 'node_modules', 'opencode-with-claude'), 'installed default Claude dependency');
     const documentReader = DEVRYAN_MANAGED_PLUGINS.find((plugin) => (
       plugin.id === DEVRYAN_MANAGED_PLUGIN_IDS.DOCUMENT_READER
     ));

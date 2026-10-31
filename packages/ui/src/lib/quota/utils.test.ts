@@ -71,10 +71,10 @@ describe('quota usage utils', () => {
   });
 
   test('formats Claude subscription windows with product-facing rate-limit labels', () => {
-    expect(formatProviderWindowLabel('claude', '5h')).toBe('5-Hour Limit');
-    expect(formatProviderWindowLabel('claude', '7d')).toBe('Weekly Limit');
-    expect(formatProviderWindowLabel('claude', '7d-fable')).toBe('Weekly Fable Limit');
-    expect(formatProviderWindowLabel('claude', '7d-sonnet')).toBe('Weekly Sonnet Limit');
+    expect(formatProviderWindowLabel('claude-agent', '5h')).toBe('5-Hour Limit');
+    expect(formatProviderWindowLabel('claude-agent', '7d')).toBe('Weekly Limit');
+    expect(formatProviderWindowLabel('claude-agent', '7d-fable')).toBe('Weekly Fable Limit');
+    expect(formatProviderWindowLabel('claude-agent', '7d-sonnet')).toBe('Weekly Sonnet Limit');
     expect(formatProviderWindowLabel('codex', '5h')).toBe('5-Hour');
   });
 

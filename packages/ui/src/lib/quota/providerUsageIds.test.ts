@@ -22,15 +22,18 @@ const window = (usedPercent: number | null) => ({
 
 describe('provider usage ids', () => {
   test('maps Providers catalog ids onto the quota ids that report their usage', () => {
-    expect(getQuotaProviderIdForProvider('anthropic')).toBe('claude');
-    expect(getQuotaProviderIdForProvider('anthropic-oauth')).toBe('claude');
+    expect(getQuotaProviderIdForProvider('anthropic')).toBe('claude-agent');
+    expect(getQuotaProviderIdForProvider('claude')).toBe('claude-agent');
+    expect(getQuotaProviderIdForProvider('anthropic-oauth')).toBe('claude-agent');
+    expect(getQuotaProviderIdForProvider('opencode-with-claude')).toBe('claude-agent');
+    expect(getQuotaProviderIdForProvider('claude-agent')).toBe('claude-agent');
     expect(getQuotaProviderIdForProvider('openai')).toBe('codex');
     expect(getQuotaProviderIdForProvider('opencode')).toBe('opencode');
     expect(getQuotaProviderIdForProvider('cursor-acp')).toBe('cursor-acp');
     expect(getQuotaProviderIdForProvider('grok')).toBe('xai');
     expect(getQuotaProviderIdForProvider('copilot')).toBe('github-copilot');
     expect(getQuotaProviderIdForProvider('zai')).toBe('zai-coding-plan');
-    expect(getQuotaProviderIdForProvider(' Anthropic ')).toBe('claude');
+    expect(getQuotaProviderIdForProvider(' Anthropic ')).toBe('claude-agent');
   });
 
   test('maps every registered quota id to itself and unknown providers to null', () => {
@@ -44,7 +47,7 @@ describe('provider usage ids', () => {
 
   test('lists usage sources that no Providers row covers', () => {
     const visible = getSortedQuotaProviders().filter((provider) => (
-      ['claude', 'codex', 'cursor-acp', 'opencode'].includes(provider.id)
+      ['claude-agent', 'codex', 'cursor-acp', 'opencode'].includes(provider.id)
     ));
 
     expect(getUsageOnlyQuotaProviders(visible, ['anthropic', 'openai']).map((provider) => provider.id).sort())
@@ -53,14 +56,16 @@ describe('provider usage ids', () => {
   });
 
   test('finds the Providers row that now covers a usage-only source', () => {
-    expect(getCatalogProviderForQuotaProvider('claude', ['openai', 'anthropic'])).toBe('anthropic');
+    expect(getCatalogProviderForQuotaProvider('claude-agent', ['openai', 'anthropic'])).toBe('anthropic');
+    expect(getCatalogProviderForQuotaProvider('claude-agent', ['openai', 'claude-agent'])).toBe('claude-agent');
     expect(getCatalogProviderForQuotaProvider('codex', ['anthropic', 'openai'])).toBe('openai');
-    expect(getCatalogProviderForQuotaProvider('claude', ['openai', 'xai'])).toBeNull();
-    expect(getCatalogProviderForQuotaProvider('claude', [])).toBeNull();
+    expect(getCatalogProviderForQuotaProvider('claude-agent', ['openai', 'xai'])).toBeNull();
+    expect(getCatalogProviderForQuotaProvider('claude-agent', [])).toBeNull();
   });
 
   test('round-trips usage-only selections and rejects unknown ids', () => {
-    expect(parseUsageOnlyProviderSelection(toUsageOnlyProviderSelection('claude'))).toBe('claude');
+    expect(parseUsageOnlyProviderSelection(toUsageOnlyProviderSelection('claude-agent'))).toBe('claude-agent');
+    expect(parseUsageOnlyProviderSelection('__usage__:claude')).toBeNull();
     expect(parseUsageOnlyProviderSelection('__usage__:unknown')).toBeNull();
     expect(parseUsageOnlyProviderSelection('anthropic')).toBeNull();
     expect(parseUsageOnlyProviderSelection('__add_provider__')).toBeNull();

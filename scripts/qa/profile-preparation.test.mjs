@@ -360,7 +360,7 @@ test('personal setup mirroring normalizes explicit options and requires preserve
 
 test('personal plugin classification keeps only entries provisioning does not own', () => {
     const sourceConfig = '/synthetic-home/.config/opencode';
-    const provisioned = ['./plugins/devryan-open-cursor.mjs', './node_modules/opencode-with-claude/dist/index.js'];
+    const provisioned = ['./plugins/devryan-open-cursor.mjs', './node_modules/opencode-gpt-imagegen/dist/index.js'];
     const { personal, managed } = classifyQaPersonalPluginEntries([
         './node_modules/@synthetic/packaged-plugin/.opencode/plugins/packaged-plugin.mjs',
         './plugins/devryan-open-cursor.mjs', 'opencode-with-claude', 'oh-my-opencode-slim@2.2.25',
@@ -391,14 +391,14 @@ test('personal plugin classification keeps only entries provisioning does not ow
 });
 
 test('mirrored plugin order follows the owner\'s registration order', () => {
-    const provisioned = ['./plugins/devryan-open-cursor.mjs', './node_modules/opencode-with-claude/dist/index.js'];
+    const provisioned = ['./plugins/devryan-open-cursor.mjs', './node_modules/opencode-gpt-imagegen/dist/index.js'];
     const sourceConfig = '/synthetic-home/.config/opencode';
     const { ordered } = classifyQaPersonalPluginEntries(['./node_modules/@synthetic/packaged-plugin/index.mjs', 'oh-my-opencode-slim@2.2.25',
         './plugins/devryan-open-cursor.mjs', './plugins/personal.mjs', './plugins/devryan-open-cursor.mjs'], { provisioned, sourceConfig });
     // The retired Slim registration is owned by DevRyan but no longer provisioned.
     assert.deepEqual(orderQaMirroredPlugins(provisioned, ordered), ['./node_modules/@synthetic/packaged-plugin/index.mjs',
         './plugins/devryan-open-cursor.mjs', './plugins/personal.mjs',
-        './node_modules/opencode-with-claude/dist/index.js']);
+        './node_modules/opencode-gpt-imagegen/dist/index.js']);
     assert.deepEqual(orderQaMirroredPlugins(provisioned, []), provisioned);
 });
 
@@ -472,7 +472,7 @@ test('personal setup mirroring copies personal plugins, skills, MCP definitions,
         await symlink('synced', path.join(sourceHome, '.claude/skills/alias'));
         await write(path.join(config, 'plugins/devryan-open-cursor.mjs'), 'provisioned\n');
         await write(path.join(config, packagedPlugin));
-        const provisioned = { plugin: ['./plugins/devryan-open-cursor.mjs', './node_modules/opencode-with-claude/dist/index.js'],
+        const provisioned = { plugin: ['./plugins/devryan-open-cursor.mjs', './node_modules/opencode-gpt-imagegen/dist/index.js'],
             agent: { explore: { disable: true }, general: { disable: true } }, lsp: true };
         const sourceConfigs = [sourceOpencode, sourceLegacy, {}];
         const sourceBefore = await readFile(path.join(sourceConfig, 'opencode.json'), 'utf8');
@@ -481,11 +481,11 @@ test('personal setup mirroring copies personal plugins, skills, MCP definitions,
         const result = await mirrorQaPersonalSetup({ options, sourceHome, home, config, sourceConfigs, provisioned });
 
         // Source order is kept: the packaged plugin loads first, as in the owner's profile; provisioned
-        // entries the owner never listed come last.
-        assert.deepEqual(result.plugin, [packagedPlugin, './plugins/devryan-open-cursor.mjs', './node_modules/opencode-with-claude/dist/index.js',
-            './plugins/personal.mjs', ['@synthetic/tuple', { apiKey: 'synthetic-option' }]]);
-        assert.deepEqual(result.evidence.pluginOrder, [packagedPlugin, './plugins/devryan-open-cursor.mjs', './node_modules/opencode-with-claude/dist/index.js',
-            './plugins/personal.mjs', '@synthetic/tuple']);
+        // entries the owner never listed come last. The owner's retired Claude proxy registration is dropped.
+        assert.deepEqual(result.plugin, [packagedPlugin, './plugins/devryan-open-cursor.mjs',
+            './plugins/personal.mjs', ['@synthetic/tuple', { apiKey: 'synthetic-option' }], './node_modules/opencode-gpt-imagegen/dist/index.js']);
+        assert.deepEqual(result.evidence.pluginOrder, [packagedPlugin, './plugins/devryan-open-cursor.mjs',
+            './plugins/personal.mjs', '@synthetic/tuple', './node_modules/opencode-gpt-imagegen/dist/index.js']);
         assert.deepEqual(result.evidence.plugins, [
             { entry: packagedPlugin, kind: 'node-modules', hasOptions: false },
             { entry: './plugins/personal.mjs', kind: 'config-path', hasOptions: false },
@@ -522,9 +522,12 @@ test('personal setup mirroring copies personal plugins, skills, MCP definitions,
         await access(path.join(sourceConfig, 'plugins/.DS_Store'));
 
         // Mirrored package entries are wrapped exactly like provisioned ones.
-        await write(path.join(config, 'node_modules/opencode-with-claude/dist/index.js'));
+        await write(path.join(config, 'node_modules/opencode-gpt-imagegen/dist/index.js'), 'reviewed imagegen\n');
         await write(path.join(config, packagedPlugin));
         await wrapQaPackagePluginEntries(config, result.plugin);
+        // Imagegen's reviewed executable stays intact for the provisioning hash check.
+        assert.equal(await readFile(path.join(config, 'node_modules/opencode-gpt-imagegen/dist/index.js'), 'utf8'), 'reviewed imagegen\n');
+        await assert.rejects(access(path.join(config, 'node_modules/opencode-gpt-imagegen/dist/index.qa-original.js')), { code: 'ENOENT' });
         assert.equal(await readFile(path.join(config, packagedPlugin.replace(/\.mjs$/, '.qa-original.mjs')), 'utf8'), 'export default () => ({});\n');
         assert.match(await readFile(path.join(config, packagedPlugin), 'utf8'), /isolated-home\.mjs/);
         await write(path.join(scratch, 'outside.mjs'));

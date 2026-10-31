@@ -60,7 +60,7 @@ describe('UsageProviderPanel quota warnings and value rows', () => {
       windowSeconds: 7 * 24 * 60 * 60,
     };
     const markup = renderPanel({
-      providerId: 'claude',
+      providerId: 'claude-agent',
       providerName: 'Claude',
       entries: [
         ['7d-fable', { ...progressWindow, usedPercent: 2, remainingPercent: 98 }],
@@ -73,7 +73,7 @@ describe('UsageProviderPanel quota warnings and value rows', () => {
     const positions = labels.map((label) => markup.indexOf(label));
     expect(positions.every((position) => position >= 0)).toBe(true);
     expect(positions).toEqual([...positions].sort((left, right) => left - right));
-    expect(markup).toContain('data-provider-logo="claude"');
+    expect(markup).toContain('data-provider-logo="claude-agent"');
   });
 
   test('keeps a usable value-only row and its provider warning without an empty progress bar', () => {

@@ -68,8 +68,8 @@ without it only ripgrep-based tools such as grep and skill fail. Built-in web fe
 trusted control operations. Native task and managed
 orchestration dispatches register parent call identities before starting children.
 Cursor uses one confined process per turn, mirrors canonical conversation
-records, and awaits publication before completion. Claude through Meridian uses
-passthrough tools and a separate read-only provider transport. On macOS that transport runs from the real project directory, with every write outside its private state still denied. Its environment prompt, and so its cached prefix, stays the same across requests, and the model sees true paths. Confined processes may reach only the system DNS resolver socket (`/private/var/run/mDNSResponder`); every other local unix socket stays denied. Because the sandbox also denies keychain lookups, the transport receives only the account's current Claude access token as `CLAUDE_CODE_OAUTH_TOKEN`; the refresh token and its refresh stay on the host. Provider API
+records, and awaits publication before completion. Claude through `claude-agent` has no built-in tools: every action is an OpenCode
+tool DevRyan executes, and the host-launched Claude Code process only carries the conversation. Confined processes may reach only the system DNS resolver socket (`/private/var/run/mDNSResponder`); every other local unix socket stays denied. Provider API
 credentials are not diagnostic evidence or execution ownership.
 
 Native enforcement, not a working directory convention, prevents writes to the

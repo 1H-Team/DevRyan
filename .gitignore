@@ -64,8 +64,6 @@ Thumbs.db
 # Exact reviewed build inputs override generic dependency/data exclusions.
 !packages/web/runtime/reviewed-inputs/
 !packages/web/runtime/reviewed-inputs/**
-packages/web/runtime/reviewed-inputs/claude-1.8.0/assets/DevRyan-Claude-darwin-arm64
-packages/web/runtime/reviewed-inputs/claude-1.11.2/assets/DevRyan-Claude-darwin-arm64
 
 # Sanitized evidence for the 2026-10-20 performance audit.
 /.artifacts/performance-audit-2026-10-20/

@@ -131,18 +131,6 @@ describe("classifyAssistantError", () => {
     })
   })
 
-  test("classifies Claude third-party usage separately from actual quota exhaustion", () => {
-    const detail = "Claude Code returned an error result: API Error: 400 Third-party apps now draw from your extra usage, not your plan limits. Add more at claude.ai/settings/usage and keep going. Subprocess stderr: Warning: ignored"
-    expect(classifyAssistantError({
-      name: "UnknownError",
-      data: { message: detail },
-    })).toEqual({
-      text: "Anthropic classified this DevRyan turn as third-party usage. Your Claude subscription quota may still be available. Use Model Recovery to enable Claude compatibility mode and retry explicitly.",
-      variant: "error",
-      retryable: true,
-    })
-  })
-
   test("classifies provider model-not-found failures with actionable copy", () => {
     expect(classifyAssistantError({
       name: "ProviderModelNotFoundError",
@@ -276,14 +264,14 @@ describe("classifyAssistantError", () => {
 })
 
  test('presents the OpenCode 2.x Claude upstream stall text without generic failure copy', () => {
-   const result = classifyAssistantError({ name: 'APIError', data: { message: 'upstream_timeout: Upstream stalled: no data for 90005ms', statusCode: 200, v2Type: 'provider.unknown' } }, { providerID: 'anthropic' });
+   const result = classifyAssistantError({ name: 'APIError', data: { message: 'upstream_timeout: Upstream stalled: no data for 90005ms', statusCode: 200, v2Type: 'provider.unknown' } }, { providerID: 'claude-agent' });
    expect(result?.text).toContain('Claude stopped sending data');
    expect(result?.text).not.toContain('The model provider could not complete');
    expect(result?.retryable).toBe(true);
  });
 
  test('presents the Claude upstream stall without generic failure copy', () => {
-   const result = classifyAssistantError({ name: 'UnknownError', data: { message: '{"type":"upstream_timeout","message":"Upstream stalled: no data for 208771ms"}' } }, { providerID: 'anthropic' });
+   const result = classifyAssistantError({ name: 'UnknownError', data: { message: '{"type":"upstream_timeout","message":"Upstream stalled: no data for 208771ms"}' } }, { providerID: 'claude-agent' });
    expect(result?.text).toContain('Claude stopped sending data');
    expect(result?.retryable).toBe(true);
  });

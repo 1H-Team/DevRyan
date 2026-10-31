@@ -1,4 +1,3 @@
-import { validateClaudeInstallation, CLAUDE_TEAM } from './managed-claude-installation.js';
 import { artifactDiagnostic } from '@devryan/shared-runtime/startup-diagnostics.js';
 import {isNativeOpenCodeVersion} from '../version-policy.js';
 import fs from 'node:fs/promises';
@@ -9,26 +8,10 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { verifySessionExecutionLauncher } from '@devryan/harness-runtime/lib/session-execution.js';
 import { REVIEWED_AST_ASSET_SHA256 } from './reviewed-ast-asset.js';
-import { REVIEWED_CLAUDE_ASSETS, REVIEWED_CLAUDE_CREDENTIALS } from './reviewed-claude-transform.js';
-import {assertWindowsBinaryArchitecture,reviewedWindowsRuntimeAsset,readWindowsLibsqlEvidence} from './reviewed-windows-assets.js';
+import {assertWindowsBinaryArchitecture,reviewedWindowsRuntimeAsset} from './reviewed-windows-assets.js';
 import {nativeArtifactInventoryLimit,validWindowsArtifactPath,verifyWindowsGitInventory,verifyWindowsGitMetadata} from './reviewed-windows-git.js';
 
 const exec = promisify(execFile), digestPattern = /^[a-f0-9]{64}$/;
-// This previously reviewed binary is migration/explicit rollback authority, never a new target pin.
-export const REVIEWED_PREVIOUS_CLAUDE_ASSET = Object.freeze({ version: '2.1.251', path: 'DevRyan-Claude-darwin-arm64',
-  sha256: '625869b01e0050f260b2980fac248fd9cef9e462612bded4ec9d3d49ff8969a5', size: 197171680, mode: 0o755 });
-export const REVIEWED_PREVIOUS_CLAUDE_ASSETS = Object.freeze([REVIEWED_PREVIOUS_CLAUDE_ASSET, Object.freeze({
-  version: '2.1.280', path: 'DevRyan-Claude-darwin-arm64', sha256: '387a5c5dcdbb815085edf0baf79591f9d8894efe922bceaf3d75b1b08055229d', size: 217254576, mode: 0o755,
-})]);
-export const isReviewedPreviousClaudeAsset = (file, purpose, platform = process.platform, arch = process.arch) =>
-  ['bundle-source', 'bundle-rollback'].includes(purpose) && platform === 'darwin' && arch === 'arm64'
-  && file?.role === 'asset' && REVIEWED_PREVIOUS_CLAUDE_ASSETS.some(asset => (file.version === undefined || file.version === asset.version)
-    && ['path', 'sha256', 'size', 'mode'].every(key => file[key] === asset[key]));
-// Shipped by 2.1.9–2.1.13; accepted only while reading an installed source or rollback.
-export const REVIEWED_PREVIOUS_CLAUDE_CREDENTIALS = Object.freeze({ path: 'DevRyan-Claude-credentials.mjs',
-  sha256: 'c471852fec5221957636d87cc80a4be155c74c6dda37d58d971e181cbe697c1e', size: 13319, mode: 0o644 });
-export const isReviewedPreviousClaudeCredentials = (file, purpose) => ['bundle-source', 'bundle-rollback'].includes(purpose)
-  && file?.role === 'asset' && ['path', 'sha256', 'size', 'mode'].every(key => file[key] === REVIEWED_PREVIOUS_CLAUDE_CREDENTIALS[key]);
 // Bundles are compiled with this Bun. Installed bundles built by the previous pin stay readable as
 // migration/rollback sources, never as the current bundle.
 export const NATIVE_BUNDLE_BUN_VERSION = '1.4.4';
@@ -124,8 +107,7 @@ async function verifyArtifacts({ manifestPath, manifestSha256, launcher, purpose
   if(process.platform==='win32')verifyWindowsGitMetadata(manifest.windowsGit,process.arch);
   const directory = await fs.realpath(path.dirname(manifestPath)), files = new Map();
   const foldedPaths=new Set();
-  let controller, writer, reviewedAst, reviewedConfiguration, reviewedClaudeCredentials, windowsLibsqlEvidence;
-  const reviewedClaude={};
+  let controller, writer, reviewedAst, reviewedConfiguration;
   for (const file of manifest.files) {
     stage = 'inventory'; artifact = 'native-bundle.json';
     if (!file || !['controller','writer','asset'].includes(file.role) || typeof file.path !== 'string'
@@ -155,33 +137,16 @@ async function verifyArtifacts({ manifestPath, manifestSha256, launcher, purpose
       if (reviewedConfiguration || file.role !== 'asset' || file.mode !== 0o644) throw fail();
       reviewedConfiguration = Object.freeze({ path: target, sha256: file.sha256, size: file.size });
     }
-    if (file.path === REVIEWED_CLAUDE_CREDENTIALS.path) {
-      if (reviewedClaudeCredentials || file.role !== 'asset' || file.mode !== REVIEWED_CLAUDE_CREDENTIALS.mode
-        || reviewedPins && file.sha256 !== REVIEWED_CLAUDE_CREDENTIALS.sha256 && !isReviewedPreviousClaudeCredentials(file, purpose) || file.size > 65536) throw fail();
-      reviewedClaudeCredentials = Object.freeze({ path: target, sha256: file.sha256 });
-    }
     let windowsAsset;
     if(process.platform==='win32'){
       try{windowsAsset=reviewedWindowsRuntimeAsset(file,process.arch);}catch{throw fail();}
-      if(file.role==='controller'||file.role==='writer'||['ast','claude','libsql'].includes(windowsAsset)){
+      if(file.role==='controller'||file.role==='writer'||windowsAsset==='ast'){
         const handle=await fs.open(target,'r');
         try{const header=Buffer.alloc(65536),{bytesRead}=await handle.read(header,0,header.length,0);assertWindowsBinaryArchitecture(header.subarray(0,bytesRead),process.arch);}
         catch{throw fail();}finally{await handle.close();}
       }
-      if(windowsAsset==='evidence')windowsLibsqlEvidence={path:target,row:file};
     }
     const ast = process.platform==='win32'?windowsAsset==='ast':path.basename(file.path) === 'DevRyan-ast-grep-darwin-arm64';
-    const claudeAsset=process.platform==='win32'
-      ? ['claude','libsql'].includes(windowsAsset)?[windowsAsset,file]:undefined
-      : Object.entries(REVIEWED_CLAUDE_ASSETS).find(([,asset])=>asset.path===file.path);
-    if(claudeAsset){
-      const [name,asset]=claudeAsset;
-      const managed = name === 'claude' && process.platform === 'darwin' && process.arch === 'arm64' && manifest.claudeInstallation;
-      if (managed) validateClaudeInstallation(managed, file);
-      if(reviewedClaude[name]||file.role!=='asset'||file.mode!==asset.mode
-        ||reviewedPins&&!managed&&file.sha256!==asset.sha256&&!(name==='claude'&&isReviewedPreviousClaudeAsset(file,purpose)))throw fail();
-      reviewedClaude[name]=Object.freeze({path:target,sha256:file.sha256});
-    }
     if (ast) {
       if (reviewedAst || file.role !== 'asset' || reviewedPins && process.platform!=='win32' && file.sha256 !== REVIEWED_AST_ASSET_SHA256 || !(file.mode & 0o111)) throw fail();
       reviewedAst = Object.freeze({ path: target, sha256: file.sha256 });
@@ -191,7 +156,7 @@ async function verifyArtifacts({ manifestPath, manifestSha256, launcher, purpose
       if (file.role === 'controller') { if (controller) throw fail(); controller = target; }
       else { if (writer) throw fail(); writer = target; }
     }
-    if (file.role === 'controller' || file.role === 'writer' || ast || claudeAsset) {
+    if (file.role === 'controller' || file.role === 'writer' || ast) {
       if (process.platform === 'darwin') {
         stage = 'signature';
         if (file.signing.mode === 'unsigned' || file.signing.verified !== true || !/^[a-f0-9]{40,64}$/.test(file.signing.cdhash)) throw fail();
@@ -202,10 +167,6 @@ async function verifyArtifacts({ manifestPath, manifestSha256, launcher, purpose
           signature = Object.freeze({ cdhash: /^CDHash=(.+)$/m.exec(info.stderr)?.[1], teamID: /^TeamIdentifier=(.+)$/m.exec(info.stderr)?.[1] });
           await remember(target, identity, { signature });
         }
-        if (claudeAsset?.[0] === 'claude' && manifest.claudeInstallation && !remembered(identity).claudeTeam) {
-          await exec('/usr/bin/codesign', ['--verify', '--strict', '-R', `=anchor apple generic and certificate leaf[subject.OU] = "${CLAUDE_TEAM}"`, target], { timeout: 15000, maxBuffer: 65536 });
-          await remember(target, identity, { claudeTeam: true });
-        }
         const { cdhash, teamID } = signature;
         if (file.signing.cdhash !== cdhash || (file.signing.mode === 'release' && (!file.signing.teamID || file.signing.teamID === 'not set' || file.signing.teamID !== teamID))) throw fail();
       }
@@ -215,22 +176,12 @@ async function verifyArtifacts({ manifestPath, manifestSha256, launcher, purpose
   if (!controller || !writer || manifest.inputs.reviewedPlugins.some(origin => origin.id === 'devryan.slim') && (!reviewedAst || !reviewedConfiguration)) throw fail();
   stage = 'launcher'; artifact = path.basename(launcher);
   if (!await verifySessionExecutionLauncher({ launcher })) throw fail();
-  stage = 'reviewed_asset'; artifact = 'native-bundle.json';
-  if(manifest.inputs.reviewedPlugins.some(origin=>origin.id==='devryan.provider-compat')&&(!reviewedClaude.claude||!reviewedClaude.libsql))throw fail();
-  if(Object.keys(reviewedClaude).length===1)throw fail();
-  if(manifest.compiledContracts?.some(value=>['devryan.bundle.credentials/1','devryan.bundle.credentials/2','devryan.claude-lifecycle/1'].includes(value)) && reviewedClaude.claude && !reviewedClaudeCredentials)throw fail();
-  if(process.platform==='win32'&&reviewedClaude.libsql){
-    if(!windowsLibsqlEvidence)throw fail();
-    try{
-      const evidence=await readWindowsLibsqlEvidence(windowsLibsqlEvidence.path,windowsLibsqlEvidence.row,process.arch);
-      if(evidence.sha256!==reviewedClaude.libsql.sha256||files.get(evidence.binary)!==reviewedClaude.libsql.path)throw fail();
-    }catch{throw fail();}
-  }
+  // Bundles before claude-agent also list the Meridian Claude, libsql and credential
+  // assets; nothing runs them now, so they are verified only against the manifest.
   const reviewedGit=process.platform==='win32'?await verifyWindowsGitInventory({manifest,directory,arch:process.arch}):undefined;
   outcome = 'completed';
-  return Object.freeze({ manifest, manifestPath, manifestSha256, directory, controller, writer, launcher, reviewedAst, reviewedConfiguration, reviewedClaudeCredentials,
-    ...(reviewedGit?{reviewedGit}:{}),
-    ...(reviewedClaude.claude?{reviewedClaude:Object.freeze(reviewedClaude)}:{}) });
+  return Object.freeze({ manifest, manifestPath, manifestSha256, directory, controller, writer, launcher, reviewedAst, reviewedConfiguration,
+    ...(reviewedGit?{reviewedGit}:{}) });
   } catch (error) {
     const failure = artifactDiagnostic(error) ? error : fail(error?.code === 'ENOENT' || error?.code === 'ENOTDIR'
       ? stage === 'manifest' ? 'manifest_missing' : stage === 'payload' ? 'payload_missing' : undefined : undefined);

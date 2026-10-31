@@ -218,8 +218,9 @@ const parseSettings = (data: Record<string, unknown> | null): QuotaSettingsState
   const rawDropdownProviders = Array.isArray(data?.usageDropdownProviders)
     ? data?.usageDropdownProviders
     : null;
+  // Claude usage moved from the Meridian `claude` id to Claude Code's own `claude-agent`.
   const dropdownProviderIds = rawDropdownProviders
-    ? rawDropdownProviders.filter((entry): entry is QuotaProviderId =>
+    ? rawDropdownProviders.map((entry) => entry === 'claude' ? 'claude-agent' : entry).filter((entry): entry is QuotaProviderId =>
         typeof entry === 'string' && allProviderIds.includes(entry as QuotaProviderId)
       )
     : allProviderIds;

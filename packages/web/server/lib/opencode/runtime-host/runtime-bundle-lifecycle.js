@@ -1,14 +1,11 @@
 import fs from 'node:fs/promises';
-import { createClaudeCandidate, preserveManagedClaude } from './managed-claude-candidate.js';
-import { checkLatestClaudeRelease, claudeVersionFromManifest } from '../claude-runtime-update.js';
-import { newerClaude } from './managed-claude-installation.js';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import express from 'express';
 import { createRuntimeBundleStore, isStaleRebindClone } from './runtime-bundle.js';
 import { createRuntimeBundleCheckpoint } from './bundle-checkpoint.js';
 import { retainNativeArtifacts } from './retained-native-artifacts.js';
-import { verifyNativeRuntimeArtifacts, readNativeRuntimeManifest } from './native-artifacts.js';
+import { verifyNativeRuntimeArtifacts } from './native-artifacts.js';
 import { defaultNativeRegistrations } from './native-default-bundle.js';
 import {resumeRuntimeBundle} from './runtime-bundle-resume.js';
 import { executionArtifacts } from '../execution-artifacts.js';
@@ -34,7 +31,7 @@ export function createRuntimeBundleLifecycle({ binding, getController, closeAdmi
   artifactDirectory = executionArtifacts().directory, verifyArtifacts = verifyNativeRuntimeArtifacts,
   credentialProcess = runNativeBundleCredentialProcess, storeFactory = createRuntimeBundleStore,
   retainArtifacts = retainNativeArtifacts, verifyCompatibility = verifyNativeCloneCompatibility, retainCheckpoint, privatePersistence={}, neverStarted = false,
-  waitForClaudeIdle, onClaudePhase = () => {}, createClaude = createClaudeCandidate, checkClaudeRelease = checkLatestClaudeRelease }) {
+  waitForIdle }) {
   if (retainCheckpoint !== undefined && typeof retainCheckpoint !== 'function') throw fail('bundle_checkpoint_grant_invalid');
   // Permanent for this process: the application admission gate never reopens
   // after a checkpoint starts closing it, so neither may the lifecycle.
@@ -101,12 +98,7 @@ export function createRuntimeBundleLifecycle({ binding, getController, closeAdmi
     if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 4 * 1024 * 1024) throw fail('bundle_candidate_artifact_invalid');
     const manifestSha256 = hash(await fs.readFile(manifestPath));
     const artifacts = await timeStartupPhase('bundle_artifact_verification', () => verifyArtifacts({ manifestPath, manifestSha256, launcher: executionArtifacts(artifactDirectory).launcher }));
-    const candidate = { artifacts, manifestSha256, manifestPath };
-    if (process.platform !== 'darwin' || process.arch !== 'arm64') return candidate;
-    const current = await readNativeRuntimeManifest(binding.descriptor.launch.artifactManifestPath, 'bundle-source');
-    if (!current.manifest.claudeInstallation) return candidate;
-    const source = await verifyLaunch(binding.descriptor.launch, 'bundle-source');
-    return preserveManagedClaude({ controlRoot: binding.controlRoot, source, candidate, verifyArtifacts });
+    return { artifacts, manifestSha256, manifestPath };
   };
   const inspect = async ({ checkUpdates = true } = {}) => {
     const current = await store.readSelected();
@@ -153,7 +145,7 @@ export function createRuntimeBundleLifecycle({ binding, getController, closeAdmi
     })().finally(() => { transition = undefined; });
     return transition;
   };
-  const applyCandidate = async (input, current, candidate, claudeUpdate = false) => {
+  const applyCandidate = async (input, current, candidate) => {
       const retained = await timeStartupPhase('bundle_artifact_retention', () => retainArtifacts({ ...privatePersistence, controlRoot: binding.controlRoot, ...candidate, verifyArtifacts }));
       const inputRoot = path.join(binding.controlRoot, 'upgrade-inputs', retained.manifestSha256);
       await fs.mkdir(inputRoot, { recursive: true, mode: 0o700 });
@@ -169,26 +161,17 @@ export function createRuntimeBundleLifecycle({ binding, getController, closeAdmi
       const sameCore = original.manifest.opencodeVersion === retained.manifest.opencodeVersion
         && original.manifest.inputs.coreDigest === retained.manifest.inputs.coreDigest;
       // An unchanged core keeps its data in place; only the launch artifacts change.
-      // A Claude update keeps the clone its cold restore of an unstarted candidate needs.
-      if (sameCore && !claudeUpdate && !privatePersistence.windowsOwner) {
+      if (sameCore && !privatePersistence.windowsOwner) {
         const selection = await timeStartupPhase('bundle_artifact_rebind', () => store.rebindArtifacts({ bundleID: current.descriptor.bundleID,
           expectedRevision: input.expectedRevision, launchArtifacts }));
         return { selection, mode: 'rebind' };
       }
       captureArtifacts = sameCore ? { manifestPath: retained.manifestPath, manifestSha256: retained.manifestSha256 } : undefined;
       const bundleID = nativeUpgradeBundleID(retained.manifestSha256, current.selection.revision);
-      let releaseIdle;
-      if (claudeUpdate) {
-        onClaudePhase('waiting-for-idle');
-        releaseIdle = await waitForClaudeIdle();
-        onClaudePhase('activating');
-      }
-      try {
       await timeStartupPhase('bundle_candidate_preparation', () => store.prepare({ bundleID, generation: 2, source: { kind: 'bundle', bundleID: current.descriptor.bundleID },
         projectMap: current.descriptor.projectMap, auxiliary: { kind: 'absent' }, launchArtifacts }));
-      const selection = await timeStartupPhase('bundle_selection', () => store.select({ bundleID, expectedRevision: input.expectedRevision, ...(claudeUpdate ? { claudeUpdate: true } : {}) }));
+      const selection = await timeStartupPhase('bundle_selection', () => store.select({ bundleID, expectedRevision: input.expectedRevision }));
       return { selection, mode: 'clone' };
-      } finally { releaseIdle?.(); }
   };
   const handle = {
     inspect,
@@ -211,23 +194,13 @@ export function createRuntimeBundleLifecycle({ binding, getController, closeAdmi
       if (candidate.manifestSha256 === current.descriptor.launch.artifactManifestSha256) throw fail('bundle_upgrade_not_available');
       return applyCandidate(input, current, candidate);
     }),
-    upgradeClaude: input => run('claude', input, async current => {
-      if (process.platform !== 'darwin' || process.arch !== 'arm64' || typeof waitForClaudeIdle !== 'function') throw fail('bundle_claude_update_unavailable');
-      const source = await verifyLaunch(current.descriptor.launch, 'bundle-source');
-      const release = await checkClaudeRelease();
-      const installed = claudeVersionFromManifest(source.manifest);
-      if (!installed) throw fail('bundle_claude_version_unavailable');
-      if (!newerClaude(release.latestVersion, installed)) throw fail('bundle_upgrade_not_available');
-      const candidate = await createClaude({ controlRoot: binding.controlRoot, source, version: release.latestVersion, verifyArtifacts, onPhase: onClaudePhase });
-      return applyCandidate(input, current, candidate, true);
-    }),
     rollback: input => run('rollback', input, async current => {
       // A rebind's previous launch is the same bundle, with no credential projection.
       const rebound = !current.selection.reconciliationRequired && await store.rebindRestorable(current.selection);
       const targetBundleID = current.selection.reconciliationRequired ? current.selection.selectedBundleID : current.selection.previousBundleID;
       if (!rebound && !targetBundleID) throw fail('bundle_rollback_target_invalid');
       let releaseIdle;
-      if (waitForClaudeIdle) { onClaudePhase('waiting-for-idle'); releaseIdle = await waitForClaudeIdle(); onClaudePhase('activating'); }
+      if (waitForIdle) releaseIdle = await waitForIdle();
       try {
         return rebound ? await store.restoreRebind({ expectedRevision: input.expectedRevision })
           : await store.rollback({ targetBundleID, expectedRevision: input.expectedRevision });
@@ -302,7 +275,7 @@ export function createRuntimeBundleAdmissionGate() {
   let held = false, idleReservation = false, checkingIdle = false, activeWrites = 0, uncertainWrite = false;
   return {
     middleware(req, res, next) {
-      const lifecycle = /^\/api\/runtime\/bundle(?:\/|$)/.test(req.path) || /^\/api\/config\/claude-update(?:\/|$)/.test(req.path);
+      const lifecycle = /^\/api\/runtime\/bundle(?:\/|$)/.test(req.path);
       if (held && !lifecycle && !['/health', '/api/health'].includes(req.path)) {
         return res.status(503).json({ code: 'bundle_runtime_admission_held' });
       }

@@ -1,6 +1,5 @@
 import {describe,it,expect} from 'vitest';
 import {CLAUDE_LIFECYCLE_LIMITS,emptyClaudeLifecycle,parseClaudeLifecycle,parseClaudeLifecycleOperation,transitionClaudeLifecycle,claudeRecordFingerprint,claudeGrantFingerprint,hasLegacyClaudeFence,assertClaudeEnrollmentCapacity} from './native-claude-lifecycle.js';
-import {createNativeClaudeLifecycleClient} from './native-claude-lifecycle-client.js';
 import {parseNativeCommand} from './native-process-protocol.js';
 
 const digest=index=>index.toString(16).padStart(64,'0');
@@ -10,13 +9,11 @@ const binding=({profileID,service,configDirectory,enrollmentID,generation})=>({p
 const next=(state,operation)=>transitionClaudeLifecycle(state,state.revision,operation);
 
 describe('Claude lifecycle contract',()=>{
- it('durable deletion fences only its exact enrollment and settles through private typed commands',()=>{
+ it('durable deletion fences only its exact enrollment and settles only its exact attempt',()=>{
   for(const incomplete of [false,true]){
    const selected=account(),other=account(2);let state=next(emptyClaudeLifecycle(),{kind:'enroll',account:other});
    state=next(state,incomplete?{kind:'prepare-enrollment',account:selected,attemptID:'fresh'}:{kind:'enroll',account:selected});
    const operation={kind:'prepare-deletion',binding:binding(selected),attemptID:'delete-owned',recordFingerprint:selected.recordFingerprint,directoryDevice:7,directoryInode:9};
-   const wire={protocol:1,id:'delete_call',action:'claude-lifecycle-transition-owned',controllerInstanceID:'owner',expectedRevision:state.revision,operation};
-   expect(parseNativeCommand(wire)).toEqual(wire);
    expect(()=>next(state,{...operation,binding:{...operation.binding,generation:'foreign'}})).toThrow('native_claude_lifecycle_conflict');
    const prepared=next(state,operation);expect(prepared.unresolved[0]).toMatchObject({phase:'deletion-prepared',incomplete,directoryDevice:7,directoryInode:9});
    expect(()=>next(prepared,{kind:'begin',account:selected,attemptID:'renew'})).toThrow('native_claude_refresh_unsettled');
@@ -105,11 +102,10 @@ describe('Claude lifecycle contract',()=>{
   expect(()=>hasLegacyClaudeFence({...marked,claudeAiOauth:{...original.claudeAiOauth,accessToken:'changed'}})).toThrow();
   expect(()=>hasLegacyClaudeFence({...marked,devryanRefreshBlock:{protocol:'other',generation:digest(1)}})).toThrow();
  });
- it('strict private commands carry only typed operations and reject foreign controllers after suspension',async()=>{
-  const operation={kind:'enroll',account:account()};const wire={protocol:1,id:'call',action:'claude-lifecycle-transition-owned',controllerInstanceID:'controller-1',expectedRevision:0,operation};
-  expect(parseNativeCommand(wire)).toEqual(wire);
-  for(const value of [{...wire,expectedRevision:-1},{...wire,operation:{...operation,token:'forbidden'}},{...wire,path:'/arbitrary'}])expect(()=>parseNativeCommand(value)).toThrow('Invalid native process protocol');
-  let current;const original={instanceID:'controller-1',call:async()=>{current={...original,instanceID:'controller-2'};return emptyClaudeLifecycle();}};current=original;
-  const client=createNativeClaudeLifecycleClient({controller:()=>current,isCurrent:()=>true});await expect(client.read()).rejects.toThrow('native_claude_lifecycle_owner_expired');
+ it('the native process protocol no longer carries Claude lifecycle commands',()=>{
+  // The lifecycle is parsed only from old bundle credential snapshots; no controller command reads or transitions it.
+  const operation={kind:'enroll',account:account()};
+  for(const wire of [{protocol:1,id:'call',action:'claude-lifecycle-read-owned',controllerInstanceID:'controller-1'},
+   {protocol:1,id:'call',action:'claude-lifecycle-transition-owned',controllerInstanceID:'controller-1',expectedRevision:0,operation}])expect(()=>parseNativeCommand(wire)).toThrow('Invalid native process protocol');
  });
 });

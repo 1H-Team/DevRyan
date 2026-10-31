@@ -103,10 +103,6 @@ export const dict = {
   'chat.modelRecovery.autoResume.exhausted': 'Auto-resume stopped: {reason}',
   'chat.modelRecovery.autoResume.exhaustedNoReason': 'Auto-resume stopped',
   'chat.modelRecovery.autoResume.off': 'Auto-resume off',
-  'chat.modelRecovery.claudeCompatibilityPrompt': 'Retry this turn with Claude compatibility mode:',
-  'chat.modelRecovery.claudeThirdPartyUsage': 'Anthropic classified this turn as third-party usage even though Claude subscription quota may still be available. Compatibility mode uses Claude Code’s native prompt and omits DevRyan’s specialized agent instructions.',
-  'chat.modelRecovery.enableCompatibilityRetry': 'Enable Compatibility & Try Again',
-  'chat.modelRecovery.enablingCompatibility': 'Enabling Compatibility…',
 
   'layout.mainTab.chat': 'Chat',
   'layout.mainTab.plan': 'Plan',

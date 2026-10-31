@@ -66,13 +66,12 @@ export interface RuntimeBundleStoreOptions {
   readonly now?: () => number;
 }
 export function createRuntimeBundleStore(options: RuntimeBundleStoreOptions): {
-  restoreUnstartedClaude(): Promise<RuntimeBundleSelection>;
   prepare(input: PrepareRuntimeBundle): Promise<RuntimeBundleDescriptor>;
   verify(input: { readonly bundleID: string; readonly phase: 'prepared' | 'resume'; readonly artifactPurpose?: 'bundle-source' | 'bundle-rollback' }): Promise<RuntimeBundleVerification>;
   resume(input:{readonly expectedRevision:number}):Promise<RuntimeBundleSelection>;
   readSelected(): Promise<{ readonly selection: RuntimeBundleSelection; readonly descriptor: RuntimeBundleDescriptor } | null>;
   /** Lifecycle stops/recomposes all owners; this does not open admission. */
-  select(input: { readonly bundleID: string; readonly expectedRevision: number; readonly claudeUpdate?: boolean }): Promise<RuntimeBundleSelection>;
+  select(input: { readonly bundleID: string; readonly expectedRevision: number }): Promise<RuntimeBundleSelection>;
   /** Static incompatibility keeps B active. A checkpointed partial projection is held for Resume B recovery. */
   rollback(input: { readonly targetBundleID: string; readonly expectedRevision: number }): Promise<{ readonly selection: RuntimeBundleSelection; readonly admission: 'held'; readonly reason: string | null }>;
   /** Same OpenCode version and core digest only: rewrites the selected bundle's launch documents in place, without a data copy. */

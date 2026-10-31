@@ -68,10 +68,7 @@ export {
 } from './skills.js';
 
 export {
-  ANTHROPIC_OAUTH_DEFAULT_BASE_URL,
-  ANTHROPIC_OAUTH_PLUGIN_NAME,
   CURSOR_ACP_PROVIDER_ID,
-  ensureAnthropicOAuthProviderConfig,
   getProviderSources,
   listProviderConfigFiles,
   removeAntigravityProviderConfig,

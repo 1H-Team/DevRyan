@@ -1195,7 +1195,7 @@ describe('syncRuntimeAgentOverlays', () => {
     expect(result.configWritten).toBe(true);
   });
 
-  it('carries Anthropic OAuth proxy config into the active runtime config while preserving MCP timeout overlays', async () => {
+  it('never carries the retired Anthropic OAuth proxy config into the active runtime config while preserving MCP timeout overlays', async () => {
     const activeConfig = {
       plugin: ['opencode-with-claude'],
       provider: {
@@ -1244,14 +1244,6 @@ describe('syncRuntimeAgentOverlays', () => {
             url: 'https://mcp.example.test/mcp',
             enabled: true,
             timeout: 60_000,
-          },
-        },
-        provider: {
-          anthropic: {
-            options: {
-              baseURL: 'http://127.0.0.1:3456',
-              apiKey: 'dummy',
-            },
           },
         },
         lsp: false,
@@ -1478,14 +1470,6 @@ describe('syncRuntimeAgentOverlays', () => {
           './plugins/openai-gpt-5-6-models.mjs',
           './plugins/openai-tool-schema-sanitizer.mjs',
         ],
-        provider: {
-          anthropic: {
-            options: {
-              baseURL: 'http://127.0.0.1:3456',
-              apiKey: 'dummy',
-            },
-          },
-        },
         lsp: false,
       });
     expect(result.pluginsWritten).toEqual([
@@ -1739,6 +1723,9 @@ describe('syncRuntimeAgentOverlays', () => {
     const generatedConfigPath = path.join(initial.targetConfigDirectory, 'opencode.json');
     const staleConfig = JSON.parse(await fs.readFile(generatedConfigPath, 'utf8'));
     expect(staleConfig.provider?.openai).toBeUndefined();
+    // The retired Anthropic loopback proxy stanza is never carried into the runtime config.
+    expect(staleConfig).not.toHaveProperty('provider');
+    staleConfig.provider = {};
     staleConfig.provider.openai = {
       options: { headerTimeout: 120_000, chunkTimeout: 300_000, timeout: 900_000 },
     };
@@ -1748,7 +1735,7 @@ describe('syncRuntimeAgentOverlays', () => {
     const runtimeConfig = JSON.parse(await fs.readFile(generatedConfigPath, 'utf8'));
     expect(refreshed.configUpdated).toBe(true);
     expect(runtimeConfig.provider?.openai).toBeUndefined();
-    expect(runtimeConfig.provider.anthropic.options.baseURL).toBe('http://127.0.0.1:3456');
+    expect(runtimeConfig.provider?.anthropic).toBeUndefined();
     expect(runtimeConfig.plugin || []).not.toContain('opencode-antigravity-auth@latest');
     expect(runtimeConfig.mcp['remote-tools']).toMatchObject({
       type: 'remote',

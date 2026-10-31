@@ -1,26 +1,8 @@
 import { expect, test } from 'vitest';
-import { isAcceptedBundleBunVersion, isReviewedPreviousClaudeAsset, isReviewedPreviousClaudeCredentials, NATIVE_BUNDLE_BUN_VERSION, REVIEWED_PREVIOUS_CLAUDE_ASSET, REVIEWED_PREVIOUS_CLAUDE_CREDENTIALS, verifyNativeRuntimeArtifacts, verifyUpdateCandidateArtifacts } from './native-artifacts.js';
-import { REVIEWED_CLAUDE_ASSETS } from './reviewed-claude-transform.js';
+import { isAcceptedBundleBunVersion, NATIVE_BUNDLE_BUN_VERSION, verifyNativeRuntimeArtifacts, verifyUpdateCandidateArtifacts } from './native-artifacts.js';
 
-test('the previous reviewed Claude identity is source/rollback only and never a default or new target pin', async () => {
-  const previous = { role: 'asset', ...REVIEWED_PREVIOUS_CLAUDE_ASSET };
-  expect(previous.version).toBe('2.1.251'); expect(REVIEWED_CLAUDE_ASSETS.claude.version).toBe('2.1.302');
-  expect(previous.sha256).not.toBe(REVIEWED_CLAUDE_ASSETS.claude.sha256);
-  for (const purpose of ['bundle-source', 'bundle-rollback']) expect(isReviewedPreviousClaudeAsset(previous, purpose, 'darwin', 'arm64')).toBe(true);
-  for (const purpose of [undefined, 'current', 'target', 'unknown']) expect(isReviewedPreviousClaudeAsset(previous, purpose, 'darwin', 'arm64')).toBe(false);
-  for (const change of [{ role: 'controller' }, { path: '../DevRyan-Claude-darwin-arm64' }, { sha256: 'a'.repeat(64) }, { size: previous.size + 1 }, { mode: 0o777 }, { version: '2.1.280' }])
-    expect(isReviewedPreviousClaudeAsset({ ...previous, ...change }, 'bundle-source', 'darwin', 'arm64')).toBe(false);
-  expect(isReviewedPreviousClaudeAsset(previous, 'bundle-source', 'win32', 'arm64')).toBe(false);
-  expect(isReviewedPreviousClaudeAsset(previous, 'bundle-source', 'darwin', 'x64')).toBe(false);
+test('an unknown verification purpose is refused', async () => {
   await expect(verifyNativeRuntimeArtifacts({ purpose: 'unknown' })).rejects.toMatchObject({ code: 'native_runtime_artifacts_unverified' });
-});
-
-test('the shipped Claude credentials identity is source/rollback only and rejects changed payload metadata', () => {
-  const previous = { role: 'asset', ...REVIEWED_PREVIOUS_CLAUDE_CREDENTIALS };
-  for (const purpose of ['bundle-source', 'bundle-rollback']) expect(isReviewedPreviousClaudeCredentials(previous, purpose)).toBe(true);
-  for (const purpose of [undefined, 'current', 'target', 'unknown']) expect(isReviewedPreviousClaudeCredentials(previous, purpose)).toBe(false);
-  for (const change of [{ role: 'controller' }, { path: '../DevRyan-Claude-credentials.mjs' }, { sha256: 'a'.repeat(64) }, { size: previous.size + 1 }, { mode: 0o777 }])
-    expect(isReviewedPreviousClaudeCredentials({ ...previous, ...change }, 'bundle-source')).toBe(false);
 });
 
 test('installed bundles built by the previous Bun are source/rollback only, never the current bundle', () => {
@@ -79,23 +61,39 @@ test('missing, truncated, changed and linked payloads are rejected before execut
   }
 }));
 
-test('unreviewed vendor assets cannot be admitted by recomputing the outer manifest', async () => fixture(async ({ root, row, verify }) => {
-  row.path = 'DevRyan-Claude-credentials.mjs'; row.mode = 0o644;
+// The pinned AST payload is the reviewed vendor asset these fixtures exercise.
+const AST_ASSET = 'DevRyan-ast-grep-darwin-arm64';
+
+test.skipIf(process.platform === 'win32')('unreviewed vendor assets cannot be admitted by recomputing the outer manifest', async () => fixture(async ({ root, row, verify }) => {
+  row.path = AST_ASSET; row.mode = 0o755;
   await fs.writeFile(path.join(root, row.path), 'test', { mode: row.mode });
   await expect(verify()).rejects.toMatchObject({ diagnostic: { stage: 'reviewed_asset', reason: 'reviewed_asset_mismatch', artifact: row.path } });
 }));
 
-test('an update candidate is checked for integrity, not against the installed app\'s Bun and reviewed-asset pins', async () => fixture(async ({ root, row, manifest, verify, verifyCandidate }) => {
+test('Claude, libsql and credential assets listed by a pre-claude-agent bundle are only checked against the manifest', async () => fixture(async ({ root, row, manifest, verify }) => {
   row.path = 'DevRyan-Claude-credentials.mjs'; row.mode = 0o644;
-  for (const name of [row.path, 'DevRyan-second']) await fs.writeFile(path.join(root, name), 'test', { mode: row.mode });
-  manifest.files[1].mode = 0o644;
-  // A later reviewed credentials payload and a newer Bun pass to the inventory stage
-  // (this fixture has no controller); the installed pins would refuse both.
+  manifest.files[1] = { ...manifest.files[1], path: 'DevRyan-Claude-darwin-arm64' };
+  manifest.files.push({ ...manifest.files[1], path: 'DevRyan-libsql-darwin-arm64.node' });
+  for (const file of manifest.files) await fs.writeFile(path.join(root, file.path), 'test', { mode: file.mode });
+  // Nothing pins or signature-checks them any more; the fixture has no controller, so inventory fails afterwards.
+  await expect(verify()).rejects.toMatchObject({ diagnostic: { stage: 'inventory' } });
+  await fs.writeFile(path.join(root, row.path), 'evil');
+  await expect(verify()).rejects.toMatchObject({ diagnostic: { reason: 'digest_mismatch', artifact: row.path } });
+}));
+
+test.skipIf(process.platform === 'win32')('an update candidate is checked for integrity, not against the installed app\'s Bun and reviewed-asset pins', async () => fixture(async ({ root, row, manifest, verify, verifyCandidate }) => {
+  row.path = AST_ASSET; row.mode = 0o755;
+  await fs.writeFile(path.join(root, row.path), 'test', { mode: row.mode });
+  await fs.writeFile(path.join(root, 'DevRyan-second'), 'test', { mode: manifest.files[1].mode });
+  // The candidate passes the reviewed-asset pin; this fixture's AST payload is unsigned
+  // on macOS and there is no controller elsewhere, so a later stage refuses it.
+  const passedPins = { stage: process.platform === 'darwin' ? 'signature' : 'inventory', purpose: 'update-candidate' };
+  // A later reviewed AST payload and a newer Bun pass the reviewed-asset stage; the installed pins would refuse both.
   await expect(verify()).rejects.toMatchObject({ diagnostic: { stage: 'reviewed_asset', reason: 'reviewed_asset_mismatch', purpose: 'current' } });
-  await expect(verifyCandidate()).rejects.toMatchObject({ diagnostic: { stage: 'inventory', purpose: 'update-candidate' } });
+  await expect(verifyCandidate()).rejects.toMatchObject({ diagnostic: passedPins });
   manifest.bunVersion = '1.4.5';
   await expect(verify()).rejects.toMatchObject({ diagnostic: { stage: 'manifest', reason: 'manifest_invalid' } });
-  await expect(verifyCandidate()).rejects.toMatchObject({ diagnostic: { stage: 'inventory', purpose: 'update-candidate' } });
+  await expect(verifyCandidate()).rejects.toMatchObject({ diagnostic: passedPins });
   // Structure, digests, modes and the manifest digest still bind the candidate.
   await expect(verifyCandidate(JSON.stringify(manifest), 'b'.repeat(64))).rejects.toMatchObject({ diagnostic: { reason: 'digest_mismatch', purpose: 'update-candidate' } });
   for (const bunVersion of [undefined, '', '1.4', 'latest', '1.4.5 ']) {
@@ -104,10 +102,8 @@ test('an update candidate is checked for integrity, not against the installed ap
   await fs.writeFile(path.join(root, row.path), 'evil');
   await expect(verifyCandidate()).rejects.toMatchObject({ diagnostic: { reason: 'digest_mismatch', artifact: row.path } });
   await fs.writeFile(path.join(root, row.path), 'test');
-  if (process.platform !== 'win32') {
-    await fs.chmod(path.join(root, row.path), 0o600);
-    await expect(verifyCandidate()).rejects.toMatchObject({ diagnostic: { reason: 'mode_mismatch' } });
-  }
+  await fs.chmod(path.join(root, row.path), 0o700);
+  await expect(verifyCandidate()).rejects.toMatchObject({ diagnostic: { reason: 'mode_mismatch' } });
 }));
 
 test.skipIf(process.platform !== 'darwin')('unsigned update candidate controllers fail signature verification', async () => {

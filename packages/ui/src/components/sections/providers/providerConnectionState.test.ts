@@ -17,7 +17,6 @@ const sources = (overrides: Partial<ProviderSources> = {}): ProviderSources => (
   user: { exists: false },
   project: { exists: false },
   custom: { exists: false },
-  anthropicOAuth: { exists: false },
   ...overrides,
 });
 
@@ -36,12 +35,12 @@ describe('provider connection state', () => {
     expect(shouldShowConnectedProvider('google', empty, true)).toBe(true);
   });
 
-  test('recognizes auth, user, project, custom, and Claude proxy sources', () => {
+  test('recognizes auth, user, project, and custom sources', () => {
     expect(hasActiveProviderSource(sources({ auth: { exists: true } }))).toBe(true);
     expect(hasActiveProviderSource(sources({ user: { exists: true } }))).toBe(true);
     expect(hasActiveProviderSource(sources({ project: { exists: true } }))).toBe(true);
     expect(hasActiveProviderSource(sources({ custom: { exists: true } }))).toBe(true);
-    expect(hasActiveProviderSource(sources({ anthropicOAuth: { exists: true } }))).toBe(true);
+    expect(hasActiveProviderSource(sources())).toBe(false);
   });
 
   test('preserves catalog-driven behavior for providers without authoritative source classification', () => {

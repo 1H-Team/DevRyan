@@ -59,7 +59,7 @@ export const formatWindowLabel = (label: string): string => {
 };
 
 export const formatProviderWindowLabel = (providerId: string, label: string): string => {
-  if (providerId !== 'claude') {
+  if (providerId !== 'claude-agent') {
     return formatWindowLabel(label);
   }
   if (label === '5h') return '5-Hour Limit';

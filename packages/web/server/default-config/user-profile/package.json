@@ -4,15 +4,9 @@
     "@ai-sdk/openai-compatible": "^2.0.47",
     "@opencode-ai/plugin": "1.18.33",
     "@rama_nigg/open-cursor": "2.5.17",
-    "@rynfar/meridian": "1.79.0",
     "adm-zip": "0.6.0",
     "mammoth": "1.12.1",
     "opencode-gpt-imagegen": "0.1.12",
-    "opencode-with-claude": "1.11.2",
     "unpdf": "1.8.0"
-  },
-  "overrides": {
-    "@anthropic-ai/claude-agent-sdk": "0.2.141",
-    "@anthropic-ai/claude-code": "2.1.302"
   }
 }

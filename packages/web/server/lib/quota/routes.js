@@ -1,4 +1,3 @@
-import {inspectClaudeRequest,isClaudeAccountAbsent,isClaudeInspectionUnavailable,unavailableClaudeInspection,sendClaudeInspectionError} from '../opencode/runtime-host/native-claude-inspection.js';
 import express from 'express';
 import { resolveClaudeExecutable } from '../opencode/runtime-host/claude-agent-host.js';
 import { fetchQuota as fetchClaudeAgentQuota } from './providers/claude-agent.js';
@@ -33,13 +32,7 @@ import {
   validateStoredOpenCodeZenCredential,
   OpenCodeZenCredentialError,
 } from './providers/opencode.js';
-import {
-  createClaudeProxyBaseUrlResolver,
-  createMeridianClaudeContextUsageClient,
-} from './providers/claude-meridian.js';
 import { isAnthropicProviderId } from '../opencode/anthropic-provider-ids.js';
-import { OPENCODE_GENERATION_INVALID } from '../opencode/opencode-generation.js';
-import { resolveClaudeCodeLaunch as resolveClaudeCodeLaunchDefault } from '../opencode/claude-cli-runtime.js';
 
 const jsonParser = express.json({ limit: MAX_QUOTA_CREDENTIAL_PAYLOAD_BYTES });
 const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
@@ -50,7 +43,7 @@ const RUNTIME_READINESS_POLL_MS = 75;
 
 // Providers whose credentials live in the native controller (no auth.json there).
 const NATIVE_QUOTA_PROVIDER_NAMES = Object.freeze({ codex: 'ChatGPT', xai: 'xAI', 'opencode-go': 'OpenCode Go' });
-const NATIVE_GATED_LIST_IDS = new Set(['claude', ...Object.keys(NATIVE_QUOTA_PROVIDER_NAMES)]);
+const NATIVE_GATED_LIST_IDS = new Set(['claude-agent', ...Object.keys(NATIVE_QUOTA_PROVIDER_NAMES)]);
 // The runtime is between states; discovery answers 503 so the client retries shortly.
 const NATIVE_TRANSIENT_CODES = new Set(['native_runtime_not_ready', 'native_provider_owner_expired', 'native_provider_configuration_changed']);
 const NATIVE_QUOTA_TRANSIENT_CODES = new Set([
@@ -185,11 +178,8 @@ export function registerQuotaRoutes(app, {
   isExternalOpenCode = () => false,
   openCodeClient = null,
   getNativeRuntimeOwner = () => null,
-  buildAugmentedPath,
   devryanDataDir,
-  resolveClaudeCodeLaunch = resolveClaudeCodeLaunchDefault,
   ownsSession,
-  claudeContextUsageClient: claudeContextUsageClientOverride,
   credentialRuntime: credentialRuntimeOverrides,
   runtimeReadinessHoldMs = RUNTIME_READINESS_HOLD_MS,
   runtimeReadinessPollMs = RUNTIME_READINESS_POLL_MS,
@@ -199,8 +189,6 @@ export function registerQuotaRoutes(app, {
     ...defaultCredentialRuntime,
     ...credentialRuntimeOverrides,
   };
-  const claudeContextUsageClient = claudeContextUsageClientOverride
-    || createMeridianClaudeContextUsageClient();
   const nativeCredentials = createNativeQuotaCredentials({ getNativeRuntimeOwner, isExternalOpenCode });
   const recordNativeQuotaFailure = (providerId, stage, error) => {
     const code = NATIVE_QUOTA_DIAGNOSTIC_CODES.has(error?.code) ? error.code : 'native_credential_unreadable';
@@ -220,16 +208,6 @@ export function registerQuotaRoutes(app, {
     }
   };
 
-  // Claude accounts are global: an unreviewed project directory reads the default location.
-  const inspectClaudeUsage = async ({ req, res, kind, directory }) => {
-    try {
-      return await inspectClaudeRequest({ req, res, kind, directory, getNativeRuntimeOwner, isExternalOpenCode });
-    } catch (error) {
-      if (!directory || error?.code !== 'native_provider_configuration_location_unreviewed') throw error;
-      return inspectClaudeRequest({ req, res, kind, directory: null, getNativeRuntimeOwner, isExternalOpenCode });
-    }
-  };
-
   // Native discovery. Returns null when the runtime is still not ready.
   const listNativeQuotaProviders = async ({ req, res, listConfiguredQuotaProviders, workingDirectory }) => {
     let base = [];
@@ -237,7 +215,6 @@ export function registerQuotaRoutes(app, {
       base = listConfiguredQuotaProviders({
         workingDirectory,
         isExternalRuntime: false,
-        claudeProxyBaseUrl: null,
       }).filter((id) => !NATIVE_GATED_LIST_IDS.has(id));
     } catch (error) {
       console.error('Failed to list quota providers:', error);
@@ -248,24 +225,13 @@ export function registerQuotaRoutes(app, {
     } catch {
       // A failed credential lookup leaves those providers out; it never fails the list.
     }
-    let claudeListed = false;
-    try {
-      await inspectClaudeUsage({ req, res, kind: 'status', directory: workingDirectory });
-      claudeListed = true;
-    } catch (error) {
-      if (NATIVE_TRANSIENT_CODES.has(error?.code)) return null;
-      // An account that exists but cannot be read stays listed so its reason is shown;
-      // an authorization refusal or an absent account is not listed.
-      claudeListed = isClaudeInspectionUnavailable(error?.code) && !isClaudeAccountAbsent(error?.code);
-    }
     // Claude Code's own usage: listed once it has reported a window or is installed.
     const owner = getNativeRuntimeOwner();
     const claudeAgentListed = typeof owner?.readClaudeAgentUsage === 'function'
       && Boolean(owner.readClaudeAgentUsage() || resolveClaudeExecutable());
-    // Registry order: claude, codex, xai lead; opencode-go closes the list.
+    // Registry order: Claude, codex, xai lead; opencode-go closes the list.
     return [
       ...(claudeAgentListed ? ['claude-agent'] : []),
-      ...(claudeListed ? ['claude'] : []),
       ...['codex', 'xai'].filter((id) => configured.has(id)),
       ...base,
       ...(configured.has('opencode-go') ? ['opencode-go'] : []),
@@ -353,29 +319,6 @@ export function registerQuotaRoutes(app, {
     return resolved.directory;
   };
 
-  // Shared with the managed-orchestration provider reset probe. A zero TTL keeps
-  // this route uncached exactly as before; overlapping requests share one lookup.
-  const claudeProxyBaseUrls = createClaudeProxyBaseUrlResolver({
-    buildOpenCodeUrl,
-    getOpenCodeAuthHeaders,
-    isExternalOpenCode,
-    openCodeClient,
-    ttlMs: 0,
-  });
-  // Only an unknown runtime identity is retried, within a bounded hold; any
-  // other failure, or one that outlasts the hold, still reaches the caller.
-  const resolveClaudeProxyBaseUrl = async (workingDirectory) => {
-    const deadline = Date.now() + runtimeReadinessHoldMs;
-    for (;;) {
-      try {
-        return await claudeProxyBaseUrls.resolve(workingDirectory);
-      } catch (error) {
-        if (error?.code !== OPENCODE_GENERATION_INVALID || Date.now() >= deadline) throw error;
-        await new Promise((resolve) => setTimeout(resolve, Math.min(runtimeReadinessPollMs, Math.max(0, deadline - Date.now()))));
-      }
-    }
-  };
-
   app.get('/api/quota/providers', async (req, res) => {
     try {
       const { listConfiguredQuotaProviders } = await getQuotaProviders();
@@ -391,12 +334,10 @@ export function registerQuotaRoutes(app, {
         res.json({ providers });
         return;
       }
-      const claudeProxyBaseUrl = await resolveClaudeProxyBaseUrl(workingDirectory);
       res.json({
         providers: listConfiguredQuotaProviders({
           workingDirectory,
           isExternalRuntime: isExternalOpenCode(),
-          claudeProxyBaseUrl,
         }),
       });
     } catch (error) {
@@ -419,18 +360,8 @@ export function registerQuotaRoutes(app, {
         res.status(404).json({ error: 'Session not found' });
         return;
       }
-      const workingDirectory = await resolveQuotaDirectory(req);
-      const baseUrl = await resolveClaudeProxyBaseUrl(workingDirectory);
-      if (!baseUrl) {
-        res.json(unavailableContextUsage(sessionID));
-        return;
-      }
-      const result = await claudeContextUsageClient.fetchContextUsage({
-        baseUrl,
-        sessionID,
-        refreshSession: req.query.refreshSession === 'true',
-      });
-      res.json(result.ok ? result.usage : unavailableContextUsage(sessionID));
+      // No provider reports live context usage; the client derives it from messages.
+      res.json(unavailableContextUsage(sessionID));
     } catch (error) {
       if (error?.statusCode) {
         res.status(error.statusCode).json({ error: error.message || 'Failed to resolve context usage' });
@@ -550,18 +481,10 @@ export function registerQuotaRoutes(app, {
     try {
       const { providerId } = req.params;
       if (!providerId) return res.status(400).json({ error: 'Provider ID is required' });
-      if (providerId === 'claude-agent') {
+      // Claude, under any earlier provider alias, is Claude Code's own reported usage.
+      if (providerId === 'claude-agent' || isAnthropicProviderId(providerId)) {
         const owner = nativeCredentials.mode() === 'legacy' ? null : getNativeRuntimeOwner();
         return res.json(await fetchClaudeAgentQuota({ readUsage: () => owner?.readClaudeAgentUsage?.(), available: Boolean(resolveClaudeExecutable()) }));
-      }
-      if(isAnthropicProviderId(providerId)){
-        try{
-          const directory=await resolveQuotaDirectory(req);
-          return res.json(await inspectClaudeUsage({req,res,kind:'quota',directory}));
-        }catch(error){
-          if(isClaudeInspectionUnavailable(error?.code))return res.json(unavailableClaudeInspection('quota',error.code));
-          return sendClaudeInspectionError(res,error);
-        }
       }
       const { fetchQuotaForProvider, resolveProviderId } = await getQuotaProviders();
       const forceRefresh = req.query.refresh === 'true';
@@ -574,26 +497,13 @@ export function registerQuotaRoutes(app, {
         return res.json(await fetchNativeQuota({
           fetchQuotaForProvider,
           providerId: nativeProviderId,
-          options: { forceRefresh, workingDirectory, isExternalRuntime: false, claudeProxyBaseUrl: null },
+          options: { forceRefresh, workingDirectory, isExternalRuntime: false },
         }));
       }
-      const claudeProxyBaseUrl = isAnthropicProviderId(providerId)
-        ? await resolveClaudeProxyBaseUrl(workingDirectory)
-        : null;
-      const externalRuntime = isExternalOpenCode();
-      const claudeCodeLaunch = isAnthropicProviderId(providerId) && !externalRuntime
-        ? resolveClaudeCodeLaunch({
-            pathValue: typeof buildAugmentedPath === 'function'
-              ? buildAugmentedPath()
-              : process.env.PATH || '',
-          })
-        : null;
       res.json(await fetchQuotaForProvider(providerId, {
         forceRefresh,
         workingDirectory,
-        isExternalRuntime: externalRuntime,
-        claudeProxyBaseUrl,
-        ...(isAnthropicProviderId(providerId) ? { claudeCodeLaunch } : {}),
+        isExternalRuntime: isExternalOpenCode(),
       }));
     } catch (error) {
       console.error('Failed to fetch quota:', error);

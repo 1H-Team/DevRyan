@@ -9,7 +9,6 @@ import {SessionSchema} from '@opencode/core/session/schema';
 import {Model} from '@opencode/schema/model';
 import {Effect,Schema,Scope} from 'effect';
 import {createControllerProviders} from '../../packages/web/server/lib/opencode/runtime-host/controller-providers.js';
-import {collapseSystemPartsInPlace as collapseSystemParts} from '../../packages/agents-core/src/utils/system-collapse.js';
 
 const directory='/owned/provider-policy';
 const location=Schema.decodeUnknownSync(Location.Info)({directory,project:{id:'global',directory,canonical:directory}});
@@ -22,12 +21,11 @@ const webSocket={execute:()=>Effect.die('Physical socket must not execute during
 const prepared={event,request:new LLMRequest({model,system:[],messages:[],tools:[]}),options:{webSocket,http:(request,handler)=>handler(request)},
  retry:()=>Effect.void,executeTool:()=>Effect.die('Tools must not execute during preparation')} satisfies SessionModelRequest.Prepared<typeof event>;
 const inner:SessionModelRequest.Interface={primary:()=>Effect.succeed(prepared),title:()=>Effect.succeed(prepared),compaction:()=>Effect.succeed(prepared),generate:()=>Effect.succeed(prepared)};
-const agents:Agent.Interface={get:()=>Effect.die('No agent read'),resolve:()=>Effect.die('No agent read'),select:()=>Effect.die('No agent read'),list:()=>Effect.die('No agent read'),transform:()=>Effect.die('No agent mutation'),reload:()=>Effect.die('No agent reload')};
 const create=(policy:(directory:string)=>Effect.Effect<boolean>)=>createControllerProviders({controllerInstanceID:'controller-policy',
  configurationSnapshot:{schema:1,revision:0,sourceStamp:'fixture',digest:'a'.repeat(64),registrationManifestDigest:'b'.repeat(64),locations:[{directory,configuration:{},skills:[],instructions:[],textReferences:[],aliases:[],activePlugins:[],compatibility:{legacy:{},agents:{},commands:{},slim:{},mcp:{}},requiredCatalogs:{agents:[],plugins:[],tools:[],models:[],skills:[],commands:[],mcp:[]}}]},
- origin:{kind:'plugin',id:'devryan.provider-compat',manifestDigest:'b'.repeat(64),capabilities:['provider']},scrubSystem:text=>text,collapseSystemParts,
- integrations:{requiresOpenAiHttp:policy,isOpenAiTokenSharing:()=>Effect.succeed(false),discoverCopilot:()=>Effect.succeed(undefined),readCatalogSelectionOwned:async()=>{throw Error('No catalog read');}},rpc:async()=>{throw Error('No RPC');},isBound:()=>true,isExecutionReady:()=>true});
-const run=<A,E>(effect:Effect.Effect<A,E,Location.Service|Agent.Service|Scope.Scope>)=>Effect.runPromise(Effect.scoped(effect.pipe(Effect.provideService(Location.Service,location),Effect.provideService(Agent.Service,agents))));
+ origin:{kind:'plugin',id:'devryan.provider-compat',manifestDigest:'b'.repeat(64),capabilities:['provider']},
+ integrations:{requiresOpenAiHttp:policy,isOpenAiTokenSharing:()=>Effect.succeed(false),discoverCopilot:()=>Effect.succeed(undefined),readCatalogSelectionOwned:async()=>{throw Error('No catalog read');}},isBound:()=>true,isExecutionReady:()=>true});
+const run=<A,E>(effect:Effect.Effect<A,E,Location.Service|Scope.Scope>)=>Effect.runPromise(Effect.scoped(effect.pipe(Effect.provideService(Location.Service,location))));
 
 test('prepared OpenAI requests follow current SIWC policy for every request kind and retain all other behavior',async()=>{
  let siwc=false,calls=0;

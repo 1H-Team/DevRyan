@@ -456,45 +456,20 @@ test('checkpoint close races an ordinary startup without publishing admission',(
  expect(commands).toEqual(['close-startup']);expect(owner.isReady()).toBe(false);await owner.assertCheckpointAdmissionClosed();await owner.close();
 }));
 
-test('native Claude inspection rechecks original web grant, saved profile configuration and held generation',()=>{
- let change,authorize,profileFile,profile;
- return fixture(async({owner,root})=>{
-  let launch,exited=false;
-  const child={bound:{catalog:{asserted:true}},hasExited:()=>exited,call:async()=>null,close:async()=>{exited=true;await launch.afterExit({});}};
-  transport.create.mockImplementation(async options=>{launch=options;child.instanceID=options.boot.instanceID;child.bound.instanceID=options.boot.instanceID;return child;});
-  await owner.start();
-  expect(await owner.inspectClaude({kind:'status',directory:root})).toMatchObject({loggedIn:true,path:null});
-  expect(authorize).toHaveBeenCalledWith({operation:'provider.configuration',scope:'read',directory:root});
-  change=async()=>{await fs.writeFile(profileFile,JSON.stringify([{...profile,oauthToken:'synthetic-replaced'}]));};
-  await expect(owner.inspectClaude({kind:'status',directory:root})).rejects.toMatchObject({code:'native_provider_configuration_changed'});
-  await fs.writeFile(profileFile,JSON.stringify([profile]));change=async()=>{throw Object.assign(new Error('revoked'),{code:'permission_denied',status:403});};
-  await expect(owner.inspectClaude({kind:'status',directory:root})).rejects.toMatchObject({code:'permission_denied'});
-  change=undefined;await owner.closeAdmissionForCheckpoint();await expect(owner.inspectClaude({kind:'status',directory:root})).rejects.toMatchObject({code:'native_runtime_not_ready'});
-  await owner.close();
- },undefined,async(options,root)=>{
-  const globals=Object.fromEntries(['home','config','data','state','cache','bin','log','repos','tmp'].map(key=>[key,path.join(root,key)]));for(const directory of Object.values(globals))await fs.mkdir(directory);
-  options.bundle.descriptor.launch.global=globals;options.bundle.descriptor.projectMap=[{targetDirectory:root}];
-  options.bundle.reviewedPlugins=[{id:'devryan.provider-compat',manifestDigest:'a'.repeat(64),capabilities:['provider']}];
-  options.bundle.artifacts.reviewedClaude={};options.withCredentialMutationQueue=async action=>action();
-  options.bundle.artifacts.manifest.compiledContracts=['devryan.claude-lifecycle/1'];
-  options.bundle.resolveConfiguration=async()=>({locations:[{directory:root,configuration:{},compatibility:{mcp:{}}}]});
-  await fs.mkdir(path.join(globals.home,'.config/meridian'),{recursive:true});profileFile=path.join(globals.home,'.config/meridian/profiles.json');
-  profile={id:'qa',type:'oauth-token',credentialPolicy:'access-only',oauthToken:'synthetic',oauthTokenExpiresAt:Date.now()+3600000};await fs.writeFile(profileFile,JSON.stringify([profile]));
-  authorize=vi.fn(async()=>async()=>{const action=change;change=undefined;await action?.();});options.authorization.captureWebAuthorization=authorize;
- });
-});
-
-test('missing Claude capability keeps core startup available and refuses before a settings grant',()=>{
- const authorize=vi.fn(async()=>async()=>{});
- return fixture(async({owner,root})=>{
-  let launch,exited=false;const commands=[];
-  const child={bound:{catalog:{asserted:true}},hasExited:()=>exited,call:async input=>{commands.push(input.action);},close:async()=>{exited=true;await launch.afterExit({});}};
-  transport.create.mockImplementation(async options=>{launch=options;return child;});
-  await owner.start();expect(owner.isReady()).toBe(true);expect(commands).toContain('open');
-  await expect(owner.inspectClaude({kind:'status',directory:root})).rejects.toMatchObject({code:'native_claude_update_required'});
-  expect(authorize).not.toHaveBeenCalled();await owner.close();
- },undefined,options=>{options.authorization.captureWebAuthorization=authorize;});
-});
+test('core startup exposes no Meridian Claude inspection or enrollment and reads recorded Claude Code usage',()=>fixture(async({owner,root})=>{
+ let launch,exited=false;const commands=[];
+ const child={bound:{catalog:{asserted:true}},hasExited:()=>exited,call:async input=>{commands.push(input.action);},close:async()=>{exited=true;await launch.afterExit({});}};
+ transport.create.mockImplementation(async options=>{launch=options;return child;});
+ expect(owner).not.toHaveProperty('inspectClaude');expect(owner).not.toHaveProperty('getClaudeEnrollmentOwner');
+ expect(owner.readClaudeAgentUsage()).toBeUndefined();
+ // Usage Claude Code reported in an earlier run is read back before the claude-agent host starts.
+ const usageFile=path.join(root,'runtime','claude-agent-usage.json');await fs.mkdir(path.dirname(usageFile),{recursive:true});
+ await fs.writeFile(usageFile,JSON.stringify({version:1,windows:{five_hour:{utilization:0.5,resetsAt:1790000000}},updatedAt:1}));
+ expect(owner.readClaudeAgentUsage()).toMatchObject({version:1,windows:{five_hour:{utilization:0.5}}});
+ await fs.writeFile(usageFile,JSON.stringify({version:2,windows:{}}));expect(owner.readClaudeAgentUsage()).toBeUndefined();
+ await owner.start();expect(owner.isReady()).toBe(true);expect(commands).toContain('open');
+ await owner.close();
+}));
 
 test('normal close retains the physical controller until the credential queue has drained',()=>{
  let release,entered;const blocked=new Promise(resolve=>{release=resolve;}),draining=new Promise(resolve=>{entered=resolve;});const order=[];

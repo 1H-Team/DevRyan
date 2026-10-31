@@ -7,8 +7,5 @@
     "general": {
       "disable": true
     }
-  },
-  "plugin": [
-    "./node_modules/opencode-with-claude/dist/index.js"
-  ]
+  }
 }

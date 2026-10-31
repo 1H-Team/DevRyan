@@ -17,16 +17,20 @@ describe('DevRyan default plugin catalog', () => {
       entries: [
         { spec: './plugins/devryan-oh-my-opencode-slim.mjs', sourcePath: '/tmp/opencode.json' },
         { spec: 'oh-my-opencode-slim@2.2.25', sourcePath: '/tmp/opencode.json' },
+        { spec: './node_modules/opencode-with-claude/dist/index.js', sourcePath: '/tmp/opencode.json' },
+        { spec: './plugins/devryan-claude-transport.mjs', sourcePath: '/tmp/opencode.json' },
         { spec: 'user-plugin@1.0.0', sourcePath: '/tmp/opencode.json' },
       ],
       files: [
         { fileName: 'devryan-oh-my-opencode-slim.mjs', absolutePath: '/tmp/plugins/devryan-oh-my-opencode-slim.mjs' },
+        { fileName: 'devryan-claude-transport.mjs', absolutePath: '/tmp/plugins/devryan-claude-transport.mjs' },
         { fileName: 'local.mjs', absolutePath: '/tmp/plugins/local.mjs' },
       ],
     });
     expect(inventory.entries.map((entry) => entry.spec)).toEqual(['user-plugin@1.0.0']);
     expect(inventory.files.map((file) => file.fileName)).toEqual(['local.mjs']);
     expect(inventory.defaults.some((plugin) => plugin.pluginId === 'oh-my-opencode-slim')).toBe(false);
+    expect(inventory.defaults.some((plugin) => plugin.pluginId === 'opencode-with-claude')).toBe(false);
   });
 
   it('exposes every public managed plugin with local-only registrations', () => {
@@ -40,12 +44,6 @@ describe('DevRyan default plugin catalog', () => {
         pluginId: '@rama_nigg/open-cursor',
         shippedSpec: './plugins/devryan-open-cursor.mjs',
         version: '2.5.17',
-        delivery: 'installed-local',
-      },
-      {
-        pluginId: 'opencode-with-claude',
-        shippedSpec: './node_modules/opencode-with-claude/dist/index.js',
-        version: '1.11.2',
         delivery: 'installed-local',
       },
       {
@@ -77,7 +75,8 @@ describe('DevRyan default plugin catalog', () => {
 
   it('classifies default registrations and files without exposing internal helpers', () => {
     expect(getDevRyanDefaultPluginIdForSpec('./plugins/devryan-oh-my-opencode-slim.mjs')).toBeNull();
-    expect(getDevRyanDefaultPluginIdForSpec('opencode-with-claude@1.6.17')).toBe('opencode-with-claude');
+    expect(getDevRyanDefaultPluginIdForSpec('opencode-with-claude@1.6.17')).toBeNull();
+    expect(getDevRyanDefaultPluginIdForSpec('./node_modules/opencode-with-claude/dist/index.js')).toBeNull();
     expect(getDevRyanDefaultPluginIdForSpec('opencode-gpt-imagegen@0.1.10')).toBe('opencode-gpt-imagegen');
     expect(getDevRyanDefaultPluginIdForSpec('context-mode@1.0.169')).toBeNull();
     expect(getDevRyanDefaultPluginIdForSpec('./plugins/devryan-superpowers.mjs')).toBeNull();
@@ -107,10 +106,9 @@ describe('DevRyan default plugin catalog', () => {
       effectiveSpec: './plugins/devryan-open-cursor.mjs',
       configuredSourcePath: '/tmp/project/opencode.json',
     });
-    expect(inventory.defaults.find((plugin) => plugin.pluginId === 'opencode-with-claude')).toMatchObject({
-      effectiveSpec: 'opencode-with-claude@1.6.17',
-      configuredSourcePath: '/tmp/opencode.json',
-    });
+    // A user pin of the retired Claude plugin is the user's own entry, not a DevRyan default.
+    expect(inventory.defaults.some((plugin) => plugin.pluginId === 'opencode-with-claude')).toBe(false);
+    expect(inventory.entries.map((entry) => entry.spec)).toContain('opencode-with-claude@1.6.17');
     expect(inventory.defaults.find((plugin) => plugin.pluginId === 'opencode-gpt-imagegen')).toMatchObject({
       effectiveSpec: 'opencode-gpt-imagegen@0.1.10',
       configuredSourcePath: '/tmp/imagegen.json',

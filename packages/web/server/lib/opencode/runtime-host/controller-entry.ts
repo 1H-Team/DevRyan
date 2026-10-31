@@ -2,7 +2,6 @@ import {verifyNativeBootMigration} from './native-boot-migration.js';
 import fs from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { parseNativeAssetRequest,parseNativeBoot,parseNativeCommand,parseNativeMigrationRequest,encodeNativeProcessMessage,NATIVE_PROCESS_LIMITS } from './native-process-protocol.js';
-import {parseProviderBoot,parseProviderCommand} from './native-provider-worker-protocol.js';
 import { createNativeCommandDispatcher } from './controller-dispatch.js';
 import type { RegistrationOrigin } from './registration-origin.js';
 import type { NativeBundleCredentialBoot } from './native-bundle-credential-contract.js';
@@ -57,32 +56,6 @@ try {
     const reply=JSON.stringify({...credentialIdentity,ok:true,result})+'\n';
     if(Buffer.byteLength(reply)>NATIVE_BUNDLE_CREDENTIAL_BYTES)throw new Error('bundle_credential_output_bound');
     process.stdout.write(reply);
-  } else if(args[0]==='--provider-worker'&&args.length===3&&args[1]==='--native-instance'&&/^[a-f0-9-]{32,64}$/i.test(args[2]??'')) {
-    const request=parseProviderBoot(first.value);
-    if(request.instanceID!==args[2]||request.buildId!==DEVRYAN_NATIVE_BUILD_ID)throw new Error('native_provider_identity_mismatch');
-    const {startNativeMeridianWorker,createProviderCredentialChannel}=await import('./native-meridian-worker.js');
-    const {createClaudeTransportChannel}=await import('./native-claude-transport-channel.js');
-    const credentials=createProviderCredentialChannel(write);
-    const transport=createClaudeTransportChannel(write);
-    close=async()=>{credentials.close();await transport.close();};
-    const host=await startNativeMeridianWorker(request,{buildId:DEVRYAN_NATIVE_BUILD_ID,startup:()=>import('devryan:reviewed-claude-startup'),resolveCredential:input=>credentials.request(input),onDiagnostic:write,transport});
-    let commands=Promise.resolve(),queued=0;
-    close=async()=>{credentials.close();await transport.close();await host.close();await commands;};write(host.bound);
-    for await(const value of lines){
-      if(value&&typeof value==='object'&&'type'in value&&value.type==='claude-transport-reply'){transport.accept(value);continue;}
-      const command=parseProviderCommand(value);
-      if(command.action==='credential-reply'){credentials.accept(command);continue;}
-      if(command.action==='close')credentials.close();
-      if(queued>=NATIVE_PROCESS_LIMITS.inFlight)throw new Error('native_provider_command_limit');
-      queued++;
-      // Consume credential replies while a lifecycle command is awaiting work.
-      commands=commands.then(async()=>{
-        try{write({protocol:1,id:command.id,ok:true,result:await host.command(command)});}
-        catch(error){const code=error&&typeof error==='object'&&'code' in error&&typeof error.code==='string'&&/^[a-z][a-z0-9_]{0,95}$/.test(error.code)?error.code:'native_provider_command_failed';write({protocol:1,id:command.id,ok:false,error:{code,status:503,message:code}});}
-        finally{queued--;}
-      });
-    }
-    await close();
   } else {
     if(args.length!==3 || args[0]!=='serve' || args[1]!=='--native-instance' || !/^[a-f0-9-]{32,64}$/i.test(args[2]??'')) throw new Error('native_args_invalid');
     const boot=parseNativeBoot(first.value);

@@ -9,10 +9,11 @@ Personal models, variants, prompts, permissions and MCP choices remain user-owne
 - The managed plugin registry is [managed-plugins.js](../packages/web/server/lib/opencode/managed-plugins.js).
   Keep it consistent with the sanitized profile manifest, installed entrypoints
   and package tests.
-- [Claude runtime compatibility](../packages/web/server/lib/opencode/claude-runtime-compatibility.js)
-  owns the selected Claude proxy/Meridian/Agent SDK/Claude Code tuple and provenance.
-  Update those four components together after acceptance. An exact source patch
-  being available does not mean its runtime tuple has passed acceptance.
+- Claude is not a managed plugin. OpenCode's built-in `claude-agent` provider runs
+  the user's own Claude Code through `@anthropic-ai/claude-agent-sdk`, pinned to
+  the exact peer version `@opencode/core` declares; it moves with OpenCode host
+  upgrades ([OpenCode upgrade runbook](OPENCODE_UPGRADES.md)). The former
+  `opencode-with-claude`/Meridian plugin specs are retired in the registry.
 - The agent orchestration derived from Oh My OpenCode Slim is not a plugin: it
   is DevRyan-owned source in [packages/agents-core](../packages/agents-core/DOCUMENTATION.md),
   built into the native runtime. Port upstream fixes with the section below,
@@ -49,18 +50,16 @@ replacement, automatic model inheritance, new agents or higher concurrency.
 
 Provisioning preserves a modified managed file or a differing file with no prior
 tracking marker. Matching files can be tracked; unknown files are not silently
-claimed. Explicit Claude dependency/override pins remain user-managed. Managed
-package pins for other bundled plugins follow the reviewed registry; reconcile
+claimed. Provisioning drops the retired Claude proxy dependencies and the Claude
+overrides only at the exact versions DevRyan pinned. Managed package pins for other bundled plugins follow the reviewed registry; reconcile
 any intentional package fork before upgrading, rather than treating it as an
 ordinary preset customization.
 
 Agent/preset conflicts remain preserved and reported. Repeated provisioning must
 be idempotent.
 
-For Meridian, use exact version, entrypoint and original SHA-256 gates in
-[the hotfix installer](../packages/web/server/lib/opencode/meridian-http-hotfix.js).
-Keep unknown or partially patched input rejected. Preserve upstream session
-publication/recovery protections when porting a patch. Install helpers before
+For a source-patched plugin, use exact version, entrypoint and original SHA-256
+gates. Keep unknown or partially patched input rejected. Install helpers before
 atomically replacing the entrypoint. Remove a patch only after the unpatched
 candidate passes the behavior it protected.
 
@@ -68,7 +67,7 @@ candidate passes the behavior it protected.
 
 Run focused owning-package tests from that package with its documented runner.
 The web suite uses Vitest; invoking its files through `bun test` is not equivalent.
-Cover modified and untracked presets, JSONC precedence, custom prompts, explicit
+Cover modified and untracked presets, JSONC precedence, custom prompts, retired
 Claude overrides, stale installed packages, partial install failure, adapter
 conflicts, repeated provisioning and rollback.
 
@@ -83,43 +82,6 @@ Check actual provider streaming and
 tool contracts separately; an import check does not establish authenticated
 Cursor execution or image model availability.
 
-For Claude, run [the real-binary prefix probe](../scripts/qa/meridian-prefix.mjs)
-in streaming and non-streaming modes. Use `--arm candidate` for **both corrected
-versions**, putting their output in separate directories. The old `control` arm
-intentionally removes the September 7 correction and must not be used as the
-upgrade baseline.
-
-```bash
-bun scripts/qa/meridian-prefix.mjs --modules /absolute/private/node_modules --claude /absolute/private/claude --arm candidate --steps 6 --parallel 2 --stream true --output /absolute/repo/.cache/prefix-new
-```
-
-Require stable system/tool prefixes and historical messages, retained actual
-client tool results, zero hidden inference, ordinary warm continuation, verified
-checkpoint lineage and cancellation rejection. Include Git edits and parallel
-tools. Synthetic token values cannot establish real cache or quota performance.
-Do not disable process-identity or lock checks to accommodate a restricted host.
-Linux evidence is supplemental to unavailable macOS/native acceptance.
-
-Only after those checks pass, use the existing isolated quota-study tools. For an upgrade
-comparison adapt their version-specific preparation and entrypoints, retaining
-the corrected baseline patch. Keep the same model, effort, prompt mode and
-authored editing workload across arms. Require independently verified completed
-work and fresh post-work quota readings; alternate arm order and seek three
-accepted pairs. Do not compare different completion outcomes as equal-work cost.
-
-For the September 8 upgrade the authorized ceiling is **10 percentage points** of
-the five-hour window, including failures/retests, with **4 points reserved** before
-admitting work. It is not a fresh allowance per process, arm, or quota reset.
-Stop on stale evidence, resets, interference, functional regression or exhausted
-headroom. Delayed quota reporting prevents an exact spending guarantee. Future
-upgrade runs require their own budget authorization.
-
-Cache acceptance defaults: candidate median cache-read fraction may decline by
-at most **2 percentage points**; median cache-write tokens per completed brief may
-increase by at most **10%**. Record prefix size, request count, uncached input,
-latency and quota separately. Below-resolution quota deltas do not prove parity.
-Incomplete acceptance means **held**, not validated.
-
 Complete `bun run validate:full`, `bun run build` and `bun run bundle:check`.
 The full gate includes documentation checks. Add isolated web/Electron
 verification when applicable; distinguish unavailable prerequisites from
@@ -127,13 +89,12 @@ failed behavior. Never weaken assertions to obtain a passing report.
 
 ## Promotion and rollback
 
-Promote independent accepted plugins separately. Promote Claude/Meridian only as
-one accepted tuple. Preserve the running app during tests; activate through the
+Promote independent accepted plugins separately. Preserve the running app during tests; activate through the
 normal reviewed installation at the next OpenCode run. A restart is needed for
 an already running process to load the new packages.
 
-Rollback restores the previous exact package tuple, native binary and **corrected**
-Meridian patch, plus only provisioning metadata changed by this upgrade. Preserve
+Rollback restores the previous exact package tuple and any source patch, plus only
+provisioning metadata changed by this upgrade. Preserve
 newer user-owned edits and never rewrite native session transcripts. Rehearse in
 a disposable profile first. Merely reverting the package version or installing an
 older DevRyan release does not reverse an unknown installed source patch safely.

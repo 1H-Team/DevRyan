@@ -334,27 +334,10 @@ and published project file survived. `archived-removal-passed` qualifies this
 lane only; it does not stand in for full package qualification. Inherited bundle
 ownership and invalid checkpoint proofs are covered by the removal owner tests.
 
-## Reviewed Claude upgrade qualification
+## Claude through claude-agent
 
-The held reviewed capture now targets plugin 1.11.2/Meridian 1.79.0 with SDK
-0.2.141 and the already selected Claude Code 2.1.302. Focused Node suites cover
-exact source/hash gates, startup/health cancellation, profile-loader parity,
-selected-account renewal and retained checkpoint retry. Bun asset tests cover
-the captured closure and resolution graph. Transport gate tests must prove
-executor attachment precedes SDK input and confirmed termination precedes
-transcript lease release. A raw managed package inside the execution boundary
-must refuse instead of invoking upstream's ambient Node process wrapper.
-Historical 1.8.0/1.62.6 inputs remain available for corrected-baseline probes;
-use the candidate arm for both tuples and preserve strict prefix/history gates.
-These fixtures establish no live provider, cache or quota acceptance.
-
-The exact-source owner test runs with all OS identity probes denied: only the
-host-attested current worker can acquire its own incarnation, and missing,
-malformed or mismatched PID proofs refuse. Foreign identities remain
-indeterminate. Native lifecycle GC cannot launch the upstream Node deletion
-helper; it retains pending state with an explicit supervision-required refusal.
-
-
-## Compiled Claude execution gate
-
-`node scripts/opencode-v2-native/compiled-claude-execution.mjs --artifact-root <absolute-private-artifacts>` qualifies the actual compiled provider worker, transformed Meridian, Agent SDK and native Claude executable against a credential-free loopback Anthropic fixture. It requires the final assistant response, then holds an actual model response open, observes an armed nonrecoverable transcript writer lease, cancels, and requires zero active leases and native transport retirement after verified termination receipts. The fixture also answers Claude's observed bounded `HEAD /api/hello` metadata handshake. No account, Keychain or live provider is read. Private scratch is deleted on completion/failure unless explicitly retained with `--keep-artifacts`; `compiled-claude-execution.test.mjs` tests fixture packet and lifecycle inspection contracts. This lane complements the credential bridge, which refuses before SDK acquisition and cannot prove these process-gate paths.
+OpenCode's `claude-agent` builtin is reviewed and runs over host-relayed IO
+(`runtime-host/claude-agent-*`). Its unit tests cover the tool-less argument
+allowlist, environment, rate-limit usage reduction and the full controller-channel
+to host relay. Live acceptance needs the user's own Claude Code login; see
+`runtime-host/DOCUMENTATION.md` ("Claude Code through claude-agent").

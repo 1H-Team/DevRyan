@@ -9,7 +9,6 @@ import {
   isLikelyCertificateVerificationFailure,
   stripWrappedJsonQuotes,
 } from "@/lib/messages/transientStreamError"
-import { isClaudeThirdPartyUsageClassificationError } from "@/lib/messages/claudeThirdPartyUsage"
 import { decodeAssistantMessageError } from "@/lib/decoders/assistantMessageError"
 import type { AbortSource } from "@/sync/abort-source"
 import { describeExecutionRecoveryFailure } from "@/lib/executionFailure"
@@ -150,14 +149,6 @@ export function classifyAssistantError(
     }
   }
 
-  if (isClaudeThirdPartyUsageClassificationError(detail)) {
-    return {
-      text: "Anthropic classified this DevRyan turn as third-party usage. Your Claude subscription quota may still be available. Use Model Recovery to enable Claude compatibility mode and retry explicitly.",
-      variant: "error",
-      retryable: true,
-    }
-  }
-
   // Checked before the broader auth-failure heuristic, which would otherwise swallow this into
   // vaguer copy. Keep the provider's own wording — it is the only thing naming which credential died.
   if (isLikelyProviderTokenExpired(detail)) {
@@ -251,7 +242,7 @@ export function classifyAssistantError(
       }
     }
     return {
-      text: `${transportFailureKind === "stream_idle_timeout" && options.providerID === "anthropic" ? "Claude stopped sending data before this turn finished." : getTransportFailureCopy(transportFailureKind)} Any completed work was preserved in this session.\n\`${detail}\``,
+      text: `${transportFailureKind === "stream_idle_timeout" && options.providerID === "claude-agent" ? "Claude stopped sending data before this turn finished." : getTransportFailureCopy(transportFailureKind)} Any completed work was preserved in this session.\n\`${detail}\``,
       variant: "error",
       retryable: true,
     }

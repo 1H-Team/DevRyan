@@ -18,28 +18,23 @@ import {
   reconcileDevRyanManagedPluginSpecs,
   removeDevRyanManagedLegacyPluginSpecs,
 } from './managed-plugins.js';
-import { applyManagedMeridianSdkFeaturePolicy } from './meridian-sdk-features.js';
-import { applyMeridianHttpHotfix } from './meridian-http-hotfix.js';
 import { applyImagegenModelHotfix } from './imagegen-model-hotfix.js';
 import { migrateDevRyanSidecarDirectory } from './devryan-sidecar.js';
-import {
-  CLAUDE_RUNTIME_MANAGED_OVERRIDES,
-  CLAUDE_RUNTIME_SELECTION,
-  COMPATIBILITY_MARKER_RELATIVE_PATH,
-  buildClaudeRuntimeCompatibilityMarker,
-  inspectClaudeRuntimeCompatibility,
-  mergeManagedClaudeRuntimeDependencies,
-  mergeManagedClaudeRuntimeOverrides,
-  readClaudeRuntimeCompatibilityMarker,
-} from './claude-runtime-compatibility.js';
 
 const DEFAULT_CONFIG_ROOT = path.resolve(process.cwd(), 'server', 'default-config');
 const DEFAULT_PROFILE_ROOT = path.join(DEFAULT_CONFIG_ROOT, 'user-profile');
 const MANIFEST_RELATIVE_PATH = path.join('.devryan', 'user-profile-manifest.json');
-const MERIDIAN_POLICY_MARKER_RELATIVE_PATH = path.join(
-  '.devryan',
-  'meridian-sdk-features-policy.json',
-);
+// Markers DevRyan wrote for the retired Meridian Claude runtime (removed 2026-10).
+const RETIRED_CLAUDE_MARKER_RELATIVE_PATHS = Object.freeze([
+  path.join('.devryan', 'meridian-sdk-features-policy.json'),
+  path.join('.devryan', 'claude-runtime-compatibility.json'),
+]);
+// Overrides DevRyan pinned for that runtime, at the exact versions it pinned;
+// a user-owned override at any other version is left alone.
+const RETIRED_CLAUDE_PROFILE_OVERRIDES = Object.freeze({
+  '@anthropic-ai/claude-agent-sdk': Object.freeze(['0.2.140', '0.2.141']),
+  '@anthropic-ai/claude-code': Object.freeze(['2.1.215', '2.1.251', '2.1.280', '2.1.302']),
+});
 
 const isRecord = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 const hashContent = (content) => crypto.createHash('sha256').update(content).digest('hex');
@@ -83,43 +78,31 @@ const removeRetiredProfileDependencies = (dependencies) => {
   return retained;
 };
 
-const mergePackageJson = (
-  rawCurrent,
-  baseline,
-  previousClaudeRuntimeMarker,
-  { assumePreviouslyManaged = false } = {},
-) => {
-  const current = isRecord(rawCurrent.dependencies)
-    ? { ...rawCurrent, dependencies: removeRetiredProfileDependencies(rawCurrent.dependencies) }
-    : rawCurrent;
+const removeRetiredProfileOverrides = (overrides) => {
+  if (!isRecord(overrides)) return overrides;
+  const retained = { ...overrides };
+  for (const [packageName, versions] of Object.entries(RETIRED_CLAUDE_PROFILE_OVERRIDES)) {
+    if (versions.includes(retained[packageName])) delete retained[packageName];
+  }
+  return Object.keys(retained).length ? retained : undefined;
+};
+
+const mergePackageJson = (rawCurrent, baseline) => {
+  const current = { ...rawCurrent };
+  if (isRecord(current.dependencies)) current.dependencies = removeRetiredProfileDependencies(current.dependencies);
+  if ('overrides' in current) {
+    const overrides = removeRetiredProfileOverrides(current.overrides);
+    if (overrides === undefined) delete current.overrides;
+    else current.overrides = overrides;
+  }
   const currentDependencies = isRecord(current.dependencies) ? current.dependencies : {};
-  const baselineDependencies = {
-    ...currentDependencies,
-    ...(isRecord(baseline.dependencies) ? baseline.dependencies : {}),
-    ...DEVRYAN_MANAGED_PROFILE_DEPENDENCIES,
-  };
-  const claudeRuntimeDependencies = mergeManagedClaudeRuntimeDependencies(
-    current,
-    { ...baseline, dependencies: baselineDependencies },
-    previousClaudeRuntimeMarker,
-    { assumePreviouslyManaged },
-  );
-  const claudeRuntimeOverrides = mergeManagedClaudeRuntimeOverrides(
-    current,
-    baseline,
-    previousClaudeRuntimeMarker,
-    { assumePreviouslyManaged },
-  );
   return {
-    packageJson: {
-      ...baseline,
-      ...current,
-      dependencies: claudeRuntimeDependencies.dependencies,
-      overrides: claudeRuntimeOverrides.overrides,
-    },
-    claudeRuntimeSources: {
-      ...claudeRuntimeDependencies.sources,
-      ...claudeRuntimeOverrides.sources,
+    ...baseline,
+    ...current,
+    dependencies: {
+      ...currentDependencies,
+      ...(isRecord(baseline.dependencies) ? baseline.dependencies : {}),
+      ...DEVRYAN_MANAGED_PROFILE_DEPENDENCIES,
     },
   };
 };
@@ -166,17 +149,10 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
   const runCommand = dependencies.runCommand || runCommandDefault;
   const inspectManagedPluginInstallation = dependencies.inspectManagedPluginInstallation
     || inspectDevRyanManagedPluginInstallation;
-  const applyMeridianHttpHotfixFn = dependencies.applyMeridianHttpHotfix || applyMeridianHttpHotfix;
   const applyImagegenModelHotfixFn = dependencies.applyImagegenModelHotfix || applyImagegenModelHotfix;
   const profileRoot = dependencies.profileRoot || DEFAULT_PROFILE_ROOT;
   const configRoot = dependencies.configRoot || DEFAULT_CONFIG_ROOT;
   const configDirectory = dependencies.configDirectory || pathApi.join(homedir(), '.config', 'opencode');
-  const meridianConfigDirectory = dependencies.meridianConfigDirectory
-    || pathApi.join(homedir(), '.config', 'meridian');
-  const meridianSettingsPath = dependencies.meridianSettingsPath
-    || pathApi.join(meridianConfigDirectory, 'sdk-features.json');
-  const meridianPolicyMarkerPath = dependencies.meridianPolicyMarkerPath
-    || pathApi.join(configDirectory, MERIDIAN_POLICY_MARKER_RELATIVE_PATH);
 
   const provision = async () => {
     migrateDevRyanSidecarDirectory(configDirectory);
@@ -194,9 +170,6 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
       install: null,
       installDegraded: false,
       warnings: [],
-      meridianPolicy: null,
-      meridianHttpHotfix: null,
-      claudeRuntime: null,
       managedPluginIssues: [],
       profileNotices: [],
     };
@@ -220,24 +193,17 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
       result.warnings.push(`${cursorRetirement.error} (${cursorRetirement.conflicts.join(', ') || 'no conflicting path'})`);
     }
 
-    const meridianPolicy = applyManagedMeridianSdkFeaturePolicy({
-      fs: fsApi,
-      path: pathApi,
-      settingsPath: meridianSettingsPath,
-      markerPath: meridianPolicyMarkerPath,
-    });
-    result.meridianPolicy = meridianPolicy;
-    if (!meridianPolicy.ok) {
-      result.ok = false;
-      result.error = meridianPolicy.error;
-      return result;
-    }
-    result.changed ||= meridianPolicy.changed;
-    if (meridianPolicy.warning) {
-      result.warnings.push(meridianPolicy.warning);
-    }
-
     fsApi.mkdirSync(configDirectory, { recursive: true });
+    for (const relativePath of RETIRED_CLAUDE_MARKER_RELATIVE_PATHS) {
+      const markerPath = pathApi.join(configDirectory, relativePath);
+      try {
+        fsApi.unlinkSync(markerPath);
+        result.changed = true;
+        result.removed.push(markerPath);
+      } catch (error) {
+        if (error?.code !== 'ENOENT') result.warnings.push(`Could not remove retired Claude marker ${markerPath}`);
+      }
+    }
 
     const syncContent = (relativePath, desiredContent, { mergeSafe = false } = {}) => {
       const targetPath = pathApi.join(configDirectory, relativePath);
@@ -321,24 +287,7 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
     const packagePath = pathApi.join(configDirectory, 'package.json');
     const baselinePackage = readJson(fsApi, pathApi.join(profileRoot, 'package.json'));
     const currentPackage = readJson(fsApi, packagePath);
-    const previousClaudeRuntimeMarker = readClaudeRuntimeCompatibilityMarker(configDirectory, {
-      fs: fsApi,
-      path: pathApi,
-    });
-    let packageOwnedByManifest = false;
-    try {
-      const currentPackageContent = fsApi.readFileSync(packagePath, 'utf8');
-      packageOwnedByManifest = previousFiles['package.json']?.hash === hashContent(currentPackageContent);
-    } catch {
-      packageOwnedByManifest = false;
-    }
-    const packageMerge = mergePackageJson(
-      currentPackage,
-      baselinePackage,
-      previousClaudeRuntimeMarker,
-      { assumePreviouslyManaged: packageOwnedByManifest },
-    );
-    const desiredPackage = packageMerge.packageJson;
+    const desiredPackage = mergePackageJson(currentPackage, baselinePackage);
     const dependenciesChanged = JSON.stringify(currentPackage.dependencies || {}) !== JSON.stringify(desiredPackage.dependencies || {});
     const overridesChanged = JSON.stringify(currentPackage.overrides || {}) !== JSON.stringify(desiredPackage.overrides || {});
     // A personal legacy agent config becomes the new-name file first, so the
@@ -437,10 +386,7 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
     }
 
     const dependencyNames = Object.keys(desiredPackage.dependencies || {});
-    const missingDependency = [
-      ...dependencyNames,
-      ...Object.keys(CLAUDE_RUNTIME_MANAGED_OVERRIDES),
-    ].some((name) => (
+    const missingDependency = dependencyNames.some((name) => (
       !fsApi.existsSync(pathApi.join(configDirectory, 'node_modules', ...name.split('/')))
     ));
     const managedPluginIssuesBeforeInstall = inspectManagedPluginInstallation({
@@ -448,29 +394,16 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
       fs: fsApi,
       path: pathApi,
     });
-    const claudeRuntimeBeforeInstall = inspectClaudeRuntimeCompatibility({
-      configDirectory,
-      packageJson: desiredPackage,
-      marker: previousClaudeRuntimeMarker,
-      sources: packageMerge.claudeRuntimeSources,
-      fs: fsApi,
-      path: pathApi,
-    });
-    const claudeRuntimeNeedsInstall = claudeRuntimeBeforeInstall.runtimeStatus !== 'ready';
     if (
       dependenciesChanged
       || overridesChanged
       || missingDependency
       || managedPluginIssuesBeforeInstall.length > 0
-      || claudeRuntimeNeedsInstall
     ) {
       result.install = await runCommand('bun', ['install', '--ignore-scripts'], { cwd: configDirectory, env: process.env });
       if (!result.install.ok) {
         const installFailure = `Failed to install OpenCode user plugins: ${result.install.stderr || `exit ${result.install.exitCode}`}`;
-        const dependencyStillMissing = [
-          ...dependencyNames,
-          ...Object.keys(CLAUDE_RUNTIME_MANAGED_OVERRIDES),
-        ].some((name) => (
+        const dependencyStillMissing = dependencyNames.some((name) => (
           !fsApi.existsSync(pathApi.join(configDirectory, 'node_modules', ...name.split('/')))
         ));
         if (dependencyStillMissing) {
@@ -507,67 +440,10 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
       } else if (result.imagegenModelHotfix.changed) result.changed = true;
     }
 
-    result.claudeRuntime = inspectClaudeRuntimeCompatibility({
-      configDirectory,
-      packageJson: desiredPackage,
-      marker: previousClaudeRuntimeMarker,
-      sources: packageMerge.claudeRuntimeSources,
-      fs: fsApi,
-      path: pathApi,
-    });
-    if (result.ok && result.claudeRuntime.source === 'managed' && result.claudeRuntime.runtimeStatus === 'ready') {
-      result.meridianHttpHotfix = applyMeridianHttpHotfixFn({ configDirectory, fs: fsApi });
-      if (!result.meridianHttpHotfix.ok) {
-        result.ok = false;
-        result.error = `${result.meridianHttpHotfix.code}: ${result.meridianHttpHotfix.error}`;
-      } else if (result.meridianHttpHotfix.changed) result.changed = true;
-    }
-    if (
-      result.ok
-      && !result.installDegraded
-      && result.claudeRuntime.source === 'managed'
-      && result.claudeRuntime.runtimeStatus !== 'ready'
-    ) {
-      result.ok = false;
-      result.error = `Managed Claude runtime installation remained ${result.claudeRuntime.runtimeStatus} after provisioning`;
-    }
-    const compatibilityMarkerPath = pathApi.join(
-      configDirectory,
-      COMPATIBILITY_MARKER_RELATIVE_PATH,
-    );
-    const compatibilityMarkerContent = `${JSON.stringify(buildClaudeRuntimeCompatibilityMarker({
-      sources: packageMerge.claudeRuntimeSources,
-      runtime: result.claudeRuntime,
-    }), null, 2)}\n`;
-    let previousCompatibilityMarkerContent = null;
-    try {
-      previousCompatibilityMarkerContent = fsApi.readFileSync(compatibilityMarkerPath, 'utf8');
-    } catch {
-      previousCompatibilityMarkerContent = null;
-    }
-    if (previousCompatibilityMarkerContent !== compatibilityMarkerContent) {
-      fsApi.mkdirSync(pathApi.dirname(compatibilityMarkerPath), { recursive: true });
-      fsApi.writeFileSync(compatibilityMarkerPath, compatibilityMarkerContent, 'utf8');
-      result.changed = true;
-      (previousCompatibilityMarkerContent === null ? result.written : result.updated)
-        .push(compatibilityMarkerPath);
-    }
-    if (result.claudeRuntime.runtimeStatus !== 'ready') {
-      result.warnings.push(
-        `Claude runtime compatibility is ${result.claudeRuntime.runtimeStatus}; `
-        + 'run user-profile provisioning again after repairing the managed packages.',
-      );
-    } else if (result.claudeRuntime.compatibilityStatus === 'upstream_blocked') {
-      result.warnings.push(
-        `Claude Code ${CLAUDE_RUNTIME_SELECTION.versions.claudeCode} is selected for Meridian compatibility; `
-        + 'the broader cross-provider context target remains upstream-blocked.',
-      );
-    }
-
     return result;
   };
 
-  return { provision, configDirectory, meridianConfigDirectory };
+  return { provision, configDirectory };
 };
 
 export { DEFAULT_PROFILE_ROOT };

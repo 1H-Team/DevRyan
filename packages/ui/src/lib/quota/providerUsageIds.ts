@@ -8,9 +8,10 @@ import { QUOTA_PROVIDER_MAP, type QuotaProviderMeta } from './providers';
  * auth-key aliases (packages/web/server/lib/quota/providers/).
  */
 const CATALOG_TO_QUOTA_PROVIDER_ID: Readonly<Record<string, QuotaProviderId>> = {
-  anthropic: 'claude',
-  'anthropic-oauth': 'claude',
-  'opencode-with-claude': 'claude',
+  anthropic: 'claude-agent',
+  claude: 'claude-agent',
+  'anthropic-oauth': 'claude-agent',
+  'opencode-with-claude': 'claude-agent',
   openai: 'codex',
   chatgpt: 'codex',
   cursor: 'cursor-acp',

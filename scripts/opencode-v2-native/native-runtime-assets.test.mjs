@@ -65,7 +65,7 @@ test('reviewed original closure and exact constructor transforms are inventoried
  const manifest=JSON.parse(await fs.readFile(path.join(root,'manifest.json'),'utf8'));
  for(const input of manifest.inputs)for(const file of input.files)assert.equal(reviewed.inputFiles.get(path.join(root,input.id,file.path)),file.sha256);
  // Ponytail was removed: no captured input, linked file, transform or virtual module remains.
- assert.deepEqual(manifest.inputs.map(input=>input.id).sort(),['ast-grep-0.45.3','claude-1.11.2','imagegen-0.1.12','jsdom-30.1.1']);
+ assert.deepEqual(manifest.inputs.map(input=>input.id).sort(),['ast-grep-0.45.3','imagegen-0.1.12','jsdom-30.1.1']);
  assert.equal(Object.hasOwn(manifest.runtimeDisposition,'Ponytail'),false);
  assert.equal([...reviewed.inputFiles.keys()].some(file=>file.startsWith(path.join(root,'ponytail-'))),false);
  assert.equal([...reviewed.virtualModules.keys(),...reviewed.transforms.map(item=>String(item.path))].some(id=>/ponytail/i.test(id)),false);
@@ -74,20 +74,13 @@ test('reviewed original closure and exact constructor transforms are inventoried
  assert.equal(manifest.inputs.some(input=>input.id.startsWith('slim-')),false);
  assert.equal([...reviewed.inputFiles.keys(),...reviewed.rewrites.keys()].some(file=>file.startsWith(path.join(root,'slim-'))),false);
  assert.equal(reviewed.transforms.some(item=>item.reason==='reviewed-slim-owned-constructor-seams'),false);
- assert.equal(reviewed.claudeCredentials.path,'DevRyan-Claude-credentials.mjs');
- assert.equal(reviewed.claudeCredentials.sha256,hash(reviewed.claudeCredentials.contents));
- assert.equal(reviewed.claudeCredentials.mode,0o644);
- const checkpointOwner=path.join(repository,'packages/web/server/lib/opencode/meridian-passthrough-handoff.js');
- const checkpointCaptured=path.join(root,'claude-1.11.2/node_modules/@rynfar/meridian/dist/devryan-meridian-passthrough-handoff.js');
- const checkpointContents=await fs.readFile(checkpointOwner,'utf8');
- assert.equal(reviewed.rewrites.get(checkpointCaptured),checkpointContents);
- assert.equal(reviewed.inputFiles.get(checkpointOwner),hash(checkpointContents));
- assert.ok(reviewed.transforms.some(row=>row.path===path.relative(repository,checkpointCaptured)&&row.reason==='canonical-transport-owned-checkpoint-verification'));
- const meridian=reviewed.rewrites.get(path.join(root,'claude-1.11.2/node_modules/@rynfar/meridian/dist/cli-ykdmqmn4.js'));
- assert.match(meridian,/__DEVRYAN_CLAUDE_CHECKPOINT_DIAGNOSTIC/);
- assert.match(meridian,/passthrough\.checkpoint_replay/);
- assert.match(meridian,/retryStalledCheckpoint\(\(\) => runSdkQueryAttempt\(/);
- assert.match(reviewed.claudeCredentials.contents,/export \{createPlatformCredentialStore, ensureFreshToken, refreshOAuthToken\};/);
+ // The Claude proxy (opencode-with-claude/Meridian) was removed: claude-agent is OpenCode's own provider,
+ // so no captured input, Claude asset, credential module, rewrite or virtual module remains.
+ assert.equal([...reviewed.inputFiles.keys()].some(file=>file.startsWith(path.join(root,'claude-'))||/meridian/i.test(file)),false);
+ assert.equal([...reviewed.rewrites.keys()].some(file=>/claude|meridian/i.test(file)),false);
+ assert.deepEqual([...reviewed.virtualModules.keys()],[]);
+ assert.equal(reviewed.transforms.some(item=>/claude|meridian/i.test(String(item.path))||/claude|meridian|libsql/i.test(item.reason)),false);
+ for(const retired of ['claudeAssets','claudeCredentials'])assert.equal(Object.hasOwn(reviewed,retired),false);
  assert.equal(reviewed.ast.path,REVIEWED_AST_FILENAME);
  assert.equal(reviewed.ast.sha256,hash(await fs.readFile(reviewed.ast.source)));
  assert.equal(reviewed.provenance.find(value=>value.id==='ast-grep-0.45.3').license.standaloneLicenseCaptured,false);
@@ -107,7 +100,7 @@ test('reviewed original closure and exact constructor transforms are inventoried
  assert.equal(reviewed.inputFiles.get(jsoncPackage),hash(await fs.readFile(jsoncPackage)));
  assert.equal(reviewed.transforms.find(item=>item.reason==='pinned-jsonc-original-esm-module-resolution').sha256,hash(await fs.readFile(jsoncMain)));
  const workspaceManifest=new Set([...reviewed.workspaceResolutions.keys()].map(directory=>path.join(directory,'package.json')));
- assert.equal([...reviewed.inputFiles].every(([file])=>file.startsWith(root+path.sep)||file===jsoncPackage||file===checkpointOwner||file===path.join(repository,'bun.lock')||workspaceManifest.has(file)
+ assert.equal([...reviewed.inputFiles].every(([file])=>file.startsWith(root+path.sep)||file===jsoncPackage||file===path.join(repository,'bun.lock')||workspaceManifest.has(file)
   ||file.startsWith(path.join(repository,'node_modules/.bun')+path.sep)&&path.basename(file)==='package.json'
   ||file===path.join(repository,'packages/web/server/default-config/plugins/devryan-document-reader.mjs')||file===path.join(repository,'packages/web/server/default-config/plugins/devryan-document-reader.d.mts')||file===path.join(repository,'packages/web/server/default-config/plugins/devryan-browser.mjs')||file===path.join(repository,'packages/web/server/default-config/plugins/devryan-browser.d.mts')),true);
 });

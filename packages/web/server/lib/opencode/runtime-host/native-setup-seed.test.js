@@ -11,8 +11,6 @@ it('setup imports no settings of the retired background runtime service',()=>{
   productionBotsRuntimeServiceAppVersion:'2.0.7',productionBotsRuntimeReregisterAfterUpdate:true})).toEqual({});
 });
 import {projectNativeSetupCredentials} from './native-setup-credential-data.js';
-import {resolveNativeProviderConfiguration} from './native-provider-configuration.js';
-import {relocateNativeSetupProfiles} from './native-setup-profiles.js';
 import {protectNativeSetupSource,resetAbandonedNativeSetupSource,removeNativeSetupSource,NATIVE_SETUP_SEED_MAX_FILES,NATIVE_SETUP_SEED_MAX_FILE_BYTES,NATIVE_SETUP_SEED_MAX_TOTAL_BYTES} from './native-setup-source.js';
 const roots=[];
 let warn;beforeEach(()=>{warn=vi.spyOn(console,'warn').mockImplementation(()=>{});});
@@ -57,19 +55,19 @@ it('seeds the chosen helper model revision independently from primary and notifi
  expect(await seedNativeSetup(f)).toEqual(marker);
  expect(JSON.parse(await fs.readFile(seeded,'utf8'))).toEqual(preferences);
 });
-it('relocates exact Meridian account files and preserves original keychain identity',async()=>{
- const f=await fixture(),account=path.join(f.source.home,'.claude');
- await f.write(path.join(account,'.credentials.json'),{claudeAiOauth:{accessToken:'fixture'}});await f.write(path.join(account,'history.jsonl'),{privateHistory:true});
- await f.write(path.join(f.source.home,'.config','meridian','profiles.json'),[{id:'default',type:'claude-max'}]);
- await seedNativeSetup(f);const [profile]=JSON.parse(await fs.readFile(path.join(f.target.home,'.config','meridian','profiles.json'),'utf8'));
- expect(profile.keychainService).toBe('Claude Code-credentials');expect(profile.claudeConfigDir.startsWith(f.target.home+path.sep)).toBe(true);
- expect(await fs.readdir(profile.claudeConfigDir)).toEqual(['.credentials.json']);
- const configuration=await resolveNativeProviderConfiguration({globals:{home:f.target.home,config:f.target.opencodeConfigDirectory,data:f.target.opencodeDataDirectory},environment:{}});expect(configuration.profiles[0]).toMatchObject(profile);
- await f.write(path.join(f.target.home,'.config','meridian','profiles.json'),[{...profile,keychainService:{invalid:true}}]);
- await expect(resolveNativeProviderConfiguration({globals:{home:f.target.home,config:f.target.opencodeConfigDirectory,data:f.target.opencodeDataDirectory},environment:{}})).rejects.toMatchObject({code:'native_provider_configuration_invalid'});
- const moved=await relocateNativeSetupProfiles({profiles:[profile],sourceHome:f.target.home,targetHome:path.join(f.root,'next'),copyAccount:async()=>{}});
- expect(moved[0].keychainService).toBe(profile.keychainService);expect(moved[0].claudeConfigDir).not.toBe(profile.claudeConfigDir);
- await expect(relocateNativeSetupProfiles({profiles:[{...profile,keychainService:'foreign-service'}],sourceHome:f.target.home,targetHome:f.root,copyAccount:async()=>{}})).rejects.toMatchObject({code:'native_setup_profiles_invalid'});
+it('leaves Claude Code and Meridian accounts and settings in the user home',async()=>{
+ // claude-agent runs the user's own `claude` with its own login; nothing Claude-specific is seeded.
+ const f=await fixture(),account=path.join(f.source.home,'.claude-work');
+ await f.write(path.join(f.source.home,'.claude','.credentials.json'),{claudeAiOauth:{accessToken:'fixture-claude'}});
+ await f.write(path.join(account,'.credentials.json'),{claudeAiOauth:{accessToken:'fixture-meridian'}});
+ await f.write(path.join(f.source.home,'.config','meridian','settings.json'),{theme:'kept',activeProfile:'work'});
+ await f.write(path.join(f.source.home,'.config','meridian','profiles.json'),[{id:'work',type:'claude-max',claudeConfigDir:account}]);
+ await f.write(path.join(f.source.webDataDirectory,'settings.json'),{themeId:'dark'});
+ const marker=await seedNativeSetup({...f,environment:{MERIDIAN_DEFAULT_PROFILE:'work',MERIDIAN_PROFILES:JSON.stringify([{id:'work',type:'claude-max'}])}});
+ expect(marker.skipped).toEqual([]);
+ expect(marker.files.map(row=>path.relative(f.root,row.path))).toEqual(['target/web/settings.json']);
+ for(const relative of ['.claude','.claude-work','.config'])expect(await fs.stat(path.join(f.target.home,relative)).catch(error=>error.code)).toBe('ENOENT');
+ expect(JSON.stringify(marker)+warn.mock.calls.join('')).not.toMatch(/fixture-|meridian/i);
 });
 it('skips symlinks leaving HOME and refuses tampered retry markers without reading outside setup roots',async()=>{
  const f=await fixture();await f.text(path.join(f.root,'outside'),'{"outside":true}');await fs.symlink(path.join(f.root,'outside'),path.join(f.source.opencodeConfigDirectory,'opencode.json'));
@@ -241,26 +239,6 @@ it('skips FIFOs, sockets and unreadable entries with coded results instead of ha
   expect(await fs.readdir(path.join(f.target.opencodeConfigDirectory,'skills','ff'))).toEqual(['SKILL.md']);
  }finally{server.close();await fs.chmod(path.join(config,'agents','x.md'),0o600).catch(()=>{});await fs.chmod(path.join(config,'commands','locked'),0o700).catch(()=>{});}
 },10_000);
-it('writes Meridian settings once and seeds profiles with the loader tolerance',async()=>{
- const seed=async(prepare,environment)=>{const f=await fixture();await prepare(f);return {f,marker:await seedNativeSetup({...f,environment}),
-  read:async name=>JSON.parse(await fs.readFile(path.join(f.target.home,'.config','meridian',name),'utf8'))};};
- // MERIDIAN_DEFAULT_PROFILE beside a saved settings.json: one merged save.
- let run=await seed(f=>f.write(path.join(f.source.home,'.config','meridian','settings.json'),{theme:'kept',activeProfile:'old'}),{MERIDIAN_DEFAULT_PROFILE:' work '});
- expect(await run.read('settings.json')).toEqual({theme:'kept',activeProfile:'work'});expect(run.marker.skipped).toEqual([]);
- // Empty export = unset; id-less rows and accounts outside HOME are dropped; trailing slashes are normalized.
- run=await seed(async f=>{await f.write(path.join(f.source.home,'.claude-work','.credentials.json'),{claudeAiOauth:{accessToken:'fixture'}});
-  await f.write(path.join(f.source.home,'.config','meridian','profiles.json'),[{id:'work',type:'claude-max',claudeConfigDir:path.join(f.source.home,'.claude-work')+'/'},{type:'api'},
-   {id:'external',type:'claude-max',claudeConfigDir:'/Volumes/External/.claude'}]);},{MERIDIAN_PROFILES:''});
- const [work,...rest]=await run.read('profiles.json');expect(rest).toEqual([]);expect(work).toMatchObject({id:'work',type:'claude-max'});
- expect(work.claudeConfigDir.startsWith(run.f.target.home+path.sep)).toBe(true);expect(await fs.readdir(work.claudeConfigDir)).toEqual(['.credentials.json']);
- expect(run.marker.skipped).toEqual([{relativePath:'.config/meridian/profiles.json',reason:'profile_id_invalid'},{relativePath:'.config/meridian/profiles.json',reason:'profile_account_outside_home',profile:'external'}]);
- expect(JSON.stringify(run.marker.skipped)).not.toContain('/Volumes');
- // An unparsable export falls back to disk; an unparsable file is no profiles.
- run=await seed(f=>f.write(path.join(f.source.home,'.config','meridian','profiles.json'),[{id:'disk'}]),{MERIDIAN_PROFILES:'{bad'});
- expect(await run.read('profiles.json')).toEqual([{id:'disk'}]);expect(run.marker.skipped).toEqual([{relativePath:'MERIDIAN_PROFILES',reason:'profiles_invalid'}]);
- run=await seed(f=>f.text(path.join(f.source.home,'.config','meridian','profiles.json'),'[{'),{});
- expect(await fs.readdir(path.join(run.f.target.home,'.config','meridian')).catch(error=>error.code)).toBe('ENOENT');expect(run.marker.skipped).toEqual([{relativePath:'.config/meridian/profiles.json',reason:'profiles_invalid'}]);
-});
 it('projects auth.json like the SDK import: wellknown and undecodable entries are skipped, never fatal',async()=>{
  const f=await fixture();
  await f.write(path.join(f.source.opencodeDataDirectory,'auth.json'),{openai:{type:'api',key:'fixture-key'},'https://opencode.example.com/':{type:'wellknown',key:'K',token:'fixture-token'},
@@ -271,15 +249,13 @@ it('projects auth.json like the SDK import: wellknown and undecodable entries ar
  expect(marker.skipped).toEqual([{relativePath:'auth.json',reason:'credential_wellknown_unsupported'},{relativePath:'auth.json',reason:'credential_invalid',integrationID:'broken'},{relativePath:'auth.json',reason:'credential_invalid',integrationID:'odd'}]);
  expect(JSON.stringify(marker)+warn.mock.calls.join('')).not.toMatch(/fixture-|example\.com/);
 });
-it('pins generated credential, Meridian and owner rows before project records and fails closed when one cannot fit',async()=>{
+it('pins generated credential and owner rows before project records and fails closed when one cannot fit',async()=>{
  const f=await fixture(),{controlRoot,sourceRoot,target}=production(f);await fs.mkdir(controlRoot,{recursive:true});await protectNativeSetupSource({controlRoot,sourceRoot});
  for(let index=0;index<17;index++)await f.write(path.join(f.source.webConfigDirectory,'projects','p'+String(index).padStart(2,'0')+'.json'),{pad:'x'.repeat(1024*1024-20)});
  await f.write(path.join(f.source.opencodeDataDirectory,'auth.json'),{openai:{type:'api',key:'synthetic'}});
- await f.write(path.join(f.source.home,'.config','meridian','profiles.json'),[{id:'api',type:'api'}]);
  const captureLogicalSetup=async()=>({localOwners:{'supabase-local-owner':{id:'10000000-0000-4000-8000-000000000001',scope:'local-admin'}}});
- const marker=await seedNativeSetup({source:f.source,target,environment:{MERIDIAN_DEFAULT_PROFILE:'work'},captureLogicalSetup});
- for(const file of [path.join(target.opencodeConfigDirectory,'native-setup-credentials.json'),path.join(target.webDataDirectory,'native-setup-local-owners.json'),
-  path.join(target.global.home,'.config','meridian','profiles.json'),path.join(target.global.home,'.config','meridian','settings.json')])expect(marker.files.some(row=>row.path===file)).toBe(true);
+ const marker=await seedNativeSetup({source:f.source,target,captureLogicalSetup});
+ for(const file of [path.join(target.opencodeConfigDirectory,'native-setup-credentials.json'),path.join(target.webDataDirectory,'native-setup-local-owners.json')])expect(marker.files.some(row=>row.path===file)).toBe(true);
  expect(marker.skipped.length).toBeGreaterThan(0);expect(marker.skipped.every(row=>row.relativePath.startsWith('projects/')&&row.reason==='total_limit')).toBe(true);
  // A generated row over the shared caps is never silently dropped.
  const g=await fixture();await fs.writeFile(path.join(g.source.opencodeDataDirectory,'auth.json'),JSON.stringify({openai:{type:'api',key:'k'.repeat(1024*1024-34)}}));
@@ -350,8 +326,8 @@ it('keeps the rest of ~/.claude, ~/.codex and ~/.claude.json protected from link
  await fs.symlink(path.join(claude,'projects'),path.join(claude,'skills','s','history'));await fs.symlink(path.join(claude,'skills'),path.join(f.source.opencodeConfigDirectory,'skills'));
  const marker=await seedNativeSetup(f);
  expect(marker.skipped).toEqual([{relativePath:'skills/s/history',reason:'protected'},...Object.keys(stores).sort().map(name=>({relativePath:'.agents/skills/'+name,reason:'protected'}))]);
- expect(marker.files.map(row=>path.relative(f.root,row.path)).sort()).toEqual(['target/config/skills/s/SKILL.md','target/home/.claude/.credentials.json']);
- expect(JSON.parse(await fs.readFile(path.join(f.target.home,'.claude','.credentials.json'),'utf8'))).toEqual({claudeAiOauth:{accessToken:'fixture-claude'}});
+ expect(marker.files.map(row=>path.relative(f.root,row.path)).sort()).toEqual(['target/config/skills/s/SKILL.md']);
+ expect(await fs.stat(path.join(f.target.home,'.claude')).catch(error=>error.code)).toBe('ENOENT');
 });
 it('never lets a ~/.claude that canonicalizes into another store lift that store',async()=>{
  const f=await fixture(),home=f.source.home,ssh=path.join(home,'.ssh');
@@ -361,12 +337,11 @@ it('never lets a ~/.claude that canonicalizes into another store lift that store
  expect(marker.skipped).toEqual([{relativePath:'skills',reason:'protected'}]);
  expect(marker.files).toEqual([]);
 });
-it('never follows links or bulk folders into account, token and browser stores; exact account inputs still seed',async()=>{
+it('never follows links or bulk folders into account, token and browser stores; exact OpenCode account inputs still seed',async()=>{
  const f=await fixture(),home=f.source.home,skills=path.join(home,'.agents','skills'),data=path.join(home,'.local','share','opencode'),source={...f.source,opencodeDataDirectory:data};
  await f.text(path.join(skills,'ok','SKILL.md'),'ok');await f.write(path.join(data,'auth.json'),{fixture:{type:'api',key:'fixture-auth'}});
  await f.write(path.join(home,'.claude','.credentials.json'),{claudeAiOauth:{accessToken:'fixture-claude'}});
  const meridian=path.join(home,'.config','meridian','accounts','m');await f.write(path.join(meridian,'.credentials.json'),{claudeAiOauth:{accessToken:'fixture-meridian'}});
- await f.write(path.join(home,'.config','meridian','profiles.json'),[{id:'m',type:'claude-max',claudeConfigDir:meridian}]);
  const stores={oc:data,cl:path.join(home,'.claude'),mer:path.join(home,'.config','meridian','accounts'),codex:path.join(home,'.codex'),gc:path.join(home,'.git-credentials'),npmrc:path.join(home,'.npmrc'),
   pypirc:path.join(home,'.pypirc'),xgh:path.join(home,'xdg','gh'),ghd:path.join(home,'ghdir'),gcloud:path.join(home,'gcloud'),
   ...Object.fromEntries(['Google','BraveSoftware','Firefox','Microsoft Edge','Arc'].map(name=>[name.replace(' ',''),path.join(home,'Library','Application Support',name)]))};
@@ -375,18 +350,9 @@ it('never follows links or bulk folders into account, token and browser stores; 
  const marker=await seedNativeSetup({...f,source,environment:{XDG_CONFIG_HOME:path.join(home,'xdg'),GH_CONFIG_DIR:path.join(home,'ghdir'),CLOUDSDK_CONFIG:path.join(home,'gcloud')}});
  expect(marker.skipped).toEqual([...Object.keys(stores),'xdg/gh'].sort().map(name=>({relativePath:'.agents/skills/'+name,reason:'protected'})));
  expect((await fs.readdir(path.join(f.target.home,'.agents','skills'))).sort()).toEqual(['ok','xdg']);expect(await fs.readdir(path.join(f.target.home,'.agents','skills','xdg'))).toEqual(['kept.md']);
- expect(JSON.parse(await fs.readFile(path.join(f.target.home,'.claude','.credentials.json'),'utf8'))).toEqual({claudeAiOauth:{accessToken:'fixture-claude'}});
- const [profile]=JSON.parse(await fs.readFile(path.join(f.target.home,'.config','meridian','profiles.json'),'utf8'));
- expect(JSON.parse(await fs.readFile(path.join(profile.claudeConfigDir,'.credentials.json'),'utf8'))).toEqual({claudeAiOauth:{accessToken:'fixture-meridian'}});
+ // Claude Code and Meridian logins stay with the user; they are neither linked nor seeded.
+ for(const relative of ['.claude','.config'])expect(await fs.stat(path.join(f.target.home,relative)).catch(error=>error.code)).toBe('ENOENT');
  expect(JSON.parse(await fs.readFile(path.join(f.target.opencodeConfigDirectory,'native-setup-credentials.json'),'utf8')).credentials.map(row=>row.integrationID)).toEqual(['fixture']);
-});
-it.skipIf(!caseInsensitive)('checks a differently cased account path against the stores by its stored case',async()=>{
- const f=await fixture(),home=f.source.home;await f.write(path.join(home,'.ssh','.credentials.json'),{fixture:'ssh-store'});
- for(const name of ['.SSH','.ssh']){
-  await f.write(path.join(home,'.config','meridian','profiles.json'),[{id:'p',type:'claude-max',claudeConfigDir:path.join(home,name)}]);
-  const marker=await seedNativeSetup({...f,target:f.launch(path.join(f.root,name==='.ssh'?'exact':'variant'))});
-  expect(marker.skipped).toEqual([{relativePath:name,reason:'protected'}]);expect(marker.files.map(row=>path.basename(row.path))).toEqual(['profiles.json']);
- }
 });
 it('never lets links or bulk folders copy DevRyan web-data secrets or Electron/Chromium stores; exact web setup still seeds',async()=>{
  const f=await fixture(),home=f.source.home,web=path.join(home,'.config','openchamber'),skills=path.join(home,'.agents','skills'),support=path.join(home,'Library','Application Support');
@@ -470,8 +436,8 @@ it('compares the opened descriptor with the checked path so a same-uid swap duri
 });
 it('refuses required account inputs over the per-file cap with their name and size, never skipping or truncating them',async()=>{
  const big=JSON.stringify({openai:{type:'api',key:'fixture-'+'k'.repeat(NATIVE_SETUP_SEED_MAX_FILE_BYTES)}});
- for(const relative of ['auth.json','.config/meridian/settings.json','.config/meridian/profiles.json','.claude/.credentials.json']){
-  const f=await fixture(),file=relative==='auth.json'?path.join(f.source.opencodeDataDirectory,relative):path.join(f.source.home,relative);
+ for(const relative of ['auth.json']){
+  const f=await fixture(),file=path.join(f.source.opencodeDataDirectory,relative);
   await f.text(file,big);await f.write(path.join(f.source.webDataDirectory,'settings.json'),{themeId:'dark'});
   const error=await seedNativeSetup(f).then(()=>undefined,value=>value);
   expect(error).toMatchObject({code:'native_setup_source_too_large',reason:'file_too_large',relativePath:relative,size:Buffer.byteLength(big),limit:NATIVE_SETUP_SEED_MAX_FILE_BYTES});
@@ -480,8 +446,8 @@ it('refuses required account inputs over the per-file cap with their name and si
  }
  // Exactly at the cap is accepted.
  const f=await fixture(),exact=JSON.stringify({openai:{type:'api',key:'k'}}).padEnd(NATIVE_SETUP_SEED_MAX_FILE_BYTES,' ');
- await f.text(path.join(f.source.home,'.claude','.credentials.json'),exact);
- expect((await seedNativeSetup(f)).files.map(row=>path.relative(f.target.home,row.path))).toEqual(['.claude/.credentials.json']);
+ await f.text(path.join(f.source.opencodeDataDirectory,'auth.json'),exact);
+ expect((await seedNativeSetup(f)).files.map(row=>path.relative(f.root,row.path))).toEqual(['target/config/native-setup-credentials.json']);
 },60_000);
 it('layers OPENCODE_CONFIG_DIR over the global config directory instead of replacing it',async()=>{
  const f=await fixture(),global=f.source.opencodeConfigDirectory,overlay=path.join(f.root,'source','overlay');

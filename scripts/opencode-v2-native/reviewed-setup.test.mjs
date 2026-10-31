@@ -4,10 +4,13 @@ import {createReviewedSetupSession,reviewedSetupFamilies,reviewedSetupRegistrati
 import {createHttpProviderConfiguration} from './http-provider.mjs';
 import {compiledHelperAgentIDs,createCompiledHelperAgentFixture} from './package-helper-agent-fixture.mjs';
 import {PLAN_MODE_SYSTEM_INSTRUCTIONS} from '../../packages/orchestration-runtime/index.js';
-test('all six families map to existing compiled owners without losing manifest provenance',()=>{
+test('all five families map to existing compiled owners without losing manifest provenance',()=>{
  const ids=[...new Set(reviewedSetupFamilies.flatMap(row=>row.origins))];const origins=ids.map(id=>({id,manifestDigest:'a'.repeat(64),capabilities:['control']}));
- const rows=reviewedSetupRegistrations(origins);assert.equal(reviewedSetupFamilies.length,6);assert.equal(rows.length,origins.length);
+ const rows=reviewedSetupRegistrations(origins);assert.equal(reviewedSetupFamilies.length,5);assert.equal(rows.length,origins.length);
  assert.equal(ids.includes('devryan.ponytail'),false);
+ // Claude is OpenCode's built-in claude-agent provider: no retired proxy plugin spec is a saved family.
+ assert.equal(reviewedSetupFamilies.some(row=>row.family==='claude'||row.spec?.includes('opencode-with-claude')),false);
+ assert.deepEqual(rows.find(row=>row.id==='devryan.provider-compat').legacySpecs,['./plugins/devryan-open-cursor.mjs']);
  // Built-in agent orchestration has no plugin spec; every other family has its exact spec.
  const builtIn=new Set(reviewedSetupFamilies.filter(row=>row.spec===null).flatMap(row=>row.origins));
  assert.deepEqual([...builtIn].sort(),['devryan.slim','devryan.slim-commands','devryan.slim-lifecycle']);
@@ -26,7 +29,7 @@ test('browser is explicit fixture activation, never an added saved personal fami
  const origins=[...new Set(reviewedSetupFamilies.flatMap(row=>row.origins)),'devryan.browser'].map(id=>({id,manifestDigest:'b'.repeat(64),capabilities:['control']}));
  assert.deepEqual(reviewedSetupRegistrations(origins).find(row=>row.id==='devryan.browser').legacySpecs,[]);
  assert.deepEqual(reviewedSetupRegistrations(origins,{browser:true}).find(row=>row.id==='devryan.browser').legacySpecs,['./plugins/devryan-browser.mjs']);
- assert.equal(reviewedSetupFamilies.length,6);
+ assert.equal(reviewedSetupFamilies.length,5);
  assert.throws(()=>reviewedSetupRegistrations(origins.filter(row=>row.id!=='devryan.browser'),{browser:true}),/compiled browser unavailable/);
 });
 

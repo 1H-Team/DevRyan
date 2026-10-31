@@ -165,6 +165,8 @@ The wire facade archives only IDs owned by its disposable fixture, through the e
 
 ## Focused Claude and Cursor regression
 
+The Claude (`anthropic`) arm below was built on the removed Meridian proxy: `live-credential-owner.mjs` now refuses it with `qa_live_anthropic_retired`, and its five-hour budget does not fit `claude-agent`, whose usage arrives only with each reply. Until an attended `claude-agent` flow exists, qualify Claude with an isolated host whose `CLAUDE_CONFIG_DIR` login you create and remove yourself (`runtime-host/DOCUMENTATION.md`, "Claude Code through claude-agent"). The Cursor arm is unchanged.
+
 `focused-provider` is an opt-in live Builder scenario with Plan off and one repetition. It runs a short prompt, reload, a follow-up that must recall the original assistant reply without repeating it in the new prompt, cancellation after a correlated physical provider request with a canonical aborted assistant, browser disconnection/reconnection and successful continuation, then a native source read and confined, receipt-backed proof-file publication. It does not run project implementation or delegation. Use one exact model/effort per provider for both hosts; discover Claude's advertised default in the isolated account catalog and freeze that tuple before preparing inputs. Cursor's existing QA tuple is `cursor-acp/grok-4.6` / `medium`; unavailable selections fail.
 
 First run the credential-free factory diagnostic:

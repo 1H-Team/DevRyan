@@ -88,10 +88,10 @@ per-turn hook, authorization, storage, or Claude integration checks. OpenAI's
 existing default stays observe. Existing accepted recoveries retain their tool
 guards after capability loss, rollback, and restart.
 
-The current production web/Electron composition does not attest the managed
-`opencode-with-claude`/Meridian/Agent SDK path: its full recovery transport and
-native-tool conformance has not been established. Consequently Claude still
-uses manual recovery there, even if its requested mode is enforce. The isolated
+The current production web/Electron composition does not attest Claude through
+OpenCode's `claude-agent` provider: Claude Code retries its own requests and its
+recovery conformance has not been established. Consequently Claude uses manual
+recovery, even if its requested mode is enforce. The isolated
 fake-provider fixture supplies its own test-only attestation; a pass from that
 fixture must never be promoted to production Claude conformance. No installed
 runtime, dependencies, provider timeout, or running application setting is

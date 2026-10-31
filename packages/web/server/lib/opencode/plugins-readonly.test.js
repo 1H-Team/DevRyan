@@ -50,7 +50,6 @@ describe('read-only plugin config model', () => {
 
       expect(result.defaults.map((plugin) => plugin.pluginId)).toEqual([
         '@rama_nigg/open-cursor',
-        'opencode-with-claude',
         'opencode-gpt-imagegen',
         'devryan-skill-context',
         'devryan-document-reader',
@@ -83,7 +82,8 @@ describe('read-only plugin config model', () => {
     const home = path.join(root, 'home');
     const project = path.join(root, 'project');
     writeJson(path.join(home, '.config', 'opencode', 'opencode.json'), {
-      plugin: ['opencode-with-claude@1.6.17', './plugins/devryan-open-cursor.mjs', './plugins/devryan-oh-my-opencode-slim.mjs'],
+      plugin: ['opencode-gpt-imagegen@0.1.10', './plugins/devryan-open-cursor.mjs', './plugins/devryan-oh-my-opencode-slim.mjs',
+        './node_modules/opencode-with-claude/dist/index.js'],
     });
     writeJson(path.join(project, '.opencode', 'opencode.json'), {
       plugin: ['project-plugin@1.0.0'],
@@ -91,17 +91,19 @@ describe('read-only plugin config model', () => {
 
     try {
       const result = createPluginReadModel({ fs, path, homedir: () => home, env: {} }).listPlugins(project);
-      const claude = result.defaults.find((plugin) => plugin.pluginId === 'opencode-with-claude');
-      expect(claude).toMatchObject({
-        effectiveSpec: 'opencode-with-claude@1.6.17',
+      const imagegen = result.defaults.find((plugin) => plugin.pluginId === 'opencode-gpt-imagegen');
+      expect(imagegen).toMatchObject({
+        effectiveSpec: 'opencode-gpt-imagegen@0.1.10',
         configuredSourcePath: path.join(home, '.config', 'opencode', 'opencode.json'),
       });
       expect(result.entries.slice(0, 2).map((entry) => entry.defaultPluginId)).toEqual([
-        'opencode-with-claude',
+        'opencode-gpt-imagegen',
         '@rama_nigg/open-cursor',
       ]);
-      // The retired Slim adapter an upgraded setup still lists is not shown.
+      // The retired Slim adapter and Claude plugin an upgraded setup still lists are not shown.
       expect(result.entries.map((entry) => entry.spec)).not.toContain('./plugins/devryan-oh-my-opencode-slim.mjs');
+      expect(result.entries.map((entry) => entry.spec)).not.toContain('./node_modules/opencode-with-claude/dist/index.js');
+      expect(result.defaults.some((plugin) => plugin.pluginId === 'opencode-with-claude')).toBe(false);
       expect(result.entries[2]).not.toHaveProperty('defaultPluginId');
     } finally {
       fs.rmSync(root, { recursive: true, force: true });

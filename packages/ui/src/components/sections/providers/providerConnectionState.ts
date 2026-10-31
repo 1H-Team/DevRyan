@@ -13,7 +13,6 @@ export interface ProviderSources {
   user: ProviderSourceInfo;
   project: ProviderSourceInfo;
   custom?: ProviderSourceInfo;
-  anthropicOAuth?: ProviderSourceInfo;
 }
 
 export type ProviderRemainingSource =
@@ -76,7 +75,6 @@ export const hasActiveProviderSource = (sources: ProviderSources | undefined): b
   || sources?.user.exists
   || sources?.project.exists
   || sources?.custom?.exists
-  || sources?.anthropicOAuth?.exists
 );
 
 export const getProviderConnectionState = (

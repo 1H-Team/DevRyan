@@ -7,7 +7,6 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { cacheGrowthFailure, snapshotCache } from './cache-guard.mjs';
-import { hydrateReviewedClaude } from './hydrate-reviewed-claude.mjs';
 import { planFullTests } from './test-full.mjs';
 import { formatDuration, recordTestTimings, runTestUnits, summarizeTestUnits, testConcurrency } from './test-pool.mjs';
 import { planScriptTests, prepareScriptTestEnvironment } from './test-scripts.mjs';
@@ -492,18 +491,6 @@ async function runCommands(commands) {
     if (status !== 0) { report(); return status; }
   }
   if (tests.length === 0) { report(); return 0; }
-  // Native suites need the pinned Claude binary. A fresh worktree lacks it and
-  // would otherwise fail dozens of lanes after running them all.
-  if (tests.some((item) => item.label !== 'test:startup')) {
-    const hydrateStarted = performance.now();
-    try { await hydrateReviewedClaude({ repository: workspaceRoot }); }
-    catch (error) {
-      console.error(`Reviewed Claude binary unavailable (${error instanceof Error ? error.message : String(error)}); run: node scripts/hydrate-reviewed-claude.mjs`);
-      timings.push({ label: 'hydrate:claude', status: 1, durationMs: performance.now() - hydrateStarted });
-      report();
-      return 1;
-    }
-  }
   const { env, cleanup } = prepareScriptTestEnvironment(workspaceRoot);
   try {
     const units = testUnitsForPlan(tests, { scriptEnvironment: env }).flatMap((unit) => {

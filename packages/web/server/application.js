@@ -1,10 +1,8 @@
-import { completeClaudeActivation, readClaudeStartupFailure } from './lib/opencode/runtime-host/claude-activation-recovery.js';
 import { selectedRuntimeBundle, getRuntimeHome } from './lib/opencode/runtime-host/runtime-bundle-binding.js';
 import {createNativePrivatePersistence} from './lib/opencode/runtime-host/native-private-persistence.js';
 import { loadNativeRuntimeBundle, createNativeRuntimeOwner, createRuntimeBundleVerifier } from './lib/opencode/runtime-host/native-runtime-owner.js';
 import { startupUpgradeFailureOver } from './lib/opencode/runtime-host/bundle-startup-upgrade-status.js';
 import { startupNotices } from './lib/opencode/runtime-host/startup-notices.js';
-import { createClaudeUpdateController, registerClaudeUpdateRoutes } from './lib/opencode/claude-update-routes.js';
 import { createRuntimeBundleLifecycle, createRuntimeBundleAdmissionGate, createRuntimeBundleWorkFence, registerRuntimeBundleLifecycleRoutes } from './lib/opencode/runtime-host/runtime-bundle-lifecycle.js';
 import { createNativeAuthorization } from './lib/opencode/runtime-host/native-authorization.js';
 import { writeOpenCodeRuntimeSelection } from './lib/opencode/runtime-selection.js';
@@ -129,7 +127,6 @@ import { readConfigCredentialScan } from './lib/opencode/config-credential-scan.
 import { resolveDuplicateOutputPolicy } from './lib/opencode/harness-duplicate-qualification.js';
 import { createHarnessRunFingerprintReader } from './lib/opencode/harness-run-fingerprint.js';
 import { createDuplicateProviderRouteResolver } from './lib/opencode/duplicate-provider-route.js';
-import { inspectClaudeRuntimeCompatibility } from './lib/opencode/claude-runtime-compatibility.js';
 import { resolveApprovedSkills } from './lib/opencode/skill-policy.js';
 import {
   getAgentConfig,
@@ -168,7 +165,7 @@ import { createBrowserCdpDiscoveryRuntime } from './lib/browser-cdp/discovery-ru
 import { createBrowserLeaseRuntime } from './lib/browser-cdp/lease-runtime.js';
 import { createBrowserObservationRuntime } from './lib/browser-cdp/observation-runtime.js';
 import { dynamicNoStoreMiddleware } from './lib/http-cache-policy.js';
-import { createMeridianProviderResetProbe } from './lib/orchestration/provider-reset-probe.js';
+import { createClaudeAgentProviderResetProbe } from './lib/orchestration/provider-reset-probe.js';
 import { createWebManagedOrchestrationRuntime } from './lib/orchestration/runtime.js';
 import { resolveManagedAgentExecution } from './lib/multi-user/managed-agent-defaults.js';
 import { registerManagedOrchestrationRoutes, captureRequiredCheckUserAuthority, authorizeObjectiveRead } from './lib/orchestration/routes.js';
@@ -817,7 +814,6 @@ async function constructWebHost(options = {}) {
   let nativeRuntime = null;
   let browserLeaseRuntime = null;
   let managedBrowserEnvironmentProvider = null;
-  let nativeClaudeSecurityHome;
   let projectPrewarmRuntime = null;
   const userProvidedOpenCodePassword = hmrStateRuntime.getUserProvidedOpenCodePassword(hmrState);
   const initialOpenCodeAuthState = hmrStateRuntime.resolveOpenCodeAuthFromState({
@@ -1771,12 +1767,10 @@ async function constructWebHost(options = {}) {
       getRequestPrincipal,
       clientDependencies: openCodeClientDeps,
       getManagedBrowserEnvironment: async () => managedBrowserEnvironmentProvider?.(),
-      getNativeClaudeSecurityHome: () => nativeClaudeSecurityHome,
       getBrowserLeaseRuntime: () => browserLeaseRuntime,
       getWebBaseURL: () => { const address=server?.address();if(!address||typeof address==='string')throw new Error('native_interview_web_owner_required');return `http://127.0.0.1:${address.port}`; },
       emitIntegrationEvent: event => broadcastGlobalUiEvent({type:'devryan:integration',properties:{...event,eventID:crypto.randomUUID()}},{directory:event.directory}),
       cursorRuntime:cursorSdkRuntime,
-      providerEnvironment:{},
       executionHost: sessionExecutionHost, primaryRuntime: primaryRecoveryRuntime, taskContext: harnessTaskContext,
       captureCommandPromptAdmission: async ({ sessionID, directory }) => {
         const principal = getRequestPrincipal();
@@ -1995,21 +1989,19 @@ async function constructWebHost(options = {}) {
 
   async function main(options = {}) {
     const bundleAdmission = createRuntimeBundleAdmissionGate();
-    const claudeUpdateAbort = new AbortController();
     let agentRuntimeWarmup;
     const requestHostRestart = typeof options.onRestartHost === 'function' ? options.onRestartHost
       : process.env.DEVRYAN_SUPERVISED_RESTART === '1'
         ? async () => { await gracefulShutdown({ exitProcess: false }); process.exit(1); } : undefined;
     const runtimeBundleLifecycle = createRuntimeBundleLifecycle({ privatePersistence, binding: selectedRuntimeBundle,
       retainCheckpoint: options.retainRuntimeBundleCheckpoint,
-      onClaudePhase: phase => claudeUpdates.setPhase(phase),
-      waitForClaudeIdle: async () => {
+      // Rollback waits until no session, scheduled task or managed launch is active.
+      waitForIdle: async () => {
         for (;;) {
-          if (claudeUpdateAbort.signal.aborted) throw Object.assign(new Error(), { code: 'claude_update_interrupted' });
           const reserved = await bundleAdmission.reserveIdle(async () => {
             const busy = await getAuthoritativeActiveSessionCount();
             const orchestration = managedOrchestrationRuntime?.getDiagnostics()?.scheduler;
-            return !claudeUpdateAbort.signal.aborted && !busy && !scheduledTasksRuntime.getStatus().runningScheduledTasksCount
+            return !busy && !scheduledTasksRuntime.getStatus().runningScheduledTasksCount
               && !orchestration?.activeLaunchCount && !orchestration?.activeHandoffCount && !orchestration?.pendingAcknowledgementCount;
           });
           if (reserved) return () => bundleAdmission.releaseIdle();
@@ -2084,7 +2076,6 @@ async function constructWebHost(options = {}) {
       },
       requestRecomposition: requestHostRestart,
     });
-    const claudeUpdates = createClaudeUpdateController({ lifecycle: runtimeBundleLifecycle, startupFailure: await readClaudeStartupFailure(selectedRuntimeBundle) });
     const deferOpenCodeStartup = options.deferOpenCodeStartup === true;
     let deferredOpenCodeStartupComplete = !deferOpenCodeStartup;
     let deferredOpenCodeStartupPromise = null;
@@ -2101,8 +2092,6 @@ async function constructWebHost(options = {}) {
         });
       return deferredOpenCodeStartupPromise;
     };
-    if(options.nativeClaudeSecurityHome!==undefined&&(typeof options.nativeClaudeSecurityHome!=='string'||!path.isAbsolute(options.nativeClaudeSecurityHome)||path.resolve(options.nativeClaudeSecurityHome)!==options.nativeClaudeSecurityHome))throw new Error('native_claude_owned_store_invalid');
-    nativeClaudeSecurityHome=options.nativeClaudeSecurityHome;
     managedBrowserEnvironmentProvider = typeof options.getManagedBrowserEnvironment === 'function'
       ? options.getManagedBrowserEnvironment
       : null;
@@ -2420,8 +2409,6 @@ async function constructWebHost(options = {}) {
     });
     registerRuntimeBundleLifecycleRoutes(app, { lifecycle: runtimeBundleLifecycle,
       isAdministrator: () => canForceConfigRestart(getRequestPrincipal()) });
-    registerClaudeUpdateRoutes(app, { controller: claudeUpdates,
-      isAdministrator: () => canForceConfigRestart(getRequestPrincipal()) });
     uiAuthController = bootstrapResult.uiAuthController;
     // Must precede managed session routes, which intercept the generic proxy.
     app.get('/api/diagnostics/execution-runtime', (_req, res) => res.json({ state: executionReadiness.state, diagnostic: executionReadiness.diagnostic }));
@@ -2496,15 +2483,7 @@ async function constructWebHost(options = {}) {
     registerEvidenceRoutes(app, { runtime: evidenceRuntime });
     await harnessInitialization;
 
-    const providerResetProbe = createMeridianProviderResetProbe({
-      openCodeClient,
-      buildOpenCodeUrl,
-      getOpenCodeAuthHeaders,
-      fetchImpl: fetch,
-      isExternalOpenCode: () => (
-        isExternalOpenCode || ENV_SKIP_OPENCODE_START || Boolean(ENV_CONFIGURED_OPENCODE_HOST)
-      ),
-    });
+    const providerResetProbe = createClaudeAgentProviderResetProbe({ readUsage: () => nativeRuntime?.readClaudeAgentUsage?.() });
     const resolveManagedAgentExecutionForOwner = (params) => {
       if (typeof multiUserRuntime.resolveSessionAgentExecution === 'function') {
         return multiUserRuntime.resolveSessionAgentExecution(params);
@@ -2576,7 +2555,7 @@ async function constructWebHost(options = {}) {
       resolveAgentExecution: resolveManagedAgentExecutionForOwner,
       // Auto-resume hooks: managed sessions key breakers per owning user and use
       // the host-managed backup model; local sessions fall back to the packaged
-      // agent config. Meridian answers when an Anthropic limit lifts.
+      // agent config. Claude Code's recorded windows say when a Claude limit lifts.
       resolveOwnerKey: async (params) => (
         (await multiUserRuntime?.resolveSessionOwnerKey?.(params)) ?? 'local'
       ),
@@ -2779,7 +2758,6 @@ async function constructWebHost(options = {}) {
       getRuntimeMode: () => (isExternalOpenCode || ENV_SKIP_OPENCODE_START ? 'external' : 'managed'),
       getPackagedAgents: () => listPackagedAgents(),
       readSkillBody: (skill) => parseMdFile(skill.path).body,
-      getClaudeRuntime: () => inspectClaudeRuntimeCompatibility(),
       recordDiagnostic: (entry) => harnessRuntime.record(entry),
       buildOpenCodeUrl,
       getOpenCodeAuthHeaders,
@@ -3011,7 +2989,6 @@ async function constructWebHost(options = {}) {
           ? async () => { await gracefulShutdown({ exitProcess: false }); process.exit(1); } : undefined,
     });
 
-    await completeClaudeActivation(selectedRuntimeBundle);
     reportStartupPhase('ready', 'DevRyan is ready.');
 
     return {
@@ -3050,7 +3027,6 @@ async function constructWebHost(options = {}) {
       isReady: () => isOpenCodeReady,
       restartOpenCode: () => restartOpenCode(),
       stop: (shutdownOptions = {}) => {
-        claudeUpdateAbort.abort();
         return gracefulShutdown({ exitProcess: shutdownOptions.exitProcess ?? false });
       }
     };

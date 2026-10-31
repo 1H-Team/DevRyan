@@ -1,6 +1,5 @@
-// Provider ids that route through Anthropic/Meridian (a Claude CLI spawn per
-// request). Shared so the OpenCode routes and the session-title runtime agree
-// on which sessions must not pay that cost for auxiliary requests.
+// Provider ids Claude used before OpenCode's claude-agent provider. Routes keep
+// refusing Anthropic API keys under them and answer their usage from claude-agent.
 const trimString = (value) => (typeof value === 'string' ? value.trim() : '');
 
 export const ANTHROPIC_PROVIDER_IDS = new Set(['anthropic', 'claude', 'anthropic-oauth', 'opencode-with-claude']);

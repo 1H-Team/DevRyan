@@ -6,7 +6,6 @@ import {REVIEWED_AST_ASSET_SHA256} from '../packages/web/server/lib/opencode/run
 import {rewriteReviewedBrowser} from '../packages/web/server/lib/opencode/runtime-host/reviewed-browser-transform.js';
 import {rewriteReviewedImagegen,rewriteReviewedImagegenDebug} from '../packages/web/server/lib/opencode/runtime-host/reviewed-imagegen-transform.js';
 import {rewriteReviewedDocumentReader} from '../packages/web/server/lib/opencode/runtime-host/reviewed-document-transform.js';
-import {rewriteReviewedClaudeStartup,rewriteReviewedMeridianLibsql,rewriteReviewedClaudeSpawn,rewriteReviewedMeridianHttp,rewriteReviewedClaudeCredentials,REVIEWED_CLAUDE_ASSETS,REVIEWED_CLAUDE_CREDENTIALS} from '../packages/web/server/lib/opencode/runtime-host/reviewed-claude-transform.js';
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
 const resolvePinnedJsonc=async resolved=>{
  const packageRoot=path.resolve(path.dirname(resolved),'../..');
@@ -98,8 +97,8 @@ export async function prepareReviewedNativeInputs(repository,{target='darwin-arm
   const bytes=await fs.readFile(absolute);inputFiles.set(absolute,hash(bytes));return bytes;
  };
  const manifest=JSON.parse((await read('manifest.json')).toString('utf8'));
- const versions={'ast-grep-0.45.3':'0.45.3','jsdom-30.1.1':'30.1.1','claude-1.11.2':'1.11.2','imagegen-0.1.12':'0.1.12'};
- if(manifest.schema!==1||!Array.isArray(manifest.inputs)||manifest.inputs.length!==4)throw new Error('Reviewed input manifest changed');
+ const versions={'ast-grep-0.45.3':'0.45.3','jsdom-30.1.1':'30.1.1','imagegen-0.1.12':'0.1.12'};
+ if(manifest.schema!==1||!Array.isArray(manifest.inputs)||manifest.inputs.length!==3)throw new Error('Reviewed input manifest changed');
  const seen=new Set();
  for(const input of manifest.inputs){
   if(!Object.hasOwn(versions,input.id)||versions[input.id]!==input.version||seen.has(input.id)||!Array.isArray(input.files))throw new Error('Reviewed input manifest changed');
@@ -121,13 +120,6 @@ export async function prepareReviewedNativeInputs(repository,{target='darwin-arm
   if(resolutions.has(key)&&resolutions.get(key)!==target)throw new Error('Reviewed DOM resolution graph conflict');
   resolutions.set(key,target);
  }
- const claudeGraph=JSON.parse((await read('claude-1.11.2/resolutions.json')).toString('utf8'));
- if(claudeGraph.schema!==1||!Array.isArray(claudeGraph.edges))throw new Error('Reviewed Claude resolution graph invalid');
- for(const edge of claudeGraph.edges){
-  const importer=path.resolve(root,'claude-1.11.2',edge.importer),target=path.resolve(root,'claude-1.11.2',edge.target);
-  if(!inputFiles.has(importer)||!inputFiles.has(target)||typeof edge.specifier!=='string'||edge.specifier.startsWith('.')||edge.specifier.startsWith('/'))throw new Error('Reviewed Claude resolution graph invalid');
-  const key=importer+'\0'+edge.specifier;if(resolutions.has(key)&&resolutions.get(key)!==target)throw new Error('Reviewed Claude resolution graph conflict');resolutions.set(key,target);
- }
  const imagegenPath=path.join(root,'imagegen-0.1.12/dist/index.js'),imagegenOriginal=await read('imagegen-0.1.12/dist/index.js');
  const imagegen=rewriteReviewedImagegen(imagegenOriginal);
  const imagegenDebugPath=path.join(root,'imagegen-0.1.12/node_modules/debug@4.4.3/src/node.js');
@@ -140,25 +132,6 @@ export async function prepareReviewedNativeInputs(repository,{target='darwin-arm
   if(edge.specifier.startsWith('.')||edge.specifier.startsWith('/'))continue;
   const key=importer+'\0'+edge.specifier;if(resolutions.has(key)&&resolutions.get(key)!==target)throw Error('Reviewed image dependency graph conflict');resolutions.set(key,target);
  }
- const claudePath=path.join(root,'claude-1.11.2/node_modules/opencode-with-claude/dist/index.js');
- const claudeOriginal=await fs.readFile(claudePath,'utf8'),claudeContents=rewriteReviewedClaudeStartup(claudeOriginal);
- const libsqlPath=path.join(root,'claude-1.11.2/node_modules/@rynfar/meridian/dist/cli-ykdmqmn4.js');
- const libsqlOriginal=await fs.readFile(libsqlPath),libsqlContents=rewriteReviewedMeridianLibsql(libsqlOriginal,{target});
- const spawnPath=path.join(root,'claude-1.11.2/node_modules/@rynfar/meridian/dist/devryan-session-provider-spawn.js');
- const spawnOriginal=await fs.readFile(spawnPath),spawnContents=rewriteReviewedClaudeSpawn(spawnOriginal);
- const httpPath=path.join(root,'claude-1.11.2/node_modules/@rynfar/meridian/dist/devryan-meridian-http-server.js');
- const httpOriginal=await fs.readFile(httpPath),httpContents=rewriteReviewedMeridianHttp(httpOriginal);
- const checkpointPath=path.join(root,'claude-1.11.2/node_modules/@rynfar/meridian/dist/devryan-meridian-passthrough-handoff.js');
- const checkpointOriginal=await fs.readFile(checkpointPath);
- const checkpointOwner=path.join(repository,'packages/web/server/lib/opencode/meridian-passthrough-handoff.js');
- const checkpointContents=await fs.readFile(checkpointOwner,'utf8');inputFiles.set(checkpointOwner,hash(checkpointContents));
- const credentialPath=path.join(root,'claude-1.11.2/node_modules/@rynfar/meridian/dist/cli-chsp880k.js');
- const credentialOriginal=await fs.readFile(credentialPath),credentialContents=rewriteReviewedClaudeCredentials(credentialOriginal);
- if(hash(credentialContents)!==REVIEWED_CLAUDE_CREDENTIALS.sha256)throw new Error('Reviewed Claude credential output changed');
- const claudeCredentials={...REVIEWED_CLAUDE_CREDENTIALS,contents:credentialContents};
- const claudeAssets=Object.fromEntries(Object.entries(REVIEWED_CLAUDE_ASSETS).map(([name,asset])=>{
-  const source=path.join(root,'claude-1.11.2/assets',asset.path);if(inputFiles.get(source)!==asset.sha256)throw new Error('Reviewed Claude asset changed');return [name,{...asset,source}];
- }));
  const documentPath=path.join(repository,'packages/web/server/default-config/plugins/devryan-document-reader.mjs');
  if(await fs.realpath(documentPath)!==documentPath)throw new Error('Reviewed document input escaped repository');
  const documentOriginal=await fs.readFile(documentPath),document=rewriteReviewedDocumentReader(documentOriginal);
@@ -201,16 +174,10 @@ export async function prepareReviewedNativeInputs(repository,{target='darwin-arm
   {path:path.relative(repository,browserPath),sha256:browser.sourceSHA256,outputSha256:browser.outputSHA256,reason:'production-browser-owned-io',steps:browser.transforms},
   {path:path.relative(repository,documentPath),sha256:document.sourceSHA256,outputSha256:document.outputSHA256,reason:'production-document-owned-io',steps:document.transforms},
   {path:path.relative(repository,jsdomPath),sha256:hash(jsdomOriginal),outputSha256:hash(jsdomContents),reason:'captured-optional-canvas-absent',steps:[{id:'sealed-jsdom-optional-canvas',originalSHA256:hash(canvasOriginal),outputSHA256:hash('exports.Canvas = null;')}]},
-  {path:path.relative(repository,stylePath),sha256:hash(styleOriginal),outputSha256:hash(styleContents),reason:'embed-exact-original-dom-stylesheet',steps:[{id:'sealed-jsdom-stylesheet',originalSHA256:hash(styleLoader),outputSHA256:hash(styleReplacement)}]},
-  {path:path.relative(repository,claudePath),sha256:hash(claudeOriginal),outputSha256:hash(claudeContents),reason:'reviewed-original-claude-startup-and-captured-version'},
-  {path:path.relative(repository,libsqlPath),sha256:hash(libsqlOriginal),outputSha256:hash(libsqlContents),reason:'verified-private-libsql-and-canonical-project-selection'},
-  {path:path.relative(repository,spawnPath),sha256:hash(spawnOriginal),outputSha256:hash(spawnContents),reason:'compiled-original-confined-provider-handoff'},
-  {path:path.relative(repository,httpPath),sha256:hash(httpOriginal),outputSha256:hash(httpContents),reason:'worker-owned-http-attempt-admission'}];
- transforms.push({path:path.relative(repository,credentialPath),sha256:hash(credentialOriginal),outputSha256:hash(credentialContents),reason:'sealed-host-selected-claude-renewal'});
- transforms.push({path:path.relative(repository,checkpointPath),sha256:hash(checkpointOriginal),outputSha256:hash(checkpointContents),reason:'canonical-transport-owned-checkpoint-verification'});
+  {path:path.relative(repository,stylePath),sha256:hash(styleOriginal),outputSha256:hash(styleContents),reason:'embed-exact-original-dom-stylesheet',steps:[{id:'sealed-jsdom-stylesheet',originalSHA256:hash(styleLoader),outputSHA256:hash(styleReplacement)}]}];
  transforms.push({path:path.relative(repository,jsoncMain),sha256:hash(await fs.readFile(jsoncMain)),outputSha256:hash(await fs.readFile(jsonc.modulePath)),reason:'pinned-jsonc-original-esm-module-resolution'},
   {path:path.relative(repository,xhrPath),sha256:hash(xhrOriginal),outputSha256:hash(xhrContents),reason:'compiled-dom-sync-xhr-lazy-original-worker-resolver'});
- return {inputFiles,resolutions,workspaceResolutions,rewrites:new Map([[imagegenPath,imagegen.contents],[imagegenDebugPath,imagegenDebug],[jsdomPath,jsdomContents],[stylePath,styleContents],[xhrPath,xhrContents],[documentPath,document.contents],[browserPath,browser.contents],[claudePath,claudeContents],[libsqlPath,libsqlContents],[spawnPath,spawnContents],[httpPath,httpContents],[checkpointPath,checkpointContents]]),virtualModules:new Map([['devryan:reviewed-claude-startup',`export {startReviewedProxy,checkReviewedProxy,scrubReviewedSystem} from ${JSON.stringify(claudePath)};`],['devryan:reviewed-claude-scrub',`export {scrubOpencodeFingerprints} from ${JSON.stringify(path.join(root,'claude-1.11.2/node_modules/@rynfar/meridian-plugin-opencode-scrub/dist/scrub.js'))};`]]),transforms,claudeAssets,claudeCredentials,
+ return {inputFiles,resolutions,workspaceResolutions,rewrites:new Map([[imagegenPath,imagegen.contents],[imagegenDebugPath,imagegenDebug],[jsdomPath,jsdomContents],[stylePath,styleContents],[xhrPath,xhrContents],[documentPath,document.contents],[browserPath,browser.contents]]),virtualModules:new Map(),transforms,
   provenance:manifest.inputs.map(({id,version,sourceKind,sourceLocation,license})=>({id,version,sourceKind,sourceLocation,license})),
   ast:{source:astPath,path:REVIEWED_AST_FILENAME,sha256:REVIEWED_AST_ASSET_SHA256}};
 }
@@ -226,7 +193,7 @@ export function reviewedNativeInputPlugin({rewrites,virtualModules,inputFiles,re
    }
    if(isBuiltin(event.path)||event.path.startsWith('bun:'))return {path:event.path,external:true};
    const importer=path.resolve(event.importer);
-   const captured=['jsdom-30.1.1/node_modules','claude-1.11.2/node_modules','imagegen-0.1.12'].some(part=>importer.includes(path.sep+path.join('reviewed-inputs',part)+path.sep));
+   const captured=['jsdom-30.1.1/node_modules','imagegen-0.1.12'].some(part=>importer.includes(path.sep+path.join('reviewed-inputs',part)+path.sep));
    if(captured){
     const resolved=resolutions.get(importer+'\0'+event.path);
     if(resolved)return {path:resolved};

@@ -47,16 +47,15 @@ describe('managed plugin manifest', () => {
       'mammoth': '1.12.1',
       'unpdf': '1.8.0',
       '@rama_nigg/open-cursor': '2.5.17',
-      'opencode-with-claude': '1.11.2',
       'opencode-gpt-imagegen': '0.1.12',
     });
     expect(DEVRYAN_MANAGED_PROFILE_PLUGIN_SPECS).toEqual([
       './plugins/devryan-open-cursor.mjs',
-      './node_modules/opencode-with-claude/dist/index.js',
       './node_modules/opencode-gpt-imagegen/dist/index.js',
       './plugins/devryan-skill-context.mjs',
       './plugins/devryan-document-reader.mjs',
     ]);
+    expect(DEVRYAN_MANAGED_PROFILE_DEPENDENCIES).not.toHaveProperty('@rynfar/meridian');
     expect(DEVRYAN_MANAGED_PROFILE_PLUGIN_SPECS.every((spec) => (
       spec.startsWith('./') && !spec.includes('@latest') && !spec.includes('git+')
     ))).toBe(true);
@@ -89,7 +88,12 @@ describe('managed plugin manifest', () => {
     ));
 
     expect(webProfileConfig.plugin).toEqual(DEVRYAN_MANAGED_PROFILE_PLUGIN_SPECS);
-    expect(tauriRootConfig).toEqual(webRootConfig);
+    // The forward root config registers no plugin; released Tauri keeps its frozen
+    // registration of the retired OpenCode with Claude plugin.
+    expect(webRootConfig).not.toHaveProperty('plugin');
+    const { plugin: tauriRootPlugins, ...tauriRootRest } = tauriRootConfig;
+    expect(tauriRootRest).toEqual(webRootConfig);
+    expect(tauriRootPlugins).toEqual(['./node_modules/opencode-with-claude/dist/index.js']);
     expect(webPackage.dependencies).toMatchObject(DEVRYAN_MANAGED_PROFILE_DEPENDENCIES);
     expect(webPackage.dependencies).not.toHaveProperty('oh-my-opencode-slim');
     expect(tauriProfileConfig.plugin).not.toContain('./plugins/devryan-document-reader.mjs');
@@ -140,7 +144,6 @@ describe('managed plugin manifest', () => {
     ])).toEqual([
       'custom-plugin@4.2.0',
       './plugins/devryan-open-cursor.mjs',
-      ['./node_modules/opencode-with-claude/dist/index.js', { enabled: true }],
       './node_modules/opencode-gpt-imagegen/dist/index.js',
       './plugins/devryan-skill-context.mjs',
       './plugins/devryan-document-reader.mjs',
@@ -164,6 +167,35 @@ describe('managed plugin manifest', () => {
       'oh-my-opencode-slim@2.2.24',
     ]).some((entry) => JSON.stringify(entry).includes('slim'))).toBe(false);
     expect(RETIRED_DEVRYAN_PROFILE_DEPENDENCIES['oh-my-opencode-slim']).toBe('2.2.25');
+  });
+
+  it('retires every OpenCode with Claude and Claude transport registration an upgraded setup still lists', () => {
+    for (const spec of [
+      'opencode-with-claude',
+      'opencode-with-claude@1.6.18',
+      'opencode-with-claude@1.8.0',
+      'opencode-with-claude@1.11.2',
+      './node_modules/opencode-with-claude/dist/index.js',
+      'file:///Users/test/.config/opencode/node_modules/opencode-with-claude/dist/index.js',
+      './plugins/devryan-claude-transport.mjs',
+      '/Users/test/.config/opencode/plugins/devryan-claude-transport.mjs',
+    ]) {
+      expect(isRetiredDevRyanPluginSpec(spec)).toBe(true);
+      expect(getDevRyanManagedPluginForSpec(spec)).toBeNull();
+    }
+    expect(DEVRYAN_MANAGED_PLUGIN_IDS).not.toHaveProperty('CLAUDE');
+    // A user pin at a version DevRyan never shipped stays the user's.
+    expect(isRetiredDevRyanPluginSpec('opencode-with-claude@1.6.17')).toBe(false);
+    expect(reconcileDevRyanManagedPluginSpecs([
+      'user-plugin@1.0.0',
+      ['./node_modules/opencode-with-claude/dist/index.js', { enabled: true }],
+      './plugins/devryan-claude-transport.mjs',
+      'opencode-with-claude@1.11.2',
+    ]).some((entry) => JSON.stringify(entry).includes('claude'))).toBe(false);
+    expect(RETIRED_DEVRYAN_PROFILE_DEPENDENCIES).toMatchObject({
+      'opencode-with-claude': '1.11.2',
+      '@rynfar/meridian': '1.79.0',
+    });
   });
 
   it('retires every Ponytail registration an upgraded setup still lists', () => {
@@ -229,6 +261,8 @@ describe('managed plugin manifest', () => {
       'context-mode': '1.0.169',
       'opencode-antigravity-auth': '1.6.0',
       'oh-my-opencode-slim': '2.2.25',
+      'opencode-with-claude': '1.11.2',
+      '@rynfar/meridian': '1.79.0',
     });
   });
 
@@ -267,10 +301,10 @@ describe('managed plugin manifest', () => {
     const configDirectory = path.join('/Users', 'test', '.config', 'opencode');
     const projectConfigPath = path.join('/tmp', 'project', '.opencode', 'opencode.json');
     expect(getDevRyanManagedPluginRegistrationForConfigPath(
-      DEVRYAN_MANAGED_PLUGIN_IDS.CLAUDE,
+      DEVRYAN_MANAGED_PLUGIN_IDS.GPT_IMAGEGEN,
       { configDirectory, configPath: projectConfigPath },
     )).toBe(
-      'file:///Users/test/.config/opencode/node_modules/opencode-with-claude/dist/index.js',
+      'file:///Users/test/.config/opencode/node_modules/opencode-gpt-imagegen/dist/index.js',
     );
   });
 

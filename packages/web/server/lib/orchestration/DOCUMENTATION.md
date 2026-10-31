@@ -186,14 +186,12 @@ The runtime wires the scheduler's `autoResume` hooks. `resolveOwnerKey` (default
 to `user:<id>` through the multi-user runtime. `resolveBackupExecution` (default
 none) returns the agent's backup model: the host-managed backup for a managed
 session, otherwise the packaged/local agent config via
-`resolveLocalAgentBackupExecution`. `resolveProviderReset` (default none) is the
-Meridian probe from `provider-reset-probe.js`: for Anthropic-routed providers on
-a managed OpenCode runtime it resolves the loopback Claude proxy from
-`/config/providers` (shared `createClaudeProxyBaseUrlResolver`, per-directory
-cache) and reads `/v1/usage/quota`, answering `{ limited, resetAt }` from the raw
-buckets (`rejected` status or 100% utilization); external runtimes, other
-providers, a missing proxy, or a failed read answer null, and successful signals
-are cached per proxy for 60 s with single-flight coalescing.
+`resolveLocalAgentBackupExecution`. `resolveProviderReset` (default none) is
+`createClaudeAgentProviderResetProbe` from `provider-reset-probe.js`: for the
+`claude-agent` provider it reads the subscription windows Claude Code last reported
+(the native owner's `readClaudeAgentUsage`) and answers `{ limited, resetAt }`
+(a `rejected` window or 100% utilization, earliest limited reset); other
+providers or no recorded usage answer null. It makes no provider request.
 
 The `attempt` callback re-enters `handleRpcInternal` with the scheduler's
 `retry_in_place` acknowledgement under an internal `{ autoResume: true }`

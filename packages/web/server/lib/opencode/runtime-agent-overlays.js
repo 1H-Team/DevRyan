@@ -29,7 +29,6 @@ import {
   GITHUB_COPILOT_PROVIDER_ID,
   GITHUB_COPILOT_PROVIDER_NAME,
 } from './provider-integrations.js';
-import { isAnthropicOAuthPluginSpec } from './anthropic-oauth-plugin.js';
 import { isRuntimePluginFileName } from './default-config-assets.js';
 import { resolveActiveProjectWorktreeContainer } from './worktree-permissions.js';
 
@@ -45,7 +44,6 @@ const DEFAULT_RUNTIME_AGENT_OVERLAY_MANIFEST_PATH = path.join(OPENCODE_CONFIG_DI
 // Must cover OAuth discovery + DCR + token refresh: an abort mid-refresh burns
 // the rotated refresh token and de-authenticates the MCP (invalid_grant loop).
 const DEFAULT_REMOTE_MCP_TIMEOUT_MS = 60_000;
-const ANTHROPIC_OAUTH_CONFIG_PROVIDER_ID = 'anthropic';
 const SLIM_CONFIG_FILE_NAMES = [...AGENTS_CONFIG_FILE_NAMES, ...LEGACY_SLIM_CONFIG_FILE_NAMES];
 
 // OpenCode merges higher-precedence agent markdown over project markdown. It
@@ -194,51 +192,6 @@ const normalizeRemoteMcpTimeoutMs = (value) => (
     ? Math.trunc(value)
     : DEFAULT_REMOTE_MCP_TIMEOUT_MS
 );
-
-const isAnthropicOAuthProxyOptions = (options) => {
-  if (!isPlainObject(options) || options.apiKey !== 'dummy' || typeof options.baseURL !== 'string') {
-    return false;
-  }
-
-  try {
-    const url = new URL(options.baseURL);
-    return url.protocol === 'http:' && ['127.0.0.1', 'localhost'].includes(url.hostname) && Boolean(url.port);
-  } catch {
-    return false;
-  }
-};
-
-const buildAnthropicOAuthProxyOverlay = (workingDirectory, options = {}) => {
-  const readActiveConfig = typeof options.readConfig === 'function' ? options.readConfig : readConfig;
-  const config = readActiveConfig(workingDirectory);
-  const plugin = Array.isArray(config?.plugin)
-    ? config.plugin.filter((entry) => typeof entry === 'string')
-    : [];
-  const anthropicPlugin = plugin.find(isAnthropicOAuthPluginSpec);
-  if (!anthropicPlugin) {
-    return null;
-  }
-
-  const providers = isPlainObject(config?.provider) ? config.provider : {};
-  const anthropic = isPlainObject(providers[ANTHROPIC_OAUTH_CONFIG_PROVIDER_ID])
-    ? providers[ANTHROPIC_OAUTH_CONFIG_PROVIDER_ID]
-    : null;
-  const anthropicOptions = isPlainObject(anthropic?.options) ? anthropic.options : {};
-  if (!isAnthropicOAuthProxyOptions(anthropicOptions)) {
-    return null;
-  }
-
-  return {
-    provider: {
-      [ANTHROPIC_OAUTH_CONFIG_PROVIDER_ID]: {
-        ...anthropic,
-        options: {
-          ...anthropicOptions,
-        },
-      },
-    },
-  };
-};
 
 const buildRemoteMcpTimeoutOverlay = (workingDirectory, options = {}) => {
   const timeoutMs = normalizeRemoteMcpTimeoutMs(options.remoteMcpTimeoutMs);
@@ -539,7 +492,6 @@ const buildRuntimeConfigOverlay = (workingDirectory, options = {}) => {
     buildRemoteMcpTimeoutOverlay(workingDirectory, options),
     buildBlockedMcpOverlay(workingDirectory, options),
     activePluginPlan.overlay,
-    buildAnthropicOAuthProxyOverlay(workingDirectory, options),
     buildPackagedPluginOverlay(packagedPluginSpecs),
     AGENT_RUNTIME_LSP_OVERLAY,
   ].filter(Boolean);

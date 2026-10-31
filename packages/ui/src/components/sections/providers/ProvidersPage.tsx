@@ -9,7 +9,6 @@ import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { quotaRefreshCoordinator, useQuotaStore } from '@/stores/useQuotaStore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Switch } from '@/components/ui/switch';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -54,17 +53,11 @@ import { ProviderUsageSection, UsageOnlyProviderView } from './ProviderUsage';
 import { useUsageOnlySelectionAvailable } from './useProviderUsage';
 import { useI18n } from '@/lib/i18n';
 import { useAuthPrincipal } from '@/lib/authSession';
-import { ClaudeDedicatedEnrollment } from './ClaudeDedicatedEnrollment';
 import { ClaudeAgentConnection } from './ClaudeAgentConnection';
 import { CLAUDE_AGENT_PROVIDER_ID } from './claudeAgentApi';
 import { getProviderModelUnavailability } from '@/lib/providers/modelAvailability';
 import { BundledRuntimeUpdate } from './BundledRuntimeUpdate';
 import { ProviderAccounts } from './ProviderAccounts';
-import {
-  getClaudePromptMode,
-  setClaudeCompatibilityMode,
-  type ClaudePromptModeState,
-} from '@/lib/claudePromptModeApi';
 import {
   disconnectProvider,
   getProviderDisconnectOutcome,
@@ -90,105 +83,17 @@ interface AuthMethod {
   [key: string]: unknown;
 }
 
-interface ClaudeCliStatus {
-  installed: boolean;
-  path?: string | null;
-  loggedIn?: boolean;
-  authStatus?: 'authenticated' | 'signed_out' | 'unavailable' | 'error';
-  authMethod?: string;
-  subscriptionType?: string;
-  lastSuccessfulInferenceAt?: number | null;
-  lastLaunchFailure?: { at: number; code: string } | null;
-  error?: string;
-}
-
-type ClaudeAuthenticationState = 'loading' | 'unavailable' | 'account_unavailable' | 'error' | 'authenticated' | 'signed_out';
-
-const getClaudeAuthenticationState = (status: ClaudeCliStatus | null, loading: boolean): ClaudeAuthenticationState => {
-  if (loading || !status) return 'loading';
-  if (status.authStatus === 'error') return 'error';
-  if (!status.installed) return 'unavailable';
-  if (status.authStatus === 'unavailable') return 'account_unavailable';
-  if (status.authStatus === 'authenticated' && status.loggedIn) return 'authenticated';
-  return 'signed_out';
-};
-
-const claudeAuthenticationTitleKeys = {
-  loading: 'settings.providers.page.auth.checkingClaudeCliTitle',
-  unavailable: 'settings.providers.page.auth.claudeCliMissingTitle',
-  account_unavailable: 'settings.providers.page.auth.claudeStatusErrorTitle',
-  error: 'settings.providers.page.auth.claudeStatusErrorTitle',
-  authenticated: 'settings.providers.page.auth.claudeAuthenticatedTitle',
-  signed_out: 'settings.providers.page.auth.claudeLoginTitle',
-} as const;
-
-const claudeAuthenticationDescriptionKeys = {
-  loading: null,
-  unavailable: 'settings.providers.page.auth.claudeCliMissingDescription',
-  account_unavailable: 'settings.providers.page.auth.claudeStatusErrorDescription',
-  error: 'settings.providers.page.auth.claudeStatusErrorDescription',
-  authenticated: null,
-  signed_out: 'settings.providers.page.auth.claudeLoginDescription',
-} as const;
-
-type ClaudeAuthenticationDescription = { text: string; key?: undefined } | { text?: undefined; key: NonNullable<typeof claudeAuthenticationDescriptionKeys[ClaudeAuthenticationState]> };
-
-const getClaudeAuthenticationDescription = (status: ClaudeAuthenticationState, claudeStatus: ClaudeCliStatus | null): ClaudeAuthenticationDescription | null => {
-  if ((status === 'error' || status === 'account_unavailable') && claudeStatus?.error) return { text: claudeStatus.error };
-  const key = claudeAuthenticationDescriptionKeys[status];
-  return key ? { key } : null;
-};
-
-const CLAUDE_LAUNCH_FAILURE_LABELS: Readonly<Record<string, string>> = {
-  native_claude_transport_invalid: 'Transport reply invalid', native_claude_transport_expired: 'Transport timed out',
-  native_claude_transport_failed: 'Transport failed', native_claude_transport_overflow: 'Transport output limit',
-  native_claude_transport_unconfirmed: 'Process termination unconfirmed', native_claude_transport_credential_failed: 'Credential access failed',
-  native_claude_transport_state_failed: 'Runtime state unavailable', native_claude_transport_launch_failed: 'Process launch failed',
-  native_claude_transport_identity_failed: 'Runtime identity check failed', native_claude_transport_attach_failed: 'Process attachment failed',
-  claude_process_permission: 'Process permission denied', claude_process_failed: 'Provider process failed',
-  provider_authentication: 'Provider authentication rejected', provider_internal: 'Provider internal error',
-};
-const validInferenceTime = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
-  && value >= 0 && value <= 8.64e15;
-function ClaudeInferenceHealth({ status }: { status: ClaudeCliStatus | null }) {
-  const success = status?.lastSuccessfulInferenceAt;
-  const failure = status?.lastLaunchFailure;
-  const failureLabel = failure && validInferenceTime(failure.at) && Object.hasOwn(CLAUDE_LAUNCH_FAILURE_LABELS, failure.code)
-    ? CLAUDE_LAUNCH_FAILURE_LABELS[failure.code] : null;
-  if (!validInferenceTime(success) && !failureLabel) return null;
-  return <div className="space-y-0.5 typography-meta text-muted-foreground" data-claude-inference-health>
-    <p>Saved sign-in status is separate from inference availability.</p>
-    {validInferenceTime(success) ? <p>Last successful inference: <time dateTime={new Date(success).toISOString()}>{new Date(success).toLocaleString()}</time></p> : null}
-    {failureLabel && failure ? <p className="text-[var(--status-warning)]">Last launch failed: {failureLabel} <time dateTime={new Date(failure.at).toISOString()}>({new Date(failure.at).toLocaleString()})</time></p> : null}
-  </div>;
-}
-
-export function ProviderAuthenticationSummary({ providerId, connectionState, cursorConfigured, cursorUnavailable = false, claudeStatus, claudeLoading }: {
+export function ProviderAuthenticationSummary({ providerId, connectionState, cursorConfigured, cursorUnavailable = false }: {
   providerId: string;
   connectionState: ProviderConnectionState;
   cursorConfigured: boolean;
   cursorUnavailable?: boolean;
-  claudeStatus: ClaudeCliStatus | null;
-  claudeLoading: boolean;
 }) {
   const { t } = useI18n();
-  const providerOAuth = useRuntimeFeature('providerOAuth');
   if (providerId === CURSOR_ACP_PROVIDER_ID && cursorUnavailable && connectionState !== 'disconnect_pending') {
     return <div className="py-1.5 typography-ui-label text-muted-foreground" data-cursor-capability="unsupported">
       {t('settings.providers.page.auth.cursorUnavailable')}
     </div>;
-  }
-  if (providerOAuth && isAnthropicOAuthProviderId(providerId) && connectionState !== 'disconnect_pending' && connectionState !== 'not_connected') {
-    const status = getClaudeAuthenticationState(claudeStatus, claudeLoading);
-    const description = getClaudeAuthenticationDescription(status, claudeStatus);
-    return (
-      <div data-claude-auth-state={status}><div className="flex items-center gap-1.5 py-1.5">
-        {status === 'loading' ? <RiLoader4Line className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" aria-hidden="true" />
-          : status === 'authenticated' ? <RiCheckLine className="w-4 h-4 text-[var(--status-success)] shrink-0" /> : null}
-        <span className="typography-ui-label text-foreground">{t(claudeAuthenticationTitleKeys[status])}</span>
-        {description ? <span className="typography-meta text-muted-foreground ml-1">{description.text ?? t(description.key)}</span> : null}
-      </div><ClaudeInferenceHealth status={claudeStatus} /></div>
-    );
   }
   const cursorSetupRequired = providerId === CURSOR_ACP_PROVIDER_ID && !cursorConfigured;
   return (
@@ -254,8 +159,10 @@ const parseAuthPayload = (payload: unknown): Record<string, AuthMethod[]> => {
   return result;
 };
 
+// Claude is Claude Code's own login (claude-agent); DevRyan accepts no Anthropic key.
 const providerSupportsApiKey = (providerId: string, nativeOAuth = true) => (
   !isRetiredProviderId(providerId)
+  && providerId !== CLAUDE_AGENT_PROVIDER_ID
   && (!nativeOAuth || !isAnthropicOAuthProviderId(providerId))
 );
 
@@ -303,12 +210,6 @@ const ProvidersPageContent: React.FC = () => {
   const [providerSources, setProviderSources] = React.useState<Record<string, ProviderSources>>({});
   const [showAuthPanel, setShowAuthPanel] = React.useState(false);
   const [accountsRefreshKey, setAccountsRefreshKey] = React.useState(0);
-  const [claudeCliStatus, setClaudeCliStatus] = React.useState<ClaudeCliStatus | null>(null);
-  const [claudeCliStatusLoading, setClaudeCliStatusLoading] = React.useState(false);
-  const [claudePromptMode, setClaudePromptMode] = React.useState<ClaudePromptModeState | null>(null);
-  const [claudePromptModeLoading, setClaudePromptModeLoading] = React.useState(false);
-  const [claudePromptModeUpdating, setClaudePromptModeUpdating] = React.useState(false);
-  const [claudePromptModeError, setClaudePromptModeError] = React.useState<string | null>(null);
   const [cursorRuntimeStatus, setCursorRuntimeStatus] = React.useState<CursorAcpRuntimeStatus | null>(null);
   const appliedRevision = useConfigApplyStore((state) => state.status?.appliedRevision ?? 0);
   const pendingRevisionByProvider = useProviderDisconnectStore((state) => state.pendingRevisionByProvider);
@@ -459,13 +360,6 @@ const ProvidersPageContent: React.FC = () => {
     }
   }, [selectedProviderId, candidateProviderId, unconnectedProviders]);
 
-  const activeAnthropicProviderId = React.useMemo(() => {
-    if (!providerOAuth) return null;
-    if (selectedProviderId === ADD_PROVIDER_ID) {
-      return isAnthropicOAuthProviderId(candidateProviderId) ? candidateProviderId : null;
-    }
-    return isAnthropicOAuthProviderId(selectedProviderId) ? selectedProviderId : null;
-  }, [candidateProviderId, selectedProviderId, providerOAuth]);
   const activeCursorAcpProviderId = React.useMemo(() => {
     if (!providerOAuth) return null;
     if (selectedProviderId === ADD_PROVIDER_ID) {
@@ -482,73 +376,6 @@ const ProvidersPageContent: React.FC = () => {
       ? providerId
       : null;
   }, [candidateProviderId, selectedProviderId, providerOAuth]);
-
-  const refreshClaudeCliStatus = React.useCallback(async () => {
-    if (!activeAnthropicProviderId) {
-      setClaudeCliStatus(null);
-      setClaudeCliStatusLoading(false);
-      return;
-    }
-
-    setClaudeCliStatusLoading(true);
-    try {
-      const response = await fetch('/api/provider/anthropic/claude-cli', {
-        method: 'GET',
-        headers: { Accept: 'application/json' },
-      });
-      const payload = await response.json().catch(() => null);
-      if (!response.ok) {
-        throw new Error(payload?.error || t('settings.providers.page.toast.claudeCliCheckFailed'));
-      }
-      setClaudeCliStatus({
-        installed: Boolean(payload?.installed),
-        path: typeof payload?.path === 'string' ? payload.path : null,
-        loggedIn: payload?.loggedIn === true,
-        authStatus: typeof payload?.authStatus === 'string' ? payload.authStatus : undefined,
-        authMethod: typeof payload?.authMethod === 'string' ? payload.authMethod : undefined,
-        subscriptionType: typeof payload?.subscriptionType === 'string' ? payload.subscriptionType : undefined,
-        lastSuccessfulInferenceAt: validInferenceTime(payload?.lastSuccessfulInferenceAt) ? payload.lastSuccessfulInferenceAt : null,
-        lastLaunchFailure: isRecord(payload?.lastLaunchFailure) && validInferenceTime(payload.lastLaunchFailure.at)
-          && typeof payload.lastLaunchFailure.code === 'string' && Object.hasOwn(CLAUDE_LAUNCH_FAILURE_LABELS, payload.lastLaunchFailure.code)
-          ? { at: payload.lastLaunchFailure.at, code: payload.lastLaunchFailure.code } : null,
-        error: typeof payload?.error === 'string' ? payload.error : undefined,
-      });
-    } catch (error) {
-      console.error('Failed to check Claude Code availability:', error);
-      setClaudeCliStatus({ installed: false, path: null, loggedIn: false, authStatus: 'error' });
-      toast.error(t('settings.providers.page.toast.claudeCliCheckFailed'));
-    } finally {
-      setClaudeCliStatusLoading(false);
-    }
-  }, [activeAnthropicProviderId, t]);
-
-  React.useEffect(() => {
-    void refreshClaudeCliStatus();
-  }, [refreshClaudeCliStatus]);
-
-  const refreshClaudePromptMode = React.useCallback(async () => {
-    if (!activeAnthropicProviderId) {
-      setClaudePromptMode(null);
-      setClaudePromptModeError(null);
-      setClaudePromptModeLoading(false);
-      return;
-    }
-    setClaudePromptModeLoading(true);
-    setClaudePromptModeError(null);
-    try {
-      setClaudePromptMode(await getClaudePromptMode());
-    } catch (error) {
-      setClaudePromptModeError(
-        error instanceof Error ? error.message : t('settings.providers.page.claudeCompatibility.loadFailed'),
-      );
-    } finally {
-      setClaudePromptModeLoading(false);
-    }
-  }, [activeAnthropicProviderId, t]);
-
-  React.useEffect(() => {
-    void refreshClaudePromptMode();
-  }, [refreshClaudePromptMode]);
 
   const refreshCursorRuntimeStatus = React.useCallback(async () => {
     if (!activeCursorAcpProviderId) {
@@ -643,7 +470,7 @@ const ProvidersPageContent: React.FC = () => {
 
   const selectedProvider = providers.find((provider) => provider.id === selectedProviderId);
   const selectedSources = selectedProviderId ? providerSources[selectedProviderId] : undefined;
-  const selectedProviderName = selectedProvider ? getProviderDisplayName(selectedProvider, selectedSources) : '';
+  const selectedProviderName = selectedProvider ? getProviderDisplayName(selectedProvider) : '';
   const selectedProviderSupportsApiKey = selectedProvider ? providerSupportsApiKey(selectedProvider.id, providerOAuth) : false;
   const selectedProviderIsCursor = isCursorAcpProviderId(selectedProvider?.id);
   const selectedCursorUnavailable = selectedProviderIsCursor && cursorRuntimeStatus?.platformUnavailable === true;
@@ -1007,25 +834,6 @@ const ProvidersPageContent: React.FC = () => {
     );
   };
 
-  const handleClaudeCompatibilityChange = async (compatibilityMode: boolean) => {
-    if (claudePromptModeUpdating || claudePromptMode?.editable === false) return;
-    setClaudePromptModeUpdating(true);
-    setClaudePromptModeError(null);
-    try {
-      const next = await setClaudeCompatibilityMode(compatibilityMode);
-      setClaudePromptMode(next);
-      toast.success(compatibilityMode
-        ? t('settings.providers.page.claudeCompatibility.enabled')
-        : t('settings.providers.page.claudeCompatibility.disabled'));
-    } catch (error) {
-      setClaudePromptModeError(
-        error instanceof Error ? error.message : t('settings.providers.page.claudeCompatibility.updateFailed'),
-      );
-    } finally {
-      setClaudePromptModeUpdating(false);
-    }
-  };
-
   const handleConfigureCursorAcp = async () => {
     const busyKey = 'cursor-configure';
     setAuthBusyKey(busyKey);
@@ -1108,70 +916,6 @@ const ProvidersPageContent: React.FC = () => {
       </div>
     );
   };
-
-  const renderClaudeCodeAuth = () => {
-    const status = getClaudeAuthenticationState(claudeCliStatus, claudeCliStatusLoading);
-    const description = getClaudeAuthenticationDescription(status, claudeCliStatus);
-    return <>
-      <div className="flex items-center justify-between gap-3 py-1.5">
-        <div>
-          <div className="typography-ui-label text-foreground">{t(claudeAuthenticationTitleKeys[status])}</div>
-          {description ? <div className="typography-meta text-muted-foreground">{description.text ?? t(description.key)}</div> : null}
-        </div>
-        {status !== 'loading' ? <Button variant="ghost" size="xs" className="!font-normal" onClick={refreshClaudeCliStatus}>
-          {t('settings.providers.page.actions.refresh')}
-        </Button> : null}
-      </div>
-      <ClaudeInferenceHealth status={claudeCliStatus} />
-      <ClaudeDedicatedEnrollment
-        administrator={principal.role === 'admin'}
-        principalID={principal.id}
-        directory={currentDirectory}
-        onSelected={async () => {
-          const result = await requestPostAuthConfigReload();
-          if (!result.ok) throw new Error('reload');
-          await loadProviders({ directory: null });
-          await refreshClaudeCliStatus();
-        }}
-      />
-    </>;
-  };
-
-  const renderClaudeCompatibilityMode = () => (
-    <div className="flex min-w-0 flex-col gap-2 py-1.5 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
-      <div className="min-w-0">
-        <div className="typography-ui-label text-foreground">
-          {t('settings.providers.page.claudeCompatibility.title')}
-        </div>
-        <div className="typography-meta text-muted-foreground">
-          {claudePromptMode?.editable === false
-            ? t('settings.providers.page.claudeCompatibility.externalReadOnly')
-            : t('settings.providers.page.claudeCompatibility.description')}
-        </div>
-        {claudePromptModeError ? (
-          <div role="alert" className="typography-meta mt-1 text-[var(--status-error)]">
-            {claudePromptModeError}
-          </div>
-        ) : null}
-      </div>
-      <div className="flex shrink-0 items-center gap-2 pt-0.5">
-        {claudePromptModeLoading ? (
-          <RiLoader4Line className="size-4 animate-spin text-muted-foreground" aria-hidden="true" />
-        ) : null}
-        <Switch
-          aria-label={t('settings.providers.page.claudeCompatibility.title')}
-          checked={claudePromptMode?.compatibilityMode === true}
-          disabled={
-            claudePromptModeLoading
-            || claudePromptModeUpdating
-            || !claudePromptMode
-            || claudePromptMode.editable === false
-          }
-          onCheckedChange={(checked) => void handleClaudeCompatibilityChange(checked)}
-        />
-      </div>
-    </div>
-  );
 
   const pendingConnection = pendingConnections[selectedProviderId];
   const connectionStatus = pendingConnection ? (
@@ -1359,13 +1103,6 @@ const ProvidersPageContent: React.FC = () => {
                       </Button>
                     </div>
                   </div>
-                  )}
-
-                  {providerOAuth && isAnthropicOAuthProviderId(candidateProviderId) && (
-                    <>
-                      {renderClaudeCodeAuth()}
-                      {renderClaudeCompatibilityMode()}
-                    </>
                   )}
 
                   {candidateProviderId === CLAUDE_AGENT_PROVIDER_ID && (
@@ -1584,8 +1321,6 @@ const ProvidersPageContent: React.FC = () => {
                 connectionState={selectedConnectionState}
                 cursorConfigured={cursorSdkConfigured}
                 cursorUnavailable={selectedCursorUnavailable}
-                claudeStatus={claudeCliStatus}
-                claudeLoading={claudeCliStatusLoading}
               />
             ) : authLoading ? (
               <div className="py-1.5 typography-meta text-muted-foreground">{t('settings.providers.page.auth.loadingMethods')}</div>
@@ -1627,10 +1362,6 @@ const ProvidersPageContent: React.FC = () => {
                     </Button>
                   </div>
                 </div>
-                )}
-
-                {providerOAuth && isAnthropicOAuthProviderId(selectedProvider.id) && (
-                  renderClaudeCodeAuth()
                 )}
 
                 {selectedProvider.id === CLAUDE_AGENT_PROVIDER_ID && (
@@ -1767,7 +1498,6 @@ const ProvidersPageContent: React.FC = () => {
           </div>
 
           <section className="px-2 pb-2 pt-0">
-            {providerOAuth && isAnthropicOAuthProviderId(selectedProvider.id) ? renderClaudeCompatibilityMode() : null}
             <div className="flex flex-col gap-2 py-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
               <div className="flex min-w-0 flex-col">
                 {selectedDisconnectPending ? (

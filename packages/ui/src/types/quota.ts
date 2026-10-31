@@ -6,7 +6,6 @@ export type QuotaProviderId =
   | 'opencode-go'
   | 'cursor-acp'
   | 'deepseek'
-  | 'claude'
   | 'claude-agent'
   | 'github-copilot'
   | 'github-copilot-addon'

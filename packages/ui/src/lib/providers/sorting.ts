@@ -1,17 +1,5 @@
 import { getProviderDisplayName } from './display';
 
-interface ProviderSourceInfo {
-  exists: boolean;
-}
-
-interface ProviderSourcesLike {
-  auth?: ProviderSourceInfo;
-  user?: ProviderSourceInfo;
-  project?: ProviderSourceInfo;
-  custom?: ProviderSourceInfo;
-  anthropicOAuth?: ProviderSourceInfo;
-}
-
 interface ProviderLike {
   id: string;
   name?: string;
@@ -41,11 +29,10 @@ const getModelSortLabel = (model: ModelLike): string => (
 
 export const sortProvidersByDisplayName = <T extends ProviderLike>(
   providers: readonly T[],
-  sourcesByProvider: Record<string, ProviderSourcesLike | undefined> = {}
 ): T[] => (
   [...providers].sort((a, b) => {
-    const labelA = getProviderDisplayName(a, sourcesByProvider[a.id]);
-    const labelB = getProviderDisplayName(b, sourcesByProvider[b.id]);
+    const labelA = getProviderDisplayName(a);
+    const labelB = getProviderDisplayName(b);
     const labelComparison = comparePickerLabels(labelA, labelB);
     if (labelComparison !== 0) {
       return labelComparison;
@@ -71,11 +58,10 @@ export const sortProviderTreeForPicker = <
   T extends ProviderWithModels<M>,
 >(
   providers: readonly T[],
-  sourcesByProvider: Record<string, ProviderSourcesLike | undefined> = {}
 ): T[] => {
   const withSortedModels = providers.map((provider) => {
     const models = Array.isArray(provider.models) ? provider.models : [];
     return { ...provider, models: sortModelsByDisplayName(models) } as T;
   });
-  return sortProvidersByDisplayName(withSortedModels, sourcesByProvider);
+  return sortProvidersByDisplayName(withSortedModels);
 };

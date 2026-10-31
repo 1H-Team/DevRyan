@@ -37,14 +37,20 @@ test('removes only bundles nothing can select again', async () => {
   expect(await remaining(root)).toEqual(['native-c-r3', 'native-d-r4', 'native-partial-r4', 'native-pending-r4']);
 });
 
-test('a pending Claude activation keeps its source selection for restore', async () => {
-  const root = await controlRoot({
-    bundles: { 'native-a-r1': 1, 'native-b-r2': 2, 'native-c-r3': 3 },
-    selection: { selectedBundleID: 'native-c-r3', previousBundleID: 'native-b-r2' },
-    activation: { state: 'pending', sourceSelection: { selectedBundleID: 'native-b-r2', previousBundleID: 'native-a-r1' } },
-  });
-  expect(await pruneSupersededBundles(root)).toEqual([]);
-  expect(await remaining(root)).toEqual(['native-a-r1', 'native-b-r2', 'native-c-r3']);
+test('a leftover Claude activation record from the retired Claude updater holds nothing back', async () => {
+  for (const activation of [
+    { state: 'pending', sourceSelection: { selectedBundleID: 'native-b-r2', previousBundleID: 'native-a-r1' } },
+    { state: 'pending' },
+    'not a record',
+  ]) {
+    const root = await controlRoot({
+      bundles: { 'native-a-r1': 1, 'native-b-r2': 2, 'native-c-r3': 3 },
+      selection: { selectedBundleID: 'native-c-r3', previousBundleID: 'native-b-r2' },
+      activation,
+    });
+    expect(await pruneSupersededBundles(root)).toEqual(['native-a-r1']);
+    expect(await remaining(root)).toEqual(['native-b-r2', 'native-c-r3']);
+  }
 });
 
 test('an unsettled rebind or a reconciling selection prunes nothing', async () => {

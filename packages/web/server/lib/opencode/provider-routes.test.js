@@ -61,56 +61,35 @@ describe('built-in OpenAI OAuth gate', () => {
   });
 });
 
-describe('dedicated Claude enrollment routes',()=>{
-  it('deletes only by administrator/CSRF scoped identity and rejects client supplied authority',async()=>{
-    const remove=vi.fn(async(id,context)=>{expect(id).toBe('owned-id');expect(context.directory).toBe('/tmp/project');expect(context.request.method).toBe('DELETE');return {enrollmentID:id,profileID:'owned-profile',status:'deleted'};});
-    const denied=createApp({getClaudeEnrollmentOwner:()=>({remove}),isProviderAdministrator:()=>false});
-    expect((await request(denied.app).delete('/api/provider/anthropic/enrollment/owned-id').set('x-devryan-csrf','1').send({})).status).toBe(403);
-    const allowed=createApp({getClaudeEnrollmentOwner:()=>({remove}),isProviderAdministrator:()=>true});
-    expect((await request(allowed.app).delete('/api/provider/anthropic/enrollment/owned-id').send({})).status).toBe(403);
-    expect((await request(allowed.app).delete('/api/provider/anthropic/enrollment/owned-id').set('x-devryan-csrf','1').send({service:'foreign'})).status).toBe(400);
-    expect(remove).not.toHaveBeenCalled();
-    const deleted=await request(allowed.app).delete('/api/provider/anthropic/enrollment/owned-id').set('x-devryan-csrf','1').send({});
-    expect(deleted.status).toBe(200);expect(deleted.body).toEqual({enrollmentID:'owned-id',profileID:'owned-profile',status:'deleted'});expect(remove).toHaveBeenCalledOnce();
+describe('retired Claude Meridian routes', () => {
+  it('no longer registers enrollment, CLI inspection, OAuth check, prompt-mode or Claude update routes', async () => {
+    const { app } = createApp({ isProviderAdministrator: () => true });
+    for (const [method, route] of [
+      ['get', '/api/provider/anthropic/enrollment'],
+      ['post', '/api/provider/anthropic/enrollment'],
+      ['post', '/api/provider/anthropic/enrollment/id/complete'],
+      ['post', '/api/provider/anthropic/enrollment/id/select'],
+      ['delete', '/api/provider/anthropic/enrollment/id'],
+      ['get', '/api/provider/anthropic/claude-cli'],
+      ['post', '/api/provider/anthropic/check-oauth'],
+      ['get', '/api/provider/anthropic/prompt-mode'],
+      ['put', '/api/provider/anthropic/prompt-mode'],
+      ['get', '/api/config/claude-update-check'],
+      ['get', '/api/config/claude-resolution'],
+    ]) {
+      const response = await request(app)[method](route).set('x-devryan-csrf', '1').send({});
+      expect(response.status, `${method.toUpperCase()} ${route}`).toBe(404);
+    }
   });
-  it('requires administrator and CSRF before any enrollment work',async()=>{
-    const begin=vi.fn();const owner={begin};
-    const denied=createApp({getClaudeEnrollmentOwner:()=>owner,isProviderAdministrator:()=>false,useJsonParser:false});
-    expect((await request(denied.app).post('/api/provider/anthropic/enrollment').set('Content-Type','application/json').send('{')).status).toBe(403);
-    const allowed=createApp({getClaudeEnrollmentOwner:()=>owner,isProviderAdministrator:()=>true,useJsonParser:false});
-    expect((await request(allowed.app).post('/api/provider/anthropic/enrollment').send({})).status).toBe(403);
-    expect(begin).not.toHaveBeenCalled();
-  });
-  it('uses original resolved directory/context and a separate explicit selection',async()=>{
-    const begin=vi.fn(async context=>{expect(context.directory).toBe('/tmp/project');expect(context.request.method).toBe('POST');return{enrollmentID:'synthetic-enrollment',status:'pending',url:'https://claude.com/cai/oauth/authorize'};});
-    const select=vi.fn(async()=>({status:'selected'})),complete=vi.fn(async()=>({status:'enrolled'}));
-    const app=createApp({getClaudeEnrollmentOwner:()=>({begin,complete,select}),isProviderAdministrator:()=>true});
-    expect((await request(app.app).post('/api/provider/anthropic/enrollment').set('x-devryan-csrf','1').send({})).status).toBe(200);
-    expect(select).not.toHaveBeenCalled();
-    expect((await request(app.app).post('/api/provider/anthropic/enrollment/id/complete').set('x-devryan-csrf','1').send({code:'fixture-code',state:'fixture-state'})).status).toBe(200);
-    expect(select).not.toHaveBeenCalled();
-    expect((await request(app.app).post('/api/provider/anthropic/enrollment/id/select').set('x-devryan-csrf','1').send({})).status).toBe(200);
-    expect(select).toHaveBeenCalledOnce();
-  });
-  it('refuses client-provided selection authority and sanitizes owner errors',async()=>{
-    const select=vi.fn();const begin=vi.fn(async()=>{throw new Error('sensitive-issuer-body');}),recordDiagnostic=vi.fn();
-    const list=vi.fn(async()=>{throw Object.assign(new Error('private /path'),{code:'native_claude_enrollment_location_unreviewed',status:503});});
-    const app=createApp({getClaudeEnrollmentOwner:()=>({select,begin,list}),isProviderAdministrator:()=>true,useJsonParser:false,recordDiagnostic});
-    const rejected=await request(app.app).post('/api/provider/anthropic/enrollment/id/select').set('x-devryan-csrf','1').send({service:'foreign'});
-    expect(rejected.status).toBe(400);expect(select).not.toHaveBeenCalled();
-    const failed=await request(app.app).post('/api/provider/anthropic/enrollment').set('x-devryan-csrf','1').send({});
-    expect(failed.status).toBe(409);expect(failed.body).toEqual({code:'native_claude_enrollment_refused'});
-    expect((await request(app.app).get('/api/provider/anthropic/enrollment')).status).toBe(503);
-    expect(recordDiagnostic.mock.calls.map(call=>call[0])).toEqual([
-      {type:'lifecycle',event:'claude_enrollment_failed',payload:{action:'select',code:'native_claude_enrollment_request_invalid',statusCode:400}},
-      {type:'lifecycle',event:'claude_enrollment_failed',payload:{action:'begin',code:'native_claude_enrollment_refused',statusCode:409}},
-      {type:'lifecycle',event:'claude_enrollment_failed',payload:{action:'list',code:'native_claude_enrollment_location_unreviewed',statusCode:503}},
-    ]);
-  });
-  it('keeps setup usable with typed update requirement before capability is installed',async()=>{
-    const app=createApp({isProviderAdministrator:()=>true,getClaudeEnrollmentOwner:()=>null});
-    const response=await request(app.app).get('/api/provider/anthropic/enrollment');
-    expect(response.status).toBe(409);expect(response.body).toEqual({code:'native_claude_enrollment_update_required'});
+
+  it('still refuses Anthropic API keys and points at the Claude Code connection', async () => {
+    const { app } = createApp();
+    for (const providerId of ['anthropic', 'claude']) {
+      const response = await request(app).put(`/api/auth/${providerId}`).send({ type: 'api', key: 'fixture-key' });
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('Anthropic API keys are not supported in DevRyan. Connect Claude Code in Settings → Providers → Claude.');
+      expect(JSON.stringify(response.body)).not.toContain('fixture-key');
+    }
   });
 });
 
@@ -139,17 +118,11 @@ const createApp = (overrides = {}) => {
         user: { exists: false, path: '/tmp/user-config.json' },
         project: { exists: false, path: null },
         custom: { exists: false, path: null },
-        anthropicOAuth: { exists: false, path: null },
       },
     })),
     removeProviderConfig: vi.fn(() => false),
     // Never let a route test reach the real Antigravity account files.
     listAntigravityAccountsPaths: vi.fn(async () => []),
-    ensureAnthropicOAuthProviderConfig: vi.fn(() => ({
-      changed: false,
-      path: '/tmp/user-config.json',
-      config: {},
-    })),
     ensureDefaultCursorAcpProviderConfig: vi.fn(() => ({
       changed: false,
       path: '/tmp/user-config.json',
@@ -163,12 +136,6 @@ const createApp = (overrides = {}) => {
       requiresReload: false,
     })),
     buildAugmentedPath: vi.fn(() => process.env.PATH || ''),
-    resolveClaudeCodeLaunch: vi.fn(({ pathValue }) => {
-      const executable = join(pathValue, 'claude');
-      return existsSync(executable)
-        ? { executable, pathValue, source: 'path' }
-        : null;
-    }),
     getOpenCodeWorkingDirectory: vi.fn(() => '/tmp/project'),
     setOpenCodeWorkingDirectory: vi.fn(),
     restartOpenCode: vi.fn(async () => undefined),
@@ -206,17 +173,6 @@ const createApp = (overrides = {}) => {
     },
     standardSessionTitleRuntime: { schedule: vi.fn() },
     authLibrary: authModule,
-    readClaudePromptMode: vi.fn(() => ({
-      ok: true,
-      mode: 'combined',
-      compatibilityMode: false,
-    })),
-    setClaudePromptCompatibilityMode: vi.fn((compatibilityMode) => ({
-      ok: true,
-      changed: true,
-      mode: compatibilityMode ? 'claude-only' : 'combined',
-      compatibilityMode,
-    })),
     ...overrides,
   };
   if (!Object.hasOwn(overrides, 'getNativeRuntimeOwner')) {
@@ -576,80 +532,6 @@ describe('OpenCode provider routes', () => {
     await request(app).delete('/api/provider/anthropic/auth?scope=project').expect(400);
 
     expect(removeProviderConfig).not.toHaveBeenCalled();
-  });
-
-  it('checks native selected credentials without CLI execution or config mutation', async () => {
-    const inspectClaude=vi.fn(async input=>{expect(input).toEqual({kind:'status',directory:'/tmp/project'});return {installed:true,path:null,loggedIn:true,authStatus:'authenticated'};});
-    const {app,dependencies}=createApp({getNativeRuntimeOwner:()=>({inspectClaude})});
-    const status=await request(app).get('/api/provider/anthropic/claude-cli').expect(200);
-    expect(status.body.loggedIn).toBe(true);
-    const connected=await request(app).post('/api/provider/anthropic/check-oauth?directory=%2Ftmp%2Fproject').expect(200);
-    expect(connected.body).toMatchObject({success:true,configured:true,changed:false});
-    expect(dependencies.resolveClaudeCodeLaunch).not.toHaveBeenCalled();expect(dependencies.buildAugmentedPath).not.toHaveBeenCalled();
-    expect(dependencies.ensureAnthropicOAuthProviderConfig).not.toHaveBeenCalled();expect(dependencies.markConfigChange).not.toHaveBeenCalled();
-  });
-
-  it('missing or expired configured credentials remain unavailable and never probe ambient CLI',async()=>{
-    for(const code of ['claude_credentials_missing','claude_credentials_expired','native_claude_account_ambiguous']){
-      const {app,dependencies}=createApp({getNativeRuntimeOwner:()=>({inspectClaude:async()=>{throw Object.assign(new Error('private contents must not escape'),{code,status:401});}})});
-      const status=await request(app).get('/api/provider/anthropic/claude-cli').expect(200);
-      expect(status.body).toMatchObject({loggedIn:false,authStatus:'unavailable',errorCode:code,path:null});
-      const check=await request(app).post('/api/provider/anthropic/check-oauth').expect(400);expect(check.body.code).toBe(code);
-      expect(JSON.stringify(status.body)).not.toContain('private contents');expect(dependencies.resolveClaudeCodeLaunch).not.toHaveBeenCalled();
-    }
-    const {app,dependencies}=createApp();await request(app).get('/api/provider/anthropic/claude-cli').expect(503);expect(dependencies.resolveClaudeCodeLaunch).not.toHaveBeenCalled();
-  });
-
-  it('reads and updates the managed Claude prompt mode without exposing configuration data', async () => {
-    const { app, dependencies } = createApp();
-
-    const current = await request(app)
-      .get('/api/provider/anthropic/prompt-mode')
-      .expect(200);
-    const updated = await request(app)
-      .put('/api/provider/anthropic/prompt-mode')
-      .send({ compatibilityMode: true })
-      .expect(200);
-
-    expect(current.body).toEqual({
-      mode: 'combined',
-      compatibilityMode: false,
-      editable: true,
-    });
-    expect(updated.body).toEqual({
-      success: true,
-      changed: true,
-      mode: 'claude-only',
-      compatibilityMode: true,
-      editable: true,
-    });
-    expect(dependencies.setClaudePromptCompatibilityMode).toHaveBeenCalledWith(true);
-    expect(JSON.stringify(updated.body)).not.toMatch(/credential|profile|token/i);
-  });
-
-  it('validates Claude prompt-mode writes and keeps external runtimes read-only', async () => {
-    const invalid = createApp();
-    await request(invalid.app)
-      .put('/api/provider/anthropic/prompt-mode')
-      .send({ compatibilityMode: 'yes' })
-      .expect(400);
-    expect(invalid.dependencies.setClaudePromptCompatibilityMode).not.toHaveBeenCalled();
-
-    const external = createApp({ isExternalOpenCode: vi.fn(() => true) });
-    const current = await request(external.app)
-      .get('/api/provider/anthropic/prompt-mode')
-      .expect(200);
-    await request(external.app)
-      .put('/api/provider/anthropic/prompt-mode')
-      .send({ compatibilityMode: true })
-      .expect(409);
-
-    expect(current.body).toEqual({
-      mode: 'external',
-      compatibilityMode: false,
-      editable: false,
-    });
-    expect(external.dependencies.setClaudePromptCompatibilityMode).not.toHaveBeenCalled();
   });
 
   it('verifies the Cursor SDK connection without writing the old OpenCode bridge config', async () => {

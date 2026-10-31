@@ -6,7 +6,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { DEFAULT_PROFILE_ROOT, createUserProfileProvisioningRuntime } from './user-profile-provisioning.js';
 import { listDefaultConfigAssets } from './default-config-assets.js';
-import { CLAUDE_RUNTIME_CANDIDATE, CLAUDE_RUNTIME_SELECTION } from './claude-runtime-compatibility.js';
 import {
   DEVRYAN_MANAGED_PLUGINS,
   DEVRYAN_MANAGED_PROFILE_PLUGIN_FILES,
@@ -59,7 +58,6 @@ describe('user profile provisioning', () => {
       }
       return { ok: true, exitCode: 0, stdout: '', stderr: '' };
     },
-    applyMeridianHttpHotfix: () => ({ ok: true, changed: false }),
     applyImagegenModelHotfix: () => ({ ok: true, changed: false }),
     ...overrides,
   });
@@ -120,12 +118,10 @@ describe('user profile provisioning', () => {
     const config = readJson(path.join(configDir, 'opencode.json'));
     const packageJson = readJson(path.join(configDir, 'package.json'));
     const slim = readJson(path.join(configDir, 'devryan-agents.jsonc'));
-    const meridianFeatures = readJson(path.join(home, '.config', 'meridian', 'sdk-features.json'));
 
     expect(result.ok).toBe(true);
     expect(config.plugin).toEqual([
       './plugins/devryan-open-cursor.mjs',
-      './node_modules/opencode-with-claude/dist/index.js',
       './node_modules/opencode-gpt-imagegen/dist/index.js',
       './plugins/devryan-skill-context.mjs',
       './plugins/devryan-document-reader.mjs',
@@ -135,17 +131,14 @@ describe('user profile provisioning', () => {
       '@ai-sdk/openai-compatible': '^2.0.47',
       '@opencode-ai/plugin': '1.18.33',
       '@rama_nigg/open-cursor': '2.5.17',
-      '@rynfar/meridian': '1.79.0',
       'adm-zip': '0.6.0',
       'mammoth': '1.12.1',
       'opencode-gpt-imagegen': '0.1.12',
-      'opencode-with-claude': '1.11.2',
       'unpdf': '1.8.0',
     });
-    expect(packageJson.overrides).toEqual({
-      '@anthropic-ai/claude-agent-sdk': '0.2.141',
-      '@anthropic-ai/claude-code': '2.1.302',
-    });
+    expect(packageJson.dependencies).not.toHaveProperty('opencode-with-claude');
+    expect(packageJson.dependencies).not.toHaveProperty('@rynfar/meridian');
+    expect(packageJson).not.toHaveProperty('overrides');
     expect(JSON.stringify(slim)).not.toContain('"mcps"');
     expect(fs.existsSync(path.join(configDir, 'agents', 'orchestrator.md'))).toBe(true);
     expect(packageJson.dependencies).not.toHaveProperty('oh-my-opencode-slim');
@@ -154,46 +147,22 @@ describe('user profile provisioning', () => {
     expect(fs.existsSync(path.join(configDir, 'plugins', 'devryan-skill-context.mjs'))).toBe(true);
     expect(fs.existsSync(path.join(configDir, 'plugins', 'devryan-document-reader.mjs'))).toBe(true);
     expect(fs.existsSync(path.join(configDir, 'node_modules', 'oh-my-opencode-slim'))).toBe(false);
-    expect(fs.existsSync(path.join(configDir, 'node_modules', 'opencode-with-claude'))).toBe(true);
+    expect(fs.existsSync(path.join(configDir, 'node_modules', 'opencode-with-claude'))).toBe(false);
     expect(fs.existsSync(path.join(configDir, 'node_modules', 'opencode-gpt-imagegen'))).toBe(true);
     expect(packageJson.dependencies).not.toHaveProperty('context-mode');
     expect(fs.existsSync(path.join(configDir, 'node_modules', 'context-mode'))).toBe(false);
     expect(packageJson.dependencies).not.toHaveProperty('opencode-antigravity-auth');
-    expect(fs.existsSync(path.join(configDir, 'node_modules', '@rynfar', 'meridian'))).toBe(true);
+    expect(fs.existsSync(path.join(configDir, 'node_modules', '@rynfar', 'meridian'))).toBe(false);
     expect(fs.existsSync(path.join(configDir, 'skills'))).toBe(false);
     expect(fs.existsSync(path.join(configDir, '.devryan', 'user-profile-manifest.json'))).toBe(true);
-    expect(fs.existsSync(path.join(configDir, '.devryan', 'meridian-sdk-features-policy.json'))).toBe(true);
-    expect(meridianFeatures.opencode).toEqual({
-      codeSystemPrompt: true,
-      clientSystemPrompt: true,
-    });
-    expect(result.meridianPolicy).toMatchObject({
-      ok: true,
-      promptMode: 'combined',
-      managedFields: ['codeSystemPrompt', 'clientSystemPrompt'],
-    });
-    expect(result.claudeRuntime).toMatchObject({
-      source: 'managed',
-      channel: 'candidate',
-      compatibilityStatus: 'upstream_blocked',
-      runtimeStatus: 'ready',
-      installed: {
-        opencodeWithClaude: '1.11.2',
-        meridian: '1.79.0',
-        agentSdk: '0.2.141',
-        claudeCode: '2.1.302',
-      },
-      managementSources: {
-        opencodeWithClaude: 'managed',
-        meridian: 'managed',
-        agentSdk: 'managed',
-        claudeCode: 'managed',
-      },
-    });
+    expect(fs.existsSync(path.join(configDir, '.devryan', 'meridian-sdk-features-policy.json'))).toBe(false);
+    expect(fs.existsSync(path.join(configDir, '.devryan', 'claude-runtime-compatibility.json'))).toBe(false);
+    expect(fs.existsSync(path.join(home, '.config', 'meridian'))).toBe(false);
+    expect(result).not.toHaveProperty('meridianPolicy');
+    expect(result).not.toHaveProperty('meridianHttpHotfix');
+    expect(result).not.toHaveProperty('claudeRuntime');
     expect(result.warnings.join('\n')).not.toMatch(/superpowers/i);
-    expect(result.warnings).toContain(
-      'Claude Code 2.1.302 is selected for Meridian compatibility; the broader cross-provider context target remains upstream-blocked.',
-    );
+    expect(result.warnings.join('\n')).not.toMatch(/claude|meridian/i);
     expect(commands).toEqual([{
       command: 'bun',
       args: ['install', '--ignore-scripts'],
@@ -349,7 +318,6 @@ describe('user profile provisioning', () => {
     expect(reconciled.plugin).toEqual([
       'user-plugin@4.2.0',
       './plugins/devryan-open-cursor.mjs',
-      './node_modules/opencode-with-claude/dist/index.js',
       './node_modules/opencode-gpt-imagegen/dist/index.js',
       './plugins/devryan-skill-context.mjs',
       './plugins/devryan-document-reader.mjs',
@@ -389,82 +357,44 @@ describe('user profile provisioning', () => {
     expect(result.updated).toEqual(expect.arrayContaining([legacyConfigPath, jsoncConfigPath]));
   });
 
-  it('migrates only the exact legacy Meridian prompt defaults and preserves explicit choices', async () => {
+  it('removes the markers DevRyan wrote for the retired Meridian Claude runtime', async () => {
+    const configDirectory = path.join(home, '.config', 'opencode');
+    const policyMarker = path.join(configDirectory, '.devryan', 'meridian-sdk-features-policy.json');
+    const runtimeMarker = path.join(configDirectory, '.devryan', 'claude-runtime-compatibility.json');
+    writeJson(policyMarker, { managedFields: ['codeSystemPrompt', 'clientSystemPrompt'] });
+    writeJson(runtimeMarker, { managedOverrides: { '@anthropic-ai/claude-code': '2.1.302' } });
+    // Meridian's own settings belong to the user and are no longer read or rewritten.
     const featuresPath = path.join(home, '.config', 'meridian', 'sdk-features.json');
-    writeJson(featuresPath, {
-      opencode: {
-        codeSystemPrompt: true,
-        clientSystemPrompt: true,
-        claudeMd: 'off',
-        memory: false,
-        dreaming: false,
-      },
-      codex: { clientSystemPrompt: false },
-    });
+    writeJson(featuresPath, { opencode: { codeSystemPrompt: true } });
+    const featuresContent = fs.readFileSync(featuresPath, 'utf8');
 
-    const migrated = await createRuntime().provision();
-    const migratedFeatures = readJson(featuresPath);
+    const runtime = createRuntime();
+    const result = await runtime.provision();
 
-    expect(migrated.meridianPolicy).toMatchObject({
-      ok: true,
-      migrated: true,
-      promptMode: 'combined',
-    });
-    expect(migratedFeatures.opencode.codeSystemPrompt).toBe(true);
-    expect(migratedFeatures.codex).toEqual({ clientSystemPrompt: false });
+    expect(result.ok).toBe(true);
+    expect(result.changed).toBe(true);
+    expect(result.removed).toEqual(expect.arrayContaining([policyMarker, runtimeMarker]));
+    expect(fs.existsSync(policyMarker)).toBe(false);
+    expect(fs.existsSync(runtimeMarker)).toBe(false);
+    expect(fs.readFileSync(featuresPath, 'utf8')).toBe(featuresContent);
 
-    const explicitHome = path.join(root, 'explicit-home');
-    home = explicitHome;
-    const explicitFeaturesPath = path.join(home, '.config', 'meridian', 'sdk-features.json');
-    writeJson(explicitFeaturesPath, {
-      opencode: {
-        codeSystemPrompt: true,
-        clientSystemPrompt: true,
-        claudeMd: 'project',
-        memory: false,
-        dreaming: false,
-      },
-    });
-
-    const preserved = await createRuntime().provision();
-
-    expect(preserved.meridianPolicy).toMatchObject({
-      ok: true,
-      migrated: false,
-      promptMode: 'combined',
-      preservedFields: ['codeSystemPrompt', 'clientSystemPrompt'],
-    });
-    expect(preserved.warnings.join('\n')).not.toContain('both the Claude Code and client system prompts');
-    expect(readJson(explicitFeaturesPath).opencode.codeSystemPrompt).toBe(true);
+    const second = await runtime.provision();
+    expect(second).toMatchObject({ ok: true, changed: false });
+    expect(second.removed).not.toContain(policyMarker);
+    expect(second.removed).not.toContain(runtimeMarker);
   });
 
-  it('fails visibly before installation when Meridian SDK features are malformed', async () => {
-    const featuresPath = path.join(home, '.config', 'meridian', 'sdk-features.json');
-    fs.mkdirSync(path.dirname(featuresPath), { recursive: true });
-    fs.writeFileSync(featuresPath, '{invalid\n', 'utf8');
-
-    const result = await createRuntime().provision();
-
-    expect(result).toMatchObject({
-      ok: false,
-      changed: false,
-      meridianPolicy: {
-        ok: false,
-        code: 'meridian_sdk_features_invalid_json',
-      },
-    });
-    expect(result.error).toContain('not valid JSON');
-    expect(commands).toEqual([]);
-    expect(fs.readFileSync(featuresPath, 'utf8')).toBe('{invalid\n');
-  });
-
-  it('migrates the old managed Claude plugin while preserving explicit user pins', async () => {
+  it('removes the retired Claude plugin registrations while preserving explicit user pins', async () => {
     const configPath = path.join(home, '.config', 'opencode', 'opencode.json');
-    writeJson(configPath, { plugin: ['opencode-with-claude'] });
+    writeJson(configPath, { plugin: [
+      'opencode-with-claude',
+      'opencode-with-claude@1.11.2',
+      './node_modules/opencode-with-claude/dist/index.js',
+      './plugins/devryan-claude-transport.mjs',
+    ] });
 
-    await createRuntime().provision();
-    expect(readJson(configPath).plugin).toContain('./node_modules/opencode-with-claude/dist/index.js');
-    expect(readJson(configPath).plugin).not.toContain('opencode-with-claude');
+    expect((await createRuntime().provision()).ok).toBe(true);
+    expect(readJson(configPath).plugin.filter((entry) => /claude/.test(entry))).toEqual([]);
 
     const pinnedHome = path.join(root, 'pinned-home');
     const pinnedPath = path.join(pinnedHome, '.config', 'opencode', 'opencode.json');
@@ -476,40 +406,48 @@ describe('user profile provisioning', () => {
     expect(pinned).toEqual(['opencode-with-claude@1.6.17']);
   });
 
-  it('adds the Meridian pin while preserving an explicit user dependency pin', async () => {
-    const packagePath = path.join(home, '.config', 'opencode', 'package.json');
-    writeJson(packagePath, {
+  it('removes the DevRyan-pinned Claude dependencies and keeps user pins at other versions', async () => {
+    const runtime = createRuntime();
+    await runtime.provision();
+    commands = [];
+    const configDirectory = path.join(home, '.config', 'opencode');
+    const packagePath = path.join(configDirectory, 'package.json');
+    const packageJson = readJson(packagePath);
+    packageJson.dependencies = {
+      ...packageJson.dependencies,
+      'opencode-with-claude': '1.11.2',
+      '@rynfar/meridian': '1.79.0',
+    };
+    writeJson(packagePath, packageJson);
+
+    const result = await runtime.provision();
+    const retired = readJson(packagePath).dependencies;
+
+    expect(result.ok).toBe(true);
+    expect(retired).not.toHaveProperty('opencode-with-claude');
+    expect(retired).not.toHaveProperty('@rynfar/meridian');
+    expect(commands).toEqual([{ command: 'bun', args: ['install', '--ignore-scripts'], cwd: configDirectory }]);
+
+    const userHome = path.join(root, 'user-home');
+    home = userHome;
+    const userPackagePath = path.join(userHome, '.config', 'opencode', 'package.json');
+    writeJson(userPackagePath, {
       dependencies: {
         '@rynfar/meridian': '1.56.0',
+        'opencode-with-claude': '1.6.17',
         'user-plugin': '3.2.1',
       },
     });
 
-    const result = await createRuntime({ applyMeridianHttpHotfix: () => { throw new Error('User-managed package must not be patched'); } }).provision();
-    const dependencies = readJson(packagePath).dependencies;
-
-    expect(result.ok).toBe(true);
-    expect(dependencies['@rynfar/meridian']).toBe('1.56.0');
-    expect(dependencies['user-plugin']).toBe('3.2.1');
-    expect(dependencies['opencode-with-claude']).toBe('1.11.2');
-    expect(result.claudeRuntime).toMatchObject({
-      source: 'user-managed',
-      compatibilityStatus: 'user_managed',
-      managementSources: { meridian: 'user-managed' },
+    expect((await createRuntime().provision()).ok).toBe(true);
+    expect(readJson(userPackagePath).dependencies).toMatchObject({
+      '@rynfar/meridian': '1.56.0',
+      'opencode-with-claude': '1.6.17',
+      'user-plugin': '3.2.1',
     });
   });
 
-  it('blocks managed startup when the reviewed Meridian HTTP patch is incompatible', async () => {
-    const result = await createRuntime({ applyMeridianHttpHotfix: () => ({
-      ok: false, changed: false, code: 'MERIDIAN_HTTP_HOTFIX_INCOMPATIBLE', error: 'Unexpected installed source',
-    }) }).provision();
-    expect(result.ok).toBe(false);
-    expect(result.error).toBe('MERIDIAN_HTTP_HOTFIX_INCOMPATIBLE: Unexpected installed source');
-    expect(result.meridianHttpHotfix.ok).toBe(false);
-    expect(commands).toHaveLength(1);
-  });
-
-  it('preserves explicit user Claude runtime overrides and reports user management', async () => {
+  it('removes only the Claude overrides DevRyan pinned and keeps user overrides', async () => {
     const packagePath = path.join(home, '.config', 'opencode', 'package.json');
     writeJson(packagePath, {
       dependencies: {
@@ -527,291 +465,55 @@ describe('user profile provisioning', () => {
 
     expect(result.ok).toBe(true);
     expect(packageJson.overrides).toEqual({
-      '@anthropic-ai/claude-agent-sdk': '0.2.140',
       '@anthropic-ai/claude-code': '2.1.214',
       'user-package': '4.0.0',
     });
-    expect(result.claudeRuntime).toMatchObject({
-      source: 'user-managed',
-      compatibilityStatus: 'user_managed',
-      runtimeStatus: 'ready',
-      managementSources: {
-        meridian: 'user-managed',
-        agentSdk: 'user-managed',
-        claudeCode: 'user-managed',
-      },
-    });
+    expect(packageJson.dependencies['@rynfar/meridian']).toBe('1.62.6');
   });
 
-  it('upgrades the previously managed Claude Code 2.1.215 override', async () => {
+  it.each([
+    ['0.2.140', '2.1.215'],
+    ['0.2.141', '2.1.251'],
+    ['0.2.141', '2.1.280'],
+    ['0.2.141', '2.1.302'],
+  ])('drops the retired managed Claude overrides %s / %s from an upgraded profile', async (agentSdk, claudeCode) => {
     const runtime = createRuntime();
     await runtime.provision();
     commands = [];
-
-    const packagePath = path.join(home, '.config', 'opencode', 'package.json');
-    const markerPath = path.join(
-      home,
-      '.config',
-      'opencode',
-      '.devryan',
-      'claude-runtime-compatibility.json',
-    );
-    const packageJson = readJson(packagePath);
-    packageJson.overrides['@anthropic-ai/claude-code'] = '2.1.215';
-    writeJson(packagePath, packageJson);
-    const marker = readJson(markerPath);
-    marker.managedOverrides['@anthropic-ai/claude-code'] = '2.1.215';
-    writeJson(markerPath, marker);
-
-    const result = await runtime.provision();
-
-    expect(readJson(packagePath).overrides['@anthropic-ai/claude-code']).toBe('2.1.302');
-    expect(result.claudeRuntime).toMatchObject({
-      source: 'managed',
-      runtimeStatus: 'ready',
-    });
-    expect(commands).toEqual([{
-      command: 'bun',
-      args: ['install', '--ignore-scripts'],
-      cwd: path.join(home, '.config', 'opencode'),
-    }]);
-  });
-
-  describe('in-place upgrade from a managed Claude Code 2.1.251 profile', () => {
-    // Profiles provisioned while DevRyan selected Claude Code 2.1.251 carry that
-    // exact managed pin in package.json, in the compatibility marker and on disk.
-    const LEGACY_CLAUDE_CODE = '2.1.251';
-    const selectedClaudeCode = CLAUDE_RUNTIME_CANDIDATE.claudeCode;
-    const CLAUDE_CODE_PACKAGE = '@anthropic-ai/claude-code';
-    const bunInstall = (cwd) => ({ command: 'bun', args: ['install', '--ignore-scripts'], cwd });
-
-    const paths = () => {
-      const configDirectory = path.join(home, '.config', 'opencode');
-      return {
-        configDirectory,
-        packagePath: path.join(configDirectory, 'package.json'),
-        markerPath: path.join(configDirectory, '.devryan', 'claude-runtime-compatibility.json'),
-        installedClaudeCodePath: path.join(configDirectory, 'node_modules', '@anthropic-ai', 'claude-code', 'package.json'),
-      };
-    };
-
-    const provisionLegacyProfile = async () => {
-      await createRuntime().provision();
-      commands = [];
-      const { packagePath, markerPath, installedClaudeCodePath } = paths();
-      const packageJson = readJson(packagePath);
-      packageJson.overrides[CLAUDE_CODE_PACKAGE] = LEGACY_CLAUDE_CODE;
-      writeJson(packagePath, packageJson);
-      const marker = readJson(markerPath);
-      expect(marker.sources[CLAUDE_CODE_PACKAGE]).toBe('managed');
-      marker.managedOverrides[CLAUDE_CODE_PACKAGE] = LEGACY_CLAUDE_CODE;
-      marker.installed.claudeCode = LEGACY_CLAUDE_CODE;
-      writeJson(markerPath, marker);
-      writeJson(installedClaudeCodePath, { name: CLAUDE_CODE_PACKAGE, version: LEGACY_CLAUDE_CODE });
-    };
-
-    it('targets the candidate release that differs from the legacy pin', () => {
-      expect(CLAUDE_RUNTIME_SELECTION.versions).toBe(CLAUDE_RUNTIME_CANDIDATE);
-      expect(selectedClaudeCode).not.toBe(LEGACY_CLAUDE_CODE);
-    });
-
-    it('upgrades the marker-recorded override to the selected release and installs it', async () => {
-      await provisionLegacyProfile();
-      const { configDirectory, packagePath, markerPath, installedClaudeCodePath } = paths();
-
-      const result = await createRuntime().provision();
-
-      expect(result.ok).toBe(true);
-      expect(readJson(packagePath).overrides[CLAUDE_CODE_PACKAGE]).toBe(selectedClaudeCode);
-      expect(commands).toEqual([bunInstall(configDirectory)]);
-      expect(readJson(installedClaudeCodePath).version).toBe(selectedClaudeCode);
-      expect(result.claudeRuntime).toMatchObject({
-        source: 'managed',
-        runtimeStatus: 'ready',
-        expected: { claudeCode: selectedClaudeCode },
-        installed: { claudeCode: selectedClaudeCode },
-        versionMismatches: [],
-      });
-      expect(readJson(markerPath)).toMatchObject({
-        managedOverrides: { [CLAUDE_CODE_PACKAGE]: selectedClaudeCode },
-        sources: { [CLAUDE_CODE_PACKAGE]: 'managed' },
-        installed: { claudeCode: selectedClaudeCode },
-      });
-    });
-
-    it('repairs a 2.1.251 install left drifting after a degraded override upgrade', async () => {
-      await provisionLegacyProfile();
-      const { configDirectory, packagePath, markerPath, installedClaudeCodePath } = paths();
-      const offlineRuntime = createRuntime({
-        runCommand: async (command, args, options) => {
-          commands.push({ command, args, cwd: options.cwd });
-          return { ok: false, exitCode: 1, stdout: '', stderr: 'registry unavailable' };
-        },
-      });
-
-      // Offline: the override moves to the selected release, but the install
-      // cannot, so the previously installed 2.1.251 stays on disk.
-      const degraded = await offlineRuntime.provision();
-
-      expect(degraded.ok).toBe(true);
-      expect(degraded.installDegraded).toBe(true);
-      expect(commands).toEqual([bunInstall(configDirectory)]);
-      expect(readJson(packagePath).overrides[CLAUDE_CODE_PACKAGE]).toBe(selectedClaudeCode);
-      expect(readJson(installedClaudeCodePath).version).toBe(LEGACY_CLAUDE_CODE);
-      expect(degraded.claudeRuntime).toMatchObject({
-        source: 'managed',
-        runtimeStatus: 'drifted',
-        installed: { claudeCode: LEGACY_CLAUDE_CODE },
-        versionMismatches: ['claudeCode'],
-      });
-      expect(degraded.warnings).toEqual(expect.arrayContaining([
-        expect.stringContaining('Claude runtime compatibility is drifted'),
-      ]));
-      expect(readJson(markerPath)).toMatchObject({
-        managedOverrides: { [CLAUDE_CODE_PACKAGE]: selectedClaudeCode },
-        sources: { [CLAUDE_CODE_PACKAGE]: 'managed' },
-        installed: { claudeCode: LEGACY_CLAUDE_CODE },
-      });
-
-      // Back online: package.json is already current, so only the recorded
-      // drift can trigger the install that repairs node_modules.
-      commands = [];
-      const repaired = await createRuntime().provision();
-
-      expect(repaired.ok).toBe(true);
-      expect(repaired.installDegraded).toBeFalsy();
-      expect(commands).toEqual([bunInstall(configDirectory)]);
-      expect(readJson(installedClaudeCodePath).version).toBe(selectedClaudeCode);
-      expect(repaired.claudeRuntime).toMatchObject({
-        source: 'managed',
-        runtimeStatus: 'ready',
-        installed: { claudeCode: selectedClaudeCode },
-        versionMismatches: [],
-      });
-      expect(readJson(markerPath).installed.claudeCode).toBe(selectedClaudeCode);
-    });
-  });
-
-  it('repairs stale installed Claude packages when the managed manifest is already current', async () => {
-    const runtime = createRuntime();
-    await runtime.provision();
-    commands = [];
-
     const configDirectory = path.join(home, '.config', 'opencode');
-    const installedClaudeCodePath = path.join(
-      configDirectory,
-      'node_modules',
-      '@anthropic-ai',
-      'claude-code',
-      'package.json',
-    );
-    writeJson(installedClaudeCodePath, {
-      name: '@anthropic-ai/claude-code',
-      version: '2.1.215',
-    });
+    const packagePath = path.join(configDirectory, 'package.json');
+    const packageJson = readJson(packagePath);
+    packageJson.overrides = {
+      '@anthropic-ai/claude-agent-sdk': agentSdk,
+      '@anthropic-ai/claude-code': claudeCode,
+    };
+    writeJson(packagePath, packageJson);
 
     const result = await runtime.provision();
 
     expect(result.ok).toBe(true);
-    expect(result.claudeRuntime).toMatchObject({
-      source: 'managed',
-      runtimeStatus: 'ready',
-      installed: { claudeCode: '2.1.302' },
-    });
-    expect(commands).toEqual([{
-      command: 'bun',
-      args: ['install', '--ignore-scripts'],
-      cwd: configDirectory,
-    }]);
+    expect(readJson(packagePath)).not.toHaveProperty('overrides');
+    expect(commands).toEqual([{ command: 'bun', args: ['install', '--ignore-scripts'], cwd: configDirectory }]);
+
+    commands = [];
+    expect((await runtime.provision()).changed).toBe(false);
+    expect(commands).toEqual([]);
   });
 
-  it('fails managed provisioning when a successful install command leaves Claude runtime drift', async () => {
+  it('does not reinstall for Claude packages left in node_modules by an earlier release', async () => {
     const runtime = createRuntime();
     await runtime.provision();
     commands = [];
-
     const configDirectory = path.join(home, '.config', 'opencode');
     writeJson(
       path.join(configDirectory, 'node_modules', '@anthropic-ai', 'claude-code', 'package.json'),
       { name: '@anthropic-ai/claude-code', version: '2.1.215' },
     );
-    const driftedRuntime = createRuntime({
-      runCommand: async (command, args, options) => {
-        commands.push({ command, args, cwd: options.cwd });
-        return { ok: true, exitCode: 0, stdout: '', stderr: '' };
-      },
-    });
-
-    const result = await driftedRuntime.provision();
-
-    expect(result.ok).toBe(false);
-    expect(result.error).toBe('Managed Claude runtime installation remained drifted after provisioning');
-    expect(result.claudeRuntime).toMatchObject({
-      source: 'managed',
-      runtimeStatus: 'drifted',
-      installed: { claudeCode: '2.1.215' },
-      versionMismatches: ['claudeCode'],
-    });
-    expect(commands).toEqual([{
-      command: 'bun',
-      args: ['install', '--ignore-scripts'],
-      cwd: configDirectory,
-    }]);
-  });
-
-  it.each([
-    ['1.6.18', '1.57.0', '2.1.215'],
-    ['1.8.0', '1.62.6', '2.1.281'],
-  ])('upgrades a manifest-owned pre-marker Claude %s tuple to the selected runtime', async (plugin, meridian, claudeCode) => {
-    const runtime = createRuntime();
-    await runtime.provision();
-    commands = [];
-
-    const configDirectory = path.join(home, '.config', 'opencode');
-    const packagePath = path.join(configDirectory, 'package.json');
-    const manifestPath = path.join(
-      configDirectory,
-      '.devryan',
-      'user-profile-manifest.json',
-    );
-    const markerPath = path.join(
-      configDirectory,
-      '.devryan',
-      'claude-runtime-compatibility.json',
-    );
-    const packageJson = readJson(packagePath);
-    packageJson.dependencies['opencode-with-claude'] = plugin;
-    packageJson.dependencies['@rynfar/meridian'] = meridian;
-    packageJson.overrides['@anthropic-ai/claude-code'] = claudeCode;
-    writeJson(packagePath, packageJson);
-    const packageContent = fs.readFileSync(packagePath, 'utf8');
-    const manifest = readJson(manifestPath);
-    manifest.files['package.json'].hash = hashContent(packageContent);
-    writeJson(manifestPath, manifest);
-    fs.unlinkSync(markerPath);
 
     const result = await runtime.provision();
-    const upgraded = readJson(packagePath);
 
-    expect(result.ok).toBe(true);
-    expect(upgraded.dependencies).toMatchObject({
-      'opencode-with-claude': '1.11.2',
-      '@rynfar/meridian': '1.79.0',
-    });
-    expect(upgraded.overrides).toMatchObject({
-      '@anthropic-ai/claude-agent-sdk': '0.2.141',
-      '@anthropic-ai/claude-code': '2.1.302',
-    });
-    expect(result.claudeRuntime).toMatchObject({
-      source: 'managed',
-      channel: 'candidate',
-      runtimeStatus: 'ready',
-    });
-    expect(commands).toEqual([{
-      command: 'bun',
-      args: ['install', '--ignore-scripts'],
-      cwd: configDirectory,
-    }]);
+    expect(result).toMatchObject({ ok: true, changed: false });
+    expect(commands).toEqual([]);
   });
 
   it('adds a newly managed dependency to a modified package without losing user fields', async () => {
@@ -819,8 +521,7 @@ describe('user profile provisioning', () => {
     fs.cpSync(DEFAULT_PROFILE_ROOT, profileRoot, { recursive: true });
     const profilePackagePath = path.join(profileRoot, 'package.json');
     const profilePackage = readJson(profilePackagePath);
-    delete profilePackage.dependencies['@rynfar/meridian'];
-    writeJson(profilePackagePath, profilePackage);
+    expect(profilePackage.dependencies).not.toHaveProperty('fixture-managed-dependency');
 
     const runtime = createRuntime({ profileRoot });
     await runtime.provision();
@@ -831,7 +532,7 @@ describe('user profile provisioning', () => {
     userPackage.dependencies['user-plugin'] = '3.2.1';
     writeJson(packagePath, userPackage);
 
-    profilePackage.dependencies['@rynfar/meridian'] = '1.79.0';
+    profilePackage.dependencies['fixture-managed-dependency'] = '1.0.0';
     writeJson(profilePackagePath, profilePackage);
     const result = await runtime.provision();
     const upgraded = readJson(packagePath);
@@ -840,7 +541,7 @@ describe('user profile provisioning', () => {
     expect(result.conflicts).not.toContain(packagePath);
     expect(upgraded.private).toBe(false);
     expect(upgraded.dependencies['user-plugin']).toBe('3.2.1');
-    expect(upgraded.dependencies['@rynfar/meridian']).toBe('1.79.0');
+    expect(upgraded.dependencies['fixture-managed-dependency']).toBe('1.0.0');
   });
 
   it('preserves and reports a user-modified managed file', async () => {
@@ -984,10 +685,12 @@ describe('user profile provisioning', () => {
     commands = [];
 
     const configDirectory = path.join(home, '.config', 'opencode');
-    writeJson(path.join(configDirectory, 'node_modules', '@rynfar', 'meridian', 'package.json'), {
-      name: '@rynfar/meridian',
-      version: '1.62.5',
-    });
+    // A stale dependency range makes provisioning refresh the install while
+    // every managed package is already on disk.
+    const packagePath = path.join(configDirectory, 'package.json');
+    const stalePackage = readJson(packagePath);
+    stalePackage.dependencies['@ai-sdk/openai-compatible'] = '^2.0.40';
+    writeJson(packagePath, stalePackage);
 
     const result = await createRuntime({
       runCommand: async (command, args, options) => {

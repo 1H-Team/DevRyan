@@ -1,5 +1,4 @@
 import {Integration as NativeIntegration} from '@opencode/core/integration';
-import {SystemPart} from '@opencode/ai/effect';
 import {Location} from '@opencode/core/location';
 import {Layer} from 'effect';
 import {Model} from '@opencode/core/model';
@@ -7,9 +6,6 @@ import {Plugin} from '@opencode/plugin/effect';
 import {Context,Effect,Option,Stream} from 'effect';
 import {normalizeNativeOpenAiModels,normalizeNativeOpenAiRequest,nativeCopilotModelsFromAccount,nativeEncodableModels} from './native-provider-compat.js';
 import {nativeCatalogStageFailure,withNativeCatalogStage} from './native-catalog-diagnostics.js';
-import type {CollapsibleSystemPart} from '@devryan/agents-core';
-import {systemCachePreserved} from './system-cache.js';
-import {normalizeNativeClaudeSystemUpdates} from './native-claude-request.js';
 
 export interface NativeProviderCompatibilityOptions {
   readonly policyForDirectory:(directory:string)=>{readonly compactionReserved?:number};
@@ -17,11 +13,6 @@ export interface NativeProviderCompatibilityOptions {
   readonly isOpenAiOAuth:(directory:string)=>Effect.Effect<boolean>;
   /** Original-caller discovery owns networking and selected-connection reauthorization. */
   readonly discoverCopilot?:(input:{directory:string;integration:NativeIntegration.Interface})=>Effect.Effect<unknown>;
-  readonly scrubAnthropicSystem?:(text:string)=>string;
-  /** agents-core `collapseSystemPartsInPlace`; with it the scrub keeps each cache-marked run. */
-  readonly collapseSystemParts?:<P extends CollapsibleSystemPart>(parts:P[])=>void;
-  /** Defaults to the DEVRYAN_SYSTEM_CACHE_PRESERVE kill switch. */
-  readonly preserveSystemCache?:boolean;
 }
 /** Scoped registered data policy; the final physical credential hooks remain owned separately. */
 export const createNativeProviderCompatibility=(options:NativeProviderCompatibilityOptions)=>{
@@ -55,24 +46,6 @@ export const createNativeProviderCompatibility=(options:NativeProviderCompatibil
     const directory=ctx.location.directory;
     let active=true;
     yield* Effect.addFinalizer(()=>Effect.sync(()=>{active=false;}));
-    const scrub=options.scrubAnthropicSystem,collapse=options.collapseSystemParts;
-    const preserve=collapse!==undefined&&(options.preserveSystemCache??systemCachePreserved());
-    for(const name of ['context','compaction','title','generate'] as const)yield* ctx.session.hook(name,event=>Effect.sync(()=>{
-      if(!active||event.model.providerID!=='anthropic')return;
-      normalizeNativeClaudeSystemUpdates(event.messages);
-      if(!scrub)return;
-      if(preserve){
-        // Scrub per run of parts sharing a cache marker, so a rewrite keeps markers and metadata.
-        const parts=event.system.map(part=>({...part}));collapse(parts);
-        const scrubbed=parts.map(part=>scrub(part.text));
-        if(scrubbed.every((text,index)=>text===parts[index]?.text))return;
-        event.system.splice(0,event.system.length,...parts.map((part,index)=>({...SystemPart.make(scrubbed[index]??part.text),
-          ...part.cache?{cache:part.cache}:{},...part.metadata?{metadata:part.metadata}:{}})));
-        return;
-      }
-      const original=event.system.map(part=>part.text).join('\n\n'),scrubbed=scrub(original);
-      if(scrubbed!==original)event.system.splice(0,event.system.length,SystemPart.make(scrubbed));
-    }),{providerID:'anthropic'});
     for(const name of ['context','compaction','title','generate'] as const)yield* ctx.session.hook(name,event=>Effect.gen(function*(){
       if(!active||event.model.providerID!=='openai')return;
       const models=yield* ctx.model.list({location:{directory}}).pipe(Effect.orDie);

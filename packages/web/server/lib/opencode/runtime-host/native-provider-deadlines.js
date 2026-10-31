@@ -12,11 +12,10 @@
 // stanza (it was 120 s for all but OpenAI). Saved values win.
 export const NATIVE_PROVIDER_DEADLINES = Object.freeze({ headerTimeout: 45_000, chunkTimeout: 300_000 });
 const PROVIDER_DEADLINES = Object.freeze({});
-// `anthropic` is the local Meridian passthrough to the Claude Agent SDK, which
-// can withhold headers through long silent reasoning and enforces its own
-// upstream idle guard (90/180 s); a tighter HTTP deadline here would abort and
-// replay a live Claude step.
-export const NATIVE_DEADLINE_EXEMPT_PROVIDERS = Object.freeze(['anthropic']);
+// `claude-agent` runs the user's Claude Code, which owns its API and stream idle
+// timeouts; OpenCode would pass a stanza deadline to it as API_TIMEOUT_MS and cut
+// off long silent reasoning.
+export const NATIVE_DEADLINE_EXEMPT_PROVIDERS = Object.freeze(['claude-agent']);
 const exempt = id => NATIVE_DEADLINE_EXEMPT_PROVIDERS.includes(id);
 
 /** Stanza `settings` with the deadlines merged under saved values; exempt providers keep theirs unchanged. */

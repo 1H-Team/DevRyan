@@ -16,26 +16,11 @@ import os from 'os';
 import path from 'path';
 import { getProviderIntegrationLookupIds } from './provider-integrations.js';
 import {
-  ANTHROPIC_OAUTH_PLUGIN_PACKAGE,
-  ANTHROPIC_OAUTH_PLUGIN_SPEC,
-  isAnthropicOAuthPluginSpec,
-  reconcileAnthropicOAuthPluginSpecs,
-} from './anthropic-oauth-plugin.js';
-import {
   DEVRYAN_MANAGED_PLUGIN_IDS,
   getDevRyanManagedPluginRegistrationForConfigPath,
   getDevRyanManagedPluginForSpec,
 } from './managed-plugins.js';
 
-const ANTHROPIC_OAUTH_PROVIDER_IDS = new Set([
-  'anthropic',
-  'claude',
-  'anthropic-oauth',
-  'opencode-with-claude',
-]);
-const ANTHROPIC_OAUTH_CONFIG_PROVIDER_ID = 'anthropic';
-const ANTHROPIC_OAUTH_PLUGIN_NAME = ANTHROPIC_OAUTH_PLUGIN_PACKAGE;
-const ANTHROPIC_OAUTH_DEFAULT_BASE_URL = 'http://127.0.0.1:3456';
 const CURSOR_ACP_PROVIDER_ID = 'cursor-acp';
 const CURSOR_ACP_PLUGIN_NAME = getDevRyanManagedPluginRegistrationForConfigPath(
   DEVRYAN_MANAGED_PLUGIN_IDS.OPEN_CURSOR,
@@ -97,9 +82,6 @@ function getProviderLookupIds(providerId) {
   if (providerIntegrationLookupIds.length > 1 || providerIntegrationLookupIds[0] !== normalized) {
     return providerIntegrationLookupIds;
   }
-  if (ANTHROPIC_OAUTH_PROVIDER_IDS.has(normalized)) {
-    return [normalized, ANTHROPIC_OAUTH_CONFIG_PROVIDER_ID];
-  }
   return [normalized];
 }
 
@@ -123,37 +105,6 @@ function hasAntigravityProviderConfig(config) {
     }
   }
   return false;
-}
-
-function hasAnthropicOAuthPlugin(config) {
-  const plugins = Array.isArray(config?.plugin) ? config.plugin : [];
-  return plugins.some(isAnthropicOAuthPluginSpec);
-}
-
-function hasAnthropicOAuthOptions(config) {
-  const providers = isPlainObject(config?.provider) ? config.provider : {};
-  const anthropic = isPlainObject(providers[ANTHROPIC_OAUTH_CONFIG_PROVIDER_ID])
-    ? providers[ANTHROPIC_OAUTH_CONFIG_PROVIDER_ID]
-    : null;
-  const options = isPlainObject(anthropic?.options) ? anthropic.options : {};
-  if (options.apiKey !== 'dummy' || typeof options.baseURL !== 'string') {
-    return false;
-  }
-
-  try {
-    const url = new URL(options.baseURL);
-    return url.protocol === 'http:' && ['127.0.0.1', 'localhost'].includes(url.hostname) && Boolean(url.port);
-  } catch {
-    return false;
-  }
-}
-
-function hasAnthropicOAuthConfig(config, providerId) {
-  const normalized = normalizeProviderId(providerId);
-  if (!ANTHROPIC_OAUTH_PROVIDER_IDS.has(normalized)) {
-    return false;
-  }
-  return hasAnthropicOAuthPlugin(config) && hasAnthropicOAuthOptions(config);
 }
 
 function getProviderSources(providerId, workingDirectory, options = {}) {
@@ -198,10 +149,6 @@ function getProviderSources(providerId, workingDirectory, options = {}) {
   const projectExists = Boolean(projectSourcePath);
   const userProviderSource = userCandidates.find((candidate) => hasProviderSourceConfig(candidate.config));
   const userExists = Boolean(userProviderSource);
-  const customAnthropicOAuthExists = hasAnthropicOAuthConfig(customConfig, providerId);
-  const projectAnthropicOAuthExists = hasAnthropicOAuthConfig(projectConfig, providerId);
-  const userAnthropicOAuthSource = userCandidates.find((candidate) => hasAnthropicOAuthConfig(candidate.config, providerId));
-  const userAnthropicOAuthExists = Boolean(userAnthropicOAuthSource);
 
   return {
     sources: {
@@ -209,17 +156,6 @@ function getProviderSources(providerId, workingDirectory, options = {}) {
       user: { exists: userExists, path: userProviderSource?.path || paths.userPath },
       project: { exists: projectExists, path: projectSourcePath || paths.projectPath || null },
       custom: { exists: customExists, path: paths.customPath },
-      // Visible review note: this is deliberately separate from the normal provider source so Anthropic API-key configs are not mislabeled as the unofficial OAuth proxy path.
-      anthropicOAuth: {
-        exists: userAnthropicOAuthExists || projectAnthropicOAuthExists || customAnthropicOAuthExists,
-        path: customAnthropicOAuthExists
-          ? paths.customPath
-          : projectAnthropicOAuthExists
-            ? paths.projectPath || null
-            : userAnthropicOAuthExists
-              ? userAnthropicOAuthSource?.path || paths.userPath
-              : null,
-      },
     }
   };
 }
@@ -264,71 +200,6 @@ function resolveActiveProviderSource(providerSources, officialUserConfigPath = O
   };
 }
 
-function ensureAnthropicOAuthProviderConfig({
-  workingDirectory = null,
-  baseURL = ANTHROPIC_OAUTH_DEFAULT_BASE_URL,
-} = {}) {
-  const layers = readConfigLayers(workingDirectory);
-  const targetPath = workingDirectory ? layers.paths.projectPath : layers.paths.userPath;
-  const targetConfig = workingDirectory ? layers.projectConfig : layers.userConfig;
-
-  const plugin = Array.isArray(targetConfig.plugin) ? [...targetConfig.plugin] : [];
-  const nextPlugin = reconcileAnthropicOAuthPluginSpecs(
-    plugin,
-    getDevRyanManagedPluginRegistrationForConfigPath(
-      DEVRYAN_MANAGED_PLUGIN_IDS.CLAUDE,
-      {
-        configDirectory: OPENCODE_CONFIG_DIR,
-        configPath: targetPath || CONFIG_FILE,
-      },
-    ),
-  );
-
-  const provider = isPlainObject(targetConfig.provider) ? targetConfig.provider : {};
-  const existingAnthropic = isPlainObject(provider[ANTHROPIC_OAUTH_CONFIG_PROVIDER_ID])
-    ? provider[ANTHROPIC_OAUTH_CONFIG_PROVIDER_ID]
-    : {};
-  const existingOptions = isPlainObject(existingAnthropic.options) ? existingAnthropic.options : {};
-  const hadOAuthPlugin = hasAnthropicOAuthPlugin(targetConfig);
-  const hadOAuthOptions = hasAnthropicOAuthOptions(targetConfig);
-  const nextOptions = {
-    ...existingOptions,
-    baseURL,
-    apiKey: 'dummy',
-  };
-  const nextAnthropic = {
-    ...existingAnthropic,
-    options: nextOptions,
-  };
-  const nextProvider = {
-    ...provider,
-    [ANTHROPIC_OAUTH_CONFIG_PROVIDER_ID]: nextAnthropic,
-  };
-
-  const changed =
-    !hadOAuthPlugin ||
-    plugin.length !== nextPlugin.length ||
-    plugin.some((entry, index) => entry !== nextPlugin[index]) ||
-    !hadOAuthOptions ||
-    !Array.isArray(targetConfig.plugin) ||
-    !isPlainObject(targetConfig.provider) ||
-    !isPlainObject(provider[ANTHROPIC_OAUTH_CONFIG_PROVIDER_ID]) ||
-    !isPlainObject(existingAnthropic.options) ||
-    existingOptions.baseURL !== baseURL ||
-    existingOptions.apiKey !== 'dummy';
-
-  if (!changed) {
-    return { changed: false, path: targetPath, config: targetConfig };
-  }
-
-  const nextConfig = {
-    ...targetConfig,
-    plugin: nextPlugin,
-    provider: nextProvider,
-  };
-  writeConfig(nextConfig, targetPath || CONFIG_FILE);
-  return { changed: true, path: targetPath, config: nextConfig };
-}
 
 function resolveDefaultCursorAcpUserConfigPath(userConfigPath = null) {
   if (typeof userConfigPath === 'string' && userConfigPath.trim()) {
@@ -1233,9 +1104,6 @@ function listProviderConfigFiles(providerId, workingDirectory) {
 }
 
 export {
-  ANTHROPIC_OAUTH_DEFAULT_BASE_URL,
-  ANTHROPIC_OAUTH_PLUGIN_NAME,
-  ANTHROPIC_OAUTH_PLUGIN_SPEC,
   CURSOR_ACP_DEFAULT_BASE_URL,
   CURSOR_ACP_PLUGIN_NAME,
   CURSOR_ACP_PROXY_HEALTH_URL,
@@ -1243,7 +1111,6 @@ export {
   areCursorWorkspacePathsEqual,
   ensureCursorAgentCompatibilityLink,
   ensureDefaultCursorAcpProviderConfig,
-  ensureAnthropicOAuthProviderConfig,
   fetchCursorAcpProxyHealth,
   getCursorAcpRuntimeStatus,
   getProviderSources,

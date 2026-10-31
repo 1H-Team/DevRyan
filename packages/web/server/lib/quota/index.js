@@ -9,7 +9,6 @@ export {
   listConfiguredQuotaProviders,
   fetchQuotaForProvider,
   resolveProviderId,
-  fetchClaudeQuota,
   fetchOpenaiQuota,
   fetchGoogleQuota,
   fetchCodexQuota,

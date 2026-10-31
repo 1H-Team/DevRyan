@@ -5,8 +5,30 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { createRunRoot } from './run-root.mjs';
-import { requireCacheDirectory } from './claude-quota-fixture.mjs';
 import { applyImagegenModelHotfix } from '../../packages/web/server/lib/opencode/imagegen-model-hotfix.js';
+
+const repository = path.resolve(import.meta.dirname, '../..');
+
+async function requireCacheDirectory(directory) {
+  const cache = await fs.realpath(path.join(repository, '.cache'));
+  const absolute = path.resolve(directory);
+  if (!absolute.startsWith(`${cache}${path.sep}`)) throw new Error('QA output must resolve inside repository .cache');
+  let ancestor = absolute;
+  for (;;) {
+    try {
+      const canonical = await fs.realpath(ancestor);
+      if (canonical !== cache && !canonical.startsWith(`${cache}${path.sep}`)) throw new Error('QA output escapes repository .cache');
+      break;
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+      ancestor = path.dirname(ancestor);
+    }
+  }
+  await fs.mkdir(directory, { recursive: true, mode: 0o700 });
+  const resolved = await fs.realpath(directory);
+  if (!resolved.startsWith(`${cache}${path.sep}`)) throw new Error('QA output must resolve inside repository .cache');
+  return resolved;
+}
 
 export async function checkInstalledPlugins({ modules, output }) {
   if (!path.isAbsolute(modules)) throw new Error('An absolute installed modules directory is required');

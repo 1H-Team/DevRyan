@@ -56,7 +56,6 @@ import { runCompiledIntervalCorrectness, validateEventReconcileInterval, interva
 import { runCompiledHumanQueue } from './opencode-v2-native/package-human-queue-lane.mjs';
 import { assertBundleCloneLayout, createCompiledBundleUpgradeLane, snapshotClosedBundleSource, snapshotCheckpointedBundleSource, snapshotRetainedBundleWork, verifyCompiledCloneCompatibility } from './opencode-v2-native/package-bundle-upgrade-lane.mjs';
 import { runCompiledFreshInstallUpgrade } from './opencode-v2-native/package-fresh-install-upgrade-lane.mjs';
-import { runCompiledClaudeCredentialBridge } from './opencode-v2-native/compiled-claude-credentials.mjs';
 import { runCompiledModelTitle } from './opencode-v2-native/package-model-title-lane.mjs';
 import { runCompiledHelperIsolation } from './opencode-v2-native/package-helper-isolation-lane.mjs';
 import { createCompiledHelperAgentFixture } from './opencode-v2-native/package-helper-agent-fixture.mjs';
@@ -480,9 +479,6 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
     return runtimeOwner.start();
     };
     const controller = await (imageLane ? imageLane.withCapturedTransport(startController) : startController());
-    if (!preflight && !managedInterval && !managedCorrectness && !managedModelAdmission && !archivedRemovalOnly) {
-      cases.push(...await runCompiledClaudeCredentialBridge({ artifacts, root, controller, environment, observations }));
-    }
     imageLane?.captureRestarts(runtimeOwner);
     if (!managedInterval) failureEvents = await capturePackageFailureEvents({ client, getAuthHeaders: () => runtimeOwner.getAuthHeaders(), controller, observations });
     assert.equal(controller.bound.catalog.asserted, true);

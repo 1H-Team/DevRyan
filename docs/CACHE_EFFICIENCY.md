@@ -262,8 +262,7 @@ Deterministic tests use synthetic usage and disposable files. Run the owning
 shared/harness tests. The removed opt-in serializer probe used an explicitly
 supplied installed binary and only loopback synthetic requests; it checked the installed adapters on two turns for Sol, Astra and Grok, native normalized usage, byte-level
 prefix hashes, response model, observer/endpoint/reservation count agreement and
-owned-process cleanup. Existing `meridian-prefix.mjs` retains the independent
-Anthropic native history/tool-result fixture. None of these fixtures establishes
+owned-process cleanup. None of these fixtures establishes
 managed OAuth acceptance, a live hit-rate gain, title quality equivalence, or a
 production savings percentage. The installed-adapter probe disables default
 plugins; complete DevRyan overlay serialization is still a separate qualification

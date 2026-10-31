@@ -19,6 +19,7 @@ import { createRuntimeBundleStore } from './runtime-bundle.js';
 import { verifyNativeRuntimeArtifacts } from './native-artifacts.js';
 import { createNativeControllerProcess } from './native-process.js';
 import { createClaudeAgentHost, readClaudeAgentUsage } from './claude-agent-host.js';
+import { createNativeCopilotCatalog } from './native-copilot-catalog.js';
 import { createNativeAdmissionOwner } from './native-admission-owner.js';
 import { parseNativeProviderTiming } from './native-provider-timing.js';
 import { createNativePrimaryStepOwner } from './primary-step-owner.js';
@@ -45,22 +46,13 @@ import { createNativeDocumentRuntime } from './native-document-runtime.js';
 import { createNativeImageRuntime } from './native-image-runtime.js';
 import { createNativeSlimContextOwner } from './native-slim-context-owner.js';
 import { createNativeControllerInterview } from './native-controller-interview.js';
-import { createNativeProviderRuntimeOwner,migrateNativeClaudeLegacyFences,createObservedNativeClaudeCredentialCommand } from './native-provider-runtime-owner.js';
 import {nativeWebfetchBinaryDirectory} from './native-read-paths.js';
 import {createNativeProjectLocations} from './native-project-locations.js';
-import {resolveNativeProviderConfiguration,hasConfiguredNativeClaudeProfile} from './native-provider-configuration.js';
 import {createNativeImageGeneration} from './native-image-generation.js';
 import {createNativeCursorOwner} from './native-cursor-owner.js';
 import {createNativeCursorRecovery} from './native-cursor-recovery.js';
 import {createNativeObservationOwner} from './native-observation-owner.js';
 import {createNativeRecoveredInputOwner, recoverAcceptedPromptBoundary} from './native-recovered-input.js';
-import {createNativeClaudeLifecycleClient} from './native-claude-lifecycle-client.js';
-import {CLAUDE_LIFECYCLE_PROTOCOL} from './native-claude-lifecycle.js';
-import {createNativeClaudeSecurityHome} from './native-claude-security-home.js';
-import {createNativeClaudeEnrollmentOwner} from './native-claude-enrollment.js';
-import {resolveNativeClaudeEnrollmentDirectory} from './native-claude-enrollment-location.js';
-import {createNativeClaudeProfilePublication} from './native-claude-profile-publication.js';
-import {projectNativeClaudeWorkerProfiles} from './native-claude-worker-profiles.js';
 
 const fail = code => Object.assign(new Error(code), { code, status: 503, statusCode: 503 });
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -106,7 +98,7 @@ export function createRuntimeBundleVerifier(binding, privatePersistence={}) {
  * `verified` is the result of `verify()` that the caller has just awaited, so boot does
  * not stream every harness ledger or signed artifact twice. It must match the binding, otherwise loading fails closed.
  * Each launch still runs `verify` again. */
-export async function loadNativeRuntimeBundle({ binding, launcher, verify = createRuntimeBundleVerifier(binding), verified, getRegisteredProjects, listProjectWorktrees, providerEnvironment = {} }) {
+export async function loadNativeRuntimeBundle({ binding, launcher, verify = createRuntimeBundleVerifier(binding), verified, getRegisteredProjects, listProjectWorktrees }) {
   if (binding.admission === 'held') throw fail('runtime_bundle_reconciliation_required');
   if (binding.descriptor.generation !== 2) throw fail('native_runtime_generation_mismatch');
   if (verified === undefined) verified = await verify();
@@ -134,9 +126,6 @@ export async function loadNativeRuntimeBundle({ binding, launcher, verify = crea
   const refreshLocations=async()=>{if(deriveLocations)locations.splice(0,locations.length,...await deriveLocations());};
   await refreshLocations();
   const resolveConfiguration=createNativeConfigurationSnapshotResolver({resolveSlimAgents:reviewedConfiguration?.resolveSlimAgents,
-    hasConfiguredClaudeProfile:async()=>{
-      return hasConfiguredNativeClaudeProfile(await resolveNativeProviderConfiguration({globals:launch.global,environment:providerEnvironment,controlRoot:binding.controlRoot}));
-    },
     ...(deriveLocations?{getRuntimeLocations:()=>deriveLocations()}:{} )});
   return { descriptor, artifacts, controlRoot: binding.controlRoot, artifactPurpose: binding.selection.transition === 'rollback' ? 'bundle-rollback' : undefined,
     preparedManifestSha256: binding.selection.preparedManifestSha256, configuration: reviewed.configuration, locations,
@@ -183,7 +172,6 @@ export function createNativeRuntimeOwner(options) {
       } }) === false) console.warn('native_observation_unavailable');
     } catch { console.warn('native_observation_unavailable'); }
   };
-  const supportsClaudeLifecycle=artifacts.manifest.compiledContracts?.includes(CLAUDE_LIFECYCLE_PROTOCOL)===true;
   const selectedPreparedManifestSha256 = bundle.preparedManifestSha256;
   const assertSelectedClone = async () => {
     if (!descriptor.sourceBundleID) return;
@@ -195,9 +183,9 @@ export function createNativeRuntimeOwner(options) {
   let child, starting, primaryStep,streamContinuation, stopping = false, stopped = false, phase = 'closed', checkpointHeld = false;
   let recoveredInputs;
   let settledController;
-  let claudeEnrollment, claudeAgentHost;
+  let claudeAgentHost, copilotCatalog;
   const claudeAgentUsageFile = path.join(descriptor.launch.webDataDirectory, 'runtime', 'claude-agent-usage.json');
-  let httpToken, lastExit, unsettledLaunch, configurationSnapshot, integrations, providers, providerConfiguration, interviews, sessionContext, slim, slimContext, documents, images, cursor, nativeInstanceID, reviewedBrowser, observationOwner, hostOperations;
+  let httpToken, lastExit, unsettledLaunch, configurationSnapshot, integrations, interviews, sessionContext, slim, slimContext, documents, images, cursor, nativeInstanceID, reviewedBrowser, observationOwner, hostOperations;
   const imageNotices=new Map();
   const imageGeneration=bundle.reviewedConfiguration?.reviewedImagegenOriginals?createNativeImageGeneration({
     originals:bundle.reviewedConfiguration.reviewedImagegenOriginals,
@@ -224,7 +212,6 @@ export function createNativeRuntimeOwner(options) {
       }
     } catch { console.warn('native_observation_unavailable'); }
   };
-  const claudeCredentialCommand=createObservedNativeClaudeCredentialCommand({onDiagnostic:payload=>options.recordDiagnostic?.({type:'lifecycle',event:'native_claude_credential_command',payload})});
   let managedTitle;
   const readPlanPolicy = input => taskContext.readNativePlanPolicy(input, scope => {
     if (!privileged) throw fail('native_context_metadata_owner_required');
@@ -531,8 +518,8 @@ export function createNativeRuntimeOwner(options) {
       }
     }
     if(method.startsWith('provider.')){
-      if(!providers)throw fail('native_provider_owner_unavailable');
-      return providers.handleRpc(method,params,context);
+      if(!copilotCatalog)throw fail('native_provider_owner_unavailable');
+      return copilotCatalog.handleRpc(method,params,context);
     }
     if (method.startsWith('execution.native.')) {
       const action = method.slice('execution.native.'.length);
@@ -594,7 +581,7 @@ export function createNativeRuntimeOwner(options) {
       await lastExit;
       await recoverStoppedManagedTasks();
       await integrations?.invalidate();
-      await providers?.close();
+      await copilotCatalog?.close();
       await interviews?.close();
       await documents?.close();
       await images?.close();
@@ -746,86 +733,11 @@ export function createNativeRuntimeOwner(options) {
         DEVRYAN_NATIVE_ARCHIVE: process.env.DEVRYAN_NATIVE_ARCHIVE === '0' ? '0' : '1',
         HOME: globals.home, XDG_CONFIG_HOME: globals.config, XDG_DATA_HOME: globals.data, XDG_STATE_HOME: globals.state,
         XDG_CACHE_HOME: globals.cache, TMPDIR: globals.tmp, TMP: globals.tmp, TEMP: globals.tmp };
-      const providerOrigin=bundle.reviewedPlugins.find(row=>row.id==='devryan.provider-compat');
-      if(providerOrigin&&configurationSnapshot){
-        const profiles=await resolveNativeProviderConfiguration({globals,environment:options.providerEnvironment??{},controlRoot:bundle.controlRoot});
-        providerConfiguration=hash(JSON.stringify(profiles));
-        const storage=path.join(globals.state,'provider-transport');await nativeBundleFileOperations(options.privatePersistence).ensureDirectory(storage);
-        if(!artifacts.reviewedClaude)throw fail('native_provider_assets_required');
-        const claudeSupported=supportsClaudeLifecycle;
-        const claudeLifecycle=createNativeClaudeLifecycleClient({controller:active,
-          isCurrent:()=>nativeInstanceID===instanceID&&Boolean(child&&!child.hasExited())});
-        const securityHome=options.getNativeClaudeSecurityHome?.();
-        const bindOwnedCommand=securityHome===undefined?undefined:createNativeClaudeSecurityHome({controlRoot:bundle.controlRoot,home:globals.home,securityHome,execute:claudeCredentialCommand});
-        const providerWorkerInstanceID=randomUUID();
-        providers=createNativeProviderRuntimeOwner({instanceID,snapshot:configurationSnapshot,registrationOrigin:{kind:'plugin',...providerOrigin},
-          claudeSupported,
-          controller:active,isReady:()=>nativeInstanceID===instanceID&&phase!=='closed'&&!checkpointHeld&&!stopping,
-          withMutationQueue:options.withCredentialMutationQueue,admissionOwner:nativeOwner,cursor:options.cursorRuntime,
-          claudeCredentials:{backend:{execFile:claudeCredentialCommand},profiles:profiles.profiles,asset:artifacts.reviewedClaudeCredentials,oauthTokenExpiries:profiles.oauthTokenExpiries,
-            lifecycle:claudeLifecycle,bindOwnedCommand,ownedControlRoot:bundle.controlRoot},
-          prepareMeridianProfiles:context=>projectNativeClaudeWorkerProfiles({profiles:profiles.profiles,globals,
-            controlRoot:bundle.controlRoot,workerInstanceID:providerWorkerInstanceID,lifecycle:claudeLifecycle},context),
-          meridian:{binary:artifacts.controller,cwd:boot.directory,environment,databasePath:boot.databasePath,
-            onDiagnostic:diagnostic=>{try{options.recordDiagnostic?.({type:'lifecycle',event:diagnostic.type==='claude-checkpoint-diagnostic'?'native_claude_checkpoint':'native_claude_process',sessionID:diagnostic.sessionID,directory:diagnostic.directory,
-              payload:{attemptID:diagnostic.attemptID,providerInstanceID:diagnostic.instanceID,...(diagnostic.type==='claude-checkpoint-diagnostic'?diagnostic.checkpoint:diagnostic.receipt)}});}catch{/* Observations cannot change provider settlement. */}},
-            supervisor:{launcher:artifacts.launcher,deniedReadDirectories:options.supervisedController?.deniedReadDirectories??[]},
-            boot:{protocol:1,type:'provider-boot',provider:'anthropic',instanceID:providerWorkerInstanceID,buildId:boot.buildId,
-              requestAuthorization:randomBytes(32).toString('hex'),globals,profiles:profiles.profiles,...profiles.defaultProfile?{defaultProfile:profiles.defaultProfile}:{},
-              assets:artifacts.reviewedClaude,transport:{launcher:artifacts.launcher,storage,directories:bundle.locations.map(location=>location.directory)}}},
-        });
-        if(claudeSupported&&artifacts.reviewedClaudeCredentials){
-          const publication=createNativeClaudeProfilePublication({home:globals.home,controlRoot:bundle.controlRoot,...options.privatePersistence});
-          const snapshot=configurationSnapshot,bindings=new WeakSet();
-          const principalKey=()=>{
-            const principal=options.getRequestPrincipal?.();
-            if(!principal||!['local-admin','managed'].includes(principal.scope)||typeof principal.id!=='string')throw fail('native_claude_enrollment_principal_required');
-            return hash(JSON.stringify({scope:principal.scope,id:principal.id,appSessionId:principal.appSessionId??null,sessionTokenHash:principal.sessionTokenHash??null}));
-          };
-          const enrollmentDirectory=context=>resolveNativeClaudeEnrollmentDirectory({directory:context?.directory,locations:snapshot.locations,projectMap:descriptor.projectMap});
-          const assertAuthority=async(binding,context)=>{
-            if(!bindings.has(binding)||binding.directory!==enrollmentDirectory(context)||binding.principalID!==principalKey()
-              ||phase!=='ready'||stopping||checkpointHeld||configurationSnapshot!==snapshot||nativeInstanceID!==instanceID||!child||child.hasExited())throw fail('native_claude_enrollment_binding_changed');
-            await binding.authorization();
-            if(phase!=='ready'||stopping||checkpointHeld||configurationSnapshot!==snapshot||nativeInstanceID!==instanceID||!child||child.hasExited())throw fail('native_claude_enrollment_binding_changed');
-          };
-          const recheckBinding=async(binding,context)=>{
-            await assertAuthority(binding,context);
-            const current=await resolveNativeProviderConfiguration({globals,environment:options.providerEnvironment??{},controlRoot:bundle.controlRoot});
-            if(hash(JSON.stringify(current))!==binding.providerConfigurationDigest
-              ||JSON.stringify(await publication.snapshot())!==JSON.stringify(binding.profileFilesBaseline))throw fail('native_claude_enrollment_configuration_changed');
-            await assertAuthority(binding,context);
-          };
-          claudeEnrollment=createNativeClaudeEnrollmentOwner({controlRoot:bundle.controlRoot,home:globals.home,
-            asset:artifacts.reviewedClaudeCredentials,lifecycle:claudeLifecycle,withMutationQueue:options.withCredentialMutationQueue,execute:claudeCredentialCommand,bindOwnedCommand,
-            beforeEnrollment:context=>migrateNativeClaudeLegacyFences({profiles:profiles.profiles,home:globals.home,...bindOwnedCommand?{ownedControlRoot:bundle.controlRoot}:{},
-              asset:artifacts.reviewedClaudeCredentials,lifecycle:claudeLifecycle,backend:{execFile:claudeCredentialCommand}},context),
-            captureBinding:async context=>{
-              const directory=enrollmentDirectory(context);
-              if(profiles.sources.profiles==='env'||profiles.sources.defaultProfile==='env')throw fail('native_claude_enrollment_environment_override');
-              const binding={principalID:principalKey(),directory,controllerInstanceID:instanceID,providerConfigurationDigest:providerConfiguration,
-                profileFilesBaseline:await publication.snapshot(),authorization:await authorization.captureWebAuthorization({operation:'provider.configuration',scope:'user',directory})};
-              bindings.add(binding);await recheckBinding(binding,context);return binding;
-            },
-            recheckBinding,
-            withProfileRemoval:action=>{if(!providers)throw fail('native_claude_enrollment_owner_required');return providers.withClaudeProfileRemoval(action);},
-            assertProfileRemoval:async(profile,binding,context)=>{
-              await recheckBinding(binding,context);
-              await publication.assertRemoval(profile,binding.profileFilesBaseline,{recheck:()=>assertAuthority(binding,context)});
-            },
-            removeProfile:async(profile,binding,context)=>{
-              await recheckBinding(binding,context);
-              await publication.remove(profile,binding.profileFilesBaseline,{recheck:()=>assertAuthority(binding,context)});
-              if(!providers)throw fail('native_claude_enrollment_owner_required');providers.invalidateClaudeProfile(profile.id);
-            },
-            recheckAfterRemoval:assertAuthority,
-            publishProfile:async(profile,binding,context)=>{
-              await recheckBinding(binding,context);
-              await publication.publish(profile,binding.profileFilesBaseline,{recheck:()=>assertAuthority(binding,context)});
-            },
-          });
-        }else claudeEnrollment=undefined;
-      }else providers=undefined;
+      const providerOrigin = bundle.reviewedPlugins.find(row => row.id === 'devryan.provider-compat');
+      copilotCatalog = providerOrigin && configurationSnapshot ? createNativeCopilotCatalog({ instanceID, snapshot: configurationSnapshot,
+        registrationOrigin: { kind: 'plugin', ...providerOrigin }, controller: active,
+        isReady: () => nativeInstanceID === instanceID && phase !== 'closed' && !checkpointHeld && !stopping,
+        withMutationQueue: options.withCredentialMutationQueue }) : undefined;
       nextStage('controller');
       const claudeAgent = createClaudeAgentHost({ usageFile: claudeAgentUsageFile,
         onDiagnostic: detail => recordStartupDiagnostic('claude_agent', { controllerInstanceID: instanceID, ...detail }) });
@@ -851,9 +763,8 @@ export function createNativeRuntimeOwner(options) {
           void launchIntegrations?.invalidate();
           lastExit = (async () => {
             await claudeAgent.close();
-            await claudeEnrollment?.close();
+            await copilotCatalog?.close();
             await cursor?.close();
-            await providers?.close();
             await interviews?.close();
             await documents?.close();
             await images?.close();
@@ -996,9 +907,8 @@ export function createNativeRuntimeOwner(options) {
     },
     drainCredentialOwners: async () => {
       if (!checkpointHeld) throw fail('bundle_checkpoint_admission_open');
-      await claudeEnrollment?.close();
       await integrations?.invalidate();
-      await providers?.close();
+      await copilotCatalog?.close();
       await options.withCredentialMutationQueue?.(async () => {});
     },
     captureContextAssets,
@@ -1009,27 +919,6 @@ export function createNativeRuntimeOwner(options) {
     },
     getConfigurationSnapshot: () => configurationSnapshot,
     getCatalogAvailability: () => child?.bound.catalog.availability ?? { selections: [] },
-    getClaudeEnrollmentOwner: () => phase==='ready'&&!stopping&&!checkpointHeld?claudeEnrollment:null,
-    inspectClaude: async (input, {signal} = {}) => {
-      if(!supportsClaudeLifecycle)throw fail('native_claude_update_required');
-      const owner=providers,snapshot=configurationSnapshot,instanceID=nativeInstanceID,expected=providerConfiguration;
-      const directory=input.directory??snapshot?.locations[0]?.directory;
-      const live=()=>{
-        if(phase!=='ready'||stopping||checkpointHeld||!child||child.hasExited()||!owner||providers!==owner||configurationSnapshot!==snapshot||nativeInstanceID!==instanceID)throw fail('native_runtime_not_ready');
-        signal?.throwIfAborted();
-      };
-      live();
-      if(!snapshot.locations.some(row=>row.directory===directory)||!descriptor.projectMap.some(row=>row.targetDirectory===directory))throw fail('native_provider_configuration_location_unreviewed');
-      const grant=await authorization.captureWebAuthorization({operation:'provider.configuration',scope:'read',directory});
-      const recheck=async()=>{
-        live();await grant();live();
-        const current=await resolveNativeProviderConfiguration({globals:descriptor.launch.global,environment:options.providerEnvironment??{},controlRoot:bundle.controlRoot});
-        live();if(hash(JSON.stringify(current))!==expected)throw fail('native_provider_configuration_changed');
-        await grant();live();
-      };
-      await recheck();
-      return owner.inspectClaude({directory,kind:input.kind},{recheck,signal});
-    },
     withProviderConfigurationAuthorization: createNativeProviderConfigurationOperation({
       descriptor, getSnapshot: () => configurationSnapshot,
       isReady: () => phase === 'ready' && Boolean(child && !child.hasExited()) && !stopping,
@@ -1058,10 +947,6 @@ export function createNativeRuntimeOwner(options) {
     },
     observeSessionIdle: async input => {
       if (phase !== 'ready' || stopping) return;
-      if(providers)try{
-        const page=await openCodeClient.sessions.messages(input.sessionID,{limit:1},{directory:input.directory,timeoutMs:5000,maxResponseBytes:1024*1024});
-        if(Array.isArray(page?.records)&&page.records.length===1)providers.observeClaudeResult(input,page.records[0]);
-      }catch{/* Provider health cannot change idle settlement or task recovery. */}
       try { await managedTask.settleIdle(input); }
       catch (error) {
         options.recordDiagnostic?.({ type: 'lifecycle', event: 'native_task_auto_continue_failed', sessionID: input.sessionID,
@@ -1215,9 +1100,8 @@ export function createNativeRuntimeOwner(options) {
       // Admitted refreshes must finish their durable KV fences while the same
       // physical controller is still alive. Closing public admission does not
       // revoke those already-owned finalizers.
-      await claudeEnrollment?.close();
       await integrations?.invalidate();
-      await providers?.close();
+      await copilotCatalog?.close();
       await options.withCredentialMutationQueue?.(async () => {});
       const settlementFailures = [];
       try {
@@ -1233,7 +1117,7 @@ export function createNativeRuntimeOwner(options) {
       if (settlementFailures.length === 1) throw settlementFailures[0];
       if (settlementFailures.length) throw new AggregateError(settlementFailures, 'Native final execution settlement failed');
       await integrations?.invalidate();
-      await providers?.close();
+      await copilotCatalog?.close();
       await cursor?.close();
       await cursorRecovery.drain();
       await interviews?.close();

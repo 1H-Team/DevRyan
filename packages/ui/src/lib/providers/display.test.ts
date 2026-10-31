@@ -16,6 +16,16 @@ describe('provider display branding', () => {
     }
   });
 
+  test('presents Claude Code\'s own claude-agent provider as Claude without treating it as Anthropic OAuth', () => {
+    expect(isAnthropicOAuthProviderId('claude-agent')).toBe(false);
+    expect(getProviderDisplayName({ id: 'claude-agent', name: 'Claude Agent' })).toBe('Claude');
+    expect(getProviderDisplayName({ id: 'claude-agent' })).toBe('Claude');
+  });
+
+  test('falls back to an empty label when a provider has neither name nor id', () => {
+    expect(getProviderDisplayName({})).toBe('');
+  });
+
   test('preserves unrelated names and applies the OpenCode Zen label', () => {
     expect(getProviderDisplayName({ id: 'custom-openai', name: 'OpenAI' })).toBe('OpenAI');
     expect(getProviderDisplayName({ id: 'opencode', name: 'OpenCode' })).toBe('OpenCode Zen');

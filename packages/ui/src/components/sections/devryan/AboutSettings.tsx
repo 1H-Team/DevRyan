@@ -16,7 +16,6 @@ import { DataStorageSettings } from './SessionRetentionSettings';
 import { DesktopKeepAwakeSettings } from './DesktopKeepAwakeSettings';
 import { DesktopNetworkSettings } from './DesktopNetworkSettings';
 import { OpenCodeVersionSection } from './OpenCodeVersionSection';
-import { ClaudeCodeVersionSection } from './ClaudeCodeVersionSection';
 
 const GITHUB_URL = 'https://github.com/1H-Team/DevRyan';
 
@@ -82,13 +81,6 @@ export const AboutSettings: React.FC = () => {
     void loadVersion();
     return () => controller.abort();
   }, []);
-
-  const checkClaudeAppUpdates = async () => {
-    await updateStore.checkForUpdates();
-    const result = useUpdateStore.getState();
-    if (result.error) throw new Error('update-check');
-    if (result.available) setUpdateDialogOpen(true);
-  };
 
   const currentVersion = appVersion ?? t('settings.devryan.about.state.unavailable');
 
@@ -178,7 +170,6 @@ export const AboutSettings: React.FC = () => {
         </div>
 
         <OpenCodeVersionSection compact />
-        <ClaudeCodeVersionSection compact onCheckAppUpdates={checkClaudeAppUpdates} />
 
         <UpdateDialog
           open={updateDialogOpen}
@@ -271,7 +262,6 @@ export const AboutSettings: React.FC = () => {
 
         </div>
         <OpenCodeVersionSection />
-        <ClaudeCodeVersionSection onCheckAppUpdates={checkClaudeAppUpdates} />
       </div>
 
       <UpdateDialog

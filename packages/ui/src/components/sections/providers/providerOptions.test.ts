@@ -16,7 +16,7 @@ describe('provider options', () => {
     });
 
     expect(options.map((provider) => provider.id)).toEqual([
-      'anthropic', 'cursor-acp', 'github-copilot', 'openai', 'xai', 'opencode-go',
+      'claude-agent', 'cursor-acp', 'github-copilot', 'openai', 'xai', 'opencode-go',
     ]);
     expect(options.slice(0, catalog.length)).toEqual(catalog);
     expect(options[0]).toBe(catalog[0]);
@@ -46,6 +46,15 @@ describe('provider options', () => {
     });
 
     expect(providers.find((provider) => provider.id === 'anthropic')?.name).toBe('Claude');
+  });
+
+  test('adds Claude through Claude Code once and names an advertised claude-agent Claude', () => {
+    const omitted = parseProvidersPayload({ providers: [{ id: 'openai', name: 'OpenAI' }] });
+    expect(omitted.filter((provider) => provider.id === 'claude-agent')).toEqual([{ id: 'claude-agent', name: 'Claude' }]);
+    expect(omitted.some((provider) => provider.id === 'anthropic')).toBe(false);
+
+    const advertised = parseProvidersPayload({ providers: [{ id: 'claude-agent', name: 'Claude Agent' }] });
+    expect(advertised.filter((provider) => provider.id === 'claude-agent')).toEqual([{ id: 'claude-agent', name: 'Claude' }]);
   });
 
   test('adds GitHub Copilot to available providers when the API omits it', () => {

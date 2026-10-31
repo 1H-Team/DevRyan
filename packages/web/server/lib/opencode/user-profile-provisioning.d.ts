@@ -33,24 +33,10 @@ export type UserProfileProvisionResult = {
     code?: string;
     error?: string;
   };
-  meridianPolicy?: {
-    ok: boolean;
-    changed: boolean;
-    settingsChanged?: boolean;
-    markerChanged?: boolean;
-    migrated?: boolean;
-    promptMode?: 'client-only' | 'claude-only' | 'combined' | 'none' | 'custom';
-    managedFields?: string[];
-    preservedFields?: string[];
-    warning?: string | null;
-    code?: string;
-    error?: string;
-  } | null;
   error?: string;
 };
 
 export function createUserProfileProvisioningRuntime(options?: Record<string, unknown>): {
   configDirectory: string;
-  meridianConfigDirectory: string;
   provision(): Promise<UserProfileProvisionResult>;
 };

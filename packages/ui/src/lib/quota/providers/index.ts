@@ -6,7 +6,6 @@ export interface QuotaProviderMeta {
 }
 
 export const QUOTA_PROVIDERS: QuotaProviderMeta[] = [
-  { id: 'claude', name: 'Claude' },
   { id: 'claude-agent', name: 'Claude' },
   { id: 'codex', name: 'ChatGPT' },
   { id: 'xai', name: 'xAI' },

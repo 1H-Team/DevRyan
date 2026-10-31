@@ -2,7 +2,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {parseMdFile} from '../shared.js';
 import {expect,it} from 'vitest';
-import {NATIVE_PROVIDER_DEADLINES,nativePermissionRules,translateNativeConfiguration} from './native-configuration-data.js';
+import {NATIVE_PROVIDER_DEADLINES,nativeModelSelection,nativePermissionRules,translateNativeConfiguration} from './native-configuration-data.js';
 import {PLAN_MODE_SYSTEM_INSTRUCTIONS} from '@devryan/orchestration-runtime';
 
 it('captures planning format in visible primary prefixes and explicit native tool budgets', () => {
@@ -29,6 +29,26 @@ it('preserves exact saved routes and native provider/model settings without runn
  expect(model.cost).toEqual([{input:1,output:2,cache:{read:0.1}},{input:3,output:4,cache:{write:0.2},tier:{type:'context',size:200000}}]);
  expect(config.providers['google-vertex-anthropic'].models.saved.package).toBe('aisdk:@ai-sdk/google-vertex/anthropic');
 });
+it('drops only the retired Meridian loopback proxy stanza DevRyan wrote',()=>{
+ for(const baseURL of ['http://127.0.0.1:3456','http://localhost:3456/v1']){
+  const {providers}=translateNativeConfiguration({legacy:{provider:{anthropic:{options:{apiKey:'dummy',baseURL}},zen:{}}},agents:{}});
+  expect(Object.keys(providers)).toEqual(['zen']);
+ }
+ // A real Anthropic route, or a loopback route without the placeholder key, is kept.
+ for(const options of [{apiKey:'dummy',baseURL:'https://api.anthropic.com/v1'},{apiKey:'dummy',baseURL:'http://127.0.0.1/v1'},{apiKey:'user-key',baseURL:'http://127.0.0.1:3456'}]){
+  expect(Object.keys(translateNativeConfiguration({legacy:{provider:{anthropic:{options}}},agents:{}}).providers)).toEqual(['anthropic']);
+ }
+ // Only the `anthropic` id is the retired proxy.
+ expect(Object.keys(translateNativeConfiguration({legacy:{provider:{custom:{options:{apiKey:'dummy',baseURL:'http://127.0.0.1:3456'}}}},agents:{}}).providers)).toEqual(['custom']);
+});
+it('maps saved Claude selections from every retired proxy provider id to claude-agent',()=>{
+ for(const providerID of ['anthropic','claude','anthropic-oauth','opencode-with-claude']){
+  expect(nativeModelSelection(`${providerID}/claude-opus-5`)).toEqual({providerID:'claude-agent',model:'claude-opus-5'});
+  expect(nativeModelSelection({providerID,modelID:'claude-sonnet-5'},'high',true)).toEqual({providerID:'claude-agent',model:'claude-sonnet-5',variant:'high'});
+ }
+ expect(nativeModelSelection('claude-agent/claude-opus-5')).toEqual({providerID:'claude-agent',model:'claude-opus-5'});
+ expect(nativeModelSelection('openai/gpt-5.6')).toEqual({providerID:'openai',model:'gpt-5.6'});
+});
 it('bounds every native provider stanza with header and chunk deadlines under saved values',()=>{
  expect(NATIVE_PROVIDER_DEADLINES).toEqual({headerTimeout:45000,chunkTimeout:300000});
  const legacy={provider:{zen:{},anthropic:{options:{baseURL:'http://127.0.0.1:3456'}},openai:{options:{baseURL:'https://api.openai.com/v1'}},
@@ -36,8 +56,8 @@ it('bounds every native provider stanza with header and chunk deadlines under sa
  const before=structuredClone(legacy),{providers}=translateNativeConfiguration({legacy,agents:{}});
  expect(legacy).toEqual(before);
  expect(providers.zen.settings).toEqual({headerTimeout:45000,chunkTimeout:300000});
- // Meridian (anthropic) keeps its own idle guard; DevRyan adds no HTTP deadlines.
- expect(providers.anthropic.settings).toEqual({baseURL:'http://127.0.0.1:3456'});
+ // Without the retired proxy's placeholder key, an anthropic stanza is an ordinary provider and gets the deadlines.
+ expect(providers.anthropic.settings).toEqual({headerTimeout:45000,chunkTimeout:300000,baseURL:'http://127.0.0.1:3456'});
  // OpenAI reasoning may send nothing for minutes before its first output item.
  expect(providers.openai.settings).toEqual({headerTimeout:45000,chunkTimeout:300000,baseURL:'https://api.openai.com/v1'});
  expect(providers.tuned.settings).toEqual({headerTimeout:90000,chunkTimeout:600000,timeout:900000});

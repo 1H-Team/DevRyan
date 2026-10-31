@@ -1,4 +1,3 @@
-import {relocateNativeSetupProfiles} from './native-setup-profiles.js';
 import {projectNativeSetupCredentials} from './native-setup-credential-data.js';
 import {NATIVE_SETUP_SEED_MAX_FILES as MAX_FILES,NATIVE_SETUP_SEED_MAX_FILE_BYTES as MAX_FILE_BYTES,NATIVE_SETUP_SEED_MAX_TOTAL_BYTES as MAX_TOTAL_BYTES,
  NATIVE_SETUP_SEED_MAX_MARKER_BYTES as MAX_MARKER_BYTES,isNativeSetupOSMetadata as osMetadata} from './native-setup-source.js';
@@ -131,7 +130,7 @@ async function seed({source,target,environment={},captureLogicalSetup,windowsOwn
   if(files.some(row=>row.path===file))throw fail('native_setup_destination_conflict');
   const row={path:file,sha256:hash(bytes)},size=Buffer.byteLength(JSON.stringify(row))+1;
   const over=bytes.length>MAX_FILE_BYTES?'file_too_large':files.length>=MAX_FILES?'file_limit':total+bytes.length>MAX_TOTAL_BYTES?'total_limit':pinned+size>MAX_MARKER_BYTES?'marker_limit':undefined;
-  // Generated credential, Meridian and owner rows are never budget-skipped.
+  // Generated credential and owner rows are never budget-skipped.
   if(over&&required)throw Object.assign(fail('native_setup_source_too_large'),{reason:over});
   if(over){skip(relative,over);return;}
   await operations.ensureDirectory(path.dirname(file));
@@ -246,29 +245,9 @@ async function seed({source,target,environment={},captureLogicalSetup,windowsOwn
  });
  // One source file through the same entry rules, read into memory.
  const load=async(root,relative,{account,required}={})=>{let bytes;await copy(root,relative,undefined,undefined,{sink:value=>{bytes=value;},account,required});return bytes;};
- // Generated credential, Meridian and owner rows first (fail closed if they cannot fit),
- // then exact records and single files, record folders and bulk folders last.
- await copy(source.home,'.claude/.credentials.json',path.join(target.global.home,'.claude','.credentials.json'),undefined,{account:true,required:true});
- // Meridian settings are written once; an exported default profile wins over the saved one.
- const meridianSettings='.config/meridian/settings.json',defaultProfile=typeof environment.MERIDIAN_DEFAULT_PROFILE==='string'?environment.MERIDIAN_DEFAULT_PROFILE.trim():'';
- if(defaultProfile.length>256)skip('MERIDIAN_DEFAULT_PROFILE','default_profile_invalid');
- if(!defaultProfile||defaultProfile.length>256)await copy(source.home,meridianSettings,path.join(target.global.home,meridianSettings),undefined,{required:true});
- else await located(meridianSettings,async()=>{
-  const bytes=await load(source.home,meridianSettings,{required:true}),saved=bytes===undefined?{}:parseJSON(bytes);
-  if(!record(saved))skip(meridianSettings,'json_invalid');
-  await save(path.join(target.global.home,meridianSettings),Buffer.from(JSON.stringify({...record(saved)?saved:{},activeProfile:defaultProfile})+'\n'),meridianSettings,true);
- });
- // Loader tolerance: an empty or unparsable export falls back to disk; an unparsable file is no profiles.
- const profileFile='.config/meridian/profiles.json';
- await located(profileFile,async()=>{
-  let label='MERIDIAN_PROFILES',profiles;const exported=environment.MERIDIAN_PROFILES;
-  if(typeof exported==='string'&&exported.trim()){profiles=Buffer.byteLength(exported)>MAX_FILE_BYTES?undefined:parseJSON(exported);if(profiles===undefined)skip(label,'profiles_invalid');}
-  if(profiles===undefined){label=profileFile;const bytes=await load(source.home,profileFile,{required:true});if(bytes===undefined)return;profiles=parseJSON(bytes);if(profiles===undefined){skip(label,'profiles_invalid');return;}}
-  const relocated=await relocateNativeSetupProfiles({profiles,sourceHome:source.home,targetHome:target.global.home,onSkip:({reason,...detail})=>skip(label,reason,detail),
-   copyAccount:async(account,destination)=>{await operations.ensureDirectory(destination);
-    await copy(source.home,path.join(path.relative(source.home,account),'.credentials.json'),path.join(destination,'.credentials.json'),undefined,{account:true,required:true});}});
-  await save(path.join(target.global.home,profileFile),Buffer.from(JSON.stringify(relocated)+'\n'),profileFile,true);
- });
+ // Generated credential and owner rows first (fail closed if they cannot fit), then
+ // exact records and single files, record folders and bulk folders last. Claude Code's
+ // own login stays in the user's home: claude-agent runs the user's `claude` there.
  await located('auth.json',async()=>{const auth=await load(source.opencodeDataDirectory,'auth.json',{account:true,required:true});
   if(auth!==undefined){const parsed=parseJSON(auth);if(parsed===undefined)throw fail('native_setup_credentials_invalid');
    const projected=projectNativeSetupCredentials(parsed,{onSkip:detail=>skip('auth.json',detail.reason,detail.integrationID?{integrationID:detail.integrationID}:{})});

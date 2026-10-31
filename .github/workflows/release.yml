@@ -174,9 +174,6 @@ jobs:
         env:
           DEVRYAN_SKIP_INSTALL_PREPARE: '1'
         run: bun install --frozen-lockfile --cpu '*' --os darwin
-      - name: Restore reviewed Claude executable
-        if: ${{ env.REUSE_RUN_ID == '' }}
-        run: node scripts/hydrate-reviewed-claude.mjs
       - name: Build and verify native v2 runtime
         if: ${{ env.REUSE_RUN_ID == '' }}
         timeout-minutes: 20

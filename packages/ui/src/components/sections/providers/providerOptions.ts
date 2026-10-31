@@ -10,7 +10,7 @@ interface ProviderAuthMethod {
   type?: string;
 }
 
-const ANTHROPIC_PROVIDER_OPTION: ProviderOption = { id: 'anthropic', name: 'Claude' };
+const CLAUDE_AGENT_PROVIDER_OPTION: ProviderOption = { id: 'claude-agent', name: 'Claude' };
 const CURSOR_ACP_PROVIDER_OPTION: ProviderOption = { id: CURSOR_ACP_PROVIDER_ID, name: 'Cursor' };
 const GITHUB_COPILOT_PROVIDER_OPTION: ProviderOption = { id: 'github-copilot', name: 'GitHub Copilot' };
 
@@ -18,7 +18,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
 
 const normalizeAvailableProviderName = (provider: ProviderOption): ProviderOption => (
-  isAnthropicOAuthProviderId(provider.id) ? { ...provider, name: 'Claude' } : provider
+  isAnthropicOAuthProviderId(provider.id) || provider.id === CLAUDE_AGENT_PROVIDER_OPTION.id ? { ...provider, name: 'Claude' } : provider
 );
 
 const normalizeProviderOption = (provider: ProviderOption): ProviderOption => {
@@ -65,7 +65,7 @@ export const parseProvidersPayload = (payload: unknown): ProviderOption[] => {
     .filter((entry): entry is ProviderOption => Boolean(entry));
 
   for (const provider of [
-    ANTHROPIC_PROVIDER_OPTION,
+    CLAUDE_AGENT_PROVIDER_OPTION,
     CURSOR_ACP_PROVIDER_OPTION,
     GITHUB_COPILOT_PROVIDER_OPTION,
   ]) {

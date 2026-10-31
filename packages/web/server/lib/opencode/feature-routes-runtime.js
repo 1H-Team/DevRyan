@@ -103,7 +103,6 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       listProviderConfigFiles,
       removeAntigravityProviderConfig,
       removeProviderConfig,
-      ensureAnthropicOAuthProviderConfig,
     } = await import('./index.js');
 
     registerSettingsUtilityRoutes(app, {
@@ -126,7 +125,6 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       openCodeClient,
       recordDiagnostic: routeDependencies.recordDiagnostic,
       getNativeRuntimeOwner: routeDependencies.getNativeRuntimeOwner,
-      getClaudeEnrollmentOwner: () => routeDependencies.getNativeRuntimeOwner?.()?.getClaudeEnrollmentOwner?.(),
       isProviderAdministrator: routeDependencies.isProviderAdministrator,
       crypto,
       clientReloadDelayMs,
@@ -144,7 +142,6 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       getProviderEnvironmentSnapshot: getLoginShellEnvSnapshot,
       removeAntigravityProviderConfig,
       removeProviderConfig,
-      ensureAnthropicOAuthProviderConfig,
       markConfigChange,
       buildAugmentedPath,
       buildOpenCodeUrl,

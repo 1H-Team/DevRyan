@@ -21,7 +21,7 @@ const group = (providerId: string, providerName: string): RateLimitGroup => ({
 const groups: RateLimitGroup[] = [
   group('gemini', 'Gemini'),
   group('cursor', 'Cursor'),
-  group('claude', 'Claude'),
+  group('claude-agent', 'Claude'),
   group('github-copilot', 'GitHub Copilot'),
   group('codex', 'ChatGPT'),
 ];

@@ -33,22 +33,14 @@ describe('sortProvidersByDisplayName', () => {
     ]);
   });
 
-  test('uses source-aware display names when available', () => {
+  test('names the Claude aliases Claude', () => {
     const providers = [
       { id: 'openai', name: 'OpenAI' },
       { id: 'anthropic-oauth', name: 'Anthropic OAuth' },
+      { id: 'claude-agent', name: 'Claude Agent' },
     ];
 
-    const sorted = sortProvidersByDisplayName(providers, {
-      'anthropic-oauth': {
-        auth: { exists: false },
-        user: { exists: false },
-        project: { exists: false },
-        anthropicOAuth: { exists: true },
-      },
-    });
-
-    expect(sorted.map((provider) => provider.id)).toEqual(['openai', 'anthropic-oauth']);
+    expect(sortProvidersByDisplayName(providers).map((provider) => provider.id)).toEqual(['openai', 'anthropic-oauth', 'claude-agent']);
   });
 
   test('is case-insensitive and tie-breaks on id for stable ordering', () => {

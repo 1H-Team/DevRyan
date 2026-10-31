@@ -14,13 +14,10 @@ let local = true;
 let nativeVersion: string | null = '2.0.5';
 let nativeCalls = 0;
 let updateCalls = 0;
-let checkClaudeUpdates: (() => Promise<void>) | null = null;
-let updateDialogOpen = false;
-let updateOutcome: 'failed' | 'current' | 'available' = 'failed';
 const getVersion = async () => { nativeCalls += 1; return nativeVersion; };
 const checkForUpdates = mock(async () => {
   updateCalls += 1;
-  updateStore.setState({ info: null, error: updateOutcome === 'failed' ? 'Update check failed' : null, available: updateOutcome === 'available' });
+  updateStore.setState({ info: null, error: 'Update check failed', available: false });
   return null;
 });
 const initialState: UpdateState = {
@@ -40,13 +37,12 @@ mock.module('@/components/ui/button', () => ({
   Button: ({ children, onClick, disabled }: React.ButtonHTMLAttributes<HTMLButtonElement>) =>
     <button type="button" onClick={onClick} disabled={disabled}>{children}</button>,
 }));
-mock.module('@/components/ui/UpdateDialog', () => ({ UpdateDialog: ({ open }: { open: boolean }) => { updateDialogOpen = open; return null; } }));
+mock.module('@/components/ui/UpdateDialog', () => ({ UpdateDialog: () => null }));
 mock.module('./SupabaseConnectionSettings', () => ({ SupabaseConnectionSettings: () => null }));
 mock.module('./SessionRetentionSettings', () => ({ DataStorageSettings: () => null }));
 mock.module('./DesktopKeepAwakeSettings', () => ({ DesktopKeepAwakeSettings: () => null }));
 mock.module('./DesktopNetworkSettings', () => ({ DesktopNetworkSettings: () => null }));
 mock.module('./OpenCodeVersionSection', () => ({ OpenCodeVersionSection: ({ compact }: { compact?: boolean }) => <span>{compact ? '[opencode-version:compact]' : '[opencode-version:full]'}</span> }));
-mock.module('./ClaudeCodeVersionSection', () => ({ ClaudeCodeVersionSection: ({ onCheckAppUpdates }: { onCheckAppUpdates: () => Promise<void> }) => { checkClaudeUpdates = onCheckAppUpdates; return null; } }));
 const { AboutSettings } = await import('./AboutSettings');
 const originalFetch = globalThis.fetch;
 const originalBuildVersion = Object.getOwnPropertyDescriptor(globalThis, '__APP_VERSION__');
@@ -60,7 +56,7 @@ const installFetch = (response: () => Promise<Response>) => {
 };
 beforeEach(() => {
   desktop = false; local = true; nativeVersion = '2.0.5';
-  nativeCalls = 0; updateCalls = 0; checkClaudeUpdates = null; updateDialogOpen = false; updateOutcome = 'failed'; updateStore.setState(initialState);
+  nativeCalls = 0; updateCalls = 0; updateStore.setState(initialState);
   setBuildVersion(undefined);
 });
 afterEach(() => {
@@ -141,19 +137,6 @@ test('aborts the host lookup on unmount and ignores its late result', async () =
   expect(signal?.aborted).toBe(true);
   await act(async () => { resolve(Response.json({ openchamberVersion: '9.0.0' })); });
   expect(container.textContent).toBe('');
-}));
-
-for (const isMobile of [false, true]) test(`Claude update delivery opens the existing dialog only for an available DevRyan update (mobile=${isMobile})`, async () => withDom(async container => {
-  mobile = isMobile; desktop = true;
-  const root = await mount(container);
-  try {
-    updateOutcome = 'current';
-    await act(async () => { await checkClaudeUpdates?.(); });
-    expect(updateDialogOpen).toBe(false);
-    updateOutcome = 'available';
-    await act(async () => { await checkClaudeUpdates?.(); });
-    expect(updateDialogOpen).toBe(true);
-  } finally { await act(async () => root.unmount()); }
 }));
 
 test('renders the compact OpenCode version section below the mobile links', async () => withDom(async (container) => {

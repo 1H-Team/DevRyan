@@ -11,7 +11,6 @@ import {runCompiledSlimCommands} from './package-agents-core-lane.mjs';
  * built-in agent orchestration (`slim`) has no spec: no plugin entry selects it. */
 export const reviewedSetupFamilies=Object.freeze([
  ['cursor','./plugins/devryan-open-cursor.mjs',['devryan.provider-compat']],
- ['claude','./node_modules/opencode-with-claude/dist/index.js',['devryan.provider-compat']],
  ['slim',null,['devryan.slim','devryan.slim-commands','devryan.slim-lifecycle']],
  ['documents','./plugins/devryan-document-reader.mjs',['devryan.document-reader']],
  ['skills','./plugins/devryan-skill-context.mjs',['devryan.reviewed-skills']],

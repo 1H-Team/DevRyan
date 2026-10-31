@@ -48,11 +48,11 @@ describe('usage dropdown group helpers', () => {
   });
 
   test('keeps active provider when it is still present', () => {
-    expect(resolveActiveUsageProviderId([group('claude'), group('codex')], 'codex')).toBe('codex');
+    expect(resolveActiveUsageProviderId([group('claude-agent'), group('codex')], 'codex')).toBe('codex');
   });
 
   test('falls back to the first provider when active provider disappears', () => {
-    expect(resolveActiveUsageProviderId([group('claude'), group('codex')], 'google')).toBe('claude');
+    expect(resolveActiveUsageProviderId([group('claude-agent'), group('codex')], 'google')).toBe('claude-agent');
   });
 
   test('returns null when no provider groups are available', () => {
@@ -76,7 +76,7 @@ describe('usage dropdown group helpers', () => {
   });
 
   test('orders Claude short-term usage before general and model-specific weekly limits', () => {
-    const anthropic = group('claude', [
+    const anthropic = group('claude-agent', [
       ['7d', windowStub],
       ['unknown', windowStub],
       ['5h', windowStub],

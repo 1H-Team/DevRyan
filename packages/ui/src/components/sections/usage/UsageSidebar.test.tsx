@@ -21,7 +21,7 @@ const usageWindow = (usedPercent: number, windowSeconds: number): UsageWindow =>
 });
 
 const anthropicResult: ProviderResult = {
-  providerId: 'claude',
+  providerId: 'claude-agent',
   providerName: 'Claude',
   ok: true,
   configured: true,
@@ -40,7 +40,7 @@ describe('Claude Usage rendering', () => {
   beforeEach(() => {
     useQuotaStore.setState({
       results: [anthropicResult],
-      selectedProviderId: 'claude',
+      selectedProviderId: 'claude-agent',
       displayMode: 'usage',
       showPredictionValues: false,
     });
@@ -48,8 +48,8 @@ describe('Claude Usage rendering', () => {
 
   test('keeps a configured Claude result visible in the Usage sidebar', () => {
     const visibleProviders = getVisibleUsageProviders([anthropicResult]);
-    expect(visibleProviders.map((provider) => provider.id)).toContain('claude');
-    expect(visibleProviders.find((provider) => provider.id === 'claude')?.name).toBe('Claude');
+    expect(visibleProviders.map((provider) => provider.id)).toContain('claude-agent');
+    expect(visibleProviders.find((provider) => provider.id === 'claude-agent')?.name).toBe('Claude');
   });
 
   test('keeps configured xAI and DeepSeek results visible in provider order', () => {
@@ -62,7 +62,7 @@ describe('Claude Usage rendering', () => {
   });
 
   test('renders all Claude primary and Fable quota cards', () => {
-    const entries = sortUsageEntries('claude', Object.entries(anthropicResult.usage?.windows ?? {}));
+    const entries = sortUsageEntries('claude-agent', Object.entries(anthropicResult.usage?.windows ?? {}));
     const markup = renderToStaticMarkup(
       <I18nProvider>
         <div>
@@ -70,7 +70,7 @@ describe('Claude Usage rendering', () => {
             <UsageCard
               key={label}
               title={label}
-              displayTitle={formatProviderWindowLabel('claude', label)}
+              displayTitle={formatProviderWindowLabel('claude-agent', label)}
               window={window}
             />
           ))}

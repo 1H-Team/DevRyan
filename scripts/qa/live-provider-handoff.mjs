@@ -20,7 +20,6 @@ import { DEFAULT_HELPER_MODEL_SELECTION } from '../../packages/shared-runtime/li
 import { nativeUpgradeBundleID } from '../../packages/web/server/lib/opencode/runtime-host/runtime-bundle-lifecycle.js';
 import { canonicalJSON } from '../../packages/web/server/lib/opencode/runtime-host/bundle-migration-inventory.js';
 import { verifyNativeRuntimeArtifacts } from '../../packages/web/server/lib/opencode/runtime-host/native-artifacts.js';
-import { isClaudeInspectionUnavailable } from '../../packages/web/server/lib/opencode/runtime-host/native-claude-inspection.js';
 import { writeFileAtomic, withCrossProcessFileLock } from '../../packages/harness-runtime/lib/atomic-file.js';
 import { readRuntimeUiLease } from './native-backend-ui-diagnostic.mjs';
 import { readSessionExecutionReceipt } from '../../packages/harness-runtime/lib/session-execution.js';
@@ -156,18 +155,16 @@ export function projectHandoffProviderStatus(value) {
     if (!record(row) || typeof row.id !== 'string' || providers.has(row.id) || !record(row.models)) throw fail('qa_handoff_catalog_invalid');
     providers.set(row.id, Object.keys(row.models).length);
   }
-  const ids = ['openai', 'cursor-acp', 'opencode', 'anthropic'];
+  const ids = ['openai', 'cursor-acp', 'opencode', 'claude-agent'];
   return { catalogConnected: Object.fromEntries(ids.map(id => [id, value.connected.includes(id)])),
     modelCounts: Object.fromEntries(ids.map(id => [id, providers.get(id) ?? 0])), catalogIncomplete: value.catalogIncomplete ?? false };
 }
 
 export function projectHandoffClaudeStatus(value) {
-  if (!value || typeof value !== 'object' || Array.isArray(value) || typeof value.installed !== 'boolean' || typeof value.loggedIn !== 'boolean'
-    || !['authenticated', 'unavailable'].includes(value.authStatus)
-    || value.authStatus === 'authenticated' && (!value.installed || !value.loggedIn || value.errorCode !== undefined && value.errorCode !== null)
-    || value.authStatus === 'unavailable' && (value.loggedIn || !isClaudeInspectionUnavailable(value.errorCode))) throw fail('qa_handoff_claude_status_invalid');
-  return { installed: value.installed, loggedIn: value.loggedIn, authStatus: value.authStatus,
-    ...(value.authStatus === 'unavailable' ? { errorCode: value.errorCode } : {}) };
+  if (!value || typeof value !== 'object' || Array.isArray(value) || value.providerID !== 'claude-agent'
+    || typeof value.available !== 'boolean' || typeof value.connected !== 'boolean'
+    || value.problem !== undefined && (!value.problem || !['needs_auth', 'error'].includes(value.problem.status))) throw fail('qa_handoff_claude_status_invalid');
+  return { available: value.available, connected: value.connected, ...(value.problem ? { problem: value.problem.status } : {}) };
 }
 
 export function assertHandoffJournalScope(input, ownedSessions, ownedDirectories) {
@@ -386,7 +383,7 @@ async function runChild(stateFile, target, qualificationReport) {
         };
         const [catalog, claude] = await Promise.allSettled([
           inspect('/api/provider', projectHandoffProviderStatus, 'qa_handoff_catalog_unavailable'),
-          inspect('/api/provider/anthropic/claude-cli', projectHandoffClaudeStatus, 'qa_handoff_claude_status_unavailable'),
+          inspect('/api/provider/claude-agent/status', projectHandoffClaudeStatus, 'qa_handoff_claude_status_unavailable'),
         ]);
         return { ...(catalog.status === 'fulfilled' ? catalog.value : { catalogCode: finiteCode(catalog.reason) }),
           ...(claude.status === 'fulfilled' ? { claudeStatus: claude.value } : { claudeCode: finiteCode(claude.reason) }) };

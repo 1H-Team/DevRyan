@@ -1,7 +1,6 @@
 import {isNativeOpenCodeVersion} from '../version-policy.js';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import {parseClaudeLifecycleOperation} from './native-claude-lifecycle.js';
 
 export const NATIVE_PROCESS_PROTOCOL = 1;
 export const NATIVE_PROCESS_LIMITS = Object.freeze({ bootBytes: 4 * 1024 * 1024, messageBytes: 64 * 1024, recordBytes:32*1024*1024, inFlight: 32 });
@@ -147,8 +146,6 @@ export function parseNativeCommand(value) {
     'credential-commit-owned': ['callID', 'controllerInstanceID', 'bindingFingerprint'],
     'credential-operation-owned': ['directory', 'controllerInstanceID', 'requestAuthorization', 'mutation'],
     'credential-metadata-owned': ['directory', 'controllerInstanceID', 'integrationID'],
-    'claude-lifecycle-read-owned':['controllerInstanceID'],
-    'claude-lifecycle-transition-owned':['controllerInstanceID','expectedRevision','operation'],
     'provider-catalog-selection-owned': ['directory', 'controllerInstanceID', 'integrationID', 'acquisitionID', 'configurationDigest', 'origin'],
     'openai-read-credential-owned': ['directory', 'controllerInstanceID', 'credentialID'],
     'openai-read-selected-owned': ['directory', 'controllerInstanceID'],
@@ -170,7 +167,6 @@ export function parseNativeCommand(value) {
     if (field === 'sessionID') { if(value.action!=='cursor-readonly-key-owned'||value.sessionID!==undefined)sessionID(value[field]); }
     else if(field==='at'){if(!Number.isSafeInteger(value[field])||value[field]<=0)throw invalid();}
     else if(field==='expectedRevision'){if(!Number.isSafeInteger(value[field])||value[field]<0)throw invalid();}
-    else if(field==='operation'){try{parseClaudeLifecycleOperation(value[field]);}catch{throw invalid();}}
     else if(field==='enqueuedSeq'){if(!Number.isSafeInteger(value[field])||value[field]<0)throw invalid();}
     else if(field==='cancellationReceiptVersion'){if(value[field]!==1)throw invalid();}
     else if (field === 'permit') permit(value[field]);

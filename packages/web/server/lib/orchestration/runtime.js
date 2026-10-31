@@ -43,10 +43,7 @@ import {
 } from '@devryan/orchestration-runtime';
 
 import { createAtomicManagedOrchestrationLedger } from './atomic-ledger.js';
-import {
-  createClaudeCompatibilityPreambleResolver,
-  resolveManagedTaskTurnBudget,
-} from './claude-compatibility.js';
+import { resolveManagedTaskTurnBudget } from './managed-task-turn-budget.js';
 import { resolveGen2OpenCodeClient } from '../opencode/opencode-client-seam.js';
 import { createWebManagedOpenCodeExecutor } from './open-code-executor.js';
 import { createManagedOrchestrationPrivateHost } from './private-host.js';
@@ -432,10 +429,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     eventDrivenWait: options.eventDrivenWait ?? (() => process.env.DEVRYAN_EVENT_DRIVEN_CHILD_WAIT !== '0'),
     onFirstAssistantActivity: options.onFirstAssistantActivity,
     now,
-    // Claude compatibility mode drops opencode's system prompt for Anthropic-routed
-    // children, so their agent rules travel inside the first task prompt instead.
-    resolveTaskPromptPreamble: options.resolveTaskPromptPreamble
-      ?? createClaudeCompatibilityPreambleResolver({ now }),
+    resolveTaskPromptPreamble: options.resolveTaskPromptPreamble,
     // Designer/fixer tool loops get an assistant-turn backstop (wrap-up prompt,
     // then abort) so a runaway child cannot burn the whole task timeout.
     resolveTaskTurnBudget: options.resolveTaskTurnBudget ?? resolveManagedTaskTurnBudget,

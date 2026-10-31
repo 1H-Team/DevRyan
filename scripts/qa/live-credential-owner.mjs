@@ -1,4 +1,3 @@
-import { openQaClaudeBudget } from './focused-provider.mjs';
 import fs from 'node:fs/promises';
 import {createReadStream} from 'node:fs';
 import path from 'node:path';
@@ -15,7 +14,6 @@ import {createQaNativeInputVerifier,prepareQaNativeBundle,createQaNativeLaunchEn
 import {createQaHostLaunchEnvironment} from './launch-environment.mjs';
 import {loadQaMatrixConfig,expandQaMatrix} from './matrix-config.mjs';
 import {captureQaSourceIdentity,captureQaArtifactIdentity} from './artifact-evidence.mjs';
-import {createAccessOnlyAnthropic,prepareAccessOnlyAnthropicSource} from './access-only-anthropic.mjs';
 import {createHeldSourceCredentials} from './held-source-credentials.mjs';
 import {verifyNativeRuntimeArtifacts} from '../../packages/web/server/lib/opencode/runtime-host/native-artifacts.js';
 import {readRuntimeBundleBinding} from '../../packages/web/server/lib/opencode/runtime-host/runtime-bundle-binding.js';
@@ -111,7 +109,9 @@ export async function prepareLiveCredentialSession(options){
     for(const directory of [runtimeRoot,workspace])await fs.mkdir(directory,{mode:0o700});await initOwnedGit(workspace,root,workspace);
     const factory=await createQaNativePreparationFactory({preparedInput:input.verifier.input,mirror:input.mirror.mirror,bootstrapCredentials:async()=>{throw fail('qa_live_source_unverified');}});
     const preparedSource=await factory.prepareSource({runtimeRoot,workspace,sourceHome:input.verifier.input.sourceHome,artifactRoot:options.artifactRoot});
-    const source=qaNativeRequiredProviders(input.mirror.savedGraph).includes('anthropic')?await prepareAccessOnlyAnthropicSource(preparedSource):preparedSource;
+    // Attended Claude QA ran Meridian's access-only login; claude-agent needs its own attended flow.
+    if(qaNativeRequiredProviders(input.mirror.savedGraph).includes('anthropic'))throw fail('qa_live_anthropic_retired');
+    const source=preparedSource;
     const preferences=path.join(source.launch.webConfigDirectory,'settings.json');let settings={};
     try{settings=JSON.parse(await readQaPinnedFile(preferences));}catch(error){if(error.code!=='ENOENT')throw error;}
     settings.projects=[{id:createProjectIdFromPath(workspace),path:workspace,name:'Independent QA'}];
@@ -174,9 +174,9 @@ async function retainCellRuntime(session,cell){
 /** Constructor injection is restricted to compiled synthetic rehearsal callers.
  * The live CLI has no flag for stores, grants, process owners or matrix adapters. */
 export async function runLiveCredentialOwner({sessionFile,input=process.stdin,emit=value=>process.stdout.write(JSON.stringify(value)+'\n'),rehearsal=false,
-  startServer,anthropicOptions={},beforeStart,runMatrix,inspectLoopback=inspectOAuthLoopbackPort,now=Date.now}){
+  startServer,beforeStart,runMatrix,inspectLoopback=inspectOAuthLoopbackPort,now=Date.now}){
   if(!rehearsal&&(!(input.isTTY||input===process.stdin&&launcherAttendance&&process.connected)||!process.stdout.isTTY))throw fail('qa_live_owner_attendance_required');
-  if(!rehearsal&&(startServer||beforeStart||runMatrix||Object.keys(anthropicOptions).length||inspectLoopback!==inspectOAuthLoopbackPort||now!==Date.now))throw fail('qa_live_constructor_invalid');
+  if(!rehearsal&&(startServer||beforeStart||runMatrix||inspectLoopback!==inspectOAuthLoopbackPort||now!==Date.now))throw fail('qa_live_constructor_invalid');
   const session=JSON.parse(await readQaPinnedFile(sessionFile,undefined,4*1024*1024));
   if(session.schema!==1||session.binding?.controlRoot!==process.env.DEVRYAN_RUNTIME_BUNDLE_ROOT||session.runtimeRoot!==process.env.DEVRYAN_QA_RUNTIME_ROOT
     ||session.binding.descriptor.launch.global.home!==process.env.DEVRYAN_QA_HOME||process.env.HOME!==process.env.DEVRYAN_QA_HOME)throw fail('qa_live_environment_invalid');
@@ -191,7 +191,7 @@ export async function runLiveCredentialOwner({sessionFile,input=process.stdin,em
   await record('identities.json',session.identities);
   let grant,grantCount=0,handle,hostPort,failedStartStop,link,held,probe,state='awaiting-owner',matrixRun=false,summary,closing,stopRequested=false,phase='source-start';
   const retained=[],timings=[];
-  const claudeBudget=session.providers.includes('anthropic')?await openQaClaudeBudget(session.root,{now}):undefined;
+  if(session.providers.includes('anthropic'))throw fail('qa_live_anthropic_retired');
   const timed=async(name,action)=>{const started=performance.now();try{return await action();}finally{timings.push({name,elapsedMs:performance.now()-started});}};
   const close=()=>closing??=(async()=>{
     let clean=true,leakScan;
@@ -224,10 +224,9 @@ export async function runLiveCredentialOwner({sessionFile,input=process.stdin,em
     for(const key of ['agentSelections','nativeBackupSelections','nativeCompactionSettings','councilMembers'])if(!isDeepStrictEqual(view[key],verifiedInput.mirror.savedGraph[key]))throw fail('qa_live_saved_graph_changed');
     if(!isDeepStrictEqual(qaNativeRequiredProviders(view),session.providers)||verifiedInput.plannedRunMs!==session.plannedRunMs)throw fail('qa_live_session_changed');
     const loopback=inspectLoopback();if(loopback.busy&&loopback.holders.some(holder=>!holder.ownedByThisHost))throw fail('qa_live_oauth_port_busy');
-    const anthropic=createAccessOnlyAnthropic({sourceBinding:session.binding,...anthropicOptions});
-    held=createHeldSourceCredentials({grant,sourceBinding:session.binding,verifyAdditionalCredentials:anthropic.verifyLogin,admitCandidate:anthropic.admitCandidate});
+    held=createHeldSourceCredentials({grant,sourceBinding:session.binding});
     link=await createLiveOwnerLink({handle,hostOrigin:`http://127.0.0.1:${handle.getPort()}`,isHeld:()=>state!=='awaiting-owner',now});
-    emit({status:'awaiting-owner',hostOrigin:`http://127.0.0.1:${handle.getPort()}`,...link.issue(),...(session.providers.includes('anthropic')?{claudeLoginCommand:await anthropic.loginCommand(session.workspace)}:{}),requiredProviders:session.providers,commands});
+    emit({status:'awaiting-owner',hostOrigin:`http://127.0.0.1:${handle.getPort()}`,...link.issue(),requiredProviders:session.providers,commands});
     const command=async value=>{
       if(value==='close')return close();
       if(value==='status'){emit({state,sourceHeld:state!=='awaiting-owner',verified:state==='verified',providersRequired:session.providers,matrixRun,...link.status()});return;}
@@ -245,8 +244,8 @@ export async function runLiveCredentialOwner({sessionFile,input=process.stdin,em
       if(state!=='verified')throw fail('qa_live_source_unverified');
       await verifyIdentities();matrixRun=true;
       const factory=await createQaNativePreparationFactory({preparedInput:verifiedInput.verifier.input,mirror:verifiedInput.mirror.mirror,bootstrapCredentials:held.bootstrap});
-      const nativePreparation={...factory,prepareSource:async options=>{const source=await factory.prepareSource(options);return session.providers.includes('anthropic')?anthropic.prepareCandidateSource(source):source;}};
-      const options={claudeBudget,prepareCellInputs:async()=>({nativePreparation,sourceHome:verifiedInput.verifier.input.sourceHome}),afterCell:async cell=>{const row=await retainCellRuntime(session,cell);if(row)retained.push(row);}};
+      const nativePreparation=factory;
+      const options={prepareCellInputs:async()=>({nativePreparation,sourceHome:verifiedInput.verifier.input.sourceHome}),afterCell:async cell=>{const row=await retainCellRuntime(session,cell);if(row)retained.push(row);}};
       summary=await timed('matrix',()=>runMatrix?runMatrix(session.options.matrixFile,options):import('./matrix-runner.mjs').then(module=>module.runQaMatrix(session.options.matrixFile,options)));
       for(const cell of verifiedInput.cells){const row=await retainCellRuntime(session,cell);if(row)retained.push(row);}
       const leakScan=await probe.scan(session.options.evidenceRoot);if(leakScan.hits)throw fail('qa_live_evidence_credential_leak');

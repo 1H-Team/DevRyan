@@ -450,7 +450,7 @@ export function settingsPageForRequest(requestPath, method = 'GET') {
     || /^\/provider\/[^/]+\/(?:auth|source|oauth|usage-auth|runtime-status|accounts)(?:\/|$)/.test(path)
     // Provider account rename, switch and removal.
     || /^\/credential(?:\/|$)/.test(path)
-    || /^\/provider\/(?:anthropic\/(?:check-oauth|claude-cli|prompt-mode)|cursor-acp\/configure|xai\/oauth)(?:\/|$)/.test(path)) return 'providers';
+    || /^\/provider\/(?:claude-agent\/(?:status|connect)|cursor-acp\/configure|xai\/oauth)(?:\/|$)/.test(path)) return 'providers';
   if (/^\/quota\/credentials(?:\/|$)/.test(path)) return 'providers';
   if (/^\/(?:devryan|openchamber)\/tunnel(?:\/|$)/.test(path)) return 'tunnel';
   if (/^\/diagnostics(?:\/(?:status|export|sanitize))?$/.test(path)
@@ -463,8 +463,7 @@ export function settingsPageForRequest(requestPath, method = 'GET') {
   if (/^\/git\/(?:identities|global-identity|discover-credentials|set-identity|commit-template)(?:\/|$)/.test(path)) return 'git';
   if (path === '/config/themes') return 'appearance';
   if (path === '/config/opencode-resolution') return 'about';
-  if (/^\/config\/claude-update(?:\/|$)/.test(path)) return 'about';
-  if (path === '/config/opencode-update-check' || path === '/config/claude-update-check' || path === '/config/claude-resolution') return 'about';
+  if (path === '/config/opencode-update-check') return 'about';
   return null;
 }
 

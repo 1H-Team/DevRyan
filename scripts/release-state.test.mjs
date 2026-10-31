@@ -6,7 +6,6 @@ import { CANDIDATE_PIN_SOURCES, PIN_FREE_INSTALLER_SINCE, SHIPPED_DISCOVERY_TAGS
   projectForDiscovery, releaseBody, releaseState, shippedAcceptedBundleIds, shippedDiscoveries, shippedDiscoveryFixtureProblems } from './release-state.mjs';
 import { SUPPORTED_UPGRADE_FLOOR } from './qa/release-upgrade-lane.mjs';
 import { NATIVE_BUNDLE_BUN_VERSION } from '../packages/web/server/lib/opencode/runtime-host/native-artifacts.js';
-import { REVIEWED_CLAUDE_ASSETS, REVIEWED_CLAUDE_CREDENTIALS } from '../packages/web/server/lib/opencode/runtime-host/reviewed-claude-transform.js';
 import { REVIEWED_AST_ASSET_SHA256 } from '../packages/web/server/lib/opencode/runtime-host/reviewed-ast-asset.js';
 
 const version = '9.8.7';
@@ -173,9 +172,7 @@ test('the installer pin report reads this checkout\'s Bun and reviewed assets ex
   const recorded = await recordedCandidatePins();
   assert.deepEqual(recorded, {}, 'every supported installer (2.0.0 on) is pin-free');
   const candidate = readRuntimePins(await readCheckoutSources(repositoryRoot));
-  assert.deepEqual(candidate, { bunVersion: NATIVE_BUNDLE_BUN_VERSION, assets: Object.fromEntries([
-    [REVIEWED_AST_ASSET_SHA256, 'DevRyan-ast-grep-darwin-arm64'], ...[REVIEWED_CLAUDE_ASSETS.claude, REVIEWED_CLAUDE_ASSETS.libsql, REVIEWED_CLAUDE_CREDENTIALS].map(asset => [asset.sha256, asset.path])]
-    .map(([sha, file]) => [file, sha]).sort(([left], [right]) => left.localeCompare(right))) });
+  assert.deepEqual(candidate, { bunVersion: NATIVE_BUNDLE_BUN_VERSION, assets: { 'DevRyan-ast-grep-darwin-arm64': REVIEWED_AST_ASSET_SHA256 } });
   assert.ok(Array.isArray(candidatePinProblems({ recorded, candidate })));
 });
 
@@ -189,8 +186,11 @@ test('the installer pin gate names each supported install a Bun or reviewed-asse
   assert.equal(bun.length, 5);
   assert.match(bun[0], new RegExp(`^v2\\.1\\.14's installer requires a native runtime built by Bun ${candidate.bunVersion.replaceAll('.', '\\.')}; this checkout builds 9\\.9\\.9$`));
   assert.match(bun.at(-1), /owner decision to raise SUPPORTED_UPGRADE_FLOOR/);
-  const credentials = candidatePinProblems({ recorded, candidate: { ...candidate, assets: { ...candidate.assets, 'DevRyan-Claude-credentials.mjs': 'e'.repeat(64) } }, floor });
-  assert.match(credentials.join('\n'), new RegExp(`v2\\.1\\.17's installer requires DevRyan-Claude-credentials\\.mjs ${candidate.assets['DevRyan-Claude-credentials.mjs'].slice(0, 12)}; this checkout ships eeeeeeeeeeee`));
+  const ast = candidatePinProblems({ recorded, candidate: { ...candidate, assets: { ...candidate.assets, 'DevRyan-ast-grep-darwin-arm64': 'e'.repeat(64) } }, floor });
+  assert.match(ast.join('\n'), new RegExp(`v2\\.1\\.17's installer requires DevRyan-ast-grep-darwin-arm64 ${candidate.assets['DevRyan-ast-grep-darwin-arm64'].slice(0, 12)}; this checkout ships eeeeeeeeeeee`));
+  // An installer that pinned a retired reviewed asset is named, not silently accepted.
+  const retired = candidatePinProblems({ recorded: { 'v2.1.17': { ...candidate, assets: { ...candidate.assets, 'DevRyan-Claude-credentials.mjs': 'd'.repeat(64) } } }, candidate, floor });
+  assert.match(retired.join('\n'), /v2\.1\.17's installer requires DevRyan-Claude-credentials\.mjs dddddddddddd; this checkout ships none/);
   // Pins below the floor are not compared.
   const old = { 'v2.1.9': { ...candidate, bunVersion: '1.4.3' } };
   assert.deepEqual(candidatePinProblems({ recorded: old, candidate, floor }), []);
@@ -205,6 +205,7 @@ test('installers are pinned until they verify candidates with verifyUpdateCandid
   assert.deepEqual(readInstallerCandidatePins({ ...checkout, main: pinnedMain }), readRuntimePins(checkout));
   assert.throws(() => readInstallerCandidatePins({ ...checkout, main: '' }), /Cannot tell which verifier/);
   assert.throws(() => readRuntimePins({ ...checkout, artifacts: '' }), /Cannot read the native runtime pins/);
+  assert.throws(() => readRuntimePins({ ...checkout, ast: '' }), /Cannot read the native runtime pins/);
 });
 
 test('recorded installer pins must equal what each tag from the floor shipped', async () => {

@@ -21,7 +21,6 @@ import {credentialMutationFingerprint} from './native-credential-mutation-owner.
 import {requestIntegrationGrant,runWithIntegrationGrant} from './native-integration-context.js';
 import type {RegistrationOrigin} from './registration-origin.js';
 import {HostRefusal} from './host-refusal.js';
-import {createControllerClaudeLifecycle} from './native-claude-lifecycle-kv.js';
 import type {NativeCursorSettlement,NativeCursorReadOnlyKey} from './native-cursor-owner.js';
 
 export interface ControllerIntegrationsOptions {
@@ -80,7 +79,6 @@ export function createControllerIntegrations(options:ControllerIntegrationsOptio
   const acquisitions=new Map<string,Acquisition>(),retained=new Set<Acquisition>();
   const CapturedAcquisition=Context.Reference<Acquisition|undefined>('DevRyan/IntegrationCredentialAcquisition',{defaultValue:()=>undefined});
   let composedCredentials:Credential.Interface|undefined;
-  let claudeLifecycle:ReturnType<typeof createControllerClaudeLifecycle>|undefined;
   let closed=false;
   const assertAcquisition=(acquisition:Acquisition)=>{
     if(closed||acquisition.closed||acquisitions.get(acquisition.directory)!==acquisition)return refuse('native_integration_acquisition_expired');
@@ -200,7 +198,6 @@ export function createControllerIntegrations(options:ControllerIntegrationsOptio
       deps:[Credential.node.mapLayer(original=>original),Database.node,KV.node],
       layer:Layer.effect(Credential.Service,Effect.gen(function*(){
       const inner=yield* Credential.Service;
-      claudeLifecycle=createControllerClaudeLifecycle({controllerInstanceID:options.controllerInstanceID,kv:yield* KV.Service,database:yield* Database.Service,isCurrent:()=>!closed&&options.isBound()});
       if(options.bootstrapCredentials)yield* options.bootstrapCredentials().pipe(Effect.orDie);
       composedCredentials=provider.decorateCredential(mcp.decorateCredential(openai.decorateCredential(cursor.decorateCredential(decorateClaudeAgentCredential(inner)))));return composedCredentials;
     }))})),
@@ -371,12 +368,6 @@ export function createControllerIntegrations(options:ControllerIntegrationsOptio
       Effect.tap(()=>Effect.sync(()=>assertAcquisition(acquisition))));
   });
   return {overrides,executeOwned:mcp.executeOwned,providerHooks:(inner:PluginHooks.Interface)=>provider.decorateHooks(openai.decorateHooks(inner)),
-    readClaudeLifecycleOwned:(input:Parameters<ReturnType<typeof createControllerClaudeLifecycle>['readOwned']>[0])=>{
-      if(!claudeLifecycle)return refuse('native_claude_lifecycle_owner_expired');return claudeLifecycle.readOwned(input);
-    },
-    transitionClaudeLifecycleOwned:(input:Parameters<ReturnType<typeof createControllerClaudeLifecycle>['transitionOwned']>[0])=>{
-      if(!claudeLifecycle)return refuse('native_claude_lifecycle_owner_expired');return claudeLifecycle.transitionOwned(input);
-    },
     requiresOpenAiHttp:openai.requiresOpenAiHttp,isOpenAiTokenSharing:openai.isOpenAiTokenSharing,readSelectedOwned:openai.readSelectedOwned,compareAndSwapSelectedOwned:openai.compareAndSwapSelectedOwned,
     discoverCopilot,readCatalogSelectionOwned,readSelectedCursorKeyOwned,readCursorReadOnlyKeyOwned,commitCredentialOwned:mutation.commitOwned,credentialOwned,credentialMetadataOwned,readProviderSelectedOwned,refreshProviderSelectedOwned,readOpenAiCredentialOwned,close};
 }

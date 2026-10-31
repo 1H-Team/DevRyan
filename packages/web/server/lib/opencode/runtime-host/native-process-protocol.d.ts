@@ -1,7 +1,7 @@
 import type { NativeConfigurationSnapshot } from './native-configuration-snapshot.js';
 import type { NativeOpenAiSelected } from './native-openai-auth.js';
 import type { Credential } from '@opencode/core/credential';
-import type { NativeProviderCatalogBinding } from './native-provider-runtime-owner.js';
+import type { NativeProviderCatalogBinding } from './native-copilot-catalog.js';
 export const NATIVE_PROCESS_PROTOCOL: 1;
 export const NATIVE_PROCESS_LIMITS: Readonly<{bootBytes:number;messageBytes:number;recordBytes:number;inFlight:number}>;
 export interface NativeGlobalRoots { readonly home:string;readonly config:string;readonly data:string;readonly state:string;readonly cache:string;readonly bin:string;readonly log:string;readonly repos:string;readonly tmp:string }
@@ -37,8 +37,6 @@ export type NativeProcessCommand = {readonly protocol:1;readonly id:string} & (
   {readonly action:'credential-commit-owned';readonly callID:string;readonly controllerInstanceID:string;readonly bindingFingerprint:string} |
   {readonly action:'credential-operation-owned';readonly directory:string;readonly controllerInstanceID:string;readonly requestAuthorization:string;readonly mutation:NativeCredentialOperation} |
   {readonly action:'credential-metadata-owned';readonly directory:string;readonly controllerInstanceID:string;readonly integrationID:string} |
-  {readonly action:'claude-lifecycle-read-owned';readonly controllerInstanceID:string} |
-  {readonly action:'claude-lifecycle-transition-owned';readonly controllerInstanceID:string;readonly expectedRevision:number;readonly operation:import('./native-claude-lifecycle.js').ClaudeLifecycleOperation} |
   ({readonly action:'provider-catalog-selection-owned'} & NativeProviderCatalogBinding) |
   {readonly action:'openai-read-credential-owned';readonly directory:string;readonly controllerInstanceID:string;readonly credentialID:string} |
   {readonly action:'openai-read-selected-owned';readonly directory:string;readonly controllerInstanceID:string} |

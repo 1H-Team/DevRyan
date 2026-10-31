@@ -9,7 +9,6 @@ import { createSessionMutationRuntime } from '../packages/harness-runtime/lib/se
 import { createSessionExecutionOwner } from '../packages/harness-runtime/lib/session-execution-owner.js';
 import { createSessionRevertCoordinator } from '../packages/harness-runtime/lib/session-revert-coordinator.js';
 import { git } from '../packages/harness-runtime/lib/session-changes-git.js';
-import { spawnConfinedProvider } from '../packages/web/server/lib/opencode/session-provider-spawn.js';
 import { fileURLToPath } from 'node:url';
 import { createWindowsPrivateFile, createWindowsPrivateFileOwner, ensureWindowsPrivateDirectory, readWindowsPrivateFile } from '../packages/harness-runtime/lib/windows-private-files.js';
 import { randomUUID } from 'node:crypto';
@@ -443,33 +442,3 @@ native('a real command held open across Revert publishes only its surviving cont
     await b.catch(() => {});
   }
 }, 60_000);
-
-native('the provider transport streams through native confinement and cannot mutate its logical project', async () => {
-  const f = await fixture(), original = path.join(f.root, 'original'); await fs.writeFile(original, 'preserved');
-  // Bootstrap only this disposable candidate for the public adapter's identity
-  // check. The build's real manifest stays disabled until all probes pass.
-  const candidate = path.join(f.root, path.basename(launcher));
-  const manifest = JSON.parse(await fs.readFile(`${launcher}.json`, 'utf8'));
-  await fs.copyFile(launcher, candidate); await fs.chmod(candidate, 0o755);
-  if (manifest.spawnLibrary) await fs.copyFile(path.join(path.dirname(launcher), manifest.spawnLibrary), path.join(f.root, manifest.spawnLibrary));
-  await fs.writeFile(`${candidate}.json`, JSON.stringify({ ...manifest, acceptance: true }));
-  const saved = Object.fromEntries(['DEVRYAN_PROVIDER_WORKER', 'DEVRYAN_EXECUTION_LAUNCHER', 'DEVRYAN_PROVIDER_STORAGE'].map((key) => [key, process.env[key]]));
-  Object.assign(process.env, { DEVRYAN_PROVIDER_WORKER: fileURLToPath(new URL('../packages/web/server/lib/opencode/session-provider-worker.mjs', import.meta.url)),
-    DEVRYAN_EXECUTION_LAUNCHER: candidate, DEVRYAN_PROVIDER_STORAGE: path.join(f.root, 'providers') });
-  try {
-    const child = spawnConfinedProvider({ command: process.execPath, args: ['-e', `const fs=require('node:fs');
-      try { fs.writeFileSync(${JSON.stringify(original)}, 'lost'); process.exit(2); }
-      catch (error) { if (!['EPERM','EACCES','EROFS'].includes(error.code)) throw error; }
-      try { fs.writeFileSync('in-project', 'lost'); process.exit(3); }
-      catch (error) { if (!['EPERM','EACCES','EROFS'].includes(error.code)) throw error; }
-      if (process.platform === 'darwin' && fs.realpathSync(process.cwd()) !== ${JSON.stringify(await fs.realpath(f.viewDirectory))}) process.exit(4);
-      if (process.env.CLAUDE_CODE_OAUTH_TOKEN !== 'devryan-fixture-token') process.exit(5);
-      process.stdin.pipe(process.stdout);`], cwd: f.viewDirectory,
-      // A caller-supplied token keeps the worker off the real keychain login.
-      env: { PATH: process.env.PATH, HOME: f.root, CLAUDE_CODE_OAUTH_TOKEN: 'devryan-fixture-token' } });
-    let output = '', stderr = ''; child.stdout.on('data', (chunk) => output += chunk); child.stderr.on('data', (chunk) => stderr += chunk);
-    child.stdin.end('transport-ok');
-    const code = await new Promise((resolve, reject) => { child.once('error', reject); child.once('close', resolve); });
-    assert.equal(code, 0, stderr); assert.equal(output, 'transport-ok'); assert.equal(await fs.readFile(original, 'utf8'), 'preserved');
-  } finally { for (const [key, value] of Object.entries(saved)) if (value === undefined) delete process.env[key]; else process.env[key] = value; }
-}, 20_000);

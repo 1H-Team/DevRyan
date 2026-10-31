@@ -45,13 +45,6 @@ cleared while result inspection, checkpoints and waits remain available. Schedul
 admission still refuses completion until its current requirements pass or are
 explicitly waived by the user.
 
-The exact Claude credentials module shipped in 2.1.9–2.1.13 remains accepted for
-`bundle-source` and `bundle-rollback` verification by digest, size and mode.
-Current runtime verification requires the new reviewed credentials module.
-
-Claude transport cancellation during executor attestation discards the pending
-stdin bytes and still waits for a confirmed physical termination receipt.
-
 ## Managed task admission errors
 
 The controller bridge preserves the shared allowlisted model-admission reason,
@@ -496,45 +489,6 @@ provenance and permission ownership. Spliced hashes cannot select another skill.
 A refusal reads `native_skill_unreviewed: ...` and lists the reviewed
 skill names (`reviewedSkillNames`, at most 50) so the model's retry can name one.
 
-## Native Claude checkpoint continuity
-
-Claude checkpoint verification uses `native-claude-checkpoint.js` to derive the
-same private account/location state directory as the physical transport. The
-worker exposes that directory only for the current constructor-authorized
-attempt, session, location and profile; SDK profile environment paths cannot
-select a native transcript. Canonical checkpoint reads reject symlinked state,
-project and transcript paths and recheck attempt authority after the read.
-The canonical helper remains `../meridian-passthrough-handoff.js`; native asset
-preparation embeds it as a recorded rewrite of the hash-checked captured helper.
-Checkpoint settling, settled, rejected, retained and replay observations use a
-finite `claude-checkpoint-diagnostic` frame and `native_claude_checkpoint` journal
-record. Only event/reason enums, bounded tool counts and correlation identities
-cross that boundary. Raw Meridian logging remains disabled; diagnostic failure
-cannot change execution or retention.
-
-### Stalled step retry
-
-Meridian aborts an SDK attempt that sends nothing for `UPSTREAM_IDLE_MS`. The
-native worker sets it explicitly to 90 s; `upstreamIdleBudget` raises a `high`,
-`xhigh` or `max` effort attempt to 180 s (a disabled guard, 0, stays disabled).
-`rewriteReviewedMeridianStallRetry` (applied inside the reviewed Meridian
-rewrite) moves that attempt guard inside `settlePassthroughQuery`, so a stall
-reports `passthrough.checkpoint_aborted` (`upstream_idle`) instead of closing
-silently. The response-level guard becomes a backstop 5 s beyond the attempt
-budget, so it cannot fire before the retry decision.
-
-The primary streamed attempt runs through `retryStalledCheckpoint`. When it
-stalls while resuming a retained `verified_handoff` checkpoint, and only
-reasoning reached the client (no text, no forwarded or captured tool call, the
-client is still connected), Meridian closes the open reasoning blocks, reports
-`passthrough.checkpoint_retry` (`upstream_idle`) and runs the same step once
-more with a fresh prompt from the same retained session (a native fork at the
-checkpoint). The retry's blocks continue the same client message. A second stall,
-or any other failure, ends the turn with Meridian's original `upstream_timeout`
-error. Non-stream, fresh-replay and silent-recovery attempts are not retried.
-The legacy managed hotfix (`meridian-passthrough-hotfix.js`) does not apply this
-rewrite.
-
 ## Native grep and glob execution
 
 OpenCode 2.0.30, 2.1.0 and 2.1.4 spawn ripgrep for `grep` and `glob` through `Environment.spawner`.
@@ -873,128 +827,9 @@ revoked authorization and unrelated credential replacement still fail. Session
 correlation includes the credential request's binding, allowing title and primary
 request resolution to be traced independently.
 
-Anthropic requests retain their native parser and physical-attempt scope. The
-controller accepts only `/v1/messages` and the native `/messages` alias produced
-by saved legacy root base URLs; both target `/v1/messages` on the owned Meridian
-origin. Other path prefixes, token-count routes, user information and fragments
-remain refused. Owned headers replace prepared credentials, and the attempt is
-released on completion, refusal or cancellation.
-
-`native-claude-request.ts` applies the reviewed Claude V2 request identity at
-that physical boundary. Title/generate and title/summary agents have no upstream
-resume affinity; compaction retains its session with the `subagent-compaction`
-source. The private `X-DevRyan-Session` header always binds authorization to the
-original admitted session. The worker rejects a foreign resume session or any
-alternate legacy affinity header; detaching a helper grants no new authority.
-Chronological system updates become escaped user `<system-update>` blocks in
-place, retaining the final cache marker and message metadata. An unresolved
-local tool call or nontext system update refuses the entire normalization.
-Legacy V1 human/synthetic markers are not inferred from native request kinds.
-
-Claude inspection uses the implicit default account when there are no saved
-profiles, the sole profile when there is one, and the exact configured default
-when there are several. An ambiguous selection stays unavailable. Ordinary
-shared credentials are read from their original owner without renewal or writes;
-expired shared credentials require reconnecting through Claude Code/Meridian.
-Dedicated enrollment is optional automatic renewal: a due dedicated profile
-renews during status and usage inspection through the same serialized,
-journaled renewal as a request, so an idle enrollment is never reported expired.
-
-The host configuration snapshot also activates Claude catalog metadata for the
-same unambiguous saved `claude-max` profile (including the legacy omitted type),
-without reading its credential or contacting a provider. The constructor uses
-the private Meridian configuration resolver; only a reviewed
-`devryan.provider-compat` registration permits an empty Anthropic stanza. Saved
-provider/model settings survive, and explicit provider exclusions, absent
-profiles, inline credentials and ambiguous selection do not enable this bridge.
-Meridian `profiles.json` and `settings.json` metadata are included in the existing
-configuration capture/retry stamp. The original native configuration plugin owns
-catalog activation; no placeholder API key or native credential is created.
-The physical Meridian attempt still requires the original admission permit and
-host-owned selected credential. Catalog visibility alone grants neither.
-At a passthrough tool boundary Meridian closes the client stream early and then
-drains the Claude SDK to its terminal result before it stores the session. A
-normal attempt end (`provider.meridian.end`) therefore first drains the
-attempt's Claude children on the transport host, waiting up to
-`MERIDIAN_HANDOFF_DRAIN_MS` (12 s, just above the handoff's 10 s drain bound)
-for them to exit on their own, and only then releases the worker attempt and
-kills what remains. The drain is not a provider command, so other attempts keep
-their command channel. An aborted attempt is released immediately. Killing the
-child before the drain finished made Meridian evict the session
-(`noncanonical_session_evicted`), so every later step replayed the whole history
-as one flattened block and only the system/tools prefix hit the prompt cache.
-The compiled provider owner is registered independently of the legacy plugin
-list. Disabling legacy plugins does not disconnect that native account or stop
-this metadata bridge; the saved plugin list is preserved.
-
-Dedicated enrollment is global to the bundle. `native-claude-enrollment-location.js`
-binds a request to its own directory when that directory is a reviewed location,
-and to the default location (`locations[0]`) otherwise, so a registered project
-outside the bundle's project map can still list, start, complete and select
-enrollments. A bundle with no reviewed default location still refuses with
-`native_claude_enrollment_location_unreviewed`.
-
-Dedicated profile deletion uses the same administrator binding and credential
-mutation queue. It refuses selected profiles, including the implicit first saved
-profile; the user must explicitly select another first. The private provider fence
-refuses active attempts, inspection or worker startup and blocks new Claude work
-until deletion settles. Only the exact lifecycle enrollment, generation, canonical
-directory and derived credential service confer deletion authority. Reviewed store
-reads must match both saved record and grant fingerprints before the exact owned
-Keychain service/account is deleted; deletion performs no renewal or issuer revoke.
-A missing incomplete credential is allowed, while unreadable or changed records
-remain refused. An absent directory can still have an owned credential; dangling
-links and recreated directory identities refuse.
-
-`prepare-deletion` records a durable `deletion-prepared` intent before mutation,
-retaining fingerprints and the observed directory identity. It fences credential
-access, selection and bundle clone authority. The profile file owner checks its
-original byte baseline and preserves other profiles and settings; directories are
-removed nonrecursively. Partial failures stay listed as `deleting` and can be retried
-with fresh administrator authority. `settle-deletion` removes only the matching
-enrollment after cleanup. Successful UI deletion refreshes the runtime configuration.
-Removal of a profile present in the provider's saved configuration invalidates
-that cache as soon as the profile file mutation succeeds, including partial cleanup.
-Claude attempts and inspection then refuse until reconfiguration retires the owner.
-Deleting an unpublished incomplete profile does not invalidate the working provider.
-
-The packaged macOS Claude Code fallback is 2.1.302. About can independently
-select a newer official Claude executable through a managed installation record. The existing npm hydrator verifies the
-archive integrity and exact binary hash/size; native build/startup signature checks
-remain required. Meridian and Agent SDK versions are unchanged. Windows retains
-its separately qualified executable pins.
-
-Claude subprocesses launch through `native-claude-transport-host.js` on the host,
-using the provider worker's existing private IPC. Applying a second execution
-supervisor inside the already confined Meridian worker fails at `setpgid` before
-the Claude executable starts. The host admits only an issued attempt for its exact
-session, directory and profile, verifies the immutable executable, and resolves
-access credentials itself. Workers cannot supply a command or environment.
-The host attests the supervisor's unique direct executor only after its exact
-reviewed executable and process-group ownership are visible to the OS. The private
-`started` reply carries that executor's host, boot and process-start incarnation.
-SDK stdin stays queued until the native gate attaches that exact incarnation to
-Meridian's active transcript lease; the host rechecks it before the first byte.
-Unavailable, stale or mismatched observation cancels without inference input.
-Executor recovery is conservative (`recoverableAfterCrash: false`): a dead PID
-does not prove its descendant writers died. Normal lease release waits for the
-supervisor's confirmed confined termination receipt; an unconfirmed join retains
-the upstream lease. The pre-spawn transcript-directory hook authorizes the exact
-request/profile and selects the same private state root used by the host.
-The original model pins, effort arguments, quiet settings and account/directory
-state key remain intact. Every launch uses the accepted read-only supervisor,
-including its protected read roots, scoped state writes and termination receipt.
-The synchronous SDK child adapter streams bounded chunks; stdin advances only
-after host write acknowledgments. Cancellation, attempt retirement and shutdown
-await the physical supervisor. Infrastructure refusals retain finite transport
-errors and exit 125 instead of becoming a misleading generic exit-one auth error.
-The obsolete nested `--claude-transport-worker` entry is no longer accepted.
-
-New builds seed the current packaged Claude pin. Independently updated
-activation candidates require the managed installation provenance and publisher
-checks described below. Bundle cloning and explicit rollback also recognize
-the historical macOS ARM64 Claude 2.1.251 and 2.1.280 identities (digest, size,
-mode and signature).
+Bundle cloning and explicit rollback still read older bundles that list the
+Meridian-era Claude, libsql and credentials assets; nothing runs them, so they
+are verified only against their own manifest.
 These constructor-owned `bundle-source`/`bundle-rollback` purposes never come
 from HTTP metadata; prepared targets and retained-candidate resume stay current-only.
 An explicit rollback selector grants its historical purpose at load and before
@@ -1009,7 +844,7 @@ graphs, changed source layouts and lower migration levels still refuse.
 
 An upgrade whose shipped manifest keeps the selected `opencodeVersion` and
 `inputs.coreDigest` does not clone (`runtime-bundle-lifecycle.js` `applyCandidate`,
-result `mode: 'rebind'`). Outside a Claude update and on non-Windows hosts it calls
+result `mode: 'rebind'`). On non-Windows hosts it calls
 the store's `rebindArtifacts` under the same checkpoint and `selection.lock`: the
 selected bundle keeps its ID, data and checkpoint; `descriptor.json` gets the new
 controller, writer and artifact manifest, `config/reviewed-plugins.json` the new
@@ -1043,22 +878,12 @@ Each clone leaves its source bundle behind, a full copy of the user's data.
 `sweepSelectedLeftovers` (startup, inside `selection.lock` of an unheld
 selection) calls `pruneSupersededBundles` before artifact pruning. It keeps the
 selected bundle, `previousBundleID`, any bundle created at or after the selected
-one, both bundles of a pending Claude activation's `sourceSelection`, and every
+one, and every
 entry without a valid descriptor; it prunes nothing while a rebind is `pending`
 or `restoring`. Clone origins (`sources/clone.json` `migrationOrigin`) and
 source bundle IDs are only compared as strings, so removing `default-native` or
 an older source is safe. Removal renames to `.stale-*` first; an interrupted
 removal is swept at the next launch. Windows keeps every bundle.
-
-Claude stderr is drained into a finite, constructor-scoped process receipt
-reported as `native_claude_process` through the existing diagnostic journal.
-Receipts retain exit code, signal presence, bounded byte counts and allowlisted
-clues for explicit HTTP/auth, model/argument/configuration, launcher/module/syntax,
-permission, connection and native receipt failures. Numeric matching state spans
-chunks without retaining stderr text. Unknown text stays unknown; exit code 1
-does not establish an auth failure. Diagnostics do not change provider errors,
-streams, credentials or process cleanup. Updated compiled provider workers are
-required to emit this private protocol observation; older workers remain usable.
 
 ## Startup diagnostics
 
@@ -1391,55 +1216,6 @@ cleans the exact scope-matched `ready` control lease and rethrows the original
 failure. `recoverExecutionLeases` also settles owner-less control leases left by
 earlier builds.
 
-## Claude updates in About
-
-The shared UI's `ClaudeCodeVersionSection.tsx` reads the running version from
-`../claude-runtime-update.js`. `../claude-update-routes.js` owns authenticated
-GET `/api/config/claude-update` and administrator-only POST `/install` and
-`/rollback` below that path. Mutations accept only `{ expectedRevision }` and
-require `x-devryan-csrf: 1`. They return 202 with a pollable host-owned operation;
-a browser disconnect does not cancel activation. Other platforms retain the
-existing app-delivered update flow.
-
-`managed-claude-installation.js` resolves an exact stable npm platform package,
-bounds downloads, verifies SHA-512 archive integrity, extracts only a regular
-ARM64 Mach-O executable, and checks Apple's signature chain and Anthropic's
-`Q6L2SF6YDW` team. Its isolated preflight checks the reported version, required
-flags and SDK initialize control response. It sends no prompt, denies network
-and Keychain command access, disables settings and tools, and waits for process
-termination before deleting scratch. `scripts/hydrate-reviewed-claude.mjs` uses
-the same downloader for the packaged fallback on macOS. Portable CI restores only
-the exact reviewed archive and executable bytes, checking pinned archive integrity,
-executable size and SHA-256 without invoking macOS tools; native packaging retains
-publisher verification and protocol preflight.
-
-`managed-claude-candidate.js` copies the verified artifact inventory, replacing
-only Claude and recording `claudeInstallation` (schema, package, version,
-platform, archive URL/integrity, executable hash/size and signature evidence).
-The manifest digest binds this record; `native-artifacts.js` verifies the actual
-publisher and bytes on every launch. Other assets retain their exact pins.
-The reviewed configuration and reviewed Claude credentials modules are executed
-from the bytes that passed their digest check, through
-`verified-module-import.js`: a `data:` URL on Node, an in-memory `blob:` URL on
-Bun (which rejects module names over about 4 KiB). The file is not read again.
-The candidate uses the existing bundle retention, checkpoint, selector CAS and
-host recomposition lifecycle. Download/check failures leave admission open;
-activation reserves idle admission before checkpointing and never replaces a
-running executable. A later app upgrade preserves a newer managed Claude;
-`claudeBaseManifestSha256` prevents reinstalling the same shipped core at every
-cold start. Source and rollback verification also recognize the previous
-2.1.280 and 2.1.251 packaged assets.
-
-Before selecting a Claude update, the bundle store persists a pending activation
-record with the source selector and source file inventory. Cold bootstrap runs
-`claude-activation-recovery.js` before opening data owners. Failed preflight can
-restore only an untouched prepared candidate's unchanged source, with absent
-owners and a fresh selector revision. It never projects old credentials over
-new work. Ready startup retires this automatic recovery; subsequent recovery
-uses the existing explicit bundle rollback and its reconciliation guards.
-Interrupted staging is removed under the updater lock on the next attempt.
-
-
 ### xAI usage renewal
 
 `provider-refresh-selected-owned` is an exact-field controller operation for the selected xAI device OAuth credential. It carries the original usage caller grant, controller/location identity, credential ID and expected fingerprint, never credential values. The `provider.usage` GET scope authorizes one update with the fixed renewal-intent fingerprint; create, activate, remove and other providers remain refused. The registered native xAI implementation renews inside the existing reverse credential mutation queue and rechecks caller, acquisition and selected record before commit. Usage and admitted model resolutions share pending renewal observations; one bounded prior-renewal receipt per reviewed location permits reuse of this owner's renewal without accepting unrelated writes. Quota reads remain read-only until their usage request is rejected. Refresh tokens never cross into the web fetcher. The default launch quota refresh therefore loads usage without a chat request.
@@ -1618,53 +1394,6 @@ alone is volatile during stream activity; other session fields remain compared.
 The three-purpose HTTP/controller tests use actual admission, provider-attempt
 authorization and settlement; fresh compiled provider qualification is a separate gate.
 
-## Claude credential command diagnostics
-
-The constructor-owned credential command observer emits
-`native_claude_credential_command` only for the exact `/usr/bin/security`
-credential operations. Its payload contains `phase` (`probe`, `read`, `write`,
-`delete`) and bounded `exitCode` (or `null` when no numeric exit was available).
-Enrollment, renewal, settlement and legacy-fence reads share the observer. It
-waits for the original command owner to settle; diagnostics cannot change its
-result, public refusal or cancellation/close ownership. Journal and export
-sanitize this event separately and omit all command arguments, account/service
-names, HOME paths, stdout/stderr and credential content.
-
-The actual OS command owner replaces `execFile` failures before returning them,
-retaining only a bounded exit/system code. The error message, command line and
-stderr cannot reach vendor logging through that error. The macOS CLI still
-receives the reviewed store's arguments; this does not change the OS command
-interface or its process-list visibility.
-
-The existing reviewed macOS store uses the implicit OS Keychain. This diagnostic
-adds no store, fallback, HOME override, Keychain command or credential mutation.
-
-`startWebUiServer` may receive the trusted constructor option
-`nativeClaudeSecurityHome` for an isolated host whose inherited HOME cannot
-address the OS user's existing Keychain. `native-claude-security-home.js` applies
-that HOME only to the original `/usr/bin/security` credential command for an
-exact private enrollment under this bundle's control root. It validates the
-enrollment UUID, generation, profile, computed service, exact account/arguments,
-private directories and retained directory identities before dispatch. The
-host's HOME and native configuration remain isolated; HTTP, environment flags,
-public profile metadata and service-name patterns cannot enable this backend.
-
-Fresh enrollment supplies its live constructor binding. Credential resolution
-reads the original canonical lifecycle before its first private account read
-and rechecks that exact enrollment at each command. Renewal keeps the original
-mutation queue and issuer/write ownership; its uncancelled settlement read is
-confined to the exact prepared replacement attempt. Default, shared and legacy
-credential paths retain inherited HOME. A missing or replaced owned directory
-refuses this backend, including deletion; it never falls back to an installed
-default service. This option creates no Keychain and adds no file credential
-store, token export or credential-copy path.
-
-Before another enrollment, legacy migration skips profiles already proved by
-the existing canonical lifecycle and private enrollment directory validator.
-They have no legacy fence to import. Actual legacy/default migration keeps its
-original command backend and inherited HOME.
-Actual OS Keychain behavior remains unverified until the authorized isolated sign-in.
-
 ### Archived deletion recovery
 
 Child-first manual bulk deletion can leave a retained terminal managed task
@@ -1721,11 +1450,9 @@ models can send nothing for minutes between output items, and a chunk timeout
 replays the whole prompt; the byte-less hangs that motivated tight deadlines end
 in a reset before 120 s anyway. (Before OpenCode 2.1.4 adoption, every stanza but
 `openai` had a 120 s chunk deadline.) Native-shaped `providers` stanzas get the
-same defaults. `anthropic` is exempt (`NATIVE_DEADLINE_EXEMPT_PROVIDERS`): it is
-the local Meridian passthrough to the Claude Agent SDK, which can withhold
-headers through long silent reasoning and enforces its own upstream idle guard
-(90 s, 180 s for high effort), so an HTTP deadline would abort and replay a live
-Claude step. The snapshot's Meridian `anthropic` stanza stays `{}`.
+same defaults. `claude-agent` is exempt (`NATIVE_DEADLINE_EXEMPT_PROVIDERS`): it
+runs the user's Claude Code, which owns its API and stream idle timeouts, and
+OpenCode would pass a stanza deadline to it as `API_TIMEOUT_MS`.
 Saved `options` or `settings` values, including `false`, always win. No total
 `timeout` is added.
 
@@ -1893,48 +1620,6 @@ inode/size/timestamps receipt without the reboot-unstable device number. Origina
 CLI validation, bounded sequences and failure behavior remain intact; the native
 transform still replaces filesystem/launch/transport access with owned callbacks.
 
-## Held Claude runtime upgrade
-
-The reviewed capture is `claude-1.11.2`: plugin 1.11.2, Meridian 1.79.0,
-Agent SDK 0.2.141 and the retained signed Claude Code 2.1.302 executable.
-`reviewed-claude-transform.js` binds the original startup and health helpers to
-static reviewed Meridian, preserving the upstream 15-second cold health budget
-and cancellation behavior. External `MERIDIAN_PATH` discovery and inherited
-socket activation cannot choose worker code or bypass admitted HTTP.
-The credential artifact seals its environment helper and excludes the new
-post-renewal plan-backfill HTTP request; selected-account inspection owns that
-read. Ambient renewal, usage requests and keepalive remain disabled in workers.
-The Meridian 1.79 process gate keeps upstream transcript journaling, exact
-lifecycle generations and join-before-release checks, while the constructor
-callback supplies confined supervised execution instead of a Node wrapper.
-The managed raw-package installer refuses this execution boundary; ordinary
-non-boundary fixtures retain upstream process gating. Prefix/cache/quota and
-native acceptance must pass before this candidate can be reported validated.
-
-The reviewed transform preserves top-level object-union tool schemas through
-Meridian's existing `advertiseDeclared` helper and the SDK's passthrough object
-envelope. This keeps `devryan_task` action branches, required fields and nested
-constraints in Claude's MCP tool listing instead of advertising an empty input
-object. Native managed-task decoding and admission still validate each call;
-the envelope grants no execution authority. Ordinary object-tool conversion,
-deferred loading, specialist model selection and orchestration policy retain
-their existing behavior. The bridge regression uses the real managed-task
-schema and pinned SDK to check tool listing, argument preservation and malformed
-call rejection; path-recovery fixtures cover discovery of the actual locale
-file after a missing guessed directory is rejected.
-
-The supervised provider boot carries the host-observed incarnation of the exact
-compiled worker child. The worker checks its PID and exposes the immutable proof
-before loading Meridian. The native source uses that proof for its own incarnation
-and boot identity; foreign process observations remain indeterminate, so the
-sealed worker cannot run OS identity probes or infer a foreign owner is dead.
-Lifecycle transcript locators use the constructor-issued physical state directory
-for the exact request/profile, matching the confined transport before any writer
-lease is acquired. Upstream SDK deletion through an ambient Node subprocess
-refuses with `native_claude_gc_requires_supervision`; the pending lifecycle record
-is retained for later supervised recovery instead of deleting any transcript.
-
-
 ## Required verification and root TODO completion
 
 The native execution host observes declared check commands through trusted constructor callbacks; real process receipts and publication precede check completion. `native-session-context-owner.js` reads the current primary objective and asks the orchestration owner for its authoritative required-check projection. Root `todowrite` cannot complete or empty the TODO list while declared verification is pending, failed or blocked. The existing open TODOs remain unchanged. Verification gates completion, not independent implementation. A settled turn with runnable TODOs can continue while checks remain pending. Pending TODOs may declare bounded `blockedBy` reasons; when every remaining item is dependency-blocked, no automatic TODO continuation is enqueued, avoiding an unchanged-failure loop. The root can inspect the exact remaining checks, rerun them, or let the user waive them through the authenticated UI route. Legacy objectives with no declared requirements retain their existing behavior.
@@ -1990,26 +1675,6 @@ cleanup. Registered operations use the deterministic check-command marker
 Native websearch activation remains reviewed for compatibility, but its tool
 definition is withheld because there is no owned search executor. Read-only
 managed prompts do not grant it. Webfetch remains available for known URLs.
-
-The reviewed Meridian transform preserves explicit authentication rejection but
-reports generic exit-one failures as internal process failures without login
-advice. Managed error formatting preserves structured `provider.internal` before
-text classification; remediation prose containing “authentication” is not auth
-evidence. Claude process receipts optionally retain the finite `transportError`
-(stage: credentials, state, launch, executor identity/attachment or transport)
-through the validated private protocol and sanitized journal/export. Raw stderr,
-paths and credential material remain excluded. Unconfirmed physical termination
-still retains ownership and never becomes a completed receipt.
-
-The existing Claude status route adds optional `lastSuccessfulInferenceAt` and
-`lastLaunchFailure: {at, code}` metadata. `native-claude-inference-health.js` keeps
-it only for the current runtime/project; it describes effective inference routing,
-not the saved selected account. Process exit zero alone is insufficient: a bounded
-canonical idle read must match session/provider, a completed timestamp and positive
-usage before recording successful inference or clearing the failure. Settings
-`authStatus` continues to describe saved credential availability independently.
-Failure codes are finite process/permission/auth/internal or reviewed transport
-codes; prompts, output, session identity and credentials are not returned there.
 
 Managed children retrieve their injected immutable plan artifact with
 `devryan_plan_read {}`. The tool has no action, path, session or update fields;

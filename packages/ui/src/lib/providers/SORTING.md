@@ -4,7 +4,7 @@ All UI surfaces that render a grouped **provider → models** picker must derive
 
 ## Conventions
 
-- **Providers** sort by `getProviderDisplayName(provider, sources?)` from [`display.ts`](./display.ts). Tie-break on `provider.id` for stable ordering when display names collide (e.g. OAuth-aware relabeling).
+- **Providers** sort by `getProviderDisplayName(provider)` from [`display.ts`](./display.ts). Tie-break on `provider.id` for stable ordering when display names collide (e.g. OAuth-aware relabeling).
 - The built-in `openai` provider displays as **ChatGPT** for both ChatGPT sign-in and API-key connections. Model fields, picker groups, and provider settings use this shared label for display, search, and sorting; execution IDs and stored provider names stay unchanged. Custom provider IDs keep their supplied names, including OpenAI.
 - **Models** sort by `model.name`, falling back to `model.id`. Tie-break on `model.id`.
 - Comparison is **case-insensitive** and uses a shared `Intl.Collator` (`sensitivity: 'base'`, `numeric: true`) so numeric suffixes order naturally (`gpt-4` < `gpt-10`).
@@ -12,9 +12,9 @@ All UI surfaces that render a grouped **provider → models** picker must derive
 
 ## When to use which helper
 
-- `sortProvidersByDisplayName(providers, sourcesByProvider?)` — flat provider lists (e.g. providers sidebar).
+- `sortProvidersByDisplayName(providers)` — flat provider lists (e.g. providers sidebar).
 - `sortModelsByDisplayName(models)` — model-only lists.
-- `sortProviderTreeForPicker(providers, sourcesByProvider?)` — the common case: nested provider → models dropdowns. Pass the already-filtered list (hidden models, search query, allowed providers) so sorting is the final step.
+- `sortProviderTreeForPicker(providers)` — the common case: nested provider → models dropdowns. Pass the already-filtered list (hidden models, search query, allowed providers) so sorting is the final step.
 
 ## What stays untouched
 

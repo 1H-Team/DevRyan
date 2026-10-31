@@ -16,7 +16,6 @@ import {credentialMutationFingerprint} from '../../packages/web/server/lib/openc
 import {createNativeIntegrationOwner} from '../../packages/web/server/lib/opencode/runtime-host/native-integration-owner.js';
 import type {NativeControllerProcess} from '../../packages/web/server/lib/opencode/runtime-host/native-process.js';
 import {bootstrapNativeSetupCredentials,NATIVE_SETUP_CREDENTIAL_STAMP} from '../../packages/web/server/lib/opencode/runtime-host/native-setup-credentials.js';
-import {parseClaudeLifecycle} from '../../packages/web/server/lib/opencode/runtime-host/native-claude-lifecycle.js';
 
 const directory=path.resolve('.cache/v2-validation/controller-integrations');
 const location=Schema.decodeUnknownSync(Location.Info)({directory,project:{id:'global',directory,canonical:directory}});
@@ -175,28 +174,6 @@ test('Cursor key reads use the actual selected native Credential and refuse clos
     }).pipe(Effect.provide(layer),Effect.provideService(Location.Service,location))));
     await expect(factory.readSelectedCursorKeyOwned(input)).rejects.toMatchObject({code:'native_integration_acquisition_expired'});
   }finally{await node.invalidate();await factory.close();await fs.rm(state,{recursive:true,force:true});}
-});
-
-test('private Claude lifecycle commands use original KV during held admission without reverse host queue callbacks',async()=>{
- const state=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-controller-claude-lifecycle-')));let bound=false;
- const factory=createControllerIntegrations({controllerInstanceID:'controller-claude',configurationSnapshot:snapshot(),
-  registrationOrigin:{kind:'native',id:'devryan.remote-mcp',manifestDigest:'c'.repeat(64),capabilities:['network']},reviewedConfigurationOrigins:new Map(),
-  isBound:()=>bound,isExecutionReady:()=>false,rpc:async()=>{throw Error('Lifecycle KV must never reenter host credential queue');},
-  executeOwnedFallback:invocation=>invocation.executeNative(),authorizeMcpCall:(_i,_b,a)=>a});
- const layer=LayerNode.compile(LayerNode.group([Credential.node,KV.node,Database.node]),{replacements:[...factory.overrides,
-  Global.node.replace(Global.layerWith({home:state,data:state,cache:state,config:state,state,tmp:state,bin:state,log:state,repos:state})),Database.node.replace(Database.configured({path:path.join(state,'native.db')}))]});
- try{
-  await Effect.runPromise(Effect.scoped(Effect.gen(function*(){
-   yield* Credential.Service;bound=true;
-   const initial=yield* Effect.promise(()=>factory.readClaudeLifecycleOwned({controllerInstanceID:'controller-claude'}));expect(initial.revision).toBe(0);
-   const account={profileID:'dedicated',service:'Claude Code-credentials-01234567',configDirectory:'/owned/enrolled/one',enrollmentID:'enrollment-one',generation:'generation-one',grantFingerprint:'1'.repeat(64),recordFingerprint:'2'.repeat(64)};
-   const enrolled=yield* Effect.promise(()=>factory.transitionClaudeLifecycleOwned({controllerInstanceID:'controller-claude',expectedRevision:initial.revision,operation:{kind:'enroll',account}}));
-   expect(enrolled.accounts).toEqual([account]);
-   const kv=yield* KV.Service;expect(parseClaudeLifecycle(yield* kv.get('devryan.claude-lifecycle/1'))).toEqual(enrolled);
-   expect((yield* Effect.exit(Effect.promise(()=>factory.readClaudeLifecycleOwned({controllerInstanceID:'foreign'}))))._tag).toBe('Failure');
-   bound=false;expect((yield* Effect.exit(Effect.promise(()=>factory.readClaudeLifecycleOwned({controllerInstanceID:'controller-claude'}))))._tag).toBe('Failure');
-  }).pipe(Effect.provide(layer),Effect.provideService(Location.Service,location))));
- }finally{await factory.close();await fs.rm(state,{recursive:true,force:true});}
 });
 
 test('provider selected reads return the active native key and refuse stale, foreign or out-of-scope requests',async()=>{

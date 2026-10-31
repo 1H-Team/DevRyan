@@ -5,11 +5,6 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { smokePackagedOrchestrationConfig } from './smoke-packaged-orchestration-config.mjs';
-import {
-  applyMeridianHttpHotfix,
-  MERIDIAN_HTTP_HOTFIX_INCOMPATIBLE,
-  MERIDIAN_HTTP_HOTFIX_VERSION,
-} from '../packages/web/server/lib/opencode/meridian-http-hotfix.js';
 const compatibilityPluginPin = JSON.parse(await fs.readFile(new URL('../packages/web/package.json', import.meta.url), 'utf8')).devDependencies['@opencode-ai/plugin'];
 
 const sourceRoot = path.resolve('packages/web/server/default-config');
@@ -33,34 +28,6 @@ test('smokes clean-user provisioning and runtime overlays from an artifact confi
   assert.ok(result.runtimePlugins.includes('plugins/devryan-managed-orchestration.mjs'));
   assert.ok(result.runtimePlugins.includes('plugins/openai-tool-schema-sanitizer.mjs'));
   assert.ok(result.runtimePlugins.includes('plugins/devryan-document-reader.mjs'));
-});
-
-test('the real Meridian source gate still rejects missing and placeholder dependency entrypoints', async () => {
-  await withConfig(async () => {}, async ({ configRoot }) => {
-    const packageRoot = path.join(configRoot, 'node_modules', '@rynfar', 'meridian');
-    const dist = path.join(packageRoot, 'dist');
-    await fs.mkdir(dist, { recursive: true });
-    await fs.writeFile(path.join(packageRoot, 'package.json'), JSON.stringify({
-      version: MERIDIAN_HTTP_HOTFIX_VERSION,
-    }));
-    assert.deepEqual(applyMeridianHttpHotfix({ configDirectory: configRoot }), {
-      ok: false,
-      changed: false,
-      code: MERIDIAN_HTTP_HOTFIX_INCOMPATIBLE,
-      error: 'Meridian HTTP hotfix files are unavailable',
-    });
-
-    const entrypoint = path.join(dist, 'cli-wxk8xvd3.js');
-    await fs.writeFile(entrypoint, '');
-    assert.deepEqual(applyMeridianHttpHotfix({ configDirectory: configRoot }), {
-      ok: false,
-      changed: false,
-      code: MERIDIAN_HTTP_HOTFIX_INCOMPATIBLE,
-      error: 'Meridian HTTP source hash is incompatible',
-    });
-    assert.equal(await fs.readFile(entrypoint, 'utf8'), '');
-    await assert.rejects(fs.access(path.join(dist, 'devryan-meridian-http-server.js')), { code: 'ENOENT' });
-  });
 });
 
 test('rejects packaged user profile skills', async () => {
@@ -88,12 +55,21 @@ for (const [name, mutate, message] of [
     profileConfig.plugin.push('./plugins/devryan-oh-my-opencode-slim.mjs');
     await fs.writeFile(configPath, `${JSON.stringify(profileConfig, null, 2)}\n`);
   }, /registers a retired plugin/],
-  ['Claude dependency', async (root) => {
+  // Claude runs through OpenCode's built-in claude-agent provider; the Meridian proxy must not return.
+  ...['opencode-with-claude', '@rynfar/meridian'].map((retired) => [`retired Claude proxy package ${retired}`, async (root) => {
     const packagePath = path.join(root, 'user-profile', 'package.json');
     const profilePackage = JSON.parse(await fs.readFile(packagePath, 'utf8'));
-    delete profilePackage.dependencies['opencode-with-claude'];
+    profilePackage.dependencies[retired] = '1.11.2';
     await fs.writeFile(packagePath, `${JSON.stringify(profilePackage, null, 2)}\n`);
-  }, /Missing default Claude dependency/],
+  }, new RegExp(`installs the retired Claude proxy package ${retired.replace('/', '\\/')}$`)]),
+  // A pinned retired spec is caught by the retired-plugin list; any other version or path by name.
+  ...[['opencode-with-claude@1.11.2', /registers a retired plugin/], ['opencode-with-claude@9.9.9', /registers the retired Claude proxy plugin/],
+    ['./node_modules/opencode-with-claude/dist/server.js', /registers the retired Claude proxy plugin/]].map(([spec, message]) => [`retired Claude proxy registration ${spec}`, async (root) => {
+    const configPath = path.join(root, 'user-profile', 'opencode.json');
+    const profileConfig = JSON.parse(await fs.readFile(configPath, 'utf8'));
+    profileConfig.plugin.push(spec);
+    await fs.writeFile(configPath, `${JSON.stringify(profileConfig, null, 2)}\n`);
+  }, message]),
   ['retired Slim adapter', (root) => fs.writeFile(path.join(root, 'plugins', 'devryan-oh-my-opencode-slim.mjs'), 'export default async () => ({});\n'), /Retired Slim adapter must not ship/],
   ['document reader plugin', (root) => fs.rm(path.join(root, 'plugins', 'devryan-document-reader.mjs')), /Missing default document reader plugin/],
   ['document dependency', async (root) => {

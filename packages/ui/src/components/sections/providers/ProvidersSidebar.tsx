@@ -69,8 +69,8 @@ export const ProvidersSidebar: React.FC<ProvidersSidebarProps> = ({ onItemSelect
     (pending) => !providers.some((provider) => provider.id === pending.id),
   );
   const sortedProviders = React.useMemo(
-    () => sortProvidersByDisplayName(providers, sourcesByProvider),
-    [providers, sourcesByProvider]
+    () => sortProvidersByDisplayName(providers),
+    [providers]
   );
   const catalogProviderIds = React.useMemo(
     () => [...providers.map((provider) => provider.id), ...Object.keys(pendingConnections)],
@@ -215,7 +215,6 @@ export const ProvidersSidebar: React.FC<ProvidersSidebarProps> = ({ onItemSelect
                   provider={provider}
                   selectedProviderId={selectedProviderId}
                   canDisconnect={canDisconnect}
-                  sources={sources}
                   isDisconnecting={disconnectingProviderId === provider.id}
                   isDisconnectPending={isDisconnectPending}
                   onSelect={() => {
@@ -261,16 +260,15 @@ export const ProvidersSidebar: React.FC<ProvidersSidebarProps> = ({ onItemSelect
 const ProviderListItem: React.FC<{
   provider: { id: string; name?: string };
   selectedProviderId: string;
-  sources?: ProviderSources;
   canDisconnect?: boolean;
   isDisconnecting?: boolean;
   isDisconnectPending?: boolean;
   onSelect: () => void;
   onDisconnect?: () => void;
-}> = ({ provider, selectedProviderId, sources, canDisconnect = false, isDisconnecting = false, isDisconnectPending = false, onSelect, onDisconnect }) => {
+}> = ({ provider, selectedProviderId, canDisconnect = false, isDisconnecting = false, isDisconnectPending = false, onSelect, onDisconnect }) => {
   const { t } = useI18n();
   const isSelected = provider.id === selectedProviderId;
-  const providerName = getProviderDisplayName(provider, sources);
+  const providerName = getProviderDisplayName(provider);
   const showDisconnect = canDisconnect && Boolean(onDisconnect);
 
   return (

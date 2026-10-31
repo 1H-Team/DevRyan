@@ -7,7 +7,7 @@
 
 import { buildResult } from '../utils/index.js';
 
-import * as claude from './claude.js';
+import * as claudeAgent from './claude-agent.js';
 import * as codex from './codex.js';
 import * as copilot from './copilot.js';
 import * as cursorAcp from './cursor-acp.js';
@@ -27,11 +27,11 @@ import * as minimaxCnCodingPlan from './minimax-cn-coding-plan.js';
 import * as ollamaCloud from './ollama-cloud.js';
 
 const registry = {
-  claude: {
-    providerId: claude.providerId,
-    providerName: claude.providerName,
-    isConfigured: claude.isConfigured,
-    fetchQuota: claude.fetchQuota
+  'claude-agent': {
+    providerId: claudeAgent.providerId,
+    providerName: claudeAgent.providerName,
+    isConfigured: claudeAgent.isConfigured,
+    fetchQuota: claudeAgent.fetchQuota
   },
   codex: {
     providerId: codex.providerId,
@@ -138,9 +138,10 @@ const registry = {
 };
 
 const providerAliases = new Map([
-  ['anthropic', 'claude'],
-  ['anthropic-oauth', 'claude'],
-  ['opencode-with-claude', 'claude'],
+  ['anthropic', 'claude-agent'],
+  ['claude', 'claude-agent'],
+  ['anthropic-oauth', 'claude-agent'],
+  ['opencode-with-claude', 'claude-agent'],
   ['zhipuai', 'zhipuai-coding-plan'],
   ['zhipu', 'zhipuai-coding-plan'],
   ['cursor', 'cursor-acp'],
@@ -195,7 +196,6 @@ export const fetchQuotaForProvider = async (providerId, options = {}) => {
   }
 };
 
-export const fetchClaudeQuota = claude.fetchQuota;
 export const fetchOpenaiQuota = openai.fetchQuota;
 export const fetchGoogleQuota = google.fetchGoogleQuota;
 export const fetchCodexQuota = codex.fetchQuota;

@@ -714,7 +714,7 @@ test('baseline and native candidate preserve only existing global skill data roo
   expect(sha256(await fs.readFile(f.seed.sourceLaunch.opencodeDatabasePath))).toBe(sourceDB);
 });
 
-test('fresh bundle creates parents for exact Meridian setup files in both prepared bundles',async()=>{
+test('fresh bundle relocates Meridian-era profiles but never copies the default Claude login or Meridian settings',async()=>{
   const f=await fixture(),home=f.seed.sourceLaunch.global.home;
   const settings=Buffer.from('{"activeProfile":"fixture-account"}\n');
   const credentials=Buffer.from('{"claudeAiOauth":{"accessToken":"fixture-only","expiresAt":1}}\n');
@@ -725,12 +725,12 @@ test('fresh bundle creates parents for exact Meridian setup files in both prepar
   const baseline=await f.store.prepare(f.baselineInput);
   const candidate=await f.store.prepare({...f.baselineInput,bundleID:'candidate',generation:2});
   for(const bundle of [baseline,candidate]){
-    expect(await fs.readFile(path.join(bundle.launch.global.home,'.config','meridian','settings.json'))).toEqual(settings);
-    expect(await fs.readFile(path.join(bundle.launch.global.home,'.claude','.credentials.json'))).toEqual(credentials);
+    // claude-agent runs the user's Claude Code with its own login in the user's home.
+    await expect(fs.stat(path.join(bundle.launch.global.home,'.config','meridian','settings.json'))).rejects.toMatchObject({code:'ENOENT'});
+    await expect(fs.stat(path.join(bundle.launch.global.home,'.claude','.credentials.json'))).rejects.toMatchObject({code:'ENOENT'});
     const [profile]=JSON.parse(await fs.readFile(path.join(bundle.launch.global.home,'.config','meridian','profiles.json'),'utf8'));
     expect(profile.id).toBe('fixture-account');expect(profile.claudeConfigDir.startsWith(bundle.launch.global.home+path.sep)).toBe(true);
     expect(await fs.readFile(path.join(profile.claudeConfigDir,'.credentials.json'))).toEqual(credentials);
-    expect((await fs.stat(path.join(bundle.launch.global.home,'.claude','.credentials.json'))).mode&0o777).toBe(0o600);
   }
   expect(await fs.readFile(path.join(home,'.config','meridian','settings.json'))).toEqual(settings);
   expect(await fs.readFile(path.join(home,'.claude','.credentials.json'))).toEqual(credentials);
@@ -1130,31 +1130,32 @@ const startupUpgradeFixture=async name=>{
  return {f,home,older,pinned,controlRoot,captures,credentialProcess,launch:(release,process=credentialProcess)=>launchPinned(f,home,release,process),
   binding:()=>readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot})};
 };
-test('cold owner upgrades the reviewed previous Claude asset while target verification stays current-only',async()=>{
- const {isReviewedPreviousClaudeAsset,REVIEWED_PREVIOUS_CLAUDE_ASSET}=await import('./native-artifacts.js');
- const {REVIEWED_CLAUDE_ASSETS}=await import('./reviewed-claude-transform.js');
+// Source and rollback verification accept installed bundles built by the previous Bun
+// pin; a new target and the current selection accept only the current pin.
+const PREVIOUS_BUNDLE_BUN='1.4.3';
+test('cold owner upgrades a bundle built by the previous Bun while target verification stays current-only',async()=>{
+ const {isAcceptedBundleBunVersion,NATIVE_BUNDLE_BUN_VERSION}=await import('./native-artifacts.js');
  const {provisionDefaultNativeBundle}=await import('./native-default-bundle.js');
  const {upgradeSelectedNativeBundleAtStartup}=await import('./native-bundle-startup-upgrade.js');
- const f=await fixture(),home=path.join(f.root,'claude-pin-home'),old=await pinnedRelease(f,TARGET_OPENCODE_VERSION);
- const target=path.join(f.root,'claude-current-target');await fs.cp(old,target,{recursive:true});
+ const f=await fixture(),home=path.join(f.root,'bun-pin-home'),old=await pinnedRelease(f,TARGET_OPENCODE_VERSION);
+ const target=path.join(f.root,'bun-current-target');await fs.cp(old,target,{recursive:true});
  const targetManifestPath=path.join(target,'native-bundle.json'),targetManifest=JSON.parse(await fs.readFile(targetManifestPath,'utf8'));
  targetManifest.fixtureHostUpdate=true;await fs.writeFile(targetManifestPath,JSON.stringify(targetManifest)+'\n');
- const writeClaude=async(directory,row)=>{
+ const writeBun=async(directory,version)=>{
   const file=path.join(directory,'native-bundle.json'),manifest=JSON.parse(await fs.readFile(file,'utf8'));
-  manifest.fixtureClaudeIdentity=row;
+  manifest.fixtureBunVersion=version;
   await fs.writeFile(file,JSON.stringify(manifest)+'\n');
  };
- const previous={role:'asset',...REVIEWED_PREVIOUS_CLAUDE_ASSET},current={role:'asset',...REVIEWED_CLAUDE_ASSETS.claude,size:217254576};
- await writeClaude(old,previous);await writeClaude(target,current);await fs.mkdir(home);
+ const previous=PREVIOUS_BUNDLE_BUN,current=NATIVE_BUNDLE_BUN_VERSION;expect(previous).not.toBe(current);
+ await writeBun(old,previous);await writeBun(target,current);await fs.mkdir(home);
  let previousApplication=true;const calls=[];
  // Real copied stores and selector; dummy executables retain the standard fixture seam.
  // The production source/target identity policy decides each artifact acceptance.
  const verifyArtifacts=async({manifestPath,manifestSha256,launcher,purpose})=>{
   const bytes=await fs.readFile(manifestPath),manifest=JSON.parse(bytes.toString('utf8')),directory=path.dirname(manifestPath);
   expect(sha256(bytes)).toBe(manifestSha256);
-  const asset=manifest.fixtureClaudeIdentity;calls.push({sha256:asset.sha256,purpose});
-  const isCurrent=['path','sha256','mode'].every(key=>asset[key]===current[key]);
-  if(!isCurrent&&!(previousApplication&&asset.sha256===previous.sha256)&&!isReviewedPreviousClaudeAsset(asset,purpose,'darwin','arm64'))
+  const version=manifest.fixtureBunVersion;calls.push({version,purpose});
+  if(version!==current&&!(previousApplication&&version===previous)&&!isAcceptedBundleBunVersion(version,purpose))
    throw Object.assign(Error('native_runtime_artifacts_unverified'),{code:'native_runtime_artifacts_unverified'});
   return {directory,manifestPath,manifestSha256,launcher,controller:path.join(directory,'DevRyan-controller'),writer:path.join(directory,'DevRyan-writer'),manifest};
  };
@@ -1169,11 +1170,11 @@ test('cold owner upgrades the reviewed previous Claude asset while target verifi
  await expect(verifyArtifacts({manifestPath:before.descriptor.launch.artifactManifestPath,manifestSha256:before.descriptor.launch.artifactManifestSha256,
   launcher:path.join(path.dirname(before.descriptor.launch.artifactManifestPath),'DevRyan-execution-darwin-arm64')})).rejects.toMatchObject({code:'native_runtime_artifacts_unverified'});
  // An old pin cannot masquerade as a new target, even though it is reviewed as a source.
- await writeClaude(target,previous);expect(await invoke()).toMatchObject({status:'failed'});
+ await writeBun(target,previous);expect(await invoke()).toMatchObject({status:'failed'});
  expect(readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot}).selection.revision).toBe(1);
- await writeClaude(target,{...current,sha256:'0'.repeat(64)});expect(await invoke()).toMatchObject({status:'failed'});
+ await writeBun(target,'1.4.5');expect(await invoke()).toMatchObject({status:'failed'});
  expect(readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot}).selection.revision).toBe(1);
- await writeClaude(target,current);expect(await invoke()).toMatchObject({status:'upgraded',mode:'rebind',revision:2});
+ await writeBun(target,current);expect(await invoke()).toMatchObject({status:'upgraded',mode:'rebind',revision:2});
  // The OpenCode core is unchanged, so the selected bundle keeps its data and only rebinds its artifacts.
  const after=readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot});
  expect(after.selection).toMatchObject({selectedBundleID:before.descriptor.bundleID,previousBundleID:before.selection.previousBundleID});
@@ -1181,15 +1182,14 @@ test('cold owner upgrades the reviewed previous Claude asset while target verifi
  expect(after.descriptor.launch.artifactManifestSha256).toBe(sha256(await fs.readFile(path.join(target,'native-bundle.json'))));
  const copied=resolveSqliteDriver().open(after.descriptor.launch.opencodeDatabasePath,{readonly:true});
  try{expect(copied.prepare('SELECT id FROM session_v2 ORDER BY id').all()).toEqual(sessions);}finally{copied.close();}
- expect(calls.some(call=>call.sha256===previous.sha256&&call.purpose==='bundle-source')).toBe(true);
- expect(calls.some(call=>call.sha256===current.sha256&&call.purpose===undefined)).toBe(true);
+ expect(calls.some(call=>call.version===previous&&call.purpose==='bundle-source')).toBe(true);
+ expect(calls.some(call=>call.version===current&&call.purpose===undefined)).toBe(true);
 },60_000);
-test('explicit rollback keeps the reviewed prior Claude purpose through final selector verification',async()=>{
- const {isReviewedPreviousClaudeAsset,REVIEWED_PREVIOUS_CLAUDE_ASSET}=await import('./native-artifacts.js');
+test('explicit rollback keeps the prior-Bun rollback purpose through final selector verification',async()=>{
+ const {isAcceptedBundleBunVersion}=await import('./native-artifacts.js');
  const f=await recoveryFixture(reconciledCredentials),priorWeb=path.join(f.controlRoot,'bundles','baseline','web-data');
- const previous={role:'asset',...REVIEWED_PREVIOUS_CLAUDE_ASSET};
  const scoped=createRuntimeBundleStore({...f.options,reconcileRollback:reconciledCredentials,verifyArtifacts:async input=>{
-  if(input.launch.webDataDirectory===priorWeb&&!isReviewedPreviousClaudeAsset(previous,input.purpose,'darwin','arm64'))
+  if(input.launch.webDataDirectory===priorWeb&&!isAcceptedBundleBunVersion(PREVIOUS_BUNDLE_BUN,input.purpose))
    throw Object.assign(Error('native_runtime_artifacts_unverified'),{code:'native_runtime_artifacts_unverified'});
   return f.verifyArtifacts(input);
  }});
@@ -1198,13 +1198,13 @@ test('explicit rollback keeps the reviewed prior Claude purpose through final se
  await expect(scoped.select({bundleID:'baseline',expectedRevision:3})).rejects.toMatchObject({code:'native_runtime_artifacts_unverified'});
  expect((await scoped.readSelected()).selection.revision).toBe(3);
 });
-test('resume cannot activate a retained previous-Claude candidate using source verification authority',async()=>{
- const {isReviewedPreviousClaudeAsset,REVIEWED_PREVIOUS_CLAUDE_ASSET}=await import('./native-artifacts.js');
+test('resume cannot activate a retained previous-Bun candidate using source verification authority',async()=>{
+ const {isAcceptedBundleBunVersion}=await import('./native-artifacts.js');
  const f=await recoveryFixture(async()=>({status:'blocked',reason:'bundle_credential_conflict'}));
  await f.store.rollback({targetBundleID:'baseline',expectedRevision:2});
- const previous={role:'asset',...REVIEWED_PREVIOUS_CLAUDE_ASSET},candidateWeb=f.candidate.launch.webDataDirectory;
+ const candidateWeb=f.candidate.launch.webDataDirectory;
  const scoped=createRuntimeBundleStore({...f.options,verifyArtifacts:async input=>{
-  if(input.launch.webDataDirectory===candidateWeb&&!isReviewedPreviousClaudeAsset(previous,input.purpose,'darwin','arm64'))
+  if(input.launch.webDataDirectory===candidateWeb&&!isAcceptedBundleBunVersion(PREVIOUS_BUNDLE_BUN,input.purpose))
    throw Object.assign(Error('native_runtime_artifacts_unverified'),{code:'native_runtime_artifacts_unverified'});
   return f.verifyArtifacts(input);
  }});
@@ -1733,24 +1733,14 @@ test('target with only historical native credential contract refuses new clone b
 });
 
 
-for (const changed of ['none', 'candidate', 'source', 'live-owner']) test(`cold Claude recovery requires untouched state and absent owners (${changed})`, async () => {
+test('selection writes no Claude activation intent and the store has no cold Claude restore',async()=>{
  const f=await fixture();
  await f.store.prepare(f.baselineInput); await f.store.select({bundleID:'baseline',expectedRevision:0});
- const candidate=await f.store.prepare({...f.baselineInput,bundleID:'claude-candidate',source:{kind:'bundle',bundleID:'baseline'}});
- await f.store.select({bundleID:'claude-candidate',expectedRevision:1,claudeUpdate:true});
- const sourceRoot=path.join(f.controlRoot,'bundles','baseline');
- if(changed==='candidate')await fs.writeFile(path.join(candidate.launch.webDataDirectory,'new-work.json'),'accepted work');
- if(changed==='source')await fs.writeFile(path.join(sourceRoot,'web-data','new-work.json'),'changed source');
- const owner=vi.fn(async()=>{if(changed==='live-owner')throw Object.assign(new Error(),{code:'bundle_upgrade_owner_active'});});
- const store=createRuntimeBundleStore({controlRoot:f.controlRoot,withQuiescedSource:f.withQuiescedSource,runMigration:f.runMigration,
-   verifyArtifacts:f.verifyArtifacts,captureCredentials,assertNoLiveOwner:owner});
- if(changed==='none') {
-   expect(await store.restoreUnstartedClaude()).toMatchObject({revision:3,selectedBundleID:'baseline',previousBundleID:null,transition:'rollback'});
-   expect(JSON.parse(await fs.readFile(path.join(f.controlRoot,'claude-activation.json'),'utf8')).state).toBe('restored');
- } else {
-   await expect(store.restoreUnstartedClaude()).rejects.toThrow();
-   expect((await store.readSelected()).selection).toMatchObject({revision:2,selectedBundleID:'claude-candidate'});
- }
+ await f.store.prepare({...f.baselineInput,bundleID:'candidate',source:{kind:'bundle',bundleID:'baseline'}});
+ // A caller still passing the retired Claude-update flag gets an ordinary activation.
+ expect(await f.store.select({bundleID:'candidate',expectedRevision:1,claudeUpdate:true})).toMatchObject({revision:2,selectedBundleID:'candidate',transition:'activate'});
+ await expect(fs.lstat(path.join(f.controlRoot,'claude-activation.json'))).rejects.toMatchObject({code:'ENOENT'});
+ expect(f.store).not.toHaveProperty('restoreUnstartedClaude');
 });
 
 test('a verified clone supplies immutable proof for adopting an inherited preparing deletion',async()=>{

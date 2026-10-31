@@ -33,7 +33,7 @@ export const sortUsageEntries = (
   providerId: string,
   entries: RateLimitGroup['entries'],
 ): RateLimitGroup['entries'] => {
-  if (providerId !== 'claude') {
+  if (providerId !== 'claude-agent') {
     return entries;
   }
 
