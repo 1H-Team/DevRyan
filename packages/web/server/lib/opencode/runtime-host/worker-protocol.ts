@@ -49,10 +49,12 @@ export const NativeResult = Schema.Struct({ output: Schema.optional(Schema.Unkno
   content: Schema.optional(Schema.Union([Schema.String, Schema.Array(Tool.Content)])), metadata: Schema.optional(Metadata) });
 // Host refusals whose message is guidance for the model: a server that shows
 // old code, a background shell in a delegated task, verification before an
-// edit is published. The controller keeps their message; any other host error
-// reaches it as its code only.
+// edit is published, a tool Plan mode cannot run, a plan read with no plan
+// selected or assigned, and todos closed before required checks. The
+// controller keeps their message; any other host error reaches it as its code only.
 export const MODEL_FACING_REFUSALS: ReadonlySet<string> = new Set(['preview_stale', 'native_shell_background_unavailable',
-  'native_verification_publication_pending']);
+  'native_verification_publication_pending', 'native_plan_write_denied', 'plan_selection_required', 'plan_assignment_missing',
+  'required_verification_pending']);
 export const modelFacingRefusal = (error: unknown): { readonly code: string; readonly message: string } | undefined => {
   if (error === null || typeof error !== 'object') return undefined;
   const code: unknown = Reflect.get(error, 'code'), message: unknown = Reflect.get(error, 'message');

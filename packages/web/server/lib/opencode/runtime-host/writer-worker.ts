@@ -54,7 +54,7 @@ export function acquireWriterRegistry(request: WorkerInput, permissions: Permiss
       Effect.gen(function* () { const service = yield* Plugin.Service; plugins = service; return service; })).pipe(Layer.provide(layer))));
     const directory = Schema.decodeUnknownSync(AbsolutePath)(request.directory);
     const projectDirectory = Schema.decodeUnknownSync(AbsolutePath)(request.projectDirectory);
-    const guardTarget = createNativeReadGuard({ directory: request.projectDirectory, protectedRoots: [request.scratchDirectory] });
+    const guardTarget = createNativeReadGuard({ directory: request.projectDirectory, protectedRoots: [request.scratchDirectory] }, 'tool.write');
     const fileAccess = FileAccess.node.replace(FileAccess.node.mapLayer((layer) => Layer.effect(FileAccess.Service,
       Effect.gen(function* () {
         const inner = yield* FileAccess.Service;

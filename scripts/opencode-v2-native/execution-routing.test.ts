@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { expect, test } from 'bun:test';
 import { Location } from '@opencode/core/location';
 import { Shell } from '@opencode/core/shell';
@@ -19,6 +20,9 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { spawnSync } from 'node:child_process';
+import { FileAccess } from '@opencode/core/file-access';
+import { Permission } from '@opencode/core/permission';
+import { createRemoteNativeAdmissionBridge } from '../../packages/web/server/lib/opencode/runtime-host/native-admission-bridge.ts';
 import { createNativeReadGuard } from '../../packages/web/server/lib/opencode/runtime-host/execution-read-guard.ts';
 import { captureReviewedSkill } from '../../packages/web/server/lib/opencode/runtime-host/reviewed-skills.js';
 
@@ -225,6 +229,54 @@ test('native read guard resolves symlinks and rejects external/protected/Git tar
       await expect(guard(target)).rejects.toMatchObject({ code: 'native_read_root_denied' });
     }
   } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test('native read guard opens a read root nested in a protected root and labels write refusals', async () => {
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-read-guard-carve-')));
+  try {
+    const project = path.join(root, 'project'), tmp = path.join(root, 'global-tmp'), webfetch = path.join(tmp, 'devryan-webfetch', 'digest');
+    await Promise.all([fs.mkdir(project), fs.mkdir(webfetch, { recursive: true })]);
+    await fs.writeFile(path.join(webfetch, 'page.pdf'), 'binary');
+    await fs.writeFile(path.join(tmp, 'other.txt'), 'other');
+    const guard = createNativeReadGuard({ directory: project, readRoots: [project, webfetch], protectedRoots: [tmp] });
+    await guard(path.join(webfetch, 'page.pdf'));
+    await expect(guard(path.join(tmp, 'other.txt'))).rejects.toMatchObject({ code: 'native_read_root_denied', operation: 'tool.read',
+      message: expect.stringContaining('read workspace files by their project path') });
+    await expect(createNativeReadGuard({ directory: project }, 'tool.write')(path.join(tmp, 'script.mjs'))).rejects.toMatchObject({
+      code: 'native_read_root_denied', operation: 'tool.write',
+      message: expect.stringMatching(/^DevRyan refused tool\.write: native_read_root_denied\. .*\$DEVRYAN_SESSION_TMP/) });
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test('native read maps a shell view path to the project file it mirrors before authorizing it', async () => {
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-view-read-')));
+  const project = path.join(root, 'project'), ledger = path.join(root, 'data', 'harness', 'session-mutations');
+  const view = path.join(ledger, createHash('sha256').update(project).digest('hex'), 'views', 'token', 'worktree');
+  await Promise.all([fs.mkdir(path.join(project, '.artifacts', 'visual'), { recursive: true }), fs.mkdir(view, { recursive: true })]);
+  await fs.writeFile(path.join(project, '.artifacts', 'visual', 'page.png'), 'png');
+  const routing = createExecutionRouting({ directory: project, protectedRoots: [path.join(root, 'data')], bridge,
+    rpc: async method => method.endsWith('direct-admit') ? { token: 'fixture', generation: 1 } : {} });
+  try {
+    const location = Schema.decodeUnknownSync(Location.Info)({ directory: project, project: { id: 'global', directory: project, canonical: project } });
+    const asserted: string[] = [];
+    const permission = Permission.node.replace(Permission.node.mapLayer(layer => Layer.effect(Permission.Service, Effect.gen(function* () {
+      const inner = yield* Permission.Service;
+      return { ...inner, assert: (input: Permission.AssertInput) => { asserted.push(input.action); return Effect.void; } };
+    })).pipe(Layer.provide(layer))));
+    const layer = LayerNode.compile(FileAccess.node, { replacements: [...routing.overrides, permission,
+      Location.node.replace(Layer.succeed(Location.Service, location))] });
+    const authorize = (target: string) => Effect.runPromise(routing.executeOwned({ ...invocation('read'), location, input: { path: target },
+      executeNative: () => Effect.gen(function* () {
+        const target_ = yield* (yield* FileAccess.Service).authorizeRead(target, context);
+        return { content: target_.absolute };
+      }).pipe(Effect.provide(layer), Effect.mapError(error => new Tool.Error({ message: error._tag }))) }));
+    expect((await authorize(path.join(view, '.artifacts', 'visual', 'page.png'))).content).toBe(path.join(project, '.artifacts', 'visual', 'page.png'));
+    // The mapped target is inside the project, so no external-directory approval is requested.
+    expect(asserted).toEqual(['read']);
+    // A view of a repository other than this location's stays a protected data path.
+    const foreign = path.join(ledger, 'f'.repeat(64), 'views', 'token', 'worktree', 'page.png');
+    await expect(authorize(foreign)).rejects.toThrow('native_read_root_denied');
+  } finally { await routing.close(); await fs.rm(root, { recursive: true, force: true }); }
 });
 
 test('explicit native instruction loading cannot import symlinked or unreviewed AGENTS files', async () => {
@@ -440,6 +492,29 @@ test('the actual native ripgrep consumer accepts a bounded match without end or 
 });
 
 
+test('a failed native read stream reports its own failure, not a generic execution failure', async () => {
+  const project = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-grep-failure-')));
+  const routing = createExecutionRouting({ directory: project, bridge, rpc: async (method, params) => {
+    if (method.endsWith('direct-admit')) return { token: 'fixture', generation: 2 };
+    if (method.endsWith('.start')) return { handle: 'failure-handle' };
+    // A truncated settlement without its truncation record is malformed.
+    if (method.endsWith('.read') && params.cursor === 0) return { cursor: 2, done: true, events: [{ cursor: 1, type: 'started', pid: 42 },
+      { cursor: 2, type: 'settled', ok: true, receipt: { terminated: true, confined: true, cancelled: false, exitCode: 0 }, truncated: true }] };
+    if (method.endsWith('.read')) return { cursor: 2, done: true, events: [] };
+    return {};
+  } });
+  try {
+    const location = Schema.decodeUnknownSync(Location.Info)({ directory: project, project: { id: 'global', directory: project, canonical: project } });
+    const layer = LayerNode.compile(Ripgrep.node, { replacements: [...routing.overrides, Location.node.replace(Layer.succeed(Location.Service, location))] });
+    const call = { ...invocation('grep'), location, input: { pattern: 'needle' }, executeNative: () => Effect.gen(function* () {
+      return { output: yield* (yield* Ripgrep.Service).grep({ cwd: project, pattern: 'needle', limit: 200 }), content: 'unreachable' };
+    }).pipe(Effect.provide(layer), Effect.mapError(error => new Tool.Error({ message: `${String(error)} ${String(Reflect.get(error, 'cause') ?? '')}` }))) };
+    const error = await Effect.runPromise(Effect.flip(routing.executeOwned(call)));
+    expect(error.message).toContain('native_search_truncation_invalid');
+    expect(error.message).not.toContain('native_execution_failed');
+  } finally { await routing.close(); await fs.rm(project, { recursive: true, force: true }); }
+});
+
 test('worker permission assertions validate the native request fields and optional identities', () => {
   const input = { sessionID: 'ses_permission', action: 'read', resources: ['/fixture/file'],
     save: ['/fixture/*'], metadata: { reason: 'fixture' }, source: { type: 'tool', messageID: 'msg_fixture', id: 'call_fixture' },
@@ -539,6 +614,21 @@ test('only listed host refusals keep their message for the model', () => {
   expect(modelFacingRefusal(refusal('preview_stale', 'x'.repeat(2049)))).toBeUndefined();
   expect(modelFacingRefusal({ code: 'preview_stale', message: '' })).toBeUndefined();
   expect(modelFacingRefusal('preview_stale')).toBeUndefined();
+  for (const code of ['native_plan_write_denied', 'plan_selection_required', 'plan_assignment_missing', 'required_verification_pending']) {
+    expect(modelFacingRefusal(refusal(code, `${code}: guidance`))).toEqual({ code, message: `${code}: guidance` });
+  }
+});
+
+test('admission refusals keep model-facing guidance and drop any other host detail', async () => {
+  const rejecting = (error: Error) => createRemoteNativeAdmissionBridge({ rpc: async () => { throw error; } });
+  const denied = Object.assign(new Error('native_plan_write_denied: Plan mode cannot run devryan_browser. Inspect with read.'),
+    { code: 'native_plan_write_denied', status: 403 });
+  await expect(rejecting(denied).authorize({ operation: 'tool.execute', sessionID: 'ses_fixture', messageID: 'msg_fixture', input: {} }))
+    .rejects.toMatchObject({ code: 'native_plan_write_denied', status: 403,
+      message: 'DevRyan refused native.admission.authorize: native_plan_write_denied. Plan mode cannot run devryan_browser. Inspect with read.' });
+  const internal = Object.assign(new Error('/private/path detail'), { code: 'native_permit_revoked', status: 409 });
+  await expect(rejecting(internal).authorize({ operation: 'tool.execute', sessionID: 'ses_fixture', messageID: 'msg_fixture', input: {} }))
+    .rejects.toMatchObject({ code: 'native_permit_revoked', message: 'DevRyan refused native.admission.authorize: native_permit_revoked' });
 });
 
 // The native shell tool replaces any failure with `Unable to execute command`;

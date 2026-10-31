@@ -2,12 +2,26 @@ import { Config } from '@opencode/core/config';
 import { Location } from '@opencode/core/location';
 import { ConfigPluginSource } from '@opencode/core/config/plugin/source';
 import { InstructionDiscovery } from '@opencode/core/instruction-discovery';
+import { InstructionBuiltIns } from '@opencode/core/instructions/builtins';
+import type { Instructions } from '@opencode/core/instructions/index';
 import { Config as ConfigSchema } from '@opencode/schema/config';
 import type { LayerNode } from '@opencode/util/effect/layer-node';
 import { makeLocationNode } from '@opencode/util/effect/app-node';
 import { Effect, Layer, Schema, Stream } from 'effect';
 import type { NativeConfigurationSnapshot } from './native-configuration-snapshot.js';
 import { decodeNativeConfigurationSnapshot } from './native-configuration.js';
+
+// OpenCode's environment instruction tells the model to prefer global.tmp,
+// which DevRyan protects; following it made every file-tool write there fail.
+const GLOBAL_TMP_ADVICE = /^[ \t]*Prefer .* over generic system temporary directories[^\n]*$/m;
+export const DEVRYAN_SCRATCH_ADVICE = '  Scratch files: use the shell\'s $DEVRYAN_SESSION_TMP (kept for the session) or $TMPDIR (per call). Both are shell-only; file tools read and write only inside the workspace.';
+export const rewriteEnvironmentInstructions = (sources: Instructions.List): Instructions.List => sources.map(source => String(source.key) !== 'core/environment' ? source
+  : { ...source, read: source.read.pipe(Effect.map(value => typeof value === 'string' ? value.replace(GLOBAL_TMP_ADVICE, DEVRYAN_SCRATCH_ADVICE) : value)) });
+const environmentInstructions = InstructionBuiltIns.node.replace(InstructionBuiltIns.node.mapLayer(layer => Layer.effect(InstructionBuiltIns.Service,
+  Effect.gen(function* () {
+    const inner = yield* InstructionBuiltIns.Service;
+    return InstructionBuiltIns.Service.of({ load: () => inner.load().pipe(Effect.map(rewriteEnvironmentInstructions)) });
+  })).pipe(Layer.provide(layer))));
 
 /** Configuration is an explicit document, never a search of HOME or ancestors. */
 export function configurationOverrides(input: unknown): LayerNode.Replacements {
@@ -33,6 +47,7 @@ export function configurationOverrides(input: unknown): LayerNode.Replacements {
     Config.node.replace(Layer.succeed(Config.Service, service)),
     ConfigPluginSource.node.replace(ConfigPluginSource.empty),
     InstructionDiscovery.node.replace(InstructionDiscovery.configured({ project: false, global: false })),
+    environmentInstructions,
   ];
 }
 
@@ -57,5 +72,5 @@ export function configurationOverridesForSnapshot(snapshot: NativeConfigurationS
   }));
   const provider = makeLocationNode({ service: Config.Service, layer: service, deps: [Location.node] });
   return [Config.node.replace(provider), ConfigPluginSource.node.replace(ConfigPluginSource.empty),
-    InstructionDiscovery.node.replace(InstructionDiscovery.configured({ project: false, global: false }))];
+    InstructionDiscovery.node.replace(InstructionDiscovery.configured({ project: false, global: false })), environmentInstructions];
 }

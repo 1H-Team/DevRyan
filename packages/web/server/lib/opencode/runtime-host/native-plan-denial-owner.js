@@ -1,5 +1,9 @@
 import { toV1ToolName } from '../v2/projection/tools.js';
 const fail = () => Object.assign(Error('native_plan_denial_unproved'), { code: 'native_plan_denial_unproved', statusCode: 409 });
+// Plan turns are read-only; say so, so the model changes approach instead of retrying.
+export const planWriteDenied = (tool) => Object.assign(Error('native_plan_write_denied'), { code: 'native_plan_write_denied', status: 403, statusCode: 403,
+  message: `native_plan_write_denied: Plan mode cannot run ${typeof tool === 'string' && tool ? tool : 'this tool'}. `
+    + 'Inspect with read, glob, grep, webfetch or the read-only shell, and list any check that needs it under the plan\'s Verification.' });
 const identifier = value => typeof value === 'string' && /^[A-Za-z0-9_:/.-]{1,256}$/.test(value);
 
 /** Called only after constructor-owned initial admission has rejected a writer.

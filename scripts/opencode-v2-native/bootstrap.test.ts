@@ -5,7 +5,18 @@ import { Config } from '@opencode/core/config';
 import { ConfigPluginSource } from '@opencode/core/config/plugin/source';
 import { AppProcess } from '@opencode/util/process';
 import { LayerNode } from '@opencode/util/effect/layer-node';
-import { configurationOverrides } from '../../packages/web/server/lib/opencode/runtime-host/configuration.js';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { Layer, Schema } from 'effect';
+import { AbsolutePath } from '@opencode/core/schema';
+import { InstructionBuiltIns } from '@opencode/core/instructions/builtins';
+import { Instructions } from '@opencode/core/instructions/index';
+import { Location } from '@opencode/core/location';
+import { Project } from '@opencode/core/project';
+import { Global } from '@opencode/util/global';
+import { configurationOverrides, DEVRYAN_SCRATCH_ADVICE } from '../../packages/web/server/lib/opencode/runtime-host/configuration.js';
 import { controllerProcessOverrides } from '../../packages/web/server/lib/opencode/runtime-host/controller-processes.js';
 import { nativeHostAuthorized } from '../../packages/web/server/lib/opencode/runtime-host/bootstrap.js';
 import { runWithHostRefusal } from '../../packages/web/server/lib/opencode/runtime-host/host-refusal.js';
@@ -28,6 +39,35 @@ test('native configuration has no filesystem discovery and preserves explicit fo
   expect(Config.latest(actual.entries, 'snapshots')).toBe(false);
   expect(Config.latest(actual.entries, 'warming')).toBe(false);
   expect(Config.latest(actual.entries, 'formatter')).toEqual({ fixture: { command: ['fixture-format', '$FILE'], extensions: ['.txt'] } });
+});
+
+test('native environment instruction names shell scratch instead of the protected global tmp', async () => {
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-environment-')));
+  try {
+  const at = (name: string) => path.join(root, name), tmp = at('tmp'), directory = Schema.decodeUnknownSync(AbsolutePath)('/fixture/project');
+  const global = Global.node.replace(Global.layerWith({ home: at('home'), data: at('data'), cache: at('cache'),
+    config: at('config'), state: at('state'), tmp, bin: at('bin'), log: at('log'), repos: at('repos') }));
+  const location = Location.node.replace(Layer.succeed(Location.Service,
+    new Location.Info({ directory, project: { id: Project.ID.global, directory, canonical: directory } })));
+  const layer = LayerNode.compile(InstructionBuiltIns.node, { replacements: [...configurationOverrides({}), global, location] });
+  const values = await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    return yield* Instructions.read(yield* (yield* InstructionBuiltIns.Service).load());
+  }).pipe(Effect.provide(layer))));
+  const environment = values.find(value => String(value.key) === 'core/environment')?.value;
+  expect(typeof environment).toBe('string');
+  expect(environment).toContain(DEVRYAN_SCRATCH_ADVICE);
+  expect(environment).toContain(`Working directory: ${directory}`);
+  expect(environment).not.toContain(tmp);
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test('installed OpenCode still emits the global tmp advice the environment override replaces', async () => {
+  // A changed sentence would let the advice through again: update GLOBAL_TMP_ADVICE in configuration.ts.
+  const entry = fileURLToPath(import.meta.resolve('@opencode/core/instructions/builtins'));
+  const chunk = /from "(\.\.\/chunks\/[^"]+)"/.exec(await fs.readFile(entry, 'utf8'))?.[1];
+  expect(chunk).toBeDefined();
+  expect(await fs.readFile(path.resolve(path.dirname(entry), chunk ?? ''), 'utf8'))
+    .toMatch(/`  Prefer \$\{global\.tmp\} over generic system temporary directories/);
 });
 
 test('native configuration refuses unreviewed discovery, MCP and competing file snapshots', () => {

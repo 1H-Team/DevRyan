@@ -31,6 +31,7 @@ Each section names its owner. Resolve every `action`; decide every `review`.
 | HTTP routes | Classify every added route in `v2/route-policy.js` (deny unless DevRyan needs it), add it to the independent rules in `route-policy.test.js`, set `OPENCODE_V2_OPENAPI_VERSION`, and run `node scripts/generate-opencode-v2-routes.mjs`. |
 | Native plugin IDs | Update `native-plugin-registry.ts`. Compare `plugin/internal.js` pre/post order by hand. |
 | Git reads outside the controller policy | Only read-only commands that reach the controller helper belong in `execution-helper-policy.js`; keep the previous forms for retained bundles. |
+| Built-in instruction text | `bootstrap.test.ts` checks that core's `core/environment` instruction still carries the `global.tmp` advice `configuration.ts` replaces. If it fails, update `GLOBAL_TMP_ADVICE` to the new sentence (or drop the override if core no longer points the model at a protected folder). |
 | Literal version occurrences | Retained-version lists (provider recovery, clone tables, migration receipts) keep the old version and add the new one; current-pin fixtures move to the candidate. |
 
 Then set `TARGET_OPENCODE_VERSION` (`version-policy.js`) and the compiled pins in

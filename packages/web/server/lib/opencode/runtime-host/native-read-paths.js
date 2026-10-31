@@ -25,8 +25,11 @@ export function createNativeReadGuard(options) {
     const canonical = await canonicalTarget(lexical);
     const roots = await Promise.all((options.readRoots ?? [options.directory]).map(root => canonicalTarget(path.resolve(root))));
     const protectedRoots = await Promise.all((options.protectedRoots ?? []).map(root => canonicalTarget(path.resolve(root))));
+    // A read root nested inside a protected root (the webfetch binary folder
+    // under global/tmp) opens only its own subtree.
+    const carved = (protectedRoot) => roots.some(root => root !== protectedRoot && within(protectedRoot, root) && within(root, canonical));
     if (metadata(lexical) || metadata(canonical) || !roots.some(root => within(root, canonical))
-      || protectedRoots.some(root => within(root, lexical) || within(root, canonical))) {
+      || protectedRoots.some(root => (within(root, lexical) || within(root, canonical)) && !carved(root))) {
       throw denied();
     }
   };

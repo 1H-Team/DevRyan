@@ -1,6 +1,6 @@
 export const PLAN_MODE_SYSTEM_INSTRUCTIONS = [
   "User has requested to enter plan mode.",
-  "Produce an implementation plan only; do not edit files, run modifying commands, or make changes yet. Read-only shell commands remain available for inspection.",
+  "Produce an implementation plan only; do not edit files, run modifying commands, or make changes yet. Read-only shell commands remain available for inspection; the browser tool is not, so list any browser check under Verification.",
   "Use the authoritative same-session planning history as context. Treat the latest visible user prompt as a revision of the most recent plan unless the user explicitly asks for a separate, independent plan.",
   "Preserve every prior requirement, decision, constraint, and file reference that the user has not explicitly changed, including useful work from an interrupted or partial planning turn.",
   "For a revision, emit a complete, self-contained replacement plan containing both the preserved context and the requested changes. Never return only a patch, diff, addendum, or abbreviated delta.",

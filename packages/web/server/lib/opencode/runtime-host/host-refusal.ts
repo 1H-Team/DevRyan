@@ -5,8 +5,8 @@ import { Effect } from 'effect';
 export class HostRefusal extends Error {
   readonly name = 'HostRefusal';
   constructor(readonly code: string, readonly status: 403 | 409 | 503,
-    readonly operation: string, readonly sessionID?: string) {
-    super(`DevRyan refused ${operation}: ${code}`);
+    readonly operation: string, readonly sessionID?: string, guidance?: string) {
+    super(`DevRyan refused ${operation}: ${code}${guidance ? `. ${guidance}` : ''}`);
   }
 }
 const requests = new AsyncLocalStorage<{ refusal?: HostRefusal }>();

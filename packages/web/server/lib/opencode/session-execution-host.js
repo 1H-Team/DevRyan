@@ -26,6 +26,7 @@ import { resolveControllerGitCommand } from './execution-helper-command.js';
 import { executeNativeContextAssets } from './runtime-host/native-context-assets.js';
 import { executeNativeInterviewDocument } from './runtime-host/native-interview-document.js';
 import { canonicalTarget } from './runtime-host/native-read-paths.js';
+import { planWriteDenied } from './runtime-host/native-plan-denial-owner.js';
 import { createCursorExecutionReceipts } from './cursor-execution-receipts.js';
 import { createNativeSearchOutput } from './native-search-output.js';
 import {projectNativeMutationResult} from './native-mutation-result.js';
@@ -584,7 +585,7 @@ export function createSessionExecutionHost(options) {
     if (input.kind === 'read' && (!['glob', 'grep'].includes(input.tool) || !['rg', 'rg.exe'].includes(path.basename(input.command ?? '')))) throw failure('native_execution_input_invalid', 400);
     if (input.kind === 'writer' && (!path.isAbsolute(nativeOptions.workerCommand ?? '') || !Array.isArray(nativeOptions.workerArgs))) throw failure('native_writer_unavailable', 503);
     const readOnly = await nativeOptions.readOnlyInvocation?.(input) === true;
-    if (readOnly && (input.kind === 'writer'||hostOperation)) throw failure('native_plan_write_denied', 403);
+    if (readOnly && (input.kind === 'writer'||hostOperation)) throw planWriteDenied(input.tool);
     const current = await session(input);
     const record = await readMessage(input.sessionID, input.messageID, input.directory);
     const call = record?.parts?.find((part) => part.type === 'tool' && part.callID === input.callID);
@@ -611,7 +612,10 @@ export function createSessionExecutionHost(options) {
       const protectedRoots = await Promise.all((location?.protectedRoots ?? nativeOptions.protectedRoots ?? []).map(root => canonicalTarget(path.resolve(root))));
       const within = (root) => readDirectory === root || readDirectory.startsWith(`${root}${path.sep}`);
       const containsProtected = protectedRoots.some(root => root.startsWith(`${readDirectory}${path.sep}`));
-      if (readDirectory.split(path.sep).some(component => component.toLowerCase() === '.git') || !readRoots.some(within) || protectedRoots.some(within) || containsProtected) throw failure('native_read_root_denied', 403);
+      // As in the controller guard, a read root nested in a protected root (the webfetch folder in global/tmp) opens only its subtree.
+      const carved = (protectedRoot) => readRoots.some(root => root.startsWith(`${protectedRoot}${path.sep}`) && within(root));
+      if (readDirectory.split(path.sep).some(component => component.toLowerCase() === '.git') || !readRoots.some(within)
+        || protectedRoots.some(root => within(root) && !carved(root)) || containsProtected) throw failure('native_read_root_denied', 403);
       const readArgs = guardedNativeReadArgs(input.tool, input.args, { projectDirectory: await fs.realpath(input.directory), readDirectory });
       const controller = new AbortController();
       const searchLimit = new AbortController();

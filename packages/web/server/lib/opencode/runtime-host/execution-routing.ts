@@ -8,12 +8,12 @@ import { FileAccess } from '@opencode/core/file-access';
 import { SessionInstructions } from '@opencode/core/session/instructions';
 import type { LayerNode } from '@opencode/util/effect/layer-node';
 import { Cause, Context, Deferred, Effect, Exit, Layer, Queue, Schema, Sink, Stream } from 'effect';
-import { systemError } from 'effect/PlatformError';
+import { isPlatformError, systemError } from 'effect/PlatformError';
 import { make as makeSpawner, makeHandle, ProcessId, ExitCode } from 'effect/process/ChildProcessSpawner';
 import type { NativeAdmissionBridge, ExecuteOwned, OwnedToolInvocation } from './native-admission-contract.js';
 import { ExecutionBatch, PlanReadAdvisory, StartResult, modelFacingRefusal } from './worker-protocol.js';
 import type { ExecutionRpc, ExecutionSpecification } from './worker-protocol.js';
-import { createNativeReadGuard } from './execution-read-guard.js';
+import { createNativeReadGuard, projectPathForView } from './execution-read-guard.js';
 import { HostRefusal, refuseHost } from './host-refusal.js';
 import { lookupReviewedSkillResourcePath, readReviewedSkillResource, type SkillResourceSnapshot } from './reviewed-skills.js';
 import type { RegistrationOrigin } from './registration-origin.js';
@@ -281,9 +281,12 @@ export function createExecutionRouting(options: { readonly rpc: ExecutionRpc; re
     Effect.gen(function* () {
       const inner = yield* FileAccess.Service;
       return FileAccess.Service.of({ ...inner,
-        authorizeRead: (file, context, settings) => inner.authorizeRead(file, context, settings).pipe(
-          Effect.tap(target => Effect.gen(function* () { const invocation = yield* TrustedToolInvocationRef;
-            yield* authorizeRead(target.absolute, invocation?.location.directory ?? options.directory, invocation); }))),
+        authorizeRead: (file, context, settings) => Effect.gen(function* () {
+          const invocation = yield* TrustedToolInvocationRef, directory = invocation?.location.directory ?? options.directory;
+          const target = yield* inner.authorizeRead(projectPathForView(file, directory), context, settings);
+          yield* authorizeRead(target.absolute, directory, invocation);
+          return target;
+        }),
         authorizeExternal: (targets, context, metadata) => inner.authorizeExternal(targets, context, metadata).pipe(
           Effect.andThen(Effect.gen(function* () {
             const invocation = yield* TrustedToolInvocationRef;
@@ -408,7 +411,9 @@ export function createExecutionRouting(options: { readonly rpc: ExecutionRpc; re
           const settlement = shellSettlements.get(callKey(ticket.invocation));
           if (!readOnly && settlement && (settlement.state === 'pending' || settlement.state === 'settled' && settlement.ok))
             shellSettlements.set(callKey(ticket.invocation), { state: 'uncertain', code: 'native_execution_result_unavailable' });
-          const error = platformFailure(cause); yield* Queue.fail(output, error); if (errors) yield* Queue.fail(errors, error);
+          // Keep the pump's own failure (overflow, missing result, the settled error); a Cause is not an Error.
+          const failure = Cause.squash(cause), error = isPlatformError(failure) ? failure : platformFailure(failure);
+          yield* Queue.fail(output, error); if (errors) yield* Queue.fail(errors, error);
           yield* Deferred.fail(started, error); yield* Deferred.fail(exit, error);
           yield* Effect.promise(() => cancel(handle));
         })), Effect.ensuring(Effect.sync(() => { done = true; completion.resolve(); handles.delete(handle); })));

@@ -546,6 +546,26 @@ is created on first use). The host resolves them with `canonicalTarget` from
 `native-read-paths.js`, as the controller read guard does: a missing root
 canonicalizes through its nearest existing parent, so a missing protected root
 still protects its location. The working directory itself must exist.
+A read root nested inside a protected root opens only its own subtree: the
+webfetch binary folder stays readable although `global/tmp` is protected. The
+controller guard (`native-read-paths.js`) and this host check apply the same rule.
+
+### File-tool boundaries
+
+- `execution-read-guard.ts` labels a refusal with the operation that asked:
+  `tool.read` for reads, `tool.write` for the writer worker's write, edit and
+  patch targets. Both add one line of guidance (read by project path; write
+  scratch from the shell under `$DEVRYAN_SESSION_TMP` or `$TMPDIR`).
+- A writable shell's `$PWD` is the call's view,
+  `<ledger>/<sha256(repository)>/views/<token>/worktree`, so script output names
+  view paths. The controller's `FileAccess.authorizeRead` maps such a path to the
+  project file it mirrors (`projectPathForView`) before OpenCode resolves it, when
+  the hash matches the location directory or one of its parents; the read guard
+  then decides on the project path. Other view paths stay protected data paths.
+- OpenCode's `core/environment` instruction advises preferring `global.tmp`,
+  which DevRyan protects. `configuration.ts` replaces that line with the shell
+  scratch rule; `bootstrap.test.ts` fails if an OpenCode upgrade changes the
+  sentence it replaces.
 
 The read handle keeps the supervisor's stdout and stderr apart, because core
 parses ripgrep's `--json` stdout line by line. Shell handles stay merged.
@@ -1482,11 +1502,18 @@ folders in `publication.ignoredInputs` and a notice that what it wrote inside
 them was dropped; a check that needed that output stays incomplete.
 A host error reaches the controller as its code only, except the refusals in
 `MODEL_FACING_REFUSALS` (`worker-protocol.ts`: `preview_stale`,
-`native_shell_background_unavailable`, `native_verification_publication_pending`),
-whose message is guidance for the model (at most 2 KiB). The controller's RPC
-client keeps that message, and when one refuses a shell's start the shell
-route returns it with its code in place of the native tool's generic
-`Unable to execute command`, which drops the cause.
+`native_shell_background_unavailable`, `native_verification_publication_pending`,
+`native_plan_write_denied`, `plan_selection_required`, `plan_assignment_missing`,
+`required_verification_pending`), whose message is guidance for the model
+(at most 2 KiB, written `<code>: <guidance>`). The controller's RPC client keeps
+that message; `native-admission-bridge.ts` appends it to the admission refusal
+(`DevRyan refused native.admission.<op>: <code>. <guidance>`), managed-task and
+todo tools return it as the tool error, and when one refuses a shell's start the
+shell route returns it with its code in place of the native tool's generic
+`Unable to execute command`, which drops the cause. A failure inside the
+execution pump keeps its own platform error (`native_output_overflow`,
+`native_execution_result_missing`, `native_search_truncation_invalid`, the
+settled error) instead of collapsing to `native_execution_failed`.
 Stop, publication and cleanup remain owned by the execution host. A background
 shell completion whose lease a user Stop cancelled (`stoppedBy: 'operator'`), or
 that the orchestrator stopped because its task attempt settled

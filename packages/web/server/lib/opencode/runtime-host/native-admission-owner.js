@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs/promises';
 import {recoveredInputHash} from './native-recovered-input-hash.js';
+import { planWriteDenied } from './native-plan-denial-owner.js';
 import {nativeShellCompletionFingerprint} from './native-shell-completion.js';
 import {buildV2PromptContent} from '../v2/admission.js';
 
@@ -514,7 +515,7 @@ export function createNativeAdmissionOwner(options) {
   };
   const planPolicy = async (request, session) => {
     const policy = await readPlanPolicy(request, session);
-    if (blockedPlanWriter(request, policy)) throw fail('native_plan_write_denied', 403);
+    if (blockedPlanWriter(request, policy)) throw planWriteDenied(request.input?.nativeToolID ?? request.input?.toolID);
     return policy;
   };
   const issue = async (request, accepted) => {
@@ -560,7 +561,7 @@ export function createNativeAdmissionOwner(options) {
           if (controllerReplacement) throw fail('native_controller_replacing', 503);
         } }));
       }
-      throw fail('native_plan_write_denied', 403);
+      throw planWriteDenied(request.input?.nativeToolID ?? request.input?.toolID);
     }
     assertController();
     const permit = Object.freeze({ token: token(), ...(request.sessionID ? { sessionID: request.sessionID } : {}), revision: state.revision });

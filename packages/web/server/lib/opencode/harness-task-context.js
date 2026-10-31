@@ -24,6 +24,7 @@ const planMarkerVersion = (record) => {
   catch { /* A malformed marker records no version. */ }
   return typeof version === 'string' && /^[a-f0-9]{64}$/.test(version) ? version : undefined;
 };
+const PLAN_ASSIGNMENT_MISSING = 'plan_assignment_missing: no approved plan is assigned to this session. Work from the brief in your prompt instead of reading a plan.';
 const fault = (code) => Object.assign(new Error(code), { code, statusCode: 503 });
 const managedToolMethods = new Set(['submit', 'status', 'wait', 'wait_any', 'wait_result_action', 'cancel', 'read_result', 'acknowledge', 'set_auto_resume', 'correct_check']);
 
@@ -243,7 +244,7 @@ export const createHarnessTaskContextHost = (options) => {
   const readAssignedPlan = async input => {
     const context=await readScope(input);
     const alias=input.tool==='devryan_plan_read';
-    if(!context.session.parentID){if(alias)throw planError(403,'plan_assignment_missing');return null;}
+    if(!context.session.parentID){if(alias)throw planError(403,'plan_assignment_missing',PLAN_ASSIGNMENT_MISSING);return null;}
     if(context.session.time?.archived||context.session.revert)throw planError(409,'plan_assignment_stale');
     if(!alias&&(input.action??input.input?.action)!=='plan_read')throw planError(403,'plan_root_authority_required');
     const assistant=await readMessage(input);
@@ -251,7 +252,7 @@ export const createHarnessTaskContextHost = (options) => {
       ||!assistant.parts.some(part=>part.type==='tool'&&part.tool===(alias?'devryan_plan_read':'devryan_task')&&part.callID===input.callID&&part.state?.status==='running'
         &&(!alias||part.state.input&&typeof part.state.input==='object'&&!Array.isArray(part.state.input)&&Object.keys(part.state.input).length===0)))throw planError(409,'plan_call_stale');
     const result=await options.getManagedRuntime().handleRpc({method:'child_plan',params:{childSessionId:input.sessionID,directory:input.directory}});
-    if(!result.approvedPlanRef||result.rootSessionId!==context.session.parentID||result.approvedPlanRef.rootSessionId!==context.session.parentID)throw planError(409,'plan_assignment_missing');
+    if(!result.approvedPlanRef||result.rootSessionId!==context.session.parentID||result.approvedPlanRef.rootSessionId!==context.session.parentID)throw planError(409,'plan_assignment_missing',PLAN_ASSIGNMENT_MISSING);
     await verifyApprovedPlanRef(result.approvedPlanRef);
     return result.approvedPlanRef;
   };
@@ -270,7 +271,8 @@ export const createHarnessTaskContextHost = (options) => {
       || assistant.info.parentID !== currentObjectiveUser(primary) || !assistant.parts.some((part) => part.type === 'tool'
         && part.tool === 'devryan_task' && part.callID === input.callID && part.state?.status === 'running')) throw planError(409, 'plan_call_stale');
     const plan = planReference(anchor);
-    if (!plan) throw planError(409, 'plan_selection_required', 'Select a saved plan with Implement before using plan tools');
+    if (!plan) throw planError(409, 'plan_selection_required', 'plan_selection_required: no saved plan is selected for this turn. '
+      + 'Plan tools read a plan the user chose with Implement; in Plan mode, write the plan instead of reading one.');
     return { primary, objectiveID, currentUser: currentObjectiveUser(primary), plan, markerVersion: planMarkerVersion(anchor), ...await resolvePlan(plan, context) };
   };
   const handlePlanRpc = async (input, recheck, { maxBytes } = {}) => {

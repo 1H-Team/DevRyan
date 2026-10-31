@@ -1229,6 +1229,34 @@ test('native scans accept location roots that do not exist yet and still honour 
     code: 'native_read_root_denied', tool: 'grep', callID: input.callID }));
 });
 
+test('native scans may run inside a read root nested in a protected root, but not elsewhere in it', async () => {
+  const native = await import('@devryan/harness-runtime/lib/session-execution.js');
+  native.startReadOnlySessionExecution.mockClear();
+  native.startReadOnlySessionExecution.mockResolvedValue({ child: {}, pid: 202,
+    result: Promise.resolve({ terminated: true, confined: true, cancelled: false, exitCode: 0 }) });
+  const tmp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-global-tmp-')));
+  const webfetch = path.join(tmp, 'devryan-webfetch', 'digest'), other = path.join(tmp, 'other');
+  try {
+    await Promise.all([fs.mkdir(webfetch, { recursive: true }), fs.mkdir(other)]);
+    const invoke = async (cwd) => {
+      const openCodeClient = createFakeClient();
+      openCodeClient.sessions.message.mockResolvedValue({ info: { role: 'assistant', sessionID: input.sessionID, parentID: 'msg_user' },
+        turnOwnership: { source: 'native-sequence', userMessageID: 'msg_user' }, parts: [{ type: 'tool', callID: input.callID, tool: 'grep' }] });
+      const { host } = fixture({ openCodeClient, nativeExecution: { recheckPermit: async () => {}, socketDirectory: null,
+        locations: [{ directory, readRoots: [directory, webfetch], protectedRoots: [tmp] }] } });
+      const specification = { kind: 'read', command: '/fixture/rg', args: ['--no-config', '--json', '--', 'needle', '.'], cwd };
+      try {
+        return await host.nativeExecution({ ...input, ...specification, tool: 'grep', agent: 'build', action: 'start',
+          argsDigest: createHash('sha256').update(JSON.stringify(specification)).digest('hex') });
+      } finally { await host.drain(); }
+    };
+    await invoke(webfetch);
+    expect(native.startReadOnlySessionExecution).toHaveBeenCalledTimes(1);
+    await expect(invoke(other)).rejects.toMatchObject({ code: 'native_read_root_denied' });
+    expect(native.startReadOnlySessionExecution).toHaveBeenCalledTimes(1);
+  } finally { await fs.rm(tmp, { recursive: true, force: true }); }
+});
+
 test('Node helper independently validates pinned VCS info flags before launching a real supervisor', async () => {
   const { nativeVcsGitFlags } = await import('./execution-helper-policy.js');
   const native = await import('@devryan/harness-runtime/lib/session-execution.js');

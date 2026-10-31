@@ -1,5 +1,6 @@
 import type { NativeAdmissionBridge, OperationPermit } from './native-admission-contract.js';
 import { HostRefusal } from './host-refusal.js';
+import { modelFacingRefusal } from './worker-protocol.js';
 
 export interface NativeAdmissionRpc { readonly rpc: (method: string, input: unknown) => Promise<unknown> }
 const record = (input: unknown): input is Record<string, unknown> => input !== null && typeof input === 'object' && !Array.isArray(input);
@@ -7,8 +8,11 @@ export function createRemoteNativeAdmissionBridge({ rpc }: NativeAdmissionRpc): 
   const call = async (operation: string, input?: unknown) => {
     try { return await rpc(`native.admission.${operation}`, input); }
     catch (error) {
-      if (record(error) && typeof error.code === 'string') throw new HostRefusal(error.code,
-        error.status === 403 ? 403 : error.status === 503 ? 503 : 409, `native.admission.${operation}`);
+      if (record(error) && typeof error.code === 'string') {
+        const guidance = modelFacingRefusal(error)?.message.replace(`${error.code}: `, '');
+        throw new HostRefusal(error.code, error.status === 403 ? 403 : error.status === 503 ? 503 : 409, `native.admission.${operation}`,
+          undefined, guidance === error.code ? undefined : guidance);
+      }
       throw error;
     }
   };

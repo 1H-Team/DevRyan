@@ -1,6 +1,9 @@
 import type { SessionMutationRuntime } from '../../../../../harness-runtime/lib/session-mutations.js';
 import type { NativeAdmissionOwnerOptions } from './native-admission-owner.js';
 
+/** The refusal for a tool Plan mode cannot run, with guidance for the model. */
+export function planWriteDenied(tool: unknown): Error & { readonly code: 'native_plan_write_denied'; readonly status: 403; readonly statusCode: 403 };
+
 /** Private canonical pending-call reader and existing guarded cancellation owner. */
 export function createNativePlanDenialOwner(options: {
   readonly runtime: Pick<SessionMutationRuntime, 'cancelUnstartedCall'>;

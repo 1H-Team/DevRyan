@@ -102,7 +102,7 @@ describe('selected saved-plan root authority', () => {
     await expect(child.handleNativePlanRpc(alias,async()=>{})).rejects.toMatchObject({code:'plan_call_stale'});
     call.state.input={};
     await expect(child.handleNativePlanRpc({...alias,action:'plan_update',text:'Changed'},async()=>{})).rejects.toMatchObject({code:'plan_rpc_invalid'});
-    await expect(child.handleNativePlanRpc({...scope,action:'plan_read',tool:'devryan_plan_read',messageID:'msg_assistant',callID:'call_plan'},async()=>{})).rejects.toMatchObject({code:'plan_assignment_missing'});
+    await expect(child.handleNativePlanRpc({...scope,action:'plan_read',tool:'devryan_plan_read',messageID:'msg_assistant',callID:'call_plan'},async()=>{})).rejects.toMatchObject({code:'plan_assignment_missing',message:expect.stringContaining('Work from the brief')});
     call.tool='devryan_task';
     routes['/session/ses_child'].time={archived:1};
     await expect(child.handleNativePlanRpc(childInput,async()=>{})).rejects.toMatchObject({code:'plan_assignment_stale'});
@@ -302,6 +302,11 @@ describe('selected saved-plan root authority', () => {
       assistant().turnOwnership.userMessageID = activeUserID;
       expect((await rpc(value)).path).toBe(revision.path);
     }
+  });
+  it('tells the model to write a plan when no saved plan is selected for the turn', async () => {
+    user().parts = [{ type: 'text', text: 'Plan the change.' }];
+    await expect(rpc(host())).rejects.toMatchObject({ code: 'plan_selection_required',
+      message: expect.stringContaining('in Plan mode, write the plan instead of reading one') });
   });
   it('accepts registered subdirectories and resolves unambiguous legacy worktree markers', async () => {
     const subdir = path.join(directory, 'pkg'); await fs.mkdir(subdir); projects.push({ path: subdir });

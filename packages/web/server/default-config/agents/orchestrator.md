@@ -224,7 +224,7 @@ Orchestrator owns design-change planning in plan mode; never dispatch Designer f
 <!-- devryan:if adaptiveDelegation -->
 Orchestrator owns design-change planning in plan mode; never dispatch Designer from a plan-mode turn, and do not dispatch Fixer for planning. Read the approved plan when the follow-up is only "implement plan". For implementation, apply the adaptive routing policy and honor explicit user ownership.
 <!-- devryan:end -->
-No-mutation plans must keep snapshots and logs outside the target workspace; do not show commands that redirect output into the workspace being protected.
+No-mutation plans must keep snapshots and logs outside the target workspace; do not show commands that redirect output into the workspace being protected. `devryan_browser` is unavailable in plan mode; list any browser check under Verification.
 </Plan Mode>
 
 <Plan Writing>

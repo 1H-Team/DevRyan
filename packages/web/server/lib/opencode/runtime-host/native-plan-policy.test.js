@@ -26,7 +26,8 @@ it.each([
   {toolID:'devryan_browser',provenance:{kind:'plugin',id:'devryan.browser'}},
   {toolID:'devryan_operation',provenance:{kind:'native',id:'devryan.host-operations'}},
 ])('unknown Plan effects remain denied even with read-only annotations: $toolID',async input=>{
-  const f=fixture();try{await expect(f.owner.handleRpc('native.admission.authorize',{...f.request(input.toolID),input:{...input,callID:'call_fixture',annotations:{readOnlyHint:true},input:{readOnly:true}}})).rejects.toMatchObject({code:'native_plan_write_denied'});}finally{f.owner.dispose();}
+  const f=fixture();try{await expect(f.owner.handleRpc('native.admission.authorize',{...f.request(input.toolID),input:{...input,callID:'call_fixture',annotations:{readOnlyHint:true},input:{readOnly:true}}})).rejects.toMatchObject({code:'native_plan_write_denied',
+    message:expect.stringMatching(new RegExp(`^native_plan_write_denied: Plan mode cannot run ${input.toolID}\\. .*Verification`))});}finally{f.owner.dispose();}
 });
 it.each([
   ['devryan.managed-task','devryan_task'],['devryan.harness-context','todoread'],['devryan.harness-context','todowrite'],
