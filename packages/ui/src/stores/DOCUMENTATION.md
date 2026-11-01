@@ -636,7 +636,7 @@ Expected model:
   cancel that sign-in when the connection panel unmounts.
 
 - `quota-refresh-coordinator.ts` owns the usage refresh timer (30-minute baseline, faster when auto-refresh is on).
-- Optional `needsPromptRetry` (wired in `useQuotaStore.ts` to `configuredProviderIds === null`) shortens the next delay to `min(interval, DISCOVERY_RETRY_MS = 15 s)` while provider discovery has not succeeded, e.g. a `503 native_runtime_not_ready` while the runtime starts.
+- Optional `needsPromptRetry` (wired in `useQuotaStore.ts` to `quotaNeedsPromptRetry`) shortens the next delay to `min(interval, DISCOVERY_RETRY_MS = 15 s)` while provider discovery has not succeeded (e.g. a `503 native_runtime_not_ready` while the runtime starts), or while a configured provider's latest refresh failed with a transient `errorCode` (`native_runtime_not_ready`, `native_usage_temporarily_unavailable`). The store keeps that code as `providerRefreshState[id].refreshErrorCode`; the last good reading stays visible.
 - Prompt retries are capped at 8 consecutive attempts; the counter resets when the dependency returns false and on `stop()`. Without the dependency the schedule is unchanged.
 - A failed discovery leaves `configuredProviderIds` null and keeps previously known results.
 - Settings → Providers shows a provider's usage panel when a result exists, or when the provider is connected and discovery is failing (`configuredProviderIds === null` with a store `error`), so the reason and the refresh button are visible. A connected provider with no usage source after a successful discovery shows nothing. An account whose usage cannot be read arrives from the server as a `configured: true`, `ok: false` result and renders its `error` text.

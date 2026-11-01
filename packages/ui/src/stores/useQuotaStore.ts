@@ -23,6 +23,8 @@ export interface ProviderRefreshState {
   lastAttemptAt: number | null;
   lastSuccessAt: number | null;
   refreshError: string | null;
+  /** Server error code of the latest failed refresh, when it reported one. */
+  refreshErrorCode?: string;
 }
 
 export interface ProviderRefreshStatus extends ProviderRefreshState {
@@ -484,6 +486,7 @@ export const useQuotaStore = create<QuotaStore>()(
                       lastAttemptAt: attemptAt,
                       lastSuccessAt,
                       refreshError: result.error ?? 'Provider usage unavailable',
+                      ...(result.errorCode ? { refreshErrorCode: result.errorCode } : {}),
                     },
                   },
                 };
@@ -636,11 +639,24 @@ export const useQuotaStore = create<QuotaStore>()(
   )
 );
 
+// The native runtime reports these while it starts or rebuilds an idle location; they clear within seconds.
+const TRANSIENT_QUOTA_ERROR_CODES = new Set(['native_runtime_not_ready', 'native_usage_temporarily_unavailable']);
+const hasTransientQuotaError = (refreshState: ProviderRefreshState | undefined): boolean => (
+  refreshState?.refreshErrorCode !== undefined && TRANSIENT_QUOTA_ERROR_CODES.has(refreshState.refreshErrorCode)
+);
+
+/** Discovery has not succeeded, or a configured provider's latest refresh failed transiently. */
+export const quotaNeedsPromptRetry = (): boolean => {
+  const { configuredProviderIds, providerRefreshState } = useQuotaStore.getState();
+  return configuredProviderIds === null
+    || configuredProviderIds.some((providerId) => hasTransientQuotaError(providerRefreshState[providerId]));
+};
+
 export const quotaRefreshCoordinator = createQuotaRefreshCoordinator({
   loadSettings: () => useQuotaStore.getState().loadSettings(),
   refresh: (options) => useQuotaStore.getState().fetchAllQuotas(options),
   getRefreshIntervalMs: () => getEffectiveQuotaRefreshIntervalMs(useQuotaStore.getState()),
-  needsPromptRetry: () => useQuotaStore.getState().configuredProviderIds === null,
+  needsPromptRetry: () => quotaNeedsPromptRetry(),
 });
 
 notifyQuotaSettingsChanged = () => quotaRefreshCoordinator.settingsChanged();

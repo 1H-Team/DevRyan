@@ -643,8 +643,36 @@ describe('native quota discovery and fetch', () => {
     expect(createDiagnosticSanitizer().sanitizeRecord(diagnostic)).toMatchObject(diagnostic);
   });
 
+  it('rebuilds an idle-released location before retrying the usage read', async () => {
+    let acquired = false;
+    const reacquireNativeLocation = vi.fn(async () => { acquired = true; });
+    const selected = { directory, integrationID: 'xai', credentialID: 'c', value: { type: 'oauth', access: 'fixture-access' } };
+    const owner = readyOwner({ readProviderSelected: vi.fn(async () => {
+      if (!acquired) throw Object.assign(new Error('expired'), { code: 'native_integration_acquisition_expired' });
+      return selected;
+    }) });
+    const fetchQuotaForProvider = vi.fn(async () => ({ providerId: 'xai', configured: true, ok: true }));
+    const body = (await request(register({ owner, quota: { fetchQuotaForProvider }, reacquireNativeLocation })).get('/api/quota/xai').expect(200)).body;
+    expect(body.ok).toBe(true);
+    expect(reacquireNativeLocation).toHaveBeenCalledExactlyOnceWith(directory);
+    expect(owner.readProviderSelected).toHaveBeenCalledTimes(2);
+  });
+
+  it('reacquires through a directory-scoped OpenCode config read by default', async () => {
+    const config = vi.fn(async () => ({}));
+    const openCodeClient = { generation: () => 2, catalog: { config } };
+    const owner = readyOwner({ readProviderSelected: vi.fn(async () => {
+      throw Object.assign(new Error('expired'), { code: 'native_integration_acquisition_expired' });
+    }) });
+    const body = (await request(register({ owner, openCodeClient })).get('/api/quota/xai').expect(200)).body;
+    expect(config).toHaveBeenCalledExactlyOnceWith({ directory }, { timeoutMs: 5_000 });
+    // Still expired after the rebuild: transient, but not reported as a starting runtime.
+    expect(body).toMatchObject({ ok: false, errorCode: 'native_usage_temporarily_unavailable', error: 'Usage is temporarily unavailable. It will retry shortly.' });
+  });
+
   it.each([
-    ['native_integration_acquisition_expired', 'native_runtime_not_ready', 2],
+    ['native_integration_acquisition_expired', 'native_usage_temporarily_unavailable', 2],
+    ['native_controller_unavailable', 'native_usage_temporarily_unavailable', 2],
     ['native_credential_update_required', 'native_credential_update_required', 1],
     ['native_credential_changed', 'native_credential_changed', 1],
     ['native_integration_binding_invalid', 'native_credential_unreadable', 1],

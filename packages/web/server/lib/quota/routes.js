@@ -33,6 +33,7 @@ import {
   OpenCodeZenCredentialError,
 } from './providers/opencode.js';
 import { isAnthropicProviderId } from '../opencode/anthropic-provider-ids.js';
+import { resolveGen2OpenCodeClient } from '../opencode/opencode-client-seam.js';
 
 const jsonParser = express.json({ limit: MAX_QUOTA_CREDENTIAL_PAYLOAD_BYTES });
 const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
@@ -40,6 +41,8 @@ const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
 // its first readiness probe, so early UI reads wait briefly instead of failing.
 const RUNTIME_READINESS_HOLD_MS = 6_000;
 const RUNTIME_READINESS_POLL_MS = 75;
+// Bounds the scoped OpenCode read that rebuilds an idle-released location.
+const NATIVE_LOCATION_REACQUIRE_TIMEOUT_MS = 5_000;
 
 // Providers whose credentials live in the native controller (no auth.json there).
 const NATIVE_QUOTA_PROVIDER_NAMES = Object.freeze({ codex: 'ChatGPT', xai: 'xAI', 'opencode-go': 'OpenCode Go' });
@@ -184,12 +187,15 @@ export function registerQuotaRoutes(app, {
   runtimeReadinessHoldMs = RUNTIME_READINESS_HOLD_MS,
   runtimeReadinessPollMs = RUNTIME_READINESS_POLL_MS,
   recordDiagnostic = () => {},
+  reacquireNativeLocation = (directory) => resolveGen2OpenCodeClient(openCodeClient)
+    .catalog.config({ directory }, { timeoutMs: NATIVE_LOCATION_REACQUIRE_TIMEOUT_MS }),
 }) {
   const credentialRuntime = {
     ...defaultCredentialRuntime,
     ...credentialRuntimeOverrides,
   };
-  const nativeCredentials = createNativeQuotaCredentials({ getNativeRuntimeOwner, isExternalOpenCode });
+  const nativeCredentials = createNativeQuotaCredentials({ getNativeRuntimeOwner, isExternalOpenCode,
+    reacquireLocation: reacquireNativeLocation });
   const recordNativeQuotaFailure = (providerId, stage, error) => {
     const code = NATIVE_QUOTA_DIAGNOSTIC_CODES.has(error?.code) ? error.code : 'native_credential_unreadable';
     try {
@@ -247,15 +253,20 @@ export function registerQuotaRoutes(app, {
       } catch (error) {
         if (!NATIVE_QUOTA_TRANSIENT_CODES.has(error?.code)) throw error;
         recordNativeQuotaFailure(providerId, 'selected_credential', error);
-        // A configuration reacquisition can overlap a usage poll. Retry once
-        // against the current owner; account changes and refusals never retry.
-        await sleep(runtimeReadinessPollMs);
+        // An idle-released location is rebuilt before the retry; any other transient
+        // state (a configuration reacquisition overlapping the poll) gets a short wait.
+        // Retry once against the current owner; account changes and refusals never retry.
+        if (error.code !== 'native_integration_acquisition_expired' || !await nativeCredentials.reacquire()) {
+          await sleep(runtimeReadinessPollMs);
+        }
         auth = await nativeCredentials.readAuth(providerId);
       }
     } catch (error) {
       const code = recordNativeQuotaFailure(providerId, 'selected_credential', error);
       if (NATIVE_QUOTA_TRANSIENT_CODES.has(code)) {
-        return nativeQuotaFailure(providerId, 'native_runtime_not_ready', 'The runtime is still starting. Usage will load shortly.');
+        return nativeCredentials.mode() === 'native-pending'
+          ? nativeQuotaFailure(providerId, 'native_runtime_not_ready', 'The runtime is still starting. Usage will load shortly.')
+          : nativeQuotaFailure(providerId, 'native_usage_temporarily_unavailable', 'Usage is temporarily unavailable. It will retry shortly.');
       }
       if (code === 'native_credential_update_required') {
         return nativeQuotaFailure(providerId, code, 'Restart DevRyan with the latest app version to load usage.');

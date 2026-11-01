@@ -422,7 +422,7 @@ Anthropic and OpenAI Responses bodies and pins the shared prefix bytes.
 
 `native-configuration-snapshot.js` applies `runtime-helper-agents.js` after saved
 and Slim agent resolution. This installs the hidden, deny-all `devryan-title`,
-`devryan-commit`, `devryan-pr` and `devryan-notify` roles without assigning a
+`devryan-commit`, `devryan-pr`, `devryan-branch` and `devryan-notify` roles without assigning a
 model or variant, and disables native `title`. The existing standard title
 coordinator owns generation, bounded retry/fallback and compare-before-rename
 persistence. Without those roles, `controller-webfetch.ts` rejects generation
@@ -1509,7 +1509,11 @@ then invalidates a location's services, including the MCP servers it started,
 after 15 minutes without durable session activity instead of its 60-minute
 default. Running sessions, pending questions and background jobs still keep a
 location loaded; the next request rebuilds the services. Eviction itself is the
-same OpenCode path that previously ran at 60 minutes.
+same OpenCode path that previously ran at 60 minutes. Controller-owned
+credential reads (`credentialMetadata`, `readProviderSelected`,
+`readOpenAiSelected`) refuse with `native_integration_acquisition_expired` once
+a location is released; usage reads rebuild the default location with one
+scoped OpenCode read before retrying (`quota/native-credentials.js`).
 
 ### Background compaction (opt-in)
 

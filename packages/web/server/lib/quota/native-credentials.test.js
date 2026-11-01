@@ -15,11 +15,13 @@ const createOwner = (overrides = {}) => ({
   ...overrides,
 });
 
-const create = (owner, { external = false, readOpenAiSelection } = {}) => createNativeQuotaCredentials({
+const create = (owner, { external = false, readOpenAiSelection, reacquireLocation } = {}) => createNativeQuotaCredentials({
   getNativeRuntimeOwner: () => owner,
   isExternalOpenCode: () => external,
   ...(readOpenAiSelection ? { readOpenAiSelection } : {}),
+  ...(reacquireLocation ? { reacquireLocation } : {}),
 });
+const expired = () => Object.assign(new Error('expired'), { code: 'native_integration_acquisition_expired' });
 
 describe('native quota credentials', () => {
   it('reports legacy, pending and ready modes', () => {
@@ -89,6 +91,35 @@ describe('native quota credentials', () => {
     expect(owner.readOpenAiSelected.mock.calls[0][0]).toMatchObject({ directory, kind: 'openai', operation: 'openai.integration' });
     owner.readOpenAiSelected.mockResolvedValue({ directory, integrationID: 'openai', credentialID: 'changed', value: { type: 'oauth', methodID: 'chatgpt-browser', access: 'other' } });
     await expect(create(owner, { readOpenAiSelection: selection }).readAuth('codex')).rejects.toMatchObject({ code: 'native_credential_invalid' });
+  });
+
+  it('reacquires the default location once when an idle release expired the acquisition', async () => {
+    let acquired = false;
+    const reacquireLocation = vi.fn(async () => { acquired = true; });
+    const owner = createOwner({ credentialMetadata: vi.fn(async (scope) => {
+      if (!acquired) throw expired();
+      return [{ id: 'r', integrationID: scope.integrationID, valueType: scope.integrationID === 'opencode-go' ? 'key' : 'oauth', active: true }];
+    }) });
+    const credentials = create(owner, { reacquireLocation });
+    expect([...await credentials.listConfigured()].sort()).toEqual(['codex', 'opencode-go', 'xai']);
+    expect(reacquireLocation).toHaveBeenCalledExactlyOnceWith(directory);
+    expect(owner.credentialMetadata).toHaveBeenCalledTimes(6);
+    await expect(credentials.reacquire()).resolves.toBe(true);
+  });
+
+  it('reacquires only for an expired acquisition and reports a failed or impossible reacquisition', async () => {
+    const reacquireLocation = vi.fn(async () => {});
+    const failing = createOwner({ credentialMetadata: vi.fn(async () => { throw new Error('lookup failed'); }) });
+    expect([...await create(failing, { reacquireLocation }).listConfigured()].sort()).toEqual(['codex', 'opencode-go', 'xai']);
+    expect(reacquireLocation).not.toHaveBeenCalled();
+    const stillExpired = createOwner({ credentialMetadata: vi.fn(async () => { throw expired(); }) });
+    const rejecting = vi.fn(async () => { throw new Error('opencode unavailable'); });
+    // A failed reacquisition keeps the unknown providers listed without a second lookup.
+    expect([...await create(stillExpired, { reacquireLocation: rejecting }).listConfigured()].sort()).toEqual(['codex', 'opencode-go', 'xai']);
+    expect(stillExpired.credentialMetadata).toHaveBeenCalledTimes(3);
+    await expect(create(stillExpired, { reacquireLocation: rejecting }).reacquire()).resolves.toBe(false);
+    await expect(create(createOwner({ isReady: () => false }), { reacquireLocation }).reacquire()).resolves.toBe(false);
+    expect(reacquireLocation).not.toHaveBeenCalled();
   });
 
   it('returns null with no active credential and validates replies', async () => {

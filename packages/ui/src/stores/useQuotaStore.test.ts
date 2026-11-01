@@ -10,6 +10,7 @@ import type { ProviderResult, QuotaProviderId } from '@/types';
 import {
   BASELINE_QUOTA_REFRESH_MS,
   getQuotaProviderRefreshStatus,
+  quotaNeedsPromptRetry,
   useQuotaStore,
 } from './useQuotaStore';
 
@@ -101,6 +102,27 @@ describe('useQuotaStore refresh ownership', () => {
       expect(state.trendHistory['xai|window||weekly']).toBe(retainedTrend);
       expect(state.providerRefreshState.codex?.lastSuccessAt).toBe(Object.keys(change).length === 0 ? 1 : null);
     }
+  });
+
+  test('asks for a prompt retry while a provider refresh failed transiently, keeping the last reading', async () => {
+    const previous = providerResult('codex');
+    useQuotaStore.setState({ results: [previous], configuredProviderIds: ['codex'],
+      providerRefreshState: { codex: { lastAttemptAt: 1, lastSuccessAt: 1, refreshError: null } } });
+    expect(quotaNeedsPromptRetry()).toBe(false);
+    for (const errorCode of ['native_usage_temporarily_unavailable', 'native_runtime_not_ready']) {
+      globalThis.fetch = (async () => Response.json({ ...previous, ok: false, usage: null, errorCode, error: 'Temporarily unavailable' })) as typeof fetch;
+      await useQuotaStore.getState().fetchProviderQuota('codex');
+      expect(useQuotaStore.getState().results[0]).toBe(previous);
+      expect(quotaNeedsPromptRetry()).toBe(true);
+    }
+    globalThis.fetch = (async () => Response.json({ ...previous, ok: false, usage: null, errorCode: 'native_credential_unreadable', error: 'Unreadable' })) as typeof fetch;
+    await useQuotaStore.getState().fetchProviderQuota('codex');
+    expect(quotaNeedsPromptRetry()).toBe(false);
+    globalThis.fetch = (async () => Response.json({ ...previous, ok: false, usage: null, errorCode: 'native_usage_temporarily_unavailable', error: 'Temporarily unavailable' })) as typeof fetch;
+    await useQuotaStore.getState().fetchProviderQuota('codex');
+    globalThis.fetch = (async () => Response.json(providerResult('codex'))) as typeof fetch;
+    await useQuotaStore.getState().fetchProviderQuota('codex');
+    expect(quotaNeedsPromptRetry()).toBe(false);
   });
 
   test('connection invalidation clears quota and prevents a late old-account read from publishing', async () => {

@@ -13,6 +13,7 @@ const QUOTA_INTEGRATIONS = Object.freeze([
   Object.freeze({ quotaId: 'opencode-go', integrationID: 'opencode-go', kind: 'provider', valueType: 'key' }),
 ]);
 
+const ACQUISITION_EXPIRED = 'native_integration_acquisition_expired';
 const fail = (code) => Object.assign(new Error(code), { code });
 const isRecord = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 const isText = (value) => typeof value === 'string' && value.length > 0;
@@ -21,6 +22,7 @@ export function createNativeQuotaCredentials({
   getNativeRuntimeOwner,
   isExternalOpenCode,
   readOpenAiSelection = readNativeOpenAiMetadata,
+  reacquireLocation = async () => {},
 }) {
   const xaiReads = new WeakMap();
   const snapshotState = () => {
@@ -57,18 +59,39 @@ export function createNativeQuotaCredentials({
     return state;
   };
 
-  const listConfigured = async () => {
+  // OpenCode releases an idle location's services after its idle timeout, and the
+  // controller's credential acquisition with them. One scoped OpenCode read
+  // rebuilds both. Returns whether a reacquisition was attempted and completed.
+  const reacquire = async () => {
     const state = snapshotState();
+    if (state.mode !== 'native-ready') return false;
+    try {
+      await reacquireLocation(state.location.directory);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const readConfigured = (state) => Promise.allSettled(QUOTA_INTEGRATIONS.map(async (entry) => {
+    const rows = await state.owner.credentialMetadata(scopeFor(state.location, entry));
+    return Array.isArray(rows)
+      && rows.some((row) => isRecord(row)
+        && row.active === true
+        && row.integrationID === entry.integrationID
+        && row.valueType === entry.valueType);
+  }));
+
+  const listConfigured = async () => {
+    let state = snapshotState();
     const configured = new Set();
     if (state.mode !== 'native-ready' || typeof state.owner.credentialMetadata !== 'function') return configured;
-    const settled = await Promise.allSettled(QUOTA_INTEGRATIONS.map(async (entry) => {
-      const rows = await state.owner.credentialMetadata(scopeFor(state.location, entry));
-      return Array.isArray(rows)
-        && rows.some((row) => isRecord(row)
-          && row.active === true
-          && row.integrationID === entry.integrationID
-          && row.valueType === entry.valueType);
-    }));
+    let settled = await readConfigured(state);
+    if (settled.some((result) => result.status === 'rejected' && result.reason?.code === ACQUISITION_EXPIRED) && await reacquire()) {
+      state = snapshotState();
+      if (state.mode !== 'native-ready' || typeof state.owner.credentialMetadata !== 'function') return configured;
+      settled = await readConfigured(state);
+    }
     // A failed lookup is unknown, not absent: the provider stays listed so its fetch
     // reports either "not configured" or an explicit unreadable result.
     settled.forEach((result, index) => {
@@ -151,6 +174,7 @@ export function createNativeQuotaCredentials({
   return Object.freeze({
     mode: () => snapshotState().mode,
     listConfigured,
+    reacquire,
     readAuth,
     refreshXai,
   });
