@@ -10,7 +10,7 @@ import { renderAgentPromptPolicies } from './packaged-agents.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const AGENTS_DIR = path.resolve(__dirname, '../../default-config/agents');
 const PRE_TASK_ORCHESTRATOR_PROMPT_UTF8_BYTES = 15_902;
-const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 36232;
+const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 36413;
 const DEFAULT_SLIM_PROFILE_PATH = path.resolve(
   __dirname,
   '../../default-config/user-profile/devryan-agents.jsonc',
@@ -550,6 +550,11 @@ describe('packaged agent defaults', () => {
     expect(body).toContain('Use one appropriate specialist for one coherent concern');
     expect(body).toContain('Do not repeat discovery.');
     expect(body).toContain('Startup failure, empty output or progress alone is not discovery');
+    // Live QA 2026-11-01: a failed Explorer start led to 15 premium-model reads and greps plus two preloaded skills.
+    expect(body).toContain('Scale delegation to the task: a simple, located question or change gets at most one specialist and a few tool calls');
+    expect(body).toContain('inspect directly within the task scope using at most six targeted reads or greps');
+    expect(body).toContain('Load a skill on demand, only after findings show it matches the change in hand; never preload skills.');
+    expect(body).not.toMatch(/load relevant skills|skill loading, prerequisite|questions, skills/);
     expect(body).toContain('For related missing context, continue the existing Explorer with the unanswered question and supplied findings');
     expect(body).toContain('start another only for a distinct scope, never to reset a read count.');
     expect(body).toContain('Verify a decisive claim or explicit gap with a narrow named read.');
