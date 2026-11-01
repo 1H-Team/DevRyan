@@ -5,6 +5,17 @@ import { withExecutionAdmission, withExecutionPreparation, withoutExecutionDeadl
 
 const failure = (code) => Object.assign(new Error(code), { code, status: 409 });
 
+const CANCELLATION_CODES = Object.freeze(['execution_cancelled', 'execution_reverted']);
+
+/** Awaits cancelled executions. A job aborted for cancellation rejects with
+ * that cancellation's own code, which proves it ended; any other rejection
+ * leaves termination unconfirmed.
+ */
+export async function awaitCancelledExecutions(settlements) {
+  const results = await Promise.allSettled(settlements);
+  return results.every((result) => result.status === 'fulfilled' || CANCELLATION_CODES.includes(result.reason?.code));
+}
+
 /** Owns native command lifetimes independently of project publication. Hosts
  * supply provider cancellation separately: cancelling a child process does not
  * prove that its parent model loop has stopped admitting more tool calls.
@@ -118,12 +129,7 @@ export function createSessionExecutionOwner({ runtime, launcher, stopSessions, v
         pending.push(owned.settled);
         owned.controller.abort();
       }
-      const results = await Promise.allSettled(pending);
-      for (const result of results) {
-        if (result.status === 'rejected' && !['execution_cancelled', 'execution_reverted'].includes(result.reason?.code)) {
-          throw failure('mutation_termination_unconfirmed');
-        }
-      }
+      if (!await awaitCancelledExecutions(pending)) throw failure('mutation_termination_unconfirmed');
       return { terminated: true, sessions: input.sessions };
     },
     drain: () => Promise.allSettled([...active.values()].map((owned) => owned.settled)),

@@ -46,6 +46,14 @@ describe('managed recovery instruction', () => {
     expect(managedRecoveryInstruction(task({ status: 'completed' }), envelope({ partial: true }))).toBeNull();
   });
 
+  test('tells the parent a result without a child never ran', () => {
+    const refused = task({ status: 'failed', failureReason: 'native_managed_task_control_invalid', childSessionId: null });
+    expect(managedRecoveryInstruction(refused, envelope())).toBe(MANAGED_RECOVERY_INSTRUCTIONS.notStarted);
+    expect(managedRecoveryInstruction(refused, envelope({ action: 'abandon' }))).toBeNull();
+    // Model Recovery needs a child to resume, so a second refusal still allows abandon.
+    expect(managedRecoveryInstruction({ ...refused, attempt: 2 }, envelope())).toBe(MANAGED_RECOVERY_INSTRUCTIONS.notStarted);
+  });
+
   test('keeps the instruction outside paged v2 metadata', async () => {
     const failed = task({ status: 'failed', failureReason: 'boom' });
     const metadata = await prepareManagedResultMetadata({ task: failed,

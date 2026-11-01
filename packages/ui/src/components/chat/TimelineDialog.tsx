@@ -9,6 +9,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { useSessionUIStore } from '@/sync/session-ui-store';
+import { revertForkFallbackLabel } from '@/sync/session-actions';
 import { useSessionMessageRecords, useSessionRevertPending } from '@/sync/sync-context';
 import { RiLoader4Line, RiSearchLine, RiTimeLine, RiGitBranchLine, RiArrowGoBackLine } from '@remixicon/react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -243,7 +244,11 @@ export const TimelineDialog: React.FC<TimelineDialogProps> = ({
                                                                 await revertToMessage(currentSessionId, message.info.id);
                                                                 onOpenChange(false);
                                                             } catch (error) {
-                                                                toast.error(error instanceof Error ? error.message : 'Failed to revert message.');
+                                                                const messageId = message.info.id;
+                                                                const forkLabel = revertForkFallbackLabel(error);
+                                                                toast.error(error instanceof Error ? error.message : 'Failed to revert message.', forkLabel ? {
+                                                                    action: { label: forkLabel, onClick: () => { onOpenChange(false); void forkFromMessage(currentSessionId, messageId); } },
+                                                                } : undefined);
                                                             } finally {
                                                                 setRevertingMessageId(null);
                                                             }

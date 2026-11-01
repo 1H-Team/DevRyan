@@ -9,6 +9,7 @@ import {
   createManagedTaskRecord,
   createManagedTaskResultEnvelope,
   createManagedTaskScheduler,
+  MANAGED_RECOVERY_INSTRUCTIONS,
   REQUIRED_CHECK_CORRECTION,
 } from '@devryan/orchestration-runtime';
 
@@ -16,7 +17,7 @@ import { createNativeConsumerFixture } from '../opencode/test-native-consumer-cl
 import { createNativeManagedTaskOwner } from '../opencode/runtime-host/managed-task-owner.js';
 import { createHarnessTaskContextHost as createNativeTaskContextHost } from '../opencode/harness-task-context.js';
 import { createNativePlanSettlementVerifier } from '../opencode/runtime-host/native-plan-settlement.js';
-import { createWebManagedOrchestrationRuntime as createNativeOrchestrationRuntime } from './runtime.js';
+import { createWebManagedOrchestrationRuntime as createNativeOrchestrationRuntime, withNativeAdmissionRetry } from './runtime.js';
 
 // These scheduler fixtures own their catalogs explicitly; no legacy transport
 // or installed runtime is used to satisfy default admission.
@@ -3323,4 +3324,109 @@ it('objective waiver uses current content and preserves the authenticated user d
     expect(result.verification).toMatchObject({ objectiveId: scope.objectiveId, status: 'waived', checks: [{ waiver: { userId: 'human', reason: 'accepted limitation' } }] });
     expect(await runtime.getObjectiveVerification({ ...scope, objectiveId: 'msg_other' })).toBeNull();
   } finally { await runtime.shutdown(); await fs.rm(directory, { recursive: true, force: true }); }
+});
+
+// Live QA 2026-11-01: an Explorer start refused at native admission failed in
+// 166 ms with no child, yet the parent needed wait_any and abandon to learn it.
+describe('pre-child start failures', () => {
+  const refusal = code => Object.assign(new Error(code), { code, statusCode: 403 });
+  const create = { operation: 'create', taskId: 'dvr_task_retry' };
+
+  it('retries one transient native admission refusal before the create runs', async () => {
+    const createChild = vi.fn(async () => ({ id: 'ses_child' }));
+    const admitted = [];
+    const dispatch = vi.fn()
+      .mockImplementationOnce(async () => { throw refusal('native_managed_task_control_invalid'); })
+      .mockImplementation(async (_input, action) => action());
+    const retrying = withNativeAdmissionRetry(dispatch, { delayMs: 1, onAdmitted: taskId => admitted.push(taskId), logger: {} });
+    await expect(retrying(create, createChild)).resolves.toEqual({ id: 'ses_child' });
+    expect(dispatch).toHaveBeenCalledTimes(2);
+    expect(createChild).toHaveBeenCalledOnce();
+    expect(admitted).toEqual(['dvr_task_retry']);
+  });
+
+  it('never retries lease or scope refusals, a second refusal, a refusal after the create, or other operations', async () => {
+    for (const code of ['native_managed_task_lease_invalid', 'native_managed_task_scope_invalid']) {
+      const dispatch = vi.fn(async () => { throw refusal(code); });
+      await expect(withNativeAdmissionRetry(dispatch, { delayMs: 1, logger: {} })(create, async () => ({}))).rejects.toMatchObject({ code });
+      expect(dispatch).toHaveBeenCalledOnce();
+    }
+    const twice = vi.fn(async () => { throw refusal('native_session_held'); });
+    await expect(withNativeAdmissionRetry(twice, { delayMs: 1, logger: {} })(create, async () => ({}))).rejects.toMatchObject({ code: 'native_session_held' });
+    expect(twice).toHaveBeenCalledTimes(2);
+    const afterCreate = vi.fn(async (_input, action) => { await action(); throw refusal('native_session_held'); });
+    await expect(withNativeAdmissionRetry(afterCreate, { delayMs: 1, logger: {} })(create, async () => ({}))).rejects.toMatchObject({ code: 'native_session_held' });
+    expect(afterCreate).toHaveBeenCalledOnce();
+    const prompt = vi.fn(async () => { throw refusal('native_session_held'); });
+    await expect(withNativeAdmissionRetry(prompt, { delayMs: 1, logger: {} })({ ...create, operation: 'prompt' }, async () => {}))
+      .rejects.toMatchObject({ code: 'native_session_held' });
+    expect(prompt).toHaveBeenCalledOnce();
+  });
+
+  it('returns a failure that happens before any child exists from start itself', async () => {
+    const runtime = createWebManagedOrchestrationRuntime({ persistence: createPersistence(), executor: {
+      start: async () => { await new Promise(resolve => setTimeout(resolve, 20)); throw refusal('native_managed_task_lease_invalid'); },
+    } });
+    try {
+      const params = submitParams('inline', { dispatchGroupId: 'msg_parent', dispatchCallId: 'call_explorer', awaitAdmission: true });
+      const result = await runtime.handleRpc({ method: 'submit', params });
+      expect(result.task).toMatchObject({ status: 'failed', childSessionId: null, agentRetryAvailable: true,
+        failureReason: 'native_managed_task_lease_invalid' });
+      expect(result.resultEnvelope).toMatchObject({ action: null, status: 'failed' });
+      expect(result.instruction).toBe(MANAGED_RECOVERY_INSTRUCTIONS.notStarted);
+      const retried = await runtime.handleRpc({ method: 'acknowledge', params: { rootSessionId: 'ses_root', directory: '/workspace',
+        taskId: result.task.taskId, action: 'retry', idempotencyKey: 'retry-inline' } });
+      expect(retried.followUpTask.task).toMatchObject({ attempt: 2, priorTaskId: result.task.taskId });
+    } finally { await runtime.shutdown(); }
+  });
+
+  it('bounds the start wait and ends it as soon as the child exists', async () => {
+    const release = deferred();
+    const runtime = createWebManagedOrchestrationRuntime({ persistence: createPersistence(), startAdmissionSettleMs: 50, executor: {
+      start: async (task, control) => {
+        if (task.label === 'Task child') await control.setChildSessionId('ses_child');
+        await release.promise;
+        return { status: 'failed', failureReason: 'released' };
+      },
+    } });
+    try {
+      const startedAt = Date.now();
+      const hanging = await runtime.handleRpc({ method: 'submit', params: submitParams('hanging', { awaitAdmission: true }) });
+      expect(hanging.task).toMatchObject({ status: 'starting', childSessionId: null });
+      expect(Date.now() - startedAt).toBeGreaterThanOrEqual(45);
+      const child = await runtime.handleRpc({ method: 'submit', params: submitParams('child', { awaitAdmission: true }) });
+      expect(child.task).toMatchObject({ status: 'starting', childSessionId: 'ses_child' });
+      expect(await runtime.awaitStartAdmission({ taskId: child.task.taskId, rootSessionId: 'ses_other', directory: '/workspace' })).toBeNull();
+      expect(await runtime.awaitStartAdmission({ taskId: child.task.taskId, rootSessionId: 'ses_root', directory: '/workspace' }))
+        .toEqual({ taskId: child.task.taskId, status: 'starting', childSessionId: 'ses_child' });
+    } finally { release.resolve(); await runtime.shutdown(); }
+  });
+
+  it('native start collects a pre-child failure after releasing its permit, so abandon needs no wait', async () => {
+    let permitHeld = false;
+    const runtime = createWebManagedOrchestrationRuntime({ persistence: createPersistence(),
+      resolveAgentExecution: async () => ({ providerId: 'openai', modelId: 'gpt-5.5', variant: null }), executor: {
+      start: async () => { await new Promise(resolve => setTimeout(resolve, 20)); throw refusal('native_managed_task_scope_invalid'); },
+    } });
+    const owner = createNativeManagedTaskOwner({
+      admissionOwner: { recheckExecution: async () => {},
+        withPermit: async (_input, action) => { permitHeld = true; try { return await action(); } finally { permitHeld = false; } },
+        withManagedTaskCatalogInvocation: (_input, action) => action() },
+      taskContext: { authorizeNativeTaskInvocation: async () => ({ readOnly: true }) },
+      executionHost: { nativeManagedControl: async () => ({ lease: { token: 'control_fixture' } }) },
+      getManagedRuntime: () => ({ ...runtime, awaitStartAdmission: async (...args) => {
+        expect(permitHeld).toBe(false);
+        return await runtime.awaitStartAdmission(...args);
+      } }),
+    });
+    const invocation = (callID, input) => ({ tool: 'devryan_task', sessionID: 'ses_root', directory: '/workspace', messageID: 'msg_plan', callID,
+      authorization: { input: { provenance: { id: 'devryan.managed-task', kind: 'plugin' } } }, input });
+    try {
+      const started = await owner(invocation('call_explorer', { action: 'start', agent: 'explorer', prompt: 'Locate the component' }));
+      expect(started).toMatchObject({ dispatched: false, instruction: MANAGED_RECOVERY_INSTRUCTIONS.notStarted,
+        task: { status: 'failed', childSessionId: null, agentRetryAvailable: true }, resultEnvelope: { action: null } });
+      const abandoned = await owner(invocation('call_abandon', { action: 'abandon', task_id: started.task.taskId }));
+      expect(abandoned.resultEnvelope).toMatchObject({ taskId: started.task.taskId, action: 'abandon' });
+    } finally { await runtime.shutdown(); }
+  });
 });

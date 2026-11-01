@@ -36,6 +36,8 @@ export interface NativeManagedDependencies {
       dispatchObjectiveId?: string | null; [REQUIRED_CHECK_CORRECTION]?: { rootSessionId: string; directory: string; objectiveId: string;
         recheck(): Promise<void>; verifyTaskObjective(task: ManagedTaskRecord): Promise<void> } }): Promise<unknown>;
     withSubmissionPreparation?<A>(params: Readonly<Record<string, unknown>>, context: {signal?: AbortSignal}, action: () => Promise<A>): Promise<A>;
+    awaitStartAdmission?(scope: {taskId: string; rootSessionId: string; directory: string}, context?: {signal?: AbortSignal}):
+      Promise<{taskId: string; status: string; childSessionId: string | null} | null>;
   };
 }
 export interface NativeManagedTaskOwner {

@@ -69,6 +69,30 @@ test('native execution errors preserve direct and private HTTP status contracts'
     .toMatchObject({ code: 'invalid_capture_identity', status: 400, statusCode: 400 });
 });
 
+test.each([
+  ['execution_cancelled', true],
+  ['execution_reverted', true],
+  ['helper_crashed', false],
+])('cancel-sessions treats a job rejecting with %s as terminated=%s', async (code, terminated) => {
+  const started = Promise.withResolvers();
+  runReadOnlySessionExecution.mockImplementation(({ signal }) => new Promise((resolve, reject) => {
+    started.resolve();
+    signal.addEventListener('abort', () => reject(Object.assign(Error(code), { code })));
+  }));
+  const { host } = fixture({ nativeExecution: { helperRoots: [directory] } });
+  const helper = host.nativeExecution({ action: 'helper', command: '/usr/bin/git', args: ['rev-parse', '--git-dir', '--git-common-dir', '--show-toplevel'],
+    cwd: directory, sessionID: input.sessionID });
+  const refusal = expect(helper).rejects.toMatchObject({ code });
+  await started.promise;
+  const cancelled = host.nativeExecution({ action: 'cancel-sessions', sessions: [input.sessionID] });
+  if (terminated) await expect(cancelled).resolves.toEqual({ processesTerminated: true, sessions: [input.sessionID] });
+  else await expect(cancelled).rejects.toMatchObject({ code: 'mutation_termination_unconfirmed' });
+  await refusal;
+  // The finished job is no longer awaited, so a retried revert can confirm.
+  await expect(host.nativeExecution({ action: 'cancel-sessions', sessions: [input.sessionID] }))
+    .resolves.toEqual({ processesTerminated: true, sessions: [input.sessionID] });
+});
+
 // ---------------------------------------------------------------------------
 // Generation 2 (DESIGN.md E item 13c): reads through `openCodeClient`; the
 // companion bridge reports `capability_absent`.

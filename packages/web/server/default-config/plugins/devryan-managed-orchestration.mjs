@@ -133,6 +133,27 @@ const getBridge = () => {
   return { url: url.toString(), token };
 };
 
+// A start refused before any child existed returns terminal from submit
+// (live QA 2026-11-01: native admission failed in 166 ms, and two more model
+// turns went to wait_any and abandon to learn it).
+const isAdmissionFailure = (result) => TERMINAL_TASK_STATUSES.has(result.task.status)
+  && result.task.status !== 'completed' && !result.task.childSessionId;
+
+const annotateAdmissionFailure = (result) => {
+  const { task } = result;
+  const label = typeof task.label === 'string' && task.label ? task.label : task.agent;
+  const reason = task.failureReason ?? result.resultEnvelope?.failureReason ?? 'unknown failure';
+  return {
+    ...exposeManualModelRecovery(result),
+    dispatched: false,
+    instructions: [
+      `NOT STARTED. Task ${task.taskId} ("${label}", agent "${task.agent}") failed before its child session existed: ${reason}.`,
+      'Its result is already collected; do not call wait or wait_any for it.',
+      ...(typeof result.instruction === 'string' ? [result.instruction] : []),
+    ].join(' '),
+  };
+};
+
 /**
  * The raw submit envelope reports `"status": "starting"` and nothing else. On
  * 2026-08-21 an orchestrator read three successive successful dispatches as
@@ -145,6 +166,7 @@ const getBridge = () => {
 const annotateDispatchResult = (result, dispatchCallId) => {
   if (!isRecord(result) || !isRecord(result.task)) return result;
   const { task } = result;
+  if (isAdmissionFailure(result)) return annotateAdmissionFailure(result);
   const alreadyRunning = task.dispatchCallId && dispatchCallId && task.dispatchCallId !== dispatchCallId;
   const label = typeof task.label === 'string' && task.label ? task.label : task.agent;
 
@@ -1259,6 +1281,7 @@ const executeAction = async (args, context, client, dispatchCallId = null, resul
       allowDuplicate: args.allow_duplicate === true,
       parentTaskId: null,
       directory: requireText(context.directory, 'context.directory'),
+      awaitAdmission: true,
       mode: context.agent === 'builder' ? 'builder' : 'orchestrator',
       readOnly,
       providerId: normalizedArgs.providerId,
@@ -2650,6 +2673,10 @@ export const DevRyanManagedOrchestrationPlugin = async ({
             return JSON.stringify(recovered, null, 2);
           }
           if (action === 'start' && context.agent !== 'builder') state.knownBarrier = true;
+          if (action === 'start' && result?.dispatched === false) {
+            // The start committed; a result this cannot record is collected by a later wait instead.
+            try { rememberCollectedResult(state, result, result.task.taskId); } catch { /* Disposition asks for that wait. */ }
+          }
           if (action === 'wait_any') {
             for (const entry of result.dispositioned ?? []) state.collectedResults.delete(entry.taskId);
             for (const entry of result.results) {

@@ -263,6 +263,13 @@ from when the session permit is acquired. Parallel starts queued behind
 siblings therefore cannot exhaust it. An uncommitted start that runs out reports
 `native_task_start_timeout`, and the executor retries it under the same
 idempotency key. A terminal `status` collects and stages exactly like `wait`.
+After a committed start that is still `starting` without a child, and after its
+permit and control lease end (child admission needs both), the owner waits up to
+3 s through the runtime's `awaitStartAdmission`. If the task failed before any
+child existed, the owner reads its `status`, collects and stages it like `wait`,
+and returns it with `dispatched: false` and the `notStarted` instruction, so the
+next call may `retry` or `abandon` it. Any doubt returns the committed `starting`
+receipt unchanged.
 Reading a result that was never collected reports `native_task_wait_required`.
 
 Later `wait`, `wait_any` and `status` slices reattach to the exact published
@@ -1725,6 +1732,10 @@ are never rewritten. This receipt states publication, not successful testing.
 Managed child prompt tool maps enable `devryan_plan_read` only for retained `approvedPlanRef` snapshots; the fixed empty-input host reader still validates the immutable assignment. Required-check declarations accept project-relative `cwd` and a named `environment`, both included in check content identities. Canonical Docker/UID prerequisite diagnoses retain failed exits as skipped `environment_unavailable` evidence; they never convert verification to a pass.
 
 Only complete canonical process output can establish an environment skip. Skipped checks permit disposition and closeout with completion status `skipped`, never `passed`; SQL/assertion/application failures remain blocking. Content changes invalidate skip receipts as well as passes.
+
+## Managed dispatch admission
+
+`withManagedTaskDispatch` verifies the parent's `devryan_task` control lease against the root's captured generation. Only the root's own unsettled Revert fences dispatch (`native_session_revert_pending`, 409); a prepared transaction of another root in the same checkout does not. Every refusal journals `managed_dispatch_rejected` with the operation, the failing check (`captured`, `revert_pending`, `lease_missing`, `generation`, `lease_kind`, `lease_preparation`, `lease_state`, `lease_generation`, `lease_scope`, `held`, `reverting`) and the code; `journal summary` lists it under errors as kind `dispatch`.
 
 ## Managed child interruption authority
 

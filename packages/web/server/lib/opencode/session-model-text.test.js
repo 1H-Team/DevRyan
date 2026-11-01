@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { classifySessionModelProviderError, generateTextWithSessionModel, sessionModelFailureReasonForStatus } from './session-model-text.js';
+import { classifySessionModelProviderError, generateTextWithSessionModel, sessionModelFailureReasonForStatus, stripReasoningPreamble } from './session-model-text.js';
+import { normalizeBranchSlug } from '../git/branch-name.js';
 
 describe('native model-text boundary', () => {
   it.each([undefined, {}, { generation: () => 1 }, { generation: () => 3 }])('refuses unsupported identity without helper effects: %j', async openCodeClient => {
@@ -29,6 +30,20 @@ describe('native model-text boundary', () => {
     await Promise.resolve();expect(calls).toHaveLength(1);resolve({text:'invalid'});expect(await work).toMatchObject({ok:true,value:'valid',attempts:2});
     expect(calls.map(x=>[x.prompt,x.modelID,x.variant])).toEqual([['Original','m2','high'],['Repair','m2','high']]);
     expect(calls[0].operationID).toBeTruthy();expect(calls[1].operationID).toBe(calls[0].operationID);
+  });
+  it('hands every helper only the answer after an inline reasoning preamble', async () => {
+    expect(stripReasoningPreamble('<think>plan the slug</think>\nfix-scroll-jump')).toBe('fix-scroll-jump');
+    expect(stripReasoningPreamble('<thinking>a</thinking><reasoning>b</reasoning> Done.')).toBe('Done.');
+    expect(stripReasoningPreamble('<think>cut off inside reasoning')).toBe('');
+    expect(stripReasoningPreamble('plain answer')).toBe('plain answer');
+    const generateHelperText = vi.fn(async () => ({ text: '<think>The user wants a branch.</think>\nfix-dirham-symbol' }));
+    expect(await generateTextWithSessionModel({ openCodeClient: { generation: () => 2 }, generateHelperText, directory: '/fixture',
+      providerID: 'opencode', modelID: 'deepseek', agent: 'devryan-branch', prompt: 'Name it', accept: normalizeBranchSlug }))
+      .toMatchObject({ ok: true, value: 'fix-dirham-symbol', text: 'fix-dirham-symbol' });
+    generateHelperText.mockResolvedValue({ text: '<think>still reasoning' });
+    expect(await generateTextWithSessionModel({ openCodeClient: { generation: () => 2 }, generateHelperText, directory: '/fixture',
+      providerID: 'opencode', modelID: 'deepseek', agent: 'devryan-notification', prompt: 'Summarize' }))
+      .toMatchObject({ ok: false, reason: 'empty_output' });
   });
   it('returns unsettled before timeout classification and never starts repair',async()=>{
     const abort=new AbortController();const generateHelperText=vi.fn(async()=>{abort.abort();throw Object.assign(Error('held'),{code:'native_helper_unsettled',statusCode:503});});

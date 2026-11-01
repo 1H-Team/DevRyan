@@ -119,6 +119,14 @@ fence and returns `mutation_recovery_required`. The host retries pending
 transactions during startup. No project transaction spans a command, generation
 or cancellation wait. File-card Undo/Redo uses the same ownership coordinator.
 
+Termination is confirmed when every cancelled job settles, including jobs that
+reject with their own `execution_cancelled` or `execution_reverted` code; jobs
+already finished are not awaited again, so a retried Revert can confirm. An
+unconfirmed transaction stays `prepared` and fences only its member sessions:
+managed dispatch reads the root's own revert state (`pendingScope: 'session'`),
+so another root in the same checkout keeps delegating, and the root itself is
+refused with `native_session_revert_pending`.
+
 The UI sends Revert before attempting cancellation, so the coordinator can keep
 earlier descendant dispatches running. Only a legacy `session_busy` response
 triggers the previous tree-abort retry. Optimistic hiding and acknowledged

@@ -300,15 +300,37 @@ export function createNativeManagedTaskOwner({ admissionOwner, taskContext, exec
           await executionHost.nativeManagedControl({ invocation: input, action: 'finish', token: lease.token });
         }
       });
+      let started;
       try {
-        if (typeof ownedRuntime.withSubmissionPreparation !== 'function') return await commit();
-        return await authorized(() => ownedRuntime.withSubmissionPreparation(params, context, commit));
+        started = typeof ownedRuntime.withSubmissionPreparation !== 'function' ? await commit()
+          : await authorized(() => ownedRuntime.withSubmissionPreparation(params, context, commit));
       } catch (error) {
         if (committedStart) return assertManagedToolOutputSize({ ...committedStart, projectionError: 'native_task_post_commit_fenced' }, maxOutputBytes);
         // Uncommitted: the attached executor may re-issue the same idempotent start.
         if (error?.name === 'TimeoutError') throw fail('native_task_start_timeout');
         throw error;
       }
+      // A refused admission fails the task before any child exists (live QA
+      // 2026-11-01: 166 ms). Wait for it here, after the permit and control
+      // lease are released because child admission needs both, and collect it
+      // like a terminal status so the next call can retry or abandon. Any
+      // doubt returns the committed `starting` receipt unchanged.
+      const task = started?.task;
+      if (!isManagedTaskId(task?.taskId) || task.status !== 'starting' || task.childSessionId
+        || typeof ownedRuntime.awaitStartAdmission !== 'function') return started;
+      try {
+        const settled = await ownedRuntime.awaitStartAdmission({ taskId: task.taskId, rootSessionId: input.sessionID, directory: input.directory },
+          { signal: context.signal });
+        if (!settled || settled.childSessionId || !isTerminalManagedTaskStatus(settled.status)) return started;
+        await recheck();
+        const current = await resultRead(() => runtime.handleRpc({ method: 'status', params: { ...scope, taskId: task.taskId } }, context));
+        await recheck(); validateNativeManagedResult(current, scope, task.taskId);
+        if (current.task.childSessionId || !isTerminalManagedTaskStatus(current.task.status) || current.resultEnvelope?.action !== null) return started;
+        let reply = current;
+        try { reply = assertManagedToolOutputSize({ ...current, dispatched: false }, maxOutputBytes); } catch { /* The bare status still fits. */ }
+        collection.collect(reply, scope, task.taskId, Boolean(readResultPublication));
+        return await delivered(reply, [task.taskId]);
+      } catch { return started; }
     }
     if (args.action === 'wait_any') {
       if (!Array.isArray(args.task_ids) || args.task_ids.length < 1) throw fail('native_task_selection_invalid');

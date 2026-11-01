@@ -212,15 +212,25 @@ export function createNativeAdmissionOwner(options) {
     // parent control call survived Revert. Compare against the existing ledger.
     const scope = { directory: input.directory, sessionID: task.rootSessionId, callID: task.dispatchCallId };
     const lease = await runtime.leaseForCall(scope);
-    const captured = await runtime.capturedSessionState(scope);
+    // Another root's unsettled Revert in this checkout does not fence this one.
+    const captured = await runtime.capturedSessionState({ ...scope, pendingScope: 'session' });
     const state = await runtime.nativeAdmissionState(scope);
     assertController();
-    if (!captured.captured || captured.pending || !Number.isSafeInteger(captured.generation)
-      || !lease || lease.executionKind !== 'control' || lease.preparation !== 'none'
-      || !['ready', 'published'].includes(lease.state) || lease.generation !== captured.generation
-      || lease.directory !== input.directory || lease.scope.sessionID !== task.rootSessionId
-      || lease.scope.callID !== task.dispatchCallId) throw fail('native_managed_task_control_invalid', 403);
-    if (state.held || state.reverting) throw fail('native_session_held');
+    const refused = (check, code = 'native_managed_task_control_invalid', status = 403) => {
+      options.recordDiagnostic?.({ type: 'lifecycle', event: 'managed_dispatch_rejected', sessionID: task.rootSessionId,
+        payload: { operation: input.operation, check, code } });
+      return fail(code, status);
+    };
+    if (!captured.captured) throw refused('captured');
+    if (captured.pending) throw refused('revert_pending', 'native_session_revert_pending', 409);
+    if (!lease) throw refused('lease_missing');
+    const check = !Number.isSafeInteger(captured.generation) ? 'generation'
+      : lease.executionKind !== 'control' ? 'lease_kind' : lease.preparation !== 'none' ? 'lease_preparation'
+        : !['ready', 'published'].includes(lease.state) ? 'lease_state' : lease.generation !== captured.generation ? 'lease_generation'
+          : lease.directory !== input.directory || lease.scope.sessionID !== task.rootSessionId
+            || lease.scope.callID !== task.dispatchCallId ? 'lease_scope' : null;
+    if (check) throw refused(check);
+    if (state.held || state.reverting) throw refused(state.reverting ? 'reverting' : 'held', 'native_session_held', 409);
     // Stop/ownership loss may occur while the ledger reads await storage.
     const current = await options.verifyManagedTaskDispatch(copy(input));
     assertController();

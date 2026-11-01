@@ -39,8 +39,9 @@ async function managedFixture() {
   const task = { owner: 'devryan', taskId: 'task_owned', leaseToken: 'task_lease', status: 'starting', directory: f.directory,
     rootSessionId: 'ses_root', dispatchCallId: 'call_task', childSessionId: null, providerId: 'fixture', modelId: 'model', agent: 'build', variant: null };
   let verifier = async () => structuredClone(task);
-  const locks = [];
+  const locks = [], diagnostics = [];
   const owner = createNativeAdmissionOwner({ runtime: f.runtime, directory: f.directory, ownerID: 'managed-dispatch-fixture',
+    recordDiagnostic: record => diagnostics.push(record),
     getSession: async id => ({ id, directory: f.directory, ...(id === 'ses_child' ? { parentID: 'ses_root' } : {}) }),
     authorizeOperation: async request => { if (request.operation !== 'tool.execute') throw new Error(`Generic policy must not authorize managed dispatch: ${request.operation}`); },
     withSessionLock: async (id, action) => { locks.push(id); return action(); },
@@ -52,7 +53,7 @@ async function managedFixture() {
     sessionID: 'ses_child', providerId: task.providerId, modelId: task.modelId, agent: task.agent, variant: task.variant };
   const fingerprint = 'a'.repeat(64), accepted = { sessionID: 'ses_child', messageID: 'msg_task_prompt', fingerprint,
     metadata: { devryan: { admission: { fingerprint } } }, request: { text: 'owned task' } };
-  return { ...f, owner, rpc, control, task, create, prompt, accepted, locks, setVerifier: value => { verifier = value; } };
+  return { ...f, owner, rpc, control, task, create, prompt, accepted, locks, diagnostics, setVerifier: value => { verifier = value; } };
 }
 
 test('replacement clears only exact temporary owner holds and preserves independent durable fences', async () => {
@@ -240,12 +241,27 @@ test('managed dispatch rejects reverted parent generation and durable holds befo
   await expect(f.owner.withManagedTaskDispatch(f.create, async () => { effects++; })).rejects.toMatchObject({ code: 'native_session_held' });
   await f.runtime.releaseNativeAdmission({ directory: f.directory, sessionID: 'ses_root', ownerID: 'managed-hold', holdID: hold.id, expectedRevision: hold.revision });
   const tx = await f.runtime.prepareRevert({ directory: f.directory, sessionID: 'ses_root', messageID: 'msg_task_user' });
-  await expect(f.owner.withManagedTaskDispatch(f.create, async () => { effects++; })).rejects.toMatchObject({ code: 'native_managed_task_control_invalid' });
+  await expect(f.owner.withManagedTaskDispatch(f.create, async () => { effects++; })).rejects.toMatchObject({ code: 'native_session_revert_pending', status: 409 });
   await f.runtime.settleRevert({ directory: f.directory, transactionID: tx.id, commit: true });
   expect((await f.runtime.leaseForCall({ directory: f.directory, sessionID: 'ses_root', callID: 'call_task' })).generation).toBe(0);
   expect((await f.runtime.capturedSessionState({ directory: f.directory, sessionID: 'ses_root' })).generation).toBe(1);
   await expect(f.owner.withManagedTaskDispatch(f.create, async () => { effects++; })).rejects.toMatchObject({ code: 'native_managed_task_control_invalid' });
   expect(effects).toBe(1);
+  expect(f.diagnostics.map(record => record.payload.check)).toEqual(['held', 'revert_pending', 'lease_generation']);
+  expect(f.diagnostics.every(record => record.event === 'managed_dispatch_rejected' && record.sessionID === 'ses_root')).toBe(true);
+});
+
+test('another root\'s unsettled Revert in the same checkout does not fence managed dispatch', async () => {
+  const f = await managedFixture(); let effects = 0;
+  await f.runtime.registerPrompt({ directory: f.directory, sessionID: 'ses_other', userMessageID: 'msg_other' });
+  await f.runtime.prepareRevert({ directory: f.directory, sessionID: 'ses_other', messageID: 'msg_other' });
+  // Project-wide evidence still reports the pending transaction for ledger-bypass callers.
+  expect((await f.runtime.capturedSessionState({ directory: f.directory, sessionID: 'ses_root' })).pending).toBe(true);
+  expect(await f.runtime.capturedSessionState({ directory: f.directory, sessionID: 'ses_root', pendingScope: 'session' }))
+    .toEqual({ captured: true, pending: false, generation: 0 });
+  await f.owner.withManagedTaskDispatch(f.create, async () => { effects++; });
+  expect(effects).toBe(1);
+  expect(f.diagnostics).toEqual([]);
 });
 
 test('managed dispatch awaiting scheduler ownership cannot survive controller invalidation', async () => {
