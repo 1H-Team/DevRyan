@@ -1726,6 +1726,10 @@ Managed child prompt tool maps enable `devryan_plan_read` only for retained `app
 
 Only complete canonical process output can establish an environment skip. Skipped checks permit disposition and closeout with completion status `skipped`, never `passed`; SQL/assertion/application failures remain blocking. Content changes invalidate skip receipts as well as passes.
 
+## Managed dispatch admission
+
+`withManagedTaskDispatch` verifies the parent's `devryan_task` control lease against the root's captured generation. Only the root's own unsettled Revert fences dispatch (`native_session_revert_pending`, 409); a prepared transaction of another root in the same checkout does not. Every refusal journals `managed_dispatch_rejected` with the operation, the failing check (`captured`, `revert_pending`, `lease_missing`, `generation`, `lease_kind`, `lease_preparation`, `lease_state`, `lease_generation`, `lease_scope`, `held`, `reverting`) and the code; `journal summary` lists it under errors as kind `dispatch`.
+
 ## Managed child interruption authority
 
 `withManagedTaskDispatch` accepts `abort` for the current scheduler settlement lease and its canonical child. It verifies task identity, parent control-call capture, directory and child ancestry before issuing a permit limited to `session.interrupt` with an empty payload. Every effect rechecks the lease; resume, child removal and selection changes are excluded. This lets detached timeout cleanup and same-child retry stop the old runner without requiring an HTTP principal or retaining the original tool permit.

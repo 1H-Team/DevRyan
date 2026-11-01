@@ -550,8 +550,9 @@ export const summarizeSessionTree = async (journalDirectory, rootSessionID, { si
   const phases = new Map();
   const errors = [];
   const controls = [];
-  const counts = { aborts: 0, otherControls: 0, retries: 0, providerRecoveries: 0, permissionAsked: 0, permissionReplied: 0,
+  const counts = { aborts: 0, otherControls: 0, retries: 0, providerRecoveries: 0, recoveryStops: 0, permissionAsked: 0, permissionReplied: 0,
     questionAsked: 0, questionReplied: 0, questionRejected: 0 };
+  const failedTasks = new Set();
   let gaps = 0;
   let firstAt = 0;
   let lastAt = 0;
@@ -595,8 +596,11 @@ export const summarizeSessionTree = async (journalDirectory, rootSessionID, { si
         asString(payload.probe) ? `probe=${payload.probe}` : '',
         asString(payload.providerRequestID) ? `providerRequestID=${payload.providerRequestID}` : '',
       ].filter(Boolean).join(' ') });
+    } else if (record?.type === 'lifecycle' && record.event === 'managed_dispatch_rejected') {
+      errors.push({ at, sessionID, kind: 'dispatch', detail: `${asString(payload.code) || '?'} check=${asString(payload.check) || '?'}` });
     } else if (record?.type === 'lifecycle' && record.event === 'provider_recovery_control') {
-      counts.providerRecoveries += 1;
+      // A stop cancels the recovery record; it is not a provider recovery.
+      if (payload.action === 'stop') counts.recoveryStops += 1; else counts.providerRecoveries += 1;
       controls.push({ at, sessionID, kind: 'provider_recovery', action: asString(payload.action) || '?', source: null,
         detail: modelLabel(payload.providerID, payload.modelID) });
     } else if (record?.type === 'open_code_event') {
@@ -605,6 +609,14 @@ export const summarizeSessionTree = async (journalDirectory, rootSessionID, { si
       if (eventType === 'session.error') {
         session.errors += 1;
         errors.push({ at, sessionID, kind: 'session', detail: clip(properties.error ?? null, 300) });
+      } else if (eventType === 'devryan:managed-task') {
+        // Task snapshots repeat; report each failed task once.
+        const task = asObject(properties.task) ?? {};
+        const taskId = asString(task.taskId);
+        if (task.status === 'failed' && taskId && !failedTasks.has(taskId)) {
+          failedTasks.add(taskId);
+          errors.push({ at, sessionID, kind: 'task', detail: `${asString(task.agent) || '?'} ${asString(task.failureReason) || '?'}` });
+        }
       } else if (eventType === 'session.status') {
         const status = asObject(properties.status) ?? {};
         session.status = asString(status.type) || session.status;
@@ -801,7 +813,7 @@ export const formatSessionSummary = (summary) => {
 
   const { counts } = summary;
   lines.push('', `CONTROLS (aborts=${counts.aborts} other=${counts.otherControls} retries=${counts.retries}`
-    + ` provider_recovery=${counts.providerRecoveries} permission=${counts.permissionAsked}/${counts.permissionReplied}`
+    + ` provider_recovery=${counts.providerRecoveries} recovery_stops=${counts.recoveryStops} permission=${counts.permissionAsked}/${counts.permissionReplied}`
     + ` question=${counts.questionAsked}/${counts.questionReplied}/${counts.questionRejected} asked/answered[/rejected]):`);
   lines.push(...limited(summary.controls, 30, (control) => `  ${clock(control.at)} ${control.sessionID} ${control.kind}`
     + `${control.action ? ` ${control.action}` : ''}${control.source ? ` source=${control.source}` : ''}${control.detail ? ` ${control.detail}` : ''}`));

@@ -3127,11 +3127,13 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
   // Read-only ownership evidence for callers that run without the companion.
   // A session the ledger has registered, or any prepared transaction in its
   // project, must never be reverted by a path that bypasses the ledger.
+  // `pendingScope: 'session'` is for admitting the session's own work: prepare
+  // marks every member pending, so another root's unsettled Revert is ignored.
   const capturedSessionState = (input) => snapshotOrLocked(input.directory, async (repo) => {
     if (!repo) return { captured: false, pending: false };
     const session = await repo.db.get(key('sessions', input.sessionID));
     let pending = Boolean(session?.pending);
-    if (!pending) for await (const { value } of repo.db.entries('transactions')) if (value.state === 'prepared') { pending = true; break; }
+    if (!pending && input.pendingScope !== 'session') for await (const { value } of repo.db.entries('transactions')) if (value.state === 'prepared') { pending = true; break; }
     return { captured: Boolean(session), pending, ...(session && !pending ? { generation: session.generation } : {}) };
   }, { requireExisting: true });
   const pendingTransactions = (input) => locked(input.directory, async (repo) => {

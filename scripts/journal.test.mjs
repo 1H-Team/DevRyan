@@ -208,6 +208,12 @@ const writeSummaryFixture = async (directory) => {
     event(T0 + 7_500, 'ses_child', 'question.replied', { requestID: 'que_1', answers: [['secret answer']] }),
     { type: 'lifecycle', at: T0 + 7_600, runtime: 'test', event: 'provider_recovery_control', sessionID: 'ses_child',
       payload: { action: 'stop', providerID: 'anthropic', modelID: 'claude-x' } },
+    { type: 'lifecycle', at: T0 + 7_650, runtime: 'test', event: 'managed_dispatch_rejected', sessionID: 'ses_child',
+      payload: { operation: 'create', check: 'revert_pending', code: 'native_session_revert_pending' } },
+    event(T0 + 7_700, 'ses_child', 'devryan:managed-task', { task: { taskId: 'dvr_task_1', agent: 'explorer', status: 'failed',
+      failureReason: 'native_session_revert_pending' } }),
+    event(T0 + 7_710, 'ses_child', 'devryan:managed-task', { task: { taskId: 'dvr_task_1', agent: 'explorer', status: 'failed',
+      failureReason: 'native_session_revert_pending' } }),
     event(T0 + 9_000, 'ses_child', 'session.status', { status: { type: 'busy' } }),
   ]);
   await bucket('ses_grand', null, [
@@ -279,6 +285,8 @@ describe('journal summary', () => {
     assert.deepEqual(summary.errors.map(({ sessionID, kind, detail }) => ({ sessionID, kind, detail })), [
       { sessionID: 'ses_root', kind: 'tool', detail: 'bash: Tool execution interrupted' },
       { sessionID: 'ses_child', kind: 'provider', detail: 'stream ECONNRESET anthropic/claude-x host=127.0.0.1:3456 elapsedMs=90000 sinceLastByteMs=75000 probe=ok providerRequestID=req_011' },
+      { sessionID: 'ses_child', kind: 'dispatch', detail: 'native_session_revert_pending check=revert_pending' },
+      { sessionID: 'ses_child', kind: 'task', detail: 'explorer native_session_revert_pending' },
       { sessionID: 'ses_root', kind: 'session', detail: '{"name":"MessageAbortedError","data":{"message":"Aborted"}}' },
     ]);
     assert.deepEqual(summary.controls.map(({ kind, action, source, detail }) => [kind, action, source, detail]), [
@@ -290,7 +298,7 @@ describe('journal summary', () => {
       ['provider_recovery', 'stop', null, 'anthropic/claude-x'],
       ['control', 'abort', 'stop_button', 'POST'],
     ]);
-    assert.deepEqual(summary.counts, { aborts: 1, otherControls: 0, retries: 1, providerRecoveries: 1, permissionAsked: 1,
+    assert.deepEqual(summary.counts, { aborts: 1, otherControls: 0, retries: 1, providerRecoveries: 0, recoveryStops: 1, permissionAsked: 1,
       permissionReplied: 1, questionAsked: 1, questionReplied: 1, questionRejected: 0 });
 
     const text = formatSessionSummary(summary);

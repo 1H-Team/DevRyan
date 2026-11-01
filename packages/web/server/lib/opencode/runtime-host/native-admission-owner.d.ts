@@ -62,7 +62,8 @@ export interface NativeAdmissionOwnerOptions {
   readonly assertRecoveredInputOperation?:(request:OperationRequest,entry?:Readonly<Record<string,unknown>>)=>object|undefined;
   readonly recordDiagnostic?:(record:{type:'lifecycle';event:'session_removal';sessionID?:string;payload:{stage:string;outcome:string;code:string}}
     |{type:'lifecycle';event:'native_mcp_elicitation';payload:{outcome:'cancelled';reason:string;fieldKinds:string[];server?:string}}
-    |{type:'lifecycle';event:'background_policy_unknown';sessionID:string;payload:{operation:'job.shell.background'}})=>void;
+    |{type:'lifecycle';event:'background_policy_unknown';sessionID:string;payload:{operation:'job.shell.background'}}
+    |{type:'lifecycle';event:'managed_dispatch_rejected';sessionID:string;payload:{operation:string;check:string;code:string}})=>void;
   readonly verifyRecoveredInputPublication?:(input:Readonly<Record<string,unknown>>)=>Promise<readonly {readonly sessionID:string;readonly inboxID:string}[]>;
   readonly withRecoveredPrimaryGrant?:<A>(input:NativePrimaryContinuationDispatch,record:PrimaryRecoveryExecutionRecord,action:(recheck:()=>Promise<void>)=>Promise<A>,originalRecheck:()=>Promise<void>)=>Promise<A>;
   readonly withRecoveredShellGrant?:<A>(input:NativePrimaryContinuationDispatch&{readonly expectedItem?:unknown;readonly shellReceipt?:{readonly token:string;readonly jobID:string;readonly command:string;readonly exitCode:number;readonly itemHash?:string;readonly itemDelivery?:'queue'|'steer'}},authorize:()=>Promise<void>,action:(recheck:()=>Promise<void>)=>Promise<A>)=>Promise<A>;

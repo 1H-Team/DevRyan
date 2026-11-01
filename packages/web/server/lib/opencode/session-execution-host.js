@@ -13,7 +13,7 @@ import { createSessionMutationHost } from '@devryan/harness-runtime';
 import { prepareSessionExecution, readSessionExecutionReceipt, verifySessionExecutionLauncher, startSessionExecution, startReadOnlySessionExecution, runReadOnlySessionExecution, sweepExecutionSocketDirectories, executionViewMarker } from '@devryan/harness-runtime/lib/session-execution.js';
 import { browserOpenTargets, createServedIdentity, loopbackPorts, previewStaleMessage, publicServedIdentity, servedFreshness } from './native-served-identity.js';
 import { createScopedRevertCoordinator } from './session-revert-coordinator.js';
-import { createSessionExecutionOwner } from '@devryan/harness-runtime/lib/session-execution-owner.js';
+import { awaitCancelledExecutions, createSessionExecutionOwner } from '@devryan/harness-runtime/lib/session-execution-owner.js';
 import { CURSOR_PROVIDER_ID } from '@devryan/cursor-sdk-runtime';
 import { createExecutionHostOwner, executionHostOwnerLost, executionOwnerFactory } from '@devryan/harness-runtime/lib/execution-host-owner.js';
 import { createExecutionPreparations, recoverExecutionLeases } from './execution-preparations.js';
@@ -443,9 +443,11 @@ export function createSessionExecutionHost(options) {
     }
     if (input.action === 'cancel-sessions') {
       if (!Array.isArray(input.sessions) || input.sessions.some((id) => !identity(id))) throw failure('invalid_capture_identity', 400);
-      const selected = [...nativeHandles.values()].filter((job) => input.sessions.includes(job.input.sessionID));
+      // Finished jobs stay mapped until their events are acknowledged; they
+      // already ended, so a retried revert must not await them again.
+      const selected = [...nativeHandles.values()].filter((job) => !job.done && input.sessions.includes(job.input.sessionID));
       for (const job of selected) job.controller.abort(failure('execution_cancelled'));
-      await Promise.all(selected.map((job) => job.settled));
+      if (!await awaitCancelledExecutions(selected.map((job) => job.settled))) throw failure('mutation_termination_unconfirmed');
       // This attests only supervised processes. The caller separately owns
       // native runner interruption and may not infer it from an empty map.
       return { processesTerminated: true, sessions: input.sessions };
