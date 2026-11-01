@@ -2037,7 +2037,7 @@ export const dict = {
   'sessions.scheduledTasks.editor.branch.placeholder': 'Select branch',
   'sessions.scheduledTasks.editor.validation.branchRequired': 'Choose a branch for this task.',
   'chat.chatInput.worktrees': 'Worktrees',
-  'chat.chatInput.worktreeToggle': 'Worktree',
+  'chat.chatInput.worktreeToggle': 'New',
   'chat.chatInput.worktreeToggleAria': 'Start Chat in New Worktree',
   'chat.chatInput.drop.insertMention': 'Drop to insert as mention',
   'chat.chatInput.drop.attachFiles': 'Drop files here to attach',
