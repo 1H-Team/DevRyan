@@ -263,6 +263,13 @@ from when the session permit is acquired. Parallel starts queued behind
 siblings therefore cannot exhaust it. An uncommitted start that runs out reports
 `native_task_start_timeout`, and the executor retries it under the same
 idempotency key. A terminal `status` collects and stages exactly like `wait`.
+After a committed start that is still `starting` without a child, and after its
+permit and control lease end (child admission needs both), the owner waits up to
+3 s through the runtime's `awaitStartAdmission`. If the task failed before any
+child existed, the owner reads its `status`, collects and stages it like `wait`,
+and returns it with `dispatched: false` and the `notStarted` instruction, so the
+next call may `retry` or `abandon` it. Any doubt returns the committed `starting`
+receipt unchanged.
 Reading a result that was never collected reports `native_task_wait_required`.
 
 Later `wait`, `wait_any` and `status` slices reattach to the exact published

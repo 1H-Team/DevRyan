@@ -65,6 +65,22 @@ const AUTO_RESUME_SETTLED_CODES = new Set([
   'result_already_acknowledged',
   'result_already_acknowledging',
 ]);
+// A start refused at native admission fails a few hundred milliseconds after
+// submit, before any child exists. A start waits up to this long for admission
+// so the parent learns that failure from start itself instead of spending
+// wait_any + abandon turns (live QA 2026-11-01). Past it, start reports `starting`.
+const START_ADMISSION_SETTLE_MS = 3_000;
+// Native admission refusals that a settling revert, hold or controller
+// handover can clear. Lease, scope and catalog refusals are final.
+const TRANSIENT_NATIVE_ADMISSION_CODES = new Set([
+  'native_managed_task_control_invalid',
+  'native_session_revert_pending',
+  'native_session_held',
+  'native_permit_capacity',
+  'native_controller_replacing',
+  'native_managed_task_owner_unavailable',
+]);
+const NATIVE_ADMISSION_RETRY_DELAY_MS = 750;
 
 const resolveMinimumTaskTimeoutMs = (agent) => {
   const normalizedAgent = typeof agent === 'string' ? agent.trim().toLowerCase() : '';
@@ -297,20 +313,81 @@ const normalizeHandoffParams = (params) => {
   };
 };
 
+// One delayed retry when native admission refuses a create for a transient
+// reason. Only a refusal raised before the create ran is retried: after it, a
+// child may exist and the executor's own cleanup owns the outcome.
+export const withNativeAdmissionRetry = (dispatch, { delayMs = NATIVE_ADMISSION_RETRY_DELAY_MS, onAdmitted = () => {}, logger = console } = {}) => (
+  async (input, action) => {
+    if (input?.operation !== 'create') return await dispatch(input, action);
+    let invoked = false;
+    const admitted = (...args) => { invoked = true; onAdmitted(input.taskId); return action(...args); };
+    try {
+      return await dispatch(input, admitted);
+    } catch (error) {
+      if (invoked || !TRANSIENT_NATIVE_ADMISSION_CODES.has(error?.code)) throw error;
+      try { logger.warn?.('[ManagedOrchestration] Retrying refused native admission once', { taskId: input.taskId, code: error.code }); } catch {}
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+      return await dispatch(input, admitted);
+    }
+  }
+);
+
 export const createWebManagedOrchestrationRuntime = (options = {}) => {
   const logger = options.logger ?? console;
   const now = options.now ?? Date.now;
   const isManagedOpenCode = options.isManagedOpenCode ?? (() => true);
   const getWorkAdmissionBlock = options.getWorkAdmissionBlock ?? (() => null);
   const emitEvent = options.publishEvent ?? (() => undefined);
+  const startAdmissionWaiters = new Map();
   const publishEvent = async event => {
     if (event.type === 'devryan:managed-task') {
+      for (const check of startAdmissionWaiters.get(event.properties.task.taskId) ?? []) check();
       const task = scheduler.getTask(event.properties.task.taskId);
       if (task?.requiredChecks?.length) event = { ...event, properties: { ...event.properties,
         task: { ...event.properties.task, verification: await projectVerification(task) } } };
     }
     return emitEvent(event);
   };
+  const startAdmissionSettleMs = options.startAdmissionSettleMs ?? START_ADMISSION_SETTLE_MS;
+  // Task IDs whose native create passed admission; bounded, read only by the wait below.
+  const admittedStarts = new Set();
+  const noteAdmittedStart = taskId => {
+    admittedStarts.add(taskId);
+    while (admittedStarts.size > 256) admittedStarts.delete(admittedStarts.values().next().value);
+    for (const check of startAdmissionWaiters.get(taskId) ?? []) check();
+  };
+  // Resolves with the current task once it has a child, native admission let
+  // its create through, it left `starting` or settled, or at the bound. The
+  // caller must not hold the parent's session lock or control lease: child
+  // admission needs both.
+  const awaitStartAdmission = async (taskId, { signal } = {}) => {
+    await ensureInitialized();
+    const task = scheduler.getTask(taskId);
+    const pending = current => current?.status === 'starting' && !current.childSessionId && !admittedStarts.has(current.taskId);
+    if (!task || !(startAdmissionSettleMs > 0) || !pending(task) || signal?.aborted) return task;
+    return await new Promise(resolve => {
+      const checks = startAdmissionWaiters.get(task.taskId) ?? new Set();
+      let timer;
+      const finish = () => {
+        clearTimeout(timer);
+        signal?.removeEventListener('abort', finish);
+        checks.delete(check);
+        if (checks.size === 0) startAdmissionWaiters.delete(task.taskId);
+        resolve(scheduler.getTask(task.taskId) ?? task);
+      };
+      const check = () => { if (!pending(scheduler.getTask(task.taskId))) finish(); };
+      checks.add(check);
+      startAdmissionWaiters.set(task.taskId, checks);
+      timer = setTimeout(finish, startAdmissionSettleMs);
+      timer.unref?.();
+      signal?.addEventListener('abort', finish, { once: true });
+      check();
+    });
+  };
+  const nativeTaskDispatch = typeof options.nativeTaskDispatch === 'function'
+    ? withNativeAdmissionRetry(options.nativeTaskDispatch, { delayMs: options.nativeAdmissionRetryDelayMs,
+      onAdmitted: noteAdmittedStart, logger })
+    : undefined;
   const cursorReadOnly = options.cursorReadOnly === true && typeof options.nativeTaskDispatch === 'function';
   const supportsReadOnlyProvider = providerId => supportsManagedReadOnlyProvider(providerId, { cursorReadOnly });
   const harnessPolicies = Object.freeze(Object.fromEntries(Object.entries((typeof options.nativeTaskDispatch === 'function' ? resolveNativeHarnessPolicies : resolveHarnessPolicies)(options.environment ?? process.env))
@@ -417,7 +494,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     cursorSdkRuntime: options.cursorSdkRuntime,
     cursorReadOnly,
     registerExecutionChild: options.registerExecutionChild,
-    nativeTaskDispatch: options.nativeTaskDispatch,
+    nativeTaskDispatch,
     ...(openCodeClient === null ? {} : { openCodeClient }),
     readTerminalError: (input) => terminalErrors.read(input),
     readOperatorAbort: (input) => scheduler.readOperatorStop(input) ?? operatorAborts.read(input),
@@ -1103,7 +1180,9 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
             check: required.checks.find(check => check.name === correction.name), correction, verifyRunner: verifyCheckRunner });
           context.signal?.throwIfAborted(); assertAvailable(); assertWorkAdmission();
         } });
-        return committedProjection({ taskId: task.taskId, rootSessionId: task.rootSessionId, action: 'start', status: task.status }, () => project(task));
+        // Compatibility callers ask to learn a pre-child failure from this receipt.
+        const settled = params.awaitAdmission === true ? await awaitStartAdmission(task.taskId, { signal: context.signal }) ?? task : task;
+        return committedProjection({ taskId: settled.taskId, rootSessionId: settled.rootSessionId, action: 'start', status: settled.status }, () => project(settled));
       }
       case 'wait': {
         const task = getScopedTask(params);
@@ -1506,6 +1585,14 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     },
     handleRpc,
     withSubmissionPreparation,
+    // Native start: called after the parent's permit and control lease end.
+    async awaitStartAdmission({ taskId, rootSessionId, directory }, { signal } = {}) {
+      const inScope = task => task?.rootSessionId === rootSessionId && task.directory === directory;
+      await ensureInitialized();
+      if (!inScope(scheduler.getTask(taskId))) return null;
+      const task = await awaitStartAdmission(taskId, { signal });
+      return inScope(task) ? { taskId: task.taskId, status: task.status, childSessionId: task.childSessionId ?? null } : null;
+    },
     getSnapshot,
     inspectRequiredChecks,
     discardObjectiveChecks: (scope, authorize) => scheduler.discardObjectiveChecks(scope, authorize),

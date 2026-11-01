@@ -4632,6 +4632,42 @@ describe('dispatch result wording', () => {
     expect(output.instructions).toContain('"wait"');
   });
 
+  it('reports a start that failed before its child existed as NOT STARTED, already collected for abandon', async () => {
+    // Live QA 2026-11-01: native admission refused Explorer in 166 ms, and the
+    // orchestrator spent wait_any and abandon turns to learn that.
+    const failed = { taskId: 'dvr_task_refused', rootSessionId: 'ses_root', directory: '/workspace', label: 'Map routing',
+      agent: 'explorer', status: 'failed', childSessionId: null, dispatchCallId: 'toolu_refused', agentRetryAvailable: true,
+      manualRecoveryRequired: false, failureReason: 'native_managed_task_control_invalid' };
+    const envelope = { envelopeId: 'dvr_result_refused', taskId: 'dvr_task_refused', status: 'failed', action: null,
+      partial: false, resumable: false, failureReason: 'native_managed_task_control_invalid' };
+    const requests = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      const request = JSON.parse(init.body);
+      requests.push(request);
+      const result = request.method === 'submit'
+        ? { task: failed, resultEnvelope: envelope, instruction: 'This task failed before its child session existed.' }
+        : { task: failed, resultEnvelope: { ...envelope, action: 'abandon' } };
+      return new Response(JSON.stringify({ ok: true, result }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }));
+    const plugin = await DevRyanManagedOrchestrationPlugin({ client: clientWithTurn() });
+
+    const output = JSON.parse(await plugin.tool.devryan_task.execute({
+      action: 'start', agent: 'explorer', prompt: 'Map the routing flow.', provider_id: 'xai', model_id: 'grok-4.6',
+    }, context({ messageID: 'msg_002', callID: 'toolu_refused' })));
+
+    expect(requests[0].params.awaitAdmission).toBe(true);
+    expect(output.dispatched).toBe(false);
+    expect(output.task).toMatchObject({ status: 'failed', agentRetryAvailable: true });
+    expect(output.instructions).toContain('NOT STARTED');
+    expect(output.instructions).toContain('native_managed_task_control_invalid');
+    expect(output.instructions).toContain('do not call wait or wait_any');
+    expect(output.instructions).toContain('This task failed before its child session existed.');
+    expect(output.instructions).not.toContain('DISPATCHED');
+
+    await plugin.tool.devryan_task.execute({ action: 'abandon', task_id: 'dvr_task_refused' }, context({ messageID: 'msg_003' }));
+    expect(requests.map(request => request.method)).toEqual(['submit', 'acknowledge']);
+  });
+
   it('says ALREADY RUNNING when the scheduler collapsed the dispatch', async () => {
     // The scheduler returns the pre-existing task, whose dispatchCallId belongs
     // to the FIRST call — that mismatch is how we know it was collapsed.
