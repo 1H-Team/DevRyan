@@ -2549,6 +2549,17 @@ export function toUserFacingRevertError(error: unknown): unknown {
 export const isRevertErrorCode = (error: unknown, code: string): boolean =>
   Boolean(error) && typeof error === "object" && (error as RevertErrorLike).code === code
 
+/**
+ * Label for the alternative to a Revert that could not confirm termination:
+ * the work may still be settling, but forking from the message starts a new
+ * session with the prompt restored. Null when Revert failed for another reason.
+ */
+export function revertForkFallbackLabel(error: unknown): string | null {
+  return isRevertErrorCode(error, "mutation_cancellation_failed") || isRevertErrorCode(error, "mutation_termination_unconfirmed")
+    ? translate("chat.sessionChanges.action.forkAndEdit")
+    : null
+}
+
 function announcePartialMutation(result: { outcome?: 'partial'; conflicts?: Array<{ path: string }> }, redo = false): boolean {
   if (result.outcome !== 'partial') return false
   void import("@/components/ui").then(({ toast }) => toast.warning(translate(

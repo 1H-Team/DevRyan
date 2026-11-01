@@ -780,11 +780,14 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         try {
             await revertToMessage(targetSessionId, messageId);
         } catch (error) {
-            toast.error(error instanceof Error ? error.message : 'Failed to revert message.');
+            const forkLabel = sessionActions.revertForkFallbackLabel(error);
+            toast.error(error instanceof Error ? error.message : 'Failed to revert message.', forkLabel ? {
+                action: { label: forkLabel, onClick: () => { void forkFromMessage(targetSessionId, messageId); } },
+            } : undefined);
         } finally {
             setIsReverting(false);
         }
-    }, [currentSessionId, isReverting, message.info.id, revertToMessage, sessionId]);
+    }, [currentSessionId, forkFromMessage, isReverting, message.info.id, revertToMessage, sessionId]);
 
     // NEW: Fork handler
     const handleFork = React.useCallback(() => {

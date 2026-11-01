@@ -1737,6 +1737,7 @@ export const dict = {
   'chat.sessionChanges.error.companionOwned': 'This conversation\'s edits are owned by the DevRyan companion, which is unavailable. Restore it to Revert or Redo. No messages or files were changed',
   'chat.sessionChanges.error.companionRecoveryPending': 'An interrupted Revert in this project is waiting for the DevRyan companion to recover. No messages or files were changed',
   'chat.sessionChanges.error.terminationUnconfirmed': 'Could not confirm that this task and its descendants stopped. Revert has not changed messages or files',
+  'chat.sessionChanges.action.forkAndEdit': 'Fork and edit',
   'chat.sessionChanges.error.recoveryRequired': 'Revert was interrupted and needs recovery. Newer edits have been preserved',
   'chat.sessionChanges.error.activityUnverified': 'Could not verify the task and its project. Refresh and retry Revert',
   'chat.sessionChanges.error.sessionBusy': 'This chat is still working; wait for it to finish',
