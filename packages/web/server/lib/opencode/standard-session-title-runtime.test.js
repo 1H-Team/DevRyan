@@ -1204,6 +1204,10 @@ describe('standard session title runtime', () => {
     )).toBe('Reliable Session Title Persistence');
     expect(normalizeGeneratedSessionTitle('Fix this', 'Fix this')).toBeNull();
     expect(normalizeGeneratedSessionTitle('```markdown\nBad title\n```', 'source')).toBeNull();
+    expect(normalizeGeneratedSessionTitle('<THINK>plan</THINK><reasoning>more</reasoning>\nHelper Title Budget Repair', 'source'))
+      .toBe('Helper Title Budget Repair');
+    // Cut off inside reasoning: nothing visible to title from.
+    expect(normalizeGeneratedSessionTitle('<think>The user wants a title for', 'source')).toBeNull();
     expect(deriveLocalSessionTitle('Make an implementation plan to fix reliable session title persistence'))
       .toBe('Reliable Session Title Persistence');
     expect(deriveLocalSessionTitle('Builder mode: explain idempotent retry behavior without using tools'))
@@ -1418,6 +1422,35 @@ describe('standard session title runtime on OpenCode 2 (openCodeClient)', () => 
       expect(projected[0]).toMatchObject({ title: 'Native Helper Session Title', source: 'session_model' });
       await runtime.dispose();
     }
+  });
+
+  // Live QA 2026-11-01: DeepSeek V4.1 Flash on Default reasoning spends its
+  // output budget on reasoning first. Under a 128-token cap the response held
+  // reasoning only, the helper reported empty_output and every session paid
+  // for a premium active-model title.
+  it.each([
+    ['separate reasoning stream', { reasoningTokens: 600, text: 'Session Title Helper Budget Fix' }],
+    ['inline think preamble', { reasoningTokens: 600, text: '<think>\nThe user wants a short title.\n</think>\n\nSession Title Helper Budget Fix' }],
+  ])('titles from a reasoning DeepSeek helper response (%s) without the premium fallback', async (_label, fixture) => {
+    const configured = { providerID: 'opencode', modelID: 'deepseek-v4.1-flash', revision: 'default' };
+    const resolveHelperSelection = vi.fn(async ({ selectionMode }) => selectionMode === 'configured'
+      ? { ...configured, selectionMode, selectionRevision: 'default' }
+      : { providerID: 'openai', modelID: 'gpt-6.1-sol', selectionMode, selectionRevision: 'active-session' });
+    // Reasoning consumes output tokens before any visible text; a cap at or
+    // below the reasoning length finishes inside reasoning with empty text.
+    const generateHelperText = vi.fn(async ({ maxOutputTokens }) => ({ text: maxOutputTokens > fixture.reasoningTokens ? fixture.text : '' }));
+    const fake = createFakeOpenCode(), projected = [], diagnostics = [];
+    const runtime = createRuntime({ fake, projected, diagnostics, generateSessionModelTitle: null, generateHelperText, resolveHelperSelection,
+      openCodeClient: createFakeOpenCodeClient(fake) });
+    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
+    expect(generateHelperText).toHaveBeenCalledOnce();
+    expect(generateHelperText).toHaveBeenCalledWith(expect.objectContaining({ providerID: 'opencode', modelID: 'deepseek-v4.1-flash', agent: 'devryan-title' }));
+    expect(generateHelperText.mock.calls[0][0]).not.toHaveProperty('variant');
+    expect(projected[0]).toMatchObject({ title: 'Session Title Helper Budget Fix', source: 'session_model' });
+    expect(stageOutcomes(diagnostics, 'session_model')).toEqual(['session_model:complete']);
+    expect(stageOutcomes(diagnostics, 'helper_create')).toEqual([]);
+    expect(diagnostics.map(({ payload }) => payload.providerID)).not.toContain('openai');
+    await runtime.dispose();
   });
 
   it('forwards the saved helper reasoning variant and journals the helper refusal code', async () => {
