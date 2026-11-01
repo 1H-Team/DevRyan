@@ -328,3 +328,59 @@ describe('automatic abort sources', () => {
     expect(classification?.text).not.toBe('Stopped after repeated provider connection failures.')
   })
 })
+
+describe('operator stops classified by structured fields', () => {
+  // The parent session's error after Stop in the 2026-11-01 live QA.
+  const qaStop = { name: 'MessageAbortedError', data: { message: 'Aborted', reason: 'user', v2Type: 'aborted', source: 'stop_button' } }
+  const stoppedByYou = { text: 'Stopped by you.', variant: 'info', abortKind: 'manual' }
+
+  test('the live QA stop event reads as a stop, not a provider failure', () => {
+    expect(classifyAssistantError(qaStop, { isLatestMessage: true })).toEqual(stoppedByYou)
+  })
+
+  test('an operator source wins for any detail', () => {
+    for (const message of ['Step interrupted', 'Tool execution interrupted', 'The operation was aborted', '']) {
+      for (const source of ['stop_button', 'double_escape', 'status_row']) {
+        const result = classifyAssistantError(
+          { name: 'MessageAbortedError', message: 'Aborted', data: { message, reason: 'user', source } },
+          { isLatestMessage: true },
+        )
+        expect(result).toEqual(stoppedByYou)
+      }
+    }
+  })
+
+  test('a stop the UI correlated with this message keeps the quiet manual presentation', () => {
+    const correlated = { manualAbortMessageId: 'msg_1', messageId: 'msg_1', isLatestMessage: true }
+    expect(classifyAssistantError(qaStop, correlated)).toEqual({ text: '', variant: 'plain', abortKind: 'manual' })
+    expect(classifyAssistantError({ name: 'MessageAbortedError', data: { message: 'Step interrupted' } }, correlated))
+      .toEqual({ text: '', variant: 'plain', abortKind: 'manual' })
+  })
+
+  test('the parent devryan_task interruption after a stop is not a provider error', () => {
+    const interrupted = { name: 'UnknownError', data: { message: 'Tool execution interrupted' } }
+    expect(classifyAssistantError(interrupted, { manualAbortMessageId: 'msg_1', messageId: 'msg_1', isLatestMessage: true }))
+      .toEqual({ text: '', variant: 'plain', abortKind: 'manual' })
+    expect(classifyAssistantError(interrupted, { isLatestMessage: true })?.variant).not.toBe('error')
+  })
+
+  test('an older stopped message adds no stop line', () => {
+    expect(classifyAssistantError(qaStop, { isLatestMessage: false })).toEqual({ text: '', variant: 'plain', abortKind: 'manual' })
+  })
+
+  test('an unattributed abort is still an abort, never the provider catch-all', () => {
+    const unattributed = { name: 'MessageAbortedError', data: { message: 'Step interrupted', reason: 'user', v2Type: 'aborted' } }
+    expect(classifyAssistantError(unattributed, { isLatestMessage: true })).toEqual({
+      text: 'The turn stopped before completion.',
+      variant: 'info',
+      abortKind: 'unexpected',
+    })
+  })
+
+  test('automatic sources and provider failures keep their own copy', () => {
+    expect(classifyAssistantError({ name: 'MessageAbortedError', data: { message: 'Aborted', reason: 'user', source: 'stall_watchdog' } })?.text)
+      .toBe('Stopped because the model provider stopped responding.')
+    expect(classifyAssistantError({ name: 'UnknownError', data: { message: 'Step interrupted' } }, { isLatestMessage: true })?.variant)
+      .toBe('error')
+  })
+})

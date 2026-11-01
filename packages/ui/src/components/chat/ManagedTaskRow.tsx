@@ -23,6 +23,7 @@ import {
 import { navigateToManagedTaskChild } from './managedTaskNavigation';
 import { getSameChildFollowUpTaskId } from './managedTaskRetryLineage';
 import { ModelRecoveryCard, type ModelRecoveryAutoResume } from './ModelRecoveryCard';
+import { ManagedTaskStoppedPanel } from './ManagedTaskStoppedPanel';
 import type { ControlledModelPickerProvider } from './ControlledModelPicker';
 import { formatEffortLabel } from './mobileControlsUtils';
 import { useManagedTaskTitle } from './managedTaskTitle';
@@ -335,6 +336,10 @@ export const ManagedTaskRowView = React.memo(({
   const manualRecoveryRequired = Boolean(resultEnvelope?.resumable && resultEnvelope.action === null
     && (task.manualRecoveryRequired === true || task.stoppedRecoveryAvailable === true || userStopped));
   const showRecovery = Boolean(onRetryInPlace && manualRecoveryRequired && (!stopped || !childActive));
+  // A stop is not a failure, so it resumes rather than recovers. Only a stopped
+  // task that also failed at its provider still asks for a model.
+  const showStoppedPanel = showRecovery && stopped
+    && (userStopped || !MODEL_RECOVERY_FAILURE_KINDS.has(task.failureKind ?? ''));
   const presentedTask = task;
   const status = getStatusPresentation(presentedTask, t);
   const providerFailurePresentation = getProviderFailurePresentation({
@@ -400,7 +405,22 @@ export const ManagedTaskRowView = React.memo(({
           </Button>
         ) : null}
       </div>
-      {showRecovery ? (
+      {showStoppedPanel ? (
+        <ManagedTaskStoppedPanel
+          title={t(userStopped ? 'chat.managedTasks.stoppedByYou' : 'chat.managedTasks.stopped')}
+          detail={t(userStopped ? 'chat.managedTasks.stoppedPanel.userDetail' : 'chat.managedTasks.stoppedPanel.detail')}
+          lastModelLabel={providerModelLabel(task, providers).combined}
+          providers={providers}
+          selection={selection}
+          onSelectionChange={setSelection}
+          pending={pending}
+          waitingForEvents={waitingForEvents}
+          onCancelWaiting={onCancelWaiting}
+          actionError={actionError}
+          onResume={(nextSelection) => onRetryInPlace?.(nextSelection)}
+          onDismiss={onDismissStopped}
+        />
+      ) : showRecovery ? (
         <ModelRecoveryCard
           embedded
           retryLabel={stopped ? t('chat.managedTasks.resumeAsTask') : undefined}

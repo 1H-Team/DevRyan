@@ -72,6 +72,13 @@ const getAutomaticAbortCopy = (source: AbortSource | undefined): string | undefi
   }
 }
 
+// Aborts the operator asked for. A `MessageAbortedError` carries the source as
+// `data.source`; OpenCode itself records every interrupt as reason "user".
+const OPERATOR_STOP_SOURCES: ReadonlySet<AbortSource> = new Set<AbortSource>(["stop_button", "double_escape", "status_row"])
+
+// The tool runtime's wording for a call an abort cut short.
+const TOOL_INTERRUPTION_DETAIL = /^tool execution (?:interrupted|aborted)$/
+
 type SteeredAbortOptions = {
   steeredAbortMessageId?: string | null
   messageId?: string | null
@@ -134,6 +141,58 @@ export function classifyAssistantError(
   const automaticAbortCopy = getAutomaticAbortCopy(decoded?.abortSource)
   if (automaticAbortCopy) return { text: automaticAbortCopy, variant: "info" }
 
+  // A `MessageAbortedError` is an abort whatever its detail ("Aborted", "Step
+  // interrupted", ...), and so is a tool call the abort cut short, such as the
+  // parent's `devryan_task`. None of them is a provider failure.
+  const normalizedDetail = detail.trim().toLowerCase()
+  if (errorName === "MessageAbortedError" || normalizedDetail === "aborted" || TOOL_INTERRUPTION_DETAIL.test(normalizedDetail)) {
+    if (options.manualAbortMessageId && options.messageId && options.manualAbortMessageId === options.messageId) {
+      return {
+        text: "",
+        variant: "plain",
+        abortKind: "manual",
+      }
+    }
+
+    const steeredAbort = classifySteeredAbortFallback(options)
+    if (steeredAbort) {
+      return steeredAbort
+    }
+
+    // The host attributed the abort to an operator stop this view did not
+    // correlate (another window, or after a reload).
+    if (decoded?.abortSource && OPERATOR_STOP_SOURCES.has(decoded.abortSource)) {
+      return options.isLatestMessage === false
+        ? { text: "", variant: "plain", abortKind: "manual" }
+        : { text: "Stopped by you.", variant: "info", abortKind: "manual" }
+    }
+
+    if (options.isLatestMessage === false) {
+      return undefined
+    }
+
+    const managedAbortCopy = (() => {
+      switch (options.managedAbortRecovery?.state) {
+        case "continuing":
+          return "The turn stopped before completion. DevRyan is continuing this subtask from saved progress."
+        case "recovered":
+          return "The turn stopped before completion. DevRyan continued this subtask from saved progress and completed it."
+        case "manual_recovery":
+          return options.managedAbortRecovery?.failureKind === "deadline_exceeded"
+            ? "This subtask ran out of time before completing. Choose a model and thinking level in the parent session’s Model Recovery card, then click Try Again to continue it."
+            : "This subtask stopped before completion. Choose a model and thinking level in the parent session’s Model Recovery card, then click Try Again."
+        case "stopped":
+        case undefined:
+          return "The turn stopped before completion."
+      }
+    })()
+
+    return {
+      text: managedAbortCopy,
+      variant: "info",
+      abortKind: "unexpected",
+    }
+  }
 
   if (errorName === "SessionRetry") {
     // Retrying cannot restore an expired sign-in; say so instead of "retrying automatically".
@@ -170,47 +229,6 @@ export function classifyAssistantError(
       text: `${PROVIDER_MODEL_NOT_FOUND_MESSAGE}\n\`${detail}\``,
       variant: "error",
       retryable: true,
-    }
-  }
-
-  if (detail.trim().toLowerCase() === "aborted") {
-    if (options.manualAbortMessageId && options.messageId && options.manualAbortMessageId === options.messageId) {
-      return {
-        text: "",
-        variant: "plain",
-        abortKind: "manual",
-      }
-    }
-
-    const steeredAbort = classifySteeredAbortFallback(options)
-    if (steeredAbort) {
-      return steeredAbort
-    }
-
-    if (options.isLatestMessage === false) {
-      return undefined
-    }
-
-    const managedAbortCopy = (() => {
-      switch (options.managedAbortRecovery?.state) {
-        case "continuing":
-          return "The turn stopped before completion. DevRyan is continuing this subtask from saved progress."
-        case "recovered":
-          return "The turn stopped before completion. DevRyan continued this subtask from saved progress and completed it."
-        case "manual_recovery":
-          return options.managedAbortRecovery?.failureKind === "deadline_exceeded"
-            ? "This subtask ran out of time before completing. Choose a model and thinking level in the parent session’s Model Recovery card, then click Try Again to continue it."
-            : "This subtask stopped before completion. Choose a model and thinking level in the parent session’s Model Recovery card, then click Try Again."
-        case "stopped":
-        case undefined:
-          return "The turn stopped before completion."
-      }
-    })()
-
-    return {
-      text: managedAbortCopy,
-      variant: "info",
-      abortKind: "unexpected",
     }
   }
 

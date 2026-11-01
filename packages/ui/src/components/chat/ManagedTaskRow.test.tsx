@@ -552,9 +552,9 @@ test('a user stop keeps Dismiss beside Resume as Task and names the last model, 
   const task = toManagedTaskEvent(stopped, envelope).properties.task;
   const html = renderView(<ManagedTaskRowView task={task} onOpenChild={() => undefined} resultEnvelope={envelope}
     onRetryInPlace={() => undefined} onDismissStopped={() => undefined} />);
-  const recovery = html.slice(html.indexOf('aria-label="Model Recovery"'));
-  expect(recovery).toContain('Dismiss Stopped Task');
-  expect(recovery.indexOf('Dismiss Stopped Task')).toBeLessThan(recovery.indexOf('Resume as Task'));
+  const panel = html.slice(html.indexOf('aria-label="Stopped by you"'));
+  expect(panel).toContain('Dismiss Stopped Task');
+  expect(panel.indexOf('Dismiss Stopped Task')).toBeLessThan(panel.indexOf('Resume as Task'));
   expect(html.match(/Dismiss Stopped Task/g)).toHaveLength(1);
   expect(html).toContain('Last model: github-copilot / gpt-4.1');
   expect(html).not.toContain('Failed model');
@@ -564,6 +564,32 @@ test('a user stop keeps Dismiss beside Resume as Task and names the last model, 
     onRetryInPlace={() => undefined} onDismissStopped={() => undefined} />);
   expect(active).not.toContain('Model Recovery');
   expect(active.match(/Dismiss Stopped Task/g)).toHaveLength(1);
+});
+
+test('a user stop is not presented as Model Recovery', () => {
+  const stopped = record('dvr_task_stopped', 'aborted', { terminationIntent: 'user_stopped', failureReason: 'Stopped by the user' });
+  const envelope = createManagedTaskResultEnvelope(stopped, { sequence: 1, createdAt: 2000, resumable: true });
+  const task = toManagedTaskEvent(stopped, envelope).properties.task;
+  const html = renderView(<ManagedTaskRowView task={task} onOpenChild={() => undefined} resultEnvelope={envelope}
+    onRetryInPlace={() => undefined} onDismissStopped={() => undefined} />);
+  expect(html).toContain('aria-label="Stopped by you"');
+  expect(html).toContain('You stopped this subtask.');
+  expect(html).not.toContain('Model Recovery');
+  expect(html).not.toContain('Choose a model');
+  expect(html).not.toContain('role="alert"');
+  // The last model is the default; choosing another is a secondary control.
+  expect(html).toContain('Change Model');
+  expect(html).not.toContain('aria-haspopup');
+});
+
+test('a provider failure still shows Model Recovery, not the stopped panel', () => {
+  const { task, envelope } = manualRecoveryFailure('provider_usage_limit', null);
+  const html = renderView(<ManagedTaskRowView task={task} resultEnvelope={envelope} onRetryInPlace={() => undefined} onOpenChild={() => undefined} />);
+  expect(html).toContain('aria-label="Model Recovery"');
+  expect(html).toContain('Choose a model to continue this subtask');
+  expect(html).toContain('Try Again');
+  expect(html).not.toContain('Stopped by you');
+  expect(html).not.toContain('Resume as Task');
 });
 
 test('the session surface renders its own card without linking to the session it is in', () => {
