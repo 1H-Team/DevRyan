@@ -1,5 +1,5 @@
 import { DEFAULT_HELPER_MODEL_SELECTION } from '@devryan/shared-runtime';
-import {generateTextWithSessionModel} from './session-model-text.js';
+import {generateTextWithSessionModel, stripReasoningPreamble} from './session-model-text.js';
 import { NativeCommandRefusal } from './runtime-host/native-command-refusal.js';
 import crypto from 'node:crypto';
 import { isManagedTaskPlaceholderSession as isManagedPlaceholderSession } from '@devryan/orchestration-runtime';
@@ -125,19 +125,6 @@ const ownsTitle = (job, title) => {
   return normalized === job?.candidateTitle || normalized === trimString(job?.replacesTitle);
 };
 const isManualTitle = (job, session) => !isEligibleStandardSession(session) && !ownsTitle(job, session?.title);
-
-// Some OpenAI-compatible routes inline reasoning into the visible text as a
-// leading <think> block; the title is what follows it. An unclosed block was
-// cut off inside reasoning and has no visible answer.
-const stripReasoningPreamble = (value) => {
-  let text = trimString(value);
-  for (let match; (match = /^<(think|thinking|reasoning)>/i.exec(text));) {
-    const end = text.toLowerCase().indexOf(`</${match[1].toLowerCase()}>`, match[0].length);
-    if (end < 0) return '';
-    text = text.slice(end + match[1].length + 3).trim();
-  }
-  return text;
-};
 
 export const normalizeGeneratedSessionTitle = (value, sourceText = '', { rejectSourceMatch = true } = {}) => {
   const raw = stripReasoningPreamble(value);

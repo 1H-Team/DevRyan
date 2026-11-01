@@ -6,6 +6,19 @@ import { isFreeTierRejectedMessage } from '@devryan/shared-runtime/lib/free-tier
 
 export const SESSION_MODEL_TEXT_TIMEOUT_MS = 60_000;
 
+// Some OpenAI-compatible routes inline reasoning into the visible text as a
+// leading <think> block; the answer is what follows it. An unclosed block was
+// cut off inside reasoning and has no visible answer.
+export const stripReasoningPreamble = (value) => {
+  let text = typeof value === 'string' ? value.trim() : '';
+  for (let match; (match = /^<(think|thinking|reasoning)>/i.exec(text));) {
+    const end = text.toLowerCase().indexOf(`</${match[1].toLowerCase()}>`, match[0].length);
+    if (end < 0) return '';
+    text = text.slice(end + match[1].length + 3).trim();
+  }
+  return text;
+};
+
 export const sessionModelFailureReasonForStatus = (status) => {
   const code = Number(status);
   if (code === 429) return 'rate_limited';
@@ -63,7 +76,7 @@ async function generateWithModel({ openCodeClient, generateHelperText, cursorRun
         : await generateHelperText({ operationID, directory, ...(sessionID ? { sessionID } : {}), providerID, modelID, agent,
           ...(variant ? { variant } : {}), ...(selectionMode ? { selectionMode, selectionRevision } : {}), prompt: text, ...(system ? { system } : {}), timeoutMs: remaining, maxOutputTokens, signal });
       signal?.throwIfAborted();
-      const output = typeof generated?.text === 'string' ? generated.text : '';
+      const output = stripReasoningPreamble(generated?.text);
       const value = output ? await accept(output) : null;
       if (value) return finish({ ok: true, value, text: output, reason: null });
       if (text === repairPrompt || !repairPrompt) return finish({ reason: output ? 'invalid_output' : 'empty_output' });

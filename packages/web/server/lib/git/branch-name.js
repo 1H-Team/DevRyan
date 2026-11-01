@@ -2,7 +2,9 @@
 
 export const BRANCH_NAME_PROMPT_MAX_LENGTH = 4_000;
 export const BRANCH_NAME_TIMEOUT_MS = 6_000;
-export const BRANCH_NAME_MAX_OUTPUT_TOKENS = 64;
+// Reasoning helpers (the default DeepSeek V4.1 Flash) spend output tokens on
+// reasoning before the slug; a 64-token cap ended inside reasoning.
+export const BRANCH_NAME_MAX_OUTPUT_TOKENS = 2048;
 export const BRANCH_SLUG_MAX_WORDS = 5;
 export const BRANCH_SLUG_MAX_LENGTH = 40;
 

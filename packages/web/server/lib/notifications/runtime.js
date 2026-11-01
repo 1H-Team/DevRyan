@@ -7,7 +7,8 @@ export const SESSION_COMPLETION_NOTIFICATION_SETTLE_MS = 500;
 
 const NOTIFICATION_HELPER_AGENT = 'devryan-notify';
 const NOTIFICATION_SUMMARY_TIMEOUT_MS = 15_000;
-const NOTIFICATION_SUMMARY_MAX_OUTPUT_TOKENS = 256;
+// Room for a reasoning helper's thinking before the one-sentence summary.
+const NOTIFICATION_SUMMARY_MAX_OUTPUT_TOKENS = 2048;
 
 const HIDDEN_NOTIFICATION_SESSION_TITLES = new Set([
   'smartfetch-secondary',
