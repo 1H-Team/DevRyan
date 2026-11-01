@@ -5040,10 +5040,10 @@ describe("session tree revert", () => {
     }
   })
 
-  test("offers Fork and edit only when Revert could not confirm termination", async () => {
+  test("offers Fork and Edit only when Revert could not confirm termination", async () => {
     const { revertForkFallbackLabel } = await import("./session-actions")
-    expect(revertForkFallbackLabel({ code: "mutation_cancellation_failed" })).toBe("Fork and edit")
-    expect(revertForkFallbackLabel({ code: "mutation_termination_unconfirmed" })).toBe("Fork and edit")
+    expect(revertForkFallbackLabel({ code: "mutation_cancellation_failed" })).toBe("Fork and Edit")
+    expect(revertForkFallbackLabel({ code: "mutation_termination_unconfirmed" })).toBe("Fork and Edit")
     expect(revertForkFallbackLabel({ code: "directory_busy" })).toBe(null)
     expect(revertForkFallbackLabel(new Error("server rejected revert"))).toBe(null)
   })
