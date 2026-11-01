@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.9] - 2026-11-01
+
+- Start chats in a worktree with a remembered composer checkbox and automatically name new branches from the task under `DevRyan/`.
+- Reload idle-released runtime locations before reading provider usage so quota information stays available.
+
 ## [2.0.8] - 2026-10-31
 
 - Show Claude plan usage as soon as Claude Code is installed and signed in, without waiting for a first Claude reply, including model-specific weekly limits.
