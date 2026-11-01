@@ -73,7 +73,7 @@ export function createNativeAuthorization({ locations, manifest, getRequestPrinc
       // Notifications carry no web request principal: devryan-notify follows
       // the detached title path (bound to the canonical session, session required).
       const detachedHelper = ['devryan-title', 'devryan-notify'].includes(input.agent);
-      if (!['devryan-title', 'devryan-commit', 'devryan-pr', 'devryan-notify'].includes(input.agent)
+      if (!['devryan-title', 'devryan-commit', 'devryan-pr', 'devryan-branch', 'devryan-notify'].includes(input.agent)
         || !['configured', 'active'].includes(input.selectionMode ?? 'configured') || detachedHelper && !session) throw fail('native_helper_selection_invalid');
       const principal = detachedHelper ? null : structuredClone(getRequestPrincipal());
       const reauthorize = detachedHelper ? await (async () => { await detached(session); return () => detached(session); })()

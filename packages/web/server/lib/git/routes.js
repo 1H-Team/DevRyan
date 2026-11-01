@@ -3,6 +3,7 @@ import { registerCommitTemplateRoutes } from './template-routes.js';
 import { generateCommitMessageDirect } from './commit-message.js';
 import { collectCommitMessageContext, validateCommitMessageSelectedFiles } from './commit-message-context.js';
 import { generatePullRequestDescriptionDirect } from './pr-description.js';
+import { BRANCH_NAME_MAX_OUTPUT_TOKENS, BRANCH_NAME_PROMPT_MAX_LENGTH, BRANCH_NAME_TIMEOUT_MS, buildBranchNamePrompt, normalizeBranchSlug } from './branch-name.js';
 import { createGitZenTextTransport } from './zen-text.js';
 import { requireManagedAssignedBranch } from '../multi-user/branch-authorization.js';
 import { getRequestPrincipal } from '../multi-user/request-context.js';
@@ -1300,6 +1301,47 @@ export function registerGitRoutes(app, {
         error: error?.message || 'Failed to generate pull request description',
         ...(code ? { code } : {}),
         attempts,
+      });
+    }
+  });
+
+  // A new chat's worktree branch name. Callers fall back to a random slug on
+  // any failure, so this never blocks a send beyond its own short bound.
+  app.post('/api/git/branch-name', async (req, res) => {
+    try {
+      const directory = typeof req.query.directory === 'string' ? req.query.directory.trim() : '';
+      const prompt = typeof req.body?.prompt === 'string' ? req.body.prompt.trim() : '';
+      if (!directory) return res.status(400).json({ error: 'directory parameter is required' });
+      if (!prompt) return res.status(400).json({ error: 'prompt is required' });
+
+      const selection = await chooseHelper(directory, req.body, 'devryan-branch', 'configured');
+      if (!selection) return res.status(502).json({ error: 'Helper selection unavailable', code: 'HELPER_MODEL_FAILED' });
+      const result = await generateTextWithSessionModel({
+        generateHelperText,
+        cursorRuntime,
+        buildOpenCodeUrl,
+        getOpenCodeAuthHeaders,
+        ...openCodeClientArgs(),
+        directory,
+        selection,
+        agent: 'devryan-branch',
+        prompt: buildBranchNamePrompt(prompt.slice(0, BRANCH_NAME_PROMPT_MAX_LENGTH)),
+        accept: normalizeBranchSlug,
+        denyTools: true,
+        maxOutputTokens: BRANCH_NAME_MAX_OUTPUT_TOKENS,
+        timeoutMs: BRANCH_NAME_TIMEOUT_MS,
+      });
+      const refusal = helperRefusal(result); if (refusal) throw refusal;
+      if (!result?.ok || !result.value) {
+        return res.status(502).json({ error: 'The helper model did not return a usable branch name', code: 'HELPER_MODEL_FAILED', reason: result?.reason || 'request_failed' });
+      }
+      return res.json({ slug: result.value, source: 'helper_model', model: `${selection.providerID}/${selection.modelID}` });
+    } catch (error) {
+      console.error('Failed to generate branch name:', error?.code || 'HELPER_MODEL_FAILED');
+      const code = typeof error?.code === 'string' ? error.code : undefined;
+      return res.status(error?.statusCode ?? error?.status ?? 500).json({
+        error: error?.message || 'Failed to generate branch name',
+        ...(code ? { code } : {}),
       });
     }
   });

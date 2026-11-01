@@ -60,6 +60,8 @@ describe("ChatInput existing-worktree branch switching", () => {
     expect(chatInputSource).toContain(
       "const canCreateWorktrees = principal.scope !== 'managed' || principal.policy.createWorktrees",
     )
-    expect(chatInputSource).toContain("{canCreateWorktrees ? (")
+    expect(chatInputSource).toContain("const showDraftWorktreeToggle = canCreateWorktrees && !isManagedMember")
+    expect(chatInputSource).toContain("{showDraftWorktreeToggle ? (")
+    expect(chatInputSource).toMatch(/if \(worktreeProject && worktreeProjectRoot && canCreateWorktrees && !isManagedMember\b/)
   })
 })

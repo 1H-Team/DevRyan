@@ -996,6 +996,10 @@ export async function retryGitWorktreeBootstrapOperation(
   return gitHttp.retryGitWorktreeBootstrapOperation(operationId);
 }
 
+export async function generateBranchSlug(directory: string, prompt: string): Promise<string | null> {
+  return gitHttp.generateBranchSlug(directory, prompt);
+}
+
 export async function previewGitWorktree(
   directory: string,
   payload: import('./api/types').CreateGitWorktreePayload

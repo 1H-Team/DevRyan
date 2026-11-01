@@ -273,11 +273,11 @@ test('a single-user saved helper model and reasoning level is what every helper 
     readHelperSettings: async () => structuredClone(persisted) });
   const session = { id: 'ses_saved', directory, model: { providerID: 'openai', id: 'chat', variant: 'high' } };
   const capture = agent => authorization.captureHelperSelection({ directory, sessionID: session.id, agent, selectionMode: 'configured' }, session);
-  for (const agent of ['devryan-title', 'devryan-notify', 'devryan-commit', 'devryan-pr']) {
+  for (const agent of ['devryan-title', 'devryan-notify', 'devryan-commit', 'devryan-pr', 'devryan-branch']) {
     expect((await capture(agent)).selection).toEqual(DEFAULT_HELPER_MODEL_SELECTION);
   }
   save({ helperModelSelection: { providerID: 'xai', modelID: 'grok-4.6', variant: 'low', revision: 'saved-1' } });
-  for (const agent of ['devryan-title', 'devryan-commit', 'devryan-pr']) {
+  for (const agent of ['devryan-title', 'devryan-commit', 'devryan-pr', 'devryan-branch']) {
     const captured = await capture(agent);
     expect(captured.selection).toEqual({ providerID: 'xai', modelID: 'grok-4.6', variant: 'low', revision: 'saved-1' });
     await captured.recheck();

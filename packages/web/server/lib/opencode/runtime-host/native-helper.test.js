@@ -59,7 +59,7 @@ test('real helper admission enriches observations only from captured selection, 
   getSession:async()=>session,authorizeOperation:async()=>{},captureWebAuthorization:async()=>async()=>{}});
  try{await expect(legacy.withHelperOperation(request,()=>{throw Error('Unreviewed helper ran');})).rejects.toMatchObject({code:'native_helper_selection_unavailable',status:503});}finally{legacy.dispose();}
 });
-for(const [agent,variant] of ['devryan-title','devryan-commit','devryan-pr','devryan-notify'].flatMap(agent=>[[agent,undefined],[agent,'low']]))test(`${agent} dispatches the saved helper model with ${variant??'Default'} reasoning through real admission and controller settlement`,async()=>{
+for(const [agent,variant] of ['devryan-title','devryan-commit','devryan-pr','devryan-branch','devryan-notify'].flatMap(agent=>[[agent,undefined],[agent,'low']]))test(`${agent} dispatches the saved helper model with ${variant??'Default'} reasoning through real admission and controller settlement`,async()=>{
  const session={id:'ses_selected',directory:'/fixture',agent:'orchestrator',model:{providerID:'primary',id:'chat',variant:'high'}};
  const selected={providerID:'helper',modelID:'selected',...variant?{variant}:{},revision:'saved'};
  let helper,dispatches=0,providerEffects=0,selectionChecks=0,selectionCurrent=true;

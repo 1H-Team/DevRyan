@@ -641,6 +641,8 @@ interface UIStore {
   hasManuallyResizedRightSidebar: boolean;
   rightSidebarTab: RightSidebarTab;
   contextPanelByDirectory: Record<string, ContextPanelDirectoryState>;
+  /** Project ids whose new chats start in a fresh `DevRyan/<task>` worktree. */
+  newChatWorktreeByProject: Record<string, true>;
   browserPanelByDirectory: Record<string, BrowserPanelDirectoryState>;
   browserLeaseTabsByDirectory: Record<string, BrowserLeaseTab[]>;
   activeBrowserLeaseIdByDirectory: Record<string, string | null>;
@@ -828,6 +830,7 @@ interface UIStore {
   setSettingsRemoteInstancesSelectedId: (instanceId: string | null) => void;
   setEventStreamStatus: (status: EventStreamStatus, hint?: string | null) => void;
   setShowReasoningTraces: (value: boolean) => void;
+  setNewChatWorktree: (projectId: string, enabled: boolean) => void;
   setChatRenderMode: (value: ChatRenderMode) => void;
   setActivityRenderMode: (value: ActivityRenderMode) => void;
   setShowDeletionDialog: (value: boolean) => void;
@@ -938,6 +941,7 @@ export const useUIStore = create<UIStore>()(
         hasManuallyResizedRightSidebar: false,
         rightSidebarTab: 'git',
         contextPanelByDirectory: {},
+        newChatWorktreeByProject: {},
         browserPanelByDirectory: {},
         browserLeaseTabsByDirectory: {},
         activeBrowserLeaseIdByDirectory: {},
@@ -2065,6 +2069,14 @@ export const useUIStore = create<UIStore>()(
           set({ showReasoningTraces: value });
         },
 
+        setNewChatWorktree: (projectId, enabled) => {
+          set((state) => {
+            if (Boolean(state.newChatWorktreeByProject[projectId]) === enabled) return state;
+            const { [projectId]: _previous, ...rest } = state.newChatWorktreeByProject;
+            return { newChatWorktreeByProject: enabled ? { ...rest, [projectId]: true } : rest };
+          });
+        },
+
         setChatRenderMode: () => {
           set({ chatRenderMode: 'live' });
         },
@@ -2908,6 +2920,7 @@ export const useUIStore = create<UIStore>()(
           rightSidebarTab: state.rightSidebarTab,
           contextPanelByDirectory: state.contextPanelByDirectory,
           browserPanelByDirectory: state.browserPanelByDirectory,
+          newChatWorktreeByProject: state.newChatWorktreeByProject,
           isBottomTerminalOpen: state.isBottomTerminalOpen,
           isBottomTerminalExpanded: state.isBottomTerminalExpanded,
           bottomTerminalHeight: state.bottomTerminalHeight,

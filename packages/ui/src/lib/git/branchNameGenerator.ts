@@ -39,3 +39,16 @@ export function generateBranchName(prefix?: string): string {
   }
   return slug;
 }
+
+/** Prefix for branches DevRyan creates for new-chat worktrees. */
+export const DEVRYAN_BRANCH_PREFIX = 'DevRyan';
+
+/**
+ * Build a `DevRyan/<slug>` branch name, using a random slug when the helper
+ * model supplied none. Returns the bare slug too: it names the worktree
+ * directory, where a `/` would nest folders.
+ */
+export function buildDevRyanBranchName(slug?: string | null): { branchName: string; worktreeName: string } {
+  const worktreeName = slug?.trim() || generateBranchSlug();
+  return { branchName: `${DEVRYAN_BRANCH_PREFIX}/${worktreeName}`, worktreeName };
+}

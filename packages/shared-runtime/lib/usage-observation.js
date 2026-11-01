@@ -82,7 +82,7 @@ export function runtimeUsageObservation(record) {
     provider: entry.providerID, requestedModel: entry.modelID, runtimeVersion: record.runtimeVersion,
     // OpenCode's modelID is a selection, not an attested provider response.
     purpose: entry.summary === true || entry.agent === 'compaction' ? 'compaction'
-      : ({ 'devryan-title': 'title', 'devryan-commit': 'commit', 'devryan-pr': 'pr' }[entry.agent]
+      : ({ 'devryan-title': 'title', 'devryan-commit': 'commit', 'devryan-pr': 'pr', 'devryan-branch': 'other_helper' }[entry.agent]
         ?? (['build', 'builder', 'plan', 'planner', 'orchestrator', 'ask', 'general'].includes(entry.agent) ? 'main' : 'unknown')),
     status: entry.error ? 'failed' : 'complete', observedAt: record.at,
     semantics: { input: 'uncached', output: 'exclusive' },

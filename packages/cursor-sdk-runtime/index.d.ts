@@ -168,7 +168,7 @@ export type CursorSdkRuntime = {
   getDeclaredVirtualProvider(): { id: string; name: string; models: Record<string, CursorModelRecord> };
   refreshVirtualProvider(options?: { force?: boolean; reason?: string; timeoutMs?: number; directory?:string; signal?:AbortSignal }): Promise<{ id: string; name: string; models: Record<string, CursorModelRecord> }>;
   validateModelSelection(input: { directory?: string; modelID: string; variant?: string | null; signal?: AbortSignal; onFailure?: (failure: { reason: string }) => void }): Promise<boolean | null>;
-  generateText(input: { titleHelper?: boolean; helperAgent?:'devryan-title'|'devryan-commit'|'devryan-pr'; selectionMode?:'configured'|'active'; selectionRevision?:string; text: string; directory: string; sessionID?: string; modelID: string; variant?: string; signal?: AbortSignal; timeoutMs?: number }): Promise<string | null>;
+  generateText(input: { titleHelper?: boolean; helperAgent?:'devryan-title'|'devryan-commit'|'devryan-pr'|'devryan-branch'; selectionMode?:'configured'|'active'; selectionRevision?:string; text: string; directory: string; sessionID?: string; modelID: string; variant?: string; signal?: AbortSignal; timeoutMs?: number }): Promise<string | null>;
   generateTitle(input: {
     text: string;
     directory?: string | null;
@@ -261,7 +261,7 @@ export function createCursorSdkRuntime(options: Record<string, unknown> & {
     | { kind: 'catalog' | 'verify'; directory?:string }
     | { kind: 'prewarm'; directory?: string; sessionID?: string }
   ) => Promise<string | null>;
-  ownedReadOnly?: <A>(input:{kind:'title'|'text'|'catalog'|'verify';directory?:string;sessionID?:string;signal?:AbortSignal;modelID?:string;variant?:string;helperAgent?:'devryan-title'|'devryan-commit'|'devryan-pr';selectionMode?:'configured'|'active';selectionRevision?:string},action:()=>Promise<A>)=>Promise<A>;
+  ownedReadOnly?: <A>(input:{kind:'title'|'text'|'catalog'|'verify';directory?:string;sessionID?:string;signal?:AbortSignal;modelID?:string;variant?:string;helperAgent?:'devryan-title'|'devryan-commit'|'devryan-pr'|'devryan-branch';selectionMode?:'configured'|'active';selectionRevision?:string},action:()=>Promise<A>)=>Promise<A>;
   nativeWarming?: false;
   recordDiagnostic?: (entry: { type: 'lifecycle'; event: 'cursor_catalog'; directory?: string;
     payload: { phase: 'key_resolved' | 'worker_started' | 'worker_result' | 'settled'; startedAt: number; elapsedMs: number;

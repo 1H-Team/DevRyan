@@ -122,6 +122,28 @@ function buildUrl(
   return url.toString();
 }
 
+const BRANCH_SLUG_REQUEST_TIMEOUT_MS = 6_000;
+
+/** The helper model's slug for a new worktree branch, or null on any failure. */
+export async function generateBranchSlug(directory: string, prompt: string): Promise<string | null> {
+  const text = prompt.trim();
+  if (!directory || !text) return null;
+  try {
+    const response = await fetch(buildUrl(`${API_BASE}/branch-name`, directory), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: text }),
+      signal: AbortSignal.timeout(BRANCH_SLUG_REQUEST_TIMEOUT_MS),
+    });
+    if (!response.ok) return null;
+    const data: unknown = await response.json().catch(() => null);
+    const slug = typeof data === 'object' && data !== null && 'slug' in data ? data.slug : null;
+    return typeof slug === 'string' && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) ? slug : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function checkIsGitRepository(directory: string): Promise<boolean> {
   const key = normalizeDirectoryKey(directory);
   const now = Date.now();

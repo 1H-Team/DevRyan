@@ -11,8 +11,8 @@ import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useContextStore } from '@/stores/contextStore';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
-import { checkIsGitRepository, previewGitWorktree } from '@/lib/gitApi';
-import { generateBranchName } from '@/lib/git/branchNameGenerator';
+import { checkIsGitRepository, generateBranchSlug, previewGitWorktree } from '@/lib/gitApi';
+import { buildDevRyanBranchName } from '@/lib/git/branchNameGenerator';
 import { getRootBranch } from '@/lib/worktrees/worktreeStatus';
 import { getWorktreeSetupCommands } from '@/lib/devryanConfig';
 import {
@@ -185,10 +185,127 @@ const initializeSessionForWorktree = (sessionId: string, metadata: {
 };
 
 
-const createInstantWorktreeDraft = async (options?: {
+type DraftWorktreeOptions = {
   initialPrompt?: string;
   title?: string;
+};
+
+type DraftWorktreeName = { branchName: string; worktreeName: string };
+
+// Absent keys, not undefined values: the draft override spreads its options,
+// so an explicit undefined would erase a title the draft already carries.
+const draftTextFields = (options?: DraftWorktreeOptions) => ({
+  ...(options?.title !== undefined ? { title: options.title } : {}),
+  ...(options?.initialPrompt !== undefined ? { initialPrompt: options.initialPrompt } : {}),
+});
+
+/** Lock the draft to a pending worktree so no React effect can reset it to
+ * the project root while the name, preview and creation are awaited. */
+const lockDraftForWorktree = (projectRef: ProjectRef, pendingRequestId: string, options?: DraftWorktreeOptions) => {
+  const sessionStore = useSessionUIStore.getState();
+  if (sessionStore.newSessionDraft?.open) {
+    retentionNavigationChanged();
+    sessionStore.overrideNewSessionDraftTarget({
+      projectId: projectRef.id,
+      directoryOverride: sessionStore.newSessionDraft.directoryOverride ?? projectRef.path,
+      pendingWorktreeRequestId: pendingRequestId,
+      preserveDirectoryOverride: true,
+      ...draftTextFields(options),
+    });
+  } else {
+    sessionStore.openNewSessionDraft({
+      selectedProjectId: projectRef.id,
+      directoryOverride: projectRef.path,
+      pendingWorktreeRequestId: pendingRequestId,
+      preserveDirectoryOverride: true,
+      ...draftTextFields(options),
+    });
+  }
+  return getRetentionNavigationRevision();
+};
+
+/** Resolve the locked draft's pending request: create the named worktree, or
+ * reject so a waiting send fails with the draft intact. */
+const completeDraftWorktree = async ({ projectRef, pendingRequestId, draftRevision, options, resolveName }: {
+  projectRef: ProjectRef;
+  pendingRequestId: string;
+  draftRevision: number;
+  options?: DraftWorktreeOptions;
+  resolveName: () => Promise<DraftWorktreeName>;
 }): Promise<string | null> => {
+  try {
+    const { branchName, worktreeName } = await resolveName();
+
+    const preview = await previewGitWorktree(projectRef.path, {
+      mode: 'new',
+      branchName,
+      worktreeName,
+    }).catch(() => null);
+
+    // Refine draft target once we know the actual worktree path from the preview.
+    if (preview?.path && draftRevision === getRetentionNavigationRevision()) {
+      useSessionUIStore.getState().overrideNewSessionDraftTarget({
+        projectId: projectRef.id,
+        directoryOverride: preview.path,
+        pendingWorktreeRequestId: pendingRequestId,
+        bootstrapPendingDirectory: preview.path,
+        preserveDirectoryOverride: true,
+        ...draftTextFields(options),
+      });
+      useDirectoryStore.getState().setDirectory(preview.path, { showOverlay: false });
+    }
+
+    const setupCommands = await getWorktreeSetupCommands(projectRef);
+    const metadata = await createWorktreeWithDefaults(projectRef, {
+      preferredName: worktreeName,
+      mode: 'new',
+      branchName,
+      worktreeName,
+      setupCommands,
+      idempotencyKey: pendingRequestId,
+    });
+
+    resolvePendingDraftWorktreeRequest(pendingRequestId, metadata.path);
+    useSessionUIStore.getState().resolvePendingDraftWorktreeTarget(pendingRequestId, metadata.path, {
+      expectedNavigationRevision: draftRevision,
+      projectId: projectRef.id,
+      pendingWorktreeRequestId: null,
+      bootstrapPendingDirectory: metadata.path,
+      preserveDirectoryOverride: true,
+      ...draftTextFields(options),
+    });
+    if (draftRevision === getRetentionNavigationRevision()) {
+      useDirectoryStore.getState().setDirectory(metadata.path, { showOverlay: false });
+    }
+
+    return metadata.path;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to create worktree';
+    const failedMetadata = (
+      error
+      && typeof error === 'object'
+      && 'worktreeMetadata' in error
+    ) ? (error as { worktreeMetadata?: Parameters<typeof removeProjectWorktree>[1] }).worktreeMetadata : null;
+    if (failedMetadata) {
+      await removeProjectWorktree(projectRef, failedMetadata, {
+        deleteLocalBranch: true,
+      }).catch(() => undefined);
+    }
+    rejectPendingDraftWorktreeRequest(pendingRequestId, error instanceof Error ? error : new Error(message));
+    useSessionUIStore.getState().resolvePendingDraftWorktreeTarget(pendingRequestId, null, {
+      expectedNavigationRevision: draftRevision,
+      bootstrapPendingDirectory: null,
+    });
+    toast.error('Failed to create worktree', {
+      description: message,
+    });
+    return null;
+  } finally {
+    isCreatingWorktreeSession = false;
+  }
+};
+
+const createInstantWorktreeDraft = async (options?: DraftWorktreeOptions): Promise<string | null> => {
   if (!canStartNewBranchWorktreeCreation()) return null;
   if (isCreatingWorktreeSession) {
     return null;
@@ -222,109 +339,55 @@ const createInstantWorktreeDraft = async (options?: {
   if (startedRevision !== getRetentionNavigationRevision()) return null;
   isCreatingWorktreeSession = true;
   const pendingRequestId = createPendingDraftWorktreeRequest();
-  let draftRevision = startedRevision;
-
-  try {
-    const projectRef: ProjectRef = { id: activeProject.id, path: projectDirectory };
-
-    // Lock the draft immediately so no React effect can reset it to the project
-    // root while we await the preview / worktree creation below.
-    const sessionStore = useSessionUIStore.getState();
-    if (sessionStore.newSessionDraft?.open) {
-      retentionNavigationChanged();
-      sessionStore.overrideNewSessionDraftTarget({
-        projectId: projectRef.id,
-        directoryOverride: sessionStore.newSessionDraft.directoryOverride ?? projectRef.path,
-        pendingWorktreeRequestId: pendingRequestId,
-        preserveDirectoryOverride: true,
-        title: options?.title,
-        initialPrompt: options?.initialPrompt,
-      });
-    } else {
-      sessionStore.openNewSessionDraft({
-        selectedProjectId: projectRef.id,
-        directoryOverride: projectRef.path,
-        pendingWorktreeRequestId: pendingRequestId,
-        preserveDirectoryOverride: true,
-        title: options?.title,
-        initialPrompt: options?.initialPrompt,
-      });
-    }
-
-    draftRevision = getRetentionNavigationRevision();
-    const preferredName = generateBranchName();
-
-    const preview = await previewGitWorktree(projectRef.path, {
-      mode: 'new',
-      branchName: preferredName,
-      worktreeName: preferredName,
-    }).catch(() => null);
-
-    // Refine draft target once we know the actual worktree path from the preview.
-    if (preview?.path && draftRevision === getRetentionNavigationRevision()) {
-      useSessionUIStore.getState().overrideNewSessionDraftTarget({
-        projectId: projectRef.id,
-        directoryOverride: preview.path,
-        pendingWorktreeRequestId: pendingRequestId,
-        bootstrapPendingDirectory: preview.path,
-        preserveDirectoryOverride: true,
-        title: options?.title,
-        initialPrompt: options?.initialPrompt,
-      });
-      useDirectoryStore.getState().setDirectory(preview.path, { showOverlay: false });
-    }
-
-    const setupCommands = await getWorktreeSetupCommands(projectRef);
-    const metadata = await createWorktreeWithDefaults(projectRef, {
-      preferredName,
-      mode: 'new',
-      branchName: preferredName,
-      worktreeName: preferredName,
-      setupCommands,
-      idempotencyKey: pendingRequestId,
-    });
-
-    resolvePendingDraftWorktreeRequest(pendingRequestId, metadata.path);
-    useSessionUIStore.getState().resolvePendingDraftWorktreeTarget(pendingRequestId, metadata.path, {
-      expectedNavigationRevision: draftRevision,
-      projectId: projectRef.id,
-      pendingWorktreeRequestId: null,
-      bootstrapPendingDirectory: metadata.path,
-      preserveDirectoryOverride: true,
-      title: options?.title,
-      initialPrompt: options?.initialPrompt,
-    });
-    if (draftRevision === getRetentionNavigationRevision()) {
-      useDirectoryStore.getState().setDirectory(metadata.path, { showOverlay: false });
-    }
-
-    return metadata.path;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Failed to create worktree';
-    const failedMetadata = (
-      error
-      && typeof error === 'object'
-      && 'worktreeMetadata' in error
-    ) ? (error as { worktreeMetadata?: Parameters<typeof removeProjectWorktree>[1] }).worktreeMetadata : null;
-    if (failedMetadata) {
-      const projectRef: ProjectRef = { id: activeProject.id, path: projectDirectory };
-      await removeProjectWorktree(projectRef, failedMetadata, {
-        deleteLocalBranch: true,
-      }).catch(() => undefined);
-    }
-    rejectPendingDraftWorktreeRequest(pendingRequestId, error instanceof Error ? error : new Error(message));
-    useSessionUIStore.getState().resolvePendingDraftWorktreeTarget(pendingRequestId, null, {
-      expectedNavigationRevision: draftRevision,
-      bootstrapPendingDirectory: null,
-    });
-    toast.error('Failed to create worktree', {
-      description: message,
-    });
-    return null;
-  } finally {
-    isCreatingWorktreeSession = false;
-  }
+  const projectRef: ProjectRef = { id: activeProject.id, path: projectDirectory };
+  const draftRevision = lockDraftForWorktree(projectRef, pendingRequestId, options);
+  return completeDraftWorktree({
+    projectRef,
+    pendingRequestId,
+    draftRevision,
+    options,
+    resolveName: async () => buildDevRyanBranchName(null),
+  });
 };
+
+/**
+ * Start a worktree for the open draft whose branch the helper model names from
+ * the prompt (`DevRyan/<slug>`, random slug on any helper failure).
+ *
+ * The draft is locked to the pending request before this returns, so a send
+ * started right after waits for the worktree and creates its session there.
+ *
+ * @returns Whether a worktree request was started
+ */
+export function createWorktreeDraftForPrompt(projectRef: ProjectRef, prompt: string): boolean {
+  if (!canStartNewBranchWorktreeCreation()) return false;
+  if (isCreatingWorktreeSession) return false;
+  if (!useSessionUIStore.getState().newSessionDraft?.open || !projectRef.path) return false;
+
+  isCreatingWorktreeSession = true;
+  const pendingRequestId = createPendingDraftWorktreeRequest();
+  let draftRevision: number;
+  try {
+    draftRevision = lockDraftForWorktree(projectRef, pendingRequestId);
+  } catch (error) {
+    // Nothing is locked, so a later send must not wait on this request.
+    isCreatingWorktreeSession = false;
+    rejectPendingDraftWorktreeRequest(pendingRequestId, error instanceof Error ? error : new Error('Failed to start worktree'));
+    return false;
+  }
+  void completeDraftWorktree({
+    projectRef,
+    pendingRequestId,
+    draftRevision,
+    resolveName: async () => {
+      if (!await checkIsGitRepository(projectRef.path).catch(() => false)) {
+        throw new Error('Worktrees can only be created in Git repositories.');
+      }
+      return buildDevRyanBranchName(await generateBranchSlug(projectRef.path, prompt));
+    },
+  });
+  return true;
+}
 
 /**
  * Create a new worktree and open a draft scoped to it.

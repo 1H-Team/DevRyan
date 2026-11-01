@@ -66,6 +66,7 @@ import { MobileModelButton } from './MobileModelButton';
 import { MobileSessionStatusBar } from './MobileSessionStatusBar';
 import { useCurrentSessionActivity } from '@/hooks/useSessionActivity';
 import { toast } from '@/components/ui';
+import { Checkbox } from '@/components/ui/checkbox';
 import { isProviderModelAvailable } from '@/lib/providers/modelAvailability';
 // useMessageStore removed — messages now come from sync system
 import { isTauriShell } from '@/lib/desktop';
@@ -89,7 +90,7 @@ import { PROJECT_COLOR_MAP, PROJECT_ICON_MAP, getProjectIconImageUrl } from '@/l
 import { useGitBranches, useGitStatus, useGitStore } from '@/stores/useGitStore';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
-import { createWorktreeDraft } from '@/lib/worktreeSessionCreator';
+import { createWorktreeDraftForPrompt } from '@/lib/worktreeSessionCreator';
 import { ensureManagedBranchTarget } from '@/lib/worktrees/managedBranchTarget';
 import {
     createPendingDraftWorktreeRequest,
@@ -646,6 +647,9 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     const principal = useAuthPrincipal();
     const mediaAvailable = useRuntimeFeature('media');
     const canCreateWorktrees = principal.scope !== 'managed' || principal.policy.createWorktrees;
+    // Managed members are confined to granted branches, so they never get a
+    // fresh DevRyan/<task> worktree.
+    const isManagedMember = principal.scope === 'managed' && principal.role !== 'admin';
     const { guardBuilderSend, requestAgentChange } = useAgentHandoffGuard();
     const draftStorage = React.useMemo(() => getSafeStorage(), []);
     const draftTextUpdateRef = React.useRef<(draftId: string, text: string) => void>(() => {});
@@ -2010,6 +2014,21 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                 clearPendingDraftPersist();
                 useSessionUIStore.getState().updateNewSessionDraftText(submittedDraftTarget.id, inputSnapshot.message);
                 persistDraftImmediately(submittedDraftTarget, inputSnapshot.message);
+                // A ticked Worktree box names (from this prompt) and creates the
+                // worktree; the draft send below waits for it before creating
+                // the session. A draft already aimed at a worktree is left alone.
+                const draft = useSessionUIStore.getState().newSessionDraft;
+                // Same fallback order as selectedDraftProject.
+                const worktreeProject = projects.find((project) => project.id === draft?.selectedProjectId)
+                    ?? projects.find((project) => project.id === activeProjectId)
+                    ?? projects[0];
+                const worktreeProjectRoot = normalizePath(worktreeProject?.path ?? null);
+                if (worktreeProject && worktreeProjectRoot && canCreateWorktrees && !isManagedMember
+                    && useUIStore.getState().newChatWorktreeByProject[worktreeProject.id]
+                    && !draft?.pendingWorktreeRequestId && !draft?.bootstrapPendingDirectory
+                    && (normalizePath(draft?.directoryOverride ?? null) ?? worktreeProjectRoot) === worktreeProjectRoot) {
+                    createWorktreeDraftForPrompt({ id: worktreeProject.id, path: worktreeProject.path }, primaryText);
+                }
             } else {
                 retireDraftTarget(submittedDraftTarget);
             }
@@ -3482,6 +3501,12 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         [selectedDraftProject?.path],
     );
 
+    const draftWorktreeEnabled = useUIStore((state) => Boolean(
+        selectedDraftProject && state.newChatWorktreeByProject[selectedDraftProject.id],
+    ));
+    const setNewChatWorktree = useUIStore((state) => state.setNewChatWorktree);
+    const showDraftWorktreeToggle = canCreateWorktrees && !isManagedMember;
+
     const selectedDraftProjectBranches = useGitBranches(selectedDraftProjectPath);
     const selectedDraftProjectStatus = useGitStatus(selectedDraftProjectPath);
     const fetchBranches = useGitStore((state) => state.fetchBranches);
@@ -3893,11 +3918,33 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         if (!selectedDraftProject) {
             return;
         }
+        // An existing worktree is an explicit target; a new one would ignore it.
+        if (normalizePath(value) !== selectedDraftProjectPath) {
+            setNewChatWorktree(selectedDraftProject.id, false);
+        }
         setNewSessionDraftTarget({
             projectId: selectedDraftProject.id,
             directoryOverride: value,
         }, { force: true });
-    }, [handleDraftBranchCheckout, selectedDraftProject, setNewSessionDraftTarget]);
+    }, [handleDraftBranchCheckout, selectedDraftProject, selectedDraftProjectPath, setNewChatWorktree, setNewSessionDraftTarget]);
+
+    const handleDraftWorktreeToggle = React.useCallback((checked: boolean) => {
+        if (!selectedDraftProject) {
+            return;
+        }
+        setNewChatWorktree(selectedDraftProject.id, checked);
+        const draft = useSessionUIStore.getState().newSessionDraft;
+        if (!checked || draft?.pendingWorktreeRequestId || draft?.bootstrapPendingDirectory || draft?.preserveDirectoryOverride) {
+            return;
+        }
+        // A new worktree branches from the project root's current branch.
+        if (selectedDraftDirectory && selectedDraftDirectory !== selectedDraftProjectPath) {
+            setNewSessionDraftTarget({
+                projectId: selectedDraftProject.id,
+                directoryOverride: selectedDraftProject.path,
+            }, { force: true });
+        }
+    }, [selectedDraftDirectory, selectedDraftProject, selectedDraftProjectPath, setNewChatWorktree, setNewSessionDraftTarget]);
 
     const renderProjectLabelWithIcon = React.useCallback((project: {
         id: string;
@@ -4261,7 +4308,10 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                                     <SelectValue>
                                         <span className="inline-flex min-w-0 items-center gap-1.5">
                                             <RiGitBranchLine className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                                            <span className="truncate">{selectedDraftBranchLabel ?? t('chat.chatInput.branch')}</span>
+                                            <span className="truncate">
+                                                {showDraftWorktreeToggle && draftWorktreeEnabled ? `${t('chat.chatInput.worktreeToggle')} · ` : ''}
+                                                {selectedDraftBranchLabel ?? t('chat.chatInput.branch')}
+                                            </span>
                                         </span>
                                     </SelectValue>
                                 </SelectTrigger>
@@ -4298,17 +4348,26 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                                     ) : null}
                                     {(draftLocalBranchOptions.length > 0 && worktreeBranchOptions.length > 0) ? <SelectSeparator /> : null}
                                     <SelectGroup>
-                                        <div className="flex min-w-48 items-center justify-between px-2 py-1.5">
+                                        <div className="flex min-w-48 items-center justify-between gap-3 px-2 py-1.5">
                                             <span className="text-muted-foreground typography-meta">{t('chat.chatInput.worktrees')}</span>
-                                            {canCreateWorktrees ? (
-                                                <button
-                                                    type="button"
-                                                    className="text-muted-foreground typography-meta hover:text-foreground cursor-pointer"
+                                            {showDraftWorktreeToggle ? (
+                                                <span
+                                                    className="flex items-center gap-1.5"
                                                     onPointerDown={(e) => { e.stopPropagation(); }}
-                                                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); void createWorktreeDraft(); }}
+                                                    onClick={(e) => { e.stopPropagation(); }}
                                                 >
-                                                    {t('chat.chatInput.worktreeNew')}
-                                                </button>
+                                                    <Checkbox
+                                                        checked={draftWorktreeEnabled}
+                                                        onChange={handleDraftWorktreeToggle}
+                                                        ariaLabel={t('chat.chatInput.worktreeToggleAria')}
+                                                    />
+                                                    <span
+                                                        className="cursor-pointer select-none text-muted-foreground typography-meta hover:text-foreground"
+                                                        onClick={() => { handleDraftWorktreeToggle(!draftWorktreeEnabled); }}
+                                                    >
+                                                        {t('chat.chatInput.worktreeToggle')}
+                                                    </span>
+                                                </span>
                                             ) : null}
                                         </div>
                                         {worktreeBranchOptions.map((option) => (

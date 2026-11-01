@@ -109,6 +109,11 @@ authorized before Git runs.
 - Route registration accepts an injected direct generator for deterministic contract tests; production defaults to `generateCommitMessageDirect`.
 - Subjects must match the repository Conventional Commit types, remain at or below 72 characters, and omit trailing punctuation. Highlights are inserted as commit-body bullets. The route does not stage, commit, or otherwise mutate Git state.
 
+### Worktree Branch Name Generation
+- `POST /api/git/branch-name?directory=…` accepts `{ prompt }` (a new chat's first message, capped at 4 000 characters) and returns `{ slug, source: 'helper_model', model }`. `branch-name.js` owns the prompt and `normalizeBranchSlug`, which reduces model output to a two-to-five-word lowercase kebab-case slug of at most 40 characters, or null.
+- Only the configured helper model is used, through the hidden no-tools `devryan-branch` agent with a 6-second bound; a draft has no active session to fall back to. Any failure returns 502 `HELPER_MODEL_FAILED` (authorization refusals keep their status), and the UI then names the branch `DevRyan/<adjective-noun>`. The route does not touch Git state.
+- The shared UI calls it when a new chat is sent with the composer's Worktree box ticked (`createWorktreeDraftForPrompt` in `packages/ui/src/lib/worktreeSessionCreator.ts`), then creates the worktree on branch `DevRyan/<slug>` in directory `<slug>`.
+
 ### Pull Request Description Generation
 - `POST /api/git/pr-description` accepts the already-rendered Generate PR instructions plus base/head metadata and returns `{ title, body, source, selectionMode, model, attempts }`. The HTTP client preserves these fields; both commit endpoints also return `source`, `selectionMode` and the provider/model tuple. Configured selections use `source: helper_model`; active-model fallbacks use `source: session_model` and surface their model in a draft toast.
 - The route adds bounded base/head diff context to the rendered prompt and tries the shared configured helper in a 45-second attempt. It accepts normalized title/body JSON or a usable plain-text draft.
