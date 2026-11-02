@@ -999,7 +999,7 @@ export interface EvidenceAPI {
   getDiff(checkpointID: string, file?: string): Promise<TurnEvidenceDiffSummary | TurnEvidenceFileDiff>;
 }
 
-// ============== Processes (bottom-dock Processes tab) ==============
+// ============== Processes (host process inspection) ==============
 
 export type ManagedProcessCategory = 'dev_server' | 'agent_cli' | 'lsp' | 'mcp' | 'other';
 

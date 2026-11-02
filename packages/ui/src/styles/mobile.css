@@ -64,7 +64,7 @@
 
   /* Non-drawer session actions keep their full touch targets clear of the title. */
   :root.mobile-pointer:not(.desktop-runtime) [data-session-row]:not([data-mobile-drawer-drag-lock="true"]) {
-    --session-row-action-padding: 80px;
+    --session-row-action-padding: 96px;
     --session-row-leading-clearance: 12px;
   }
 

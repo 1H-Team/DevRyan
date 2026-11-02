@@ -1,5 +1,5 @@
 import React from 'react';
-import { RiAddLine, RiArrowDownLine, RiArrowGoBackLine, RiArrowLeftLine, RiArrowRightLine, RiArrowUpLine, RiCloseLine, RiCommandLine, RiCpuLine, RiFullscreenExitLine, RiFullscreenLine, RiGlobalLine, RiTerminalLine } from '@remixicon/react';
+import { RiAddLine, RiArrowDownLine, RiArrowGoBackLine, RiArrowLeftLine, RiArrowRightLine, RiArrowUpLine, RiCloseLine, RiCommandLine, RiFullscreenExitLine, RiFullscreenLine, RiGlobalLine, RiTerminalLine } from '@remixicon/react';
 
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useTerminalStore } from '@/stores/useTerminalStore';
@@ -10,8 +10,6 @@ import { useFontPreferences } from '@/hooks/useFontPreferences';
 import { CODE_FONT_OPTION_MAP, DEFAULT_MONO_FONT } from '@/lib/fontOptions';
 import { convertThemeToXterm } from '@/lib/terminalTheme';
 import { TerminalViewport, type TerminalController } from '@/components/terminal/TerminalViewport';
-import { ProcessesPanel } from '@/components/views/ProcessesPanel';
-import { PROCESSES_TAB_ID } from '@/stores/useProcessesStore';
 import { cn } from '@/lib/utils';
 import { useUIStore } from '@/stores/useUIStore';
 import { Button } from '@/components/ui/button';
@@ -161,8 +159,8 @@ const SupportedTerminalView: React.FC = () => {
         );
     }, [directoryTerminalState, activeTabId]);
 
-    const terminalTabItems = React.useMemo((): SortableTabsStripItem[] => {
-        const items: SortableTabsStripItem[] = (directoryTerminalState?.tabs ?? []).map((tab) => ({
+    const terminalTabItems = React.useMemo((): SortableTabsStripItem[] => (
+        (directoryTerminalState?.tabs ?? []).map((tab) => ({
             icon: (() => {
                 const Icon = tab.iconKey ? PROJECT_ACTION_ICON_MAP[tab.iconKey as ProjectActionIconKey] ?? RiTerminalLine : RiTerminalLine;
                 return <Icon className="h-3.5 w-3.5" />;
@@ -171,17 +169,8 @@ const SupportedTerminalView: React.FC = () => {
             label: tab.label,
             title: tab.label,
             closeLabel: t('terminalView.tabs.closeTabTitle'),
-        }));
-        // Fixed, non-closable tab: leftover processes under the managed OpenCode server.
-        items.push({
-            icon: <RiCpuLine className="h-3.5 w-3.5" />,
-            id: PROCESSES_TAB_ID,
-            label: t('terminalView.processes.tabLabel'),
-            title: t('terminalView.processes.tabLabel'),
-            closable: false,
-        });
-        return items;
-    }, [directoryTerminalState?.tabs, t]);
+        }))
+    ), [directoryTerminalState?.tabs, t]);
 
     const terminalSessionId = activeTab?.terminalSessionId ?? null;
     const terminalLifecycle = activeTab?.lifecycle ?? 'idle';
@@ -195,7 +184,6 @@ const SupportedTerminalView: React.FC = () => {
     const [activeModifier, setActiveModifier] = React.useState<Modifier | null>(null);
     const [isRestarting, setIsRestarting] = React.useState(false);
     const [viewportLayoutVersion, setViewportLayoutVersion] = React.useState(0);
-    const [isProcessesTabActive, setProcessesTabActive] = React.useState(false);
 
     const streamCleanupRef = React.useRef<(() => void) | null>(null);
     const activeTerminalIdRef = React.useRef<string | null>(null);
@@ -665,24 +653,6 @@ const SupportedTerminalView: React.FC = () => {
         [disconnectStream, effectiveDirectory, setActiveTab]
     );
 
-    // Any change of the real active tab (create/close/select) leaves the
-    // Processes view; selecting the Processes tab never touches the terminal store.
-    React.useEffect(() => {
-        setProcessesTabActive(false);
-    }, [activeTabId]);
-
-    const handleSelectTabItem = React.useCallback(
-        (tabId: string) => {
-            if (tabId === PROCESSES_TAB_ID) {
-                setProcessesTabActive(true);
-                return;
-            }
-            setProcessesTabActive(false);
-            handleSelectTab(tabId);
-        },
-        [handleSelectTab]
-    );
-
     const handleCloseTab = React.useCallback(
         (tabId: string) => {
             if (!effectiveDirectory) return;
@@ -1100,8 +1070,8 @@ const SupportedTerminalView: React.FC = () => {
                         <div className={cn('min-w-0 flex-1', isTouchTerminal ? 'h-8' : 'h-7')}>
                             <SortableTabsStrip
                                 items={terminalTabItems}
-                                activeId={isProcessesTabActive ? PROCESSES_TAB_ID : activeTabId}
-                                onSelect={handleSelectTabItem}
+                                activeId={activeTabId}
+                                onSelect={handleSelectTab}
                                 onClose={handleCloseTab}
                                 layoutMode="scrollable"
                                 variant="soft-pill"
@@ -1184,7 +1154,7 @@ const SupportedTerminalView: React.FC = () => {
                 className="relative flex-1 overflow-hidden"
                 style={{ backgroundColor: xtermTheme.background }}
             >
-                <div className={cn('h-full w-full box-border pl-4 pr-1.5 pt-3 pb-4', isProcessesTabActive && 'hidden')}>
+                <div className="h-full w-full box-border pl-4 pr-1.5 pt-3 pb-4">
                     {shouldRenderViewport ? (
                         <TerminalViewport
                             ref={(controller) => {
@@ -1198,14 +1168,11 @@ const SupportedTerminalView: React.FC = () => {
                             fontFamily={resolvedFontStack}
                             fontSize={terminalFontSize}
                             enableTouchScroll={useTouchTerminalInput}
-                            autoFocus={!useTouchTerminalInput && isTerminalVisible && !isProcessesTabActive}
-                            isVisible={isTerminalVisible && !isProcessesTabActive}
+                            autoFocus={!useTouchTerminalInput && isTerminalVisible}
+                            isVisible={isTerminalVisible}
                         />
                     ) : null}
                 </div>
-                {isProcessesTabActive ? (
-                    <ProcessesPanel directory={effectiveDirectory} visible={isTerminalVisible} />
-                ) : null}
                 {!isReconnectPending && connectionError && (
                     <div className="absolute inset-x-0 bottom-0 bg-[var(--status-error-background)] px-3 py-2 text-xs text-[var(--status-error-foreground)] flex items-center justify-between gap-2">
                         <span>{connectionError}</span>

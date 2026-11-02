@@ -1154,7 +1154,7 @@ export const settingsDict = {
   'settings.projects.processes.title': 'Background processes',
   'settings.projects.processes.toggle': 'Track background processes started by agents',
   'settings.projects.processes.description': 'When on, shell commands run by agents carry a session marker so their processes can be grouped and stopped when the session is deleted.',
-  'settings.projects.processes.note': 'Off by default. Only dev servers matched to a deleted session are stopped automatically; everything else stays until you stop it from the Processes tab.',
+  'settings.projects.processes.note': 'Off by default. Only dev servers matched to a deleted session are stopped automatically; everything else keeps running.',
   'settings.projects.processes.loadFailed': 'Failed to load process tracking settings',
   'settings.projects.processes.saveFailed': 'Failed to save process tracking settings',
   'settings.usage.sidebar.title': 'Usage',

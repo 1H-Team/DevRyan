@@ -10,10 +10,9 @@ describe('terminal tabs', () => {
         expect(terminalView).toContain('className="h-3.5 w-3.5"');
     });
 
-    test('adds a fixed, non-closable Processes tab that swaps the viewport for the panel', () => {
-        expect(terminalView).toContain('PROCESSES_TAB_ID');
-        expect(terminalView).toContain('closable: false');
-        expect(terminalView).toContain('<ProcessesPanel');
-        expect(terminalView).toContain('isProcessesTabActive ? PROCESSES_TAB_ID : activeTabId');
+    test('shows only terminal tabs, with no fixed Processes tab', () => {
+        expect(terminalView).not.toContain('PROCESSES_TAB_ID');
+        expect(terminalView).not.toContain('<ProcessesPanel');
+        expect(terminalView).toContain('activeId={activeTabId}');
     });
 });

@@ -5,8 +5,8 @@ import { Switch } from '@/components/ui/switch';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useI18n } from '@/lib/i18n';
 
-// Opt-in per project: agent shell commands carry a session marker so the
-// Processes tab can group them and session delete can stop matched dev servers.
+// Opt-in per project: agent shell commands carry a session marker so
+// session delete can stop matched dev servers.
 export const ProcessTrackingSettingsSection: React.FC<{ directory: string }> = ({ directory }) => {
   const { t } = useI18n();
   const { processes } = useRuntimeAPIs();

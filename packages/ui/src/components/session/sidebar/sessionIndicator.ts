@@ -55,10 +55,10 @@ type ResolveLeadingRailLayoutOptions = {
 export type LeadingRailLayout = {
   slots: [
     'pin' | null,
-    'status',
+    'chevron' | null,
   ];
   hasChildren: boolean;
-  /** Pinned parents show the pin after the title: the rail only fits chevron + status. */
+  /** Pinned parents show the pin after the title: the rail only fits the chevron. */
   pinAfterTitle: boolean;
 };
 
@@ -230,17 +230,15 @@ export function resolveSubtaskSidebarIndicator({
   return null;
 }
 
-// The status slot is always occupied (colored dot, working blink, or idle
-// ring), so it sits directly next to the title on every row. Parent rows
-// always draw the expand chevron directly left of status; the leading gutter
-// cannot also hold a pin there, so a pinned parent's pin moves after the title.
-// On leaf rows the pin, when present, goes left of status.
+// Status lives in the trailing slot right of the title, so the leading rail
+// only holds the parent expand chevron or a leaf's pin. The gutter cannot
+// hold both, so a pinned parent's pin moves after the title.
 export function resolveLeadingRailLayout({
   hasChildren,
   isPinnedSession,
 }: ResolveLeadingRailLayoutOptions): LeadingRailLayout {
   return {
-    slots: [isPinnedSession && !hasChildren ? 'pin' : null, 'status'],
+    slots: [isPinnedSession && !hasChildren ? 'pin' : null, hasChildren ? 'chevron' : null],
     hasChildren,
     pinAfterTitle: isPinnedSession && hasChildren,
   };

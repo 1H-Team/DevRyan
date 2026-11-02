@@ -155,7 +155,7 @@ describe('SessionNodeItem status selectors', () => {
     expect(source).toContain('isSessionWorking || hasWorkingDescendant || hasActiveManagedSubtask');
   });
 
-  test('shows working as the leading status dot instead of a trailing spinner', () => {
+  test('shows working as the status dot instead of a spinner', () => {
     const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'SessionNodeItem.tsx'), 'utf8');
 
     expect(source).toContain('resolveSessionLeadingIndicatorPresentation({');
@@ -260,21 +260,25 @@ describe('session sidebar archive reflow animation wiring', () => {
     expect(itemSource).not.toContain('left-[-');
   });
 
-  test('keeps status next to the title and swaps it for the parent chevron on hover without shifting titles', () => {
+  test('shows status right of the title, fading it on hover for the quick actions', () => {
     const testDir = dirname(fileURLToPath(import.meta.url));
     const itemSource = readFileSync(join(testDir, 'SessionNodeItem.tsx'), 'utf8');
     const motionSource = readFileSync(join(testDir, 'SessionSidebarMotionRow.tsx'), 'utf8');
-    const statusSlotStart = itemSource.indexOf('const leadingStatusSlot = ');
-    const statusSlotEnd = itemSource.indexOf('const leadingRailSlotContent', statusSlotStart);
-    const statusSlotSource = itemSource.slice(statusSlotStart, statusSlotEnd);
-    const parentStatusSlotSource = statusSlotSource.slice(0, statusSlotSource.indexOf(') : ('));
+    const chevronSlotStart = itemSource.indexOf('const leadingChevronSlot = ');
+    const chevronSlotEnd = itemSource.indexOf('const leadingRailSlotContent', chevronSlotStart);
+    const chevronSlotSource = itemSource.slice(chevronSlotStart, chevronSlotEnd);
     const leadingRailStart = itemSource.indexOf('const leadingRail = (');
-    const leadingRailEnd = itemSource.indexOf('const streamingIndicator', leadingRailStart);
+    const leadingRailEnd = itemSource.indexOf('const trailingStatusContent', leadingRailStart);
     const leadingRailSource = itemSource.slice(leadingRailStart, leadingRailEnd);
+    const trailingSlotStart = itemSource.indexOf('const trailingStatusContent');
+    const trailingSlotEnd = itemSource.indexOf('const handleMenuOpenChange', trailingSlotStart);
+    const trailingSlotSource = itemSource.slice(trailingSlotStart, trailingSlotEnd);
     const rowButtonStart = itemSource.indexOf('<button', itemSource.indexOf('{leadingRail}'));
     const rowButtonEnd = itemSource.indexOf('</button>', rowButtonStart);
     const rowButtonSource = itemSource.slice(rowButtonStart, rowButtonEnd);
     const leadingRailRenderIndex = itemSource.indexOf('{leadingRail}', leadingRailEnd);
+    const hoverStatusIndex = itemSource.indexOf('{trailingStatusSlot}', rowButtonEnd);
+    const hoverStatusSource = itemSource.slice(itemSource.lastIndexOf('{!alwaysShowActions ? (', hoverStatusIndex), hoverStatusIndex);
     const titleRowStart = rowButtonSource.indexOf("className={cn('flex min-w-0 flex-1 items-center gap-1.5 typography-ui-label font-normal'");
     const titleRowEnd = rowButtonSource.indexOf('</div>', titleRowStart);
     const titleRowSource = rowButtonSource.slice(titleRowStart, titleRowEnd);
@@ -285,30 +289,31 @@ describe('session sidebar archive reflow animation wiring', () => {
     expect(leadingRailEnd).toBeGreaterThan(leadingRailStart);
     expect(leadingRailSource).toContain('absolute right-full');
     expect(leadingRailSource).toContain('leadingRailLayout.slots.map');
-    expect(statusSlotStart).toBeGreaterThan(-1);
-    expect(statusSlotSource).toContain('leadingRailLayout.hasChildren');
-    // Parent rows always draw the chevron directly left of the dot, with no
-    // hover swap and no separate touch-only chevron.
-    expect(parentStatusSlotSource).toContain("renderSubsessionChevron('absolute left-1/2 top-1/2 inline-flex -translate-x-1/2 -translate-y-1/2')");
-    expect(parentStatusSlotSource.indexOf('renderSubsessionChevron(')).toBeGreaterThan(-1);
-    expect(parentStatusSlotSource.indexOf('renderSubsessionChevron(')).toBeLessThan(
-      parentStatusSlotSource.indexOf('{leadingStatusMarker}'),
-    );
-    expect(parentStatusSlotSource).not.toContain('group-hover/session-row');
-    expect(parentStatusSlotSource).not.toContain('group-focus-within/session-row');
+    // The leading rail holds only the parent chevron or a leaf pin.
+    expect(chevronSlotSource).toContain("renderSubsessionChevron('absolute left-1/2 top-1/2 inline-flex -translate-x-1/2 -translate-y-1/2')");
+    expect(chevronSlotSource).not.toContain('statusMarker');
+    expect(chevronSlotSource).not.toContain('group-hover/session-row');
+    expect(itemSource).toContain('chevron: leadingChevronSlot');
+    expect(itemSource).not.toContain('leadingStatusSlot');
+    // Status (or the zombie warning) sits in the trailing slot.
+    expect(trailingSlotSource).toContain(': statusMarker;');
+    expect(trailingSlotSource).toContain('data-session-trailing-status');
+    // Hover rows fade the status out so pin/archive take its place; rows with
+    // always-visible actions render it inside the actions cluster instead.
+    expect(hoverStatusIndex).toBeGreaterThan(rowButtonEnd);
+    expect(hoverStatusSource).toContain('absolute right-1.5');
+    expect(hoverStatusSource).toContain("isMenuOpen ? 'opacity-0' : hideOnHoverClass");
+    expect(itemSource).toContain('{alwaysShowActions ? trailingStatusSlot : null}');
     expect(itemSource).toContain("'group group/session-row relative my-0.5 flex items-center rounded-sm px-1.5 py-1'");
-    expect(leadingRailSource).not.toContain('renderSubsessionChevron');
-    expect(leadingRailSource).not.toContain('[.mobile-pointer_&]:inline-flex');
-    expect(leadingRailSource).not.toContain('justify-between');
-    expect(itemSource).not.toContain('<span className="h-4 w-9 flex-shrink-0" aria-hidden="true" />');
-    expect(itemSource).toContain('status: leadingStatusSlot');
     expect(leadingRailRenderIndex).toBeGreaterThan(leadingRailEnd);
     expect(rowButtonStart).toBeGreaterThan(-1);
     expect(leadingRailRenderIndex).toBeLessThan(rowButtonStart);
     expect(rowButtonEnd).toBeGreaterThan(rowButtonStart);
     expect(rowButtonSource).toContain('overflow-hidden rounded-sm text-left');
+    // Titles truncate before the status dot and widen the gap on hover.
+    expect(rowButtonSource).toContain("cn('pr-5', revealPaddingClass)");
     expect(rowButtonSource).not.toContain('pl-9');
-    expect(rowButtonSource).not.toContain('{leadingStatusSlot}');
+    expect(rowButtonSource).not.toContain('{trailingStatusSlot}');
     expect(rowButtonSource).not.toContain('renderSubsessionChevron');
     expect(titleRowStart).toBeGreaterThan(-1);
     expect(agentIconIndex).toBeGreaterThan(-1);

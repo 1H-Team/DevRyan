@@ -9,7 +9,6 @@ mock.module('@/hooks/useRuntimeAPIs', () => ({ useRuntimeAPIs: () => ({ terminal
 mock.module('@/lib/i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 mock.module('@/contexts/useThemeSystem', () => ({ useThemeSystem: ownerMounted }));
 mock.module('@/components/terminal/TerminalViewport', () => ({ TerminalViewport: () => null }));
-mock.module('@/components/views/ProcessesPanel', () => ({ ProcessesPanel: () => null }));
 const { TerminalView } = await import('./TerminalView');
 
 test('unsupported, failed and superseded capability reads cannot mount terminal owners', async () => withDom(async container => {

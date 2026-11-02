@@ -118,7 +118,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       retireLegacyCursorPlugin,
     });
 
-    // Host process inspection (bottom-dock Processes tab, session-delete auto-stop).
+    // Host process inspection (session-delete auto-stop).
     const processesRuntime = createProcessesRuntime({ dataDir: devryanDataDir });
 
     registerOpenCodeRoutes(app, {

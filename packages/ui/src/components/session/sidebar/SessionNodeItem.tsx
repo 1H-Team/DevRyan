@@ -333,9 +333,10 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   const showQuickDeleteAction = archivedBucket && !isArchiveAncestorOnly && !mobileVariant;
   const {
     revealOnHoverClass,
+    hideOnHoverClass,
     revealPaddingClass,
   } = resolveSessionRowInteractionClasses();
-  const alwaysActionPaddingClass = 'pr-[var(--session-row-action-padding,3.5rem)]';
+  const alwaysActionPaddingClass = 'pr-[var(--session-row-action-padding,4.5rem)]';
   const suppressNextSelectRef = React.useRef(false);
   const mobileSwipeRef = React.useRef<{
     pointerId: number;
@@ -744,16 +745,16 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   // Generic unread attention intentionally has no colored dot: session status
   // colors are reserved for explicit question/plan lifecycle signals. Working
   // shows a slow gray blink in the same slot; otherwise an idle ring holds it.
-  const leadingPresentation = resolveSessionLeadingIndicatorPresentation({
+  const statusPresentation = resolveSessionLeadingIndicatorPresentation({
     indicator: effectiveSidebarStatusIndicator,
     isWorking: sidebarIsWorking,
     isImplementingPlan: lifecycleStatus.kind === 'plan-executing',
   });
-  const leadingLabelKey = resolveSessionLeadingIndicatorLabelKey(leadingPresentation);
-  const leadingStatusMarker = (
+  const statusLabelKey = resolveSessionLeadingIndicatorLabelKey(statusPresentation);
+  const statusMarker = (
     <SessionStatusDot
-      presentation={leadingPresentation}
-      label={leadingLabelKey ? t(leadingLabelKey) : undefined}
+      presentation={statusPresentation}
+      label={statusLabelKey ? t(statusLabelKey) : undefined}
     />
   );
   const handleSubsessionChevronPointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
@@ -797,25 +798,16 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
       aria-label={t('sessions.sidebar.session.status.pinned')}
     />
   );
-  // Parent rows always show the expand/collapse chevron directly left of the
-  // status dot. Fixed-size cell: the touch target's 36px minimum overflows it
-  // evenly instead of widening the rail.
-  const leadingStatusSlot = leadingRailLayout.hasChildren ? (
-    <span className="inline-flex items-center">
-      <span className="relative mr-px inline-flex h-3.5 w-3.5">
-        {renderSubsessionChevron('absolute left-1/2 top-1/2 inline-flex -translate-x-1/2 -translate-y-1/2')}
-      </span>
-      <span className="pointer-events-none inline-flex h-2 w-2 items-center justify-center">
-        {leadingStatusMarker}
-      </span>
-    </span>
-  ) : (
-    <span className="pointer-events-none inline-flex h-2 w-2 items-center justify-center">
-      {leadingStatusMarker}
+  // Parent rows always show the expand/collapse chevron in the leading rail.
+  // Fixed-size cell: the touch target's 36px minimum overflows it evenly
+  // instead of widening the rail.
+  const leadingChevronSlot = (
+    <span className="relative inline-flex h-3.5 w-3.5">
+      {renderSubsessionChevron('absolute left-1/2 top-1/2 inline-flex -translate-x-1/2 -translate-y-1/2')}
     </span>
   );
   const leadingRailSlotContent = {
-    status: leadingStatusSlot,
+    chevron: leadingChevronSlot,
     pin: (
       <span className="pointer-events-none inline-flex h-3.5 w-3.5 items-center justify-center">
         {leadingPinMarker}
@@ -833,9 +825,20 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     </span>
   );
 
-  const streamingIndicator = isZombie
+  // The trailing slot right of the title shows status (or the zombie warning
+  // in its place). On hover rows it fades out so pin/archive take the slot;
+  // rows with always-visible actions keep it left of those actions.
+  const trailingStatusContent = isZombie
     ? <RiErrorWarningLine className="h-4 w-4 text-status-warning" />
-    : null;
+    : statusMarker;
+  const trailingStatusSlot = (
+    <span
+      data-session-trailing-status
+      className="pointer-events-none inline-flex h-4 w-4 flex-shrink-0 items-center justify-center"
+    >
+      {trailingStatusContent}
+    </span>
+  );
 
   const handleMenuOpenChange = (open: boolean) => {
     setOpenSidebarMenuKey(open ? menuInstanceKey : null);
@@ -1158,7 +1161,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
                   isTouchPressed && 'bg-interactive-hover/70',
                   alwaysShowActions
                     ? (alwaysActionPaddingClass)
-                    : revealPaddingClass,
+                    : cn('pr-5', revealPaddingClass),
                 )}
               >
                 <div className="flex w-full items-center min-w-0 flex-1 overflow-hidden gap-1">
@@ -1227,9 +1230,12 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
               </div>
             ) : null}
 
-            {streamingIndicator && !mobileVariant ? (
-              <div className="absolute top-1/2 -translate-y-1/2 z-10 right-0">
-                {streamingIndicator}
+            {!alwaysShowActions ? (
+              <div className={cn(
+                'pointer-events-none absolute right-1.5 top-1/2 z-10 flex -translate-y-1/2 items-center transition-opacity',
+                isMenuOpen ? 'opacity-0' : hideOnHoverClass,
+              )}>
+                {trailingStatusSlot}
               </div>
             ) : null}
 
@@ -1241,6 +1247,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
                   ? 'opacity-100'
                   : cn('opacity-0', revealOnHoverClass),
             )}>
+              {alwaysShowActions ? trailingStatusSlot : null}
               {showQuickPinAction ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
