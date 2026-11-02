@@ -172,6 +172,15 @@ reported instead:
   although it never became a message; the harness check receives the archived
   session IDs and reports that lease as `bundle_shell_notice_undelivered`
   instead of `bundle_message_reference_lost`.
+- A revert transaction names each member session by `id` in `targets`,
+  `result.sessions` and `boundaries`; the messages there belong to that
+  session. A completed native removal of the session therefore excuses them,
+  like any other record of a removed session. A transaction whose session is
+  still live and names a missing message still refuses.
+- A lost session or message reference refuses with `detail: {ledger, key}`,
+  the first record that named it (identifiers only). The Electron startup page
+  and its copied diagnostics show that record; `scripts/qa/bundle-startup-rehearsal.mjs`
+  runs the same check against a copy of the installed bundle before tagging.
 - Cursor recovery pauses the one session whose intent it cannot settle
   (invalid, foreign owner, scope mismatch, unconfirmed termination) with a
   `<bundleID>-cursor-recovery` hold, keeps the intent, and continues. The

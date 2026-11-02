@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { artifactDiagnostic, parseArtifactDiagnostic, startupDiagnosticSummary, describeArtifactFailure } from './startup-diagnostics.js';
+import { artifactDiagnostic, parseArtifactDiagnostic, startupDiagnosticSummary, describeArtifactFailure, describeReferenceFailure } from './startup-diagnostics.js';
 
 const diagnostic = { stage: 'payload', reason: 'digest_mismatch', artifact: 'DevRyan-native-controller', purpose: 'current' };
 test('startup diagnostics retain only bounded labels and packaged basenames', () => {
@@ -23,4 +23,15 @@ test('a refusal names its ledger and leases by identifier only', () => {
     detail: { ledger: '8a7eca4fb393', leases: [{ token: 'ac1af5a2-b846-40d3-80fb-a50fbbbadd2d', state: 'ready', kind: 'process', cleanupPending: false }] } });
   expect(summary).not.toContain('private');
   expect(JSON.parse(startupDiagnosticSummary({ code: 'bundle_execution_unsettled', detail: { ledger: '../x', leases: [] } }))).toEqual({ code: 'bundle_execution_unsettled' });
+});
+
+test('a lost reference names its ledger and record key by identifier only', () => {
+  const key = 'transactions/8052fc42b36dd8f448d427eae5be5e1c570a17c6dec524285d3e2c7bed826357.json';
+  const error = { code: 'bundle_message_reference_lost', detail: { ledger: '8a7eca4fb393', key, text: 'private' } };
+  expect(JSON.parse(startupDiagnosticSummary(error))).toEqual({ code: 'bundle_message_reference_lost', detail: { ledger: '8a7eca4fb393', key } });
+  expect(describeReferenceFailure(error)).toContain(`Record: 8a7eca4fb393/${key}.`);
+  for (const bad of ['../secret', '/private/token', 'a\nb'])
+    expect(JSON.parse(startupDiagnosticSummary({ code: 'bundle_message_reference_lost', detail: { ledger: '8a7eca4fb393', key: bad } })))
+      .toEqual({ code: 'bundle_message_reference_lost' });
+  expect(describeReferenceFailure({ code: 'bundle_message_reference_lost' })).not.toContain('Record:');
 });

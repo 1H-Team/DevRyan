@@ -16,10 +16,13 @@ export function artifactDiagnostic(error) {
   return parseArtifactDiagnostic(error?.diagnostic) ?? parseArtifactDiagnostic(error?.cause?.diagnostic);
 }
 
-/** Identifiers only: which ledger and leases a refusal named, never their contents. */
+/** Identifiers only: which ledger and leases or record a refusal named, never their contents. */
 export function startupFailureDetail(error) {
   const detail = error?.detail ?? error?.cause?.detail, label = value => typeof value === 'string' && /^[A-Za-z0-9._-]{1,64}$/.test(value);
-  if (!detail || typeof detail !== 'object' || !label(detail.ledger) || !Array.isArray(detail.leases)) return undefined;
+  if (!detail || typeof detail !== 'object' || !label(detail.ledger)) return undefined;
+  if (typeof detail.key === 'string' && /^[A-Za-z0-9_-][A-Za-z0-9._/-]{0,159}$/.test(detail.key) && !detail.key.split('/').some(part => part === '' || part === '..'))
+    return { ledger: detail.ledger, key: detail.key };
+  if (!Array.isArray(detail.leases)) return undefined;
   return { ledger: detail.ledger, leases: detail.leases.slice(0, 8).filter(row => row && label(row.token) && label(row.state) && label(row.kind))
     .map(row => ({ token: row.token, state: row.state, kind: row.kind, cleanupPending: row.cleanupPending === true })) };
 }
@@ -44,6 +47,12 @@ const explanations = {
   reviewed_asset_mismatch: 'A bundled runtime component does not match its approved version.',
   launcher_rejected: 'The runtime execution launcher could not be verified.',
 };
+
+/** A saved record names a session or message that no longer exists. */
+export function describeReferenceFailure(error) {
+  const detail = startupFailureDetail(error), record = detail?.key ? ` Record: ${detail.ledger}/${detail.key}.` : '';
+  return `DevRyan found a saved record that refers to a deleted session or message, so it did not start.${record} Install the latest DevRyan update. Your existing data has not been reset.`;
+}
 
 export function describeArtifactFailure(value) {
   const diagnostic = parseArtifactDiagnostic(value);

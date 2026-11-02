@@ -28,11 +28,22 @@ import { admit, releaseVersion, requireTrustedCI } from './release.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const execute = promisify(execFile);
 
+/** Runs `scripts/qa/bundle-startup-rehearsal.mjs`; a machine without an installed bundle passes with a skip note. */
+export async function rehearseInstalledBundle({ repositoryRoot = root, run = execute } = {}) {
+  try {
+    const { stdout } = await run('bun', ['scripts/qa/bundle-startup-rehearsal.mjs'], { cwd: repositoryRoot, timeout: 1_800_000, maxBuffer: 64 * 1024 * 1024 });
+    return { passed: true, detail: stdout.trim().split('\n').at(-1) ?? '' };
+  } catch (error) {
+    const refused = String(error.stdout ?? '').split('\n').find(line => line.includes('REFUSED'));
+    return { passed: false, detail: refused?.trim() ?? error.message };
+  }
+}
+
 /** `origin` must be the canonical repository, so the tag reaches the repository whose CI and dry run were checked. */
 export const isCanonicalRemote = url => new RegExp(`^(?:https://github\\.com/|git@github\\.com:|ssh://git@github\\.com/)${CANONICAL_RELEASE_REPOSITORY}(?:\\.git)?/?$`).test(url.trim());
 
 export async function releaseTag({ repositoryRoot = root, environment = process.env, fetchImpl = fetch, run = execute, log = console.log,
-  check = false, move = false, cleanPreflight = options => preflightInCleanCheckout(options) } = {}) {
+  check = false, move = false, cleanPreflight = options => preflightInCleanCheckout(options), rehearse = rehearseInstalledBundle } = {}) {
   const git = (...args) => run('git', args, { cwd: repositoryRoot, timeout: 120_000, maxBuffer: 16 * 1024 * 1024 }).then(result => result.stdout.trim());
   const version = await releaseVersion(repositoryRoot, {});
   const tag = `v${version}`;
@@ -58,6 +69,10 @@ export async function releaseTag({ repositoryRoot = root, environment = process.
   log(`Dry run ${dryRun.id} at ${source} passed simulation and visual gates; the tag run adopts its DMG.`);
   const status = await cleanPreflight({ repositoryRoot, args: ['--local-only'], environment: { ...environment, GITHUB_SHA: source } });
   if (status !== 0) throw new Error(`Release preflight failed at ${source}; fix it before tagging ${tag}`);
+  // This machine's installed data must still pass the every-launch check of the build being tagged.
+  const rehearsal = await rehearse({ repositoryRoot, run });
+  if (!rehearsal.passed) throw new Error(`Startup rehearsal refused this machine's installed DevRyan data at ${source}: ${rehearsal.detail}; fix it before tagging ${tag}`);
+  log(`Startup rehearsal: ${rehearsal.detail}`);
 
   if (admission.tagged) {
     log(`${tag} already points at ${source}; nothing to push. Follow it with: bun run release:status ${tag}`);

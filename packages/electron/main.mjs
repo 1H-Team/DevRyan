@@ -3,7 +3,7 @@ import '../shared-runtime/lib/adopt-legacy-environment.js';
 import { adoptLegacyEnvironment, setDevRyanEnv } from '../shared-runtime/lib/legacy-environment.js';
 import { resolveDevRyanDataRoot } from '../shared-runtime/lib/data-root.js';
 import { configureEarlyStartup, createStartupWindowOptions, takeEarlyStartupWindow, takeEarlyAppLinks } from './early-startup.mjs';
-import { artifactDiagnostic, describeArtifactFailure, startupDiagnosticSummary } from '../shared-runtime/startup-diagnostics.js';
+import { artifactDiagnostic, describeArtifactFailure, describeReferenceFailure, startupDiagnosticSummary, startupFailureDetail } from '../shared-runtime/startup-diagnostics.js';
 import {createNativeSettingsDirectory,readNativeShellBundleBinding} from './native-settings-directory.mjs';
 import { isWindowsPreview, WINDOWS_PREVIEW_APP_ID, WINDOWS_PREVIEW_NAME, createPreviewUpdater, isPreviewUnsupportedCommand } from './windows-preview.mjs';
 import {selectInheritedShellEnv,selectShellDataRoots} from './shell-env-inheritance.mjs';
@@ -1272,13 +1272,16 @@ const startupErrorDetails = (error) => {
   const relativePath = typeof error?.relativePath === 'string'
     ? error.relativePath
     : (typeof cause?.relativePath === 'string' ? cause.relativePath : null);
+  const detail = startupFailureDetail(error);
   return {
     message,
     code,
     causeMessage,
     ...(relativePath ? { relativePath } : {}),
     ...(diagnostic ? { diagnostic } : {}),
+    ...(detail ? { detail } : {}),
     displayMessage: code === 'native_runtime_artifacts_unverified' ? describeArtifactFailure(diagnostic)
+      : code === 'bundle_message_reference_lost' || code === 'bundle_session_reference_lost' ? `${describeReferenceFailure(error)} (${code})`
       : code && message !== code ? `${message} (${code})` : message,
   };
 };

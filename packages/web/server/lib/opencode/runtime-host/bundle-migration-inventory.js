@@ -8,7 +8,8 @@ import { fileURLToPath } from 'node:url';
 import { toV2PermissionRuleset } from '../v2/admission.js';
 import { writeFileAtomic } from '../../../../../harness-runtime/lib/atomic-file.js';
 
-export const bundleFailure = (code) => Object.assign(new Error(code), { code, status: 409 });
+/** `detail` carries identifiers only (ledger, record key), never record contents. */
+export const bundleFailure = (code, detail) => Object.assign(new Error(code), { code, status: 409, ...(detail ? { detail } : {}) });
 export const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 export const canonicalJSON = value => JSON.stringify(value, (_key, item) => isRecord(item)
   ? Object.fromEntries(Object.keys(item).sort().map(key => [key, item[key]])) : item);

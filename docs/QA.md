@@ -137,6 +137,10 @@ The final-DMG profile pins the helper model and saves Builder model and thinking
 level selections before UI submission; saved agent selections apply only to managed
 users, which is the quarantined smoke defect.
 
+### Startup rehearsal against installed data
+
+`bun scripts/qa/bundle-startup-rehearsal.mjs [--control-root <dir>]` runs this checkout's every-launch harness check against a copy of the installed app's selected runtime bundle (default `~/.local/state/devryan/runtime-bundles`, or `DEVRYAN_RUNTIME_BUNDLE_ROOT`). The database is read through `VACUUM INTO` and the harness ledgers are cloned into `devryan-qa/bundle-rehearsal-*` under the OS temp dir; the live bundle is never written. It prints each isolated record and exits 1 with the refusal code and record (identifiers only) when startup would refuse. `release:tag` runs it before pushing a tag. Scratch is removed on every outcome unless `--keep-artifacts` is passed.
+
 ### Native startup benchmark
 
 ```sh

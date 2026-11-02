@@ -368,3 +368,63 @@ test('clipped edited turn requires the exact committed operation, call and publi
  f.db.set('operations/unrelated.json',{scope:{sessionID:id,messageID:assistant}});await f.db.commit();
  await expect(verify()).rejects.toMatchObject({code:'bundle_message_reference_lost'});
 });
+
+test('a revert transaction belongs to its target sessions, so their completed removal excuses it',async()=>{
+  const f=await fixture({state:'completed',acked:true}),child='ses_removed_child',txID='10000000-0000-4000-8000-000000000031';
+  const childRemoval='10000000-0000-4000-8000-000000000032',member={id:child,parentID:null,directory:f.member.directory,generation:0};
+  f.db.set(`sessions/${changeKey(child)}.json`,{...member,pending:null,nativeRemoved:childRemoval,
+    nativeAdmission:{revision:1,holds:[{id:'hold',ownerID:`native-removal:${childRemoval}`,removalID:childRemoval}],continuations:[]}});
+  f.db.set(`native-removals/${changeKey(childRemoval)}.json`,{id:childRemoval,directory:f.member.directory,rootSessionID:child,ownerID:'candidate',
+    state:'completed',members:[member],removed:[child],dispositions:[{sessionID:child,inboxIDs:[],pendingIDs:[]}]});
+  const targets=[{id:f.member.id,targetMessageID:'msg_root_target'},{id:child,targetMessageID:'msg_child_target'}];
+  const txKey=`transactions/${changeKey(txID)}.json`;
+  // The shape a cancelled tree revert leaves behind (2026-11-02 lockout).
+  f.db.set(txKey,{id:txID,rootSessionID:f.member.id,boundarySequence:1,state:'cancelled',phase:'cancelled',scope:'tree',
+    targets,members:[f.member.id,child],redo:false,result:{sessions:targets}});
+  await f.db.commit();
+  await expect(f.verify()).resolves.toBeDefined();
+  // While either session is live its missing message still refuses, naming the record.
+  f.db.remove(`native-removals/${changeKey(childRemoval)}.json`);
+  f.db.set(`sessions/${changeKey(child)}.json`,{...member,pending:null});await f.db.commit();
+  await expect(f.verify({sessionIDs:[child]})).rejects.toMatchObject({code:'bundle_message_reference_lost',
+    detail:{ledger:changeKey(f.member.directory).slice(0,12),key:txKey}});
+});
+
+test('deleting every session after real edits and reverts never refuses startup inspection',async()=>{
+  const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'bundle-removed-all-')));roots.push(root);
+  const directory=path.join(root,'project'),web=path.join(root,'web');
+  await fs.mkdir(path.join(directory,'src'),{recursive:true});await git(directory,['init','--quiet']);
+  for(let index=0;index<4;index+=1)await fs.writeFile(path.join(directory,'src',`f${index}.txt`),`line ${index}\n`);
+  const runtime=createSessionMutationRuntime({directory:path.join(web,'harness','session-mutations')});
+  const edit=async(sessionID,userMessageID,callID,file)=>{
+    await runtime.registerPrompt({directory,sessionID,userMessageID});
+    const lease=await runtime.begin({directory,sessionID,userMessageID,messageID:`${userMessageID}-assistant`,callID});
+    await runtime.claimLease({directory,token:lease.token,kind:'process'});
+    await fs.appendFile(path.join(lease.viewDirectory,'src',file),'edited\n');
+    await fs.writeFile(path.join(path.dirname(lease.viewDirectory),'termination.json'),JSON.stringify({terminated:true,confined:true,exitCode:0,cancelled:false}),{flag:'wx',mode:0o600});
+    await runtime.finish({directory,token:lease.token});
+    await runtime.cleanupLease({directory,token:lease.token});
+  };
+  await edit('ses_a','msg_a1','call_a1','f0.txt');await edit('ses_a','msg_a2','call_a2','f1.txt');
+  await edit('ses_b','msg_b1','call_b1','f2.txt');await edit('ses_b','msg_b2','call_b2','f3.txt');
+  const committed=await runtime.prepareRevert({directory,sessionID:'ses_a',messageID:'msg_a2'});
+  await runtime.settleRevert({directory,transactionID:committed.id,commit:true});
+  const cancelled=await runtime.prepareRevert({directory,sessionID:'ses_b',messageID:'msg_b2'});
+  await runtime.settleRevert({directory,transactionID:cancelled.id,commit:false});
+  for(const sessionID of ['ses_a','ses_b']){
+    const ownerID='removal-owner',intent=await runtime.beginNativeRemoval({directory,rootSessionID:sessionID,ownerID});
+    const members=[{id:sessionID,parentID:null,directory}];
+    await runtime.prepareNativeRemovalMembers({directory,intentID:intent.id,ownerID,members});
+    await runtime.commitNativeRemoval({directory,intentID:intent.id,ownerID,members});
+    const input={directory,intentID:intent.id,ownerID,sessionID,inboxIDs:[],pendingIDs:[]};
+    await runtime.stageNativeRemovalMember(input);await runtime.acknowledgeNativeRemoval(input);
+    await runtime.completeNativeRemoval({directory,intentID:intent.id,ownerID});
+  }
+  await runtime.drain();
+  const storage=path.join(web,'harness','session-mutations',changeKey(await fs.realpath(directory)));
+  const db=await openChangeStore(storage,path.join(storage,'git')),kinds=new Set();
+  for await(const {key} of db.records())kinds.add(key.split('/')[0]);
+  expect([...kinds]).toEqual(expect.arrayContaining(['transactions','leases','operations','calls','prompts','sessions','native-removals']));
+  // OpenCode no longer has any session or message: every reference left is history of a removed session.
+  await expect(inspectBundleHarness(web,{sessionIDs:[],messageIDs:[]})).resolves.toBeDefined();
+},60_000);

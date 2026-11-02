@@ -50,14 +50,14 @@ function scriptedGit({ status = '', origin = 'https://github.com/1H-Team/DevRyan
   return { calls, run, pushes: () => calls.filter(call => call.startsWith('push') || call.startsWith('tag ')) };
 }
 
-async function attempt(t, { github = {}, git = {}, preflightStatus = 0, check = false, move = false } = {}) {
+async function attempt(t, { github = {}, git = {}, preflightStatus = 0, check = false, move = false, rehearsal = { passed: true, detail: 'passed' } } = {}) {
   const repositoryRoot = await checkout(t);
   const fake = createFakeGitHub({ ciRuns: [ciRun()], releaseRuns: [dryRun()], ...github });
   const scripted = scriptedGit(git);
   const preflights = [];
   const lines = [];
   const result = await releaseTag({ repositoryRoot, environment: { GITHUB_TOKEN: 'fixture-token' }, fetchImpl: fake.fetchImpl, run: scripted.run, log: line => lines.push(line),
-    check, move, cleanPreflight: async options => { preflights.push(options); return preflightStatus; } }).catch(error => error);
+    check, move, cleanPreflight: async options => { preflights.push(options); return preflightStatus; }, rehearse: async () => rehearsal }).catch(error => error);
   assert.ok(fake.requests.every(request => request.method === 'GET'), 'release:tag only reads GitHub');
   return { result, fake, git: scripted, preflights, lines };
 }
@@ -126,4 +126,10 @@ test('a tag already at the commit pushes nothing; --move re-points an unpublishe
 test('only the canonical repository is an accepted origin', () => {
   for (const url of ['https://github.com/1H-Team/DevRyan.git', 'https://github.com/1H-Team/DevRyan', 'git@github.com:1H-Team/DevRyan.git', 'ssh://git@github.com/1H-Team/DevRyan.git']) assert.ok(isCanonicalRemote(url), url);
   for (const url of ['https://github.com/1H-Team/DevRyan-fork.git', 'https://github.com/someone/DevRyan.git', 'https://example.com/1H-Team/DevRyan.git', '/tmp/DevRyan']) assert.ok(!isCanonicalRemote(url), url);
+});
+
+test('a startup rehearsal that refuses the installed data stops the tag before any push', async t => {
+  const { result, git } = await attempt(t, { rehearsal: { passed: false, detail: '[rehearsal] REFUSED bundle_message_reference_lost record 8a7eca4fb393/transactions/x.json' } });
+  assert.match(result.message, /Startup rehearsal refused .*bundle_message_reference_lost/);
+  assert.deepEqual(git.pushes(), []);
 });

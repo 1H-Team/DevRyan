@@ -29,7 +29,7 @@ export interface MigrationVerification {
   readonly remembered: MigrationInventory['remembered'];
   readonly permissions: readonly { readonly id: string; readonly rules: readonly MigrationRule[] | null }[];
 }
-export function bundleFailure(code: string): Error & { code: string; status: number };
+export function bundleFailure(code: string, detail?: { ledger: string; key: string }): Error & { code: string; status: number; detail?: { ledger: string; key: string } };
 export function isRecord(value: unknown): value is Record<string, unknown>;
 export function canonicalJSON(value: unknown): string;
 export function sha256(value: string | Uint8Array): string;

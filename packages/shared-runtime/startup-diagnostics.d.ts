@@ -8,5 +8,6 @@ export interface ArtifactDiagnostic {
 export function parseArtifactDiagnostic(value: unknown): ArtifactDiagnostic | undefined;
 export function artifactDiagnostic(error: unknown): ArtifactDiagnostic | undefined;
 export function describeArtifactFailure(value: unknown): string;
-export function startupFailureDetail(error: unknown): { ledger: string; leases: Array<{ token: string; state: string; kind: string; cleanupPending: boolean }> } | undefined;
+export function describeReferenceFailure(error: unknown): string;
+export function startupFailureDetail(error: unknown): { ledger: string; key: string } | { ledger: string; leases: Array<{ token: string; state: string; kind: string; cleanupPending: boolean }> } | undefined;
 export function startupDiagnosticSummary(error: unknown): string;

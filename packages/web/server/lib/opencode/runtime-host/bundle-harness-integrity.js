@@ -17,23 +17,30 @@ const sessionFields = new Set(['sessionID','sessionId','rootSessionId','parentSe
 const messageFields = new Set(['messageID','messageId','userMessageID','assistantMessageID','anchorID','objectiveID','sourceUserMessageID','previousStepID','activeUserID','stepID','failedID','recoveryID','continuationID','sourceMessageId','targetMessageID','boundaryMessageID','notificationID','turnID']);
 /** Field names the inspection collects as session and message references. */
 export const BUNDLE_REFERENCE_FIELDS=Object.freeze([...sessionFields,...messageFields]);
-const references = (value, collected, sessionID=null, exception, route=[]) => {
+// A revert transaction names each member session by `id` in its targets,
+// result sessions and boundaries; those entries belong to that session.
+const TRANSACTION_MEMBER_ROUTE=/^(?:targets|result\.sessions|boundaries)\.\d+$/;
+const collectMessage=(collected,id,owner)=>{
+  collected.messages.add(id);
+  const scopes=collected.messageScopes.get(id) ?? new Set();
+  scopes.add(typeof owner==='string' ? owner : null); collected.messageScopes.set(id,scopes);
+  if(collected.at&&!collected.messageSources?.has(id))(collected.messageSources??=new Map()).set(id,collected.at);
+};
+const references = (value, collected, sessionID=null, exception, route=[], transaction=false) => {
   if (Array.isArray(value)) { for (const [index,item] of value.entries()) {
     if(route.join('.')==='record.guardedIDs'&&typeof item==='string'){
-      if(!exception?.some(proof=>proof.id===item&&proof.sessionID===sessionID&&proof.paths?.includes([...route,index].join('.')))){collected.messages.add(item);const scopes=collected.messageScopes.get(item)??new Set();scopes.add(sessionID);collected.messageScopes.set(item,scopes);}
-    }else references(item,collected,sessionID,exception,[...route,String(index)]);
+      if(!exception?.some(proof=>proof.id===item&&proof.sessionID===sessionID&&proof.paths?.includes([...route,index].join('.'))))collectMessage(collected,item,sessionID);
+    }else references(item,collected,sessionID,exception,[...route,String(index)],transaction);
   } return; }
   if (!isRecord(value)) return;
-  const owner = value.sessionID ?? value.sessionId ?? value.scope?.sessionID ?? sessionID;
+  const member=transaction&&typeof value.id==='string'&&TRANSACTION_MEMBER_ROUTE.test(route.join('.')) ? value.id : undefined;
+  const owner = value.sessionID ?? value.sessionId ?? value.scope?.sessionID ?? member ?? sessionID;
   for (const [key,item] of Object.entries(value)) {
-    if (typeof item === 'string' && sessionFields.has(key)) collected.sessions.add(item);
+    if (typeof item === 'string' && sessionFields.has(key)) { collected.sessions.add(item); if(collected.at&&!collected.sessionSources?.has(item))(collected.sessionSources??=new Map()).set(item,collected.at); }
     if (typeof item === 'string' && messageFields.has(key) && !exception?.some(proof=>item===proof.id&&owner===proof.sessionID
-      && (proof.paths??['record.continuationID','record.nativeContinuation.messageID','record.nativeContinuation.prompt.messageID']).includes([...route,key].join('.')))) {
-      collected.messages.add(item);
-      const scopes=collected.messageScopes.get(item) ?? new Set();
-      scopes.add(typeof owner==='string' ? owner : null); collected.messageScopes.set(item,scopes);
-    }
-    if (!['input','output','body','request','metadata','text','parts'].includes(key)) references(item,collected,owner,exception,[...route,key]);
+      && (proof.paths??['record.continuationID','record.nativeContinuation.messageID','record.nativeContinuation.prompt.messageID']).includes([...route,key].join('.'))))
+      collectMessage(collected,item,owner);
+    if (!['input','output','body','request','metadata','text','parts'].includes(key)) references(item,collected,owner,exception,[...route,key],transaction);
   }
 };
 // A native delete may commit before its Node ACK. The existing durable intent
@@ -139,14 +146,15 @@ export async function inspectBundleHarness(webDataDirectory,{projectMap=[],reloc
   const readBundleJSON=nativeFiles?.readJSON??(file=>readBundleJSONOwned(file,documentOptions)),saveBundleJSON=nativeFiles?.saveJSON??((file,value)=>saveBundleJSONOwned(file,value,documentOptions));
   const runGit=gitRunner?.git??git;
   if(windows&&!nativeFiles&&typeof windowsOwner?.tree!=='function')throw bundleFailure('private_windows_storage_authority_unavailable');
-  const collected = {sessions:new Set(),messages:new Set(),messageScopes:new Map()}, refs = [];
+  const collected = {sessions:new Set(),messages:new Set(),messageScopes:new Map(),messageSources:new Map(),sessionSources:new Map(),at:null}, refs = [];
   // Refuse only in-flight or foreign state. A defect in a terminal record or a
   // stray entry is a finding: identifiers only, reported by the caller. Moving
   // records to another directory still needs every one of them to be exact.
   const findings=[],strict=relocate&&projectMap.some(row=>row.sourceDirectory!==row.targetDirectory);
+  const recordDetail=at=>at?{ledger:String(at.ledger).slice(0,12),key:String(at.key).replace(/[^A-Za-z0-9._/-]/g,'_').slice(0,160)}:undefined;
   const finding=(code,ledger,key)=>{
     if(strict)throw bundleFailure(code);
-    const row={code,ledger:String(ledger).slice(0,12),key:String(key).replace(/[^A-Za-z0-9._/-]/g,'_').slice(0,160)};
+    const row={code,...recordDetail({ledger,key})};
     if(findings.length<256&&!findings.some(item=>item.code===row.code&&item.ledger===row.ledger&&item.key===row.key))findings.push(row);
   };
   const removed={sessions:new Set(),messages:new Set()}, verifiedFiles=new Set(),shellPins=[],tombstones=[];
@@ -271,7 +279,7 @@ export async function inspectBundleHarness(webDataDirectory,{projectMap=[],reloc
           if(!valid)continue;
           const proof = { id:old.value.messageID,sessionID:tx.rootSessionID };
           clipped.set(old.key,[{...proof,paths:['messageID']}]);
-          clipped.set(transactionKey,[{...proof,sessionID:null,paths:[`targets.${targetIndex}.targetMessageID`,`result.sessions.${targetIndex}.targetMessageID`]}]);
+          clipped.set(transactionKey,[{...proof,paths:[`targets.${targetIndex}.targetMessageID`,`result.sessions.${targetIndex}.targetMessageID`]}]);
           for(const {operationKey,leaseKey,callKey,scope,owner,effectScope} of owned){
             if(scope.sessionID!==tx.rootSessionID)continue;
             const records=[{id:scope.userMessageID,sessionID:scope.sessionID,paths:['scope.userMessageID']},
@@ -363,7 +371,10 @@ export async function inspectBundleHarness(webDataDirectory,{projectMap=[],reloc
           const named={sessions:new Set(),messages:new Set(),messageScopes:new Map()};
           references(record,named);
           tombstones.push({ledger:entry.name,key,named});
-        } else references(record,collected,null,promptException ?? shellException ?? clipped.get(key));
+        } else {
+          collected.at={ledger:entry.name,key};
+          references(record,collected,null,promptException ?? shellException ?? clipped.get(key),[],/^transactions\/[a-f0-9]{64}\.json$/.test(key));
+        }
         if (relocate) store.set(key,await relocateRecord(record,projectMap,owned,getRegistered));
       }
       if (relocate) await store.commit();
@@ -395,6 +406,7 @@ export async function inspectBundleHarness(webDataDirectory,{projectMap=[],reloc
     }
     const record=loaded?.envelope ?? await readBundleJSON(file);
     if (!isRecord(record)) throw bundleFailure('bundle_harness_record_invalid');
+    collected.at={ledger:directory,key:entry.name};
     references(record,collected,null,exception);
     if (relocate) {
       const next = await relocateRecord(record,projectMap,undefined,getRegistered);
@@ -428,7 +440,7 @@ export async function inspectBundleHarness(webDataDirectory,{projectMap=[],reloc
         const named={sessions:new Set(),messages:new Set(),messageScopes:new Map()};
         references(task,named,owner);
         tombstones.push({ledger:'orchestration',key:`tasks/${task.taskId}`,named});
-      } else references(task,collected,owner);
+      } else { collected.at={ledger:'orchestration',key:`tasks/${task.taskId}`}; references(task,collected,owner); }
     }
     if (relocate) await saveBundleJSON(ledgerFile,{...ledger,tasks:await Promise.all(ledger.tasks.map(task => relocateRecord(task,projectMap,undefined,getRegistered)))});
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
@@ -444,12 +456,13 @@ export async function inspectBundleHarness(webDataDirectory,{projectMap=[],reloc
       const named={sessions:new Set(),messages:new Set(),messageScopes:new Map()};
       references(record,named);
       tombstones.push({ledger:'evidence',key:entry.name,named});
-    } else references(record,collected);
+    } else { collected.at={ledger:'evidence',key:entry.name}; references(record,collected); }
     if (relocate) await saveBundleJSON(file,await relocateRecord(record,projectMap,undefined,getRegistered));
   }
-  if (sessionIDs) for (const id of collected.sessions) if (!sessionIDs.includes(id) && !removed.sessions.has(id)) throw bundleFailure('bundle_session_reference_lost');
+  if (sessionIDs) for (const id of collected.sessions) if (!sessionIDs.includes(id) && !removed.sessions.has(id)) throw bundleFailure('bundle_session_reference_lost',recordDetail(collected.sessionSources?.get(id)));
   if (messageIDs) for (const id of collected.messages) if (!messageIDs.includes(id)
-    && ![...collected.messageScopes.get(id)].every(owner=>owner===null ? removed.messages.has(id) : removed.sessions.has(owner))) throw bundleFailure('bundle_message_reference_lost');
+    && ![...collected.messageScopes.get(id)].every(owner=>owner===null ? removed.messages.has(id) : removed.sessions.has(owner)))
+    throw bundleFailure('bundle_message_reference_lost',recordDetail(collected.messageSources?.get(id)));
   for (const {ledger,key,named} of tombstones) {
     if (sessionIDs && [...named.sessions].some(id=>!sessionIDs.includes(id) && !removed.sessions.has(id))) finding('bundle_session_reference_lost',ledger,key);
     if (messageIDs && [...named.messages].some(id=>!messageIDs.includes(id)
