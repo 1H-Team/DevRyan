@@ -576,8 +576,9 @@ const toToolActivityRow = (activity: TurnActivityPart): AggregatedLeafRow => {
 
 /**
  * Aggregate sorted activity parts into display rows.
- * Passive lookup and browser tools roll up across reasoning text until a hard tool boundary.
- * Edit/patch tools stay burst-scoped so output remains close to the narrative that produced it.
+ * Search/read/fetch/edit/patch counts are burst-scoped: reasoning, narration and hard tool
+ * boundaries start a new row, so an earlier count never grows under later narrative.
+ * Only the single browser surface rolls up across the whole segment.
  * Ungrouped expandable tools (bash, question) stay as individual rows.
  * Unknown tools stay as individual expandable rows (fallback).
  */

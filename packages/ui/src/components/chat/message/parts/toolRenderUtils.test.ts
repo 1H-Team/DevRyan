@@ -438,26 +438,59 @@ describe('tool activity grouping', () => {
         }
     });
 
-    test('rolls read tools across reasoning into one group', () => {
+    test('starts a new read row after reasoning instead of growing the earlier one', () => {
         const rows = collectRows([
             { kind: 'tool', tool: 'read', part: toolPart('read', { input: { filePath: 'src/a.ts' } }, 'read-1') },
             { kind: 'reasoning' },
             { kind: 'tool', tool: 'view', part: toolPart('view', { input: { path: 'src/b.ts' } }, 'read-2') },
         ]);
 
-        expect(rows).toHaveLength(2);
+        expect(rows).toHaveLength(3);
         expect(rows[0]?.type).toBe('group');
         if (rows[0]?.type === 'group') {
             expect(rows[0].groupInfo.kind).toBe('read');
-            expect(rows[0].items).toHaveLength(2);
+            expect(rows[0].items.map((item) => item.kind === 'tool' ? item.part?.id : null)).toEqual(['read-1']);
         }
         expect(rows[1]?.type).toBe('item');
         if (rows[1]?.type === 'item') {
             expect(rows[1].item.kind).toBe('reasoning');
         }
+        expect(rows[2]?.type).toBe('group');
+        if (rows[2]?.type === 'group') {
+            expect(rows[2].groupInfo.kind).toBe('read');
+            expect(rows[2].items.map((item) => item.kind === 'tool' ? item.part?.id : null)).toEqual(['read-2']);
+        }
     });
 
-    test('rolls mixed search and read groups while preserving reasoning rows', () => {
+    test('keeps earlier search counts fixed when later narration starts a new burst', () => {
+        const getPart = (item: ToolItem) => item.kind === 'tool' ? item.part : undefined;
+        const rows = collectRows([
+            { kind: 'tool', tool: 'grep', part: toolPart('grep', { output: 'src/a.ts:1:a\nsrc/b.ts:2:b' }, 'grep-1') },
+            { kind: 'reasoning' },
+            { kind: 'tool', tool: 'grep', part: toolPart('grep', { output: 'src/c.ts:1:c' }, 'grep-2') },
+            { kind: 'reasoning' },
+            { kind: 'tool', tool: 'glob', part: toolPart('glob', { output: 'src/d.ts\nsrc/e.ts\nsrc/f.ts' }, 'glob-1') },
+        ]);
+
+        const searchGroups = rows.flatMap((row) => row.type === 'group' && row.groupInfo.kind === 'search' ? [row] : []);
+        expect(rows.map((row) => row.type)).toEqual(['group', 'item', 'group', 'item', 'group']);
+        expect(searchGroups.map((group) => getToolActivityGroupSummaryCount('search', group.items, getPart))).toEqual([2, 1, 3]);
+    });
+
+    test('keeps earlier fetch counts fixed when later narration starts a new burst', () => {
+        const getPart = (item: ToolItem) => item.kind === 'tool' ? item.part : undefined;
+        const rows = collectRows([
+            { kind: 'tool', tool: 'webfetch', part: toolPart('webfetch', { input: { url: 'https://example.com/a' } }, 'fetch-1') },
+            { kind: 'reasoning' },
+            { kind: 'tool', tool: 'webfetch', part: toolPart('webfetch', { input: { url: 'https://example.com/b' } }, 'fetch-2') },
+            { kind: 'tool', tool: 'webfetch', part: toolPart('webfetch', { input: { url: 'https://example.com/c' } }, 'fetch-3') },
+        ]);
+
+        const fetchGroups = rows.flatMap((row) => row.type === 'group' && row.groupInfo.kind === 'fetch' ? [row] : []);
+        expect(fetchGroups.map((group) => getToolActivityGroupSummaryCount('fetch', group.items, getPart))).toEqual([1, 2]);
+    });
+
+    test('splits mixed search and read groups at reasoning', () => {
         const rows = collectRows([
             { kind: 'tool', tool: 'grep', part: toolPart('grep', { output: 'src/a.ts:1:a' }, 'grep-1') },
             { kind: 'reasoning' },
@@ -466,12 +499,12 @@ describe('tool activity grouping', () => {
             { kind: 'tool', tool: 'view', part: toolPart('view', { input: { path: 'src/b.ts' } }, 'read-2') },
         ]);
 
-        expect(rows).toHaveLength(3);
+        expect(rows).toHaveLength(4);
         expect(rows[0]?.type).toBe('group');
         if (rows[0]?.type === 'group') {
             expect(rows[0].groupInfo.kind).toBe('search');
-            expect(rows[0].items).toHaveLength(2);
-            expect(getToolActivityGroupSummaryCount('search', rows[0].items, (item) => item.kind === 'tool' ? item.part : undefined)).toBe(3);
+            expect(rows[0].items).toHaveLength(1);
+            expect(getToolActivityGroupSummaryCount('search', rows[0].items, (item) => item.kind === 'tool' ? item.part : undefined)).toBe(1);
         }
         expect(rows[1]?.type).toBe('item');
         if (rows[1]?.type === 'item') {
@@ -481,6 +514,11 @@ describe('tool activity grouping', () => {
         if (rows[2]?.type === 'group') {
             expect(rows[2].groupInfo.kind).toBe('read');
             expect(rows[2].items).toHaveLength(2);
+        }
+        expect(rows[3]?.type).toBe('group');
+        if (rows[3]?.type === 'group') {
+            expect(rows[3].groupInfo.kind).toBe('search');
+            expect(getToolActivityGroupSummaryCount('search', rows[3].items, (item) => item.kind === 'tool' ? item.part : undefined)).toBe(2);
         }
     });
 
@@ -506,7 +544,7 @@ describe('tool activity grouping', () => {
         }
     });
 
-    test('keeps patch groups across shell boundaries (durable rollup)', () => {
+    test('keeps patch groups across shell commands in one burst', () => {
         const rows = collectRows([
             { kind: 'tool', tool: 'apply_patch', part: toolPart('apply_patch', { metadata: { files: [{ relativePath: 'src/a.ts', additions: 1, deletions: 0 }] } }, 'patch-1') },
             { kind: 'tool', tool: 'bash', part: toolPart('bash', { input: { command: 'pwd' } }, 'bash-1') },
@@ -523,7 +561,7 @@ describe('tool activity grouping', () => {
         }
     });
 
-    test('keeps edit groups across shell boundaries (durable rollup)', () => {
+    test('keeps edit groups across shell commands in one burst', () => {
         const rows = collectRows([
             { kind: 'tool', tool: 'edit', part: toolPart('edit', { input: { filePath: 'src/a.ts' } }, 'edit-1') },
             { kind: 'tool', tool: 'bash', part: toolPart('bash', { input: { command: 'pwd' } }, 'bash-1') },
@@ -588,7 +626,7 @@ describe('tool activity grouping', () => {
         }
     });
 
-    test('rolls edit groups across reasoning while preserving reasoning rows', () => {
+    test('keeps earlier edit counts fixed when reasoning starts a new burst', () => {
         const rows = collectRows([
             { kind: 'tool', tool: 'edit', part: toolPart('edit', { input: { filePath: 'src/a.ts' } }, 'edit-1') },
             { kind: 'tool', tool: 'write', part: toolPart('write', { input: { filePath: 'src/b.ts' }, metadata: { exists: true } }, 'write-1') },
@@ -597,17 +635,29 @@ describe('tool activity grouping', () => {
             { kind: 'tool', tool: 'write', part: toolPart('write', { input: { filePath: 'src/d.ts' }, metadata: { exists: true } }, 'write-2') },
         ]);
 
-        expect(rows).toHaveLength(2);
-        expect(rows[0]?.type).toBe('group');
-        expect(rows[1]?.type).toBe('item');
-        if (rows[0]?.type === 'group') {
-            expect(rows[0].groupInfo.kind).toBe('edit');
-            expect(rows[0].items).toHaveLength(4);
-            expect(getToolActivityGroupSummaryCount('edit', rows[0].items, (item) => item.kind === 'tool' ? item.part : undefined)).toBe(4);
+        expect(rows.map((row) => row.type)).toEqual(['group', 'item', 'group']);
+        for (const row of [rows[0], rows[2]]) {
+            expect(row?.type).toBe('group');
+            if (row?.type === 'group') {
+                expect(row.groupInfo.kind).toBe('edit');
+                expect(getToolActivityGroupSummaryCount('edit', row.items, (item) => item.kind === 'tool' ? item.part : undefined)).toBe(2);
+            }
         }
     });
 
-    test('rolls patch groups across reasoning and suppresses covered edit duplicates', () => {
+    test('keeps an edit row visible when only a patch from a later burst covers it', () => {
+        const rows = collectRows([
+            { kind: 'tool', tool: 'edit', part: toolPart('edit', { input: { filePath: 'src/a.ts' } }, 'edit-1') },
+            { kind: 'reasoning' },
+            { kind: 'tool', tool: 'read', part: toolPart('read', { input: { filePath: 'src/b.ts' } }, 'read-1') },
+            { kind: 'reasoning' },
+            { kind: 'tool', tool: 'apply_patch', part: toolPart('apply_patch', { metadata: { files: [{ relativePath: 'src/a.ts', additions: 1, deletions: 0 }] } }, 'patch-1') },
+        ]);
+
+        expect(rows.flatMap((row) => row.type === 'group' ? [row.groupInfo.kind] : [])).toEqual(['edit', 'read', 'patch']);
+    });
+
+    test('splits patch groups at reasoning and suppresses covered edits within their own burst', () => {
         const rows = collectRows([
             { kind: 'tool', tool: 'edit', part: toolPart('edit', { input: { filePath: 'src/a.ts' } }, 'edit-1') },
             { kind: 'reasoning' },
@@ -616,13 +666,20 @@ describe('tool activity grouping', () => {
             { kind: 'tool', tool: 'apply_patch', part: toolPart('apply_patch', { metadata: { files: [{ relativePath: 'src/a.ts', additions: 2, deletions: 1 }] } }, 'patch-2') },
         ]);
 
-        expect(rows).toHaveLength(2);
-        expect(rows[0]?.type).toBe('item');
-        expect(rows[1]?.type).toBe('group');
-        if (rows[1]?.type === 'group') {
-            expect(rows[1].groupInfo.kind).toBe('patch');
-            expect(rows[1].items).toHaveLength(2);
-            expect(getToolActivityGroupSummaryCount('patch', rows[1].items, (item) => item.kind === 'tool' ? item.part : undefined)).toBe(1);
+        // edit-1 precedes the reasoning, so no patch in its burst covers it; write-1 is
+        // covered by the patches in its own burst and drops out.
+        expect(rows).toHaveLength(3);
+        expect(rows[0]?.type).toBe('group');
+        if (rows[0]?.type === 'group') {
+            expect(rows[0].groupInfo.kind).toBe('edit');
+            expect(rows[0].items.map((item) => item.kind === 'tool' ? item.part?.id : null)).toEqual(['edit-1']);
+        }
+        expect(rows[1]?.type).toBe('item');
+        expect(rows[2]?.type).toBe('group');
+        if (rows[2]?.type === 'group') {
+            expect(rows[2].groupInfo.kind).toBe('patch');
+            expect(rows[2].items).toHaveLength(2);
+            expect(getToolActivityGroupSummaryCount('patch', rows[2].items, (item) => item.kind === 'tool' ? item.part : undefined)).toBe(1);
         }
     });
 
@@ -827,6 +884,29 @@ describe('tool activity grouping', () => {
         expect(getToolActivityGroupSummaryCount('fetch', fetch?.items ?? [], options.getToolPart)).toBe(2);
     });
 
+    test('anchors each live search burst at its own first part across reasoning', () => {
+        const items = [
+            { messageId: 'message-1', kind: 'tool' as const, tool: 'grep', part: toolPart('grep', { output: 'src/a.ts:1:x' }, 'grep-1') },
+            { messageId: 'message-2', kind: 'tool' as const, tool: 'glob', part: toolPart('glob', { output: 'src/b.ts' }, 'glob-1') },
+            { messageId: 'message-3', kind: 'reasoning' as const, tool: '', part: toolPart('reasoning', {}, 'reasoning-1') },
+            { messageId: 'message-3', kind: 'tool' as const, tool: 'grep', part: toolPart('grep', { output: 'src/c.ts:1:y' }, 'grep-2') },
+            { messageId: 'message-4', kind: 'tool' as const, tool: 'glob', part: toolPart('glob', { output: 'src/d.ts\nsrc/e.ts' }, 'glob-2') },
+        ];
+
+        const groups = collectCrossMessageFileActivityGroups(items, {
+            getToolName: (item) => item.tool,
+            getToolPart: (item) => item.kind === 'tool' ? item.part : undefined,
+            getMessageId: (item) => item.messageId,
+            isReasoningOrJustification: (item) => item.kind === 'reasoning',
+        });
+
+        expect(groups.map((group) => group.items.map((item) => item.part.id))).toEqual([
+            ['grep-1', 'glob-1'],
+            ['grep-2', 'glob-2'],
+        ]);
+        expect(groups.map((group) => getToolActivityGroupSummaryCount('search', group.items, (item) => item.part))).toEqual([2, 3]);
+    });
+
     test('does not bridge a search burst confined to one message', () => {
         const items = [
             { messageId: 'message-1', tool: 'grep', part: toolPart('grep', { output: 'src/a.ts:1:x' }, 'grep-1') },
@@ -940,22 +1020,26 @@ describe('tool activity grouping', () => {
         }
     });
 
-    test('consolidates reads across standalone task tools', () => {
+    test('starts a new read row after a task tool', () => {
         const rows = collectToolActivityRowsFromToolParts([
             toolPart('read', { input: { filePath: 'src/a.ts' } }, 'read-1'),
             toolPart('task', { input: { description: 'Nested task' } }, 'task-1'),
             toolPart('read', { input: { filePath: 'src/b.ts' } }, 'read-2'),
         ]);
 
-        expect(rows).toHaveLength(2);
+        expect(rows).toHaveLength(3);
         expect(rows[0]?.type).toBe('group');
         if (rows[0]?.type === 'group') {
             expect(rows[0].groupInfo.kind).toBe('read');
-            expect(rows[0].items).toHaveLength(2);
+            expect(rows[0].items.map((part) => part.id)).toEqual(['read-1']);
         }
         expect(rows[1]?.type).toBe('item');
         if (rows[1]?.type === 'item') {
             expect(rows[1].item.tool).toBe('task');
+        }
+        expect(rows[2]?.type).toBe('group');
+        if (rows[2]?.type === 'group') {
+            expect(rows[2].items.map((part) => part.id)).toEqual(['read-2']);
         }
     });
 });

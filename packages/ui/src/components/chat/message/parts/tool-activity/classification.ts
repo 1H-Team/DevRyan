@@ -66,7 +66,10 @@ const TOOL_NAME_ALIASES = new Map<string, string>([
 export type ToolActivityGroupKind = 'search' | 'read' | 'edit' | 'fetch' | 'patch' | 'shell' | 'browser';
 export type ToolFileMutationAction = 'created' | 'edited' | 'wrote';
 
-const PASSIVE_ROLLUP_GROUP_KINDS = new Set<ToolActivityGroupKind>(['search', 'read', 'fetch', 'edit', 'patch', 'browser']);
+// Only the single live browser surface rolls up across a whole turn; its count
+// is fixed at 1. File-activity counts stay burst-scoped so a row never grows
+// after later narration has rendered below it.
+const PASSIVE_ROLLUP_GROUP_KINDS = new Set<ToolActivityGroupKind>(['browser']);
 
 export interface ToolActivityGroupInfo {
     key: string;

@@ -336,10 +336,16 @@ export const collectToolActivityRows = <T>(
     const rows: ToolActivityAggregation<T>[] = [];
     const passiveRollups = new Map<string, { groupInfo: ToolActivityGroupInfo; items: T[] }>();
     const burstGroups = new Map<string, { groupInfo: ToolActivityGroupInfo; items: T[] }>();
-    const patchCoveredPaths = collectPatchCoveredPaths(items, options.getToolPart);
+    // Edit rows are only suppressed by a patch from the same burst; a patch much
+    // later in the turn must not hide an edit row rendered far above it.
+    const burstItemsByIndex: T[][] = [[]];
+    const burstIndexByGroupItems = new Map<T[], number>();
 
     const closeBurstGroups = () => {
         burstGroups.clear();
+        if (burstItemsByIndex[burstItemsByIndex.length - 1]!.length > 0) {
+            burstItemsByIndex.push([]);
+        }
     };
 
     const pushItem = (item: T) => {
@@ -355,7 +361,8 @@ export const collectToolActivityRows = <T>(
 
         const group = { groupInfo, items: [item] };
         groups.set(groupInfo.key, group);
-            rows.push({ type: 'group', groupInfo, items: group.items });
+        burstIndexByGroupItems.set(group.items, burstItemsByIndex.length - 1);
+        rows.push({ type: 'group', groupInfo, items: group.items });
     };
 
     for (const item of items) {
@@ -391,8 +398,13 @@ export const collectToolActivityRows = <T>(
             continue;
         }
 
+        burstItemsByIndex[burstItemsByIndex.length - 1]!.push(item);
         appendToGroup(groupInfo, item, burstGroups);
     }
+
+    const patchCoveredPathsByBurst = burstItemsByIndex.map((burstItems) => (
+        collectPatchCoveredPaths(burstItems, options.getToolPart)
+    ));
 
     return rows.flatMap((row): ToolActivityAggregation<T>[] => {
         if (row.type === 'item') {
@@ -400,6 +412,8 @@ export const collectToolActivityRows = <T>(
         }
 
         const normalizedItems = normalizeToolActivityGroupItems(row.groupInfo, row.items, options.getToolPart);
+        const burstIndex = burstIndexByGroupItems.get(row.items);
+        const patchCoveredPaths = burstIndex === undefined ? [] : patchCoveredPathsByBurst[burstIndex] ?? [];
         if (isEditGroupCoveredByPatch(row.groupInfo, normalizedItems, patchCoveredPaths, options.getToolPart)) {
             return [];
         }
