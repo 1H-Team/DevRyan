@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.11] - 2026-11-03
+
+- Fix DevRyan refusing to start with `bundle_message_reference_lost` after deleting a session that had an undone (reverted) turn.
+- Name the saved record on the startup error page and in copied diagnostics when DevRyan refuses to start.
+
 ## [2.0.10] - 2026-11-02
 
 - Load session change history from cached summaries and verify current file state when previewing Undo or Redo.
