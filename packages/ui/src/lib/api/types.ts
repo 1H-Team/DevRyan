@@ -778,6 +778,7 @@ export interface SessionPlanRevisionIdentity {
 }
 
 export interface SessionPlanRevisionWrite extends SessionPlanRevisionIdentity {
+  trigger?: 'completion' | 'hydration' | 'retry' | 'edit';
   markdown: string;
 }
 

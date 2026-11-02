@@ -65,11 +65,13 @@ export const getPlanCardActionState = ({
   isRevisionSettled = true,
   isGenerationSuccessful = true,
   hasTerminalFailure = false,
+  isPlanStateKnown = true,
 }: {
   streamPhase: StreamPhase;
   hasPlanText: boolean;
   isImplementationRequested: boolean;
-  isLatestPlan: boolean;
+  isLatestPlan?: boolean;
+  isPlanStateKnown?: boolean;
   /** False while any assistant sibling in the plan revision is still running. */
   isRevisionSettled?: boolean;
   isGenerationSuccessful?: boolean;
@@ -80,6 +82,10 @@ export const getPlanCardActionState = ({
       canImplement: false,
       disabledReason: 'Implementation already started.',
     };
+  }
+
+  if (!isPlanStateKnown || isLatestPlan === undefined) {
+    return { canImplement: false, disabledReason: 'Checking plan state.' };
   }
 
   if (!isLatestPlan) {

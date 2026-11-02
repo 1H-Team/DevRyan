@@ -2,6 +2,7 @@ import { validateTaskPrerequisites } from './task-prerequisites.js';
 import { validateApprovedPlanRef } from './approved-plan.js';
 import { validateRequiredChecks, validateRequiredCheckReceipts } from './required-checks.js';
 import { validateCheckCorrectionHistory } from './check-correction.js';
+import { validatePrimaryStepBudget } from './designer-step-budget.js';
 import {
   MODEL_UNAVAILABLE_FAILURE_KIND,
   isProviderAuthenticationFailure,
@@ -269,6 +270,7 @@ export const validateManagedTaskRecord = (task) => {
   validateRequiredChecks(task.requiredChecks);
   validateRequiredCheckReceipts(task.requiredCheckReceipts, task.requiredChecks);
   validateCheckCorrectionHistory(task.requiredCheckCorrections);
+  validatePrimaryStepBudget(task.primaryStepBudget);
   assertNullableString(task.dispatchObjectiveId ?? null, 'dispatchObjectiveId');
   assertJsonCompatible(task, 'task');
   return task;

@@ -400,7 +400,15 @@ export type SessionChangesCurrent = {
   reasons: string[];
 };
 
+export type SessionRestoreEligibility =
+  | { state: 'candidate'; action: 'undo' | 'redo' }
+  | { state: 'unavailable'; reasons: string[] }
+  | { state: 'unknown' };
+
 export type SessionTreeChanges = {
+  projectionState?: 'ready' | 'refreshing' | 'missing';
+  generatedAt?: number | null;
+  restoreEligibility?: SessionRestoreEligibility;
   current?: SessionChangesCurrent;
   coverageBySession?: { sessionID: string; reasons: string[] }[];
   fileCount?: number;
@@ -679,6 +687,17 @@ export function parseSessionTreeChanges(payload: unknown): SessionTreeChanges {
   const record = isRecord(payload) ? payload : {};
   const files: SessionTreeChangedFile[] = [];
   const currentRecord = isRecord(record.current) ? record.current : null;
+  const eligibility = isRecord(record.restoreEligibility) ? record.restoreEligibility : null;
+  const restoreEligibility: SessionRestoreEligibility | undefined = eligibility
+    ? eligibility.state === 'candidate' && record.projectionState === 'ready' && record.coverage === 'complete'
+      && record.reconciliationState === 'settled' && typeof record.revision === 'string'
+      && (record.attributionVersion === 2 || record.attributionVersion === 3 || record.attributionVersion === 4)
+      && (eligibility.action === 'undo' || eligibility.action === 'redo')
+      ? { state: 'candidate', action: eligibility.action }
+      : eligibility.state === 'unavailable' && Array.isArray(eligibility.reasons)
+        ? { state: 'unavailable', reasons: eligibility.reasons.filter((value): value is string => typeof value === 'string') }
+        : { state: 'unknown' }
+    : undefined;
   if (Array.isArray(record.files)) {
     for (const entry of record.files) {
       if (!isRecord(entry) || typeof entry.path !== "string" || entry.path.length === 0) continue;
@@ -713,6 +732,9 @@ export function parseSessionTreeChanges(payload: unknown): SessionTreeChanges {
       worktreeDirectory: typeof record.worktreeDirectory === 'string' ? record.worktreeDirectory : undefined,
       undone: record.undone === true,
     } : {}),
+    projectionState: record.projectionState === 'ready' || record.projectionState === 'refreshing' || record.projectionState === 'missing' ? record.projectionState : undefined,
+    generatedAt: typeof record.generatedAt === 'number' && Number.isFinite(record.generatedAt) ? record.generatedAt : null,
+    restoreEligibility,
     coverage: record.revision && record.coverage === 'complete' ? 'complete' : 'partial',
     reconciliationState: record.reconciliationState === 'pending'
       || Array.isArray(record.reasons) && record.reasons.some((reason) => ['history_pending', 'capture_pending', 'receipts_pending'].includes(reason)) ? 'pending' : 'settled',
@@ -761,14 +783,17 @@ export async function requestSessionTreeChanges({
   directory,
   fetchImpl = globalThis.fetch,
   signal,
+  summaryOnly = false,
 }: {
   baseUrl: string;
   sessionId: string;
   directory?: string;
   fetchImpl?: typeof fetch;
   signal?: AbortSignal;
+  summaryOnly?: boolean;
 }): Promise<SessionTreeChanges> {
   const url = buildScopedRevertUrl(baseUrl, sessionId, "changes", directory);
+  if (summaryOnly) url.searchParams.set('summary', '1');
   const response = await fetchImpl(url.toString(), {
     method: "GET",
     headers: { accept: "application/json" },
@@ -1918,7 +1943,7 @@ class OpencodeService {
   async getSessionTreeChanges(
     sessionId: string,
     directory?: string,
-    options: { signal?: AbortSignal } = {},
+    options: { signal?: AbortSignal; summaryOnly?: boolean } = {},
   ): Promise<SessionTreeChanges> {
     assertRuntimeFeatureAvailable('revert');
     const targetDirectory = directory || this.currentDirectory;
@@ -1928,13 +1953,28 @@ class OpencodeService {
       directory: targetDirectory,
       fetchImpl: this.noStoreFetch,
       signal: options.signal,
+      summaryOnly: options.summaryOnly,
     });
   }
 
-  async sessionChangesAction(sessionId: string, directory: string, revision: string, action: 'undo' | 'redo', restoreProof?: { version: 1; digest: string }): Promise<void> {
+  async previewSessionChanges(sessionId: string, directory: string, revision: string, action: 'undo' | 'redo', signal?: AbortSignal): Promise<{ version: 1; digest: string }> {
+    assertRuntimeFeatureAvailable('revert');
+    const url = buildScopedRevertUrl(this.baseUrl, sessionId, 'changes/preview', directory);
+    const response = await this.noStoreFetch(url.toString(), { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ revision, action }), signal });
+    if (!response.ok) throw await readScopedRevertError(response, 'Cannot preview session restore');
+    const body: unknown = await response.json();
+    if (!isRecord(body) || body.revision !== revision || body.action !== action || !isRecord(body.restoreProof)
+      || body.restoreProof.version !== 1 || typeof body.restoreProof.digest !== 'string' || !/^[a-f0-9]{64}$/.test(body.restoreProof.digest)) {
+      throw new Error('Session restore preview identity mismatch');
+    }
+    return { version: 1, digest: body.restoreProof.digest };
+  }
+
+  async sessionChangesAction(sessionId: string, directory: string, revision: string, action: 'undo' | 'redo', restoreProof?: { version: 1; digest: string }, signal?: AbortSignal): Promise<void> {
     assertRuntimeFeatureAvailable('revert');
     const url = buildScopedRevertUrl(this.baseUrl, sessionId, `changes/${action}`, directory);
-    const response = await this.noStoreFetch(url.toString(), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ revision, restoreProof }) });
+    const response = await this.noStoreFetch(url.toString(), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ revision, restoreProof }), signal });
     if (!response.ok) throw await readScopedRevertError(response, 'Cannot restore session changes');
   }
 

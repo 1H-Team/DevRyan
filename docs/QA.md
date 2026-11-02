@@ -39,7 +39,7 @@ Scenarios beyond `chat` (which selects a session, connects events, runs four con
 
 - `mobile`: 390x844, 844x390 and 768x1024 in both themes, composer and viewport bounds, touch drawer open/close.
 - `recovery`: replays failure/recovery records, checks the recovery card, saved Plan Markdown, Explorer/Designer titles, reload and narrow layouts. Completed task execution is shown separately from pending, stale, failed and passed checks; a scoped fixture also exercises the current root-objective verification panel and objective changes on desktop and mobile. Fixture-owned managed task updates enter the isolated page through scoped app WebSocket/SSE wire frames, with matching snapshot reads; they do not qualify native OpenCode event projection, actual check execution or scheduler execution. The saved-plan route uses the production file owner with a fixture-scoped simulated source identity and settlement; it does not establish native plan authority. The saved plan is from a separate human follow-up; a receipt-backed plan continued from a synthetic wake is not qualified. Child title checks use the production title coordinator with a scoped simulated source and deterministic fixture model, not native helper authorization.
-- `session-changes`: exercises isolated capture and disabled Undo for unowned evidence. A narrowly scoped UI transport simulates stale proof rejection, refresh and fresh Undo/Redo proof revisions; it does not mutate files or qualify a native restore. Native ownership and restore are covered by the compiled package lanes.
+- `session-changes`: exercises isolated cached capture history without claiming fresh file verification; candidate Undo requests a preview that refuses unowned evidence without dispatching restore or changing files. A narrowly scoped UI transport simulates stale proof rejection, refresh and fresh Undo/Redo proof revisions; it does not mutate files or qualify a native restore. Native ownership and restore are covered by the compiled package lanes.
 - `thinking`, `grok-plan`, `skill-loading`, `navigation`: the named feature journeys.
 - `execution-failure`: a session error after idle without an assistant, its persistent notice after reload, and failed grouped tools.
 - `provider-usage`: weekly usage, native sign-in source, reset expiries and empty inventories in the Providers UI.
@@ -207,3 +207,33 @@ Evidence includes canonical turn/tool IDs, native observation completeness, publ
 Read the journal first: `bun scripts/journal.mjs show SESSION_ID --grep CALL_ID --dir <run>/journal` and `bun scripts/journal.mjs gaps --dir <run>/journal`. Layout, retention and Error Log correlation: [Agent runtime verification](AGENT_RUNTIME_VERIFICATION.md). Storage, sanitizer and export contracts: `packages/harness-runtime/DOCUMENTATION.md` and `packages/web/server/lib/diagnostics/DOCUMENTATION.md`.
 
 `node scripts/qa/native-profile-factory-diagnostic.mjs --artifact-root <abs>` starts a credential-free disposable host (add `--hold-chatgpt-signin` to keep it up for a human sign-in; it prints the loopback origin and journal directory and waits for SIGINT).
+
+## Fixed tool-overhead sampling
+
+`node scripts/perf/tool-latency-benchmark.mjs --files 300 --seed-calls 1000 --warmup 3 --reads 20 --bursts 20 --parallel 4 --edits 20`
+replays direct read receipts, four-call batches and confined single-file edits.
+Run once normally and once with `--host` for the worker-host boundary. Both modes
+use the same retained ledger fixture. Warm-up runs use the same runtime and are
+excluded from the measured phase, CPU and sample arrays. The first invocation of
+each phase remains in `cold`; runtime initialization and history seeding remain
+separate. Edit waves include process RSS and CPU; these are not whole-app measurements.
+All private fixture files are removed on success, failure and interruption unless
+`--keep-artifacts` is explicitly selected. This is deterministic harness overhead,
+not a Claude provider comparison or evidence that native tools are faster.
+
+`scripts/perf/claude-bridge-comparison.mjs` exports `runClaudeBridgeComparison` for
+an already authenticated isolated QA host. Supply the existing evaluation client,
+a clean disposable fixture repository, the configured agent body, matching
+`claude-agent` model/effort, verified CLI path/version and the isolated host's
+Claude home. The runner pins SDK 0.3.301, verifies the role hash at preflight and
+completion, runs bridge/native then native/bridge then bridge/native, and stops on
+the first failed trial. Each arm starts from the same two fixture files and prompt;
+acceptance requires the unchanged test to pass. Native tools are restricted to
+those paths and the exact acceptance command. Timeout closes the SDK and its owned
+process group. It does not discover or copy credentials, register projects, change
+helper routing, or construct an isolated host. The host owner must establish those
+prerequisites first. Partial reports retain failed-trial metadata and cleanup status.
+
+The two architectures have different tool, permission, compaction and injected
+runtime guidance. Reports preserve those limits and distinguish whole-arm time
+from HTTP/SDK turn duration; three pairs support directional observations only.

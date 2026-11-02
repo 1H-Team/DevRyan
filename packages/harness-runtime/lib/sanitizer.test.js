@@ -4,6 +4,18 @@ import { createDiagnosticSanitizer } from './sanitizer.js';
 import { parseNativeJournalObservation } from '../../shared-runtime/lib/native-observation.js';
 
 describe('diagnostic sanitizer', () => {
+  test('preserves wait selections, plan source correlation and classified canonical failures without raw causes', () => {
+    const sanitizer = createDiagnosticSanitizer();
+    const record = sanitizer.sanitizeRecord({ type: 'lifecycle', event: 'context_failure', payload: {
+      sourceMessageID: 'msg_source', input: { action: 'wait_any', task_ids: ['dvr_task_one'], until: 'settled' },
+      details: { causeCategory: 'timeout', causeStatus: 503, stack: 'private stack', cause: 'private cause' },
+    } });
+    expect(record.payload).toEqual({ sourceMessageID: 'msg_source', input: { action: 'wait_any', task_ids: ['dvr_task_one'], until: 'settled' },
+      details: { causeCategory: 'timeout', causeStatus: 503 } });
+    expect(sanitizer.sanitizeExportValue(record)).toEqual(record);
+    expect(sanitizer.sanitizeRecord({ type: 'lifecycle', event: 'context_canonical_source_unavailable', payload: { causeCategory: 'runtime_changed', causeStatus: 503 } }).payload).toEqual({ causeCategory: 'runtime_changed', causeStatus: 503 });
+    expect(sanitizer.sanitizeRecord({ type: 'log', event: 'bad', payload: { causeCategory: 'private value', causeStatus: 1, until: 'private value' } }).payload).toEqual({});
+  });
   test('input admission keeps bounded intent and refusal fields without message content', () => {
     const payload = { code: 'native_input_admission', delivery: 'queue', decision: 'refused',
       descendantSettlement: 'required', refusalReason: 'subtree_active_or_unavailable', sessionID: 'ses_root', messageID: 'msg_followup' };

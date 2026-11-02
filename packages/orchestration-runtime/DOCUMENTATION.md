@@ -288,17 +288,49 @@ probe quota reset times, or enter the quota backoff ladder.
 
 ### Assignment preservation during recovery
 
-Every same-child resume, model switch, transport recovery, empty-output recovery,
-stale-tail re-post, and turn-budget prompt carries a versioned assignment context
-from the durable task ledger: task/root identity, agent, label, and the complete
-original brief. This restores scope, owned targets, exclusions, and acceptance
-checks even when earlier conversation context is unavailable. It is reference
+Initial prompts, same-child resume, model switch, transport recovery, empty-output
+recovery, stale-tail re-post, and Fixer's turn-budget prompt share the v2 assignment
+renderer with child compaction. It includes task/root identity, agent, label, the
+original brief, complete current corrected `requiredChecks`, and separately named
+`rootRequiredChecks`. A constructor-owned resolver refreshes checks before dispatch;
+root checks provide context and never expand child ownership. Exact command, cwd,
+environment and paths remain intact; only compaction's prose may be shortened.
+If mandatory metadata cannot fit the compaction budget, the matching assignment
+is unavailable rather than silently losing checks. It is reference
 context for completing remaining work, not a request to replay completed tools
 or restart the original assignment. Missing identity or brief rejects dispatch;
 the executor never reconstructs the assignment from search, recent edits, or
 another conversation. The context remains private prompt content and is absent
-from task projections. Recognition accepts the complete envelope and older bare
+from task projections. Recognition accepts complete v1/v2 envelopes and older bare
 continuations, preserving bounded recovery and restart reconciliation.
+
+### Designer primary step budget
+
+Designer has a 240-step native cap per accepted prompt. The native accepted-prompt
+owner records its canonical user boundary; the native primary-step owner validates
+`session.step.started` and canonical turn ownership before tools run. Its private
+scheduler record deduplicates assistant IDs, excludes compaction, fences old leases
+and old prompt replay, and survives reattachment. A newly accepted queued prompt
+does not reset the active budget until its own first primary step starts. A
+completed old turn cannot abort an accepted pending continuation using its old
+count; a queued prompt behind an unfinished turn does not disable enforcement.
+Typed completed native compaction and synthetic maintenance (including shell completion
+and `compaction_continue`) retain the original allowance; only a native user
+acceptance renews it. An unknown maintenance parent or pre-upgrade live task uses
+a bounded private native-sequence read (2,000 rows / 8 MiB / 20 pages) to recover
+the accepted user and ordinary Designer step IDs. The scheduler persists that
+parent mapping and deduplicated history; later steps use the small normal path.
+Missing or out-of-bounds lineage fails closed rather than inventing a reset.
+
+At 180 primary steps, the first settled tool result can atomically claim one
+`designer_step_budget_warning` notice. The persisted latch is claimed before the
+notice is composed: a crash can omit that advisory, but cannot duplicate it after
+restart. Result composition retains the actual tool outcome and permit recheck.
+At 260 primary steps the executor stops the child and retains resumable partial
+work. Designer never receives the old queued 150/170-message wrap-up prompts.
+Fixer's 150-message warning and 20-message abort grace are unchanged. Recovery
+and accepted-prompt boundaries retain conversation context; deadline floors,
+progress renewal and bounded recovery policy remain independent.
 
 ### Automatic resume after a provider usage limit
 

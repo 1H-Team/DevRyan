@@ -251,7 +251,11 @@ export function createNativeRuntimeOwner(options) {
       return options.captureCommandPromptAdmission(input);
     },
     reservePromptBoundary: input => executionHost.runtime.reservePromptBoundary(input),
-    registerAcceptedPrompt: input => executionHost.runtime.registerPrompt(input),
+    registerAcceptedPrompt: async input => {
+      await executionHost.runtime.registerPrompt(input);
+      if (input.parentID) await getManagedRuntime().acceptManagedPrimaryPrompt({ sessionId: input.sessionID,
+        directory: input.directory, userMessageId: input.userMessageID });
+    },
     observeAcceptedUser: input => {
       if (!observationOwner) throw fail('native_observation_unavailable');
       return observationOwner.observeAcceptedUser(input);
@@ -657,6 +661,15 @@ export function createNativeRuntimeOwner(options) {
       integrations = launchIntegrations;
       httpToken = randomBytes(32).toString('base64url');
       primaryStep = createNativePrimaryStepOwner({ admissionOwner: nativeOwner, openCodeClient, primaryRuntime, instanceID,
+        observeManagedStep: async input => {
+          const runtime = getManagedRuntime();
+          const recorded = await runtime.observeManagedPrimaryStep(input);
+          if (!recorded?.lineageRequired) return recorded;
+          if (!privileged) throw fail('managed_primary_step_budget_unavailable');
+          const lineage = await privileged.readCanonicalStepLineage(input.sessionId, input.messageId, { directory: input.directory });
+          if (!lineage) throw fail('managed_primary_step_budget_unavailable');
+          return runtime.observeManagedPrimaryStep(input, lineage);
+        },
         allowStopHandoff:artifacts.manifest.compiledContracts?.includes('devryan.primary-step-stop/1')===true,
         getInstanceID:()=>nativeInstanceID===instanceID?instanceID:undefined });
       streamContinuation=configurationSnapshot?createNativeStreamContinuationOwner({instanceID,configurationDigest:configurationSnapshot.digest,
@@ -666,6 +679,7 @@ export function createNativeRuntimeOwner(options) {
       if (bundle.reviewedPlugins.some(origin => origin.id === 'devryan.harness-context')) {
         if (!privileged) throw fail('native_context_metadata_owner_required');
         sessionContext = createNativeSessionContextOwner({ admissionOwner: nativeOwner, taskContext, executionHost, openCodeClient, primaryRuntime, instanceID,getInstanceID:()=>nativeInstanceID===instanceID?instanceID:undefined,getManagedRuntime,
+          recordDiagnostic: options.recordDiagnostic,
           onContinuationError:input=>{
             const entry=collectionContinuationDiagnostic(input,bundle.locations);
             if(entry)options.recordDiagnostic?.(entry);

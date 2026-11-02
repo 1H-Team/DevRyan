@@ -38,3 +38,24 @@ test('fixture rejects a stale token once and accepts only the refreshed proof', 
   assert.equal((await post({ revision: initial.revision, restoreProof: initial.restoreProof })).status, 409);
   assert.equal((await post({ revision: refreshed.revision, restoreProof: refreshed.restoreProof })).status, 200);
 });
+
+
+test('cached candidate carries no proof and preview binds the exact displayed revision and direction', async () => {
+  const origin = 'http://127.0.0.1:32100';
+  const context = vm.createContext({ URL, Request, Response, location: { origin, href: origin }, fetch: async () => Response.json({}) });
+  vm.runInContext(createQaChangeProofScript({ origin, sessionID: 'ses_owned', directory: '/qa',
+    summary: { revision: '1'.repeat(64), coverage: 'complete', attributionVersion: 4, fileCount: 1, current: { state: 'verified' }, restoreProof: { version: 1, digest: 'f'.repeat(64) } } }), context);
+  const prefix = '/api/devryan/session/ses_owned/changes';
+  const summary = await (await context.fetch(prefix + '?directory=%2Fqa&summary=1')).json();
+  assert.equal(summary.projectionState, 'ready');
+  assert.deepEqual(summary.restoreEligibility, { state: 'candidate', action: 'undo' });
+  assert.equal(summary.restoreProof, undefined); assert.equal(summary.current, undefined);
+  const preview = body => context.fetch(prefix + '/preview?directory=%2Fqa', { method: 'POST', body: JSON.stringify(body) });
+  assert.equal((await preview({ revision: '2'.repeat(64), action: 'undo' })).status, 409);
+  assert.equal((await preview({ revision: summary.revision, action: 'redo' })).status, 409);
+  const proof = await (await preview({ revision: summary.revision, action: 'undo' })).json();
+  assert.equal(proof.restoreProof.digest, 'a'.repeat(64));
+  assert.equal(context.__devryanQaChangeProof.requests.length, 0);
+  assert.equal((await context.fetch(prefix + '/undo?directory=%2Fqa', { method: 'POST', body: JSON.stringify({ revision: proof.revision, restoreProof: proof.restoreProof }) })).status, 200);
+  assert.equal(context.__devryanQaChangeProof.requests.length, 1);
+});

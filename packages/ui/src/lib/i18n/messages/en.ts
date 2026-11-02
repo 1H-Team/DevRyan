@@ -1819,6 +1819,7 @@ export const dict = {
   'chat.sessionChanges.diffTitle': 'Session changes: {file}',
   'chat.sessionChanges.diffDescription': 'Recorded changes for this session revision.',
   'chat.sessionChanges.footer.undone': 'Undone',
+  'chat.sessionChanges.footer.checking': 'Checking…',
   'chat.sessionChanges.footer.undoing': 'Undoing…',
   'chat.sessionChanges.footer.redoing': 'Redoing…',
   'chat.sessionChanges.footer.undoTooltip': 'Revert every file changed by this session and its sub-agents',

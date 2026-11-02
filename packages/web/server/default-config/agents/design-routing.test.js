@@ -35,7 +35,8 @@ describe('specialist-owned bundled agent routing', () => {
   it('routes coherent work without mandatory Explorer discovery and routes implementation to its owning specialist', () => {
     const prompt = readAgent('orchestrator');
     for (const rule of ['**Evidence-driven discovery.**', 'Use one appropriate specialist for one coherent concern',
-      'Sequence only actual dependencies', 'Do not repeat discovery',
+      'Sequence only actual dependencies', 'Complete shared components before dependent routes',
+      'use blocked/resume for ownership blockers', 'Do not repeat discovery',
       'Verify a decisive claim or explicit gap with a narrow named read.', '**Specialist-owned implementation.**',
       'You are not the default implementer.', 'every bug fix, tests, fixtures, and backend/server/state/CLI/config work go to `fixer`',
       'visual or UX changes go to `designer`', 'current external documentation goes to `librarian`',

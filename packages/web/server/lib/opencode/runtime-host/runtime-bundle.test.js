@@ -1416,6 +1416,27 @@ const seedSelectedLease=async(u,lease)=>{
  await db.commit();await fs.mkdir(viewDirectory,{recursive:true});
  return {root,gitDir,token,viewDirectory};
 };
+test('default startup cancels an unstarted revert before strict verification and upgrades',async()=>{
+ const u=await startupUpgradeFixture('startup-unstarted-revert-home'),seeded=await seedSelectedLease(u,{state:'cancelled',cleaned:true,cleanupPending:false});
+ const db=await openChangeStore(seeded.root,seeded.gitDir),sessionID='ses_orphaned_control',transactionID='70000000-0000-4000-8000-000000000007';
+ const sessionKey=`sessions/${changeKey(sessionID)}.json`,transactionKey=`transactions/${changeKey(transactionID)}.json`;
+ db.set(sessionKey,{...await db.get(sessionKey),generation:1,pending:transactionID});
+ db.set(transactionKey,{id:transactionID,rootSessionID:sessionID,boundarySequence:0,state:'prepared',phase:'prepared',scope:'tree',
+  targets:[{id:sessionID,targetMessageID:'msg_orphaned_user'}],members:[sessionID],redo:false});
+ await db.commit();
+ const launch=u.binding().descriptor.launch,lock=path.join(launch.webDataDirectory,'orchestration','owner.lock');
+ await fs.mkdir(path.dirname(lock),{recursive:true});await fs.writeFile(lock,JSON.stringify({version:1,token:'t'.repeat(32),pid:process.pid,acquiredAt:Date.now()}));
+ const {recoverSelectedBundleLeasesAtStartup}=await import('./native-bundle-lease-recovery.js');
+ expect(await recoverSelectedBundleLeasesAtStartup({controlRoot:u.controlRoot,log:{}})).toEqual({status:'failed',code:'bundle_upgrade_owner_active'});
+ expect(await (await openChangeStore(seeded.root,seeded.gitDir)).get(transactionKey)).toMatchObject({state:'prepared'});
+ await fs.rm(lock);
+ expect(await u.launch(u.pinned)).toBe(u.controlRoot);
+ expect(readStartupBundleUpgradeFailure()).toBe(null);expect(u.binding().selection.revision).toBe(2);
+ const recovered=await openChangeStore(seeded.root,seeded.gitDir);
+ expect(await recovered.get(transactionKey)).toMatchObject({state:'cancelled',phase:'cancelled'});
+ expect(await recovered.get(sessionKey)).toMatchObject({generation:1,pending:null});
+ expect(await recoverSelectedBundleLeasesAtStartup({controlRoot:u.controlRoot,log:{}})).toEqual({status:'clean'});
+},60_000);
 test('default startup settles an abandoned control lease before verification, then upgrades and launches',async()=>{
  const u=await startupUpgradeFixture('startup-orphaned-control-home'),seeded=await seedSelectedLease(u,{});
  // A node_modules input leaves a link overlay in the ledger; the upgrade copy must skip it.

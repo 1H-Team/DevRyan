@@ -712,10 +712,11 @@ export function createSessionExecutionHost(options) {
           const objectiveId = requiredCheckObjective && currentObjective
             && requiredCheckObjective.objectiveId === currentObjective.objectiveId
             && requiredCheckObjective.cancellationGeneration === currentObjective.cancellationGeneration ? currentObjective.objectiveId : undefined;
-          await nativeOptions.observeRequiredCheck?.('after', input,
+          const observation = await nativeOptions.observeRequiredCheck?.('after', input,
             receipt?.terminated && receipt.confined && !receipt.cancelled ? receipt.exitCode : null,
             { executionDirectory: job.lease.viewDirectory, objectiveId, output: diagnostic?.buffer.subarray(0, diagnostic.bytes).toString('utf8') ?? '',
               outputComplete: diagnostic?.complete === true, servedFreshness: job.servedAtExit ?? servedFreshness(job.served) });
+          if (observation?.recorded === true && observation.hints?.length) job.requiredCheckHints = observation.hints;
         } finally { diagnostic?.buffer.fill(0); }
       })().catch(() => {});
       // Timing only: an admission wrapper would recheck its inherited deadline
@@ -889,7 +890,7 @@ export function createSessionExecutionHost(options) {
           await runtime.cancelLease({ directory: input.directory, token: lease.token, ...stoppedBy(job) });
           await recordCancelled(job.lease, toV1ToolName(input.tool)); if (shellLike) await settleRequiredCheck(); await cleanup(job.lease);
           try { nativeOptions.onOutcome?.({ ...job.lease.scope, token: lease.token, state: 'cancelled' }); } catch { /* Observer only. */ }
-          nativeEvent(job, { type: 'settled', ok: false, receipt, error: job.result?.error ?? (job.failure
+          nativeEvent(job, { type: 'settled', ok: false, receipt, ...(job.requiredCheckHints ? { requiredCheckHints: job.requiredCheckHints } : {}), error: job.result?.error ?? (job.failure
             ? { message: job.failure.message, ...(job.failure.code ? { code: job.failure.code } : {}), ...(job.failure.metadata ? { metadata: job.failure.metadata } : {}) }
             : { message: receipt.cancelled ? 'execution_cancelled' : !receipt.confined ? 'mutation_termination_unconfirmed' : 'native_execution_failed' }) }, true);
           return;
@@ -898,7 +899,8 @@ export function createSessionExecutionHost(options) {
         const publication = await publish();
         if (shellLike) await settleRequiredCheck();
         await cleanupAfterPublication(job.lease);
-        nativeEvent(job, { type: 'settled', ok: true, receipt, publication: nativeSettledPublication(publication), ...await artifactsOf(job), result: nativePublicationResult(job.result?.result, publication, job.lease,input.tool,job.served) }, true);
+        nativeEvent(job, { type: 'settled', ok: true, receipt, publication: nativeSettledPublication(publication), ...await artifactsOf(job),
+          ...(job.requiredCheckHints ? { requiredCheckHints: job.requiredCheckHints } : {}), result: nativePublicationResult(job.result?.result, publication, job.lease,input.tool,job.served) }, true);
       } catch (cause) {
         job.resolveChild();
         await Promise.allSettled([...job.browserOperations]);
@@ -919,17 +921,18 @@ export function createSessionExecutionHost(options) {
             const publication = await publish();
             if (shellLike) await settleRequiredCheck();
             await cleanupAfterPublication(job.lease);
-            nativeEvent(job, { type: 'settled', ok: true, receipt, publication: nativeSettledPublication(publication), ...await artifactsOf(job), result: nativePublicationResult(job.result?.result, publication, job.lease,input.tool,job.served) }, true);
+            nativeEvent(job, { type: 'settled', ok: true, receipt, publication: nativeSettledPublication(publication), ...await artifactsOf(job),
+              ...(job.requiredCheckHints ? { requiredCheckHints: job.requiredCheckHints } : {}), result: nativePublicationResult(job.result?.result, publication, job.lease,input.tool,job.served) }, true);
             return;
           }
           await runtime.cancelLease({ directory: input.directory, token: lease.token, ...stoppedBy(job) });
           if (shellLike) await settleRequiredCheck();
           await cleanup(job.lease);
-          nativeEvent(job, { type: 'settled', ok: false, receipt, error: { message: cause.message, code: cause.code } }, true);
+          nativeEvent(job, { type: 'settled', ok: false, receipt, ...(job.requiredCheckHints ? { requiredCheckHints: job.requiredCheckHints } : {}), error: { message: cause.message, code: cause.code } }, true);
           return;
         }
         if (shellLike) await settleRequiredCheck();
-        nativeEvent(job, { type: 'settled', ok: false, error: { message: cause.message, code: cause.code } }, true);
+        nativeEvent(job, { type: 'settled', ok: false, ...(job.requiredCheckHints ? { requiredCheckHints: job.requiredCheckHints } : {}), error: { message: cause.message, code: cause.code } }, true);
       } finally {
         if (shellLike && !requiredCheckSettlement) await settleRequiredCheck();
         clearTimeout(deadline); signal?.removeEventListener('abort', abort); job.done = true; for (const wake of job.waiters) wake(); job.waiters.clear();

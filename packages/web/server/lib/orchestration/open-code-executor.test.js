@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { describe, expect, it, vi } from 'vitest';
 
 import { MANAGED_TURN_BUDGET_PROMPT } from '@devryan/orchestration-runtime';
+import { appendManagedAssignment } from '@devryan/orchestration-runtime/continuation-assignment.js';
 
 import { createOpenCodeClient } from '../opencode/opencode-client/index.js';
 import { createNativeConsumerFixture } from '../opencode/test-native-consumer-client.js';
@@ -179,7 +180,7 @@ describe('web managed OpenCode executor transport', () => {
       },
       parts: [{
         type: 'text',
-        text: 'Inspect the project.',
+        text: appendManagedAssignment(task, 'Complete the delegated assignment below.'),
       }],
     });
     expect(requests.every((request) => request.init.headers.authorization === 'Basic opaque')).toBe(true);
@@ -473,7 +474,7 @@ describe('web managed OpenCode executor transport', () => {
         variant: 'fast',
         parts: [{
           type: 'text',
-          text: 'Implement the change.',
+          text: appendManagedAssignment(task, 'Complete the delegated assignment below.'),
         }],
         tools: { task: false, opencode_session_rename: false, devryan_plan_read: false, todoread: false, todowrite: false },
       },
@@ -576,7 +577,7 @@ describe('web managed OpenCode executor host hooks', () => {
       resolveTaskTurnBudget: (task) => (task.agent === 'explorer' ? 1 : null),
     });
 
-    const result = await executor.start({
+    const task = {
       taskId: 'dvr_task_hooks',
       rootSessionId: 'ses_root',
       childSessionId: null,
@@ -587,15 +588,16 @@ describe('web managed OpenCode executor host hooks', () => {
       variant: null,
       label: 'Hooked child',
       prompt: 'Inspect the project.',
-    }, {
+    };
+    const result = await executor.start(task, {
       setChildSessionId: vi.fn(async () => true),
       markAccepted: vi.fn(async () => true),
     });
 
     expect(result.status).toBe('completed');
     expect(prompts.map((body) => body.parts[0].text)).toEqual([
-      'Contract.\n\nInspect the project.',
-      expect.stringContaining(MANAGED_TURN_BUDGET_PROMPT),
+      `Contract.\n\n${appendManagedAssignment(task, 'Complete the delegated assignment below.')}`,
+      appendManagedAssignment(task, MANAGED_TURN_BUDGET_PROMPT),
     ]);
   });
 });
@@ -723,7 +725,7 @@ describe('web managed OpenCode executor on gen 2 (openCodeClient)', () => {
       agent: 'explorer',
       model: { providerID: 'github-copilot', modelID: 'gpt-4.1' },
       variant: '',
-      parts: [{ type: 'text', text: 'Inspect the project.' }],
+      parts: [{ type: 'text', text: appendManagedAssignment(task, 'Complete the delegated assignment below.') }],
     }), expect.objectContaining({ directory: '/workspace', timeoutMs: 30_000 }));
     // The scheduler's launch signal travels with the dispatch budget, as on gen 1.
     const promptOptions = client.prompts.prompt.mock.calls[0][2];

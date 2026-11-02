@@ -11,6 +11,15 @@ import { evaluate } from './cdp.mjs';
 import { createQaUiDriver } from './ui-driver.mjs';
 import { installQaChangeProof } from './fixture-session-change-proof.mjs';
 
+/** Display QA must never mistake cached history for live restore authority. */
+export function assertQaDisplaySummary(value) {
+  assert.equal(value.projectionState, 'ready');
+  assert.equal(value.restoreProof, undefined);
+  assert.equal(value.current, undefined);
+  assert.ok(value.files.every(file => file.verification === undefined));
+  return value;
+}
+
 // Seed the production private store, then deliver explicitly delayed evidence
 // through a separate host under its cross-process lock during isolated QA.
 export async function prepareSessionChangesQa({ fixture, directory, dataDirectory }) {
@@ -22,10 +31,11 @@ export async function prepareSessionChangesQa({ fixture, directory, dataDirector
   const recovery = await create('Late receipt recovery');
   const native = await create('Native task reconciliation');
   let publishEvent = () => {};
+  const ownership = { previewAttempts: 0, restoreAttempts: 0 };
   const host = createSessionChangeHost({ dataDirectory, openCodeClient,
     publishEvent: (payload, { directory: eventDirectory }) => publishEvent(payload, eventDirectory),
-    restoreOwned: async () => { throw Object.assign(new Error('fixture has no native ownership'), { code: 'mutation_history_unavailable' }); },
-    previewOwned: async () => { throw Object.assign(new Error('fixture has no native ownership'), { code: 'mutation_history_unavailable' }); } });
+    restoreOwned: async () => { ownership.restoreAttempts++; throw Object.assign(new Error('fixture has no native ownership'), { code: 'mutation_history_unavailable' }); },
+    previewOwned: async () => { ownership.previewAttempts++; throw Object.assign(new Error('fixture has no native ownership'), { code: 'mutation_history_unavailable' }); } });
   const rows = new Map();
   let sequence = Date.now();
   const scene = sessionID => {
@@ -100,7 +110,7 @@ export async function prepareSessionChangesQa({ fixture, directory, dataDirector
       state: { status: 'completed', input: { prompt: 'Update 28 files.' }, output: 'Updated 28 files.', metadata: { cursorNativeTask: projection }, time: { start: sequence, end: sequence + 1 } } });
     replay(native.id);
     prepared = true;
-    return { host, setPublisher: callback => { publishEvent = callback; }, sessionIDs: [PERF_PARENT_SESSION_ID, ...PERF_CHILD_SESSION_IDS, unrelated.id, restorable.id, partial.id, recovery.id, native.id], root: PERF_PARENT_SESSION_ID, child: PERF_CHILD_SESSION_IDS[0], unrelated: unrelated.id, restorable: restorable.id, partial: partial.id, recovery: recovery.id, native: native.id,
+    return { host, ownership, setPublisher: callback => { publishEvent = callback; }, sessionIDs: [PERF_PARENT_SESSION_ID, ...PERF_CHILD_SESSION_IDS, unrelated.id, restorable.id, partial.id, recovery.id, native.id], root: PERF_PARENT_SESSION_ID, child: PERF_CHILD_SESSION_IDS[0], unrelated: unrelated.id, restorable: restorable.id, partial: partial.id, recovery: recovery.id, native: native.id,
       repairLateReceipt: async () => {
         late.state.metadata = { filediff: { file: 'recovered.txt', before: null, after: 'recovered exact content\n' } };
         replay(recovery.id);
@@ -126,10 +136,11 @@ export async function runSessionChangesQa({ cdp, directory, runtime, prepared, c
   const card = '[data-session-changes-card-root]';
   const cardText = () => evaluate(cdp, `document.querySelector('${card}')?.textContent ?? ''`);
   const summary = id => ui.waitFor('session change summary', async () => {
-    const result = await evaluate(cdp, `fetch('/api/devryan/session/${id}/changes?directory='+encodeURIComponent(${JSON.stringify(directory)})).then(async r=>({status:r.status,body:await r.json()}))`);
+    const result = await evaluate(cdp, `fetch('/api/devryan/session/${id}/changes?summary=1&directory='+encodeURIComponent(${JSON.stringify(directory)})).then(async r=>({status:r.status,body:await r.json()}))`);
     if (result.status === 503 && result.body?.code === 'reconciliation_busy') return null;
     if (result.status !== 200) throw new Error(`summary ${result.status} ${JSON.stringify(result.body)}`);
-    return result.body;
+    if (result.body.projectionState === 'missing' || result.body.projectionState === 'refreshing') return null;
+    return assertQaDisplaySummary(result.body);
   });
   const select = async id => {
     await cdp.send('Page.navigate', { url: `${await evaluate(cdp, 'location.origin')}/?session=${id}` });
@@ -159,9 +170,9 @@ export async function runSessionChangesQa({ cdp, directory, runtime, prepared, c
   await check('live exact receipt arrives through SSE without changing an unrelated summary', async () => {
     await select(prepared.unrelated);
     assert.match(await cardText(), /Edited 1 file/);
-    assert.equal((await summary(prepared.unrelated)).current.state, 'verified');
+    assert.equal((await summary(prepared.unrelated)).restoreProof, undefined);
     await openReview();
-    await ui.waitExpression('verified current observation', `Boolean(document.querySelector('${review} [data-session-changes-current="verified"]'))`);
+    await ui.waitExpression('cached history does not claim fresh verification', `Boolean(document.querySelector('${review}')) && !document.querySelector('${review} [data-session-changes-current]')`);
     await ui.key('Escape');
     await openHistory();
     await prepared.appendLiveEdit(prepared.unrelated, 'independent-live.txt', null, 'live independent content\n');
@@ -207,11 +218,20 @@ export async function runSessionChangesQa({ cdp, directory, runtime, prepared, c
     await select(prepared.restorable);
     const value = await summary(prepared.restorable);
     assert.equal(value.restoreAvailable, false);
-    assert.ok(value.restoreReasons.includes('restore_evidence_unavailable'));
+    assert.deepEqual(value.restoreEligibility, { state: 'candidate', action: 'undo' });
     const button = `${card} [data-session-changes-action="undo"]`;
-    await ui.waitExpression('unowned undo is disabled', `Boolean(document.querySelector('${button}:disabled'))`);
-    const reason = await evaluate(cdp, `document.querySelector('${button}')?.parentElement?.getAttribute('title')`);
-    assert.match(reason, /evidence needed for safe Undo or Redo is unavailable/i);
+    await ui.waitExpression('candidate can request authoritative preview', `Boolean(document.querySelector('${button}:not(:disabled)'))`);
+    const before = await readFile(path.join(directory, 'restore.txt'), 'utf8');
+    const initial = { ...prepared.ownership };
+    await ui.click({ selector: button });
+    await ui.waitVisibleText('Undo this session’s changes?', '[role="dialog"]');
+    await ui.click({ text: 'Undo', selector: '[role="dialog"] button' });
+    await ui.waitVisibleText('These edits can be reviewed, but the evidence needed for safe Undo or Redo is unavailable.', '[data-sonner-toaster]');
+    await ui.waitFor('unowned preview rejected before restore', () => prepared.ownership.previewAttempts === initial.previewAttempts + 1);
+    await ui.waitExpression('failed preview leaves the displayed history available', `Boolean(document.querySelector('${button}:not(:disabled)'))`);
+    assert.equal(prepared.ownership.restoreAttempts, initial.restoreAttempts);
+    assert.equal(await readFile(path.join(directory, 'restore.txt'), 'utf8'), before);
+    assert.equal(await readFile(path.join(directory, 'external-only.txt'), 'utf8'), 'external only\n');
     await screenshot(`${prefix}-undo-unavailable`);
   };
   for (const theme of ['light', 'dark']) {
@@ -225,7 +245,7 @@ export async function runSessionChangesQa({ cdp, directory, runtime, prepared, c
         prepared.setStatus(prepared.unrelated, 'busy');
         await select(prepared.root);
         await ui.waitExpression('compact captured files visible', `document.querySelector('${card}')?.textContent.includes('Edited 4 files') && document.querySelectorAll('${card} [data-session-changes-rows] button').length === 4`);
-        assert.equal((await summary(prepared.root)).current.state, 'verified', 'an independent busy session must not make this completed root uncertain');
+        assert.equal((await summary(prepared.root)).coverage, 'complete', 'an independent busy session must not change this root’s recorded coverage');
         assert.match(await cardText(), /4 files/); assert.doesNotMatch(await cardText(), /independent.txt|external-only.txt|unverified|overlapping owners/);
         assert.equal(await evaluate(cdp, `document.documentElement.classList.contains('dark')`), theme === 'dark');
         assert.equal(await evaluate(cdp, `Boolean(document.querySelector('${card} [data-session-changes-action="show-more"]'))`), false);
@@ -270,7 +290,7 @@ export async function runSessionChangesQa({ cdp, directory, runtime, prepared, c
         await screenshot(`${prefix}-capture-limitation`);
         await ui.key('Escape');
       });
-      await check(`${prefix}: unowned Undo stays disabled with explanation`, () => exerciseUnavailableRestore(prefix));
+      await check(`${prefix}: unowned Undo preview refuses without mutating files`, () => exerciseUnavailableRestore(prefix));
     }
   }
   await check('unowned real host refuses an unproved Undo without changing files', async () => {
@@ -291,21 +311,24 @@ export async function runSessionChangesQa({ cdp, directory, runtime, prepared, c
       const undo = `${card} [data-session-changes-action="undo"]`;
       await ui.waitExpression('fixture-owned undo enabled', `Boolean(document.querySelector('${undo}:not(:disabled)'))`);
       const initial = await summary(prepared.restorable);
-      assert.equal(initial.restoreProof?.version, 1); assert.match(initial.restoreProof.digest, /^[a-f0-9]{64}$/);
+      assert.deepEqual(initial.restoreEligibility, { state: 'candidate', action: 'undo' });
+      const initialProof = await evaluate(cdp, 'globalThis.__devryanQaChangeProof.proof');
       await evaluate(cdp, `globalThis.__devryanQaChangeProof.staleNext=true`);
       await ui.click({ selector: undo }); await ui.waitVisibleText('Undo this session’s changes?', '[role="dialog"]');
       await screenshot('changes-proof-desktop-confirm');
       await ui.click({ text: 'Undo', selector: '[role="dialog"] button' });
-      await ui.waitExpression('stale proof refresh', `globalThis.__devryanQaChangeProof.requests.length===1 && globalThis.__devryanQaChangeProof.proof.digest!==${JSON.stringify(initial.restoreProof.digest)} && Boolean(document.querySelector('${undo}:not(:disabled)'))`);
+      await ui.waitExpression('stale proof refresh', `globalThis.__devryanQaChangeProof.requests.length===1 && globalThis.__devryanQaChangeProof.proof.digest!==${JSON.stringify(initialProof.digest)} && Boolean(document.querySelector('${undo}:not(:disabled)'))`);
       const refreshed = await summary(prepared.restorable);
-      assert.notEqual(refreshed.revision, initial.revision); assert.notEqual(refreshed.restoreProof.digest, initial.restoreProof.digest);
+      const refreshedProof = await evaluate(cdp, 'globalThis.__devryanQaChangeProof.proof');
+      assert.notEqual(refreshed.revision, initial.revision); assert.notEqual(refreshedProof.digest, initialProof.digest);
       await ui.click({ selector: undo }); await ui.waitVisibleText('Undo this session’s changes?', '[role="dialog"]');
       await ui.click({ text: 'Undo', selector: '[role="dialog"] button' });
       await ui.waitExpression('fixture redo enabled after fresh proof', `Boolean(document.querySelector('[data-session-changes-action="redo"]:not(:disabled)'))`);
       const undone = await summary(prepared.restorable);
       assert.equal(undone.undone, true); assert.notEqual(undone.revision, refreshed.revision);
+      const undoneProof = await evaluate(cdp, 'globalThis.__devryanQaChangeProof.proof');
       const undoRequest = await evaluate(cdp, `globalThis.__devryanQaChangeProof.requests[1]`);
-      assert.deepEqual(undoRequest.body, { revision: refreshed.revision, restoreProof: refreshed.restoreProof });
+      assert.deepEqual(undoRequest.body, { revision: refreshed.revision, restoreProof: refreshedProof });
       if (runtime === 'web') {
         await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
         await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true });
@@ -318,9 +341,12 @@ export async function runSessionChangesQa({ cdp, directory, runtime, prepared, c
       await ui.click({ selector: '[data-session-changes-action="redo"]' });
       await ui.waitExpression('fixture fresh redo proof accepted', `Boolean(document.querySelector('${undo}:not(:disabled)'))`);
       const requests = await evaluate(cdp, `globalThis.__devryanQaChangeProof.requests`);
-      assert.deepEqual(requests[2], { action: 'redo', body: { revision: undone.revision, restoreProof: undone.restoreProof } });
+      assert.deepEqual(requests[2], { action: 'redo', body: { revision: undone.revision, restoreProof: undoneProof } });
+      const previews = await evaluate(cdp, 'globalThis.__devryanQaChangeProof.previewRequests');
+      assert.deepEqual(previews, [{ revision: initial.revision, action: 'undo' },
+        { revision: refreshed.revision, action: 'undo' }, { revision: undone.revision, action: 'redo' }]);
       assert.equal(await readFile(path.join(directory, 'restore.txt'), 'utf8'), 'restorable content\n');
-      result.proofFixture = { source: 'scoped UI transport simulation; no native restore or filesystem mutation', requests: requests.length, staleRejected: true };
+      result.proofFixture = { source: 'scoped UI transport simulation; no native restore or filesystem mutation', requests: requests.length, previews: previews.length, staleRejected: true };
     } finally { await transport.close(); await cdp.send('Emulation.clearDeviceMetricsOverride'); await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false }); }
   });
   return result;

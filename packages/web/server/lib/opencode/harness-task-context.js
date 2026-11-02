@@ -26,24 +26,41 @@ const planMarkerVersion = (record) => {
 };
 const PLAN_ASSIGNMENT_MISSING = 'plan_assignment_missing: no approved plan is assigned to this session. Work from the brief in your prompt instead of reading a plan.';
 const fault = (code) => Object.assign(new Error(code), { code, statusCode: 503 });
+const canonicalFailure = error => {
+  const status = Number.isInteger(error?.statusCode) && error.statusCode >= 400 && error.statusCode <= 599 ? error.statusCode : null;
+  const causeCategory = error?.name === 'TimeoutError' ? 'timeout' : error?.name === 'AbortError' ? 'cancelled'
+    : error?.code === 'opencode_runtime_changed' ? 'runtime_changed'
+    : error?.code === 'opencode_generation_invalid' ? 'client_unavailable'
+      : error?.code === 'opencode_response_too_large' ? 'response_too_large'
+        : error?.code === 'opencode_invalid_response' ? 'invalid_response'
+          : status === 404 ? 'not_found' : status === 401 || status === 403 ? 'access_denied'
+            : status !== null ? 'http_error' : 'transport_or_unknown';
+  return Object.assign(fault('context_canonical_source_unavailable'), { details: { causeCategory, ...(status === null ? {} : { causeStatus: status }) } });
+};
 const managedToolMethods = new Set(['submit', 'status', 'wait', 'wait_any', 'wait_result_action', 'cancel', 'read_result', 'acknowledge', 'set_auto_resume', 'correct_check']);
 
 export const createHarnessTaskContextHost = (options) => {
   const nativeWrites = new AsyncLocalStorage();
-  const canonical = async (read) => {
+  const unavailable = (error, scope) => {
+    const failure = canonicalFailure(error);
+    try { options.recordDiagnostic?.({ type: 'lifecycle', event: failure.code,
+      ...(identifier(scope?.sessionID) ? { sessionID: scope.sessionID } : {}), payload: failure.details }); } catch { /* Diagnostics cannot replace the refusal. */ }
+    return failure;
+  };
+  const canonical = async (read, scope) => {
     let client;
-    try { client = resolveGen2OpenCodeClient(options.openCodeClient); } catch { throw fault('context_canonical_source_unavailable'); }
-    try { return await read(client); } catch { throw fault('context_canonical_source_unavailable'); }
+    try { client = resolveGen2OpenCodeClient(options.openCodeClient); } catch (error) { throw unavailable(error, scope); }
+    try { return await read(client); } catch (error) { throw unavailable(error, scope); }
   };
   const readMessage = async ({ sessionID, directory, messageID }) => {
     if (!identifier(sessionID) || !identifier(messageID)) throw fault('context_invalid_identity');
-    const data = await canonical((client) => client.sessions.message(sessionID, messageID, { directory, timeoutMs: 5000, maxResponseBytes: 8 * 1024 * 1024 }));
+    const data = await canonical((client) => client.sessions.message(sessionID, messageID, { directory, timeoutMs: 5000, maxResponseBytes: 8 * 1024 * 1024 }), { sessionID });
     if (data?.info?.id !== messageID || data.info.sessionID !== sessionID || !Array.isArray(data.parts)) throw fault('context_message_scope_mismatch');
     return data;
   };
-  const readSession = async (sessionID, directory) => canonical((client) => client.sessions.get(sessionID, { directory, timeoutMs: 5000, maxResponseBytes: 8 * 1024 * 1024 }));
+  const readSession = async (sessionID, directory) => canonical((client) => client.sessions.get(sessionID, { directory, timeoutMs: 5000, maxResponseBytes: 8 * 1024 * 1024 }), { sessionID });
   const readProject = async (directory) => canonical((client) => client.catalog.project({ directory }, { timeoutMs: 5000 }));
-  const readTodos = async (sessionID, directory) => canonical((client) => client.sessions.todo(sessionID, { directory, timeoutMs: 5000, maxResponseBytes: 8 * 1024 * 1024 }));
+  const readTodos = async (sessionID, directory) => canonical((client) => client.sessions.todo(sessionID, { directory, timeoutMs: 5000, maxResponseBytes: 8 * 1024 * 1024 }), { sessionID });
   const readCanonicalPlanIdentity = async ({ sessionID, sourceMessageID, directory, allowSelected = false }) => {
     if (!identifier(sessionID) || !identifier(sourceMessageID) || typeof directory !== 'string' || !path.isAbsolute(directory)) {
       throw planError(400, 'plan_identity_invalid');

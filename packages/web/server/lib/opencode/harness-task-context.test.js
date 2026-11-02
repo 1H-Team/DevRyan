@@ -80,9 +80,9 @@ describe('native canonical task-context adapter', () => {
   });
   it('rejects missing or oversized canonical sources without replacing stored history', async () => {
     delete routes['/session/ses_root/todo'];
-    await expect(checkpoint()).rejects.toThrow('context_canonical_source_unavailable');
+    await expect(checkpoint()).rejects.toMatchObject({ code: 'context_canonical_source_unavailable', details: { causeCategory: 'not_found', causeStatus: 404 } });
     routes['/session/ses_root/todo'] = new Response(' '.repeat(8 * 1024 * 1024 + 1));
-    await expect(checkpoint()).rejects.toThrow('context_canonical_source_unavailable');
+    await expect(checkpoint()).rejects.toMatchObject({ code: 'context_canonical_source_unavailable', details: { causeCategory: 'response_too_large' } });
   });
   it('leaves children on their dispatch brief and does not read the parent objective for them', async () => {
     routes['/session/ses_root'].parentID = 'ses_parent';
@@ -471,6 +471,22 @@ describe('native canonical task-context adapter on OpenCode 2', () => {
     await expect(unknown.handleRpc({ action: 'checkpoint', ...scope })).rejects.toThrow('context_canonical_source_unavailable');
     await unknown.drain();
     expect(fetchCalls).toEqual([]);
+  });
+
+  it.each([
+    [Object.assign(new Error('private timeout'), { name: 'TimeoutError' }), 'timeout'],
+    [new TypeError('private transport details'), 'transport_or_unknown'],
+    [Object.assign(new Error('private response'), { code: 'opencode_invalid_response', statusCode: 502 }), 'invalid_response'],
+    [Object.assign(new Error('private runtime identities'), { code: 'opencode_runtime_changed', statusCode: 503 }), 'runtime_changed'],
+  ])('retains a bounded canonical failure category: %s', async (failure, causeCategory) => {
+    routes['todo:ses_root'] = failure;
+    const host = createHost(fakeClient());
+    try {
+      await expect(host.handleRpc({ action: 'checkpoint', ...scope })).rejects.toMatchObject({
+        code: 'context_canonical_source_unavailable', details: { causeCategory },
+      });
+      expect(calls.filter(call => call.name === 'sessions.todo')).toHaveLength(1);
+    } finally { await host.drain(); }
   });
 
   it('refuses generation 1 before reading canonical state', async () => {

@@ -27,7 +27,7 @@ describe('createWebSessionPlansAPI', () => {
     }) as typeof fetch;
 
     const api = createWebSessionPlansAPI();
-    expect(await api.ensureRevision({ ...identity, markdown: '# Plan' })).toMatchObject({ version: 'v1' });
+    expect(await api.ensureRevision({ ...identity, markdown: '# Plan', trigger: 'completion' })).toMatchObject({ version: 'v1' });
     expect(await api.readRevision(identity)).toMatchObject({ version: 'v1' });
     expect(await api.updateRevision({ ...identity, markdown: '# Edited', expectedVersion: 'v1' })).toMatchObject({ version: 'v2' });
 
@@ -40,12 +40,13 @@ describe('createWebSessionPlansAPI', () => {
       sessionCreated: identity.sessionCreated,
       sessionSlug: identity.sessionSlug,
       markdown: '# Plan',
+      trigger: 'completion',
     });
     const readUrl = new URL(calls[1].url, 'http://127.0.0.1');
     expect(readUrl.pathname).toBe('/api/session/session-a/plan-revisions/msg-plan-1');
     expect(readUrl.searchParams.get('directory')).toBe(identity.directory);
     expect(calls[2].init?.method).toBe('PUT');
-    expect(JSON.parse(String(calls[2].init?.body))).toMatchObject({ expectedVersion: 'v1' });
+    expect(JSON.parse(String(calls[2].init?.body))).toMatchObject({ expectedVersion: 'v1', trigger: 'edit' });
     expect(new Headers(calls[2].init?.headers).get('X-DevRyan-CSRF')).toBe('1');
   });
 

@@ -41,6 +41,19 @@ const shellFailureMessage = (settlement: { readonly error?: string; readonly cod
   return `command_deadline_exceeded: DevRyan stopped this command ${grace === undefined ? '' : `${Math.round(grace / 1000)} s `}after ${enforced}. `
     + `Use a larger timeout (at most ${MAX_SHELL_TIMEOUT_MS} ms) or split the work.`;
 };
+// Only a host-committed, typed settlement may add check advice. The original
+// tool failure and its exit/deadline receipt stay failures with the same code.
+export const appendRequiredCheckFailureHints = (error: Tool.Error,
+  settlement: { readonly requiredCheckHints?: readonly typeof import('./worker-protocol.js').RequiredCheckHint.Type[];
+    readonly receipt?: typeof import('./worker-protocol.js').TerminationReceipt.Type; readonly code?: string;
+    readonly errorMetadata?: Readonly<Record<string, unknown>> }) => {
+  const hints = settlement.requiredCheckHints;
+  if (!hints?.length) return error;
+  return new Tool.Error({ message: `${error.message}\n\n${hints.map(hint => hint.message).join('\n')}`,
+    metadata: { ...error.metadata, ...(settlement.receipt ? { receipt: settlement.receipt } : {}),
+      ...(settlement.code ? { code: settlement.code } : {}), ...(settlement.errorMetadata ? { deadline: settlement.errorMetadata } : {}),
+      requiredCheckHints: hints } });
+};
 const platformFailure = (cause: unknown) => systemError({ _tag: 'Unknown', module: 'DevRyanExecution', method: 'spawn',
   description: cause instanceof Error ? cause.message : 'native_execution_failed' });
 const toolFailure = (cause: unknown) => new Tool.Error({ message: cause instanceof Error ? cause.message : 'native_execution_failed' });
@@ -101,6 +114,7 @@ export function createExecutionRouting(options: { readonly rpc: ExecutionRpc; re
       publication?: { readonly outcome: 'complete' | 'partial'; readonly conflicts: readonly string[]; readonly ignoredInputs?: readonly string[] }; error?: string;
       artifacts?: { readonly directory: string; readonly truncated?: boolean;
         readonly files: readonly { readonly path: string; readonly size: number; readonly sha256?: string }[] };
+      requiredCheckHints?: readonly typeof import('./worker-protocol.js').RequiredCheckHint.Type[];
       code?: string; errorMetadata?: Readonly<Record<string, unknown>> };
   const shellSettlements = new Map<string, ShellSettlement>();
   const callKey = (call: OwnedToolInvocation) => JSON.stringify([call.nativeContext.sessionID, call.nativeContext.messageID, call.nativeContext.id]);
@@ -247,8 +261,8 @@ export function createExecutionRouting(options: { readonly rpc: ExecutionRpc; re
             // OpenCode's own timer stopped the command: it marks its result
             // (`timeout: true`) before it kills, so the cause is established.
             if (receipt?.terminated && receipt.cancelled && result.metadata?.timeout === true)
-              return Effect.succeed({ ...result, content: withNotice('Changes from this command were not published because it was stopped at its timeout.'),
-                metadata: { ...result.metadata, receipt } });
+              return Effect.succeed({ ...result, content: withNotice(['Changes from this command were not published because it was stopped at its timeout.', ...(settlement.requiredCheckHints?.map(hint => hint.message) ?? [])].join('\n\n')),
+                metadata: { ...result.metadata, receipt, ...(settlement.requiredCheckHints ? { requiredCheckHints: settlement.requiredCheckHints } : {}) } });
             return Effect.fail(new Tool.Error({ message: shellFailureMessage(settlement), metadata: { output: result.content,
               ...(receipt ? { receipt } : {}), ...(settlement.code ? { code: settlement.code } : {}),
               ...(settlement.errorMetadata ? { deadline: settlement.errorMetadata } : {}) } }));
@@ -258,6 +272,7 @@ export function createExecutionRouting(options: { readonly rpc: ExecutionRpc; re
           // Dropped output is reported, never passed off as published: a check
           // that needed it stays incomplete.
           const notice = [
+            ...(settlement.requiredCheckHints?.map(hint => hint.message) ?? []),
             ...(settlement.publication.outcome === 'partial'
               ? [`Some changes were not published because these files changed during execution: ${settlement.publication.conflicts.join(', ')}. Proposed contents were retained for recovery.`] : []),
             ...(ignored.length ? [`Not published: this command replaced these ignored folders, so what it wrote inside them was dropped: ${ignored.slice(0, 20).join(', ')}${ignored.length > 20 ? ` (${ignored.length - 20} more)` : ''}. Write output to a new path instead of deleting and recreating these folders.`] : []),
@@ -267,10 +282,12 @@ export function createExecutionRouting(options: { readonly rpc: ExecutionRpc; re
           ].join('\n\n') || undefined;
           const content = notice ? withNotice(notice) : result.content;
           return Effect.succeed({ ...result, content, metadata: { ...result.metadata, exitCode: receipt.exitCode, publication: settlement.publication,
+            ...(settlement.requiredCheckHints ? { requiredCheckHints: settlement.requiredCheckHints } : {}),
             ...(settlement.artifacts ? { artifacts: settlement.artifacts } : {}) } });
         }), Effect.mapError(error => {
           const settlement = shellSettlements.get(key);
-          return settlement?.state === 'refused' ? new Tool.Error({ message: settlement.message, metadata: { code: settlement.code } }) : error;
+          if (settlement?.state === 'refused') return new Tool.Error({ message: settlement.message, metadata: { code: settlement.code } });
+          return settlement?.state === 'settled' ? appendRequiredCheckFailureHints(error, settlement) : error;
         }), Effect.ensuring(Effect.sync(() => { shellSettlements.delete(key); })));
     }
     if (invocation.toolID === 'skill') return Effect.fail(new Tool.Error({ message: 'native_skill_asset_authority_required' }));
@@ -396,6 +413,7 @@ export function createExecutionRouting(options: { readonly rpc: ExecutionRpc; re
                 done = true; yield* read(handle, cursor);
                 if (!readOnly && shellSettlements.has(callKey(ticket.invocation))) shellSettlements.set(callKey(ticket.invocation),
                   { state: 'settled', ok: event.ok, receipt: event.receipt, publication: event.publication, error: event.error?.message,
+                    ...(event.requiredCheckHints ? { requiredCheckHints: event.requiredCheckHints } : {}),
                     ...(event.artifacts ? { artifacts: event.artifacts } : {}),
                     ...(event.error?.code ? { code: event.error.code } : {}), ...(event.error?.metadata ? { errorMetadata: event.error.metadata } : {}) });
                 if (!event.ok || !event.receipt?.terminated || !event.receipt.confined || (!readOnly && event.receipt.cancelled)) return yield* Effect.fail(platformFailure(new Error(event.error?.message ?? 'native_execution_failed')));

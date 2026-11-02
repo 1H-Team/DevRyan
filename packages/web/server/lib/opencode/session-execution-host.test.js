@@ -723,6 +723,30 @@ test('untracked shells retain no separate required-check output buffer', async (
   } finally { f.terminated.resolve(f.receipt); await f.host.drain(); }
 });
 
+test('only committed matched check diagnostics travel with the trusted settled result', async () => {
+  const hints = [{ name: 'legacy check', code: 'required_check_command_exit_ambiguous', message: 'Use the exact standalone declared command.' }];
+  const f = await nativePublicationFixture({ nativeExecution: { observeRequiredCheck: async phase => phase === 'before'
+    ? { tracked: true } : { recorded: true, hints } } }, 'shell');
+  try {
+    const { handle } = await f.start(); await f.launched.promise; f.terminated.resolve(f.receipt);
+    expect(await f.settled(handle)).toMatchObject({ type: 'settled', ok: true, receipt: { exitCode: 0 }, requiredCheckHints: hints });
+  } finally { f.terminated.resolve(f.receipt); await f.host.drain(); }
+});
+
+test.each([false, true])('committed evidence hints survive cancelled=%s without changing the worker outcome', async cancelled => {
+  const hints = [{ name: 'matched check', code: 'required_check_evidence_incomplete', message: 'The process exit code was not observed.' }];
+  const observeRequiredCheck = vi.fn(async phase => phase === 'before' ? { tracked: true } : { recorded: true, hints });
+  const f = await nativePublicationFixture({ nativeExecution: { observeRequiredCheck } }, 'shell');
+  Object.assign(f.receipt, { cancelled, exitCode: cancelled ? 137 : 0 });
+  try {
+    const { handle } = await f.start(); await f.launched.promise; f.terminated.resolve(f.receipt);
+    const event = await f.settled(handle);
+    expect(event).toMatchObject({ type: 'settled', ok: !cancelled, receipt: f.receipt, requiredCheckHints: hints });
+    if (cancelled) expect(event.error).toEqual({ message: 'execution_cancelled' });
+    expect(observeRequiredCheck.mock.calls.find(([phase]) => phase === 'after')[2]).toBe(cancelled ? null : 0);
+  } finally { f.terminated.resolve(f.receipt); await f.host.drain(); }
+});
+
 test.each([0, 7])('native required check exit %s persists after publication and before terminal delivery', async exitCode => {
   const native = await import('@devryan/harness-runtime/lib/session-execution.js');
   const entered = Promise.withResolvers(), release = Promise.withResolvers(), phases = [];

@@ -216,6 +216,8 @@ export interface ManagedTaskWaitingReason {
 export interface TaskPrerequisite { taskId: string; checkName: string; paths: string[]; contentHash: string }
 export function validateTaskPrerequisites(value?: TaskPrerequisite[]): TaskPrerequisite[];
 export interface ManagedTaskRecord {
+  /** Private canonical steps/latch for the active accepted prompt; absent on legacy tasks. */
+  primaryStepBudget?: { acceptedPrompts: { userMessageID: string; createdAt: number }[]; userMessageID: string | null; assistantMessageIDs: string[]; warningClaimedAt: number | null; maintenanceParents?: { parentID: string; userMessageID: string }[]; retiredPromptThrough?: number };
   taskPrerequisites?: TaskPrerequisite[];
   approvedPlanRef?: ApprovedPlanRef;
   requiredChecks?: RequiredCheck[];
@@ -432,6 +434,7 @@ export interface ManagedTaskExecutorResult {
 }
 
 export interface ManagedTaskControl {
+  readPrimaryStepBudget?(): Promise<{ usedSteps: number; userMessageID: string | null; acceptedUserMessageIDs: string[] } | null>;
   assertPrerequisites?(): Promise<void>;
   /** Required for automatic transport recovery. Commits before dispatch and fences stale/cancelled leases. */
   recordTransportRecovery?(recovery: ManagedTransportRecovery, expectedRevision: number): Promise<boolean>;
@@ -575,10 +578,13 @@ export interface ManagedOpenCodeExecutorOptions {
   resolveTaskPromptPreamble?: (
     task: ManagedTaskRecord,
   ) => string | null | Promise<string | null>;
+  /** Constructor-owned current task/root check declarations for every prompt. */
+  resolveTaskAssignment?: (task: ManagedTaskRecord) => Promise<ManagedTaskRecord & { rootRequiredChecks?: RequiredCheck[] }>;
   /** Assistant-turn budget applied to every task unless `resolveTaskTurnBudget`
    * answers for it. At the budget the child is told once to wrap up; at budget +
    * `MANAGED_TURN_BUDGET_ABORT_GRACE_TURNS` it is aborted and reported as a
-   * resumable failure. `null` (default) disables the backstop. */
+   * resumable failure. Designer instead stops at this exact number of persisted
+   * native primary steps without queued prompts. `null` disables the backstop. */
   maxAssistantTurns?: number | null;
   /** Per-task turn budget. `null` disables the backstop for that task; `undefined`
    * falls back to `maxAssistantTurns`. */
@@ -818,6 +824,9 @@ export function projectManagedWaitSnapshot(input: { rootSessionId: string; tasks
 export interface ObjectiveCheckScope { rootSessionId: string; directory: string; objectiveId: string }
 export interface ObjectiveCheckRecord extends ObjectiveCheckScope { updatedAt?: number; requiredChecks: RequiredCheck[]; requiredCheckReceipts: RequiredCheckReceipt[]; requiredCheckCorrections: RequiredCheckCorrectionHistoryEntry[] }
 export interface ManagedTaskScheduler {
+  acceptPrimaryPrompt(input: { taskId: string; leaseToken: string; sessionId: string; directory: string; userMessageId: string; createdAt: number }): Promise<boolean | null>;
+  recordPrimaryStep(input: { taskId: string; leaseToken: string; sessionId: string; directory: string; messageId: string; userMessageId: string; createdAt: number; maintenanceParentId?: string; historicalSteps?: { messageId: string; createdAt: number }[] }): Promise<{ usedSteps: number } | null>;
+  claimPrimaryStepBudgetWarning(input: { taskId: string; leaseToken: string; sessionId: string; directory: string; messageId: string; callId: string }): Promise<{ notice: DesignerStepBudgetNotice } | null>;
   discardObjectiveChecks(scope: { directory: string; sessions: string[] }, authorize: () => Promise<void>): Promise<{ removed: number }>;
   declareObjectiveChecks(scope: ObjectiveCheckScope, checks: RequiredCheck[], corrections: RequiredCheckCorrectionHistoryEntry[], authorize: () => Promise<void>): Promise<ObjectiveCheckRecord>;
   getObjectiveRequiredChecks(scope: ObjectiveCheckScope): ObjectiveCheckRecord | null;
@@ -1273,9 +1282,14 @@ export function readManagedResultReport(preview: string): CompactResultHeader['r
 export const PROVIDER_AUTHENTICATION_FAILURE_KIND: 'provider_authentication';
 export function isProviderAuthenticationFailure(value: unknown): boolean;
 export function formatManagedAssignmentContext(
-  task: Pick<ManagedTaskRecord, 'taskId' | 'rootSessionId' | 'agent' | 'label' | 'prompt'> & { readOnly?: boolean },
+  task: Pick<ManagedTaskRecord, 'taskId' | 'rootSessionId' | 'agent' | 'label' | 'prompt'> & { readOnly?: boolean; requiredChecks?: RequiredCheck[]; rootRequiredChecks?: RequiredCheck[]; taskPrerequisites?: TaskPrerequisite[] },
   options?: { maxPromptBytes?: number; maxBytes?: number },
 ): string | null;
+export const DESIGNER_PRIMARY_STEP_WARNING: 180;
+export const DESIGNER_PRIMARY_STEP_EMERGENCY: 260;
+export interface DesignerStepBudgetNotice { code: 'designer_step_budget_warning'; message: string; attempt: number; usedSteps: number; limit: 260 }
+export function designerStepBudgetNotice(attempt: number, usedSteps: number): DesignerStepBudgetNotice;
+export function validatePrimaryStepBudget(value: unknown): void;
 
 // Orchestration codec (codec.js): persisted ledger and host-to-UI wire shapes.
 export const MANAGED_TASK_ID_PREFIX: 'dvr_task_';

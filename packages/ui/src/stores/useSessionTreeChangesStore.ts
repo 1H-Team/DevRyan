@@ -13,7 +13,7 @@ import { isTransientError } from '@/sync/retry'
  * and every response is checked against the latest request for its key so a
  * slow, superseded fetch can never overwrite fresher data.
  */
-export type SessionTreeChangesEntry = Pick<SessionTreeChanges, 'fileCount' | 'nextCursor' | 'previousCursor' | 'pageIndex' | 'current' | 'coverageBySession'> & {
+export type SessionTreeChangesEntry = Pick<SessionTreeChanges, 'fileCount' | 'nextCursor' | 'previousCursor' | 'pageIndex' | 'current' | 'coverageBySession' | 'projectionState' | 'generatedAt' | 'restoreEligibility'> & {
   revision?: string
   worktreeDirectory?: string
   coverage?: 'complete' | 'partial'
@@ -65,7 +65,7 @@ export const useSessionTreeChangesStore = create<SessionTreeChangesStore>(() => 
 }))
 
 const defaultFetcher: SessionTreeChangesFetcher = (rootSessionID, directory, signal) =>
-  opencodeClient.getSessionTreeChanges(rootSessionID, directory, { signal })
+  opencodeClient.getSessionTreeChanges(rootSessionID, directory, { signal, summaryOnly: true })
 
 let fetcher: SessionTreeChangesFetcher = defaultFetcher
 let debounceMs = SESSION_TREE_CHANGES_DEBOUNCE_MS
@@ -252,6 +252,9 @@ async function fetchSessionTreeChanges(directory: string, rootSessionID: string)
   transientRetries.delete(key)
   const previous = useSessionTreeChangesStore.getState().entries.get(key)
   patchEntry(key, {
+    projectionState: result.projectionState,
+    generatedAt: result.generatedAt,
+    restoreEligibility: result.restoreEligibility,
     current: result.current,
     coverageBySession: result.coverageBySession,
     revision: result.revision,
@@ -276,7 +279,7 @@ async function fetchSessionTreeChanges(directory: string, rootSessionID: string)
     loading: false,
     error: null,
   })
-  const pending = result.reconciliationState === 'pending'
+  const pending = result.projectionState === 'missing' || result.projectionState === 'refreshing' || result.reconciliationState === 'pending'
     || result.reasons?.some((reason) => ['history_pending', 'capture_pending', 'receipts_pending'].includes(reason))
   if (pending && (subscriberCounts.get(key) ?? 0) > 0) {
     const attempt = pendingRetries.get(key) ?? 0

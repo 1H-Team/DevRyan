@@ -145,6 +145,22 @@ describe('active global subscription readiness', () => {
     expect(registered).toBe(false); expect(hub.events.size).toBe(0); expect(hub.statuses.size).toBe(0);
   });
 
+  it('keeps cold startup retries open without readiness until a connection is established', async () => {
+    const hub = readinessHub();
+    hub.start = () => { hub.status('disconnect'); hub.status('disconnect'); };
+    const context = setup({ req: { headers: readyHeaders }, hub });
+    await context.handler(context.req, context.res);
+    expect(context.res.destroyed).toBe(false); expect(context.res.chunks).toEqual([]);
+    expect(hub.events.size).toBe(1); expect(hub.statuses.size).toBe(1);
+    hub.status('disconnect');
+    expect(context.res.destroyed).toBe(false); expect(context.res.chunks).toEqual([]);
+    hub.status('connect');
+    expect(context.res.chunks).toEqual([readyFrame]);
+    hub.status('disconnect');
+    expect(context.res.destroyed).toBe(true);
+    expect(hub.events.size).toBe(0); expect(hub.statuses.size).toBe(0);
+  });
+
   it('orders the complete authorized replay snapshot before live events and readiness despite a connect race', async () => {
     const hub = readinessHub({ replay: [entry('one'), entry('two')] });
     let release;

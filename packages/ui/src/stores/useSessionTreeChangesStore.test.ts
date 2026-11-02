@@ -498,7 +498,7 @@ describe('useSessionTreeChangesStore', () => {
 
   test('restart recovery retries only the actual read-only summary URL, never a mutation', async () => {
     const requests: Array<{ url: string; method: string }> = []
-    setSessionTreeChangesFetcher((root, directory, signal) => requestSessionTreeChanges({ baseUrl: 'http://fixture.invalid/api', sessionId: root, directory, signal,
+    setSessionTreeChangesFetcher((root, directory, signal) => requestSessionTreeChanges({ baseUrl: 'http://fixture.invalid/api', sessionId: root, directory, signal, summaryOnly: true,
       fetchImpl: async (input, options) => {
         requests.push({ url: String(input), method: options?.method ?? 'GET' })
         return requests.length === 1 ? Response.json({ code: 'native_controller_starting' }, { status: 503 })
@@ -506,7 +506,7 @@ describe('useSessionTreeChangesStore', () => {
       } }))
     const release = subscribeSessionTreeChanges('/repo', 'ses_root')
     await waitUntil(() => useSessionTreeChangesStore.getState().entries.get(getSessionTreeChangesKey('/repo', 'ses_root'))?.revision === 'ready')
-    expect(requests).toEqual([1, 2].map(() => ({ url: 'http://fixture.invalid/api/devryan/session/ses_root/changes?directory=%2Frepo', method: 'GET' })))
+    expect(requests).toEqual([1, 2].map(() => ({ url: 'http://fixture.invalid/api/devryan/session/ses_root/changes?directory=%2Frepo&summary=1', method: 'GET' })))
     release()
   })
 

@@ -7,6 +7,7 @@ import { parse as parseJsonc } from 'jsonc-parser';
 import {
   deleteAgentBackupModel,
   getAgentConfig,
+  getAgentSources,
   listAgentBackupModels,
   listConfigAgents,
   listManagedRuntimeAgentModelOverrides,
@@ -68,6 +69,35 @@ describe('agent model overrides', () => {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
     tempRoot = undefined;
+  });
+
+  it('resolves packaged, project and Slim-only agent sources from the supplied fixture configuration', async () => {
+    const slimConfigDirectory = path.dirname(userConfigPath);
+    const slimConfigPath = path.join(slimConfigDirectory, 'devryan-agents.json');
+    const options = { userConfigPath, slimConfigDirectory, env: {} };
+    const packaged = getAgentSources('designer', projectDirectory, options);
+    expect(packaged.md).toMatchObject({ exists: true, scope: 'packaged' });
+    expect(packaged.packagedMd.exists).toBe(true);
+    expect(packaged.md.fields).toContain('prompt');
+    expect(packaged.json).toEqual({ exists: false, path: null, scope: null, fields: [] });
+
+    await writeJson(slimConfigPath, { agents: {
+      designer: { model: 'fixture/designer', variant: 'medium' },
+      'fixture-specialist': { model: 'fixture/specialist' },
+    } });
+    const configured = getAgentSources('designer', projectDirectory, options);
+    expect(configured.md).toEqual(packaged.md);
+    expect(configured.json).toEqual({ exists: true, path: slimConfigPath, scope: 'slim', fields: ['model', 'variant'] });
+
+    await writeProjectAgent(projectDirectory, 'designer', ['mode: subagent', 'model: fixture/project']);
+    const project = getAgentSources('designer', projectDirectory, options);
+    expect(project.md).toMatchObject({ exists: true, scope: 'project', path: path.join(projectDirectory, '.opencode', 'agents', 'designer.md') });
+    expect(project.json).toEqual(configured.json);
+
+    const slimOnly = getAgentSources('fixture-specialist', projectDirectory, options);
+    expect(slimOnly.md).toEqual({ exists: false, scope: null, path: null, fields: [] });
+    expect(slimOnly.json).toEqual(configured.json);
+    expect(getAgentSources('fixture-missing', projectDirectory, options).md.exists).toBe(false);
   });
 
   it('persists a partial default selection without re-inheriting the preset effort', async () => {

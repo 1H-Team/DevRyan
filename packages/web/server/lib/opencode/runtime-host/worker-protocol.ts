@@ -80,6 +80,7 @@ export const SearchTruncation = Schema.Struct({ limitBytes: Schema.Int, limitRec
   returnedBytes: Schema.Int, returnedRecords: Schema.Int, reason: Schema.Literals(['byte_limit', 'record_limit']) });
 // Non-blocking host notice appended to a plan-mode read or grep result.
 export const PlanReadAdvisory = Schema.Struct({ code: Schema.Literal('plan_mode_reread_after_explorer'), count: Schema.Int, message: Schema.String });
+export const RequiredCheckHint = Schema.Struct({ name: Schema.String, code: Schema.Literals(['required_check_command_exit_ambiguous', 'required_check_evidence_incomplete']), message: Schema.String });
 export const ExecutionEvent = Schema.Union([
   Schema.Struct({ cursor: Schema.Int, type: Schema.Literal('started'), pid: Schema.Int }),
   Schema.Struct({ cursor: Schema.Int, type: Schema.Literal('output'), stream: Schema.Literals(['stdout', 'stderr']), data: Schema.String }),
@@ -87,6 +88,7 @@ export const ExecutionEvent = Schema.Union([
   Schema.Struct({ cursor: Schema.Int, type: Schema.Literal('progress'), update: Metadata }),
   Schema.Struct({ cursor: Schema.Int, type: Schema.Literal('settled'), ok: Schema.Boolean,
     receipt: Schema.optional(TerminationReceipt), result: Schema.optional(NativeResult), error: Schema.optional(WorkerError),
+    requiredCheckHints: Schema.optional(Schema.Array(RequiredCheckHint)),
     publication: Schema.optional(Schema.Struct({ outcome: Schema.Literals(['complete', 'partial']), conflicts: Schema.Array(Schema.String),
       ignoredInputs: Schema.optional(Schema.Array(Schema.String)) })),
     // This call's $DEVRYAN_ARTIFACT_DIR and the files it left there.

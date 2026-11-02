@@ -174,12 +174,22 @@ const writeSummaryFixture = async (directory) => {
     toolPart(T0 + 4_000, 'ses_root', 'call_2', 'read', { status: 'completed', time: { start: T0 + 3_000, end: T0 + 6_000 } }),
     toolPart(T0 + 4_500, 'ses_root', 'call_3', 'bash', { status: 'error', error: 'Tool execution\ninterrupted', time: { start: T0 + 4_000, end: T0 + 4_400 } }),
     toolPart(T0 + 4_600, 'ses_root', 'call_4', 'bash', { status: 'running', time: { start: T0 + 4_600 } }),
+    toolPart(T0 + 4_700, 'ses_root', 'call_nonzero', 'bash', { status: 'completed', metadata: { exitCode: 1 }, time: { start: T0 + 4_600, end: T0 + 4_700 } }),
+    toolPart(T0 + 4_800, 'ses_root', 'call_wait', 'devryan_task', { status: 'completed', input: { action: 'wait_any', task_ids: ['dvr_task_one'], until: 'settled' } }),
     { type: 'lifecycle', at: T0 + 1_200, runtime: 'test', event: 'session_execution', sessionID: 'ses_root',
       payload: { phase: 'ledger_lock', state: 'completed', elapsedMs: 300, action: 'reserve', slow: true } },
     { type: 'lifecycle', at: T0 + 1_300, runtime: 'test', event: 'session_execution', sessionID: 'ses_root',
       payload: { phase: 'ledger_lock', state: 'completed', elapsedMs: 500, action: 'reserve' } },
     { type: 'lifecycle', at: T0 + 1_350, runtime: 'test', event: 'session_execution', sessionID: 'ses_root',
       payload: { phase: 'admission', state: 'started' } },
+    ...[
+      { stage: 'step-link', assistantMessageID: 'msg_r1' },
+      { stage: 'step-link', assistantMessageID: 'msg_r1' },
+      { stage: 'model-prepared', requestID: 'req_primary', kind: 'primary' },
+      { stage: 'model-prepared', requestID: 'req_compact', kind: 'compaction' },
+      { stage: 'compaction-trigger', triggerID: 'compact_one', reason: 'auto' },
+      { stage: 'compaction-outcome', triggerID: 'compact_one', status: 'completed' },
+    ].map(payload => ({ type: 'lifecycle', at: T0 + 1_390, runtime: 'test', event: 'native_observation', sessionID: 'ses_root', payload })),
     // Native shell/writer records carry their tier, so no row is labelled `?`.
     { type: 'lifecycle', at: T0 + 1_400, runtime: 'test', event: 'session_execution', sessionID: 'ses_root',
       payload: { phase: 'preparation', state: 'completed', elapsedMs: 200, executionTier: 'process', steps: 'ledger_commit:2/70' } },
@@ -269,11 +279,22 @@ describe('journal summary', () => {
     assert.deepEqual([openai.messages, openai.input, openai.cacheRead], [2, 250, 650]);
     assert.deepEqual([summary.tokens.total.messages, summary.tokens.total.input, summary.tokens.total.cost], [3, 260, 0.52]);
 
+    assert.equal(root.toolChoice.primarySteps, 1);
+    assert.equal(root.toolChoice.bashCalls, 3);
+    assert.equal(root.toolChoice.bashShare, 3 / root.toolChoice.observedCalls);
+    assert.equal(root.toolChoice.toolsPerPrimaryStep, root.toolChoice.observedCalls);
+    assert.equal(child.toolChoice.toolsPerPrimaryStep, null);
+    assert.deepEqual(root.toolChoice.modelPrepared, { primary: 1, compaction: 1 });
+    assert.deepEqual(root.toolChoice.compactionTriggers, { auto: 1 });
+    assert.deepEqual(root.toolChoice.compactionOutcomes, { completed: 1 });
+
     const read = summary.tools.find((tool) => tool.tool === 'read');
     assert.deepEqual([read.calls, read.timed, read.p50Ms, read.p90Ms, read.maxMs, read.totalMs, read.errors],
       [3, 3, 1_000, 3_000, 3_000, 4_500, 0]);
     const bash = summary.tools.find((tool) => tool.tool === 'bash');
-    assert.deepEqual([bash.calls, bash.errors, bash.unfinished], [1, 1, 1]);
+    assert.deepEqual([bash.calls, bash.errors, bash.commandFailures, bash.unfinished], [2, 1, 1, 1]);
+    assert.deepEqual(summary.commandFailures.map(({ callID, exitCode }) => ({ callID, exitCode })), [{ callID: 'call_nonzero', exitCode: 1 }]);
+    assert.deepEqual(summary.waits, [{ sessionID: 'ses_root', callID: 'call_wait', action: 'wait_any', taskIds: ['dvr_task_one'], until: 'settled' }]);
 
     assert.deepEqual(summary.phases.map(({ tier, phase, count, p50Ms, totalMs, slow }) => ({ tier, phase, count, p50Ms, totalMs, slow })), [
       { tier: 'reserve', phase: 'ledger_lock', count: 2, p50Ms: 400, totalMs: 800, slow: 1 },

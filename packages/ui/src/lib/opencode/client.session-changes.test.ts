@@ -105,3 +105,30 @@ test('undo submits the exact reviewed proof with its revision', async () => {
     expect(body).toEqual({ revision: 'revision', restoreProof: proof });
   } finally { fetch.mockRestore(); }
 });
+
+test('summary display metadata never becomes restore proof and malformed candidates fail closed', () => {
+  const projected = { ...summary, attributionVersion: 4, restoreAvailable: false, restoreProof: undefined,
+    projectionState: 'ready', reconciliationState: 'settled', restoreEligibility: { state: 'candidate', action: 'undo' } };
+  expect(parseSessionTreeChanges(projected)).toMatchObject({ projectionState: 'ready',
+    restoreEligibility: { state: 'candidate', action: 'undo' }, restoreAvailable: false });
+  for (const overrides of [{ coverage: 'partial' }, { projectionState: 'refreshing' }, { reconciliationState: 'pending' },
+    { restoreEligibility: { state: 'candidate', action: 'delete' } }]) {
+    expect(parseSessionTreeChanges({ ...projected, ...overrides }).restoreEligibility).toEqual({ state: 'unknown' });
+  }
+});
+
+test('on-demand preview sends revision/direction and rejects mismatched proof identity', async () => {
+  const signal = new AbortController().signal, proof = { version: 1 as const, digest: 'c'.repeat(64) };
+  let returned = { revision: 'revision', action: 'undo', restoreProof: proof };
+  const fetch = spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+    expect(String(input)).toContain('/changes/preview?directory=%2Ffixture');
+    expect(init?.signal).toBe(signal);
+    expect(JSON.parse(String(init?.body))).toEqual({ revision: 'revision', action: 'undo' });
+    return Response.json(returned);
+  });
+  try {
+    expect(await opencodeClient.previewSessionChanges('root', '/fixture', 'revision', 'undo', signal)).toEqual(proof);
+    returned = { ...returned, revision: 'new-revision' };
+    await expect(opencodeClient.previewSessionChanges('root', '/fixture', 'revision', 'undo', signal)).rejects.toThrow('identity mismatch');
+  } finally { fetch.mockRestore(); }
+});

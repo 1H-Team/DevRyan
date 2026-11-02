@@ -317,9 +317,7 @@ describe('managed OpenCode executor', () => {
 
     expect(result.status).toBe('completed');
     expect(prompts).toHaveLength(1);
-    expect(prompts[0].prompt).toBe(
-      'Inspect the authentication flow.',
-    );
+    expect(prompts[0].prompt).toBe(appendManagedAssignment(task({ agent: 'oracle' }), 'Complete the delegated assignment below.'));
     expect(prompts[0].tools).toEqual({
       task: false, opencode_session_rename: false, devryan_plan_read: false, todoread: false, todowrite: false,
     });
@@ -351,7 +349,7 @@ describe('managed OpenCode executor', () => {
     expect(prompts).toHaveLength(1);
     expect(prompts[0].prompt).toBe([
       MANAGED_READ_ONLY_PROMPT,
-      'Inspect the authentication flow.',
+      appendManagedAssignment(task({ readOnly: true }), 'Complete the delegated assignment below.'),
     ].join('\n\n'));
     expect(prompts[0].tools).toMatchObject({
       '*': false,
@@ -2518,7 +2516,7 @@ describe('managed OpenCode executor', () => {
       modelId: 'gpt-4.1',
       agent: 'explorer',
       variant: 'fast',
-      prompt: 'Inspect the authentication flow.',
+      prompt: appendManagedAssignment(task({ label: 'locate-chat_ui' }), 'Complete the delegated assignment below.'),
       tools: {
         'resend_*': false,
         'mcp__resend__*': false,
@@ -3214,14 +3212,12 @@ describe('managed task prompt preamble', () => {
     expect((await executor.start(task({ agent: 'designer' }), control)).status).toBe('completed');
     expect(prompts[0].prompt).toBe([
       'Contract for designer.',
-      'Inspect the authentication flow.',
+      appendManagedAssignment(task({ agent: 'designer' }), 'Complete the delegated assignment below.'),
     ].join('\n\n'));
 
     expect((await executor.start(task({ taskId: 'dvr_task_2', agent: 'explorer' }), control)).status)
       .toBe('completed');
-    expect(prompts[1].prompt).toBe(
-      'Inspect the authentication flow.',
-    );
+    expect(prompts[1].prompt).toBe(appendManagedAssignment(task({ taskId: 'dvr_task_2', agent: 'explorer' }), 'Complete the delegated assignment below.'));
     expect(seen).toEqual(['designer', 'explorer']);
   });
 
@@ -3238,7 +3234,7 @@ describe('managed task prompt preamble', () => {
     expect(prompts[0].prompt).toBe([
       'Contract.',
       MANAGED_READ_ONLY_PROMPT,
-      'Inspect the authentication flow.',
+      appendManagedAssignment(task({ readOnly: true }), 'Complete the delegated assignment below.'),
     ].join('\n\n'));
   });
 
@@ -3525,10 +3521,10 @@ describe('managed task turn budget', () => {
   test('prompts the child to finish exactly once when its budget is used, then keeps observing', async () => {
     const { state, transport } = createBusyChild({ finishAfterReads: 6 });
     const executor = createExecutor(transport, {
-      resolveTaskTurnBudget: (candidate) => (candidate.agent === 'designer' ? 3 : null),
+      resolveTaskTurnBudget: (candidate) => (candidate.agent === 'fixer' ? 3 : null),
     });
 
-    const result = await executor.start(task({ agent: 'designer' }), control);
+    const result = await executor.start(task({ agent: 'fixer' }), control);
 
     expect(result).toMatchObject({ status: 'completed', recoverablePreview: 'Wrapped up' });
     expect(state.abortCount).toBe(0);
@@ -3539,7 +3535,7 @@ describe('managed task turn budget', () => {
     // even though the child produced further turns before wrapping up.
     expect(budgetPrompts[0]).toMatchObject({
       sessionId: 'ses_child',
-      agent: 'designer',
+      agent: 'fixer',
       atRead: 3,
       tools: { task: false, todoread: false, todowrite: false },
     });
@@ -3577,6 +3573,63 @@ describe('managed task turn budget', () => {
       expect(state.prompts).toHaveLength(1);
       expect(state.abortCount).toBe(0);
     }
+  });
+
+  test('Designer emergency uses persisted primary steps, not transcript count, and never queues a warning', async () => {
+    const { state, transport } = createBusyChild();
+    const executor = createExecutor(transport, { resolveTaskTurnBudget: () => 3 });
+    const result = await executor.start(task({ agent: 'designer' }), {
+      ...control, async readPrimaryStepBudget() { return { usedSteps: Math.max(0, state.reads - 2) }; },
+    });
+    expect(result).toMatchObject({ status: 'failed', resumable: true,
+      failureReason: 'primary step emergency limit (3) reached; partial results reported' });
+    expect(state.reads).toBe(5);
+    expect(state.abortCount).toBe(1);
+    expect(state.prompts).toHaveLength(1);
+  });
+
+  test('a newly accepted prompt is not aborted by the completed previous prompt emergency count', async () => {
+    let reads = 0, aborted = false;
+    const old = assistant({ info: { id: 'msg_old', parentID: 'msg_old_user', time: { completed: 1000 } } });
+    const next = { info: { id: 'msg_next_user', role: 'user', time: { created: 1001 } }, parts: [{ type: 'text', text: MANAGED_RESUME_CONTINUATION_PROMPT }] };
+    const transport = {
+      async createSession() { return { id: 'ses_child' }; }, async promptSession() {},
+      async readSession() { return { id: 'ses_child' }; }, async readStatus() { return { type: reads >= 2 ? 'idle' : 'busy' }; },
+      async readMessages() { reads++; return reads < 2 ? [old, next] : [old, next,
+        assistant({ info: { id: 'msg_next_step', parentID: 'msg_next_user' }, parts: [{ type: 'text', text: 'Completed new prompt' }] })]; },
+      async abortSession() { aborted = true; return true; }, deleteSession,
+    };
+    const result = await createExecutor(transport, { resolveTaskTurnBudget: () => 3 }).start(task({ agent: 'designer' }), {
+      ...control, async readPrimaryStepBudget() { return reads <= 2
+        ? { usedSteps: 3, userMessageID: 'msg_old_user', acceptedUserMessageIDs: ['msg_old_user', 'msg_next_user'] }
+        : { usedSteps: 1, userMessageID: 'msg_next_user', acceptedUserMessageIDs: ['msg_old_user', 'msg_next_user'] }; },
+    });
+    expect(result.status).toBe('completed'); expect(aborted).toBe(false);
+  });
+
+  test('a queued prompt does not excuse a still-running old prompt at its emergency count', async () => {
+    let aborted = false;
+    const transport = {
+      async createSession() { return { id: 'ses_child' }; }, async promptSession() {}, async readSession() { return { id: 'ses_child' }; },
+      async readStatus() { return { type: aborted ? 'idle' : 'busy' }; },
+      async readMessages() { return [assistant({ info: { id: 'msg_old', parentID: 'msg_old_user', time: {} } }),
+        { info: { id: 'msg_next_user', role: 'user' }, parts: [{ type: 'text', text: MANAGED_RESUME_CONTINUATION_PROMPT }] }]; },
+      async abortSession() { aborted = true; return true; }, deleteSession,
+    };
+    const result = await createExecutor(transport, { resolveTaskTurnBudget: () => 3 }).start(task({ agent: 'designer' }), {
+      ...control, async readPrimaryStepBudget() { return { usedSteps: 3, userMessageID: 'msg_old_user', acceptedUserMessageIDs: ['msg_old_user', 'msg_next_user'] }; },
+    });
+    expect(result.status).toBe('failed'); expect(aborted).toBe(true);
+  });
+
+  test('a reattached Designer below its primary-step limit ignores historical assistant totals', async () => {
+    const { state, transport } = createBusyChild({ finishAfterReads: 30 });
+    const executor = createExecutor(transport, { resolveTaskTurnBudget: () => 3 });
+    expect((await executor.start(task({ agent: 'designer' }), {
+      ...control, async readPrimaryStepBudget() { return { usedSteps: 2 }; },
+    })).status).toBe('completed');
+    expect(state.abortCount).toBe(0);
+    expect(state.prompts).toHaveLength(1);
   });
 
   test('gives a resumed attempt a fresh budget instead of counting the inherited tail', async () => {

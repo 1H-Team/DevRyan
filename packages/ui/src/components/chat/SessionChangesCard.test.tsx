@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { Message, Session, SessionStatus } from '@opencode-ai/sdk/v2/client';
 
-import { opencodeClient, type SessionTreeChanges } from '@/lib/opencode/client';
+import { opencodeClient, ScopedRevertError, type SessionTreeChanges } from '@/lib/opencode/client';
 import { sessionEvents } from '@/lib/sessionEvents';
 import type { SessionChangesController } from './sessionChangesController';
 import { I18nProvider } from '@/lib/i18n';
@@ -380,6 +380,12 @@ describe('SessionChangesCardView', () => {
     expect(countRows(markup)).toBe(0);
   });
 
+  test('distinguishes proof checking from the subsequent restore mutation', () => {
+    const markup = render(React.createElement(SessionChangesCardView, { ...viewProps, busy: 'checking' }));
+    expect(markup).toContain(dict['chat.sessionChanges.footer.checking']);
+    expect(markup).not.toContain(dict['chat.sessionChanges.footer.undoing']);
+  });
+
   test('uses the full column width on mobile and the padded message column on desktop', () => {
     const mobile = render(React.createElement(SessionChangesCardView, { ...viewProps, isMobile: true }));
     expect(mobile).toContain('class="mt-3 chat-message-column"');
@@ -553,6 +559,8 @@ describe('SessionChangesCard (connected)', () => {
 
   test('Undo and Redo refresh the revision and keep the empty undone card actionable', async () => {
     const original = opencodeClient.sessionChangesAction;
+    const originalPreview = opencodeClient.previewSessionChanges;
+    opencodeClient.previewSessionChanges = async () => ({ version: 1, digest: 'a'.repeat(64) });
     const actions: Array<{ action: string; proof: { version: 1; digest: string } | undefined }> = [];
     let undone = false;
     opencodeClient.sessionChangesAction = async (_root, _directory, _revision, action, proof) => {
@@ -571,7 +579,20 @@ describe('SessionChangesCard (connected)', () => {
       await settle();
       expect(renderConnected()).toContain('restored.ts');
       expect(actions).toEqual(['undo', 'redo'].map(action => ({ action, proof: { version: 1, digest: 'a'.repeat(64) } })));
-    } finally { opencodeClient.sessionChangesAction = original; }
+    } finally { opencodeClient.sessionChangesAction = original; opencodeClient.previewSessionChanges = originalPreview; }
+  });
+
+  test('unavailable preview refreshes eligibility without dispatching a restore', async () => {
+    const originalPreview = opencodeClient.previewSessionChanges, originalAction = opencodeClient.sessionChangesAction;
+    let actions = 0, refreshes = 0;
+    opencodeClient.previewSessionChanges = async () => { throw new ScopedRevertError('Unavailable', { code: 'restore_evidence_unavailable' }); };
+    opencodeClient.sessionChangesAction = async () => { actions++; };
+    storeModule.setSessionTreeChangesFetcher(async () => { refreshes++; return result({ projectionState: 'ready',
+      restoreEligibility: { state: 'unavailable', reasons: ['restore_evidence_unavailable'] } }); });
+    try {
+      controller().undo(); await settle();
+      expect(actions).toBe(0); expect(refreshes).toBe(1); expect(controller().state.undoDisabled).toBe(true);
+    } finally { opencodeClient.previewSessionChanges = originalPreview; opencodeClient.sessionChangesAction = originalAction; }
   });
 
   test('hides while a revert is pending anywhere in the tree', () => {
@@ -652,4 +673,56 @@ test('large summaries retain the total count while the card renders a bounded pa
   expect(markup).toContain('Changed file pages');
   expect(markup).toContain('Next');
   expect(countRows(markup) <= 5).toBe(true);
+});
+
+describe('single-click restore proof acquisition', () => {
+  test('only a ready candidate enables the attempt without a cached proof', () => {
+    seedEntry('ses_root', { projectionState: 'ready', restoreProof: undefined, restoreAvailable: false,
+      restoreEligibility: { state: 'candidate', action: 'undo' } });
+    let state: SessionChangesController['state'] | undefined;
+    function Probe() { state = useSessionChangesController().state; return null; }
+    render(React.createElement(Probe));
+    expect(state?.undoDisabled).toBe(false);
+    seedEntry('ses_root', { projectionState: 'refreshing', restoreProof: undefined, restoreAvailable: false,
+      restoreEligibility: { state: 'unknown' } });
+    render(React.createElement(Probe));
+    expect(state?.undoDisabled).toBe(true);
+  });
+  for (const reason of ['cancelled', 'navigation'] as const) test(`${reason} during preview prevents action even when transport completes`, async () => {
+    const { restoreSessionChangesWithPreview } = await import('./sessionChangesController');
+    let finish!: (proof: { version: 1; digest: string }) => void;
+    let actions = 0;
+    const action = async () => { actions++; }, controller = new AbortController();
+    let current = true;
+    const pending = restoreSessionChangesWithPreview({ client: {
+      previewSessionChanges: () => new Promise(resolve => { finish = resolve; }), sessionChangesAction: action },
+      sessionID: 'ses_root', directory: '/repo', revision: 'revision', action: 'undo', signal: controller.signal, isCurrent: () => current });
+    if (reason === 'cancelled') controller.abort(); else current = false;
+    finish({ version: 1, digest: 'a'.repeat(64) });
+    expect(await pending).toBe(false); expect(actions).toBe(0);
+  });
+  for (const change of ['revision', 'eligibility', 'direction'] as const) test(`${change} changes during preview prevent stale action dispatch`, async () => {
+    const { restoreSessionChangesWithPreview, isSessionChangesRestoreCurrent } = await import('./sessionChangesController');
+    seedEntry('ses_root', { revision: 'revision', projectionState: 'ready', restoreEligibility: { state: 'candidate', action: 'undo' } });
+    const key = storeModule.getSessionTreeChangesKey('/repo', 'ses_root');
+    let finish!: (proof: { version: 1; digest: string }) => void, actions = 0;
+    const pending = restoreSessionChangesWithPreview({ client: {
+      previewSessionChanges: () => new Promise(resolve => { finish = resolve; }), sessionChangesAction: async () => { actions++; } },
+      sessionID: 'ses_root', directory: '/repo', revision: 'revision', action: 'undo', signal: new AbortController().signal,
+      isCurrent: () => isSessionChangesRestoreCurrent(storeModule.useSessionTreeChangesStore.getState().entries.get(key), 'revision', 'undo') });
+    seedEntry('ses_root', { revision: change === 'revision' ? 'new-revision' : 'revision', undone: change === 'direction',
+      restoreEligibility: change === 'eligibility' ? { state: 'unknown' } : { state: 'candidate', action: 'undo' } });
+    finish({ version: 1, digest: 'a'.repeat(64) });
+    expect(await pending).toBe(false); expect(actions).toBe(0);
+  });
+  test('a stale preview does not dispatch an action', async () => {
+    const { restoreSessionChangesWithPreview } = await import('./sessionChangesController');
+    let actions = 0;
+    const action = async () => { actions++; };
+    await expect(restoreSessionChangesWithPreview({ client: {
+      previewSessionChanges: async () => { throw new Error('summary_revision_changed'); }, sessionChangesAction: action },
+      sessionID: 'ses_root', directory: '/repo', revision: 'revision', action: 'undo', signal: new AbortController().signal,
+      isCurrent: () => true })).rejects.toThrow('summary_revision_changed');
+    expect(actions).toBe(0);
+  });
 });

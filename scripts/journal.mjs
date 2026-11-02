@@ -544,6 +544,7 @@ export const summarizeSessionTree = async (journalDirectory, rootSessionID, { si
     depth: depth.get(id), title: relations.get(id)?.title ?? null,
     firstAt: 0, lastAt: 0, status: null, deleted: false, records: 0, errors: 0, aborts: 0, gaps: 0, busy: emptyTokens(),
     agents: new Map(), models: new Map(), userAgents: new Map(), userModels: new Map(),
+    primarySteps: new Set(), preparedRequests: new Map(), compactionTriggers: new Map(), compactionOutcomes: new Map(),
   }]));
   const messages = new Map();
   const toolCalls = new Map();
@@ -578,6 +579,11 @@ export const summarizeSessionTree = async (journalDirectory, rootSessionID, { si
       if (action === 'abort') { counts.aborts += 1; session.aborts += 1; } else counts.otherControls += 1;
       controls.push({ at, sessionID, kind: 'control', action, source: asString(payload.source) || null,
         detail: asString(payload.method) || null });
+    } else if (record?.type === 'lifecycle' && record.event === 'native_observation') {
+      if (payload.stage === 'step-link' && asString(payload.assistantMessageID)) session.primarySteps.add(payload.assistantMessageID);
+      else if (payload.stage === 'model-prepared' && asString(payload.requestID)) session.preparedRequests.set(payload.requestID, asString(payload.kind));
+      else if (payload.stage === 'compaction-trigger' && asString(payload.triggerID)) session.compactionTriggers.set(payload.triggerID, asString(payload.reason));
+      else if (payload.stage === 'compaction-outcome' && asString(payload.triggerID)) session.compactionOutcomes.set(payload.triggerID, asString(payload.status));
     } else if (record?.type === 'lifecycle' && record.event === 'session_execution' && Number.isFinite(payload.elapsedMs)) {
       const tier = asString(payload.executionTier) || asString(payload.action) || '?';
       const phase = asString(payload.phase) || '?';
@@ -657,7 +663,7 @@ export const summarizeSessionTree = async (journalDirectory, rootSessionID, { si
           const previous = toolCalls.get(key);
           const terminal = (status) => status === 'completed' || status === 'error';
           if (!previous || !terminal(previous.state?.status)) {
-            toolCalls.set(key, { at, sessionID, tool: asString(part.tool) || '?', state: asObject(part.state) ?? {} });
+            toolCalls.set(key, { at, sessionID, callID: part.callID, tool: asString(part.tool) || '?', state: asObject(part.state) ?? {} });
           }
         }
       }
@@ -690,10 +696,17 @@ export const summarizeSessionTree = async (journalDirectory, rootSessionID, { si
     .map(({ fields, tokens }) => finishTokens(fields, tokens))
     .sort((left, right) => (right.input + right.cacheRead) - (left.input + left.cacheRead));
 
-  const tools = new Map();
+  const tools = new Map(), commandFailures = [], waits = [];
   for (const call of toolCalls.values()) {
-    const entry = tools.get(call.tool) ?? { tool: call.tool, calls: 0, errors: 0, unfinished: 0, durations: [] };
+    const entry = tools.get(call.tool) ?? { tool: call.tool, calls: 0, errors: 0, commandFailures: 0, unfinished: 0, durations: [] };
     const status = call.state.status;
+    const input = asObject(call.state.input);
+    if (call.tool === 'devryan_task' && ['wait', 'wait_any'].includes(input?.action)) {
+      const ids = input.task_ids ?? input.taskIds ?? (input.task_id ? [input.task_id] : []);
+      waits.push({ sessionID: call.sessionID, callID: call.callID, action: input.action,
+        taskIds: Array.isArray(ids) ? ids.filter(id => typeof id === 'string').slice(0, 32) : [],
+        ...(input.until === 'settled' ? { until: 'settled' } : {}) });
+    }
     if (status === 'completed' || status === 'error') {
       entry.calls += 1;
       const start = finiteNumber(call.state.time?.start);
@@ -703,6 +716,11 @@ export const summarizeSessionTree = async (journalDirectory, rootSessionID, { si
         entry.errors += 1;
         errors.push({ at: call.at, sessionID: call.sessionID, kind: 'tool', detail: `${call.tool}: ${clip(call.state.error ?? null, 200)}` });
       }
+      const exitCode = call.state.metadata?.exitCode;
+      if (Number.isSafeInteger(exitCode) && exitCode !== 0) {
+        entry.commandFailures += 1;
+        commandFailures.push({ at: call.at, sessionID: call.sessionID, callID: call.callID, tool: call.tool, exitCode });
+      }
     } else {
       entry.unfinished += 1;
     }
@@ -711,16 +729,31 @@ export const summarizeSessionTree = async (journalDirectory, rootSessionID, { si
   errors.sort((left, right) => left.at - right.at);
   controls.sort((left, right) => left.at - right.at);
 
+  const toolChoice = (sessionID = null) => {
+    const observed = [...toolCalls.values()].filter(call => sessionID === null || call.sessionID === sessionID);
+    const selected = sessionID === null ? [...sessions.values()] : [sessions.get(sessionID)];
+    const primarySteps = selected.reduce((sum, session) => sum + session.primarySteps.size, 0);
+    const bashCalls = observed.filter(call => call.tool === 'bash').length;
+    const countValues = (field) => {
+      const counts = {};
+      for (const session of selected) for (const value of session[field].values()) if (value) counts[value] = (counts[value] ?? 0) + 1;
+      return counts;
+    };
+    return { observedCalls: observed.length, bashCalls, bashShare: observed.length ? bashCalls / observed.length : null,
+      primarySteps, toolsPerPrimaryStep: primarySteps ? observed.length / primarySteps : null,
+      modelPrepared: countValues('preparedRequests'), compactionTriggers: countValues('compactionTriggers'), compactionOutcomes: countValues('compactionOutcomes') };
+  };
   const pickTop = (map) => [...map.entries()].sort((left, right) => right[1] - left[1]).map(([key]) => key);
   return {
     rootSessionID,
+    toolChoice: toolChoice(),
     window: { since, until },
     span: { firstAt, lastAt, durationMs: lastAt && firstAt ? lastAt - firstAt : 0 },
     gaps,
     sessions: tree.map((id) => {
       const session = sessions.get(id);
       return {
-        id, parentID: session.parentID, depth: session.depth, title: session.title,
+        id, toolChoice: toolChoice(id), parentID: session.parentID, depth: session.depth, title: session.title,
         agents: session.agents.size ? pickTop(session.agents) : pickTop(session.userAgents),
         models: session.models.size ? pickTop(session.models) : pickTop(session.userModels),
         status: session.deleted ? 'deleted' : session.status, records: session.records,
@@ -745,6 +778,8 @@ export const summarizeSessionTree = async (journalDirectory, rootSessionID, { si
       return { ...entry, count: stats.count, p50Ms: stats.p50, p90Ms: stats.p90, maxMs: stats.max, totalMs: stats.total };
     }).sort((left, right) => (right.totalMs - left.totalMs) || `${left.tier} ${left.phase}`.localeCompare(`${right.tier} ${right.phase}`)),
     errors,
+    commandFailures,
+    waits,
     controls,
     counts,
   };
@@ -796,11 +831,22 @@ export const formatSessionSummary = (summary) => {
   for (const row of summary.tokens.byModel) lines.push(tokenLine(row.model, row));
   lines.push(tokenLine('TOTAL', summary.tokens.total));
 
+  lines.push('', 'TOOL CHOICE (all observed calls; steps = canonical native primary observations):');
+  for (const session of summary.sessions) {
+    const choice = session.toolChoice;
+    lines.push(`  ${session.id} calls=${choice.observedCalls} bash=${choice.bashCalls} share=${percent(choice.bashShare)} primarySteps=${choice.primarySteps} tools/step=${choice.toolsPerPrimaryStep === null ? '—' : choice.toolsPerPrimaryStep.toFixed(2)}`
+      + ` modelPrepared=${JSON.stringify(choice.modelPrepared)} compactionTriggers=${JSON.stringify(choice.compactionTriggers)} compactionOutcomes=${JSON.stringify(choice.compactionOutcomes)}`);
+  }
+
   lines.push('', 'TOOLS (calls, p50 s, p90 s, max s, total s, errors, unfinished):');
   for (const tool of summary.tools) {
     lines.push(`  ${truncate(tool.tool, 22)} n=${String(tool.calls).padEnd(4)} p50=${(tool.p50Ms / 1000).toFixed(2).padStart(6)}`
       + ` p90=${(tool.p90Ms / 1000).toFixed(2).padStart(6)} max=${(tool.maxMs / 1000).toFixed(2).padStart(6)}`
-      + ` total=${(tool.totalMs / 1000).toFixed(1).padStart(7)} err=${tool.errors}${tool.unfinished ? ` unfinished=${tool.unfinished}` : ''}`);
+      + ` total=${(tool.totalMs / 1000).toFixed(1).padStart(7)} err=${tool.errors}${tool.commandFailures ? ` commandNonzero=${tool.commandFailures}` : ''}${tool.unfinished ? ` unfinished=${tool.unfinished}` : ''}`);
+  }
+  if (summary.waits.length) {
+    lines.push('', 'MANAGED WAITS (call, selection, until):');
+    for (const wait of summary.waits) lines.push(`  ${wait.callID} ${wait.action} tasks=${wait.taskIds.join(',')} until=${wait.until ?? 'first result'}`);
   }
 
   lines.push('', 'EXECUTION PHASES (n, p50 ms, p90 ms, max ms, total s):');

@@ -222,7 +222,7 @@ export const createPrivilegedOpenCodeClient = (deps) => {
       scannedCount: body.data.length, scannedBytes: Buffer.byteLength(JSON.stringify(body)) };
   });
 
-  /** Bounded native order and maintenance identities for Plan lineage only.
+  /** Bounded native order and maintenance identities for private lineage owners.
    * Projection runs once over the complete sequence, including page boundaries.
    * @returns {Promise<{records:import('../v2/projection/messages.js').V1MessageRecord[],nativeSequence:Array<{id:string,type:string,ordinal:number,turnParent:boolean,status?:string,reason?:string}>}|null>}
    */
@@ -258,6 +258,45 @@ export const createPrivilegedOpenCodeClient = (deps) => {
         ...(row.type==='compaction'?{status:typeof row.status==='string'?row.status:'unavailable',reason:typeof row.reason==='string'?row.reason:'unavailable'}:{})};
     });
     return {records:projectMessagePage(messages,context).records,nativeSequence};
+  });
+
+  /** Metadata-only recovery of the accepted user owning a canonical primary
+   * step. Native maintenance/synthetic parents retain the same allowance; only
+   * an actual accepted native user starts another allowance.
+   * @returns {Promise<{userMessageID:string,createdAt:number,steps:Array<{messageId:string,createdAt:number}>}|null>}
+   */
+  const readCanonicalStepLineage = gen2('readCanonicalStepLineage', async (sessionID, assistantMessageID, options = {}) => {
+    const snapshot = await readCanonicalPlanSequence(sessionID, options);
+    if (!snapshot) return null;
+    const byID = new Map(snapshot.records.map(record => [record.info.id, record]));
+    let origin, parentID;
+    const steps = [];
+    for (const row of snapshot.nativeSequence) {
+      if (row.type === 'user') { origin = row.id; parentID = row.id; steps.length = 0; }
+      else if (row.turnParent) {
+        if (!(row.type === 'compaction' && row.status === 'completed' || row.type === 'synthetic')) {
+          origin = undefined; steps.length = 0;
+        }
+        parentID = row.id;
+      } else if (row.type === 'assistant') {
+        const record = byID.get(row.id);
+        if (!origin || record?.info.role !== 'assistant' || record.info.summary === true || record.info.agent !== 'designer'
+          || record.turnOwnership?.source !== 'native-sequence' || record.turnOwnership.userMessageID !== parentID
+          || record.info.parentID !== parentID || !Number.isFinite(record.info.time?.created)) {
+          if (row.id === assistantMessageID) return null;
+          continue;
+        }
+        // Emergency accounting saturates at 260; retain the current ID as well
+        // when it is already beyond that bound so the caller can fence safely.
+        if (steps.length < 260) steps.push({ messageId: row.id, createdAt: record.info.time.created });
+        if (row.id === assistantMessageID) {
+          const user = byID.get(origin);
+          if (user?.info.role !== 'user' || !Number.isFinite(user.info.time?.created)) return null;
+          return { userMessageID: origin, createdAt: user.info.time.created, steps };
+        }
+      }
+    }
+    return null;
   });
 
   const switchAgent = gen2('switchAgent', async (sessionID, agent, options = {}) => {
@@ -324,6 +363,7 @@ export const createPrivilegedOpenCodeClient = (deps) => {
     readUserMessage,
     readCanonicalUserPage,
     readCanonicalPlanSequence,
+    readCanonicalStepLineage,
     switchAgent,
     switchModel,
     locationReload,

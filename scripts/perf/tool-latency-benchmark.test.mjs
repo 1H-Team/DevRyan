@@ -12,6 +12,9 @@ test('parses tool-latency options and rejects invalid counts or unknown flags', 
   assert.equal(options.out, path.resolve('r.json'));
   assert.equal(options.writers, 1);
   assert.equal(options.host, false);
+  assert.equal(options.warmup, 0);
+  assert.equal(parseToolLatencyArgs(['--warmup', '3']).warmup, 3);
+  assert.throws(() => parseToolLatencyArgs(['--warmup', '21']), /--warmup/);
   assert.equal(parseToolLatencyArgs(['--host']).host, true);
   assert.equal(parseToolLatencyArgs(['--writers', '2']).writers, 2);
   assert.throws(() => parseToolLatencyArgs(['--writers', '9']), /--writers/);
@@ -40,4 +43,15 @@ test('pairs isolated edit phases and evidence-preserving scan counts with their 
     assert.equal(report.waves[sample.wave].wave, sample.wave);
   }
   assert.equal(report.phases['edit.finish'].count, 4);
+});
+
+ test('warm-up stays out of measured samples while cold timings remain explicit', async () => {
+  const report = await runToolLatencyBenchmark(parseToolLatencyArgs(['--files', '8', '--seed-calls', '8', '--warmup', '1', '--reads', '2', '--bursts', '2', '--edits', '2', '--parallel', '2']));
+  assert.equal(report.phases['read.total'].count, 2);
+  assert.equal(report.phases['parallel.wall'].count, 2);
+  assert.equal(report.phases['edit.total'].count, 2);
+  assert.equal(report.samples.length, 2);
+  assert.equal(report.waves.length, 2);
+  for (const key of ['readMs', 'parallelMs', 'editWaveMs']) assert.ok(Number.isFinite(report.cold[key]));
+  assert.ok(report.waves.every(wave => wave.rssBytes > 0));
 });

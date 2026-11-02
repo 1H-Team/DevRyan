@@ -1132,12 +1132,19 @@ describe('web managed orchestration runtime', () => {
       createLeaseToken: () => 'dvr_lease_assignment',
       now: () => 10_000,
     });
-    await runtime.handleRpc({ method: 'submit', params: submitParams(1, { childSessionId: 'ses_child_assigned', prompt: 'Fix the parser only.' }) });
+    const scope = { rootSessionId: 'ses_root', directory: '/workspace', objectiveId: 'msg_objective' };
+    const rootCheck = { name: 'root integration', command: 'bun test integration.test.js', paths: ['source.txt'] };
+    const taskCheck = { name: 'parser', command: 'bun test parser.test.js', paths: ['parser.js'] };
+    await runtime.handleRpc({ method: 'declare_checks', params: { ...scope, requiredChecks: [rootCheck] } },
+      { [REQUIRED_CHECK_CORRECTION]: { ...scope, recheck: async () => {} } });
+    await runtime.handleRpc({ method: 'submit', params: submitParams(1, { childSessionId: 'ses_child_assigned', prompt: 'Fix the parser only.', requiredChecks: [taskCheck] }) },
+      { dispatchObjectiveId: scope.objectiveId });
     const { text } = await runtime.handleRpc({ method: 'child_assignment', params: { childSessionId: 'ses_child_assigned', directory: '/workspace' } });
     expect(text).toContain('Continue only the original delegated assignment below.');
-    expect(JSON.parse(text.slice(text.lastIndexOf('\n') + 1))).toMatchObject({ taskId: 'dvr_task_assignment', prompt: 'Fix the parser only.' });
-    expect(await runtime.handleRpc({ method: 'child_assignment', params: { childSessionId: 'ses_child_assigned', directory: '/workspace', maxBytes: 20 } }))
-      .toEqual({ text: null });
+    expect(JSON.parse(text.slice(text.lastIndexOf('\n') + 1))).toMatchObject({ taskId: 'dvr_task_assignment', prompt: 'Fix the parser only.',
+      requiredChecks: [taskCheck], rootRequiredChecks: [rootCheck] });
+    await expect(runtime.handleRpc({ method: 'child_assignment', params: { childSessionId: 'ses_child_assigned', directory: '/workspace', maxBytes: 20 } }))
+      .rejects.toMatchObject({ code: 'managed_assignment_context_unavailable', statusCode: 409 });
     await expect(runtime.handleRpc({ method: 'child_assignment', params: { childSessionId: 'ses_other', directory: '/workspace' } }))
       .resolves.toEqual({ text: null });
     await expect(runtime.handleRpc({ method: 'child_assignment', params: { directory: '/workspace' } }))
@@ -3429,4 +3436,47 @@ describe('pre-child start failures', () => {
       expect(abandoned.resultEnvelope).toMatchObject({ taskId: started.task.taskId, action: 'abandon' });
     } finally { await runtime.shutdown(); }
   });
+});
+
+it('binds Designer budget hooks to canonical accepted users and native tool identities through the identified client', async () => {
+  let role = 'user', canonical = true;
+  const task = { taskId: 'dvr_task_budget', childSessionId: 'ses_child', directory: '/workspace',
+    status: 'running', agent: 'designer', leaseToken: 'lease_current', readOnly: false };
+  const scheduler = { initialize: async () => {}, shutdown: async () => {}, flush: async () => {}, getDiagnostics: () => ({}),
+    getChildAssignment: () => task,
+    acceptPrimaryPrompt: vi.fn(async () => true), recordPrimaryStep: vi.fn(async () => ({ usedSteps: 180 })),
+    claimPrimaryStepBudgetWarning: vi.fn(async () => ({ notice: { code: 'designer_step_budget_warning', usedSteps: 180 } })) };
+  const runtime = createWebManagedOrchestrationRuntime({ scheduler, persistence: createPersistence(),
+    openCodeClient: { generation: () => 2, sessions: { message: async (_session, id) => ({
+      info: { id, sessionID: 'ses_child', role, agent: 'designer', parentID: 'msg_user', time: { created: 20 } },
+      turnOwnership: { source: canonical ? 'native-sequence' : 'untrusted', userMessageID: 'msg_user' },
+      parts: [{ type: 'tool', callID: 'call_owned' }],
+    }) } } });
+  try {
+    await expect(runtime.acceptManagedPrimaryPrompt({ sessionId: 'ses_child', directory: '/workspace', userMessageId: 'msg_user' })).resolves.toBe(true);
+    expect(scheduler.acceptPrimaryPrompt).toHaveBeenCalledWith(expect.objectContaining({ taskId: task.taskId, leaseToken: 'lease_current', createdAt: 20 }));
+    role = 'assistant';
+    await expect(runtime.acceptManagedPrimaryPrompt({ sessionId: 'ses_child', directory: '/workspace', userMessageId: 'msg_user' })).rejects.toMatchObject({ code: 'managed_primary_prompt_invalid' });
+    await expect(runtime.observeManagedPrimaryStep({ sessionId: 'ses_child', directory: '/workspace', messageId: 'msg_step', userMessageId: 'msg_user', createdAt: 21 })).resolves.toEqual({ usedSteps: 180 });
+    expect(await runtime.claimManagedTaskBudgetWarning({ sessionId: 'ses_child', directory: '/workspace', messageId: 'msg_step', callId: 'call_foreign' })).toBeNull();
+    canonical = false;
+    expect(await runtime.claimManagedTaskBudgetWarning({ sessionId: 'ses_child', directory: '/workspace', messageId: 'msg_step', callId: 'call_owned' })).toBeNull();
+    canonical = true;
+    expect(await runtime.claimManagedTaskBudgetWarning({ sessionId: 'ses_child', directory: '/workspace', messageId: 'msg_step', callId: 'call_owned' })).toMatchObject({ notice: { usedSteps: 180 } });
+    expect(scheduler.claimPrimaryStepBudgetWarning).toHaveBeenCalledTimes(1);
+    scheduler.recordPrimaryStep.mockImplementation(async input => input.userMessageId === 'msg_user' ? { usedSteps: 181 } : null);
+    const compacted = { sessionId: 'ses_child', directory: '/workspace', messageId: 'msg_after', userMessageId: 'msg_compaction', createdAt: 22 };
+    expect(await runtime.observeManagedPrimaryStep(compacted)).toEqual({ lineageRequired: true });
+    expect(await runtime.observeManagedPrimaryStep(compacted, { userMessageID: 'msg_user', createdAt: 20,
+      steps: [{ messageId: 'msg_prior', createdAt: 21 }, { messageId: 'msg_after', createdAt: 22 }] })).toEqual({ usedSteps: 181 });
+    expect(scheduler.recordPrimaryStep).toHaveBeenLastCalledWith(expect.objectContaining({ userMessageId: 'msg_user',
+      maintenanceParentId: 'msg_compaction', historicalSteps: [{ messageId: 'msg_prior', createdAt: 21 }, { messageId: 'msg_after', createdAt: 22 }] }));
+    task.primaryStepBudget = { maintenanceParents: [{ parentID: 'msg_compaction', userMessageID: 'msg_user' }] };
+    expect(await runtime.observeManagedPrimaryStep(compacted)).toEqual({ usedSteps: 181 });
+    scheduler.acceptPrimaryPrompt.mockResolvedValueOnce(null);
+    scheduler.recordPrimaryStep.mockResolvedValueOnce(null);
+    await expect(runtime.observeManagedPrimaryStep(compacted, { userMessageID: 'msg_forged', createdAt: 20, steps: [] }))
+      .rejects.toMatchObject({ code: 'managed_primary_step_budget_unavailable' });
+
+  } finally { await runtime.shutdown(); }
 });

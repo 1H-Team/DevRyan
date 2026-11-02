@@ -117,7 +117,9 @@ test('relays a host-launched process and records its usage', async () => {
     const claude = path.join(root, 'claude'), usageFile = path.join(root, 'runtime', 'claude-agent-usage.json');
     // Echoes stdin and reports one rate-limit event, like Claude Code's stream-json output.
     await fs.writeFile(claude, `#!/bin/sh\nprintf '%s\\n' '${JSON.stringify({ type: 'rate_limit_event', rate_limit_info: RATE })}'\nprintf 'home=%s\\n' "$HOME"\ncat\nexit 3\n`, { mode: 0o755 });
+    const diagnostics: Record<string, unknown>[] = [];
     const { host, channel } = connect({ usageFile, resolveExecutable: () => claude,
+      onDiagnostic: detail => { diagnostics.push(detail); },
       environment: requested => buildClaudeAgentEnvironment(requested, { home: root, accountHome: root }) });
     const spawn = channel.io.spawn;
     if (!spawn) throw new Error('spawn missing');
@@ -131,6 +133,12 @@ test('relays a host-launched process and records its usage', async () => {
     await host.close();
     expect(readClaudeAgentUsage(usageFile)?.windows.seven_day?.utilization).toBe(0.55);
     expect(host.usage()?.windows.five_hour?.utilization).toBe(0.12);
+    expect(diagnostics).toHaveLength(2);
+    expect(diagnostics[0]).toMatchObject({ phase: 'started', reason: 'sdk_spawn' });
+    expect(diagnostics[1]).toMatchObject({ phase: 'settled', requestID: diagnostics[0].requestID, reason: 'process_exit',
+      bytes: Buffer.byteLength(stdout), exitCode: 3 });
+    expect(JSON.stringify(diagnostics)).not.toContain(root);
+    expect(JSON.stringify(diagnostics)).not.toContain('x'.repeat(100));
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
 

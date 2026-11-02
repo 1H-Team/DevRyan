@@ -611,6 +611,12 @@ Absent exact history, incompatible runtime and unconfirmed termination are
 distinct errors. The declarations adjacent to these modules define the host
 contract.
 
+Cold startup can call `settleRevert` with `commit: false, cancelUnstarted: true`
+to cancel a conversation Revert/Redo still in its initial `prepared` phase,
+without saved boundaries. The locked ledger refuses later phases, file-only
+transactions and unresolved member execution leases. Cancellation clears pending
+fences while retaining the transaction, generations and captured history.
+
 The production host installs this coordinator when the companion and native
 artifacts have passed acceptance. Native OpenCode, managed
 descendants, Cursor/Claude and file Undo/Redo share that boundary. See
@@ -879,3 +885,19 @@ changed content or socket identity, absent/unavailable host socket, unsupported
 platform, pending prerequisites and deadline. A missing execution socket does
 not assert that the host Docker daemon is stopped. Tests use a synthetic daemon
 to prove a registered grant works while ordinary shell access stays denied.
+
+Session changes expose a cached display projection at `GET .../changes?summary=1`.
+The authenticated read validates its root and directory, then returns
+`projectionState` (`missing`, `refreshing`, `ready`), `generatedAt`, and
+`restoreEligibility` (`unknown`, `unavailable` with reasons, or `candidate` with
+Undo/Redo direction). A candidate is permission to attempt preview, never restore
+authority. Cached rows omit live content verification and proofs. Up to 32
+requested roots retain projections; refreshes share the bounded read pool, merge
+hints into one trailing refresh, and refresh on the next read after five seconds.
+Runtime change notifications invalidate matching project projections. Reconciliation
+and observation settlement run outside the display request; failures retain rows
+with unknown eligibility. The existing full GET and revision/diff routes remain.
+`POST .../changes/preview` requires the displayed revision and direction, performs
+current reconciliation and existing exact proof generation, and rejects changed
+revision/direction. Existing Undo/Redo still revalidate proof and current content
+at the mutation boundary. Preview is read-only; it does not create a restore fence.

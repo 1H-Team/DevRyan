@@ -19,7 +19,7 @@ import {
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useSelectionStore } from '@/sync/selection-store';
 import { useSessionUIStore } from '@/sync/session-ui-store';
-import { useSessionStatus } from '@/sync/sync-context';
+import { useSessionStatus, useSessionMessageLoadState } from '@/sync/sync-context';
 import { useNotificationStore } from '@/sync/notification-store';
 import {
   CHAT_PRESERVE_SCROLL_ANCHOR_EVENT,
@@ -122,6 +122,9 @@ const PlanCard: React.FC<PlanCardProps> = ({
   const isGenerationSuccessful = traceEntry?.isActionable ?? false;
   const hasTurnFailure = useNotificationStore(state => hasPlanRevisionFailure(state.list, sessionId, traceEntry?.userMessageId, isGenerationSuccessful));
   const sessionStatus = useSessionStatus(sessionId, sessionDirectory);
+  const messageLoad = useSessionMessageLoadState(sessionId, sessionDirectory);
+  const isPlanStateKnown = Boolean(traceEntry) && messageLoad.resolved
+    && messageLoad.status === 'ready' && messageLoad.planSelectionStatus === 'ready';
   const isLatestPlan = traceEntry?.isLatestPlan === true;
   // Unsettled revision = another assistant sibling is still running; the card
   // stays visible but disabled until the whole revision settles.
@@ -135,7 +138,8 @@ const PlanCard: React.FC<PlanCardProps> = ({
     streamPhase,
     hasPlanText: planText.trim().length > 0,
     isImplementationRequested,
-    isLatestPlan: traceEntry?.isLatestPlan ?? false,
+    isLatestPlan: traceEntry?.isLatestPlan,
+    isPlanStateKnown,
     isRevisionSettled,
     isGenerationSuccessful,
     hasTerminalFailure: (traceEntry?.hasTerminalError === true || hasTurnFailure)
@@ -393,7 +397,7 @@ const PlanCard: React.FC<PlanCardProps> = ({
       data-plan-turn-id={traceEntry?.turnId}
       data-plan-version={traceEntry?.planVersion}
       data-plan-state={getPlanCardDataState({
-        isSuperseded: traceEntry?.isSuperseded === true,
+        isSuperseded: isPlanStateKnown && traceEntry?.isSuperseded === true,
         isImplementationRequested,
         canImplement,
       })}

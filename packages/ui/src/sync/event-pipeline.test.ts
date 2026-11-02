@@ -803,3 +803,74 @@ test('original SDK quiet ACK reconnects without a cursor through bounded replay 
     expect(delivered[0]).toMatchObject(deltaEvent('QA response chunk 1.'));
   } finally { pipeline.cleanup(); release(); }
 });
+
+describe("SSE cancellation errors", () => {
+  test("an aborted owning stream ignores callback and iterator TypeErrors", async () => {
+    installBrowserStubs()
+    const originalConsoleError = console.error
+    const errors: unknown[][] = [], disconnected: string[] = []
+    console.error = (...args: unknown[]) => { errors.push(args) }
+    let attached!: () => void
+    const attachment = new Promise<void>(resolve => { attached = resolve })
+    const sdk = { global: { event: async ({ signal, onSseError }: {
+      signal: AbortSignal; onSseError: (error: unknown) => void;
+    }) => {
+      attached()
+      return { stream: (async function* () {
+        await new Promise<void>(resolve => {
+          if (signal.aborted) resolve()
+          else signal.addEventListener("abort", () => resolve(), { once: true })
+        })
+        yield* []
+        const error = new TypeError("network error")
+        onSseError(error)
+        throw error
+      })() }
+    } } } as unknown as OpencodeClient
+    const pipeline = createEventPipeline({ sdk, transport: "sse", onEvent: () => {},
+      onDisconnect: reason => { disconnected.push(reason) } })
+    try {
+      await attachment
+      pipeline.cleanup()
+      await new Promise(resolve => setTimeout(resolve, 0))
+      expect(errors).toEqual([])
+      expect(disconnected).toEqual([])
+    } finally { pipeline.cleanup(); console.error = originalConsoleError; restoreBrowserStubs() }
+  })
+
+  test("an active stream TypeError still reports disconnection and reconnects", async () => {
+    installBrowserStubs()
+    const originalConsoleError = console.error
+    const errors: unknown[][] = [], disconnected: string[] = []
+    console.error = (...args: unknown[]) => { errors.push(args) }
+    let attempts = 0, second!: () => void
+    const reconnected = new Promise<void>(resolve => { second = resolve })
+    const failure = new TypeError("network error")
+    const sdk = { global: { event: async ({ signal, onSseError }: {
+      signal: AbortSignal; onSseError: (error: unknown) => void;
+    }) => {
+      attempts++
+      if (attempts === 1) return { stream: (async function* () {
+        yield* []
+        onSseError(failure)
+        throw failure
+      })() }
+      second()
+      return { stream: (async function* () {
+        await new Promise<void>(resolve => {
+          if (signal.aborted) resolve()
+          else signal.addEventListener("abort", () => resolve(), { once: true })
+        })
+        yield* []
+      })() }
+    } } } as unknown as OpencodeClient
+    const pipeline = createEventPipeline({ sdk, transport: "sse", reconnectDelayMs: 0, onEvent: () => {},
+      onDisconnect: reason => { disconnected.push(reason) } })
+    try {
+      await Promise.race([reconnected, failAfter(1000)])
+      expect(errors).toEqual([["[event-pipeline] SSE stream error", failure]])
+      expect(disconnected).toEqual(["sse_error"])
+      expect(attempts).toBe(2)
+    } finally { pipeline.cleanup(); console.error = originalConsoleError; restoreBrowserStubs() }
+  })
+})

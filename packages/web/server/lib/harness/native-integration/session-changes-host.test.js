@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createSessionChangeHost } from '../../../../../harness-runtime/lib/session-changes-host.js';
+import { withCrossProcessFileLock } from '../../../../../harness-runtime/lib/atomic-file.js';
 import { createSessionMutationRuntime } from '../../../../../harness-runtime/lib/session-mutations.js';
 import { changeKey, openChangeStore } from '../../../../../harness-runtime/lib/session-changes-store.js';
 import { createNativeConsumerFixture } from '../../opencode/test-native-consumer-client.js';
@@ -447,4 +448,138 @@ test('read-only history cannot erase conflicting exact mutation evidence or enab
     source: 'confined-execution', files: [{ path: 'contradiction.txt', before: null, after: { bytes: Buffer.from('owned\n'), mode: '100644' } }] });
   const result = await host.handleRequest('GET', endpoint());
   expect(result.body).toMatchObject({ coverage: 'partial', reasons: ['capture_identity_reused'], fileCount: 1, restoreAvailable: false });
+});
+
+test('cached display summaries stay responsive for one and three clients while reconciliation is blocked', async () => {
+  const children = Array.from({ length: 7 }, (_, i) => ({ id: `ses_child_${i}`, parentID: 'ses_a', directory }));
+  let release;
+  const blocked = new Promise(resolve => { release = resolve; });
+  let reconciliations = 0, historyReads = 0, proofs = 0, outcomeCalls = 0, observerThrows = 0;
+  const lockTimings = [];
+  const mutationStorage = path.join(base, 'display-mutations');
+  const mutations = createSessionMutationRuntime({ directory: mutationStorage, onLockTiming: timing => lockTimings.push(timing) });
+  await mutations.activeLeases({ directory });
+  const historicalReads = sessionID => Array.from({ length: 32 }, (_, i) => {
+    const record = tool(`read_${sessionID}_${i}`); record.parts[0].tool = 'read'; return record;
+  });
+  messages.push(...historicalReads('ses_a'));
+  const record = tool('display_write'); record.parts[0].tool = 'write'; messages.push(record);
+  const cached = createFixtureHost({ dataDirectory: base,
+    publishEvent: () => {
+      if (historyReads && cached.getReadDiagnostics().active === 0) { observerThrows++; throw Error('display observer failed'); }
+    },
+    reconcileExecutionReceipts: async ({ sessionID }) => {
+      reconciliations++; await blocked; await mutations.executionOutcomes({ directory, sessionID, calls: [] });
+    },
+    executionOutcomes: async ({ sessionID, calls }) => {
+      outcomeCalls += calls.length;
+      return calls.map(call => ({ ...call, sessionID, outcome: 'finished', effect: 'read-only' }));
+    },
+    previewOwned: async () => { proofs++; return { version: 1, digest: 'a'.repeat(64) }; }, restoreOwned: async () => {},
+    fetchImpl: async raw => {
+      const url = new URL(raw), id = url.pathname.split('/')[2];
+      if (url.pathname.endsWith('/children')) return Response.json(id === 'ses_a' ? children : []);
+      if (url.pathname.endsWith('/message')) { historyReads++; return Response.json(id === 'ses_a' ? messages : [messages[0], ...historicalReads(id)]); }
+      return Response.json(id === 'ses_a' ? { id, directory } : children.find(child => child.id === id));
+    } });
+  try {
+    await cached.plugin({ action: 'message', sessionID: 'ses_a', directory, userMessageID: 'user_1' });
+    const files = Array.from({ length: 104 }, (_, i) => ({ path: `file-${i}.txt`, before: null, after: `value ${i}\n` }));
+    await Promise.all(files.map(file => fs.writeFile(path.join(directory, file.path), file.after)));
+    await cached.recordReceipt({ directory, sessionID: 'ses_a', messageID: record.info.id, callID: 'display_write',
+      userMessageID: 'user_1', source: 'confined-execution', complete: true, files, tool: 'write' });
+    const cold = await cached.handleRequest('GET', `${endpoint()}&summary=1`);
+    expect(cold.body).toMatchObject({ projectionState: 'missing', restoreEligibility: { state: 'unknown' } });
+    expect(proofs).toBe(0);
+    const changed = tool('during_refresh'); changed.parts[0].tool = 'write'; messages.push(changed);
+    await cached.recordReceipt({ directory, sessionID: 'ses_a', messageID: changed.info.id, callID: 'during_refresh',
+      userMessageID: 'user_1', source: 'confined-execution', complete: true, files: [], tool: 'write' });
+    const waiting = await Promise.all(Array.from({ length: 3 }, () => cached.handleRequest('GET', `${endpoint()}&summary=1`)));
+    expect(waiting.every(result => result.body.projectionState === 'missing')).toBe(true);
+    expect(reconciliations).toBe(1);
+    release();
+    let ready;
+    for (let i = 0; i < 1000; i++) {
+      ready = await cached.handleRequest('GET', `${endpoint()}&summary=1`);
+      if (ready.body.projectionState === 'ready') break;
+      await Bun.sleep(5);
+    }
+    expect(ready.body).toMatchObject({ projectionState: 'ready', fileCount: 104, sessionCount: 8,
+      restoreEligibility: { state: 'candidate', action: 'undo' } });
+    expect(ready.body.restoreProof).toBeUndefined(); expect(ready.body.current).toBeUndefined();
+    expect(ready.body.files.every(file => file.verification === undefined)).toBe(true);
+    expect(observerThrows).toBeGreaterThan(0);
+    expect(reconciliations).toBe(16); // One initial refresh and one trailing refresh for all eight sessions.
+    expect(outcomeCalls).toBe(512); // 32 historical reads per session, across both refreshes.
+    const initial = { reconciliations, historyReads, outcomeCalls, ownerLocks: lockTimings.length };
+    let unlock, entered;
+    const held = new Promise(resolve => { entered = resolve; });
+    const releaseLock = new Promise(resolve => { unlock = resolve; });
+    const ownerLock = withCrossProcessFileLock(path.join(mutationStorage, changeKey(await fs.realpath(directory)), 'owner.lock'),
+      async () => { entered(); await releaseLock; });
+    await held;
+    try { for (const clients of [1, 3]) {
+      const elapsed = [];
+      for (let i = 0; i < 10; i++) {
+        const started = performance.now();
+        const responses = await Promise.all(Array.from({ length: clients }, () => cached.handleRequest('GET', `${endpoint()}&summary=1`)));
+        expect(responses.every(result => result.body.projectionState === 'ready')).toBe(true);
+        elapsed.push(performance.now() - started);
+      }
+      const p95 = elapsed.sort((a, b) => a - b)[Math.ceil(elapsed.length * .95) - 1];
+      expect(p95).toBeLessThan(1000);
+      console.info(`session-summary warm clients=${clients} p95=${p95.toFixed(1)}ms sessions=8 files=104 historicalReadCalls=256 heldOwnerLock=true`);
+    }
+    expect({ reconciliations, historyReads, outcomeCalls, ownerLocks: lockTimings.length }).toEqual(initial);
+    expect(proofs).toBe(0);
+    } finally { unlock(); await ownerLock; }
+    expect(await cached.handleRequest('POST', endpoint('/preview'), { revision: 'b'.repeat(64), action: 'undo' }))
+      .toMatchObject({ status: 409, body: { code: 'summary_revision_changed' } });
+    expect(proofs).toBe(0);
+    const preview = await cached.handleRequest('POST', endpoint('/preview'), { revision: ready.body.revision, action: 'undo' });
+    expect(preview).toMatchObject({ status: 200, body: { revision: ready.body.revision, action: 'undo', restoreProof: { version: 1, digest: 'a'.repeat(64) } } });
+    expect(proofs).toBe(1);
+    expect(await cached.handleRequest('POST', endpoint('/preview'), { revision: ready.body.revision, action: 'redo' }))
+      .toMatchObject({ status: 409 });
+  } finally { release(); await cached.drain(); await mutations.drain(); }
+});
+
+test('a failed display refresh retains rows with unknown eligibility and never invokes restore preview', async () => {
+  let fail = false, proofs = 0, reconciliations = 0;
+  const cached = createFixtureHost({ dataDirectory: base,
+    reconcileExecutionReceipts: async () => { reconciliations++; if (fail) throw Error('owner unavailable'); },
+    previewOwned: async () => { proofs++; return { version: 1, digest: 'a'.repeat(64) }; }, restoreOwned: async () => {},
+    fetchImpl: async raw => {
+      const url = new URL(raw);
+      if (url.pathname.endsWith('/children')) return Response.json([]);
+      if (url.pathname.endsWith('/message')) return Response.json(messages);
+      return Response.json({ id: 'ses_a', directory });
+    } });
+  try {
+    await cached.plugin({ action: 'message', sessionID: 'ses_a', directory, userMessageID: 'user_1' });
+    const record = tool('saved_row'); record.parts[0].tool = 'write'; messages.push(record);
+    await fs.writeFile(path.join(directory, 'saved.txt'), 'saved\n');
+    await cached.recordReceipt({ directory, sessionID: 'ses_a', messageID: record.info.id, callID: 'saved_row',
+      userMessageID: 'user_1', source: 'confined-execution', complete: true,
+      files: [{ path: 'saved.txt', before: null, after: 'saved\n' }], tool: 'write' });
+    let ready;
+    for (let i = 0; i < 100; i++) {
+      ready = await cached.handleRequest('GET', `${endpoint()}&summary=1`);
+      if (ready.body.projectionState === 'ready') break;
+      await Bun.sleep(5);
+    }
+    expect(ready.body.restoreEligibility).toEqual({ state: 'candidate', action: 'undo' });
+    fail = true;
+    const next = tool('new_receipt'); next.parts[0].tool = 'write'; messages.push(next);
+    const before = reconciliations;
+    await cached.recordReceipt({ directory, sessionID: 'ses_a', messageID: next.info.id, callID: 'new_receipt',
+      userMessageID: 'user_1', source: 'confined-execution', complete: true, files: [], tool: 'write' });
+    for (let i = 0; i < 100 && (reconciliations === before || cached.getReadDiagnostics().active); i++) await Bun.sleep(5);
+    const failed = await cached.handleRequest('GET', `${endpoint()}&summary=1`);
+    expect(failed.body).toMatchObject({ projectionState: 'refreshing', revision: ready.body.revision,
+      fileCount: 1, restoreEligibility: { state: 'unknown' } });
+    expect(failed.body.restoreProof).toBeUndefined(); expect(proofs).toBe(0);
+    expect(await cached.handleRequest('POST', endpoint('/preview'), { revision: ready.body.revision, action: 'delete' }))
+      .toMatchObject({ status: 400, body: { code: 'invalid_restore_preview' } });
+  } finally { await cached.drain(); }
 });

@@ -1,8 +1,40 @@
 import {expect,it} from 'vitest';
+import {Effect} from 'effect';
+import {createNativeSessionContext} from './native-session-context.ts';
 import {createNativeSessionContextOwner,validateNativeTodos} from './native-session-context-owner.js';
 const todo={id:'one',content:'Verify the actual change',status:'in_progress',priority:'high'};
 const invocation={tool:'todowrite',directory:'/project',sessionID:'ses_root',messageID:'msg_step',callID:'call_todo',input:{todos:[todo]},
  authorization:{input:{provenance:{kind:'plugin',id:'devryan.harness-context'}}}};
+it('appends a typed warning to the settled tool result without changing its original output or adding input',async()=>{
+ const phases=[],notice={code:'designer_step_budget_warning',message:'Verify remaining work',attempt:1,usedSteps:180,limit:260};
+ const factory=createNativeSessionContext({origin:{kind:'plugin',id:'devryan.harness-context',manifestDigest:'c'.repeat(64),capabilities:['control']},
+  executeOwned:()=>Effect.die(Error('unused')),rpc:async(_method,input)=>{phases.push(input.phase);return input.phase==='tool_after'?{notice}:{tracked:false};}});
+ const result=await Effect.runPromise(factory.withPrimaryToolExecution(()=>Effect.succeed({content:'actual result',metadata:{exitCode:0}}))({
+  ...invocation,toolID:'bash',nativeContext:{sessionID:'ses_root',messageID:'msg_step',id:'call_todo'},location:{directory:'/project'},
+  provenance:{kind:'native',id:'opencode.tool.shell'},recheckPermit:()=>Effect.void}));
+ expect(result).toEqual({content:'actual result\n\nVerify remaining work',metadata:{exitCode:0,managedStepBudget:notice}});
+ expect(phases).toEqual(['tool_before','tool_after']);
+});
+it('claims a managed warning only after a child tool result and rechecks its original permit',async()=>{
+ const claims=[],notice={code:'designer_step_budget_warning',message:'Verify remaining work',attempt:1,usedSteps:180,limit:260};
+ let allowed=true;
+ const owner=createNativeSessionContextOwner({instanceID:'controller',admissionOwner:{recheckExecution:async()=>{if(!allowed)throw Error('revoked');}},
+  primaryRuntime:{readRecord:async()=>null},openCodeClient:{sessions:{get:async()=>({id:'ses_root',directory:'/project',parentID:'ses_parent'})}},
+  getManagedRuntime:()=>({claimManagedTaskBudgetWarning:async input=>{claims.push(input);return {notice};}})});
+ expect(await owner.observeTool({...invocation,phase:'tool_before'})).toEqual({tracked:false});
+ expect(claims).toEqual([]);
+ expect(await owner.observeTool({...invocation,phase:'tool_after'})).toEqual({tracked:false,notice});
+ expect(claims).toEqual([{sessionId:'ses_root',directory:'/project',messageId:'msg_step',callId:'call_todo'}]);
+ allowed=false;await expect(owner.observeTool({...invocation,phase:'tool_after'})).rejects.toThrow('revoked');expect(claims).toHaveLength(1);
+});
+it('keeps a settled result available when the optional warning claim fails without hiding revocation',async()=>{
+ const diagnostics=[];
+ const owner=createNativeSessionContextOwner({instanceID:'controller',admissionOwner:{recheckExecution:async()=>{}},
+  primaryRuntime:{readRecord:async()=>null},openCodeClient:{sessions:{get:async()=>({id:'ses_root',directory:'/project',parentID:'ses_parent'})}},
+  getManagedRuntime:()=>({claimManagedTaskBudgetWarning:async()=>{throw Error('private failure');}}),recordDiagnostic:entry=>diagnostics.push(entry)});
+ expect(await owner.observeTool({...invocation,phase:'tool_after'})).toEqual({tracked:false});
+ expect(diagnostics).toEqual([{type:'lifecycle',event:'managed_step_budget_warning_unavailable',sessionID:'ses_root',payload:{messageID:'msg_step',callID:'call_todo'}}]);
+});
 function fixture(overrides={}){
  let revoked=false,checks=0,commits=0;
  const recheck=async()=>{checks++;if(revoked)throw Error('revoked');};

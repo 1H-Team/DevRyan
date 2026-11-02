@@ -31,3 +31,4 @@ export * from './managed-recovery-instruction.js';
 export { formatManagedAssignmentContext } from './continuation-assignment.js';
 
 export * from './task-prerequisites.js';
+export * from './designer-step-budget.js';

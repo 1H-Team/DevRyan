@@ -1,0 +1,295 @@
+{
+  "schemaVersion": 1,
+  "complete": true,
+  "sdkVersion": "0.3.301",
+  "cliVersion": "2.1.311 (Claude Code)",
+  "cliSha256": "85d8c08707fcfd1e78ffa0204eefbc6ec9e4fe22f375fb2767ef85d957ed3161",
+  "selection": {
+    "agent": "builder",
+    "providerId": "claude-agent",
+    "modelId": "opus",
+    "variant": "medium"
+  },
+  "nativeModel": "opus",
+  "effort": "medium",
+  "roleSha256": "6423486cadcc6184089127bcf48c568e172b056f7af8d619897c35871ddc7836",
+  "projectInstructionsSha256": "4755a53b6b1675581869bbd66b03f3676634f9c4fcd8a1e6faba5de56fa08983",
+  "fixtureSha256": "9ce6c9e25ade61736c5af220e61a8e3756aeee1a54ab15cdc0b4072cac7135c1",
+  "runtimeBuildId": "9d298430e77f6803e3ed1d2ca697a6c0c90345d0c2a7c97ff6e876259d3c4626",
+  "runtimeManifestSha256": "faa2ec3149fcad2065d8538ad4d7cd6017afb8ba8ed701dab9c9710c82cba2be",
+  "rows": [
+    {
+      "pair": 1,
+      "arm": "bridge",
+      "promptSha256": "f800c3d03950eeeba3cb353e972e7aa595cea2f43fc5ee0220f09362ea5e7745",
+      "sessionId": "ses_e6341f938ffeIMr9CAafOP3caI",
+      "accepted": true,
+      "durationMs": 20512,
+      "armWallMs": 20530.674375,
+      "tools": {
+        "read": 3,
+        "bash": 3,
+        "edit": 1
+      },
+      "models": [
+        "opus"
+      ],
+      "usage": {
+        "input_tokens": 12,
+        "output_tokens": 1145,
+        "cache_read_input_tokens": 112339,
+        "cache_creation_input_tokens": 2219
+      },
+      "cleanup": {
+        "restored": true,
+        "deletedOwnedFileCount": 2,
+        "manifestMatch": true,
+        "deletionFailureCount": 0
+      },
+      "turnTimingAvailability": {
+        "available": false,
+        "reason": "turn_timing_forbidden",
+        "httpStatus": 403
+      }
+    },
+    {
+      "pair": 1,
+      "arm": "native",
+      "promptSha256": "f800c3d03950eeeba3cb353e972e7aa595cea2f43fc5ee0220f09362ea5e7745",
+      "accepted": true,
+      "durationMs": 13347.884791999997,
+      "armWallMs": 13348.228334,
+      "tools": {
+        "Read": 2,
+        "Bash": 2,
+        "Edit": 1
+      },
+      "models": [
+        "claude-opus-5-5"
+      ],
+      "sdkModelTurns": 6,
+      "usage": {
+        "input_tokens": 8,
+        "cache_creation_input_tokens": 8964,
+        "cache_read_input_tokens": 43305,
+        "output_tokens": 1091
+      },
+      "cleanup": {
+        "restored": true,
+        "deletedOwnedFileCount": 2,
+        "manifestMatch": true,
+        "deletionFailureCount": 0
+      }
+    },
+    {
+      "pair": 2,
+      "arm": "native",
+      "promptSha256": "f800c3d03950eeeba3cb353e972e7aa595cea2f43fc5ee0220f09362ea5e7745",
+      "accepted": true,
+      "durationMs": 12979.342125000003,
+      "armWallMs": 12979.458958000003,
+      "tools": {
+        "Read": 2,
+        "Bash": 2,
+        "Edit": 1
+      },
+      "models": [
+        "claude-opus-5-5"
+      ],
+      "sdkModelTurns": 6,
+      "usage": {
+        "input_tokens": 8,
+        "cache_creation_input_tokens": 1222,
+        "cache_read_input_tokens": 51047,
+        "output_tokens": 1077
+      },
+      "cleanup": {
+        "restored": true,
+        "deletedOwnedFileCount": 2,
+        "manifestMatch": true,
+        "deletionFailureCount": 0
+      }
+    },
+    {
+      "pair": 2,
+      "arm": "bridge",
+      "promptSha256": "f800c3d03950eeeba3cb353e972e7aa595cea2f43fc5ee0220f09362ea5e7745",
+      "sessionId": "ses_e63413cecffeQigXa8Izf8ib8l",
+      "accepted": true,
+      "durationMs": 28641,
+      "armWallMs": 28654.222582999995,
+      "tools": {
+        "read": 3,
+        "bash": 3,
+        "edit": 1
+      },
+      "models": [
+        "opus"
+      ],
+      "usage": {
+        "input_tokens": 12,
+        "output_tokens": 1119,
+        "cache_read_input_tokens": 112341,
+        "cache_creation_input_tokens": 2223
+      },
+      "cleanup": {
+        "restored": true,
+        "deletedOwnedFileCount": 2,
+        "manifestMatch": true,
+        "deletionFailureCount": 0
+      },
+      "turnTimingAvailability": {
+        "available": false,
+        "reason": "turn_timing_forbidden",
+        "httpStatus": 403
+      }
+    },
+    {
+      "pair": 3,
+      "arm": "bridge",
+      "promptSha256": "f800c3d03950eeeba3cb353e972e7aa595cea2f43fc5ee0220f09362ea5e7745",
+      "sessionId": "ses_e6340cb2affeUPWV8Q0aSsbv09",
+      "accepted": true,
+      "durationMs": 30508,
+      "armWallMs": 30524.851083,
+      "tools": {
+        "read": 3,
+        "bash": 3,
+        "edit": 1
+      },
+      "models": [
+        "opus"
+      ],
+      "usage": {
+        "input_tokens": 12,
+        "output_tokens": 1126,
+        "cache_read_input_tokens": 112336,
+        "cache_creation_input_tokens": 2224
+      },
+      "cleanup": {
+        "restored": true,
+        "deletedOwnedFileCount": 2,
+        "manifestMatch": true,
+        "deletionFailureCount": 0
+      },
+      "turnTimingAvailability": {
+        "available": false,
+        "reason": "turn_timing_forbidden",
+        "httpStatus": 403
+      }
+    },
+    {
+      "pair": 3,
+      "arm": "native",
+      "promptSha256": "f800c3d03950eeeba3cb353e972e7aa595cea2f43fc5ee0220f09362ea5e7745",
+      "accepted": true,
+      "durationMs": 14801.094874999995,
+      "armWallMs": 14801.176500000001,
+      "tools": {
+        "Read": 2,
+        "Bash": 2,
+        "Edit": 1
+      },
+      "models": [
+        "claude-opus-5-5"
+      ],
+      "sdkModelTurns": 6,
+      "usage": {
+        "input_tokens": 10,
+        "cache_creation_input_tokens": 1179,
+        "cache_read_input_tokens": 64810,
+        "output_tokens": 1111
+      },
+      "cleanup": {
+        "restored": true,
+        "deletedOwnedFileCount": 2,
+        "manifestMatch": true,
+        "deletionFailureCount": 0
+      }
+    }
+  ],
+  "excludedAttempts": [
+    {
+      "name": "setup-declined",
+      "reason": "Provider authenticated but not connected; no session or model invocation.",
+      "rows": [
+        {
+          "pair": 1,
+          "arm": "bridge",
+          "accepted": false,
+          "durationMs": 307.74800000000005,
+          "errorCode": "comparison_trial_failed",
+          "cleanup": {
+            "restored": true,
+            "deletedOwnedFileCount": 2,
+            "manifestMatch": true,
+            "deletionFailureCount": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "timing-denied",
+      "reason": "Bridge model completed; collector could not read privileged timing metadata.",
+      "rows": [
+        {
+          "pair": 1,
+          "arm": "bridge",
+          "accepted": false,
+          "durationMs": 26499.663834,
+          "errorCode": "comparison_trial_failed",
+          "cleanup": {
+            "restored": true,
+            "deletedOwnedFileCount": 2,
+            "manifestMatch": true,
+            "deletionFailureCount": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "native-auth-declined",
+      "reason": "Bridge accepted; native environment omitted account variables and authentication failed before tools.",
+      "rows": [
+        {
+          "pair": 1,
+          "arm": "bridge",
+          "accepted": true,
+          "durationMs": 26215,
+          "cleanup": {
+            "restored": true,
+            "deletedOwnedFileCount": 2,
+            "manifestMatch": true,
+            "deletionFailureCount": 0
+          }
+        },
+        {
+          "pair": 1,
+          "arm": "native",
+          "accepted": false,
+          "durationMs": 703.1463750000003,
+          "errorCode": "comparison_native_turn_failed",
+          "cleanup": {
+            "restored": true,
+            "deletedOwnedFileCount": 2,
+            "manifestMatch": true,
+            "deletionFailureCount": 0
+          }
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "Three pairs provide directional observations only; no causal speedup claim.",
+    "Privileged turn timing may be unavailable (HTTP 403); turnTimingAvailability marks absence, not zero measured timing.",
+    "armWallMs includes arm execution and process/session cleanup, excluding baseline/final acceptance tests; durationMs is HTTP turn/diagnostic time or SDK query/result time respectively.",
+    "Bridge CLI identity is caller-confirmed; direct executable bytes/version are checked.",
+    "Native Claude kernel/builtin tools, compaction and permission ownership differ from the bridge.",
+    "AGENTS.md is discovered by the bridge and explicitly appended to native system instructions; it is not duplicated in either user task.",
+    "Other bridge-injected runtime/project guidance is not captured; role body, fixture guidance and task match.",
+    "Direct native tools use a fixture-only PreToolUse/permission policy; this is not an OS sandbox.",
+    "Title/helper model selection must be pinned in the isolated host by its owner; no production configuration is changed.",
+    "SDK model turns and native primary steps are different counters; this runner does not equate them.",
+    "Shared provider caches may be warm and are not reset between alternating arms."
+  ]
+}

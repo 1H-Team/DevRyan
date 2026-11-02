@@ -268,5 +268,8 @@ export const createWebManagedOpenCodeExecutor = (options = {}) => {
     ...(typeof options.resolveTaskTurnBudget === 'function'
       ? { resolveTaskTurnBudget: options.resolveTaskTurnBudget }
       : {}),
+    ...(typeof options.resolveTaskAssignment === 'function'
+      ? { resolveTaskAssignment: options.resolveTaskAssignment }
+      : {}),
   });
 };

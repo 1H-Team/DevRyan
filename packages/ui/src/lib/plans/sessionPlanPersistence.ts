@@ -17,6 +17,7 @@ export interface PersistSessionPlanRevisionInput {
 
 export interface PersistSessionPlanRevisionOptions {
   retry?: boolean;
+  trigger?: 'completion' | 'hydration' | 'retry';
   storage?: SessionPlanFileStorage;
   validationAttempt?: string;
 }
@@ -86,6 +87,7 @@ export const persistSessionPlanRevision = (
         result = await sessionPlans.ensureRevision({
           ...revisionIdentity,
           markdown: input.markdown,
+          trigger: options.trigger ?? (options.retry ? 'retry' : 'hydration'),
         });
       }
       useSessionPlanFileStore.getState().markSaved(

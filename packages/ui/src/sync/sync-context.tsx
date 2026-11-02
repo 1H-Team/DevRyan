@@ -1788,7 +1788,7 @@ async function detectAndMarkPlanLifecycle(
       sourceMessageId: candidate.sourceMessageId,
     },
     markdown: candidate.markdown,
-  }, `${state.message[sessionID]?.at(-1)?.id ?? candidate.sourceMessageId}:${lastStatusEventAtBySessionKey.get(statusTrackingKey(directory, sessionID))?.revision ?? 0}`, isCurrent)
+  }, `${state.message[sessionID]?.at(-1)?.id ?? candidate.sourceMessageId}:${lastStatusEventAtBySessionKey.get(statusTrackingKey(directory, sessionID))?.revision ?? 0}`, isCurrent, shouldDetectTurnCompletion ? 'completion' : 'hydration')
 }
 
 // Saves a proposed plan; once its source is current and successful on the
@@ -1797,9 +1797,9 @@ async function detectAndMarkPlanLifecycle(
 // status and managed-task changes and on its own schedule, 2 s doubling to
 // 30 s for about 3 minutes, after which it fails with Retry on the plan card.
 async function savePlanProposal(directory: string, input: PersistSessionPlanRevisionInput, validationAttempt: string,
-  isCurrent: () => boolean): Promise<void> {
+  isCurrent: () => boolean, trigger: 'completion' | 'hydration' | 'retry' = 'hydration'): Promise<void> {
   const sessionID = input.sessionId, sourceMessageId = input.identity.sourceMessageId
-  const savedPlan = await persistSessionPlanRevision(input, { validationAttempt })
+  const savedPlan = await persistSessionPlanRevision(input, { validationAttempt, trigger })
   if (!isCurrent()) return
   if (savedPlan.status === 'saving' && savedPlan.waitingFor === 'settlement') {
     schedulePlanSettlementRetry(directory, input, validationAttempt)
@@ -1837,7 +1837,7 @@ function schedulePlanSettlementRetry(directory: string, input: PersistSessionPla
     entry.timer = null
     entry.attempt += 1
     if (!current()) { planSettlementRetries.delete(key); return }
-    void savePlanProposal(directory, input, validationAttempt, current).catch(() => undefined)
+    void savePlanProposal(directory, input, validationAttempt, current, 'retry').catch(() => undefined)
   }, planSettlementRetrySchedule[entry.attempt])
   planSettlementRetries.set(key, entry)
 }

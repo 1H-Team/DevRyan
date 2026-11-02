@@ -13,7 +13,7 @@ export const nativeStepPermitSha256=permit=>{
 };
 
 /** Completes the native durable event handoff before its tools can execute. */
-export function createNativePrimaryStepOwner({ admissionOwner, openCodeClient, primaryRuntime, instanceID, getInstanceID, allowStopHandoff=false }) {
+export function createNativePrimaryStepOwner({ admissionOwner, openCodeClient, primaryRuntime, instanceID, getInstanceID, allowStopHandoff=false, observeManagedStep }) {
   let handshake;
   const track=async(step,recheck,expectedUserID,witness,allowStoppedHandoff=false)=>{
       const session = await openCodeClient.sessions.get(step.sessionID);
@@ -35,6 +35,11 @@ export function createNativePrimaryStepOwner({ admissionOwner, openCodeClient, p
         userMessageID: assistant.info.parentID, assistantMessageID: assistant.info.id });
       if (session.parentID || !existingPrimary) {
         await recheck();
+        if (session.parentID && step.agent === 'designer' && assistant.info.summary !== true) {
+          await observeManagedStep?.({ sessionId: session.id, directory, messageId: assistant.info.id,
+            userMessageId: assistant.info.parentID, createdAt: assistant.info.time?.created });
+          await recheck();
+        }
         await acknowledge();
         return { tracked: false };
       }

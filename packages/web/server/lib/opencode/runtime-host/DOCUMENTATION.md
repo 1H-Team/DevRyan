@@ -1198,6 +1198,11 @@ skipped on Windows. It cancels and cleans through the existing
 when it has work. It never throws; anything left unsettled still fails the
 strict gate. Its log line lists every distinct failure and names system errors
 (`bundle_lease_recovery_failed:ENOENT`).
+The same cold recovery cancels initial `prepared` Revert/Redo fences through
+`settleRevert({ commit: false, cancelUnstarted: true })`, after proving no live
+bundle owner and settling execution leases. These transactions have not saved
+conversation boundaries or changed files. Later phases and pending
+materialization still refuse launch; startup never discards their evidence.
 `assertSelectedBundleLeasesSettled` reads lease records before expensive cold
 upgrade work; full bundle verification still owns admission. Its refusal carries
 identifier-only `detail` (ledger prefix, lease token, state, kind), which the
@@ -1371,6 +1376,14 @@ owner. It reads at most 2,000 native rows/8 MiB, preserves canonical paging
 order and native compaction type/status/reason, and projects the complete
 sequence once. The Plan validator can therefore verify automatic-compaction
 successors without trusting display parts, summary text or client metadata.
+A separate private `readCanonicalStepLineage` metadata result reuses the same
+bounded sequence for Designer budget recovery only when the accepted parent is
+unknown (typed compaction/maintenance or a pre-upgrade live task). It returns the
+original native user identity and ordinary Designer assistant IDs/times, never
+prompt, summary or tool content. The scheduler persists that ancestry and
+history so subsequent primary steps do not repeat the full read. Synthetic
+parents also retain the same allowance (including admitted shell completion);
+only native user acceptance can renew it. Missing lineage fences the step.
 The sequence is read at the canonical session's directory, which for a worktree
 session differs from the project root a Plan card submits.
 
@@ -1777,6 +1790,13 @@ per-controller `claude-agent-host.js` created by `native-runtime-owner.js`, and 
   Agent SDK session for Claude Code's `/usage` answer (see `../../quota/DOCUMENTATION.md`);
 - terminates its processes when the controller exits.
 
+The relay journals process start/settlement with the same request ID, elapsed time,
+stdout byte count, exit code and a bounded reason (`sdk_spawn`, `sdk_kill`,
+`controller_close`, `process_exit`, `launch_failed`). It retains no stream content,
+arguments or environment. These events establish physical process lifetime only;
+core owns query reuse/replacement decisions, so a cache miss is not relabeled as a
+restart. Observer failure cannot interrupt the relay.
+
 Connecting uses OpenCode's external `claude-login` method. The facade
 (`v2/native-integration-facade.js` `claudeStatus/claudeConnect/claudeDisconnect`,
 routes `/api/provider/claude-agent/status|connect`) runs under the `claude` integration
@@ -1788,3 +1808,5 @@ when a `claude` executable resolves and nobody pressed Disconnect, it connects
 Disconnect record the choice in `<webDataDirectory>/runtime/claude-agent-connection.json`
 (owner `claudeAgentConnectionChoice`); after a Disconnect it never reconnects on its own. The controller delegates claude-agent
 credentials and accepts only an external `claude-login` value without metadata.
+
+Matched required-check advice uses only the finite `required_check_command_exit_ambiguous` and `required_check_evidence_incomplete` codes. The host adds notices only after receipt commit, including failed settlements. Shell result/error composition preserves actual exit, termination receipt, error code and deadline metadata; advice never upgrades a failed or incomplete check.

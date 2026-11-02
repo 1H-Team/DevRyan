@@ -1,4 +1,4 @@
-import { Effect, Schema } from 'effect';
+import { Effect, Option, Schema } from 'effect';
 import { Message } from '@opencode/ai/effect';
 import { Plugin } from '@opencode/plugin/effect';
 import type {PluginHooks} from '@opencode/core/plugin/hooks';
@@ -18,6 +18,7 @@ export const nativeSessionContextPlugin=Plugin.define({id:SESSION_CONTEXT_PLUGIN
   editor.add({name:'todowrite',input:nativeTodoSchema,description:'Update the complete ordered TODO list for this owned objective. Preserve task IDs and use pending, in_progress, completed or cancelled; completion needs actual verification. Keep unavailable checks pending with blockedBy dependency reasons; continue every other runnable task. Clear blockedBy when its prerequisite changes.',options:{codemode:false},execute:()=>Effect.fail(new Tool.Error({message:'native_todo_host_required'}))});
 })});
 const record=(value:unknown):value is Record<string,unknown>=>value!==null&&typeof value==='object'&&!Array.isArray(value);
+const budgetNotice=Schema.Struct({code:Schema.Literal('designer_step_budget_warning'),message:Schema.String,attempt:Schema.Int,usedSteps:Schema.Int,limit:Schema.Int});
 
 /** Composes into the one reviewed executor and final hook owner. */
 export function createNativeSessionContext(options:{readonly origin:RegistrationOrigin;readonly rpc:ExecutionRpc;readonly executeOwned:ExecuteOwned;
@@ -47,16 +48,20 @@ export function createNativeSessionContext(options:{readonly origin:Registration
       input:{toolID:invocation.toolID,...invocation.nativeToolID===undefined?{}:{nativeToolID:invocation.nativeToolID},callID:invocation.nativeContext.id,provenance:invocation.provenance,input:invocation.input}};
     const observe=(phase:'tool_before'|'tool_after')=>Effect.gen(function*(){
       yield* invocation.recheckPermit();
-      yield* Effect.tryPromise({try:signal=>options.rpc('native.session-context.observe-tool',{directory:invocation.location.directory,
+      const observed=yield* Effect.tryPromise({try:signal=>options.rpc('native.session-context.observe-tool',{directory:invocation.location.directory,
         sessionID:invocation.nativeContext.sessionID,messageID:invocation.nativeContext.messageID,callID:invocation.nativeContext.id,
         tool:invocation.nativeToolID??invocation.toolID,input:invocation.input,permit:invocation.existingPermit,authorization,phase},{signal}),
         catch:error=>new Tool.Error({message:error instanceof Error?error.message:'native_primary_tool_unavailable'})});
       yield* invocation.recheckPermit();
+      return observed;
     });
     yield* observe('tool_before');
     const result=yield* inner(invocation);
-    yield* observe('tool_after');
-    return result;
+    const observed=yield* observe('tool_after');
+    const notice=Schema.decodeUnknownOption(budgetNotice)(record(observed)?observed.notice:undefined);
+    if(Option.isNone(notice))return result;
+    return {...result,content:typeof result.content==='string'?`${result.content}\n\n${notice.value.message}`
+      :[...(result.content??[]),{type:'text' as const,text:notice.value.message}],metadata:{...result.metadata,managedStepBudget:notice.value}};
   });
   const decorateHooks=(inner:PluginHooks.Interface,location:Readonly<Location.Info>):PluginHooks.Interface=>({ ...inner,
     trigger:(domain,name,event)=>inner.trigger(domain,name,event).pipe(Effect.tap(updated=>{

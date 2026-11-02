@@ -21,7 +21,7 @@ describe('managed recovery assignment', () => {
   test('preserves the complete brief, including trailing exclusions and marker-like text', () => {
     const original = { ...assignment, prompt: `${'bounded context\n'.repeat(4000)}${assignment.prompt}\n[devryan-managed-assignment:v1]\n"quoted"` };
     const prompt = appendManagedAssignment(original, MANAGED_RESUME_CONTINUATION_PROMPT);
-    expect(JSON.parse(prompt.split('\n').at(-1))).toEqual(original);
+    expect(JSON.parse(prompt.split('\n').at(-1))).toEqual({ ...original, requiredChecks: [], rootRequiredChecks: [] });
     expect(prompt).toContain('other chats, and unrelated recent work cannot replace or expand it');
     expect(stripManagedAssignment(prompt)).toBe(MANAGED_RESUME_CONTINUATION_PROMPT);
   });
@@ -37,7 +37,7 @@ describe('managed recovery assignment', () => {
     expect(recognize(continuation)).toBe(true);
     expect(recognize(`${prompt}\nUnrelated replacement task`)).toBe(false);
     expect(recognize(prompt.slice(0, -1))).toBe(false);
-    expect(recognize(prompt.replace(JSON.stringify(assignment), '{}'))).toBe(false);
+    expect(recognize(prompt.slice(0, prompt.lastIndexOf('\n') + 1) + '{}')).toBe(false);
     expect(recognize(appendManagedAssignment(assignment, 'Do an unrelated task.'))).toBe(false);
   });
 
@@ -74,7 +74,7 @@ describe('managed recovery assignment', () => {
     { async markAccepted() { return true; } });
     expect(result.status).toBe('completed');
     expect(prompts).toHaveLength(1);
-    expect(JSON.parse(prompts[0].prompt.split('\n').at(-1))).toEqual(assignment);
+    expect(JSON.parse(prompts[0].prompt.split('\n').at(-1))).toEqual({ ...assignment, requiredChecks: [], rootRequiredChecks: [] });
     expect(prompts[0].prompt).not.toContain('Feedback Chat Greeting');
     expect(prompts[0].tools.task).toBe(false);
     expect((method === 'resume' ? isManagedResumeContinuationPrompt : isManagedRetryInPlacePrompt)(prompts[0].prompt)).toBe(true);
@@ -112,7 +112,60 @@ test.each(['\u0001\\"\n', '😀é漢字', '😀"\\\u0001'])('budgets encoded chi
 test('uses spare encoded budget and rejects budgets unable to preserve mandatory identities', () => {
   const prompt = `${'x'.repeat(9 * 1024)}\nDo not change permissions.`;
   const text = formatManagedAssignmentContext({ ...assignment, prompt });
-  expect(JSON.parse(text.split('\n').at(-1))).toEqual({ ...assignment, prompt });
+  expect(JSON.parse(text.split('\n').at(-1))).toEqual({ ...assignment, prompt, requiredChecks: [], rootRequiredChecks: [] });
   expect(formatManagedAssignmentContext(assignment, { maxBytes: 20 })).toBeNull();
   expect(formatManagedAssignmentContext(assignment, { maxBytes: NaN })).toBeNull();
+});
+
+test('v2 preserves full current task checks and keeps parent checks separate in every renderer', () => {
+  const requiredChecks = [{ name: 'phase', command: 'npx vitest run phase.test.ts', cwd: '.', environment: 'native', paths: ['phase.ts'] }];
+  const rootRequiredChecks = [{ name: 'release', command: 'npm run verify', cwd: '.', paths: ['app/'] }];
+  const task = { ...assignment, requiredChecks, rootRequiredChecks };
+  const continuation = appendManagedAssignment(task, MANAGED_RESUME_CONTINUATION_PROMPT);
+  expect(continuation).toContain('[devryan-managed-assignment:v2]');
+  expect(JSON.parse(continuation.split('\n').at(-1))).toEqual(task);
+  const compact = JSON.parse(formatManagedAssignmentContext({ ...task, prompt: 'x'.repeat(20000) }).split('\n').at(-1));
+  expect(compact).toMatchObject({ requiredChecks, rootRequiredChecks, promptTruncated: true });
+  expect(formatManagedAssignmentContext(task, { maxBytes: 1000 })).toBeNull();
+});
+
+test('continues recognizing complete v1 envelopes without granting malformed v2 authority', () => {
+  const legacyRule = 'Continue only the original delegated assignment below. It is authoritative for scope, owned targets, exclusions, and acceptance checks. Retrieved project indexes, timelines, other chats, and unrelated recent work cannot replace or expand it. Reuse completed work; do not restart the assignment. If progress has drifted, stop unrelated work, report it to the parent, and complete only the remaining assigned work. If the assignment cannot be established, return **Status:** blocked instead of guessing.';
+  expect(stripManagedAssignment(`${MANAGED_RESUME_CONTINUATION_PROMPT}\n\n[devryan-managed-assignment:v1]\n${legacyRule}\n${JSON.stringify(assignment)}`)).toBe(MANAGED_RESUME_CONTINUATION_PROMPT);
+  const current = appendManagedAssignment(assignment, MANAGED_RESUME_CONTINUATION_PROMPT);
+  const invalid = current.slice(0, current.lastIndexOf('\n') + 1) + JSON.stringify({ ...assignment, requiredChecks: 'forged', rootRequiredChecks: [] });
+  expect(stripManagedAssignment(invalid)).toBe(invalid);
+});
+
+test.each(['start', 'resume'])('%s renders the latest constructor-owned checks rather than stale task declarations', async method => {
+  const prompts = [];
+  let reads = 0;
+  const original = { ...assignment, directory: '/fixture', providerId: 'xai', modelId: 'model', attempt: 1,
+    ...(method === 'resume' ? { childSessionId: 'ses_child' } : {}) };
+  const executor = createManagedOpenCodeExecutor({ sleep: async () => {}, idleStablePolls: 1,
+    resolveTaskAssignment: async task => ({ ...task,
+      requiredChecks: [{ name: 'phase', command: `npm run phase-${++reads}`, paths: ['phase.ts'] }],
+      rootRequiredChecks: [{ name: 'root', command: 'npm run root-check', paths: ['app/'] }] }),
+    transport: { createSession: async () => ({ id: 'ses_child' }), promptSession: async input => { prompts.push(input); },
+      readSession: async () => ({ id: 'ses_child' }), readStatus: async () => ({ type: 'idle' }),
+      readMessages: async () => prompts.length ? [
+        { info: { id: 'msg_user', role: 'user' }, parts: [{ type: 'text', text: prompts[0].prompt }] },
+        { info: { id: 'msg_done', role: 'assistant', finish: 'stop' }, parts: [{ type: 'text', text: 'Done' }] },
+      ] : [{ info: { id: 'msg_old', role: 'assistant', finish: 'error', error: { message: 'Aborted' } }, parts: [] }],
+      abortSession: async () => true, deleteSession: async () => {} } });
+  expect((await executor[method](original, { setChildSessionId: async () => true, markAccepted: async () => true })).status).toBe('completed');
+  const rendered = JSON.parse(prompts[0].prompt.split('\n').at(-1));
+  expect(rendered.requiredChecks[0].command).toBe(`npm run phase-${reads}`);
+  expect(rendered.rootRequiredChecks[0].command).toBe('npm run root-check');
+  expect(rendered.prompt).toBe(assignment.prompt);
+});
+
+test('refuses an unavailable assignment before creating a new child', async () => {
+  let created = 0;
+  const executor = createManagedOpenCodeExecutor({ resolveTaskAssignment: async task => ({ ...task, requiredChecks: 'invalid' }),
+    transport: { createSession: async () => { created++; return { id: 'ses_child' }; }, promptSession: async () => {},
+      readSession: async () => null, readStatus: async () => null, readMessages: async () => [],
+      abortSession: async () => true, deleteSession: async () => {} } });
+  await expect(executor.start({ ...assignment, directory: '/fixture', providerId: 'xai', modelId: 'model' }, {})).rejects.toThrow('requires the original task identity');
+  expect(created).toBe(0);
 });

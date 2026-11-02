@@ -246,3 +246,9 @@ passed, waived, or skipped states do not add a second status subtitle. Objective
 check details remain in `ObjectiveVerification`/`VerificationDetails`, and host
 verification requirements continue to govern objective completion. Historical
 task outcomes are not relabeled by this presentation.
+
+PlanCard preserves unknown plan state while its trace or message/Plan-choice
+hydration is incomplete. Its disabled action says “Checking plan state.” rather
+than inferring supersession from a missing trace. An observed implementation
+marker still takes priority; loaded, confirmed superseded plans retain their
+existing explanation. This is presentation state, not new plan authority.

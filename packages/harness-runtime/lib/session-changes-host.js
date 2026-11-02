@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { createBoundedReadPool } from './bounded-read-pool.js';
 import path from 'node:path';
 import fs from 'node:fs/promises';
-import { createSessionChangeRuntime } from './session-changes.js';
+import { createSessionChangeRuntime, isSessionChangeProofEligible } from './session-changes.js';
 
 import { SESSION_CHANGE_READ_ONLY_TOOLS, classifySessionChangeTool, isSyntheticSessionChange,
   normalizeSessionChangeTool, sessionChangeCapturePaths, sessionChangeReceipt } from './session-changes-tools.js';
@@ -19,12 +19,57 @@ export function createSessionChangeHost(options) {
     restoreOwned: options.restoreOwned,
     previewOwned: options.previewOwned,
     assertLegacyRestore: options.assertLegacyRestore,
-    onChange: ({ directory, sessionID }) => options.publishEvent?.({ type: 'session.changes.updated', properties: { sessionID } }, { directory }),
+    onChange: ({ directory, sessionID }) => {
+      if (!projectionContext.getStore()) invalidateProjections(directory);
+      return options.publishEvent?.({ type: 'session.changes.updated', properties: { sessionID } }, { directory });
+    },
   });
   const readPool = createBoundedReadPool();
   const readContext = new AsyncLocalStorage();
   const responseMetrics = { activeResponses: 0, responseBytes: 0, peakResponseBytes: 0 };
   const observations = new Map();
+  const projectionContext = new AsyncLocalStorage();
+  const projections = new Map();
+  let closing = false;
+  const invalidateProjections = (directory) => {
+    for (const entry of projections.values()) if (!directory || entry.directory === directory) {
+      entry.dirty = true;
+      if (!entry.pending) refreshProjection(entry);
+    }
+  };
+  const refreshProjection = (entry) => {
+    if (closing || entry.pending) return;
+    entry.dirty = false; entry.failed = false;
+    entry.pending = readPool.run(`projection:${entry.key}`, signal => projectionContext.run(true,
+      () => readContext.run({ signal }, () => requestUnshared('GET', entry.url, {}, { projection: true }))));
+    void entry.pending.then(result => {
+      if (result?.status === 200) {
+        const summary = { ...result.body };
+        delete summary.restoreProof; delete summary.current;
+        // Display snapshots never imply that current filesystem content was verified.
+        entry.summary = { ...summary, files: summary.files.map(file => { const row = { ...file }; delete row.verification; return row; }) };
+        entry.generatedAt = Date.now();
+      } else entry.failed = true;
+    }).catch(() => { entry.failed = true; }).finally(() => {
+      entry.pending = null;
+      if (closing) return;
+      try {
+        if (!entry.failed) options.publishEvent?.({ type: 'session.changes.updated', properties: { sessionID: entry.rootSessionID } }, { directory: entry.directory });
+      } catch { /* A display observer cannot discard the coalesced trailing refresh. */ }
+      if (entry.dirty) refreshProjection(entry);
+    }).catch(() => {});
+  };
+  const projectedSummary = (entry) => {
+    const summary = entry.summary;
+    const projectionState = !summary ? 'missing' : entry.pending || entry.dirty || entry.failed ? 'refreshing' : 'ready';
+    const eligible = projectionState === 'ready' && summary.reconciliationState === 'settled';
+    return { ...(summary ?? { rootSessionID: entry.rootSessionID, directory: entry.directory, files: [], fileCount: 0,
+      sessionCount: 0, firstUserMessageID: null, hasUnattributedMutations: false }),
+      projectionState, generatedAt: entry.generatedAt ?? null, restoreAvailable: false,
+      restoreEligibility: !eligible ? { state: 'unknown' } : options.restoreOwned && options.previewOwned && isSessionChangeProofEligible(summary)
+        ? { state: 'candidate', action: summary.undone ? 'redo' : 'undo' }
+        : { state: 'unavailable', reasons: summary.restoreReasons ?? [] } };
+  };
   const callMessages = new Map();
   const rememberCall = (directory, sessionID, callID, messageID) => {
     const key = JSON.stringify([directory, sessionID, callID]);
@@ -341,13 +386,16 @@ export function createSessionChangeHost(options) {
       return work;
     },
     async drain() {
+      closing = true;
       await readPool.drain();
+      await Promise.allSettled([...projections.values()].map(entry => entry.pending).filter(Boolean));
+      projections.clear();
       while (observations.size) await Promise.allSettled([...observations.values()].flatMap((pending) => [...pending]));
       await runtime.drain();
     },
-    async handleRequest(method, rawPath, body = {}) {
+    async handleRequest(method, rawPath, body = {}, { projection = false } = {}) {
       const url = new URL(rawPath, 'http://session-changes.invalid');
-      const match = url.pathname.replace(/^\/api(?=\/)/, '').match(/^\/(?:devryan|openchamber)\/session\/([^/]+)\/changes(?:\/(diff|undo|redo))?$/);
+      const match = url.pathname.replace(/^\/api(?=\/)/, '').match(/^\/(?:devryan|openchamber)\/session\/([^/]+)\/changes(?:\/(diff|undo|redo|preview))?$/);
       if (!match) return null;
       const [, rootSessionID, action] = match;
       const directory = url.searchParams.get('directory');
@@ -362,8 +410,11 @@ export function createSessionChangeHost(options) {
           return { status: 200, body: await runtime.summaryPage({ directory, rootSessionID,
             revision: url.searchParams.get('revision'), cursor: url.searchParams.get('cursor') }) };
         }
+        if (method === 'POST' && action === 'preview' && (typeof body?.revision !== 'string'
+          || !/^[a-f0-9]{64}$/.test(body.revision) || !['undo', 'redo'].includes(body?.action)
+          || Object.keys(body).some(key => !['revision', 'action'].includes(key)))) throw error('invalid_restore_preview', 400);
         const sessions = await tree(rootSessionID, directory);
-        if (method === 'GET' && !action || method === 'POST' && ['undo', 'redo'].includes(action)) {
+        if (method === 'GET' && !action || method === 'POST' && ['undo', 'redo', 'preview'].includes(action)) {
           const receiptStates = [];
           for (const entry of sessions) {
             receiptStates.push(await options.reconcileExecutionReceipts?.({ directory, sessionID: entry.id }));
@@ -397,7 +448,13 @@ export function createSessionChangeHost(options) {
               ...(histories.some((entry) => !entry.complete) ? ['history_pending'] : []),
               ...receiptStates.flatMap((state) => state?.reasons ?? []),
               ...(receiptStates.some((state) => state?.pending) || sessions.some((entry) => observations.get(entry.id)?.size) ? ['receipts_pending'] : [])] });
-          if (method === 'GET') return { status: 200, body: await runtime.previewRestore({ directory, rootSessionID, summary }) };
+          if (method === 'GET') return { status: 200, body: projection ? summary : await runtime.previewRestore({ directory, rootSessionID, summary }) };
+          if (action === 'preview') {
+            if (summary.revision !== body.revision || (summary.undone ? 'redo' : 'undo') !== body.action) throw error('summary_revision_changed');
+            const preview = await runtime.previewRestore({ directory, rootSessionID, summary });
+            if (!preview.restoreAvailable || !preview.restoreProof) throw error('restore_evidence_unavailable');
+            return { status: 200, body: { revision: body.revision, action: body.action, restoreProof: preview.restoreProof } };
+          }
           if (summary.revision !== body?.revision) throw error('summary_revision_changed');
         }
         if (method === 'POST' && ['undo', 'redo'].includes(action)) {
@@ -414,7 +471,7 @@ export function createSessionChangeHost(options) {
   const requestUnshared = host.handleRequest;
   host.handleRequest = async (method, rawPath, body = {}, context = {}) => {
     const url = new URL(rawPath, 'http://session-changes.invalid');
-    const match = url.pathname.replace(/^\/api(?=\/)/, '').match(/^\/(?:devryan|openchamber)\/session\/([a-zA-Z0-9_-]+)\/changes(?:\/(diff|undo|redo))?$/);
+    const match = url.pathname.replace(/^\/api(?=\/)/, '').match(/^\/(?:devryan|openchamber)\/session\/([a-zA-Z0-9_-]+)\/changes(?:\/(diff|undo|redo|preview))?$/);
     if (!match) return requestUnshared(method, rawPath, body);
     try {
       const directory = url.searchParams.get('directory');
@@ -422,10 +479,31 @@ export function createSessionChangeHost(options) {
       const canonical = await fs.realpath(directory);
       const key = JSON.stringify([canonical, match[1]]);
       url.searchParams.set('directory', canonical);
-      const run = () => requestUnshared(method, url.pathname + url.search, body);
+      if (method === 'GET' && !match[2] && url.searchParams.get('summary') === '1' && !url.searchParams.has('revision')) {
+        await session(match[1], canonical);
+        context.signal?.throwIfAborted();
+        let entry = projections.get(key);
+        if (!entry) {
+          // Only requested roots retain display projections; running refreshes are never evicted.
+          if (projections.size >= 32) {
+            const oldest = [...projections.values()].find(value => !value.pending);
+            if (!oldest) throw error('reconciliation_busy', 503);
+            projections.delete(oldest.key);
+          }
+          const refreshUrl = new URL(url); refreshUrl.searchParams.delete('summary');
+          entry = { key, directory: canonical, rootSessionID: match[1], url: refreshUrl.pathname + refreshUrl.search, dirty: true };
+          projections.set(key, entry);
+        }
+        if (!entry.pending && (entry.dirty || entry.failed || !entry.summary || Date.now() - entry.generatedAt > 5000)) refreshProjection(entry);
+        return { status: 200, body: { ...projectedSummary(entry), directory } };
+      }
+      const run = () => method === 'POST' && match[2] === 'preview'
+        ? readContext.run({ signal: context.signal }, () => requestUnshared(method, url.pathname + url.search, body))
+        : requestUnshared(method, url.pathname + url.search, body);
       const result = method === 'GET' && !match[2] && !url.searchParams.has('revision')
         ? await readPool.run(key, signal => readContext.run({ signal }, run), context.signal)
         : await run();
+      if (method === 'POST' && ['undo', 'redo'].includes(match[2])) invalidateProjections(canonical);
       // Reconciliation belongs to the canonical scope, but each response must
       // retain its caller's requested directory (including a symlink alias).
       return result?.status === 200 && result.body && Object.hasOwn(result.body, 'directory')

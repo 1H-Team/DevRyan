@@ -130,6 +130,25 @@ export const diagnoseRequiredCheckEnvironment = output => {
   return null;
 };
 
+const evidenceHint = (check, update) => {
+  if (update.status === 'passed') return null;
+  if (requiredCheckCommandIssue(check.command) && update.status === 'blocked') return {
+    name: check.name, code: 'required_check_command_exit_ambiguous',
+    message: `Required check "${check.name}" did not establish a pass. ${REQUIRED_CHECK_COMMAND_HINT} Ask the parent to correct the declaration before rerunning it.`,
+  };
+  const reasons = [];
+  if (update.exitCode === null) reasons.push('The process exit code was not observed.');
+  if (update.contentHash === null) reasons.push('Declared coverage could not be tied to unchanged current files.');
+  if (check.kind === 'visual') {
+    if (!update.visual) reasons.push('The visual report or its referenced evidence is missing or invalid.');
+    else if (['unknown', 'stale'].includes(update.visual.servedFreshness)) reasons.push(PREVIEW_FRESHNESS_HINT);
+    else if (!visualCheckPassed(check, update.visual)) reasons.push('The visual report does not pass every declared assertion with the required data source.');
+  }
+  if (!reasons.length) return null;
+  return { name: check.name, code: 'required_check_evidence_incomplete',
+    message: `Required check "${check.name}" did not establish a pass. ${reasons.join(' ')}` };
+};
+
 export const createRequiredCheckObserver = ({ scheduler, now = Date.now, verifyCheckRunner }) => {
   const pending = new Map();
   const identityFor = async (task, check, directory = task.directory) => {
@@ -192,13 +211,14 @@ export const createRequiredCheckObserver = ({ scheduler, now = Date.now, verifyC
       return { tracked: results.some(result => result.tracked), ...(results.some(result => result.needsIdentity) ? { needsIdentity: true } : {}) };
     },
     async after(input) {
-      const results = [];
+      const results = [], hints = [];
       for (const [key, receipt] of pending) {
         if (receipt.sessionId !== input.sessionId || receipt.callId !== input.callId) continue;
         pending.delete(key);
         if (!receipt.messageId || receipt.directory !== input.directory || receipt.messageId !== input.messageId
           || !receipt.taskId && input.objectiveId !== receipt.owner.objectiveId) continue;
         const exitCode = Number.isSafeInteger(input.exitCode) ? input.exitCode : null;
+        const candidates = new Map();
         const updates = await Promise.all(receipt.checks.map(async check => {
           const current = (receipt.taskId ? scheduler.getRequiredCheckTasks?.(input.sessionId, input.directory)?.find(task => task.taskId === receipt.taskId)
             : scheduler.getObjectiveRequiredChecks?.(receipt.owner)) ?? receipt.task;
@@ -212,14 +232,26 @@ export const createRequiredCheckObserver = ({ scheduler, now = Date.now, verifyC
           const commandIssue = requiredCheckCommandIssue(check.command);
           const environmentUnavailable = stable && input.outputComplete === true && exitCode !== null && exitCode !== 0 && !commandIssue
             && !visual?.assertions.some(item => item.status === 'failed') ? diagnoseRequiredCheckEnvironment(input.output) : null;
-          return { name: check.name, callId: input.callId, messageId: input.messageId, exitCode, observedAt: now(),
+          const update = { name: check.name, callId: input.callId, messageId: input.messageId, exitCode, observedAt: now(),
             status: environmentUnavailable ? 'skipped' : exitCode !== null && exitCode !== 0 || visual?.assertions.some(item => item.status === 'failed') ? 'failed'
               : exitCode === 0 && stable && visualPassed && !commandIssue ? 'passed' : exitCode === 0 && (commandIssue || check.kind === 'visual' || current.requiredCheckCorrections?.some(entry => entry.name === check.name)) ? 'blocked' : 'not-observed',
             contentHash: stable ? contentHash : null, ...(environmentUnavailable ? { environmentUnavailable } : {}), ...(visual ? { visual } : {}) };
+          // A declaration corrected during this call cannot produce advice for
+          // its replacement, even when an observer stub accepts the old receipt.
+          if (JSON.stringify(currentCheck) === JSON.stringify(check)) {
+            const hint = evidenceHint(check, update);
+            if (hint) candidates.set(check.name, hint);
+          }
+          return update;
         }));
-        results.push(await scheduler.recordRequiredChecks(receipt.owner, receipt.leaseToken, updates, 'complete') === true);
+        const recorded = await scheduler.recordRequiredChecks(receipt.owner, receipt.leaseToken, updates, 'complete') === true;
+        results.push(recorded);
+        if (recorded) for (const check of receipt.checks) {
+          const hint = candidates.get(check.name);
+          if (hint) hints.push(hint);
+        }
       }
-      return { recorded: results.some(Boolean) };
+      return { recorded: results.some(Boolean), ...(hints.length ? { hints: hints.slice(0, 8) } : {}) };
     },
     async project(task) {
       const checks = task.requiredChecks ?? [];

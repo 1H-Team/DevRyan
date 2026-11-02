@@ -29,6 +29,15 @@ describe('repository-owned Edge runner correction', () => {
   });
   afterEach(async () => fs.rm(directory, { recursive: true, force: true }));
 
+  it('rejects ambiguous new declarations before dispatch and accepts a standalone project runner', async () => {
+    for (const command of ['bun test | cat', 'bun test; echo done', 'sh -c "bun test"']) {
+      await expect(prepareRequiredCheckDeclarations({ directory, checks: [{ ...check, command }] }))
+        .rejects.toMatchObject({ code: 'required_check_command_exit_ambiguous' });
+    }
+    const command = 'node scripts/visual-check.mjs --url http://localhost:4173';
+    expect((await prepareRequiredCheckDeclarations({ directory, checks: [{ ...check, command }] })).checks[0].command).toBe(command);
+  });
+
   it('resolves the observed wrong runner without executing code or changing declared coverage', async () => {
     const result = await resolveRequiredCheckRunnerCorrection(options());
     expect(result).toMatchObject({ name: check.name, previousCommand: check.command, command: 'npm run test:edge -- --function booking-documents', observedAt: 100,

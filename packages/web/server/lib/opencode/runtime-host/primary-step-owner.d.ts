@@ -11,6 +11,8 @@ export function createNativePrimaryStepOwner(options:{
  readonly getInstanceID?:()=>string|undefined;
  /** Verified selected native artifact supports the finite Stop disposition. */
  readonly allowStopHandoff?:boolean;
+ /** Awaited only for a canonically verified, non-compaction Designer child step. */
+ readonly observeManagedStep?:(input:{sessionId:string;directory:string;messageId:string;userMessageId:string;createdAt:number|undefined})=>Promise<unknown>;
  readonly admissionOwner:Pick<NativeAdmissionOwner,'handleRpc'|'acknowledgeStartedContinuation'>;
  readonly openCodeClient:{readonly sessions:{
   readonly get:(sessionID:string)=>Promise<unknown>;

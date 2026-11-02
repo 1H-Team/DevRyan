@@ -22,7 +22,7 @@ export function validateNativeTodos(value) {
 
 /** Native reads and metadata commits use the existing canonical task/context
  * owners. No plugin field is a caller grant or a durable objective. */
-export function createNativeSessionContextOwner({admissionOwner,taskContext,openCodeClient,writeTodos,authorizeContext,primaryRuntime,instanceID,getInstanceID,deliverContinuation,isHeld,readSessionMetadata,inspectVerification,getManagedRuntime,onContinuationError,getCapabilitySnapshot,executionHost}) {
+export function createNativeSessionContextOwner({admissionOwner,taskContext,openCodeClient,writeTodos,authorizeContext,primaryRuntime,instanceID,getInstanceID,deliverContinuation,isHeld,readSessionMetadata,inspectVerification,getManagedRuntime,onContinuationError,getCapabilitySnapshot,executionHost,recordDiagnostic}) {
   const scans=new Map(), watches=new Map();
   const helloOwner={isCurrent:()=>!getInstanceID||getInstanceID()===instanceID,
     authorize:async()=>{if(!helloOwner.isCurrent())throw fail('native_primary_continuation_controller_stale');}};
@@ -261,7 +261,15 @@ export function createNativeSessionContextOwner({admissionOwner,taskContext,open
       await recheck();
       const [session,primary]=await Promise.all([openCodeClient.sessions.get(input.sessionID,{directory:input.directory}),primaryRuntime.readRecord(input.sessionID)]);
       if(session?.id!==input.sessionID||session.directory!==input.directory||session.time?.archived)throw fail('native_primary_tool_scope_invalid');
-      if(session.parentID||!primary){await recheck();return {tracked:false};}
+      if(session.parentID||!primary){
+        let warning=null;
+        if(input.phase==='tool_after'&&session.parentID)try{
+          warning=await getManagedRuntime?.()?.claimManagedTaskBudgetWarning?.({sessionId:input.sessionID,directory:input.directory,messageId:input.messageID,callId:input.callID});
+        }catch{
+          try{recordDiagnostic?.({type:'lifecycle',event:'managed_step_budget_warning_unavailable',sessionID:input.sessionID,payload:{messageID:input.messageID,callID:input.callID}});}catch{/* Advisory only. */}
+        }
+        await recheck();return {tracked:false,...(warning?.notice?{notice:warning.notice}:{})};
+      }
       const assistant=await openCodeClient.sessions.message(input.sessionID,input.messageID,{directory:input.directory});
       const tool=toV1ToolName(input.tool);
       if(primary.sessionID!==session.id||primary.directory!==session.directory||primary.stepID!==input.messageID

@@ -96,10 +96,12 @@ export const createOpenCodeV2SseHandler = ({ globalMessageStreamHub, resolveRequ
     if (closed) { unregister(); return; }
   }
   if (subscriptionReady) {
-    // Observe before checking or starting, including changes during replay auth.
+    // A failed first connection is cold startup, not loss of an established stream.
+    // Latch before subscribing so disconnect still fences pending replay authorization.
+    let established = hub.isConnected();
     unsubscribeStatus = hub.subscribeStatus(status => {
-      if (status.type === 'disconnect') { cleanup(); res.destroy(); }
-      else if (status.type === 'connect') sendSubscriptionReady();
+      if (status.type === 'disconnect' && established) { cleanup(); res.destroy(); }
+      else if (status.type === 'connect') { established = true; sendSubscriptionReady(); }
     });
     if (closed) { unsubscribeStatus(); return; }
   }

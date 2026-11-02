@@ -166,6 +166,7 @@ export function createClaudeAgentHost({ usageFile, resolveExecutable = resolveCl
   environment = buildClaudeAgentEnvironment, loadSessions = defaultSessions, readUsageReport = defaultUsageReport,
   onDiagnostic = () => {}, now = Date.now }) {
   const processes = new Map();
+  const diagnostic = detail => { try { onDiagnostic(detail); } catch { /* Observations cannot interrupt the relay. */ } };
   let closed = false, usage, usageWrite = Promise.resolve(), send, refreshing, lastReport = -Infinity;
   const reply = value => { const frame = parseClaudeAgentReply({ protocol: 1, type: 'claude-agent-reply', ...value }); send?.(frame); };
   const recordUsage = info => persistUsage(claudeAgentUsageFromEvent(info, usage ?? readClaudeAgentUsage(usageFile), now()));
@@ -178,7 +179,7 @@ export function createClaudeAgentHost({ usageFile, resolveExecutable = resolveCl
       const temporary = `${usageFile}.${process.pid}.tmp`;
       await fs.promises.writeFile(temporary, snapshot, { mode: 0o600 });
       await fs.promises.rename(temporary, usageFile);
-    }).catch(() => onDiagnostic({ event: 'claude_agent_usage_write_failed' }));
+    }).catch(() => diagnostic({ event: 'claude_agent_usage_write_failed' }));
   };
   const observe = state => text => {
     state.line += text;
@@ -197,11 +198,12 @@ export function createClaudeAgentHost({ usageFile, resolveExecutable = resolveCl
     if (!state.child) return void state.queued.push(frame);
     if (frame.action === 'stdin') state.child.stdin.write(Buffer.from(frame.chunk, 'base64'));
     else if (frame.action === 'end') state.child.stdin.end();
-    else if (frame.action === 'kill') state.child.kill(frame.signal);
+    else if (frame.action === 'kill') { state.stopReason = 'sdk_kill'; state.child.kill(frame.signal); }
   };
   const spawnProcess = async request => {
     if (processes.size >= MAX_PROCESSES) throw fail('claude_agent_limit');
-    const state = { child: undefined, queued: [], line: '', stderr: Buffer.alloc(0), settled: false };
+    const state = { child: undefined, queued: [], line: '', stderr: Buffer.alloc(0), settled: false,
+      startedAt: performance.now(), outputBytes: 0, stopReason: null };
     processes.set(request.id, state);
     try { await launch(request, state); }
     catch (error) { processes.delete(request.id); throw error; }
@@ -218,8 +220,10 @@ export function createClaudeAgentHost({ usageFile, resolveExecutable = resolveCl
     if (state.queued.some(frame => frame.action === 'kill')) throw fail('claude_agent_closed');
     const child = spawnImpl(executable, request.args, { cwd: request.cwd, env: environment(request.env), stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     state.child = child;
+    diagnostic({ event: 'claude_agent_process', phase: 'started', requestID: request.id, reason: 'sdk_spawn', elapsedMs: Math.round(performance.now() - state.startedAt) });
     const watch = observe(state);
     child.stdout.on('data', bytes => {
+      state.outputBytes += bytes.length;
       watch(bytes.toString('utf8'));
       for (let offset = 0; offset < bytes.length; offset += CLAUDE_AGENT_CHUNK_BYTES) {
         reply({ id: request.id, action: 'stdout', chunk: bytes.subarray(offset, offset + CLAUDE_AGENT_CHUNK_BYTES).toString('base64') });
@@ -231,6 +235,9 @@ export function createClaudeAgentHost({ usageFile, resolveExecutable = resolveCl
     const settle = (code, signal, error) => {
       if (state.settled) return; state.settled = true;
       processes.delete(request.id);
+      diagnostic({ event: 'claude_agent_process', phase: 'settled', requestID: request.id,
+        reason: state.stopReason ?? (error ? 'launch_failed' : 'process_exit'), elapsedMs: Math.round(performance.now() - state.startedAt),
+        bytes: state.outputBytes, exitCode: Number.isSafeInteger(code) ? code : null });
       reply({ id: request.id, action: 'exit', code: Number.isSafeInteger(code) ? Math.min(Math.max(code, 0), 255) : null, signal: signal ?? null, ...(error ? { error } : {}) });
     };
     child.once('error', () => settle(null, null, 'claude_agent_launch_failed'));
@@ -254,12 +261,12 @@ export function createClaudeAgentHost({ usageFile, resolveExecutable = resolveCl
     accept(value) {
       let request;
       try { request = parseClaudeAgentRequest(value); }
-      catch { onDiagnostic({ event: 'claude_agent_frame_invalid' }); return; }
+      catch { diagnostic({ event: 'claude_agent_frame_invalid' }); return; }
       const refuse = error => {
         const code = typeof error?.code === 'string' && error.code.startsWith('claude_agent_') ? error.code : 'claude_agent_launch_failed';
         if (request.action === 'spawn') reply({ id: request.id, action: 'exit', code: null, signal: null, error: code });
         else reply({ id: request.id, action: 'error', error: code });
-        onDiagnostic({ event: 'claude_agent_refused', action: request.action, code });
+        diagnostic({ event: 'claude_agent_refused', action: request.action, code });
       };
       if (closed) return refuse(fail('claude_agent_closed'));
       if (request.action === 'spawn') return void spawnProcess(request).catch(refuse);
@@ -285,7 +292,7 @@ export function createClaudeAgentHost({ usageFile, resolveExecutable = resolveCl
         try {
           const report = await readUsageReport({ executable, env: environment({}), cwd: os.tmpdir(), timeoutMs: USAGE_REPORT_TIMEOUT_MS });
           if (!closed) persistUsage(claudeAgentUsageFromReport(report, usage ?? readClaudeAgentUsage(usageFile), now()));
-        } catch { onDiagnostic({ event: 'claude_agent_usage_report_failed' }); }
+        } catch { diagnostic({ event: 'claude_agent_usage_report_failed' }); }
         return usage ?? readClaudeAgentUsage(usageFile);
       })().finally(() => { refreshing = undefined; });
       return refreshing;
@@ -293,7 +300,7 @@ export function createClaudeAgentHost({ usageFile, resolveExecutable = resolveCl
     async close() {
       closed = true;
       const children = [...processes.values()].filter(state => state.child);
-      for (const { child } of children) child.kill('SIGTERM');
+      for (const state of children) { state.stopReason = 'controller_close'; state.child.kill('SIGTERM'); }
       await Promise.all(children.map(({ child }) => new Promise(resolve => {
         if (child.exitCode !== null || child.signalCode !== null) return resolve();
         const timer = setTimeout(() => { child.kill('SIGKILL'); resolve(); }, 2000);

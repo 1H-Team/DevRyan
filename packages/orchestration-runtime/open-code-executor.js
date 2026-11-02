@@ -153,7 +153,7 @@ const resolveContinuationTaskPrompt = (task, prompt) => (
 );
 
 const resolveInitialTaskPrompt = (task, preamble = null) => {
-  const prompt = resolveTaskPrompt(task, task.prompt);
+  const prompt = resolveTaskPrompt(task, appendManagedAssignment(task, 'Complete the delegated assignment below.'));
   // A host-supplied preamble (e.g. the compact agent contract for Claude
   // compatibility mode) sits ahead of the task prompt so it reads as the
   // child's standing rules. It belongs to the first prompt of a fresh child only;
@@ -996,6 +996,16 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     return { request: current, observation };
   };
 
+  const currentAssignment = async task => {
+    const assignment = typeof options.resolveTaskAssignment === 'function' ? await options.resolveTaskAssignment(task) : task;
+    if (!assignment || ['taskId', 'rootSessionId', 'agent', 'label', 'prompt', 'readOnly'].some(key => assignment[key] !== task[key])) {
+      throw new Error('Managed assignment identity changed before provider prompt');
+    }
+    // Validate all check declarations before a fresh child can be created.
+    appendManagedAssignment(assignment, '');
+    return assignment;
+  };
+
   const promptTask = async (task, input) => {
     const attempt = attemptFor(task);
     assertRunning();
@@ -1010,6 +1020,10 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     }
     attempt?.controller.signal.throwIfAborted();
     if (stopped) return false;
+    if (typeof options.resolveTaskAssignment === 'function') {
+      const assignment = await currentAssignment(task);
+      input = { ...input, prompt: appendManagedAssignment(assignment, stripManagedAssignment(input.prompt)) };
+    }
     if (task.taskPrerequisites?.length) await attempt?.control?.assertPrerequisites?.();
     assertRunning();
     attempt?.controller.signal.throwIfAborted();
@@ -1638,12 +1652,27 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       : null;
     let turnBudgetPromptSent = false;
     const enforceTurnBudget = async (observation) => {
-      if (attemptFor(task)?.steeringUserId) return null;
+      const designer = task.agent === 'designer';
+      if (!designer && attemptFor(task)?.steeringUserId) return null;
       if (turnBudget === null) return null;
       if (turnBudgetBaseline === null) turnBudgetBaseline = observation.assistantCount;
-      const usedTurns = observation.assistantCount - turnBudgetBaseline;
-      if (usedTurns >= turnBudget + MANAGED_TURN_BUDGET_ABORT_GRACE_TURNS) {
-        const failureReason = `turn budget (${turnBudget}) exceeded; partial results reported`;
+      // Designer counts only canonical primary steps, persisted by the native
+      // step-start owner. Transcript polling cannot count compaction as work.
+      const primaryBudget = designer ? await waitOptions.control?.readPrimaryStepBudget?.() : null;
+      // A completed old turn can still be the transcript tail after native
+      // admission of the next prompt. Do not abort that prompt with old steps.
+      // A queued prompt behind a still-running assistant does not grant relief.
+      const pendingAcceptedPrompt = designer && (
+        observation.assistantCompleted && observation.hasNewerUserInput
+          && primaryBudget?.acceptedUserMessageIDs?.includes(observation.latestUserMessageId)
+          && primaryBudget.userMessageID !== observation.latestUserMessageId
+        || primaryBudget?.acceptedUserMessageIDs?.includes(observation.latestAssistantParentId)
+          && primaryBudget.userMessageID !== observation.latestAssistantParentId
+      );
+      const usedTurns = designer ? pendingAcceptedPrompt ? 0 : primaryBudget?.usedSteps ?? 0 : observation.assistantCount - turnBudgetBaseline;
+      if (usedTurns >= turnBudget + (designer ? 0 : MANAGED_TURN_BUDGET_ABORT_GRACE_TURNS)) {
+        const failureReason = designer ? `primary step emergency limit (${turnBudget}) reached; partial results reported`
+          : `turn budget (${turnBudget}) exceeded; partial results reported`;
         const stopError = await ensureRetryStopped(task);
         return {
           status: stopError ? 'interrupted' : 'failed',
@@ -1656,7 +1685,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
           resumable: true,
         };
       }
-      if (usedTurns >= turnBudget && !turnBudgetPromptSent) {
+      if (!designer && usedTurns >= turnBudget && !turnBudgetPromptSent) {
         // Posted exactly once per wait, the way the other continuations are. OpenCode
         // queues it behind the running turn, so the child is not aborted here.
         turnBudgetPromptSent = await promptTask(task, {
@@ -2164,6 +2193,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     assertRunning();
     assertReadOnlyAgentSupport(task);
     assertReadOnlyProviderSupport(task, cursorReadOnly);
+    const assignment = await currentAssignment(task);
     // Resolved before the child exists so a failing host hook cannot orphan a session.
     const promptPreamble = resolveTaskPromptPreamble
       ? await resolveTaskPromptPreamble(task)
@@ -2202,7 +2232,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       modelId: task.modelId,
       agent: task.agent,
       variant: task.variant,
-      prompt: resolveInitialTaskPrompt(task, promptPreamble),
+      prompt: resolveInitialTaskPrompt(assignment, promptPreamble),
       tools: resolveTaskPromptTools(task),
     });
     if (!submitted) return await waitForTerminal(runningTask, { terminalErrorAfter, turnBudgetBaseline: 0, control });

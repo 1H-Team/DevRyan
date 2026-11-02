@@ -101,7 +101,7 @@ describe('openCodeClient contract (native v2 fixture)', () => {
     expect(Object.keys(client.interaction.permissions).sort()).toEqual(['list', 'reply']);
     expect(Object.keys(client.interaction.questions).sort()).toEqual(['list', 'reject', 'reply']);
     expect(Object.keys(privileged).sort()).toEqual(['createChildSession', 'externalMessage', 'instructions', 'locationReload',
-      'readCanonicalPlanSequence', 'readCanonicalUserPage', 'readSessionMetadata', 'readUserMessage', 'revert', 'setMetadata', 'setPermissions', 'switchAgent', 'switchModel', 'synthetic']);
+      'readCanonicalPlanSequence', 'readCanonicalStepLineage', 'readCanonicalUserPage', 'readSessionMetadata', 'readUserMessage', 'revert', 'setMetadata', 'setPermissions', 'switchAgent', 'switchModel', 'synthetic']);
   });
 
   it.each([undefined, null, 1, 3, '2'])('refuses runtime identity %s before any I/O', async generation => {
@@ -459,6 +459,28 @@ describe('openCodeClient contract (native v2 fixture)', () => {
       expect(requests).toBe(2);
       expect(forged.nativeSequence.find(row=>row.id==='msg_auto')).toEqual({id:'msg_auto',type:'synthetic',ordinal:2,turnParent:true});
       raw=[tail,tail];await expect(client.readCanonicalPlanSequence(sessionID,{directory})).rejects.toMatchObject({code:C.invalidResponse});
+    });
+    it('private step lineage counts only Designer primary work across typed compaction without renewing the prompt', async () => {
+      const sessionID = 'ses_step_lineage';
+      const user = { id: 'msg_user', type: 'user', text: 'PRIVATE ASSIGNMENT', time: { created: 1 } };
+      const step = (id, created, agent = 'designer') => ({ id, type: 'assistant', agent,
+        model: { providerID: 'fixture', id: 'fixture' }, content: [{ type: 'text', text: 'PRIVATE OUTPUT' }], time: { created, completed: created + 1 } });
+      const maintenance = { id: 'msg_continue', type: 'synthetic', text: 'PRIVATE MAINTENANCE', metadata: { compaction_continue: true }, time: { created: 7 } };
+      let rows = [user, step('msg_before', 2), { id: 'msg_auto', type: 'compaction', status: 'completed', reason: 'auto',
+        summary: 'PRIVATE SUMMARY', time: { created: 4 } }, step('msg_after', 5), maintenance,
+        step('msg_helper', 8, 'compaction'), step('msg_current', 10)];
+      const client = createPrivilegedOpenCodeClient({ getRuntime: () => ({ generation: 2, baseUrl: 'http://127.0.0.1:1' }), fetchImpl: async url => {
+        if (!new URL(url).pathname.endsWith('/message')) return Response.json({ data: { id: sessionID, location: { directory }, agent: 'designer', model: { providerID: 'fixture', id: 'fixture' } } });
+        return Response.json({ data: [...rows].reverse() });
+      } });
+      const lineage = await client.readCanonicalStepLineage(sessionID, 'msg_current', { directory });
+      expect(lineage).toEqual({ userMessageID: 'msg_user', createdAt: 1, steps: [
+        { messageId: 'msg_before', createdAt: 2 }, { messageId: 'msg_after', createdAt: 6 }, { messageId: 'msg_current', createdAt: 10 } ] });
+      expect(JSON.stringify(lineage)).not.toMatch(/PRIVATE|summary|content/);
+      rows = rows.map(row => row.id === maintenance.id ? { ...row, metadata: {} } : row);
+      expect(await client.readCanonicalStepLineage(sessionID, 'msg_current', { directory })).toEqual(lineage);
+      rows = [user, step('msg_before', 2), { id: 'msg_next_user', type: 'user', text: 'New accepted prompt', time: { created: 4 } }, step('msg_current', 10)];
+      expect(await client.readCanonicalStepLineage(sessionID, 'msg_current', { directory })).toEqual({ userMessageID: 'msg_next_user', createdAt: 4, steps: [{ messageId: 'msg_current', createdAt: 10 }] });
     });
     it('private Plan sequence refuses repeated cursors, incomplete bounded history and foreign scope',async()=>{
       const sessionID='ses_plan_bounds';let pages=0,mode='cycle';

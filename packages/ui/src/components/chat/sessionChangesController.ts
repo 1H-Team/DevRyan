@@ -135,10 +135,30 @@ export const toGitChangedFile = (file: SessionTreeChangedFile, directory: string
 // Connected controller
 // ---------------------------------------------------------------------------
 
-export type SessionChangesBusy = 'undo' | 'redo' | null;
+export const isSessionChangesRestoreCurrent = (entry: SessionTreeChangesEntry | undefined, revision: string, action: 'undo' | 'redo'): boolean => {
+    if (!entry || entry.loading || entry.error || entry.revision !== revision || entry.coverage !== 'complete'
+        || entry.reconciliationState === 'pending' || (entry.undone ? 'redo' : 'undo') !== action) return false;
+    return entry.restoreEligibility ? entry.restoreEligibility.state === 'candidate' && entry.restoreEligibility.action === action
+        : entry.restoreAvailable === true && Boolean(entry.restoreProof);
+};
 
-export const resolveSessionChangesStatusKey = (entry?: Pick<SessionTreeChangesEntry, 'loading' | 'error' | 'coverage' | 'reasons' | 'reconciliationState'>) => {
-    if (entry?.loading) return 'chat.sessionChanges.loading';
+/** A cancelled or superseded preview must never dispatch the file mutation. */
+export async function restoreSessionChangesWithPreview({ client, sessionID, directory, revision, action, signal, isCurrent, onPrepared }: {
+    client: Pick<typeof opencodeClient, 'previewSessionChanges' | 'sessionChangesAction'>;
+    sessionID: string; directory: string; revision: string; action: 'undo' | 'redo';
+    signal: AbortSignal; isCurrent: () => boolean; onPrepared?: () => void;
+}): Promise<boolean> {
+    const proof = await client.previewSessionChanges(sessionID, directory, revision, action, signal);
+    if (signal.aborted || !isCurrent()) return false;
+    onPrepared?.();
+    await client.sessionChangesAction(sessionID, directory, revision, action, proof, signal);
+    return !signal.aborted && isCurrent();
+}
+
+export type SessionChangesBusy = 'checking' | 'undo' | 'redo' | null;
+
+export const resolveSessionChangesStatusKey = (entry?: Pick<SessionTreeChangesEntry, 'loading' | 'error' | 'coverage' | 'reasons' | 'reconciliationState' | 'projectionState'>) => {
+    if (entry?.loading || entry?.projectionState === 'missing' || entry?.projectionState === 'refreshing') return 'chat.sessionChanges.loading';
     if (entry?.error) return 'chat.sessionChanges.loadFailed';
     if (entry?.reconciliationState === 'pending'
         || entry?.reasons?.some((reason) => ['history_pending', 'capture_pending', 'receipts_pending'].includes(reason))) return 'chat.sessionChanges.loading';
@@ -226,6 +246,12 @@ export const useSessionChangesController = (): SessionChangesController => {
     );
     const entryKey = directory && rootSessionId ? getSessionTreeChangesKey(directory, rootSessionId) : '';
     const busy = busySelection?.key === entryKey ? busySelection.action : null;
+    const activeKey = React.useRef(entryKey);
+    activeKey.current = entryKey;
+    const restoreRequest = React.useRef<{ key: string; controller: AbortController } | null>(null);
+    React.useEffect(() => () => {
+        if (restoreRequest.current?.key === entryKey) { restoreRequest.current.controller.abort(); restoreRequest.current = null; }
+    }, [entryKey]);
     const entry = useSessionTreeChangesStore(React.useCallback(
         (state): SessionTreeChangesEntry | undefined => entryKey ? state.entries.get(entryKey) : undefined,
         [entryKey],
@@ -288,9 +314,12 @@ export const useSessionChangesController = (): SessionChangesController => {
 
     const statusKey = resolveSessionChangesStatusKey(entry);
     const statusMessage = statusKey ? t(statusKey) : null;
+    const candidate = entry?.restoreEligibility?.state === 'candidate'
+        && entry.restoreEligibility.action === (isUndone ? 'redo' : 'undo');
     state.undoDisabled = state.undoDisabled || Boolean(entry?.loading || entry?.error) || entry?.reconciliationState === 'pending'
-        || entry?.coverage !== 'complete' || !entry?.revision || entry?.restoreAvailable !== true || !entry?.restoreProof
-        || Boolean(!isUndone && entry?.current && (entry.current.state !== 'verified' || entry.current.verifiedFileCount !== entry.fileCount));
+        || entry?.coverage !== 'complete' || !entry?.revision
+        || (entry?.restoreEligibility ? !candidate : entry?.restoreAvailable !== true || !entry?.restoreProof)
+        || Boolean(!entry?.restoreEligibility && !isUndone && entry?.current && (entry.current.state !== 'verified' || entry.current.verifiedFileCount !== entry.fileCount));
 
     const retry = React.useCallback(() => {
         if (!rootSessionId || !directory || entry?.loading) return;
@@ -299,27 +328,45 @@ export const useSessionChangesController = (): SessionChangesController => {
 
     const restore = React.useCallback((action: 'undo' | 'redo') => {
         const revision = entry?.revision;
-        const restoreProof = entry?.restoreProof;
-        if (!rootSessionId || !revision || !restoreProof || busy) return;
-        setBusySelection({ key: entryKey, action });
+        if (!rootSessionId || !revision || busy || restoreRequest.current) return;
+        const controller = new AbortController();
+        restoreRequest.current = { key: entryKey, controller };
+        const scopeCurrent = () => !controller.signal.aborted && activeKey.current === entryKey
+            && getSessionTreeChangesKey(directory, rootSessionId) === entryKey;
+        const current = () => scopeCurrent()
+            && isSessionChangesRestoreCurrent(useSessionTreeChangesStore.getState().entries.get(entryKey), revision, action);
+        setBusySelection({ key: entryKey, action: 'checking' });
         void (async () => {
             try {
-                await opencodeClient.sessionChangesAction(rootSessionId, directory, revision, action, restoreProof);
+                if (!await restoreSessionChangesWithPreview({ client: opencodeClient, sessionID: rootSessionId, directory,
+                    revision, action, signal: controller.signal, isCurrent: current,
+                    onPrepared: () => setBusySelection({ key: entryKey, action }) })) {
+                    if (scopeCurrent()) await refreshSessionTreeChanges(directory, rootSessionId);
+                    return;
+                }
                 await refreshSessionTreeChanges(directory, rootSessionId);
             } catch (error) {
+                if (!scopeCurrent()) return;
                 const code = error instanceof ScopedRevertError ? error.code : null;
                 if (code === 'working_tree_changed') toast.error(t('chat.sessionChanges.error.conflict'));
                 else if (code === 'summary_revision_changed' || code === 'restore_proof_stale') {
                     toast.error(t('chat.sessionChanges.error.revisionChanged'));
                     await refreshSessionTreeChanges(directory, rootSessionId);
                 }
+                else if (code === 'restore_evidence_unavailable') {
+                    toast.error(t('chat.sessionChanges.restoreUnavailable'));
+                    await refreshSessionTreeChanges(directory, rootSessionId);
+                }
                 else if (code === 'directory_busy') toast.error(t('chat.sessionChanges.footer.undoBlockedTooltip'));
                 else if (code === 'summary_incomplete') toast.error(t('chat.sessionChanges.incomplete'));
                 else if (code === 'rollback_failed') toast.error(t('chat.sessionChanges.error.rollbackFailed'));
                 else toast.error(t(action === 'redo' ? 'chat.sessionChanges.error.redoFailed' : 'chat.sessionChanges.error.undoFailed'));
-            } finally { setBusySelection((current) => current?.key === entryKey ? null : current); }
+            } finally {
+                if (restoreRequest.current?.controller === controller) restoreRequest.current = null;
+                setBusySelection((current) => current?.key === entryKey ? null : current);
+            }
         })();
-    }, [busy, directory, entry?.revision, entry?.restoreProof, entryKey, rootSessionId, t]);
+    }, [busy, directory, entry?.revision, entryKey, rootSessionId, t]);
     const undo = React.useCallback(() => restore('undo'), [restore]);
     const redo = React.useCallback(() => restore('redo'), [restore]);
     const openFile = React.useCallback((file: ChangedFileEntry) => {

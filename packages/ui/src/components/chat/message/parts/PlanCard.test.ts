@@ -267,3 +267,18 @@ describe('shouldPersistPlanCard', () => {
     })).toBe(false);
   });
 });
+
+describe('cold plan action state', () => {
+  const base = { streamPhase: 'completed' as const, hasPlanText: true, isImplementationRequested: false };
+  test('missing trace or pending hydration remains unknown instead of claiming supersession', () => {
+    expect(getPlanCardActionState(base)).toEqual({ canImplement: false, disabledReason: 'Checking plan state.' });
+    expect(getPlanCardActionState({ ...base, isLatestPlan: false, isPlanStateKnown: false }))
+      .toEqual({ canImplement: false, disabledReason: 'Checking plan state.' });
+    expect(getPlanCardActionState({ ...base, isLatestPlan: false, isPlanStateKnown: true }).disabledReason)
+      .toBe('This plan is no longer current.');
+  });
+  test('an observed implementation marker takes priority while remaining history loads', () => {
+    expect(getPlanCardActionState({ ...base, isImplementationRequested: true, isPlanStateKnown: false }))
+      .toEqual({ canImplement: false, disabledReason: 'Implementation already started.' });
+  });
+});

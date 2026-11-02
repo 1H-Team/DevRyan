@@ -174,7 +174,7 @@ export const SessionChangesCardView: React.FC<SessionChangesCardViewProps> = ({
                         onClick={() => setConfirmOpen(true)}
                         data-session-changes-action="undo"
                     >
-                        {busy === 'undo'
+                        {busy === 'checking' ? t('chat.sessionChanges.footer.checking') : busy === 'undo'
                             ? t('chat.sessionChanges.footer.undoing')
                             : t('chat.sessionChanges.footer.actions.undo')}
                         <RiArrowGoBackLine className="size-3" aria-hidden="true" />
@@ -200,7 +200,7 @@ export const SessionChangesCardView: React.FC<SessionChangesCardViewProps> = ({
                         onClick={onRedo}
                         data-session-changes-action="redo"
                     >
-                        {busy === 'redo'
+                        {busy === 'checking' ? t('chat.sessionChanges.footer.checking') : busy === 'redo'
                             ? t('chat.sessionChanges.footer.redoing')
                             : t('chat.sessionChanges.footer.actions.redo')}
                         <RiArrowGoForwardLine className="size-3" aria-hidden="true" />

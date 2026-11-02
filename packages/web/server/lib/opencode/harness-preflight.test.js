@@ -38,7 +38,7 @@ describe('harness preflight', () => {
       .filter((finding) => finding.ruleId === 'invalid-agent-steps');
     expect(findings).toEqual([]);
     const steps = Object.fromEntries(agents.map((agent) => [agent.name, agent.frontmatter.steps]));
-    expect(steps).toMatchObject({ explorer: 35, librarian: 35, fixer: 120, designer: 120 });
+    expect(steps).toMatchObject({ explorer: 35, librarian: 35, fixer: 120, designer: 240 });
   });
 
   it('ships no packaged sampling settings the native runtime would drop', () => {

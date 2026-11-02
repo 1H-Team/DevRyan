@@ -489,6 +489,14 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     })).status !== 'available') return null;
     return backup;
   };
+  const resolveTaskAssignment = async task => {
+    const current = scheduler.getTask(task.taskId);
+    if (!current || current.rootSessionId !== task.rootSessionId || current.directory !== task.directory || current.leaseToken !== task.leaseToken)
+      throw createRuntimeError('task_lease_stale', 'Managed assignment ownership changed', 409);
+    const objective = current.dispatchObjectiveId ? scheduler.getObjectiveRequiredChecks({ rootSessionId: current.rootSessionId,
+      directory: current.directory, objectiveId: current.dispatchObjectiveId }) : null;
+    return { ...task, requiredChecks: structuredClone(current.requiredChecks ?? []), rootRequiredChecks: structuredClone(objective?.requiredChecks ?? []) };
+  };
   const executor = options.executor ?? createWebManagedOpenCodeExecutor({
     ...(options.eventReconcileIntervalMs === undefined ? {} : { eventReconcileIntervalMs: options.eventReconcileIntervalMs }),
     cursorSdkRuntime: options.cursorSdkRuntime,
@@ -507,8 +515,9 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     onFirstAssistantActivity: options.onFirstAssistantActivity,
     now,
     resolveTaskPromptPreamble: options.resolveTaskPromptPreamble,
-    // Designer/fixer tool loops get an assistant-turn backstop (wrap-up prompt,
-    // then abort) so a runaway child cannot burn the whole task timeout.
+    resolveTaskAssignment,
+    // Fixer retains its assistant-turn backstop; Designer uses persisted
+    // canonical primary steps and a result notice instead of queued prompts.
     resolveTaskTurnBudget: options.resolveTaskTurnBudget ?? resolveManagedTaskTurnBudget,
   });
   // Automatic quota recovery or a single backup after exhausted transport
@@ -1036,7 +1045,9 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
         if (!childSessionId || !directory) throw createRuntimeError('task_scope_mismatch', 'childSessionId and directory are required', 403);
         const task = scheduler.getChildAssignment?.(childSessionId, directory) ?? null;
         if(method==='child_plan')return {approvedPlanRef:task?.approvedPlanRef??null,rootSessionId:task?.rootSessionId??null};
-        return { text: task ? formatManagedAssignmentContext(task, { maxBytes: params.maxBytes }) : null };
+        const text = task ? formatManagedAssignmentContext(await resolveTaskAssignment(task), { maxBytes: params.maxBytes }) : null;
+        if (task && !text) throw createRuntimeError('managed_assignment_context_unavailable', 'Managed assignment context exceeds the supported budget', 409);
+        return { text };
       }
       case 'declare_checks': {
         const authority = context[REQUIRED_CHECK_CORRECTION];
@@ -1597,6 +1608,46 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     inspectRequiredChecks,
     discardObjectiveChecks: (scope, authorize) => scheduler.discardObjectiveChecks(scope, authorize),
     observeNativeRequiredCheck: input => input.phase === 'before' ? requiredCheckObserver.before(input) : requiredCheckObserver.after(input),
+    // Constructor-only native step/result hooks; never exposed through RPC.
+    async acceptManagedPrimaryPrompt(input) {
+      const task = scheduler.getChildAssignment(input.sessionId, input.directory);
+      if (!task || task.agent !== 'designer' || !['starting', 'running'].includes(task.status) || task.readOnly) return null;
+      const message = await resolveGen2OpenCodeClient(openCodeClient).sessions.message(input.sessionId, input.userMessageId, { directory: input.directory });
+      if (message?.info?.id !== input.userMessageId || message.info.sessionID !== input.sessionId
+        || message.info.role !== 'user') throw createRuntimeError('managed_primary_prompt_invalid', 'Managed primary prompt is unavailable', 409);
+      const accepted = await scheduler.acceptPrimaryPrompt({ ...input, createdAt: message.info.time?.created,
+        taskId: task.taskId, leaseToken: task.leaseToken });
+      if (!accepted) throw createRuntimeError('managed_primary_prompt_invalid', 'Managed primary prompt is fenced', 409);
+      return accepted;
+    },
+    async observeManagedPrimaryStep(input, lineage) {
+      const task = scheduler.getChildAssignment(input.sessionId, input.directory);
+      if (!task || task.agent !== 'designer' || !['starting', 'running'].includes(task.status) || task.readOnly) return null;
+      const scope = { taskId: task.taskId, leaseToken: task.leaseToken };
+      const parent = task.primaryStepBudget?.maintenanceParents?.find(parent => parent.parentID === input.userMessageId);
+      let budget = await scheduler.recordPrimaryStep({ ...input, ...scope, userMessageId: parent?.userMessageID ?? input.userMessageId });
+      if (budget) return budget;
+      // Constructor-only native owner supplies bounded typed sequence evidence
+      // for compaction and pre-upgrade live tasks. Never infer from prose or
+      // restart a persisted allowance from a transcript count.
+      if (!lineage) return { lineageRequired: true };
+      const accepted = await scheduler.acceptPrimaryPrompt({ ...input, ...scope,
+        userMessageId: lineage.userMessageID, createdAt: lineage.createdAt });
+      if (accepted) budget = await scheduler.recordPrimaryStep({ ...input, ...scope, userMessageId: lineage.userMessageID,
+        historicalSteps: lineage.steps, ...(input.userMessageId !== lineage.userMessageID ? { maintenanceParentId: input.userMessageId } : {}) });
+      if (!budget) throw createRuntimeError('managed_primary_step_budget_unavailable', 'Managed primary step is fenced', 409);
+      return budget;
+    },
+    async claimManagedTaskBudgetWarning(input) {
+      const task = scheduler.getChildAssignment(input.sessionId, input.directory);
+      if (!task || task.agent !== 'designer' || task.status !== 'running' || task.readOnly) return null;
+      const assistant = await resolveGen2OpenCodeClient(openCodeClient).sessions.message(input.sessionId, input.messageId, { directory: input.directory });
+      if (assistant?.info?.id !== input.messageId || assistant.info.sessionID !== input.sessionId
+        || assistant.info.role !== 'assistant' || assistant.info.agent !== 'designer'
+        || assistant.turnOwnership?.source !== 'native-sequence' || assistant.turnOwnership.userMessageID !== assistant.info.parentID
+        || !assistant.parts?.some(part => part.type === 'tool' && part.callID === input.callId)) return null;
+      return scheduler.claimPrimaryStepBudgetWarning({ ...input, taskId: task.taskId, leaseToken: task.leaseToken });
+    },
     async getObjectiveVerification(scope) {
       await ensureInitialized();
       const record = scheduler.getObjectiveRequiredChecks(scope);

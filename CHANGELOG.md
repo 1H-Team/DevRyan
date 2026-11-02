@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.10] - 2026-11-02
+
+- Load session change history from cached summaries and verify current file state when previewing Undo or Redo.
+- Recover safely from interrupted Revert and Redo preparation during startup.
+- Preserve task assignments and required checks across continuation and compaction, and bound Designer steps across recovered turns.
+- Keep plan actions disabled until current plan state has loaded, and improve plan-save and Claude process diagnostics.
+- Improve required-check failure feedback and share concurrent plan-policy reads.
+- Add a trailing sidebar status dot, remove the terminal Processes tab, and refresh the reviewed model catalog.
+
 ## [2.0.9] - 2026-11-02
 
 - Start chats in a worktree with a remembered composer checkbox and automatically name new branches from the task under `DevRyan/`.

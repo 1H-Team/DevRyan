@@ -21,6 +21,22 @@ const reads = async (advise, count, tool = 'read') => {
 };
 
 describe('plan-mode read advisory', () => {
+  it('shares initialization across concurrent reads without losing increments', async () => {
+    let release, policyReads = 0;
+    const ready = new Promise(resolve => { release = resolve; }), journal = [];
+    const advise = createNativePlanReadAdvisory({
+      readManagedState: async () => ({ tasks: [{ agent: 'explorer', status: 'completed', createdAt: 200 }] }),
+      readPrimaryRecord: async () => ({ ...scope, objectiveID: 'msg_objective' }),
+      readPlanPolicy: async () => { policyReads++; await ready; return { readOnly: true }; },
+      readObjectiveStart: async () => 100, recordDiagnostic: entry => journal.push(entry),
+    });
+    const pending = Array.from({ length: 5 }, () => advise({ ...scope, tool: 'read' }));
+    await new Promise(resolve => setImmediate(resolve)); release();
+    const results = await Promise.all(pending);
+    expect(policyReads).toBe(1);
+    expect(journal.map(entry => entry.payload.count)).toEqual([1, 2, 3, 4, 5]);
+    expect(results.filter(Boolean).map(result => result.count)).toEqual([4, 5]);
+  });
   it('advises from the fourth plan-mode read or grep after a settled Explorer and journals every count', async () => {
     const { advise, journal, state } = fixture();
     const results = await reads(advise, 5, 'grep');

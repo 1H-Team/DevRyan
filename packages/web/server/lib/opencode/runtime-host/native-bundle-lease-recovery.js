@@ -25,7 +25,8 @@ const needsRecovery = lease => unsettled(lease) || ['published', 'cancelled'].in
  * `allRecords` digests every ledger record into `inventorySha256`, the canonical
  * hash of `[{ directory, records: [{ key, value }], root }]`, without retaining
  * them: a ledger holds several records per project file. A lease this `intent`
- * already recovered is digested as its original. Only leases are returned. */
+ * already recovered is digested as its original. Returns leases and IDs of
+ * initial Revert/Redo fences that have not reached conversation mutation. */
 export async function readBundleLeaseInventory(launch, { allRecords = false, intent, storeOptions = {} } = {}) {
   const storage = path.join(launch.webDataDirectory, 'harness', 'session-mutations');
   let names;
@@ -61,7 +62,11 @@ export async function readBundleLeaseInventory(launch, { allRecords = false, int
     if (revertPending) throw Object.assign(Error('migration_revert_pending'), { code: 'migration_revert_pending' });
     const leasePins = allRecords ? (await git(root, ['--git-dir', path.join(root, 'git'), 'for-each-ref', '--format=%(refname) %(objectname)', 'refs/devryan/leases/']))
       .toString().trim().split('\n').filter(Boolean).map(line => { const [ref, oid] = line.split(' '); return { ref, oid }; }) : [];
-    ledgers.push({ root, directory: meta.directory, records, leasePins, db });
+    const unstartedReverts = [];
+    for await (const { value } of db.entries('transactions')) {
+      if (value.state === 'prepared' && value.phase === 'prepared' && value.boundaries === undefined && value.kind === undefined) unstartedReverts.push(value.id);
+    }
+    ledgers.push({ root, directory: meta.directory, records, leasePins, db, unstartedReverts });
   }
   return allRecords ? Object.assign(ledgers, { inventorySha256: inventory.update(']').digest('hex') }) : ledgers;
 }
@@ -91,7 +96,8 @@ export async function recoverAbandonedControlLeases({ launch, createRuntime = cr
     && typeof lease.viewDirectory === 'string' && path.resolve(lease.viewDirectory) === lease.viewDirectory
     && containsPath(path.join(ledger.root, 'views'), lease.viewDirectory) && lease.viewDirectory !== path.join(ledger.root, 'views') }))
     .filter(ledger => ledger.records.some(row => needsRecovery(row.value) && (ledger.abandoned(row.value) || row.value.executionKind === 'process')));
-  if (!ledgers.length) return { status: 'clean' };
+  const revertLedgers = inventory.filter(ledger => ledger.unstartedReverts.length);
+  if (!ledgers.length && !revertLedgers.length) return { status: 'clean' };
   return timeStartupPhase('bundle_lease_recovery', async () => {
     await assertOwnerAbsent(launch);
     const launcher = executionArtifacts(path.dirname(launch.artifactManifestPath ?? '')).launcher;
@@ -108,13 +114,20 @@ export async function recoverAbandonedControlLeases({ launch, createRuntime = cr
           || lease.executionKind === 'process' && await ownerLost({ directory: path.join(launch.webDataDirectory, 'harness', 'execution-owners'), launcher, id: lease.ownerID }),
           onFailure: cause => failures.push(failureCode(cause)) });
       }
+      // The bootstrap lock excludes new owners; unresolved writers keep every fence held.
+      const remaining = await readBundleLeaseInventory(launch);
+      if (!remaining.some(ledger => ledger.records.some(row => unsettled(row.value)))) {
+        for (const { directory, unstartedReverts } of revertLedgers) for (const transactionID of unstartedReverts) {
+          await runtime.settleRevert({ directory, transactionID, commit: false, cancelUnstarted: true });
+        }
+      }
     } finally { await runtime.drain?.(); }
     if (!(await readBundleLeaseInventory(launch)).some(ledger => ledger.records.some(row => needsRecovery(row.value)))) return { status: 'recovered' };
     return { status: 'failed', code: [...new Set(failures)].join(',') || 'bundle_lease_recovery_incomplete' };
   });
 }
 
-/** Cold settlement of the selected bundle's abandoned control leases, inside the
+/** Cold settlement of abandoned leases and unstarted reverts, inside the
  * bootstrap lock and before the startup upgrade and launch verification. Both
  * refuse any unsettled lease, while in-runtime recovery runs only after launch.
  * A control lease spawned no process, so with no live owner of the bundle it is
@@ -130,7 +143,7 @@ export async function recoverSelectedBundleLeasesAtStartup({ controlRoot, log = 
   } catch (error) {
     result = { status: 'failed', code: finiteCode(error) };
   }
-  if (result.status === 'recovered') log.info?.('[runtime-bundle] settled abandoned control leases of the selected bundle');
+  if (result.status === 'recovered') log.info?.('[runtime-bundle] settled abandoned control leases and unstarted reverts of the selected bundle');
   if (result.status === 'failed') log.warn?.(`[runtime-bundle] abandoned control leases not settled: ${result.code}`);
   return result;
 }

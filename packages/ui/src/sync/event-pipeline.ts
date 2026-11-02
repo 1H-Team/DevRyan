@@ -847,6 +847,7 @@ export function createEventPipeline(input: EventPipelineInput) {
         }
       },
       onSseError: (error: unknown) => {
+        if (signal.aborted) return
         setSubscriptionReady(false)
         if (isAbortError(error)) return
         notifyDisconnected("sse_error")
@@ -1109,7 +1110,7 @@ export function createEventPipeline(input: EventPipelineInput) {
           // a full directory resync.
           responsivenessPerfCount("event_pipeline.transport_switch")
           onTransportSwitch?.()
-        } else if (!isAbortError(error)) {
+        } else if (!isAbortError(error) && !(currentTransport === "sse" && attempt?.signal.aborted)) {
           consecutiveFailures += 1
           if (!streamErrorLogged) {
             streamErrorLogged = true

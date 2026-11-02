@@ -10,7 +10,7 @@
 //
 //   bun scripts/perf/tool-latency-benchmark.mjs [--runtime <harness-runtime/lib>] [--files 3000]
 //     [--seed-calls 12000] [--reads 40] [--bursts 8] [--parallel 8] [--edits 12] [--writers 1]
-//     [--host] [--count-git] [--out <report.json>] [--keep]
+//     [--warmup 3] [--host] [--count-git] [--out <report.json>] [--keep]
 //
 // `--writers N` runs the edits as N sessions editing in parallel (as parallel
 // subagents do). Every edit's preparation reports its summary steps
@@ -40,8 +40,8 @@ const repositoryRoot = fileURLToPath(new URL('../../', import.meta.url));
 
 export function parseToolLatencyArgs(argv) {
   const options = { runtime: path.join(repositoryRoot, 'packages/harness-runtime/lib'), files: 3000, seedCalls: 12_000,
-    reads: 40, bursts: 8, parallel: 8, edits: 12, writers: 1, host: false, countGit: false, out: null, keep: false };
-  const numbers = { '--files': 'files', '--seed-calls': 'seedCalls', '--reads': 'reads', '--bursts': 'bursts', '--parallel': 'parallel', '--edits': 'edits', '--writers': 'writers' };
+    reads: 40, bursts: 8, parallel: 8, edits: 12, writers: 1, warmup: 0, host: false, countGit: false, out: null, keep: false };
+  const numbers = { '--files': 'files', '--seed-calls': 'seedCalls', '--reads': 'reads', '--bursts': 'bursts', '--parallel': 'parallel', '--edits': 'edits', '--writers': 'writers', '--warmup': 'warmup' };
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
     const value = () => {
@@ -60,6 +60,7 @@ export function parseToolLatencyArgs(argv) {
   for (const [flag, name] of Object.entries(numbers)) {
     if (!Number.isSafeInteger(options[name]) || options[name] < 0 || options[name] > 200_000) throw new Error(`${flag} must be an integer from 0 to 200000`);
   }
+  if (options.warmup > 20) throw new Error('--warmup must be an integer from 0 to 20');
   if (options.parallel < 1 || options.parallel > 64) throw new Error('--parallel must be an integer from 1 to 64');
   if (options.writers < 1 || options.writers > 8) throw new Error('--writers must be an integer from 1 to 8');
   return options;
@@ -125,7 +126,7 @@ export async function runToolLatencyBenchmark(options) {
       : createSessionMutationRuntime;
     const { withExecutionPreparation, withExecutionTiming } = await import(pathToFileURL(path.join(options.runtime, 'execution-admission.js')).href);
     runtime = create({ directory: storage, maintenance: { looseObjects: 1_000, packs: 12, commits: 64 } });
-    const report = { files: options.files, seedCalls: options.seedCalls, writers: options.writers, host: options.host, phases: {}, steps: {}, units: {}, cpu: {}, git: {}, samples: [], waves: [] };
+    const report = { files: options.files, seedCalls: options.seedCalls, writers: options.writers, host: options.host, phases: {}, steps: {}, units: {}, cpu: {}, git: {}, samples: [], waves: [], warmup: options.warmup, cold: {} };
     const stepRows = {}, unitRows = {}, cpuRows = {};
     const started = performance.now();
     await runtime.warm({ directory, maxFiles: 20_000 });
@@ -156,6 +157,23 @@ export async function runToolLatencyBenchmark(options) {
         executionFingerprint: fingerprint(identity.callID) }));
     };
     const step = (index) => ({ directory, sessionID: 'bench', userMessageID: `bench-u${index}`, messageID: `bench-u${index}-assistant` });
+    const discardWarmup = () => {
+      for (const collection of [rows, stepRows, unitRows, cpuRows, gitRows]) {
+        for (const key of Object.keys(collection)) delete collection[key];
+      }
+      report.samples.length = 0; report.waves.length = 0;
+    };
+    // Warm the same runtime and paths; keep first-call latency separate.
+    for (let index = 0; index < options.warmup; index += 1) {
+      const start = performance.now();
+      await readCall({ ...step(`warm-r${index}`), callID: `warm-read-${index}` }, 'warm');
+      if (index === 0) report.cold.readMs = Math.round(performance.now() - start);
+      const burstStart = performance.now();
+      await Promise.all(Array.from({ length: options.parallel }, (_, call) =>
+        readCall({ ...step(`warm-p${index}`), callID: `warm-burst-${index}-${call}` }, 'warm')));
+      if (index === 0) report.cold.parallelMs = Math.round(performance.now() - burstStart);
+    }
+    discardWarmup();
     // One registered prompt per step, as the host registers each user message.
     for (let index = 0; index < options.reads; index += 1) {
       const identity = { ...step(`r${Math.floor(index / 8)}`), callID: `read-${index}` };
@@ -189,7 +207,7 @@ export async function runToolLatencyBenchmark(options) {
     };
     const editOnce = async (index, writer) => {
       const identity = { ...step(`e${index}-w${writer}`), sessionID: `bench-w${writer}`, callID: `edit-${index}-${writer}` };
-      const file = index * options.writers + writer, target = `src${file % 23}/mod${file % 7}/file${file % options.files}.ts`;
+      const file = Math.abs(index) * options.writers + writer, target = `src${file % 23}/mod${file % 7}/file${file % options.files}.ts`;
       const sample = { wave: index, writer, callID: identity.callID, phases: {}, steps: {}, units: {} };
       const measure = (phase, action) => elapsed(rows, phase, async () => {
         const started = performance.now();
@@ -214,6 +232,16 @@ export async function runToolLatencyBenchmark(options) {
       });
       report.samples.push(sample);
     };
+    // Edit warm-up follows reads but must not erase their measured samples.
+    if (options.warmup > 0 && options.edits > 0) {
+      const readRows = structuredClone(rows), readGitRows = structuredClone(gitRows);
+      for (let index = 0; index < options.warmup; index += 1) {
+        const start = performance.now();
+        await Promise.all(Array.from({ length: options.writers }, (_, writer) => editOnce(-index - 1, writer)));
+        if (index === 0) report.cold.editWaveMs = Math.round(performance.now() - start);
+      }
+      discardWarmup(); Object.assign(rows, readRows); Object.assign(gitRows, readGitRows);
+    }
     for (let index = 0; index < options.edits; index += 1) {
       const cpu = process.cpuUsage(), loop = performance.eventLoopUtilization();
       await countGit('edit', () => elapsed(rows, 'edit.wave', () => Promise.all(Array.from({ length: options.writers }, (_, writer) => editOnce(index, writer)))));
@@ -222,7 +250,7 @@ export async function runToolLatencyBenchmark(options) {
       // (the host's) thread only.
       (cpuRows['edit.wave.ms'] ??= []).push(Math.round((used.user + used.system) / 1000));
       (cpuRows['edit.wave.hostLoopBusyMs'] ??= []).push(Math.round(busy.active));
-      report.waves.push({ wave: index, processCpuMs: Math.round((used.user + used.system) / 1000), hostLoopBusyMs: Math.round(busy.active) });
+      report.waves.push({ wave: index, processCpuMs: Math.round((used.user + used.system) / 1000), hostLoopBusyMs: Math.round(busy.active), rssBytes: process.memoryUsage().rss });
     }
     await runtime.drain();
     report.phases = Object.fromEntries(Object.entries(rows).map(([phase, values]) => [phase, summarize(values)]));

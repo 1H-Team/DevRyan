@@ -27,6 +27,49 @@ describe('canonical required checks against final content', () => {
   afterEach(async () => { observer.dispose(); await fs.rm(directory, { recursive: true, force: true }); });
   const check = async (exitCode = 0) => { await observer.before(input); await observer.after({ ...input, exitCode }); };
 
+  it('returns a hint only for a matched retained ambiguous declaration whose receipt committed', async () => {
+    task.requiredChecks[0].command = 'bun test source.test.js; echo done';
+    expect(await observer.before(input)).toEqual({ tracked: false });
+    expect(await observer.after({ ...input, exitCode: 0 })).toEqual({ recorded: false });
+    const matched = { ...input, command: task.requiredChecks[0].command };
+    await observer.before(matched);
+    const result = await observer.after({ ...matched, exitCode: 0 });
+    expect(result).toMatchObject({ recorded: true, hints: [{ name: 'unit tests', code: 'required_check_command_exit_ambiguous' }] });
+    expect((await observer.project(task))[0]).toMatchObject({ status: 'blocked' });
+    expect(await observer.after({ ...matched, exitCode: 0 })).toEqual({ recorded: false });
+  });
+
+  it.each(['missing visual', 'invalid visual', 'changed coverage', 'missing exit'])('returns compact committed evidence advice for %s without changing exit/status', async problem => {
+    let exitCode = 0;
+    if (problem.includes('visual')) {
+      task.requiredChecks[0] = { ...task.requiredChecks[0], kind: 'visual', visual: {
+        state: 'populated', dataSource: 'fixture', assertions: ['rows visible'], reportPath: 'visual.json' } };
+      if (problem === 'invalid visual') await fs.writeFile(path.join(directory, 'visual.json'), '{invalid');
+    }
+    await observer.before(input);
+    if (problem === 'changed coverage') await fs.writeFile(path.join(directory, 'source.txt'), 'changed during check');
+    if (problem === 'missing exit') exitCode = null;
+    const result = await observer.after({ ...input, exitCode });
+    expect(result).toMatchObject({ recorded: true, hints: [{ name: 'unit tests', code: 'required_check_evidence_incomplete' }] });
+    expect(result.hints).toHaveLength(1);
+    expect(result.hints[0].message).toContain(problem.includes('visual') ? 'visual report' : problem === 'missing exit' ? 'exit code was not observed' : 'Declared coverage');
+    expect(task.requiredCheckReceipts[0]).toMatchObject({ exitCode, status: problem.includes('visual') ? 'blocked' : 'not-observed' });
+    expect(await observer.after({ ...input, exitCode })).toEqual({ recorded: false });
+  });
+  it('keeps passed checks, changed declarations and foreign or stale completions silent', async () => {
+    await observer.before(input);
+    expect(await observer.after({ ...input, exitCode: 0 })).toEqual({ recorded: true });
+    await observer.before(input);
+    task.requiredChecks = [{ ...task.requiredChecks[0], command: 'bun test corrected.test.js' }];
+    expect(await observer.after({ ...input, exitCode: null })).toEqual({ recorded: true });
+    task.requiredChecks[0].command = input.command;
+    await observer.before(input);
+    expect(await observer.after({ ...input, messageId: 'msg_foreign', exitCode: null })).toEqual({ recorded: false });
+    await observer.before(input);
+    task.leaseToken = 'lease_replaced';
+    expect(await observer.after({ ...input, exitCode: null })).toEqual({ recorded: false });
+  });
+
   it('invalidates a pass after a relevant write and reestablishes it only after another check', async () => {
     expect((await observer.project(task))[0]).toMatchObject({ status: 'pending', reason: 'check_not_observed' });
     await check();

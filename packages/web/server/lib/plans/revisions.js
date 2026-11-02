@@ -111,7 +111,7 @@ export const readPlanRevision = async (revision, { fsApi = fs } = {}) => {
 
 // Both HTTP edits and root-agent updates share this lock and byte version.
 export const writePlanRevision = async (revision, { text, expectedVersion, create = false,
-  authorize = async () => {}, fsApi = fs } = {}) => {
+  authorize = async () => {}, fsApi = fs, observe = () => {} } = {}) => {
   validatePlanText(text);
   if (!create && (typeof expectedVersion !== 'string' || !expectedVersion)) {
     throw planError(428, 'plan_version_required', 'Read the plan before updating it');
@@ -131,8 +131,20 @@ export const writePlanRevision = async (revision, { text, expectedVersion, creat
     if (error?.code === 'ENOENT') throw planError(404, 'plan_revision_missing', 'Plan revision not found');
     throw error;
   }
+  const started = performance.now();
+  let acquiredAt;
+  const mark = (stage) => {
+    const now = performance.now();
+    try { observe({ stage, elapsedMs: Math.round(now - started),
+      waitMs: Math.round((acquiredAt ?? now) - started),
+      ...(acquiredAt === undefined ? {} : { holdMs: Math.round(now - acquiredAt) }) }); } catch { /* Observer only. */ }
+  };
+  mark('lock_wait');
   return withCrossProcessFileLock(`${revision.path}.lock`, async () => {
+    acquiredAt = performance.now();
+    mark('lock_acquired');
     await authorize();
+    mark('locked_authorized');
     let current;
     try { current = await readPlanRevision(revision, { fsApi }); }
     catch (error) { if (!create || error?.code !== 'plan_revision_missing') throw error; }
@@ -149,12 +161,15 @@ export const writePlanRevision = async (revision, { text, expectedVersion, creat
       await handle.sync();
       await handle.close(); handle = null;
       await assertDirectory(revision, fsApi);
+      mark('precommit_authorizing');
       await authorize();
+      mark('precommit_authorized');
       await fsApi.rename(temporary, revision.path);
+      mark('published');
     } finally {
       await handle?.close().catch(() => {});
       await fsApi.unlink(temporary).catch(() => {});
     }
     return { path: revision.path, ...(create ? { created: true } : { saved: true }), version };
-  }, { fs: fsApi });
+  }, { fs: fsApi }).finally(() => mark('lock_settled'));
 };

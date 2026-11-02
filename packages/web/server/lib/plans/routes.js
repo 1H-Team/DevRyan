@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { resolveSessionPlanRevision, readPlanRevision, writePlanRevision, planError } from './revisions.js';
 export { resolveSessionPlanRevision } from './revisions.js';
 const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
@@ -56,8 +57,8 @@ export const registerSessionPlanRoutes = (app, {
     }) };
   };
 
-  const diagnostic = (req, outcome, result) => { try { recordDiagnostic({ type: 'lifecycle', event: 'session_plan_write',
-    sessionID: req.params.sessionID, payload: { outcome, code: result?.code, version: result?.version } }); } catch { /* Observer only. */ } };
+  const diagnostic = (req, outcome, result, correlation = {}) => { try { recordDiagnostic({ type: 'lifecycle', event: 'session_plan_write',
+    sessionID: req.params.sessionID, payload: { outcome, code: result?.code, version: result?.version, ...correlation } }); } catch { /* Observer only. */ } };
   const publish = (req, sessionContext, result) => publishEvent({ type: 'session.plan.updated', properties: {
     sessionID: req.params.sessionID, sourceMessageID: req.params.sourceMessageID,
     directory: sessionContext?.directory || req.body.directory,
@@ -65,9 +66,17 @@ export const registerSessionPlanRoutes = (app, {
   } }, { directory: sessionContext?.directory || req.body.directory });
 
   for (const method of ['post', 'put']) app[method]('/api/session/:sessionID/plan-revisions/:sourceMessageID', async (req, res) => {
+    const requestId = randomUUID(), started = performance.now();
+    const correlation = { requestId, sourceMessageID: req.params.sourceMessageID,
+      trigger: ['completion', 'retry', 'hydration', 'edit'].includes(req.body?.trigger) ? req.body.trigger : 'unknown' };
+    const observe = ({ stage, waitMs, holdMs }) => diagnostic(req, stage, null, { ...correlation,
+      elapsedMs: Math.round(performance.now() - started), waitMs, holdMs });
     try {
+      observe({ stage: 'received' });
       const sessionContext = await authorizeSession(req);
+      observe({ stage: 'authorized' });
       const { revision, canonical } = await resolveFromRequest(req, sessionContext);
+      observe({ stage: 'source_validated' });
       const authorize = async () => {
         const current = await authorizeSession(req).catch(error => {
           if (error.code === 'plan_owner_unavailable') throw planError(404, 'plan_owner_changed', 'Session not found');
@@ -82,8 +91,8 @@ export const registerSessionPlanRoutes = (app, {
         }
       };
       const result = await writePlanRevision(revision, { text: method === 'post' ? canonical.content ?? req.body?.markdown : req.body?.markdown,
-        expectedVersion: req.body?.expectedVersion, create: method === 'post', fsApi: fsPromises, authorize });
-      diagnostic(req, 'saved', result);
+        expectedVersion: req.body?.expectedVersion, create: method === 'post', fsApi: fsPromises, authorize, observe });
+      diagnostic(req, 'saved', result, { ...correlation, elapsedMs: Math.round(performance.now() - started) });
       try { if (method === 'put' || result.created) publish(req, sessionContext, result); } catch { /* Saved rename is authoritative. */ }
       let content = method === 'put' ? req.body.markdown : canonical.content;
       if (method === 'post' && !result.created && canonical.sourceIdentity) {
@@ -92,7 +101,7 @@ export const registerSessionPlanRoutes = (app, {
       }
       return res.json({ ...result, ...(canonical.sourceIdentity ? { sourceIdentity: canonical.sourceIdentity, ...(content !== undefined ? { content } : {}) } : {}) });
     } catch (error) {
-      diagnostic(req, 'refused', error);
+      diagnostic(req, 'refused', error, { ...correlation, elapsedMs: Math.round(performance.now() - started) });
       return sendRouteError(res, error, 'Failed to save plan revision');
     }
   });

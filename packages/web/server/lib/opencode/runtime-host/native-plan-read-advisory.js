@@ -25,11 +25,16 @@ export function createNativePlanReadAdvisory({ readManagedState, readPrimaryReco
       const key = `${directory}\0${sessionID}`;
       let entry = objectives.get(key);
       if (entry?.objectiveID !== objectiveID) {
-        const [policy, since] = await Promise.all([readPlanPolicy({ sessionID, directory }), readObjectiveStart({ sessionID, directory, objectiveID })]);
-        entry = { objectiveID, readOnly: policy?.readOnly === true, since: Number.isFinite(since) ? since : null, count: 0 };
+        entry = { objectiveID, readOnly: false, since: null, count: 0, ready: null };
+        const pending = entry;
+        pending.ready = Promise.all([readPlanPolicy({ sessionID, directory }), readObjectiveStart({ sessionID, directory, objectiveID })])
+          .then(([policy, since]) => { pending.readOnly = policy?.readOnly === true; pending.since = Number.isFinite(since) ? since : null; })
+          .catch(error => { if (objectives.get(key) === pending) objectives.delete(key); throw error; });
         objectives.delete(key); objectives.set(key, entry);
         while (objectives.size > MAX_TRACKED_SESSIONS) objectives.delete(objectives.keys().next().value);
       }
+      await entry.ready;
+      if (objectives.get(key) !== entry) return undefined;
       if (!entry.readOnly || entry.since === null || !explorers.some(task => task.createdAt >= entry.since)) return undefined;
       entry.count += 1;
       try {

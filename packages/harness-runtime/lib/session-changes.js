@@ -23,6 +23,9 @@ const normalizedError = (error) => ['ENOSPC', 'EDQUOT', 'EIO', 'EROFS'].includes
 const DIFF_BYTES = 64 * 1024;
 const ATTRIBUTION_VERSION = 4;
 
+export const isSessionChangeProofEligible = summary => summary.coverage === 'complete' && summary.fileCount > 0
+  && summary.restoreReasons.every(reason => ['segmented_changes', 'restore_evidence_unavailable'].includes(reason));
+
 export function createSessionChangeRuntime(options) {
   const storage = path.resolve(options.directory);
   const tails = new Map(), active = new Map(), nativeActive = new Set();
@@ -744,8 +747,7 @@ export function createSessionChangeRuntime(options) {
     const directory = await resolveDirectory(input.directory);
     return serialize(directory, async () => { const repo = await load(directory); await noteSession(repo, input); await repo.db.commit(); });
   };
-  const proofEligible = summary => summary.coverage === 'complete' && summary.fileCount > 0
-    && summary.restoreReasons.every(reason => ['segmented_changes', 'restore_evidence_unavailable'].includes(reason));
+  const proofEligible = isSessionChangeProofEligible;
   const validProof = proof => proof?.version === 1 && typeof proof.digest === 'string' && /^[a-f0-9]{64}$/.test(proof.digest)
     && Object.keys(proof).every(key => ['version', 'digest'].includes(key));
   const previewRestore = async ({ directory: requested, rootSessionID, summary }) => {

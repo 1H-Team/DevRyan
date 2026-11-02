@@ -1035,6 +1035,14 @@ export interface SessionChangeDiagnostic {
 export interface SessionChangePage {
   nextCursor: string | null; previousCursor: string | null; pageIndex: number;
 }
+export type SessionChangeRestoreEligibility = { state: 'candidate'; action: 'undo' | 'redo' }
+  | { state: 'unavailable'; reasons: string[] } | { state: 'unknown' };
+/** Cached display metadata never authorizes a restore; POST preview supplies the proof. */
+export type SessionChangeProjection = Omit<Partial<SessionChangeSummary>, 'restoreProof'> & {
+  rootSessionID: string; directory: string; files: SessionChangeSummary['files'];
+  projectionState: 'ready' | 'refreshing' | 'missing'; generatedAt: number | null;
+  restoreEligibility: SessionChangeRestoreEligibility;
+};
 export interface SessionChangeSummary extends SessionChangePage {
   fileCount: number; additions?: number; deletions?: number;
   rootSessionID: string; directory: string; worktreeDirectory: string; worktreeID: string; revision: string;
@@ -1045,6 +1053,7 @@ export interface SessionChangeSummary extends SessionChangePage {
   files: Array<{ path: string; oldPath: string | null; status: 'added' | 'deleted' | 'modified' | 'renamed';
     additions: number | null; deletions: number | null; sessions: string[]; reviewMode: 'net' | 'segments'; segmentCount: number }>;
 }
+export function isSessionChangeProofEligible(summary: SessionChangeSummary): boolean;
 export interface SessionChangeRuntime {
   begin(input: SessionChangeIdentity & { messageID: string; callID: string }): Promise<void>;
   finish(input: SessionChangeIdentity & { callID: string }): Promise<void>;

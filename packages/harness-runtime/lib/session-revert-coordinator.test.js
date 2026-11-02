@@ -35,6 +35,25 @@ async function fixture() {
     read: () => fs.readFile(path.join(project, 'x'), 'utf8'), write: (value) => fs.writeFile(path.join(project, 'x'), value) };
 }
 
+test('cold cancellation clears only an unstarted revert after its writers settle', async () => {
+  const f = await fixture(); await f.write('before');
+  const lease = await f.begin('a');
+  const tx = await f.runtime.prepareRevert({ directory: f.directory, sessionID: 'a', messageID: 'pa' });
+  const cancel = () => f.runtime.settleRevert({ directory: f.directory, transactionID: tx.id, commit: false, cancelUnstarted: true });
+  await expect(cancel()).rejects.toMatchObject({ code: 'mutation_termination_unconfirmed' });
+  await f.runtime.cancelLease({ directory: f.directory, token: lease.token });
+  await f.runtime.cleanupLease({ directory: f.directory, token: lease.token });
+  await cancel();
+  expect(await f.runtime.pendingTransactions({ directory: f.directory })).toEqual([]);
+  expect(await f.runtime.transaction({ directory: f.directory, transactionID: tx.id })).toMatchObject({ state: 'cancelled' });
+  expect(await f.read()).toBe('before'); expect(f.calls).toEqual([]);
+  const next = await f.runtime.prepareRevert({ directory: f.directory, sessionID: 'a', messageID: 'pa' });
+  await f.runtime.updateTransaction({ directory: f.directory, transactionID: next.id, expectedPhase: 'prepared', phase: 'stopped', boundaries: [{ id: 'a', revert: null }] });
+  await expect(f.runtime.settleRevert({ directory: f.directory, transactionID: next.id, commit: false, cancelUnstarted: true }))
+    .rejects.toMatchObject({ code: 'mutation_recovery_required' });
+  expect(await f.runtime.pendingTransactions({ directory: f.directory })).toHaveLength(1);
+});
+
 test('a stale file proof after writer termination cancels the fence without overwriting foreign edits', async () => {
   const f = await fixture(); await f.write('before');
   const lease = await f.begin('a'); await fs.writeFile(path.join(lease.viewDirectory, 'x'), 'after');

@@ -234,3 +234,25 @@ it('rechecks the trusted current controller before a delayed native hello can bi
   await expect(current({permit,event,attempt})).resolves.toEqual({tracked:true});
   expect({hellos,steps,acknowledgements}).toEqual({hellos:1,steps:1,acknowledgements:1});
 });
+
+it('records managed Designer primary steps only after canonical ownership and excludes compaction', async () => {
+  const permit = { token: 'owned', sessionID: 'ses_child' }, observed = [];
+  let summary = false, parent = 'msg_user', agent = 'designer';
+  const event = () => ({ type: 'session.step.started', durable: { seq: 1, aggregateID: 'ses_child' },
+    data: { sessionID: 'ses_child', assistantMessageID: 'msg_step', agent, model: { providerID: 'sim', id: 'm1' } } });
+  const owner = createNativePrimaryStepOwner({ instanceID: 'instance', observeManagedStep: async input => { observed.push(input); },
+    admissionOwner: { handleRpc: async () => permit, acknowledgeStartedContinuation: async () => {} },
+    openCodeClient: { sessions: { get: async () => ({ id: 'ses_child', parentID: 'ses_root', directory: '/project' }),
+      message: async () => ({ info: { id: 'msg_step', sessionID: 'ses_child', role: 'assistant', parentID: parent,
+        agent, providerID: 'sim', modelID: 'm1', summary, time: { created: 10 } },
+      turnOwnership: { source: 'native-sequence', userMessageID: 'msg_user' } }) } },
+    primaryRuntime: { readRecord: async () => null } });
+  await owner({ permit, event: event() });
+  expect(observed).toEqual([{ sessionId: 'ses_child', directory: '/project', messageId: 'msg_step', userMessageId: 'msg_user', createdAt: 10 }]);
+  summary = true; await owner({ permit, event: event() });
+  summary = false; agent = 'fixer'; await owner({ permit, event: event() });
+  expect(observed).toHaveLength(1);
+  agent = 'designer'; parent = 'msg_foreign';
+  await expect(owner({ permit, event: event() })).rejects.toThrow('native_primary_step_invalid');
+  expect(observed).toHaveLength(1);
+});

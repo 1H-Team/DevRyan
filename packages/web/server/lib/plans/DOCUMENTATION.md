@@ -55,7 +55,13 @@ they are not bus event sequence numbers. Only sanitized verified membership
 reaches the UI's existing Plan grouping contract.
 
 Writes publish `session.plan.updated` with revision identity and version only,
-and record content-free write/refusal diagnostics. Plan View skips load echoes,
+and record content-free write/refusal diagnostics. Each HTTP write has a server
+request ID, source message ID and bounded client trigger (`completion`, `hydration`,
+`retry`, `edit`, or `unknown`). Stages share one elapsed-time origin and distinguish
+admission, canonical validation, lock acquisition, locked authorization, final
+precommit authorization, publication and settlement. Lock stages also record wait
+and hold milliseconds. These observations do not retry or coalesce writes and
+cannot turn a successful rename into a refusal. Plan View skips load echoes,
 serializes saves against its acknowledged version, refreshes a clean matching
 view, and retains a dirty draft on conflict. These events do not create another
 Plan Card.

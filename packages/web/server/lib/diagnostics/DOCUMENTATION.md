@@ -1,5 +1,7 @@
 # Diagnostics
 
+Journal sanitization retains managed-wait task selections and `until: settled`, plan-save `sourceMessageID`, and finite canonical-context cause classifications. `scripts/journal.mjs summary` reports nonzero canonical command exits separately from tool-status errors and includes managed wait selections; a completed shell tool with exit 1 is not silently counted as successful verification.
+
 The diagnostics module exposes the always-on local harness journal without
 uploading it. `GET /api/diagnostics/status` reports bounded storage health,
 including `sessionCount`, plus `commandDeadlineRecovery` with active,
@@ -45,3 +47,5 @@ report that limitation instead of reconstructing evidence.
 The Error Log `DELETE /api/error-logs` snapshot clear uses the durable audit
 outbox barrier and the `20260810182541_clear_managed_error_diagnostics`
 Supabase migration; clearing either store never implicitly clears the other.
+
+Journal summaries report Bash share across all observed tool calls and tools per deduplicated canonical native `step-link` assistant. A missing primary-step observation leaves the ratio unavailable; prepared model requests are counted separately by kind. Compaction triggers and outcomes are deduplicated by trigger ID. Token/cache rows remain observations, not active context snapshots or a comparison of different agent workloads.

@@ -19,6 +19,29 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
 const requireElectron = createRequire(new URL('../../packages/electron/package.json', import.meta.url));
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** Keep renderer correlation useful without persisting query secrets or URL credentials. */
+export function qaDiagnosticUrl(value, sanitize = String) {
+  try {
+    const url = new URL(value);
+    if (url.protocol === 'about:') return url.href === 'about:blank' ? url.href : null;
+    if (!['http:', 'https:'].includes(url.protocol)) return null;
+    const session = url.searchParams.get('session');
+    url.username = ''; url.password = ''; url.search = ''; url.hash = '';
+    if (/^[A-Za-z0-9_-]{1,256}$/.test(session ?? '')) url.searchParams.set('session', session);
+    return sanitize(url.toString()).slice(0, 512);
+  } catch { return null; }
+}
+
+export function qaConsoleObservationMetadata(event, { runStartedAtMs, captureStartedAtMs, receivedAtMs = Date.now(),
+  lastCheckName, topFrameUrl, sanitize = String }) {
+  const timestamp = Number.isFinite(event.timestamp) && event.timestamp >= 0 ? event.timestamp : null;
+  return { receivedAtMs, cdpTimestampMs: timestamp, runStartedAtMs, captureStartedAtMs,
+    eventPrecedesCapture: timestamp === null ? null : timestamp < captureStartedAtMs,
+    executionContextId: Number.isSafeInteger(event.executionContextId) && event.executionContextId >= 0 ? event.executionContextId : null,
+    lastCheckName: typeof lastCheckName === 'string' ? sanitize(lastCheckName).slice(0, 256) : null,
+    topFrameUrl: qaDiagnosticUrl(topFrameUrl, sanitize) };
+}
+
 export async function runQa({ runtime = 'web', scenario = 'chat', generation, artifactRoot = process.env.QA_NATIVE_ARTIFACT_ROOT, outputRoot = scratchParent('qa'), holdMs = 0 } = {}) {
   if (!Number.isSafeInteger(holdMs) || holdMs < 0 || holdMs > 300000) throw new Error('QA inspection hold must be 0–300000 milliseconds');
   if (!['web', 'electron'].includes(runtime)) throw new Error('QA runtime must be web or electron');
@@ -49,6 +72,7 @@ export async function runQa({ runtime = 'web', scenario = 'chat', generation, ar
   let cdp;
   let providerUsageFixture;
   let interrupted = false;
+  let lastCheckName = null;
   const onInterrupt = () => { interrupted = true; };
   process.on('SIGINT', onInterrupt);
   process.on('SIGTERM', onInterrupt);
@@ -66,6 +90,7 @@ export async function runQa({ runtime = 'web', scenario = 'chat', generation, ar
     throw new Error(`Timed out: ${label}`);
   };
   const check = async (name, action) => {
+    lastCheckName = name;
     const start = performance.now();
     console.log(JSON.stringify({ check: name, state: 'started' }));
     try { await action(); evidence.checks.push({ name, outcome: 'passed', elapsedMs: performance.now() - start }); }
@@ -145,17 +170,46 @@ export async function runQa({ runtime = 'web', scenario = 'chat', generation, ar
       // is ready. Cold-start timing belongs to the startup-specific QA suites.
       await cdp.send('Emulation.setScriptExecutionDisabled', { value: true });
     }
-    const recordConsoleError = (kind, text) => {
+    const captureStartedAtMs = Date.now();
+    evidence.rendererCaptureStartedAtMs = captureStartedAtMs;
+    const runStartedAtMs = Date.parse(evidence.startedAt);
+    let topFrameUrl = null;
+    const streamRequests = new Map();
+    evidence.eventStreamFailures = [];
+    const metadata = event => qaConsoleObservationMetadata(event, {
+      runStartedAtMs, captureStartedAtMs, lastCheckName, topFrameUrl, sanitize });
+    const updateTopFrame = frame => { if (frame && !frame.parentId) topFrameUrl = qaDiagnosticUrl(frame.url, sanitize); };
+    cdp.on('Page.frameNavigated', ({ frame }) => updateTopFrame(frame));
+    const recordConsoleError = (kind, text, event) => {
       if (evidence.consoleErrors.length >= 100) return;
       const sanitized = sanitize(text);
       evidence.consoleErrors.push(sanitized);
-      evidence.consoleObservations.push({ ordinal: evidence.consoleErrors.length, kind, text: sanitized });
+      evidence.consoleObservations.push({ ordinal: evidence.consoleErrors.length, kind, text: sanitized, ...metadata(event) });
     };
-    cdp.on('Runtime.exceptionThrown', ({ exceptionDetails }) => {
-      recordConsoleError('exception', exceptionDetails.exception?.description ?? exceptionDetails.text);
+    cdp.on('Runtime.exceptionThrown', ({ exceptionDetails, timestamp }) => {
+      recordConsoleError('exception', exceptionDetails.exception?.description ?? exceptionDetails.text,
+        { timestamp, executionContextId: exceptionDetails.executionContextId });
     });
-    cdp.on('Runtime.consoleAPICalled', ({ type, args }) => {
-      if (type === 'error') recordConsoleError('console', args.map((arg) => arg.value ?? arg.description ?? '').join(' '));
+    cdp.on('Runtime.consoleAPICalled', ({ type, args, timestamp, executionContextId }) => {
+      if (type === 'error') recordConsoleError('console', args.map((arg) => arg.value ?? arg.description ?? '').join(' '),
+        { timestamp, executionContextId });
+    });
+    cdp.on('Network.requestWillBeSent', event => {
+      const url = qaDiagnosticUrl(event.request?.url, sanitize);
+      if (!url || !/\/api\/(?:global\/)?event(?:\?|$)/.test(url)) return;
+      if (streamRequests.size >= 64) streamRequests.delete(streamRequests.keys().next().value);
+      streamRequests.set(event.requestId, { url, wallTime: event.wallTime, timestamp: event.timestamp,
+        documentUrl: qaDiagnosticUrl(event.documentURL, sanitize) });
+    });
+    cdp.on('Network.loadingFinished', ({ requestId }) => streamRequests.delete(requestId));
+    cdp.on('Network.loadingFailed', event => {
+      const request = streamRequests.get(event.requestId); streamRequests.delete(event.requestId);
+      if (!request || evidence.eventStreamFailures.length >= 64) return;
+      const timestamp = Number.isFinite(request.wallTime) && Number.isFinite(request.timestamp) && Number.isFinite(event.timestamp)
+        ? (request.wallTime + event.timestamp - request.timestamp) * 1000 : null;
+      evidence.eventStreamFailures.push({ ...metadata({ timestamp }), requestId: String(event.requestId).slice(0, 128),
+        url: request.url, documentUrl: request.documentUrl, canceled: event.canceled === true,
+        errorText: sanitize(String(event.errorText ?? '')).slice(0, 256) });
     });
     let transportReady = false;
     cdp.on('Network.webSocketFrameReceived', ({ response }) => {
@@ -173,8 +227,10 @@ export async function runQa({ runtime = 'web', scenario = 'chat', generation, ar
       }
     ` });
     await cdp.send('Network.enable');
-    await cdp.send('Runtime.enable');
     await cdp.send('Page.enable');
+    const frameTree = await cdp.send('Page.getFrameTree');
+    updateTopFrame(frameTree.frameTree?.frame);
+    await cdp.send('Runtime.enable');
     if (scenario === 'provider-usage') {
       const { setupProviderUsageQa } = await import('./provider-usage.mjs');
       providerUsageFixture = await setupProviderUsageQa(cdp);
@@ -200,7 +256,7 @@ export async function runQa({ runtime = 'web', scenario = 'chat', generation, ar
       const appOrigin = await evaluate(cdp, 'location.origin');
       await navigateQaElectronWireFacade(cdp, { localOrigin: appOrigin, facadeOrigin: facade.origin });
       await waitFor('Electron fixture origin', () => evaluate(cdp, `location.origin === ${JSON.stringify(facade.origin)}`));
-      await cdp.send('Page.navigate', { url: `${facade.origin}/?session=${PERF_PARENT_SESSION_ID}` });
+      // The checked sidebar selection below owns session navigation; do not cancel this document's boot.
     }
     if (runtime === 'web') {
       const loaded = cdp.waitFor('Page.loadEventFired');

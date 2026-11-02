@@ -11,15 +11,28 @@ export function createQaChangeProofScript({ origin, sessionID, directory, summar
     if(location.origin!==origin)return;
     const key='__devryanQaChangeProof',original=globalThis.fetch.bind(globalThis);
     if(globalThis[key])throw Error('Fixture already installed');
-    const state={revision:base.revision,proof:{version:1,digest:'a'.repeat(64)},undone:false,staleNext:false,requests:[],closed:false};
+    const state={revision:base.revision,proof:{version:1,digest:'a'.repeat(64)},undone:false,staleNext:false,requests:[],previewRequests:[],closed:false};
     const advance=()=>{state.revision=state.revision==='b'.repeat(64)?'c'.repeat(64):'b'.repeat(64);state.proof={version:1,digest:state.proof.digest==='d'.repeat(64)?'e'.repeat(64):'d'.repeat(64)};};
     const wrapper=async(input,init)=>{
       const req=typeof Request!=='undefined'&&input instanceof Request?input:null,url=new URL(req?req.url:String(input),location.href);
       const prefix='/api/devryan/session/'+encodeURIComponent(sessionID)+'/changes';
-      if(state.closed||url.origin!==origin||!(url.pathname===prefix||url.pathname===prefix+'/undo'||url.pathname===prefix+'/redo'))return original(input,init);
+      if(state.closed||url.origin!==origin||!(url.pathname===prefix||url.pathname===prefix+'/undo'||url.pathname===prefix+'/redo'||url.pathname===prefix+'/preview'))return original(input,init);
       const method=String(init?.method??req?.method??'GET').toUpperCase(),query=url.searchParams;
-      if(query.get('directory')!==directory||query.getAll('directory').length!==1||[...query.keys()].some(key=>key!=='directory'))throw Error('Fixture scope mismatch');
-      if(url.pathname===prefix&&method==='GET')return Response.json({...base,revision:state.revision,undone:state.undone,restoreAvailable:true,restoreReasons:[],restoreProof:state.proof});
+      if(query.get('directory')!==directory||query.getAll('directory').length!==1||[...query.keys()].some(key=>!['directory','summary'].includes(key))||query.has('summary')&&(query.get('summary')!=='1'||query.getAll('summary').length!==1||url.pathname!==prefix||method!=='GET'))throw Error('Fixture scope mismatch');
+      if(url.pathname===prefix&&method==='GET'){
+        if(query.get('summary')==='1'){
+          const display={...base,revision:state.revision,undone:state.undone,restoreAvailable:false,restoreReasons:[],projectionState:'ready',generatedAt:Date.now(),reconciliationState:'settled',restoreEligibility:{state:'candidate',action:state.undone?'redo':'undo'}};
+          delete display.restoreProof;delete display.current;
+          return Response.json(display);
+        }
+        return Response.json({...base,revision:state.revision,undone:state.undone,restoreAvailable:true,restoreReasons:[],restoreProof:state.proof});
+      }
+      if(url.pathname===prefix+'/preview'&&method==='POST'){
+        const body=JSON.parse(String(init?.body??''));state.previewRequests.push(body);
+        if(Object.keys(body).some(key=>!['revision','action'].includes(key))||body.revision!==state.revision||!['undo','redo'].includes(body.action)||state.undone!==(body.action==='redo'))
+          return Response.json({code:'summary_revision_changed',error:'summary_revision_changed'},{status:409});
+        return Response.json({revision:state.revision,action:body.action,restoreProof:state.proof});
+      }
       if(method!=='POST'||!['/undo','/redo'].some(suffix=>url.pathname===prefix+suffix))throw Error('Fixture operation refused');
       const body=JSON.parse(String(init?.body??''));const action=url.pathname.endsWith('/undo')?'undo':'redo';
       state.requests.push({action,body});

@@ -2730,6 +2730,16 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
   const settleRevert = (input) => locked(input.directory, async (repo) => {
     const tx = await repo.db.get(key('transactions', input.transactionID));
     if (!tx) throw changeError('revert_unavailable');
+    // Cold startup may abandon only a fence that never changed conversation or files.
+    if (input.cancelUnstarted && (input.commit !== false || tx.state !== 'prepared'
+      || tx.phase !== 'prepared' || tx.boundaries !== undefined || tx.kind !== undefined)) {
+      throw changeError('mutation_recovery_required');
+    }
+    if (input.cancelUnstarted) for await (const { value: lease } of repo.db.entries('leases')) {
+      if (tx.members.includes(lease.scope?.sessionID) && (!['published', 'cancelled'].includes(lease.state) || lease.cleanupPending)) {
+        throw changeError('mutation_termination_unconfirmed');
+      }
+    }
     if (tx.state === 'committed') return tx.result;
     if (tx.state !== 'prepared') throw changeError('revert_unavailable');
     const documents = new Map(), conflicts = [], fenced = new Set();

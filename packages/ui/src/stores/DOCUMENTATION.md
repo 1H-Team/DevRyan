@@ -811,3 +811,12 @@ Provider Settings shows Claude through `ClaudeAgentConnection`: Claude Code's ow
 login state as OpenCode's `claude-agent` integration reports it (connected, or a
 `needs_auth`/`error` problem with its message), with connect, disconnect and
 check-again actions.
+
+The session-tree summary fetch now selects `summary=1`. Cached projection rows
+remain visible while `missing`/`refreshing` responses use the existing pending
+refresh lifecycle. `restoreEligibility` is display-only and is never converted
+into `restoreProof`. Undo/Redo acquire a fresh proof through the preview endpoint
+on click, then dispatch the existing exact-revision action without an additional
+dialog. Scope changes/unmount abort preview and a final scope check prevents a late
+response from dispatching a mutation. Cancellation after mutation dispatch cannot
+promise that the server has not already applied the action.

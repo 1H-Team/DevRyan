@@ -53,13 +53,14 @@ const RECORD_FIELDS = Object.freeze({
 const NESTED_FIELDS = new Set([
   'type', 'properties', 'payload', 'actor', 'info', 'part', 'status', 'state', 'time',
   'id', 'helperSessionID', 'sessionID', 'sessionId', 'messageID', 'messageId', 'parentID', 'parentId',
-  'requestID', 'requestId', 'transactionID', 'errorID',
+  'requestID', 'requestId', 'transactionID', 'errorID', 'sourceMessageID',
   'channelID', 'channelId', 'runID', 'runId',
   'role', 'scope', 'finish', 'completed', 'created', 'updated', 'started', 'ended',
   'version', 'phase', 'outcome', 'settledAt',
   'title', 'description', 'text', 'delta', 'reasoning', 'reasoningText',
   'tool', 'name', 'callID', 'callId', 'input', 'output', 'error', 'message',
-  'code', 'reason', 'action', 'permission', 'questions', 'answers', 'response', 'providerCode', 'providerParam', 'v2Type',
+  'code', 'reason', 'action', 'permission', 'questions', 'answers', 'response', 'providerCode', 'providerParam', 'v2Type', 'details', 'causeCategory', 'causeStatus',
+  'task_id', 'task_ids', 'taskIds', 'until',
   'directory', 'path', 'file', 'filePath', 'url', 'mime', 'mimeType', 'size',
   'filename',
   'sha256', 'hash', 'source', 'runtime', 'providerID', 'providerId', 'modelID',
@@ -105,7 +106,7 @@ const TOKEN_FIELDS = new Set(['total', 'input', 'output', 'reasoning', 'cache'])
 const TOKEN_CACHE_FIELDS = new Set(['read', 'write']);
 
 const STABLE_IDENTIFIER_FIELDS = new Set([
-  'requestID', 'requestId', 'transactionID', 'errorID',
+  'requestID', 'requestId', 'transactionID', 'errorID', 'sourceMessageID', 'task_id', 'task_ids', 'taskIds',
   'observationID', 'attemptID', 'responseID', 'stepID', 'parentMessageID', 'rootTaskID', 'rootSessionID', 'counterScopeID',
   'id', 'helperSessionID', 'sessionID', 'sessionId', 'messageID', 'messageId', 'parentID', 'parentId',
   'channelID', 'channelId', 'runID', 'runId',
@@ -323,6 +324,11 @@ export const createDiagnosticSanitizer = (options = {}) => {
       ? TOKEN_FIELDS
       : (field === 'cache' ? TOKEN_CACHE_FIELDS : NESTED_FIELDS);
     for (const [key, nested] of Object.entries(object)) {
+      if (key === 'until' && nested !== 'settled'
+        || key === 'causeCategory' && !['timeout', 'cancelled', 'runtime_changed', 'client_unavailable', 'response_too_large', 'invalid_response', 'not_found', 'access_denied', 'http_error', 'transport_or_unknown'].includes(nested)
+        || key === 'causeStatus' && (!Number.isInteger(nested) || nested < 400 || nested > 599)) {
+        report.droppedFields += 1; continue;
+      }
       if ((key === 'providerCode' && !isSafeProviderCode(nested))
         || (key === 'providerParam' && !isSafeProviderParam(nested))
         || (key === 'v2Type' && !isSafeErrorType(nested))) {

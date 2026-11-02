@@ -88,7 +88,7 @@ export const createWebSessionPlansAPI = (): SessionPlansAPI => ({
     const result = await withCanonicalSlug(input, current => requestJson(routeFor(current), {
       method: 'POST',
       headers: mutationHeaders,
-      body: JSON.stringify({ ...identityPayload(current), markdown: input.markdown }),
+      body: JSON.stringify({ ...identityPayload(current), markdown: input.markdown, trigger: input.trigger }),
     }));
     if (typeof result.created !== 'boolean') throw new Error('Invalid plan response');
     const proof = sourceIdentity(result.sourceIdentity, input);
@@ -115,7 +115,7 @@ export const createWebSessionPlansAPI = (): SessionPlansAPI => ({
     const result = await withCanonicalSlug(input, current => requestJson(routeFor(current), {
       method: 'PUT',
       headers: mutationHeaders,
-      body: JSON.stringify({ ...identityPayload(current), markdown: input.markdown, expectedVersion: input.expectedVersion }),
+      body: JSON.stringify({ ...identityPayload(current), markdown: input.markdown, expectedVersion: input.expectedVersion, trigger: 'edit' }),
     }));
     if (typeof result.saved !== 'boolean') throw new Error('Invalid plan response');
     const proof = sourceIdentity(result.sourceIdentity, input);

@@ -1,4 +1,5 @@
 import { USER_CHECK_WAIVER } from './required-checks.js';
+import { DESIGNER_PRIMARY_STEP_WARNING, DESIGNER_PRIMARY_STEP_EMERGENCY, designerStepBudgetNotice } from './designer-step-budget.js';
 import { REQUIRED_CHECK_CORRECTION, applyCheckCorrection } from './check-correction.js';
 export const USER_STOPPED_RECOVERY = Symbol('user-stopped-recovery');
 
@@ -95,6 +96,7 @@ const resolveFollowUpTimeoutAt = (sourceTask, requestedTimeoutAt, now) => {
 
 const cloneTask = (task) => task ? {
   ...task,
+  ...(task.primaryStepBudget ? { primaryStepBudget: structuredClone(task.primaryStepBudget) } : {}),
   ...(task.approvedPlanRef ? { approvedPlanRef: structuredClone(task.approvedPlanRef) } : {}),
   ...(task.requiredChecks ? { requiredChecks: structuredClone(task.requiredChecks) } : {}),
   ...(task.taskPrerequisites ? { taskPrerequisites: structuredClone(task.taskPrerequisites) } : {}),
@@ -1074,6 +1076,13 @@ export const createManagedTaskScheduler = (options = {}) => {
         clearStartingLease(taskId);
         return true;
       });
+    },
+    async readPrimaryStepBudget() {
+      const task = uncommittedRead ? committedReadState.tasks.find(task => task.taskId === taskId) : tasks.get(taskId);
+      if (!task || task.leaseToken !== leaseToken || isTerminalManagedTaskStatus(task.status)) return null;
+      return { usedSteps: task.primaryStepBudget?.assistantMessageIDs.length ?? 0,
+        userMessageID: task.primaryStepBudget?.userMessageID ?? null,
+        acceptedUserMessageIDs: task.primaryStepBudget?.acceptedPrompts.map(prompt => prompt.userMessageID) ?? [] };
     },
     async recordProgress(progress = {}) {
       if (shutDown) return false;
@@ -3857,6 +3866,78 @@ export const createManagedTaskScheduler = (options = {}) => {
     getRequiredCheckTasks(sessionId, directory) {
       return [...tasks.values()].filter(task => task.directory === directory && task.requiredChecks?.length
         && (task.childSessionId === sessionId && ACTIVE_STATUSES.has(task.status) || task.rootSessionId === sessionId)).map(cloneTask);
+    },
+    async acceptPrimaryPrompt(input) {
+      await ensureInitialized();
+      return runExclusive(async () => {
+        const task = tasks.get(input.taskId);
+        if (!task || task.agent !== 'designer' || task.readOnly || !['starting', 'running'].includes(task.status)
+          || task.leaseToken !== input.leaseToken || task.childSessionId !== input.sessionId
+          || task.directory !== input.directory || removalHeld(task) || cancellationPromises.has(task.taskId)
+          || !Number.isFinite(input.createdAt) || input.createdAt < task.createdAt
+          || typeof input.userMessageId !== 'string' || !/^[A-Za-z0-9_:-]{1,256}$/.test(input.userMessageId)) return null;
+        const budget = task.primaryStepBudget ?? { acceptedPrompts: [], userMessageID: null, assistantMessageIDs: [], warningClaimedAt: null };
+        if (budget.acceptedPrompts.some(prompt => prompt.userMessageID === input.userMessageId)) return true;
+        if (budget.acceptedPrompts.some(prompt => prompt.createdAt > input.createdAt)
+          || budget.retiredPromptThrough !== undefined && input.createdAt <= budget.retiredPromptThrough) return null;
+        const acceptedPrompts = [...budget.acceptedPrompts, { userMessageID: input.userMessageId, createdAt: input.createdAt }];
+        // Keep the active prompt plus bounded future/recent acceptances. An
+        // evicted historical prompt cannot become a new counter baseline.
+        let retiredPromptThrough = budget.retiredPromptThrough;
+        while (acceptedPrompts.length > 32) {
+          const [retired] = acceptedPrompts.splice(acceptedPrompts.findIndex(prompt => prompt.userMessageID !== budget.userMessageID), 1);
+          retiredPromptThrough = Math.max(retiredPromptThrough ?? 0, retired.createdAt);
+        }
+        await commitTaskUpdateLocked(task, { ...task, primaryStepBudget: { ...budget, acceptedPrompts,
+          ...(retiredPromptThrough !== undefined ? { retiredPromptThrough } : {}),
+          ...(budget.maintenanceParents ? { maintenanceParents: budget.maintenanceParents.filter(parent => acceptedPrompts.some(prompt => prompt.userMessageID === parent.userMessageID)) } : {}) } });
+        return true;
+      });
+    },
+    async recordPrimaryStep(input) {
+      await ensureInitialized();
+      return runExclusive(async () => {
+        const task = tasks.get(input.taskId);
+        if (!task || task.agent !== 'designer' || task.readOnly || !['starting', 'running'].includes(task.status)
+          || task.leaseToken !== input.leaseToken || task.childSessionId !== input.sessionId
+          || task.directory !== input.directory || removalHeld(task) || cancellationPromises.has(task.taskId)
+          || !Number.isFinite(input.createdAt) || input.createdAt < task.createdAt
+          || typeof input.messageId !== 'string' || !/^[A-Za-z0-9_:-]{1,256}$/.test(input.messageId)) return null;
+        let budget = task.primaryStepBudget;
+        if (!budget) return null;
+        const promptIndex = budget.acceptedPrompts.findIndex(prompt => prompt.userMessageID === input.userMessageId);
+        const currentIndex = budget.acceptedPrompts.findIndex(prompt => prompt.userMessageID === budget.userMessageID);
+        if (promptIndex < 0 || promptIndex < currentIndex) return null;
+        if (budget.userMessageID !== input.userMessageId) budget = { ...budget, userMessageID: input.userMessageId, assistantMessageIDs: [], warningClaimedAt: null };
+        const history = input.historicalSteps ?? [];
+        if (!Array.isArray(history) || history.length > DESIGNER_PRIMARY_STEP_EMERGENCY
+          || history.some(step => !step || typeof step.messageId !== 'string' || !/^[A-Za-z0-9_:-]{1,256}$/.test(step.messageId)
+            || !Number.isFinite(step.createdAt) || step.createdAt < task.createdAt)
+          || input.maintenanceParentId !== undefined && (typeof input.maintenanceParentId !== 'string'
+            || !/^[A-Za-z0-9_:-]{1,256}$/.test(input.maintenanceParentId))) return null;
+        const assistantMessageIDs = [...new Set([...budget.assistantMessageIDs, ...history.map(step => step.messageId), input.messageId])]
+          .slice(0, DESIGNER_PRIMARY_STEP_EMERGENCY);
+        const maintenanceParents = input.maintenanceParentId ? [...(budget.maintenanceParents ?? [])
+          .filter(parent => parent.parentID !== input.maintenanceParentId), { parentID: input.maintenanceParentId, userMessageID: input.userMessageId }].slice(-32)
+          : budget.maintenanceParents;
+        if (assistantMessageIDs.length === budget.assistantMessageIDs.length && maintenanceParents === budget.maintenanceParents) return { usedSteps: assistantMessageIDs.length };
+        const primaryStepBudget = { ...budget, assistantMessageIDs, ...(maintenanceParents ? { maintenanceParents } : {}) };
+        await commitTaskUpdateLocked(task, { ...task, primaryStepBudget });
+        return { usedSteps: primaryStepBudget.assistantMessageIDs.length };
+      });
+    },
+    async claimPrimaryStepBudgetWarning(input) {
+      await ensureInitialized();
+      return runExclusive(async () => {
+        const task = tasks.get(input.taskId), budget = task?.primaryStepBudget;
+        if (!task || task.agent !== 'designer' || task.readOnly || task.status !== 'running'
+          || task.leaseToken !== input.leaseToken || task.childSessionId !== input.sessionId
+          || task.directory !== input.directory || removalHeld(task) || cancellationPromises.has(task.taskId)
+          || !budget || !budget.assistantMessageIDs.includes(input.messageId)
+          || budget.assistantMessageIDs.length < DESIGNER_PRIMARY_STEP_WARNING || budget.warningClaimedAt !== null) return null;
+        await commitTaskUpdateLocked(task, { ...task, primaryStepBudget: { ...budget, warningClaimedAt: now() } });
+        return { notice: designerStepBudgetNotice(task.attempt, budget.assistantMessageIDs.length) };
+      });
     },
     async correctRequiredCheck(taskId, correction, authority) {
       if (authority?.[REQUIRED_CHECK_CORRECTION] !== true || typeof authority.recheck !== 'function') throw new TypeError('Host runner correction authority required');

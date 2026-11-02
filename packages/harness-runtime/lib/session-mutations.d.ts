@@ -157,7 +157,7 @@ export interface SessionMutationRuntime {
     calls: Array<{ sessionID: string; callID: string; messageID: string }> }): Promise<{ version: 1; digest: string }>;
   prepareFileRestore(input: { directory: string; sessionID: string; revision: string; redo?: boolean;
     calls: Array<{ sessionID: string; callID: string; messageID: string }>; proof: { version: 1; digest: string } }): Promise<MutationTransaction>;
-  settleRevert(input: MutationTransactionReference & { commit: boolean }): Promise<MutationRevertResult>;
+  settleRevert(input: MutationTransactionReference & { commit: boolean; cancelUnstarted?: boolean }): Promise<MutationRevertResult>;
   transaction(input: MutationTransactionReference): Promise<MutationTransaction | null>;
   updateTransaction(input: MutationTransactionReference & {
     expectedPhase: MutationTransaction['phase']; phase: MutationTransaction['phase']; boundaries?: MutationBoundary[];

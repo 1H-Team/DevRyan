@@ -89,8 +89,12 @@ performance parity. Remaining gates are in [the OpenCode module documentation](.
   requests reconciliation on stream loss. Its active global subscriber owns the
   opt-in `X-DevRyan-Subscription-Ready: 1` handshake: an ID-less named
   `devryan.subscription-ready` frame follows principal registration, live attachment,
-  authorized replay and actual upstream hub connectivity. Upstream disconnect
-  revokes this readiness by closing opted-in subscribers. Only previously ready
+  authorized replay and actual upstream hub connectivity. A subscriber that has
+  never observed an established hub connection remains open and unacknowledged
+  during failed initial connection attempts. Connectivity is latched from the
+  initial hub state and subsequent connect notifications; any later disconnect
+  closes the opted-in subscriber, including while replay authorization is still
+  pending before ACK. Only previously ready
   cursor-free reconnects request `X-DevRyan-Replay-Unanchored: 1`; the same bounded
   hub replay and branded gap control precede the new ACK. Initial connections skip
   history. Directory envelopes, ownership filtering and drain backpressure stay

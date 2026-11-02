@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import request from '../../test-supertest.js';
+import { createDiagnosticSanitizer } from '../../../../harness-runtime/lib/sanitizer.js';
 import { registerSessionPlanRoutes, resolveSessionPlanRevision } from './routes.js';
 
 const identity = {
@@ -248,9 +249,31 @@ describe('session plan revision routes', () => {
     expect(publishEvent.mock.calls.at(-1)[0]).toEqual({ type: 'session.plan.updated', properties: {
       sessionID: 'session-a', sourceMessageID: 'msg-events', ...identity, version: updated.body.version,
     } });
-    expect(recordDiagnostic.mock.calls.map(([record]) => record.payload.outcome)).toEqual(['saved', 'saved', 'refused']);
+    expect(recordDiagnostic.mock.calls.map(([record]) => record.payload.outcome).filter(outcome => ['saved', 'refused'].includes(outcome))).toEqual(['saved', 'saved', 'refused']);
     expect(JSON.stringify([...publishEvent.mock.calls, ...recordDiagnostic.mock.calls])).not.toContain('Private');
     expect(JSON.stringify(recordDiagnostic.mock.calls)).not.toContain('Stale content');
+  });
+
+  it('correlates concurrent saves through validation, lock wait and publication without retaining content', async () => {
+    const records = [], sanitizer = createDiagnosticSanitizer();
+    const app = createApp({ dataDirectory, recordDiagnostic: record => records.push(sanitizer.sanitizeRecord(record)) });
+    const route = '/api/session/session-a/plan-revisions/msg-correlated';
+    const responses = await Promise.all(['completion', 'hydration'].map(trigger => request(app).post(route)
+      .send({ ...identity, trigger, markdown: '# Sensitive plan' })));
+    expect(responses.map(response => response.status)).toEqual([200, 200]);
+    expect(responses.filter(response => response.body.created)).toHaveLength(1);
+    const requestIDs = new Set(records.map(record => record.payload.requestId));
+    expect(requestIDs.size).toBe(2);
+    for (const requestId of requestIDs) {
+      const stages = records.filter(record => record.payload.requestId === requestId).map(record => record.payload);
+      expect(stages[0]).toMatchObject({ outcome: 'received', sourceMessageID: 'msg-correlated', elapsedMs: expect.any(Number) });
+      expect(stages.map(stage => stage.outcome)).toEqual(expect.arrayContaining(['authorized', 'source_validated', 'lock_wait', 'lock_acquired', 'locked_authorized', 'lock_settled', 'saved']));
+      expect(stages.at(-1).outcome).toBe('saved');
+      expect(stages.map(stage => stage.elapsedMs)).toEqual(stages.map(stage => stage.elapsedMs).sort((a, b) => a - b));
+      expect(stages.find(stage => stage.outcome === 'lock_settled')).toMatchObject({ waitMs: expect.any(Number), holdMs: expect.any(Number) });
+    }
+    expect(records.filter(record => record.payload.outcome === 'published')).toHaveLength(1);
+    expect(JSON.stringify(records)).not.toContain('Sensitive plan');
   });
 
   it('returns 404 for a foreign managed session', async () => {

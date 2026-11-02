@@ -989,7 +989,8 @@ function getAgentScope(agentName, workingDirectory) {
   return { scope: null, path: null };
 }
 
-function getAgentSources(agentName, workingDirectory) {
+function getAgentSources(agentName, workingDirectory, options = {}) {
+  const slim = resolveSlimConfig(workingDirectory, options);
   const projectPath = workingDirectory ? getIndexedProjectAgentPath(workingDirectory, agentName) : null;
   const projectExists = Boolean(projectPath && fs.existsSync(projectPath));
   const packagedAgent = getPackagedAgent(agentName);
@@ -1042,7 +1043,7 @@ function getAgentSources(agentName, workingDirectory) {
   }
 
   if (!sources.md.exists) {
-    const slimRuntimeAgents = getSlimRuntimeModelAgents(workingDirectory);
+    const slimRuntimeAgents = getSlimAgentsFromResolvedConfig(slim);
     const slimRuntimeAgent = slimRuntimeAgents[agentName];
     if (slimRuntimeAgent) {
       const mdPath = slimRuntimeAgent.__path || null;

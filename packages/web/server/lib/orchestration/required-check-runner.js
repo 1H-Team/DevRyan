@@ -5,11 +5,16 @@ import crypto from 'node:crypto';
 import { validateRequiredChecks } from '@devryan/orchestration-runtime';
 import { applyCheckCorrection, correctedEdgeCommand, parseVitestEdgeCommand, validateCheckCorrection } from '../../../../orchestration-runtime/check-correction.js';
 import { fingerprintCheckContent } from './required-check-observer.js';
+import { requiredCheckCommandIssue, REQUIRED_CHECK_COMMAND_HINT } from './required-check-command.js';
 
 const fail = code => Object.assign(new Error(code), { code, statusCode: 409 });
 const digest = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 const scriptPath = 'scripts/testing/run-deno-tests.mjs';
 const inside = (root, file) => file === root || file.startsWith(`${root}${path.sep}`);
+const assertNewCheckCommand = command => {
+  const code = requiredCheckCommandIssue(command);
+  if (code) throw Object.assign(fail(code), { message: `${code}: ${REQUIRED_CHECK_COMMAND_HINT}` });
+};
 
 export function createRequiredCheckRunnerPolicy(entries = []) {
   if (!Array.isArray(entries) || entries.length > 32 || entries.some(entry => !entry || Object.keys(entry).sort().join() !== 'kind,scriptSha256'
@@ -97,7 +102,9 @@ export async function resolveRequiredCheckRunnerCorrection({ directory, check, p
   // Policy lookup may yield; stale runner bytes never acquire correction authority.
   if (manifest.sha256 !== (await projectFile(root, 'package.json')).sha256 || script.sha256 !== (await projectFile(root, scriptPath)).sha256
     || coverageHash !== await fingerprintCheckContent(root, check.paths) || await fs.realpath(directory) !== root) throw fail('required_check_runner_changed');
-  return validateCheckCorrection({ name: check.name, previousCommand: check.command, command: correctedEdgeCommand(source.functionName),
+  const command = correctedEdgeCommand(source.functionName);
+  assertNewCheckCommand(command);
+  return validateCheckCorrection({ name: check.name, previousCommand: check.command, command,
     reason: 'repository_edge_deno_runner', observedAt: now(), ...(previousReceipt === undefined ? {} : { previousReceipt }), runnerIdentity }, check);
 }
 
@@ -130,5 +137,7 @@ export async function prepareRequiredCheckDeclarations({ directory, checks = [],
     }
     prepared = applyCheckCorrection(prepared, correction);
   }
+  // New writes reject ambiguous exits; persisted declarations remain readable.
+  for (const check of prepared.checks) assertNewCheckCommand(check.command);
   return prepared;
 }
