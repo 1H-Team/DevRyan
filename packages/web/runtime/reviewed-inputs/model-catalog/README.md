@@ -2,9 +2,13 @@
 
 Exact public runtime metadata captured from [https://models.opencode.ai/api.json](https://models.opencode.ai/api.json). This data contains provider and model definitions, not account credentials.
 
-- Retrieved UTC: `2026-10-02T07:29:13.740Z`
+- Retrieved UTC: `2026-11-02T15:11:00.587Z`
 - HTTP status: `200`
-- Byte size: `5293409`
-- SHA-256: `1290e78c59b72a425cb6c39c1c354a780a4e002605f03c9867f17271c7cb04b9`
+- Byte size: `5959566`
+- SHA-256: `26319ed6d8a2eff7265557e6d52ddb9d8daebd5ebccd4411166409e22e87eca0`
 
 `DevRyan-model-catalog.json` retains the response bytes unchanged. `provenance.json` records its source and comparison against the preceding selected-model observation. The native runtime embeds this file and passes it to the pinned SDK's original catalog parser with network fetching and snapshot fallback disabled. Changing the captured data requires reviewing its provenance and rebuilding the native artifact; no ambient catalog or installed account is read.
+
+## Refreshing
+
+A model released upstream reaches users only through a refreshed snapshot. `bun run catalog:refresh` (`scripts/model-catalog-refresh.mjs`) captures the live response, rewrites `provenance.json` and the lines above, and prints the added and removed model ids per provider for review. Commit the directory and rebuild the native runtime. Two gates keep it current: `scripts/model-catalog-refresh.test.mjs` requires a row for every model in the pinned core's ChatGPT allow-list (which hides allow-listed models without one), and release preflight fails when the live catalog has a model of a tracked provider that the snapshot lacks (`bun run catalog:check` runs the same comparison).

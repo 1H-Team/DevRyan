@@ -12,6 +12,7 @@
 //   pipeline-change gate                    changed release pipeline code passed a dry run at this commit
 //   build reuse                             a retained DMG from an earlier run at this SHA (the green dry run first)
 //   backend deploy                          deploy-backend runs only when its inputs changed since the previous ledger tag
+//   reviewed model catalog                  the embedded catalog has every live model of the tracked providers
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { execFile, execFileSync, spawn } from 'node:child_process';
@@ -21,6 +22,7 @@ import { RELEASE_REPOSITORY } from '../packages/electron/release-assets.mjs';
 import { createRunRoot, scratchParent } from './qa/run-root.mjs';
 import { admit, checkVersions, compareVersions, findReleases, readLedger, releaseNotes, releaseVersion } from './release.mjs';
 import { githubClient } from './release-github.mjs';
+import { modelCatalogFreshness } from './model-catalog-refresh.mjs';
 import { findGreenDryRun, findReusableCandidate } from './release-candidate.mjs';
 import { LEDGER_TAG_PREFIX, RELEASE_BODY_MAX_BYTES, candidatePinFixtureProblems, candidatePinProblems, formatReleaseMarker, readCheckoutSources, readRuntimePins, recordedCandidatePins, releaseBody, releasePayloadProblems, releaseState, shippedDiscoveryFixtureProblems } from './release-state.mjs';
 
@@ -151,6 +153,9 @@ export async function preflight({ repositoryRoot = root, environment = process.e
     const token = await githubToken(environment, run);
     if (!token) throw new Error('GitHub checks need GITHUB_TOKEN, GH_TOKEN or `gh auth login`; use --local-only to skip them');
     const client = githubClient({ token, fetchImpl, repository: env.GITHUB_REPOSITORY, environment: env });
+    // The runtime never fetches a catalog: a model missing here ships missing.
+    await check('reviewed model catalog', () => modelCatalogFreshness({ fetchImpl })
+      .catch(error => { if (env.RELEASE_DRY_RUN === 'true') return `dry run: a tag push would fail: ${error.message}`; throw error; }));
     const admission = await check('publication state and latest ordering', async () => {
       if (env.RELEASE_DRY_RUN !== 'true') {
         const result = await admit({ repositoryRoot, environment: env, fetchImpl, log: () => {} });

@@ -65,6 +65,18 @@ const section = (title, items, note) => { report.sections.push({ title, note, it
   section('Pinned core sources', items);
 }
 
+// 1b. The ChatGPT plugin keeps only allow-listed catalog rows: each allow-listed
+// model needs a row in the reviewed catalog or it never appears.
+{
+  const { allowListGaps, chatgptAllowList, readReviewedCatalog } = await load('scripts/model-catalog-refresh.mjs');
+  const items = [];
+  try {
+    const gaps = allowListGaps(await readReviewedCatalog(), await chatgptAllowList(coreRoot));
+    items.push(...gaps.map((id) => ({ status: 'action', what: `no catalog row for ${id}`, hint: 'bun run catalog:refresh' })));
+  } catch (error) { items.push({ status: 'action', what: `allow-list discovery failed: ${error.message}` }); }
+  section('ChatGPT allow-list catalog coverage', items);
+}
+
 // 2. Previous release, packed for comparison only.
 await fs.mkdir(scratchParent('opencode-upgrade'), { recursive: true });
 const scratch = await fs.mkdtemp(path.join(scratchParent('opencode-upgrade'), 'report-'));

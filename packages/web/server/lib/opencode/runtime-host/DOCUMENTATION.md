@@ -1,5 +1,11 @@
 # Native startup catalog diagnostics
 
+`native-model-catalog.ts` serves only the embedded reviewed model catalog
+(`packages/web/runtime/reviewed-inputs/model-catalog`); fetch, snapshot and
+refresh are disabled. Core's ChatGPT plugin lists only allow-listed models that
+have a row there, so the snapshot must cover that allow-list
+(`scripts/model-catalog-refresh.test.mjs`); refresh it with `bun run catalog:refresh`.
+
 ## Managed result delivery measurements
 
 `native-result-delivery.js` observes `devryan_task` output only after the result

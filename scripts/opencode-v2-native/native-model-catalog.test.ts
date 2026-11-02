@@ -52,6 +52,9 @@ test('actual native file parser ignores fresh/divergent KV, resolves GPT6.1 effo
    const sol=openai?.models.find(model=>model.id==='gpt-6.1-sol');
    expect<string|undefined>(sol?.id).toBe('gpt-6.1-sol');
    expect<readonly string[]|undefined>(sol?.variants.map(variant=>variant.id)).toEqual(['low','medium','high','xhigh','max']);
+   const terra=openai?.models.find(model=>model.id==='gpt-6.1-terra');
+   // Raw catalog efforts; the OpenAI provider adapter later drops `none`.
+   expect<readonly string[]|undefined>(terra?.variants.map(variant=>variant.id)).toEqual(['none','low','medium','high','xhigh','max']);
    expect(actual.find(provider=>provider.info.id==='xai')?.models.some(model=>model.id==='grok-4.6')).toBe(true);
   }
   expect(rows[0]).toEqual(rows[1]);expect(fixture.traffic()).toBe(0);expect(fixture.cacheReads()).toBe(0);

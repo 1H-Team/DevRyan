@@ -53,6 +53,8 @@
     "cache:report": "node scripts/storage.mjs report",
     "cache:prune": "node scripts/storage.mjs clean",
     "clean": "bun run cache:prune",
+    "catalog:refresh": "node scripts/model-catalog-refresh.mjs",
+    "catalog:check": "node scripts/model-catalog-refresh.mjs --check",
     "bundle:check": "node scripts/check-bundle-budgets.mjs",
     "app:check": "node scripts/check-packaged-app.mjs",
     "release:preflight": "node scripts/release-preflight.mjs",
