@@ -76,8 +76,9 @@ test('reviewed original closure and exact constructor transforms are inventoried
  assert.equal(reviewed.transforms.some(item=>item.reason==='reviewed-slim-owned-constructor-seams'),false);
  // The Claude proxy (opencode-with-claude/Meridian) was removed: claude-agent is OpenCode's own provider,
  // so no captured input, Claude asset, credential module, rewrite or virtual module remains.
- assert.equal([...reviewed.inputFiles.keys()].some(file=>file.startsWith(path.join(root,'claude-'))||/meridian/i.test(file)),false);
- assert.equal([...reviewed.rewrites.keys()].some(file=>/claude|meridian/i.test(file)),false);
+ // Match repository-relative paths: the checkout itself may sit under such a name (.claude/worktrees).
+ assert.equal([...reviewed.inputFiles.keys()].some(file=>file.startsWith(path.join(root,'claude-'))||/meridian/i.test(path.relative(repository,file))),false);
+ assert.equal([...reviewed.rewrites.keys()].some(file=>/claude|meridian/i.test(path.relative(repository,file))),false);
  assert.deepEqual([...reviewed.virtualModules.keys()],[]);
  assert.equal(reviewed.transforms.some(item=>/claude|meridian/i.test(String(item.path))||/claude|meridian|libsql/i.test(item.reason)),false);
  for(const retired of ['claudeAssets','claudeCredentials'])assert.equal(Object.hasOwn(reviewed,retired),false);
