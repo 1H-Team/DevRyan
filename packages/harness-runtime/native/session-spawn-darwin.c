@@ -1,9 +1,22 @@
 /* Compatibility adapter for runtimes that cannot fall back from posix_spawn.
  * The kernel still denies posix_spawn/setpgid/setsid. This library provides no
- * extra authority: it implements the supported file actions using fork/exec,
- * which inherit the supervisor's immutable Seatbelt policy and process group.
+ * extra authority: it implements the supported file actions using fork and
+ * execve, which inherit the supervisor's immutable Seatbelt policy and process
+ * group.
  * Omitting/removing the adapter therefore fails closed. Detached spawn requests
  * run in the existing supervised group; creating a new group remains denied.
+ *
+ * An in-place spawn (POSIX_SPAWN_SETEXEC: execve with spawn attributes, which
+ * Xcode's python3 stub uses) applies the same attributes and file actions to
+ * the calling process and calls execve without forking. The kernel leaves a
+ * caller unchanged when that exec fails, and posix_spawnp then tries the next
+ * PATH entry, so everything changed is recorded and undone on failure.
+ *
+ * Architecture preferences (posix_spawnattr_setbinpref_np): execve runs the
+ * caller's own slice of a universal binary, and only native processes can load
+ * this library (dyld stops a Rosetta process that names it). A preference for
+ * the native type or CPU_TYPE_ANY is therefore exactly what execve does; any
+ * other preference cannot be honoured and is refused, not ignored.
  *
  * Virtual groups (session-group-darwin.h): a child that requested its own
  * group is named after its pid in DEVRYAN_SPAWN_GROUP, and kill/killpg deliver
@@ -22,6 +35,7 @@
 #include <sys/wait.h>
 #include <sys/stat.h>
 #include <libproc.h>
+#include <mach/machine.h>
 #include "session-group-darwin.h"
 
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
@@ -100,6 +114,134 @@ static char **group_environment(char *const envp[], char **marker) {
   return copy;
 }
 
+/* The library's own slice is the calling process's architecture. */
+#if defined(__arm64__)
+#define NATIVE_CPU CPU_TYPE_ARM64
+#elif defined(__x86_64__)
+#define NATIVE_CPU CPU_TYPE_X86_64
+#else
+#error Unsupported spawn adapter architecture
+#endif
+static int preference(const posix_spawnattr_t *attributes) {
+  cpu_type_t first = 0; size_t count = 0;
+  int error = posix_spawnattr_getbinpref_np(attributes, 1, &first, &count); if (error) return error;
+  return (!count || first == 0 || first == CPU_TYPE_ANY || first == NATIVE_CPU) ? 0 : ENOTSUP;
+}
+
+/* Applies the file actions in order. An in-place spawn passes `undo`, which
+ * first records each descriptor an action replaces (a copy above every
+ * descriptor the actions name, or -1 when it was closed). */
+struct saved { int fd, copy, flags; };
+struct undo { struct saved *saved; int count, above; };
+static int apply_actions(struct actions *actions, struct undo *undo) {
+  for (struct action *a = actions ? actions->first : NULL; a; a = a->next) {
+    if (undo && a->kind != CHDIR && a->kind != FCHDIR) {
+      int fd = a->kind == DUP ? a->target : a->fd, known = 0;
+      for (int i = 0; i < undo->count; i++) if (undo->saved[i].fd == fd) known = 1;
+      if (!known) {
+        int flags = fcntl(fd, F_GETFD), copy = flags < 0 ? -1 : fcntl(fd, F_DUPFD_CLOEXEC, undo->above);
+        if (flags >= 0 && copy < 0) return errno;
+        undo->saved[undo->count++] = (struct saved){ .fd = fd, .copy = copy, .flags = flags };
+      }
+    }
+    switch (a->kind) {
+      case CLOSE: close(a->fd); break;
+      case DUP: if (dup2(a->fd, a->target) < 0 || fcntl(a->target, F_SETFD, 0)) return errno; break;
+      case OPEN: {
+        int fd = open(a->path, a->flags, a->mode); if (fd < 0) return errno;
+        if (fd != a->fd) { int error = dup2(fd, a->fd) < 0 ? errno : 0; close(fd); if (error) return error; }
+        break;
+      }
+      case CHDIR: if (chdir(a->path)) return errno; break;
+      case FCHDIR: if (fchdir(a->fd)) return errno; break;
+      case INHERIT: if (fcntl(a->fd, F_SETFD, 0)) return errno; break;
+    }
+  }
+  return 0;
+}
+/* Whether a descriptor survives POSIX_SPAWN_CLOEXEC_DEFAULT. */
+static int kept(struct actions *actions, int fd) {
+  int keep = 0;
+  for (struct action *a = actions ? actions->first : NULL; a; a = a->next) {
+    if ((a->kind == DUP && a->target == fd) || ((a->kind == INHERIT || a->kind == OPEN) && a->fd == fd)) keep = 1;
+    if (a->kind == CLOSE && a->fd == fd) keep = 0;
+  }
+  return keep;
+}
+
+/* POSIX_SPAWN_SETEXEC. Signals stay blocked while the caller is changed, so no
+ * handler runs against half-applied state. CLOEXEC_DEFAULT marks descriptors
+ * close-on-exec instead of closing them, so a failed execve can unmark them. */
+static int launch_in_place(const char *file, const posix_spawn_file_actions_t *value, short flags,
+  const sigset_t *mask, const sigset_t *defaults, int grouped, pid_t joined,
+  struct proc_fdinfo *descriptors, int descriptorsSize, char *const argv[], char *const envp[]) {
+  sigset_t all, caller, reset; struct sigaction handlers[NSIG];
+  uid_t euid = geteuid(); gid_t egid = getegid();
+  sigfillset(&all); sigemptyset(&reset);
+  int error = pthread_sigmask(SIG_SETMASK, &all, &caller); if (error) return error;
+  pthread_mutex_lock(&lock);
+  struct actions *actions = value ? find(*value) : NULL;
+  int size = 0, top = 2, directory = 0, count = 0, marked = 0, cwd = -1;
+  for (struct action *a = actions ? actions->first : NULL; a; a = a->next) {
+    size++; if (a->fd > top) top = a->fd; if (a->target > top) top = a->target;
+    if (a->kind == CHDIR || a->kind == FCHDIR) directory = 1;
+  }
+  struct undo undo = { .saved = size ? calloc((size_t)size, sizeof(struct saved)) : NULL, .above = top + 1 };
+  char *marker = NULL, **environment = grouped ? group_environment(envp, &marker) : NULL;
+  if (value && !actions) { error = EINVAL; goto done; }
+  if (size && !undo.saved) { error = ENOMEM; goto done; }
+  /* Kept above every descriptor the actions name, like the copies, so an action
+   * on a descriptor the caller never opened still fails. */
+  if (directory) {
+    int opened = open(".", O_SEARCH | O_CLOEXEC);
+    cwd = opened < 0 ? -1 : fcntl(opened, F_DUPFD_CLOEXEC, undo.above);
+    error = cwd < 0 ? errno : 0;
+    if (opened >= 0) close(opened);
+    if (error) goto done;
+  }
+  /* Without memory the image starts ungrouped, exactly as a forked child. */
+  if (environment) write_group(marker, joined > 1 ? joined : getpid());
+  if ((error = apply_actions(actions, &undo))) goto restore;
+  if (descriptors) count = proc_pidinfo(getpid(), PROC_PIDLISTFDS, 0, descriptors, descriptorsSize);
+  if (descriptors && (count <= 0 || count >= descriptorsSize)) { error = EMFILE; goto restore; }
+  for (int i = 0; i < count / (int)sizeof(struct proc_fdinfo); i++) {
+    int fd = descriptors[i].proc_fd, fdFlags = fcntl(fd, F_GETFD);
+    if (fdFlags < 0 || (fdFlags & FD_CLOEXEC) || kept(actions, fd)) continue;
+    if (fcntl(fd, F_SETFD, fdFlags | FD_CLOEXEC)) { error = errno; goto restore; }
+    descriptors[marked++].proc_fd = fd; /* Compacted in place: marked <= i. */
+  }
+  if (flags & POSIX_SPAWN_RESETIDS) if (setegid(getgid()) || seteuid(getuid())) { error = errno; goto restore; }
+  if (flags & POSIX_SPAWN_SETSIGDEF) for (int signal = 1; signal < NSIG; signal++) {
+    if (signal == SIGKILL || signal == SIGSTOP || sigismember(defaults, signal) != 1) continue;
+    struct sigaction action = { .sa_handler = SIG_DFL }; sigemptyset(&action.sa_mask);
+    if (sigaction(signal, &action, &handlers[signal])) { error = errno; goto restore; }
+    sigaddset(&reset, signal);
+  }
+  if ((error = pthread_sigmask(SIG_SETMASK, (flags & POSIX_SPAWN_SETSIGMASK) ? mask : &caller, NULL))) goto restore;
+  execve(file, argv, environment ? environment : envp);
+  error = errno;
+  pthread_sigmask(SIG_SETMASK, &all, NULL);
+restore:
+  for (int signal = 1; signal < NSIG; signal++) if (sigismember(&reset, signal) == 1) sigaction(signal, &handlers[signal], NULL);
+  if (geteuid() != euid) (void)seteuid(euid);
+  if (getegid() != egid) (void)setegid(egid);
+  for (int i = 0; i < marked; i++) {
+    int fd = descriptors[i].proc_fd, fdFlags = fcntl(fd, F_GETFD);
+    if (fdFlags >= 0) fcntl(fd, F_SETFD, fdFlags & ~FD_CLOEXEC);
+  }
+  for (int i = undo.count - 1; i >= 0; i--) {
+    struct saved *saved = &undo.saved[i];
+    if (saved->copy < 0) { close(saved->fd); continue; }
+    dup2(saved->copy, saved->fd); fcntl(saved->fd, F_SETFD, saved->flags); close(saved->copy);
+  }
+  if (cwd >= 0) (void)fchdir(cwd);
+done:
+  if (cwd >= 0) close(cwd);
+  pthread_mutex_unlock(&lock); free(undo.saved); free(environment); free(marker);
+  pthread_sigmask(SIG_SETMASK, &caller, NULL);
+  return error;
+}
+
 static int launch(pid_t *pid, const char *file, const posix_spawn_file_actions_t *value,
   const posix_spawnattr_t *attributes, char *const argv[], char *const envp[]) {
   short flags = 0; sigset_t mask, defaults; pid_t joined = 0;
@@ -111,12 +253,17 @@ static int launch(pid_t *pid, const char *file, const posix_spawn_file_actions_t
   /* Detached callers may start, but cannot leave the supervisor's group. */
   int grouped = (flags & (POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_SETSID)) && group_signals_enabled();
   flags &= ~(POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_SETSID);
-  if (flags & ~(POSIX_SPAWN_CLOEXEC_DEFAULT | POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_RESETIDS)) return ENOTSUP;
+  if (flags & ~(POSIX_SPAWN_CLOEXEC_DEFAULT | POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_RESETIDS | POSIX_SPAWN_SETEXEC)) return ENOTSUP;
+  if (attributes) { int error = preference(attributes); if (error) return error; }
   long maximum = sysconf(_SC_OPEN_MAX); if (maximum <= 0 || maximum > INT_MAX) return EINVAL;
   if ((unsigned long)maximum > INT_MAX / sizeof(struct proc_fdinfo)) return EMFILE;
   int descriptorsSize = (int)(maximum * sizeof(struct proc_fdinfo));
   struct proc_fdinfo *descriptors = flags & POSIX_SPAWN_CLOEXEC_DEFAULT ? malloc((size_t)descriptorsSize) : NULL;
   if ((flags & POSIX_SPAWN_CLOEXEC_DEFAULT) && !descriptors) return ENOMEM;
+  if (flags & POSIX_SPAWN_SETEXEC) {
+    int error = launch_in_place(file, value, flags, &mask, &defaults, grouped, joined, descriptors, descriptorsSize, argv, envp);
+    free(descriptors); return error;
+  }
   int errors[2]; if (pipe(errors)) { int error = errno; free(descriptors); return error; }
   fcntl(errors[0], F_SETFD, FD_CLOEXEC); fcntl(errors[1], F_SETFD, FD_CLOEXEC);
   pthread_mutex_lock(&lock);
@@ -143,31 +290,12 @@ static int launch(pid_t *pid, const char *file, const posix_spawn_file_actions_t
       struct sigaction action = { .sa_handler = SIG_DFL }; sigemptyset(&action.sa_mask);
       if (sigaction(signal, &action, NULL)) goto failed;
     }
-    for (struct action *a = actions ? actions->first : NULL; a; a = a->next) {
-      switch (a->kind) {
-        case CLOSE: close(a->fd); break;
-        case DUP: if (dup2(a->fd, a->target) < 0 || fcntl(a->target, F_SETFD, 0)) goto failed; break;
-        case OPEN: {
-          int fd = open(a->path, a->flags, a->mode); if (fd < 0) goto failed;
-          if (fd != a->fd) { if (dup2(fd, a->fd) < 0) goto failed; close(fd); }
-          break;
-        }
-        case CHDIR: if (chdir(a->path)) goto failed; break;
-        case FCHDIR: if (fchdir(a->fd)) goto failed; break;
-        case INHERIT: if (fcntl(a->fd, F_SETFD, 0)) goto failed; break;
-      }
-    }
+    if ((errno = apply_actions(actions, NULL))) goto failed;
     int count = descriptors ? proc_pidinfo(getpid(), PROC_PIDLISTFDS, 0, descriptors, descriptorsSize) : 0;
     if (descriptors && (count <= 0 || count >= descriptorsSize)) { errno = EMFILE; goto failed; }
     for (int i = 0; i < count / (int)sizeof(struct proc_fdinfo); i++) {
       int fd = descriptors[i].proc_fd;
-      if (fd == report) continue;
-      int keep = 0;
-      for (struct action *a = actions ? actions->first : NULL; a; a = a->next) {
-        if ((a->kind == DUP && a->target == fd) || ((a->kind == INHERIT || a->kind == OPEN) && a->fd == fd)) keep = 1;
-        if (a->kind == CLOSE && a->fd == fd) keep = 0;
-      }
-      if (!keep) close(fd);
+      if (fd != report && !kept(actions, fd)) close(fd);
     }
     execve(file, argv, environment ? environment : envp);
 failed: {

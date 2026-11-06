@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
+import { promisify } from 'node:util';
 import { prepareSessionExecution, readSessionExecutionReceipt, removeExecutionSocketDirectory, startSessionExecution } from '../packages/harness-runtime/lib/session-execution.js';
 import { createSessionMutationRuntime } from '../packages/harness-runtime/lib/session-mutations.js';
 import { createSessionExecutionOwner } from '../packages/harness-runtime/lib/session-execution-owner.js';
@@ -44,7 +45,8 @@ async function fixture({ scope, readOnly = false } = {}) {
   };
   return { root: canonical, viewDirectory, lease, run: (source, signal) => start(process.execPath, ['-e', source], signal),
     // Through /bin/sh, as `npm run` starts scripts: macOS strips DYLD_* here.
-    shell: (script, signal) => start('/bin/sh', ['-c', script], signal) };
+    shell: (script, signal) => start('/bin/sh', ['-c', script], signal),
+    exec: (command, args, signal) => start(command, args, signal) };
 }
 
 native('Plan boundary preserves workspace reads and denies writes and localhost POST without changing ordinary execution', async t => {
@@ -348,6 +350,136 @@ native('Node started through /bin/sh regains the spawn adapter, and its children
   assert.equal(scoped.result.adapter, true);
   assert.equal(await fs.realpath(scoped.result.cwd), await fs.realpath(path.join(scoped.f.viewDirectory, 'sub')));
 }, 30_000);
+
+// An in-place spawn (POSIX_SPAWN_SETEXEC) is execve with spawn attributes. The
+// probe checks the replaced image's descriptors, directory and signal state;
+// that a failed exec leaves the caller unchanged, so posix_spawnp's next PATH
+// entry starts cleanly; and that a slice execve cannot select is refused. The
+// expected values are the kernel's own outside the profile, except that the
+// kernel answers the foreign slice for this thin probe with EBADARCH.
+const inPlaceProbe = String.raw`#define _DARWIN_C_SOURCE
+#include <errno.h>
+#include <fcntl.h>
+#include <mach/machine.h>
+#include <pthread.h>
+#include <signal.h>
+#include <spawn.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+extern char **environ;
+static void handler(int signal) { (void)signal; }
+static int flags(int fd) { return fcntl(fd, F_GETFD); }
+static const char *disposition(int signal) {
+  struct sigaction current; sigaction(signal, NULL, &current);
+  return current.sa_handler == SIG_DFL ? "default" : current.sa_handler == SIG_IGN ? "ignore" : "handler";
+}
+static int blocked(int signal) { sigset_t mask; pthread_sigmask(SIG_SETMASK, NULL, &mask); return sigismember(&mask, signal); }
+static const char *name(int error) {
+  return error == ENOENT ? "ENOENT" : error == EBADF ? "EBADF" : error == ENOTSUP ? "ENOTSUP" : error == EBADARCH ? "EBADARCH" : error ? "other" : "none";
+}
+#define STATE "\"fds\":[%d,%d,%d,%d,%d],\"usr1\":%d,\"usr2\":%d,\"usr2Action\":\"%s\",\"termAction\":\"%s\""
+#define STATE_VALUES flags(10), flags(11), flags(12), flags(13), flags(14), blocked(SIGUSR1), blocked(SIGUSR2), disposition(SIGUSR2), disposition(SIGTERM)
+int main(int argc, char **argv) {
+  if (argc == 3 && !strcmp(argv[1], "report")) {
+    struct stat zero, copy; char cwd[1024];
+    int same = !stat("/dev/zero", &zero) && !fstat(13, &copy) && copy.st_rdev == zero.st_rdev;
+    printf("{\"samePid\":%s,\"dupIsZero\":%s,\"cwd\":\"%s\"," STATE "}\n", atoi(argv[2]) == getpid() ? "true" : "false",
+      same ? "true" : "false", getcwd(cwd, sizeof(cwd)) ? strrchr(cwd, '/') + 1 : "?", STATE_VALUES);
+    return 0;
+  }
+  if (argc != 3 || strcmp(argv[1], "start")) return 2;
+  /* The caller: 10, 11 (/dev/zero), 12 and 14 inheritable, SIGUSR1 blocked,
+   * SIGUSR2 ignored, SIGTERM caught; 3 is not open. */
+  int null = open("/dev/null", O_RDONLY), zero = open("/dev/zero", O_RDONLY);
+  if (null < 0 || zero < 0 || dup2(null, 10) < 0 || dup2(zero, 11) < 0 || dup2(null, 12) < 0 || dup2(null, 14) < 0) return 2;
+  close(null); close(zero);
+  sigset_t caller; sigemptyset(&caller); sigaddset(&caller, SIGUSR1); pthread_sigmask(SIG_SETMASK, &caller, NULL);
+  signal(SIGUSR2, SIG_IGN); signal(SIGTERM, handler);
+  struct stat before, after; stat(".", &before);
+  /* The image keeps 0-2, 12 and 13 (a copy of 11) and runs in sub/ with only
+   * SIGUSR2 blocked and reset to its default action. */
+  posix_spawn_file_actions_t actions; posix_spawn_file_actions_init(&actions);
+  for (int fd = 0; fd < 3; fd++) posix_spawn_file_actions_addinherit_np(&actions, fd);
+  posix_spawn_file_actions_adddup2(&actions, 11, 13); posix_spawn_file_actions_addclose(&actions, 11);
+  posix_spawn_file_actions_addclose(&actions, 10); posix_spawn_file_actions_addinherit_np(&actions, 12);
+  posix_spawn_file_actions_addchdir_np(&actions, "sub");
+  posix_spawnattr_t attributes; posix_spawnattr_init(&attributes);
+  sigset_t mask; sigemptyset(&mask); sigaddset(&mask, SIGUSR2);
+  posix_spawnattr_setsigmask(&attributes, &mask); posix_spawnattr_setsigdefault(&attributes, &mask);
+#if defined(__arm64__)
+  cpu_type_t native = CPU_TYPE_ARM64, foreign = CPU_TYPE_X86_64;
+#else
+  cpu_type_t native = CPU_TYPE_X86_64, foreign = CPU_TYPE_ARM64;
+#endif
+  size_t copied; posix_spawnattr_setbinpref_np(&attributes, 1, &native, &copied);
+  posix_spawnattr_setflags(&attributes, POSIX_SPAWN_SETEXEC | POSIX_SPAWN_CLOEXEC_DEFAULT | POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_SETSIGDEF);
+  char pid[32], self[2048], path[2048]; snprintf(pid, sizeof(pid), "%d", (int)getpid());
+  snprintf(self, sizeof(self), "%s/probe", argv[2]); snprintf(path, sizeof(path), "/nonexistent-devryan:%s", argv[2]);
+  char *next[] = { "probe", "report", pid, NULL };
+  int missing = posix_spawn(NULL, "/nonexistent-devryan/probe", &actions, &attributes, next, environ);
+  /* The adapter's own records never stand in for a descriptor the caller lacks. */
+  posix_spawn_file_actions_t unopened; posix_spawn_file_actions_init(&unopened);
+  posix_spawn_file_actions_addchdir_np(&unopened, "sub"); posix_spawn_file_actions_adddup2(&unopened, 3, 15);
+  int lacking = posix_spawn(NULL, "/nonexistent-devryan/probe", &unopened, &attributes, next, environ);
+  stat(".", &after);
+  posix_spawnattr_t other; posix_spawnattr_init(&other);
+  posix_spawnattr_setbinpref_np(&other, 1, &foreign, &copied); posix_spawnattr_setflags(&other, POSIX_SPAWN_SETEXEC);
+  int refused = posix_spawn(NULL, self, NULL, &other, next, environ);
+  printf("{\"missing\":\"%s\",\"unopened\":\"%s\",\"foreign\":\"%s\",\"cwd\":\"%s\"," STATE "}\n", name(missing), name(lacking), name(refused),
+    before.st_ino == after.st_ino && before.st_dev == after.st_dev ? "same" : "changed", STATE_VALUES);
+  fflush(stdout);
+  setenv("PATH", path, 1);
+  printf("{\"returned\":\"%s\"}\n", name(posix_spawnp(NULL, "probe", &actions, &attributes, next, environ)));
+  return 3;
+}
+`;
+native('an in-place spawn replaces the caller with its attributes and file actions, and a failed one changes nothing', async (t) => {
+  if (process.platform !== 'darwin') { t.skip('macOS spawn adapter only'); return; }
+  const build = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-in-place-')); roots.push(build);
+  const bin = path.join(build, 'bin'), source = path.join(build, 'probe.c');
+  await fs.mkdir(bin); await fs.writeFile(source, inPlaceProbe);
+  await promisify(execFile)(process.env.CC || 'cc', ['-std=c11', '-O2', source, '-o', path.join(bin, 'probe')], { timeout: 60_000 });
+  for (const readOnly of [true, false]) {
+    const f = await fixture({ readOnly });
+    await fs.mkdir(path.join(f.viewDirectory, 'sub'));
+    const handle = await f.exec(path.join(bin, 'probe'), ['start', bin]);
+    assert.equal((await handle.result).exitCode, 0, handle.output().stdout + handle.output().stderr);
+    assert.deepEqual(handle.output().stdout.trim().split('\n').map((line) => JSON.parse(line)), [
+      { missing: 'ENOENT', unopened: 'EBADF', foreign: 'ENOTSUP', cwd: 'same', fds: [0, 0, 0, -1, 0], usr1: 1, usr2: 0, usr2Action: 'ignore', termAction: 'handler' },
+      { samePid: true, dupIsZero: true, cwd: 'sub', fds: [-1, -1, 0, 0, -1], usr1: 0, usr2: 1, usr2Action: 'default', termAction: 'default' },
+    ], readOnly ? 'Plan profile' : 'implementation profile');
+  }
+}, 60_000);
+
+// Xcode's python3 is a stub that re-executes its framework's Python in place,
+// preferring its own architecture. Xcode's pip3 script names /usr/bin/xcrun as
+// its interpreter, a platform binary the adapter never loads into, and exits 71
+// like every xcrun call, so pip is checked as the module that script runs.
+const selectedXcodePython = async () => {
+  if (process.platform !== 'darwin') return null;
+  const developer = await promisify(execFile)('/usr/bin/xcode-select', ['-p'], { timeout: 10_000 })
+    .then(({ stdout }) => stdout.trim(), () => null);
+  if (!developer || !path.isAbsolute(developer)) return null;
+  const present = (file) => fs.access(file).then(() => true, () => false);
+  const python = path.join(developer, 'usr', 'bin', 'python3');
+  return await present(path.join(developer, 'usr', 'bin', 'xcodebuild')) && await present(python) ? python : null;
+};
+native("Xcode's python3 and its pip run inside the Plan and implementation profiles", async (t) => {
+  const python = await selectedXcodePython();
+  if (!python) { t.skip('no full Xcode with python3 is selected'); return; }
+  for (const readOnly of [true, false]) {
+    for (const [args, expected] of [[['--version'], /^Python 3\.\d+\.\d+$/], [['-m', 'pip', '--version'], /^pip \S+ from \S.* \(python 3\.\d+\)$/]]) {
+      const handle = await (await fixture({ readOnly })).exec(python, args);
+      const label = `${readOnly ? 'Plan' : 'implementation'} profile: ${python} ${args.join(' ')}`;
+      assert.equal((await handle.result).exitCode, 0, `${label}: ${handle.output().stderr}`);
+      assert.match(handle.output().stdout.trim(), expected, label);
+    }
+  }
+}, 60_000);
 
 // Headless Chromium under the confined profile, launched the way Playwright
 // does (detached Node spawn with a CDP pipe on fds 3/4) through /bin/sh. It
