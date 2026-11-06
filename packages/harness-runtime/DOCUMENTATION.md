@@ -833,6 +833,25 @@ provider/worker/formatter startup and do not qualify end-to-end app latency.
 
 Read-only lease and outcome queries retain the owner lock and durable recovery checks, but do not stage unchanged metadata or rebuild the Git index. `lock_wait`, `ledger_open`, `ledger_recovery`, `ledger_transaction`, and `ledger_commit` diagnostics identify work inside the lock; they are journaled only when a phase fails or takes at least 250 ms, because every tool call takes this lock. Every confined worker receives its own scratch `HOME`, temporary paths, and execution-worker marker, including Cursor and read-only provider workers. On macOS each execution also gets a short private runtime directory, exported as `XDG_RUNTIME_DIR` and spelled `/tmp/dr-<uid>/<lease digest>`, because the scratch path exceeds the 104-byte Unix socket limit. The agent-browser daemon socket therefore fits with its full lease session name (budget: 26 bytes for the directory). The profile lets the execution create and reach sockets only there, plus the system resolver. Cleanup removes it, and host recovery sweeps orphans older than a day. The parent must be a real directory owned by the user with mode 0700, or preparation fails closed. Every session-scoped execution also gets `DEVRYAN_SESSION_TMP`, `context-cache/session-tmp/<session digest>`: unlike the per-call scratch it survives between the session's calls, so logs and reproduction output remain readable. Preparation never follows a link planted at either level, and directories idle for a week are swept at most hourly per project. `/tmp` itself stays unwritable. Session-scoped executions on macOS can also run headless Chromium (a project's Playwright check): `PLAYWRIGHT_BROWSERS_PATH` names the host's `~/Library/Caches/ms-playwright` (read and execute only; an explicit host value is kept), a `NODE_OPTIONS` preload (`$HOME/.devryan-node-spawn.cjs`) restores the verified spawn adapter that macOS strips when `npm run` passes through `/usr/bin/env` and `/bin/sh`, and the profile allows exactly one mach lookup, `org.chromium.Chromium.MachPortRendezvousServer.<pid>`, which Chromium's helpers need for their IPC ports. Native-bundle shell executions get them too (`workerBrowsers: true` in `packages/web/server/application.js`); before that, agents had to find the cache and set `PLAYWRIGHT_BROWSERS_PATH` by hand. Provider transports, read-only shells and document/AST workers never get these. `DEVRYAN_WORKER_BROWSERS=0` restores the previous environment and profile exactly. A detached child cannot get its own process group inside the boundary, so a starter that stops it with `process.kill(-pid)` (Playwright's `webServer`, bounded test wrappers) used to signal nothing and wait for an exit that never came. The preload names the group of each detached child in `DEVRYAN_SPAWN_GROUP` and delivers a group signal through the verified launcher's `--signal-group` mode; the spawn adapter does the same for processes that have it. Signals stay inside the execution's own sandbox. `DEVRYAN_WORKER_GROUP_SIGNALS=0` turns this off in the preload and the adapter. WebKit, Firefox, the Google Chrome channel, headed mode and `chromiumSandbox: true` remain unsupported.
 
+The profile still denies `posix_spawn`, and the macOS spawn adapter also emulates
+in-place spawns (`POSIX_SPAWN_SETEXEC`, an `execve` with spawn attributes).
+Xcode's `python3` is a stub that re-executes its framework's `Python` this way,
+preferring its own architecture. The adapter applies the attributes and file
+actions to the calling process and calls `execve` without forking, so the
+process keeps its pid and its supervised group. If `execve` fails, the adapter
+restores the caller's descriptors, working directory, effective IDs, signal
+actions and mask before it returns the error, as the kernel does, so
+`posix_spawnp` can try the next `PATH` entry. `execve` cannot choose a slice of a
+universal binary: it runs the caller's architecture, and only native processes
+can load the adapter (dyld stops a Rosetta process that names it). An
+architecture preference is honoured when its first entry is the native type or
+`CPU_TYPE_ANY`, as the stub's is, and refused with `ENOTSUP` otherwise. Xcode's
+`python3` and `python3 -m pip` therefore run under both execution profiles when
+started directly or from zsh or bash, which restore the adapter. Started by a
+protected binary such as `/bin/sh` or `/usr/bin/env`, they still fail, because
+macOS strips `DYLD_*` there. Xcode's `pip3` script still exits 71: its
+interpreter is `/usr/bin/xcrun`, which spawns `xcodebuild` first.
+
 `SessionMutationRuntime.recoverNativeRemovalOwnership` is constructor-only clone
 recovery. Its checkpoint ID and source object ID come from complete selected
 bundle verification, not HTTP input. Under the ledger lock it verifies the
