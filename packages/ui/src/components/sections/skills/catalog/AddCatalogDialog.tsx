@@ -25,6 +25,7 @@ import { updateDesktopSettings } from '@/lib/persistence';
 import type { DesktopSettings, SkillCatalogConfig } from '@/lib/desktop';
 import { useSkillsCatalogStore } from '@/stores/useSkillsCatalogStore';
 import { useGitIdentitiesStore } from '@/stores/useGitIdentitiesStore';
+import { useAuthPrincipal } from '@/lib/authSession';
 import { useI18n } from '@/lib/i18n';
 
 const generateCatalogId = () => `custom:${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -83,6 +84,8 @@ export const AddCatalogDialog: React.FC<AddCatalogDialogProps> = ({ open, onOpen
   const isScanning = useSkillsCatalogStore((s) => s.isScanning);
   const defaultGitIdentityId = useGitIdentitiesStore((s) => s.defaultGitIdentityId);
   const loadDefaultGitIdentityId = useGitIdentitiesStore((s) => s.loadDefaultGitIdentityId);
+  // Managed principals clone with their own GitHub account, never an identity.
+  const isManaged = useAuthPrincipal().scope === 'managed';
 
   const [label, setLabel] = React.useState('');
   const [source, setSource] = React.useState('');
@@ -166,10 +169,15 @@ export const AddCatalogDialog: React.FC<AddCatalogDialogProps> = ({ open, onOpen
 
     if (!result.ok) {
       if (result.error?.kind === 'authRequired') {
-
         const ids = (result.error.identities || []) as IdentityOption[];
         setIdentityOptions(ids);
-        if (!gitIdentityId && ids.length > 0) {
+        if (ids.length === 0) {
+          // No identity to pick: a managed principal is offered none and
+          // authenticates with its own GitHub account, which the message names.
+          toast.error(result.error.message || t('settings.skills.catalog.add.toast.authenticationRequiredScan'));
+          return;
+        }
+        if (!gitIdentityId) {
           const preferred =
             defaultGitIdentityId &&
             defaultGitIdentityId !== 'global' &&
@@ -275,7 +283,9 @@ export const AddCatalogDialog: React.FC<AddCatalogDialogProps> = ({ open, onOpen
               placeholder={t('settings.skills.catalog.shared.field.repositoryPlaceholder')}
             />
             <p className="typography-micro text-muted-foreground">
-              {t('settings.skills.catalog.add.field.repositoryHint')}
+              {t(isManaged
+                ? 'settings.skills.catalog.add.field.managedRepositoryHint'
+                : 'settings.skills.catalog.add.field.repositoryHint')}
             </p>
           </div>
 

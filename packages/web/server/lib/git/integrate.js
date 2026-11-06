@@ -233,7 +233,7 @@ export async function integrateCommits(repoRoot, input) {
     const upstream = await runGitCommand(tempWorktreePath, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']);
     const upstreamRef = String(upstream.stdout || '').trim();
     if (upstream.success && upstreamRef) {
-      await runGitCommandOrThrow(tempWorktreePath, ['fetch'], 'Failed to fetch target branch');
+      await runGitCommandOrThrow(tempWorktreePath, ['fetch'], 'Failed to fetch target branch', { includeCredentials: true });
       await runGitCommandOrThrow(tempWorktreePath, ['merge', '--ff-only', upstreamRef], 'Target branch could not be fast-forwarded');
     }
     const status = await runGitCommandOrThrow(tempWorktreePath, ['status', '--porcelain'], 'Failed to inspect target branch');

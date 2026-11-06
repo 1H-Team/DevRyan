@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const statusMock = vi.hoisted(() => vi.fn());
 
 vi.mock('simple-git', () => ({
-  default: vi.fn(() => ({ status: statusMock })),
+  default: vi.fn(() => ({ status: statusMock, env() { return this; } })),
 }));
 
 import { getStatus } from './service.js';

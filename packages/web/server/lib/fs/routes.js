@@ -3,6 +3,7 @@ import { readVersionedFile, writeVersionedFile } from './file-versions.js';
 import { createDeterministicGitReadCache } from './git-read-cache.js';
 import { createFsWatchHandler, createFsWatchHub, FS_WATCH_MAX_DIRECTORIES } from './watch.js';
 import { isProtectedDotenvPath, shouldHideProtectedDotenv } from '../multi-user/dotenv-visibility.js';
+import { sshCommandKeyPath } from '../git/ssh-command.js';
 
 const EXEC_JOB_TTL_MS = 30 * 60 * 1000;
 const IMAGE_ASSET_GRANT_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp']);
@@ -122,7 +123,8 @@ const resolveCloneGitIdentity = async (gitIdentityId) => {
       name: 'Global Identity',
       userName: globalIdentity.userName,
       userEmail: globalIdentity.userEmail,
-      sshKey: globalIdentity.sshCommand ? globalIdentity.sshCommand.replace('ssh -i ', '') : null,
+      // None when the global command does more than name a key.
+      sshKey: sshCommandKeyPath(globalIdentity.sshCommand),
     };
   }
   return getProfile(id) || null;
@@ -770,6 +772,11 @@ export const registerFsRoutes = (app, dependencies) => {
         gitArgs.unshift(`core.sshCommand=ssh -i ${escapeCloneSshKeyPath(sshKeyPath)} -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new`);
         gitArgs.unshift('-c');
       }
+      // The Git service's environment: a managed principal's clone runs without
+      // the host's credential helpers and askpass programs, with only its own
+      // GitHub account's token.
+      const { buildGitEnv } = await import('../git/index.js');
+      const gitEnv = await buildGitEnv(parentPath, { includeCredentials: true });
 
       await fsPromises.mkdir(parentPath, { recursive: true });
       try {
@@ -787,8 +794,8 @@ export const registerFsRoutes = (app, dependencies) => {
           windowsHide: true,
           stdio: ['ignore', 'pipe', 'pipe'],
           env: {
-            ...process.env,
-            PATH: buildAugmentedPath ? buildAugmentedPath(process.env.PATH || '') : process.env.PATH,
+            ...gitEnv,
+            PATH: buildAugmentedPath ? buildAugmentedPath(gitEnv.PATH || '') : gitEnv.PATH,
             GIT_TERMINAL_PROMPT: '0',
           },
         });

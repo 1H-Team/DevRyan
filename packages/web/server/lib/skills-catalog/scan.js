@@ -3,7 +3,14 @@ import os from 'os';
 import path from 'path';
 import yaml from 'yaml';
 
-import { assertGitAvailable, looksLikeAuthError, runGit } from './git.js';
+import {
+  assertGitAvailable,
+  authRequiredError,
+  gitIdentityForRequest,
+  looksLikeAuthError,
+  runGit,
+  sshCommandForIdentity,
+} from './git.js';
 import { parseSkillRepoSource } from './source.js';
 
 const SKILL_NAME_PATTERN = /^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/;
@@ -65,8 +72,17 @@ export async function scanSkillsRepository({
   source,
   subpath,
   defaultSubpath,
-  identity,
+  identity: requestedIdentity,
 } = {}) {
+  // A managed principal clones over HTTPS, never with the profile's SSH key.
+  const identity = gitIdentityForRequest(requestedIdentity);
+
+  // A refused SSH key path fails the scan before any git command runs.
+  const ssh = sshCommandForIdentity(identity);
+  if (!ssh.ok) {
+    return { ok: false, error: ssh.error };
+  }
+
   const gitCheck = await assertGitAvailable();
   if (!gitCheck.ok) {
     return { ok: false, error: gitCheck.error };
@@ -87,7 +103,7 @@ export async function scanSkillsRepository({
     if (!cloned.ok) {
       const msg = `${cloned.error?.stderr || ''}\n${cloned.error?.message || ''}`.trim();
       if (looksLikeAuthError(msg)) {
-        return { ok: false, error: { kind: 'authRequired', message: 'Authentication required to access this repository', sshOnly: true } };
+        return { ok: false, error: authRequiredError() };
       }
       return { ok: false, error: { kind: 'networkError', message: msg || 'Failed to clone repository' } };
     }

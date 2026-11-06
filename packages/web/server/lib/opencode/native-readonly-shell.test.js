@@ -2,10 +2,11 @@ import { afterEach, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { sessionExecutionProfile, prepareSessionExecution } from '@devryan/harness-runtime/lib/session-execution.js';
 import { readOnlyShellLease } from './native-readonly-shell.js';
+import { resolveControllerGitCommand } from './execution-helper-command.js';
 const roots = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => fs.rm(root, { recursive: true, force: true }))); });
 const fixture = async () => {
@@ -79,9 +80,20 @@ if (process.platform === 'darwin') it('macOS confined shell allows inspection an
 // With SIP disabled (GitHub macOS runners) libuv's posix_spawn aborts with ENOSYS inside the
 // sandbox, so this real-network probe only runs where user Macs run it: with SIP enabled.
 const sipEnabled = process.platform === 'darwin' && /enabled/.test(spawnSync('/usr/bin/csrutil', ['status'], { encoding: 'utf8' }).stdout ?? '');
+// Not spawnSync: blocking the event loop the probe's server answers on would leave every request uncounted.
+const run = (command, args, options) => new Promise((resolve, reject) => {
+  const child = spawn(command, args, options); let stdout = '', stderr = '';
+  child.stdout.setEncoding('utf8').on('data', chunk => { stdout += chunk; });
+  child.stderr.setEncoding('utf8').on('data', chunk => { stderr += chunk; });
+  child.once('error', reject).once('close', (status, signal) => resolve({ status, signal, stdout, stderr }));
+});
 if (sipEnabled) it('macOS Plan shell denies actual local POST and git push while permitting reviewed inspection', async () => {
   const f = await fixture(), lease = await readOnlyShellLease(f.lease);
   const scratchDirectory = path.join(f.root, 'scratch'); await fs.mkdir(scratchDirectory);
+  // With a full Xcode selected, Apple's /usr/bin/git shim cannot select Git inside any execution profile:
+  // it must first spawn xcodebuild, the profile denies posix_spawn, and it exits 71 before Git runs.
+  // Probe with the Git the shim selects, resolved on the host as confined helpers resolve it.
+  const git = await resolveControllerGitCommand('/usr/bin/git');
   const gitEnv = { ...process.env, HOME:scratchDirectory, GIT_CONFIG_NOSYSTEM:'1', GIT_CONFIG_GLOBAL:'/dev/null', GIT_TEMPLATE_DIR:'', GIT_TERMINAL_PROMPT:'0', NO_PROXY:'127.0.0.1', no_proxy:'127.0.0.1' };
   for (const args of [['init', '--quiet', f.snapshot], ['-C', f.snapshot, 'add', 'tracked'],
     ['-C', f.snapshot, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', '-c', 'core.hooksPath=/dev/null', 'commit', '--quiet', '-m', 'Fixture']]) {
@@ -95,13 +107,14 @@ if (sipEnabled) it('macOS Plan shell denies actual local POST and git push while
     const profile = sessionExecutionProfile({ viewDirectory: lease.viewDirectory, scratchDirectory, readOnly: true });
     const script = `const {spawnSync}=require('node:child_process');const fs=require('node:fs');
       const post=spawnSync('/usr/bin/curl',['--noproxy','*','--max-time','1','--request','POST',${JSON.stringify(url)}],{encoding:'utf8'});
-      const push=spawnSync('/usr/bin/git',['-c','credential.helper=','-c','core.hooksPath=/dev/null','push',${JSON.stringify(url + '/repo')},'HEAD'],{encoding:'utf8',timeout:2000});
-      console.log(JSON.stringify({read:fs.readFileSync('tracked','utf8'),post:post.status,push:push.status}));`;
-    const result = spawnSync('/usr/bin/sandbox-exec', ['-p', profile, process.execPath, '-e', script], { cwd: f.snapshot,
-      env: gitEnv, encoding: 'utf8', timeout:5000 });
+      const push=spawnSync(${JSON.stringify(git)},['-c','credential.helper=','-c','core.hooksPath=/dev/null','push',${JSON.stringify(url + '/repo')},'HEAD'],{encoding:'utf8',timeout:2000});
+      console.log(JSON.stringify({read:fs.readFileSync('tracked','utf8'),post:post.status,push:push.status,pushError:push.stderr}));`;
+    const result = await run('/usr/bin/sandbox-exec', ['-p', profile, process.execPath, '-e', script], { cwd: f.snapshot,
+      env: gitEnv, timeout:5000 });
     expect(result.status, `signal=${result.signal} stdout=${result.stdout} stderr=${result.stderr}`).toBe(0);
     const outcomes = JSON.parse(result.stdout);
-    expect(outcomes.read).toBe('original'); expect(outcomes.post).toBe(7); expect(outcomes.push).toBe(128);
-    expect(requests).toBe(0);
+    expect(outcomes.read).toBe('original'); expect(outcomes.post).toBe(7); expect(outcomes.push, outcomes.pushError).toBe(128);
   } finally { await new Promise(resolve => server.close(resolve)); }
+  // close() calls back only after every accepted connection has ended, so any request that arrived is counted.
+  expect(requests).toBe(0);
 });

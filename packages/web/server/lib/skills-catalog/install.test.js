@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('./git.js', () => ({
+vi.mock('./git.js', async (importOriginal) => ({
+  ...(await importOriginal()),
   assertGitAvailable: vi.fn(async () => ({ ok: true })),
   looksLikeAuthError: vi.fn(() => false),
   runGit: vi.fn(async () => ({ ok: true, stdout: '', stderr: '' })),

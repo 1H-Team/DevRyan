@@ -18,6 +18,7 @@ Managed callers are additionally constrained by the multi-user layer: worktree c
   - `commit-message-context.js`: Bounded host-side status, history, and selected-file diff collection for commit-message drafts.
   - `credentials.js`: Git credentials management.
   - `identity-storage.js`: Git identity storage under `DEVRYAN_DATA_DIR` with mode-`0600` atomic writes.
+  - `ssh-command.js`: `sshCommandKeyPath`, which reads the key path back out of a `core.sshCommand` value (see [Local identity profiles](#local-identity-profiles)).
 
 ## Public API
 
@@ -28,12 +29,12 @@ The following functions are exported and used by the web server:
 - `getGlobalIdentity()`: Get global Git user.name, user.email, and core.sshCommand.
 - `getCurrentIdentity(directory)`: Get local Git identity (fallback to global if not set locally).
 - `hasLocalIdentity(directory)`: Check if local Git identity is configured.
-- `setLocalIdentity(directory, profile)`: Set local Git identity (userName, userEmail, authType, sshKey/host).
+- `setLocalIdentity(directory, profile)`: Set local Git identity (userName, userEmail, authType, sshKey/host); see [Local identity profiles](#local-identity-profiles).
 - `getRemoteUrl(directory, remoteName)`: Get URL for a specific remote.
 
 ### Status and Diff Operations
 - `getStatus(directory)`: Get comprehensive Git status including current branch, tracking, ahead/behind, file changes, diff stats, merge/rebase state.
-- Background status reads set `GIT_OPTIONAL_LOCKS=0`, preventing Git's optional index refresh from racing worktree population or other index writers.
+- Status reads set `GIT_OPTIONAL_LOCKS=0`, preventing Git's optional index refresh from racing worktree population or other index writers.
 - `getDiff(directory, { path, staged, contextLines })`: Get diff output for files or entire working tree.
 - `getRangeDiff(directory, { base, head, path, contextLines })`: Get diff between two refs.
 - `getRangeFiles(directory, { base, head })`: Get list of changed files between two refs.
@@ -89,10 +90,16 @@ container. Pull and push use the worktree's actual checked-out branch. Fetch
 uses that branch by default and may fetch another exact `origin` branch for an
 Update-tab merge/rebase when the branch is assigned to the same managed project;
 managed administrators may fetch any valid `origin` branch. Managed remote
-operations reject alternate remotes and never fall back to host-current GitHub
-credentials. Branch listings and ordinary merge/rebase sources remain
+operations reject alternate remotes and never fall back to the host's current
+GitHub account. Branch listings and ordinary merge/rebase sources remain
 presentation-filtered; cross-branch reintegration is separately target-grant
-authorized before Git runs.
+authorized before Git runs. The identity reaches Git as `GIT_AUTHOR_*` and
+`GIT_COMMITTER_*`. Remote commands authenticate only with the principal's token,
+which DevRyan's askpass helper gives only to `https://github.com`. The host's
+credential helpers and askpass programs are switched off, so a managed user
+without a connected GitHub account cannot authenticate to an HTTPS remote. Git
+refuses SSH remotes for managed users, because they would authenticate with the
+host's SSH agent and keys (see [Git child environment](#git-child-environment)).
 
 ### Commit Reintegration
 
@@ -155,8 +162,8 @@ authorized before Git runs.
 
 The following functions are internal helpers used by exported functions:
 - `buildSshCommand(sshKeyPath)`: Build SSH command string for git config.
-- `buildGitEnv()`: Build Git environment with SSH_AUTH_SOCK resolution.
-- `createGit(directory)`: Create simple-git instance with environment.
+- `buildGitEnv()`: Build the Git child environment (see [Git child environment](#git-child-environment)).
+- `createGit(directory)`: Create a simple-git instance whose Git children receive that environment.
 - `createGlobalConfigGit()`: Create the dedicated global-config client from a
   stable existing directory; repository clients always require a non-empty
   project directory.
@@ -256,10 +263,168 @@ mutation lock as Git operations so API-driven edits cannot race a merge.
 6. Return consistent error messages; use `parseGitErrorText(error)` to extract meaningful git errors.
 7. Update this file with the new function in the appropriate API section.
 
+### Git child environment
+
+`buildGitEnv(directory, options)` copies the server's `process.env`, drops any
+inherited `DEVRYAN_GIT_ASKPASS_TOKEN`, and changes only these variables:
+
+- `GIT_OPTIONAL_LOCKS=0` with `optionalLocks: false` (status reads).
+- `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_COMMITTER_NAME` and
+  `GIT_COMMITTER_EMAIL` for a managed request principal: its GitHub account's
+  name and email, otherwise the principal's own.
+- Credential isolation, for a managed request principal and for any call that
+  attaches a token: inherited `GIT_ASKPASS` and `SSH_ASKPASS` are dropped,
+  `GIT_TERMINAL_PROMPT=0` is set,
+  `'credential.helper=' 'core.askPass=' 'protocol.ssh.allow=never'` is appended
+  to `GIT_CONFIG_PARAMETERS` after any inherited entries, and `ssh` is removed
+  from an inherited `GIT_ALLOW_PROTOCOL`.
+- `GIT_ASKPASS` (DevRyan's helper) and `DEVRYAN_GIT_ASKPASS_TOKEN` with
+  `includeCredentials`, when the managed principal's GitHub account (or an
+  explicit `githubAccountId` for durable provisioning retries) has a token.
+  The helper gives the token only to `https://github.com` (see below).
+  Unmanaged requests never receive a token and keep the host's credential
+  helpers and inherited askpass programs.
+- `SSH_AUTH_SOCK` from the gpg-agent SSH socket when the server has none.
+
+Git asks every configured credential helper before any askpass program, then
+passes the credential that worked to each helper's `store` (a rejected one to
+`erase`). `GIT_CONFIG_PARAMETERS` is how Git passes `git -c` settings to its own
+children, such as `git-remote-https`. The empty `credential.helper` clears every
+configured helper (system, global, URL-scoped and repository), and the empty
+`core.askPass` stops Git falling back to `SSH_ASKPASS`. So a managed HTTPS
+operation authenticates only with the principal's token: the host's keychain,
+`gh` or Git Credential Manager never answers for it or receives its token, and a
+managed user without a connected account cannot authenticate. The commands that
+request credentials are push, pull, fetch, live branch listings, worktree
+provisioning fetches, worktree validation's `ls-remote` checks, reintegration's
+target fetch, `POST /api/fs/clone` ([clone
+credentials](../fs/DOCUMENTATION.md#clone-credentials)) and a managed
+principal's skills catalog scans and installs ([managed
+principals](../skills-catalog/DOCUMENTATION.md#managed-principals)). Worktree setup commands
+and the post-checkout hook get the same environment, so Git that they start for
+a managed user is isolated too, without a token.
+
+DevRyan's askpass helper (`runtime/git-askpass` in the data root,
+`git-askpass.cmd` on Windows) contains no token; it reads
+`DEVRYAN_GIT_ASKPASS_TOKEN`. It answers only Git's username and password prompts
+for `https://github.com`, with `x-access-token` and the token. Git's prompt names
+the URL the credential is for, after `url.*.insteadOf` rewrites and redirects,
+and the helper fails every prompt for another host, a port, plain HTTP, a proxy
+or a client certificate. Git then sends no credential and fails with
+`error: unable to read askpass response` and
+`could not read Username for '<url>'`. So a remote, submodule or clone URL
+outside GitHub never receives a managed user's token. The host may be written in
+any letter case. With `credential.useHttpPath` the prompt also names the path.
+The helper refuses a username or path that contains `@`: Git versions that print
+the username undecoded would otherwise let one such as
+`x-access-token@github.com/x` pass for github.com. On Windows the helper answers
+only `Username for 'https://github.com': ` and
+`Password for 'https://x-access-token@github.com': `.
+
+`protocol.ssh.allow=never` makes Git refuse the SSH transport with
+`fatal: transport 'ssh' not allowed`. Git checks it after `url.*.insteadOf` and
+`pushInsteadOf` rewrites and before it starts ssh, so no managed operation
+reaches the host's SSH agent (inherited, or the gpg-agent socket above), the
+host's `~/.ssh` keys and configuration, or the key in a `core.sshCommand`.
+`GIT_CONFIG_PARAMETERS` is read after `GIT_CONFIG_COUNT`, so it also overrides
+inherited pairs. An inherited `GIT_ALLOW_PROTOCOL` would replace every
+`protocol.*.allow` setting, so it loses `ssh` and keeps the rest. A managed
+project whose origin is an SSH URL therefore needs an HTTPS `remoteUrl`; project
+registration stores `git@github.com:` and `ssh://git@github.com/` origins as
+their `https://github.com/` URL. Without one, its push, pull and fetch fail, and
+live listings keep the remote-tracking refs they could not verify. The same
+applies to a host `insteadOf` that rewrites HTTPS to SSH, a managed clone of an
+SSH URL, and SSH remotes that setup commands fetch from, such as `git+ssh`
+dependencies. Unmanaged Git keeps the SSH transport.
+
+Not covered: credentials embedded in a remote URL or sent by `http.extraHeader`;
+commit signing, which uses the host's signing key and agent when the host's
+configuration enables it; ssh started by programs other than Git, such as Git
+LFS for an SSH remote or a setup command; and `ext::` and other remote-helper
+transports (such as `codecommit::`), which run host programs with the host's own
+credentials (`ext::` only when the host's configuration allows it).
+
+`runGitCommand` passes the environment to `execFile`. `createGit` passes it with
+simple-git's `.env()`: simple-git ignores an `env` constructor option, and
+`.env()` replaces the child's environment, so the complete set is passed; add a
+variable to one instance with `git.env(name, value)`. simple-git refuses editor,
+pager, askpass, SSH-command and config-path variables unless the matching
+`unsafe` option is set. Each one present, inherited or DevRyan's, enables only
+its own option (`SCREENED_GIT_ENV_OPTIONS`), so Git keeps seeing the server
+environment it inherits; a new variable that simple-git screens needs an entry
+there. Inherited `GIT_CONFIG_COUNT` pairs that set a key simple-git screens,
+such as `core.sshCommand`, are still refused. simple-git also refuses `-c`
+arguments and `GIT_CONFIG_COUNT` pairs that name `credential.helper` or
+`protocol.*.allow` unless `allowUnsafeCredentialHelper` or
+`allowUnsafeProtocolOverride` is set, which would allow that key in every
+argument of the instance. It does not screen `GIT_CONFIG_PARAMETERS` or
+`GIT_ALLOW_PROTOCOL`, so credential isolation needs no `unsafe` option. If a
+simple-git upgrade starts screening them, managed Git is refused and
+`service.git-credentials.test.js` and `service.git-ssh.test.js` fail.
+simple-git's debug output (`DEBUG=simple-git*`) shows the environment as
+variable names, never values.
+
+Regression tests: `service.git-env.test.js` records each Git child's environment
+through a `git` wrapper first on `PATH`. `service.git-askpass.test.js` runs the
+askpass helper with Git's prompts, directly and through `git credential fill`.
+`service.git-credentials.test.js` serves a repository through
+`git http-backend` at `https://github.com` and at `https://git.example.test`,
+adds fake host credential helpers and askpass programs, and checks which
+credential authenticates each managed and unmanaged operation;
+`../fs/routes.clone-credentials.test.js` does the same for `POST /api/fs/clone`,
+and `../skills-catalog/git.managed-credentials.test.js` for the skills catalog's
+scan, install and catalog source routes at `https://github.com`.
+They reach the hosts through `test-https-hosts.js`, a CONNECT proxy on
+127.0.0.1 that terminates TLS with a throwaway certificate (made with the
+`openssl` command-line tool), so Git formats its prompts for the real host names
+and nothing leaves the machine. `service.git-ssh.test.js` puts a fake `ssh`
+first on `PATH`. It records the agent socket and key Git hands it and serves a
+local bare repository. The test checks that managed operations never start
+ssh, whatever the host's agent, identity profile, URL rewrite or
+`GIT_ALLOW_PROTOCOL`, and that unmanaged operations keep the host's agent.
+
+### Local identity profiles
+
+`setLocalIdentity(directory, profile)` builds the profile's SSH command before
+any write, so a key path that `escapeSshKeyPath` refuses changes nothing. It
+writes `user.name` and `user.email` to the repository's local config, then the
+profile's authentication:
+
+- `authType: 'ssh'` with `sshKey`: sets `core.sshCommand` to
+  `buildSshCommand(sshKey)` and unsets `credential.helper`.
+- `authType: 'token'` with `host`: sets `credential.helper` to `store` and unsets
+  `core.sshCommand`.
+
+simple-git refuses to set or unset either key, `--unset` included, unless the
+instance enables `allowUnsafeSshCommand` and `allowUnsafeCredentialHelper`.
+Only the `setLocalIdentity` instance enables them
+(`createGit(directory, { authConfigWrites: true })`); its values are fixed or
+validated by `escapeSshKeyPath`. An unset of a key that is not set is ignored.
+
+`POST /api/git/set-identity` with `profileId: 'global'` builds the profile from
+the global `user.name`, `user.email` and `core.sshCommand`. Its `sshKey` is
+`sshCommandKeyPath(sshCommand)`: the command is read as the shell reads it, and
+only `ssh -i <key>`, alone or with `-o IdentitiesOnly=yes` and in any quoting,
+gives the exact key path, with a leading `~/` expanded under HOME as ssh does.
+Any other command (another program or option, a shell expansion, another
+user's `~`) gives no key, so the repository's local authentication config is
+left as it was, and without a local `core.sshCommand` the global command keeps
+applying. A key path that `escapeSshKeyPath` refuses stays the profile's key,
+so applying it fails and writes nothing. `POST /api/fs/clone` with
+`gitIdentityId: 'global'` builds the same profile (`resolveCloneGitIdentity` in
+`lib/fs/routes.js`, see the [FS module](../fs/DOCUMENTATION.md#clone-with-a-git-identity)).
+
+Regression tests: `service.local-identity.test.js` applies both profile types to
+a real repository and reads its local config back. `routes.global-identity.test.js`
+applies the global profile for each global command form to a real repository
+with a stub HOME, and `ssh-command.test.js` lists the forms `sshCommandKeyPath`
+reads and refuses.
+
 ### SSH Key Handling
 - SSH keys are escaped and validated via `escapeSshKeyPath` to prevent command injection.
+- `sshCommandKeyPath` reads a key path back out of a `core.sshCommand` without validating it; the path still goes through `escapeSshKeyPath` before a profile writes it, and through `escapeCloneSshKeyPath` (`lib/fs/routes.js`) before a clone uses it.
 - On Windows, paths are converted to MSYS format (`C:/path` → `/c/path`).
-- SSH_AUTH_SOCK is automatically resolved via `resolveSshAuthSock` (checks GPG agent, gpgconf).
+- SSH_AUTH_SOCK is automatically resolved via `resolveSshAuthSock` (checks GPG agent, gpgconf). Managed Git never authenticates with it: Git refuses SSH remotes for managed users (see [Git child environment](#git-child-environment)).
 
 ### Worktree Naming
 - Worktree names are slugified via `slugWorktreeName`.
@@ -300,9 +465,10 @@ The route sets no deadline of its own; Git owns the transport operation. `sendGi
 Push and pull reject an active rebase with HTTP 409 `GIT_REBASE_IN_PROGRESS`,
 and a detached HEAD without a rebase with HTTP 409 `GIT_DETACHED_HEAD`, before
 remote commands. Managed credential and branch restrictions remain in place.
-Rebase continuation enables only the fixed noninteractive editor, propagates
-failed commands, never implicitly skips an empty patch, and checks that rebase
-metadata is gone before returning completion. The UI invalidates cached status
+Rebase and merge continuation add only the fixed noninteractive editor
+(`GIT_EDITOR=true`) to the normal Git environment. Rebase continuation
+propagates failed commands, never implicitly skips an empty patch, and checks
+that rebase metadata is gone before returning completion. The UI invalidates cached status
 after operation attempts and guards push synchronization before fetch and after
 pull, including a pull conflict paired with a stale status response.
 

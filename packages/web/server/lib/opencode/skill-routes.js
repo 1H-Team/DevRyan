@@ -13,6 +13,7 @@ import {
   withHarnessResult,
 } from './harness-result.js';
 import { resolveGen2OpenCodeClient } from './opencode-client-seam.js';
+import { getRequestPrincipal } from '../multi-user/request-context.js';
 
 export const registerSkillRoutes = (app, dependencies) => {
   const {
@@ -314,7 +315,17 @@ export const registerSkillRoutes = (app, dependencies) => {
     });
   };
 
+  // A managed principal's catalog Git clones over HTTPS with only its own
+  // GitHub token and never uses an identity profile, so it is offered none.
+  const isManagedRequest = () => getRequestPrincipal()?.scope === 'managed';
+  const authRequiredRetry = () => (isManagedRequest()
+    ? 'Retry after connecting a GitHub account that can read the repository'
+    : 'Retry with a Git identity that can read the repository');
+
   const listGitIdentitiesForResponse = () => {
+    if (isManagedRequest()) {
+      return [];
+    }
     try {
       const profiles = getProfiles();
       return profiles.map((p) => ({ id: p.id, name: p.name }));
@@ -604,7 +615,7 @@ export const registerSkillRoutes = (app, dependencies) => {
           recovery: {
             rootCauseHint: result.error?.message || 'Skill repository scan did not complete',
             safeRetry: result.error?.kind === 'authRequired'
-              ? 'Retry with a Git identity that can read the repository'
+              ? authRequiredRetry()
               : 'Retry with a valid skill repository source',
             stopCondition: 'Stop if the source is not reachable or does not contain skills',
             retryable: result.error?.kind !== 'invalidSource',
@@ -750,7 +761,7 @@ export const registerSkillRoutes = (app, dependencies) => {
           recovery: {
             rootCauseHint: result.error?.message || 'Skill install did not complete',
             safeRetry: result.error?.kind === 'authRequired'
-              ? 'Retry with a Git identity that can read the repository'
+              ? authRequiredRetry()
               : result.error?.kind === 'conflicts'
                 ? 'Retry with explicit conflict decisions'
                 : 'Retry after checking skill source and target write permissions',

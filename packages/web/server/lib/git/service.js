@@ -10,7 +10,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { execFile } from 'child_process';
-import { promisify } from 'util';
+import { inspect, promisify } from 'util';
 import { createRequire } from 'module';
 
 import {
@@ -336,6 +336,51 @@ const assertManagedFetchBranchAllowed = async ({ directory, principal, assignmen
   return branch;
 };
 
+// DevRyan's askpass helper. Git runs it with one prompt, such as
+// `Username for 'https://github.com': `, naming the URL the credential is for
+// after any `insteadOf` rewrite or redirect. It answers only Git's username
+// and password prompts for https://github.com (the host in any letter case,
+// with no port), with `x-access-token` and DEVRYAN_GIT_ASKPASS_TOKEN, and
+// fails every other prompt, so the token never reaches another host, a proxy
+// or a plain-HTTP URL. With credential.useHttpPath the prompt also names the
+// path. Neither the username nor the path may contain `@`: Git versions that
+// print the username in prompts undecoded would otherwise let one such as
+// `x-access-token@github.com/x` pass for github.com. The Windows helper
+// answers only `Username for 'https://github.com': ` and
+// `Password for 'https://x-access-token@github.com': `, in any letter case.
+const GIT_ASKPASS_HELPER_SOURCE = [
+  '#!/bin/sh',
+  '[ -n "${DEVRYAN_GIT_ASKPASS_TOKEN:-}" ] || exit 1',
+  'case $1 in',
+  `  "Username for '"*"': ") answer=x-access-token; url=\${1#"Username for '"} ;;`,
+  `  "Password for '"*"': ") answer=$DEVRYAN_GIT_ASKPASS_TOKEN; url=\${1#"Password for '"} ;;`,
+  '  *) exit 1 ;;',
+  'esac',
+  `url=\${url%"': "}`,
+  'case $url in https://*) url=${url#https://} ;; *) exit 1 ;; esac',
+  'authority=${url%%/*}',
+  'case ${url#"$authority"} in *@*) exit 1 ;; esac',
+  'case $authority in',
+  '  [Gg][Ii][Tt][Hh][Uu][Bb].[Cc][Oo][Mm]) ;;',
+  "  *@[Gg][Ii][Tt][Hh][Uu][Bb].[Cc][Oo][Mm]) case ${authority%@*} in ''|*@*) exit 1 ;; esac ;;",
+  '  *) exit 1 ;;',
+  'esac',
+  `printf '%s\\n' "$answer"`,
+  '',
+].join('\n');
+
+const GIT_ASKPASS_HELPER_WINDOWS_SOURCE = [
+  '@echo off',
+  'setlocal DisableDelayedExpansion',
+  'set "request=%~1"',
+  'setlocal EnableDelayedExpansion',
+  'if not defined DEVRYAN_GIT_ASKPASS_TOKEN exit /b 1',
+  `if /I "!request!"=="Username for 'https://github.com': " (echo x-access-token& exit /b 0)`,
+  `if /I "!request!"=="Password for 'https://x-access-token@github.com': " (echo !DEVRYAN_GIT_ASKPASS_TOKEN!& exit /b 0)`,
+  'exit /b 1',
+  '',
+].join('\r\n');
+
 const ensureGitAskPassHelper = async () => {
   if (gitAskPassHelperPromise) return gitAskPassHelperPromise;
   gitAskPassHelperPromise = (async () => {
@@ -344,13 +389,11 @@ const ensureGitAskPassHelper = async () => {
     await fsp.mkdir(runtimeDirectory, { recursive: true, mode: 0o700 });
     if (process.platform === 'win32') {
       const helperPath = path.join(runtimeDirectory, 'git-askpass.cmd');
-      const source = '@echo off\r\necho %* | findstr /I "username" >nul\r\nif not errorlevel 1 (echo x-access-token) else (echo %DEVRYAN_GIT_ASKPASS_TOKEN%)\r\n';
-      await fsp.writeFile(helperPath, source, { encoding: 'utf8', mode: 0o700 });
+      await fsp.writeFile(helperPath, GIT_ASKPASS_HELPER_WINDOWS_SOURCE, { encoding: 'utf8', mode: 0o700 });
       return helperPath;
     }
     const helperPath = path.join(runtimeDirectory, 'git-askpass');
-    const source = '#!/bin/sh\ncase "$1" in\n  *[Uu]sername*) printf "%s\\n" "x-access-token" ;;\n  *) printf "%s\\n" "$DEVRYAN_GIT_ASKPASS_TOKEN" ;;\nesac\n';
-    await fsp.writeFile(helperPath, source, { encoding: 'utf8', mode: 0o700 });
+    await fsp.writeFile(helperPath, GIT_ASKPASS_HELPER_SOURCE, { encoding: 'utf8', mode: 0o700 });
     await fsp.chmod(helperPath, 0o700);
     return helperPath;
   })().catch((error) => {
@@ -360,11 +403,25 @@ const ensureGitAskPassHelper = async () => {
   return gitAskPassHelperPromise;
 };
 
+// `git -c credential.helper= -c core.askPass= -c protocol.ssh.allow=never`, in
+// the variable that carries `-c` settings to Git's own children such as
+// git-remote-https. The empty helper clears every configured one (system,
+// global, URL-scoped, repository); the empty core.askPass also stops Git
+// falling back to SSH_ASKPASS. Git refuses the SSH transport after any URL
+// rewrite, so ssh never starts with the host's agent, keys or SSH config.
+// simple-git refuses `-c` arguments and GIT_CONFIG_COUNT pairs that name
+// credential.helper or protocol.*.allow unless allowUnsafeCredentialHelper or
+// allowUnsafeProtocolOverride is set, which would allow them in every
+// argument; it does not screen this variable.
+const ISOLATED_CREDENTIAL_CONFIG = "'credential.helper=' 'core.askPass=' 'protocol.ssh.allow=never'";
+
 export const buildGitEnv = async (
   directory = null,
   { includeCredentials = false, githubAccountId = null, optionalLocks = true } = {},
 ) => {
   const env = { ...process.env };
+  // Git sees an askpass token only when this call attaches one below.
+  delete env.DEVRYAN_GIT_ASKPASS_TOKEN;
   if (optionalLocks === false) {
     env.GIT_OPTIONAL_LOCKS = '0';
   }
@@ -388,10 +445,26 @@ export const buildGitEnv = async (
       env.GIT_COMMITTER_EMAIL = authorEmail;
     }
   }
-  if (includeCredentials && auth?.accessToken) {
-    env.GIT_ASKPASS = await ensureGitAskPassHelper();
+  const token = includeCredentials ? auth?.accessToken || null : null;
+  if (principal || token) {
+    // Git asks every configured credential helper before askpass, and then
+    // hands the credential that worked to each helper's `store`. Managed Git,
+    // and Git that DevRyan gives a token, runs without helpers, `core.askPass`,
+    // inherited askpass programs, terminal prompts and the SSH transport, so
+    // only the token attached below can authenticate.
+    delete env.GIT_ASKPASS;
+    delete env.SSH_ASKPASS;
     env.GIT_TERMINAL_PROMPT = '0';
-    env.DEVRYAN_GIT_ASKPASS_TOKEN = auth.accessToken;
+    env.GIT_CONFIG_PARAMETERS = [env.GIT_CONFIG_PARAMETERS, ISOLATED_CREDENTIAL_CONFIG].filter(Boolean).join(' ');
+    // An inherited protocol allow-list replaces Git's protocol.*.allow
+    // settings, so it loses `ssh` and keeps the rest.
+    if (typeof env.GIT_ALLOW_PROTOCOL === 'string') {
+      env.GIT_ALLOW_PROTOCOL = env.GIT_ALLOW_PROTOCOL.split(':').filter((name) => name !== 'ssh').join(':');
+    }
+  }
+  if (token) {
+    env.GIT_ASKPASS = await ensureGitAskPassHelper();
+    env.DEVRYAN_GIT_ASKPASS_TOKEN = token;
   }
   if (!env.SSH_AUTH_SOCK || !env.SSH_AUTH_SOCK.trim()) {
     const resolved = await resolveSshAuthSock();
@@ -401,6 +474,43 @@ export const buildGitEnv = async (
   }
   return env;
 };
+
+// simple-git refuses to start Git with any of these variables in the child
+// environment unless the matching `unsafe` option is set (simple-git 3.36,
+// names compared case-insensitively). Inherited ones have always reached Git,
+// so each one present enables only its own option; GIT_ASKPASS is also the
+// helper buildGitEnv attaches for managed credentials.
+const SCREENED_GIT_ENV_OPTIONS = new Map([
+  ['editor', 'allowUnsafeEditor'],
+  ['git_editor', 'allowUnsafeEditor'],
+  ['git_sequence_editor', 'allowUnsafeEditor'],
+  ['git_askpass', 'allowUnsafeAskPass'],
+  ['ssh_askpass', 'allowUnsafeAskPass'],
+  ['git_config', 'allowUnsafeConfigPaths'],
+  ['git_config_global', 'allowUnsafeConfigPaths'],
+  ['git_config_system', 'allowUnsafeConfigPaths'],
+  ['git_exec_path', 'allowUnsafeConfigPaths'],
+  ['prefix', 'allowUnsafeConfigPaths'],
+  ['git_config_count', 'allowUnsafeConfigEnvCount'],
+  ['git_external_diff', 'allowUnsafeDiffExternal'],
+  ['git_pager', 'allowUnsafePager'],
+  ['pager', 'allowUnsafePager'],
+  ['git_proxy_command', 'allowUnsafeGitProxy'],
+  ['git_template_dir', 'allowUnsafeTemplateDir'],
+  ['git_ssh', 'allowUnsafeSshCommand'],
+  ['git_ssh_command', 'allowUnsafeSshCommand'],
+]);
+
+const screenedGitEnvOptions = (env) => Object.fromEntries(Object.keys(env)
+  .map((name) => SCREENED_GIT_ENV_OPTIONS.get(name.trim().toLowerCase()))
+  .filter(Boolean)
+  .map((option) => [option, true]));
+
+// simple-git's debug output (DEBUG=simple-git*) prints each child's spawn
+// options; the environment renders as variable names, never values.
+const withRedactedInspection = (env) => Object.defineProperty(env, inspect.custom, {
+  value: () => `[Git environment: ${Object.keys(env).sort().join(', ')}]`,
+});
 
 const createGit = async (directory, options = {}) => {
   const directoryPath = normalizeDirectoryPath(directory);
@@ -414,20 +524,24 @@ const createGit = async (directory, options = {}) => {
   const binary = getGitBinary();
   const hasCustomBinary = typeof binary === 'string' && binary.trim() && binary !== 'git' && binary !== 'git.exe';
   const unsafe = {
+    ...screenedGitEnvOptions(env),
     ...(hasCustomBinary ? { allowUnsafeCustomBinary: true } : {}),
     ...(options.nonInteractiveEditor ? { allowUnsafeEditor: true } : {}),
+    // setLocalIdentity sets and unsets these keys with fixed or validated values.
+    ...(options.authConfigWrites ? { allowUnsafeSshCommand: true, allowUnsafeCredentialHelper: true } : {}),
     // Only used with our fixed core.fsmonitor=false read configuration.
     ...(signal ? { allowUnsafeFsMonitor: true } : {}),
   };
+  // simple-git ignores an `env` option. Only `.env()` reaches the child, and it
+  // replaces the child's environment, so it is given the complete set.
   return simpleGit({
     baseDir: directoryPath,
-    env,
     spawnOptions,
     ...(signal ? { config: ['core.fsmonitor=false'] } : {}),
     binary,
     unsafe,
     ...(signal ? { abort: signal } : {}),
-  });
+  }).env(withRedactedInspection(env));
 };
 
 const globalGitDirectory = [os.homedir(), os.tmpdir(), process.cwd()]
@@ -1271,7 +1385,8 @@ const checkRemoteBranchExists = async (primaryWorktree, remoteName, branchName, 
   const target = url || remote;
   const lsRemote = await runGitCommand(
     primaryWorktree,
-    ['ls-remote', '--heads', target, `refs/heads/${branch}`]
+    ['ls-remote', '--heads', target, `refs/heads/${branch}`],
+    { includeCredentials: true },
   );
   if (!lsRemote.success) {
     return { success: false, found: false };
@@ -1452,19 +1567,20 @@ export async function hasLocalIdentity(directory) {
 }
 
 export async function setLocalIdentity(directory, profile) {
-  const git = await createGit(directory);
+  const git = await createGit(directory, { authConfigWrites: true });
 
   try {
+    const authType = profile.authType || 'ssh';
+    // Built before any write, so a refused key path leaves the config unchanged.
+    const sshCommand = authType === 'ssh' && profile.sshKey ? buildSshCommand(profile.sshKey) : null;
 
     await git.addConfig('user.name', profile.userName, false, 'local');
     await git.addConfig('user.email', profile.userEmail, false, 'local');
 
-    const authType = profile.authType || 'ssh';
-
-    if (authType === 'ssh' && profile.sshKey) {
+    if (sshCommand) {
       await git.addConfig(
         'core.sshCommand',
-        buildSshCommand(profile.sshKey),
+        sshCommand,
         false,
         'local'
       );
@@ -2773,7 +2889,8 @@ export async function validateWorktreeCreate(directory, input = {}) {
         if (parsedExistingRemote && ensureRemoteName && ensureRemoteUrl && ensureRemoteName === parsedExistingRemote.remote) {
           const lsRemote = await runGitCommand(
             context.primaryWorktree,
-            ['ls-remote', '--heads', ensureRemoteUrl, `refs/heads/${parsedExistingRemote.branch}`]
+            ['ls-remote', '--heads', ensureRemoteUrl, `refs/heads/${parsedExistingRemote.branch}`],
+            { includeCredentials: true },
           );
           if (!lsRemote.success) {
             throw new Error(`Unable to query remote ${ensureRemoteName}`);
@@ -3926,7 +4043,7 @@ async function continueRebaseUnlocked(directory) {
 
 async function continueMergeUnlocked(directory) {
   const directoryPath = normalizeDirectoryPath(directory);
-  const git = await createGit(directoryPath);
+  const git = await createGit(directoryPath, { nonInteractiveEditor: true });
 
   try {
     await assertManagedMutationBranch(directoryPath, git);

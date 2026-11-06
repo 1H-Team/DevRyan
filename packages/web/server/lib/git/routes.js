@@ -5,6 +5,7 @@ import { collectCommitMessageContext, validateCommitMessageSelectedFiles } from 
 import { generatePullRequestDescriptionDirect } from './pr-description.js';
 import { BRANCH_NAME_MAX_OUTPUT_TOKENS, BRANCH_NAME_PROMPT_MAX_LENGTH, BRANCH_NAME_TIMEOUT_MS, buildBranchNamePrompt, normalizeBranchSlug } from './branch-name.js';
 import { createGitZenTextTransport } from './zen-text.js';
+import { sshCommandKeyPath } from './ssh-command.js';
 import { requireManagedAssignedBranch } from '../multi-user/branch-authorization.js';
 import { getRequestPrincipal } from '../multi-user/request-context.js';
 import { generateTextWithSessionModel as generateTextWithSessionModelDefault } from '../opencode/session-model-text.js';
@@ -448,9 +449,8 @@ export function registerGitRoutes(app, {
           name: 'Global Identity',
           userName: globalIdentity.userName,
           userEmail: globalIdentity.userEmail,
-          sshKey: globalIdentity.sshCommand
-            ? globalIdentity.sshCommand.replace('ssh -i ', '')
-            : null,
+          // None when the global command does more than name a key.
+          sshKey: sshCommandKeyPath(globalIdentity.sshCommand),
         };
       } else {
         profile = getProfile(profileId);
