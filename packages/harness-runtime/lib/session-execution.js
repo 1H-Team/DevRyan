@@ -7,6 +7,7 @@ import { spawn, execFile } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { writeFileAtomic } from './atomic-file.js';
 import { writableInputDirectories } from './execution-inputs.js';
+import { developerToolEnvironment } from './execution-developer-tools.js';
 import { ensureWindowsPrivateDirectory, createWindowsPrivateFile, createWindowsPrivateFileOwner, readWindowsPrivateFile } from './windows-private-files.js';
 
 const error = (code) => Object.assign(new Error(code), { code, status: 409 });
@@ -292,7 +293,9 @@ async function prepareArtifactDirectory(lease, writableDirectories) {
   return await fs.realpath(current).catch(() => null) === current ? current : null;
 }
 
-export async function prepareSessionExecution({ launcher, lease, socketDirectory: requestedSocketDirectory, workerBrowsers = true, deniedReadDirectories = [], hostOperationGrant }) {
+/** `env` is the environment the command will receive beneath the returned
+ * `environment`; it only informs additions such as developer tool paths. */
+export async function prepareSessionExecution({ launcher, lease, socketDirectory: requestedSocketDirectory, workerBrowsers = true, deniedReadDirectories = [], hostOperationGrant, env }) {
   if(hostOperationGrant){assertRegisteredHostOperationGrant(hostOperationGrant);if(lease.readOnly===true)throw error('native_plan_write_denied');if(process.platform!=='darwin')throw error('host_operation_platform_unavailable');}
   if (!['darwin', 'linux', 'win32'].includes(process.platform)) throw error('mutation_platform_unsupported');
   if (!path.isAbsolute(launcher ?? '')) throw error('mutation_runtime_unsupported');
@@ -347,6 +350,9 @@ export async function prepareSessionExecution({ launcher, lease, socketDirectory
     protectedDirectories: [ledgerStorageOf(viewDirectory), auxiliaryDirectory],
   }) : [];
   const artifactDirectory = await prepareArtifactDirectory(lease, writableDirectories);
+  // Apple's developer tool shims exit 71 under the profile when a full Xcode
+  // is selected (execution-developer-tools.js).
+  const developerTools = await developerToolEnvironment(env);
   const profile = path.join(root, `sandbox-${randomUUID()}.sb`);
   if (process.platform === 'win32') {
     for (const denied of deniedRoots) for (const granted of [viewDirectory, scratchDirectory, auxiliaryDirectory]) {
@@ -376,7 +382,7 @@ export async function prepareSessionExecution({ launcher, lease, socketDirectory
       TMPPREFIX: path.join(scratchDirectory, 'zsh'), ...workerLanguageServerEnvironment(), ...nodeEnvironment,
       // The spawn adapter reads the same switch inside the worker.
       ...(process.platform === 'darwin' && !workerGroupSignalsEnabled() ? { DEVRYAN_WORKER_GROUP_SIGNALS: '0' } : {}),
-      ...hostOperationGrant?.environment } };
+      ...developerTools, ...hostOperationGrant?.environment } };
 }
 
 // Kill switch: DEVRYAN_WORKER_BROWSERS=0 restores the previous worker
@@ -538,7 +544,7 @@ export async function startSessionExecution({ launcher, lease, command, args = [
   if (typeof command !== 'string' || !command || !Array.isArray(args)
     || args.some((arg) => typeof arg !== 'string' || arg.includes('\0'))) throw error('invalid_execution_command');
   signal?.throwIfAborted();
-  const prepared = await prepareSessionExecution({ launcher, lease, socketDirectory, workerBrowsers, deniedReadDirectories, hostOperationGrant });
+  const prepared = await prepareSessionExecution({ launcher, lease, socketDirectory, workerBrowsers, deniedReadDirectories, hostOperationGrant, env });
   if (signal?.aborted) {
     await fs.rm(prepared.profile, { force: true }); await removeExecutionSocketDirectory(lease, prepared.socketDirectory).catch(() => {});
     signal.throwIfAborted();

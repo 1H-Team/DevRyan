@@ -833,6 +833,40 @@ provider/worker/formatter startup and do not qualify end-to-end app latency.
 
 Read-only lease and outcome queries retain the owner lock and durable recovery checks, but do not stage unchanged metadata or rebuild the Git index. `lock_wait`, `ledger_open`, `ledger_recovery`, `ledger_transaction`, and `ledger_commit` diagnostics identify work inside the lock; they are journaled only when a phase fails or takes at least 250 ms, because every tool call takes this lock. Every confined worker receives its own scratch `HOME`, temporary paths, and execution-worker marker, including Cursor and read-only provider workers. On macOS each execution also gets a short private runtime directory, exported as `XDG_RUNTIME_DIR` and spelled `/tmp/dr-<uid>/<lease digest>`, because the scratch path exceeds the 104-byte Unix socket limit. The agent-browser daemon socket therefore fits with its full lease session name (budget: 26 bytes for the directory). The profile lets the execution create and reach sockets only there, plus the system resolver. Cleanup removes it, and host recovery sweeps orphans older than a day. The parent must be a real directory owned by the user with mode 0700, or preparation fails closed. Every session-scoped execution also gets `DEVRYAN_SESSION_TMP`, `context-cache/session-tmp/<session digest>`: unlike the per-call scratch it survives between the session's calls, so logs and reproduction output remain readable. Preparation never follows a link planted at either level, and directories idle for a week are swept at most hourly per project. `/tmp` itself stays unwritable. Session-scoped executions on macOS can also run headless Chromium (a project's Playwright check): `PLAYWRIGHT_BROWSERS_PATH` names the host's `~/Library/Caches/ms-playwright` (read and execute only; an explicit host value is kept), a `NODE_OPTIONS` preload (`$HOME/.devryan-node-spawn.cjs`) restores the verified spawn adapter that macOS strips when `npm run` passes through `/usr/bin/env` and `/bin/sh`, and the profile allows exactly one mach lookup, `org.chromium.Chromium.MachPortRendezvousServer.<pid>`, which Chromium's helpers need for their IPC ports. Native-bundle shell executions get them too (`workerBrowsers: true` in `packages/web/server/application.js`); before that, agents had to find the cache and set `PLAYWRIGHT_BROWSERS_PATH` by hand. Provider transports, read-only shells and document/AST workers never get these. `DEVRYAN_WORKER_BROWSERS=0` restores the previous environment and profile exactly. A detached child cannot get its own process group inside the boundary, so a starter that stops it with `process.kill(-pid)` (Playwright's `webServer`, bounded test wrappers) used to signal nothing and wait for an exit that never came. The preload names the group of each detached child in `DEVRYAN_SPAWN_GROUP` and delivers a group signal through the verified launcher's `--signal-group` mode; the spawn adapter does the same for processes that have it. Signals stay inside the execution's own sandbox. `DEVRYAN_WORKER_GROUP_SIGNALS=0` turns this off in the preload and the adapter. WebKit, Firefox, the Google Chrome channel, headed mode and `chromiumSandbox: true` remain unsupported.
 
+On macOS with a full Xcode selected, Apple's `/usr/bin` developer tools exit 71
+(`EX_OSERR`) under both execution profiles. This covers `git`, `cc`, `clang`,
+`make`, `swift` and the other hard links of the tool shim, and `xcrun`. The shim
+spawns `xcodebuild` before it selects the tool, the profile denies `posix_spawn`
+so that process groups stay supervised, and the spawn adapter never loads into a
+platform binary. With only the Command Line Tools selected, the shim runs the
+tool directly and works. `prepareSessionExecution` therefore receives the
+environment the command will run with, and `lib/execution-developer-tools.js`
+inserts the selected Xcode's `Toolchains/XcodeDefault.xctoolchain/usr/bin` and
+then its `usr/bin` immediately before the first `/usr/bin` entry of that `PATH`.
+This is the order `xcrun` resolves in; `Developer/usr/bin/ld` is itself an
+`xcrun` stub. It also sets `SDKROOT` to the macOS SDK when the command has none,
+as the shim does for the tools it launches; without it, `cc` finds no SDK
+headers. `PATH` entries ahead of `/usr/bin`, such as Homebrew's, keep their
+precedence.
+
+The host reads the selection with `xcode-select -p`, passing the command's own
+`DEVELOPER_DIR`. This spawns no `xcodebuild`, and the result is re-read at most
+once a minute per `DEVELOPER_DIR` value. The environment stays unchanged
+on other platforms, with a Command Line Tools selection, when `PATH` has no
+`/usr/bin`, or when the selection cannot be read. Known limits:
+
+- Explicit `/usr/bin/<tool>` and `xcrun` calls still exit 71. So do Xcode tools
+  that are themselves `xcrun` stubs: `gcc`, `g++`, `swift-package` and
+  `sourcekit-lsp`.
+- Xcode's `python3` and `pip3` fail for another reason: their stub calls
+  `posix_spawn` with flags outside the spawn adapter's set.
+- Because whole directories are added, Xcode tools without a `/usr/bin` shim
+  become visible (`clang-format`, `xctest`, `simctl`), and Xcode's copies of a
+  few `/usr/bin` tools (`leaks`, `vmmap`, `xcodebuild`) come first.
+- `TOOLCHAINS` is not consulted.
+
+`DEVRYAN_DEVELOPER_TOOL_PATH=0` restores the previous environment.
+
 `SessionMutationRuntime.recoverNativeRemovalOwnership` is constructor-only clone
 recovery. Its checkpoint ID and source object ID come from complete selected
 bundle verification, not HTTP input. Under the ledger lock it verifies the
