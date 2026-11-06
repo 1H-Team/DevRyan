@@ -11,7 +11,7 @@ import { PERF_CHILD_SESSION_IDS, PERF_PARENT_SESSION_ID } from '../../../../../.
 import { createOpenCodeAdmission } from '../v2/admission.js';
 import { TARGET_OPENCODE_V2_VERSION } from '../readiness-probe.js';
 import { NO_CONTENT, isNoContent, readResponseBody, unwrapData, unwrapList, unwrapLocated, unwrapPage, unwrapV1Payload } from './envelope.js';
-import { mapV2ErrorResponse, OPENCODE_CLIENT_ERROR_CODES, OpenCodeClientError, V2_ERROR_TAG_CODES } from './errors.js';
+import { createV2HttpError, mapV2ErrorResponse, nativeRefusalCode, OPENCODE_CLIENT_ERROR_CODES, OpenCodeClientError, V2_ERROR_TAG_CODES } from './errors.js';
 import { createOpenCodeClient, OPENCODE_CLIENT_SHAPE } from './index.js';
 import { translateLocation } from './location.js';
 import { createPrivilegedOpenCodeClient } from './privileged.js';
@@ -770,6 +770,19 @@ describe('errors and locations', () => {
     expect(mapV2ErrorResponse(503, { code: 'service_starting' })).toMatchObject({ code: C.unavailable, retryable: true, tag: null });
     expect(mapV2ErrorResponse(418, null)).toMatchObject({ code: C.httpError, status: 418 });
     expect([...V2_ERROR_TAG_CODES.values()].every((entry) => Number.isInteger(entry.status))).toBe(true);
+  });
+
+  it('keeps only a bounded native host refusal code from an untagged answer', () => {
+    const answer = (status, body) => createV2HttpError({ status, body, bodyText: JSON.stringify(body), label: 'browser.openai.oauth.cancel' });
+    const refused = answer(503, { code: 'native_openai_attempt_scope_required', operation: 'provider.openai' });
+    expect(refused).toMatchObject({ code: C.unavailable, statusCode: 503, detail: { refusal: 'native_openai_attempt_scope_required' } });
+    expect(nativeRefusalCode(refused)).toBe('native_openai_attempt_scope_required');
+    for (const body of [{ _tag: 'ServiceUnavailableError', code: 'native_openai_attempt_scope_required' }, { code: 'service_starting' },
+      { code: `native_${'a'.repeat(97)}` }, { code: 'native_Upper' }, { code: 7 }, null]) {
+      const error = answer(503, body);
+      expect(error.detail).toBeUndefined(); expect(nativeRefusalCode(error)).toBeUndefined();
+    }
+    expect(nativeRefusalCode({ detail: { refusal: 'native_openai_attempt_scope_required' } })).toBeUndefined();
   });
 
   it('translates each location mode and fails closed on header and body-location', () => {

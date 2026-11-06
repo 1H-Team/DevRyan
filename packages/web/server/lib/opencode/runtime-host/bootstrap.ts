@@ -165,6 +165,7 @@ export async function createNativeRuntimeHost(options: NativeRuntimeHostOptions)
       closeStartup: () => { opened=false;gates.controls.closeStartup(); },quiesce:gates.controls.quiesce,holdAndStop: gates.controls.holdAndStop,
       interruptStoppedHandoff:gates.controls.interruptStoppedHandoff,
       release: gates.controls.release, wakeOwned: gates.controls.wakeOwned, wakeDeferredOwned: gates.controls.wakeDeferredOwned,
+      managedJobs:gates.controls.managedJobs,
       reconcileShellOwned: gates.controls.reconcileShellOwned,
       reconcilePrimaryOwned: gates.controls.reconcilePrimaryOwned,
       queuedPrimaryIdleOwned:gates.controls.queuedPrimaryIdleOwned,prepareQueuedPublication:gates.controls.prepareQueuedPublication,assertQueuedPublication:gates.controls.assertQueuedPublication,

@@ -1,5 +1,6 @@
 import {expect,it} from 'vitest';
 import {createNativeAdmissionOwner} from './native-admission-owner.js';
+import {nativeContextAuthorizer} from './native-session-context-owner.js';
 import {buildV2PromptContent} from '../v2/admission.js';
 import {recoveredInputHash} from './native-recovered-input-hash.js';
 
@@ -136,6 +137,21 @@ it('compaction context retains only its exact active runner grant across async a
  await expect(owner.captureContextAuthorization({...input,phase:'context'})).rejects.toMatchObject({code:'native_context_scope_invalid'});
  held=true;await expect(recheck()).rejects.toMatchObject({code:'native_permit_revoked'});held=false;
  await owner.invalidateController();await expect(recheck()).rejects.toMatchObject({code:'native_permit_invalid'});owner.dispose();
+});
+it('the per-request context hook uses its session-hook grant while a compaction anchor keeps the runner grant',async()=>{
+ let held=false;
+ const owner=createNativeAdmissionOwner({directory:scope.directory,ownerID:'bundle',runtime:{registerNativeSession:async()=>{},nativeAdmissionState:async()=>({revision:held?1:0,held})},
+  getSession:async id=>({id,directory:scope.directory}),authorizeOperation:async()=>{}});
+ const authorize=nativeContextAuthorizer(owner);
+ const permit=await owner.handleRpc('native.admission.authorize',{operation:'runner.drain',sessionID:scope.sessionID});
+ const input={permit,directory:scope.directory,sessionID:scope.sessionID,phase:'context'};
+ // Adaptive delegation's capability snapshot arrives through this hook on every request.
+ const recheck=await authorize(input);await recheck();
+ await expect(authorize({...input,directory:'/other'})).rejects.toMatchObject({code:'native_hook_scope_invalid'});
+ const compaction=await authorize({...input,phase:'compaction'});await compaction();
+ await expect(authorize({...input,phase:'compaction',directory:'/other'})).rejects.toMatchObject({code:'native_context_scope_invalid'});
+ held=true;await expect(recheck()).rejects.toMatchObject({code:'native_permit_revoked'});held=false;
+ owner.dispose();
 });
 
 it('read-only native session hooks retain their exact active session and cannot manufacture a prompt grant',async()=>{

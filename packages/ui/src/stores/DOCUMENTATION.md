@@ -61,6 +61,13 @@ Examples:
 - `useFeatureFlagsStore.ts`
 - `useUpdateStore.ts`
 
+`useUIStore.ts` persists the Files editor line-wrap toggle as
+`fileEditorWrapLines` (default `true`), separate from the diff viewer's
+`diffWrapLines` (default `false`). Same-version snapshots skip `migrate`, so the
+persist `merge` (otherwise zustand's default shallow merge) restores a missing or
+non-boolean `fileEditorWrapLines` as `true`. The snapshot lives under the
+principal-scoped `ui-store` key, so each user keeps their own choice.
+
 `useDirectoryStore.ts` does not store the home-folder fallback as the last
 directory, locally or in the server settings, and `goHome` (used once the last
 project is removed) goes home without storing it and sends `lastDirectory: ''`
@@ -498,6 +505,7 @@ Important properties:
 - loading state is per-directory, not global
 - `ensureStatus()` and `ensureAll()` are the preferred entry points for consumers
 - in-flight dedupe exists for status and `ensureAll()`
+- `fetchBranches()` lists local refs only (no network); `{ remote: 'live' }` (the New Worktree "Fetch Branches" control) also verifies remotes. Per directory, only the newest listing writes branches or clears loading, and routine or repeated live calls made during a live listing join it
 - diff data is separately cached and capped with size + count limits
 - status equality includes HEAD and merge/rebase metadata, so operation-only transitions publish without inventing file changes; identical metadata preserves the previous status reference
 

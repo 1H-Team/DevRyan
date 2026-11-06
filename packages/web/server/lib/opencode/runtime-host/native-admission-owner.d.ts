@@ -2,6 +2,7 @@ import type { MutationLease, SessionMutationRuntime } from '../../../../../harne
 import type { OperationPermit, OperationRequest, ShellJobRegistration } from './native-admission-contract.js';
 import type { ManagedTaskRecord } from '../../../../../orchestration-runtime/index.js';
 import type {NativePrimaryContinuationPrompt,NativePromptSelectionReceipt,PrimaryRecoveryExecutionRecord} from '@devryan/harness-runtime';
+import type {NativeManagedJobInput,NativeManagedJobCancellation,NativeManagedJobPhase} from './native-managed-jobs.js';
 export interface NativePrimaryContinuationDispatch {readonly sessionID:string;readonly directory:string;readonly messageID:string}
 
 export type NativeManagedTaskDispatch = { readonly taskId: string; readonly leaseToken: string; readonly directory: string } & (
@@ -114,6 +115,9 @@ export interface NativeAdmissionOwnerOptions {
   readonly captureManagedCatalogAuthorization?: (session:NativeSessionIdentity)=>Promise<()=>Promise<void>>;
   readonly verifyManagedTaskCatalog?: (input: NativeManagedCursorCatalogScope) => Promise<ManagedTaskRecord>;
   readonly verifyManagedTaskDispatch?: (input: NativeManagedTaskDispatch) => Promise<ManagedTaskRecord>;
+  readonly verifyNativeJobSegment?:(input:NativeManagedJobInput&{readonly phase:NativeManagedJobPhase})=>Promise<{
+    readonly task:ManagedTaskRecord; readonly segment:{readonly jobID:string;readonly messageID:string;readonly notificationID:string};readonly envelopeID?:string}>;
+  readonly retireManagedJobInput?:(input:NativeManagedJobInput,recheck:()=>Promise<void>)=>Promise<void>;
   readonly verifyPrimaryContinuationDispatch?: (input: NativePrimaryContinuationDispatch) => Promise<{
     record:PrimaryRecoveryExecutionRecord;prompt:NativePrimaryContinuationPrompt;recheck:()=>Promise<void>}>;
   readonly verifyPrimaryRecoveryDispatch?: (input: NativePrimaryContinuationDispatch) => Promise<{
@@ -149,6 +153,7 @@ export interface NativeAdmissionOwner {
   readonly withManagedTaskCatalogInvocation:<A>(input:NativeExecutionAuthorization,action:()=>Promise<A>)=>Promise<A>;
   readonly captureManagedCursorCatalogAuthorization:(input:NativeManagedCursorCatalogScope|{readonly directory:string;readonly kind:'catalog'})=>Promise<(()=>Promise<void>)|null>;
   readonly withManagedTaskDispatch: <A>(input: NativeManagedTaskDispatch, action: () => Promise<A>) => Promise<A>;
+  readonly withManagedJobOperation:<A>(phase:NativeManagedJobPhase,input:NativeManagedJobInput|NativeManagedJobCancellation,action:(permit:OperationPermit)=>Promise<A>)=>Promise<A>;
   /** Private exact TODO metadata derivative; caller already owns withPermit's session lock. */
   readonly withNativeTodoWrite:<A>(input:{invocation:NativeExecutionAuthorization;metadata:Readonly<Record<string,unknown>>},action:()=>Promise<A>)=>Promise<A>;
   readonly captureContextAuthorization:(input:{permit:OperationPermit;directory:string;sessionID:string;phase:'compaction'})=>Promise<()=>Promise<void>>;

@@ -1,12 +1,15 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import express from 'express';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import request from '../../test-supertest.js';
 
 let directory;
 let auth;
 let getOctokitOrNull;
 let runWithRequestPrincipal;
+let registerGitHubRoutes;
 const originalDataDirectory = process.env.DEVRYAN_DATA_DIR;
 
 beforeAll(async () => {
@@ -16,6 +19,7 @@ beforeAll(async () => {
   auth = await import('./auth.js');
   ({ getOctokitOrNull } = await import('./octokit.js'));
   ({ runWithRequestPrincipal } = await import('../multi-user/request-context.js'));
+  ({ registerGitHubRoutes } = await import('./routes.js'));
 });
 
 afterAll(async () => {
@@ -93,5 +97,86 @@ describe('multi-user GitHub auth storage', () => {
     });
 
     expect(selected?.accountId).toBe('account-a');
+  });
+});
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+describe('GitHub credential revisions', () => {
+  it('rotates on every replacement, survives activation and other-account writes, and never leaves the server', async () => {
+    const first = auth.setGitHubAuth({ ...accountInput('account-a', 'alpha', 'token-revision'), makeCurrent: true });
+    expect(first.credentialRevision).toMatch(UUID_PATTERN);
+    expect(auth.getGitHubAuthById('account-a')?.credentialRevision).toBe(first.credentialRevision);
+
+    const replaced = auth.setGitHubAuth({ ...accountInput('account-a', 'alpha', 'token-revision'), makeCurrent: true });
+    expect(replaced.credentialRevision).toMatch(UUID_PATTERN);
+    expect(replaced.credentialRevision).not.toBe(first.credentialRevision);
+
+    auth.setGitHubAuth({ ...accountInput('account-b', 'beta', 'token-beta'), makeCurrent: false });
+    const betaRevision = auth.getGitHubAuthById('account-b')?.credentialRevision;
+    expect(betaRevision).toMatch(UUID_PATTERN);
+    expect(auth.getGitHubAuthById('account-a')?.credentialRevision).toBe(replaced.credentialRevision);
+
+    expect(auth.activateGitHubAuth('account-b')).toBe(true);
+    expect(auth.getGitHubAuth()?.accountId).toBe('account-b');
+    expect(auth.getGitHubAuth()?.credentialRevision).toBe(betaRevision);
+    expect(auth.getGitHubAuthById('account-a')?.credentialRevision).toBe(replaced.credentialRevision);
+    expect(auth.activateGitHubAuth('account-a')).toBe(true);
+
+    const developer = { ...managedPrincipal(), githubAccountId: 'account-a' };
+    const projections = [
+      auth.getGitHubAuthAccounts(),
+      auth.getAllGitHubAuthAccounts(),
+      await runWithRequestPrincipal(developer, () => auth.getGitHubAuthAccounts(), {
+        assignment: developer.assignments[0],
+      }),
+    ];
+    for (const projection of projections) {
+      expect(projection.length).toBeGreaterThan(0);
+      const serialized = JSON.stringify(projection);
+      expect(serialized).not.toContain('credentialRevision');
+      expect(serialized).not.toContain(replaced.credentialRevision);
+      expect(serialized).not.toContain(betaRevision);
+    }
+
+    const app = express();
+    registerGitHubRoutes(app, {
+      getGhCliToken: () => null,
+      loadGitHubLibraries: async () => ({
+        ...auth,
+        getOctokitOrNull: () => ({
+          rest: {
+            users: {
+              getAuthenticated: async () => ({
+                data: { login: 'alpha', id: 101, avatar_url: null, name: 'alpha Name', email: 'alpha@example.test' },
+              }),
+            },
+          },
+        }),
+      }),
+    });
+    const response = await request(app).get('/api/github/auth/status').expect(200);
+    expect(response.body.connected).toBe(true);
+    expect(response.body.activeAccountId).toBe('account-a');
+    const serializedStatus = JSON.stringify(response.body);
+    expect(serializedStatus).not.toContain('credentialRevision');
+    expect(serializedStatus).not.toContain(replaced.credentialRevision);
+    expect(serializedStatus).not.toContain(betaRevision);
+    expect(serializedStatus).not.toContain('token-revision');
+  });
+
+  it('keeps legacy entries revision-less until their credential is replaced', async () => {
+    await fs.writeFile(auth.GITHUB_AUTH_FILE, JSON.stringify([
+      { accountId: 'legacy', accessToken: 'token-legacy', user: { login: 'legacy' }, current: true },
+    ]), { mode: 0o600 });
+
+    expect(auth.getGitHubAuthById('legacy')).not.toHaveProperty('credentialRevision');
+    expect(auth.activateGitHubAuth('legacy')).toBe(true);
+    const stored = JSON.parse(await fs.readFile(auth.GITHUB_AUTH_FILE, 'utf8'));
+    expect(stored[0]).not.toHaveProperty('credentialRevision');
+
+    const replaced = auth.setGitHubAuth({ accountId: 'legacy', accessToken: 'token-legacy-new', user: { login: 'legacy' } });
+    expect(replaced.credentialRevision).toMatch(UUID_PATTERN);
+    expect(auth.getGitHubAuthById('legacy')?.credentialRevision).toBe(replaced.credentialRevision);
   });
 });

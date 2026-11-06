@@ -23,6 +23,7 @@ import {BUNDLE_CREDENTIAL_OWNER_PROTOCOL,isBundleCredentialOwnerEvidence,capture
 
 import {NATIVE_BUNDLE_CREDENTIAL_CONTRACT} from './native-bundle-credential-contract.js';
 import {readRollbackIntentSync,rollbackIntentUnresolved,saveRollbackIntent,assertPrivateBundleControlRoot,assertRollbackPhysicalExit,captureRollbackFiles} from './bundle-rollback-intent.js';
+import { verifyBundleManagedJobs } from './bundle-managed-jobs.js';
 
 const validID = value => typeof value === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(value);
 const validHash = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
@@ -401,6 +402,11 @@ export function createRuntimeBundleStore(options) {
   };
   const fileHash=file=>operations.windows&&containsPath(controlRoot,file)?options.windowsOwner.largeFile(file).then(value=>value.token.split(':')[2]):fileHashOwned(file);
   const inspectHarness=async(directory,input,artifacts)=>{const result=await inspectBundleHarnessOwned(directory,input,artifacts);recordStartupFindings('bundle_verifier',result?.findings);return result;};
+  const verifyManagedJobs = async (value, targetManifest) => {
+    const db = sqlite(value.opencodeDatabasePath);
+    try { await verifyBundleManagedJobs({ db, webDataDirectory: value.webDataDirectory, targetManifest,
+      windowsOwner: documentOptions.windowsOwner }); } finally { db.raw.close(); }
+  };
   const inspectBundleHarnessOwned=(directory,input,artifacts)=>inspectBundleHarness(directory,{...input,windowsOwner:options.windowsOwner,windowsLedgerOwner:options.windowsLedgerOwner,
     runWindowsInspection:request=>runNativeHarnessRelocationProcess({binary:artifacts.controllerBinary,controlRoot,windowsOwner:options.windowsOwner,
       request:{protocol:'devryan-native-harness-relocation/1',requestID:'harness_'+sha256(canonicalJSON({directory,...request})).slice(0,32),webDataDirectory:directory,...request},
@@ -448,6 +454,8 @@ export function createRuntimeBundleStore(options) {
     let removalInheritance;
     const db = sqlite(value.launch.opencodeDatabasePath);
     try {
+      await verifyBundleManagedJobs({ db, webDataDirectory: value.launch.webDataDirectory,
+        targetManifest: verifiedArtifacts?.manifest ?? {}, windowsOwner: documentOptions.windowsOwner });
       const baseline=await readBundleJSON(path.join(root,'sources','baseline.json'));
       if (!isRecord(baseline) || !isRecord(baseline.harness) || !Array.isArray(baseline.harness.refs)) throw fail('bundle_manifest_invalid');
       const preservedRefs={checkpointID:value.checkpoint.checkpointID,refs:baseline.harness.refs};
@@ -517,12 +525,13 @@ export function createRuntimeBundleStore(options) {
       immutableFiles:files.filter(row=>immutablePath(row.path)),dataFiles});
     await verify({bundleID:value.bundleID,phase:'prepared'}); return value;
   };
-  const prepareV2=async input=>{
+  const prepareV2=async (input, targetManifest)=>{
     if(!validID(input.source.bundleID)||input.source.bundleID===input.bundleID)throw fail('bundle_clone_source_invalid');
     const current=await readSelected();
     if(current&&rollbackIntentUnresolved(readRollbackIntentSync(controlRoot),current.selection))throw fail('bundle_recovery_resume_required');
     if(current?.selection.reconciliationRequired||current?.descriptor.bundleID!==input.source.bundleID)throw fail('bundle_clone_source_not_selected');
     const source=current.descriptor,artifacts=input.launchArtifacts;
+    await verifyManagedJobs(source.launch, targetManifest);
     if(canonicalJSON(input.projectMap)!==canonicalJSON(source.projectMap)||input.auxiliary?.kind!=='absent')throw fail('bundle_clone_mapping_changed');
     const compatibility={protocol:'devryan-v2-clone/1',sourceBundleID:source.bundleID,
       sourceManifestSha256:source.launch.artifactManifestSha256,targetManifestSha256:artifacts.artifactManifestSha256};
@@ -533,6 +542,7 @@ export function createRuntimeBundleStore(options) {
     const root=path.join(controlRoot,'bundles',input.bundleID),inputSha256=sha256(canonicalJSON(input));
     return options.withQuiescedSource(input.source,async (stamp,scope)=>{
       const sourceCheckpoint=checkpoint(source.launch,2,stamp);
+      await verifyManagedJobs(source.launch, targetManifest);
       await verify({bundleID:source.bundleID,phase:'resume',allowOwnedContinuations:false,artifactPurpose:'bundle-source',cloneSource:true});
       if(typeof scope?.assertHeld!=='function')throw fail('bundle_credential_checkpoint_required');
       await scope.assertHeld();
@@ -615,7 +625,7 @@ export function createRuntimeBundleStore(options) {
       const contracts=verifiedArtifacts?.manifest?.compiledContracts;
       if(!Array.isArray(contracts)||!contracts.includes(BUNDLE_CREDENTIAL_OWNER_PROTOCOL))throw fail('bundle_credential_owner_unsupported');
       if(!contracts.includes(NATIVE_BUNDLE_CREDENTIAL_CONTRACT))throw fail('bundle_credential_contract_incompatible');
-      return prepareV2(input);
+      return prepareV2(input, verifiedArtifacts.manifest);
     }
     if(input.source.kind!=='legacy') throw fail('bundle_migration_generation_invalid');
     const sourceLaunch=legacySource(input.source.launch),sourceGeneration=1;
@@ -786,6 +796,7 @@ export function createRuntimeBundleStore(options) {
     if(current.selection.revision!==expectedRevision)throw fail('bundle_selection_revision_conflict');
     if(retryHeld)throw fail('bundle_recovery_resume_required');
     const targetArtifacts=await verifyArtifacts({generation:target.generation,launch:target.launch,purpose:'bundle-rollback'});
+    await verifyManagedJobs(candidate.launch, targetArtifacts?.manifest ?? {});
     const originBefore=await readBundleJSON(path.join(controlRoot,'rollback',candidate.bundleID+'.json')).catch(error=>{if(error.code!=='ENOENT')throw error;return null;});
     if(!targetArtifacts?.manifest.compiledContracts?.includes(NATIVE_BUNDLE_CREDENTIAL_CONTRACT)
       ||!isRecord(originBefore)||originBefore.schema!==1||originBefore.candidateBundleID!==candidate.bundleID||originBefore.targetBundleID!==target.bundleID
@@ -795,6 +806,7 @@ export function createRuntimeBundleStore(options) {
     const pending=readRollbackIntentSync(controlRoot);if(rollbackIntentUnresolved(pending,current.selection))throw fail('bundle_recovery_resume_required');
     return options.withQuiescedSource({kind:'bundle',bundleID:current.descriptor.bundleID},async (proof,scope) => {
       checkpoint(current.descriptor.launch,current.descriptor.generation,proof);
+      await verifyManagedJobs(candidate.launch, targetArtifacts?.manifest ?? {});
       await verify({bundleID:candidate.bundleID,phase:'resume',allowOwnedContinuations:false,artifactPurpose:'bundle-source'});
       await verify({bundleID:target.bundleID,phase:'resume',allowOwnedContinuations:false,artifactPurpose:'bundle-rollback'});
       let credentialBinding,capturedSource;
@@ -860,9 +872,11 @@ export function createRuntimeBundleStore(options) {
       || await fileHash(absolute(artifacts.artifactManifestPath)) !== artifacts.artifactManifestSha256) throw fail('bundle_artifact_manifest_changed');
     if (artifacts.artifactManifestSha256 === source.launch.artifactManifestSha256) throw fail('bundle_upgrade_not_available');
     if (artifacts.reviewedNativeConfigPath !== source.launch.reviewedNativeConfigPath) throw fail('bundle_rebind_configuration_changed');
-    const contracts = (await verifyArtifacts({ generation: 2, launch: artifacts }))?.manifest?.compiledContracts;
+    const targetArtifacts = await verifyArtifacts({ generation: 2, launch: artifacts });
+    const contracts = targetArtifacts?.manifest?.compiledContracts;
     if (!Array.isArray(contracts) || !contracts.includes(BUNDLE_CREDENTIAL_OWNER_PROTOCOL)) throw fail('bundle_credential_owner_unsupported');
     if (!contracts.includes(NATIVE_BUNDLE_CREDENTIAL_CONTRACT)) throw fail('bundle_credential_contract_incompatible');
+    await verifyManagedJobs(source.launch, targetArtifacts.manifest);
     const compatibility = { protocol: 'devryan-v2-clone/1', sourceBundleID: source.bundleID,
       sourceManifestSha256: source.launch.artifactManifestSha256, targetManifestSha256: artifacts.artifactManifestSha256 };
     const compatible = await options.verifyV2Compatibility?.({ source, artifacts });
@@ -871,6 +885,7 @@ export function createRuntimeBundleStore(options) {
     const plugins = await readOwnedBytes(absolute(artifacts.reviewedPluginManifestPath));
     return options.withQuiescedSource({ kind: 'bundle', bundleID }, async (proof, scope) => {
       checkpoint(source.launch, 2, proof);
+      await verifyManagedJobs(source.launch, targetArtifacts.manifest);
       await scope?.assertHeld?.();
       // Held throughout: startup recovery never observes a live rebind.
       return lock(path.join(controlRoot, 'selection.lock'), async () => {
@@ -936,9 +951,11 @@ export function createRuntimeBundleStore(options) {
     if (!await rebindRestorable(current.selection)) throw fail('bundle_rollback_target_invalid');
     const previous = JSON.parse((await readOwnedBytes(rebindCopy(controlRoot, 'descriptor.json'))).toString('utf8'));
     const target = descriptor(controlRoot, current.descriptor.bundleID, previous);
-    await verifyArtifacts({ generation: 2, launch: target.launch, purpose: 'bundle-rollback' });
+    const targetArtifacts = await verifyArtifacts({ generation: 2, launch: target.launch, purpose: 'bundle-rollback' });
+    await verifyManagedJobs(current.descriptor.launch, targetArtifacts?.manifest ?? {});
     return options.withQuiescedSource({ kind: 'bundle', bundleID: current.descriptor.bundleID }, async (proof, scope) => {
       checkpoint(current.descriptor.launch, 2, proof);
+      await verifyManagedJobs(current.descriptor.launch, targetArtifacts?.manifest ?? {});
       await scope?.assertHeld?.();
       return lock(path.join(controlRoot, 'selection.lock'), async () => {
         const selected = await readSelected(), intent = await readRebindIntent(controlRoot);

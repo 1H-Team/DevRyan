@@ -1,6 +1,12 @@
 import { create } from 'zustand';
 import type { Session } from '@opencode-ai/sdk/v2';
-import { isStrictlyOlderSession } from '@/sync/session-recency';
+import {
+  hasNewerSessionLifecycle,
+  isStrictlyOlderSession,
+  mergeSessionLifecycle,
+  retainSessionLifecycle,
+} from '@/sync/session-recency';
+import { readSessionLifecycle } from '@/sync/display-session';
 import { opencodeClient } from '@/lib/opencode/client';
 import { listGlobalSessionPages } from '@/stores/globalSessions';
 import { mergeSessionPreservingMeaningfulTitle } from '@/lib/sessionTitles';
@@ -152,6 +158,9 @@ const buildSessionsByDirectory = (sessions: Session[]): Map<string, Session[]> =
 };
 
 const getSessionSignature = (session: Session): string => {
+  // Lifecycle facts never move `time.updated`, so they are part of the
+  // signature; otherwise a lifecycle-only change would read as a no-op.
+  const lifecycle = readSessionLifecycle(session);
   return [
     session.id,
     session.title ?? '',
@@ -160,6 +169,11 @@ const getSessionSignature = (session: Session): string => {
     session.time?.archived ?? 0,
     session.share ? 1 : 0,
     resolveGlobalSessionDirectory(session) ?? '',
+    lifecycle.busy ?? '',
+    lifecycle.idle ?? '',
+    lifecycle.viewed ?? '',
+    lifecycle.outcome ?? '',
+    lifecycle.fork ? `${lifecycle.fork.sessionID}/${lifecycle.fork.boundary.type}/${lifecycle.fork.boundary.messageID}` : '',
   ].join(':');
 };
 
@@ -184,7 +198,10 @@ const upsertSessionIntoList = (sessions: Session[], session: Session): Session[]
     return [session, ...sessions];
   }
   if (isStrictlyOlderSession(session, sessions[index])) {
-    const titlePreservingCurrent = mergeSessionPreservingMeaningfulTitle(session, sessions[index]);
+    const titlePreservingCurrent = retainSessionLifecycle(
+      mergeSessionPreservingMeaningfulTitle(session, sessions[index]),
+      session,
+    );
     if (getSessionSignature(sessions[index]) === getSessionSignature(titlePreservingCurrent)) {
       return sessions;
     }
@@ -192,7 +209,10 @@ const upsertSessionIntoList = (sessions: Session[], session: Session): Session[]
     next[index] = titlePreservingCurrent;
     return next;
   }
-  const mergedSession = mergeSessionPreservingMeaningfulTitle(sessions[index], session);
+  const mergedSession = mergeSessionLifecycle(
+    sessions[index],
+    mergeSessionPreservingMeaningfulTitle(sessions[index], session),
+  );
   if (getSessionSignature(sessions[index]) === getSessionSignature(mergedSession)) {
     return sessions;
   }
@@ -334,8 +354,13 @@ const isLifecycleUpsertConfirmed = (
     return false;
   }
 
+  // A snapshot newer by `updated` confirms the intent only when it also holds
+  // the intent's lifecycle facts; those never move `updated`.
   return getSessionSignature(snapshotSession) === getSessionSignature(intent.session)
-    || isStrictlyOlderSession(intent.session, snapshotSession);
+    || (
+      isStrictlyOlderSession(intent.session, snapshotSession)
+      && !hasNewerSessionLifecycle(snapshotSession, intent.session)
+    );
 };
 
 const reconcileLifecycleShadow = (
@@ -377,10 +402,19 @@ const reconcileLifecycleShadow = (
 
     protectedIds.add(sessionID);
     if (intent.kind === 'upsert') {
-      if (intent.session.time?.archived) {
-        desiredArchivedSessions.push(intent.session);
+      // Neither side may move lifecycle facts backwards: a newer snapshot
+      // keeps its record and takes the intent's facts; otherwise the intent
+      // keeps its record and takes the snapshot's facts.
+      const snapshotSession = activeById.get(sessionID) ?? archivedById.get(sessionID);
+      const desiredSession = !snapshotSession
+        ? intent.session
+        : isStrictlyOlderSession(intent.session, snapshotSession)
+          ? mergeSessionLifecycle(intent.session, snapshotSession)
+          : retainSessionLifecycle(intent.session, snapshotSession);
+      if (desiredSession.time?.archived) {
+        desiredArchivedSessions.push(desiredSession);
       } else {
-        desiredActiveSessions.push(intent.session);
+        desiredActiveSessions.push(desiredSession);
       }
     }
   }
@@ -505,7 +539,8 @@ const mergeSessionLists = (existing: Session[], incoming?: Session[]): Session[]
 
   const byId = new Map(existing.map((session) => [session.id, session]));
   incoming.forEach((session) => {
-    byId.set(session.id, mergeSessionPreservingMeaningfulTitle(byId.get(session.id), session));
+    const current = byId.get(session.id);
+    byId.set(session.id, mergeSessionLifecycle(current, mergeSessionPreservingMeaningfulTitle(current, session)));
   });
 
   const ordered: Session[] = [];
@@ -544,12 +579,16 @@ const applySnapshot = (
     ...state.activeSessions,
     ...state.archivedSessions,
   ].map((session) => [session.id, session]));
-  const titlePreservingActiveSessions = activeSessions.map((session) => (
-    mergeSessionPreservingMeaningfulTitle(currentById.get(session.id), session)
-  ));
-  const titlePreservingArchivedSessions = archivedSessions.map((session) => (
-    mergeSessionPreservingMeaningfulTitle(currentById.get(session.id), session)
-  ));
+  // Snapshot records win, except for meaningful titles and monotonic
+  // lifecycle facts already held by the store.
+  const titlePreservingActiveSessions = activeSessions.map((session) => {
+    const current = currentById.get(session.id);
+    return mergeSessionLifecycle(current, mergeSessionPreservingMeaningfulTitle(current, session));
+  });
+  const titlePreservingArchivedSessions = archivedSessions.map((session) => {
+    const current = currentById.get(session.id);
+    return mergeSessionLifecycle(current, mergeSessionPreservingMeaningfulTitle(current, session));
+  });
   const nextActiveSessions = sameSessionList(state.activeSessions, titlePreservingActiveSessions)
     ? state.activeSessions
     : titlePreservingActiveSessions;
@@ -670,20 +709,21 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
 
   upsertSession: (session) => {
     const lifecycleIntent = lifecycleShadow.get(session.id);
-    if (
-      lifecycleIntent?.kind === 'upsert'
-      && !isStrictlyOlderSession(session, lifecycleIntent.session)
-      && getSessionSignature(session) !== getSessionSignature(lifecycleIntent.session)
-    ) {
-      recordLifecycleIntent(session.id, { kind: 'upsert', session });
+    if (lifecycleIntent?.kind === 'upsert') {
+      const intentSession = isStrictlyOlderSession(session, lifecycleIntent.session)
+        ? retainSessionLifecycle(lifecycleIntent.session, session)
+        : mergeSessionLifecycle(lifecycleIntent.session, session);
+      if (getSessionSignature(intentSession) !== getSessionSignature(lifecycleIntent.session)) {
+        recordLifecycleIntent(session.id, { kind: 'upsert', session: intentSession });
+      }
     }
 
     set((state) => {
       const currentSession = state.activeSessions.find((candidate) => candidate.id === session.id)
         ?? state.archivedSessions.find((candidate) => candidate.id === session.id);
       const effectiveSession = currentSession && isStrictlyOlderSession(session, currentSession)
-        ? mergeSessionPreservingMeaningfulTitle(session, currentSession)
-        : session;
+        ? retainSessionLifecycle(mergeSessionPreservingMeaningfulTitle(session, currentSession), session)
+        : mergeSessionLifecycle(currentSession, session);
       if (
         currentSession
         && getSessionSignature(currentSession) === getSessionSignature(effectiveSession)
@@ -914,7 +954,15 @@ export const applyGlobalSessionLifecycleEvent = (
     ? currentIntent.session
     : currentSession;
   if (newestKnownSession && isStrictlyOlderSession(session, newestKnownSession)) {
-    return false;
+    if (!hasNewerSessionLifecycle(newestKnownSession, session)) {
+      return false;
+    }
+    // Older by `updated` but newer by lifecycle: keep the newest record and
+    // take only the advanced lifecycle facts.
+    const advancedSession = retainSessionLifecycle(newestKnownSession, session);
+    recordLifecycleIntent(session.id, { kind: 'upsert', session: advancedSession });
+    state.upsertSession(advancedSession);
+    return true;
   }
 
   recordLifecycleIntent(session.id, { kind: 'upsert', session });

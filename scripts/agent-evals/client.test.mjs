@@ -91,6 +91,19 @@ const createManualDeadline = () => {
 const flushPendingCallbacks = () => new Promise((resolve) => setImmediate(resolve));
 
 describe('DevRyan loopback evaluation client', () => {
+  test('a refused turn-timing read records no timings instead of failing the run; other errors still fail', async () => {
+    let status = 403;
+    const { baseUrl } = await startServer((request, response) => {
+      const url = new URL(request.url, 'http://127.0.0.1');
+      if (url.pathname === '/api/diagnostics/turn-timing/recent') return sendJson(response, status, { code: 'turn_timing_forbidden' });
+      return sendJson(response, 404, { error: 'missing' });
+    });
+    const client = createEvaluationClient({ baseUrl, pollIntervalMs: 1 });
+    assert.deepEqual(await client.getTurnTiming('ses_fixture'), { records: [], availability: 'forbidden' });
+    status = 500;
+    await assert.rejects(client.getTurnTiming('ses_fixture'), (error) => error.code === 'evaluation_http_error' && error.statusCode === 500);
+  });
+
   test('uses the host Cursor catalog and SDK auth status for pinned model availability', async () => {
     const selection = { providerId: 'cursor-acp', modelId: 'composer-2.5', agent: 'builder', variant: null };
     for (const [sdkAuthConfigured, models, expected] of [
@@ -860,6 +873,8 @@ describe('DevRyan loopback evaluation client', () => {
     });
 
     assert.equal(result.rootSessionId, 'ses_parent');
+    // The evaluated root is named for usage attribution among trace roots.
+    assert.equal(result.harnessEvidence.rootSessionId, 'ses_parent');
     assert.deepEqual(result.statuses, ['busy', 'idle']);
     assert.deepEqual(result.tools, [{
       tool: 'read', status: 'completed', final: true, sessionScope: 'root',
@@ -1280,6 +1295,66 @@ describe('DevRyan loopback evaluation client', () => {
     });
     assert.equal(result.terminalEvidence.complete, true);
     assert.ok(snapshotReads >= 3);
+  });
+
+  const drainServer = ({ acknowledgeAfter, traces }) => {
+    const reads = { snapshots: 0, traces: 0 };
+    return { reads, handler: (request, response, baseUrl) => {
+      const url = new URL(request.url, baseUrl);
+      if (request.method === 'POST' && url.pathname === '/api/session') return sendJson(response, 200, { id: 'ses_parent' });
+      if (request.method === 'POST' && url.pathname.endsWith('/prompt_async')) { response.writeHead(204); return response.end(); }
+      if (url.pathname === '/api/session/status') return sendJson(response, 200, {});
+      if (url.pathname === '/api/session/ses_parent/message') return sendJson(response, 200, [{ info: { role: 'assistant', finish: 'stop' }, parts: [] }]);
+      if (url.pathname === '/api/session/ses_parent/children') return sendJson(response, 200, []);
+      if (url.pathname.includes('/orchestration/')) {
+        reads.snapshots += 1;
+        const acknowledged = reads.snapshots > acknowledgeAfter;
+        return sendJson(response, 200, { available: true,
+          tasks: [{ taskId: 'task_1', rootSessionId: 'ses_parent', childSessionId: null, status: 'completed' }],
+          resultEnvelopes: [{ taskId: 'task_1', status: 'completed', action: acknowledged ? 'continue' : null, acknowledgedAt: acknowledged ? 5 : null }] });
+      }
+      if (request.method === 'POST' && url.pathname === '/api/diagnostics/export') {
+        const trace = traces[Math.min(reads.traces++, traces.length - 1)];
+        return trace === 500 ? sendJson(response, 500, {}) : sendJson(response, 200, { metadata: trace });
+      }
+      if (url.pathname.includes('/diagnostics/')) return sendJson(response, 200, { records: [] });
+      return sendJson(response, 404, {});
+    } };
+  };
+  const objectiveTrace = (state, durationMs) => ({ schemaVersion: 1, roots: [{ rootSessionId: 'ses_parent',
+    objectiveDurations: [{ anchorID: 'msg_user', state, durationMs }], totalObjectiveCriticalPathMs: durationMs }] });
+
+  test('grades a managed result only after its acknowledgement drains, then reads the settled objective', async () => {
+    const server = drainServer({ acknowledgeAfter: 4, traces: [500, objectiveTrace('observing', null), objectiveTrace('completed', 42)] });
+    const { baseUrl } = await startServer((request, response) => server.handler(request, response, baseUrl));
+    const result = await runSessionTurn({
+      client: createEvaluationClient({ baseUrl, pollIntervalMs: 1 }),
+      directory: '/tmp/fixture',
+      selection: { providerId: 'p', modelId: 'm', agent: 'builder', variant: null },
+      prompt: 'in-memory prompt', caseId: 'inspect', timeoutMs: UNREACHABLE_TURN_BUDGET_MS,
+      resultDrainGraceMs: UNREACHABLE_TURN_BUDGET_MS, traceSettleMs: UNREACHABLE_TURN_BUDGET_MS, traceRetryMs: 1,
+    });
+    assert.equal(result.terminalEvidence.complete, true);
+    assert.ok(server.reads.snapshots > 4);
+    assert.equal(result.managedSnapshot.resultEnvelopes[0].action, 'continue');
+    // A transient export failure and an unsettled objective are both read again.
+    assert.equal(server.reads.traces, 3);
+    assert.deepEqual(result.harnessEvidence.trace.roots[0].objectiveDurations, [{ anchorID: 'msg_user', state: 'completed', durationMs: 42 }]);
+  });
+
+  test('grades an unacknowledged result after the drain grace and keeps the latest unsettled trace', async () => {
+    const server = drainServer({ acknowledgeAfter: Infinity, traces: [objectiveTrace('observing', null)] });
+    const { baseUrl } = await startServer((request, response) => server.handler(request, response, baseUrl));
+    const result = await runSessionTurn({
+      client: createEvaluationClient({ baseUrl, pollIntervalMs: 1 }),
+      directory: '/tmp/fixture',
+      selection: { providerId: 'p', modelId: 'm', agent: 'builder', variant: null },
+      prompt: 'in-memory prompt', caseId: 'inspect', timeoutMs: UNREACHABLE_TURN_BUDGET_MS,
+      resultDrainGraceMs: 20, traceSettleMs: 20, traceRetryMs: 1,
+    });
+    assert.equal(result.terminalEvidence.complete, true);
+    assert.equal(result.managedSnapshot.resultEnvelopes[0].action, null);
+    assert.equal(result.harnessEvidence.trace.roots[0].objectiveDurations[0].state, 'observing');
   });
 
   test('waits for recursive children and managed tasks, then aborts them before a timed-out parent', async () => {

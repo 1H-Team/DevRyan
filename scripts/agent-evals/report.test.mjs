@@ -31,6 +31,34 @@ describe('evaluation report safety', () => {
     assert.equal(result.evidence.roots[0].context[0].appliedReductions, 1);
     assert.equal(result.evidence.roots[0].context[0].finalRequestBytes, null);
   });
+  test('projects derivation evidence, enum switches and helper attribution for the paired comparator', () => {
+    const result = projectHarnessEvidence({ rootSessionId: 'ses_root', finishFingerprint: { schemaVersion: 1, policySource: 'runtime-projection',
+      role: { contentHash: 'a'.repeat(64), templateHash: 'b'.repeat(64), rendererHash: 'c'.repeat(64), rendererVersion: 1,
+        attestedContentHash: 'a'.repeat(64), templatePolicies: ['adaptiveDelegation'] },
+      catalog: { contentHash: 'd'.repeat(64), tools: [{ id: 'devryan_task', contentHash: 'e'.repeat(64) }, { id: 'read', contentHash: 'private' }] },
+      switches: { DEVRYAN_LEDGER_PACK: '0', DEVRYAN_VIEW_CLONE: 'sk-private', DEVRYAN_UNLISTED: '1' } },
+    trace: { schemaVersion: 1, attribution: { schemaVersion: 1, unattributedHelperUsage: 0 }, roots: [{ rootSessionId: 'ses_root',
+      measurements: { output: { observed: 2, unknown: 0, total: 9 }, helperInput: { observed: 1, unknown: 0, total: 4 } },
+      attribution: { helperSessions: 1, helperCalls: 1, helperUsageRecords: 1, unattributedHelperCalls: 0, helperOnly: false } }] } });
+    const fingerprint = result.finishFingerprint;
+    assert.deepEqual(fingerprint.role, { source: 'unknown', sourceHash: null, contentHash: 'a'.repeat(64), bytes: null, templateHash: 'b'.repeat(64),
+      rendererHash: 'c'.repeat(64), rendererVersion: 1, attestedContentHash: 'a'.repeat(64), templatePolicies: ['adaptivedelegation'] });
+    assert.deepEqual(fingerprint.catalog.tools, [{ id: 'devryan_task', contentHash: 'e'.repeat(64) }, { id: 'read', contentHash: null }]);
+    assert.equal(fingerprint.policySource, 'runtime-projection');
+    assert.equal(fingerprint.switches.DEVRYAN_LEDGER_PACK, '0');
+    assert.equal(fingerprint.switches.DEVRYAN_VIEW_CLONE, 'other');
+    assert.equal('DEVRYAN_UNLISTED' in fingerprint.switches, false);
+    assert.equal(fingerprint.switches.DEVRYAN_FS_WATCH, 'other');
+    assert.equal(JSON.stringify(result).includes('sk-private'), false);
+    assert.equal(result.evidence.rootSessionId, 'ses_root');
+    assert.deepEqual(result.evidence.attribution, { unattributedHelperUsage: 0 });
+    assert.deepEqual(result.evidence.roots[0].usage.output, { observed: 2, unknown: 0, total: 9 });
+    assert.deepEqual(result.evidence.roots[0].usage.helperInput, { observed: 1, unknown: 0, total: 4 });
+    assert.deepEqual(result.evidence.roots[0].attribution, { helperSessions: 1, helperCalls: 1, helperUsageRecords: 1,
+      unattributedHelperCalls: 0, helperOnly: false });
+    assert.equal(projectHarnessEvidence({ trace: { schemaVersion: 1, roots: [] } }).evidence.attribution, null);
+    assert.equal(projectHarnessEvidence({ finishFingerprint: { schemaVersion: 1 } }).finishFingerprint.switches, null);
+  });
   test('retains numeric runtime versions without admitting paths or credential-shaped values', () => {
     const project = (runtimeVersion) => projectHarnessEvidence({
       startFingerprint: { schemaVersion: 1, runtimeVersion },

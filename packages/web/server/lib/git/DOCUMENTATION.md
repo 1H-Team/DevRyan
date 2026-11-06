@@ -44,7 +44,10 @@ The following functions are exported and used by the web server:
 - `unstageFile(directory, filePath)`: Remove a file from the Git index while preserving working tree changes.
 
 ### Branch Operations
-- `getBranches(directory)`: Get list of local and remote branches (filtered to active remote branches); non-Git directories return an empty branch response without logging stack traces.
+- `getBranches(directory, { remote = 'local' })`: List local and remote-tracking branches as `{ all, current, branches }`; `remotes/<remote>/HEAD` is always excluded from `all`, and non-Git directories return an empty branch response without logging stack traces.
+  - `local` (default, every routine listing) reads refs on disk only: no credentials, no askpass helper, no `ls-remote`, so it performs no network operation.
+  - `live` loads Git credentials and drops remote-tracking refs that `ls-remote --heads` no longer reports, keeping known refs for any remote that cannot be probed. It never fetches.
+  - `GET /api/git/branches?directory=…&remote=live` selects live mode only for exactly `remote=live`; any other or missing value is local. In the UI only the New Worktree dialog's "Fetch Branches" action requests live (`GitAPI.getGitBranches(directory, { remote: 'live' })`, `useGitStore.fetchBranches(directory, git, { remote: 'live' })`). The store applies results only from the newest request per directory, and routine reads made during a live listing join it.
 - `createBranch(directory, branchName, options)`: Create and checkout a new branch.
 - `checkoutBranch(directory, branchName)`: Checkout an existing branch.
 - `deleteBranch(directory, branch, options)`: Delete a branch (supports force flag).

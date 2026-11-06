@@ -197,6 +197,9 @@ export function createSessionMutationRuntime(options: {
   };
   /** Rows per install transaction (defaults 128 and, for a first build, 1024). Tests shrink them. */
   batching?: { install?: number; initialInstall?: number };
+  /** Process-wide prepared-baseline budget (positive integers; defaults 100,000 rows and 32 MiB of
+   * serialized baseline bytes). Only used with `DEVRYAN_PREPARED_BASELINE_REUSE=1`. Tests shrink it. */
+  preparedBaselines?: { rows?: number; bytes?: number };
   /** Document complexity guard bounds (positive integers, each warning at most its ceiling). */
   complexity?: { warnEntries?: number; warnBytes?: number; ceilingEntries?: number; ceilingBytes?: number };
   onChange?(input: MutationPublication & { directory: string }): void | Promise<void>;
@@ -209,3 +212,5 @@ export function createSessionMutationRuntime(options: {
    * `snapshotMiss`: why a snapshot-first read fell back to this lock. */
   onLockTiming?(timing: { operation: string; sessionID?: string; snapshotMiss?: 'absent' | 'materialization' | 'meta' | 'write' | 'error'; queueMs: number; waitMs: number; holdMs: number; wrote: boolean; failed: boolean }): void;
 }): SessionMutationRuntime;
+/** Process-wide prepared-baseline cache usage (diagnostics and tests). */
+export function preparedBaselineUsage(): { rows: number; bytes: number; entries: { token: string; rows: number; bytes: number }[] };

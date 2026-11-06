@@ -8,16 +8,31 @@ export function getOctokitForAccount(accountId) {
   return auth?.accessToken ? createGitHubApiClient({ auth: auth.accessToken }) : null;
 }
 
-export function getOctokitOrNull() {
+/**
+ * Resolves the request's stored account and its client from one auth read, so
+ * a route that later keys caches or permission checks by the account uses the
+ * same credential its client was built from. `auth` is null for the gh CLI
+ * fallback, which has no stored account identity.
+ */
+export function getGitHubClientSnapshot() {
   const principal = getRequestPrincipal();
   if (principal?.scope === 'managed') {
     const accountId = principal.githubAccountId || null;
-    return accountId ? getOctokitForAccount(accountId) : null;
+    const auth = accountId ? getGitHubAuthById(accountId) : null;
+    return auth?.accessToken
+      ? { auth, octokit: createGitHubApiClient({ auth: auth.accessToken }) }
+      : { auth: null, octokit: null };
   }
   const auth = getGitHubAuth();
-  const token = auth?.accessToken || (!isGhCliDisabled() ? getGhCliToken() : null);
-  if (!token) {
-    return null;
+  if (auth?.accessToken) {
+    return { auth, octokit: createGitHubApiClient({ auth: auth.accessToken }) };
   }
-  return createGitHubApiClient({ auth: token });
+  const token = !isGhCliDisabled() ? getGhCliToken() : null;
+  return token
+    ? { auth: null, octokit: createGitHubApiClient({ auth: token }) }
+    : { auth: null, octokit: null };
+}
+
+export function getOctokitOrNull() {
+  return getGitHubClientSnapshot().octokit;
 }

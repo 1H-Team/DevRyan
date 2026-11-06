@@ -1,6 +1,8 @@
 import { resolveDevRyanDataRoot } from '@devryan/shared-runtime/node/data-root.js';
 import { readVersionedFile, writeVersionedFile } from './file-versions.js';
 import { createDeterministicGitReadCache } from './git-read-cache.js';
+import { createFsWatchHandler, createFsWatchHub, FS_WATCH_MAX_DIRECTORIES } from './watch.js';
+import { isProtectedDotenvPath, shouldHideProtectedDotenv } from '../multi-user/dotenv-visibility.js';
 
 const EXEC_JOB_TTL_MS = 30 * 60 * 1000;
 const IMAGE_ASSET_GRANT_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp']);
@@ -375,6 +377,108 @@ const resolveReadPathFromContext = async ({ req, targetPath, resolveProjectDirec
   });
 };
 
+const WATCH_SCOPE_INVALID = 'fs_watch_scope_invalid';
+
+const statOrNull = async (target, fsPromises) => {
+  try {
+    return await fsPromises.stat(target);
+  } catch (error) {
+    if (error && (error.code === 'ENOENT' || error.code === 'ENOTDIR')) return null;
+    throw error;
+  }
+};
+
+/**
+ * Authorize a whole `GET /api/fs/watch` scope or reject it. `directory` is the
+ * scalar the managed path middleware translates; `expanded` and `selected` are
+ * relative to it. The root gets the read-route confinement without
+ * `allowOutsideWorkspace`, and every entry must stay inside the canonical root
+ * with no symlink component. Missing entries are allowed and watched once they
+ * appear; an entry of the wrong type rejects the scope.
+ */
+const resolveWatchScopeFromContext = async ({
+  req, resolveProjectDirectory, path, os, normalizeDirectoryPath, devryanUserConfigRoot, fsPromises,
+}) => {
+  const params = new URL(req.url || '/', 'http://127.0.0.1').searchParams;
+  const directoryValues = params.getAll('directory');
+  const expanded = params.getAll('expanded');
+  const selectedValues = params.getAll('selected');
+  const directory = directoryValues.length === 1 ? directoryValues[0].trim() : '';
+  if (!directory || selectedValues.length > 1) {
+    return { ok: false, status: 400, error: 'A single watch directory is required', code: WATCH_SCOPE_INVALID };
+  }
+  if (expanded.length + 1 > FS_WATCH_MAX_DIRECTORIES) {
+    return { ok: false, status: 400, error: 'Too many watched directories', code: 'fs_watch_scope_too_large' };
+  }
+
+  const lexical = await resolveWorkspacePathFromContext({
+    req, targetPath: directory, resolveProjectDirectory, path, os, normalizeDirectoryPath, devryanUserConfigRoot,
+  });
+  if (!lexical.ok) return { ok: false, status: 400, error: lexical.error };
+  const canonicalBase = await resolveCanonicalBase(lexical.base, fsPromises, path);
+  const rootResult = await resolveCanonicalTargetPath({ resolvedPath: lexical.resolved, canonicalBase, fsPromises, path, os });
+  if (!rootResult.ok) return rootResult;
+  const root = rootResult.canonical;
+  const rootStats = await statOrNull(root, fsPromises);
+  if (!rootStats) return { ok: false, status: 404, error: 'Directory not found' };
+  if (!rootStats.isDirectory()) return { ok: false, status: 400, error: 'Specified path is not a directory' };
+
+  const hideDotenv = shouldHideProtectedDotenv(req.principal);
+  const resolveEntry = async (relative) => {
+    if (typeof relative !== 'string' || relative.includes('\0') || relative.startsWith('/') || relative.startsWith('\\')
+      || path.isAbsolute(relative) || /^[A-Za-z]:/.test(relative)) {
+      return { ok: false, status: 400, error: 'Watch entries must be relative to the directory', code: WATCH_SCOPE_INVALID };
+    }
+    const segments = relative.split('/').filter((segment) => segment && segment !== '.');
+    if (segments.includes('..')) return { ok: false, status: 403, error: CANONICAL_ESCAPE_ERROR };
+    const target = path.join(root, ...segments);
+    if (!isLexicallyWithinRoot(target, root, path)) return { ok: false, status: 403, error: CANONICAL_ESCAPE_ERROR };
+    const symlinkCheck = await rejectSymlinkComponentsInPrefix(target, fsPromises, path);
+    if (!symlinkCheck.ok) return symlinkCheck;
+    const canonical = await resolveCanonicalTargetPath({ resolvedPath: target, canonicalBase: root, fsPromises, path, os });
+    if (!canonical.ok) return canonical;
+    if (hideDotenv && (isProtectedDotenvPath(relative) || isProtectedDotenvPath(canonical.canonical))) {
+      return { ok: false, status: 404, error: 'File not found' };
+    }
+    return { ok: true, canonical: canonical.canonical, stats: await statOrNull(canonical.canonical, fsPromises) };
+  };
+
+  const watches = new Map();
+  const watchFor = (target) => {
+    let entry = watches.get(target);
+    if (!entry) {
+      entry = { directory: target, slots: [], selectedBasename: null };
+      watches.set(target, entry);
+    }
+    return entry;
+  };
+  watchFor(root).slots.push({ kind: 'root' });
+  for (const [index, relative] of expanded.entries()) {
+    const resolved = await resolveEntry(relative);
+    if (!resolved.ok) return resolved;
+    if (resolved.stats && !resolved.stats.isDirectory()) {
+      return { ok: false, status: 400, error: 'Expanded entries must be directories', code: WATCH_SCOPE_INVALID };
+    }
+    watchFor(resolved.canonical).slots.push({ kind: 'expanded', index });
+  }
+  if (selectedValues.length === 1) {
+    const resolved = await resolveEntry(selectedValues[0]);
+    if (!resolved.ok) return resolved;
+    if (resolved.canonical === root) {
+      return { ok: false, status: 400, error: 'The selected entry must be a file', code: WATCH_SCOPE_INVALID };
+    }
+    if (resolved.stats && !resolved.stats.isFile()) {
+      return { ok: false, status: 400, error: 'Specified path is not a file', code: WATCH_SCOPE_INVALID };
+    }
+    // Watch the parent, never the file: an atomic save replaces the file's inode.
+    watchFor(path.dirname(resolved.canonical)).selectedBasename = path.basename(resolved.canonical);
+  }
+  if (watches.size > FS_WATCH_MAX_DIRECTORIES) {
+    return { ok: false, status: 400, error: 'Too many watched directories', code: 'fs_watch_scope_too_large' };
+  }
+  return { ok: true, root, watches: [...watches.values()] };
+};
+
 const normalizeHeaderAsciiFileName = (fileName) => {
   const ascii = String(fileName || 'file')
     .normalize('NFKD')
@@ -474,6 +578,7 @@ export const registerFsRoutes = (app, dependencies) => {
     resolveGitBinaryForSpawn,
     devryanUserConfigRoot,
     authorizeImageAssetGrant,
+    fsWatch = {},
   } = dependencies;
 
   const execJobs = new Map();
@@ -554,6 +659,16 @@ export const registerFsRoutes = (app, dependencies) => {
       return res.status(500).json({ error: (error && error.message) || 'Failed to resolve home directory' });
     }
   });
+
+  // Cookie-authenticated SSE; `fsWatch` overrides exist for tests only.
+  const { hub: injectedWatchHub, ...watchHandlerOptions } = fsWatch;
+  app.get('/api/fs/watch', createFsWatchHandler({
+    hub: injectedWatchHub ?? createFsWatchHub({ fsPromises }),
+    authorizeScope: (req) => resolveWatchScopeFromContext({
+      req, resolveProjectDirectory, path, os, normalizeDirectoryPath, devryanUserConfigRoot, fsPromises,
+    }),
+    ...watchHandlerOptions,
+  }));
 
   app.post('/api/fs/mkdir', async (req, res) => {
     try {

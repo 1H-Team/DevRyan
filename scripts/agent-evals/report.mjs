@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { summarizeGraders } from './graders.mjs';
+import { HARNESS_BEHAVIOUR_SWITCHES, HARNESS_BEHAVIOUR_SWITCH_VALUES } from '../../packages/harness-runtime/lib/sanitizer.js';
 
 const SENSITIVE_HEADERS = new Set([
   'authorization',
@@ -235,8 +236,13 @@ const projectFingerprint = (value) => value?.schemaVersion === 1 ? {
   schemaVersion: 1, configurationHash: safeHash(value.configurationHash), runtimeVersion: runtimeVersion(value.runtimeVersion), runtimeHash: safeHash(value.runtimeHash),
   selection: { providerId: opaqueIdentifier(value.selection?.providerID, 'provider'), modelId: opaqueIdentifier(value.selection?.modelID, 'model'),
     agent: opaqueIdentifier(value.selection?.agent, 'agent'), variant: value.selection?.variant === null ? null : opaqueIdentifier(value.selection?.variant, 'variant') },
-  role: { source: normalizeStatus(value.role?.source), sourceHash: safeHash(value.role?.sourceHash), contentHash: safeHash(value.role?.contentHash), bytes: finiteNumber(value.role?.bytes) },
-  catalog: { contentHash: safeHash(value.catalog?.contentHash), idsHash: safeHash(value.catalog?.idsHash), count: finiteNumber(value.catalog?.count), availability: normalizeStatus(value.catalog?.availability) },
+  role: { source: normalizeStatus(value.role?.source), sourceHash: safeHash(value.role?.sourceHash), contentHash: safeHash(value.role?.contentHash), bytes: finiteNumber(value.role?.bytes),
+    templateHash: safeHash(value.role?.templateHash), rendererHash: safeHash(value.role?.rendererHash),
+    rendererVersion: Number.isSafeInteger(value.role?.rendererVersion) && value.role.rendererVersion > 0 ? value.role.rendererVersion : null,
+    attestedContentHash: safeHash(value.role?.attestedContentHash),
+    templatePolicies: Array.isArray(value.role?.templatePolicies) ? value.role.templatePolicies.slice(0, 16).map(name => normalizeStatus(name)) : null },
+  catalog: { contentHash: safeHash(value.catalog?.contentHash), idsHash: safeHash(value.catalog?.idsHash), count: finiteNumber(value.catalog?.count), availability: normalizeStatus(value.catalog?.availability),
+    tools: Array.isArray(value.catalog?.tools) ? value.catalog.tools.slice(0, 512).map(tool => ({ id: normalizeTool(tool?.id), contentHash: safeHash(tool?.contentHash) })) : null },
   plugins: { inventory: value.plugins?.inventory ? {
     configurationHash: safeHash(value.plugins.inventory.configurationHash), contentHash: safeHash(value.plugins.inventory.contentHash),
     providerHash: safeHash(value.plugins.inventory.providerHash),
@@ -246,6 +252,11 @@ const projectFingerprint = (value) => value?.schemaVersion === 1 ? {
   } : null, configured: Array.isArray(value.plugins?.configured) ? value.plugins.configured.slice(0, 128).map((entry) => ({ name: opaqueIdentifier(entry.name, 'plugin'), sourceHash: safeHash(entry.sourceHash) })) : null,
     observed: Array.isArray(value.plugins?.observed) ? value.plugins.observed.slice(0, 128).map((entry) => ({ name: opaqueIdentifier(entry.name, 'plugin'), contentHash: safeHash(entry.contentHash), factoryCalls: nonNegativeInteger(entry.factoryCalls), ownership: normalizeStatus(entry.ownership) })) : null },
   policies: Object.fromEntries(['readOverlap', 'waitAny', 'compactResults', 'contextProjection', 'duplicateOutputs', 'adaptiveDelegation'].map((key) => [key, value.policies?.[key] === true])),
+  policySource: ['runtime-projection', 'environment'].includes(value.policySource) ? value.policySource : 'unknown',
+  // Allowlisted switches only, as closed enum values; anything else is `other`.
+  switches: value.switches && typeof value.switches === 'object' && !Array.isArray(value.switches)
+    ? Object.fromEntries(HARNESS_BEHAVIOUR_SWITCHES.map(name => [name, HARNESS_BEHAVIOUR_SWITCH_VALUES.includes(value.switches[name]) ? value.switches[name] : 'other']))
+    : null,
 } : null;
 
 const measured = (value) => ({ observed: nonNegativeInteger(value?.observed), unknown: nonNegativeInteger(value?.unknown), total: finiteNumber(value?.total) });
@@ -255,12 +266,19 @@ export const projectHarnessEvidence = (value) => ({
     variantAvailable: typeof value.availability.variantAvailable === 'boolean' ? value.availability.variantAvailable : null } : null,
   evidence: value?.trace?.schemaVersion === 1 ? { source: 'retained-journal', incomplete: value.trace.incomplete === true,
     sourceRecords: nonNegativeInteger(value.trace.sourceRecords), omittedRecords: nonNegativeInteger(value.trace.omittedRecords), omittedEvents: nonNegativeInteger(value.trace.omittedEvents),
+    // The evaluated root, projected like the trace's roots so they compare.
+    rootSessionId: typeof value.rootSessionId === 'string' && value.rootSessionId ? opaqueIdentifier(value.rootSessionId, 'session') : null,
+    attribution: value.trace.attribution?.schemaVersion === 1
+      ? { unattributedHelperUsage: nonNegativeInteger(value.trace.attribution.unattributedHelperUsage) } : null,
     roots: Array.isArray(value.trace.roots) ? value.trace.roots.slice(0, 2048).map((root) => ({ rootSessionId: opaqueIdentifier(root.rootSessionId, 'session'),
       queueMs: measured(root.measurements?.queueMs), firstActivityMs: measured(root.measurements?.firstResponseMs),
       toolExecutionMs: measured(root.measurements?.toolExecutionMs), resultConsumptionMs: measured(root.measurements?.resultConsumptionMs),
       workspaceBarrierMs: measured(root.measurements?.workspaceBarrierMs), recoveryMs: measured(root.measurements?.recoveryMs),
       objectiveDurationMs: finiteNumber(root.totalObjectiveCriticalPathMs),
-      usage: Object.fromEntries(['input', 'output', 'cacheRead', 'cacheWrite', 'cost'].map((key) => [key, measured(root.measurements?.[key])])),
+      usage: Object.fromEntries(['input', 'output', 'cacheRead', 'cacheWrite', 'cost', 'helperInput', 'helperOutput'].map((key) => [key, measured(root.measurements?.[key])])),
+      attribution: root.attribution && typeof root.attribution === 'object' ? { helperSessions: nonNegativeInteger(root.attribution.helperSessions),
+        helperCalls: nonNegativeInteger(root.attribution.helperCalls), helperUsageRecords: nonNegativeInteger(root.attribution.helperUsageRecords),
+        unattributedHelperCalls: nonNegativeInteger(root.attribution.unattributedHelperCalls), helperOnly: root.attribution.helperOnly === true } : null,
       costProvenance: ['native-runtime-reported', 'native-provider-reported'].includes(root.costProvenance)
         ? 'native-runtime-reported' : 'unavailable',
       toolVolumeBytes: measured(root.measurements?.toolVolumeBytes), retrievedPages: nonNegativeInteger(root.retrievedPages),

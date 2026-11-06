@@ -12,6 +12,7 @@ vi.mock('../git/index.js', () => ({
 }));
 
 import { runWithRequestPrincipal } from '../multi-user/request-context.js';
+import { createGitHubPermissionRefusalCache } from './rate-limit.js';
 import { registerGitHubRoutes } from './routes.js';
 
 const assignment = {
@@ -36,9 +37,15 @@ const pulls = {
   merge: vi.fn(),
   update: vi.fn(),
 };
-const octokit = { rest: { pulls, repos: { getBranch: vi.fn() } }, graphql: vi.fn() };
+const repos = {
+  getBranch: vi.fn(),
+  getCollaboratorPermissionLevel: vi.fn(),
+  getCombinedStatusForRef: vi.fn(),
+};
+const checks = { listForRef: vi.fn() };
+const octokit = { rest: { pulls, repos, checks }, graphql: vi.fn() };
 
-const createApp = () => {
+const createApp = (dependencies = {}) => {
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => runWithRequestPrincipal(principal, next, { assignment }));
@@ -47,6 +54,7 @@ const createApp = () => {
       getOctokitOrNull: () => octokit,
       clearGitHubAuth: vi.fn(),
     }),
+    ...dependencies,
   });
   return app;
 };
@@ -67,6 +75,9 @@ beforeEach(() => {
   });
   pulls.get.mockResolvedValue({ data: { base: { ref: 'main' }, node_id: 'PR_node', draft: true } });
   pulls.merge.mockResolvedValue({ data: { merged: true } });
+  repos.getCollaboratorPermissionLevel.mockResolvedValue({ data: { permission: 'write' } });
+  repos.getCombinedStatusForRef.mockResolvedValue({ data: { statuses: [] } });
+  checks.listForRef.mockResolvedValue({ data: { check_runs: [] } });
 });
 
 describe('managed GitHub project policy', () => {
@@ -118,5 +129,50 @@ describe('managed GitHub project policy', () => {
 
     expect(response.status).toBe(200);
     expect(pulls.merge).toHaveBeenCalled();
+  });
+});
+
+describe('managed GitHub permission refusal cache', () => {
+  it('never caches internal branch 403s or branch denials as GitHub permission refusals', async () => {
+    const permissionRefusalCache = createGitHubPermissionRefusalCache();
+    const app = createApp({
+      permissionRefusalCache,
+      getGitHubClientSnapshot: () => ({
+        auth: {
+          accountId: 'github-account',
+          accessToken: 'token',
+          credentialRevision: 'revision-1',
+          user: { login: 'developer-login' },
+        },
+        octokit,
+      }),
+      resolveGitHubPrStatus: async () => ({
+        repo: { owner: 'one-health', repo: 'connector' },
+        pr: { number: 42 },
+        defaultBranch: 'main',
+        resolvedRemoteName: 'origin',
+      }),
+    });
+
+    const merge = await request(app)
+      .post('/api/github/pr/merge')
+      .send({ directory: assignment.repositoryPath, number: 42, method: 'squash' });
+    expect(merge.status).toBe(403);
+    expect(merge.body).toEqual(expect.objectContaining({ code: 'BRANCH_NOT_ASSIGNED' }));
+
+    pulls.get.mockResolvedValue({ data: { number: 42, base: { ref: 'main' }, head: { ref: 'developer', sha: 'abc123' } } });
+    const unassignedBase = await request(app)
+      .get(`/api/github/pr/status?directory=${encodeURIComponent(assignment.repositoryPath)}&branch=developer&force=true`)
+      .expect(200);
+    expect(unassignedBase.body.canMerge).toBe(false);
+    expect(repos.getCollaboratorPermissionLevel).toHaveBeenCalledTimes(1);
+
+    pulls.get.mockResolvedValue({ data: { number: 42, base: { ref: 'developer' }, head: { ref: 'feature', sha: 'abc123' } } });
+    const assignedBase = await request(app)
+      .get(`/api/github/pr/status?directory=${encodeURIComponent(assignment.repositoryPath)}&branch=feature&force=true`)
+      .expect(200);
+    expect(assignedBase.body.canMerge).toBe(true);
+    expect(repos.getCollaboratorPermissionLevel).toHaveBeenCalledTimes(2);
+    expect(permissionRefusalCache.size()).toBe(0);
   });
 });

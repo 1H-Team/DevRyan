@@ -7,6 +7,9 @@ import type {
   FileReadResult,
   FileWriteOptions,
   FileWriteResult,
+  FileWatchEvent,
+  FileWatchScope,
+  FileWatchSlot,
 } from '@devryan/ui/lib/api/types';
 
 const normalizePath = (path: string): string => path.replace(/\\/g, '/');
@@ -70,7 +73,152 @@ const toDirectoryListResult = (fallbackDirectory: string, payload: WebDirectoryL
   };
 };
 
+// Mirrors the server's per-subscription limit; a larger scope keeps polling.
+const FILE_WATCH_MAX_DIRECTORIES = 64;
+const FILE_WATCH_MAX_URL_LENGTH = 8 * 1024;
+// The server sends a heartbeat every 15 s.
+const FILE_WATCH_TIMEOUT_MS = 45_000;
+
+const isRecord = (value: unknown): value is Record<string, unknown> => (
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+);
+
+const parseFileWatchSlot = (value: unknown): FileWatchSlot | null => {
+  if (!isRecord(value)) return null;
+  if (value.kind === 'root') return { kind: 'root' };
+  if (value.kind === 'selected') return { kind: 'selected' };
+  if (value.kind === 'expanded' && typeof value.index === 'number' && Number.isSafeInteger(value.index) && value.index >= 0) {
+    return { kind: 'expanded', index: value.index };
+  }
+  return null;
+};
+
+export const parseFileWatchEvent = (raw: string): FileWatchEvent | null => {
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!isRecord(value) || typeof value.epoch !== 'number' || !Number.isSafeInteger(value.epoch)) return null;
+  const { epoch } = value;
+  switch (value.type) {
+    case 'ready':
+      return { type: 'ready', epoch };
+    case 'resync':
+      return { type: 'resync', epoch };
+    case 'unavailable':
+      return { type: 'unavailable', epoch, retryable: value.retryable === true };
+    case 'invalidate': {
+      const slot = parseFileWatchSlot(value.slot);
+      return slot ? { type: 'invalidate', epoch, slot } : null;
+    }
+    default:
+      return null;
+  }
+};
+
+const parentRelativePath = (relativePath: string): string => {
+  const index = relativePath.lastIndexOf('/');
+  return index < 0 ? '' : relativePath.slice(0, index);
+};
+
+const buildFileWatchUrl = (scope: FileWatchScope): string | null => {
+  const params = new URLSearchParams({ directory: normalizePath(scope.directory) });
+  const directories = new Set<string>(['']);
+  for (const entry of scope.expandedDirectories) {
+    const relative = normalizePath(entry);
+    params.append('expanded', relative);
+    directories.add(relative);
+  }
+  if (scope.selectedFile) {
+    const selected = normalizePath(scope.selectedFile);
+    params.set('selected', selected);
+    directories.add(parentRelativePath(selected));
+  }
+  const url = `/api/fs/watch?${params.toString()}`;
+  return directories.size > FILE_WATCH_MAX_DIRECTORIES || url.length > FILE_WATCH_MAX_URL_LENGTH ? null : url;
+};
+
+// Same-origin cookie-authenticated fetch (not EventSource), so the caller's
+// AbortSignal owns the stream and the server can reject a scope with a status.
+const watchFiles = async (
+  scope: FileWatchScope,
+  onEvent: (event: FileWatchEvent) => void,
+  signal: AbortSignal,
+): Promise<void> => {
+  if (signal.aborted) return;
+  const url = buildFileWatchUrl(scope);
+  if (!url) {
+    onEvent({ type: 'unavailable', epoch: 0, retryable: false });
+    return;
+  }
+
+  const controller = new AbortController();
+  let timedOut = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const resetTimer = () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, FILE_WATCH_TIMEOUT_MS);
+  };
+  const abort = () => controller.abort();
+  signal.addEventListener('abort', abort, { once: true });
+  resetTimer();
+
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: { Accept: 'text/event-stream' },
+      cache: 'no-store',
+      credentials: 'same-origin',
+    });
+    if (response.status >= 400 && response.status < 500) {
+      await response.body?.cancel().catch(() => {});
+      onEvent({ type: 'unavailable', epoch: 0, retryable: false });
+      return;
+    }
+    if (!response.ok || !response.body) {
+      throw new Error(`File watch failed with status ${response.status}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      resetTimer();
+      buffer = (buffer + decoder.decode(value, { stream: true })).replace(/\r\n/g, '\n');
+      let boundary = buffer.indexOf('\n\n');
+      while (boundary >= 0) {
+        const block = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        const data = block.split('\n')
+          .filter((line) => line.startsWith('data:'))
+          .map((line) => line.slice(5).replace(/^ /, ''))
+          .join('\n');
+        const event = data ? parseFileWatchEvent(data) : null;
+        if (event && !signal.aborted) onEvent(event);
+        boundary = buffer.indexOf('\n\n');
+      }
+    }
+  } catch (error) {
+    if (signal.aborted) return;
+    if (timedOut) throw new Error('File watch timed out');
+    throw error;
+  } finally {
+    if (timer) clearTimeout(timer);
+    signal.removeEventListener('abort', abort);
+    controller.abort();
+  }
+};
+
 export const createWebFilesAPI = (): FilesAPI => ({
+  watch: watchFiles,
+
   async listDirectory(path: string): Promise<DirectoryListResult> {
     const target = normalizePath(path);
     const params = new URLSearchParams();

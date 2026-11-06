@@ -84,6 +84,38 @@ describe('managed dotenv visibility', () => {
     expect(adminNext).toHaveBeenCalledOnce();
   });
 
+  it('rejects a file-watch scope that names a protected dotenv path', () => {
+    const middleware = createDotenvVisibilityMiddleware();
+    for (const query of ['selected=.env', 'expanded=src&expanded=config%2F.env.d', 'selected=nested%2F.env.local']) {
+      const response = createResponse();
+      const next = vi.fn();
+      middleware({
+        originalUrl: `/api/fs/watch?directory=%2Frepo&${query}`,
+        query: { directory: '/repo' },
+        principal: restrictedPrincipal(),
+      }, response, next);
+      expect(response.statusCode).toBe(404);
+      expect(response.payload).toEqual({ error: 'File not found' });
+      expect(next).not.toHaveBeenCalled();
+    }
+
+    const allowed = vi.fn();
+    middleware({
+      originalUrl: '/api/fs/watch?directory=%2Frepo&expanded=src&selected=src%2Fenvironment.ts',
+      query: { directory: '/repo' },
+      principal: restrictedPrincipal('senior_developer'),
+    }, createResponse(), allowed);
+    expect(allowed).toHaveBeenCalledOnce();
+
+    const admin = vi.fn();
+    middleware({
+      originalUrl: '/api/fs/watch?directory=%2Frepo&selected=.env',
+      query: { directory: '/repo' },
+      principal: restrictedPrincipal('admin'),
+    }, createResponse(), admin);
+    expect(admin).toHaveBeenCalledOnce();
+  });
+
   it('filters Git status JSON for senior developers', () => {
     const middleware = createDotenvVisibilityMiddleware();
     const response = createResponse();

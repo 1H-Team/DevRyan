@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { continueRebase, createGitWorktree, generateCommitMessage, generateCommitMessageDraft, generatePullRequestDescription, getGitLog, getGitStatus, getGitWorktreeBootstrapStatus, getPrimaryWorktreeRoot, gitFetch, gitPush, resolveGitApiBaseOrigin, retryGitWorktreeBootstrapOperation } from "./gitApiHttp"
+import { continueRebase, createGitWorktree, generateCommitMessage, generateCommitMessageDraft, generatePullRequestDescription, getGitBranches, getGitLog, getGitStatus, getGitWorktreeBootstrapStatus, getPrimaryWorktreeRoot, gitFetch, gitPush, resolveGitApiBaseOrigin, retryGitWorktreeBootstrapOperation } from "./gitApiHttp"
 
 type TestWindow = {
   location: { origin: string }
@@ -83,6 +83,31 @@ describe("gitApiHttp URL routing", () => {
 
       expect(requestedUrls).toEqual([
         "http://127.0.0.1:5173/api/git/worktrees/bootstrap-status?directory=%2FUsers%2Fzoubair%2FRepositories%2FDevRyan",
+      ])
+    } finally {
+      restoreGlobals()
+    }
+  })
+
+  test("sends remote=live for branch listings only when live mode is requested", async () => {
+    try {
+      setTestWindow({ location: { origin: "http://127.0.0.1:5173" } })
+      const requestedUrls: string[] = []
+      globalThis.fetch = (async (input: RequestInfo | URL) => {
+        requestedUrls.push(String(input))
+        return Response.json({ all: ["main"], current: "main", branches: {} })
+      }) as typeof fetch
+
+      await getGitBranches("/repo")
+      await getGitBranches("/repo", {})
+      await getGitBranches("/repo", { remote: "local" })
+      expect(await getGitBranches("/repo", { remote: "live" })).toEqual({ all: ["main"], current: "main", branches: {} })
+
+      expect(requestedUrls).toEqual([
+        "http://127.0.0.1:5173/api/git/branches?directory=%2Frepo",
+        "http://127.0.0.1:5173/api/git/branches?directory=%2Frepo",
+        "http://127.0.0.1:5173/api/git/branches?directory=%2Frepo",
+        "http://127.0.0.1:5173/api/git/branches?directory=%2Frepo&remote=live",
       ])
     } finally {
       restoreGlobals()

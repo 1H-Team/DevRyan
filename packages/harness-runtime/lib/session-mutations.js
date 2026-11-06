@@ -252,6 +252,47 @@ const mapBounded = async (items, fn, limit = FILE_CONCURRENCY) => {
   return results;
 };
 
+// Prepared baselines (DEVRYAN_PREPARED_BASELINE_REUSE=1, off by default): the
+// `bases/<token>/files` pages a preparation committed to its lease ref, kept
+// as the exact JSON page strings it staged (never the shared `doc.published`
+// objects), so publication can skip reading them back. An entry is published
+// once the lease is durably ready and is used only by the runtime that made it,
+// for the same ledger root, while the lease ref still names the committed view
+// tree; anything else reads the durable rows. One LRU budget for the process;
+// a lease larger than the whole budget is never kept. A miss only costs that
+// durable read: nothing waits for, or is refused by, this cache.
+const preparedBaselineReuse = () => process.env.DEVRYAN_PREPARED_BASELINE_REUSE === '1';
+const PREPARED_BASELINE_BUDGET = Object.freeze({ rows: 100_000, bytes: 32 * 1024 * 1024 });
+const preparedBaselines = new Map();
+const preparedBaselineTotals = { rows: 0, bytes: 0 };
+const forgetPreparedBaseline = (token) => {
+  const entry = preparedBaselines.get(token);
+  if (!entry) return;
+  preparedBaselines.delete(token);
+  preparedBaselineTotals.rows -= entry.rows; preparedBaselineTotals.bytes -= entry.bytes;
+};
+const keepPreparedBaseline = (token, entry, budget) => {
+  forgetPreparedBaseline(token);
+  if (entry.rows > budget.rows || entry.bytes > budget.bytes) return;
+  preparedBaselines.set(token, entry);
+  preparedBaselineTotals.rows += entry.rows; preparedBaselineTotals.bytes += entry.bytes;
+  // Least recently used first; the new entry fits alone, so it stays.
+  while (preparedBaselineTotals.rows > budget.rows || preparedBaselineTotals.bytes > budget.bytes) {
+    forgetPreparedBaseline(preparedBaselines.keys().next().value);
+  }
+};
+// Removes the lease's entry and returns its rows (fresh objects parsed from the
+// stored pages) only when owner, root and view tree all match.
+const takePreparedBaseline = (token, owner, root, tree) => {
+  const entry = preparedBaselines.get(token);
+  forgetPreparedBaseline(token);
+  if (!entry || entry.owner !== owner || entry.root !== root || !tree || entry.tree !== tree) return null;
+  return entry.pages.flatMap((page) => JSON.parse(page));
+};
+/** Process-wide prepared-baseline usage (diagnostics and tests). */
+export const preparedBaselineUsage = () => ({ rows: preparedBaselineTotals.rows, bytes: preparedBaselineTotals.bytes,
+  entries: [...preparedBaselines].map(([token, entry]) => ({ token, rows: entry.rows, bytes: entry.bytes })) });
+
 /** Durable mutation ledger; not an execution sandbox.
  * Adapters must enforce write confinement and stop every writer before finish.
  * The private Git metadata store pages histories and commits accepted intent
@@ -261,7 +302,7 @@ const mapBounded = async (items, fn, limit = FILE_CONCURRENCY) => {
 // and stamp files with synchronous calls: on 13k files a stamp pass took
 // 49 ms instead of 311 ms through the thread pool. Chunks still yield between
 // each other. Kill switch, read per use: DEVRYAN_LEDGER_SYNC_WALKS=0.
-export function createSessionMutationRuntime({ directory: storage, onChange = () => {}, onMaterialize, onDiagnostic = () => {}, onLockTiming, maintenance: maintenanceOptions, batching = {}, complexity = {}, windowsOwner, windowsLauncher, gitRunner, synchronousWalks = false } = {}) {
+export function createSessionMutationRuntime({ directory: storage, onChange = () => {}, onMaterialize, onDiagnostic = () => {}, onLockTiming, maintenance: maintenanceOptions, batching = {}, complexity = {}, preparedBaselines: preparedBaselineOptions = {}, windowsOwner, windowsLauncher, gitRunner, synchronousWalks = false } = {}) {
   const syncWalks = () => synchronousWalks === true && process.env.DEVRYAN_LEDGER_SYNC_WALKS !== '0';
   const listDirectory = (directory) => syncWalks() ? readdirSync(directory, { withFileTypes: true }) : fs.readdir(directory, { withFileTypes: true });
   const lstatEntry = (file) => {
@@ -281,6 +322,13 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     || complexityLimits.warnEntries > complexityLimits.ceilingEntries || complexityLimits.warnBytes > complexityLimits.ceilingBytes) {
     throw new TypeError('Document complexity limits must be positive integers, each warning at most its ceiling');
   }
+  // Prepared-baseline budget this runtime admits entries under (tests shrink
+  // it); production keeps the one process-wide default.
+  const preparedBaselineBudget = { ...PREPARED_BASELINE_BUDGET, ...preparedBaselineOptions };
+  if (!Object.values(preparedBaselineBudget).every((value) => Number.isSafeInteger(value) && value > 0)) {
+    throw new TypeError('Prepared baseline budget must be positive integers');
+  }
+  const preparedBaselineOwner = Symbol('prepared-baselines');
   // Background failures outside any admission context (codes only).
   const diagnostic = (record) => { try { onDiagnostic(record); } catch { /* Observer only. */ } };
   // Every owner-lock acquisition, with or without an execution context:
@@ -2326,11 +2374,23 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
           }
         }
       };
-      await executionPhase('view_files', () => db.setList(`bases/${lease.token}/files`, base()));
+      // Prepared-baseline reuse: the staged page strings, until they would
+      // exceed the whole budget (the lease is then never kept).
+      const collected = preparedBaselineReuse() ? { pages: [], rows: 0, bytes: 0 } : null;
+      const collect = (data, rows) => {
+        if (!collected.pages) return;
+        collected.rows += rows; collected.bytes += Buffer.byteLength(data);
+        if (collected.rows > preparedBaselineBudget.rows || collected.bytes > preparedBaselineBudget.bytes) collected.pages = null;
+        else collected.pages.push(data);
+      };
+      const baseBytes = await executionPhase('view_files', () => collected
+        ? db.setList(`bases/${lease.token}/files`, base(), { collect })
+        : db.setList(`bases/${lease.token}/files`, base()));
       // Units, not time: how many view files were copied and how many adopted.
       executionStep('view_copied', 0, copied);
       executionStep('view_reused', 0, live.length - copied);
       await executionPhase('view_commit', () => db.commit());
+      const viewTree = db.tree;
       noteLedgerCommit(root);
       await executionPhase('view_git', async () => {
         await git(lease.viewDirectory, ['init', '--quiet']);
@@ -2370,13 +2430,17 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       // Before the lease is ready, so no command can have touched the view yet.
       if (viewReuse() && fastView) rememberView(lease.token, { root, sessionID: lease.scope.sessionID,
         directories: await timedExecutionStep('view_record', () => directoryStamps(lease.viewDirectory)) });
-      return await locked(lease.directory, async (current) => {
+      const ready = await locked(lease.directory, async (current) => {
         if ((await current.db.get(key('leases', lease.token)))?.state === 'cancelled') throw changeError('execution_cancelled');
         const session = await current.db.get(key('sessions', lease.scope.sessionID));
         if (session.generation !== lease.generation || session.pending) throw changeError('execution_reverted');
         if (!lease.lazyBaseRuns) await current.db.importPrefix(db.tree, `bases/${lease.token}`);
         lease.state = 'ready'; current.db.set(key('leases', lease.token), lease); return lease;
       });
+      // Only once the ready lease is durable; accounted with setList's byte total.
+      if (collected?.pages) keepPreparedBaseline(lease.token, { owner: preparedBaselineOwner, root, tree: viewTree,
+        pages: collected.pages, rows: collected.rows, bytes: baseBytes }, preparedBaselineBudget);
+      return ready;
     } catch (error) {
       // This method has not admitted a writer. A failed/cancelled copy must not
       // leave an immortal preparing lease that later recovery cannot attest.
@@ -2447,7 +2511,11 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       const repo = { root, directory: captured.projectDirectory };
       snapshot = { root, directory: captured.projectDirectory, db };
       await timedExecutionStep('finish_baseline', async () => {
-        for await (const file of db.list(`bases/${token}/files`)) { base.set(file.path, file); if (file.identity) identities.set(file.identity, file); }
+        // The rows this runtime staged for the same committed view tree, else durable.
+        const prepared = preparedBaselineReuse() ? takePreparedBaseline(token, preparedBaselineOwner, root, db.tree) : null;
+        if (preparedBaselineReuse()) executionStep('finish_baseline_prepared', 0, prepared?.length ?? 0);
+        if (prepared) for (const file of prepared) { base.set(file.path, file); if (file.identity) identities.set(file.identity, file); }
+        else for await (const file of db.list(`bases/${token}/files`)) { base.set(file.path, file); if (file.identity) identities.set(file.identity, file); }
       });
       // The host has verified native termination before calling finish. Hashing
       // this immutable output does not serialize unrelated project admissions.
@@ -2622,7 +2690,8 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
   const settlements = new Map();
   const finish = (input) => {
     if (settlements.has(input.token)) return settlements.get(input.token);
-    const work = finishOwned(input).finally(() => settlements.delete(input.token));
+    // A settled publication never reads its prepared baseline again.
+    const work = finishOwned(input).finally(() => { settlements.delete(input.token); if (preparedBaselines.size) forgetPreparedBaseline(input.token); });
     settlements.set(input.token, work); return work;
   };
   const cleanupLease = async (input) => {
@@ -2641,6 +2710,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     if (!lease) return false;
     const record = viewRecords.get(input.token);
     viewRecords.delete(input.token);
+    if (preparedBaselines.size) forgetPreparedBaseline(input.token);
     // Only a published process lease, whose termination receipt was verified
     // above and whose view publication fully inspected, is parked for reuse.
     const parked = record?.files && viewReuse() && lease.state === 'published' && lease.executionKind === 'process'
@@ -3159,6 +3229,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     lease.state = 'cancelled'; lease.cleanupPending = !lease.cleaned;
     if (input.stoppedBy !== undefined) lease.stoppedBy = input.stoppedBy;
     repo.db.set(key('leases', lease.token), lease);
+    if (preparedBaselines.size) forgetPreparedBaseline(lease.token);
   });
   const cancelUnstartedCall = (input) => locked(input.directory, async (repo) => {
     await input.guard?.assertCurrent();
@@ -3184,6 +3255,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       if (lease.rebootRecovery) throw changeError('execution_already_started');
       lease.cancelledBeforeStart = true;
       lease.state = 'cancelled'; lease.cleanupPending = !lease.cleaned; repo.db.set(key('leases', lease.token), lease);
+      if (preparedBaselines.size) forgetPreparedBaseline(lease.token);
     }
     repo.db.set(key('cancelled-calls', scopeKey), { sessionID: input.sessionID, messageID: input.messageID });
   }, { assertCurrent: input.guard?.assertCurrent });
@@ -3234,7 +3306,11 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     transaction, updateTransaction, pendingTransactions, capturedSessionState, restoreForeign, cancelLease, cancelUnstartedCall, activeLeases, pendingCleanup, executionOutcomes,
     viewFreshness, maintainLedger: ({ directory }) => resolveRepository(directory).then(({ directory: project }) => maintainLedger(rootFor(project))),
     drain: () => Promise.allSettled([...preparations.values(), ...settlements.values(), ...queues.values(), ...retiring,
-      ...[...maintenanceStates.values()].flatMap((state) => [state.running, state.check]).filter(Boolean)]) };
+      ...[...maintenanceStates.values()].flatMap((state) => [state.running, state.check]).filter(Boolean)]).then((settled) => {
+      // Shutdown: this runtime's prepared baselines go with it.
+      for (const [token, entry] of preparedBaselines) if (entry.owner === preparedBaselineOwner) forgetPreparedBaseline(token);
+      return settled;
+    }) };
   // Lock timings name the outermost runtime operation; nested calls keep it.
   for (const [name, method] of Object.entries(runtime)) {
     if (typeof method !== 'function' || name === 'drain') continue;

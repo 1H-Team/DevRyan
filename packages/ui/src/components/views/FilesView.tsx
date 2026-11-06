@@ -46,6 +46,16 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { CodeMirrorEditor } from '@/components/ui/CodeMirrorEditor';
 import { GoToLineDialog } from './GoToLineDialog';
+import {
+  buildFilesWatchPlan,
+  classifySelectedFileStat,
+  filesPollIntervals,
+  FILES_SELECTED_FILE_POLL_MS,
+  FILES_WATCH_SCOPE_DEBOUNCE_MS,
+  shouldSubscribeFilesWatch,
+  startFilesWatch,
+  type FilesWatchHandlers,
+} from './filesViewWatch';
 import { PreviewToggleButton } from './PreviewToggleButton';
 import { JsonTreeView } from '@/components/ui/JsonTreeView';
 import { SimpleMarkdownRenderer } from '@/components/chat/MarkdownRenderer';
@@ -541,7 +551,8 @@ export const FilesView: React.FC<{ visible?: boolean }> = ({ visible = true }) =
   const searchInputRef = React.useRef<HTMLInputElement>(null);
 
   const [showMobilePageContent, setShowMobilePageContent] = React.useState(false);
-  const [wrapLines, setWrapLines] = React.useState(true);
+  const wrapLines = useUIStore((state) => state.fileEditorWrapLines);
+  const setWrapLines = useUIStore((state) => state.setFileEditorWrapLines);
   const [isSearchOpen, setIsSearchOpen] = React.useState(false);
   const [isFloatingToolbarOpen, setIsFloatingToolbarOpen] = React.useState(false);
   const floatingToolbarRef = React.useRef<HTMLDivElement | null>(null);
@@ -1017,6 +1028,73 @@ export const FilesView: React.FC<{ visible?: boolean }> = ({ visible = true }) =
     }
   }, [loadDirectory, root, showGitignored, showHidden]);
 
+  // Scoped change notifications. While a watch is ready, hints refresh the
+  // named slot and the 8 s / 2 s polls drop to a 30 s safety net; any failure
+  // restores polling.
+  const [documentVisible, setDocumentVisible] = React.useState(() => typeof document === 'undefined' || !document.hidden);
+  React.useEffect(() => {
+    const update = () => setDocumentVisible(!document.hidden);
+    document.addEventListener('visibilitychange', update);
+    return () => document.removeEventListener('visibilitychange', update);
+  }, []);
+  const [filesWatchActive, setFilesWatchActive] = React.useState(false);
+  const filesWatchPlan = React.useMemo(
+    () => buildFilesWatchPlan({ root, expandedPaths, selectedPath: selectedFilePath || null }),
+    [expandedPaths, root, selectedFilePath],
+  );
+  const filesWatchPlanRef = React.useRef(filesWatchPlan);
+  filesWatchPlanRef.current = filesWatchPlan;
+  const debouncedFilesWatchKey = useDebouncedValue(filesWatchPlan?.key ?? '', FILES_WATCH_SCOPE_DEBOUNCE_MS);
+  const selectedFileWatched = Boolean(filesWatchActive && filesWatchPlan?.scope.selectedFile);
+  // The slow safety net replaces directory polling only when every expanded
+  // directory is in the watch scope; one outside it keeps the normal poll.
+  const expandedDirectoriesWatched = Boolean(filesWatchPlan)
+    && expandedPaths.every((dirPath) => dirPath === root || Boolean(filesWatchPlan?.expandedPaths.includes(dirPath)));
+  const directoryPollMs = filesPollIntervals(filesWatchActive && expandedDirectoriesWatched).directoryMs;
+  const selectedFilePollMs = selectedFileWatched ? filesPollIntervals(true).selectedFileMs : FILES_SELECTED_FILE_POLL_MS;
+  const expandedPathsRef = React.useRef(expandedPaths);
+  expandedPathsRef.current = expandedPaths;
+  const selectedFileCheckRef = React.useRef<(() => void) | null>(null);
+  const filesWatchHandlersRef = React.useRef<FilesWatchHandlers | null>(null);
+  filesWatchHandlersRef.current = {
+    refreshDirectory: (dirPath) => {
+      opencodeClient.invalidateLocalDirectory(dirPath);
+      void refreshDirectory(dirPath);
+    },
+    refreshSelectedFile: () => selectedFileCheckRef.current?.(),
+    refreshAll: () => {
+      for (const dirPath of new Set([root, ...expandedPathsRef.current])) {
+        if (!dirPath) continue;
+        opencodeClient.invalidateLocalDirectory(dirPath);
+        void refreshDirectory(dirPath);
+      }
+      selectedFileCheckRef.current?.();
+    },
+    setWatching: setFilesWatchActive,
+  };
+
+  React.useEffect(() => {
+    const watch = files.watch;
+    const plan = filesWatchPlanRef.current;
+    if (!watch || !plan) {
+      setFilesWatchActive(false);
+      return;
+    }
+    if (!shouldSubscribeFilesWatch({ visible, documentVisible, hasWatch: true, hasPlan: true })) return;
+    // Subscribe only once the debounced scope has caught up with the live one.
+    if (plan.key !== debouncedFilesWatchKey) return;
+    return startFilesWatch({
+      watch: (scope, onEvent, signal) => watch(scope, onEvent, signal),
+      plan,
+      handlers: {
+        refreshDirectory: (dirPath) => filesWatchHandlersRef.current?.refreshDirectory(dirPath),
+        refreshSelectedFile: () => filesWatchHandlersRef.current?.refreshSelectedFile(),
+        refreshAll: () => filesWatchHandlersRef.current?.refreshAll(),
+        setWatching: (watching) => filesWatchHandlersRef.current?.setWatching(watching),
+      },
+    });
+  }, [debouncedFilesWatchKey, documentVisible, files, visible]);
+
   // Auto-refresh expanded directories when user returns to the tab
   React.useEffect(() => {
     if (!visible || !files.listDirectory) return;
@@ -1033,7 +1111,7 @@ export const FilesView: React.FC<{ visible?: boolean }> = ({ visible = true }) =
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [visible, expandedPaths, files.listDirectory, refreshDirectory]);
 
-  // Poll expanded directories for external changes
+  // Poll expanded directories for external changes (the safety net while watching)
   React.useEffect(() => {
     if (!visible || !files.listDirectory) return;
     if (expandedPaths.length === 0) return;
@@ -1044,11 +1122,12 @@ export const FilesView: React.FC<{ visible?: boolean }> = ({ visible = true }) =
         void refreshDirectory(dir);
       }
     };
-    refresh();
-    const interval = setInterval(refresh, 8000);
+    // A ready watch has already done its authoritative refresh.
+    if (!filesWatchActive) refresh();
+    const interval = setInterval(refresh, directoryPollMs);
 
     return () => clearInterval(interval);
-  }, [visible, expandedPaths, files.listDirectory, refreshDirectory]);
+  }, [visible, expandedPaths, files.listDirectory, refreshDirectory, filesWatchActive, directoryPollMs]);
 
   const handleDialogSubmit = React.useCallback(async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -1669,41 +1748,35 @@ export const FilesView: React.FC<{ visible?: boolean }> = ({ visible = true }) =
             return;
           }
 
-          const previousStat = lastLoadedFileStatRef.current;
-          if (!previousStat || previousStat.path !== selectedFile.path) {
-            lastLoadedFileStatRef.current = latestStat;
-            return;
-          }
-
-          const changedByMtime = latestStat.mtimeMs !== undefined
-            && previousStat.mtimeMs !== undefined
-            && latestStat.mtimeMs !== previousStat.mtimeMs;
-          const changedBySize = latestStat.size !== previousStat.size;
-
-          const changedByCtime = latestStat.ctimeMs !== undefined && previousStat.ctimeMs !== undefined
-            && latestStat.ctimeMs !== previousStat.ctimeMs;
-          if (!changedByMtime && !changedBySize && !changedByCtime) {
-            return;
-          }
-
-          if (isDirtyRef.current) {
+          const change = classifySelectedFileStat({
+            previous: lastLoadedFileStatRef.current,
+            latest: latestStat,
+            selectedPath: selectedFile.path,
+            isDirty: isDirtyRef.current,
+          });
+          if (change === 'unchanged' || change === 'dirty') {
             return;
           }
 
           lastLoadedFileStatRef.current = latestStat;
-          // Reset loadedFilePath so the effect above triggers a single reload.
-          setLoadedFilePath(null);
+          if (change === 'reload') {
+            // Reset loadedFilePath so the effect above triggers a single reload.
+            setLoadedFilePath(null);
+          }
         })
         .catch(() => {});
     };
+    // Watch hints for the selected slot re-stat through the same check.
+    selectedFileCheckRef.current = refresh;
     refresh();
-    const interval = window.setInterval(refresh, 2000);
+    const interval = window.setInterval(refresh, selectedFilePollMs);
 
     return () => {
       cancelled = true;
+      if (selectedFileCheckRef.current === refresh) selectedFileCheckRef.current = null;
       window.clearInterval(interval);
     };
-  }, [visible, loadedFilePath, readFileStat, selectedFile?.path, selectedFileReadOptions]);
+  }, [visible, loadedFilePath, readFileStat, selectedFile?.path, selectedFileReadOptions, selectedFilePollMs]);
 
   const discardAndContinue = React.useCallback(() => {
     const nextFile = pendingSelectFileRef.current;

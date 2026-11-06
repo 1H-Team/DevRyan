@@ -211,3 +211,26 @@ for (const directTrees of ['1', '0']) test(`list pages written before a transact
     if (previous === undefined) delete process.env.DEVRYAN_LEDGER_DIRECT_TREES; else process.env.DEVRYAN_LEDGER_DIRECT_TREES = previous;
   }
 });
+
+test('setList hands collect the exact staged page JSON, which lists back as the committed rows',async()=>{
+  const s=await store();
+  // Undefined fields are dropped by the stored JSON; a kept reference would still carry them.
+  const values=Array.from({length:300},(_,index)=>({path:`f${index}`,entry:{hash:String(index),whole:undefined},stamp:index%2?undefined:`s${index}`}));
+  const pages=[],counts=[];
+  const db=await s.open();
+  const bytes=await db.setList('bases/t/files',values,{collect:(data,rows)=>{pages.push(data);counts.push(rows);}});
+  const plain=await s.open();
+  expect(await plain.setList('bases/t/files',values)).toBe(bytes);
+  expect(pages.length).toBe(3);
+  expect(counts).toEqual([128,128,44]);
+  expect(bytes).toBe(values.reduce((sum,value)=>sum+Buffer.byteLength(JSON.stringify(value)),0));
+  await db.commit();
+  const listed=[];for await(const row of (await s.open()).list('bases/t/files'))listed.push(row);
+  const collected=pages.flatMap((page)=>JSON.parse(page));
+  expect(collected).toStrictEqual(listed);
+  expect(collected[1]).toStrictEqual({path:'f1',entry:{hash:'1'}});
+  expect(Object.hasOwn(values[1],'stamp')).toBe(true);
+  // The staged blob is the collected string byte for byte.
+  const committed=await s.open();
+  expect(JSON.stringify(await committed.get('bases/t/files/0000000000.json'))).toBe(pages[0]);
+});

@@ -4,8 +4,10 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createIntervalCorrectnessTurn, validateEventReconcileInterval, intervalCorrectnessDeadlineMs,
   intervalCorrectnessArmTimeoutMs, installInterruptAckBarrier, runCompiledIntervalCorrectness,
+  installManagedJobCancelAckBarrier,
   forwardIntervalCorrectnessHints, assertNativeDeadlineCompletion } from './package-interval-correctness.mjs';
 import { createOpenCodeClient } from '../../packages/web/server/lib/opencode/opencode-client/index.js';
+import { MANAGED_RECOVERY_INSTRUCTIONS } from '../../packages/orchestration-runtime/managed-recovery-instruction.js';
 
 const runFile = promisify(execFile);
 const request = messages => ({ body: { messages, tools: [{ function: { name: 'devryan_task' } }, { function: { name: 'write' } }] } });
@@ -73,11 +75,26 @@ test('cancel responder stays held until actual transport abort and refuses nonte
   signal.abort(Error('owned fixture abort')); await stopped;
   assert.equal(turn.inspect().childAborted, true); assert.equal(turn.inspect().parentReplies, 0);
   const waited = tool(turn.callIDs.waitID, 'aborted', 'dvr_task_fixture', {
-    task: adverseTask('aborted'), resultEnvelope: adverseEnvelope('aborted') });
+    task: { ...adverseTask('aborted'), stoppedRecoveryAvailable: true }, resultEnvelope: adverseEnvelope('aborted'),
+    instruction: MANAGED_RECOVERY_INSTRUCTIONS.manual });
+  const final = await turn.responder(request([user, started, waited]), signal.signal);
+  assert.equal(final.items[0].type, 'textDelta'); assert.equal(final.items[0].text, turn.expectedText);
+  assert.equal(turn.inspect().parentReplies, 1);
+  await assert.rejects(turn.responder(request([user, started, waited]), signal.signal), /repeated/);
+  await assert.rejects(turn.responder(request([user, started, { role: 'tool', tool_call_id: 'native_correctness-unit-cancel_abandon',
+    content: '{}' }]), signal.signal), /Stopped results must remain pending/);
+});
+
+test('deadline disposition binds the actual completed envelope and refuses identity loss or a follow-up', async () => {
+  const turn = createIntervalCorrectnessTurn('correctness-unit-disposition', 'deadline'), signal = new AbortController();
+  const user = { role: 'user', content: turn.marker }, started = tool(turn.callIDs.startID, 'running');
+  await turn.responder(request([user]), signal.signal); await turn.responder(request([user, started]), signal.signal);
+  const waited = tool(turn.callIDs.waitID, 'failed', 'dvr_task_fixture', {
+    task: adverseTask('failed'), resultEnvelope: adverseEnvelope('failed') });
   const abandon = await turn.responder(request([user, started, waited]), signal.signal);
   assert.equal(abandon.items[0].input.action, 'abandon');
   // Observed original native acknowledge response has no task property.
-  const result = { resultEnvelope: { ...adverseEnvelope('aborted'), action: 'abandon', acknowledgedAt: 123 }, followUpTask: null };
+  const result = { resultEnvelope: { ...adverseEnvelope('failed'), action: 'abandon', acknowledgedAt: 123 }, followUpTask: null };
   const disposed = { role: 'tool', tool_call_id: abandon.items[0].id, content: JSON.stringify(result) };
   assert.equal(Object.hasOwn(result, 'task'), false);
   for (const field of ['owner', 'envelopeId', 'taskId', 'rootSessionId', 'childSessionId', 'directory', 'status', 'action', 'acknowledgedAt', 'followUpTaskId']) {
@@ -153,6 +170,52 @@ test('actual frozen client receives original interrupt ACK only after the scoped
     assert.equal(responses[0].bodyUsed, true);
   } finally { release(); restore(); }
   assert.equal(nativeTransport.fetch, originalFetch); assert.equal(client.sessions.abort, originalAbort);
+});
+
+test('native job cancellation holds only its exact original settlement receipt and restores the constructor proxy', async () => {
+  const response = { aborted: true }, cancelled = [], release = Promise.withResolvers(), acknowledged = Promise.withResolvers();
+  const cancelTask = async input => { cancelled.push(input); return response; };
+  const nativeManagedJobs = { cancelTask };
+  let ackCalls = 0;
+  const restore = installManagedJobCancelAckBarrier({ nativeManagedJobs, taskID: 'dvr_task_fixture', sessionID: 'ses_child',
+    signal: new AbortController().signal, release: release.promise, afterAck: () => { ackCalls++; acknowledged.resolve(); } });
+  try {
+    let returned = false;
+    const input = { taskId: 'dvr_task_fixture', sessionID: 'ses_child', segments: [{ jobID: 'dvr_job_fixture' }] };
+    const pending = nativeManagedJobs.cancelTask(input).then(value => { returned = true; return value; });
+    await acknowledged.promise; assert.equal(returned, false); assert.deepEqual(cancelled, [input]);
+    for (const foreign of [{ ...input, taskId: 'dvr_task_other' }, { ...input, sessionID: 'ses_other' }]) {
+      assert.equal(await nativeManagedJobs.cancelTask(foreign), response);
+    }
+    assert.equal(ackCalls, 1); release.resolve(); assert.equal(await pending, response);
+  } finally { release.resolve(); restore(); }
+  assert.equal(nativeManagedJobs.cancelTask, cancelTask);
+});
+
+test('native cancellation refusal and a lost held receipt cannot manufacture settlement evidence', async () => {
+  const refusal = Error('original native cancellation refused'), input = { taskId: 'dvr_task_fixture', sessionID: 'ses_child' };
+  let ackCalls = 0;
+  for (const result of [refusal, { aborted: false }]) {
+    const nativeManagedJobs = { cancelTask: async () => { if (result instanceof Error) throw result; return result; } };
+    const restore = installManagedJobCancelAckBarrier({ nativeManagedJobs, taskID: input.taskId, sessionID: input.sessionID,
+      signal: new AbortController().signal, release: Promise.resolve(), afterAck: () => { ackCalls++; } });
+    try {
+      await assert.rejects(nativeManagedJobs.cancelTask(input), error => result instanceof Error
+        ? error === refusal : /did not confirm settlement/.test(error.message));
+      assert.equal(ackCalls, 0);
+    } finally { restore(); }
+  }
+  const signal = new AbortController(), acknowledged = Promise.withResolvers(), receipt = { aborted: true };
+  let originalCalls = 0;
+  const nativeManagedJobs = { cancelTask: async () => { originalCalls++; return receipt; } };
+  const restore = installManagedJobCancelAckBarrier({ nativeManagedJobs, taskID: input.taskId, sessionID: input.sessionID,
+    signal: signal.signal, release: new Promise(() => {}), afterAck: () => acknowledged.resolve() });
+  try {
+    const pending = nativeManagedJobs.cancelTask(input), lost = assert.rejects(pending,
+      error => error.name === 'AbortError' && error.cause === signal.signal.reason);
+    await acknowledged.promise; signal.abort(Error('held cancellation response lost')); await lost;
+    assert.equal(originalCalls, 1);
+  } finally { restore(); }
 });
 
 test('a failed original operation with a frozen client still cancels the SSE reader and releases its lock', { timeout: 5000 }, async t => {

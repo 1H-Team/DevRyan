@@ -2,6 +2,7 @@ import {isNativeOpenCodeVersion} from '../version-policy.js';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { isCatalogProviderIntegration, isProviderFormAnswer } from './native-provider-integrations.js';
+import {nativeManagedJobInput,NATIVE_MANAGED_JOB_PHASES} from './native-managed-job-input.js';
 
 export const NATIVE_PROCESS_PROTOCOL = 1;
 export const NATIVE_PROCESS_LIMITS = Object.freeze({ bootBytes: 4 * 1024 * 1024, messageBytes: 64 * 1024, recordBytes:32*1024*1024, inFlight: 32 });
@@ -142,6 +143,7 @@ export function parseNativeCommand(value) {
   if (!record(value) || value.protocol !== 1) throw invalid();
   string(value.id);
   const fields = { open: [], 'open-recovery': [], 'close-startup': [], quiesce: [], close: [], hold: ['sessionID'], release: ['sessionID'],
+    'managed-job-owned':['sessionID','permit','phase','input'],
     'wake-owned': ['sessionID', 'permit'], 'wake-deferred-owned': ['sessionID', 'permit'],
     'acquire-retention-owned':['sessionID','permit'],'archive-retention-owned':['sessionID','permit','at'],
     'queued-primary-idle-owned':['sessionID','messageID','permit'], 'inspect-removal-owned': ['sessionID', 'permit'], 'remove-leaf-owned': ['intentID', 'sessionID', 'permit'],
@@ -165,6 +167,10 @@ export function parseNativeCommand(value) {
   if (!Object.hasOwn(fields, value.action)) throw invalid();
   keys(value, ['protocol', 'id', 'action', ...fields[value.action]]);
   for (const field of fields[value.action]) {
+    if(value.action==='managed-job-owned'&&field==='phase'){if(!NATIVE_MANAGED_JOB_PHASES.includes(value.phase))throw invalid();continue;}
+    if(value.action==='managed-job-owned'&&field==='input'){
+      nativeManagedJobInput(value.input,value.phase);if(value.input.sessionID!==value.sessionID)throw invalid();continue;
+    }
     if(field==='messageID'&&value.action==='queued-primary-idle-owned'&&value.messageID===undefined)continue;
     if(field==='variant'){if(value.variant!==undefined)string(value.variant);continue;}
     if (field === 'sessionID') { if(value.action!=='cursor-readonly-key-owned'||value.sessionID!==undefined)sessionID(value[field]); }

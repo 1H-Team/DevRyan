@@ -300,6 +300,9 @@ export function createSessionExecutionHost(options) {
   let contextAssetLifetime = new AbortController();
   let controllerSettlement, terminalDrain, terminal = false;
   const nativeAdmissions = new Set(), unsettledAdmissions = new Set();
+  // Native control leases begun and not yet finished or settled, by token, with
+  // the acquisition lifetime that admitted them and their finish work.
+  const openControls = new Map();
   const acquireController = action => {
     const lifetime = contextAssetLifetime, signal = lifetime.signal;
     signal.throwIfAborted();
@@ -331,6 +334,10 @@ export function createSessionExecutionHost(options) {
     // Admission may be awaiting canonical reads before a handle exists. Abort
     // its captured lifetime and join it before taking the process snapshot.
     await Promise.allSettled([...nativeAdmissions]);
+    // The controller that would finish these control leases is gone, and its
+    // RPC handlers unwind on their own schedule. The replacement verifies the
+    // bundle at once, so settle every lease it began before returning.
+    await Promise.allSettled([...openControls.values()].filter(entry => entry.lifetime.aborted).map(settleOpenControl));
     const warming = ledgerWarm;
     warming?.controller.abort(Object.assign(new Error('ledger_warm_stopped'), { code: 'ledger_warm_stopped' }));
     const results = await Promise.allSettled([
@@ -1305,6 +1312,7 @@ export function createSessionExecutionHost(options) {
     if (!['begin', 'finish'].includes(action)
       || !invocation.input || typeof invocation.input !== 'object' || Array.isArray(invocation.input)
       || (action === 'finish' && !identity(token))) throw failure('invalid_capture_identity', 400);
+    const lifetime = contextAssetLifetime.signal;
     await assertNativeManagedAvailable();
     await nativeRecheck(invocation); signal?.throwIfAborted();
     const capture = { directory: invocation.directory, sessionID: invocation.sessionID,
@@ -1312,10 +1320,27 @@ export function createSessionExecutionHost(options) {
       argsDigest: createHash('sha256').update(JSON.stringify(invocation.input)).digest('hex'), action,
       ...(action === 'begin' && invocation.tool === 'devryan_task' && ['wait', 'wait_any', 'status'].includes(invocation.input.action) ? { reattach: true } : {}),
       ...(action === 'finish' ? { token } : {}) };
-    return activity([capture.sessionID], () => dispatchPlugin(capture, async () => {
+    const run = () => activity([capture.sessionID], () => dispatchPlugin(capture, async () => {
       await assertNativeManagedAvailable();
       await nativeRecheck(invocation); signal?.throwIfAborted();
     }, action === 'finish' ? trustedEffect(invocation) : undefined));
+    if (action === 'begin') {
+      const result = await run();
+      if (result?.reattached !== true && identity(result?.lease?.token)) {
+        openControls.set(result.lease.token, { invocation, token: result.lease.token, lifetime, work: new Set() });
+      }
+      return result;
+    }
+    const result = await controlWork(token, run);
+    openControls.delete(token);
+    return result;
+  };
+  // Work on an open control lease (its finish, or its failed-finish
+  // settlement), so controller settlement can join it.
+  const controlWork = (token, action) => {
+    const entry = openControls.get(token), work = Promise.resolve().then(action);
+    if (entry) { entry.work.add(work); void work.finally(() => entry.work.delete(work)).catch(() => {}); }
+    return work;
   };
   const nativeManagedControl = async input => {
     const { invocation } = input, origin = invocation?.authorization?.input?.provenance;
@@ -1329,7 +1354,29 @@ export function createSessionExecutionHost(options) {
   // Finish needs the tool's live permit; a timeout or Stop retires it first.
   // A ready control lease left behind blocks every later startup of the bundle.
   // Cancelling only narrows authority, so it needs no permit.
-  const settleFailedNativeControl = async ({ invocation, token }) => {
+  const settleFailedNativeControl = async input => {
+    await controlWork(input.token, () => cancelReadyControl(input));
+    openControls.delete(input.token);
+  };
+  // Controller settlement joins a finish or failed-finish already running, then
+  // cancels and cleans the lease if it is still ready. A finish that starts
+  // later finds it cancelled and changes nothing; a publication that won the
+  // ledger lock first queued its own cleanup, which settlement also joins.
+  // A failure is journaled and the entry kept: the startup gate still refuses
+  // the unsettled lease, and the next settlement retries it.
+  const settleOpenControl = async entry => {
+    try {
+      await Promise.allSettled([...entry.work]);
+      try { await cancelReadyControl(entry); }
+      catch (cause) { if (cause?.code !== 'execution_already_published') throw cause; }
+      await Promise.allSettled([...entry.work]);
+      openControls.delete(entry.token);
+    } catch (cause) {
+      try { options.onDiagnostic?.({ event: 'session_execution', ...leaseIdentity({ executionKind: 'control', scope: entry.invocation }),
+        phase: 'controller_settlement', state: 'failed', code: cause?.code || 'execution_cleanup_pending' }); } catch { /* Observer only. */ }
+    }
+  };
+  const cancelReadyControl = async ({ invocation, token }) => {
     if (!identity(token)) return;
     const lease = await runtime.leaseForCall({ directory: invocation.directory, sessionID: invocation.sessionID, callID: invocation.callID });
     if (lease?.token !== token || lease.state !== 'ready' || lease.executionKind !== 'control' || lease.preparation !== 'none'

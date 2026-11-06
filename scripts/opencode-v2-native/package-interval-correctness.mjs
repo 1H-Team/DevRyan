@@ -9,6 +9,7 @@ import { managedTaskTurn, assertWriterOutcome } from './assertions.mjs';
 import { waitFor } from './process-lanes.mjs';
 import { createV2MessageId } from '../../packages/web/server/lib/opencode/v2/admission.js';
 import { readSessionExecutionReceipt } from '../../packages/harness-runtime/lib/session-execution.js';
+import { MANAGED_RECOVERY_INSTRUCTIONS } from '../../packages/orchestration-runtime/managed-recovery-instruction.js';
 
 const runFile = promisify(execFile);
 export const intervalCorrectnessDeadlineMs = 15 * 60_000;
@@ -61,6 +62,24 @@ export function installInterruptAckBarrier({ nativeTransport, nativeOrigin, sess
   return () => { nativeTransport.fetch = originalFetch; };
 }
 
+/** The constructor proxy holds the exact native cancellation receipt after the
+ * original controller has interrupted and drained this task's child. */
+export function installManagedJobCancelAckBarrier({ nativeManagedJobs, taskID, sessionID, afterAck, release, signal }) {
+  assert.match(taskID, /^dvr_task_[A-Za-z0-9_-]+$/);
+  assert.match(sessionID, /^ses_[A-Za-z0-9]+$/);
+  const cancelTask = nativeManagedJobs.cancelTask;
+  assert.equal(typeof cancelTask, 'function');
+  nativeManagedJobs.cancelTask = async input => {
+    const result = await cancelTask(input);
+    if (input.taskId === taskID && input.sessionID === sessionID) {
+      assert.equal(result?.aborted, true, 'Original native managed child cancellation did not confirm settlement');
+      await afterAck(); await awaitGate(release, signal);
+    }
+    return result;
+  };
+  return () => { nativeManagedJobs.cancelTask = cancelTask; };
+}
+
 /** Only model output is fixture data. The actual start/wait/abandon results
  * and child interruption always come from the original product owners. */
 export function createIntervalCorrectnessTurn(caseID, mode) {
@@ -102,6 +121,7 @@ export function createIntervalCorrectnessTurn(caseID, mode) {
       }
       const disposed = messages.find(row => row.role === 'tool' && row.tool_call_id === abandonID);
       if (disposed) {
+        assert.notEqual(mode, 'cancel', 'Stopped results must remain pending for explicit user recovery');
         const result = JSON.parse(disposed.content);
         // Original acknowledge returns an envelope and optional follow-up, not
         // a task wrapper. Bind it to the exact terminal result already waited.
@@ -126,6 +146,13 @@ export function createIntervalCorrectnessTurn(caseID, mode) {
         }
         for (const field of ['rootSessionId', 'childSessionId', 'directory']) assert.ok(typeof result.task[field] === 'string' && result.task[field]);
         assert.equal(result.resultEnvelope.action, null); assert.equal(result.resultEnvelope.acknowledgedAt, null);
+        if (mode === 'cancel') {
+          assert.equal(result.task.stoppedRecoveryAvailable, true);
+          assert.equal(result.instruction, MANAGED_RECOVERY_INSTRUCTIONS.manual);
+          assert.equal(++waitResults, 1, 'Parent wait result repeated');
+          assert.equal(++parentReplies, 1, 'Stopped parent response repeated');
+          return { items: [{ type: 'textDelta', text: `observed ${expected} ${caseID}` }], reason: 'stop' };
+        }
         assert.equal(++waitResults, 1, 'Parent wait result repeated');
         waitedEnvelope = result.resultEnvelope;
         return { items: [{ type: 'toolCall', index: 0, id: abandonID, name: 'devryan_task',
@@ -227,12 +254,14 @@ export async function runCompiledIntervalCorrectness({ intervalMs, client, manag
         assert.equal(observations.some(row => row.phase === 'managed_event' && row.properties?.task?.taskId === before.taskId
           && terminal(row.properties.task)), false, 'Task published terminal state while child remained held');
         const acknowledged = gate(), releaseAck = gate();
-        restoreInterruptBarrier = installInterruptAckBarrier({ nativeTransport, nativeOrigin: new URL(client.events.url()).origin,
-          sessionID: before.childSessionId, release: releaseAck.promise, signal: abort.signal, afterAck: async () => {
+        const barrierOptions = { sessionID: before.childSessionId, release: releaseAck.promise, signal: abort.signal, afterAck: async () => {
             assert.equal(++ackCalls, 1);
             interrupted = await readInterruptedChild({ databasePath, environment, sessionID: before.childSessionId });
             acknowledged.release();
-          } });
+          } };
+        restoreInterruptBarrier = managed.nativeManagedJobs?.available() === true
+          ? installManagedJobCancelAckBarrier({ ...barrierOptions, nativeManagedJobs: managed.nativeManagedJobs, taskID: before.taskId })
+          : installInterruptAckBarrier({ ...barrierOptions, nativeTransport, nativeOrigin: new URL(client.events.url()).origin });
         let cancelling;
         try {
           if (mode === 'cancel') {
@@ -284,6 +313,11 @@ export async function runCompiledIntervalCorrectness({ intervalMs, client, manag
         assert.equal(task.taskId, before.taskId); assert.equal(task.status, mode === 'cancel' ? 'aborted' : 'failed');
         assert.equal(ackCalls, 1); assert.equal(turn.inspect().childRequests, 1); assert.equal(turn.inspect().childAborted, true);
         assert.equal(turn.inspect().waitResults, 1); assert.equal(turn.inspect().parentReplies, 1);
+        if (mode === 'cancel') {
+          assert.equal(final.resultEnvelopes[0].action, null); assert.equal(final.resultEnvelopes[0].acknowledgedAt, null);
+          assert.equal(page.records.flatMap(row => row.parts).some(part => part.type === 'tool'
+            && part.callID === `native_${caseID}_abandon`), false, 'Stopped result was acknowledged by the parent');
+        }
         if (mode === 'deadline') assert.equal(task.failureReason, `Managed task timed out at ${before.timeoutAt}`);
         const child = (await client.sessions.messages(task.childSessionId, {}, { directory })).records;
         assert.equal(child.filter(row => row.info.role === 'user').length, 1);

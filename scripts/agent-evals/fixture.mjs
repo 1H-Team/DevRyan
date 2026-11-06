@@ -195,7 +195,9 @@ const validateRunId = (runId) => {
   return runId;
 };
 
-export const allocateRunFiles = (fixtureRoot, runId) => {
+// `secondarySource` allocates one more run-owned source for cases that need
+// two disjoint owned files; without it the allocation is exactly two files.
+export const allocateRunFiles = (fixtureRoot, runId, options = {}) => {
   const root = normalizeFixtureRoot(fixtureRoot);
   const fixtureIdentity = captureDirectoryIdentity(root, 'Fixture root');
   const safeRunId = validateRunId(runId);
@@ -214,7 +216,10 @@ export const allocateRunFiles = (fixtureRoot, runId) => {
   const testRelativePath = `src/devryan-eval-${safeRunId}.test.mjs`;
   const sourcePath = path.join(root, sourceRelativePath);
   const testPath = path.join(root, testRelativePath);
-  for (const candidate of [sourcePath, testPath]) {
+  const secondarySourceRelativePath = options.secondarySource === true ? `src/devryan-eval-${safeRunId}.phase-b.ts` : null;
+  const secondarySourcePath = secondarySourceRelativePath ? path.join(root, secondarySourceRelativePath) : null;
+  const ownedPaths = [sourcePath, testPath, ...(secondarySourcePath ? [secondarySourcePath] : [])];
+  for (const candidate of ownedPaths) {
     if (pathEntryExists(candidate)) {
       throw new FixtureSafetyError(`Run-owned file already exists: ${path.basename(candidate)}`, {
         code: 'fixture_run_file_collision',
@@ -232,7 +237,8 @@ export const allocateRunFiles = (fixtureRoot, runId) => {
     testPath,
     sourceRelativePath,
     testRelativePath,
-    ownedPaths: Object.freeze([sourcePath, testPath]),
+    ...(secondarySourcePath ? { secondarySourcePath, secondarySourceRelativePath } : {}),
+    ownedPaths: Object.freeze(ownedPaths),
   });
 };
 

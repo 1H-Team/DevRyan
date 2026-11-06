@@ -2,8 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import {qaCache,qaHash,readQaPinnedFile,prepareLiveSetupMirror,parseQaSavedGraph} from './live-setup-mirror.mjs';
+import {qaCache,qaHash,readQaPinnedFile,prepareLiveSetupMirror,parseQaSavedGraph,removeQaLiveCredentials} from './live-setup-mirror.mjs';
 import {verifyQaNativeInput} from './native-profile-preparation.mjs';
+
+test('credential projection removes real keys but keeps the retired proxy placeholder the native configuration drops',()=>{
+  const projected=removeQaLiveCredentials({provider:{anthropic:{options:{baseURL:'http://127.0.0.1:3456',apiKey:'dummy'}},
+    openai:{options:{apiKey:'sk-real-value',baseURL:'https://example.test'}}}});
+  assert.deepEqual(projected.provider.anthropic.options,{baseURL:'http://127.0.0.1:3456',apiKey:'dummy'});
+  assert.deepEqual(projected.provider.openai.options,{baseURL:'https://example.test'});
+  assert.doesNotMatch(JSON.stringify(projected),/sk-real-value/);
+});
 
 test('saved graph rejects excess authority fields and malformed backup, Council and compaction shapes',()=>{
   const graph={agentSelections:{builder:{model:'openai/gpt-6.1-sol',variant:'medium',promptSha256:'a'.repeat(64)}},nativeBackupSelections:{slim:{runtimeChains:{builder:['xai/grok-4.6']},modelArrays:{builder:[{id:'xai/grok-4.6',variant:'high'}]},fallback:{enabled:true,maxRetries:2},effectiveExecutionVariant:'default'},devryan:{}},nativeCompactionSettings:{auto:true,keep:{tokens:1000}},councilMembers:[{providerId:'xai',modelId:'grok-4.6',variant:'high',agent:'builder',timeoutMs:180000}]};

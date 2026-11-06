@@ -5,6 +5,17 @@ import {nativeToolOutputLimits,PLAN_MODE_SYSTEM_INSTRUCTIONS} from '@devryan/orc
 import {withNativeProviderDeadlines} from './native-provider-deadlines.js';
 
 export const NATIVE_LOCATION_IDLE_TIMEOUT = '15 minutes';
+export const PRIMARY_PLAN_MODE_LEAD = 'For a turn explicitly requesting Plan mode, apply the following shared planning instructions:';
+
+/** A primary agent's effective system prompt: its own prompt followed by the
+ * shared Plan-mode instructions. Every other agent keeps its prompt as is. The
+ * native configuration, the Cursor prompt resolver and run-fingerprint
+ * attestation all use this one rule. */
+export function withPrimaryPlanModeInstructions(system, { name, mode, hidden, disabled } = {}) {
+  return mode === 'primary' && name !== 'plan' && !hidden && !disabled
+    ? [system, PRIMARY_PLAN_MODE_LEAD, PLAN_MODE_SYSTEM_INSTRUCTIONS].filter(Boolean).join('\n\n')
+    : system;
+}
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const fail = code => Object.assign(new Error(code), { code, status: 503 });
 const RETIRED_CLAUDE_PROVIDER_IDS = new Set(['anthropic', 'claude', 'anthropic-oauth', 'opencode-with-claude']);
@@ -207,10 +218,8 @@ export function translateNativeConfiguration({ legacy, agents, commands = {}, en
     if (agent.disable !== undefined || agent.disabled !== undefined) info.disabled = agent.disabled ?? agent.disable;
     if (agent.steps !== undefined || agent.maxSteps !== undefined) info.steps = agent.steps ?? agent.maxSteps;
     if (agent.prompt !== undefined) { if (typeof agent.prompt !== 'string') throw fail('native_agent_prompt_invalid'); info.system = agent.prompt; }
-    if (agent.mode === 'primary' && name !== 'plan' && !agent.hidden && !info.disabled) {
-      info.system = [info.system, 'For a turn explicitly requesting Plan mode, apply the following shared planning instructions:',
-        PLAN_MODE_SYSTEM_INSTRUCTIONS].filter(Boolean).join('\n\n');
-    }
+    const system = withPrimaryPlanModeInstructions(info.system, { name, mode: agent.mode, hidden: agent.hidden, disabled: info.disabled });
+    if (system !== undefined) info.system = system;
     if (agent.model !== undefined) info.model = nativeModelSelection(agent.model, agent.variant, Object.hasOwn(agent, 'variant'));
     else if (Object.hasOwn(agent, 'variant')) {
       if (legacy.model === undefined) throw fail('native_variant_without_model');

@@ -1152,6 +1152,11 @@ export function createPrimaryRecoveryController(options) {
       if (Number.isFinite(p.task.createdAt)) void observeProgress({ sessionID: id, kind: 'child-completed',
         identity: p.resultEnvelope.envelopeId, taskCreatedAt: p.task.createdAt });
     }
+    // A native job's result is reviewed and acknowledged after its root goes
+    // idle, so the idle read can still see the workspace barrier. Each later
+    // task change re-reads; without it the objective would stay `observing`.
+    if (canonicalDevRyanEventType(payload.type) === 'devryan:managed-task' && p.task?.rootSessionId === id
+      && l.phase === 'idle' && !TERMINAL.has(r.state)) return schedule(id);
     if (payload.type === 'message.part.delta' && typeof p.delta === 'string' && p.delta && p.messageID === r.stepID
       && ['text', 'reasoning'].includes(p.field)) {
       l.at = now();

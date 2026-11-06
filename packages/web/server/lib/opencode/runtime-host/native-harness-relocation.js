@@ -31,6 +31,7 @@ function fixedFiles(root,mutating){
  const renames=[];
  const relative=file=>{if(!containsPath(root,file)||path.normalize(file)!==file)fail('native_harness_write_scope_invalid');return path.relative(root,file).split(path.sep).join('/');};
  const writable=file=>{const name=relative(file);if(!mutating||!(name==='orchestration/ledger.json'
+  ||/^orchestration\/native-job-proofs\/[0-3][0-9a-f]\.json$/.test(name)
   ||/^harness\/(provider-recovery|context)\/[A-Za-z0-9_-]+\.json$/.test(name)
   ||/^harness\/evidence\/records\/[A-Za-z0-9_-]+\.json$/.test(name)))fail('native_harness_write_scope_invalid');};
  return {

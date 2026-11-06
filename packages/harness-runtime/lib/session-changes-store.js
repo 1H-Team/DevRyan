@@ -155,7 +155,10 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF,gitRunner,s
   };
   const set = (key, value) => {
     if (!validKey(key)) throw changeError('invalid_change_record');
-    const data = JSON.stringify(value);
+    setData(key, JSON.stringify(value));
+  };
+  // Stages `data`, a value's JSON, exactly as given (key already validated).
+  const setData = (key, data) => {
     if (Buffer.byteLength(data) > 512 * 1024) throw changeError('change_record_too_large', 503);
     if (!pending.has(key) && baseline.has(key) && baseline.get(key) === data) return;
     pending.set(key, data);
@@ -223,12 +226,21 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF,gitRunner,s
   // `absent`: the caller knows the prefix is new (a just-generated id), so
   // there is nothing to replace and no listing to read. `firstPage` leaves the
   // lower page names to the caller (a format page that must list first).
+  // `collect(data, rows)` receives each page's JSON exactly as it is staged,
+  // with its value count, so a caller can keep the stored form.
   // Returns the bytes of the values' JSON.
-  const setList = async (prefix, values, { absent = false, firstPage = 0 } = {}) => {
+  const setList = async (prefix, values, { absent = false, firstPage = 0, collect } = {}) => {
     if (!absent) for await (const { key } of entries(prefix)) remove(key);
     let index = firstPage;
     const totals = { bytes: 0 };
-    for await (const page of pagesOf(values, totals)) set(`${prefix}/${String(index++).padStart(10, '0')}.json`, page);
+    for await (const page of pagesOf(values, totals)) {
+      const name = `${prefix}/${String(index++).padStart(10, '0')}.json`;
+      if (!collect) { set(name, page); continue; }
+      if (!validKey(name)) throw changeError('invalid_change_record');
+      const data = JSON.stringify(page);
+      setData(name, data);
+      collect(data, page.length);
+    }
     return totals.bytes;
   };
   // setList in two steps: `writeList` writes the pages as objects ahead of a

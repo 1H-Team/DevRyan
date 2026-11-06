@@ -3,6 +3,7 @@ import { resolveClaudeExecutable } from '../runtime-host/claude-agent-host.js';
 import { isCatalogProviderIntegration } from '../runtime-host/native-provider-integrations.js';
 import { reviewedMcpConfiguration } from '../runtime-host/reviewed-mcp-configuration.js';
 import { unwrapData, unwrapList } from '../opencode-client/envelope.js';
+import { nativeRefusalCode } from '../opencode-client/errors.js';
 import { isSameOpenCodeRuntime, readOpenCodeRuntime, withOpenCodeRuntime } from '../opencode-client/runtime.js';
 
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -13,6 +14,14 @@ const bodyFields = (body, fields) => {
   if (!record(body) || Object.keys(body).some(field => !fields.includes(field))) throw fail('opencode_invalid_input', 400);
   return body;
 };
+// The refusal each OAuth owner answers for an attempt its current acquisition does not
+// hold. Disposing an instance closes its acquisition and cancels every attempt that
+// acquisition held, so for an attempt this facade started the refusal proves the attempt
+// is gone; nothing is left to cancel, poll or complete.
+const UNHELD_ATTEMPT_REFUSAL = { openai: 'native_openai_attempt_scope_required',
+  provider: 'native_provider_attempt_scope_required', mcp: 'native_mcp_attempt_scope_required' };
+const attemptGone = (value, error) => UNHELD_ATTEMPT_REFUSAL[value.scope.kind] !== undefined
+  && nativeRefusalCode(error) === UNHELD_ATTEMPT_REFUSAL[value.scope.kind];
 // Providers whose sign-in DevRyan pins to one OAuth method (null: none, OpenCode Console);
 // others offer every formless one. The controller applies the same policy.
 const providerOAuthMethod = { xai: 'device', openai: 'chatgpt-browser', opencode: null };
@@ -251,20 +260,31 @@ export function createNativeIntegrationFacade({ getNativeRuntimeOwner, getOpenCo
     if (value.selected.owner !== selected.owner || value.selected.snapshot !== selected.snapshot) throw fail('native_integration_grant_expired');
     return value;
   };
+  const forget = (key, value) => { if (attempts.get(key) === value) attempts.delete(key); };
   const complete = async (selected, key, options, input) => {
     const value = pending(selected, key);
     if (value.expiresAt <= now()) throw fail('native_integration_attempt_expired', 410);
     bodyFields(input, ['code']);
     if (input.code !== undefined && (typeof input.code !== 'string' || !input.code || input.code.length > 8192)) throw fail('opencode_invalid_input', 400);
     const path = `/api/integration/${segment(value.scope.integrationID)}/connect/oauth/${segment(value.attemptID)}/complete`;
-    await scopedRequest(selected, { ...value.scope, methodID: value.methodID, attemptID: value.attemptID }, `${value.scope.kind}.oauth.complete`, path, { ...options, timeoutMs: 180_000 }, 'POST', input);
+    try {
+      await scopedRequest(selected, { ...value.scope, methodID: value.methodID, attemptID: value.attemptID }, `${value.scope.kind}.oauth.complete`, path, { ...options, timeoutMs: 180_000 }, 'POST', input);
+    } catch (error) {
+      if (!attemptGone(value, error)) throw error;
+      forget(key, value); throw fail('native_integration_attempt_expired', 410);
+    }
     attempts.delete(key); return true;
+  };
+  const cancelNative = async (selected, value, options) => {
+    try {
+      await scopedRequest(selected, { ...value.scope, methodID: value.methodID, attemptID: value.attemptID }, `${value.scope.kind}.oauth.cancel`,
+        `/api/integration/${segment(value.scope.integrationID)}/connect/oauth/${segment(value.attemptID)}`, options, 'DELETE');
+    } catch (error) { if (!attemptGone(value, error)) throw error; }
   };
   const cancel = async (selected, key, options) => {
     const value = pending(selected, key);
-    await scopedRequest(selected, { ...value.scope, methodID: value.methodID, attemptID: value.attemptID }, `${value.scope.kind}.oauth.cancel`,
-      `/api/integration/${segment(value.scope.integrationID)}/connect/oauth/${segment(value.attemptID)}`, options, 'DELETE');
-    if (attempts.get(key) === value) attempts.delete(key);
+    await cancelNative(selected, value, options);
+    forget(key, value);
   };
   const credential = async (selected, id, options) => {
     if (!identifier(id) || typeof selected.owner.credentialMetadata !== 'function') throw unavailable('providerAuthentication');
@@ -328,9 +348,8 @@ export function createNativeIntegrationFacade({ getNativeRuntimeOwner, getOpenCo
       if (attempt) {
         check(attempt.selected);
         if (!attempt.attemptID) throw fail('native_integration_attempt_pending', 409);
-        await scopedRequest(selected, { ...attempt.scope, methodID: attempt.methodID, attemptID: attempt.attemptID }, 'mcp.oauth.cancel',
-          `/api/integration/${segment(attempt.scope.integrationID)}/connect/oauth/${segment(attempt.attemptID)}`, options, 'DELETE');
-        if (attempts.get(key) === attempt) attempts.delete(key);
+        await cancelNative(selected, attempt, options);
+        forget(key, attempt);
       }
       const { info } = await mcpInfo(selected, server, options);
       const records = info.connections.filter(connection => connection.type === 'credential' && connection.method === 'oauth');
@@ -389,8 +408,15 @@ export function createNativeIntegrationFacade({ getNativeRuntimeOwner, getOpenCo
       if (body.code !== undefined) {
         await complete(selected, key, options, { code: body.code }); return { status: 'complete' };
       }
-      const status = unwrapData(await scopedRequest(selected, { ...value.scope, methodID: value.methodID, attemptID: value.attemptID },
-        `${value.scope.kind}.oauth.status`, `/api/integration/${segment(providerID)}/connect/oauth/${segment(value.attemptID)}`, options));
+      let answer;
+      try {
+        answer = await scopedRequest(selected, { ...value.scope, methodID: value.methodID, attemptID: value.attemptID },
+          `${value.scope.kind}.oauth.status`, `/api/integration/${segment(providerID)}/connect/oauth/${segment(value.attemptID)}`, options);
+      } catch (error) {
+        if (!attemptGone(value, error)) throw error;
+        forget(key, value); return { status: 'expired' };
+      }
+      const status = unwrapData(answer);
       if (!record(status) || !['pending', 'complete', 'failed', 'expired'].includes(status.status)) throw fail('native_integration_invalid_response', 502);
       if (status.status !== 'pending') attempts.delete(key);
       return { status: status.status };

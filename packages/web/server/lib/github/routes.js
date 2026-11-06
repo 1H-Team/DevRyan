@@ -1,5 +1,6 @@
 import {
   classifyGitHubApiError,
+  createGitHubPermissionRefusalCache,
   githubRateLimitTracker,
 } from './rate-limit.js';
 import { getRequestPrincipal } from '../multi-user/request-context.js';
@@ -11,7 +12,6 @@ import {
 
 const PR_STATUS_CACHE_TTL_MS = 90_000;
 const PR_STATUS_CACHE_MAX_ENTRIES = 200;
-const prStatusCache = new Map();
 
 function getManagedAssignment(directory) {
   const authorization = getManagedBranchAuthorization(directory);
@@ -65,7 +65,7 @@ async function resolveRepoForRequest(octokit, directory, requestedRepo) {
   return allowed ? requestedRepo : null;
 }
 
-function setPrStatusCache(key, data, fetchedAt) {
+function setPrStatusCache(prStatusCache, key, entry) {
   // Evict oldest entry when cache exceeds max size
   if (prStatusCache.size >= PR_STATUS_CACHE_MAX_ENTRIES && !prStatusCache.has(key)) {
     const oldest = prStatusCache.entries().next().value;
@@ -73,12 +73,37 @@ function setPrStatusCache(key, data, fetchedAt) {
       prStatusCache.delete(oldest[0]);
     }
   }
-  prStatusCache.set(key, { data, fetchedAt });
+  prStatusCache.set(key, entry);
+}
+
+// PR status is cached per credential: a different account, a replaced
+// credential, the gh CLI fallback and "not connected" never share entries.
+function getPrStatusAccountKey(auth, octokit) {
+  if (auth) {
+    return `account:${auth.accountId || ''}:${auth.credentialRevision || ''}`;
+  }
+  return octokit ? 'gh-cli' : 'none';
+}
+
+// `canMerge` is GitHub permission AND the caller's live managed-branch
+// assignment, so a cached GitHub permission never outlives a revoked branch.
+function computeCanMerge(directory, githubPermissionGranted, pr) {
+  return Boolean(githubPermissionGranted && pr && isManagedBranchAssigned(directory, pr.base));
 }
 
 export function registerGitHubRoutes(app, dependencies = {}) {
   const loadGitHubLibraries = dependencies.loadGitHubLibraries ?? (() => import('./index.js'));
   const rateLimitTracker = dependencies.rateLimitTracker ?? githubRateLimitTracker;
+  const permissionRefusalCache = dependencies.permissionRefusalCache ?? createGitHubPermissionRefusalCache();
+  const prStatusCache = new Map();
+  let defaultGitHubClientSnapshot = null;
+  const loadGitHubClientSnapshot = async () => {
+    if (dependencies.getGitHubClientSnapshot) return dependencies.getGitHubClientSnapshot;
+    if (!defaultGitHubClientSnapshot) {
+      ({ getGitHubClientSnapshot: defaultGitHubClientSnapshot } = await import('./octokit.js'));
+    }
+    return defaultGitHubClientSnapshot;
+  };
   const resolvePullListRepoFromDirectory = dependencies.resolveGitHubRepoFromDirectory
     ?? (async (directory) => {
       const { resolveGitHubRepoFromDirectory } = await import('./index.js');
@@ -149,10 +174,14 @@ export function registerGitHubRoutes(app, dependencies = {}) {
           ? auth.accountId.trim()
           : (accounts.find((account) => account.current)?.id || accounts[0]?.id || null));
 
+      // Project explicit public fields so no stored credential detail (token,
+      // credential revision) can reach the client through an account entry.
       const normalizeAccounts = (liveUser = null, accountList = accounts) => accountList.map((account) => {
         const isActive = Boolean(activeAccountId) && account.id === activeAccountId;
         return {
-          ...account,
+          id: account.id,
+          user: account.user,
+          scope: account.scope,
           current: isActive,
           ...(isActive && liveUser ? { user: { ...(account.user || {}), ...liveUser } } : {}),
         };
@@ -438,11 +467,19 @@ export function registerGitHubRoutes(app, dependencies = {}) {
         return res.status(400).json({ error: 'directory and branch are required' });
       }
 
+      // One auth read: the cache key, the client and the permission check all
+      // use this exact credential, even if the stored account changes later.
+      const getGitHubClientSnapshot = await loadGitHubClientSnapshot();
+      const { auth, octokit } = getGitHubClientSnapshot();
+
       // Check cache (skip when force=true to allow manual refresh bypass)
-      const cacheKey = `${directory}::${branch}::${remote}`;
+      const cacheKey = `${directory}::${branch}::${remote}::${getPrStatusAccountKey(auth, octokit)}`;
       const cached = prStatusCache.get(cacheKey);
       if (!force && cached && Date.now() - cached.fetchedAt < PR_STATUS_CACHE_TTL_MS) {
-        return res.json(cached.data);
+        return res.json({
+          ...cached.data,
+          canMerge: computeCanMerge(directory, cached.githubPermissionGranted, cached.data.pr),
+        });
       }
 
       const activeCooldown = rateLimitTracker.getCooldown();
@@ -451,17 +488,18 @@ export function registerGitHubRoutes(app, dependencies = {}) {
       }
 
       // Intercept res.json to cache successful responses before sending
-      // Only caches responses with connected:true — error/edge-case responses are not cached
+      // Only caches responses with connected:true — error/edge-case responses are not cached.
+      // The GitHub-derived permission bit is stored beside the response so a
+      // cache hit can recompute canMerge against the live branch assignment.
+      let githubPermissionGranted = false;
       const originalJson = res.json.bind(res);
       res.json = (data) => {
         if (data && data.connected === true) {
-          setPrStatusCache(cacheKey, data, Date.now());
+          setPrStatusCache(prStatusCache, cacheKey, { data, fetchedAt: Date.now(), githubPermissionGranted });
         }
         return originalJson(data);
       };
 
-      const { getOctokitOrNull, getGitHubAuth } = await getGitHubLibraries();
-      const octokit = getOctokitOrNull();
       if (!octokit) {
         return res.json({ connected: false });
       }
@@ -562,27 +600,36 @@ export function registerGitHubRoutes(app, dependencies = {}) {
         }
       }
 
-      // Permission check (best-effort)
-      let canMerge = false;
-      try {
-        const auth = getGitHubAuth();
-        const username = auth?.user?.login;
-        if (username) {
-          const perm = await octokit.rest.repos.getCollaboratorPermissionLevel({
-            owner: searchRepo.owner,
-            repo: searchRepo.repo,
-            username,
-          });
-          const level = perm?.data?.permission;
-          canMerge = (level === 'admin' || level === 'maintain' || level === 'write')
-            && isManagedBranchAssigned(directory, prData.base?.ref);
+      // Permission check (best-effort). A stable GitHub refusal for this exact
+      // credential and repository is remembered, so it is not re-requested on
+      // every poll; a newly granted permission can stay hidden until it expires.
+      const username = auth?.user?.login;
+      if (username) {
+        const refusalIdentity = {
+          accountId: auth.accountId,
+          credentialRevision: auth.credentialRevision,
+          owner: searchRepo.owner,
+          repo: searchRepo.repo,
+        };
+        if (!permissionRefusalCache.has(refusalIdentity)) {
+          try {
+            const perm = await octokit.rest.repos.getCollaboratorPermissionLevel({
+              owner: searchRepo.owner,
+              repo: searchRepo.repo,
+              username,
+            });
+            const level = perm?.data?.permission;
+            githubPermissionGranted = level === 'admin' || level === 'maintain' || level === 'write';
+          } catch (error) {
+            if (classifyGitHubApiError(error) === 'rate_limit') {
+              throw error;
+            }
+            permissionRefusalCache.record(refusalIdentity, error);
+            githubPermissionGranted = false;
+          }
         }
-      } catch (error) {
-        if (classifyGitHubApiError(error) === 'rate_limit') {
-          throw error;
-        }
-        canMerge = false;
       }
+      const canMerge = computeCanMerge(directory, githubPermissionGranted, { base: prData.base?.ref });
 
        const isMerged = Boolean(prData.merged || prData.merged_at);
        const mergedState = isMerged ? 'merged' : (prData.state === 'closed' ? 'closed' : 'open');

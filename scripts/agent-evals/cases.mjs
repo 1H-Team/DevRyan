@@ -15,6 +15,7 @@ import {
 } from './fixture.mjs';
 import {
   gradeCaseOutcome,
+  gradeDelegationArm,
   gradeManagedTaskOutcome,
   gradeRoutingOutcome,
   gradeManagedIndependentFacts,
@@ -24,6 +25,14 @@ import {
 } from './graders.mjs';
 
 import { buildRoutingDefinition, isRoutingCase, routingFixture, ROUTING_CASES } from './routing-cases.mjs';
+import {
+  ADAPTIVE_CASES,
+  adaptiveFixture,
+  buildAdaptiveDefinition,
+  isAdaptiveCase,
+  isArmPinnedCase,
+  resolveDelegationArm,
+} from './adaptive-cases.mjs';
 
 const OUTPUT_LIMIT_BYTES = 4 * 1024 * 1024;
 
@@ -165,6 +174,7 @@ const isContextAnalysisCase = (caseId) => caseId === 'managed-independent';
 
 export const buildCaseDefinition = (caseId, runFiles) => {
   if (isRoutingCase(caseId)) return buildRoutingDefinition(caseId, runFiles);
+  if (isAdaptiveCase(caseId)) return buildAdaptiveDefinition(caseId, runFiles);
   if (caseId === 'inspect') {
     return {
       caseId,
@@ -251,6 +261,13 @@ export const prepareCaseFixture = (caseId, runFiles) => {
     writeRunOwnedFile(runFiles.sourcePath, baselineSource, runFiles);
     writeRunOwnedFile(runFiles.testPath, baselineTest, runFiles);
     return { baselineSource, baselineTest };
+  }
+  if (isAdaptiveCase(caseId)) {
+    const fixture = adaptiveFixture(caseId, runFiles);
+    writeRunOwnedFile(runFiles.sourcePath, fixture.source, runFiles);
+    writeRunOwnedFile(runFiles.testPath, fixture.test, runFiles);
+    if (fixture.secondarySource !== undefined) writeRunOwnedFile(runFiles.secondarySourcePath, fixture.secondarySource, runFiles);
+    return { baselineSource: fixture.source, baselineTest: fixture.test, baselineSecondarySource: fixture.secondarySource ?? null };
   }
   if (caseId === 'inspect') return { baselineSource: null, baselineTest: null };
   if (isContextAnalysisCase(caseId)) {
@@ -343,7 +360,7 @@ export const runNodeTests = (options = {}) => {
 };
 
 const filterOwnedPaths = (manifest, runFiles) => {
-  const owned = new Set([runFiles.sourceRelativePath, runFiles.testRelativePath]);
+  const owned = new Set([runFiles.sourceRelativePath, runFiles.testRelativePath, runFiles.secondarySourceRelativePath].filter(Boolean));
   return {
     tracked: (manifest?.tracked ?? []).filter((entry) => !owned.has(entry.path)),
     untracked: (manifest?.untracked ?? []).filter((entry) => !owned.has(entry.path)),
@@ -388,7 +405,8 @@ export const executeEvaluationCase = async (options = {}) => {
   };
   try {
     prepared = prepareCaseFixture(caseId, runFiles);
-    if (caseId !== 'inspect' && !isContextAnalysisCase(caseId) && !isOracleReviewCase(caseId) && !ROUTING_CASES[caseId]?.readOnly) {
+    if (caseId !== 'inspect' && !isContextAnalysisCase(caseId) && !isOracleReviewCase(caseId) && !ROUTING_CASES[caseId]?.readOnly
+      && !ADAPTIVE_CASES[caseId]?.readOnly) {
       baselineTest = await testRunner({
         fixtureRoot,
         testRelativePath: runFiles.testRelativePath,
@@ -430,6 +448,12 @@ export const executeEvaluationCase = async (options = {}) => {
     const ownedSourceChanged = readIfPresent(runFiles.sourcePath) !== prepared.baselineSource;
     const ownedTestChanged = readIfPresent(runFiles.testPath) !== prepared.baselineTest;
     const tools = Array.isArray(sessionResult?.tools) ? sessionResult.tools : [];
+    // Arm-pinned cases are graded only against the delegation arm their own
+    // run fingerprints attest; without that evidence the run is held.
+    const armPinned = isArmPinnedCase(caseId);
+    const delegation = armPinned
+      ? resolveDelegationArm(sessionResult?.harnessEvidence ?? sessionError?.harnessEvidence)
+      : null;
     const graders = [
       {
         id: `${caseId}.session`,
@@ -437,7 +461,7 @@ export const executeEvaluationCase = async (options = {}) => {
           && Boolean(sessionResult?.rootSessionId)
           && sessionResult?.terminalEvidence?.complete === true,
       },
-      gradeToolRequirements(caseId, tools),
+      ...(armPinned ? [] : [gradeToolRequirements(caseId, tools)]),
       gradeCaseOutcome({
         caseId,
         nonOwnedManifestMatches,
@@ -447,16 +471,22 @@ export const executeEvaluationCase = async (options = {}) => {
         finalTest,
       }),
     ];
-    if (caseId === 'managed-change' || caseId === 'managed-independent' || (isRoutingCase(caseId) && ROUTING_CASES[caseId].agent)) {
-      if (selection.agent === 'orchestrator') graders.push(gradeInitialAssessment(sessionResult ?? {}));
-      graders.push(gradeManagedTaskOutcome({
-        rootSessionId: sessionResult?.rootSessionId,
-        childSessionIds: sessionResult?.childSessionIds,
-        snapshot: sessionResult?.managedSnapshot,
-      }));
-    }
-    if (isRoutingCase(caseId)) {
-      graders.push(gradeRoutingOutcome({ caseId, rootSessionId: sessionResult?.rootSessionId, snapshot: sessionResult?.managedSnapshot, childSessionIds: sessionResult?.childSessionIds, evidence: sessionResult?.routingEvidence, sessionTree: sessionResult?.sessionTree }));
+    if (armPinned) {
+      // The visible-reasoning rule is arm-independent: keep it where it applied.
+      if (selection.agent === 'orchestrator' && ROUTING_CASES[caseId]?.agent) graders.push(gradeInitialAssessment(sessionResult ?? {}));
+      graders.push(...gradeDelegationArm({ caseId, arm: delegation.arm, tools, sessionResult: sessionResult ?? {} }));
+    } else {
+      if (caseId === 'managed-change' || caseId === 'managed-independent' || (isRoutingCase(caseId) && ROUTING_CASES[caseId].agent)) {
+        if (selection.agent === 'orchestrator') graders.push(gradeInitialAssessment(sessionResult ?? {}));
+        graders.push(gradeManagedTaskOutcome({
+          rootSessionId: sessionResult?.rootSessionId,
+          childSessionIds: sessionResult?.childSessionIds,
+          snapshot: sessionResult?.managedSnapshot,
+        }));
+      }
+      if (isRoutingCase(caseId)) {
+        graders.push(gradeRoutingOutcome({ caseId, rootSessionId: sessionResult?.rootSessionId, snapshot: sessionResult?.managedSnapshot, childSessionIds: sessionResult?.childSessionIds, evidence: sessionResult?.routingEvidence, sessionTree: sessionResult?.sessionTree }));
+      }
     }
     if (caseId === 'managed-independent') {
       graders.push(...gradeManagedIndependentFacts(sessionResult ?? {}));
@@ -468,15 +498,17 @@ export const executeEvaluationCase = async (options = {}) => {
         durationMs: sessionResult?.durationMs,
       }));
     }
+    const held = armPinned && delegation.arm === null;
     result = {
       caseId,
       repetition,
-      status: graders.every((grader) => grader.passed) ? 'passed' : 'failed',
+      status: held ? 'held' : graders.every((grader) => grader.passed) ? 'passed' : 'failed',
       durationMs: Number.isFinite(sessionResult?.durationMs)
         ? sessionResult.durationMs
         : Date.now() - startedAt,
       tools,
-      routingMetrics: isRoutingCase(caseId) ? sessionResult?.routingMetrics ?? null : null,
+      routingMetrics: isRoutingCase(caseId) || isAdaptiveCase(caseId) ? sessionResult?.routingMetrics ?? null : null,
+      ...(armPinned ? { delegationArm: delegation.arm } : {}),
       graders,
       harnessEvidence: sessionResult?.harnessEvidence ?? sessionError?.harnessEvidence ?? null,
       turnTiming: sessionResult?.turnTiming ?? { records: [] },
@@ -485,9 +517,9 @@ export const executeEvaluationCase = async (options = {}) => {
         sessionResult?.rootSessionId,
         ...(Array.isArray(sessionResult?.childSessionIds) ? sessionResult.childSessionIds : []),
       ].filter(Boolean),
-      ...(sessionError?.code ? { errorCode: sessionError.code } : {}),
+      ...(sessionError?.code ? { errorCode: sessionError.code } : held ? { errorCode: 'evaluation_arm_unattested' } : {}),
     };
-    if (result.status === 'failed') {
+    if (result.status !== 'passed') {
       if (sessionError?.cleanup) {
         sessionCleanup = sessionError.cleanup;
       } else if (sessionResult?.rootSessionId && options.client) {

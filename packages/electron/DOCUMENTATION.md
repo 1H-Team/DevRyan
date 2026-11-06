@@ -104,3 +104,16 @@ actual Chromium input, visual pulse, recording, observation and confined workers
 `scripts/qa/browser-live.mjs` exercises the full desktop/native-runtime path with
 local deterministic model decisions. See the inspection README for invocation
 and evidence-retention details.
+
+## Menu Copy
+
+`desktop-menu.mjs` owns Edit → Copy (Cmd+C). It acts on the focused document,
+`webContents.getFocusedWebContents()`, not the focused window. When nothing is
+focused or the contents are destroyed, it does nothing. Otherwise it calls
+`copy()` on those contents once. Only when they are the top-level contents of
+an app document window (`isAppDocumentWindow`: `__ocLabel` `main` or `main-N`,
+or `__ocMiniChat`, never `__ocBrowserPopout`) does it also dispatch one
+`devryan:menu-action` `copy` DOM event, plus its `openchamber:` alias, through
+`executeJavaScript`. Copy never uses the `devryan:emit` IPC path, so the app's
+copy handler runs once per press. Webview guests, browser popouts and DevTools
+get the native copy only. Other menu actions keep both IPC and DOM delivery.

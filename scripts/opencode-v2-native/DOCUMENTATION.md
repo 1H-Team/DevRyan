@@ -18,6 +18,55 @@ the canonical selected agent on every invocation, including reviewed setup.
 
 ## Compiled package lanes
 
+`node scripts/verify-opencode-v2-package.mjs --managed-jobs --artifact-root
+<fresh-native-artifact-directory>` qualifies native managed subagent Jobs through
+the actual compiled controller, scheduler, private ledger and writer. The four
+cases require the original durable Job row before child provider execution, one
+canonical parent input, exact segment/result receipt consumption, held-child
+cancellation with provider abort and parent result delivery, and controller death
+during a held child followed by durable interruption without a second child
+provider request or accepted input. The replacement consumes the retained native
+marker only after the terminal scheduler envelope is durable. The fourth case
+holds the child after the original and bounded retry activation responses are
+deliberately lost after real native activation;
+the task and parent dispatch barrier must remain active, then complete from the
+same child and segment without another original provider request. Model responses
+are loopback fixtures; the cancellation case has no executable child process.
+Two further cases, `compiled-managed-confined-cancel` and
+`compiled-managed-confined-restart`, give the child one real confined shell with
+a live background descendant writing inside its private view. Stop holds the
+exact native `cancelTask` receipt and, before releasing it, requires interrupted
+native idle (`assertNativeCancellationSettled`), a non-terminal task and no
+acknowledgement. The native interrupt leaves the shell running by design: the
+settled attempt's run cleanup must then cancel the lease with
+`stoppedBy: 'task_settled'`. Controller death must settle the process before the
+replacement publishes the interruption. Both require a supervisor receipt with
+`terminated`, `confined` and `cancelled`, the descendant gone, no published
+file, and a native acknowledgement that sees the terminal task with its
+completion still pending; completion is `done` only afterwards.
+Successful cases collect their exact result with a real later-Step `continue`
+before the parent ends. Native v2 returns a committed task/envelope/action receipt;
+the fixture checks the exact acknowledged envelope and review identity in the
+durable ledger. They leave no pending managed-result wake behind when
+the responder changes to the next case.
+The ordinary full package qualifier also runs these cases. The focused
+`managed-jobs-passed` result does not replace full package or live-provider QA.
+The compiled fixture supplies production's stopped-runtime reconciliation callback;
+its scheduler can settle interrupted tasks only through the controller owner's
+physical-stop proof. Failure-event observation closes before the deliberate kill
+and reconnects to the replacement controller before the next case.
+
+The existing `--managed-correctness` cancellation and nonrenewable deadline cases
+hold the constructor proxy's exact native `cancelTask` receipt after physical
+child interruption and drainage. Their original assertions still require no
+terminal task or parent wait result before that receipt is released. Older
+artifacts retain the scoped HTTP interrupt-response barrier; the public native
+client stays immutable in both paths.
+Cancellation leaves its stopped result undispositioned for explicit user recovery;
+the parent validates the returned manual-recovery instruction and finishes with
+one status sentence. The deadline case still exercises exact envelope-bound
+`abandon` and refuses lost identity or an unexpected follow-up.
+
 `node scripts/opencode-v2-native/package-managed-interval-lane.mjs --artifact-root
 <fresh-native-artifact-directory> --long-wait` runs one isolated compiled arm
 with a 65-second child hold. It requires one initial control claim/publication,
@@ -153,7 +202,7 @@ compaction, formatter subprocess, per-location read boundaries, and a tracked
 primary background notice resumed after controller replacement. The latter
 requires the original objective and saved selection, a fresh runtime handshake,
 exactly one canonical continuation, and another real writer after replacement.
-The separate parent-death fixture explicitly submits the root's canonical agent
+The separate parent-death fixture is prepared against the current controller (the managed-jobs lanes replace the original one earlier in the full run) and explicitly submits the root's canonical agent
 so its new probe prompt owns the primary objective. It waits for a real confined
 shell, kills only its owned Node process, and checks every observed descendant
 plus both real

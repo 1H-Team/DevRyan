@@ -27,7 +27,7 @@ export function projectPackageFailureEvent(block, receivedAt) {
       messageSha256: createHash('sha256').update(message).digest('hex'), messageBytes: Buffer.byteLength(message) } };
 }
 
-/** One observer for the actual initial compiled controller, sharing its SSE. */
+/** One observer bound to an actual compiled controller, sharing its SSE. */
 export async function capturePackageFailureEvents({ client, getAuthHeaders, controller, observations }) {
   const abort = new AbortController();
   const response = await fetch(client.events.url(), { headers: await getAuthHeaders(), signal: abort.signal });
@@ -56,7 +56,7 @@ export async function capturePackageFailureEvents({ client, getAuthHeaders, cont
   return { close: () => closing ??= (async () => {
     abort.abort(); await work;
     observations.push({ phase: 'native_failure_sse_coverage', controllerInstanceID: controller.instanceID,
-      scope: 'startup-through-interview', bytes, blocks, failures, ended, failed: Boolean(streamFailure) });
+      scope: 'controller-observation', bytes, blocks, failures, ended, failed: Boolean(streamFailure) });
     if (streamFailure) throw streamFailure;
   })() };
 }

@@ -52,6 +52,9 @@ import { DevShutdownMenuItem } from '@/components/layout/DevShutdownMenuItem';
 import { ProjectActionsButton } from '@/components/layout/ProjectActionsButton';
 import { OpenInAppButton } from '@/components/desktop/OpenInAppButton';
 import { ActiveSessionChangesBadge } from '@/components/session/ActiveSessionChangesBadge';
+import { SessionForkProvenance } from '@/components/session/SessionForkProvenance';
+import { formatSessionLifecycleLines, resolveSessionLifecyclePresentation } from '@/components/session/sessionLifecyclePresentation';
+import { readSessionLifecycle } from '@/sync/display-session';
 import { isDesktopShell, startDesktopWindowDrag } from '@/lib/desktop';
 import { useI18n } from '@/lib/i18n';
 import type { Session } from '@opencode-ai/sdk/v2/client';
@@ -478,6 +481,22 @@ export const Header: React.FC<HeaderProps> = ({
     });
   }, [activeProjectLabel, currentSession?.title, currentSessionFirstUserText, currentSessionId]);
 
+  // Native last-run facts and fork provenance are display metadata only:
+  // running state stays with `session.status`.
+  const currentSessionLifecycle = currentSession ? readSessionLifecycle(currentSession) : null;
+  const currentSessionIdleAt = currentSessionLifecycle?.idle;
+  const currentSessionBusyAt = currentSessionLifecycle?.busy;
+  const currentSessionOutcome = currentSessionLifecycle?.outcome;
+  const currentSessionFork = currentSessionLifecycle?.fork ?? null;
+  const currentSessionLifecycleLines = React.useMemo(() => formatSessionLifecycleLines(
+    resolveSessionLifecyclePresentation({
+      busy: currentSessionBusyAt,
+      idle: currentSessionIdleAt,
+      outcome: currentSessionOutcome,
+    }),
+    t,
+  ), [currentSessionBusyAt, currentSessionIdleAt, currentSessionOutcome, t]);
+
   const actionDirectory = React.useMemo(() => {
     return normalize(openDirectory || activeProject?.path || '');
   }, [activeProject?.path, openDirectory]);
@@ -853,9 +872,27 @@ export const Header: React.FC<HeaderProps> = ({
           ) : null}
           {!isNewSessionDraftOpen ? (
             <div className="flex min-w-0 items-center gap-2">
-              <div className="min-w-0 truncate text-left typography-ui-label text-[14px] font-normal leading-tight text-foreground">
-                {currentSessionTitle}
-              </div>
+              {currentSessionId && currentSessionLifecycleLines.length > 0 ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="min-w-0 truncate text-left typography-ui-label text-[14px] font-normal leading-tight text-foreground">
+                      {currentSessionTitle}
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {currentSessionLifecycleLines.map((line) => (
+                      <p key={line} className="typography-meta">{line}</p>
+                    ))}
+                  </TooltipContent>
+                </Tooltip>
+              ) : (
+                <div className="min-w-0 truncate text-left typography-ui-label text-[14px] font-normal leading-tight text-foreground">
+                  {currentSessionTitle}
+                </div>
+              )}
+              {currentSessionId && currentSessionFork ? (
+                <SessionForkProvenance fork={currentSessionFork} className="max-w-[16rem] shrink" />
+              ) : null}
               {currentSessionId ? (
                 <ActiveSessionChangesBadge
                   sessionId={currentSessionId}

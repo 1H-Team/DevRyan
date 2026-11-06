@@ -15,7 +15,7 @@
 - `packages/web/server/lib/github/api-client.js`: shared Octokit construction and timeout-aware GitHub fetch wrapper.
 - `packages/web/server/lib/github/repo/index.js`: remote URL parsing and directory-to-repo resolution.
 - `packages/web/server/lib/github/pr-status.js`: PR lookup across remotes, forks, and upstreams.
-- `packages/web/server/lib/github/rate-limit.js`: API failure classification and shared PR-status cooldown state.
+- `packages/web/server/lib/github/rate-limit.js`: API failure classification, shared PR-status cooldown state, and the GitHub permission-refusal cache factory.
 - `packages/web/server/index.js`: API route layer that calls this module.
 - `packages/web/src/api/github.ts`: web client wrapper for GitHub endpoints.
 
@@ -26,7 +26,7 @@
 - `getGitHubAuth()`: current auth entry.
 - `getGitHubAuthAccounts()`: all configured accounts.
 - `getGitHubAuthById(accountId)`: exact stored account, including its token, for server-only request scoping.
-- `setGitHubAuth({ accessToken, scope, tokenType, user, accountId })`: save or update account.
+- `setGitHubAuth({ accessToken, scope, tokenType, user, accountId })`: save or update account. Every save writes a fresh server-only `credentialRevision` (`randomUUID()`), including a save that replaces an account's credential within the same millisecond.
 - `activateGitHubAuth(accountId)`: switch active account.
 - `clearGitHubAuth()`: clear current account.
 - `getGitHubClientId()`: resolve client id.
@@ -42,6 +42,7 @@
 
 - `getOctokitOrNull()`: current Octokit or `null`.
 - `getOctokitForAccount(accountId)`: Octokit for one exact stored account, with no CLI/current-account fallback.
+- `getGitHubClientSnapshot()` (`octokit.js`): `{ auth, octokit }` from one auth read, with the same managed/standalone/gh CLI selection as `getOctokitOrNull()` (which delegates to it). `auth` is the stored entry the client was built from, or `null` for the gh CLI fallback and when not connected. Routes that key caches or permission checks by account use it so the identity and the client cannot come from different credentials.
 - `createGitHubApiClient({ auth })`: construct a timeout-protected client for a selected token.
 - Every GitHub HTTP request has a 15-second deadline. Device-flow requests use the same timeout wrapper.
 
@@ -57,6 +58,7 @@
 - Client ID resolution order: `DEVRYAN_GITHUB_CLIENT_ID` -> `settings.json` -> default.
 - Scope resolution order: `DEVRYAN_GITHUB_SCOPES` -> `settings.json` -> default.
 - Account id resolution order: explicit `accountId` -> user login -> user id -> token prefix.
+- `credentialRevision` identifies one exact stored credential. Normalization and account activation preserve it, and writes to other accounts never change it. Entries saved before revisions existed have none until their credential is next saved. It is server-only: `getGitHubAuthAccounts()`, `getAllGitHubAuthAccounts()` and the `accounts` of `GET /api/github/auth/status` (which projects explicit `id`, `user`, `scope`, `current` fields) never expose it.
 - Standalone credential selection remains the current stored account first,
   then optional `gh` CLI token when CLI credentials are enabled. OAuth
   completion creates its verification client through the same shared factory.
@@ -146,6 +148,9 @@
 - Closed or merged PR -> stop regular polling.
 - Hidden tab -> skip polling.
 - Non-forced refreshes use a `90s` TTL.
+- The server's `90s` PR-status cache is keyed by `directory::branch::remote` plus the credential (`account:<accountId>:<credentialRevision>`, `gh-cli`, or `none`), so another account, a replaced credential or the gh CLI fallback never receives a cached response. It stores the GitHub-derived permission bit beside the response and recomputes `canMerge` on every hit.
+- `canMerge` is always GitHub permission (`admin`, `maintain` or `write`) AND `isManagedBranchAssigned(directory, base)` for the live request principal, so a revoked managed branch takes effect on the next request, cached or not.
+- GitHub permission refusals: `createGitHubPermissionRefusalCache({ now, ttlMs = 300000, maxEntries = 1000 })` lives per `registerGitHubRoutes` instance (inject `permissionRefusalCache` in tests). It records only a `getCollaboratorPermissionLevel` failure with `error.status === 403` that `classifyGitHubApiError` reports as `forbidden`; 401, 404, rate limits, 5xx, transport errors and internal `BRANCH_NOT_ASSIGNED` 403s are never cached. The key is API origin (`https://api.github.com`), `accountId`, `credentialRevision`, and lowercased owner and repo; entries without a revision (legacy entries, gh CLI) bypass it. Expired entries are dropped on access and the oldest entry is evicted at capacity. The identity is captured from the request's auth snapshot before any GitHub call, so a late response from a replaced credential writes only under its old revision. Accepted tradeoff: a newly granted permission can stay hidden for up to 5 minutes.
 - A GitHub rate-limit response starts a server-side cooldown. Cached status can still be served, while uncached or forced PR-status work returns a stable `429` without making another GitHub request until the cooldown expires.
 
 ## Background tracking rules

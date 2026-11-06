@@ -5,8 +5,9 @@ import { readBundleRecoveryEnvelope } from './bundle-owned-continuations.js';
 import { git } from '../../../../../harness-runtime/lib/session-changes-git.js';
 import { openChangeStore, changeKey } from '../../../../../harness-runtime/lib/session-changes-store.js';
 import { isRebootRecoveredLease } from '../../../../../harness-runtime/lib/session-reboot-recovery.js';
-import { isTerminalManagedTaskStatus } from '../../../../../orchestration-runtime/contract.js';
+import { isTerminalManagedTaskStatus, validateManagedTaskRecord } from '../../../../../orchestration-runtime/contract.js';
 import { bundleFailure, containsPath, isRecord, readBundleJSON as readBundleJSONOwned, saveBundleJSON as saveBundleJSONOwned, sha256, canonicalJSON } from './bundle-migration-inventory.js';
+import { readBundleNativeJobProofs } from './bundle-native-job-proofs.js';
 
 export const PER_FILE_RECORD=/^(?:files|revisions|runs|bases)\//;
 const entries = async directory => fs.readdir(directory,{withFileTypes:true}).catch(error => {
@@ -427,23 +428,53 @@ export async function inspectBundleHarness(webDataDirectory,{projectMap=[],reloc
       ||sha256(canonicalJSON(await readBundleJSON(pin.file)))!==pin.receiptHash)throw bundleFailure('migration_pending_input_unsupported');
   }catch{throw bundleFailure('migration_pending_input_unsupported');}}
   if (verifiedFiles.size!==new Set(verifiedContinuations.map(proof=>proof.file).filter(Boolean)).size) throw bundleFailure('bundle_message_reference_lost');
-  const ledgerFile = path.join(webDataDirectory,'orchestration','ledger.json');
+  // A result envelope repeats its task's directory and the codec requires the
+  // two to match, so both move together; so do the directory-keyed objective checks.
+  const relocateLedgerDocument=async document=>{
+    const next={...document,tasks:await Promise.all(document.tasks.map(task => relocateRecord(task,projectMap,undefined,getRegistered)))};
+    for (const field of ['resultEnvelopes','objectiveChecks']) if (Array.isArray(document[field])) next[field]=await Promise.all(document[field].map(record => relocateRecord(record,projectMap,undefined,getRegistered)));
+    return next;
+  };
+  const ledgerFile = path.join(webDataDirectory,'orchestration','ledger.json'), ledgerTaskIDs=new Set();
   try {
     const ledger = await readBundleJSON(ledgerFile);
     if (!isRecord(ledger) || !Array.isArray(ledger.tasks)) throw bundleFailure('bundle_task_ledger_invalid');
     for (const task of ledger.tasks) {
+      if (isRecord(task) && typeof task.taskId === 'string') ledgerTaskIDs.add(task.taskId);
       if (!isRecord(task) || ['starting','running','cancelling'].includes(task.status)) throw bundleFailure('bundle_task_unsettled');
+      let canonicalTask = task;
+      if (Object.hasOwn(task, 'nativeJobSegments')) {
+        try { validateManagedTaskRecord(task); } catch { throw bundleFailure('bundle_managed_job_reference_invalid'); }
+        // These private RPC correlations are checked against the native Job table
+        // by bundle-managed-jobs, not against canonical conversation messages.
+        const { nativeJobSegments: _segments, ...canonical } = task;
+        canonicalTask = canonical;
+      }
       // A task's messages belong to its child session. A finished task is
       // history, so a session or message it names that is gone is reported.
       const owner=typeof task.childSessionId==='string' ? task.childSessionId : null;
       if (isTerminalManagedTaskStatus(task.status)) {
         const named={sessions:new Set(),messages:new Set(),messageScopes:new Map()};
-        references(task,named,owner);
+        references(canonicalTask,named,owner);
         tombstones.push({ledger:'orchestration',key:`tasks/${task.taskId}`,named});
-      } else { collected.at={ledger:'orchestration',key:`tasks/${task.taskId}`}; references(task,collected,owner); }
+      } else { collected.at={ledger:'orchestration',key:`tasks/${task.taskId}`}; references(canonicalTask,collected,owner); }
     }
-    if (relocate) await saveBundleJSON(ledgerFile,{...ledger,tasks:await Promise.all(ledger.tasks.map(task => relocateRecord(task,projectMap,undefined,getRegistered)))});
+    if (relocate) await saveBundleJSON(ledgerFile,await relocateLedgerDocument(ledger));
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  // Released native-job proofs are finished-task history kept beside the
+  // ledger. Their messages belong to the child session, like a ledger task;
+  // their private segment correlations are bundle-managed-jobs' to check. A
+  // copy of a task the ledger still holds is superseded by that record.
+  for (const {file,document,proofs} of await readBundleNativeJobProofs(webDataDirectory,readBundleJSON)) {
+    for (const {task} of proofs) {
+      if (ledgerTaskIDs.has(task.taskId)) continue;
+      const { nativeJobSegments: _segments, ...canonical } = task;
+      const named={sessions:new Set(),messages:new Set(),messageScopes:new Map()};
+      references(canonical,named,typeof task.childSessionId==='string' ? task.childSessionId : null);
+      tombstones.push({ledger:'orchestration',key:`native-job-proofs/${task.taskId}`,named});
+    }
+    if (relocate) await saveBundleJSON(file,await relocateLedgerDocument(document));
+  }
   for (const entry of await entries(path.join(webDataDirectory,'harness','evidence','records'))) {
     if(windows&&isWindowsPrivateControlName(entry.name))continue;
     if (!entry.isFile() || !entry.name.endsWith('.json')) { finding('bundle_evidence_layout_invalid','evidence',entry.name); continue; }

@@ -215,7 +215,50 @@ export interface ManagedTaskWaitingReason {
 
 export interface TaskPrerequisite { taskId: string; checkName: string; paths: string[]; contentHash: string }
 export function validateTaskPrerequisites(value?: TaskPrerequisite[]): TaskPrerequisite[];
+export type ManagedExecutionBackend = 'legacy-session' | 'native-job' | 'cursor';
+export interface ManagedNativeJobSegment {
+  jobID: string;
+  notificationID: string;
+  messageID: string;
+  state: 'reserved' | 'prepared' | 'accepted' | 'uncertain' | 'cancelled';
+  completion?: 'pending' | 'done';
+}
+export interface ManagedNativeJobScope {
+  taskId: string;
+  rootSessionId: string;
+  leaseToken: string;
+  directory: string;
+  sessionID: string;
+  providerId: string;
+  modelId: string;
+  agent: string;
+  variant: string | null;
+  jobID: string;
+  notificationID: string;
+  messageID: string;
+}
+export interface ManagedNativeJobVerification extends ManagedNativeJobScope {
+  phase: 'prepare' | 'activate' | 'cancelSegment' | 'cancelTask' | 'acknowledge';
+  envelopeID?: string;
+}
+export interface ManagedNativeJobInputDisposition extends ManagedNativeJobScope { envelopeID: string }
+export interface ManagedNativeJobs {
+  available(): boolean;
+  prepare(input: ManagedNativeJobScope): Promise<unknown>;
+  activate(input: ManagedNativeJobScope): Promise<unknown>;
+  cancelSegment(input: ManagedNativeJobScope): Promise<unknown>;
+  cancelTask(input: Omit<ManagedNativeJobScope, 'jobID' | 'notificationID' | 'messageID'> & { segments: Pick<ManagedNativeJobSegment, 'jobID' | 'notificationID' | 'messageID'>[] }): Promise<{ aborted: boolean }>;
+  acknowledge(input: ManagedNativeJobScope & { envelopeID: string }): Promise<unknown>;
+}
+export function validateManagedExecutionBackend(value?: ManagedExecutionBackend): ManagedExecutionBackend | undefined;
+export function validateManagedNativeJobSegments(value: unknown, backend?: ManagedExecutionBackend): void;
+export function isManagedNativeJobReceiptTransition(previous: ManagedTaskRecord, next: ManagedTaskRecord): boolean;
+export function requiresManagedNativeInputDisposition(task: ManagedTaskRecord): boolean;
+
 export interface ManagedTaskRecord {
+  /** Private transport selection; absence retains the legacy session executor. */
+  executionBackend?: ManagedExecutionBackend;
+  nativeJobSegments?: ManagedNativeJobSegment[];
   /** Private canonical steps/latch for the active accepted prompt; absent on legacy tasks. */
   primaryStepBudget?: { acceptedPrompts: { userMessageID: string; createdAt: number }[]; userMessageID: string | null; assistantMessageIDs: string[]; warningClaimedAt: number | null; maintenanceParents?: { parentID: string; userMessageID: string }[]; retiredPromptThrough?: number };
   taskPrerequisites?: TaskPrerequisite[];
@@ -434,6 +477,8 @@ export interface ManagedTaskExecutorResult {
 }
 
 export interface ManagedTaskControl {
+  reserveNativeJobSegment?(segment: Pick<ManagedNativeJobSegment, 'jobID' | 'notificationID' | 'messageID'>): Promise<boolean>;
+  recordNativeJobSegment?(messageID: string, state: ManagedNativeJobSegment['state']): Promise<boolean>;
   readPrimaryStepBudget?(): Promise<{ usedSteps: number; userMessageID: string | null; acceptedUserMessageIDs: string[] } | null>;
   assertPrerequisites?(): Promise<void>;
   /** Required for automatic transport recovery. Commits before dispatch and fences stale/cancelled leases. */
@@ -496,6 +541,9 @@ export interface ManagedOpenCodeTransport {
     prewarmExecutionView: boolean;
   }): Promise<{ id?: string } | null>;
   promptSession(input: ManagedOpenCodeTransportInput & {
+    rootSessionId?: string;
+    executionBackend?: ManagedExecutionBackend;
+    control?: ManagedTaskControl;
     taskId: string;
     leaseToken: string | null;
     signal?: AbortSignal;
@@ -505,7 +553,7 @@ export interface ManagedOpenCodeTransport {
     messageId?: string;
     prompt: string;
     tools?: Readonly<Record<string, boolean>>;
-  }): Promise<void>;
+  }): Promise<void | { state: 'native_admission_uncertain'; messageID: string }>;
   readSession(input: ManagedOpenCodeTransportInput): Promise<Record<string, unknown> | null>;
   readStatus(input: ManagedOpenCodeTransportInput): Promise<{
     type?: string;
@@ -537,7 +585,7 @@ export interface ManagedOpenCodeTransport {
     state?: 'pending' | 'accepted' | 'uncertain';
     durable?: boolean;
   } | null>;
-  abortSession(input: ManagedOpenCodeTransportInput & { taskId: string; leaseToken?: string | null; signal?: AbortSignal }): Promise<boolean>;
+  abortSession(input: ManagedOpenCodeTransportInput & { taskId: string; leaseToken?: string | null; executionBackend?: ManagedExecutionBackend; signal?: AbortSignal }): Promise<boolean>;
   deleteSession(input: ManagedOpenCodeTransportInput): Promise<boolean>;
 }
 
@@ -600,10 +648,29 @@ export interface ManagedOrchestrationState {
   resultEnvelopes: ManagedTaskResultEnvelope[];
 }
 
+/** Two lowercase hex digits, `00` to `3f`. */
+export type ManagedNativeJobProofShard = string;
+export interface ManagedNativeJobProof { task: ManagedTaskRecord; envelope: ManagedTaskResultEnvelope }
 export interface ManagedOrchestrationPersistence {
   load(): Promise<ManagedOrchestrationState | null>;
   save(state: ManagedOrchestrationState, observation?: { onProgress(input: { phase: string; state: 'started' | 'completed' }): void }): Promise<void>;
+  /** Optional, all three or none: released native-job proof shards. Each read is whole; an unreadable shard rejects. */
+  loadNativeJobProofShards?(): Promise<{ shard: ManagedNativeJobProofShard; value: unknown }[]>;
+  /** Atomically replaces one shard with `text`, serialized with `save`. */
+  putNativeJobProofShard?(shard: ManagedNativeJobProofShard, text: string): Promise<void>;
+  /** Atomically removes one shard; an absent shard is a no-op. */
+  removeNativeJobProofShard?(shard: ManagedNativeJobProofShard): Promise<void>;
 }
+export const MANAGED_NATIVE_JOB_PROOF_DIRECTORY: 'native-job-proofs';
+export const MANAGED_NATIVE_JOB_PROOF_SHARD_COUNT: number;
+export const MANAGED_NATIVE_JOB_PROOF_SHARD_MAX_BYTES: number;
+export const MANAGED_NATIVE_JOB_PROOF_SHARDS: readonly ManagedNativeJobProofShard[];
+export function isManagedNativeJobProofShard(value: unknown): value is ManagedNativeJobProofShard;
+export function managedNativeJobProofShard(taskId: string): ManagedNativeJobProofShard;
+export function managedNativeJobProofShardFile(shard: ManagedNativeJobProofShard): string;
+export function decodeManagedNativeJobProofShard(value: unknown, shard: ManagedNativeJobProofShard): ManagedNativeJobProof[];
+export function decodeManagedNativeJobProof(entry: ManagedNativeJobProof): ManagedNativeJobProof;
+export function encodeManagedNativeJobProofShard(shard: ManagedNativeJobProofShard, entries: readonly ManagedNativeJobProof[]): string;
 
 export interface ManagedPersistenceObservation {
   ownerID: string;
@@ -694,6 +761,8 @@ export type ManagedTaskLaunchAdmissionDecision =
     };
 
 export interface ManagedTaskSchedulerOptions {
+  resolveExecutionBackend?(input: ManagedTaskSubmitInput): ManagedExecutionBackend;
+  acknowledgeNativeJob?(input: { task: ManagedTaskRecord; segment: ManagedNativeJobSegment; envelopeID: string }): Promise<unknown>;
   inspectRequiredChecks?: (task: ManagedTaskRecord) => Promise<RequiredCheckCompletion>;
   verifyTaskPrerequisites?: (task: ManagedTaskRecord) => Promise<boolean>;
   /** Same verified host capability used by the managed executor. Defaults false. */
@@ -752,6 +821,10 @@ export interface ManagedTaskSchedulerDiagnostics {
   admissionRetryPending: boolean;
   compactedTaskCount: number;
   serializedBytes: number;
+  /** Released native-job proofs held in proof shards. */
+  nativeJobProofCount: number;
+  /** Shards whose cleanup after a disposal or compaction is still pending. */
+  pendingNativeJobProofShardCount: number;
   shutDown: boolean;
   persistence: { state: 'writing' | 'needs_attention'; phase: string; elapsedMs: number; idleMs: number } | null;
 }
@@ -827,6 +900,7 @@ export interface ManagedTaskScheduler {
   acceptPrimaryPrompt(input: { taskId: string; leaseToken: string; sessionId: string; directory: string; userMessageId: string; createdAt: number }): Promise<boolean | null>;
   recordPrimaryStep(input: { taskId: string; leaseToken: string; sessionId: string; directory: string; messageId: string; userMessageId: string; createdAt: number; maintenanceParentId?: string; historicalSteps?: { messageId: string; createdAt: number }[] }): Promise<{ usedSteps: number } | null>;
   claimPrimaryStepBudgetWarning(input: { taskId: string; leaseToken: string; sessionId: string; directory: string; messageId: string; callId: string }): Promise<{ notice: DesignerStepBudgetNotice } | null>;
+  /** Verified physical session disposal also releases retained adverse native input receipts. */
   discardObjectiveChecks(scope: { directory: string; sessions: string[] }, authorize: () => Promise<void>): Promise<{ removed: number }>;
   declareObjectiveChecks(scope: ObjectiveCheckScope, checks: RequiredCheck[], corrections: RequiredCheckCorrectionHistoryEntry[], authorize: () => Promise<void>): Promise<ObjectiveCheckRecord>;
   getObjectiveRequiredChecks(scope: ObjectiveCheckScope): ObjectiveCheckRecord | null;
@@ -925,6 +999,9 @@ export interface ManagedTaskScheduler {
   getTask(taskId: string): ManagedTaskRecord | null;
   verifyTaskDispatch(taskId: string, leaseToken: string | null): Promise<ManagedTaskRecord>;
   verifyTaskSettlement(taskId: string, leaseToken: string | null): Promise<ManagedTaskRecord>;
+  verifyNativeJobSegment(input: ManagedNativeJobVerification): Promise<{ task: ManagedTaskRecord; segment: ManagedNativeJobSegment; envelopeID?: string }>;
+  /** Constructor-only durable restored-input handoff; loads without activating work. */
+  readNativeJobInputDispositions(): Promise<ManagedNativeJobInputDisposition[]>;
   listTasks(options?: { rootSessionId?: string }): ManagedTaskRecord[];
   withNativePromptContext<A>(input:{rootSessionId:string;directory:string;authorize:()=>Promise<void>},action:(state:{tasks:ManagedTaskRecord[];envelopes:ManagedTaskResultEnvelope[];
     readBarrier(scope:{rootSessionId:string;directory:string}):Promise<{state:'clear'|'active'|'awaiting_acknowledgement';taskIds:string[]}>;
@@ -1172,12 +1249,22 @@ export function compactManagedOrchestrationState(state: ManagedOrchestrationStat
   maxTerminalRecords?: number;
   maxAgeMs?: number;
   maxBytes?: number;
+  expireUnacknowledged?: boolean;
+  assumeOwnedInput?: boolean;
 }): {
   state: ManagedOrchestrationState;
   removedTaskIds: string[];
+  /** Retained native proofs this pass shrank into tombstones. */
+  tombstonedTaskIds: string[];
+  /** Tombstones in `state`, new or inline, that are not hard-protected and may leave for a proof store. */
+  proofTaskIds: string[];
   serializedBytes: number;
   overLimit: boolean;
 };
+/** Fixed prompt of a retained native proof whose prompt and result bodies were released. */
+export const MANAGED_NATIVE_JOB_TOMBSTONE_PROMPT: 'Released native job proof';
+/** A retained native proof without bodies. It counts toward no record or byte cap. */
+export function isManagedNativeJobTombstone(task: ManagedTaskRecord): boolean;
 export function resolveProviderPromptTools(
   providerId: unknown,
   agent?: unknown,

@@ -1,5 +1,16 @@
+// An app document window renders the DevRyan UI itself: a main or additional
+// window (`__ocLabel` main or main-N) or Mini Chat. Browser popouts never qualify.
+export const isAppDocumentWindow = (browserWindow) => Boolean(
+  browserWindow
+  && !browserWindow.isDestroyed()
+  && browserWindow.__ocBrowserPopout !== true
+  && (browserWindow.__ocMiniChat === true
+    || browserWindow.__ocLabel === 'main'
+    || (typeof browserWindow.__ocLabel === 'string' && /^main-\d+$/.test(browserWindow.__ocLabel))),
+);
+
 export function createDesktopMenu({ BrowserWindow, Menu, app, shell, log, getMainWindow,
-  emitToWindow, emitToAllWindows, handleInvoke,
+  emitToWindow, emitToAllWindows, handleInvoke, getFocusedWebContents, isAppDocumentWindow: isAppDocument = isAppDocumentWindow,
   GITHUB_BUG_REPORT_URL, GITHUB_FEATURE_REQUEST_URL, DISCORD_INVITE_URL,
 }) {
   const dispatchDomEventToWindow = (browserWindow, event, detail) => {
@@ -40,9 +51,19 @@ export function createDesktopMenu({ BrowserWindow, Menu, app, shell, log, getMai
 
   const buildMacMenu = () => {
     const dispatchAction = (action) => dispatchMenuAction(action);
+    // Copy acts on the focused document: a webview guest, popout or DevTools
+    // gets the native copy only. The app's own copy handler runs once, through
+    // the DOM event, only when the focused document is an app window itself.
     const handleCopyAction = () => {
-      BrowserWindow.getFocusedWindow()?.webContents.copy();
-      dispatchAction('copy');
+      const focused = getFocusedWebContents();
+      if (!focused || focused.isDestroyed()) return;
+      focused.copy();
+      const appWindow = BrowserWindow.getAllWindows().find((browserWindow) => (
+        !browserWindow.isDestroyed()
+        && isAppDocument(browserWindow)
+        && browserWindow.webContents.id === focused.id
+      ));
+      if (appWindow) dispatchDomEventToWindow(appWindow, 'devryan:menu-action', 'copy');
     };
 
     return Menu.buildFromTemplate([

@@ -1,4 +1,5 @@
 import type { Session } from '@opencode-ai/sdk/v2';
+import { mergeSessionLifecycle } from './session-recency';
 
 export const SESSION_CHILDREN_FETCH_TTL_MS = 5000;
 export const SESSION_CHILDREN_FETCH_MAX_ENTRIES = 100;
@@ -223,7 +224,10 @@ export const mergeChildSessions = (
 
   let changed = false;
   for (const child of validChildren) {
-    const normalizedChild = withInheritedChildDirectory(child, byId, options);
+    const normalizedChild = mergeSessionLifecycle(
+      byId.get(child.id),
+      withInheritedChildDirectory(child, byId, options),
+    );
     if (byId.get(normalizedChild.id) !== normalizedChild) {
       changed = true;
     }

@@ -67,6 +67,11 @@ export async function recoverStoppedBundleManagedTasks({ controlRoot, launch, lo
       persistence: {
         load: async () => { await assertStopped(); return ledger.load(); },
         save: async (value, observation) => { await assertStopped(); return ledger.save(value, observation); },
+        // Released native-job proofs share the ledger's commit protocol; this
+        // settling scheduler loads and keeps them exactly as the runtime does.
+        loadNativeJobProofShards: async () => { await assertStopped(); return ledger.loadNativeJobProofShards(); },
+        putNativeJobProofShard: async (shard, text) => { await assertStopped(); return ledger.putNativeJobProofShard(shard, text); },
+        removeNativeJobProofShard: async (shard) => { await assertStopped(); return ledger.removeNativeJobProofShard(shard); },
       },
       logger,
     });

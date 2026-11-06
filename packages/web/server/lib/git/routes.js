@@ -1354,7 +1354,9 @@ export function registerGitRoutes(app, {
         return res.status(400).json({ error: 'directory parameter is required' });
       }
 
-      const branches = await getBranches(directory);
+      // Only exactly `remote=live` verifies remotes; anything else lists local refs.
+      const remote = req.query.remote === 'live' ? 'live' : 'local';
+      const branches = await getBranches(directory, { remote });
       res.json(branches);
     } catch (error) {
       console.error('Failed to get branches:', error);

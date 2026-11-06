@@ -1,6 +1,7 @@
 import { canonicalDevRyanEventType } from '@devryan/shared-runtime/lib/event-types.js';
 import crypto from 'node:crypto';
 import { resolveRecordSessionID, resolveSessionRelation } from './session-id.js';
+import { projectUsageObservation } from '../../shared-runtime/lib/usage-observation.js';
 
 const number = (value) => Number.isFinite(value) && value >= 0 ? value : null;
 const label = (value) => typeof value === 'string' && /^[a-zA-Z0-9_.:-]{1,160}$/.test(value)
@@ -10,9 +11,24 @@ const id = (value) => label(value) ?? (typeof value === 'string'
 const size = (value) => typeof value === 'string' ? Buffer.byteLength(value)
   : value?.type === 'blob' ? number(value.size) : null;
 const duration = (start, end) => number(start) !== null && number(end) !== null && end >= start ? end - start : null;
+// A root's objectives are its user turns. Their critical path is the union of
+// their intervals, so overlap is counted once; it is unknown until all settle.
+const objectiveCriticalPath = (intervals) => {
+  if (!intervals.length || intervals.includes(null)) return null;
+  let total = 0, end = -Infinity;
+  for (const [start, finish] of [...intervals].sort((a, b) => a[0] - b[0])) {
+    if (finish <= end) continue;
+    total += finish - Math.max(start, end);
+    end = finish;
+  }
+  return total;
+};
 const fields = ['taskId', 'rootSessionId', 'childSessionId', 'parentTaskId', 'priorTaskId', 'envelopeId',
   'messageID', 'assistantMessageID', 'userMessageID', 'callID', 'providerRequestID', 'recoveryLineageId',
   'recoveryMessageID', 'runtimeInstanceID'];
+// Helper agents and the usage purposes their direct provider calls record.
+const HELPER_AGENTS = new Set(['devryan-title', 'devryan-commit', 'devryan-pr', 'devryan-branch', 'devryan-notify']);
+const HELPER_PURPOSES = new Set(['title', 'commit', 'pr', 'other_helper']);
 const metadata = (source = {}) => Object.fromEntries([
   ...fields.flatMap((key) => source[key] == null ? [] : [[key, id(source[key])]]),
   ...['attempt', 'sequence', 'generation', 'cancellationGeneration', 'count', 'bytes', 'exitCode'].flatMap((key) =>
@@ -26,6 +42,8 @@ const metadata = (source = {}) => Object.fromEntries([
 export const createHarnessTraceCollector = ({ maxEvents = 100_000, maxBytes = 32 * 1024 * 1024 } = {}) => {
   if (!Number.isSafeInteger(maxEvents) || maxEvents < 1 || !Number.isSafeInteger(maxBytes) || maxBytes < 1024) throw new TypeError('Invalid trace bounds');
   const tasks = new Map(), tools = new Map(), usage = new Map(), relations = new Map(), turns = new Map(), objectives = new Map();
+  // Direct helper provider calls (no native session) and their usage records.
+  const helperCalls = new Map(), helperUsage = new Map(), helperSessions = new Set();
   const observations = [];
   let sourceRecords = 0, omittedRecords = 0, retainedBytes = 0;
   const keep = (map, key, value) => {
@@ -41,6 +59,23 @@ export const createHarnessTraceCollector = ({ maxEvents = 100_000, maxBytes = 32
     if (relation) keep(relations, id(relation.sessionID), id(relation.parentID));
     const sessionID = id(resolveRecordSessionID(record)) ?? 'runtime';
     const payload = record?.payload ?? {}, p = payload.properties ?? {}, at = number(record?.at);
+    if (record?.type === 'lifecycle' && record.event === 'session_title_generation') {
+      // A helper session is attributed to its title owner by the relation above.
+      if (payload.helperSessionID) helperSessions.add(id(payload.helperSessionID));
+      // A session-model attempt without a helper session is a direct provider
+      // call on the owner's behalf; its usage must arrive as a usage record.
+      else if (payload.stage === 'session_model' && sessionID !== 'runtime') {
+        keep(helperCalls, `${sessionID}:${number(payload.attempt) ?? 'unknown'}:${at ?? 'unknown'}`, { sessionID, purpose: 'title' });
+      }
+    }
+    const observation = projectUsageObservation(record?.usageObservation);
+    if (observation?.source === 'provider_request' && HELPER_PURPOSES.has(observation.purpose)) {
+      // Prefer the recorded originating root; otherwise the calling session.
+      keep(helperUsage, `${observation.source}:${observation.observationID}`, { root: id(observation.rootSessionID),
+        sessionID: id(observation.sessionID), purpose: observation.purpose,
+        input: observation.tokens.uncachedInput, output: observation.tokens.output,
+        cacheRead: observation.tokens.cacheRead, cacheWrite: observation.tokens.cacheWrite, cost: observation.cost.amount });
+    }
     if (canonicalDevRyanEventType(payload.type) === 'devryan:managed-task' && p.task) {
       const task = p.task, key = id(task.taskId), previous = tasks.get(key);
       if (previous && number(previous.sequence) > number(task.sequence)) return;
@@ -65,7 +100,7 @@ export const createHarnessTraceCollector = ({ maxEvents = 100_000, maxBytes = 32
       keep(usage, `${sessionID}:${id(info.id)}`, { sessionID, messageID: id(info.id), parentID: id(info.parentID),
         completedAt: number(info.time.completed), input: number(info.tokens?.input), output: number(info.tokens?.output),
         cacheRead: number(info.tokens?.cache?.read), cacheWrite: number(info.tokens?.cache?.write),
-        cost: number(info.cost), successful: !info.error });
+        cost: number(info.cost), successful: !info.error, helper: HELPER_AGENTS.has(info.agent) });
     }
     if (record?.type === 'lifecycle' && ['turn_started', 'turn_completed', 'turn_failed', 'turn_aborted'].includes(record.event)) {
       const key = `${sessionID}:${id(record.userMessageID)}`, previous = turns.get(key);
@@ -113,7 +148,8 @@ export const createHarnessTraceCollector = ({ maxEvents = 100_000, maxBytes = 32
       const root = rootOf(session);
       if (!summaries.has(root)) summaries.set(root, { rootSessionId: root, queueMs: [], firstResponseMs: [], toolExecutionMs: [],
         resultConsumptionMs: [], turnDurationMs: [], input: [], output: [], cacheRead: [], cacheWrite: [], cost: [],
-        toolVolumeBytes: [], workspaceBarrierMs: [], recoveryMs: [], objectiveDurations: [], retrievedPages: 0, projections: [] });
+        helperInput: [], helperOutput: [], toolVolumeBytes: [], workspaceBarrierMs: [], recoveryMs: [], objectiveDurations: [], retrievedPages: 0, projections: [],
+        attribution: { helperSessions: new Set(), helperCalls: 0, helperUsageRecords: 0 } });
       return summaries.get(root);
     };
     const slice = (name, category, session, lane, start, end, args) => {
@@ -140,19 +176,45 @@ export const createHarnessTraceCollector = ({ maxEvents = 100_000, maxBytes = 32
       values.toolVolumeBytes.push(tool.bytes);
       if (tool.retrievedPage) values.retrievedPages++;
     }
+    // Helper sessions: title helpers named by their owner's diagnostic, and any
+    // session whose assistant ran as a helper agent.
+    const helperSessionIDs = new Set(helperSessions);
+    for (const entry of usage.values()) if (entry.helper) helperSessionIDs.add(entry.sessionID);
+    const reportingSessions = new Set([...usage.values()].map((entry) => entry.sessionID));
     for (const entry of usage.values()) {
       const values = summary(entry.sessionID);
       for (const key of ['input', 'output', 'cacheRead', 'cacheWrite', 'cost']) values[key].push(entry[key]);
+      // A helper session reached through its recorded relation is part of this
+      // root's spending; without one it remains its own (unattributed) root.
+      if (helperSessionIDs.has(entry.sessionID)) {
+        if (rootOf(entry.sessionID) !== entry.sessionID) values.attribution.helperSessions.add(entry.sessionID);
+        values.helperInput.push(entry.input); values.helperOutput.push(entry.output);
+      }
     }
+    let unattributedHelperUsage = 0;
+    for (const entry of helperUsage.values()) {
+      // A helper session already reporting its own message usage is not counted twice.
+      if (entry.sessionID && helperSessionIDs.has(entry.sessionID) && reportingSessions.has(entry.sessionID)) continue;
+      const owner = entry.root ?? entry.sessionID;
+      if (!owner) { unattributedHelperUsage++; continue; }
+      const values = summary(owner);
+      for (const key of ['input', 'output', 'cacheRead', 'cacheWrite', 'cost']) values[key].push(entry[key]);
+      values.helperInput.push(entry.input); values.helperOutput.push(entry.output);
+      if (entry.purpose === 'title') values.attribution.helperUsageRecords++;
+    }
+    for (const call of helperCalls.values()) summary(call.sessionID).attribution.helperCalls++;
     for (const turn of turns.values()) {
       if (rootOf(turn.sessionID) === turn.sessionID) summary(turn.sessionID).turnDurationMs.push(
         slice('Native turn', 'turn', turn.sessionID, `turn:${turn.userMessageID}`, turn.startedAt, turn.settledAt, metadata(turn)));
     }
+    const objectiveIntervals = new Map();
     for (const objective of objectives.values()) {
       const values = summary(objective.sessionID);
       const elapsed = slice('Objective', 'objective', objective.sessionID, `objective:${objective.anchorID}`,
         objective.startedAt, objective.finishedAt, { anchorID: objective.anchorID, state: objective.state, generation: objective.generation });
       values.objectiveDurations.push({ anchorID: objective.anchorID, state: objective.state, durationMs: elapsed });
+      if (!objectiveIntervals.has(values.rootSessionId)) objectiveIntervals.set(values.rootSessionId, []);
+      objectiveIntervals.get(values.rootSessionId).push(elapsed === null ? null : [objective.startedAt, objective.finishedAt]);
       if (objective.recoveryStartedAt !== null) values.recoveryMs.push(slice('Recovery', 'recovery', objective.sessionID,
         `recovery:${objective.anchorID}`, objective.recoveryStartedAt, objective.finishedAt, { anchorID: objective.anchorID, generation: objective.generation }));
     }
@@ -175,12 +237,19 @@ export const createHarnessTraceCollector = ({ maxEvents = 100_000, maxBytes = 32
       total: values.some((v) => v !== null) ? values.reduce((sum, v) => sum + (v ?? 0), 0) : null });
     const roots = [...summaries.values()].map((value) => ({ rootSessionId: value.rootSessionId,
       measurements: Object.fromEntries(Object.entries(value).filter(([, entry]) => Array.isArray(entry) && entry !== value.projections && entry !== value.objectiveDurations).map(([key, entry]) => [key, aggregate(entry)])),
+      // Direct title calls the journal shows without a matching usage record
+      // are spending this root cannot account for.
+      attribution: { helperSessions: value.attribution.helperSessions.size, helperCalls: value.attribution.helperCalls,
+        helperUsageRecords: value.attribution.helperUsageRecords,
+        unattributedHelperCalls: Math.max(0, value.attribution.helperCalls - value.attribution.helperUsageRecords),
+        helperOnly: value.input.length > 0 && value.input.length === value.helperInput.length },
       retrievedPages: value.retrievedPages, projections: value.projections,
       objectiveDurations: value.objectiveDurations,
-      totalObjectiveCriticalPathMs: value.objectiveDurations.length === 1 ? value.objectiveDurations[0].durationMs : null, wireFirstResponseMs: null,
+      totalObjectiveCriticalPathMs: objectiveCriticalPath(objectiveIntervals.get(value.rootSessionId) ?? []), wireFirstResponseMs: null,
       costProvenance: value.cost.some((v) => v !== null) ? 'native-runtime-reported' : 'unavailable' }));
     return { traceEvents, displayTimeUnit: 'ms', metadata: { schemaVersion: 1, product: 'DevRyan', source: 'retained-journal',
       sourceRecords, omittedRecords, omittedEvents, incomplete: omittedRecords > 0 || omittedEvents > 0,
+      attribution: { schemaVersion: 1, unattributedHelperUsage },
       measurementScope: 'Observed durations may overlap; sums are not critical-path duration. Null means missing authoritative evidence.', roots } };
   };
   return { add, finish };

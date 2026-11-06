@@ -86,7 +86,7 @@ export const filterProtectedDotenvResponse = (requestPath, payload) => {
 };
 
 const DIRECT_PATH_ROUTES = [
-  /^\/fs\/(?:list|stat|read|raw|write|delete|rename|reveal)$/,
+  /^\/fs\/(?:list|stat|read|raw|write|delete|rename|reveal|watch)$/,
   /^\/file(?:\/content)?$/,
   /^\/git\/(?:diff|file-diff|revert|stage|unstage|apply-hunk|log|commit|commit-message(?:\/draft)?)$/,
 ];
@@ -99,6 +99,21 @@ const FILTERED_JSON_ROUTES = [
   /^\/git\/commit-files$/,
 ];
 
+// Repeated query keys (the file-watch scope) are read from the URL itself so
+// they do not depend on the query parser's array handling.
+const collectWatchScopePaths = (req) => {
+  let raw = '';
+  if (typeof req?.originalUrl === 'string' && req.originalUrl) raw = req.originalUrl;
+  else if (typeof req?.url === 'string') raw = req.url;
+  if (!raw.includes('?')) return [];
+  try {
+    const params = new URL(raw, 'http://127.0.0.1').searchParams;
+    return [...params.getAll('expanded'), ...params.getAll('selected')];
+  } catch {
+    return [];
+  }
+};
+
 const collectRequestedPaths = (req) => {
   const body = req?.body && typeof req.body === 'object' ? req.body : {};
   const query = req?.query && typeof req.query === 'object' ? req.query : {};
@@ -106,6 +121,7 @@ const collectRequestedPaths = (req) => {
   return [
     query.path,
     query.file,
+    ...collectWatchScopePaths(req),
     body.path,
     body.file,
     body.filePath,

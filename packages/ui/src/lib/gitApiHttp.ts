@@ -7,6 +7,7 @@ import type {
   GitFileDiffResponse,
   GetGitFileDiffOptions,
   GitBranch,
+  GitBranchListOptions,
   GitDeleteBranchPayload,
   GitDeleteRemoteBranchPayload,
   GitRemoveRemotePayload,
@@ -366,8 +367,10 @@ export async function isLinkedWorktree(directory: string): Promise<boolean> {
   return Boolean(data.linked);
 }
 
-export async function getGitBranches(directory: string): Promise<GitBranch> {
-  const response = await fetch(buildUrl(`${API_BASE}/branches`, directory));
+export async function getGitBranches(directory: string, options?: GitBranchListOptions): Promise<GitBranch> {
+  // Only a live listing sends the parameter; the server treats anything else as local.
+  const params = options?.remote === 'live' ? { remote: 'live' } : undefined;
+  const response = await fetch(buildUrl(`${API_BASE}/branches`, directory, params));
   if (!response.ok) {
     throw new Error(`Failed to get branches: ${response.statusText}`);
   }

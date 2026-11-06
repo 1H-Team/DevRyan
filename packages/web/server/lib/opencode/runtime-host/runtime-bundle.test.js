@@ -26,6 +26,9 @@ import { readStartupBundleUpgradeFailure, recordStartupBundleUpgradeFailure } fr
 import { TARGET_OPENCODE_VERSION } from '../version-policy.js';
 import { BUNDLE_DOCUMENT_MAX_BYTES } from './bundle-document-limits.js';
 import { readStartupFindings, recordStartupFindings, resetStartupFindings, startupNotices } from './startup-notices.js';
+import { NATIVE_MANAGED_SUBAGENT_JOB_CONTRACT } from './native-managed-job-contract.js';
+import { createManagedTaskRecord } from '../../../../../orchestration-runtime/contract.js';
+import { createManagedTaskResultEnvelope } from '../../../../../orchestration-runtime/result-envelope.js';
 
 // Every prepared row: inline immutable rows plus the hash-bound data sidecar.
 const preparedRows=async file=>{const manifest=JSON.parse(await fs.readFile(file,'utf8'));
@@ -151,6 +154,34 @@ test('verification hands its checked artifacts to the loader without extending t
  expect(verified.artifacts).toBe(artifacts);
  expect(Object.keys(verified)).toEqual(['descriptor','phase','integrity','admission']);
  expect(JSON.parse(JSON.stringify(verified))).not.toHaveProperty('artifacts');
+});
+
+test('actual bundle resume preserves native tasks without treating private job correlations as canonical message references',async()=>{
+ const f=await fixture({compiledContracts:['devryan.bundle.credential-owners/2',NATIVE_BUNDLE_CREDENTIAL_CONTRACT,NATIVE_MANAGED_SUBAGENT_JOB_CONTRACT]});
+ const baseline=await f.store.prepare(f.baselineInput),directory=baseline.projectMap[0].targetDirectory;
+ const tasks=['accepted','reserved'].map((state,index)=>({...createManagedTaskRecord({taskId:`dvr_task_native_resume_${index}`,idempotencyKey:`native-resume-${index}`,
+   rootSessionId:'ses_migration_root_1',childSessionId:'ses_migration_child_1',parentTaskId:null,priorTaskId:null,directory,
+   mode:'orchestrator',sequence:index+1,providerId:'sim',modelId:'m1',agent:'fixer',variant:null,label:'Native resume',prompt:'Owned fixture work',
+   attempt:1,executionKind:'start',createdAt:1,timeoutAt:null,executionBackend:'native-job',nativeJobSegments:[{
+     jobID:`dvr_job_${String(index+1).repeat(32)}`,notificationID:`msg_private_notice_${index}`,
+     messageID:index===0?'msg_ses_migration_child_1_user':'msg_never_accepted',state,completion:'done'}]}),status:'interrupted',finishedAt:2}));
+ const ledger={version:1,tasks,resultEnvelopes:tasks.map((task,index)=>createManagedTaskResultEnvelope(task,{sequence:index+1,createdAt:2,resumable:true}))};
+ tasks[0].nativeJobSegments[0].completion='pending';
+ const raw=resolveSqliteDriver().open(baseline.launch.opencodeDatabasePath),segment=tasks[0].nativeJobSegments[0];
+ try{raw.prepare('INSERT INTO job (notification_id,id,session_id,child_session_id,kind,title,status,recovery,time_created,time_updated) VALUES (?,?,?,?,?,?,?,?,?,?)')
+   .run(segment.notificationID,segment.jobID,tasks[0].rootSessionId,tasks[0].childSessionId,'subagent',tasks[0].taskId,'running',
+     JSON.stringify({kind:'subagent',parentSessionID:tasks[0].rootSessionId,childSessionID:tasks[0].childSessionId,agent:'fixer',description:tasks[0].taskId}),1,2);
+ }finally{raw.close();}
+ const ledgerFile=path.join(baseline.launch.webDataDirectory,'orchestration','ledger.json');
+ await fs.mkdir(path.dirname(ledgerFile),{recursive:true});const bytes=JSON.stringify(ledger);await fs.writeFile(ledgerFile,bytes);
+ resetStartupFindings();await expect(f.store.verify({bundleID:'baseline',phase:'resume'})).resolves.toMatchObject({integrity:'verified'});
+ expect(readStartupFindings().filter(row=>row.key?.startsWith('tasks/dvr_task_native_resume_'))).toEqual([]);
+ expect(await fs.readFile(ledgerFile,'utf8')).toBe(bytes);
+ tasks[0].canonicalRefs=[{type:'message',messageID:'msg_missing_canonical'}];
+ await fs.writeFile(ledgerFile,JSON.stringify(ledger));resetStartupFindings();await f.store.verify({bundleID:'baseline',phase:'resume'});
+ expect(readStartupFindings()).toContainEqual(expect.objectContaining({code:'bundle_message_reference_lost',key:'tasks/dvr_task_native_resume_0'}));
+ tasks[0].nativeJobSegments[0].foreignReference='msg_not_a_private_segment_field';await fs.writeFile(ledgerFile,JSON.stringify(ledger));
+ await expect(f.store.verify({bundleID:'baseline',phase:'resume'})).rejects.toMatchObject({code:'bundle_managed_job_reference_invalid'});
 });
 
 test('original store clone forwards captured native enrollment authority without copying the dedicated account',async()=>{
@@ -1245,6 +1276,29 @@ const coldLifecycle=async(u,binding)=>{
   assertAdmissionClosed:()=>assertNoLiveOwner(binding.descriptor.launch),stopProducers:async()=>{},drainStores:async()=>{},executionHost:{drain:async()=>{}},
   artifactDirectory:u.pinned,verifyArtifacts:verifyPinned,credentialProcess:async()=>{throw Error('a rebind rollback projects no credentials');}});
 };
+test('artifact rebind rollback refuses cold durable native work before changing selection or closing admission',async()=>{
+ const u=await startupUpgradeFixture('startup-managed-job-rebind-home');
+ await u.launch(u.pinned);const previous=u.binding();
+ const manifestPath=path.join(u.pinned,'native-bundle.json'),manifest=JSON.parse(await fs.readFile(manifestPath,'utf8'));
+ manifest.compiledContracts.push(NATIVE_MANAGED_SUBAGENT_JOB_CONTRACT);
+ await fs.writeFile(manifestPath,JSON.stringify(manifest)+'\n');
+ await repairPinnedController(u.pinned,'fixture native managed jobs controller\n');await u.launch(u.pinned);
+ const before=u.binding(),ledgerPath=path.join(before.descriptor.launch.webDataDirectory,'orchestration','ledger.json');
+ const bytes=await fs.readFile(ledgerPath).catch(error=>{if(error.code!=='ENOENT')throw error;return null;});
+ const ledger=bytes?JSON.parse(bytes.toString('utf8')):{version:1,tasks:[],resultEnvelopes:[]};
+ ledger.tasks.push(createManagedTaskRecord({taskId:'dvr_task_native_guard',idempotencyKey:'native-guard',rootSessionId:'ses_native_guard',
+   parentTaskId:null,priorTaskId:null,directory:before.descriptor.projectMap[0].targetDirectory,mode:'orchestrator',sequence:1,
+   providerId:'sim',modelId:'m1',agent:'fixer',variant:null,label:'Native rollback guard',prompt:'Fixture staged work',
+   attempt:1,executionKind:'start',createdAt:Date.now(),timeoutAt:null,executionBackend:'native-job',nativeJobSegments:[]}));
+ await fs.mkdir(path.dirname(ledgerPath),{recursive:true});await fs.writeFile(ledgerPath,JSON.stringify(ledger));
+ const lifecycle=await coldLifecycle(u,before);
+ await expect(lifecycle.rollback({expectedRevision:before.selection.revision})).rejects.toMatchObject({code:'bundle_managed_jobs_incompatible'});
+ expect(u.binding().selection).toEqual(before.selection);
+ expect((await lifecycle.inspect({checkUpdates:false})).state).toBe('ready');
+ if(bytes)await fs.writeFile(ledgerPath,bytes);else await fs.rm(ledgerPath);
+ expect(await lifecycle.rollback({expectedRevision:before.selection.revision})).toMatchObject({transition:'rollback'});
+ expect(u.binding().descriptor.launch.artifactManifestSha256).toBe(previous.descriptor.launch.artifactManifestSha256);
+},60_000);
 test('cold startup rebinds repaired host artifacts at the same OpenCode version in place once and retains rollback',async()=>{
  const u=await startupUpgradeFixture('startup-host-repair-home');
  await u.launch(u.pinned);const before=u.binding(),bundles=await fs.readdir(path.join(u.controlRoot,'bundles'));

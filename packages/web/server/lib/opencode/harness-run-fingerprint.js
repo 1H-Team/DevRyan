@@ -4,6 +4,10 @@ import { resolveHarnessPolicies, resolveNativeHarnessPolicies } from '@devryan/o
 import { readDuplicatePluginInventory, qualifyDuplicateOutputs, resolveDuplicateOutputPolicy, createRuntimeDigestReader, createRuntimeIdentityReader, duplicatePolicyVector } from './harness-duplicate-qualification.js';
 import { createHarnessToolManifestReader } from './harness-tool-manifest.js';
 import { resolveGen2OpenCodeClient } from './opencode-client-seam.js';
+import { describeAgentPromptTemplate, resolveAgentPromptPolicies } from './packaged-agents.js';
+import { withPrimaryPlanModeInstructions } from './runtime-host/native-configuration-data.js';
+import { parseMdFile } from './shared.js';
+import { HARNESS_BEHAVIOUR_SWITCHES, normalizeBehaviourSwitch } from '@devryan/harness-runtime/lib/sanitizer.js';
 
 const object = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const identifier = (value) => typeof value === 'string' && /^[a-zA-Z0-9@][a-zA-Z0-9_.@:/-]{0,255}$/.test(value)
@@ -11,6 +15,16 @@ const identifier = (value) => typeof value === 'string' && /^[a-zA-Z0-9@][a-zA-Z
 const hash = (value) => crypto.createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex');
 const ordered = (value) => Array.isArray(value) ? value.map(ordered) : object(value)
   ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, ordered(value[key])])) : value;
+const catalogAvailable = (toolManifest) => toolManifest?.availability?.catalog?.availability === 'available';
+// A reviewed skill's ID hashes its location folder and file path
+// (`runtime-host/reviewed-skills.js`), so identical skills get different IDs on hosts
+// at different paths. Catalog hashes replace each ID with one placeholder; the skill
+// tool lists every readable skill name beside its ID, so the skill set stays hashed.
+const REVIEWED_SKILL_ID = /\bdevryan-[0-9a-f]{32}\b/g;
+const hostNeutral = (value) => typeof value === 'string' ? value.replace(REVIEWED_SKILL_ID, 'devryan-<reviewed-skill>')
+  : Array.isArray(value) ? value.map(hostNeutral)
+    : object(value) ? Object.fromEntries(Object.entries(value).map(([key, item]) => [hostNeutral(key), hostNeutral(item)])) : value;
+const catalogEntry = ({ id, description, parameters }) => hostNeutral({ id, description, parameters });
 const sourceIdentity = (spec) => {
   if (Array.isArray(spec)) spec = spec[0];
   if (typeof spec !== 'string') return null;
@@ -18,10 +32,29 @@ const sourceIdentity = (spec) => {
   return { name: identifier(path.basename(clean)), sourceHash: hash(clean) };
 };
 
+const POLICY_KEYS = ['readOverlap', 'waitAny', 'compactResults', 'contextProjection', 'duplicateOutputs', 'adaptiveDelegation'];
+const POLICY_SOURCES = new Set(['runtime-projection', 'environment']);
+
+/** Allowlisted behaviour switches as closed enum values; never raw environment text. */
+export const captureBehaviourSwitches = (environment = {}) => Object.fromEntries(HARNESS_BEHAVIOUR_SWITCHES
+  .map((name) => [name, normalizeBehaviourSwitch(typeof environment[name] === 'string' ? environment[name] : undefined)]));
+
 export const buildHarnessRunFingerprint = ({ runtimeVersion, runtimeHash = null, selection = {}, agent, source, toolManifest,
-  configuredPlugins, observedPlugins, pluginInventory = null, policies = resolveHarnessPolicies() } = {}) => {
+  configuredPlugins, observedPlugins, pluginInventory = null, policies = resolveHarnessPolicies(), policySource = null,
+  template = null, switches = null } = {}) => {
   const roleBody = typeof agent?.prompt === 'string' ? agent.prompt : null;
-  const catalogAvailable = toolManifest?.availability?.catalog?.availability === 'available';
+  const policyValues = Object.fromEntries(POLICY_KEYS.map((key) => [key, policies[key] === true]));
+  // The host renders the unrendered role source for exactly these policies, then
+  // applies what the native configuration appends for this agent (a primary
+  // agent's Plan-mode instructions), so the attestation names its effective prompt.
+  const derivation = describeAgentPromptTemplate(template, policyValues, (body) => withPrimaryPlanModeInstructions(body, {
+    name: typeof agent?.name === 'string' ? agent.name : undefined, mode: agent?.mode, hidden: agent?.hidden === true,
+    disabled: agent?.disabled === true || agent?.disable === true }));
+  const catalogTools = catalogAvailable(toolManifest) && Array.isArray(toolManifest.tools) && toolManifest.tools.length <= 512
+    ? toolManifest.tools.filter((tool) => object(tool) && typeof tool.id === 'string' && tool.id.length > 0 && tool.id.length <= 256)
+      .map((tool) => ({ id: tool.id, contentHash: hash(ordered(catalogEntry(tool))) }))
+      .sort((a, b) => a.id.localeCompare(b.id)) : null;
+  const catalogIsAvailable = catalogAvailable(toolManifest);
   const idsAvailable = toolManifest?.availability?.ids?.availability === 'available';
   const plugins = Array.isArray(configuredPlugins) ? configuredPlugins.map(sourceIdentity).filter(Boolean) : null;
   const observed = Array.isArray(observedPlugins) ? observedPlugins.slice(0, 128).filter((entry) => object(entry)
@@ -39,12 +72,19 @@ export const buildHarnessRunFingerprint = ({ runtimeVersion, runtimeHash = null,
     role: { source: ['packaged', 'project', 'user', 'custom', 'runtime'].includes(source?.scope) ? source.scope : 'unknown',
       sourceHash: typeof source?.path === 'string' ? hash(source.path) : null,
       contentHash: roleBody === null ? null : hash(roleBody), bytes: roleBody === null ? null : Buffer.byteLength(roleBody) },
-    catalog: { contentHash: catalogAvailable ? hash(ordered((toolManifest.tools ?? []).map(({ id, description, parameters }) => ({ id, description, parameters })))) : null,
+    catalog: { contentHash: catalogIsAvailable ? hash(ordered((toolManifest.tools ?? []).map(catalogEntry))) : null,
       idsHash: idsAvailable ? hash([...toolManifest.toolIds].sort()) : null,
-      count: idsAvailable ? toolManifest.toolIds.length : null, availability: catalogAvailable ? 'available' : 'unavailable' },
+      count: idsAvailable ? toolManifest.toolIds.length : null, availability: catalogIsAvailable ? 'available' : 'unavailable',
+      // Per-tool hashes let a comparison confine a schema delta to declared tools.
+      tools: catalogTools },
     plugins: { configured: plugins, observed, inventory: pluginInventory, observation: observed?.length ? 'factory_report' : 'unavailable' },
-    policies: Object.fromEntries(['readOverlap', 'waitAny', 'compactResults', 'contextProjection', 'duplicateOutputs', 'adaptiveDelegation'].map((key) => [key, policies[key] === true])),
+    policies: policyValues,
+    policySource: POLICY_SOURCES.has(policySource) ? policySource : 'unknown',
+    switches: object(switches) ? Object.fromEntries(HARNESS_BEHAVIOUR_SWITCHES.map((name) => [name, normalizeBehaviourSwitch(
+      typeof switches[name] === 'string' && switches[name] !== 'unset' ? switches[name] : undefined)])) : null,
   };
+  // Rendered content stays checked evidence beside its derivation.
+  Object.assign(value.role, derivation ?? { templateHash: null, rendererHash: null, rendererVersion: null, templatePolicies: null, attestedContentHash: null });
   return { ...value, configurationHash: hash(ordered(value)) };
 };
 
@@ -80,24 +120,41 @@ export const createHarnessRunFingerprintReader = (options) => {
     const result = await viaClient((client) => client.catalog.agents({ directory }, { timeoutMs: 5000 }));
     return result.value;
   };
+  // The unrendered role source the host attests renders against. Unknown or
+  // unreadable sources stay null; they never borrow another role's template.
+  const readTemplate = options.readAgentTemplate ?? ((source) => typeof source?.path === 'string' && path.isAbsolute(source.path)
+    ? parseMdFile(source.path).body : null);
+  // Prompts and this fingerprint share the runtime projection once it exists.
+  const readPolicies = options.resolvePolicies ?? (() => {
+    const resolved = resolveAgentPromptPolicies();
+    return resolved.source === 'runtime-projection' ? resolved
+      : { source: 'environment', policies: { ...resolveNativeHarnessPolicies(options.environment ?? process.env), duplicateOutputs } };
+  });
   const read = async (context = {}) => {
     const key = JSON.stringify([context.directory, context.providerID, context.modelID, context.agent, context.variant]);
     if (pending.has(key)) return pending.get(key);
     const operation = (async () => {
-      const [health, config, agents, toolManifest] = await Promise.all([
-        readHealth(), readConfig(context.directory), readAgents(context.directory), manifests(context),
+      // Lazily read switches are captured at every read: run start and finish.
+      const switches = captureBehaviourSwitches(options.environment ?? process.env);
+      const [health, config, agents, toolManifest, currentRuntimeHash] = await Promise.all([
+        readHealth(), readConfig(context.directory), readAgents(context.directory), manifests(context), readRuntimeHash(),
       ]);
       const agent = Array.isArray(agents) ? agents.find((entry) => entry?.name === context.agent) : null;
-      let source;
+      let source, template = null;
       try { source = options.getAgentSource?.(context.agent, context.directory); } catch { /* unknown source */ }
+      try { template = readTemplate(source); } catch { /* unreadable template stays unattested */ }
       const inventory = inventories.get(context.directory);
       const currentInventory = inventory && Array.isArray(config?.plugin)
         && inventory.configurationHash === hash(JSON.stringify(config.plugin))
         && inventory.providerHash === hash(JSON.stringify(ordered(config.provider ?? {}))) ? inventory : null;
+      const resolved = readPolicies();
       return buildHarnessRunFingerprint({ runtimeVersion: health?.version,
-        runtimeHash: health?.version === qualifiedRuntimeVersion ? runtimeHash : null, selection: context, agent, source, toolManifest,
+        // The digest is re-validated against the binary's stat identity on
+        // every read, so it names the artifact running now.
+        runtimeHash: currentRuntimeHash ?? (health?.version === qualifiedRuntimeVersion ? runtimeHash : null),
+        selection: context, agent, source, toolManifest, template, switches,
         configuredPlugins: config?.plugin, pluginInventory: currentInventory, observedPlugins: observations.get(context.directory),
-        policies: { ...resolveNativeHarnessPolicies(options.environment ?? process.env), duplicateOutputs } });
+        policies: resolved.policies, policySource: resolved.source });
     })().finally(() => pending.delete(key));
     pending.set(key, operation);
     return operation;

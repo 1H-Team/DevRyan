@@ -66,6 +66,12 @@ import type { SessionIndicator } from './sessionIndicator';
 import { useSessionLifecycleStatus } from '@/hooks/useSessionLifecycleStatus';
 import { SessionStatusDot } from './SessionStatusDot';
 import {
+  SESSION_LIFECYCLE_SEPARATOR,
+  formatSessionLifecycleLines,
+  resolveSessionLifecyclePresentation,
+} from '../sessionLifecyclePresentation';
+import { readSessionLifecycle } from '@/sync/display-session';
+import {
   resolveMobileSessionSwipeAction,
   resolveSessionRowInteractionClasses,
 } from './sessionRowInteractionClasses';
@@ -145,6 +151,16 @@ const getNodeChildSignature = (node: SessionNode): string => {
     .join('|');
 };
 
+// Lifecycle facts never move `time.updated`, so they are compared on their own.
+const getSessionLifecycleRenderSignature = (session: Session): string => {
+  const lifecycle = readSessionLifecycle(session);
+  return [
+    lifecycle.busy ?? '',
+    lifecycle.idle ?? '',
+    lifecycle.outcome ?? '',
+  ].join(',');
+};
+
 const getSessionRenderSignature = (session: Session): string => {
   const record = session as Session & {
     agent?: string | null;
@@ -163,6 +179,7 @@ const getSessionRenderSignature = (session: Session): string => {
     record.parentID ?? '',
     record.agent ?? '',
     session.share?.url ?? '',
+    getSessionLifecycleRenderSignature(session),
   ].join('|');
 };
 
@@ -751,10 +768,20 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     isImplementingPlan: lifecycleStatus.kind === 'plan-executing',
   });
   const statusLabelKey = resolveSessionLeadingIndicatorLabelKey(statusPresentation);
+  // Last-run facts label only the idle ring; the working blink stays driven by
+  // `session.status` alone. Computed inline (cheap string work) because this
+  // runs after the editing-mode early return.
+  const idleLifecycleLines = statusPresentation.kind === 'idle'
+    ? formatSessionLifecycleLines(resolveSessionLifecyclePresentation(readSessionLifecycle(resolvedSession)), t)
+    : [];
+  const idleLifecycleLabel = idleLifecycleLines.length > 0
+    ? idleLifecycleLines.join(SESSION_LIFECYCLE_SEPARATOR)
+    : undefined;
   const statusMarker = (
     <SessionStatusDot
       presentation={statusPresentation}
       label={statusLabelKey ? t(statusLabelKey) : undefined}
+      idleLabel={idleLifecycleLabel}
     />
   );
   const handleSubsessionChevronPointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {

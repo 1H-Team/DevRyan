@@ -152,7 +152,8 @@ describe('vector 01: two-step tool turn', () => {
       expect(event.directory).toBe(DIR);
     }
     expect(diagnostics).toEqual([]);
-    expect(projector.takeReseedRequests()).toEqual([]);
+    // Execution lifecycle events coalesce into one session re-read (native owns busy/idle/outcome).
+    expect(projector.takeReseedRequests()).toEqual([{ kind: 'session', sessionID: SID, reason: 'execution_started' }]);
   });
 
   it('streams deltas on the text field with the ordinal part ids', () => {
@@ -476,7 +477,8 @@ describe('questions and permissions', () => {
     expect(link?.questions[0].external).toEqual({ url: 'https://example.invalid/connect', title: 'Open link' });
     expect(ofType(events, 'question.rejected')).toEqual([{ sessionID: SID, requestID: 'frm_000000000003normalized0000' }]);
     expect(diagnostics).toEqual([]);
-    expect(projector.takeReseedRequests()).toEqual([]);
+    // Execution lifecycle events coalesce into one session re-read (native owns busy/idle/outcome).
+    expect(projector.takeReseedRequests()).toEqual([{ kind: 'session', sessionID: SID, reason: 'execution_started' }]);
   });
 
   it('queues a cancel for a session link form with a refused scheme, never its URL', () => {
@@ -625,7 +627,8 @@ describe('compaction without an inbox item (auto, context overflow)', () => {
     expect(ofType(events, 'message.part.delta').filter((props) => props.messageID === `${id}:summary`)).toHaveLength(1);
     expect(ofType(events, 'session.compacted')).toEqual([{ sessionID: SID }]);
     expect(diagnostics).toEqual([]);
-    expect(projector.takeReseedRequests()).toEqual([]);
+    // Execution lifecycle events coalesce into one session re-read (native owns busy/idle/outcome).
+    expect(projector.takeReseedRequests()).toEqual([{ kind: 'session', sessionID: SID, reason: 'execution_started' }]);
     expectLiveEqualsRest(events, SID, autoPage(id));
   });
 
@@ -805,6 +808,7 @@ describe('vector 09: rename, metadata and no-op suppression', () => {
     replay(projector, framesOf('09-rename-metadata.json'));
     const forks = projector.takeReseedRequests();
     expect(forks).toEqual([
+      { kind: 'session', sessionID: S09, reason: 'execution_started' },
       { kind: 'session', sessionID: 'ses_fffffffffff2normalized0000', reason: 'forked' },
       { kind: 'session', sessionID: 'ses_fffffffffff1normalized0000', reason: 'forked' },
     ]);
@@ -1031,9 +1035,12 @@ describe('cold sessions, gaps and reseeds', () => {
     expect(status.directory).toBe('global');
     const info = rest('01-two-step-tool-turn.json', 'session.get').data;
     const seeded = projector.applySession(SID, info);
+    // The lifecycle event asked for the record, so the seed announces it (with native idle/outcome).
     expect(seeded.map((event) => [event.directory, event.payload.type, event.payload.properties.status])).toEqual([
+      [DIR, 'session.updated', undefined],
       [DIR, 'session.status', { type: 'busy' }],
     ]);
+    expect(seeded[0].payload.properties.info).toMatchObject({ outcome: 'succeeded', time: { idle: 1767225634000 } });
     expect(projector.sessionDirectory(SID)).toBe(DIR);
   });
 
@@ -1134,6 +1141,151 @@ describe('cold sessions, gaps and reseeds', () => {
   });
 });
 
+describe('native lifecycle facts (2.2.5 busy/idle/viewed/outcome)', () => {
+  const created = {
+    id: 'evt_lc_created', created: 100, type: 'session.created', location: { directory: DIR },
+    data: { sessionID: SID, slug: 'lc', version: '2', projectID: 'global', location: { directory: DIR }, subpath: '' },
+  };
+  /** The native record as `GET /api/session/:id` returns it; `time.updated` never moves for lifecycle facts. */
+  const nativeInfo = (time = {}, fields = {}) => ({
+    id: SID, projectID: 'global', location: { directory: DIR }, cost: 0,
+    tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+    time: { created: 100, updated: 100, ...time }, ...fields,
+  });
+  const LIFECYCLE = [
+    ['session.execution.started', {}, 'execution_started'],
+    ['session.execution.succeeded', {}, 'execution_succeeded'],
+    ['session.execution.failed', { error: { type: 'unknown', message: 'boom' } }, 'execution_failed'],
+    ['session.execution.interrupted', { reason: 'user' }, 'execution_interrupted'],
+    ['session.viewed', { idle: 150 }, 'viewed'],
+  ];
+  const envelope = (type, data, id, at = 200) => ({ id, created: at, type, location: { directory: DIR }, data: { sessionID: SID, ...data } });
+  const warm = () => {
+    const { projector, diagnostics } = createProjector();
+    projector.project(created);
+    // Seed the record once so later seeds compare against an emitted signature.
+    projector.applySession(SID, nativeInfo());
+    projector.takeReseedRequests();
+    return { projector, diagnostics };
+  };
+  const sessionRequests = (projector) => projector.takeReseedRequests().filter((request) => request.kind === 'session');
+
+  it.each(LIFECYCLE)('%s re-reads the record and never folds time.updated', (type, data, reason) => {
+    const { projector, diagnostics } = warm();
+    const events = [...projector.project(envelope(type, data, 'evt_lc_1'))];
+    expect(ofType(events, 'session.updated')).toEqual([]);
+    expect(diagnostics).toEqual([]);
+    expect(sessionRequests(projector)).toEqual([{ kind: 'session', sessionID: SID, reason }]);
+    // A second fact before the seed is taken coalesces into the same queued request.
+    projector.project(envelope(type, data, 'evt_lc_2'));
+    expect(projector.pendingReseedCount()).toBe(0);
+  });
+
+  it.each(LIFECYCLE)('%s makes an in-flight session seed stale; the requeued seed emits the lifecycle-only change', (type, data) => {
+    const { projector } = warm();
+    projector.project({ id: 'evt_lc_rename', created: 150, type: 'session.renamed', location: { directory: DIR }, data: { sessionID: SID, title: 'T' } });
+    projector.project(envelope('session.usage.updated', { cost: 0 }, 'evt_lc_usage'));
+    projector.applySession(SID, nativeInfo({ updated: 150 }, { title: 'T' }));
+    // Hand a seed to the hub, then let the lifecycle fact land while it is in flight.
+    projector.project(envelope('session.execution.started', {}, 'evt_lc_s0', 160));
+    const [inFlight] = projector.takeReseedRequests();
+    expect(projector.beginReseed(inFlight)).toBe(true);
+    projector.project(envelope(type, data, 'evt_lc_live'));
+    expect(projector.applySession(SID, nativeInfo({ updated: 150, busy: 160 }, { title: 'T' }), inFlight)).toBe(EMPTY_PROJECTION);
+    const [requeued] = projector.takeReseedRequests();
+    expect(requeued).toEqual({ kind: 'session', sessionID: SID, reason: 'stale_seed' });
+    expect(projector.beginReseed(requeued)).toBe(true);
+    const native = nativeInfo({ updated: 150, busy: 160, idle: 201, viewed: 150 }, { title: 'T', outcome: 'failed' });
+    const seeded = projector.applySession(SID, native, requeued);
+    expect(seeded.map((event) => event.payload.type)).toEqual(['session.updated']);
+    expect(seeded[0].payload.properties.info).toMatchObject({
+      title: 'T', outcome: 'failed', time: { created: 100, updated: 150, busy: 160, idle: 201, viewed: 150 },
+    });
+    // The same record again is a no-op.
+    projector.project(envelope(type, data, 'evt_lc_again'));
+    const [again] = projector.takeReseedRequests();
+    expect(projector.beginReseed(again)).toBe(true);
+    expect(projector.applySession(SID, native, again)).toBe(EMPTY_PROJECTION);
+  });
+
+  it('no longer drops session.viewed: it is projected as a re-read, without a diagnostic', () => {
+    const { projector, diagnostics } = warm();
+    expect(projector.project(envelope('session.viewed', { idle: 150 }, 'evt_v'))).toBe(EMPTY_PROJECTION);
+    expect(diagnostics).toEqual([]);
+    expect(sessionRequests(projector)).toEqual([{ kind: 'session', sessionID: SID, reason: 'viewed' }]);
+    expect(ofType(projector.applySession(SID, nativeInfo({ viewed: 150 })), 'session.updated')[0].info.time)
+      .toEqual({ created: 100, updated: 100, viewed: 150 });
+  });
+
+  it('keeps a shutdown interrupt silent: no session.error, and an unchanged record emits nothing', () => {
+    const { projector } = warm();
+    const settled = nativeInfo({ busy: 120, idle: 130 }, { outcome: 'succeeded' });
+    projector.project(envelope('session.execution.started', {}, 'evt_sd_0', 120));
+    projector.takeReseedRequests();
+    expect(types(projector.applySession(SID, settled))).toEqual(['session.updated']);
+    const events = [...projector.project(envelope('session.execution.interrupted', { reason: 'shutdown' }, 'evt_sd_1'))];
+    expect(ofType(events, 'session.error')).toEqual([]);
+    expect(projector.takeReseedRequests()).toEqual([
+      { kind: 'session', sessionID: SID, reason: 'execution_interrupted' },
+      { kind: 'active', reason: 'interrupted_shutdown' },
+    ]);
+    // Native leaves idle and outcome alone on shutdown, so the re-read changes nothing.
+    expect(projector.applySession(SID, settled)).toBe(EMPTY_PROJECTION);
+  });
+
+  it('never re-reads the record for text, reasoning or tool deltas', () => {
+    const { projector } = warm();
+    projector.project(envelope('session.execution.started', {}, 'evt_dl_0', 120));
+    projector.takeReseedRequests();
+    projector.applySession(SID, nativeInfo({ busy: 120 }));
+    const deltas = [
+      envelope('session.text.delta', { assistantMessageID: mid(2), ordinal: 0, delta: 'a' }, 'evt_dl_1'),
+      envelope('session.reasoning.delta', { assistantMessageID: mid(2), ordinal: 0, delta: 'b' }, 'evt_dl_2'),
+      envelope('session.tool.input.delta', { assistantMessageID: mid(2), id: 'call_x', delta: '{' }, 'evt_dl_3'),
+    ];
+    for (let index = 0; index < 20; index += 1) replay(projector, deltas.map((item) => ({ ...item, id: `${item.id}_${index}` })));
+    expect(sessionRequests(projector)).toEqual([]);
+  });
+
+  it('replays a lifecycle event idempotently (as after the hub dedupe window evicts its id)', () => {
+    const { projector } = warm();
+    const succeeded = envelope('session.execution.succeeded', {}, 'evt_rp_1', 300);
+    const native = nativeInfo({ busy: 200, idle: 300 }, { outcome: 'succeeded' });
+    const first = [...projector.project(succeeded)];
+    const [request] = projector.takeReseedRequests();
+    projector.beginReseed(request);
+    expect(types(projector.applySession(SID, native, request))).toEqual(['session.updated']);
+    const replayed = [...projector.project(succeeded)];
+    expect(types(replayed)).toEqual(types(first).filter((type) => type !== 'session.status'));
+    const [again] = projector.takeReseedRequests();
+    projector.beginReseed(again);
+    expect(projector.applySession(SID, native, again)).toBe(EMPTY_PROJECTION);
+  });
+
+  it('after a gap re-reads only sessions whose busy/idle state changed, so overflow cannot loop', () => {
+    const { projector } = warm();
+    const two = 'ses_ffffffffffffnormalized0002';
+    projector.project({ ...created, id: 'evt_lc_two', data: { ...created.data, sessionID: two, slug: 'two' } });
+    projector.project(envelope('session.execution.started', {}, 'evt_gap_0', 120));
+    projector.takeReseedRequests();
+    projector.handleGap('reseed_overflow');
+    // handleGap itself never asks for session seeds (it is the overflow handler).
+    expect(projector.takeReseedRequests()).toEqual([{ kind: 'active', reason: 'reseed_overflow' }]);
+    // SID finished and `two` started inside the gap.
+    const active = { data: { [two]: { type: 'running' } } };
+    projector.applyActive(active);
+    expect(sessionRequests(projector)).toEqual([
+      { kind: 'session', sessionID: SID, reason: 'active_lifecycle' },
+      { kind: 'session', sessionID: two, reason: 'active_lifecycle' },
+    ]);
+    // A repeated overflow reconciles to the same statuses and queues no further seeds.
+    projector.handleGap('reseed_overflow');
+    expect(projector.takeReseedRequests()).toEqual([{ kind: 'active', reason: 'reseed_overflow' }]);
+    projector.applyActive(active);
+    expect(sessionRequests(projector)).toEqual([]);
+  });
+});
+
 describe('caps and eviction', () => {
   const created = (sessionID) => ({
     id: `evt_${sessionID}`, created: 1, type: 'session.created', location: { directory: DIR },
@@ -1188,7 +1340,8 @@ describe('caps and eviction', () => {
     expect(projector.pendingReseedCount()).toBe(1);
     projector.project(execution('evt_2', 'ses_other'));
     expect(diagnostics).toEqual([{ code: EVENT_PROJECTOR_DIAGNOSTICS.reseedDropped, kind: 'session', reason: 'unknown_session' }]);
-    expect(projector.stats().reseedsDropped).toBe(3);
+    // Each attempt counts: per event the unknown-session seed, then the lifecycle seed (plus the second history).
+    expect(projector.stats().reseedsDropped).toBe(5);
     expect(projector.takeReseedRequests()).toEqual([{ kind: 'history', sessionID: SID, reason: 'cold_session' }]);
     // The dropped session seed is requested on the session's next event.
     projector.project({

@@ -12,9 +12,9 @@ import { restartSupabaseHost } from './supabase-host-restart.mjs';
 import {confirmRuntimeBundleResume} from './runtime-bundle-recovery.mjs';
 import { createRuntimeMemoryMonitor } from './runtime-memory-monitor.mjs';
 import { installRendererRecovery } from './renderer-recovery.mjs';
-import { createDesktopMenu } from './desktop-menu.mjs';
+import { createDesktopMenu, isAppDocumentWindow } from './desktop-menu.mjs';
 import { createNativeNotifications } from './native-notifications.mjs';
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, Notification, powerMonitor, powerSaveBlocker, session, shell, systemPreferences, WebContentsView } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, Notification, powerMonitor, powerSaveBlocker, session, shell, systemPreferences, webContents, WebContentsView } from 'electron';
 import contextMenu from 'electron-context-menu';
 import log from 'electron-log/main.js';
 import dgram from 'node:dgram';
@@ -1429,6 +1429,8 @@ const extractInitialDeepLinks = () =>
 
 const { buildMacMenu, dispatchMenuAction, dispatchCheckForUpdates, dispatchDomEventToWindow } = createDesktopMenu({
   BrowserWindow, Menu, app, shell, log, getMainWindow: () => state.mainWindow,
+  getFocusedWebContents: () => webContents.getFocusedWebContents(),
+  isAppDocumentWindow,
   emitToWindow: (...args) => emitToWindow(...args),
   emitToAllWindows: (...args) => emitToAllWindows(...args),
   handleInvoke: (...args) => handleInvoke(...args),

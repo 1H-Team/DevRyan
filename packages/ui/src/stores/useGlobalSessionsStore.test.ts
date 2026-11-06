@@ -331,6 +331,91 @@ describe('useGlobalSessionsStore snapshot helpers', () => {
     expect(useGlobalSessionsStore.getState().activeSessions).toEqual([newest]);
   });
 
+  test('takes newer lifecycle facts from a remote echo that is older by updated', () => {
+    const newest = {
+      ...session('remote-lifecycle', '/remote'),
+      title: 'Newest',
+      time: { created: 10, updated: 30, busy: 100 },
+    } as Session;
+    const olderButFinished = {
+      ...newest,
+      title: 'Older',
+      time: { created: 10, updated: 20, busy: 100, idle: 140 },
+      outcome: 'succeeded',
+    } as Session;
+
+    applyGlobalSessionLifecycleEvent({ type: 'upsert', session: newest });
+    expect(applyGlobalSessionLifecycleEvent({ type: 'upsert', session: olderButFinished })).toBe(true);
+    expect(useGlobalSessionsStore.getState().activeSessions).toEqual([{
+      ...newest,
+      time: { created: 10, updated: 30, busy: 100, idle: 140 },
+      outcome: 'succeeded',
+    } as Session]);
+
+    // Replaying the same older echo is now a no-op.
+    expect(applyGlobalSessionLifecycleEvent({ type: 'upsert', session: olderButFinished })).toBe(false);
+  });
+
+  test('keeps lifecycle facts across a snapshot that is newer by updated but lacks them', () => {
+    const finished = {
+      ...session('snapshot-lifecycle', '/remote'),
+      time: { created: 10, updated: 30, busy: 100, idle: 150, viewed: 160 },
+      outcome: 'failed',
+    } as Session;
+    const staleLifecycleSnapshot = {
+      ...session('snapshot-lifecycle', '/remote'),
+      title: 'Renamed',
+      time: { created: 10, updated: 40, busy: 100, viewed: 90 },
+    } as Session;
+    const expected = {
+      ...staleLifecycleSnapshot,
+      time: { created: 10, updated: 40, busy: 100, idle: 150, viewed: 160 },
+      outcome: 'failed',
+    } as Session;
+
+    const requestRevision = captureGlobalSessionLifecycleRevision();
+    applyGlobalSessionLifecycleEvent({ type: 'upsert', session: finished });
+    // The pending intent is not confirmed by a snapshot that lacks its facts.
+    useGlobalSessionsStore.getState().applySnapshot([staleLifecycleSnapshot], [], 'ready', undefined, requestRevision);
+    expect(useGlobalSessionsStore.getState().activeSessions).toEqual([expected]);
+
+    // A later complete snapshot drops the intent, and the store still never moves facts backwards.
+    useGlobalSessionsStore.getState().applySnapshot(
+      [staleLifecycleSnapshot],
+      [],
+      'ready',
+      undefined,
+      captureGlobalSessionLifecycleRevision(),
+    );
+    expect(useGlobalSessionsStore.getState().activeSessions).toEqual([expected]);
+  });
+
+  test('keeps the current idle pair on an equal idle and treats viewed as a watermark', () => {
+    const current = {
+      ...session('lifecycle-tie', '/repo'),
+      time: { created: 1, updated: 10, busy: 100, idle: 150, viewed: 500 },
+      outcome: 'succeeded',
+    } as Session;
+    useGlobalSessionsStore.getState().applySnapshot([current], []);
+    const before = useGlobalSessionsStore.getState().activeSessions;
+
+    useGlobalSessionsStore.getState().upsertSession({
+      ...current,
+      time: { created: 1, updated: 10, busy: 100, idle: 150, viewed: 400 },
+      outcome: 'interrupted',
+    } as Session);
+    expect(useGlobalSessionsStore.getState().activeSessions).toBe(before);
+
+    useGlobalSessionsStore.getState().upsertSession({
+      ...current,
+      time: { created: 1, updated: 9, viewed: 600 },
+    } as Session);
+    expect(useGlobalSessionsStore.getState().activeSessions[0]).toEqual({
+      ...current,
+      time: { created: 1, updated: 10, busy: 100, idle: 150, viewed: 600 },
+    } as Session);
+  });
+
   test('lets a newer direct mutation supersede a pending remote lifecycle overlay', () => {
     const remote = {
       ...session('remote-then-local', '/remote'),

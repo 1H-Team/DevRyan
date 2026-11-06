@@ -5,7 +5,17 @@ import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { fileURLToPath } from 'node:url';
 
-import { createManagedTaskRecord } from '@devryan/orchestration-runtime';
+import {
+  MANAGED_NATIVE_JOB_PROOF_DIRECTORY,
+  MANAGED_NATIVE_JOB_PROOF_SHARDS,
+  MANAGED_NATIVE_JOB_PROOF_SHARD_MAX_BYTES,
+  MANAGED_NATIVE_JOB_TOMBSTONE_PROMPT,
+  createManagedTaskRecord,
+  createManagedTaskResultEnvelope,
+  createManagedTaskScheduler,
+  decodeManagedNativeJobProofShard,
+  managedNativeJobProofShard,
+} from '@devryan/orchestration-runtime';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { createAtomicManagedOrchestrationLedger } from './atomic-ledger.js';
@@ -629,5 +639,138 @@ describe('golden ledger fixtures through the atomic ledger', () => {
     const saved = await goldenFixture('ledger-legacy.atomic-saved.json');
     expect(await roundTrip(await goldenFixture('ledger-legacy.json'))).toBe(saved);
     expect(await roundTrip(saved)).toBe(saved);
+  });
+});
+
+const DAY = 24 * 60 * 60 * 1_000;
+// A failed native attempt whose done receipt is a retained input-disposition proof.
+const nativeProof = (index) => {
+  const task = {
+    ...createManagedTaskRecord({ idempotencyKey: `native-${index}`, rootSessionId: `ses_root_${index}`, parentTaskId: null, directory: '/workspace',
+      mode: 'orchestrator', providerId: 'openai', modelId: 'fixture', agent: 'fixer', variant: null, label: `Native ${index}`,
+      prompt: `Fix ${index}. ${'Context. '.repeat(64)}`, taskId: `dvr_task_native_${index}`, sequence: index + 1, createdAt: 1, timeoutAt: null,
+      attempt: 1, priorTaskId: null, executionKind: 'start', executionBackend: 'native-job' }),
+    childSessionId: `ses_child_${index}`, leaseToken: `dvr_lease_${index}`, status: 'failed', startedAt: 1, finishedAt: 2,
+    failureReason: 'The provider stream failed', partial: true, recoverablePreview: 'Partial.',
+    nativeJobSegments: [{ jobID: `dvr_job_${index}`, notificationID: `msg_notification_${index}`, messageID: `msg_prompt_${index}`, state: 'accepted', completion: 'done' }],
+  };
+  return { task, envelope: { ...createManagedTaskResultEnvelope(task, { sequence: index + 1, createdAt: 2, resumable: true }), action: 'abandon', acknowledgedAt: 2 } };
+};
+const proofDirectory = ledger => path.join(path.dirname(ledger.filePath), MANAGED_NATIVE_JOB_PROOF_DIRECTORY);
+
+describe('native job proof shards beside the ledger', () => {
+  it('writes, reads and removes whole shards through the ledger write queue and owner fence', async () => {
+    const ledger = await createOwnedLedger({ dataDirectory: await createTemporaryDirectory() });
+    try {
+      expect(await ledger.loadNativeJobProofShards()).toEqual([]);
+      const order = [];
+      const writes = [ledger.putNativeJobProofShard('3f', '{"version":1,"shard":"3f","tasks":[],"resultEnvelopes":[]}\n').then(() => order.push('shard')),
+        ledger.save(snapshot([queuedTask(1)])).then(() => order.push('ledger'))];
+      await Promise.all(writes);
+      expect(order).toEqual(['shard', 'ledger']);
+      const file = path.join(proofDirectory(ledger), '3f.json');
+      expect((await fs.stat(file)).mode & 0o777).toBe(0o600);
+      expect(await ledger.loadNativeJobProofShards()).toEqual([{ shard: '3f', value: { version: 1, shard: '3f', tasks: [], resultEnvelopes: [] } }]);
+      // Only fixed shard names are read; scratch and foreign files are ignored.
+      await fs.writeFile(path.join(proofDirectory(ledger), 'notes.json'), '{broken');
+      await fs.writeFile(path.join(proofDirectory(ledger), '40.json'), '{broken');
+      expect((await ledger.loadNativeJobProofShards()).map(row => row.shard)).toEqual(['3f']);
+      await ledger.removeNativeJobProofShard('3f');
+      await ledger.removeNativeJobProofShard('3f');
+      await expect(fs.access(file)).rejects.toMatchObject({ code: 'ENOENT' });
+      for (const name of ['40', '../ledger', 'AB']) await expect(ledger.putNativeJobProofShard(name, '{}')).rejects.toThrow();
+    } finally { await ledger.releaseOwnership(); }
+  });
+
+  it('refuses an oversized, malformed or linked shard loudly and never quarantines it', async () => {
+    const dataDirectory = await createTemporaryDirectory();
+    const ledger = await createOwnedLedger({ dataDirectory, maxProofShardReadBytes: 64, logger: { warn: () => {} } });
+    try {
+      await expect(ledger.putNativeJobProofShard('00', 'x'.repeat(65))).rejects.toMatchObject({ code: 'native_job_proof_shard_too_large' });
+      await fs.mkdir(proofDirectory(ledger), { recursive: true });
+      const file = path.join(proofDirectory(ledger), '00.json');
+      for (const write of [() => fs.writeFile(file, 'x'.repeat(65)), () => fs.writeFile(file, '{broken'),
+        async () => { await fs.rm(file, { force: true }); await fs.writeFile(`${file}.target`, '{}'); await fs.symlink(`${file}.target`, file); }]) {
+        await write();
+        await expect(ledger.loadNativeJobProofShards()).rejects.toMatchObject({ code: 'native_job_proof_shard_unreadable' });
+        await expect(fs.lstat(file)).resolves.toBeDefined();
+      }
+      expect(ledger.getDiagnostics().quarantinedPath).toBeNull();
+    } finally { await ledger.releaseOwnership(); }
+  });
+
+  it('fences shard reads and writes after the owner token changes', async () => {
+    const ledger = await createOwnedLedger({ dataDirectory: await createTemporaryDirectory(), logger: { warn: () => {} } });
+    await fs.writeFile(path.join(path.dirname(ledger.filePath), 'owner.lock'), JSON.stringify({ version: 1, token: 'f'.repeat(32), pid: 1, acquiredAt: 1 }));
+    await expect(ledger.putNativeJobProofShard('00', '{}')).rejects.toMatchObject({ code: 'managed_orchestration_ownership_lost' });
+    await expect(ledger.loadNativeJobProofShards()).rejects.toMatchObject({ code: 'managed_orchestration_ownership_lost' });
+    await expect(fs.access(proofDirectory(ledger))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('keeps released proofs out of every scheduler ledger write and restores them on restart', async () => {
+    const dataDirectory = await createTemporaryDirectory();
+    const entries = Array.from({ length: 300 }, (_value, index) => nativeProof(index));
+    const seed = await createOwnedLedger({ dataDirectory });
+    await seed.save({ version: 1, tasks: entries.map(entry => entry.task), resultEnvelopes: entries.map(entry => entry.envelope) });
+    await seed.releaseOwnership();
+    const executor = { start: async () => { throw new Error('no launch'); } };
+    const run = async (action) => {
+      const ledger = await createOwnedLedger({ dataDirectory });
+      const scheduler = createManagedTaskScheduler({ now: () => 20 * DAY, persistence: ledger, executor });
+      try { return await action(scheduler, ledger); } finally { await scheduler.shutdown(); await ledger.releaseOwnership(); }
+    };
+    await run(async (scheduler) => {
+      expect(await scheduler.readNativeJobInputDispositions()).toHaveLength(entries.length);
+    });
+    const saved = JSON.parse(await fs.readFile(path.join(dataDirectory, 'orchestration', 'ledger.json'), 'utf8'));
+    expect(saved).toMatchObject({ tasks: [], resultEnvelopes: [] });
+    const names = (await fs.readdir(path.join(dataDirectory, 'orchestration', MANAGED_NATIVE_JOB_PROOF_DIRECTORY))).sort();
+    expect(names.length).toBeGreaterThan(32);
+    expect(names.every(name => /^[0-3][0-9a-f]\.json$/.test(name))).toBe(true);
+    const proofs = [];
+    for (const name of names) {
+      const shard = name.slice(0, 2);
+      proofs.push(...decodeManagedNativeJobProofShard(JSON.parse(await fs.readFile(path.join(dataDirectory, 'orchestration', MANAGED_NATIVE_JOB_PROOF_DIRECTORY, name), 'utf8')), shard));
+    }
+    expect(proofs.map(entry => entry.task.taskId).sort()).toEqual(entries.map(entry => entry.task.taskId).sort());
+    expect(proofs.every(entry => entry.task.prompt === MANAGED_NATIVE_JOB_TOMBSTONE_PROMPT)).toBe(true);
+    expect(new Set(proofs.map(entry => `${managedNativeJobProofShard(entry.task.taskId)}.json`))).toEqual(new Set(names));
+    await run(async (scheduler) => {
+      const dispositions = await scheduler.readNativeJobInputDispositions();
+      expect(dispositions.map(row => row.envelopeID).sort()).toEqual(entries.map(entry => entry.envelope.envelopeId).sort());
+      expect(scheduler.getTask(entries[7].task.taskId)).toMatchObject({ leaseToken: entries[7].task.leaseToken, prompt: MANAGED_NATIVE_JOB_TOMBSTONE_PROMPT });
+    });
+  });
+});
+
+describe('Windows native proof shards', () => {
+  it('reads every fixed shard and writes and deletes through the retained owner with exact native CAS', async () => {
+    const fixture = windowsFixture(), ledger = fixture.create(), deletions = [];
+    fixture.files.delete = async (file, { expected } = {}) => { expect(expected).toBe(fixture.records.get(file)); deletions.push(file); fixture.records.delete(file); };
+    const reads = [], read = fixture.files.read;
+    fixture.files.read = async file => { reads.push(file); return read(file); };
+    await ledger.acquireOwnership();
+    expect(await ledger.loadNativeJobProofShards()).toEqual([]);
+    expect(reads).toEqual(MANAGED_NATIVE_JOB_PROOF_SHARDS.map(shard => path.join('/fixture/private/orchestration', MANAGED_NATIVE_JOB_PROOF_DIRECTORY, `${shard}.json`)));
+    const file = path.join('/fixture/private/orchestration', MANAGED_NATIVE_JOB_PROOF_DIRECTORY, '0a.json');
+    await ledger.putNativeJobProofShard('0a', '{"shard":"0a"}\n');
+    await ledger.putNativeJobProofShard('0a', '{"shard":"0a","next":true}\n');
+    expect(fixture.writes.map(row => [row.file, row.bytes.toString('utf8')])).toEqual([[file, '{"shard":"0a"}\n'], [file, '{"shard":"0a","next":true}\n']]);
+    expect(await ledger.loadNativeJobProofShards()).toEqual([{ shard: '0a', value: { shard: '0a', next: true } }]);
+    await ledger.removeNativeJobProofShard('0a'); await ledger.removeNativeJobProofShard('0a');
+    expect(deletions).toEqual([file]);
+    fixture.records.set(file, { identity: { fileId: 'oversized' }, bytes: Buffer.alloc(MANAGED_NATIVE_JOB_PROOF_SHARD_MAX_BYTES + 1, 32) });
+    await expect(ledger.loadNativeJobProofShards()).rejects.toMatchObject({ code: 'native_job_proof_shard_unreadable' });
+    expect(fixture.records.has(file)).toBe(true);
+    fixture.state.active = false;
+    await expect(ledger.putNativeJobProofShard('0b', '{}')).rejects.toMatchObject({ code: 'managed_orchestration_ownership_lost' });
+  });
+  it('refuses a proof bound beyond the native owner and a delete without native authority', async () => {
+    const fixture = windowsFixture();
+    expect(() => fixture.create({ maxProofShardReadBytes: 64 * 1024 * 1024 + 1 })).toThrow('managed_orchestration_windows_authority_unavailable');
+    const ledger = fixture.create(); await ledger.acquireOwnership();
+    await ledger.putNativeJobProofShard('00', '{}');
+    await expect(ledger.removeNativeJobProofShard('00')).rejects.toMatchObject({ code: 'managed_orchestration_windows_authority_unavailable' });
+    await ledger.releaseOwnership();
   });
 });

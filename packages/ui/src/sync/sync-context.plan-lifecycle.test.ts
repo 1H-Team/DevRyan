@@ -4601,6 +4601,43 @@ describe("sync plan lifecycle on message.part.delta", () => {
     }])
   })
 
+  test("lets an event older by updated advance lifecycle facts in the store and snapshot replay", () => {
+    const childStores = new ChildStoreManager()
+    const routingIndex = routingIndexFor()
+    const store = childStores.ensureChild(DIRECTORY)
+    const newest = {
+      id: "ses_lifecycle_gate",
+      title: "Newest title",
+      directory: DIRECTORY,
+      time: { created: 1, updated: 20, busy: 100 },
+    } as unknown as Session
+    applySyncEventForTest(DIRECTORY, {
+      type: "session.updated",
+      properties: { info: newest },
+    } as unknown as Event, childStores, routingIndex, DIRECTORY)
+
+    const requestRevision = captureDirectorySessionListRevision(DIRECTORY)
+    applySyncEventForTest(DIRECTORY, {
+      type: "session.updated",
+      properties: {
+        info: {
+          ...newest,
+          title: "Older title",
+          time: { created: 1, updated: 10, busy: 100, idle: 150 },
+          outcome: "succeeded",
+        },
+      },
+    } as unknown as Event, childStores, routingIndex, DIRECTORY)
+
+    const expected = {
+      ...newest,
+      time: { created: 1, updated: 20, busy: 100, idle: 150 },
+      outcome: "succeeded",
+    } as unknown as Session
+    expect(store.getState().session.find((session) => session.id === newest.id)).toEqual(expected)
+    expect(reconcileDirectorySessionListSnapshot(DIRECTORY, [newest], requestRevision)).toEqual([expected])
+  })
+
   test("deletes a session from every initialized child store despite a wrong event directory", () => {
     const secondDirectory = "/repo-worktree"
     const deletedSession = {

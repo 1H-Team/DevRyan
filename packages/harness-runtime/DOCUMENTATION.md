@@ -214,6 +214,15 @@ in [identity compatibility](../../docs/IDENTITY_COMPATIBILITY.md#data-folder-mig
   a recent time range by rebuilding older retained records and their blob
   sidecars, or remove all current and legacy journal data. Both modes preserve
   the discovery files and accept newly arriving records afterward.
+  `HARNESS_BEHAVIOUR_SWITCHES` is the closed allowlist of behaviour switches a run
+  fingerprint records (`switches`); each value is reduced to `unset`, a switch word
+  or `other`, and the sanitizer drops a switch name used as a key anywhere else.
+- `trace.js`: per-session usage roll-up for evaluations. Managed children fold
+  into their root through task relations, related helper sessions fold into their
+  root, and direct helper provider calls come from journal `usageObservation`
+  records. Each root reports `helperInput`/`helperOutput` and an `attribution`
+  block; `attribution.unattributedHelperUsage` makes the paired comparator hold a
+  pair instead of dropping usage silently.
   These modules also preserve validated native startup catalog codes and bounded recognized
   stderr diagnostics. Schema paths accept only fixed field names and indices;
   raw errors, values and arbitrary plugin logfmt fields remain excluded. The
@@ -264,6 +273,7 @@ in [identity compatibility](../../docs/IDENTITY_COMPATIBILITY.md#data-folder-mig
 - `createSessionMutationRuntime({ batching: { install, initialInstall } })` overrides rows per install transaction (defaults 128 and 1024 for a first build; validated positive integers); tests pass small values to cross batch boundaries with ~150 files.
 - A reservation may carry `attempt` (`{ taskId, leaseToken }`, or `{ state: 'none' | 'unknown' }`), stored on the lease so the orchestrator can stop exactly a settled attempt's runs; `cancelLease` records `stoppedBy: 'operator'` (a user Stop) or `'task_settled'` (that cleanup), and neither run's completion restarts the conversation.
 - `createSessionMutationRuntime({ complexity: { warnEntries, warnBytes, ceilingEntries, ceilingBytes } })` overrides the document complexity guard (defaults 250,000 entries / 16 MiB to journal, 1,000,000 / 64 MiB to record whole content; validated positive integers, each warning at most its ceiling). See [Concurrent Revert](../../docs/CONCURRENT_REVERT.md).
+- `createSessionMutationRuntime({ preparedBaselines: { rows, bytes } })` overrides the prepared-baseline budget this runtime admits entries under (defaults 100,000 rows and 32 MiB, shared by the process; validated positive integers); tests shrink it.
 - `openChangeStore(..., { listingLimitBytes })` overrides the 1 MiB in-memory key-listing bound (validated positive integer; default unchanged); tests pass a small value to cross it with a few hundred records.
 - Whole-ledger listings must stream. `openChangeStore().records()` yields every
   `{key, oid, value}` of a snapshot through `gitTokens` plus batched
@@ -365,6 +375,13 @@ the UI to hold its manual card; a declined failure sets `reason:
 'failure_not_eligible'` without changing state. The `provider_recovery_capability`
 diagnostic is written once per runtime instance and when `{supported, transport}`
 changes, not on every hello.
+
+An objective completes only from a settled read: an idle, unblocked turn whose
+last Step finished without error. Native jobs review and acknowledge a delivered
+result after the root goes idle, so that idle read can still see the workspace
+barrier. While the root is idle, each `devryan:managed-task` event for it
+schedules another read, so the barrier clearing completes the objective instead
+of leaving it `observing`.
 
 For the exact pinned native 2.2.5 controller (and retained 2.0.26/2.0.30/2.1.0/2.1.3/2.1.4/2.2.0/2.2.1/2.2.2), constructor-only
 `nativeStreamContinuation` owns interrupted-stream reserve, canonical Synthetic
@@ -755,6 +772,34 @@ publication on 6,000 files). A new tree's listing reuses the previous
 listing's parsed documents whose object id is unchanged and reads only the
 rest, so object reads per confined edit no longer grow with the project
 (`DEVRYAN_LEDGER_INCREMENTAL_FILE_INDEX=0` reads every document again).
+
+Prepared baseline reuse (`DEVRYAN_PREPARED_BASELINE_REUSE=1`; off by default,
+any other value runs the durable read only). Preparation keeps the
+`bases/<token>/files` pages it stages, as the exact JSON page strings
+`setList({ collect })` stages (never the shared `doc.published` objects), and
+publishes the entry only after `view_commit` and the ready lease are durable.
+Publication (`finish_baseline`) uses it only in the runtime that prepared the
+lease, for the same ledger root, while the store opened at the lease ref names
+the same view tree OID; any mismatch reads the durable rows, and the parsed rows
+are fresh objects. One LRU budget for the process, 100,000 rows and 32 MiB of
+the values' JSON (`setList`'s byte total): a new entry evicts the least recently
+used, and a lease larger than the whole budget is never kept (its collection
+stops there). A miss only costs the durable read, so nothing waits for or is
+refused by it. Entries go on publication (success or failure, including
+`execution_reverted`), `cleanupLease` (which releases the lease ref),
+`cancelLease`/`cancelUnstartedCall` and `drain`. Finish summaries then carry
+`finish_baseline_prepared`, the rows taken from memory (0 on a miss).
+`preparedBaselineUsage()` reports the process totals. Termination, lease and
+admission checks, output inspection, conflicts, intents, CAS, rollback and
+Revert/Redo are unchanged (`session-mutations.baseline-cache.test.js`). On a
+synthetic single-file edit (2026-11-05, loaded machine) `finish_baseline` fell
+from 22 to 1 ms at 2,000 files and from 23 to 4 ms at 6,000, and object reads per
+edit from 101 to 87 at 2,000; processes stay at 16. At 12,000 files
+(`node scripts/perf/tool-latency-benchmark.mjs --files 12000 --edits 12`, two
+alternating runs per mode) the whole edit did not improve: median 1,003 → 1,026 ms
+direct and 957 → 981 ms through the host, p90 1,178 → 1,579 ms and 1,018 →
+1,109 ms, and the cold first wave was slower. No benefit was shown, so the
+switch stays off by default and is not qualified.
 
 While this process applies a publication or revert intent (between its intent
 commit and the commit that completes it), lock-free snapshot readers such as

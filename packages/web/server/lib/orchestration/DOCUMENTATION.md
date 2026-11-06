@@ -80,6 +80,64 @@ Private task-result RPCs accept `resultMode: "eager" | "reference"`; omission is
 
 ## Persistence and recovery
 
+The verified native managed-job capability selects `native-job` for new OpenCode
+tasks. Missing historical selections retain session execution; native-bound tasks
+fail closed when the capability disappears. Cursor uses a separate shared-executor
+instance and its existing SDK transport. Same-child compatibility recovery stays
+on its legacy transport, while provider changes occur through new task records.
+
+Backend selection is decided outside the scheduler lock. `submit` first waits up
+to `NATIVE_BACKEND_READY_WAIT_MS` (10 s, `nativeBackendReadyWaitMs`) through
+`nativeManagedJobs.awaitReady` when the controller is replacing, checkpointing or
+recovering, and passes the outcome to `resolveExecutionBackend` (which stays
+synchronous) through an `AsyncLocalStorage`: `ready` selects `native-job`, a
+timeout selects `legacy-session` and the native owner journals
+`managed_backend_fallback`, and `unsupported` keeps the existing selection.
+Internal retries and continuations keep their existing selection rules. A
+native-selected dispatch waits for readiness until the task's own deadline
+(`timeoutAt`, the same bound as count refusals) or Stop, and the default bound
+only when the task has no deadline. Only a ready controller without the
+capability, shutdown or a wait that reaches that bound fails closed
+(`native_managed_job_unavailable`). The existing `native_dispatch_unavailable`
+work-admission check still applies after the wait.
+
+The web adapter reserves stable message/job/notification identities, prepares and
+backgrounds a latched native Job, then submits the existing prompt admission with
+`noReply: true` and activates the exact accepted input. Every prompt uses this
+path, including queued budget notices and bounded recovery continuations. Multiple
+segments may join the same native child runner. `prepare` and `activate` carry the
+task's `timeoutAt` and Stop signal, so count refusals of commands that never ran
+wait instead of failing. A `not-dispatched` `native_managed_job_controller_changed`
+preparation refusal waits for the successor controller and prepares again only
+while the ledger segment is still `reserved` (never prepared on any controller);
+otherwise the existing cancel path runs. A lost preparation/admission reply
+retains uncertainty for settlement; it does not repeat the prompt. The native
+owner supplies drained cancellation and idempotent terminal acknowledgement.
+`verifyNativeJobSegment` is constructor-only, repeats ledger ownership, and binds
+root, task lease, directory, child, execution selection and segment identities.
+Postterminal completion is separate from live dispatch authority and does not
+depend on the original parent tool invocation remaining alive.
+
+`readNativeJobInputDispositions()` verifies ledger ownership and uses scheduler
+load-only initialization. It is a constructor API for native restored-input
+handoff, never a public RPC action. It returns only exact terminal native task,
+envelope and completed-segment identities, without starting queued work, arming
+recovery or requiring native work admission to be ready.
+Adverse native task receipts remain protected after completion acknowledgement
+until verified physical session disposal. The existing removal cleanup callback
+releases their task/envelope records under the same constructor authorization as
+objective-check cleanup; ordinary result disposition does not release them.
+Successful completed tasks retain normal history compaction. Retained adverse
+proofs never count toward the ledger caps: where retention would remove one, the
+core shrinks it into a body-free tombstone and releases it into the ledger's proof
+shards (below), so it neither refuses a submit nor grows `ledger.json`.
+
+Browser/SSE reconnect leaves execution intact. Host death closes or reaps its
+controller; startup retains the existing proven-stop interrupted/aborted recovery,
+rather than silently replaying durable native jobs. Additive v1 fields preserve
+current codec compatibility but do not make an unaware older binary a safe
+downgrade while native receipts remain pending.
+
 The atomic ledger reports content-free physical progress to its constructor
 save observer: write completion, file sync, rename, directory sync and final
 owner verification. Windows reports its native CAS commit as one physical
@@ -100,6 +158,8 @@ cannot create a prompt context or turn the read into mutation authority.
 Managed OpenCode retry status preserves optional structured action metadata. The shared executor treats the exact `action.reason: free_tier_limit` signal as immediate provider exhaustion, falls back to normalized usage-limit message wording for compatibility, and never waits for the provider's multi-hour `next` timestamp before exposing Model Recovery.
 
 `atomic-ledger.js` writes `DEVRYAN_DATA_DIR/orchestration/ledger.json` through a private mode-0600 temp file, file sync, atomic rename, and best-effort directory sync. Saves are serialized and every load, save, and quarantine verifies the immutable owner token in `orchestration/owner.lock`. The lock is created with an atomic hard-link claim, heartbeats through file timestamps, and is released only after exact-token verification. A lock whose recorded process is confirmed dead is recovered immediately, even when its heartbeat is still fresh. A live owner is never stolen, including when the heartbeat looks stale. Unreadable locks are never stolen automatically. Shutdown drops the lock before waiting for an in-flight ledger save, and a process-exit handler unlinks the file only when this runtime still holds the matching token. Losing the token fences the former owner before further ledger access. Pre-barrier tasks missing `dispatchGroupId`, tasks predating exact dispatch correlation missing `dispatchCallId`, and tasks predating wave labels missing `dispatchWaveId` hydrate to `null`; tasks predating plan-mode propagation hydrate with `readOnly: false`. Invalid JSON, oversized input, duplicate identity, and task/result contradictions are moved to a timestamped `.corrupt-*` file before the scheduler starts from an explicit empty state. Reading accepts up to 64 MiB, well above the 20 MiB the scheduler writes, so a ledger a previous version grew is compacted instead of quarantined. A save that shrinks a ledger of at least 5 MiB to less than half first copies the previous file to `ledger.json.before-compaction` (mode 0600, only the first time, best effort); it may be deleted once the removed history is not wanted back. Runtime diagnostics expose only sanitized ownership state, while the UI snapshot receives only a safe warning; ledger content, owner PID/token, and quarantine paths remain private.
+
+The same ledger object exposes the core's released native-job proof shards: `loadNativeJobProofShards()`, `putNativeJobProofShard(shard, text)` and `removeNativeJobProofShard(shard)` on `orchestration/native-job-proofs/<shard>.json`, with the 64 fixed shard names `00`–`3f` from `@devryan/orchestration-runtime`. Shard writes join the ledger save queue and its owner checks, so a shard the scheduler writes before a ledger commit is durable before that commit starts. POSIX writes use the same mode-0600 `writeFileAtomic` (temp file, file sync, rename, directory sync); removal unlinks and syncs the directory. Loading reads every fixed name (absent is empty; other names and `.tmp-` scratch are ignored) and refuses a non-regular, linked, oversized or malformed shard with `native_job_proof_shard_unreadable`; a shard is never quarantined, because that would forget its proofs. Each shard is bounded at 32 MiB (`maxProofShardReadBytes`, the bundle document bound), and a larger write is refused with `native_job_proof_shard_too_large`, which keeps those proofs inline in the ledger. On Windows every shard is read, published and deleted through the retained native ledger owner with exact CAS (`expected` = the owner's prior read), the same keeper assertions and no Node filesystem access; the 64 names are probed instead of listed, and a bound above the owner's 64 MiB, or a removal without native `delete`, refuses with `managed_orchestration_windows_authority_unavailable`. Bundle clone, rebind and rollback copy and inventory the whole `orchestration` directory, so the shards travel with the ledger; `bundle-harness-integrity.js`, `bundle-managed-jobs.js` and `native-bundle-task-recovery.js` read them (see runtime-host).
 
 The shared executor records a child session before sending one queue-time provider/model/agent/variant snapshot. Web transport routes normal providers to managed OpenCode and Cursor to the existing Cursor SDK owner. Scheduler checkpoints confirm that the launch still owns its durable lease before prompting and after provider acceptance; a stale fresh child is aborted and deleted through OpenCode, with Cursor state cleaned through its SDK owner as well. Provider `busy` and transient `retry` status remains live, while definite usage/quota exhaustion, including an exhausted provider session allowance, settles as an immediately user-recoverable failure and starts bounded retry-loop cleanup. Transient status/message polling failures retry against the same child while retaining the last successful preview and references. A terminal assistant request, response-header, stream-idle, or connection transport failure receives one idempotent fixed continuation in the same child with the captured execution snapshot, without replaying the original task; restart reconciliation preserves the first failure for that recovery and a repeated transport failure settles normally. A managed `resume` observes a still-live canonical child or sends one transcript-marked continuation when it is already terminal; restart reconciliation relaunches only a missing continuation and never duplicates a recorded one. A temporary managed-port transition is typed as HTTP-style 503 unavailability; restart reconciliation keeps the task active and retries the same canonical child under its existing lease and deadline instead of emitting an interruption or replaying the prompt. Non-retryable observation failures become resumable interruptions instead of provider failures. The same shared prompt-tool policy used by the UI is applied to managed children, including both OpenCode names for Copilot's optional Resend MCP namespace. Every OpenCode-backed managed child prompt explicitly disables provider-native `task`, including initial execution and ordinary retry, resume, manual same-child model recovery, restart, and automatic continuations, so delegation remains root-owned even when an agent definition or task record is writable. A plan-mode parent turn additionally marks the private task read-only before admission and disables every mutation surface on each prompt. Native Cursor prompts use the same fresh managed task authority, derive read-only policy from the verified durable task, and restrict SDK tools to `read`, `grep`, `glob`, and `ls`. Hosts without that capability continue to refuse read-only Cursor dispatch.
 
@@ -216,12 +276,12 @@ No DevRyan host wires the scheduler's optional admission hook (`packages/orchest
 
 A start that native admission refuses fails a few hundred milliseconds after `submit`, before any child exists (live QA 2026-11-01: 166 ms). Two layers keep the parent from spending `wait_any` and `abandon` turns to learn that.
 
-- **One automatic retry.** `withNativeAdmissionRetry` (exported from `runtime.js`) wraps the host's `nativeTaskDispatch` for `create` only. When native admission refuses before the create action runs, with one of `native_managed_task_control_invalid`, `native_session_revert_pending`, `native_session_held`, `native_permit_capacity`, `native_controller_replacing` or `native_managed_task_owner_unavailable`, it logs the task ID and code and retries once after 750 ms (`nativeAdmissionRetryDelayMs`). It never retries `native_managed_task_lease_invalid`, `native_managed_task_scope_invalid` or any other code, a second refusal, a refusal raised after the create ran (a child may exist; the executor's cleanup owns that), or a `prompt`/`abort`.
+- **One automatic retry.** `withNativeAdmissionRetry` (exported from `runtime.js`) wraps the host's `nativeTaskDispatch` for `create` only. When native admission refuses before the create action runs, with one of `native_managed_task_control_invalid`, `native_session_revert_pending`, `native_session_held`, `native_permit_capacity`, `native_controller_replacing` or `native_managed_task_owner_unavailable`, it logs the task ID and code and retries once after 750 ms (`nativeAdmissionRetryDelayMs`). A `native_permit_capacity` count refusal instead waits with 25-500 ms backoff while the task is still `starting` under the same lease and before its `timeoutAt` (`readTask`); Stop or a new lease returns it to the single retry. It never retries `native_managed_task_lease_invalid`, `native_managed_task_scope_invalid` or any other code, a second refusal, a refusal raised after the create ran (a child may exist; the executor's cleanup owns that), or a `prompt`/`abort`.
 - **Inline failure.** `awaitStartAdmission` resolves once a `starting` task has a child, native admission let its create through, it left `starting`, or 3 s passed (`startAdmissionSettleMs`). It is driven by `devryan:managed-task` publications, with no polling. The public method takes `{ taskId, rootSessionId, directory }` and returns only `{ taskId, status, childSessionId }`, or `null` outside that scope. The caller must not hold the parent's session lock or control lease, because child admission needs both. The native `devryan_task` owner calls it after its start permit and lease end (see `../opencode/runtime-host/DOCUMENTATION.md`). The compatibility plugin instead sends `awaitAdmission: true` with `submit`, and the receipt then projects the settled task. A task that failed with no child carries the shared `notStarted` recovery instruction, its result envelope (`action: null`) and `agentRetryAvailable`. The parent can `retry` or `abandon` it without a wait. Past the bound, start reports `starting` exactly as before.
 
 ## Testing
 
-Run the module files under `packages/web/server/lib/orchestration/*.test.js`, the packaged managed-tool and Council plugin tests, the OpenCode lifecycle/shutdown tests, and `bun test packages/orchestration-runtime`. Runtime tests cover the single transient native admission retry and its exclusions, inline pre-child start failures (compatibility receipt and native owner collection), the bounded start wait, immediate one/three/five admission without a concurrency cap, root/barrier scope, result-action waiting and recovered lineage delivery, inspection and confirmed handoff cleanup, idempotent retries, grouped retry-limit conflicts, manual retry-in-place exemption, partial failure, bounded same-child transport continuation, ordinary 30-minute, Designer/Fixer 60-minute, and Oracle 15/30-minute start/follow-up deadlines, safe projection, legacy hydration, corrupt-ledger quarantine, atomic overlapping saves, exclusive two-process ownership, dead-process owner recovery, lost-token fencing, process-exit lock release, second-runtime recovery suppression, bearer/body rejection, normal/Cursor transports, same-turn plugin races, idle recovery for starts abandoned between pre-hook and execution, authoritative agent gating, fail-closed unknown ownership, external-runtime unavailability, and deterministic cleanup.
+Run the module files under `packages/web/server/lib/orchestration/*.test.js`, the packaged managed-tool and Council plugin tests, the OpenCode lifecycle/shutdown tests, and `bun test packages/orchestration-runtime`. Runtime tests cover the single transient native admission retry and its exclusions, the permit-count wait and its Stop/lease end, submit-time backend selection during a pending, timed-out or unsupported readiness wait, inline pre-child start failures (compatibility receipt and native owner collection), the bounded start wait, immediate one/three/five admission without a concurrency cap, root/barrier scope, result-action waiting and recovered lineage delivery, inspection and confirmed handoff cleanup, idempotent retries, grouped retry-limit conflicts, manual retry-in-place exemption, partial failure, bounded same-child transport continuation, ordinary 30-minute, Designer/Fixer 60-minute, and Oracle 15/30-minute start/follow-up deadlines, safe projection, legacy hydration, corrupt-ledger quarantine, atomic overlapping saves, exclusive two-process ownership, dead-process owner recovery, lost-token fencing, process-exit lock release, second-runtime recovery suppression, bearer/body rejection, normal/Cursor transports, same-turn plugin races, idle recovery for starts abandoned between pre-hook and execution, authoritative agent gating, fail-closed unknown ownership, external-runtime unavailability, and deterministic cleanup.
 
 Managed native OpenCode prompts translate a captured `variant: null` into the
 verified empty-string wire value that clears configured agent effort. Undefined

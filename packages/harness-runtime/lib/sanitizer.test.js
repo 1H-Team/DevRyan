@@ -1,9 +1,30 @@
 import { describe, expect, test } from 'bun:test';
 
-import { createDiagnosticSanitizer } from './sanitizer.js';
+import { createDiagnosticSanitizer, HARNESS_BEHAVIOUR_SWITCHES, HARNESS_BEHAVIOUR_SWITCH_VALUES, normalizeBehaviourSwitch } from './sanitizer.js';
 import { parseNativeJournalObservation } from '../../shared-runtime/lib/native-observation.js';
 
 describe('diagnostic sanitizer', () => {
+  test('keeps run-fingerprint derivation evidence and only enum behaviour-switch values', () => {
+    const sanitizer = createDiagnosticSanitizer();
+    const switches = Object.fromEntries(HARNESS_BEHAVIOUR_SWITCHES.map((name, index) => [name, HARNESS_BEHAVIOUR_SWITCH_VALUES[index % HARNESS_BEHAVIOUR_SWITCH_VALUES.length]]));
+    const fingerprint = { schemaVersion: 1, policySource: 'runtime-projection',
+      role: { contentHash: 'a'.repeat(64), templateHash: 'b'.repeat(64), rendererHash: 'c'.repeat(64), rendererVersion: 1,
+        attestedContentHash: 'a'.repeat(64), templatePolicies: ['adaptiveDelegation', 'readOverlap'] },
+      catalog: { tools: [{ id: 'read', contentHash: 'd'.repeat(64) }] }, switches };
+    const record = sanitizer.sanitizeRecord({ type: 'lifecycle', event: 'harness_run_start', sessionID: 'ses_fixture', payload: { fingerprint } });
+    expect(record.payload.fingerprint).toEqual(fingerprint);
+    expect(sanitizer.sanitizeExportValue(record).payload.fingerprint).toEqual(fingerprint);
+    // A raw secret-shaped value, a malformed hash or a switch name outside
+    // `switches` is dropped, never journaled.
+    const leaked = sanitizer.sanitizeRecord({ type: 'lifecycle', event: 'harness_run_start', sessionID: 'ses_fixture', payload: { fingerprint: {
+      role: { templateHash: 'not-a-hash', attestedContentHash: 'sk-private' },
+      switches: { DEVRYAN_LEDGER_PACK: 'sk-aaaaaaaaaaaaaaaaaaaaaaaa', DEVRYAN_VIEW_CLONE: '1', DEVRYAN_PRIVATE_TOKEN: '1' },
+      DEVRYAN_LEDGER_PACK: '1' } } });
+    expect(leaked.payload.fingerprint).toEqual({ role: {}, switches: { DEVRYAN_VIEW_CLONE: '1' } });
+    expect(JSON.stringify(leaked)).not.toContain('sk-');
+    expect([undefined, '0', '1', ' Off ', 'TRUE', '2', 'sk-private', ''].map(normalizeBehaviourSwitch))
+      .toEqual(['unset', '0', '1', 'off', 'true', 'other', 'other', 'other']);
+  });
   test('preserves wait selections, plan source correlation and classified canonical failures without raw causes', () => {
     const sanitizer = createDiagnosticSanitizer();
     const record = sanitizer.sanitizeRecord({ type: 'lifecycle', event: 'context_failure', payload: {

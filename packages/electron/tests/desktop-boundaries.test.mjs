@@ -65,17 +65,36 @@ test('notifications use live focus and main window state when clicked', () => {
 
 test('menu dispatch follows the current focused window and preserves native shortcuts', () => {
   const calls = [];
-  const first = { isDestroyed: () => false, webContents: { executeJavaScript: async () => {}, copy: () => calls.push('copy') } };
-  const second = { ...first };
+  const appWindow = (label, id) => ({
+    __ocLabel: label,
+    isDestroyed: () => false,
+    webContents: {
+      id,
+      isDestroyed: () => false,
+      executeJavaScript: async (script) => { calls.push(['dom', label, script]); },
+      copy: () => calls.push(['copy', label]),
+    },
+  });
+  const first = appWindow('main', 1);
+  const second = appWindow('main-2', 2);
   let focused = first;
   const menu = createDesktopMenu({ BrowserWindow: { getFocusedWindow: () => focused, getAllWindows: () => [first, second] },
     Menu: { buildFromTemplate: (template) => template }, app: { name: 'DevRyan' }, shell: {}, log: {},
-    getMainWindow: () => first, emitToWindow: (window, event, action) => calls.push([window, event, action]), emitToAllWindows: () => {} });
+    getMainWindow: () => first, getFocusedWebContents: () => focused.webContents,
+    emitToWindow: (window, event, action) => calls.push([window, event, action]), emitToAllWindows: () => {} });
   const template = menu.buildMacMenu();
   const copy = template.find((item) => item.label === 'Edit').submenu.find((item) => item.label === 'Copy');
+  const settings = template.find((item) => item.label === 'DevRyan').submenu.find((item) => item.label === 'Settings');
   assert.equal(copy.accelerator, 'Cmd+C');
   focused = second;
+  settings.click();
+  assert.deepEqual(calls[0], [second, 'devryan:menu-action', 'settings']);
+  assert.deepEqual(calls[1].slice(0, 2), ['dom', 'main-2']);
+  // Copy follows the focused document: native copy there, then the app action
+  // once through the DOM, never through emitToWindow.
   copy.click();
-  assert.equal(calls[0], 'copy');
-  assert.deepEqual(calls[1], [second, 'devryan:menu-action', 'copy']);
+  assert.deepEqual(calls[2], ['copy', 'main-2']);
+  assert.deepEqual(calls[3].slice(0, 2), ['dom', 'main-2']);
+  assert.match(calls[3][2], /"devryan:menu-action", \{ detail: "copy" \}/);
+  assert.equal(calls.length, 4);
 });

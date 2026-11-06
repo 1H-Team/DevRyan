@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { renderAgentPromptPolicies } from '../../lib/opencode/packaged-agents.js';
 
 const readAgent = (name) => readFileSync(new URL(`./${name}.md`, import.meta.url), 'utf8');
 
@@ -22,7 +23,8 @@ describe('primary agent plan guidance', () => {
   });
 
   it('keeps plan execution on the saved revision and managed phases for Orchestrator', () => {
-    const prompt = readAgent('orchestrator');
+    // Specialist-phase startup is the `adaptiveDelegation: false` branch; pin it explicitly.
+    const prompt = renderAgentPromptPolicies(readAgent('orchestrator'), { adaptiveDelegation: false });
     const execution = prompt.slice(prompt.indexOf('<Plan Execution>'), prompt.indexOf('</Plan Execution>'));
     expect(execution).toContain('The selected saved revision is the source of truth');
     expect(execution).toContain('Approved-plan implementation startup:');
@@ -30,5 +32,17 @@ describe('primary agent plan guidance', () => {
     expect(execution).toContain("run the plan's Verification section once across scopes");
     expect(prompt).toContain('never a skill loaded first');
     expect(prompt).not.toContain('Orchestrator loads planning and routing skills');
+  });
+
+  it('keeps adaptive plan execution on the saved revision with direct or delegated phases', () => {
+    const prompt = renderAgentPromptPolicies(readAgent('orchestrator'), { adaptiveDelegation: true });
+    const execution = prompt.slice(prompt.indexOf('<Plan Execution>'), prompt.indexOf('</Plan Execution>'));
+    expect(execution).toContain('The selected saved revision is the source of truth');
+    expect(execution).toContain('Approved-plan implementation: read the selected plan before implementation.');
+    expect(execution).toContain('Use direct work for a small known cohesive unit after declaring objective checks');
+    expect(execution).toContain('For delegated phases send `approved_plan` with saved version, exact phase and paths.');
+    expect(execution).toContain("run the plan's Verification once across scopes");
+    expect(execution).not.toContain('Approved-plan implementation startup:');
+    expect(prompt).toContain('never a skill loaded first');
   });
 });

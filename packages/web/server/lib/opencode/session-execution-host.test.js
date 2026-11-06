@@ -314,6 +314,41 @@ test('revocation during native control preparation cancels the unclaimed lease',
   expect(mocks.runtime.cleanupLease).toHaveBeenCalledWith(f.lease);
 });
 
+test('controller settlement cancels and cleans a control lease its exited controller never finished', async () => {
+  const f = nativeManagedFixture(); f.invocation.input = { action: 'wait', task_id: 'dvr_task_fixture' };
+  const { lease } = await f.host.nativeManagedControl({ action: 'begin', invocation: f.invocation });
+  expect(mocks.runtime.cancelLease).not.toHaveBeenCalled();
+  await f.host.settleController();
+  expect(mocks.runtime.cancelLease).toHaveBeenCalledWith({ directory, token: lease.token });
+  expect(mocks.runtime.cleanupLease).toHaveBeenCalledWith(f.lease);
+  // The departed handler's late finish finds the lease cancelled and changes nothing.
+  mocks.runtime.leaseForCall.mockResolvedValue({ ...f.lease, state: 'cancelled', cleaned: true });
+  mocks.runtime.finish.mockRejectedValue(Object.assign(Error('not ready'), { code: 'execution_not_ready' }));
+  await expect(f.host.nativeManagedControl({ action: 'finish', invocation: f.invocation, token: lease.token }))
+    .rejects.toMatchObject({ code: 'execution_not_ready' });
+  await f.host.settleController();
+  expect(mocks.runtime.cancelLease).toHaveBeenCalledTimes(1); expect(mocks.runtime.cleanupLease).toHaveBeenCalledTimes(1);
+});
+
+test('controller settlement joins a finish already publishing and never cancels its published lease', async () => {
+  const f = nativeManagedFixture(); f.invocation.input = { action: 'wait', task_id: 'dvr_task_fixture' };
+  const { lease } = await f.host.nativeManagedControl({ action: 'begin', invocation: f.invocation });
+  const publication = Promise.withResolvers();
+  mocks.runtime.finish.mockImplementation(() => publication.promise);
+  const finishing = f.host.nativeManagedControl({ action: 'finish', invocation: f.invocation, token: lease.token });
+  await vi.waitFor(() => expect(mocks.runtime.finish).toHaveBeenCalled());
+  let settled = false;
+  const settling = f.host.settleController().then(() => { settled = true; });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  expect(settled).toBe(false);
+  mocks.runtime.leaseForCall.mockResolvedValue({ ...f.lease, state: 'published', cleanupPending: true });
+  publication.resolve({ files: [], operationID: 'published_1' });
+  expect(await finishing).toEqual({ files: [], operationID: 'published_1' });
+  await settling;
+  expect(mocks.runtime.cancelLease).not.toHaveBeenCalled();
+  expect(mocks.runtime.cleanupLease).toHaveBeenCalledWith({ directory, token: lease.token });
+});
+
 test.each(['wait', 'wait_any', 'status'])('published %s reattaches only with the original identity', async action => {
   const f = nativeManagedFixture(); f.invocation.input = { action };
   const digest = createHash('sha256').update(JSON.stringify(f.invocation.input)).digest('hex');

@@ -3370,6 +3370,26 @@ describe('pre-child start failures', () => {
     expect(prompt).toHaveBeenCalledOnce();
   });
 
+  it('waits for a permit slot while the task can still start, and stops at Stop', async () => {
+    const createChild = vi.fn(async () => ({ id: 'ses_child' }));
+    let task = { status: 'starting', leaseToken: 'dvr_lease_retry', timeoutAt: Date.now() + 60_000 };
+    const counted = { ...create, leaseToken: 'dvr_lease_retry' };
+    const dispatch = vi.fn(async (_input, action) => { if (dispatch.mock.calls.length <= 6) throw refusal('native_permit_capacity'); return action(); });
+    const waiting = withNativeAdmissionRetry(dispatch, { delayMs: 1, logger: {}, readTask: () => task });
+    await expect(waiting(counted, createChild)).resolves.toEqual({ id: 'ses_child' });
+    expect(dispatch).toHaveBeenCalledTimes(7); expect(createChild).toHaveBeenCalledOnce();
+    // Stop (a terminal task) ends the wait: the ordinary single retry is all that remains.
+    task = { ...task, status: 'aborted' };
+    const refused = vi.fn(async () => { throw refusal('native_permit_capacity'); });
+    await expect(withNativeAdmissionRetry(refused, { delayMs: 1, logger: {}, readTask: () => task })(counted, async () => ({})))
+      .rejects.toMatchObject({ code: 'native_permit_capacity' });
+    expect(refused).toHaveBeenCalledTimes(2);
+    const replaced = vi.fn(async () => { throw refusal('native_permit_capacity'); });
+    await expect(withNativeAdmissionRetry(replaced, { delayMs: 1, logger: {}, readTask: () => ({ status: 'starting', leaseToken: 'dvr_lease_new', timeoutAt: null }) })(counted, async () => ({})))
+      .rejects.toMatchObject({ code: 'native_permit_capacity' });
+    expect(replaced).toHaveBeenCalledTimes(2);
+  });
+
   it('returns a failure that happens before any child exists from start itself', async () => {
     const runtime = createWebManagedOrchestrationRuntime({ persistence: createPersistence(), executor: {
       start: async () => { await new Promise(resolve => setTimeout(resolve, 20)); throw refusal('native_managed_task_lease_invalid'); },
@@ -3479,4 +3499,68 @@ it('binds Designer budget hooks to canonical accepted users and native tool iden
       .rejects.toMatchObject({ code: 'managed_primary_step_budget_unavailable' });
 
   } finally { await runtime.shutdown(); }
+});
+
+describe('deterministic native backend selection', () => {
+  const backendRuntime = (nativeManagedJobs) => {
+    const started = [];
+    const runtime = createWebManagedOrchestrationRuntime({ persistence: createPersistence(), nativeManagedJobs, nativeBackendReadyWaitMs: 40,
+      executor: { start: async task => { started.push(task.executionBackend); return { status: 'completed', recoverablePreview: 'Done' }; } } });
+    return { runtime, started };
+  };
+  const jobs = (readiness) => {
+    let ready = false;
+    return { available: () => ready, acknowledge: vi.fn(async () => ({})),
+      awaitReady: vi.fn(async (input) => { const state = await readiness(input); ready = state === 'ready'; return state; }) };
+  };
+
+  it.each(['checkpoint', 'recovering'])('a submission during %s waits for readiness and selects native jobs', async () => {
+    const gate = deferred();
+    const nativeManagedJobs = jobs(async () => { await gate.promise; return 'ready'; });
+    const { runtime, started } = backendRuntime(nativeManagedJobs);
+    try {
+      const submitted = runtime.handleRpc({ method: 'submit', params: submitParams('ready') });
+      await waitFor(() => nativeManagedJobs.awaitReady.mock.calls.length === 1);
+      // Controller timing after the wait cannot change the decision taken.
+      gate.resolve(); const result = await submitted;
+      await runtime.handleRpc({ method: 'wait', params: { taskId: result.task.taskId, rootSessionId: 'ses_root', directory: '/workspace' } });
+      expect(started).toEqual(['native-job']);
+      expect(nativeManagedJobs.awaitReady).toHaveBeenCalledWith(expect.objectContaining({ timeoutMs: 40,
+        fallback: { rootSessionId: 'ses_root', directory: '/workspace' } }));
+    } finally { await runtime.shutdown(); }
+  });
+
+  it('a timed-out wait falls back to the session transport even if the controller becomes ready inside the lock', async () => {
+    let ready = false;
+    const nativeManagedJobs = { available: () => ready, acknowledge: vi.fn(async () => ({})),
+      awaitReady: vi.fn(async () => { ready = true; return 'timeout'; }) };
+    const { runtime, started } = backendRuntime(nativeManagedJobs);
+    try {
+      const result = await runtime.handleRpc({ method: 'submit', params: submitParams('fallback') });
+      await runtime.handleRpc({ method: 'wait', params: { taskId: result.task.taskId, rootSessionId: 'ses_root', directory: '/workspace' } });
+      expect(started).toEqual(['legacy-session']);
+      // The owner journals `managed_backend_fallback` for exactly this scope.
+      expect(nativeManagedJobs.awaitReady.mock.calls[0][0].fallback).toEqual({ rootSessionId: 'ses_root', directory: '/workspace' });
+    } finally { await runtime.shutdown(); }
+  });
+
+  it('a downgraded bundle without the capability selects the session transport without waiting', async () => {
+    const nativeManagedJobs = jobs(async () => 'unsupported');
+    const { runtime, started } = backendRuntime(nativeManagedJobs);
+    try {
+      const result = await runtime.handleRpc({ method: 'submit', params: submitParams('downgrade') });
+      await runtime.handleRpc({ method: 'wait', params: { taskId: result.task.taskId, rootSessionId: 'ses_root', directory: '/workspace' } });
+      expect(started).toEqual(['legacy-session']);
+    } finally { await runtime.shutdown(); }
+  });
+
+  it('a ready controller selects native jobs without waiting', async () => {
+    const nativeManagedJobs = { available: () => true, acknowledge: vi.fn(async () => ({})), awaitReady: vi.fn() };
+    const { runtime, started } = backendRuntime(nativeManagedJobs);
+    try {
+      const result = await runtime.handleRpc({ method: 'submit', params: submitParams('ready-now') });
+      await runtime.handleRpc({ method: 'wait', params: { taskId: result.task.taskId, rootSessionId: 'ses_root', directory: '/workspace' } });
+      expect(started).toEqual(['native-job']); expect(nativeManagedJobs.awaitReady).not.toHaveBeenCalled();
+    } finally { await runtime.shutdown(); }
+  });
 });

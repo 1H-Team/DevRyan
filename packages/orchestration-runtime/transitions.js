@@ -3,6 +3,7 @@ import {
   validateManagedTaskRecord,
 } from './contract.js';
 import { isCheckCorrectionTransition } from './check-correction.js';
+import { isManagedNativeJobReceiptTransition } from './native-job-segments.js';
 
 const ALLOWED_TRANSITIONS = Object.freeze({
   queued: new Set(['starting', 'aborted']),
@@ -39,6 +40,7 @@ const IMMUTABLE_FIELDS = Object.freeze([
   'attempt',
   'priorTaskId',
   'executionKind',
+  'executionBackend',
   'createdAt',
   'recoveryLineageId',
 ]);
@@ -47,6 +49,7 @@ const terminalRecordChanged = (previous, next) => {
   const correction = isCheckCorrectionTransition(previous, next);
   const keys = new Set([...Object.keys(previous), ...Object.keys(next)]);
   for (const key of keys) {
+    if (key === 'nativeJobSegments' && isManagedNativeJobReceiptTransition(previous, next)) continue;
     if (key === 'operatorStop') continue; // Private control receipt may resolve after terminal settlement.
     if (key === 'requiredCheckReceipts') continue; // Verification may be rerun or explicitly waived after execution settles.
     if (correction && ['requiredChecks', 'requiredCheckCorrections'].includes(key)) continue;

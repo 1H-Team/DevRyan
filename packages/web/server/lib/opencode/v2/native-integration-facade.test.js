@@ -29,7 +29,13 @@ async function setup() {
   const nativeCalls = [], nativeLocations = [], mutations = [], attempts = new Map(), oauthBodies = [];
   let releaseStart, startEntered;
   const startBarrier = new Promise(resolve => { startEntered = resolve; });
-  let startPause, loseStartAcknowledgement = false, allowStart = true;
+  let startPause, loseStartAcknowledgement = false, allowStart = true, cancelRefusal;
+  // Each OAuth owner answers an attempt its current acquisition does not hold this way
+  // (the host's `{ code, operation }` refusal body, status 503).
+  const unheld = (req, res) => {
+    const integrationID = req.path.split('/')[3], kind = integrationID === 'openai' ? 'openai' : integrationID === 'mcp_remote' ? 'mcp' : 'provider';
+    return res.status(503).json({ code: `native_${kind}_attempt_scope_required`, operation: kind === 'mcp' ? 'mcp.oauth' : `provider.${integrationID}` });
+  };
   const snapshot = { locations: ['/owned', '/foreign'].map(directory => ({ directory, configuration: { providers: { openai: {} } },
     compatibility: { mcp: { remote: { type: 'remote', url: 'http://127.0.0.1:9/mcp', oauth: {}, enabled: true },
       disabled: { type: 'remote', url: 'http://127.0.0.1:9/disabled', enabled: false } } } })) };
@@ -82,6 +88,7 @@ async function setup() {
       if (req.method === 'GET' && req.path === '/api/websearch/provider') return res.json([{ id: 'tinyfish', name: 'TinyFish' }]);
       if (req.method === 'GET' && req.path.includes('/connect/oauth/')) {
         const attempt = attempts.get(req.path.split('/').at(-1));
+        if (!attempt) return unheld(req, res);
         await grants.reauthorize({ authorizationID: attempt.grant.authorizationID, binding: attempt.bound });
         return res.json({ status: attempt.status ?? 'pending' });
       }
@@ -101,12 +108,15 @@ async function setup() {
         return res.json({ attemptID, mode: kind === 'openai' ? 'auto' : 'code', url: 'http://127.0.0.1:9/owned-issuer', expiresAt: Date.now() + 60_000 });
       }
       if (req.method === 'DELETE' && req.path.includes('/connect/oauth/')) {
+        if (cancelRefusal) return res.status(503).json({ code: cancelRefusal, operation: 'provider.openai' });
         const attempt = attempts.get(req.path.split('/').at(-1));
+        if (!attempt) return unheld(req, res);
         await grants.reauthorize({ authorizationID: attempt.grant.authorizationID, binding: attempt.bound });
         attempts.delete(req.path.split('/').at(-1)); return res.json(true);
       }
       if (req.path.endsWith('/complete')) {
         const attempt = attempts.get(req.path.split('/').at(-2));
+        if (!attempt) return unheld(req, res);
         await grants.reauthorize({ authorizationID: attempt.grant.authorizationID, binding: attempt.bound });
         attempts.delete(req.path.split('/').at(-2)); return res.json(true);
       }
@@ -144,6 +154,9 @@ async function setup() {
     allowStart: value => { allowStart = value; },
     allowForeign: () => { original.directories.add('/foreign'); },
     loseStartAck: () => { loseStartAcknowledgement = true; },
+    // An idle instance dispose closes its acquisition, which cancels every attempt it held.
+    disposeInstance: () => { attempts.clear(); },
+    refuseCancel: code => { cancelRefusal = code; },
     enableCursor: () => { snapshot.locations[0].configuration.providers['cursor-acp'] = {}; },
     configureProvider: () => { snapshot.locations[0].configuration.providers.openai = { models: { fixture: {} } }; },
     bumpEpoch: () => { epoch++; }, revokeAtCommit: () => { revokeBeforeMutation = true; } };
@@ -311,6 +324,52 @@ describe('native integration public facade with original caller grants', () => {
     expect(removed.status).toBe(200); expect(removed.body.removed).toBe(true);
     expect(f.records.has('created_key')).toBe(false); expect(f.records.has('credential_openai')).toBe(true);
     expect(f.mutations).toEqual(['create', 'update', 'activate', 'remove']);
+  });
+  it('replaces, polls, completes and cancels OAuth attempts a disposed instance already cancelled', async () => {
+    const f = await setup();
+    const deletes = () => f.nativeCalls.filter(call => call.method === 'DELETE' && call.path.includes('/connect/oauth/')).length;
+    expect((await request(f.app).post('/api/provider/openai/oauth/authorize').send({ method: 0 })).status).toBe(200);
+    f.disposeInstance();
+    // Start again: the cancel of the gone attempt is refused as not held, and a new attempt starts.
+    expect((await request(f.app).post('/api/provider/openai/oauth/authorize').send({ method: 0 })).status).toBe(200);
+    expect(f.nativeCalls).toContainEqual({ method: 'DELETE', path: '/api/integration/openai/connect/oauth/attempt_1' });
+    expect(f.starts()).toBe(2);
+    // Polling a gone attempt reports it expired and forgets it, so the next start cancels nothing.
+    f.disposeInstance();
+    expect((await request(f.app).post('/api/provider/openai/oauth/callback').send({ method: 0 })).body).toEqual({ status: 'expired' });
+    const before = deletes();
+    expect((await request(f.app).post('/api/provider/openai/oauth/authorize').send({ method: 0 })).status).toBe(200);
+    expect(deletes()).toBe(before); expect(f.starts()).toBe(3);
+    f.disposeInstance();
+    expect((await request(f.app).post('/api/provider/openai/oauth/cancel').send({ method: 0 })).status).toBe(200);
+    // A code completion for a gone attempt answers expired; the next start needs no cancel.
+    expect((await request(f.app).post('/api/provider/xai/oauth/authorize').send({ method: 0 })).status).toBe(200);
+    f.disposeInstance();
+    const completed = await request(f.app).post('/api/provider/xai/oauth/callback').send({ method: 0, code: 'owned-code' });
+    expect(completed.status).toBe(410); expect(completed.body.code).toBe('native_integration_attempt_expired');
+    const beforeXai = deletes();
+    expect((await request(f.app).post('/api/provider/xai/oauth/authorize').send({ method: 0 })).status).toBe(200);
+    expect(deletes()).toBe(beforeXai);
+    // MCP sign-out clears a gone attempt so sign-in can start again.
+    expect((await request(f.app).post('/api/mcp/remote/auth').send({})).status).toBe(200);
+    f.disposeInstance();
+    expect((await request(f.app).delete('/api/mcp/remote/auth')).status).toBe(200);
+    expect((await request(f.app).post('/api/mcp/remote/auth').send({})).status).toBe(200);
+    expect(f.mutations).toEqual(['remove']);
+  });
+  it('keeps an attempt whose cancel is refused for any other reason and starts no replacement', async () => {
+    const f = await setup();
+    expect((await request(f.app).post('/api/provider/openai/oauth/authorize').send({ method: 0 })).status).toBe(200);
+    for (const code of ['native_openai_oauth_scope_required', 'native_mcp_attempt_scope_required']) {
+      f.refuseCancel(code);
+      const again = await request(f.app).post('/api/provider/openai/oauth/authorize').send({ method: 0 });
+      expect(again.status).toBe(503); expect(again.body.error).toContain(code);
+      expect(f.starts()).toBe(1);
+    }
+    f.refuseCancel(undefined);
+    expect((await request(f.app).post('/api/provider/openai/oauth/cancel').send({ method: 0 })).status).toBe(200);
+    expect((await request(f.app).post('/api/provider/openai/oauth/authorize').send({ method: 0 })).status).toBe(200);
+    expect(f.starts()).toBe(2);
   });
   it('retains an uncertain native OAuth start instead of issuing a replacement attempt', async () => {
     const f = await setup(); f.loseStartAck();

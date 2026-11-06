@@ -13,6 +13,32 @@ const schemaFields = new Set(['data', 'location', 'directory', 'id', 'modelID', 
 export const sanitizeNativeSchemaPath = value => typeof value === 'string' && value.length <= 256
   && value.split('.').every(key => schemaFields.has(key) || key === '<key>' || /^\[\d{1,10}\]$/.test(key));
 
+// Behaviour switches recorded in harness run fingerprints, enumerated by grep
+// over their readers. Every one is a kill or opt-in switch compared with `0`/`1`
+// (`DEVRYAN_FS_WATCH` also reads false/off): none carries a path, URL, credential
+// or free text. Values are reduced to this closed enum before they leave the
+// host, so a raw environment value is never journaled or reported.
+export const HARNESS_BEHAVIOUR_SWITCHES = Object.freeze([
+  'DEVRYAN_FS_WATCH', 'DEVRYAN_PREPARED_BASELINE_REUSE',
+  'DEVRYAN_LAZY_BASE_RUNS', 'DEVRYAN_CAPABILITY_TOOL_SCHEMA', 'DEVRYAN_SYSTEM_CACHE_PRESERVE', 'DEVRYAN_NATIVE_ARCHIVE',
+  'DEVRYAN_ORCHESTRATION_UNACKNOWLEDGED_EXPIRY', 'DEVRYAN_CHILD_VIEW_PREWARM',
+  'DEVRYAN_VIEW_CLONE', 'DEVRYAN_VIEW_FAST_MATERIALIZE', 'DEVRYAN_VIEW_REUSE', 'DEVRYAN_VIEW_SHARED_STANDBY', 'DEVRYAN_VIEW_STAT_REUSE',
+  'DEVRYAN_LEDGER_ANCESTOR_MEMO', 'DEVRYAN_LEDGER_ANCESTRY_COMPACTION', 'DEVRYAN_LEDGER_BASELINE_REFS', 'DEVRYAN_LEDGER_COMPLEXITY_GUARD',
+  'DEVRYAN_LEDGER_DIRECT_TREES', 'DEVRYAN_LEDGER_FAST_INGEST', 'DEVRYAN_LEDGER_INCREMENTAL_FILE_INDEX', 'DEVRYAN_LEDGER_PACK',
+  'DEVRYAN_LEDGER_PATH_WINNERS', 'DEVRYAN_LEDGER_PERSISTENT_INDEX', 'DEVRYAN_LEDGER_PERSISTENT_READER', 'DEVRYAN_LEDGER_PREWARM',
+  'DEVRYAN_LEDGER_RECORD_CACHE', 'DEVRYAN_LEDGER_REPOSITORY_CACHE', 'DEVRYAN_LEDGER_RESTAMP_BATCH', 'DEVRYAN_LEDGER_SNAPSHOT_REUSE',
+  'DEVRYAN_LEDGER_SYNC_WALKS', 'DEVRYAN_LEDGER_WORKER',
+]);
+export const HARNESS_BEHAVIOUR_SWITCH_VALUES = Object.freeze(['unset', '0', '1', 'true', 'false', 'on', 'off', 'yes', 'no', 'other']);
+const SWITCH_WORDS = new Set(HARNESS_BEHAVIOUR_SWITCH_VALUES.filter(value => !['unset', 'other'].includes(value)));
+/** Unset, a known switch word (trimmed, lower case), or `other`; never the raw value. */
+export const normalizeBehaviourSwitch = value => {
+  if (value === undefined) return 'unset';
+  const word = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  return SWITCH_WORDS.has(word) ? word : 'other';
+};
+const BEHAVIOUR_SWITCHES = new Set(HARNESS_BEHAVIOUR_SWITCHES);
+
 const REDACTED = '[REDACTED]';
 const CLAUDE_PROCESS_CLUES = new Set(['http_401', 'http_403', 'auth', 'model', 'unsupported_option', 'argument', 'config',
   'permission', 'launcher', 'module', 'syntax', 'spawn', 'connection', 'native_receipt']);
@@ -82,6 +108,10 @@ const NESTED_FIELDS = new Set([
   'schemaVersion', 'configurationHash', 'runtimeVersion', 'selection', 'catalog', 'contentHash', 'sourceHash', 'idsHash', 'providerHash', 'runtimeHash',
   'availability', 'bytes', 'plugins', 'configured', 'observed', 'observation', 'factoryCalls', 'ownership',
   'policies', 'readOverlap', 'waitAny', 'compactResults', 'contextProjection', 'duplicateOutputs', 'adaptiveDelegation',
+  // Run-fingerprint derivation evidence: role template/renderer identity, the
+  // host-attested render, policy provenance and enum-valued behaviour switches.
+  'templateHash', 'rendererHash', 'rendererVersion', 'attestedContentHash', 'templatePolicies', 'policySource', 'switches',
+  ...HARNESS_BEHAVIOUR_SWITCHES,
   'anchorUserMessageID', 'continuationMessageID', 'activeUserMessageID', 'todoContinuationCount',
   'owner', 'task', 'taskId', 'rootSessionId', 'parentTaskId', 'childSessionId', 'priorTaskId', 'envelopeId', 'resultEnvelope',
   'acknowledgedAt', 'resumable', 'partial', 'executionKind', 'failureKind', 'failureReason', 'dispatchGrouped',
@@ -116,6 +146,7 @@ const STABLE_IDENTIFIER_FIELDS = new Set([
   'sha256', 'hash', 'head', 'commit', 'tree', 'ref', 'parent',
   'streamId', 'subscriptionId',
   'configurationHash', 'contentHash', 'sourceHash', 'idsHash', 'providerHash', 'runtimeHash',
+  'templateHash', 'rendererHash', 'attestedContentHash',
   'anchorUserMessageID', 'continuationMessageID', 'activeUserMessageID',
   'taskId', 'rootSessionId', 'parentTaskId', 'childSessionId', 'priorTaskId', 'envelopeId',
   'recoveryLineageId', 'recoveryMessageID', 'runtimeInstanceID', 'providerRequestID',
@@ -344,8 +375,14 @@ export const createDiagnosticSanitizer = (options = {}) => {
         report.droppedFields += 1;
         continue;
       }
-      if (['configurationHash', 'contentHash', 'sourceHash', 'idsHash', 'providerHash', 'runtimeHash'].includes(key)
+      if (['configurationHash', 'contentHash', 'sourceHash', 'idsHash', 'providerHash', 'runtimeHash',
+        'templateHash', 'rendererHash', 'attestedContentHash'].includes(key)
         && nested !== null && (typeof nested !== 'string' || !/^[a-f0-9]{64}$/.test(nested))) {
+        report.droppedFields += 1;
+        continue;
+      }
+      // A switch name is a key only for its closed enum value, never free text.
+      if (BEHAVIOUR_SWITCHES.has(key) && (field !== 'switches' || !HARNESS_BEHAVIOUR_SWITCH_VALUES.includes(nested))) {
         report.droppedFields += 1;
         continue;
       }

@@ -30,7 +30,7 @@ export function priceLabel(price) {
 }
 `;
 
-export const routingTest = (caseId, sourceFilename) => `import assert from 'node:assert/strict';
+export const routingTest = (caseId, sourceFilename, kind = ROUTING_CASES[caseId]?.kind) => `import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 const source = await readFile(new URL('./${sourceFilename}', import.meta.url), 'utf8');
@@ -41,7 +41,7 @@ test('preserves service content and pricing', () => {
   assert.match(servicePills(false), /Procedure/);
   assert.doesNotMatch(servicePills(false), /Needs Review/);
 });
-${ROUTING_CASES[caseId]?.kind === 'behavior' ? `test('zero is a price, without changing presentation', () => {
+${kind === 'behavior' ? `test('zero is a price, without changing presentation', () => {
   assert.equal(priceLabel(0), '0');
   assert.equal(rowStyle, ${JSON.stringify(routingSource.match(/rowStyle = '(.*)';/)[1])});
   assert.equal(servicePills(true), '<span>Needs Review</span><span class="service-type">Procedure</span>');

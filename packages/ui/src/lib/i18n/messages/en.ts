@@ -2724,6 +2724,17 @@ export const dict = {
   'markdownRenderer.mermaid.actions.copySourceTitle': 'Copy Source',
   'markdownRenderer.mermaid.actions.downloadSvgTitle': 'Download SVG',
   'markdownRenderer.mermaid.toast.downloadFailed': 'Failed to download diagram',
+  'sessions.lifecycle.outcome.succeeded': 'Last run succeeded',
+  'sessions.lifecycle.outcome.failed': 'Last run failed',
+  'sessions.lifecycle.outcome.interrupted': 'Last run interrupted',
+  'sessions.lifecycle.outcome.finished': 'Last run finished',
+  'sessions.lifecycle.idleSince': 'Idle since {time}',
+  'sessions.lifecycle.duration': 'Ran for {duration}',
+  'sessions.fork.label': 'Forked From',
+  'sessions.fork.unavailableSource': 'another session',
+  'sessions.fork.boundary.before': 'before message',
+  'sessions.fork.boundary.through': 'through message',
+  'sessions.fork.openSourceAria': 'Open Source Session {title}',
 } as const;
 
 export type I18nKey = keyof typeof dict;

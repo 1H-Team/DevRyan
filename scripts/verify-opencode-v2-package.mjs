@@ -54,6 +54,7 @@ import { runCompiledManagedIntervalArm } from './opencode-v2-native/package-mana
 import { configureManagedModelAdmission, runCompiledManagedModelAdmission } from './opencode-v2-native/package-managed-model-admission-lane.mjs';
 import { runCompiledIntervalCorrectness, validateEventReconcileInterval, intervalCorrectnessArmTimeoutMs } from './opencode-v2-native/package-interval-correctness.mjs';
 import { runCompiledHumanQueue } from './opencode-v2-native/package-human-queue-lane.mjs';
+import { runCompiledManagedJobs } from './opencode-v2-native/package-managed-jobs-lane.mjs';
 import { assertBundleCloneLayout, createCompiledBundleUpgradeLane, snapshotClosedBundleSource, snapshotCheckpointedBundleSource, snapshotRetainedBundleWork, verifyCompiledCloneCompatibility } from './opencode-v2-native/package-bundle-upgrade-lane.mjs';
 import { runCompiledFreshInstallUpgrade } from './opencode-v2-native/package-fresh-install-upgrade-lane.mjs';
 import { runCompiledModelTitle } from './opencode-v2-native/package-model-title-lane.mjs';
@@ -74,9 +75,12 @@ const errorEvidence = error => ({ name: error.name, code: error.code, message: e
 const nodeHostRequired = 'native_package_node_host_required: Run node scripts/verify-opencode-v2-package.mjs';
 
 /** Qualified production binaries and real web owners; model replies alone are fixture data. */
-export async function runNativePackageAcceptance({ artifactRoot = path.join(repositoryRoot, '.cache/v2-validation/native-artifact'), baselineArtifactRoot, diagnostic = false, reviewedSetup = false, browser = false, preflight = false, skillDataRoot, onParentDeathReady, managedInterval, eventReconcileIntervalMs, managedCorrectness = false, retainedShellDiagnostic = false, managedModelAdmission, archivedRemovalOnly = false } = {}) {
+export async function runNativePackageAcceptance({ artifactRoot = path.join(repositoryRoot, '.cache/v2-validation/native-artifact'), baselineArtifactRoot, diagnostic = false, reviewedSetup = false, browser = false, preflight = false, skillDataRoot, onParentDeathReady, managedInterval, eventReconcileIntervalMs, managedCorrectness = false, retainedShellDiagnostic = false, managedModelAdmission, managedJobsOnly = false, archivedRemovalOnly = false } = {}) {
   if (process.versions.bun) throw Object.assign(new Error(nodeHostRequired), { code: 'native_package_node_host_required' });
   validateEventReconcileInterval(eventReconcileIntervalMs);
+  if (managedJobsOnly) assert.ok(!managedInterval && !managedCorrectness && !managedModelAdmission && !retainedShellDiagnostic
+    && !archivedRemovalOnly && !preflight && !reviewedSetup && !browser && !skillDataRoot && !onParentDeathReady,
+  'Managed jobs qualification is a separate compiled lane');
   if (managedModelAdmission !== undefined) {
     assert.ok(['low', 'medium'].includes(managedModelAdmission));
     assert.ok(!managedInterval && !managedCorrectness && !retainedShellDiagnostic && !reviewedSetup && !browser && !preflight && !skillDataRoot && !onParentDeathReady,
@@ -394,7 +398,10 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
     journal = await createFixtureJournal({ webDataDirectory: descriptor.launch.webDataDirectory, label: `fixture-main-${randomBytes(4).toString('hex')}` });
     host = createSessionExecutionHost({ dataDirectory: descriptor.launch.webDataDirectory, openCodeClient: client,
       getLauncher: () => artifacts.launcher, buildOpenCodeUrl, getOpenCodeAuthHeaders: deps.getAuthHeaders,
-      onDiagnostic: row => { diagnostics.push(row); journal.sessionExecution(row); }, nativeExecution: { writerConfig, isReady: () => Boolean(nativeURL),
+      onDiagnostic: row => { diagnostics.push(row); journal.sessionExecution(row); },
+      // As in application.js: a managed child's runs carry its task attempt.
+      attemptFor: ({ sessionID, directory: childDirectory }) => managed?.getManagedRuntime().childAttempt?.({ childSessionId: sessionID, directory: childDirectory }) ?? null,
+      nativeExecution: { writerConfig, isReady: () => Boolean(nativeURL),
         conversation:createNativeRevertConversation({openCodeClient:client,clientDeps:deps,isReady:()=>runtimeOwner?.isReady()===true,
           admissionOwner:{withRevertOperation:(input,action)=>runtimeOwner.nativeOwner.withRevertOperation(input,action),
             releaseTransactionHolds:input=>runtimeOwner.nativeOwner.releaseTransactionHolds(input),
@@ -426,6 +433,21 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
       readOnlyExecution: input => runtimeOwner.nativeOwner.readOnlyExecution(input),
       withPermit: (permit, action) => runtimeOwner.nativeOwner.withPermit(permit, action) };
     managed = createNativeManagedFixture({ client, admissionOwner: ownerDelegate, executionHost: host, directory, directories: locations.map(row => row.directory),
+      nativeManagedJobs: { available: () => runtimeOwner?.nativeManagedJobs.available() === true,
+        prepare: input => runtimeOwner.nativeManagedJobs.prepare(input), activate: input => runtimeOwner.nativeManagedJobs.activate(input),
+        cancelSegment: input => runtimeOwner.nativeManagedJobs.cancelSegment(input), cancelTask: input => runtimeOwner.nativeManagedJobs.cancelTask(input),
+        acknowledge: async input => {
+          const identity = { phase: 'compiled_native_job_ack', taskID: input.taskId, jobID: input.jobID, notificationID: input.notificationID };
+          try {
+            const result = await runtimeOwner.nativeManagedJobs.acknowledge(input);
+            observations.push({ ...identity, outcome: 'succeeded' }); return result;
+          } catch (error) {
+            const status = error?.status ?? error?.statusCode;
+            observations.push({ ...identity, outcome: 'failed', code: /^[a-z][a-z0-9_]{1,100}$/.test(error?.code ?? '') ? error.code : null,
+              status: Number.isSafeInteger(status) && status >= 400 && status <= 599 ? status : null });
+            throw error;
+          }
+        } },
       ...(eventReconcileIntervalMs !== undefined || managedInterval
         ? { eventReconcileIntervalMs: eventReconcileIntervalMs ?? managedInterval.intervalMs } : {}),
       ...(managedModelAdmission ? { onModelValidationFailure: record => {
@@ -434,6 +456,10 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
           sessionID: record.rootSessionId, directory: record.directory, payload: record }), true);
       } } : {}),
       dataDirectory: descriptor.launch.webDataDirectory, buildOpenCodeUrl, getOpenCodeAuthHeaders: deps.getAuthHeaders,
+      // As in application.js: a settled attempt's runs stop with it.
+      stopAttemptRuns: input => host.stopAttemptRuns(input),
+      onRunCleanup: row => observations.push({ phase: 'task_run_cleanup', taskID: row.taskId, childSessionID: row.childSessionId,
+        state: row.state, attempts: row.attempts, ...(row.stopped === undefined ? {} : { stopped: row.stopped }), ...(row.code ? { code: row.code } : {}) }),
       isNativeFallbackError: error => bundle.reviewedConfiguration?.isReviewedSlimFailoverError(error) === true,
       dispatchNativeRecovery: (record, prompt) => runtimeOwner.dispatchNativeRecovery(record, prompt),
       environment, observations, diagnostics, journal, executionModel: { providerID: 'devryan-smoke', modelID: 'smoke-write', variant: 'default' } });
@@ -473,6 +499,7 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
       }),
       withCredentialMutationQueue: createOpenAiOAuthCoordinator({ readAuth: () => undefined }).withAuthMutation,
       primaryRuntime: managed.primaryRuntime, taskContext: managed.taskContext, getManagedRuntime: managed.getManagedRuntime, authorization,
+      recoverStoppedManagedTasks: assertStopped => managed.getManagedRuntime().recoverStoppedRuntime(assertStopped),
       environment, supervisedController: { deniedReadDirectories: ['packages', 'scripts', 'node_modules'].map(name => path.join(repositoryRoot, name)) },
       onExit: exit => observations.push({ phase: 'compiled_controller_exit', ...exit }), onBound: child => { currentController = child; nativeURL = child.url; epoch++; observations.push({ phase: 'compiled_bound_catalog', catalog: child.bound.catalog, instanceID: child.instanceID }); } });
     slimWeb?.bindRuntimeOwner(runtimeOwner);
@@ -481,6 +508,15 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
     const controller = await (imageLane ? imageLane.withCapturedTransport(startController) : startController());
     imageLane?.captureRestarts(runtimeOwner);
     if (!managedInterval) failureEvents = await capturePackageFailureEvents({ client, getAuthHeaders: () => runtimeOwner.getAuthHeaders(), controller, observations });
+    const replaceManagedController = async () => {
+      await failureEvents?.close(); failureEvents = null;
+      const previous = currentController, exit = await previous.killForRecovery();
+      assert.equal(exit.receipt?.terminated, true); assert.equal(exit.receipt?.confined, true);
+      const replacement = await runtimeOwner.start();
+      assert.notEqual(replacement.instanceID, previous.instanceID);
+      failureEvents = await capturePackageFailureEvents({ client, getAuthHeaders: () => runtimeOwner.getAuthHeaders(), controller: replacement, observations });
+      return { previous, exit, replacement };
+    };
     assert.equal(controller.bound.catalog.asserted, true);
     if(reviewedSetup)await assertReviewedSetupBoot({runtimeOwner,controller,client,browser,onCase:row=>cases.push(row)});
     cases.push({ id: 'compiled-ready-catalog', status: 'passed', instanceID: controller.instanceID, source: 'accepted-supervisor-source-denied-full-serve' });
@@ -514,6 +550,11 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
         onExit: exit => observations.push({ phase: 'recovered_input_controller_exit', ...exit }) }));
       result = { status: 'retained-shell-diagnostic-passed', qualification: 'compiled-retained-shell-diagnostic-only',
         artifact: { buildId: artifacts.manifest.buildId, manifestSha256 }, remainingMandatoryGates: ['full-package-qualification'] };
+    } else if (managedJobsOnly) {
+      cases.push(...await runCompiledManagedJobs({ client, managed, provider, runtimeOwner, executionHost: host, replaceController: replaceManagedController,
+        directory, dataDirectory: descriptor.launch.webDataDirectory, databasePath: descriptor.launch.opencodeDatabasePath, environment, observations }));
+      result = { status: 'managed-jobs-passed', qualification: 'compiled-managed-jobs-only',
+        artifact: { buildId: artifacts.manifest.buildId, manifestSha256 }, remainingMandatoryGates: ['full-package-qualification'] };
     } else if (managedModelAdmission) {
       cases.push(await runCompiledManagedModelAdmission({ variant: managedModelAdmission, client, managed, provider, directory, diagnostics, journal }));
       result = { status: 'model-admission-passed', qualification: 'compiled-explorer-model-admission-only',
@@ -543,6 +584,8 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
     } else {
     let modelTitleProof;
     if (!preflight) {
+      cases.push(...await runCompiledManagedJobs({ client, managed, provider, runtimeOwner, executionHost: host, replaceController: replaceManagedController,
+        directory, dataDirectory: descriptor.launch.webDataDirectory, databasePath: descriptor.launch.opencodeDatabasePath, environment, observations }));
       cases.push(await runCompiledHelperIsolation({ runtimeOwner, client, provider, directory }));
       modelTitleProof = await runCompiledModelTitle({ runtimeOwner, client, provider, directory, root, getRuntimeOwner: () => runtimeOwner,
         enrollPrimary: sessionID => managed.admitPrimary(sessionID),
@@ -620,7 +663,8 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
       await invoke(scenario);
       if(scenario.id==='package-read')cases.push(await runCompiledWorkspaceRevert({invoke,client,executionHost:host,directory,sessionID:session.id,observations}));
       if (onParentDeathReady && scenario.id === 'package-write') await onParentDeathReady(await prepareCompiledParentDeathProbe({
-        root, provider, client, host, controller, descriptor, directory, sessionID: session.id, journal, inheritedJournals: [baselineEvidence.journal] }));
+        // The managed-jobs lanes replace the controller; probe the current one.
+        root, provider, client, host, controller: currentController, descriptor, directory, sessionID: session.id, journal, inheritedJournals: [baselineEvidence.journal] }));
     }
     if (reviewedSetup) cases.push(await runCompiledCouncil({ invoke, runtime: host.runtime, client, managed, directory, runtimeOwner }));
     const secondDirectory = locations[1].directory;
@@ -822,27 +866,29 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
   const changedPaths = [...new Set([...Object.keys(source.sources), ...Object.keys(after.sources)])]
     .filter(file => source.sources[file] !== after.sources[file]);
   if (fixtureSha256(await fs.readFile(fileURLToPath(import.meta.url))) !== runnerSha256) changedPaths.push('scripts/verify-opencode-v2-package.mjs');
-  result = { ...result, root, diagnostic, reviewedSetup, browser, preflight, managedCorrectness, retainedShellDiagnostic, managedModelAdmission,
+  result = { ...result, root, diagnostic, reviewedSetup, browser, preflight, managedCorrectness, retainedShellDiagnostic, managedModelAdmission, managedJobsOnly,
     eventReconcileIntervalMs: eventReconcileIntervalMs ?? managedInterval?.intervalMs ?? 750,
     cases, observations, diagnostics, cleanupFailures, source, runnerSha256,
     sourceCohort: { valid: changedPaths.length === 0, changedPaths } };
   if (cleanupFailures.length || changedPaths.length) result.status = 'failed';
   await fs.writeFile(path.join(root, 'result.json'), JSON.stringify(result, null, 2) + '\n');
-  run.finish(['passed', 'preflight-passed', 'interval-diagnostic-passed', 'interval-correctness-passed', 'retained-shell-diagnostic-passed', 'model-admission-passed', 'archived-removal-passed'].includes(result.status) ? 'passed' : 'failed');
+  run.finish(['passed', 'preflight-passed', 'interval-diagnostic-passed', 'interval-correctness-passed', 'retained-shell-diagnostic-passed', 'model-admission-passed', 'managed-jobs-passed', 'archived-removal-passed'].includes(result.status) ? 'passed' : 'failed');
   return result;
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   if (process.versions.bun) { process.stderr.write(nodeHostRequired + '\n'); process.exit(1); }
-  const {values}=parseArgs({options:{diagnostic:{type:'boolean'},'reviewed-setup':{type:'boolean'},browser:{type:'boolean'},preflight:{type:'boolean'},'artifact-root':{type:'string'},'baseline-artifact-root':{type:'string'},'skill-data':{type:'string'},'managed-correctness':{type:'boolean'},'retained-shell-diagnostic':{type:'boolean'},'keep-artifacts':{type:'boolean'},'event-reconcile-interval-ms':{type:'string'}}});
+  const {values}=parseArgs({options:{diagnostic:{type:'boolean'},'reviewed-setup':{type:'boolean'},browser:{type:'boolean'},preflight:{type:'boolean'},'artifact-root':{type:'string'},'baseline-artifact-root':{type:'string'},'skill-data':{type:'string'},'managed-correctness':{type:'boolean'},'managed-jobs':{type:'boolean'},'retained-shell-diagnostic':{type:'boolean'},'keep-artifacts':{type:'boolean'},'event-reconcile-interval-ms':{type:'string'}}});
   if (values['event-reconcile-interval-ms'] !== undefined) assert.match(values['event-reconcile-interval-ms'], /^(750|1500)$/,
     '--event-reconcile-interval-ms must be 750 or 1500');
   const result = await runNativePackageAcceptance({ diagnostic:values.diagnostic??false,reviewedSetup:values['reviewed-setup']??false,browser:values.browser??false,preflight:values.preflight??false,
     managedCorrectness: values['managed-correctness'] ?? false,
+    managedJobsOnly: values['managed-jobs'] ?? false,
     retainedShellDiagnostic: values['retained-shell-diagnostic'] ?? false,
     ...(values['event-reconcile-interval-ms'] === undefined ? {} : { eventReconcileIntervalMs: Number(values['event-reconcile-interval-ms']) }),
     ...(values['baseline-artifact-root'] ? { baselineArtifactRoot: path.resolve(values['baseline-artifact-root']) } : {}),
     ...(values['artifact-root']?{artifactRoot:path.resolve(values['artifact-root'])}:{}),...(values['skill-data']?{skillDataRoot:path.resolve(values['skill-data'])}:{}) });
-  process.stdout.write(JSON.stringify({ status: result.status, artifact: path.join(result.root, 'result.json'), cases: result.cases }) + '\n');
-  if (!['passed', 'preflight-passed', 'interval-correctness-passed', 'retained-shell-diagnostic-passed', 'model-admission-passed', 'archived-removal-passed'].includes(result.status)) process.exitCode = 1;
+  process.stdout.write(JSON.stringify({ status: result.status, artifact: path.join(result.root, 'result.json'), cases: result.cases,
+    ...(result.error ? { error: result.error } : {}), ...(result.cleanupFailures.length ? { cleanupFailures: result.cleanupFailures } : {}) }) + '\n');
+  if (!['passed', 'preflight-passed', 'interval-correctness-passed', 'retained-shell-diagnostic-passed', 'model-admission-passed', 'managed-jobs-passed', 'archived-removal-passed'].includes(result.status)) process.exitCode = 1;
 }

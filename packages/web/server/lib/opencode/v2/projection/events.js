@@ -183,7 +183,6 @@ const TEXT_FIELD = 'text';
 
 /** Events with no v1 counterpart that are dropped without a diagnostic. */
 const DROPPED_TYPES = new Set([
-  'session.viewed',
   'session.step.streamed',
   'session.tool.input.delta',
   'session.instructions.updated',
@@ -259,9 +258,19 @@ const sessionSignature = (info) => {
   const time = isRecord(info.time) ? info.time : EMPTY_DATA;
   const revert = isRecord(info.revert) ? info.revert : EMPTY_DATA;
   const model = isRecord(info.model) ? info.model : EMPTY_DATA;
+  const fork = isRecord(info.fork) ? info.fork : EMPTY_DATA;
+  const boundary = isRecord(fork.boundary) ? fork.boundary : EMPTY_DATA;
   return [
     info.title,
     time.archived,
+    // Lifecycle and fork facts: a reseed that changes only these still emits.
+    time.busy,
+    time.idle,
+    time.viewed,
+    info.outcome,
+    fork.sessionID,
+    boundary.type,
+    boundary.messageID,
     revert.messageID,
     revert.partID,
     revert.snapshot,
@@ -651,6 +660,22 @@ export function createEventProjector(options = {}) {
     const time = isRecord(state.info.time) ? state.info.time : {};
     state.info.time = { ...time, updated: ctx.created };
     maybeEmitSessionUpdated(ctx, state);
+  };
+
+  /**
+   * A native lifecycle fact (`session.execution.*`, `session.viewed`) changed
+   * busy/idle/viewed/outcome. Native applies its own ordering rules (strictly
+   * increasing idle, max viewed) without touching `time.updated`, so the
+   * projector re-reads the record instead of folding it: the revision bump makes
+   * an in-flight seed stale (`acceptReseed` requeues it) and `pendingUpdate`
+   * lets the seed emit `session.updated` when the signature moved.
+   * @param {SessionState} state
+   * @param {string} reason
+   */
+  const requestLifecycleReseed = (state, reason) => {
+    state.sessionRevision += 1;
+    state.pendingUpdate = true;
+    queueSession(state, reason);
   };
 
   const seedSessionInfo = (state, info) => {
@@ -1167,10 +1192,12 @@ export function createEventProjector(options = {}) {
 
   onSession('session.execution.started', (ctx, state) => {
     setStatus(ctx, state, BUSY_STATUS);
+    requestLifecycleReseed(state, 'execution_started');
   });
 
   onSession('session.execution.succeeded', (ctx, state) => {
     finishExecution(ctx, state);
+    requestLifecycleReseed(state, 'execution_succeeded');
   });
 
   onSession('session.execution.failed', (ctx, state, data) => {
@@ -1178,6 +1205,7 @@ export function createEventProjector(options = {}) {
       ?? { name: 'UnknownError', data: { message: '', v2Type: 'unknown' } };
     emit(ctx, 'session.error', { sessionID: state.sessionID, error });
     finishExecution(ctx, state);
+    requestLifecycleReseed(state, 'execution_failed');
   });
 
   onSession('session.execution.interrupted', (ctx, state, data) => {
@@ -1188,8 +1216,15 @@ export function createEventProjector(options = {}) {
       });
     }
     finishExecution(ctx, state);
+    // Native leaves idle and outcome unchanged on `shutdown`; the seed then emits nothing.
+    requestLifecycleReseed(state, 'execution_interrupted');
     // [ev M16]: `shutdown` keeps the claim, so the host may resume the run.
     if (data.reason === 'shutdown') queueReseed({ kind: 'active', reason: 'interrupted_shutdown' });
+  });
+
+  // Display metadata only: DevRyan never calls native view and unread stays client-owned.
+  onSession('session.viewed', (_ctx, state) => {
+    requestLifecycleReseed(state, 'viewed');
   });
 
   onSession('session.retry.scheduled', (ctx, state, data) => {
@@ -2002,6 +2037,9 @@ export function createEventProjector(options = {}) {
       if (!known) queueSession(state, 'active_unknown_session');
       const ctx = seedContext(state);
       const wasBusy = state.status.type !== 'idle';
+      // A busy/idle transition hidden by the gap moved the native lifecycle fields.
+      // Only real transitions reseed: a repeated reconciliation (overflow) queues nothing new.
+      if (wasBusy !== (status.type !== 'idle')) requestLifecycleReseed(state, 'active_lifecycle');
       if (state.directory === undefined) {
         // The UI routes 'global' payloads to its global reducer; hold the status for the seed.
         state.status = status;

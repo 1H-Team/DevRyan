@@ -420,7 +420,8 @@ export function NewWorktreeDialog({
     if (!projectDirectory || !git) {
       return;
     }
-    void fetchBranches(projectDirectory, git);
+    // The explicit "Fetch Branches" action is the one listing that verifies remotes.
+    void fetchBranches(projectDirectory, git, { remote: 'live' });
   }, [projectDirectory, git, fetchBranches]);
 
   React.useEffect(() => {

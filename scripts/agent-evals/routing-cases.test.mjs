@@ -10,6 +10,11 @@ import { ROUTING_CASES, routingFixture, routingSource, collectRoutingEvidence, c
 import { EVALUATION_CASE_IDS } from './config.mjs';
 import { gradeInitialAssessment, gradeRoutingOutcome, gradeToolRequirements } from './graders.mjs';
 import { runSessionTurn } from './client.mjs';
+import { isArmPinnedCase } from './adaptive-cases.mjs';
+
+// Raw host fingerprints attesting the specialists-by-default arm.
+const baselineArmEvidence = () => ({ startFingerprint: { schemaVersion: 1, policies: { adaptiveDelegation: false } },
+  finishFingerprint: { schemaVersion: 1, policies: { adaptiveDelegation: false } } });
 
 const repaired = (caseId, filename) => ROUTING_CASES[caseId].kind === 'typo'
   ? routingFixture(caseId, filename).source.replace('Retruns', 'Returns')
@@ -64,6 +69,7 @@ for (const [caseId, scenario] of Object.entries(ROUTING_CASES)) {
           assert.equal(options.planMode, scenario.planMode === true);
           if (!scenario.readOnly) writeFileSync(runFiles.sourcePath, repaired(caseId, path.basename(runFiles.sourcePath)));
           return {
+            harnessEvidence: baselineArmEvidence(),
             rootSessionId: 'root', childSessionIds: scenario.agent ? ['child'] : [],
             routingEvidence: scenario.kind === 'footer' ? { located: true, cause: true, verification: true }
               : scenario.kind === 'inventory' ? { counts: { identity: 180, billing: 180, session: 180, elevated: 135 } }
@@ -85,6 +91,11 @@ for (const [caseId, scenario] of Object.entries(ROUTING_CASES)) {
       if (!scenario.readOnly) assert.match(testResults[0].stdout + testResults[0].stderr, /ERR_ASSERTION/);
       assert.equal(testResults.at(-1).timedOut, false);
       assert.equal(result.status, 'passed', JSON.stringify(result.graders));
+      // Arm-pinned cases are graded as the attested specialists-by-default arm.
+      if (isArmPinnedCase(caseId)) {
+        assert.equal(result.delegationArm, 'baseline');
+        assert.ok(result.graders.some(grader => grader.id === `${caseId}.arm.baseline` && grader.passed));
+      }
       assertFixtureReady(root);
     } finally { rmSync(root, { recursive: true, force: true }); }
   });

@@ -49,6 +49,9 @@ describe('persistent Supabase connection', () => {
       expect(await auth.resolvePrincipal(request(cookie))).toMatchObject({ id: 'owner', scope: 'local-admin' });
       expect(await runtime.resolveScheduledTaskAccess({ ownerUserId: 'owner' })).toMatchObject({ state: 'dormant' });
       expect(await runtime.resolveScheduledTaskAccess({})).toMatchObject({ state: 'runnable' });
+      // Single-user: the local principal owns every session (turn timing and other
+      // session-scoped diagnostics authorize through this).
+      expect(await runtime.ownsSession({ id: 'owner', scope: 'local-admin' }, 'ses_local_fixture')).toBe(true);
       await runtime.recordOpenCodeActivity({ type: 'session.created', properties: { info: { id: 'ses_local_fixture', directory: '/fixture/project' } } });
       expect(runtime.connection.localSessionOwner('ses_local_fixture')).toEqual({ userId: 'owner', directory: '/fixture/project' });
       expect(fetchImpl).not.toHaveBeenCalled();

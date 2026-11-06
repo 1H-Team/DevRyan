@@ -222,6 +222,8 @@ export async function startNativeController(boot:NativeProcessBoot,identity:{cor
   };
   const command=async(input:NativeProcessCommand):Promise<unknown>=>{
     switch(input.action) {
+      case 'managed-job-owned':return input.phase==='cancelTask'?host.managedJobs.cancelTask(input.input,input.permit)
+        :host.managedJobs[input.phase](input.input,input.permit);
       case 'cursor-record-owned':{
         const {action,protocol,id,...record}=input;void [action,protocol,id];return cursor.persistOwned(record);
       }

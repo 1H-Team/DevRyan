@@ -1,6 +1,9 @@
 import type { NativeProcessCommand } from './native-process-protocol.js';
 import { NATIVE_PROCESS_LIMITS } from './native-process-protocol.js';
 
+/** Refusals the dispatcher answers before `run`; a reply carrying one proves the command never ran. */
+export const NATIVE_DISPATCH_REFUSALS: ReadonlySet<string> = new Set(['native_command_capacity','native_command_duplicate']);
+
 /** Correlation is concurrent; a settlement RPC must never queue behind close. */
 export function createNativeCommandDispatcher(options:{ readonly run:(command:NativeProcessCommand)=>Promise<unknown>;
   readonly closeStartup:()=>void;readonly respond:(id:string,result:{ok:true;result:unknown}|{ok:false;error:{code:string;status:number;message:string}})=>void }) {
@@ -11,11 +14,14 @@ export function createNativeCommandDispatcher(options:{ readonly run:(command:Na
     dispatch(command:NativeProcessCommand) {
       if(active.has(command.id)) { fail(command.id,'native_command_duplicate',409);return; }
       if(active.size>=NATIVE_PROCESS_LIMITS.inFlight) { fail(command.id,'native_command_capacity',503);return; }
-      if(closing && ['open','open-recovery','release','recover-shell-owned','remove-leaf-owned','release-removal-claim-owned','openai-cas-selected-owned','credential-commit-owned','credential-operation-owned','claude-lifecycle-read-owned','claude-lifecycle-transition-owned'].includes(command.action)) {fail(command.id,'native_controller_stopping',409);return;}
+      if(closing && ['open','open-recovery','release','recover-shell-owned','remove-leaf-owned','release-removal-claim-owned','openai-cas-selected-owned','credential-commit-owned','credential-operation-owned','claude-lifecycle-read-owned','claude-lifecycle-transition-owned','managed-job-owned'].includes(command.action)) {fail(command.id,'native_controller_stopping',409);return;}
       if(command.action==='close') closing=true;
       if(['close','quiesce','close-startup'].includes(command.action)) options.closeStartup();
       const task=Promise.resolve().then(()=>options.run(command)).then(result=>options.respond(command.id,{ok:true,result}),error=>{
-        const code = error && typeof error==='object' && 'code' in error && typeof error.code==='string' && /^[a-z][a-z0-9_]{0,95}$/.test(error.code) ? error.code : 'native_control_failed';
+        const reported = error && typeof error==='object' && 'code' in error && typeof error.code==='string' && /^[a-z][a-z0-9_]{0,95}$/.test(error.code) ? error.code : 'native_control_failed';
+        // Only the checks above may answer these codes: the host retries them as
+        // proof that the command never ran, so a command that did run cannot.
+        const code = NATIVE_DISPATCH_REFUSALS.has(reported) ? 'native_control_failed' : reported;
         const status = error && typeof error==='object' && 'status' in error && typeof error.status==='number' && Number.isInteger(error.status) && error.status>=400 && error.status<=599 ? error.status : 503;
         // Wire errors contain identifiers, never arbitrary native payloads/tokens.
         fail(command.id,code,status);

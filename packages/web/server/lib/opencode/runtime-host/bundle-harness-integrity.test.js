@@ -8,6 +8,8 @@ import {BUNDLE_REFERENCE_FIELDS,PER_FILE_RECORD,inspectBundleHarness} from './bu
 import {createSessionMutationRuntime} from '../../../../../harness-runtime/lib/session-mutations.js';
 import {sha256} from './bundle-migration-inventory.js';
 import {createNativeProjectLocations} from './native-project-locations.js';
+import {MANAGED_NATIVE_JOB_PROOF_DIRECTORY,MANAGED_NATIVE_JOB_TOMBSTONE_PROMPT,compactManagedOrchestrationState,createManagedTaskRecord,
+  createManagedTaskResultEnvelope,decodeLedgerSnapshot,decodeManagedNativeJobProofShard,encodeManagedNativeJobProofShard,managedNativeJobProofShard} from '@devryan/orchestration-runtime';
 
 const roots=[];
 afterEach(async()=>Promise.all(roots.splice(0).map(root=>fs.rm(root,{recursive:true,force:true}))));
@@ -428,3 +430,55 @@ test('deleting every session after real edits and reverts never refuses startup 
   // OpenCode no longer has any session or message: every reference left is history of a removed session.
   await expect(inspectBundleHarness(web,{sessionIDs:[],messageIDs:[]})).resolves.toBeDefined();
 },60_000);
+
+// A released native-job proof shard beside the ledger, as the scheduler writes it.
+const nativeProofLedger=(directory,{root='ses_removed',child='ses_removed',index=1}={})=>{
+  const task={...createManagedTaskRecord({idempotencyKey:`native-${index}`,rootSessionId:root,parentTaskId:null,directory,mode:'orchestrator',
+    providerId:'openai',modelId:'fixture',agent:'fixer',variant:null,label:'Native',prompt:'Fix.',taskId:`dvr_task_native_${index}`,sequence:index,
+    createdAt:1,timeoutAt:null,attempt:1,priorTaskId:null,executionKind:'start',executionBackend:'native-job'}),
+    childSessionId:child,leaseToken:`dvr_lease_${index}`,status:'failed',startedAt:1,finishedAt:2,failureReason:'failed',partial:true,
+    recoverablePreview:'Partial.',canonicalRefs:[{type:'message',id:`msg_child_${index}`}],
+    nativeJobSegments:[{jobID:`dvr_job_${index}`,notificationID:`msg_notice_${index}`,messageID:`msg_prompt_${index}`,state:'accepted',completion:'done'}]};
+  const envelope={...createManagedTaskResultEnvelope(task,{sequence:index,createdAt:2,resumable:true}),action:'abandon',acknowledgedAt:2};
+  return compactManagedOrchestrationState({version:1,tasks:[task],resultEnvelopes:[envelope]},{now:30*24*60*60*1000});
+};
+const writeProofShard=async(web,compacted)=>{
+  const [task]=compacted.state.tasks,[envelope]=compacted.state.resultEnvelopes,shard=managedNativeJobProofShard(task.taskId);
+  const file=path.join(web,'orchestration',MANAGED_NATIVE_JOB_PROOF_DIRECTORY,`${shard}.json`);
+  await fs.mkdir(path.dirname(file),{recursive:true});await fs.writeFile(file,encodeManagedNativeJobProofShard(shard,[{task,envelope}]));
+  return {task,envelope,shard,file};
+};
+test('a released native-job proof is finished history: a removed session resolves, a lost one is a finding, a ledger copy wins',async()=>{
+  const f=await fixture({acked:true});
+  const proof=await writeProofShard(f.web,nativeProofLedger(f.member.directory));
+  expect(proof.task.prompt).toBe(MANAGED_NATIVE_JOB_TOMBSTONE_PROMPT);
+  // Deleting every session leaves nothing unresolved.
+  expect((await f.verify()).findings).toEqual([]);
+  const lost=await writeProofShard(f.web,nativeProofLedger(f.member.directory,{child:'ses_gone'}));
+  expect((await f.verify()).findings.map(row=>[row.code,row.ledger,row.key])).toEqual([
+    ['bundle_session_reference_lost','orchestratio',`native-job-proofs/${lost.task.taskId}`]]);
+  // While the ledger still holds the task, its record is the one inspected.
+  const ledger=path.join(f.web,'orchestration','ledger.json');
+  await fs.writeFile(ledger,JSON.stringify({tasks:[{taskId:lost.task.taskId,status:'failed',childSessionId:'ses_removed',rootSessionId:'ses_removed'}]}));
+  expect((await f.verify()).findings).toEqual([]);
+  await fs.writeFile(lost.file,'{broken');
+  await expect(f.verify()).rejects.toMatchObject({code:'bundle_native_job_proof_invalid'});
+  await fs.writeFile(lost.file,JSON.stringify({version:1,shard:lost.shard,tasks:[{taskId:lost.task.taskId}],resultEnvelopes:[]}));
+  await expect(f.verify()).rejects.toMatchObject({code:'bundle_native_job_proof_invalid'});
+});
+test('relocation moves ledger records, their envelopes and released proofs together and keeps every document decodable',async()=>{
+  const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'bundle-proof-relocation-')));roots.push(root);
+  const web=path.join(root,'web'),source=path.join(root,'source'),target=path.join(root,'target');
+  const proof=await writeProofShard(web,nativeProofLedger(source,{root:'ses_root',child:'ses_child',index:1}));
+  const live=nativeProofLedger(source,{root:'ses_root',child:'ses_child',index:2});
+  const kept={...live.state.tasks[0],prompt:'Kept whole.'},keptEnvelope=live.state.resultEnvelopes[0];
+  const ledger=path.join(web,'orchestration','ledger.json');
+  await fs.writeFile(ledger,JSON.stringify({version:1,tasks:[kept],resultEnvelopes:[keptEnvelope]}));
+  await inspectBundleHarness(web,{relocate:true,projectMap:[{sourceDirectory:source,targetDirectory:target}],sessionIDs:['ses_root','ses_child'],messageIDs:[]});
+  const savedLedger=decodeLedgerSnapshot(JSON.parse(await fs.readFile(ledger,'utf8')));
+  expect(savedLedger.tasks.map(task=>task.directory)).toEqual([target]);
+  expect(savedLedger.resultEnvelopes.map(envelope=>envelope.directory)).toEqual([target]);
+  const [moved]=decodeManagedNativeJobProofShard(JSON.parse(await fs.readFile(proof.file,'utf8')),proof.shard);
+  expect(moved.task).toEqual({...proof.task,directory:target});
+  expect(moved.envelope).toEqual({...proof.envelope,directory:target});
+});

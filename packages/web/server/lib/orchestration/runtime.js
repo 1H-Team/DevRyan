@@ -45,7 +45,7 @@ import {
 import { createAtomicManagedOrchestrationLedger } from './atomic-ledger.js';
 import { resolveManagedTaskTurnBudget } from './managed-task-turn-budget.js';
 import { resolveGen2OpenCodeClient } from '../opencode/opencode-client-seam.js';
-import { createWebManagedOpenCodeExecutor } from './open-code-executor.js';
+import { createWebManagedOpenCodeExecutor, NATIVE_BACKEND_READY_WAIT_MS } from './open-code-executor.js';
 import { createManagedOrchestrationPrivateHost } from './private-host.js';
 import { createParentReadFreshness } from './parent-read-freshness.js';
 
@@ -81,6 +81,9 @@ const TRANSIENT_NATIVE_ADMISSION_CODES = new Set([
   'native_managed_task_owner_unavailable',
 ]);
 const NATIVE_ADMISSION_RETRY_DELAY_MS = 750;
+// A permit-count refusal before the create ran waits for a slot, with this
+// short backoff, while its task can still start: never a launch failure.
+const nativePermitRetryDelayMs = attempt => Math.min(500, 25 * 2 ** Math.min(attempt, 5));
 
 const resolveMinimumTaskTimeoutMs = (agent) => {
   const normalizedAgent = typeof agent === 'string' ? agent.trim().toLowerCase() : '';
@@ -316,18 +319,31 @@ const normalizeHandoffParams = (params) => {
 // One delayed retry when native admission refuses a create for a transient
 // reason. Only a refusal raised before the create ran is retried: after it, a
 // child may exist and the executor's own cleanup owns the outcome.
-export const withNativeAdmissionRetry = (dispatch, { delayMs = NATIVE_ADMISSION_RETRY_DELAY_MS, onAdmitted = () => {}, logger = console } = {}) => (
+export const withNativeAdmissionRetry = (dispatch, { delayMs = NATIVE_ADMISSION_RETRY_DELAY_MS, onAdmitted = () => {}, logger = console,
+  readTask, now = Date.now } = {}) => (
   async (input, action) => {
     if (input?.operation !== 'create') return await dispatch(input, action);
-    let invoked = false;
+    let invoked = false, retried = false;
     const admitted = (...args) => { invoked = true; onAdmitted(input.taskId); return action(...args); };
-    try {
-      return await dispatch(input, admitted);
-    } catch (error) {
-      if (invoked || !TRANSIENT_NATIVE_ADMISSION_CODES.has(error?.code)) throw error;
-      try { logger.warn?.('[ManagedOrchestration] Retrying refused native admission once', { taskId: input.taskId, code: error.code }); } catch {}
-      await new Promise(resolve => setTimeout(resolve, delayMs));
-      return await dispatch(input, admitted);
+    // Stop, a new lease or the deadline ends the permit wait.
+    const startable = () => {
+      const task = typeof readTask === 'function' ? readTask(input.taskId) : null;
+      return Boolean(task) && task.status === 'starting' && task.leaseToken === input.leaseToken && !(Number.isFinite(task.timeoutAt) && now() >= task.timeoutAt);
+    };
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return await dispatch(input, admitted);
+      } catch (error) {
+        if (invoked || !TRANSIENT_NATIVE_ADMISSION_CODES.has(error?.code)) throw error;
+        if (error.code === 'native_permit_capacity' && startable()) {
+          await new Promise(resolve => setTimeout(resolve, nativePermitRetryDelayMs(attempt)));
+          continue;
+        }
+        if (retried) throw error;
+        retried = true;
+        try { logger.warn?.('[ManagedOrchestration] Retrying refused native admission once', { taskId: input.taskId, code: error.code }); } catch {}
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
     }
   }
 );
@@ -335,6 +351,8 @@ export const withNativeAdmissionRetry = (dispatch, { delayMs = NATIVE_ADMISSION_
 export const createWebManagedOrchestrationRuntime = (options = {}) => {
   const logger = options.logger ?? console;
   const now = options.now ?? Date.now;
+  const nativeBackendReadyWaitMs = options.nativeBackendReadyWaitMs ?? NATIVE_BACKEND_READY_WAIT_MS;
+  const nativeBackendSelection = new AsyncLocalStorage();
   const isManagedOpenCode = options.isManagedOpenCode ?? (() => true);
   const getWorkAdmissionBlock = options.getWorkAdmissionBlock ?? (() => null);
   const emitEvent = options.publishEvent ?? (() => undefined);
@@ -386,7 +404,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
   };
   const nativeTaskDispatch = typeof options.nativeTaskDispatch === 'function'
     ? withNativeAdmissionRetry(options.nativeTaskDispatch, { delayMs: options.nativeAdmissionRetryDelayMs,
-      onAdmitted: noteAdmittedStart, logger })
+      onAdmitted: noteAdmittedStart, logger, readTask: taskId => scheduler.getTask(taskId), now })
     : undefined;
   const cursorReadOnly = options.cursorReadOnly === true && typeof options.nativeTaskDispatch === 'function';
   const supportsReadOnlyProvider = providerId => supportsManagedReadOnlyProvider(providerId, { cursorReadOnly });
@@ -503,6 +521,9 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     cursorReadOnly,
     registerExecutionChild: options.registerExecutionChild,
     nativeTaskDispatch,
+    nativeManagedJobs: options.nativeManagedJobs,
+    nativeReadyWaitMs: nativeBackendReadyWaitMs,
+    readManagedTask: taskId => scheduler.getTask(taskId),
     ...(openCodeClient === null ? {} : { openCodeClient }),
     readTerminalError: (input) => terminalErrors.read(input),
     readOperatorAbort: (input) => scheduler.readOperatorStop(input) ?? operatorAborts.read(input),
@@ -590,6 +611,22 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
   };
 
   const scheduler = options.scheduler ?? createManagedTaskScheduler({
+    resolveExecutionBackend: input => {
+      if (input.providerId === 'cursor-acp') return 'cursor';
+      const prior = input.priorTaskId ? scheduler.getTask(input.priorTaskId) : null;
+      if (input.childSessionId && prior?.executionBackend === 'native-job') return 'native-job';
+      if (input.childSessionId && prior && prior.providerId !== 'cursor-acp' && prior.executionBackend !== 'native-job') return 'legacy-session';
+      // A submission's bounded readiness wait decides its backend; the
+      // scheduler lock never waits and controller timing cannot change it.
+      const selected = nativeBackendSelection.getStore();
+      if (selected) return selected;
+      return options.nativeManagedJobs?.available?.() === true ? 'native-job' : 'legacy-session';
+    },
+    ...(options.nativeManagedJobs ? { acknowledgeNativeJob: ({ task, segment, envelopeID }) => options.nativeManagedJobs.acknowledge({
+      taskId: task.taskId, rootSessionId: task.rootSessionId, leaseToken: task.leaseToken, directory: task.directory, sessionID: task.childSessionId,
+      providerId: task.providerId, modelId: task.modelId, agent: task.agent, variant: task.variant,
+      jobID: segment.jobID, notificationID: segment.notificationID, messageID: segment.messageID, envelopeID,
+    }) } : {}),
     inspectRequiredChecks: task => projectVerification(task),
     verifyTaskPrerequisites: task => verifyTaskPrerequisites(task),
     cursorReadOnly,
@@ -835,6 +872,13 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     } else throw createRuntimeError('native_managed_task_scope_invalid', 'Native task dispatch operation is unavailable', 403);
     return task;
   };
+  const verifyNativeJobSegment = async input => {
+    assertAvailable();
+    if (!initialized || !ownershipAcquired || shutdownPromise) throw createRuntimeError('native_managed_job_scope_invalid', 'Native managed job owner is unavailable', 403);
+    await persistence.verifyOwnership?.();
+    if (['prepare', 'activate'].includes(input?.phase)) assertWorkAdmission();
+    return await scheduler.verifyNativeJobSegment(input);
+  };
 
   // A recovery catalog read is bound to the current unacknowledged attempt,
   // never to a caller-supplied root ID or the original tool's expired permit.
@@ -966,6 +1010,16 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
   };
 
   const preparedSubmissions = new AsyncLocalStorage();
+  // Wait outside the scheduler lock for a replacing, checkpointing or
+  // recovering controller. Timeout selects the session transport, journaled
+  // as `managed_backend_fallback` by the native owner.
+  const selectSubmissionBackend = async (params, signal) => {
+    const jobs = options.nativeManagedJobs;
+    if (!jobs || typeof jobs.awaitReady !== 'function' || jobs.available?.() === true) return jobs?.available?.() === true ? 'native-job' : null;
+    const state = await jobs.awaitReady({ timeoutMs: nativeBackendReadyWaitMs, ...(signal ? { signal } : {}),
+      fallback: { rootSessionId: String(params?.rootSessionId ?? ''), directory: String(params?.directory ?? '') } });
+    return state === 'ready' ? 'native-job' : state === 'timeout' ? 'legacy-session' : null;
+  };
   const nativePromptContexts = new AsyncLocalStorage();
   const resolveSubmission = async (params, context) => {
     context.signal?.throwIfAborted();
@@ -1138,6 +1192,8 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
       }
       case 'submit': {
         context.signal?.throwIfAborted();
+        const nativeBackend = await selectSubmissionBackend(params, context.signal);
+        context.signal?.throwIfAborted();
         assertWorkAdmission();
         const timeoutAt = resolveSubmitTimeoutAt(params, now);
         const prepared = preparedSubmissions.getStore();
@@ -1182,7 +1238,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
         if (maxOutputBytes !== undefined) await project(createManagedTaskRecord({ ...submission,
           taskId: MANAGED_TASK_ID_PREFIX.padEnd(256, 'x'), dispatchWaveId: MANAGED_WAVE_ID_PREFIX.padEnd(256, 'x'),
           sequence: Number.MAX_SAFE_INTEGER, createdAt: now(), attempt: 1, priorTaskId: null, executionKind: 'start' }), null);
-        const task = await scheduler.submit(submission, { signal: context.signal, authorize: async () => {
+        const submitTask = () => scheduler.submit(submission, { signal: context.signal, authorize: async () => {
           context.signal?.throwIfAborted(); assertAvailable(); assertWorkAdmission();
           await persistence.verifyOwnership?.();
           await context.authorizeSubmission?.();
@@ -1191,6 +1247,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
             check: required.checks.find(check => check.name === correction.name), correction, verifyRunner: verifyCheckRunner });
           context.signal?.throwIfAborted(); assertAvailable(); assertWorkAdmission();
         } });
+        const task = nativeBackend ? await nativeBackendSelection.run(nativeBackend, submitTask) : await submitTask();
         // Compatibility callers ask to learn a pre-child failure from this receipt.
         const settled = params.awaitAdmission === true ? await awaitStartAdmission(task.taskId, { signal: context.signal }) ?? task : task;
         return committedProjection({ taskId: settled.taskId, rootSessionId: settled.rootSessionId, action: 'start', status: settled.status }, () => project(settled));
@@ -1584,6 +1641,9 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
   return {
     prepareBridge,
     initialize,
+    // The resolved policy projection that harness_capabilities reports; agent
+    // prompts render from it (packaged-agents setAgentPromptPolicySource).
+    getHarnessPolicies: () => harnessPolicies,
     async recoverStoppedRuntime(assertStopped) {
       assertAvailable();
       await ensureOwnership();
@@ -1688,6 +1748,16 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
       } }, state => nativePromptContexts.run({ readBarrier: state.readBarrier }, () => action(state)));
     },
     verifyNativeTaskDispatch: input => verifyNativeTaskDispatch(input).catch(error => { throw normalizeRuntimeError(error); }),
+    verifyNativeJobSegment: input => verifyNativeJobSegment(input).catch(error => { throw normalizeRuntimeError(error); }),
+    async readNativeJobInputDispositions() {
+      assertAvailable();
+      if (shutdownPromise) throw createRuntimeError('native_managed_job_scope_invalid', 'Native managed job owner is unavailable', 403);
+      await ensureOwnership();
+      const dispositions = await scheduler.readNativeJobInputDispositions();
+      await persistence.verifyOwnership?.();
+      if (shutdownPromise || !ownershipAcquired) throw createRuntimeError('native_managed_job_scope_invalid', 'Native managed job owner is unavailable', 403);
+      return dispositions;
+    },
     // The managed attempt a child session's runs belong to: `unknown` until
     // this owner is initialized, null for a session no task owns.
     childAttempt: ({ childSessionId, directory }) => (initialized && ownershipAcquired && !shutdownPromise

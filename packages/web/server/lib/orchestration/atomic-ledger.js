@@ -3,7 +3,14 @@ import nodeFs from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-import { decodeLedgerSnapshot, encodeLedgerSnapshot } from '@devryan/orchestration-runtime';
+import {
+  MANAGED_NATIVE_JOB_PROOF_DIRECTORY,
+  MANAGED_NATIVE_JOB_PROOF_SHARDS,
+  MANAGED_NATIVE_JOB_PROOF_SHARD_MAX_BYTES,
+  decodeLedgerSnapshot,
+  encodeLedgerSnapshot,
+  managedNativeJobProofShardFile,
+} from '@devryan/orchestration-runtime';
 import { writeFileAtomic } from '@devryan/harness-runtime';
 import { createExecutionHostOwner } from '@devryan/harness-runtime/lib/execution-host-owner.js';
 
@@ -31,6 +38,24 @@ const createOwnershipError = (code, message) => Object.assign(new Error(message)
   statusCode: 409,
 });
 
+// Released native-job proofs live in fixed shard files beside the ledger. A
+// shard is never quarantined: one that cannot be read whole refuses loading,
+// because forgetting it would forget proofs. Content is decoded by the core.
+const proofShardError = (code, shard, cause) => Object.assign(new Error(`native job proof shard ${shard} is ${code === 'native_job_proof_shard_too_large' ? 'too large' : 'unreadable'}`), {
+  code, statusCode: 503, ...(cause ? { cause } : {}),
+});
+const parseProofShard = (shard, text, maxBytes) => {
+  if (Buffer.byteLength(text, 'utf8') > maxBytes) throw proofShardError('native_job_proof_shard_unreadable', shard);
+  try { return JSON.parse(text); } catch (error) { throw proofShardError('native_job_proof_shard_unreadable', shard, error); }
+};
+const encodeProofShard = (shard, text, maxBytes) => {
+  managedNativeJobProofShardFile(shard);
+  if (typeof text !== 'string') throw new TypeError('native job proof shard text is required');
+  const bytes = Buffer.from(text, 'utf8');
+  if (bytes.length > maxBytes) throw proofShardError('native_job_proof_shard_too_large', shard);
+  return bytes;
+};
+
 const isValidOwnerRecord = (value) => (
   Boolean(value)
   && typeof value === 'object'
@@ -57,10 +82,11 @@ const defaultIsProcessAlive = (pid) => {
 
 /** The Windows lifetime belongs to the retained native kernel keeper. Ledger
  * JSON, timestamps and numeric process probes never authorize stealing it. */
-function createWindowsManagedLedger({ filePath, ownerPath, maxReadBytes, now, logger, windowsLedgerOwner, windowsLauncher, createWindowsKeeper }) {
+function createWindowsManagedLedger({ filePath, ownerPath, maxReadBytes, maxProofShardReadBytes, now, logger, windowsLedgerOwner, windowsLauncher, createWindowsKeeper }) {
   const files = windowsLedgerOwner;
   if (!files || files.maxBytes !== DEFAULT_MAX_LEDGER_READ_BYTES || !Number.isSafeInteger(maxReadBytes)
-    || maxReadBytes < 1 || maxReadBytes > files.maxBytes || path.dirname(ownerPath) !== path.dirname(filePath)) {
+    || maxReadBytes < 1 || maxReadBytes > files.maxBytes || path.dirname(ownerPath) !== path.dirname(filePath)
+    || !Number.isSafeInteger(maxProofShardReadBytes) || maxProofShardReadBytes < 1 || maxProofShardReadBytes > files.maxBytes) {
     throw Object.assign(new Error('managed_orchestration_windows_authority_unavailable'), { code: 'managed_orchestration_windows_authority_unavailable', statusCode: 503 });
   }
   const createKeeper = createWindowsKeeper ?? (() => createExecutionHostOwner({ directory: path.dirname(ownerPath), launcher: windowsLauncher, lockFile: ownerPath }));
@@ -125,6 +151,36 @@ function createWindowsManagedLedger({ filePath, ownerPath, maxReadBytes, now, lo
   };
   const save = (snapshot, observation) => enqueue(() => saveNow(snapshot, observation));
   const load = () => enqueue(loadNow);
+  // Every fixed shard name is read through the retained owner; the Node
+  // filesystem never lists or reads this directory on Windows.
+  const proofDirectory = path.join(path.dirname(filePath), MANAGED_NATIVE_JOB_PROOF_DIRECTORY);
+  const proofShardPath = shard => path.join(proofDirectory, managedNativeJobProofShardFile(shard));
+  const readProofShard = async (shard) => {
+    try { return await read(proofShardPath(shard)); }
+    catch (error) { if (/^managed_orchestration_/.test(error?.code ?? '')) throw error; throw proofShardError('native_job_proof_shard_unreadable', shard, error); }
+  };
+  const loadNativeJobProofShards = () => enqueue(async () => {
+    const shards = [];
+    for (const shard of MANAGED_NATIVE_JOB_PROOF_SHARDS) {
+      const previous = await readProofShard(shard);
+      if (!previous) continue;
+      if (!Buffer.isBuffer(previous.bytes) || previous.bytes.length > maxProofShardReadBytes) throw proofShardError('native_job_proof_shard_unreadable', shard);
+      shards.push({ shard, value: parseProofShard(shard, previous.bytes.toString('utf8'), maxProofShardReadBytes) });
+    }
+    await assertOwnership(); return shards;
+  });
+  const putNativeJobProofShard = (shard, text) => enqueue(async () => {
+    const bytes = encodeProofShard(shard, text, maxProofShardReadBytes);
+    await assertOwnership(); await files.ensureDirectory(proofDirectory);
+    const previous = await readProofShard(shard);
+    await assertOwnership(); await files.write(proofShardPath(shard), bytes, { expected: previous }); await assertOwnership();
+  });
+  const removeNativeJobProofShard = shard => enqueue(async () => {
+    const previous = await readProofShard(shard);
+    if (!previous) return;
+    if (typeof files.delete !== 'function') throw Object.assign(new Error('managed_orchestration_windows_authority_unavailable'), { code: 'managed_orchestration_windows_authority_unavailable', statusCode: 503 });
+    await assertOwnership(); await files.delete(proofShardPath(shard), { expected: previous }); await assertOwnership();
+  });
   const releaseOwnership = () => closePromise ??= (async () => {
     // Keep the kernel lease until every admitted write has settled. New work
     // is fenced immediately; uncertain close never reports released ownership.
@@ -138,6 +194,7 @@ function createWindowsManagedLedger({ filePath, ownerPath, maxReadBytes, now, lo
     ownershipState = 'unowned'; return true;
   })();
   return { filePath, acquireOwnership, verifyOwnership: assertOwnership, releaseOwnership, load, save,
+    loadNativeJobProofShards, putNativeJobProofShard, removeNativeJobProofShard,
     getDiagnostics: () => ({ filePath, quarantinedPath, recoveryWarning, writeCount, ownership: { state: ownershipState,
       heartbeatAgeMs: observedAt === null ? null : Math.max(0, now() - observedAt), staleAfterMs: DEFAULT_OWNER_STALE_MS } }) };
 }
@@ -152,10 +209,11 @@ export const createAtomicManagedOrchestrationLedger = (options = {}) => {
   const randomId = options.randomId ?? (() => crypto.randomUUID().replaceAll('-', ''));
   const logger = options.logger ?? console;
   const maxReadBytes = options.maxReadBytes ?? DEFAULT_MAX_LEDGER_READ_BYTES;
+  const maxProofShardReadBytes = options.maxProofShardReadBytes ?? MANAGED_NATIVE_JOB_PROOF_SHARD_MAX_BYTES;
   const ownerPath = options.ownerPath
     ? path.resolve(options.ownerPath)
     : path.join(path.dirname(filePath), 'owner.lock');
-  if ((options.platform ?? process.platform) === 'win32') return createWindowsManagedLedger({ ...options, filePath, ownerPath, maxReadBytes, now, logger });
+  if ((options.platform ?? process.platform) === 'win32') return createWindowsManagedLedger({ ...options, filePath, ownerPath, maxReadBytes, maxProofShardReadBytes, now, logger });
   const processId = options.pid ?? process.pid;
   const isProcessAlive = options.isProcessAlive ?? defaultIsProcessAlive;
   const heartbeatIntervalMs = options.heartbeatIntervalMs ?? DEFAULT_OWNER_HEARTBEAT_MS;
@@ -496,6 +554,62 @@ export const createAtomicManagedOrchestrationLedger = (options = {}) => {
     return operation;
   };
 
+  // Shard writes share the ledger's write queue and owner fence, so a shard the
+  // core writes before a ledger commit is durable before that commit starts.
+  const enqueueWrite = (action) => {
+    const operation = saveTail.then(action);
+    saveTail = operation.catch(() => undefined);
+    return operation;
+  };
+  const proofDirectory = path.join(path.dirname(filePath), MANAGED_NATIVE_JOB_PROOF_DIRECTORY);
+  const proofShardPath = shard => path.join(proofDirectory, managedNativeJobProofShardFile(shard));
+
+  const loadNativeJobProofShards = async () => {
+    await saveTail;
+    await assertOwnership();
+    try {
+      const directory = await fsApi.lstat(proofDirectory);
+      if (!directory.isDirectory()) throw new TypeError('native job proof directory is not a directory');
+    } catch (error) {
+      if (error?.code === 'ENOENT') return [];
+      throw proofShardError('native_job_proof_shard_unreadable', 'directory', error);
+    }
+    const shards = [];
+    for (const shard of MANAGED_NATIVE_JOB_PROOF_SHARDS) {
+      const file = proofShardPath(shard);
+      let text;
+      try {
+        const stat = await fsApi.lstat(file);
+        if (!stat.isFile() || stat.size > maxProofShardReadBytes) throw new RangeError(`native job proof shard exceeds ${maxProofShardReadBytes} bytes or is not a regular file`);
+        text = await fsApi.readFile(file, 'utf8');
+      } catch (error) {
+        if (error?.code === 'ENOENT') continue;
+        logger.warn?.('[ManagedOrchestration] Refused an unreadable native job proof shard', { shard,
+          reason: error instanceof Error ? error.message : String(error) });
+        throw proofShardError('native_job_proof_shard_unreadable', shard, error);
+      }
+      shards.push({ shard, value: parseProofShard(shard, text, maxProofShardReadBytes) });
+    }
+    await assertOwnership();
+    return shards;
+  };
+
+  const putNativeJobProofShard = (shard, text) => enqueueWrite(async () => {
+    const bytes = encodeProofShard(shard, text, maxProofShardReadBytes);
+    await assertOwnership();
+    await writeFileAtomic(proofShardPath(shard), bytes, { fs: fsApi, mode: 0o600, directoryMode: 0o700, randomId });
+    await assertOwnership();
+  });
+
+  const removeNativeJobProofShard = shard => enqueueWrite(async () => {
+    const file = proofShardPath(shard);
+    await assertOwnership();
+    try { await fsApi.rm(file); } catch (error) { if (error?.code === 'ENOENT') return; throw error; }
+    const handle = await fsApi.open(proofDirectory, 'r');
+    try { await handle.sync(); } finally { await handle.close(); }
+    await assertOwnership();
+  });
+
   return {
     filePath,
     acquireOwnership,
@@ -503,6 +617,9 @@ export const createAtomicManagedOrchestrationLedger = (options = {}) => {
     releaseOwnership,
     load,
     save,
+    loadNativeJobProofShards,
+    putNativeJobProofShard,
+    removeNativeJobProofShard,
     getDiagnostics() {
       const heartbeatAgeMs = lastObservedHeartbeatAt === null
         ? null

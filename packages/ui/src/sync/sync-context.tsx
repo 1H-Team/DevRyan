@@ -152,7 +152,14 @@ import { resolveEffectivePlanIndicatorState } from "./plan-indicator"
 import { persistSessionPlanRevision, type PersistSessionPlanRevisionInput } from "@/lib/plans/sessionPlanPersistence"
 import { useSessionPlanFileStore } from "@/stores/useSessionPlanFileStore"
 import { resolveProjectForSessionDirectory } from "@/lib/projectResolution"
-import { isStrictlyOlderSession } from "./session-recency"
+import {
+  hasNewerSessionLifecycle,
+  isStrictlyOlderSession,
+  mergeSessionLifecycle,
+  mergeSessionListLifecycle,
+  retainSessionLifecycle,
+} from "./session-recency"
+import { decodeDisplaySession, decodeDisplaySessionList, decodeSessionEventInfo } from "./display-session"
 import { mergeSessionPreservingMeaningfulTitle } from "../lib/sessionTitles"
 import {
   isSessionTurnSettledForCompletion,
@@ -1089,12 +1096,13 @@ const mergeRecoveredSessionsIntoStore = (
       if (!nextSession?.id) continue
       const sessionIndex = sessions.findIndex((item) => item.id === nextSession.id)
       if (sessionIndex >= 0) {
-        if (!haveEquivalentSyncSnapshots(sessions[sessionIndex], nextSession)) {
+        const mergedSession = mergeSessionLifecycle(sessions[sessionIndex], nextSession)
+        if (!haveEquivalentSyncSnapshots(sessions[sessionIndex], mergedSession)) {
           if (!changed) {
             sessions = [...sessions]
             changed = true
           }
-          sessions[sessionIndex] = nextSession
+          sessions[sessionIndex] = mergedSession
         }
         continue
       }
@@ -1149,9 +1157,10 @@ const materializeBlockingRequestSessions = async (
         scopedClient.session.get({ sessionID }).then((result) => unwrapSdkResult(result, "session.get")),
       ).catch(() => null)
       if (blockingRequestSessionMaterializationsInFlight.get(materializationKey) !== token) return
-      if (!session?.id) return
+      const decodedSession = decodeDisplaySession(session)
+      if (!decodedSession) return
 
-      const recoveredSession = stripSessionDiffSnapshots(session) as Session
+      const recoveredSession = stripSessionDiffSnapshots(decodedSession)
       recoveredSessions.push(recoveredSession)
       if (routingIndex) {
         setIndexedSessionDirectory(routingIndex, recoveredSession.id, directory)
@@ -2070,13 +2079,16 @@ export const reconcileDirectorySessionListSnapshot = (
     if (current && isStrictlyOlderSession(change.session, current)) {
       sessionsById.set(
         change.session.id,
-        mergeSessionPreservingMeaningfulTitle(change.session, current),
+        retainSessionLifecycle(
+          mergeSessionPreservingMeaningfulTitle(change.session, current),
+          change.session,
+        ),
       )
       continue
     }
     sessionsById.set(
       change.session.id,
-      mergeSessionPreservingMeaningfulTitle(current, change.session),
+      mergeSessionLifecycle(current, mergeSessionPreservingMeaningfulTitle(current, change.session)),
     )
   }
   return Array.from(sessionsById.values()).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
@@ -2894,7 +2906,7 @@ export async function resyncDirectoryAfterReconnect(
       retry(() => scopedClient.session.get({ sessionID: sessionId }).then((result) => unwrapSdkResult(result, "session.get"))).catch(() => null),
       retry(() => scopedClient.session.messages({ sessionID: sessionId, limit: RECONNECT_MESSAGE_LIMIT }).then(unwrapMessageRecordsResult)).catch(() => null),
     ])
-    const session = sessionResponse
+    const session = decodeDisplaySession(sessionResponse)
     const records = messageResponse
     if (!session || !records || !isSessionCurrent(sessionId)) return
 
@@ -2916,9 +2928,12 @@ export async function resyncDirectoryAfterReconnect(
       let sessionTotal = state.sessionTotal
 
       if (sessionIndex >= 0) {
-        const mergedNextSession = mergeSessionPreservingMeaningfulTitle(
+        const mergedNextSession = mergeSessionLifecycle(
           sessions[sessionIndex],
-          nextSession,
+          mergeSessionPreservingMeaningfulTitle(
+            sessions[sessionIndex],
+            nextSession,
+          ),
         )
         if (!haveEquivalentSyncSnapshots(sessions[sessionIndex], mergedNextSession)) {
           sessions = [...state.session]
@@ -3061,7 +3076,7 @@ function handleEvent(
   const directory = resolveDirectoryFromRoutingIndex(routingIndex, rawDirectory, payload, childStores)
 
   if (payload.type === "session.created" || payload.type === "session.updated") {
-    const session = (payload.properties as { info?: Session }).info
+    const session = decodeSessionEventInfo(payload.properties)
     if (session) {
       applyGlobalSessionLifecycleEvent({ type: "upsert", session })
       const lifecycleDirectory = resolveSessionRecordDirectory(session)
@@ -3167,13 +3182,16 @@ function handleEvent(
   if (batch?.source === store) store = batch.staged
 
   if (payload.type === "session.created" || payload.type === "session.updated") {
-    const incoming = (payload.properties as { info?: Session }).info
+    const incoming = decodeSessionEventInfo(payload.properties)
     const currentSession = incoming
       ? store.getState().session.find((session) => session.id === incoming.id)
       : undefined
     if (incoming && currentSession && isStrictlyOlderSession(incoming, currentSession)) {
       const titlePreservingCurrent = mergeSessionPreservingMeaningfulTitle(incoming, currentSession)
-      if (titlePreservingCurrent.title === currentSession.title) {
+      if (
+        titlePreservingCurrent.title === currentSession.title
+        && !hasNewerSessionLifecycle(currentSession, incoming)
+      ) {
         responsivenessPerfCount("sync.event.noop")
         syncDebug.dispatch.eventNoChange(payload.type, incoming.id, undefined)
         return
@@ -3895,8 +3913,7 @@ export function SyncProvider(props: {
                 }
                 throw wrapped
               }
-              const snapshotSessions = (result.data ?? [])
-                .filter((s) => !!s?.id)
+              const snapshotSessions = decodeDisplaySessionList(result.data)
                 .map((session) => stripUntrustedSessionDiffSummary(
                   stripSessionDiffSnapshots(session) as Session & { summary?: SessionSummaryDiffStats | null },
                 ) as Session)
@@ -3910,7 +3927,9 @@ export function SyncProvider(props: {
                 requestLifecycleRevision,
               )
               store.setState({
-                session: sessions,
+                // Membership and fields come from the snapshot; monotonic
+                // lifecycle facts already stored are never moved backwards.
+                session: mergeSessionListLifecycle(store.getState().session, sessions),
                 sessionTotal: sessions.length,
                 limit: Math.max(sessions.length, 50),
                 sessionListStatus: "ready",
@@ -4514,7 +4533,7 @@ export function useEnsureSessionChildren(
       ) {
         return
       }
-      const childSessions = unwrapSdkResult(result, "session.children") ?? []
+      const childSessions = decodeDisplaySessionList(unwrapSdkResult(result, "session.children"))
       store.setState((state: DirectoryStore) => {
         const nextSessions = mergeChildSessions(state.session, childSessions, { directory: dir })
         if (nextSessions === state.session) {

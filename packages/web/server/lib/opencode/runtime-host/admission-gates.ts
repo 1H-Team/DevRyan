@@ -50,6 +50,7 @@ import type { NativeSlimCommandInput, NativeSlimCommandOptions } from './native-
 import { persistInterviewNotification } from './native-notification.js';
 import {recoveredInputHash} from './native-recovered-input-hash.js';
 import { decorateNativeForms, type McpElicitationCalls } from './native-mcp-elicitation.js';
+import {createNativeManagedJobs} from './native-managed-jobs.js';
 
 export interface AdmissionHookOwners {
   readonly assertToolRead:(event:unknown,target:string)=>Effect.Effect<void>;
@@ -206,6 +207,12 @@ export function createAdmissionGates(options: AdmissionGateOptions) {
         ...(derivation && ['session.prompt', 'session.switchAgent', 'session.switchModel'].includes(name) ? { derivation } : {}) },
         commandDerivation.clear(action));
     });
+  const managedJobs=createNativeManagedJobs({services:()=>{
+    if(!jobs||!store||!inbox||!execution||!executionScope)throw new HostRefusal('native_managed_job_owner_unavailable',503,'job.managed');
+    return {jobs,store,inbox,execution,scope:executionScope};
+  },recheck:(phase,input,permit)=>recheck(permit,{operation:`job.managed.${phase}`,sessionID:input.sessionID,input}),
+    guard:(phase,input,permit,action)=>operation({operation:`job.managed.${phase}`,sessionID:input.sessionID,input},action)
+    .pipe(Effect.provideService(OperationPermitRef,permit))});
   const assertReviewedCommand = (input: NativeSlimCommandInput) => Effect.gen(function* () {
     const sessionID = input.invocation.sessionID;
     const derivation = yield* commandDerivation.requestMarker();
@@ -990,6 +997,7 @@ export function createAdmissionGates(options: AdmissionGateOptions) {
       if ((await runControllerEffect(execution.active)).size) throw new HostRefusal('native_settlement_uncertain', 409, 'host.quiesce');
       return [...held];
     },
+    managedJobs,
     wakeOwned: async ({ sessionID, permit }: { readonly sessionID: string; readonly permit: OperationPermit }): Promise<void> => {
       if (!execution) throw new HostRefusal('native_execution_unavailable', 503, 'shell.continue', sessionID);
       await runControllerEffect(operation({ operation: 'shell.continue', sessionID }, execution.wake(SessionSchema.ID.make(sessionID)))

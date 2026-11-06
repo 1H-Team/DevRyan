@@ -8,6 +8,9 @@ import { assertNativeCancellationSettled, waitFor } from './process-lanes.mjs';
 import { assertWriterOutcome, snapshotFiles } from './assertions.mjs';
 
 const tables = ['session_v2', 'session_message', 'session_inbox', 'session_pending'];
+// OpenCode 2.2.0 dropped the never-written session_pending table; older layouts
+// still carry it, so its rows are read when it exists and are empty otherwise.
+const optionalTables = new Set(['session_pending']);
 
 /** Attach the competing request before removal enters its private DELETE scope. */
 export function stageIndependentRemovalRace(action, matches) {
@@ -26,15 +29,19 @@ export async function readNativeRemovalRows({ databasePath, sessions }) {
   assert.equal(new Set(sessions).size, sessions.length, 'Removal identity set contains duplicates');
   for (const id of sessions) assert.match(id, /^ses_[A-Za-z0-9]+$/, 'Invalid native removal identity');
   const ids = sessions.map(id => `'${id}'`).join(',');
-  const expressions = tables.map(table => `'${table}',json((SELECT COALESCE(json_group_array(json_object('id',id,'sessionID',${table === 'session_v2' ? 'id' : 'session_id'})),'[]') FROM (SELECT * FROM ${table} WHERE ${table === 'session_v2' ? 'id' : 'session_id'} IN (${ids}) ORDER BY id)))`);
   const db = resolveSqliteDriver().open(databasePath, { readonly: true });
   let result;
   try {
     db.pragma('busy_timeout=5000');
+    const present = new Set(db.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (${tables.map(table => `'${table}'`).join(',')})`)
+      .all().map(row => row.name));
+    for (const table of tables) assert.ok(present.has(table) || optionalTables.has(table), `Missing native ${table} table`);
+    const expressions = tables.filter(table => present.has(table)).map(table => `'${table}',json((SELECT COALESCE(json_group_array(json_object('id',id,'sessionID',${table === 'session_v2' ? 'id' : 'session_id'})),'[]') FROM (SELECT * FROM ${table} WHERE ${table === 'session_v2' ? 'id' : 'session_id'} IN (${ids}) ORDER BY id)))`);
     const row = db.prepare(`SELECT json_object(${expressions.join(',')}) AS rows;`).get();
     assert.ok(typeof row?.rows === 'string' && Buffer.byteLength(row.rows) <= 1024 * 1024,
       'Native removal inspection exceeded its output bound');
     result = JSON.parse(row.rows);
+    for (const table of tables) if (!present.has(table)) result[table] = [];
   } finally { db.close(); }
   for (const table of tables) {
     assert.ok(Array.isArray(result[table]), `Missing native ${table} rows`);

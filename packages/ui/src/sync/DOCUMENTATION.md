@@ -544,6 +544,48 @@ changes newer than the request revision, so a concurrent create/update survives
 the snapshot and a concurrent delete wins. Historical cached rows that received
 no concurrent lifecycle event are removed instead of being preserved forever.
 
+### Native session lifecycle and fork facts
+
+Session records are `DisplaySession` (`types.ts`): the SDK `Session` plus the
+optional native `time.busy`, `time.idle`, `time.viewed`, `outcome`
+(`succeeded`/`failed`/`interrupted`) and `fork`
+(`{sessionID, boundary: {type: before|through, messageID}}`) the v1 projection
+carries. `time.updated` keeps its meaning; lifecycle facts never move it.
+
+- **Decode boundary.** `decodeDisplaySession` / `decodeSessionEventInfo` /
+  `decodeDisplaySessionList` (`display-session.ts`) are the only way session
+  records from `session.created`/`session.updated` events and REST reads
+  (`session.list`, `session.get`, `session.children`, `session.update`,
+  `session.fork`, global `experimental.session.list`) enter the stores. A value
+  without an `id` string and a `time` object is dropped; invalid lifecycle
+  values are dropped; valid records keep their reference.
+- **Monotonic merge.** `mergeSessionLifecycle` / `retainSessionLifecycle`
+  (`session-recency.ts`): `busy` and `viewed` are max watermarks, `(idle,
+  outcome)` comes from the larger `idle` (a tie keeps the stored pair), `fork`
+  keeps the first defined value. Every recency gate applies it, including the
+  branch that rejects a record older by `updated`, so an older snapshot can
+  still advance lifecycle facts: `event-reducer.ts` (`session.created`,
+  `session.updated`), `sync-context.tsx` (`handleEvent` no-op gate,
+  `reconcileDirectorySessionListSnapshot`, directory `loadSessions`,
+  `mergeRecoveredSessionsIntoStore`, reconnect `session.get`),
+  `session-actions.ts` (`mirrorSessionIntoDirectoryStore`),
+  `session-history.ts` (metadata `session.get`), `session-children.ts`
+  (`mergeChildSessions`) and `useGlobalSessionsStore.ts` (list upsert,
+  snapshot apply, lifecycle-intent confirmation and replay, `upsertSession`,
+  `applyGlobalSessionLifecycleEvent`). Equality checks
+  (`areSessionRecordsEqual`, the global store signature, the sidebar row render
+  signature) compare the merged result.
+- **Authority.** These facts are display metadata. Running state comes only
+  from `session.status`, never from `busy > idle`. DevRyan never calls native
+  view, so `viewed` never clears unread (owned by `notification-store.ts`).
+  The native `outcome` never feeds managed verification. Forks keep a null
+  `parentID`; `fork` never changes grouping or the tree.
+- **Presentation.** `components/session/sessionLifecyclePresentation.ts`
+  formats the last outcome, idle time and (when `idle >= busy`) duration for the
+  sidebar idle ring and the header title tooltip. `SessionForkProvenance` shows
+  "Forked From <title> (before/through message)", linked only when the source
+  is in the principal's live or global session lists.
+
 ### Global session list
 
 Use `useGlobalSessionsStore` when the UI needs a **shared global session cache**.

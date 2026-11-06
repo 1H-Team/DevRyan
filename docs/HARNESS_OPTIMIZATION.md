@@ -23,6 +23,7 @@ Duplicate outputs default on only for a non-stale qualified profile: a verified 
 | `DEVRYAN_COMPACT_MANAGED_RESULTS` | `compactResults` | On by default (`0` disables). Version-1 canonical result header before selectively retrieved detail; declared required-check observation. |
 | `DEVRYAN_TASK_CONTEXT_PROJECTION` | `contextProjection` | Bounded task checkpoints, project decisions and native compaction context. |
 | `DEVRYAN_DUPLICATE_OUTPUTS` | `duplicateOutputs` | Qualified skill/managed-result duplicates in ordinary requests; independent of checkpoints. |
+| `DEVRYAN_ADAPTIVE_DELEGATION` | `adaptiveDelegation` | Off by default. The Orchestrator implements small, known, cohesive changes itself after `declare_checks`; explicit specialist requests and larger, unfamiliar, independent or substantial visual work still go to specialists. Promotion to default-on requires a full Balanced pass in matched live trials, which has not happened. |
 
 The other switches need `1`. The compatibility plugin reads its own environment and advertises `wait_any` only with `DEVRYAN_MANAGED_WAIT_ANY=1`; native registration takes the resolved host policy. Legacy eager/reference result clients and single-task `wait` remain supported. `DEVRYAN_MANAGED_RESULT_MODE=eager` retains its existing rollback behavior. No optional optimization is promoted solely because deterministic tests pass.
 
@@ -89,11 +90,21 @@ provider evidence from runtime accounting. It changes no inference defaults.
 
 The existing diagnostics ZIP includes `DevRyan-trace.json`. The authenticated `POST /api/diagnostics/export` also accepts `format: "chrome-trace"` with its existing runtime/task scope. Open the JSON in [Perfetto](https://perfetto.dev/docs/getting-started/other-formats). Root/task lanes correlate retained ledger, message, call and recovery identifiers. Export is bounded to 100,000 events and 32 MiB per projection stage; overflow is explicit.
 
-Observed queue, tool, workspace-gating, disposition, native turn, objective and recovery durations retain missing timestamps as null. Workspace gating is not parent idle time, observed first activity is not wire time to first response, overlapping duration sums are not a critical path, and cost is labelled native-runtime-reported or unavailable. A runtime-reported cost does not establish a provider bill or a provider-reported charge. Input/output/cache usage is deduplicated by canonical message. Context observations label `hook-applied`, `summary-suppressed`, `checkpoint`, `checkpoint-unavailable`, or historical `legacy-estimate` phases. Planned/applied counts and transform duration are separate from final-request sizes, which production hook diagnostics cannot establish and leave null. Structural metadata excludes private reasoning, opaque provider blobs and raw tool arguments/output. Repeated identical known diagnostics aggregate by identity/cause/generation; retention writes age/size eviction reasons before deletion. These additions do not establish why older historical evidence was already missing.
+Observed queue, tool, workspace-gating, disposition, native turn, objective and recovery durations retain missing timestamps as null. Workspace gating is not parent idle time, observed first activity is not wire time to first response, overlapping duration sums are not a critical path (a root's `totalObjectiveCriticalPathMs` is the union of its objectives' intervals, and null until every objective has settled), and cost is labelled native-runtime-reported or unavailable. A runtime-reported cost does not establish a provider bill or a provider-reported charge. Input/output/cache usage is deduplicated by canonical message. Context observations label `hook-applied`, `summary-suppressed`, `checkpoint`, `checkpoint-unavailable`, or historical `legacy-estimate` phases. Planned/applied counts and transform duration are separate from final-request sizes, which production hook diagnostics cannot establish and leave null. Structural metadata excludes private reasoning, opaque provider blobs and raw tool arguments/output. Repeated identical known diagnostics aggregate by identity/cause/generation; retention writes age/size eviction reasons before deletion. These additions do not establish why older historical evidence was already missing.
 
 Task exports attribute exact DevRyan-owned managed-task events to their root and preserve the recorded child relation even when the corresponding native session-created event has expired. The sanitizer preserves only the fixed `owner: devryan` marker needed for this attribution. Historical records whose owner marker was already dropped cannot establish that ownership. Unknown ownership, conflicting explicit roots and unrelated same-directory tasks cannot widen the export scope.
 
-The existing `agent:eval` CLI accepts a deterministic 30-case golden catalog and live paired mode; see `scripts/agent-evals/main.mjs`. Golden selections fail when no tests actually run. Paired mode alternates three trials per arm, freezes fixture/environment/model/effort and nonexperimental fingerprint dimensions, and retains interrupted/failed outcomes. Disagreements require investigation and ten pairs. Unknown metrics, unavailable models, configuration mismatch, failed outcomes or no reduction in the declared target cannot qualify promotion. Models are never silently replaced.
+The existing `agent:eval` CLI accepts a deterministic 30-case golden catalog and live paired mode; see `scripts/agent-evals/main.mjs`. Golden selections fail when no tests actually run. Paired mode alternates three trials per arm, freezes fixture/environment/model/effort and nonexperimental fingerprint dimensions, and retains interrupted/failed outcomes. Disagreements require investigation and ten pairs. Unknown metrics, unavailable models, configuration mismatch, failed outcomes or no reduction in the declared target cannot qualify promotion. Models are never silently replaced. `pairing.targetMetric` accepts `objectiveDurationMs`, `input`, `output`, `workspaceBarrierMs`, `resultConsumptionMs`, `toolExecutionMs` and `toolVolumeBytes`; token targets read the evaluated root's `usage.input` / `usage.output`.
+
+Packaged and project role prompts render from one policy source. `setAgentPromptPolicySource` in `packaged-agents.js` registers the managed orchestration runtime's resolved projection, the same object `harness_capabilities` returns; until it is registered, prompts fall back to the web process environment. Run fingerprints record which source they used as `policySource` (`runtime-projection`, `environment` or `unknown`), and use that same projection for their `policies`.
+
+Fingerprints carry derivation evidence for the role: `role.templateHash` (SHA-256 of the unrendered body with the renderer version), `role.rendererHash` and `role.rendererVersion`, `role.templatePolicies` (the policies the template branches on) and `role.attestedContentHash`, the host's own render of that template for the fingerprint's policies. The rendered `role.contentHash` stays checked evidence. `catalog.tools` lists one content hash per tool. Catalog hashes replace each reviewed-skill ID (`devryan-` plus 32 hex digits, a hash of the host's location folder and skill file path) with one placeholder, so hosts at different paths with the same skills hash alike; the skill tool's readable skill names stay in the hash. `runtimeHash` is the current runtime binary digest. `switches` records the behaviour-switch allowlist (`HARNESS_BEHAVIOUR_SWITCHES` in `harness-runtime/lib/sanitizer.js`: `DEVRYAN_FS_WATCH`, `DEVRYAN_PREPARED_BASELINE_REUSE`, `DEVRYAN_LAZY_BASE_RUNS`, `DEVRYAN_CHILD_VIEW_PREWARM`, `DEVRYAN_VIEW_*`, `DEVRYAN_LEDGER_*`, `DEVRYAN_CAPABILITY_TOOL_SCHEMA`, `DEVRYAN_SYSTEM_CACHE_PRESERVE`, `DEVRYAN_NATIVE_ARCHIVE` and `DEVRYAN_ORCHESTRATION_UNACKNOWLEDGED_EXPIRY`, each named exactly). Every value is reduced to `unset`, a switch word (`0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no`) or `other`, so a raw environment value is never journaled or reported; the sanitizer drops any other value. Each preflight read captures the switches again, so a report holds them at run start and at finish.
+
+For a harness policy factor (`readOverlap`, `waitAny`, `compactResults`, `contextProjection`, `adaptiveDelegation`) the matched configuration requires, besides the selection, observed plugins and other policies: equal template and renderer hashes; in each arm, a rendered hash equal to the host-attested render (`role_attestation_mismatch` otherwise) and a `runtime-projection` policy source (`policy_source_unattested`); equal `runtimeHash`; equal configured plugin names in load order (their source-path hashes are host-local); equal switches, unchanged between start and finish of each run (`switches_changed_during_run`, `switches_unavailable`); and an equal catalog, except tools in the factor's declared capability-schema delta (`FACTOR_CAPABILITY_SCHEMA_DELTAS`: `devryan_task` for `waitAny` and `contextProjection`, none for the others), whose id set must still match. The `role` factor also requires runtime bytes, configured plugins and switches. Role and catalog hashes are never ignored globally; the `runtime` factor keeps its existing comparison.
+
+Usage is attributed to the evaluated root. The client names that root (`harnessEvidence.rootSessionId`). The Chrome Trace folds related helper sessions into their root and adds direct helper provider calls from journal `usageObservation` records (`source: provider_request`, a helper `purpose`, an explicit `rootSessionID` or calling `sessionID`). Each root reports `helperInput`/`helperOutput` and `attribution` (`helperSessions`, `helperCalls`, `helperUsageRecords`, `unattributedHelperCalls`, `helperOnly`), and the trace reports `attribution.unattributedHelperUsage`. A `session_model` title attempt without a helper session counts as a direct call that needs a usage record. Another root carrying usage, a direct call without a usage record, rootless helper usage or missing attribution evidence makes the pair `usage_unattributable`: it is held, never dropped.
+
+Policy factors pass only through the Balanced gate. The comparison's `balanced` object has `name`, `required`, `status` (`passed`, `held` or `failed`), `reasons`, `outcomes` (cases, passes per arm, disagreements) and `metrics.objectiveDurationMs` / `input` / `output`, each with `rule`, `baselineTotal`, `candidateTotal`, `delta`, `ratio` and `passed`. It passes when every case passed in both arms, the candidate's aggregate objective duration is below the baseline's, and its aggregate input and output tokens are each no higher. Missing measurements, unattributable usage, unavailable credentials or managed runtime (`prerequisite_unavailable`), missing fingerprint or switch evidence, confounds, incomplete cleanup and a disagreement before ten pairs (`expansion_required`) hold it. A clean comparison that misses a criterion (`outcome_failed`, `duration_not_lower`, `input_tokens_higher`, `output_tokens_higher`) fails it. The runner does not expand on its own: after a disagreement, re-run with `pairs: 10`. The `role` factor reports the gate with `required: false`.
 
 Runtime qualification uses `pairing.factor: "runtime"`: the same cases, model and effort run against two already-running isolated hosts, the baseline on the runtime being replaced and the candidate on the upgrade; each side's version is whatever its host reports as `runtimeVersion`. The compared factor is the recorded `runtimeVersion`; an `unknown` version on either side makes the fingerprint unavailable. Plugins retain exact name/content-hash identity. Only explicit `pairing.runtimePluginMigrations` entries with a name and exact `baselineHash`/`candidateHash` SHA-256 pair may differ; undeclared, reversed, missing or mismatched migrations fail the comparison. Role, catalog, selection and policy fingerprints must still be identical. This factor asks whether the candidate is non-inferior, not whether it reduced waste: optional `pairing.nonInferiorityMargin` (a number from 0 through 1, default 0.1) lets the candidate's measured `targetMetric` total exceed the baseline total by that fraction before `candidate_metric_worse` is recorded. The verdict is `non-inferior` only when no reason remains. A case that failed on the candidate but passed on the baseline, or a worse metric, is `inferior` only on a clean comparison; a confounded pair (mismatch, unavailable fingerprint, unchanged factor, incomplete cleanup) stays `inconclusive` even when the candidate also looks worse. Model unavailability stays `unavailable`. The comparison reports `margin`, `baselineTotal`, `candidateTotal` and `ratio`. A `runtime` paired run passes only on `non-inferior`; other factors still pass only on `canary-eligible`. `perf:compare` does not accept the `runtime` factor.
 
@@ -126,6 +137,56 @@ and unrelated files, and failing-before/passing-after source acceptance tests.
 These checks establish routing and source behavior, not rendered visual quality.
 Deterministic tests exercise the fixtures, wrong-role rejection, and stale-turn
 handling without calling a provider; live model results must be reported separately.
+
+## Adaptive delegation trials
+
+Live `adaptiveDelegation` trials grade each run against the routing branch its
+own host rendered. `scripts/agent-evals/adaptive-cases.mjs` reads the arm from
+the run's raw start and finish fingerprints: both must carry a boolean
+`policies.adaptiveDelegation` and agree (`false` is the baseline arm, `true` the
+adaptive arm). Any other evidence holds the run: status `held`, error code
+`evaluation_arm_unattested` and one failed `<case>.arm` grader, with no
+arm-specific grader run. A paired comparison with a held run records
+`arm_unattested` and the Balanced gate is held; that run counts as neither an
+outcome disagreement nor a failure. A graded run reports `<case>.arm.baseline`
+or `<case>.arm.adaptive`.
+
+The arm-pinned cases are `routing-natural-behavior`, `routing-natural-visual`,
+`routing-direct-typo`, `routing-plan-mode-behavior` and `routing-broad-discovery`,
+plus four adaptive cases. In the baseline arm each existing case uses its
+unchanged `ROUTING_CASES` graders. The correctness checks are the same in both
+arms: the case's acceptance test fails before and passes after, the test file
+and unrelated files are unchanged, and results are dispositioned. They differ
+only in who owns the work:
+
+| Case | Baseline arm | Adaptive arm |
+|---|---|---|
+| `routing-natural-behavior` (known one-file repair) | Fixer | Root edits directly, after a completed `declare_checks` and with no child edits |
+| `routing-natural-visual` (small cohesive visual change) | Designer | Direct with declared checks, or Designer |
+| `routing-direct-typo` | No managed calls | Direct with declared checks |
+| `routing-plan-mode-behavior` (plan, then "implement plan") | Fixer, optionally with Explorer | Direct with declared checks; at most one read-only Explorer; no edit in the planning turn |
+| `routing-broad-discovery` | Up to three Explorers | Same |
+| `adaptive-explicit-fixer` (user names Fixer) | Fixer | Fixer |
+| `adaptive-narrow-lookup` | No edits, at most one Explorer, exact `{missingLabel,line}` answer | Same |
+| `adaptive-check-discipline` | Fixer | Direct with declared checks |
+| `adaptive-independent-phases` (two disjoint files) | At least two editing Fixers started in one assistant message | Same |
+
+Every direct route also needs a passing owned test run that starts after the
+last edit ends. `adaptive-check-discipline` additionally needs, in both arms, a
+failed owned test run before the first edit. `devryan_task` events keep only the
+closed-shape `managedAction`, so direct routes allow only non-dispatching actions
+(and `start` where a companion is allowed). An unknown or missing action, or an
+edit without native timing, fails the route.
+
+`adaptive-independent-phases` allocates a third run-owned file
+(`src/devryan-eval-<run>.phase-b.ts`), which the fixture cleanup removes with the
+others. The live runner cannot yet drive Stop, reconnect and late completion,
+missing prerequisites, scoped-helper refusal, or `devryan_browser` visible
+verification. The fixture has no served page, and preview availability is a host
+prerequisite, so these remain manual or native-QA checks. Each evaluation root
+session is created with an explicit title, so the standard title runtime skips it.
+A managed child with a placeholder title can still be titled; that helper usage
+must be attributed to its root, or the pair is held.
 
 ## Duplicate-output acceptance
 

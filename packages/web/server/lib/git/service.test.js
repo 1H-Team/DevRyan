@@ -5,6 +5,19 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import simpleGit from 'simple-git';
 import { createRecordStore } from '@devryan/harness-runtime';
 import { collectCommitMessageContext } from './commit-message-context.js';
+import { runWithRequestPrincipal } from '../multi-user/request-context.js';
+
+const testGitHubAccounts = vi.hoisted(() => new Map());
+
+vi.mock('../github/auth.js', async (importOriginal) => {
+  const original = await importOriginal();
+  return {
+    ...original,
+    getGitHubAuthById: (accountId) => (
+      testGitHubAccounts.has(accountId) ? testGitHubAccounts.get(accountId) : original.getGitHubAuthById(accountId)
+    ),
+  };
+});
 
 import {
   applyHunk,
@@ -508,11 +521,94 @@ describe('git branch listing', () => {
     await git.raw(['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main']);
     await git.raw(['remote', 'add', 'origin', join(tmpdir(), 'devryan-missing-remote')]);
 
-    const branches = await getBranches(directory);
+    const branches = await getBranches(directory, { remote: 'live' });
 
     expect(branches.all).toContain('main');
     expect(branches.all).toContain('remotes/origin/main');
     expect(branches.all).not.toContain('remotes/origin/HEAD');
+  });
+
+  // The upload-pack wrapper records every remote probe, so an absent record
+  // proves no remote operation ran.
+  const createProbedRemote = async () => {
+    const { directory, git } = await createRepo();
+    const root = await mkdtemp(join(tmpdir(), 'devryan-git-branches-remote-'));
+    tempDirs.push(root);
+    const remoteDirectory = join(root, 'remote.git');
+    const probeLog = join(root, 'probes.log');
+    const wrapper = join(root, 'upload-pack.sh');
+    await simpleGit(root).raw(['init', '--bare', remoteDirectory]);
+    await writeFile(wrapper, [
+      '#!/bin/sh',
+      `echo probe >> '${probeLog}'`,
+      'exec git upload-pack "$@"',
+      '',
+    ].join('\n'));
+    await chmod(wrapper, 0o700);
+    await git.raw(['remote', 'add', 'origin', remoteDirectory]);
+    await git.raw(['push', 'origin', 'main']);
+    const head = (await git.revparse(['HEAD'])).trim();
+    await git.raw(['update-ref', 'refs/remotes/origin/gone', head]);
+    await git.raw(['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main']);
+    await simpleGit({ baseDir: directory, unsafe: { allowUnsafePack: true } })
+      .addConfig('remote.origin.uploadpack', wrapper);
+    const readProbes = async () => readFile(probeLog, 'utf8')
+      .then((text) => text.trim().split('\n'))
+      .catch((error) => (error?.code === 'ENOENT' ? [] : Promise.reject(error)));
+    return { directory, root, readProbes };
+  };
+
+  it('lists routine branches from local refs without probing remotes', async () => {
+    const { directory, readProbes } = await createProbedRemote();
+
+    const branches = await getBranches(directory);
+    const explicitLocal = await getBranches(directory, { remote: 'local' });
+
+    expect(branches.all).toEqual(expect.arrayContaining(['main', 'remotes/origin/main', 'remotes/origin/gone']));
+    expect(branches.all).not.toContain('remotes/origin/HEAD');
+    expect(branches.current).toBe('main');
+    expect(explicitLocal.all).toEqual(branches.all);
+    expect(await readProbes()).toEqual([]);
+  });
+
+  it('verifies remote-tracking refs with credentials only in live mode', async () => {
+    const { directory, root, readProbes } = await createProbedRemote();
+    const originalDataDirectory = process.env.DEVRYAN_DATA_DIR;
+    const dataDirectory = join(root, 'data');
+    const askPassHelper = join(dataDirectory, 'runtime', 'git-askpass');
+    const askPassHelperExists = () => readFile(askPassHelper).then(() => true, () => false);
+    process.env.DEVRYAN_DATA_DIR = dataDirectory;
+    testGitHubAccounts.set('branch-listing-account', {
+      accessToken: 'branch-listing-test-token',
+      user: { login: 'branch-lister', id: 404, name: 'Branch Lister', email: 'branch-lister@example.test' },
+    });
+    const managedPrincipal = {
+      id: 'branch-lister',
+      email: 'branch-lister@example.test',
+      displayName: 'branch-lister',
+      role: 'developer',
+      scope: 'managed',
+      githubAccountId: 'branch-listing-account',
+      assignments: [{ repositoryPath: directory, githubAccountId: 'branch-listing-account' }],
+    };
+
+    try {
+      const local = await runWithRequestPrincipal(managedPrincipal, () => getBranches(directory));
+      expect(local.all).toContain('remotes/origin/gone');
+      expect(await readProbes()).toEqual([]);
+      expect(await askPassHelperExists()).toBe(false);
+
+      const live = await runWithRequestPrincipal(managedPrincipal, () => getBranches(directory, { remote: 'live' }));
+      expect(live.all).toEqual(expect.arrayContaining(['main', 'remotes/origin/main']));
+      expect(live.all).not.toContain('remotes/origin/gone');
+      expect(live.all).not.toContain('remotes/origin/HEAD');
+      expect(await readProbes()).toEqual(['probe']);
+      expect(await askPassHelperExists()).toBe(true);
+    } finally {
+      testGitHubAccounts.delete('branch-listing-account');
+      if (originalDataDirectory === undefined) delete process.env.DEVRYAN_DATA_DIR;
+      else process.env.DEVRYAN_DATA_DIR = originalDataDirectory;
+    }
   });
 });
 

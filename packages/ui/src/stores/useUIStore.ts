@@ -711,6 +711,7 @@ interface UIStore {
   diffLayoutPreference: 'dynamic' | 'inline' | 'side-by-side';
   diffFileLayout: Record<string, 'inline' | 'side-by-side'>;
   diffWrapLines: boolean;
+  fileEditorWrapLines: boolean;
   diffViewMode: 'single' | 'stacked';
   gitChangesViewMode: 'flat' | 'tree';
   isTimelineDialogOpen: boolean;
@@ -873,6 +874,7 @@ interface UIStore {
   setDiffLayoutPreference: (mode: 'dynamic' | 'inline' | 'side-by-side') => void;
   setDiffFileLayout: (filePath: string, mode: 'inline' | 'side-by-side') => void;
   setDiffWrapLines: (wrap: boolean) => void;
+  setFileEditorWrapLines: (wrap: boolean) => void;
   setDiffViewMode: (mode: 'single' | 'stacked') => void;
   setGitChangesViewMode: (mode: 'flat' | 'tree') => void;
   setMultiRunLauncherOpen: (open: boolean) => void;
@@ -923,6 +925,13 @@ interface UIStore {
   clearShortcutOverride: (actionId: string) => void;
   resetAllShortcutOverrides: () => void;
 }
+
+const DEFAULT_FILE_EDITOR_WRAP_LINES = true;
+
+// A restored ui-store snapshot is a plain object of persisted fields; anything
+// else (absent storage, corrupt JSON values) contributes nothing.
+const isPersistedUIStoreSnapshot = (value: unknown): value is Partial<UIStore> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 
 export const useUIStore = create<UIStore>()(
@@ -1006,6 +1015,7 @@ export const useUIStore = create<UIStore>()(
         diffLayoutPreference: 'inline',
         diffFileLayout: {},
         diffWrapLines: false,
+        fileEditorWrapLines: DEFAULT_FILE_EDITOR_WRAP_LINES,
         diffViewMode: 'stacked',
         gitChangesViewMode: 'flat',
         isTimelineDialogOpen: false,
@@ -2226,6 +2236,10 @@ export const useUIStore = create<UIStore>()(
           set({ diffWrapLines: wrap });
         },
 
+        setFileEditorWrapLines: (wrap) => {
+          set({ fileEditorWrapLines: wrap });
+        },
+
         setDiffViewMode: (mode) => {
           set({ diffViewMode: mode });
         },
@@ -2911,6 +2925,21 @@ export const useUIStore = create<UIStore>()(
 
           return state;
         },
+        // Same-version snapshots skip `migrate`, so restored values that need a
+        // type guard are repaired here. Otherwise this is zustand's default
+        // shallow merge.
+        merge: (persistedState, currentState) => {
+          if (!isPersistedUIStoreSnapshot(persistedState)) {
+            return currentState;
+          }
+          return {
+            ...currentState,
+            ...persistedState,
+            fileEditorWrapLines: typeof persistedState.fileEditorWrapLines === 'boolean'
+              ? persistedState.fileEditorWrapLines
+              : DEFAULT_FILE_EDITOR_WRAP_LINES,
+          };
+        },
         partialize: (state) => ({
           theme: state.theme,
           isSidebarOpen: state.isSidebarOpen,
@@ -2957,6 +2986,7 @@ export const useUIStore = create<UIStore>()(
           recentEfforts: state.recentEfforts,
           diffLayoutPreference: state.diffLayoutPreference,
           diffWrapLines: state.diffWrapLines,
+          fileEditorWrapLines: state.fileEditorWrapLines,
           diffViewMode: state.diffViewMode,
           gitChangesViewMode: state.gitChangesViewMode,
           nativeNotificationsEnabled: state.nativeNotificationsEnabled,

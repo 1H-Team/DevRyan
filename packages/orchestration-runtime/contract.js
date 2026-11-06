@@ -15,6 +15,7 @@ import {
   isProviderPromptRejected,
 } from './provider-retry-policy.js';
 import { validateManagedTransportRecovery } from './transport-recovery.js';
+import { validateManagedExecutionBackend, validateManagedNativeJobSegments } from './native-job-segments.js';
 import {
   MANAGED_TASK_ID_PREFIX,
   MANAGED_TASK_STATUSES,
@@ -261,6 +262,8 @@ export const validateManagedTaskRecord = (task) => {
   assertNullableTimestamp(task.firstAssistantPartAt, 'firstAssistantPartAt');
   assertNullableWaitingReason(task.waitingReason, 'waitingReason');
   validateManagedTransportRecovery(task.transportRecovery);
+  validateManagedExecutionBackend(task.executionBackend);
+  validateManagedNativeJobSegments(task.nativeJobSegments, task.executionBackend);
   if (task.status !== 'queued' && task.waitingReason !== null) {
     throw new TypeError('waitingReason must be null unless the task is queued');
   }

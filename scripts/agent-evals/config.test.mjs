@@ -161,6 +161,10 @@ describe('agent evaluation CLI configuration', () => {
       'oracle-review-focused',
       'oracle-review-deep',
       'oracle-review-clean',
+      'adaptive-explicit-fixer',
+      'adaptive-narrow-lookup',
+      'adaptive-check-discipline',
+      'adaptive-independent-phases',
     ]);
     assert.deepEqual(
       validateEvaluationConfig({
@@ -284,6 +288,9 @@ describe('agent evaluation CLI configuration', () => {
       assert.throws(() => validate({ factor, nonInferiorityMargin: 0.1 }), /only valid with factor runtime/, factor);
     }
     assert.throws(() => validate({ factor: 'runtimeVersion' }), /Invalid paired live comparison/);
+    // Output tokens can be the declared target of a policy trial.
+    assert.equal(validate({ factor: 'adaptiveDelegation', targetMetric: 'output' }).targetMetric, 'output');
+    assert.throws(() => validate({ factor: 'adaptiveDelegation', targetMetric: 'reasoning' }), /Invalid paired live comparison/);
     const migration = { name: 'custom-plugin', baselineHash: 'a'.repeat(64), candidateHash: 'b'.repeat(64) };
     const configured = validate({ runtimePluginMigrations: [migration] });
     assert.deepEqual(configured.runtimePluginMigrations, [migration]);

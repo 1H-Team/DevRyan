@@ -36,7 +36,13 @@ import {
 import { clearAbortGuard, filterSessionStatusThroughAbortGuard } from "./abort-retry-guard"
 import { isFinalToolStatus } from "../lib/toolStatus"
 import { mergeSessionPreservingMeaningfulTitle } from "../lib/sessionTitles"
-import { areSessionRecordsEqual, isStrictlyOlderSession } from "./session-recency"
+import {
+  areSessionRecordsEqual,
+  isStrictlyOlderSession,
+  mergeSessionLifecycle,
+  retainSessionLifecycle,
+} from "./session-recency"
+import { decodeSessionEventInfo } from "./display-session"
 import {
   compareMessagesChronologically,
   findMessageIndex,
@@ -459,12 +465,19 @@ export function applyDirectoryEvent(
     }
 
     case "session.created": {
-      const incoming = stripSessionDiffSnapshots((event.properties as { info: Session }).info)
+      const decoded = decodeSessionEventInfo(event.properties)
+      if (!decoded) return false
+      const incoming = stripSessionDiffSnapshots(decoded)
       const sessions = draft.session
       const result = Binary.search(sessions, incoming.id, (s) => s.id)
       if (result.found && isStrictlyOlderSession(incoming, sessions[result.index])) {
         const current = sessions[result.index]
-        const titlePreservingCurrent = mergeSessionPreservingMeaningfulTitle(incoming, current)
+        // The older record is refused, but its monotonic lifecycle facts
+        // (busy/idle/outcome/viewed/fork) still advance the current one.
+        const titlePreservingCurrent = retainSessionLifecycle(
+          mergeSessionPreservingMeaningfulTitle(incoming, current),
+          incoming,
+        )
         if (areSessionRecordsEqual(current, titlePreservingCurrent)) return false
         sessions[result.index] = titlePreservingCurrent
         return true
@@ -473,9 +486,12 @@ export function applyDirectoryEvent(
         draft,
         incoming,
       )
-      const info = mergeSessionPreservingMeaningfulTitle(
+      const info = mergeSessionLifecycle(
         result.found ? sessions[result.index] : undefined,
-        normalizedInfo,
+        mergeSessionPreservingMeaningfulTitle(
+          result.found ? sessions[result.index] : undefined,
+          normalizedInfo,
+        ),
       )
       if (result.found) {
         if (areSessionRecordsEqual(sessions[result.index], info)) return false
@@ -489,12 +505,19 @@ export function applyDirectoryEvent(
     }
 
     case "session.updated": {
-      const incoming = stripSessionDiffSnapshots((event.properties as { info: Session }).info)
+      const decoded = decodeSessionEventInfo(event.properties)
+      if (!decoded) return false
+      const incoming = stripSessionDiffSnapshots(decoded)
       const sessions = draft.session
       const result = Binary.search(sessions, incoming.id, (s) => s.id)
       if (result.found && isStrictlyOlderSession(incoming, sessions[result.index])) {
         const current = sessions[result.index]
-        const titlePreservingCurrent = mergeSessionPreservingMeaningfulTitle(incoming, current)
+        // The older record is refused, but its monotonic lifecycle facts
+        // (busy/idle/outcome/viewed/fork) still advance the current one.
+        const titlePreservingCurrent = retainSessionLifecycle(
+          mergeSessionPreservingMeaningfulTitle(incoming, current),
+          incoming,
+        )
         if (areSessionRecordsEqual(current, titlePreservingCurrent)) return false
         sessions[result.index] = titlePreservingCurrent
         return true
@@ -503,9 +526,12 @@ export function applyDirectoryEvent(
         draft,
         incoming,
       )
-      const info = mergeSessionPreservingMeaningfulTitle(
+      const info = mergeSessionLifecycle(
         result.found ? sessions[result.index] : undefined,
-        normalizedInfo,
+        mergeSessionPreservingMeaningfulTitle(
+          result.found ? sessions[result.index] : undefined,
+          normalizedInfo,
+        ),
       )
 
       if (info.time.archived) {

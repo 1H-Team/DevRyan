@@ -362,6 +362,25 @@ test('initial plugin handshake and delayed idle cannot settle an unpersisted adm
   expect(f.sent).toHaveLength(0);
 });
 
+test('a native result acknowledged after idle completes the objective once its barrier clears', async () => {
+  const f = await fixture();
+  delete f.state.messages.at(-1).info.error;
+  await f.controller.plugin({ action: 'step', ...identity });
+  const taskEvent = { type: 'devryan:managed-task', properties: { task: { taskId: 'task_native', rootSessionId: identity.sessionID, status: 'completed' } } };
+  // Task changes during the turn do not re-read the transcript.
+  await f.controller.observe(taskEvent);
+  expect((await f.controller.readRecord(identity.sessionID)).state).toBe('observing');
+  // Native jobs review the delivered result after the root goes idle, so the
+  // idle read still sees the workspace barrier.
+  f.state.blocked = true; f.state.managedBarrierState = 'awaiting_acknowledgement';
+  await f.controller.observe({ type: 'session.status', properties: { sessionID: identity.sessionID, status: { type: 'idle' } } });
+  expect((await f.controller.readRecord(identity.sessionID)).state).toBe('observing');
+  f.state.blocked = false; f.state.managedBarrierState = 'clear';
+  await f.controller.observe(taskEvent);
+  expect((await f.controller.readRecord(identity.sessionID)).state).toBe('completed');
+  expect(f.sent).toHaveLength(0);
+});
+
 test('a runtime-wide handshake does not authorize recovery without this turn\'s request hook', async () => {
   const f = await fixture();
   await f.controller.observe({ type: 'session.error', properties: { sessionID: identity.sessionID, error: timeout } });

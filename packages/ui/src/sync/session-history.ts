@@ -16,6 +16,8 @@ import {
 import { getBackgroundTrimLimit } from "@/stores/types/sessionTypes"
 import { markSessionNavigationLoaderStarted, startSessionLoadPerformanceEvent } from "./session-load-performance"
 import { mergeSessionPreservingMeaningfulTitle } from "@/lib/sessionTitles"
+import { decodeDisplaySession } from "./display-session"
+import { mergeSessionLifecycle } from "./session-recency"
 
 // Debounce for the background-session message trim so rapid session flips
 // don't thrash trim/reload cycles.
@@ -349,7 +351,8 @@ export class SessionHistory {
     const sdk = this.options.getSdk(target.directory)
     const promise: Promise<void> = retry(() =>
       sdk.session.get({ sessionID: target.sessionID }).then((response) => unwrapSdkResult(response, "session.get")),
-    ).then((result) => {
+    ).then((response) => {
+      const result = decodeDisplaySession(response)
       if (
         this.disposed
         || this.metadataInflight.get(key) !== promise
@@ -371,7 +374,12 @@ export class SessionHistory {
         : stripUntrustedSessionDiffSummary(
           result as Session & { summary?: SessionSummaryDiffStats | null },
         ) as Session
-      if (idx.found) sessions[idx.index] = mergeSessionPreservingMeaningfulTitle(sessions[idx.index], normalized)
+      if (idx.found) {
+        sessions[idx.index] = mergeSessionLifecycle(
+          sessions[idx.index],
+          mergeSessionPreservingMeaningfulTitle(sessions[idx.index], normalized),
+        )
+      }
       else sessions.splice(idx.index, 0, normalized)
       store.setState({ session: sessions })
       finishMetadata("complete")

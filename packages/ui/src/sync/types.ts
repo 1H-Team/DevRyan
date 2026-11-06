@@ -41,6 +41,35 @@ export type ProjectMeta = {
 
 export type SessionListStatus = "idle" | "loading" | "ready" | "error"
 
+/** Native terminal result of the last run. Display metadata only. */
+export type SessionOutcome = "succeeded" | "failed" | "interrupted"
+
+/** Native fork provenance. Forks keep a null `parentID`; this never feeds the tree. */
+export type SessionFork = {
+  sessionID: string
+  boundary: {
+    type: "before" | "through"
+    messageID: string
+  }
+}
+
+/**
+ * A session record as the UI stores it: the SDK `Session` plus the optional
+ * native lifecycle and fork facts the v1 projection carries. Every field is
+ * optional, so plain SDK sessions are display sessions too. Values reach the
+ * stores only through `decodeDisplaySession`, which drops invalid ones.
+ * Running state still comes only from `session.status`.
+ */
+export type DisplaySession = Session & {
+  time: {
+    busy?: number
+    idle?: number
+    viewed?: number
+  }
+  outcome?: SessionOutcome
+  fork?: SessionFork
+}
+
 /** Per-directory store state */
 export type State = {
   status: "loading" | "partial" | "complete"

@@ -120,9 +120,13 @@ it('primary tool observations use exact native-sequence calls and static native 
  expect(events).toHaveLength(1);
 });
 
+const sessionLock=()=>{let tail=Promise.resolve();return async(_sessionID,action)=>{
+ const previous=tail;let release;tail=new Promise(resolve=>{release=resolve;});
+ try{await previous;return await action();}finally{release();}};};
 function continuationFixture(overrides={}){
  const primary={sessionID:'ses_root',directory:'/project',stepID:'msg_step',anchorID:'msg_user',objectiveID:'msg_user',
-  state:'completed',executionGeneration:2,agent:'orchestrator',providerID:'fixture',modelID:'m1',variant:'default',tools:{read:true}};
+  state:'completed',executionGeneration:2,agent:'orchestrator',providerID:'fixture',modelID:'m1',variant:'default',tools:{read:true},cancellationGeneration:1};
+ const withSessionLock=overrides.withSessionLock===undefined?sessionLock():overrides.withSessionLock;
  const session={id:'ses_root',directory:'/project',metadata:{devryan:{todo:{sessionID:'ses_root',items:[todo],rev:4}}}};
  const user={info:{id:'msg_user',sessionID:'ses_root',role:'user',metadata:{}},parts:[]};
  const assistant={info:{id:'msg_step',sessionID:'ses_root',role:'assistant',parentID:'msg_user',agent:'orchestrator',
@@ -140,8 +144,8 @@ function continuationFixture(overrides={}){
  const owner=createNativeSessionContextOwner({primaryRuntime:runtime,instanceID:'controller',isHeld:async()=>false,
   readSessionMetadata:async()=>({id:session.id,directory:session.directory,metadata:session.metadata}),
   openCodeClient:{sessions:{get:async()=>({...session,metadata:undefined}),status:async()=>status,message:async(_id,id)=>id==='msg_user'?user:assistant}},
-  deliverContinuation:async(input,authorize)=>{await held;await authorize();deliveries.push(input);if(lostAck)throw Error('lost delivery ACK');},...overrides});
- return {owner,primary,session,user,assistant,deliveries,reservations:()=>reservations,status:value=>{status=value;},
+  deliverContinuation:async(input,authorize)=>{await held;await authorize();deliveries.push(input);if(lostAck)throw Error('lost delivery ACK');},...overrides,withSessionLock});
+ return {owner,primary,session,user,assistant,deliveries,withSessionLock,reservations:()=>reservations,status:value=>{status=value;},
   revoke:()=>{allowed=false;},lostAck:value=>{lostAck=value;},hold:value=>{held=value;}};
 }
 it('continues independent implementation despite blocked verification and stops only for explicit dependencies',async()=>{
@@ -193,6 +197,38 @@ it('scans canonical idle root TODOs once and recovers the same durable prompt af
  expect(f.deliveries[1]).toEqual(reserved);expect(f.reservations()).toBe(1);
  expect(reserved.prompt).toMatchObject({agent:'orchestrator',variant:'default',objectiveID:'msg_user',tools:{read:true}});
  expect(reserved.prompt.parts[0].text).toContain('[devryan-open-todo-continuation:v1]');
+});
+it('lets an in-flight human queued admission win over a continuation reserved under the same session lock',async()=>{
+ const f=continuationFixture();let release,entered;
+ const admitted=new Promise(resolve=>{entered=resolve;});
+ // The human prompt admission owns the per-session lock from its idle proof
+ // through native enqueue and primary commit, which replaces the objective.
+ const human=f.withSessionLock('ses_root',async()=>{entered();await new Promise(resolve=>{release=resolve;});
+  f.primary.anchorID='msg_human_queue';f.primary.objectiveID='msg_human_queue';f.primary.stepID=null;f.primary.cancellationGeneration=2;});
+ await admitted;
+ const scan=f.owner.continueTodos({sessionID:'ses_root',directory:'/project'});
+ await new Promise(resolve=>setTimeout(resolve,10));
+ expect(f.reservations()).toBe(0);
+ release();await human;
+ expect(await scan).toEqual({continued:false,reason:'objective_changed'});
+ expect(f.reservations()).toBe(0);expect(f.deliveries).toHaveLength(0);
+ expect(f.primary).toMatchObject({anchorID:'msg_human_queue',cancellationGeneration:2});expect(f.primary.nativeContinuation).toBeUndefined();
+});
+it('reserves a continuation after an unrelated session-lock holder leaves the objective unchanged',async()=>{
+ const f=continuationFixture();let release,entered;
+ const admitted=new Promise(resolve=>{entered=resolve;});
+ const other=f.withSessionLock('ses_root',async()=>{entered();await new Promise(resolve=>{release=resolve;});});
+ await admitted;
+ const scan=f.owner.continueTodos({sessionID:'ses_root',directory:'/project'});
+ await new Promise(resolve=>setTimeout(resolve,10));
+ expect(f.reservations()).toBe(0);
+ release();await other;
+ expect(await scan).toMatchObject({continued:true});expect(f.reservations()).toBe(1);expect(f.deliveries).toHaveLength(1);
+});
+it('fails closed without the prompt-admission session lock before reserving a continuation',async()=>{
+ const f=continuationFixture({withSessionLock:null});
+ await expect(f.owner.continueTodos({sessionID:'ses_root',directory:'/project'})).rejects.toMatchObject({code:'native_primary_continuation_owner_required'});
+ expect(f.reservations()).toBe(0);expect(f.deliveries).toHaveLength(0);
 });
 it('refuses busy, foreign-sequence, failed and guarded TODO sources without reserving work',async()=>{
  for(const change of [f=>f.status({ses_root:{type:'busy'}}),f=>{f.assistant.turnOwnership.source='display';},

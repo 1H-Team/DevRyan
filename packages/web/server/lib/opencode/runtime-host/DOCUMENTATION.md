@@ -1,3 +1,97 @@
+# Managed native subagent jobs
+
+The compiled `devryan.managed-subagent-jobs/1` capability enables the private
+`nativeManagedJobs` owner. Existing managed task scheduling, model selection,
+barriers, canonical result classification and result envelopes remain owned by
+the orchestration runtime. Cursor continues through its existing SDK path.
+
+Each accepted input has a distinct native Job ID, message ID and completion
+notification ID reserved in the managed ledger. `native-managed-jobs.ts` prepares
+the original Job launch latch and durably backgrounds it **before** prompt
+admission, because an already active native runner can consume a no-reply steer.
+Activation verifies that exact canonical input under the native inbox lock,
+rechecks its short-lived grant after lock acquisition, and rings `wake` for
+queued input even when another segment's runner is active. The native Job joins
+the native coordinator; its bounded receipt never substitutes for the managed
+canonical result. Repeated preparation and activation reuse the original latch.
+
+`managed-job-owned` is a strictly validated private controller command. Its
+prepare, activate, cancellation and terminal acknowledgement grants bind the
+task, lease, root, child, directory, model tuple and exact segment. Task
+cancellation checks the complete authoritative segment set, interrupts the
+native child, waits for native idle and cleanup, then cancels its Jobs. A
+definitely unadmitted prepared segment can be cancelled without interrupting
+the child's previous turn. Terminal acknowledgement uses the separately
+persisted task/envelope completion intent, refuses a still-live segment, and
+idempotently removes only its exact native background marker.
+Cancellation and terminal acknowledgement also cancel the segment's exact
+remaining queued input, preventing a lost activation reply from leaving work
+that a later child wake could execute. Native inbox cancellation owns its own
+mutex; a concurrent promotion refuses cleanup and leaves the receipt retryable.
+An already removed child/root can acknowledge only under its exact completed
+native removal proof, matching the retained generation, member parent,
+disposition and removal hold with no active execution leases.
+On controller replacement, a private Symbol-bound terminal task/segment/envelope
+proof admits only native Job acknowledgement through the restored-input fence.
+After cleanup, that exact promoted input transfers from the restored-input owner
+to the managed terminal result; its canonical history stays intact and unrelated
+restored inputs stay fenced. Startup reapplies this handoff from committed
+`completion: done` scheduler records without launching work. Adverse native
+records retain this proof until confirmed session deletion, so compaction cannot
+make an unfinished historical input executable again. Queued inputs still need
+the original native cancellation and exact payload/enqueue witness.
+
+A prepared entry (the in-memory launch latch) is released only after its Job
+cancel succeeds, in `cancelSegment` or `cancelTask`, or after terminal
+acknowledgement. It is never released by resolving the latch with `null`,
+which would complete the Job with `''`, and a refused cancel keeps the entry
+the replay guard depends on. `cancelSegment` refuses
+(`native_managed_job_already_activated`) when the segment's input exists in
+native message history, durable evidence that survives a controller restart.
+
+No count fails a managed-job command. `controller-dispatch.ts` answers
+`native_command_capacity` and `native_command_duplicate` only before `run`
+(`NATIVE_DISPATCH_REFUSALS`; the same codes raised inside `run` become
+`native_control_failed`), and refuses `managed-job-owned` once closing.
+`nativeManagedJobs` (`native-runtime-owner.js`) retries, with 25-500 ms
+backoff, exactly the refusals that prove the command never ran: a
+`NativeCommandRefusal` `native_process_busy` (`not-dispatched`), a
+`native_command_capacity` reply, or `native_permit_capacity` raised before the
+command action. `prepare`/`activate` take `{ signal, deadlineAt }` and wait
+until the task deadline or Stop (60 s without a deadline); cleanup and
+acknowledgement keep a fixed 60 s window. Each attempt rechecks the same
+controller, instance and capability; a change ends the retry with a
+`not-dispatched` `native_managed_job_controller_changed` refusal. A command
+issued while the controller is replacing, checkpointing or recovering first
+waits for readiness inside its window (`native_managed_job_controller_not_ready`
+on timeout) instead of answering `native_managed_job_capability_unavailable`,
+which now means only a ready controller without the contract, or shutdown.
+`readiness()` reports `ready`, `pending` or `unsupported`; `awaitReady({
+timeoutMs, signal?, fallback? })` polls every 50 ms and, given a `fallback`
+scope, journals `managed_backend_fallback` (`reason: controller_not_ready`,
+`phase`, `backend: legacy-session`, `waitedMs`, `controllerInstanceID`) on
+timeout. A managed launch prompt in `withAcceptedOperation` waits for a
+`PERMIT_MAX` slot, rechecking its task lease, instead of failing; other
+`PERMIT_MAX` refusals are not on the launch path. The 32-command protocol
+window is unchanged.
+
+Native `SubagentJob` notification delivery and `SessionRestart` replay remain
+disabled. A controller replacement retains the existing physical-stop recovery
+policy; a surviving Job marker cannot authorize provider replay or parent
+notification. Job output is not returned through the private process protocol.
+
+`native-managed-jobs.test.ts` exercises the actual pinned Job, SQLite, inbox and
+run coordinator for duplicate/lost replies, active-runner wake overlap, durable
+completion acknowledgement, cancellation finalizer drainage, release only after
+a successful cancel, and the post-restart activation refusal.
+`native-managed-job-owner.test.js` verifies exact private grants, terminal
+authority, cancellation set completeness and protocol refusal cases.
+`controller-dispatch.test.ts` (Bun) covers the rewritten reserved codes and the
+closing refusal; `native-runtime-owner.test.js` covers 64 concurrent prepares
+through a full window, Stop during a wait, the controller-change stop, cleanup
+and acknowledgement retries, readiness phases and the fallback journal;
+`native-admission-owner.test.js` covers the launch-prompt permit wait.
+
 # Native startup catalog diagnostics
 
 `native-model-catalog.ts` serves only the embedded reviewed model catalog
@@ -893,6 +987,44 @@ still lists it rebinds and its `config/reviewed-plugins.json` is replaced by the
 shipped registrations. A controller refuses a registration it has no plugin for
 (`native_reviewed_plugin_unavailable`); the rebind is what keeps the two in step.
 
+Native managed-job execution is declared by the selected verified artifact's exact
+`devryan.managed-subagent-jobs/1` compiled contract. It adds no database migration
+or user setting. `bundle-managed-jobs.js` checks native subagent Job columns,
+recovery parent/child/agent/task identity, and each private managed segment's
+accepted-input and notification identity. Managed notification IDs cannot occur
+in the canonical parent history or inbox. A reserved `dvr_job_` row without its
+durable managed owner refuses startup or copying. Native task completion retains
+the segment until the scheduler's terminal envelope and native receipt settle.
+The generic conversation-reference inventory excludes only `nativeJobSegments`
+on a fully validated managed task. Its notification and reserved-input IDs are
+private correlations; ordinary task fields and canonical result references
+retain their existing message checks. `bundle-managed-jobs.js` independently
+checks private correlations against native Job, message and inbox ownership.
+Clone, rebind and rollback repeat compatibility checks while quiesced; an artifact
+without the exact contract refuses queued/active native tasks or any unconsumed
+segment receipt with `bundle_managed_jobs_incompatible`, before selection changes.
+The early check also leaves admission open when incompatibility is already known.
+
+Released native-job proofs live beside the ledger in
+`orchestration/native-job-proofs/<shard>.json` (the orchestration-runtime proof
+store). Clone, rebind and rollback copy and inventory the whole web-data tree, so
+the shards travel with `ledger.json`; native setup seeding excludes the whole
+`orchestration` directory as before. `bundle-native-job-proofs.js` reads the 64
+fixed shard names through the caller's bounded document reader (and its Windows
+owner) and decodes each shard whole with the core codec; a malformed or invalid
+shard refuses with `bundle_native_job_proof_invalid`. A shard copy of a task the
+ledger still lists is superseded by the ledger record, as in the scheduler.
+`bundle-managed-jobs.js` binds Job rows and pending receipts of released proofs
+like ledger records. `bundle-harness-integrity.js` treats each proof as finished
+task history owned by its child session (references of a removed session resolve;
+a lost one is a finding), and relocation rewrites each shard with the ledger. A
+result envelope and an objective check repeat their task's directory, so ledger
+relocation now moves `resultEnvelopes` and `objectiveChecks` with the tasks; the
+codec refuses an envelope whose directory differs from its task's. Windows
+relocation may write exactly the shard files besides `ledger.json`.
+`native-bundle-task-recovery.js` gives its settling scheduler the same proof-shard
+operations behind its physical-stop checks.
+
 A clone hashes its copied tree several times (preparation record, prepared
 manifest, prepared-phase verification). `runtime-bundle.js` reuses a file's
 SHA-256 within the process while its device, inode, size, mode, mtime and ctime
@@ -1261,7 +1393,13 @@ execution-host owner on their lease. When `finish` fails, for example because a
 timeout or Stop retired the tool permit, `nativeManagedControl` cancels and
 cleans the exact scope-matched `ready` control lease and rethrows the original
 failure. `recoverExecutionLeases` also settles owner-less control leases left by
-earlier builds.
+earlier builds. A controller can exit while its RPC handler still holds a
+control lease (a `devryan_task` wait, for example), and the replacement verifies
+the bundle at once. `settleController` therefore joins any finish already
+running for a lease that controller began, then cancels and cleans it if it is
+still `ready`; a later finish finds it cancelled. A failure is journaled as
+`session_execution` phase `controller_settlement` and the lease stays for the
+startup gate (`bundle_execution_unsettled`) and the next settlement.
 
 ### xAI usage renewal
 
@@ -1764,6 +1902,14 @@ Only complete canonical process output can establish an environment skip. Skippe
 ## Managed dispatch admission
 
 `withManagedTaskDispatch` verifies the parent's `devryan_task` control lease against the root's captured generation. Only the root's own unsettled Revert fences dispatch (`native_session_revert_pending`, 409); a prepared transaction of another root in the same checkout does not. Every refusal journals `managed_dispatch_rejected` with the operation, the failing check (`captured`, `revert_pending`, `lease_missing`, `generation`, `lease_kind`, `lease_preparation`, `lease_state`, `lease_generation`, `lease_scope`, `held`, `reverting`) and the code; `journal summary` lists it under errors as kind `dispatch`.
+
+### Continuation reservation and human queued input
+
+Collect, TODO and verification continuation reservation (`native-session-context-owner` `scan`) runs under the same per-session prompt-admission lock (`withSessionLock`) that human queued admission holds from its idle proof through native enqueue and primary commit. Under the lock it rereads the primary record; if the anchor, cancellation generation, step or directory changed it reserves nothing (`objective_changed`), so newer human intent admitted first wins. A continuation already enqueued keeps FIFO order and the human input gets the existing `native_queued_input_blocked` non-acceptance. A missing lock fails closed (`native_primary_continuation_owner_required`); skipped collect wakes are retried by the result watch. Neither side ever replays an input.
+
+### Recovery runners during startup
+
+Startup recovery (shell and execution continuations) admits runners while the phase is still `recovering`. `provider.attempt`, `openai.attempt` and `provider.credential.assert` therefore await this controller's own startup promise and then rerun the unchanged readiness check. A failed, checkpointed, stopping or foreign-controller startup still refuses, and invalidation during the wait still expires the grant. Startup never awaits provider work, so the wait cannot deadlock.
 
 ## Managed child interruption authority
 

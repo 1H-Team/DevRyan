@@ -15,6 +15,7 @@ import { assertWriterOutcome } from './assertions.mjs';
 export function createNativeManagedFixture({ client, admissionOwner, executionHost, directory, directories = [directory], dataDirectory,
   buildOpenCodeUrl, getOpenCodeAuthHeaders, environment, observations, diagnostics, journal,
   isNativeFallbackError, dispatchNativeRecovery, eventReconcileIntervalMs, resolveProviderRequest, onModelValidationFailure,
+  nativeManagedJobs, stopAttemptRuns, onRunCleanup,
   executionModel = { providerID: 'sim', modelID: 'm1', variant: 'default' } }) {
   assert.ok(typeof executionModel.providerID === 'string' && executionModel.providerID
     && typeof executionModel.modelID === 'string' && executionModel.modelID
@@ -50,6 +51,9 @@ export function createNativeManagedFixture({ client, admissionOwner, executionHo
     buildOpenCodeUrl, getOpenCodeAuthHeaders, environment,
     registerExecutionChild: input => executionHost.nativeManagedChild(input),
     nativeTaskDispatch: (input, action) => admissionOwner.withManagedTaskDispatch(input, action),
+    nativeManagedJobs,
+    // Production's settled-attempt run cleanup, when the caller supplies it.
+    ...(typeof stopAttemptRuns === 'function' ? { stopAttemptRuns, onRunCleanup } : {}),
     // The fixture uses a native model, not the Claude compatibility transport.
     resolveTaskPromptPreamble: () => null,
     resolveAgentExecution: async ({ agent, directory: requestedDirectory }) => {
@@ -71,6 +75,7 @@ export function createNativeManagedFixture({ client, admissionOwner, executionHo
     roots.set(sessionID, rootDirectory);
   };
   return {
+    nativeManagedJobs,
     primaryRuntime: primary, taskContext, getManagedRuntime: () => managed,
     // Match the server-derived owner used by this fixture's accepted prompts.
     requestRecovery: (method, route, body) => primary.handleRequest(method, route, body, { owner: fixtureOwner }),

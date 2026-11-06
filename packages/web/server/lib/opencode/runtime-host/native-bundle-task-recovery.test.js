@@ -4,7 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
 import { recoverStoppedBundleManagedTasks } from './native-bundle-task-recovery.js';
-import { decodeLedgerSnapshot } from '@devryan/orchestration-runtime';
+import { MANAGED_NATIVE_JOB_PROOF_DIRECTORY, compactManagedOrchestrationState, createManagedTaskRecord, createManagedTaskResultEnvelope,
+  decodeLedgerSnapshot, decodeManagedNativeJobProofShard, encodeManagedNativeJobProofShard, managedNativeJobProofShard } from '@devryan/orchestration-runtime';
 
 const roots = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => fs.rm(root, { recursive: true, force: true }))); });
@@ -81,3 +82,30 @@ for (const kind of ['missing-receipt', 'unconfined-receipt', 'active-owner', 'un
     expect(await fs.readFile(f.ledgerFile, 'utf8')).toBe(f.before);
   });
 }
+
+test('cold recovery keeps released native proofs in their shards and releases an aged inline proof shard-first', async () => {
+  const f = await fixture();
+  const proof = index => {
+    const task = { ...createManagedTaskRecord({ idempotencyKey: `native-${index}`, rootSessionId: `ses_proof_${index}`, parentTaskId: null, directory: f.running.directory,
+      mode: 'orchestrator', providerId: 'openai', modelId: 'fixture', agent: 'fixer', variant: null, label: 'Native', prompt: `Fix ${index}. ${'Context. '.repeat(32)}`,
+      taskId: `dvr_task_native_${index}`, sequence: 100 + index, createdAt: 1, timeoutAt: null, attempt: 1, priorTaskId: null, executionKind: 'start', executionBackend: 'native-job' }),
+      childSessionId: `ses_proof_child_${index}`, leaseToken: `dvr_lease_proof_${index}`, status: 'failed', startedAt: 1, finishedAt: 2, failureReason: 'failed', partial: true,
+      nativeJobSegments: [{ jobID: `dvr_job_${index}`, notificationID: `msg_notice_${index}`, messageID: `msg_prompt_${index}`, state: 'accepted', completion: 'done' }] };
+    return { task, envelope: { ...createManagedTaskResultEnvelope(task, { sequence: 100 + index, createdAt: 2, resumable: true }), action: 'abandon', acknowledgedAt: 2 } };
+  };
+  const released = compactManagedOrchestrationState({ version: 1, tasks: [proof(1).task], resultEnvelopes: [proof(1).envelope] }, { now: 30 * 24 * 60 * 60 * 1000 }).state;
+  const proofDirectory = path.join(path.dirname(f.ledgerFile), MANAGED_NATIVE_JOB_PROOF_DIRECTORY);
+  const releasedShard = managedNativeJobProofShard(released.tasks[0].taskId);
+  await fs.mkdir(proofDirectory, { recursive: true });
+  await fs.writeFile(path.join(proofDirectory, `${releasedShard}.json`), encodeManagedNativeJobProofShard(releasedShard, [{ task: released.tasks[0], envelope: released.resultEnvelopes[0] }]));
+  const inline = proof(2), original = JSON.parse(f.before);
+  await fs.writeFile(f.ledgerFile, JSON.stringify({ ...original, tasks: [...original.tasks, inline.task], resultEnvelopes: [inline.envelope] }));
+  expect(await recoverStoppedBundleManagedTasks(f)).toEqual({ status: 'recovered' });
+  const saved = await f.read();
+  expect(saved.tasks.map(task => task.taskId)).not.toContain(inline.task.taskId);
+  expect(saved.tasks.find(task => task.taskId === f.running.taskId)?.status).toBe('interrupted');
+  const proofs = [];
+  for (const name of await fs.readdir(proofDirectory)) proofs.push(...decodeManagedNativeJobProofShard(JSON.parse(await fs.readFile(path.join(proofDirectory, name), 'utf8')), name.slice(0, 2)));
+  expect(proofs.map(entry => entry.task.taskId).sort()).toEqual([released.tasks[0].taskId, inline.task.taskId].sort());
+  expect(proofs.find(entry => entry.task.taskId === released.tasks[0].taskId)).toEqual({ task: released.tasks[0], envelope: released.resultEnvelopes[0] });
+});

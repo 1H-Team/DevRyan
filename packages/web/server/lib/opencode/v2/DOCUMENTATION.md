@@ -25,7 +25,10 @@ performance parity. Remaining gates are in [the OpenCode module documentation](.
   requests. `privileged.js` is deliberately absent from the public barrel.
   `health.runtimeInfo` observes only the native `/api/info` version within the
   same byte/deadline/epoch fences for the private primary handshake. It makes
-  no readiness claim and is explicitly unsupported on generation one.
+  no readiness claim and is explicitly unsupported on generation one. A gen-2
+  error keeps a native host refusal's bounded `native_*` code (the host's
+  untagged `{ code, operation }` body) as `detail.refusal`; read it with
+  `nativeRefusalCode(error)`. It is not sent to the browser.
 - `native-archive.js` owns native session archive state (OpenCode 2.1). The
   owned `metadata.devryan.archive` override stays the commit point and wins in
   the projection; native `time.archived` is the index `GET /api/session?archived=`
@@ -188,14 +191,34 @@ limits, with their operational consequences made explicit.
 | `live-synthetic-fold` | Live synthetic events can be displayed separately until REST reconciliation performs the page-local fold. |
 | `retry-action` | Native retry status has no source for the legacy action field. |
 | `revert-diff` | Native Revert has no legacy patch body; available file summaries retain counts only. Revert publication requires the ledger coordinator. |
-| `session-time` | Native idle/viewed times and outcome have no matching application session fields. |
 | `session-slug` | A session without cached creation-event slug uses its ID as display fallback. |
-| `fork-lineage` | Native fork boundary/source is not projected as a parent-child relationship. |
 | `session-share-summary` | Native share and summary fields are absent from the application projection. |
 | `command-result` | The pinned command endpoint returns no assistant message; admission returns null and later state arrives through events/history. |
 | `compact-model` | Native compaction uses the session selection; the legacy compact request's provider/model pair is not a separate native selection. |
 
 ## Native behavior that must not be inferred away
+
+Session lifecycle and fork facts (2.2.5 `Session.Info`, pinned by
+`scripts/opencode-v2-native/session-lifecycle-semantics.test.ts`): `toV1Session`
+copies `time.busy`, `time.idle` and `time.viewed` (finite, non-negative epoch
+ms), `outcome` (`succeeded`/`failed`/`interrupted`) and
+`fork{sessionID, boundary{type: before|through, messageID}}` exactly, and omits
+any invalid value. Start sets `busy` and keeps `idle`/`outcome`; a terminal sets
+a strictly increasing `idle` (a tie or older time becomes the previous value + 1
+ms) with its `outcome`; a `shutdown` interrupt changes neither; `viewed` is a
+max watermark; none moves `time.updated`. A fork keeps no `parentID`, so it
+stays a root; `fork` is display lineage only. These fields are display metadata:
+they never feed unread state, managed verification or running state (which
+comes only from `session.status`). The event projector never folds them: each
+`session.execution.*` and `session.viewed` bumps the session revision, marks a
+pending update and queues one coalesced session re-read, so an in-flight seed
+goes stale and is requeued and the seed emits `session.updated` when only these
+fields changed (they are part of the signature). Text, reasoning and tool deltas
+never re-read the session. After a gap, `applyActive` re-reads only the sessions
+whose idle/non-idle state changed; `handleGap` itself (also the `reseed_overflow`
+handler) queues no session reads, so a repeated overflow cannot loop. A run that
+started and ended entirely inside a gap updates on the session's next read or
+the client's reconnect fetch.
 
 Metadata PATCH replaces the entire map, while forks and children inherit it.
 Archive (override and native `archived`) and admission metadata updates share
@@ -213,6 +236,17 @@ are retained through completion and mutation; secret Credential GET stays
 private. MCP OAuth availability requires the ready owned runtime. Config-wide
 provider disconnect remains unavailable where prepared configuration removal
 has not been qualified.
+
+The facade remembers each OAuth attempt it started until it completes, expires or
+is cancelled, but an attempt lives in the controller's per-location acquisition.
+Disposing an idle instance closes that acquisition and cancels every attempt it
+held, and the next acquisition refuses the old attempt ID with the owner's
+not-held refusal (`native_openai_attempt_scope_required`,
+`native_provider_attempt_scope_required` or `native_mcp_attempt_scope_required`).
+For an attempt the facade started, that refusal proves the attempt is gone: start
+and cancel go ahead, status answers `expired`, a code completion answers 410
+`native_integration_attempt_expired`, and MCP sign-out continues. Each forgets the
+attempt. Any other refusal keeps the attempt and surfaces.
 
 Providers lists every provider OpenCode supports natively. `GET /api/provider/auth`
 reads `/api/integration` once and returns each model provider with its connect

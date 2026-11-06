@@ -6,7 +6,7 @@ describe('HTTP compression boundary', () => {
     let disabled = false;
     const { shouldSkipCompression } = createCompressionPolicy({ shouldSkipApiCompression: () => disabled });
     const response = { getHeader: () => undefined };
-    for (const route of ['/api/event', '/api/global/event', '/api/terminal/a/stream', '/api/browser/agent-leases/a/stream']) {
+    for (const route of ['/api/event', '/api/global/event', '/api/terminal/a/stream', '/api/browser/agent-leases/a/stream', '/api/fs/watch']) {
       expect(shouldSkipCompression({ headers: {}, path: route }, response)).toBe(true);
     }
     expect(shouldSkipCompression({ headers: {}, path: '/api/status' }, response)).toBe(false);

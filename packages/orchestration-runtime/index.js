@@ -23,6 +23,8 @@ export * from './terminal-error-registry.js';
 export * from './operator-abort-registry.js';
 export * from './transitions.js';
 export * from './transport-recovery.js';
+export * from './native-job-segments.js';
+export * from './native-job-proof-store.js';
 export * from './xai-tool-catalog.js';
 export * from './required-checks.js';
 export * from './check-correction.js';

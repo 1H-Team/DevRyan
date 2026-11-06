@@ -2,6 +2,7 @@ import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { ROUTING_CASES } from './routing-cases.mjs';
+import { ADAPTIVE_CASES } from './adaptive-cases.mjs';
 import { GOLDEN_CASE_IDS } from './golden-cases.mjs';
 
 export const EVALUATION_CASE_IDS = Object.freeze([
@@ -13,6 +14,7 @@ export const EVALUATION_CASE_IDS = Object.freeze([
   'oracle-review-focused',
   'oracle-review-deep',
   'oracle-review-clean',
+  ...Object.keys(ADAPTIVE_CASES),
 ]);
 
 const REQUIRED_FIELDS = Object.freeze([
@@ -45,7 +47,7 @@ const PAIRING_FIELDS = Object.freeze(['baselineConfig', 'pairs', 'factor', 'targ
 // The `runtime` factor compares the same cases on two OpenCode runtime versions
 // and asks only whether the candidate is non-inferior within a margin.
 export const PAIRING_FACTORS = Object.freeze(['readOverlap', 'waitAny', 'compactResults', 'contextProjection', 'adaptiveDelegation', 'role', 'runtime']);
-export const PAIRING_TARGET_METRICS = Object.freeze(['objectiveDurationMs', 'input', 'workspaceBarrierMs', 'resultConsumptionMs', 'toolExecutionMs', 'toolVolumeBytes']);
+export const PAIRING_TARGET_METRICS = Object.freeze(['objectiveDurationMs', 'input', 'output', 'workspaceBarrierMs', 'resultConsumptionMs', 'toolExecutionMs', 'toolVolumeBytes']);
 export const DEFAULT_NON_INFERIORITY_MARGIN = 0.1;
 
 const USAGE = 'Usage: bun run agent:eval -- --config <path>';

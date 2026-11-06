@@ -2,6 +2,11 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { renderAgentPromptPolicies } from '../../lib/opencode/packaged-agents.js';
 const readAgent = name => readFileSync(new URL(`./${name}.md`, import.meta.url), 'utf8');
+// Specialists-by-default is the `adaptiveDelegation: false` branch. Pin it
+// explicitly so these assertions keep holding after a default change.
+const BASELINE = Object.freeze({ adaptiveDelegation: false });
+const ADAPTIVE = Object.freeze({ adaptiveDelegation: true });
+const renderAgent = (name, policies) => renderAgentPromptPolicies(readAgent(name), policies);
 
 describe('specialist-owned bundled agent routing', () => {
   it.each([false, true])('keeps parent acceptance and browser diagnosis with adaptive routing=%s', (adaptiveDelegation) => {
@@ -33,7 +38,7 @@ describe('specialist-owned bundled agent routing', () => {
     for (const agent of ['builder', 'explorer', 'fixer', 'orchestrator']) expect(readAgent(agent)).not.toMatch(/codemap/i);
   });
   it('routes coherent work without mandatory Explorer discovery and routes implementation to its owning specialist', () => {
-    const prompt = readAgent('orchestrator');
+    const prompt = renderAgent('orchestrator', BASELINE);
     for (const rule of ['**Evidence-driven discovery.**', 'Use one appropriate specialist for one coherent concern',
       'Sequence only actual dependencies', 'Complete shared components before dependent routes',
       'use blocked/resume for ownership blockers', 'Do not repeat discovery',
@@ -48,7 +53,10 @@ describe('specialist-owned bundled agent routing', () => {
       'Explicit user requests for a specialist take precedence']) {
       expect(prompt).toContain(rule);
     }
+    expect(prompt).not.toContain('**Adaptive implementation.**');
     // The 2026-09-25 direct-first policy left Orchestrator implementing everything after Explorer returned.
+    // Checked against the unrendered template, so neither policy branch may reintroduce it.
+    const template = readAgent('orchestrator');
     for (const obsolete of ['Unknown codebase location: call', 'roughly 20 lines',
       'Direct implementation is the default', 'Direct work is the default', 'A bounded behavior fix stays direct',
       'Simple specified visual work may stay with Orchestrator', 'Delegate only when specialization',
@@ -59,11 +67,28 @@ describe('specialist-owned bundled agent routing', () => {
       'direct-first discovery policy', 'only when it adds value',
       // Retired with Ponytail, the only source of appended minimal-diff style guidance.
       'minimal-diff or lazy-developer']) {
-      expect(prompt).not.toContain(obsolete);
+      expect(template).not.toContain(obsolete);
+    }
+  });
+  it('routes small known cohesive work directly only on the adaptive branch, keeping specialists for the rest', () => {
+    const prompt = renderAgent('orchestrator', ADAPTIVE);
+    for (const rule of ['**Evidence-driven discovery.**', 'Use one appropriate specialist for one coherent concern',
+      '**Adaptive implementation.** Follow explicit user requests for a specialist or direct work.',
+      'When the target, behavior and acceptance checks are already known and the work is one small cohesive unit, implement and verify it directly after the managed barrier clears.',
+      'Before direct implementation, declare objective checks with `devryan_task` `declare_checks`; run them on the final content.',
+      'For larger, unfamiliar, independent or visual work, use the appropriate specialist and keep each assignment bounded.',
+      'Plan mode stays read-only.',
+      'For direct work, `declare_checks` binds requirements to the current root objective before edits']) {
+      expect(prompt).toContain(rule);
+    }
+    for (const baselineOnly of ['**Specialist-owned implementation.**', 'You are not the default implementer.', 'whatever its size',
+      'A one-line bug fix is still a bug fix: send it to `fixer` instead of patching it yourself.',
+      'Implement directly only a mechanical edit that changes no behavior or presentation']) {
+      expect(prompt).not.toContain(baselineOnly);
     }
   });
   it('keeps specialist ownership boundaries between Designer and Fixer', () => {
-    const prompt = readAgent('orchestrator');
+    const prompt = renderAgent('orchestrator', BASELINE);
     for (const rule of ['owner of visual or UX implementation, including fully specified tweaks', 'Designer implements:',
       'observable acceptance criteria', 'default owner of bounded non-design implementation', 'create disjoint scopes',
       'Merely touching a UI file is not a design change', 'under an unchanged presentation route to `fixer`',
@@ -78,14 +103,43 @@ describe('specialist-owned bundled agent routing', () => {
       expect(readAgent(agent)).not.toContain('simple fully specified visual tweaks directly');
     }
   });
+  it('keeps Designer for substantial visual work and coupled ownership on the adaptive branch', () => {
+    const prompt = renderAgent('orchestrator', ADAPTIVE);
+    for (const rule of ['Choose Designer for substantial, independently useful visual or UX work; a small known cohesive change may be direct.',
+      '- `designer`: scoped visual or UX implementation needing dedicated design judgment.',
+      'keep coupled UI changes together',
+      '- `fixer`: bounded implementation or debugging in a larger, unfamiliar, or independently useful non-design scope.',
+      'For mixed work, keep coupled changes with one owner and dispatch disjoint independent specialists together.',
+      'Parallel delegation readiness gate: start independent, disjoint work together.',
+      'Name every file by its absolute path in the current workspace']) {
+      expect(prompt).toContain(rule);
+    }
+    for (const baselineOnly of ['owner of visual or UX implementation, including fully specified tweaks',
+      'default owner of bounded non-design implementation', 'Visible verification is a verification method, not a routing signal']) {
+      expect(prompt).not.toContain(baselineOnly);
+    }
+    // Designer and Fixer keep their ownership statements whichever branch the Orchestrator renders.
+    for (const policies of [BASELINE, ADAPTIVE]) {
+      expect(renderAgent('fixer', policies)).toContain('Visual changes, including fully specified tweaks, belong to Designer.');
+      expect(renderAgent('designer', policies)).toContain('visual implementation, including fully specified tweaks, belongs to Designer');
+    }
+  });
   it('keeps planning read-only and preserves explicit approval context', () => {
-    const prompt = readAgent('orchestrator');
+    const prompt = renderAgent('orchestrator', BASELINE);
     expect(prompt).toContain('never dispatch Designer from a plan-mode turn');
     expect(prompt).toContain('Read the approved plan when the follow-up is only "implement plan"');
     expect(prompt).toContain('Use the same evidence-driven routing in plan mode; every planning specialist stays read-only.');
     expect(prompt).toContain('When the plan depends on external or version-specific facts, start `librarian` alongside independent repository work.');
     expect(prompt).toContain('Plan approval preserves specialist ownership: in the implementation turn, route approved visual work to Designer and non-design implementation to Fixer.');
     expect(prompt).toContain('Never delegate planning-only or standalone review work to Designer.');
+  });
+  it('keeps planning read-only on the adaptive branch and applies adaptive routing to approved implementation', () => {
+    const prompt = renderAgent('orchestrator', ADAPTIVE);
+    expect(prompt).toContain('never dispatch Designer from a plan-mode turn');
+    expect(prompt).toContain('Read the approved plan when the follow-up is only "implement plan"');
+    expect(prompt).toContain('Use the same evidence-driven routing in plan mode; every planning specialist stays read-only.');
+    expect(prompt).toContain('For implementation, apply the adaptive routing policy and honor explicit user ownership.');
+    expect(prompt).not.toContain('Plan approval preserves specialist ownership');
   });
   it('uses evidence gaps rather than read counts to route planning discovery', () => {
     expect(readAgent('orchestrator')).toContain('A read-count advisory asks you to reassess evidence, not start a fresh Explorer.');

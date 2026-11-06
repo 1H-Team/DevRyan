@@ -25,6 +25,9 @@ export type NativeInterviewAction = {readonly kind:'rename';readonly body:{reado
   |{readonly kind:'notify';readonly body:{readonly sessionID:string;readonly id:string;readonly text:string;readonly resume:false}}
   |{readonly kind:'continue';readonly body:{readonly sessionID:string;readonly id:string;readonly text:string}};
 export type NativeProcessCommand = {readonly protocol:1;readonly id:string} & (
+  {readonly action:'managed-job-owned';readonly sessionID:string;readonly permit:NativeWirePermit} & (
+    {readonly phase:Exclude<import('./native-managed-jobs.js').NativeManagedJobPhase,'cancelTask'>;readonly input:import('./native-managed-jobs.js').NativeManagedJobInput}
+    |{readonly phase:'cancelTask';readonly input:import('./native-managed-jobs.js').NativeManagedJobCancellation}) |
   {readonly action:'open'|'open-recovery'|'close-startup'|'quiesce'|'close'} |
   {readonly action:'hold'|'release';readonly sessionID:string} |
   {readonly action:'wake-owned'|'wake-deferred-owned';readonly sessionID:string;readonly permit:NativeWirePermit} |

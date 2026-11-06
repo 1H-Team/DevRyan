@@ -14,6 +14,7 @@ import {
   sessionMessageContext,
   stripDevryanMetadata,
   toV1PermissionRuleset,
+  toV1Fork,
   toV1Revert,
   toV1Session,
   toV1SessionFromCreated,
@@ -48,7 +49,9 @@ describe('toV1Session (vector 09)', () => {
       directory: DIR,
       title: 'Renamed by user',
       version: V1_SESSION_VERSION,
-      time: { created: 1767225635000, updated: 1767225648000, archived: 1767225601000 },
+      // Native lifecycle facts are copied exactly; `time.updated` is native's own.
+      time: { created: 1767225635000, updated: 1767225648000, archived: 1767225601000, idle: 1767225646000 },
+      outcome: 'succeeded',
       cost: 0,
       tokens: zeroTokens,
       metadata: { a: 1 },
@@ -69,7 +72,11 @@ describe('toV1Session (vector 09)', () => {
   it('keeps forks as roots and maps the permission ruleset to the v1 rule shape', () => {
     const fork = toV1Session(rest('09-rename-metadata.json', 'fork.session.get').data);
     expect(fork.parentID).toBeUndefined();
-    expect(fork).not.toHaveProperty('fork');
+    // Native forks have no parentID; the origin is display lineage only.
+    expect(fork.fork).toEqual({
+      sessionID: PARENT,
+      boundary: { type: 'before', messageID: 'msg_000000000004normalized0000' },
+    });
     expect(fork.permission).toEqual([{ permission: 'edit', pattern: '*', action: 'ask' }]);
     expect(fork.metadata).toEqual({ a: null });
     expect(fork.title).toBe('Renamed by user (fork #1)');
@@ -82,6 +89,13 @@ describe('toV1Session (vector 09)', () => {
     expect(sessions).toHaveLength(body.data.length);
     expect(sessions.every((session) => session.parentID === undefined)).toBe(true);
     expect(sessions.find((session) => session.id === PARENT).slug).toBe('slug-parent');
+    expect(sessions.find((session) => session.id === 'ses_fffffffffff1normalized0000').fork).toEqual({
+      sessionID: PARENT,
+      boundary: { type: 'through', messageID: 'msg_000000000007normalized0000' },
+    });
+    expect(sessions.find((session) => session.id === 'ses_fffffffffffanormalized0000')).toMatchObject({
+      outcome: 'failed', time: { idle: 1767225616000 },
+    });
     expect(toV1SessionList([{ id: PARENT, time: { created: 1, updated: 2 } }, { title: 'no id' }, null]))
       .toHaveLength(1);
     expect(toV1SessionList(undefined)).toEqual([]);
@@ -95,7 +109,7 @@ describe('toV1Session (vector 09)', () => {
     expect(toV1Session(null)).toBeUndefined();
   });
 
-  it('carries path, agent, model and the read-only archived time', () => {
+  it('carries path, agent, model, the read-only archived time and the lifecycle times', () => {
     const session = toV1Session({
       id: 'ses_x',
       projectID: 'p',
@@ -107,9 +121,58 @@ describe('toV1Session (vector 09)', () => {
     });
     expect(session).toMatchObject({
       directory: '/repo', path: 'pkg', agent: 'build', model: { id: 'm', providerID: 'p', variant: 'high' },
-      time: { created: 1, updated: 2, archived: 5 },
     });
-    expect(session.time).not.toHaveProperty('idle');
+    expect(session.time).toEqual({ created: 1, updated: 2, idle: 3, viewed: 4, archived: 5 });
+  });
+});
+
+describe('native lifecycle and fork facts (2.2.5 Session.Info)', () => {
+  const base = { id: 'ses_x', time: { created: 1, updated: 2 } };
+
+  it('copies busy, idle, viewed, outcome and fork exactly', () => {
+    const session = toV1Session({
+      ...base,
+      time: { created: 1, updated: 2, busy: 1767225700000, idle: 1767225699001, viewed: 0 },
+      outcome: 'interrupted',
+      fork: { sessionID: 'ses_origin', boundary: { type: 'through', messageID: 'msg_7' } },
+    });
+    expect(session.time).toEqual({ created: 1, updated: 2, busy: 1767225700000, idle: 1767225699001, viewed: 0 });
+    expect(session.outcome).toBe('interrupted');
+    expect(session.fork).toEqual({ sessionID: 'ses_origin', boundary: { type: 'through', messageID: 'msg_7' } });
+    expect(session.parentID).toBeUndefined();
+    for (const outcome of ['succeeded', 'failed', 'interrupted']) {
+      expect(toV1Session({ ...base, outcome }).outcome).toBe(outcome);
+    }
+  });
+
+  it('omits invalid lifecycle values and leaves time.updated unchanged', () => {
+    for (const bad of [-1, Number.NaN, Number.POSITIVE_INFINITY, '5', null, {}]) {
+      const session = toV1Session({ ...base, time: { created: 1, updated: 2, busy: bad, idle: bad, viewed: bad } });
+      expect(session.time).toEqual({ created: 1, updated: 2 });
+    }
+    for (const outcome of ['aborted', 'SUCCEEDED', '', 1, null]) {
+      expect(toV1Session({ ...base, outcome })).not.toHaveProperty('outcome');
+    }
+    expect(toV1Session(base)).not.toHaveProperty('outcome');
+    expect(toV1Session(base)).not.toHaveProperty('fork');
+  });
+
+  it('omits a fork unless every member is valid', () => {
+    const valid = { sessionID: 'ses_origin', boundary: { type: 'before', messageID: 'msg_1' } };
+    expect(toV1Fork(valid)).toEqual(valid);
+    expect(toV1Fork({ ...valid, extra: 1, boundary: { ...valid.boundary, extra: 2 } })).toEqual(valid);
+    for (const bad of [
+      undefined, null, 'ses_origin', [],
+      { boundary: valid.boundary },
+      { sessionID: '', boundary: valid.boundary },
+      { sessionID: 'ses_origin' },
+      { sessionID: 'ses_origin', boundary: { type: 'after', messageID: 'msg_1' } },
+      { sessionID: 'ses_origin', boundary: { type: 'before' } },
+      { sessionID: 'ses_origin', boundary: { type: 'before', messageID: '' } },
+    ]) {
+      expect(toV1Fork(bad)).toBeUndefined();
+      expect(toV1Session({ ...base, fork: bad })).not.toHaveProperty('fork');
+    }
   });
 });
 

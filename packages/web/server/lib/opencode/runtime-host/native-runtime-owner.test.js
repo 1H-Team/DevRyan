@@ -9,6 +9,8 @@ import { collectionContinuationDiagnostic, createNativeRuntimeOwner, loadNativeR
 import * as nativeArtifacts from './native-artifacts.js';
 import { createNativeCursorRecovery } from './native-cursor-recovery.js';
 import {createCursorSdkRuntime} from '../../../../../cursor-sdk-runtime/index.js';
+import {NativeCommandRefusal} from './native-command-refusal.js';
+import {NATIVE_MANAGED_SUBAGENT_JOB_CONTRACT} from './native-managed-job-contract.js';
 
 const transport = vi.hoisted(() => ({ create: vi.fn(), start: vi.fn(), stop: vi.fn() }));
 const primaryStepOptions = vi.hoisted(() => []);
@@ -20,8 +22,18 @@ vi.mock('./primary-step-owner.js', async importOriginal => {
  }};
 });
 vi.mock('./native-process.js', () => ({ createNativeControllerProcess: transport.create }));
+// Managed-job tests replace only the private grant step; every owner check stays real.
+const managedJobGrant = vi.hoisted(() => ({ override: null }));
+vi.mock('./native-admission-owner.js', async importOriginal => {
+ const original = await importOriginal();
+ return {...original, createNativeAdmissionOwner: options => {
+  const owner = original.createNativeAdmissionOwner(options);
+  return {...owner, withManagedJobOperation: (phase, input, action) => managedJobGrant.override
+   ? managedJobGrant.override(phase, input, action) : owner.withManagedJobOperation(phase, input, action)};
+ }};
+});
 vi.mock('../../orchestration/private-host.js', () => ({ createManagedOrchestrationPrivateHost: () => ({ start: transport.start, stop: transport.stop }) }));
-afterEach(() => vi.resetAllMocks());
+afterEach(() => { vi.resetAllMocks(); managedJobGrant.override = null; });
 
 const fixture = async (action, cursorRuntime, configure) => {
   const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-native-owner-')));
@@ -38,6 +50,10 @@ const fixture = async (action, cursorRuntime, configure) => {
         launch: {opencodeDatabasePath, webDataDirectory: root, global: { log: root } } }, artifacts: { manifest: { buildId: 'fixture' } }, configuration: {},
         locations: [{ directory: root }], reviewedPlugins: [], verify: async () => {} },
       primaryRuntime:{setRecoveredInputOwner:vi.fn(),nativeStartupRecords:async()=>[],readRecord:async()=>null},
+      getManagedRuntime: () => ({ readNativeJobInputDispositions: async () => [], handleRpc: async ({ method }) => {
+        expect(method).toBe('harness_capabilities');
+        return undefined;
+      } }),
       executionHost: { runtime, drain, settleController }, admission: {withSessionLock:async(_id,action)=>action()}, openCodeClient: { sessions: {} },
       authorization: { captureWebAuthorization: async () => async () => {}, authorizeOperation: async () => {} },
       cursorRuntime,
@@ -145,7 +161,7 @@ test.each([false, true])('controller receives authoritative managed tool policie
     await owner.close();
   }, undefined, options => {
     options.environment = { DEVRYAN_MANAGED_WAIT_ANY: enabled ? '0' : '1', DEVRYAN_TASK_CONTEXT_PROJECTION: enabled ? '0' : '1', DEVRYAN_ADAPTIVE_DELEGATION: enabled ? '0' : '1' };
-    options.getManagedRuntime = () => ({ handleRpc: async ({ method }) => {
+    options.getManagedRuntime = () => ({ readNativeJobInputDispositions: async () => [], handleRpc: async ({ method }) => {
       expect(method).toBe('harness_capabilities');
       return { policies: { waitAny: enabled, contextProjection: enabled, adaptiveDelegation: enabled } };
     } });
@@ -568,3 +584,127 @@ test('stopped-controller task recovery reuses exact drained epoch before verific
   options.recoverStoppedManagedTasks=async assertStopped=>{stoppedProof=assertStopped;await assertStopped();events.push('tasks');if(refuse)throw Error('save refused');};
  });
 });
+
+const jobPermit={token:'a'.repeat(64),sessionID:'ses_child',revision:0};
+const jobInput=index=>({taskId:'dvr_task_job',leaseToken:'lease_one',rootSessionId:'ses_root',directory:'/fixture',sessionID:'ses_child',
+ providerId:'fixture',modelId:'saved',agent:'fixer',variant:null,messageID:`msg_input_${index}`,jobID:`dvr_job_${index}`,notificationID:`msg_notice_${index}`});
+const jobReply=input=>({jobID:input.jobID,messageID:input.messageID,notificationID:input.notificationID,status:'running'});
+const busy=()=>new NativeCommandRefusal('native_process_busy',503,'not-dispatched');
+const capacity=()=>new NativeCommandRefusal('native_command_capacity',503,'reply');
+const managedJobFixture=(action,configure)=>fixture(async context=>{
+ managedJobGrant.override=async(_phase,_input,run)=>run(jobPermit);
+ let launch,exited=false;const state={managed:null,exited:()=>exited,exit:()=>{exited=true;}};
+ const child={instanceID:'ctl_one',bound:{catalog:{asserted:true}},hasExited:()=>exited,
+  call:async input=>input.action==='managed-job-owned'?state.managed(input):null,
+  close:async()=>{exited=true;await launch.afterExit({});},killForRecovery:async()=>{}};
+ transport.create.mockImplementation(async options=>{launch=options;return child;});
+ await action({...context,state,child});
+},undefined,async(options,root)=>{options.bundle.artifacts.manifest.compiledContracts=[NATIVE_MANAGED_SUBAGENT_JOB_CONTRACT];await configure?.(options,root);});
+
+test('64 concurrent prepares through a full 32-command window are all admitted without cleanup',()=>managedJobFixture(async({owner,state})=>{
+ await owner.start();expect(owner.nativeManagedJobs.readiness()).toBe('ready');
+ let inFlight=0,peak=0,refused=0;const ran=[];
+ state.managed=async input=>{
+  if(inFlight>=32){refused++;throw refused%2?busy():capacity();}
+  inFlight++;peak=Math.max(peak,inFlight);await new Promise(resolve=>setTimeout(resolve,5));inFlight--;ran.push(input.phase);return jobReply(input.input);
+ };
+ const results=await Promise.all(Array.from({length:64},(_,index)=>owner.nativeManagedJobs.prepare(jobInput(index),{deadlineAt:Date.now()+30_000})));
+ expect(results.map(result=>result.jobID)).toEqual(Array.from({length:64},(_,index)=>`dvr_job_${index}`));
+ expect(refused).toBeGreaterThan(0);expect(peak).toBe(32);expect(ran).toEqual(Array(64).fill('prepare'));
+ await owner.close();
+}));
+
+test('Stop during a count wait leaves no dispatched command',()=>managedJobFixture(async({owner,state})=>{
+ await owner.start();let refusals=0;
+ state.managed=async()=>{refusals++;throw busy();};
+ const stop=new AbortController();
+ const prepared=owner.nativeManagedJobs.prepare(jobInput(0),{signal:stop.signal,deadlineAt:Date.now()+30_000});
+ await vi.waitFor(()=>expect(refusals).toBeGreaterThan(1));stop.abort(new Error('Managed task cancelled'));
+ await expect(prepared).rejects.toThrow('Managed task cancelled');
+ const seen=refusals;await new Promise(resolve=>setTimeout(resolve,100));expect(refusals).toBe(seen);
+ await owner.close();
+}));
+
+test('a count retry stops at a controller change and proves the command never ran there',()=>managedJobFixture(async({owner,state})=>{
+ await owner.start();let calls=0;
+ state.managed=async()=>{calls++;state.exit();throw busy();};
+ const error=await owner.nativeManagedJobs.prepare(jobInput(0),{deadlineAt:Date.now()+30_000}).catch(cause=>cause);
+ expect(error).toBeInstanceOf(NativeCommandRefusal);expect(error).toMatchObject({code:'native_managed_job_controller_changed',settlement:'not-dispatched'});
+ expect(calls).toBe(1);
+}));
+
+test('cleanup, task cancellation and acknowledgement retry count refusals instead of failing',()=>managedJobFixture(async({owner,state})=>{
+ await owner.start();const attempts=new Map();
+ state.managed=async input=>{
+  const seen=(attempts.get(input.phase)??0)+1;attempts.set(input.phase,seen);
+  if(seen<3)throw seen===1?capacity():busy();
+  return input.phase==='cancelTask'?{aborted:true}:jobReply(input.input);
+ };
+ const {jobID:_jobID,notificationID:_notificationID,messageID:_messageID,...task}=jobInput(0);
+ await expect(owner.nativeManagedJobs.cancelSegment(jobInput(0))).resolves.toMatchObject({jobID:'dvr_job_0'});
+ await expect(owner.nativeManagedJobs.cancelTask({...task,segments:[{jobID:'dvr_job_0',notificationID:'msg_notice_0',messageID:'msg_input_0'}]})).resolves.toEqual({aborted:true});
+ await expect(owner.nativeManagedJobs.acknowledge({...jobInput(0),envelopeID:'env_one'})).resolves.toMatchObject({jobID:'dvr_job_0'});
+ expect(Object.fromEntries(attempts)).toEqual({cancelSegment:3,cancelTask:3,acknowledge:3});
+ // An ordinary reply refusal ran and is never retried.
+ state.managed=async()=>{throw new NativeCommandRefusal('native_managed_job_unsettled',409,'reply');};
+ await expect(owner.nativeManagedJobs.acknowledge({...jobInput(1),envelopeID:'env_two'})).rejects.toMatchObject({code:'native_managed_job_unsettled'});
+ await owner.close();
+}));
+
+test('a permit-count refusal before the command action is retried; one after it is not',()=>managedJobFixture(async({owner,state})=>{
+ await owner.start();let grants=0,calls=0;
+ managedJobGrant.override=async(_phase,_input,run)=>{
+  if(++grants===1)throw Object.assign(new Error('native_permit_capacity'),{code:'native_permit_capacity',status:503});
+  return run(jobPermit);
+ };
+ state.managed=async input=>{calls++;return jobReply(input.input);};
+ await expect(owner.nativeManagedJobs.activate(jobInput(0),{deadlineAt:Date.now()+30_000})).resolves.toMatchObject({status:'running'});
+ expect(grants).toBe(2);expect(calls).toBe(1);
+ managedJobGrant.override=async(_phase,_input,run)=>{await run(jobPermit);throw Object.assign(new Error('native_permit_capacity'),{code:'native_permit_capacity',status:503});};
+ await expect(owner.nativeManagedJobs.activate(jobInput(0),{deadlineAt:Date.now()+30_000})).rejects.toMatchObject({code:'native_permit_capacity'});
+ expect(calls).toBe(2);
+ await owner.close();
+}));
+
+test('managed-job commands wait for a starting controller; a timed-out wait is journaled as backend fallback',()=>{
+ const diagnostics=[];
+ return managedJobFixture(async({owner,state})=>{
+  let release;const blocked=new Promise(resolve=>{release=resolve;});const create=transport.create.getMockImplementation();
+  transport.create.mockImplementation(async options=>{await blocked;return create(options);});
+  const started=owner.start();
+  expect(owner.nativeManagedJobs.readiness()).toBe('pending');
+  await expect(owner.nativeManagedJobs.awaitReady({timeoutMs:20,fallback:{rootSessionId:'ses_root',directory:'/fixture'}})).resolves.toBe('timeout');
+  expect(diagnostics).toEqual([expect.objectContaining({type:'lifecycle',event:'managed_backend_fallback',sessionID:'ses_root',directory:'/fixture',
+   payload:expect.objectContaining({reason:'controller_not_ready',backend:'legacy-session',phase:'closed',waitedMs:expect.any(Number)})})]);
+  state.managed=async input=>jobReply(input.input);
+  const acknowledged=owner.nativeManagedJobs.acknowledge({...jobInput(0),envelopeID:'env_one'});
+  await new Promise(resolve=>setTimeout(resolve,30));release();await started;
+  await expect(acknowledged).resolves.toMatchObject({jobID:'dvr_job_0'});
+  expect(await owner.nativeManagedJobs.awaitReady({timeoutMs:0})).toBe('ready');
+  await owner.close();
+  expect(owner.nativeManagedJobs.readiness()).toBe('unsupported');
+  await expect(owner.nativeManagedJobs.acknowledge({...jobInput(0),envelopeID:'env_one'})).rejects.toMatchObject({code:'native_managed_job_capability_unavailable'});
+ },options=>{options.recordDiagnostic=entry=>{if(entry.event==='managed_backend_fallback')diagnostics.push(entry);};});
+});
+
+test('a ready controller without the managed-job contract is unsupported, never a wait',()=>fixture(async({owner})=>{
+ let launch,exited=false;
+ transport.create.mockImplementation(async options=>{launch=options;return {bound:{catalog:{asserted:true}},hasExited:()=>exited,call:async()=>null,
+  close:async()=>{exited=true;await launch.afterExit({});},killForRecovery:async()=>{}};});
+ await owner.start();expect(owner.nativeManagedJobs.readiness()).toBe('unsupported');
+ await expect(owner.nativeManagedJobs.awaitReady({timeoutMs:10_000})).resolves.toBe('unsupported');
+ await expect(owner.nativeManagedJobs.prepare(jobInput(0))).rejects.toMatchObject({code:'native_managed_job_capability_unavailable'});
+ await owner.close();
+}));
+
+test('recovering and checkpoint phases are pending readiness, not missing capability',()=>managedJobFixture(async({owner,child})=>{
+ let release;const opened=new Promise(resolve=>{release=resolve;});let entered;const recovering=new Promise(resolve=>{entered=resolve;});
+ const call=child.call;child.call=async input=>{if(input.action==='open'){entered();await opened;}return call(input);};
+ const started=owner.start();await recovering;
+ expect(owner.nativeManagedJobs.readiness()).toBe('pending');expect(owner.nativeManagedJobs.available()).toBe(false);
+ release();await started;expect(owner.nativeManagedJobs.readiness()).toBe('ready');
+ await owner.closeAdmissionForCheckpoint();
+ expect(owner.nativeManagedJobs.readiness()).toBe('pending');
+ await expect(owner.nativeManagedJobs.awaitReady({timeoutMs:20})).resolves.toBe('timeout');
+ await owner.close();
+}));

@@ -5,15 +5,22 @@
 //   slug        cached from `session.created` (v2 records have none), else id
 //   directory   location.directory          path        subpath
 //   version     '2'                         permission  permissions (v1 rule shape)
-//   time        {created, updated, archived}; archived = the DevRyan archive
-//               override in metadata.devryan.archive when it is owned by this
-//               session, otherwise the native v2 time.archived (both are
-//               accepted while legacy overrides are backfilled; native-archive.js)
+//   time        {created, updated, archived, busy?, idle?, viewed?}; archived =
+//               the DevRyan archive override in metadata.devryan.archive when it
+//               is owned by this session, otherwise the native v2 time.archived
+//               (both are accepted while legacy overrides are backfilled;
+//               native-archive.js). busy/idle/viewed are copied exactly when
+//               finite and non-negative, else omitted.
+//   outcome     'succeeded' | 'failed' | 'interrupted' when valid, else omitted
+//   fork        {sessionID, boundary: {type: 'before' | 'through', messageID}}
+//               when every member is valid, else omitted
 //   revert      {messageID, partID?, snapshot?, files? without patch bodies}
 //   metadata    v2 metadata without the `devryan` internals
 //
 // A fork has `fork{sessionID, boundary}` and no parentID in v2; it stays a
 // root (parentID undefined) so sidebar grouping never treats it as a child.
+// The lifecycle fields (busy/idle/viewed/outcome) are display metadata: they
+// never change `time.updated` and grant no execution or verification authority.
 // `share` and `summary` have no v2 source and are absent.
 //
 // metadata.devryan entries (archive, todo) carry the owner `sessionID`: v2
@@ -38,6 +45,11 @@ const isNonEmptyString = (value) => typeof value === 'string' && value.length > 
 const isFiniteNumber = (value) => typeof value === 'number' && Number.isFinite(value);
 
 const finiteOr = (value, fallback) => (isFiniteNumber(value) ? value : fallback);
+
+const isTimestamp = (value) => isFiniteNumber(value) && value >= 0;
+
+/** Native `Session.Info.outcome` values (2.2.5). */
+const SESSION_OUTCOMES = new Set(['succeeded', 'failed', 'interrupted']);
 
 // ---------------------------------------------------------------------------
 // metadata.devryan (owner guard)
@@ -182,6 +194,21 @@ const toV1Model = (model) => {
 };
 
 /**
+ * The native fork origin `{sessionID, boundary: {type, messageID}}`, or
+ * `undefined` unless every member is valid. Display lineage only: a fork stays
+ * a root session (no parentID).
+ * @param {unknown} fork
+ * @returns {{ sessionID: string, boundary: { type: 'before' | 'through', messageID: string } } | undefined}
+ */
+export const toV1Fork = (fork) => {
+  if (!isRecord(fork) || !isNonEmptyString(fork.sessionID) || !isRecord(fork.boundary)) return undefined;
+  const { type, messageID } = fork.boundary;
+  // Native `Session.ForkBoundary` types (2.2.5).
+  if ((type !== 'before' && type !== 'through') || !isNonEmptyString(messageID)) return undefined;
+  return { sessionID: fork.sessionID, boundary: { type, messageID } };
+};
+
+/**
  * The session's location directory, or `undefined`.
  * @param {unknown} session the v2 `Session.Info`
  * @returns {string | undefined}
@@ -215,7 +242,9 @@ export const toV1Session = (info, options = {}) => {
   const archived = archiveOverride ? archiveOverride.at : time.archived;
   const projectedTime = { created, updated: finiteOr(time.updated, created) };
   if (isFiniteNumber(archived)) projectedTime.archived = archived;
-  // LOSS(session-time): `time.idle` and `time.viewed` have no v1 field; `outcome` is dropped.
+  if (isTimestamp(time.busy)) projectedTime.busy = time.busy;
+  if (isTimestamp(time.idle)) projectedTime.idle = time.idle;
+  if (isTimestamp(time.viewed)) projectedTime.viewed = time.viewed;
 
   const session = {
     id: info.id,
@@ -228,8 +257,11 @@ export const toV1Session = (info, options = {}) => {
     time: projectedTime,
   };
   if (typeof info.subpath === 'string' && info.subpath.length > 0) session.path = info.subpath;
-  // A fork has no parentID; LOSS(fork-lineage): `fork{sessionID, boundary}` is not projected.
+  if (SESSION_OUTCOMES.has(info.outcome)) session.outcome = info.outcome;
+  // A fork has no parentID; its origin is display lineage only.
   if (isNonEmptyString(info.parentID)) session.parentID = info.parentID;
+  const fork = toV1Fork(info.fork);
+  if (fork) session.fork = fork;
   if (isNonEmptyString(info.agent)) session.agent = info.agent;
   const model = toV1Model(info.model);
   if (model) session.model = model;

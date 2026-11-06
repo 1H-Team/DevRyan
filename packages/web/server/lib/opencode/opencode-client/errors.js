@@ -8,6 +8,8 @@
 //   tag         the upstream gen-2 `_tag`, when there was one
 //   operation   the client operation (`sessions.get`, ...)
 //   generation  1 or 2
+//   detail      optional; a native host refusal's bounded `native_*` code is
+//               `detail.refusal` (read it with `nativeRefusalCode`)
 //
 // Gen 1 keeps today's request-helper semantics (`orchestration/open-code-executor.js`):
 // a non-2xx answer is `opencode_http_error` with the upstream status, an unparsable
@@ -83,6 +85,12 @@ export const V2_ERROR_TAG_CODES = new Map([
 ]);
 
 const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+
+// The native host answers its own refusals as `{ code, operation }` with no `_tag`
+// (`runtime-host/bootstrap.ts`).
+const NATIVE_REFUSAL_CODE = /^native_[a-z0-9_]{1,96}$/;
+const nativeRefusalOf = (body) => (isRecord(body) && body._tag === undefined
+  && typeof body.code === 'string' && NATIVE_REFUSAL_CODE.test(body.code) ? body.code : undefined);
 
 /** The error every client failure is raised as. */
 export class OpenCodeClientError extends Error {
@@ -167,6 +175,7 @@ export const createV2HttpError = ({ status, body, bodyText, label, operation }) 
   const mapped = mapV2ErrorResponse(status, body);
   const upstreamMessage = isRecord(body) && typeof body.message === 'string' ? body.message : truncate(bodyText);
   const message = `${label} failed (${status}${mapped.tag ? ` ${mapped.tag}` : ''})${upstreamMessage ? `: ${truncate(upstreamMessage)}` : ''}`;
+  const refusal = nativeRefusalOf(body);
   return new OpenCodeClientError(message, {
     code: mapped.code,
     statusCode: mapped.status,
@@ -174,8 +183,17 @@ export const createV2HttpError = ({ status, body, bodyText, label, operation }) 
     tag: mapped.tag,
     operation: operation ?? label,
     generation: 2,
+    ...(refusal ? { detail: { refusal } } : {}),
   });
 };
+
+/**
+ * The bounded `native_*` code of a native host refusal a gen-2 answer carried.
+ * @param {unknown} error
+ * @returns {string | undefined}
+ */
+export const nativeRefusalCode = (error) => (error instanceof OpenCodeClientError && isRecord(error.detail)
+  && typeof error.detail.refusal === 'string' ? error.detail.refusal : undefined);
 
 /**
  * A capability gen 2 (or gen 1, for the privileged client) does not offer.

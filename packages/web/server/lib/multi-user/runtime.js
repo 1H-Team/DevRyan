@@ -611,6 +611,9 @@ export async function createMultiUserRuntime({
       recordOpenCodeActivity: async (payload) => payload?.type === 'session.created'
         ? connection.recordLocalSession(payload.properties?.info) : false,
       canSessionTokenHashAccess: async () => true,
+      // Single-user: the local principal owns every session, as the enabled
+      // runtime answers for any principal that is not managed.
+      ownsSession: async () => true,
       resolveBrowserLeaseContext: async () => null,
       getPublicPrincipal: publicPrincipal,
       // An owner-bound task needs its owner's policy; without Supabase it stays

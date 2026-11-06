@@ -10,6 +10,11 @@ type SessionStatusDotProps = {
   presentation: SessionLeadingIndicatorPresentation;
   /** Translated label for status/working; ignored for the idle ring. */
   label?: string;
+  /**
+   * Translated last-run summary (outcome, idle time, duration) for the idle
+   * ring. Display metadata only: working state never comes from it.
+   */
+  idleLabel?: string;
 };
 
 // Must match the keyframes used by `.animate-session-working-blink`.
@@ -53,7 +58,7 @@ function SessionWorkingDot({ label }: { label?: string }) {
 // The single leading status marker shared by sidebar rows and the mobile
 // session status bar: a colored attention dot, a slow gray working blink, or a
 // faint idle ring that holds the slot.
-export function SessionStatusDot({ presentation, label }: SessionStatusDotProps) {
+export function SessionStatusDot({ presentation, label, idleLabel }: SessionStatusDotProps) {
   if (presentation.kind === 'status') {
     return (
       <span
@@ -67,6 +72,17 @@ export function SessionStatusDot({ presentation, label }: SessionStatusDotProps)
 
   if (presentation.kind === 'working') {
     return <SessionWorkingDot label={label} />;
+  }
+
+  if (idleLabel) {
+    return (
+      <span
+        role="img"
+        className={cn(DOT_CLASS, 'border border-muted-foreground/60')}
+        aria-label={idleLabel}
+        title={idleLabel}
+      />
+    );
   }
 
   return (

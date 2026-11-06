@@ -135,7 +135,7 @@ import {
   listStaleAgentModelOverrides,
   resolveLocalAgentBackupExecution,
 } from './lib/opencode/agents.js';
-import { listPackagedAgents } from './lib/opencode/packaged-agents.js';
+import { listPackagedAgents, setAgentPromptPolicySource } from './lib/opencode/packaged-agents.js';
 import {
   findWorktreeRoot,
   getAncestors,
@@ -144,7 +144,7 @@ import {
   walkSkillMdFiles,
 } from './lib/opencode/shared.js';
 import { CURSOR_PROVIDER_ID, createCursorSdkRuntime } from '@devryan/cursor-sdk-runtime';
-import { PLAN_MODE_SYSTEM_INSTRUCTIONS } from '@devryan/orchestration-runtime';
+import { withPrimaryPlanModeInstructions } from './lib/opencode/runtime-host/native-configuration-data.js';
 import { createScheduledTasksRuntime } from './lib/scheduled-tasks/runtime.js';
 import { createServerStartupRuntime } from './lib/opencode/server-startup-runtime.js';
 import { createTunnelWiringRuntime } from './lib/opencode/tunnel-wiring-runtime.js';
@@ -743,9 +743,8 @@ async function constructWebHost(options = {}) {
       const result = getAgentConfig(agent, directory);
       const config = result?.config;
       const prompt = typeof config?.prompt === 'string' ? config.prompt : '';
-      return config?.mode === 'primary' && agent !== 'plan' && !config.hidden && !config.disable && !config.disabled
-        ? [prompt, 'For a turn explicitly requesting Plan mode, apply the following shared planning instructions:',
-          PLAN_MODE_SYSTEM_INSTRUCTIONS].filter(Boolean).join('\n\n') : prompt;
+      return withPrimaryPlanModeInstructions(prompt, { name: agent, mode: config?.mode, hidden: config?.hidden,
+        disabled: config?.disable || config?.disabled });
     },
     resolveAgentDefinitions: resolveCursorSdkAgentDefinitions,
   });
@@ -2542,6 +2541,7 @@ async function constructWebHost(options = {}) {
       registerExecutionChild: nativeBundle ? input => sessionExecutionHost.nativeManagedChild(input)
         : capturedExecutions ? (input) => sessionExecutionHost.plugin({ ...input, action: 'child' }) : undefined,
       nativeTaskDispatch: nativeBundle ? (input, action) => nativeRuntime.nativeOwner.withManagedTaskDispatch(input, action) : undefined,
+      nativeManagedJobs: nativeBundle ? nativeRuntime.nativeManagedJobs : undefined,
       getNativeDispatchReady: nativeBundle ? () => nativeRuntime.isReady() : undefined,
       publishEvent: emitSyntheticOpenCodeEvent,
       isManagedOpenCode: () => !(
@@ -2579,6 +2579,8 @@ async function constructWebHost(options = {}) {
       authorizePrivateRpc: (request) => harnessTaskContext.authorizePrivateRpc(request),
       logger: console,
     });
+    // Agent prompts render from the same resolved policies harness_capabilities returns.
+    setAgentPromptPolicySource(() => managedOrchestrationRuntime?.getHarnessPolicies?.() ?? null);
     const retention = createSessionRetention({
       openCodeClient, getNativeRuntime:()=>nativeRuntime,
       gate: sessionActivityGate, readSettings: readSettingsFromDiskMigrated,

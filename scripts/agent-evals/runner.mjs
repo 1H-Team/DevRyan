@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 
 import { executeEvaluationCase } from './cases.mjs';
+import { runFileOptionsFor } from './adaptive-cases.mjs';
 import { executeGoldenCase } from './golden-cases.mjs';
 import { runPairedEvaluation } from './paired.mjs';
 import { createEvaluationClient } from './client.mjs';
@@ -72,7 +73,7 @@ export const runEvaluation = async (config, dependencies = {}) => {
   const executeOne = async ({ caseId, repetition, purpose, includeInAggregates }) => {
     sequence += 1;
     const runFileId = `${runId}-${purpose}-${sequence}`;
-    const runFiles = allocateRunFiles(config.fixtureRoot, runFileId);
+    const runFiles = allocateRunFiles(config.fixtureRoot, runFileId, runFileOptionsFor(caseId));
     const result = await caseExecutor({
       caseId,
       repetition,

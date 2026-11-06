@@ -4,6 +4,7 @@ import { devtools } from './utils/devtoolsGate';
 import type {
   GitStatus,
   GitBranch,
+  GitBranchListOptions,
   GitLogResponse,
   GitIdentitySummary,
 } from '@/lib/api/types';
@@ -55,7 +56,12 @@ interface GitStore {
   getDirectoryState: (directory: string) => DirectoryGitState | null;
 
   fetchStatus: (directory: string, git: GitAPI, options?: { silent?: boolean; mode?: 'light'; force?: boolean }) => Promise<boolean>;
-  fetchBranches: (directory: string, git: GitAPI) => Promise<boolean>;
+  /**
+   * Lists branches from local refs. `{ remote: 'live' }` also verifies remotes
+   * (user-initiated only). Resolves false when the request failed or a newer
+   * listing superseded it.
+   */
+  fetchBranches: (directory: string, git: GitAPI, options?: GitBranchListOptions) => Promise<boolean>;
   fetchLog: (directory: string, git: GitAPI, maxCount?: number) => Promise<boolean>;
   fetchIdentity: (directory: string, git: GitAPI) => Promise<void>;
   fetchAll: (directory: string, git: GitAPI, options?: { force?: boolean; silentIfCached?: boolean; includeIdentity?: boolean }) => Promise<void>;
@@ -86,7 +92,7 @@ interface GitFileDiffResponse {
 interface GitAPI {
   checkIsGitRepository: (directory: string) => Promise<boolean>;
   getGitStatus: (directory: string, options?: { mode?: 'light'; force?: boolean }) => Promise<GitStatus>;
-  getGitBranches: (directory: string) => Promise<GitBranch>;
+  getGitBranches: (directory: string, options?: GitBranchListOptions) => Promise<GitBranch>;
   getGitLog: (directory: string, options?: { maxCount?: number }) => Promise<GitLogResponse>;
   getCurrentGitIdentity: (directory: string) => Promise<GitIdentitySummary | null>;
   getGitFileDiff: (directory: string, options: { path: string; staged?: boolean }) => Promise<GitFileDiffResponse>;
@@ -100,6 +106,9 @@ const inFlightRepositoryPollsByDirectory = new Map<string, Promise<boolean>>();
 const pendingRepositoryRefreshDirectories = new Set<string>();
 const statusFetchGenerationByDirectory = new Map<string, number>();
 const logFetchGenerationByDirectory = new Map<string, number>();
+const branchFetchGenerationByDirectory = new Map<string, number>();
+// A live listing is the freshest answer; routine reads made during it join it.
+const inFlightLiveBranchFetches = new Map<string, Promise<boolean>>();
 
 const getStatusFetchKey = (directory: string, mode: GitStatusFetchMode): string => `${mode}:${directory}`;
 const bumpRequestGeneration = (generations: Map<string, number>, directory: string): number => {
@@ -501,7 +510,14 @@ export const useGitStore = create<GitStore>()(
         }
       },
 
-      fetchBranches: async (directory, git) => {
+      fetchBranches: async (directory, git, options) => {
+        const inFlightLive = inFlightLiveBranchFetches.get(directory);
+        if (inFlightLive) {
+          return inFlightLive;
+        }
+        const live = options?.remote === 'live';
+        const requestGeneration = bumpRequestGeneration(branchFetchGenerationByDirectory, directory);
+
         {
           const newDirectories = new Map(get().directories);
           const d = newDirectories.get(directory) ?? createEmptyDirectoryState();
@@ -509,20 +525,43 @@ export const useGitStore = create<GitStore>()(
           set({ directories: newDirectories });
         }
 
+        // Only the newest listing writes results or clears the loading flag;
+        // the newest one always settles, so loading is never stranded.
+        const fetchPromise = (async (): Promise<boolean> => {
+          try {
+            const branches = live
+              ? await git.getGitBranches(directory, { remote: 'live' })
+              : await git.getGitBranches(directory);
+            if (!isCurrentRequestGeneration(branchFetchGenerationByDirectory, directory, requestGeneration)) {
+              return false;
+            }
+            const newDirectories = new Map(get().directories);
+            const dirState = newDirectories.get(directory) ?? createEmptyDirectoryState();
+            newDirectories.set(directory, { ...dirState, branches, isLoadingBranches: false, lastBranchesFetch: Date.now() });
+            set({ directories: newDirectories });
+            return true;
+          } catch (error) {
+            if (isCurrentRequestGeneration(branchFetchGenerationByDirectory, directory, requestGeneration)) {
+              console.error('Failed to fetch git branches:', error);
+              const newDirectories = new Map(get().directories);
+              const d = newDirectories.get(directory) ?? createEmptyDirectoryState();
+              newDirectories.set(directory, { ...d, isLoadingBranches: false });
+              set({ directories: newDirectories });
+            }
+            return false;
+          }
+        })();
+
+        if (!live) {
+          return fetchPromise;
+        }
+        inFlightLiveBranchFetches.set(directory, fetchPromise);
         try {
-          const branches = await git.getGitBranches(directory);
-          const newDirectories = new Map(get().directories);
-          const dirState = newDirectories.get(directory) ?? createEmptyDirectoryState();
-          newDirectories.set(directory, { ...dirState, branches, isLoadingBranches: false, lastBranchesFetch: Date.now() });
-          set({ directories: newDirectories });
-          return true;
-        } catch (error) {
-          console.error('Failed to fetch git branches:', error);
-          const newDirectories = new Map(get().directories);
-          const d = newDirectories.get(directory) ?? createEmptyDirectoryState();
-          newDirectories.set(directory, { ...d, isLoadingBranches: false });
-          set({ directories: newDirectories });
-          return false;
+          return await fetchPromise;
+        } finally {
+          if (inFlightLiveBranchFetches.get(directory) === fetchPromise) {
+            inFlightLiveBranchFetches.delete(directory);
+          }
         }
       },
 

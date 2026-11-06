@@ -121,6 +121,27 @@ describe('evaluation fixture safety', () => {
     assert.deepEqual(compareFixtureManifests(starting, captureFixtureManifest(root)), { matches: true, differences: [] });
   });
 
+  test('allocates an optional secondary source only on request and cleans it with the run', () => {
+    const root = makeFixture();
+    const starting = assertFixtureReady(root);
+    const plain = allocateRunFiles(root, 'run-plain');
+    assert.equal(plain.ownedPaths.length, 2);
+    assert.equal(Object.hasOwn(plain, 'secondarySourcePath'), false);
+    assert.equal(Object.hasOwn(plain, 'secondarySourceRelativePath'), false);
+    const files = allocateRunFiles(root, 'run-phases', { secondarySource: true });
+    assert.equal(files.secondarySourceRelativePath, 'src/devryan-eval-run-phases.phase-b.ts');
+    assert.deepEqual(files.ownedPaths, [files.sourcePath, files.testPath, files.secondarySourcePath]);
+    writeRunOwnedFile(files.sourcePath, 'export const a = 1;\n', files);
+    writeRunOwnedFile(files.testPath, 'test artifact\n', files);
+    writeRunOwnedFile(files.secondarySourcePath, 'export const b = 2;\n', files);
+    assert.throws(() => allocateRunFiles(root, 'run-phases', { secondarySource: true }), /already exists/i);
+    const cleanup = cleanupRunFiles({ fixtureRoot: root, runFiles: files, startingManifest: starting });
+    assert.equal(cleanup.restored, true);
+    assert.equal(cleanup.deletedOwnedFileCount, 3);
+    assert.equal(existsSync(files.secondarySourcePath), false);
+    assert.deepEqual(compareFixtureManifests(starting, captureFixtureManifest(root)), { matches: true, differences: [] });
+  });
+
   test('never resets tracked drift or cleans unrelated untracked additions during cleanup', () => {
     const root = makeFixture();
     const starting = assertFixtureReady(root);

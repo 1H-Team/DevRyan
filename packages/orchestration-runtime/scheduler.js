@@ -21,6 +21,7 @@ import {
 import { assertManagedTaskTransition } from './transitions.js';
 import { managedResultCollectionState, projectManagedWaitSnapshot, projectManagedCommitSnapshot } from './managed-wait.js';
 import { validateManagedTransportRecovery } from './transport-recovery.js';
+import { requiresManagedNativeInputDisposition, validateManagedNativeJobSegments } from './native-job-segments.js';
 import {
   createManagedTaskResultEnvelope,
   validateManagedTaskResultEnvelope,
@@ -36,7 +37,14 @@ import {
   DEFAULT_MANAGED_TERMINAL_MAX_AGE_MS,
   DEFAULT_MANAGED_TERMINAL_MAX_RECORDS,
   compactManagedOrchestrationState,
+  isManagedNativeJobTombstone,
 } from './persistence.js';
+import {
+  decodeManagedNativeJobProof,
+  decodeManagedNativeJobProofShard,
+  encodeManagedNativeJobProofShard,
+  managedNativeJobProofShard,
+} from './native-job-proof-store.js';
 import {
   MANAGED_TASK_TIMEOUT_REASON_PREFIX,
   formatManagedTaskFailureReason,
@@ -96,6 +104,7 @@ const resolveFollowUpTimeoutAt = (sourceTask, requestedTimeoutAt, now) => {
 
 const cloneTask = (task) => task ? {
   ...task,
+  ...(task.nativeJobSegments ? { nativeJobSegments: task.nativeJobSegments.map(segment => ({ ...segment })) } : {}),
   ...(task.primaryStepBudget ? { primaryStepBudget: structuredClone(task.primaryStepBudget) } : {}),
   ...(task.approvedPlanRef ? { approvedPlanRef: structuredClone(task.approvedPlanRef) } : {}),
   ...(task.requiredChecks ? { requiredChecks: structuredClone(task.requiredChecks) } : {}),
@@ -114,6 +123,12 @@ const createDefaultPersistence = () => ({
   async save() {
   },
 });
+
+const textByteLength = typeof Buffer !== 'undefined' && typeof Buffer.byteLength === 'function'
+  ? (text) => Buffer.byteLength(text, 'utf8')
+  : (text) => new TextEncoder().encode(text).byteLength;
+// A released proof's share of the main-ledger bytes: its two records and separators.
+const serializedProofBytes = (entry) => textByteLength(JSON.stringify(entry.task)) + textByteLength(JSON.stringify(entry.envelope)) + 2;
 
 const createRandomId = (prefix) => {
   const random = globalThis.crypto?.randomUUID?.()
@@ -264,6 +279,45 @@ export const createManagedTaskScheduler = (options = {}) => {
   const objectiveChecks = new Map();
   const objectiveKey = scope => JSON.stringify([scope.rootSessionId, scope.directory, scope.objectiveId]);
   const resultEnvelopes = new Map();
+  // Retained native proofs released from the main ledger. A persistence that
+  // offers proof shards keeps them in `<ledger dir>/native-job-proofs/`; they are
+  // then outside every main-ledger write, listing, snapshot and cap, and only
+  // proof readers (native receipts, disposition, verified disposal, point reads)
+  // see them. Without proof shards, tombstones stay inline in the ledger.
+  const proofStore = ['loadNativeJobProofShards', 'putNativeJobProofShard', 'removeNativeJobProofShard']
+    .every(name => typeof persistence[name] === 'function');
+  const nativeJobProofs = new Map();
+  const proofIdsByShard = new Map();
+  // What each shard file held when last loaded or written. It may still list a
+  // task the main ledger now owns again; the main ledger's record wins.
+  const proofShardsOnDisk = new Map();
+  // Shards whose file still holds a proof that was released or disposed of.
+  const dirtyProofShards = new Set();
+  // Proofs moved back into the ledger maps for a mutation, with the copy their
+  // shard durably holds. Every shard rewrite keeps that copy until the proof is
+  // released again, disposed of or compacted, so no rewrite can drop a proof
+  // whose newer record is not yet committed anywhere. Moving one out again
+  // publishes no second removal.
+  const rehydratedProofs = new Map();
+  // Proofs a verified disposal is releasing: shard rewrites keep them until the
+  // main-ledger commit that dispositions them is durable.
+  const disposingProofs = new Map();
+  const findTask = taskId => tasks.get(taskId) ?? nativeJobProofs.get(taskId)?.task;
+  const findEnvelope = taskId => resultEnvelopes.get(taskId) ?? nativeJobProofs.get(taskId)?.envelope;
+  const setNativeJobProof = (entry) => {
+    const { taskId } = entry.task, shard = managedNativeJobProofShard(taskId);
+    nativeJobProofs.set(taskId, entry);
+    const ids = proofIdsByShard.get(shard) ?? new Set();
+    ids.add(taskId); proofIdsByShard.set(shard, ids);
+  };
+  const deleteNativeJobProof = (taskId) => {
+    if (!nativeJobProofs.delete(taskId)) return false;
+    const shard = managedNativeJobProofShard(taskId), ids = proofIdsByShard.get(shard);
+    ids?.delete(taskId);
+    if (ids && !ids.size) proofIdsByShard.delete(shard);
+    return true;
+  };
+  const listNativeJobProofTasks = () => [...nativeJobProofs.values()].map(entry => entry.task);
   const idempotencyIndex = new Map();
   const activeLaunches = new Map();
   const cancellationPromises = new Map();
@@ -398,6 +452,67 @@ export const createManagedTaskScheduler = (options = {}) => {
     );
   };
 
+  const proofStoreWarning = (message, error, shard) => {
+    try {
+      logger.warn?.(`[ManagedOrchestration] ${message}`, { shard,
+        code: /^[a-z][a-z0-9_]{1,100}$/.test(error?.code ?? '') ? error.code : 'native_job_proof_store_failed',
+        reason: error instanceof Error ? error.message : String(error) });
+    } catch { /* Observation never changes the commit outcome. */ }
+  };
+  // Rewrites one whole shard: its current proofs plus `added`, or removes the
+  // file once nothing is left. Each write is atomic through the ledger's own
+  // file authority and is serialized with the main-ledger writes.
+  const writeProofShardLocked = async (shard, added = []) => {
+    const entries = new Map();
+    for (const taskId of proofIdsByShard.get(shard) ?? []) entries.set(taskId, nativeJobProofs.get(taskId));
+    for (const retained of [rehydratedProofs, disposingProofs]) {
+      for (const [taskId, entry] of retained) if (managedNativeJobProofShard(taskId) === shard) entries.set(taskId, entry);
+    }
+    for (const entry of added) entries.set(entry.task.taskId, entry);
+    if (entries.size) await persistence.putNativeJobProofShard(shard, encodeManagedNativeJobProofShard(shard, [...entries.values()]));
+    else if (proofShardsOnDisk.has(shard)) await persistence.removeNativeJobProofShard(shard);
+    if (entries.size) proofShardsOnDisk.set(shard, new Set(entries.keys())); else proofShardsOnDisk.delete(shard);
+    dirtyProofShards.delete(shard);
+  };
+  // Runs only after a main-ledger commit no longer needs the released proofs.
+  // A failure keeps the shard dirty: its stale proof is retained, never lost,
+  // and the next commit retries.
+  const flushProofShardsLocked = async () => {
+    for (const shard of [...dirtyProofShards]) {
+      try { await writeProofShardLocked(shard); }
+      catch (error) { proofStoreWarning('Native job proof shard cleanup remains pending', error, shard); }
+    }
+  };
+  const markProofShardDirty = (taskId) => {
+    const shard = managedNativeJobProofShard(taskId);
+    if (proofShardsOnDisk.get(shard)?.has(taskId)) dirtyProofShards.add(shard);
+  };
+  // Shard first: a released proof is durable in its shard before the main
+  // ledger commit that drops its record. A shard that cannot take it keeps the
+  // tombstone inline for this commit, so nothing is lost and the next commit
+  // retries the move.
+  const releaseNativeJobProofsLocked = async (compaction) => {
+    const moved = [];
+    const proofIds = new Set(compaction.proofTaskIds);
+    const envelopes = new Map();
+    for (const envelope of compaction.state.resultEnvelopes) if (proofIds.has(envelope.taskId)) envelopes.set(envelope.taskId, envelope);
+    const byShard = new Map();
+    for (const task of compaction.state.tasks) {
+      if (!proofIds.has(task.taskId)) continue;
+      const shard = managedNativeJobProofShard(task.taskId);
+      let entry;
+      try { entry = decodeManagedNativeJobProof({ task, envelope: envelopes.get(task.taskId) }); }
+      catch (error) { proofStoreWarning('Native job proof stays in the ledger', error, shard); continue; }
+      const entries = byShard.get(shard) ?? [];
+      entries.push(entry); byShard.set(shard, entries);
+    }
+    for (const [shard, entries] of byShard) {
+      try { await writeProofShardLocked(shard, entries); moved.push(...entries); }
+      catch (error) { proofStoreWarning('Native job proofs stay in the ledger', error, shard); }
+    }
+    return moved;
+  };
+
   const persistLocked = async () => {
     uncommittedRead = true;
     const compaction = compactManagedOrchestrationState(snapshotLocked(), {
@@ -418,14 +533,21 @@ export const createManagedTaskScheduler = (options = {}) => {
         `managed orchestration ledger cannot fit within ${maxPersistedBytes} bytes without removing protected work`,
       );
     }
+    // Awaited only when there is something to release: a commit without proofs
+    // keeps its exact microtask path to the ledger write.
+    const moved = proofStore && compaction.proofTaskIds.length ? await releaseNativeJobProofsLocked(compaction) : [];
+    const movedIds = new Set(moved.map(entry => entry.task.taskId));
+    const state = movedIds.size ? { ...compaction.state,
+      tasks: compaction.state.tasks.filter(task => !movedIds.has(task.taskId)),
+      resultEnvelopes: compaction.state.resultEnvelopes.filter(envelope => !movedIds.has(envelope.taskId)) } : compaction.state;
     const startedAt = now(), completed = new Set();
     // A proposed terminal save retains the last committed running deadline.
     let dueTask;
-    for (const task of [...committedReadState.tasks, ...compaction.state.tasks]) {
+    for (const task of [...committedReadState.tasks, ...state.tasks]) {
       if (!isTerminalManagedTaskStatus(task.status) && Number.isFinite(task.timeoutAt)
         && (!dueTask || task.timeoutAt < dueTask.timeoutAt)) dueTask = task;
     }
-    const task = dueTask ?? compaction.state.tasks[0];
+    const task = dueTask ?? state.tasks[0];
     const identity = { ownerID: createRandomId('dvr_save_'), ...(task ? { taskId: task.taskId, rootSessionId: task.rootSessionId } : {}) };
     const owner = { ...identity, startedAt, progressAt: startedAt, phase: 'queued', attention: false, timer: null };
     persistenceOwner = owner;
@@ -439,7 +561,7 @@ export const createManagedTaskScheduler = (options = {}) => {
       owner.attention = true;
       const record = { state: 'needs_attention', code: 'managed_persistence_stalled', phase: owner.phase,
         reason: deadlineExpired ? 'task_deadline' : 'owner_progress_timeout', at, elapsedMs: at - startedAt,
-        idleMs: at - owner.progressAt, taskCount: compaction.state.tasks.length,
+        idleMs: at - owner.progressAt, taskCount: state.tasks.length,
         ...identity };
       report(record);
       try { logger.warn?.('[ManagedOrchestration] Mandatory ledger write requires attention; ownership retained', record); } catch { /* Observer only. */ }
@@ -452,7 +574,7 @@ export const createManagedTaskScheduler = (options = {}) => {
     arm();
     let outcome = 'failed';
     try {
-      await persistence.save(compaction.state, { onProgress: input => {
+      await persistence.save(state, { onProgress: input => {
         if (persistenceOwner !== owner || !PERSISTENCE_PHASES.has(input?.phase) || !['started', 'completed'].includes(input?.state)) return;
         if (input.state === 'completed' && completed.has(input.phase)) return;
         owner.phase = input.phase;
@@ -461,16 +583,38 @@ export const createManagedTaskScheduler = (options = {}) => {
           if (!owner.attention) arm();
         }
       } });
-      committedReadState = compaction.state;
+      committedReadState = state;
       uncommittedRead = false;
       outcome = 'committed';
     } finally {
       cancelTimeout(owner.timer);
       if (persistenceOwner === owner) persistenceOwner = null;
       if (owner.attention) report({ state: 'settled', outcome, code: 'managed_persistence_stalled', phase: owner.phase,
-        at: now(), elapsedMs: now() - startedAt, taskCount: compaction.state.tasks.length, ...identity });
+        at: now(), elapsedMs: now() - startedAt, taskCount: state.tasks.length, ...identity });
     }
-    lastSerializedBytes = compaction.serializedBytes;
+    lastSerializedBytes = Math.max(0, compaction.serializedBytes
+      - moved.reduce((total, entry) => total + serializedProofBytes(entry), 0));
+    // A released proof leaves the ledger maps: like removed history it is no
+    // longer listed, but proof readers and point reads still resolve it.
+    for (const entry of moved) {
+      const { taskId } = entry.task, previousTask = tasks.get(taskId);
+      tasks.delete(taskId);
+      resultEnvelopes.delete(taskId);
+      setNativeJobProof(entry);
+      providerRecoveryContinuationClaims.delete(taskId);
+      clearTaskTimeout(taskId);
+      clearReconciliationRetry(taskId);
+      clearAutoResumeTimer(taskId);
+      if (!rehydratedProofs.delete(taskId) && previousTask) queueTaskRemovalPublication(previousTask);
+    }
+    // A tombstone saved inline replaces its full record and envelope in memory too.
+    if (compaction.tombstonedTaskIds.length) {
+      const tombstoned = new Set(compaction.tombstonedTaskIds.filter(taskId => !movedIds.has(taskId)));
+      for (const task of state.tasks) if (tombstoned.has(task.taskId)) tasks.set(task.taskId, cloneTask(task));
+      for (const envelope of state.resultEnvelopes) {
+        if (tombstoned.has(envelope.taskId)) resultEnvelopes.set(envelope.taskId, structuredClone(envelope));
+      }
+    }
     for (const taskId of compaction.removedTaskIds) {
       const removedTask = tasks.get(taskId);
       if (removedTask) {
@@ -484,7 +628,10 @@ export const createManagedTaskScheduler = (options = {}) => {
       clearReconciliationRetry(taskId);
       clearAutoResumeTimer(taskId);
       compactedTaskCount += 1;
+      rehydratedProofs.delete(taskId);
+      markProofShardDirty(taskId);
     }
+    if (dirtyProofShards.size) await flushProofShardsLocked();
   };
 
   const commitNewTaskLocked = async (task) => {
@@ -500,7 +647,7 @@ export const createManagedTaskScheduler = (options = {}) => {
     queueTaskPublication(task);
   };
 
-  const commitTaskUpdateLocked = async (previous, next) => {
+  const commitTaskUpdateLocked = async (previous, next, { publish = true } = {}) => {
     assertManagedTaskTransition(previous, next);
     tasks.set(next.taskId, next);
     try {
@@ -509,7 +656,7 @@ export const createManagedTaskScheduler = (options = {}) => {
       tasks.set(previous.taskId, previous);
       throw error;
     }
-    queueTaskPublication(next);
+    if (publish && tasks.has(next.taskId)) queueTaskPublication(next);
   };
 
   const nextResultSequenceLocked = () => {
@@ -691,6 +838,7 @@ export const createManagedTaskScheduler = (options = {}) => {
   };
 
   const commitTerminalTaskLocked = async (previous, next, { resumable = false, providerResetAt = null } = {}) => {
+    if (next.nativeJobSegments?.length) next = { ...next, nativeJobSegments: next.nativeJobSegments.map(segment => ({ ...segment, completion: segment.completion ?? 'pending' })) };
     assertManagedTaskTransition(previous, next);
     const existingEnvelope = resultEnvelopes.get(next.taskId);
     let envelope = existingEnvelope ?? createManagedTaskResultEnvelope(next, {
@@ -717,9 +865,56 @@ export const createManagedTaskScheduler = (options = {}) => {
     clearStartingLease(next.taskId);
     clearReconciliationRetry(next.taskId);
     if (cleanup) afterCommit(() => runAttemptCleanup(next.taskId));
+    if (next.nativeJobSegments?.some(segment => segment.completion === 'pending')) afterCommit(() => completeNativeJobs(next.taskId));
     if (tasks.has(next.taskId)) queueTaskPublication(next);
     notifyTaskWaiters(next);
     notifyResultCollectionWaiters(next.rootSessionId);
+  };
+  // Moves a released proof back into the ledger maps for a mutation in this
+  // exclusive section. Its shard keeps the previous copy until the next commit
+  // releases the changed tombstone again, or keeps it inline when protected.
+  const rehydrateNativeJobProofLocked = (taskId) => {
+    const entry = nativeJobProofs.get(taskId);
+    if (!entry || tasks.has(taskId)) return;
+    deleteNativeJobProof(taskId);
+    tasks.set(taskId, cloneTask(entry.task));
+    resultEnvelopes.set(taskId, structuredClone(entry.envelope));
+    rehydratedProofs.set(taskId, entry);
+  };
+  const nativeCompletionTimers = new Map();
+  const nativeCompletionActive = new Map();
+  const nativeCompletionFailures = new Set();
+  const completeNativeJobs = taskId => {
+    if (nativeCompletionActive.has(taskId)) return nativeCompletionActive.get(taskId);
+    if (shutDown || typeof options.acknowledgeNativeJob !== 'function') return Promise.resolve();
+    const work = Promise.resolve().then(async () => { try {
+      const task = findTask(taskId), envelope = findEnvelope(taskId);
+      if (!task || !envelope || !isTerminalManagedTaskStatus(task.status)) return;
+      for (const segment of task.nativeJobSegments ?? []) {
+        if (segment.completion !== 'pending') continue;
+        await options.acknowledgeNativeJob({ task: cloneTask(task), segment: { ...segment }, envelopeID: envelope.envelopeId });
+        await runExclusive(async () => {
+          if (shutDown) return;
+          rehydrateNativeJobProofLocked(taskId);
+          const current = tasks.get(taskId);
+          if (shutDown || !current || current.leaseToken !== task.leaseToken) return;
+          const next = { ...current, nativeJobSegments: current.nativeJobSegments.map(row => row.notificationID === segment.notificationID ? { ...row, completion: 'done' } : row) };
+          await commitTaskUpdateLocked(current, next, { publish: false });
+        });
+      }
+      nativeCompletionFailures.delete(taskId);
+    } catch (error) {
+      if (!nativeCompletionFailures.has(taskId)) {
+        nativeCompletionFailures.add(taskId);
+        try { logger.warn?.('[ManagedOrchestration] Native job completion remains pending', { taskId,
+          code: /^[a-z][a-z0-9_]{1,100}$/.test(error?.code ?? '') ? error.code : 'native_managed_job_completion_pending' }); } catch { /* Observation cannot prevent durable recovery. */ }
+      }
+      if (!shutDown && !nativeCompletionTimers.has(taskId)) nativeCompletionTimers.set(taskId, unrefTimer(scheduleTimeout(() => {
+        nativeCompletionTimers.delete(taskId); void completeNativeJobs(taskId);
+      }, 5_000)));
+    } }).finally(() => nativeCompletionActive.delete(taskId));
+    nativeCompletionActive.set(taskId, work);
+    return work;
   };
   // A child that ran under a scheduler lease leaves runs to stop.
   const runCleanupFor = (task, envelope) => (typeof options.stopAttemptRuns === 'function' && !envelope.runCleanup
@@ -1003,6 +1198,34 @@ export const createManagedTaskScheduler = (options = {}) => {
   };
 
   const createTaskControl = (taskId, leaseToken) => ({
+    async reserveNativeJobSegment(segment) {
+      return await runExclusive(async () => {
+        const previous = tasks.get(taskId);
+        if (shutDown || !previous || previous.leaseToken !== leaseToken || isTerminalManagedTaskStatus(previous.status)
+          || cancellationOwners.has(taskId) || removalHeld(previous)) return false;
+        const existing = previous.nativeJobSegments?.find(row => row.messageID === segment.messageID);
+        if (existing) return ['jobID', 'notificationID'].every(key => existing[key] === segment[key]);
+        const next = { ...previous, nativeJobSegments: [...(previous.nativeJobSegments ?? []), {
+          jobID: segment.jobID, notificationID: segment.notificationID, messageID: segment.messageID, state: 'reserved',
+        }] };
+        validateManagedNativeJobSegments(next.nativeJobSegments, next.executionBackend);
+        await commitTaskUpdateLocked(previous, next, { publish: false }); return true;
+      });
+    },
+    async recordNativeJobSegment(messageID, state) {
+      return await runExclusive(async () => {
+        const previous = tasks.get(taskId);
+        if (shutDown || !previous || previous.leaseToken !== leaseToken || isTerminalManagedTaskStatus(previous.status)) return false;
+        const current = previous.nativeJobSegments?.find(segment => segment.messageID === messageID);
+        if (!current) throw new TypeError('Native job segment was not reserved');
+        const allowed = { reserved: ['prepared', 'uncertain', 'cancelled'], prepared: ['accepted', 'uncertain', 'cancelled'], uncertain: ['accepted', 'cancelled'], accepted: [], cancelled: [] };
+        if (current.state !== state && !allowed[current.state].includes(state)) throw new TypeError('Invalid native job segment transition');
+        if (current.state === state) return true;
+        const next = { ...previous, nativeJobSegments: previous.nativeJobSegments.map(segment => segment.messageID === messageID ? { ...segment, state } : segment) };
+        validateManagedNativeJobSegments(next.nativeJobSegments, next.executionBackend);
+        await commitTaskUpdateLocked(previous, next, { publish: false }); return true;
+      });
+    },
     // Read-only: an automatic backup follow-up does not copy its source
     // task's failure, but its recovery class depends on that failure.
     readPriorFailureReason() {
@@ -2055,6 +2278,35 @@ export const createManagedTaskScheduler = (options = {}) => {
     }
   };
 
+  // Every shard is read and decoded whole; an unreadable, oversized or invalid
+  // shard refuses initialization instead of forgetting its proofs. A task in
+  // both stores resolves to the main ledger's record; the next commit releases
+  // it again and rewrites the shard idempotently.
+  const loadNativeJobProofsLocked = async () => {
+    const shards = await persistence.loadNativeJobProofShards();
+    if (!Array.isArray(shards)) throw new ManagedOrchestrationError('invalid_native_job_proof_store', 'native job proof shards are invalid');
+    const decoded = new Map();
+    for (const row of shards) {
+      try {
+        if (decoded.has(row?.shard)) throw new TypeError('duplicate native job proof shard');
+        decoded.set(row?.shard, decodeManagedNativeJobProofShard(row?.value, row?.shard));
+      } catch (error) {
+        proofStoreWarning('Refused an invalid native job proof shard', error, typeof row?.shard === 'string' ? row.shard.slice(0, 8) : undefined);
+        throw new ManagedOrchestrationError('invalid_native_job_proof_store', 'a native job proof shard is invalid');
+      }
+    }
+    for (const [shard, entries] of decoded) {
+      proofShardsOnDisk.set(shard, new Set(entries.map(entry => entry.task.taskId)));
+      for (const entry of entries) {
+        const { taskId, rootSessionId, idempotencyKey } = entry.task;
+        if (tasks.has(taskId)) continue;
+        setNativeJobProof(entry);
+        const key = idempotencyIndexKey(rootSessionId, idempotencyKey);
+        if (!idempotencyIndex.has(key)) idempotencyIndex.set(key, taskId);
+      }
+    }
+  };
+
   const initialize = ({ loadOnly = false } = {}) => {
     if (!loadOnly && (dispatchPaused || runtimeUnavailable)) return Promise.reject(new ManagedOrchestrationError(
       'managed_runtime_restarting', 'Managed task dispatch is paused for runtime replacement'));
@@ -2078,6 +2330,7 @@ export const createManagedTaskScheduler = (options = {}) => {
         }
         for (const envelope of ledger.resultEnvelopes) resultEnvelopes.set(envelope.taskId, structuredClone(envelope));
       }
+      if (proofStore) await loadNativeJobProofsLocked();
       committedReadState = { version: 1, ...(objectiveChecks.size ? { objectiveChecks: [...objectiveChecks.values()] } : {}), tasks: [...tasks.values()], resultEnvelopes: [...resultEnvelopes.values()] };
       initialized = true;
     }).then(async () => {
@@ -2120,6 +2373,10 @@ export const createManagedTaskScheduler = (options = {}) => {
       for (const task of tasks.values()) {
         scheduleTaskDeadline(task);
         scheduleStartingLease(task);
+        if (isTerminalManagedTaskStatus(task.status) && task.nativeJobSegments?.some(segment => segment.completion === 'pending')) void completeNativeJobs(task.taskId);
+      }
+      for (const task of listNativeJobProofTasks()) {
+        if (task.nativeJobSegments.some(segment => segment.completion === 'pending')) void completeNativeJobs(task.taskId);
       }
       // Run cleanups a restart interrupted, or that had failed.
       for (const envelope of resultEnvelopes.values()) {
@@ -2164,7 +2421,7 @@ export const createManagedTaskScheduler = (options = {}) => {
       assertNotRemoving(input);
       const indexKey = idempotencyIndexKey(input.rootSessionId, input.idempotencyKey);
       const existingTaskId = idempotencyIndex.get(indexKey);
-      if (existingTaskId) return cloneTask(tasks.get(existingTaskId));
+      if (existingTaskId) return cloneTask(findTask(existingTaskId));
       const automatic = input[AUTO_RESUME_SUBMISSION];
       if (automatic) {
         const source = resultEnvelopes.get(automatic.taskId);
@@ -2239,6 +2496,7 @@ export const createManagedTaskScheduler = (options = {}) => {
         throw new ManagedOrchestrationError('task_id_collision', `task ID ${taskId} already exists`);
       }
       const next = createManagedTaskRecord({
+        ...(typeof options.resolveExecutionBackend === 'function' ? { executionBackend: options.resolveExecutionBackend(input) } : {}),
         taskId,
         idempotencyKey: input.idempotencyKey,
         rootSessionId: input.rootSessionId,
@@ -3107,6 +3365,9 @@ export const createManagedTaskScheduler = (options = {}) => {
       for (const taskId of [...reconciliationRetryTimers.keys()]) clearReconciliationRetry(taskId);
       for (const taskId of [...autoResumeTimers.keys()]) clearAutoResumeTimer(taskId);
       for (const taskId of [...runCleanupTimers.keys()]) clearRunCleanup(taskId);
+      for (const timer of nativeCompletionTimers.values()) cancelTimeout(timer);
+      nativeCompletionTimers.clear();
+      nativeCompletionFailures.clear();
       clearAdmissionRetry();
       const shutdownError = new ManagedOrchestrationError(
         'scheduler_shut_down',
@@ -3164,7 +3425,7 @@ export const createManagedTaskScheduler = (options = {}) => {
 
   const acknowledgeResult = async (taskId, actionOptions = {}) => {
     await ensureInitialized();
-    assertNotRemoving(tasks.get(taskId));
+    assertNotRemoving(findTask(taskId));
     const action = actionOptions.action;
     const acknowledgementIdentity=actionOptions.acknowledgementIdentity;
     if(acknowledgementIdentity!==undefined&&(typeof acknowledgementIdentity!=='string'||!/^[a-f0-9]{64}$/.test(acknowledgementIdentity)))throw new ManagedOrchestrationError('invalid_result_action','result acknowledgement identity is invalid');
@@ -3192,6 +3453,21 @@ export const createManagedTaskScheduler = (options = {}) => {
     }
 
     const promise = (async () => {
+      // A released proof answers its disposition read-only. Only a pending
+      // disposition moves it back into the ledger maps for the commit below.
+      const proof = nativeJobProofs.get(taskId);
+      if (proof && ['resume', 'retry', 'recover_in_place', 'retry_in_place'].includes(action)) {
+        throw new ManagedOrchestrationError('result_not_found', `managed task result ${taskId} was released by retention`);
+      }
+      if (proof && proof.envelope.action !== null) {
+        if (proof.envelope.action !== action || (acknowledgementIdentity !== undefined || proof.envelope.acknowledgementIdentity !== undefined)
+          && proof.envelope.acknowledgementIdentity !== acknowledgementIdentity) {
+          throw new ManagedOrchestrationError('result_already_acknowledged', `result is already acknowledged with ${proof.envelope.action}`);
+        }
+        return { envelope: structuredClone(proof.envelope),
+          followUpTask: proof.envelope.followUpTaskId ? cloneTask(findTask(proof.envelope.followUpTaskId)) : null };
+      }
+      if (proof) await runExclusive(() => rehydrateNativeJobProofLocked(taskId));
       const currentEnvelope = resultEnvelopes.get(taskId);
       const sourceTask = tasks.get(taskId);
       if (hasPendingOperatorStop(sourceTask)) {
@@ -3235,6 +3511,11 @@ export const createManagedTaskScheduler = (options = {}) => {
             ? cloneTask(tasks.get(currentEnvelope.followUpTaskId))
             : null,
         };
+      }
+
+      // A tombstone released the prompt and result a follow-up would continue from.
+      if (isManagedNativeJobTombstone(sourceTask) && ['resume', 'retry', 'recover_in_place', 'retry_in_place'].includes(action)) {
+        throw new ManagedOrchestrationError('result_not_found', `managed task result ${taskId} was released by retention`);
       }
 
       if (isStoppedRecoveryAvailable(sourceTask, currentEnvelope)
@@ -3422,7 +3703,8 @@ export const createManagedTaskScheduler = (options = {}) => {
       if (followUpTask) await launchCommittedTask(followUpTask);
 
       return {
-        envelope: structuredClone(resultEnvelopes.get(taskId)),
+        // A released proof's commit may have moved it back to its shard.
+        envelope: structuredClone(findEnvelope(taskId)),
         followUpTask: followUpTask ? cloneTask(tasks.get(followUpTask.taskId)) : null,
       };
     })();
@@ -3548,8 +3830,9 @@ export const createManagedTaskScheduler = (options = {}) => {
     }
     for (const key of keys) sessionRemovalHolds.set(key, intentID);
     await ensureInitialized();
-    const selected = () => [...tasks.values()].filter((task) => task.directory === directory
-      && (sessions.includes(task.rootSessionId) || sessions.includes(task.childSessionId)));
+    const inScope = (task) => task.directory === directory
+      && (sessions.includes(task.rootSessionId) || sessions.includes(task.childSessionId));
+    const selected = () => [...tasks.values()].filter(inScope);
     await runExclusive(async () => {
       for (const task of selected()) {
         const envelope = resultEnvelopes.get(task.taskId);
@@ -3562,6 +3845,16 @@ export const createManagedTaskScheduler = (options = {}) => {
     await Promise.allSettled(selected().map((task) => acknowledgementPromises.get(task.taskId)?.promise));
     if (phase === 'fence') return { fenced: true, sessions: [...sessions] };
     const taskIDs = selected().map((task) => task.taskId);
+    // Released proofs are terminal history under the same subtree fence, and
+    // their pending native receipts must still settle below.
+    const proofIDs = listNativeJobProofTasks().filter(inScope).map((task) => task.taskId);
+    for (const taskID of proofIDs) {
+      const task = findTask(taskID);
+      if (task && task.childSessionId && !sessions.includes(task.childSessionId)
+        && (typeof verifyRemovedSession !== 'function' || await verifyRemovedSession(task.childSessionId) !== true)) {
+        throw invalidScope('Managed child is outside the settled removal subtree');
+      }
+    }
     for (const taskID of taskIDs) {
       const task = tasks.get(taskID);
       if (task.childSessionId && !sessions.includes(task.childSessionId)) {
@@ -3593,6 +3886,12 @@ export const createManagedTaskScheduler = (options = {}) => {
         providerRecoveryContinuationClaims.delete(task.taskId);
       }
     });
+    for (const taskId of [...taskIDs, ...proofIDs]) {
+      await completeNativeJobs(taskId);
+      if (findTask(taskId)?.nativeJobSegments?.some(segment => segment.completion !== 'done')) {
+        throw new ManagedOrchestrationError('native_removal_settlement_required', 'Native managed job completion is still pending');
+      }
+    }
     await flush();
     return { settled: true, sessions: [...sessions], taskIDs };
   };
@@ -3734,9 +4033,50 @@ export const createManagedTaskScheduler = (options = {}) => {
     return runExclusive(async () => {
       await authorize();
       const removed = [...objectiveChecks].filter(([, record]) => record.directory === directory && sessions.includes(record.rootSessionId));
-      if (!removed.length) return { removed: 0 };
+      // This constructor callback runs only after every native removal member
+      // has been physically disposed. It is also the release proof for retained
+      // adverse native inputs; ordinary history compaction cannot provide it.
+      const disposed = task => task.directory === directory && requiresManagedNativeInputDisposition(task)
+        && (sessions.includes(task.rootSessionId) || sessions.includes(task.childSessionId))
+        && task.nativeJobSegments.every(segment => segment.completion === 'done');
+      const removedTasks = [...tasks.values()].filter(disposed);
+      const removedProofs = [...nativeJobProofs.values()].filter(entry => disposed(entry.task));
+      if (!removed.length && !removedTasks.length && !removedProofs.length) return { removed: 0 };
+      const previousEnvelopes = new Map(removedTasks.map(task => [task.taskId, resultEnvelopes.get(task.taskId)]));
       for (const [key] of removed) objectiveChecks.delete(key);
-      try { await persistLocked(); } catch (error) { for (const [key, record] of removed) objectiveChecks.set(key, record); throw error; }
+      for (const task of removedTasks) {
+        tasks.delete(task.taskId); resultEnvelopes.delete(task.taskId);
+        idempotencyIndex.delete(idempotencyIndexKey(task.rootSessionId, task.idempotencyKey));
+      }
+      for (const entry of removedProofs) {
+        const { task } = entry;
+        deleteNativeJobProof(task.taskId);
+        disposingProofs.set(task.taskId, entry);
+        idempotencyIndex.delete(idempotencyIndexKey(task.rootSessionId, task.idempotencyKey));
+      }
+      // Main ledger first, shards after: a disposed proof leaves its shard only
+      // once the commit that dispositions it is durable.
+      try { await persistLocked(); } catch (error) {
+        for (const entry of removedProofs) disposingProofs.delete(entry.task.taskId);
+        for (const [key, record] of removed) objectiveChecks.set(key, record);
+        for (const task of removedTasks) {
+          tasks.set(task.taskId, task);
+          if (previousEnvelopes.get(task.taskId)) resultEnvelopes.set(task.taskId, previousEnvelopes.get(task.taskId));
+          idempotencyIndex.set(idempotencyIndexKey(task.rootSessionId, task.idempotencyKey), task.taskId);
+        }
+        for (const entry of removedProofs) {
+          setNativeJobProof(entry);
+          idempotencyIndex.set(idempotencyIndexKey(entry.task.rootSessionId, entry.task.idempotencyKey), entry.task.taskId);
+        }
+        throw error;
+      }
+      for (const task of [...removedTasks, ...removedProofs.map(entry => entry.task)]) {
+        rehydratedProofs.delete(task.taskId);
+        disposingProofs.delete(task.taskId);
+        markProofShardDirty(task.taskId);
+      }
+      await flushProofShardsLocked();
+      for (const task of removedTasks) queueTaskRemovalPublication(task);
       return { removed: removed.length };
     });
   };
@@ -4031,7 +4371,10 @@ export const createManagedTaskScheduler = (options = {}) => {
     releaseModeLease,
     flush,
     getTask(taskId) {
-      return cloneTask(uncommittedRead ? committedReadState.tasks.find(task => task.taskId === taskId) : tasks.get(taskId));
+      // A proof moved back for a mutation is not in the last committed ledger.
+      return cloneTask((uncommittedRead ? committedReadState.tasks.find(task => task.taskId === taskId)
+        ?? (rehydratedProofs.has(taskId) ? tasks.get(taskId) : undefined) : tasks.get(taskId))
+        ?? nativeJobProofs.get(taskId)?.task);
     },
     verifyTaskDispatch(taskId, leaseToken) {
       return runExclusive(() => {
@@ -4042,6 +4385,48 @@ export const createManagedTaskScheduler = (options = {}) => {
           throw new ManagedOrchestrationError('native_managed_task_lease_invalid', 'Managed dispatch has no current task lease');
         }
         return cloneTask(task);
+      });
+    },
+    verifyNativeJobSegment(input) {
+      return runExclusive(() => {
+        const task = findTask(input?.taskId), envelope = findEnvelope(input?.taskId);
+        const segment = task?.nativeJobSegments?.find(row => row.jobID === input.jobID && row.notificationID === input.notificationID && row.messageID === input.messageID);
+        const terminal = input?.phase === 'acknowledge';
+        const cancelling = ['cancelSegment', 'cancelTask'].includes(input?.phase);
+        if (!initialized || shutDown || !task || task.executionBackend !== 'native-job' || !segment
+          || task.leaseToken !== input.leaseToken || !input.leaseToken || task.directory !== input.directory
+          || task.rootSessionId !== input.rootSessionId
+          || task.childSessionId !== input.sessionID || ['providerId', 'modelId', 'agent', 'variant'].some(key => task[key] !== input[key])
+          || !['prepare', 'activate', 'cancelSegment', 'cancelTask', 'acknowledge'].includes(input.phase)
+          || terminal && (!isTerminalManagedTaskStatus(task.status) || !envelope || envelope.envelopeId !== input.envelopeID || !segment.completion)
+          || !terminal && (!['starting', 'running'].includes(task.status) || removalHeld(task)
+            || !cancelling && (cancellationOwners.has(task.taskId) || cancellationPromises.has(task.taskId)))
+          || input.phase === 'prepare' && !['reserved', 'prepared'].includes(segment.state)
+          || input.phase === 'activate' && !['prepared', 'accepted', 'uncertain'].includes(segment.state)) {
+          throw new ManagedOrchestrationError('native_managed_job_scope_invalid', 'Native job segment ownership is unavailable');
+        }
+        return { task: cloneTask(task), segment: { ...segment }, ...(envelope ? { envelopeID: envelope.envelopeId } : {}) };
+      });
+    },
+    async readNativeJobInputDispositions() {
+      // Startup recovered-input ownership needs durable receipts before native
+      // admission is ready. Loading must never activate queued work or recovery.
+      await initialize({ loadOnly: true });
+      return runExclusive(() => {
+        const dispositions = [];
+        for (const task of [...tasks.values(), ...listNativeJobProofTasks()]) {
+          const envelope = findEnvelope(task.taskId);
+          if (task.executionBackend !== 'native-job' || !isTerminalManagedTaskStatus(task.status)
+            || !task.childSessionId || !task.leaseToken || !envelope) continue;
+          for (const segment of task.nativeJobSegments ?? []) {
+            if (segment.completion !== 'done') continue;
+            dispositions.push({ taskId: task.taskId, leaseToken: task.leaseToken, rootSessionId: task.rootSessionId,
+              directory: task.directory, sessionID: task.childSessionId, providerId: task.providerId,
+              modelId: task.modelId, agent: task.agent, variant: task.variant, messageID: segment.messageID,
+              jobID: segment.jobID, notificationID: segment.notificationID, envelopeID: envelope.envelopeId });
+          }
+        }
+        return dispositions;
       });
     },
     verifyTaskSettlement(taskId, leaseToken) {
@@ -4137,6 +4522,8 @@ export const createManagedTaskScheduler = (options = {}) => {
         admissionRetryPending: admissionRetryTimer !== null,
         compactedTaskCount,
         serializedBytes: lastSerializedBytes,
+        nativeJobProofCount: nativeJobProofs.size,
+        pendingNativeJobProofShardCount: dirtyProofShards.size,
         shutDown,
         persistence: persistenceOwner ? { state: persistenceOwner.attention ? 'needs_attention' : 'writing',
           phase: persistenceOwner.phase, elapsedMs: Math.max(0, now() - persistenceOwner.startedAt),
@@ -4144,7 +4531,8 @@ export const createManagedTaskScheduler = (options = {}) => {
       };
     },
     getResultEnvelope(taskId) {
-      const envelope = uncommittedRead ? committedReadState.resultEnvelopes.find(value => value.taskId === taskId) : resultEnvelopes.get(taskId);
+      const envelope = (uncommittedRead ? committedReadState.resultEnvelopes.find(value => value.taskId === taskId) : resultEnvelopes.get(taskId))
+        ?? nativeJobProofs.get(taskId)?.envelope;
       return envelope ? structuredClone(envelope) : null;
     },
     listResultEnvelopes({ rootSessionId } = {}) {

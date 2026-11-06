@@ -6,6 +6,11 @@ export interface NativeTodo {readonly id:string;readonly content:string;readonly
 export function validateNativeTodos(input:unknown):NativeTodo[];
 export interface NativeTodoInvocation extends Omit<NativeManagedInvocation,'tool'> {readonly tool:'todoread'|'todowrite'}
 export interface NativeContextInvocation {readonly permit:OperationPermit;readonly directory:string;readonly sessionID:string;readonly phase:'context'|'compaction'}
+/** Routes a compaction anchor to its runner grant and the per-request context hook to the session-hook grant. */
+export function nativeContextAuthorizer(admissionOwner:{
+ readonly captureContextAuthorization:(input:NativeContextInvocation&{readonly phase:'compaction'})=>Promise<()=>Promise<void>>;
+ readonly captureSessionHookAuthorization:(input:NativeContextInvocation&{readonly phase:'context'})=>Promise<()=>Promise<void>>;
+}):(input:NativeContextInvocation)=>Promise<()=>Promise<void>>;
 export function createNativeSessionContextOwner(options:{
  readonly executionHost?: { nativeManagedControl(input: { invocation: NativeTodoInvocation; action: 'begin'; token?: never }): Promise<{ lease: { token: string } }>; nativeManagedControl(input: { invocation: NativeTodoInvocation; action: 'finish'; token: string }): Promise<unknown> };
  readonly onContinuationError?:(input:{directory:string;sessionID?:string;code:string})=>void;
@@ -17,6 +22,8 @@ export function createNativeSessionContextOwner(options:{
  readonly primaryRuntime?:Pick<PrimaryRecoveryHost,'readRecord'|'plugin'|'recordRejection'|'helloNative'|'reserveNativeContinuation'|'pendingNativeContinuations'|'captureNativeContinuationDispatch'>;readonly instanceID?:string;readonly getInstanceID?:()=>string|undefined;
  readonly isHeld?:(scope:{sessionID:string;directory:string;messageID:string})=>Promise<boolean>;
  readonly deliverContinuation?:(input:{scope:{sessionID:string;directory:string;messageID:string};prompt:NativePrimaryContinuationPrompt},recheck:()=>Promise<void>)=>Promise<void>;
+ /** The prompt-admission per-session lock; continuation reservation is serialized with prompt admission. Required to reserve. */
+ readonly withSessionLock?:<A>(sessionID:string,action:()=>Promise<A>)=>Promise<A>;
  readonly readSessionMetadata?:(scope:{sessionID:string;directory:string})=>Promise<{id:string;directory:string;metadata:Record<string,unknown>}>;
  readonly writeTodos:(input:{sessionID:string;directory:string;todos:readonly NativeTodo[];invocation:NativeTodoInvocation},recheck:()=>Promise<void>)=>Promise<unknown>;
  readonly authorizeContext:(input:NativeContextInvocation)=>Promise<()=>Promise<void>>;

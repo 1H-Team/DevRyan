@@ -48,9 +48,13 @@ export async function readQaPinnedFile(file,sha256,maximum=1024*1024){
   }finally{await handle.close();}
 }
 
+// The Meridian-era placeholder key is not a credential. Keeping it lets the
+// native configuration recognise and drop that retired loopback proxy stanza
+// (isRetiredClaudeProxy), exactly as it does for the installed configuration.
+const retiredProxyPlaceholder=(key,item)=>key==='apiKey'&&item==='dummy';
 export function removeQaLiveCredentials(value){
   if(Array.isArray(value))return value.map(removeQaLiveCredentials);
-  if(value!==null&&typeof value==='object')return Object.fromEntries(Object.entries(value).filter(([key])=>!omitted.has(key)).map(([key,item])=>[key,removeQaLiveCredentials(item)]));
+  if(value!==null&&typeof value==='object')return Object.fromEntries(Object.entries(value).filter(([key,item])=>!omitted.has(key)||retiredProxyPlaceholder(key,item)).map(([key,item])=>[key,removeQaLiveCredentials(item)]));
   return value;
 }
 

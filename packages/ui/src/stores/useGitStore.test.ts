@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
-import type { GitLogEntry, GitLogResponse, GitStatus } from '@/lib/api/types';
+import { beforeEach, describe, expect, spyOn, test } from 'bun:test';
+import type { GitBranch, GitBranchListOptions, GitLogEntry, GitLogResponse, GitStatus } from '@/lib/api/types';
 import { useGitStore } from './useGitStore';
 
 type Deferred<T> = {
@@ -371,5 +371,98 @@ describe('Git operation-only status changes', () => {
     status = { ...status, headState: 'branch', rebaseInProgress: null };
     await refresh();
     expect(useGitStore.getState().directories.get(directory)?.status).toBe(status);
+  });
+
+  describe('branch listing', () => {
+    const createBranches = (name: string): GitBranch => ({ all: [name], current: name, branches: {} });
+
+    const createDeferredBranchApi = () => {
+      const requests: Array<{ options: GitBranchListOptions | undefined; deferred: Deferred<GitBranch> }> = [];
+      const git = createGitApi(async () => createStatus());
+      git.getGitBranches = (_directory, options) => {
+        const deferred = createDeferred<GitBranch>();
+        requests.push({ options, deferred });
+        return deferred.promise;
+      };
+      return { git, requests };
+    };
+
+    const branchState = (directory: string) => useGitStore.getState().getDirectoryState(directory);
+
+    test('ignores a stale routine completion and keeps loading until the newest settles', async () => {
+      const { git, requests } = createDeferredBranchApi();
+      const stale = useGitStore.getState().fetchBranches('/repo-stale', git);
+      const fresh = useGitStore.getState().fetchBranches('/repo-stale', git);
+      expect(requests.map((request) => request.options)).toEqual([undefined, undefined]);
+
+      requests[0].deferred.resolve(createBranches('stale'));
+      expect(await stale).toBe(false);
+      expect(branchState('/repo-stale')?.branches).toBeNull();
+      expect(branchState('/repo-stale')?.isLoadingBranches).toBe(true);
+
+      requests[1].deferred.resolve(createBranches('fresh'));
+      expect(await fresh).toBe(true);
+      expect(branchState('/repo-stale')?.branches?.current).toBe('fresh');
+      expect(branchState('/repo-stale')?.isLoadingBranches).toBe(false);
+      expect(branchState('/repo-stale')?.lastBranchesFetch).toBeGreaterThan(0);
+    });
+
+    test('joins routine reads to an in-flight live listing and returns to local afterwards', async () => {
+      const { git, requests } = createDeferredBranchApi();
+      const live = useGitStore.getState().fetchBranches('/repo-live', git, { remote: 'live' });
+      const joinedRoutine = useGitStore.getState().fetchBranches('/repo-live', git);
+      const joinedLive = useGitStore.getState().fetchBranches('/repo-live', git, { remote: 'live' });
+      expect(requests.map((request) => request.options)).toEqual([{ remote: 'live' }]);
+
+      requests[0].deferred.resolve(createBranches('live'));
+      expect(await Promise.all([live, joinedRoutine, joinedLive])).toEqual([true, true, true]);
+      expect(branchState('/repo-live')?.branches?.current).toBe('live');
+      expect(branchState('/repo-live')?.isLoadingBranches).toBe(false);
+
+      const routine = useGitStore.getState().fetchBranches('/repo-live', git);
+      expect(requests.map((request) => request.options)).toEqual([{ remote: 'live' }, undefined]);
+      requests[1].deferred.resolve(createBranches('routine'));
+      expect(await routine).toBe(true);
+      expect(branchState('/repo-live')?.branches?.current).toBe('routine');
+    });
+
+    test('lets a live listing supersede an older routine read', async () => {
+      const { git, requests } = createDeferredBranchApi();
+      const routine = useGitStore.getState().fetchBranches('/repo-supersede', git);
+      const live = useGitStore.getState().fetchBranches('/repo-supersede', git, { remote: 'live' });
+      expect(requests.map((request) => request.options)).toEqual([undefined, { remote: 'live' }]);
+
+      requests[1].deferred.resolve(createBranches('live'));
+      expect(await live).toBe(true);
+      requests[0].deferred.resolve(createBranches('routine'));
+      expect(await routine).toBe(false);
+      expect(branchState('/repo-supersede')?.branches?.current).toBe('live');
+      expect(branchState('/repo-supersede')?.isLoadingBranches).toBe(false);
+    });
+
+    test('clears loading only for the newest failure and keeps the boolean contract', async () => {
+      const consoleError = spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        const { git, requests } = createDeferredBranchApi();
+        const stale = useGitStore.getState().fetchBranches('/repo-failure', git, { remote: 'live' });
+        requests[0].deferred.reject(new Error('remote unavailable'));
+        expect(await stale).toBe(false);
+        expect(branchState('/repo-failure')?.isLoadingBranches).toBe(false);
+
+        const older = useGitStore.getState().fetchBranches('/repo-failure', git);
+        const newer = useGitStore.getState().fetchBranches('/repo-failure', git);
+        requests[1].deferred.reject(new Error('superseded failure'));
+        expect(await older).toBe(false);
+        expect(branchState('/repo-failure')?.isLoadingBranches).toBe(true);
+
+        requests[2].deferred.reject(new Error('current failure'));
+        expect(await newer).toBe(false);
+        expect(branchState('/repo-failure')?.isLoadingBranches).toBe(false);
+        expect(branchState('/repo-failure')?.branches).toBeNull();
+        expect(consoleError).toHaveBeenCalledTimes(2);
+      } finally {
+        consoleError.mockRestore();
+      }
+    });
   });
 });

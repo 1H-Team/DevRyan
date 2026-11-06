@@ -7,6 +7,7 @@ import { canonicalJSON, hasMigrationTable, sha256, bundleFailure } from './bundl
 import { isNativeTurnParent } from '../../../../../shared-runtime/lib/native-message-status.js';
 import {nativeInputCancellation,nativeInputEnqueue} from './native-input-cancellation.js';
 import {nativeShellCompletionFingerprint} from './native-shell-completion.js';
+import {NATIVE_MANAGED_JOB_COMPLETION,nativeManagedJobInput} from './native-managed-job-input.js';
 import {recoveredInputHash} from './native-recovered-input-hash.js';
 export {recoveredInputHash} from './native-recovered-input-hash.js';
 
@@ -123,10 +124,22 @@ export async function recoverAcceptedPromptBoundary({ runtime, databasePath, dir
 export {nativeInputCancellation} from './native-input-cancellation.js';
 
 /** Startup-only fence. No normal live inbox item is registered here. */
-export function createNativeRecoveredInputOwner({databasePath,primaryRuntime,captureAuthorization,runOwned,readiness,withSessionLock}) {
+export function createNativeRecoveredInputOwner({databasePath,primaryRuntime,captureAuthorization,runOwned,readiness,withSessionLock,readManagedJobDispositions}) {
   const sessions=new Map(), grants=new Map();let epoch;
+  const retiredManagedInputs=new Map();
+  const retired=input=>retiredManagedInputs.get(input.sessionID)?.has(input.messageID)===true;
+  const rememberRetired=input=>{
+    const inputs=retiredManagedInputs.get(input.sessionID)??new Set();inputs.add(input.messageID);retiredManagedInputs.set(input.sessionID,inputs);
+  };
+  const managedCompletion=(entry,request=entry?.request)=>{
+    const input=entry?.[NATIVE_MANAGED_JOB_COMPLETION];
+    if(!input||entry.managedJob?.phase!=='acknowledge'||request?.operation!=='job.managed.acknowledge'
+      ||entry.request?.operation!==request.operation||request.sessionID!==input.sessionID||entry.permit?.sessionID!==input.sessionID
+      ||canonicalJSON(entry.request.input)!==canonicalJSON(input)||canonicalJSON(request.input)!==canonicalJSON(input))return null;
+    return input;
+  };
   const read=action=>withRecoveredInputDatabase(databasePath,action);
-  const currentInputs=sessionID=>read(db=>readRecoveredNativeInputs(db,sessions.get(sessionID)?.startedIDs??[],sessionID));
+  const currentInputs=sessionID=>read(db=>readRecoveredNativeInputs(db,sessions.get(sessionID)?.startedIDs??[],sessionID)).filter(input=>!retired(input));
   const owns=(r,id)=>Boolean(r&&[r.anchorID,r.recoveryID,r.continuationID,...r.guardedIDs].includes(id));
   const tuple=r=>({owner:r.owner,cancellationGeneration:r.cancellationGeneration,anchorID:r.anchorID,recoveryID:r.recoveryID,
     providerID:r.providerID,modelID:r.modelID,agent:r.agent,variant:r.variant,
@@ -222,7 +235,13 @@ export function createNativeRecoveredInputOwner({databasePath,primaryRuntime,cap
           && model.id===selection.modelID && (model.variant??'default')===selection.variant);
       }catch{return false;}
     },
-    async install(instanceID){epoch=instanceID;sessions.clear();grants.clear();
+    async install(instanceID){epoch=instanceID;sessions.clear();grants.clear();retiredManagedInputs.clear();
+      for(const candidate of await readManagedJobDispositions?.()??[]){
+        const input=nativeManagedJobInput(candidate,'acknowledge');
+        const session=read(db=>db.all('SELECT id,directory,parent_id FROM session_v2 WHERE id=?',[input.sessionID])[0]);
+        if(session&&(session.directory!==input.directory||session.parent_id!==input.rootSessionId))fail('native_managed_job_scope_invalid');
+        rememberRetired(input);
+      }
       const records=await primaryRuntime.nativeStartupRecords(),startedIDs=[];
       for(const r of records)if(r.recoveredInput||r.stepID){
         const userID=r.recoveredInput?.inputID??r.activeUserID??r.continuationID??r.recoveryID??r.anchorID;
@@ -237,7 +256,7 @@ export function createNativeRecoveredInputOwner({databasePath,primaryRuntime,cap
         });
         if(unfinished)startedIDs.push(userID);
       }
-      for(const input of read(db=>readRecoveredNativeInputs(db,startedIDs))){const value=sessions.get(input.sessionID)??{inputs:[],unresolved:[],startedIDs:[]};value.inputs.push(input);
+      for(const input of read(db=>readRecoveredNativeInputs(db,startedIDs)).filter(input=>!retired(input))){const value=sessions.get(input.sessionID)??{inputs:[],unresolved:[],startedIDs:[]};value.inputs.push(input);
         if(startedIDs.includes(input.messageID))value.startedIDs.push(input.messageID);sessions.set(input.sessionID,value);}
       for(const r of records){
         const unresolved=(r.recoveredInputDispositions??[]).filter(item=>item.phase==='requested');
@@ -250,6 +269,17 @@ export function createNativeRecoveredInputOwner({databasePath,primaryRuntime,cap
       return [...sessions.keys()];
     },
     has:sessionID=>sessions.has(sessionID),
+    async retireManagedCompletion(candidate,recheck){
+      const input=nativeManagedJobInput(candidate,'acknowledge');
+      await recheck();
+      if(grants.has(input.sessionID))fail('native_recovered_input_busy');
+      const retained=currentInputs(input.sessionID).find(row=>row.messageID===input.messageID);
+      if(retained&&(retained.type!=='user'||retained.directory!==input.directory||retained.session.parent_id!==input.rootSessionId))fail('native_managed_job_scope_invalid');
+      // Queued inputs need their original native cancellation receipt. A
+      // promoted input stays immutable history and only changes fence owner.
+      if(retained?.location==='queued')fail('native_managed_job_input_pending');
+      await recheck();rememberRetired(input);await refresh(input.sessionID);
+    },
     hasCurrentGrant:(sessionID,instanceID)=>sessions.has(sessionID)&&epoch===instanceID&&grants.get(sessionID)?.epoch===instanceID,
     async snapshot(sessionID){if(!sessions.has(sessionID))return undefined;
       const inputs=await refresh(sessionID);if(!sessions.has(sessionID))return undefined;
@@ -309,6 +339,7 @@ export function createNativeRecoveredInputOwner({databasePath,primaryRuntime,cap
       return beginGrant(row,record,authorize,action);
     },
     assertOperation(request,entry){if(!request.sessionID||!sessions.has(request.sessionID))return;
+      if(managedCompletion(entry,request))return;
       if(['execution.interrupt','session.abort','session.stop'].includes(request.operation))return;
       // The admission owner pins this permit to an archive-only metadata change
       // and its native archived flag, or (alignment) to that flag alone.
@@ -331,6 +362,14 @@ export function createNativeRecoveredInputOwner({databasePath,primaryRuntime,cap
       const cancellations=[];
       for(const event of events){const sessionID=event.data?.sessionID;if(!sessions.has(sessionID))continue;
         const owned=grants.get(sessionID);
+        const managed=managedCompletion(grant);
+        if(managed&&event.type==='session.inbox.cancelled'&&managed.sessionID===sessionID&&managed.messageID===event.data.inboxID){
+          await grant.reauthorize();
+          const original=currentInputs(sessionID).find(item=>item.messageID===managed.messageID),input=pending.find(item=>item.sessionID===sessionID&&item.id===managed.messageID);
+          if(!original||original.location!=='queued'||original.type!=='user'||original.directory!==managed.directory
+            ||original.session.parent_id!==managed.rootSessionId||!input||input.payloadHash!==original.payloadHash||input.enqueuedSeq!==original.enqueuedSeq)fail('recovery_revision_conflict');
+          cancellations.push({sessionID,inboxID:input.id});continue;
+        }
         if(event.type==='session.inbox.cancelled'&&grant?.recoveredInputCancellation?.messageID===event.data.inboxID){
           await grant.reauthorize();
           const input=pending.find(item=>item.sessionID===sessionID&&item.id===event.data.inboxID);

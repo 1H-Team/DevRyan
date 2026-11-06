@@ -745,6 +745,86 @@ describe("applyDirectoryEvent", () => {
     expect(draft.sessionTotal).toBe(1)
   })
 
+  test("takes newer lifecycle facts from an event that is older by updated", () => {
+    const current = {
+      ...testSession("ses_1"),
+      title: "Newest title",
+      time: { created: 1, updated: 10, busy: 100 },
+    } as unknown as Session
+    const draft = state({ session: [current] })
+
+    const result = applyDirectoryEvent(draft, {
+      type: "session.updated",
+      properties: {
+        info: {
+          ...current,
+          title: "Older title",
+          time: { created: 1, updated: 9, busy: 100, idle: 150 },
+          outcome: "succeeded",
+        },
+      },
+    } as unknown as Event)
+
+    expect(result).toBe(true)
+    expect(draft.session[0]).toMatchObject({
+      title: "Newest title",
+      time: { created: 1, updated: 10, busy: 100, idle: 150 },
+      outcome: "succeeded",
+    })
+
+    const replay = applyDirectoryEvent(draft, {
+      type: "session.updated",
+      properties: {
+        info: {
+          ...current,
+          time: { created: 1, updated: 9, busy: 100, idle: 150 },
+          outcome: "failed",
+        },
+      },
+    } as unknown as Event)
+    expect(replay).toBe(false)
+    expect(draft.session[0]).toMatchObject({ outcome: "succeeded" })
+  })
+
+  test("keeps lifecycle facts when a newer record omits them and drops invalid ones", () => {
+    const current = {
+      ...testSession("ses_1"),
+      time: { created: 1, updated: 10, busy: 100, idle: 150, viewed: 120 },
+      outcome: "interrupted",
+      fork: { sessionID: "ses_0", boundary: { type: "before", messageID: "msg_0" } },
+    } as unknown as Session
+    const draft = state({ session: [current] })
+
+    const result = applyDirectoryEvent(draft, {
+      type: "session.updated",
+      properties: {
+        info: {
+          ...testSession("ses_1"),
+          title: "Renamed",
+          time: { created: 1, updated: 11, idle: "later", viewed: 90 },
+          outcome: "unknown",
+        },
+      },
+    } as unknown as Event)
+
+    expect(result).toBe(true)
+    expect(draft.session[0]).toMatchObject({
+      title: "Renamed",
+      time: { created: 1, updated: 11, busy: 100, idle: 150, viewed: 120 },
+      outcome: "interrupted",
+      fork: { sessionID: "ses_0", boundary: { type: "before", messageID: "msg_0" } },
+    })
+    expect(draft.session[0]?.parentID).toBeUndefined()
+  })
+
+  test("ignores session events without a session identity", () => {
+    const draft = state({ session: [testSession("ses_1")] })
+    expect(applyDirectoryEvent(draft, {
+      type: "session.updated",
+      properties: { info: { title: "no id" } },
+    } as unknown as Event)).toBe(false)
+  })
+
   test("keeps equal and missing timestamps eligible while duplicate updates are no-ops", () => {
     const current = {
       ...testSession("ses_1"),

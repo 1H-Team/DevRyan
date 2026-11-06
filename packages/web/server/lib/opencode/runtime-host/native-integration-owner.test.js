@@ -122,6 +122,43 @@ test('finite physical and resolution checks use the original admitted caller, ex
   }finally{await owner.invalidate();await fs.rm(root,{recursive:true,force:true});}
 });
 
+test('provider attempts from a startup-recovery runner wait for this controller\'s startup, then recheck readiness', async () => {
+  const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-provider-startup-owner-')));
+  const instanceID='controller-fixture';let ready=false,starting,attempts=0,resolutions=0;
+  const permit={token:'a'.repeat(64),revision:0,sessionID:'ses_fixture'};
+  const owner=createNativeIntegrationOwner({instanceID,stateDirectory:root,
+    snapshot:{locations:[{directory:root,configuration:{providers:{xai:{options:{}}}},compatibility:{mcp:{}}}]},
+    controller:()=>({instanceID,call:async()=>{throw Error('no_reverse_command_expected');}}),isReady:()=>ready,awaitStartup:()=>starting,
+    withMutationQueue:action=>action(),captureWebAuthorization:async()=>{throw Error('no_settings_grant_expected');},
+    admissionOwner:{withProviderAttempt:async(_input,action)=>{expect(ready).toBe(true);attempts++;return action();},
+      withProviderResolution:async(_input,action)=>{expect(ready).toBe(true);resolutions++;return action(async()=>{});}}});
+  const attempt={controllerInstanceID:instanceID,directory:root,sessionID:'ses_fixture',permit,kind:'primary',integrationID:'xai'};
+  const resolution={kind:'provider',valueType:'key',integrationID:'xai',directory:root,controllerInstanceID:instanceID,
+    acquisitionID:'acquisition-fixture',configurationDigest:fingerprint({options:{}}),credentialID:'credential-fixture',expectedFingerprint:'b'.repeat(64),sessionID:'ses_fixture',permit};
+  try{
+    // No startup in progress and not ready: refused without waiting.
+    await expect(owner.handleRpc('provider.attempt',attempt)).rejects.toMatchObject({code:'native_provider_attempt_invalid'});
+    // Recovery admitted a runner; startup has not yet marked this controller ready.
+    let finish,abort;starting=new Promise(resolve=>{finish=resolve;});
+    const pending=owner.handleRpc('provider.attempt',attempt),resolving=owner.handleRpc('provider.credential.assert',resolution);
+    await new Promise(resolve=>setTimeout(resolve,10));expect(attempts).toBe(0);expect(resolutions).toBe(0);
+    ready=true;finish();
+    expect(await pending).toBeNull();expect(await resolving).toBeNull();expect(attempts).toBe(1);expect(resolutions).toBe(1);
+    // A failed or checkpointed startup settles without readiness and still refuses.
+    ready=false;starting=new Promise((_resolve,reject)=>{abort=reject;});
+    const refused=owner.handleRpc('provider.attempt',attempt);abort(Object.assign(Error('startup failed'),{code:'native_startup_failed'}));
+    await expect(refused).rejects.toMatchObject({code:'native_provider_attempt_invalid'});
+    // A foreign controller never waits on this startup.
+    starting=new Promise(()=>{});
+    await expect(owner.handleRpc('provider.attempt',{...attempt,controllerInstanceID:'old'})).rejects.toMatchObject({code:'native_provider_attempt_invalid'});
+    // Invalidation during the wait expires the grant.
+    starting=new Promise(resolve=>{finish=resolve;});
+    const expiring=owner.handleRpc('provider.attempt',attempt);await owner.invalidate();finish();
+    await expect(expiring).rejects.toMatchObject({code:'native_integration_grant_expired'});
+    expect(attempts).toBe(1);
+  }finally{await owner.invalidate();await fs.rm(root,{recursive:true,force:true});}
+});
+
 test('OpenAI attempt RPC remains available but host token access is removed', async () => {
   const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-builtin-owner-')));
   const owner = createNativeIntegrationOwner({ instanceID: 'controller-fixture', stateDirectory: root,

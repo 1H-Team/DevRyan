@@ -6,7 +6,10 @@ import type {NativeCredentialOperation} from './native-process-protocol.js';
 export interface NativeIntegrationOwnerOptions {
   readonly instanceID:string;readonly snapshot:NativeConfigurationSnapshot;readonly stateDirectory:string;
   readonly controller:()=>Pick<NativeControllerProcess,'instanceID'|'call'|'killAndWaitForExit'|'killAndWaitForTermination'>;
-  readonly isReady:()=>boolean;readonly withMutationQueue:<A>(action:()=>A|Promise<A>)=>Promise<A>;
+  readonly isReady:()=>boolean;
+  /** This controller's in-progress startup (settles after ready or failure), or undefined when none runs. Provider attempts and credential assertions await it before rechecking `isReady`. */
+  readonly awaitStartup?:()=>Promise<unknown>|undefined;
+  readonly withMutationQueue:<A>(action:()=>A|Promise<A>)=>Promise<A>;
   readonly captureWebAuthorization:NativeIntegrationAuthorizationOptions['captureWebAuthorization'];
   readonly admissionOwner:Pick<NativeAdmissionOwner,'withProviderAttempt'|'withProviderResolution'|'withImageGeneration'>;
   readonly recordDiagnostic?:(input:Readonly<Record<string,unknown>>)=>void;

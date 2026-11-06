@@ -1,4 +1,5 @@
 import { isRoutingCase, ROUTING_CASES } from './routing-cases.mjs';
+import { ADAPTIVE_CASES, collectAdaptiveEvidence, delegationArmExpectations, isAdaptiveCase } from './adaptive-cases.mjs';
 import { consumePrivateToolIntervals } from './tool-evidence.mjs';
 
 const TOOL_FAMILIES = Object.freeze({
@@ -119,7 +120,9 @@ const selectCausalRepairChain = (events, intervalByEvent) => {
   return null;
 };
 
-export const gradeToolRequirements = (caseId, toolEvents = []) => {
+// `options.scenario` grades an arm-specific routing expectation; without it a
+// routing case uses its ROUTING_CASES entry exactly as before.
+export const gradeToolRequirements = (caseId, toolEvents = [], options = {}) => {
   const events = Array.isArray(toolEvents) ? toolEvents : [];
   const intervalByEvent = consumePrivateToolIntervals(events);
   if (caseId === 'inspect') {
@@ -156,10 +159,10 @@ export const gradeToolRequirements = (caseId, toolEvents = []) => {
     chain.forEach((event, index) => { event.ordinal = index + 1; });
     return result(id, true);
   }
-  if (isRoutingCase(caseId)) {
+  if (options.scenario || isRoutingCase(caseId)) {
     const root = events.filter(event => event.sessionScope === 'root');
     const child = events.filter(event => event.sessionScope === 'child');
-    const scenario = ROUTING_CASES[caseId];
+    const scenario = options.scenario ?? ROUTING_CASES[caseId];
     if (!scenario.agent) return result(`${caseId}.tools`, child.length === 0
       && !hasFamily(events, 'managed') && (scenario.readOnly
         ? !hasFamily(events, 'mutation') && hasFamily(root, 'read', { final: true })
@@ -221,9 +224,9 @@ export const gradeCaseOutcome = (input = {}) => {
         && finalTestPassed,
     );
   }
-  if (ROUTING_CASES[caseId]?.readOnly) return result(`${caseId}.filesystem-test`, manifestSafe
+  if (ROUTING_CASES[caseId]?.readOnly || ADAPTIVE_CASES[caseId]?.readOnly) return result(`${caseId}.filesystem-test`, manifestSafe
     && input.ownedSourceChanged === false && input.ownedTestChanged === false && finalTestPassed);
-  if (caseId === 'repair-and-test' || caseId === 'managed-change' || isRoutingCase(caseId)) {
+  if (caseId === 'repair-and-test' || caseId === 'managed-change' || isRoutingCase(caseId) || isAdaptiveCase(caseId)) {
     return result(
       `${caseId}.filesystem-test`,
       manifestSafe
@@ -382,8 +385,7 @@ const completedMutationSessionIds = (sessionTree) => new Set((Array.isArray(sess
   ))))
   .map(entry => entry.sessionId));
 
-export const gradeRoutingOutcome = ({ caseId, rootSessionId, snapshot, childSessionIds = [], evidence, sessionTree } = {}) => {
-  const scenario = ROUTING_CASES[caseId];
+export const gradeRoutingOutcome = ({ caseId, scenario = ROUTING_CASES[caseId], rootSessionId, snapshot, childSessionIds = [], evidence, sessionTree } = {}) => {
   const tasks = Array.isArray(snapshot?.tasks) ? snapshot.tasks : [];
   const observed = Boolean(scenario && rootSessionId && snapshot && snapshot.available !== false && Array.isArray(snapshot.tasks));
   const companions = scenario?.companions ?? [];
@@ -393,9 +395,123 @@ export const gradeRoutingOutcome = ({ caseId, rootSessionId, snapshot, childSess
     ? ownTasks.length >= 1 && tasks.length <= (scenario.maxChildren ?? 1)
       && tasks.every(task => task.rootSessionId === rootSessionId && (task.agent === scenario.agent || companions.includes(task.agent)))
       && (scenario.readOnly || ownTasks.every(task => mutating.has(task.childSessionId)))
+      // Independent phases need distinct owning children that each edited.
+      && (!scenario.minOwners || new Set(ownTasks.map(task => task.childSessionId).filter(id => mutating.has(id))).size >= scenario.minOwners)
     : tasks.length === 0 && childSessionIds.length === 0;
   const correct = scenario?.kind === 'footer' ? evidence?.located === true && evidence.cause === true && evidence.verification === true
     : scenario?.kind === 'external' ? evidence?.cited === true && evidence.flag === true && evidence.defaultValue === true
     : scenario?.kind === 'inventory' ? evidence?.counts?.identity === 180 && evidence.counts.billing === 180 && evidence.counts.session === 180 && evidence.counts.elevated === 135 : true;
   return result(`${caseId}.specialist`, observed && routing && correct);
+};
+
+// Delegation-arm grading (see adaptive-cases.mjs). Each arm lists accepted
+// route alternatives; the first that passes is reported, else the first.
+const DIRECT_MANAGED_ACTIONS = Object.freeze(['declare_checks', 'correct_objective_check', 'plan_read', 'status', 'wait',
+  'wait_any', 'read_result', 'continue']);
+const isCompletedMutation = (event) => TOOL_FAMILIES.mutation.has(normalizeTool(event?.tool)) && event?.status === 'completed';
+const isManagedAction = (event, action) => normalizeTool(event?.tool) === 'devryan_task' && event?.managedAction === action;
+
+// Every completed edit has timing, and a passing owned test run starts after
+// the last one ends: edits after a passing run must be verified again.
+const verifiedAfterLastEdit = (events, intervals) => {
+  const edits = events.filter(isCompletedMutation);
+  if (!edits.length || edits.some(event => !validInterval(intervals.get(event)))) return false;
+  const lastEditEnd = Math.max(...edits.map(event => intervals.get(event).end));
+  return events.some(event => event?.ownedTestOutcome === 'passed' && validInterval(intervals.get(event))
+    && intervals.get(event).start >= lastEditEnd);
+};
+const firstEditStart = (edits, intervals) => Math.min(...edits.map(event => intervals.get(event).start));
+
+const planTurnStayedReadOnly = (sessionTree, rootSessionId, firstTurnMessageIds) => {
+  if (!Array.isArray(firstTurnMessageIds) || firstTurnMessageIds.length === 0) return false;
+  const firstTurn = new Set(firstTurnMessageIds);
+  const root = (Array.isArray(sessionTree) ? sessionTree : []).find(entry => entry?.sessionId === rootSessionId);
+  const messages = (root?.messages ?? []).filter(message => firstTurn.has(message?.info?.id));
+  return messages.length > 0 && messages.every(message => !(message.parts ?? []).some(part => (
+    part?.type === 'tool' && TOOL_FAMILIES.mutation.has(normalizeTool(part.tool)) && part.state?.status === 'completed')));
+};
+
+const gradeDirectRoute = ({ caseId, expectation, tools, intervals, sessionResult }) => {
+  const { rootSessionId, managedSnapshot: snapshot, sessionTree, firstTurnMessageIds } = sessionResult;
+  const childSessionIds = Array.isArray(sessionResult.childSessionIds) ? sessionResult.childSessionIds : [];
+  const root = tools.filter(event => event?.sessionScope === 'root');
+  const child = tools.filter(event => event?.sessionScope === 'child');
+  const actions = new Set(expectation.maxChildren > 0 ? [...DIRECT_MANAGED_ACTIONS, 'start'] : DIRECT_MANAGED_ACTIONS);
+  // Unknown or missing managed actions fail closed.
+  const managedOk = !hasFamily(child, 'managed') && root.filter(event => hasFamily([event], 'managed'))
+    .every(event => normalizeTool(event.tool) === 'devryan_task' && actions.has(event.managedAction));
+  let toolsOk;
+  if (expectation.readOnly) {
+    toolsOk = managedOk && !hasFamily(tools, 'mutation') && hasFamily(tools, 'read', { final: true });
+  } else {
+    const rootEdits = root.filter(isCompletedMutation);
+    const timedEdits = rootEdits.length > 0 && rootEdits.every(event => validInterval(intervals.get(event)));
+    const declared = !expectation.declaredChecks || (timedEdits && root.some(event => isManagedAction(event, 'declare_checks')
+      && event.status === 'completed' && validInterval(intervals.get(event))
+      && intervals.get(event).end <= firstEditStart(rootEdits, intervals)));
+    toolsOk = managedOk && !hasFamily(child, 'mutation') && timedEdits && declared && verifiedAfterLastEdit(tools, intervals);
+  }
+  const tasks = Array.isArray(snapshot?.tasks) ? snapshot.tasks : [];
+  const observed = Boolean(rootSessionId && snapshot && snapshot.available !== false && Array.isArray(snapshot.tasks));
+  const mutating = completedMutationSessionIds(sessionTree);
+  const ownership = observed && tasks.length <= expectation.maxChildren && childSessionIds.length <= expectation.maxChildren
+    && tasks.every(task => task.rootSessionId === rootSessionId && expectation.companions.includes(task.agent)
+      && !mutating.has(task.childSessionId))
+    && childSessionIds.every(id => !mutating.has(id))
+    && (!expectation.planTurnReadOnly || planTurnStayedReadOnly(sessionTree, rootSessionId, firstTurnMessageIds));
+  return [
+    result(`${caseId}.direct-tools`, toolsOk),
+    // Companion children, when any ran, are dispositioned like every other task.
+    ...(tasks.length || childSessionIds.length ? [gradeManagedTaskOutcome({ rootSessionId, childSessionIds, snapshot })] : []),
+    result(`${caseId}.direct`, ownership),
+  ];
+};
+
+const gradeRoutingRoute = ({ caseId, scenario, tools, sessionResult }) => [
+  gradeToolRequirements(caseId, tools, { scenario }),
+  ...(scenario.agent ? [gradeManagedTaskOutcome({ rootSessionId: sessionResult.rootSessionId,
+    childSessionIds: sessionResult.childSessionIds, snapshot: sessionResult.managedSnapshot })] : []),
+  gradeRoutingOutcome({ caseId, scenario, rootSessionId: sessionResult.rootSessionId, snapshot: sessionResult.managedSnapshot,
+    childSessionIds: sessionResult.childSessionIds, evidence: sessionResult.routingEvidence, sessionTree: sessionResult.sessionTree }),
+];
+
+const startsIn = (message) => (message?.parts ?? []).filter(part => part?.type === 'tool'
+  && normalizeTool(part.tool) === 'devryan_task' && part.state?.input?.action === 'start').length;
+
+/**
+ * Grades an arm-pinned case for the arm its fingerprints attested. A null or
+ * unknown arm grades nothing arm-specific and returns one failed `.arm`
+ * grader; the caller marks that run held.
+ */
+export const gradeDelegationArm = ({ caseId, arm, tools = [], sessionResult = {} } = {}) => {
+  const events = Array.isArray(tools) ? tools : [];
+  const intervals = consumePrivateToolIntervals(events);
+  const alternatives = typeof arm === 'string' ? delegationArmExpectations(caseId)?.[arm] : null;
+  if (!Array.isArray(alternatives) || alternatives.length === 0) return [result(`${caseId}.arm`, false)];
+  const graded = alternatives.map(expectation => expectation.route === 'direct'
+    ? gradeDirectRoute({ caseId, expectation, tools: events, intervals, sessionResult })
+    : gradeRoutingRoute({ caseId, scenario: expectation.scenario, tools: events, sessionResult }));
+  const chosen = graded.find(set => set.every(grader => grader.passed)) ?? graded[0];
+  const adaptive = ADAPTIVE_CASES[caseId];
+  const extra = [];
+  if (adaptive?.checkOrder) {
+    // Arm-independent: a failed owned check precedes the first edit, and a
+    // passing one follows the last edit, in whichever session made them.
+    const edits = events.filter(isCompletedMutation);
+    const timed = edits.length > 0 && edits.every(event => validInterval(intervals.get(event)));
+    extra.push(result(`${caseId}.check-order`, timed && events.some(event => event?.ownedTestOutcome === 'failed'
+      && validInterval(intervals.get(event)) && intervals.get(event).end <= firstEditStart(edits, intervals))
+      && verifiedAfterLastEdit(events, intervals)));
+  }
+  if (adaptive?.parallelStart) {
+    const root = (Array.isArray(sessionResult.sessionTree) ? sessionResult.sessionTree : [])
+      .find(entry => entry?.sessionId === sessionResult.rootSessionId);
+    const first = (root?.messages ?? []).find(message => message?.info?.role === 'assistant' && startsIn(message) > 0);
+    extra.push(result(`${caseId}.parallel-start`, startsIn(first) >= 2));
+  }
+  if (adaptive?.kind === 'lookup') {
+    const answer = collectAdaptiveEvidence(caseId, sessionResult.sessionTree, sessionResult.rootSessionId);
+    extra.push(result(`${caseId}.answer`, answer?.answered === true && answer.labelMatches === true && answer.lineMatches === true));
+  }
+  return [...chosen, ...extra, result(`${caseId}.arm.${arm}`, true)];
 };

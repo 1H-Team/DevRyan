@@ -56,7 +56,13 @@ import {
   registerManualAbortGuard,
   setAbortGuardExecutor,
 } from "./abort-retry-guard"
-import { areSessionRecordsEqual, isStrictlyOlderSession } from "./session-recency"
+import {
+  areSessionRecordsEqual,
+  isStrictlyOlderSession,
+  mergeSessionLifecycle,
+  retainSessionLifecycle,
+} from "./session-recency"
+import { decodeDisplaySession } from "./display-session"
 import { mergeSessionPreservingMeaningfulTitle } from "@/lib/sessionTitles"
 import { formatMessage, useI18nStore, type I18nKey, type I18nParams } from "@/lib/i18n/store"
 import { sessionEvents } from "@/lib/sessionEvents"
@@ -247,12 +253,12 @@ const mirrorSessionIntoDirectoryStore = (session: Session, directory: string | u
     if (result.found) {
       const current = state.session[result.index]
       const merged = isStrictlyOlderSession(session, current)
-        ? mergeSessionPreservingMeaningfulTitle(session, current)
-        : mergeSessionPreservingMeaningfulTitle(current, {
+        ? retainSessionLifecycle(mergeSessionPreservingMeaningfulTitle(session, current), session)
+        : mergeSessionLifecycle(current, mergeSessionPreservingMeaningfulTitle(current, {
             ...current,
             ...session,
             time: { ...current.time, ...session.time },
-          } as Session)
+          } as Session))
       if (areSessionRecordsEqual(current, merged)) return state
       const next = [...state.session]
       next[result.index] = merged
@@ -1684,9 +1690,10 @@ export async function unarchiveSessions(sessionIds: string[]): Promise<Unarchive
 export async function updateSessionTitle(sessionId: string, title: string): Promise<void> {
   const sessionDirectory = getSessionDirectory(sessionId)
   const result = await sdk().session.update({ sessionID: sessionId, directory: sessionDirectory, title })
-  if (result.data) {
-    mirrorSessionIntoDirectoryStore(result.data, sessionDirectory)
-    useGlobalSessionsStore.getState().upsertSession(result.data)
+  const updatedSession = decodeDisplaySession(result.data)
+  if (updatedSession) {
+    mirrorSessionIntoDirectoryStore(updatedSession, sessionDirectory)
+    useGlobalSessionsStore.getState().upsertSession(updatedSession)
   }
 }
 
@@ -3020,9 +3027,9 @@ export async function forkFromMessage(sessionId: string, messageId: string): Pro
   const messageText = shouldRestoreInput ? getRestorableText(parts) : ""
 
   const result = await sdk().session.fork({ sessionID: sessionId, directory: sessionDirectory, messageID: messageId })
-  if (!result.data) return
-
-  const forkedSession = result.data
+  // The fork's native provenance (`fork`) survives decoding; its parentID stays null.
+  const forkedSession = decodeDisplaySession(result.data)
+  if (!forkedSession) return
 
   // Insert new session into child store so sidebar updates immediately
   const current = store.getState()

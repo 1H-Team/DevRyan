@@ -92,5 +92,20 @@ test('independent read-only SQLite inspection scopes every table to the exact su
       await assert.rejects(readNativeRemovalRows({ databasePath, environment, sessions: ['ses_root', 'ses_root'] }));
       assert.deepEqual(await readNativeRemovalRows({ databasePath, environment, sessions }), observed, 'Read oracle or rejected identity changed native data');
       assertNativeRemovalAbsent(await readNativeRemovalRows({ databasePath, environment, sessions: ['ses_absent'] }));
+
+      // OpenCode 2.2.0+ layouts have no session_pending table; every required table still must exist.
+      const currentPath = path.join(fixture, 'native-current.db');
+      await fs.writeFile(currentPath, '');
+      const current = resolveSqliteDriver().open(currentPath);
+      try { current.exec(statements.filter(statement => !statement.includes('session_pending')).join('\n')); } finally { current.close(); }
+      const currentRows = await readNativeRemovalRows({ databasePath: currentPath, environment, sessions });
+      assert.deepEqual(currentRows.session_pending, []);
+      assert.deepEqual(currentRows.session_inbox, [{ id: 'msg_queued', sessionID: 'ses_child' }]);
+      assert.deepEqual(currentRows.session_message, [{ id: 'msg_history', sessionID: 'ses_child' }]);
+      const missingPath = path.join(fixture, 'native-missing.db');
+      await fs.writeFile(missingPath, '');
+      const missing = resolveSqliteDriver().open(missingPath);
+      try { missing.exec('CREATE TABLE session_v2(id TEXT PRIMARY KEY);'); } finally { missing.close(); }
+      await assert.rejects(readNativeRemovalRows({ databasePath: missingPath, environment, sessions }), /Missing native session_message table/);
     } finally { await fs.rm(fixture, { recursive: true, force: true }); }
   });

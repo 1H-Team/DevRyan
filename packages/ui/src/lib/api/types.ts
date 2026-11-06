@@ -178,6 +178,15 @@ export interface GitBranch {
   branches: Record<string, GitBranchDetails>;
 }
 
+/**
+ * `local` (the default) lists refs already on disk with no network access.
+ * `live` also verifies remote-tracking refs against each remote (`ls-remote`);
+ * it never fetches.
+ */
+export interface GitBranchListOptions {
+  remote?: 'local' | 'live';
+}
+
 export interface GitCommitSummary {
   changes: number;
   insertions: number;
@@ -592,7 +601,7 @@ export interface GitAPI {
   unstageGitHunk?(directory: string, filePath: string, patch: string): Promise<void>;
   revertGitHunk?(directory: string, filePath: string, patch: string): Promise<void>;
   isLinkedWorktree(directory: string): Promise<boolean>;
-  getGitBranches(directory: string): Promise<GitBranch>;
+  getGitBranches(directory: string, options?: GitBranchListOptions): Promise<GitBranch>;
   deleteGitBranch(directory: string, payload: GitDeleteBranchPayload): Promise<{ success: boolean }>;
   deleteRemoteBranch(directory: string, payload: GitDeleteRemoteBranchPayload): Promise<{ success: boolean }>;
   removeRemote(directory: string, payload: GitRemoveRemotePayload): Promise<{ success: boolean }>;
@@ -742,8 +751,34 @@ export interface FileReadResult { content: string; path: string; version?: strin
 export interface FileWriteOptions { expectedVersion?: string }
 export interface FileWriteResult { success: boolean; path: string; version?: string }
 
+/** Directory-relative scope of one file-watch subscription. */
+export interface FileWatchScope {
+  directory: string;
+  expandedDirectories: readonly string[];
+  selectedFile?: string;
+}
+
+/** A hint names only a scope slot: the root, an `expandedDirectories` index, or the selected file. */
+export type FileWatchSlot =
+  | { kind: 'root' }
+  | { kind: 'expanded'; index: number }
+  | { kind: 'selected' };
+
+/** `epoch` identifies the subscription; adapter-synthesized events use 0. */
+export type FileWatchEvent =
+  | { type: 'ready'; epoch: number }
+  | { type: 'invalidate'; epoch: number; slot: FileWatchSlot }
+  | { type: 'resync'; epoch: number }
+  | { type: 'unavailable'; epoch: number; retryable: boolean };
+
 export interface FilesAPI {
   listDirectory(path: string, options?: ListDirectoryOptions): Promise<DirectoryListResult>;
+  /**
+   * Stream change hints for `scope` until `signal` aborts or the stream ends.
+   * Resolves when the stream ends or is unavailable; rejects on network errors
+   * and timeouts, which the caller may retry.
+   */
+  watch?(scope: FileWatchScope, onEvent: (event: FileWatchEvent) => void, signal: AbortSignal): Promise<void>;
   search(payload: FileSearchQuery): Promise<FileSearchResult[]>;
   createDirectory(path: string): Promise<{ success: boolean; path: string }>;
   statFile?(path: string, options?: FileReadOptions): Promise<FileStatResult>;

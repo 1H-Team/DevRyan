@@ -1029,8 +1029,13 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     attempt?.controller.signal.throwIfAborted();
     if (attempt && activeExecutions.get(task.taskId) !== attempt) throw new Error('Managed task execution lease changed before provider prompt');
     // No asynchronous work between the last guard and the transport call.
-    await transport.promptSession({ ...input, taskId: task.taskId, leaseToken: task.leaseToken,
+    const submission = await transport.promptSession({ ...input, taskId: task.taskId, leaseToken: task.leaseToken,
+      ...(task.executionBackend === 'native-job' ? { executionBackend: task.executionBackend, control: attempt?.control, rootSessionId: task.rootSessionId } : {}),
       signal: attempt?.controller.signal });
+    if (task.executionBackend === 'native-job' && submission?.state === 'native_admission_uncertain') {
+      attempt.nativeAdmissionUncertainMessageID = submission.messageID;
+      return false;
+    }
     return true;
   };
 
@@ -1201,6 +1206,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
 
   const retryStopInput = (task) => ({
     taskId: task.taskId,
+    ...(task.executionBackend === 'native-job' ? { executionBackend: task.executionBackend } : {}),
     leaseToken: task.leaseToken,
     sessionId: task.childSessionId,
     directory: task.directory,
@@ -1711,7 +1717,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     let stoppedHandoff = null;
     let operatorAbortSeenAt = null;
     let operatorAbortStopNotBefore = null;
-    const settleOperatorAbort = async () => {
+    const settleOperatorAbort = async (expectedMessageID = null) => {
       const stopped = await readApplicableOperatorAbort(task, operatorAbortAfter);
       if (!stopped || stopped.steered) {
         operatorAbortSeenAt = null;
@@ -1725,7 +1731,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
         failureReason: 'Stopped by the user', resumable: true, terminationIntent: 'user_stopped' };
       if (!observation) return 'pending';
       if (!LIVE_STATUS_TYPES.has(observation.statusType)) {
-        const terminal = toTerminalResult(observation);
+        const terminal = expectedMessageID && observation.latestAssistantParentId !== expectedMessageID ? null : toTerminalResult(observation);
         if (terminal?.status === 'completed') return terminal;
         return { ...transportRecoveryResult(observation, 'Stopped by the user', 'aborted'), terminationIntent: 'user_stopped' };
       }
@@ -1752,6 +1758,27 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       let observation;
       try {
         attemptFor(task)?.controller.signal.throwIfAborted();
+        const uncertainInput = attemptFor(task)?.nativeAdmissionUncertainMessageID;
+        if (uncertainInput) {
+          // A transport response is not a settlement receipt. Never classify
+          // the inherited tail or send another continuation before this exact
+          // input owns canonical assistant work.
+          const stopped = await settleOperatorAbort(uncertainInput);
+          if (stopped && stopped !== 'pending') return stopped;
+          try {
+            const current = await readObservation(task, await readLiveStatus(task));
+            if (current.latestAssistantParentId === uncertainInput) {
+              if (await waitOptions.control?.recordNativeJobSegment?.(uncertainInput, 'accepted') === false) throw new Error('Native input ownership changed');
+              await retainInPlaceAcceptance(task, waitOptions.control, 'after exact native input observation');
+              attemptFor(task).nativeAdmissionUncertainMessageID = null;
+            }
+          } catch {
+            attemptFor(task)?.controller.signal.throwIfAborted();
+            assertRunning();
+          }
+          await sleep(pollIntervalMs, { signal: shutdownController.signal });
+          continue;
+        }
         const interrupted = await settleObservationFailure(task);
         if (interrupted === 'pending') {
           await sleep(pollIntervalMs, { signal: shutdownController.signal });

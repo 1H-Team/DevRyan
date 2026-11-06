@@ -15,6 +15,7 @@ import {assertBundlePendingInput,sha256} from './bundle-migration-inventory.js';
 import {createNativeAdmissionOwner} from './native-admission-owner.js';
 import {createOpenCodeClient} from '../opencode-client/index.js';
 import {createOpenCodeAdmission} from '../v2/admission.js';
+import {NATIVE_MANAGED_JOB_COMPLETION} from './native-managed-job-input.js';
 const roots=[];afterEach(async()=>{for(const {root,db} of roots.splice(0)){db.close();await fs.rm(root,{recursive:true,force:true});}});
 async function fixture(){
  const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'recovered-input-'))),file=path.join(root,'native.db');await fs.writeFile(file,'');const db=resolveSqliteDriver().open(file);roots.push({root,db});
@@ -428,4 +429,70 @@ test('recovery reads retained compaction fields while rejecting unrecognized sto
  expect(()=>readRecoveredNativeInputs(f.sql)).not.toThrow();
  f.db.prepare('UPDATE session_message SET data=? WHERE id=?').run(JSON.stringify({time:{created:100},...data,unrecognized:true}),'msg_compact');
  expect(()=>readRecoveredNativeInputs(f.sql)).toThrow();
+});
+
+test('verified terminal managed completion hands off only its promoted input and permits fresh same-child work without replay',async()=>{
+ const f=await fixture(),rootSessionId='ses_managed_parent';
+ f.db.prepare('INSERT INTO session_v2 VALUES(?,?,?,?,?,?,?,?)').run(rootSessionId,f.root,null,'build',JSON.stringify({providerID:'devryan-smoke',id:'smoke-write'}),'[]',null,null);
+ f.db.prepare('UPDATE session_v2 SET parent_id=? WHERE id=?').run(rootSessionId,f.sessionID);
+ f.db.prepare('DELETE FROM session_inbox').run();f.message(f.messageID,'user',1,{text:'retained input'});
+ const proof={taskId:'dvr_task_terminal',leaseToken:'lease_terminal',rootSessionId,directory:f.root,sessionID:f.sessionID,
+  providerId:'devryan-smoke',modelId:'smoke-write',agent:'build',variant:null,messageID:f.messageID,jobID:'dvr_job_terminal',notificationID:'msg_terminal_notice',envelopeID:'dvr_result_terminal'};
+ let done=[];
+ const recovered=f.owner({readManagedJobDispositions:async()=>done});await recovered.install('first-controller');
+ expect((await recovered.snapshot(f.sessionID)).inputs[0].messageID).toBe(f.messageID);
+ let task={owner:'devryan',taskId:proof.taskId,leaseToken:proof.leaseToken,rootSessionId,directory:f.root,childSessionId:f.sessionID,
+  providerId:proof.providerId,modelId:proof.modelId,agent:proof.agent,variant:null,status:'interrupted',dispatchCallId:'call_parent'};
+ let currentIdentity={jobID:proof.jobID,messageID:proof.messageID,notificationID:proof.notificationID};
+ let terminal=true;
+ const native=createNativeAdmissionOwner({directory:f.root,ownerID:'fixture',getSession:async id=>{const row=f.db.prepare('SELECT * FROM session_v2 WHERE id=?').get(id);return row&&{id:row.id,directory:row.directory,parentID:row.parent_id};},
+  runtime:{registerNativeSession:async()=>{},nativeAdmissionState:async()=>({revision:1,held:false,reverting:false}),
+   capturedSessionState:async()=>({captured:true,pending:false,generation:1}),leaseForCall:async()=>({directory:f.root,generation:1,executionKind:'control',preparation:'none',state:'published',scope:{sessionID:rootSessionId,callID:'call_parent'}})},
+  authorizeOperation:async()=>{throw Error('unowned');},verifyManagedTaskDispatch:async()=>({...task,status:terminal?'interrupted':'running'}),
+  verifyNativeJobSegment:async input=>{
+   if(input.phase==='acknowledge'&&(!terminal||input.envelopeID!==proof.envelopeID)||input.phase!=='acknowledge'&&terminal)throw Error('exact terminal grant required');
+   return {task:{...task,status:terminal?'interrupted':'running'},segment:currentIdentity,envelopeID:proof.envelopeID};},
+  assertRecoveredInputOperation:(request,entry)=>recovered.assertOperation(request,entry),
+  retireManagedJobInput:(input,recheck)=>recovered.retireManagedCompletion(input,recheck)});
+ try{
+  const request={operation:'job.managed.acknowledge',sessionID:f.sessionID,input:proof};
+  expect(()=>recovered.assertOperation(request,{managedJob:{phase:'acknowledge'},request,permit:{sessionID:f.sessionID}})).toThrow('native_recovered_input_fenced');
+  await expect(native.withManagedJobOperation('acknowledge',{...proof,envelopeID:'dvr_result_foreign'},async()=>{})).rejects.toThrow('exact terminal grant required');
+  await native.withManagedJobOperation('acknowledge',proof,async permit=>{
+   expect(await native.handleRpc('native.admission.authorize',{...request,existingPermit:permit})).toEqual(permit);
+   await expect(native.handleRpc('native.admission.authorize',{operation:'execution.resume',sessionID:f.sessionID,existingPermit:permit})).rejects.toThrow();
+  });
+  expect(await recovered.snapshot(f.sessionID)).toBeUndefined();
+  expect(f.db.prepare('SELECT id FROM session_message WHERE id=?').get(f.messageID)?.id).toBe(f.messageID);
+  terminal=false;task={...task,taskId:'dvr_task_followup',leaseToken:'lease_followup'};
+  currentIdentity={jobID:'dvr_job_followup',messageID:'msg_followup',notificationID:'msg_followup_notice'};
+  const {envelopeID:_envelopeID,...original}=proof,fresh={...original,taskId:task.taskId,leaseToken:task.leaseToken,...currentIdentity};
+  await native.withManagedJobOperation('prepare',fresh,async permit=>expect(await native.handleRpc('native.admission.authorize',{
+   operation:'job.managed.prepare',sessionID:f.sessionID,input:fresh,existingPermit:permit})).toEqual(permit));
+  // Durable scheduler completion is the startup handoff proof; no native history is rewritten.
+  done=[proof];const replacement=f.owner({readManagedJobDispositions:async()=>done});await replacement.install('second-controller');
+  expect(await replacement.snapshot(f.sessionID)).toBeUndefined();expect(replacement.assertOperation({operation:'store.claim',sessionID:f.sessionID})).toBeUndefined();
+  expect(f.calls()).toBe(0);
+  f.add('msg_unrelated');await replacement.install('third-controller');
+  expect((await replacement.snapshot(f.sessionID)).inputs.map(input=>input.messageID)).toEqual(['msg_unrelated']);
+  expect(()=>replacement.assertOperation({operation:'store.claim',sessionID:f.sessionID})).toThrow('native_recovered_input_fenced');
+  const unproven=f.owner();await unproven.install('unproven-controller');expect(()=>unproven.assertOperation({operation:'store.claim',sessionID:f.sessionID})).toThrow('native_recovered_input_fenced');
+ }finally{native.dispose();}
+});
+
+test('terminal managed queued cleanup requires the constructor proof and exact original cancellation witness',async()=>{
+ const f=await fixture(),rootSessionId='ses_managed_parent';f.db.prepare('UPDATE session_v2 SET parent_id=? WHERE id=?').run(rootSessionId,f.sessionID);
+ const owner=f.owner();await owner.install('controller');
+ const input={taskId:'dvr_task_terminal',leaseToken:'lease_terminal',rootSessionId,directory:f.root,sessionID:f.sessionID,
+  providerId:'devryan-smoke',modelId:'smoke-write',agent:'build',variant:null,messageID:f.messageID,jobID:'dvr_job_terminal',notificationID:'msg_terminal_notice',envelopeID:'dvr_result_terminal'};
+ const request={operation:'job.managed.acknowledge',sessionID:f.sessionID,input};
+ const grant={request,managedJob:{phase:'acknowledge'},permit:{sessionID:f.sessionID},[NATIVE_MANAGED_JOB_COMPLETION]:input,reauthorize:async()=>{}};
+ const queued=readRecoveredNativeInputs(f.sql)[0],pending=[{id:f.messageID,sessionID:f.sessionID,payloadHash:queued.payloadHash,enqueuedSeq:queued.enqueuedSeq}];
+ expect(owner.assertOperation(request,grant)).toBeUndefined();
+ await expect(owner.beforePublish({events:[{type:'session.inbox.delivered',data:{sessionID:f.sessionID,inboxID:f.messageID}}],pending,grant})).rejects.toThrow('native_recovered_input_fenced');
+ await expect(owner.beforePublish({events:[{type:'session.inbox.cancelled',data:{sessionID:f.sessionID,inboxID:f.messageID}}],pending:[{...pending[0],payloadHash:'0'.repeat(64)}],grant})).rejects.toThrow('recovery_revision_conflict');
+ await expect(owner.beforePublish({events:[{type:'session.inbox.cancelled',data:{sessionID:f.sessionID,inboxID:f.messageID}}],pending,grant})).resolves.toEqual([{sessionID:f.sessionID,inboxID:f.messageID}]);
+ await expect(owner.retireManagedCompletion(input,async()=>{})).rejects.toThrow('native_managed_job_input_pending');
+ f.db.prepare('DELETE FROM session_inbox WHERE id=?').run(f.messageID);
+ await owner.retireManagedCompletion(input,async()=>{});expect(await owner.snapshot(f.sessionID)).toBeUndefined();
 });

@@ -1,5 +1,6 @@
 import type { OpencodeClient, Session } from "@opencode-ai/sdk/v2";
 import { retry } from "@/sync/retry";
+import { decodeDisplaySession } from "@/sync/display-session";
 
 export type GlobalSessionRecord = Session & {
     project?: {
@@ -69,12 +70,20 @@ export async function listGlobalSessionPages(
             { attempts: 5, delay: 500, maxDelay: 4000 },
         );
 
-        const payload = Array.isArray(response.data) ? (response.data as GlobalSessionRecord[]) : [];
-        if (payload.length === 0) break;
+        const rawPayload: unknown[] = Array.isArray(response.data) ? response.data : [];
+        if (rawPayload.length === 0) break;
+
+        // Decode every entry: entries without a session identity are skipped
+        // and invalid native lifecycle values are dropped.
+        const payload: GlobalSessionRecord[] = [];
+        for (const value of rawPayload) {
+            const session = decodeDisplaySession(value);
+            if (session) payload.push(session);
+        }
 
         let appended = 0;
         for (const session of payload) {
-            if (!session?.id || seenIds.has(session.id)) continue;
+            if (seenIds.has(session.id)) continue;
             seenIds.add(session.id);
             all.push(session);
             appended += 1;
@@ -84,12 +93,12 @@ export async function listGlobalSessionPages(
         }
 
         // Stop on partial page — nothing more to fetch.
-        if (payload.length < options.pageSize) break;
+        if (rawPayload.length < options.pageSize) break;
 
         // Prefer server header; fall back to last session's `time.updated`
         // (cursor semantics on server = "updated strictly before this timestamp").
         const headerCursor = toNumber(readResponseHeader(response, "x-next-cursor"));
-        const lastUpdated = payload[payload.length - 1]?.time?.updated;
+        const lastUpdated = payload[payload.length - 1]?.time.updated;
         const nextCursor = headerCursor
             ?? (typeof lastUpdated === "number" && Number.isFinite(lastUpdated) ? lastUpdated : undefined);
 

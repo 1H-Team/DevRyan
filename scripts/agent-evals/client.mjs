@@ -1,4 +1,5 @@
 import { isRoutingCase, collectRoutingEvidence, collectRoutingMetrics } from './routing-cases.mjs';
+import { isAdaptiveCase } from './adaptive-cases.mjs';
 import { resolveProviderPromptTools } from '../../packages/orchestration-runtime/provider-prompt-tools.js';
 import { createManagedRecoveryMessageId } from '../../packages/orchestration-runtime/transport-recovery.js';
 import { redactUrl } from './report.mjs';
@@ -6,6 +7,15 @@ import { retainPrivateToolInterval } from './tool-evidence.mjs';
 import { loadPlanModeInstruction } from './plan-mode.mjs';
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
+// A trace export reads the whole retained journal, which grows during a trial.
+const TRACE_EXPORT_TIMEOUT_MS = 60_000;
+// A native job's result is acknowledged just after its root goes idle; the
+// graph waits this long for that drain before it is graded as it stands.
+const DEFAULT_RESULT_DRAIN_GRACE_MS = 30_000;
+// The root's objective settles from its own events after the graph is terminal.
+const DEFAULT_TRACE_SETTLE_MS = 30_000;
+const TRACE_SETTLE_RETRY_MS = 1_000;
+const TERMINAL_OBJECTIVE_STATES = new Set(['completed', 'needs_attention', 'cancelled', 'superseded']);
 const DEFAULT_POLL_INTERVAL_MS = 250;
 const DEFAULT_CLEANUP_TIMEOUT_MS = 5_000;
 const MAX_SESSION_TREE_SIZE = 100;
@@ -170,7 +180,7 @@ export const createEvaluationClient = (options = {}) => {
 
   const request = async (pathname, requestOptions = {}) => {
     const url = `${apiBase}${pathname}`;
-    const timeoutSignal = AbortSignal.timeout(requestTimeoutMs);
+    const timeoutSignal = AbortSignal.timeout(requestOptions.timeoutMs ?? requestTimeoutMs);
     const response = await fetchImpl(url, {
       method: requestOptions.method ?? 'GET',
       headers: {
@@ -215,7 +225,7 @@ export const createEvaluationClient = (options = {}) => {
     },
     async getHarnessTrace(sessionId, directory, signal) {
       const trace = await request('/diagnostics/export', { method: 'POST', body: { scope: 'task', sessionID: sessionId,
-        directory, format: 'chrome-trace' }, signal, label: 'diagnostics.trace' });
+        directory, format: 'chrome-trace' }, signal, label: 'diagnostics.trace', timeoutMs: Math.max(requestTimeoutMs, TRACE_EXPORT_TIMEOUT_MS) });
       return trace?.metadata ?? null;
     },
     async createSession(directory, title, signal) {
@@ -290,11 +300,19 @@ export const createEvaluationClient = (options = {}) => {
       return true;
     },
     async getTurnTiming(sessionId, signal) {
-      const payload = await request(appendQuery('/diagnostics/turn-timing/recent', {
-        sessionId,
-        limit: 20,
-      }), { signal, label: 'turn-timing.recent' });
-      return payload && typeof payload === 'object' ? payload : { records: [] };
+      // Turn timing is an informational diagnostic (the report's turnTimingMs
+      // aggregate); no grader or paired metric reads it. A host that refuses it
+      // records no timings instead of discarding the whole evaluated run.
+      try {
+        const payload = await request(appendQuery('/diagnostics/turn-timing/recent', {
+          sessionId,
+          limit: 20,
+        }), { signal, label: 'turn-timing.recent' });
+        return payload && typeof payload === 'object' ? payload : { records: [] };
+      } catch (error) {
+        if (error instanceof EvaluationHttpError && error.statusCode === 403) return { records: [], availability: 'forbidden' };
+        throw error;
+      }
     },
     async getManagedSnapshot(rootSessionId, signal) {
       const payload = await request(appendQuery('/orchestration/snapshot', { rootSessionId }), {
@@ -515,6 +533,29 @@ const terminalAssistantEvidence = (messages) => {
   };
 };
 
+// The root's objective settles from its own events just after its graph is
+// terminal, and an export can fail transiently. Read the trace until each of
+// the root's objectives has settled, for a bounded time, keeping the latest
+// successful read. A refused export (4xx) or an export without a trace is final.
+const readSettledTrace = async ({ client, rootSessionId, directory, signal, settleMs, retryMs = TRACE_SETTLE_RETRY_MS }) => {
+  if (typeof client.getHarnessTrace !== 'function') return null;
+  const deadline = Date.now() + settleMs;
+  let latest = null;
+  while (true) {
+    try {
+      latest = await client.getHarnessTrace(rootSessionId, directory, signal);
+      const root = Array.isArray(latest?.roots) ? latest.roots.find((entry) => entry?.rootSessionId === rootSessionId) : null;
+      const objectives = Array.isArray(root?.objectiveDurations) ? root.objectiveDurations : [];
+      if (!latest || objectives.every((objective) => TERMINAL_OBJECTIVE_STATES.has(objective?.state))) return latest;
+    } catch (error) {
+      if (signal.aborted) throw error;
+      if (error instanceof EvaluationHttpError && error.statusCode < 500) return latest;
+    }
+    if (Date.now() >= deadline) return latest;
+    await wait(Math.min(retryMs, deadline - Date.now()), signal);
+  }
+};
+
 const waitForTerminalGraph = async ({
   client,
   rootSessionId,
@@ -524,10 +565,12 @@ const waitForTerminalGraph = async ({
   knownSessionIds,
   requireManaged,
   previousRootMessageIds = new Set(),
+  resultDrainGraceMs = DEFAULT_RESULT_DRAIN_GRACE_MS,
 }) => {
   const stateBySessionId = new Map();
   let settledSignature = '';
   let settledSnapshots = 0;
+  let drainPendingSince = null;
   while (true) {
     if (signal.aborted) throw signal.reason ?? new EvaluationAbortedError();
     const [statusSnapshot, sessionTree, managedPayload] = await Promise.all([
@@ -586,13 +629,23 @@ const waitForTerminalGraph = async ({
       if (taskChildId && !sessionIdsInTree.has(taskChildId)) tasksComplete = false;
     }
 
-    const allComplete = Boolean(rootProof) && sessionsComplete && tasksComplete;
+    // A completed task's result is drained once its envelope is acknowledged.
+    // Native jobs acknowledge just after the root goes idle, so the graph waits
+    // a bounded grace for it; an unacknowledged result is then graded as it is.
+    const envelopes = Array.isArray(managedPayload?.resultEnvelopes) ? managedPayload.resultEnvelopes : [];
+    const drainPending = tasks.some((task) => normalizeString(task?.status).toLowerCase() === 'completed'
+      && envelopes.some((envelope) => envelope?.taskId === task?.taskId && !envelope?.acknowledgedAt));
+    const graphComplete = Boolean(rootProof) && sessionsComplete && tasksComplete;
+    if (graphComplete && drainPending) drainPendingSince ??= Date.now();
+    else drainPendingSince = null;
+    const allComplete = graphComplete && (!drainPending || Date.now() - drainPendingSince >= resultDrainGraceMs);
     const signature = JSON.stringify({
       sessions: sessionTree.map((entry) => [
         entry.sessionId,
         normalizeString(statusSnapshot?.[entry.sessionId]?.type).toLowerCase(),
       ]),
       tasks: tasks.map((task) => [task?.taskId, task?.status, task?.childSessionId]),
+      envelopes: envelopes.map((envelope) => [envelope?.taskId, envelope?.status, envelope?.action ?? null, Boolean(envelope?.acknowledgedAt)]),
     });
     if (allComplete && signature === settledSignature) settledSnapshots += 1;
     else if (allComplete) {
@@ -807,6 +860,9 @@ const sanitizeToolEvent = (part, ownedTestRelativePath, sessionScope, workingDir
     final: FINAL_TOOL_STATUSES.has(status),
     sessionScope,
   };
+  // The managed action is a closed schema literal; keep it only in that shape.
+  const managedAction = tool === 'devryan_task' ? normalizeString(part.state?.input?.action).toLowerCase() : '';
+  if (/^[a-z][a-z_]{0,39}$/.test(managedAction)) event.managedAction = managedAction;
   const commandKind = ownedTestCommandKind(
     part.state?.input?.command,
     ownedTestRelativePath,
@@ -956,7 +1012,9 @@ export const runSessionTurn = async (options = {}) => {
   const statuses = [];
   const knownSessionIds = new Set();
   let rootSessionId = '';
-  let harnessEvidence = { startFingerprint: null, finishFingerprint: null, availability: null, trace: null };
+  let firstTurnMessageIds = null;
+  const requireManaged = options.caseId === 'managed-change' || isRoutingCase(options.caseId) || isAdaptiveCase(options.caseId);
+  let harnessEvidence = { startFingerprint: null, finishFingerprint: null, availability: null, trace: null, rootSessionId: null };
   try {
     const metadata = await Promise.allSettled([
       client.getHarnessPreflight?.(directory, selection, signal), client.getAdvertisedAvailability?.(directory, selection, signal),
@@ -968,6 +1026,8 @@ export const runSessionTurn = async (options = {}) => {
     }
     const session = await client.createSession(directory, title, signal);
     rootSessionId = session.id;
+    // Names the evaluated root among the trace's roots for usage attribution.
+    harnessEvidence.rootSessionId = rootSessionId;
     knownSessionIds.add(rootSessionId);
     await client.promptSession(rootSessionId, directory, selection, prompt, signal, { planMode: options.planMode === true });
     let terminal = await waitForTerminalGraph({
@@ -977,7 +1037,8 @@ export const runSessionTurn = async (options = {}) => {
       signal,
       statuses,
       knownSessionIds,
-      requireManaged: options.caseId === 'managed-change' || isRoutingCase(options.caseId),
+      requireManaged,
+      resultDrainGraceMs: options.resultDrainGraceMs,
     });
     if (options.followUpPrompt) {
       const previousMessages = terminal.sessionTree.find(entry => entry.sessionId === rootSessionId)?.messages ?? [];
@@ -985,16 +1046,20 @@ export const runSessionTurn = async (options = {}) => {
         throw Object.assign(new Error('Follow-up requires identifiable prior messages'), { code: 'evaluation_missing_turn_identity' });
       }
       const previousRootMessageIds = new Set(previousMessages.map(message => message.info.id));
+      firstTurnMessageIds = [...previousRootMessageIds];
       await client.promptSession(rootSessionId, directory, selection, options.followUpPrompt, signal);
       terminal = await waitForTerminalGraph({
         client, rootSessionId, directory, signal, statuses, knownSessionIds,
-        requireManaged: isRoutingCase(options.caseId), previousRootMessageIds,
+        requireManaged: isRoutingCase(options.caseId) || isAdaptiveCase(options.caseId), previousRootMessageIds,
+        resultDrainGraceMs: options.resultDrainGraceMs,
       });
     }
     const timingPayload = await client.getTurnTiming(rootSessionId, signal);
     const { sessionTree, managedPayload, terminalEvidence } = terminal;
     const diagnostics = await Promise.allSettled([
-      client.getHarnessPreflight?.(directory, selection, signal), client.getHarnessTrace?.(rootSessionId, directory, signal),
+      client.getHarnessPreflight?.(directory, selection, signal),
+      readSettledTrace({ client, rootSessionId, directory, signal, settleMs: options.traceSettleMs ?? DEFAULT_TRACE_SETTLE_MS,
+        retryMs: options.traceRetryMs }),
     ]);
     harnessEvidence.finishFingerprint = diagnostics[0].status === 'fulfilled' ? diagnostics[0].value?.runFingerprint ?? null : null;
     harnessEvidence.trace = diagnostics[1].status === 'fulfilled' ? diagnostics[1].value ?? null : null;
@@ -1003,6 +1068,8 @@ export const runSessionTurn = async (options = {}) => {
       rootSessionId,
       childSessionIds: sessionTree.slice(1).map((entry) => entry.sessionId),
       sessionTree,
+      // The first turn's root messages, so a plan turn can be checked read-only.
+      ...(firstTurnMessageIds ? { firstTurnMessageIds } : {}),
       statuses,
       tools: collectSanitizedTools(sessionTree, {
         rootSessionId,

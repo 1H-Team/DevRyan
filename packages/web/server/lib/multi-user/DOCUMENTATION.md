@@ -137,7 +137,9 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
 - Managed developers and senior developers never receive `.env` or `.env.*`
   entries from filesystem, OpenCode file/search, Git status, conflict, or commit
   file-list responses. Direct filesystem and Git access to those paths returns
-  `404` so the API does not confirm that a secret file exists. Administrators
+  `404` so the API does not confirm that a secret file exists. That includes a
+  `GET /api/fs/watch` scope whose `expanded` or `selected` entry is protected,
+  and the watch stream drops change hints for protected names per subscriber. Administrators
   and the single-user local runtime retain their existing behavior.
 - Settings-page reads and mutations are authorized independently through the
   canonical Read/Edit matrix. Administrator access remains fixed at full; an

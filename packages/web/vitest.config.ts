@@ -11,6 +11,8 @@ const notVitest = [
   'runtime/reviewed-inputs/**',
   'server/lib/opencode/runtime-host/native-helper.test.js',
   'server/lib/opencode/runtime-host/native-retention-quiet.test.ts',
+  'server/lib/opencode/runtime-host/native-managed-jobs.test.ts',
+  'server/lib/opencode/runtime-host/controller-dispatch.test.ts',
   'server/lib/opencode/runtime-host/native-queued-input.test.ts',
   'server/lib/harness/native-integration/**',
 ];

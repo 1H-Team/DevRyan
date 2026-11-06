@@ -3,6 +3,8 @@ import { currentObjectiveUser } from '@devryan/harness-runtime/lib/objective-ide
 import { createNativePlanSettlementVerifier } from './native-plan-settlement.js';
 import { createNativePlanDenialOwner } from './native-plan-denial-owner.js';
 import { createNativeManagedTitleOwner } from './native-managed-title-owner.js';
+import {hasNativeManagedSubagentJobs} from './native-managed-job-contract.js';
+import {nativeManagedJobInput} from './native-managed-job-input.js';
 import { startStartupTiming, timeStartupPhase } from '../startup-timing.js';
 import { artifactDiagnostic } from '@devryan/shared-runtime/startup-diagnostics.js';
 import {captureNativeSetupCredentialSeed} from './native-setup-credential-ack.js';
@@ -18,6 +20,7 @@ import { createManagedOrchestrationPrivateHost } from '../../orchestration/priva
 import { createRuntimeBundleStore } from './runtime-bundle.js';
 import { verifyNativeRuntimeArtifacts } from './native-artifacts.js';
 import { createNativeControllerProcess } from './native-process.js';
+import { NativeCommandRefusal } from './native-command-refusal.js';
 import { createClaudeAgentHost, readClaudeAgentConnectionChoice, readClaudeAgentUsage, writeClaudeAgentConnectionChoice } from './claude-agent-host.js';
 import { createNativeCopilotCatalog } from './native-copilot-catalog.js';
 import { createNativeAdmissionOwner } from './native-admission-owner.js';
@@ -35,7 +38,7 @@ import { createNativeIntegrationOwner } from './native-integration-owner.js';
 import { createNativeProviderConfigurationOperation } from './native-provider-configuration-operation.js';
 import { createNativeCouncilOwner } from './council-owner.js';
 import { reviewedCouncilMembers } from './reviewed-council-configuration.js';
-import { createNativeSessionContextOwner } from './native-session-context-owner.js';
+import { createNativeSessionContextOwner, nativeContextAuthorizer } from './native-session-context-owner.js';
 import { createNativeBrowserOwner } from './native-browser-owner.js';
 import { readNativeBrowserAssets } from './native-browser-assets.js';
 import { createPrivilegedOpenCodeClient } from '../opencode-client/privileged.js';
@@ -55,6 +58,33 @@ import {createNativeObservationOwner} from './native-observation-owner.js';
 import {createNativeRecoveredInputOwner, recoverAcceptedPromptBoundary} from './native-recovered-input.js';
 
 const fail = code => Object.assign(new Error(code), { code, status: 503, statusCode: 503 });
+// A managed-job command refused by a count never ran, so it waits for a slot
+// instead of failing its launch. The protocol window itself stays unchanged.
+const NATIVE_MANAGED_JOB_RETRY_WINDOW_MS = 60_000;
+const NATIVE_MANAGED_JOB_READY_POLL_MS = 50;
+const nativeManagedJobRetryDelay = attempt => Math.min(500, 25 * 2 ** Math.min(attempt, 5));
+// Only these refusals prove a managed-job command never ran: the process owner
+// never wrote it, the controller dispatcher refused it before `run`
+// (controller-dispatch.ts rewrites the same code raised inside `run`), or
+// admission refused its permit before the command action was entered.
+const managedJobNotRun = (cause, entered) => cause instanceof NativeCommandRefusal
+  && (cause.settlement === 'not-dispatched' && cause.code === 'native_process_busy'
+    || cause.settlement === 'reply' && cause.code === 'native_command_capacity')
+  || !entered && cause?.code === 'native_permit_capacity';
+const managedJobControllerChanged = () => new NativeCommandRefusal('native_managed_job_controller_changed', 503, 'not-dispatched');
+const pauseUnlessAborted = (ms, signal) => new Promise((resolve, reject) => {
+  if (signal?.aborted) { reject(signal.reason); return; }
+  const abort = () => { clearTimeout(timer); reject(signal.reason); };
+  const timer = setTimeout(() => { signal?.removeEventListener('abort', abort); resolve(); }, ms);
+  signal?.addEventListener('abort', abort, { once: true });
+});
+const managedJobWait = value => {
+  if (value === undefined) return {};
+  if (!record(value) || Object.keys(value).some(key => !['signal', 'deadlineAt'].includes(key))
+    || value.signal !== undefined && !(value.signal instanceof AbortSignal)
+    || value.deadlineAt !== undefined && !Number.isFinite(value.deadlineAt)) throw fail('native_managed_job_wait_invalid');
+  return value;
+};
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const startupFailureCodes = new Set(['native_catalog_mismatch', 'native_clone_evidence_invalid', 'native_configuration_sources_changed',
@@ -279,6 +309,8 @@ export function createNativeRuntimeOwner(options) {
     bindShellJob: input => executionHost.nativeExecution({ ...input, action: 'bind-shell-job' }),
     getShellJobReceipt: input => executionHost.nativeShellJobReceipt(input),
     verifyManagedTaskDispatch: input => getManagedRuntime().verifyNativeTaskDispatch(input),
+    verifyNativeJobSegment:input=>getManagedRuntime().verifyNativeJobSegment(input),
+    retireManagedJobInput:(input,recheck)=>recoveredInputs.retireManagedCompletion(input,recheck),
     verifyManagedTaskCatalog: input => getManagedRuntime().verifyNativeTaskCatalog(input),
     verifyPrimaryContinuationDispatch: input => primaryRuntime.captureNativeContinuationDispatch({ ...input, instanceID: nativeInstanceID }),
     verifyPrimaryRecoveryDispatch:input=>primaryRuntime.captureNativeRecoveryDispatch({...input,instanceID:nativeInstanceID}),
@@ -291,6 +323,7 @@ export function createNativeRuntimeOwner(options) {
     },
   });
   recoveredInputs=createNativeRecoveredInputOwner({databasePath:descriptor.launch.opencodeDatabasePath,primaryRuntime,
+    readManagedJobDispositions:()=>getManagedRuntime().readNativeJobInputDispositions(),
     withSessionLock:admission.withSessionLock,
     readiness:()=>{if(phase!=='ready'||stopping||stopped||!child||child.hasExited())throw fail('native_runtime_not_ready');},
     captureAuthorization:input=>authorization.captureWebAuthorization({operation:'recovery.input',sessionID:input.sessionID,directory:input.directory},
@@ -655,6 +688,8 @@ export function createNativeRuntimeOwner(options) {
       }):undefined;
       const launchIntegrations = configurationSnapshot ? createNativeIntegrationOwner({ instanceID, snapshot: configurationSnapshot,
         stateDirectory: globals.state, controller: active, isReady: () => phase === 'ready' && !stopping,
+        // This launch's startup promise; it settles after `phase` reaches ready or the launch fails.
+        awaitStartup: () => starting,
         withMutationQueue: options.withCredentialMutationQueue,
         captureWebAuthorization: input => authorization.captureWebAuthorization(input), admissionOwner: nativeOwner,
         recordDiagnostic: options.recordDiagnostic }) : undefined;
@@ -687,9 +722,9 @@ export function createNativeRuntimeOwner(options) {
           getCapabilitySnapshot: scope => readNativeCapabilitySnapshot({ scope, artifacts, reviewedBrowser, browserOperation,
             getBrowserLeaseRuntime: options.getBrowserLeaseRuntime, primaryRuntime, policies: capabilities?.policies }),
           inspectVerification: scope => getManagedRuntime().inspectRequiredChecks(scope),
-          readSessionMetadata,
+          readSessionMetadata, withSessionLock: admission.withSessionLock,
           isHeld: async scope => { const state = await executionHost.runtime.nativeAdmissionState(scope); return state.held || state.reverting; },
-          authorizeContext: input => nativeOwner.captureContextAuthorization(input),
+          authorizeContext: nativeContextAuthorizer(nativeOwner),
           writeTodos: async ({ sessionID, directory, todos, invocation }, recheck) => {
             // withPermit already owns the existing per-session admission lock.
             await recheck();
@@ -878,7 +913,77 @@ export function createNativeRuntimeOwner(options) {
     activeLeases: input => executionHost.runtime.activeLeases(input),
     readPrimaryRecord: sessionID => primaryRuntime.readRecord(sessionID),
   });
+  const nativeManagedJobsAvailable=()=>hasNativeManagedSubagentJobs(artifacts.manifest)&&phase==='ready'&&!stopping&&!stopped&&Boolean(child&&!child.hasExited());
+  const nativeManagedJobsReadiness=()=>!hasNativeManagedSubagentJobs(artifacts.manifest)||stopping||stopped?'unsupported'
+    :nativeManagedJobsAvailable()?'ready':'pending';
+  // Replacement, checkpoint and recovery are bounded waits; only a ready
+  // controller without the capability (or shutdown) answers `unsupported`.
+  const awaitNativeManagedJobsReady=async raw=>{
+    if(!record(raw)||Object.keys(raw).some(key=>!['timeoutMs','signal','fallback'].includes(key))
+      ||!Number.isSafeInteger(raw.timeoutMs)||raw.timeoutMs<0||raw.timeoutMs>300_000
+      ||raw.signal!==undefined&&!(raw.signal instanceof AbortSignal)
+      ||raw.fallback!==undefined&&(!record(raw.fallback)||Object.keys(raw.fallback).some(key=>!['rootSessionId','directory'].includes(key))
+        ||typeof raw.fallback.rootSessionId!=='string'||typeof raw.fallback.directory!=='string'))throw fail('native_managed_job_wait_invalid');
+    const startedAt=Date.now();
+    for(;;){
+      const state=nativeManagedJobsReadiness();
+      if(state!=='pending')return state;
+      const remaining=startedAt+raw.timeoutMs-Date.now();
+      if(remaining<=0)break;
+      await pauseUnlessAborted(Math.min(NATIVE_MANAGED_JOB_READY_POLL_MS,remaining),raw.signal);
+    }
+    if(raw.fallback)try{
+      if(options.recordDiagnostic?.({type:'lifecycle',event:'managed_backend_fallback',sessionID:raw.fallback.rootSessionId,directory:raw.fallback.directory,
+        payload:{reason:'controller_not_ready',phase,backend:'legacy-session',waitedMs:Date.now()-startedAt,controllerInstanceID:nativeInstanceID??null}})===false)console.warn('native_observation_unavailable');
+    }catch{console.warn('native_observation_unavailable');}
+    return 'timeout';
+  };
+  const nativeManagedJob=async(jobPhase,raw,rawWait)=>{
+    const input=nativeManagedJobInput(raw,jobPhase),wait=managedJobWait(rawWait);
+    // Launch phases wait until the task deadline or Stop. Cleanup phases are
+    // themselves Stop and settlement work, so they keep a fixed window instead.
+    const launch=jobPhase==='prepare'||jobPhase==='activate';
+    const until=launch&&wait.deadlineAt!==undefined?wait.deadlineAt:Date.now()+NATIVE_MANAGED_JOB_RETRY_WINDOW_MS;
+    const signal=launch?wait.signal:undefined;
+    if(!nativeManagedJobsAvailable()){
+      // Replacement, checkpoint and recovery are a wait, not a missing
+      // capability; completion drainage and cleanup retry rather than fail.
+      const state=nativeManagedJobsReadiness()==='pending'?await awaitNativeManagedJobsReady({
+        timeoutMs:Math.max(0,Math.min(300_000,until-Date.now())),...(signal?{signal}:{})}):'unsupported';
+      if(state==='unsupported')throw fail('native_managed_job_capability_unavailable');
+      if(state!=='ready')throw fail('native_managed_job_controller_not_ready');
+    }
+    const target=active(),instanceID=nativeInstanceID;
+    const sameController=()=>child===target&&!target.hasExited()&&nativeInstanceID===instanceID&&nativeManagedJobsAvailable();
+    for(let attempt=0;;attempt++){
+      // A refused command never ran here; a retry never crosses into a new controller.
+      if(!sameController())throw managedJobControllerChanged();
+      let entered=false;
+      try{
+        return await nativeOwner.withManagedJobOperation(jobPhase,input,async permit=>{
+          entered=true;
+          if(!sameController())throw managedJobControllerChanged();
+          const result=await target.call({action:'managed-job-owned',sessionID:input.sessionID,phase:jobPhase,input,permit});
+          if(active()!==target||nativeInstanceID!==instanceID)throw fail('native_managed_job_controller_changed');
+          if(jobPhase==='cancelTask'){
+            if(!record(result)||result.aborted!==true||Object.keys(result).length!==1)throw fail('native_managed_job_reply_invalid');
+          }else if(!record(result)||Object.keys(result).sort().join()!=='jobID,messageID,notificationID,status'
+            ||result.jobID!==input.jobID||result.messageID!==input.messageID||result.notificationID!==input.notificationID
+            ||!['running','completed','error','cancelled','absent'].includes(result.status))throw fail('native_managed_job_reply_invalid');
+          return result;
+        });
+      }catch(cause){
+        if(!managedJobNotRun(cause,entered)||Date.now()>=until)throw cause;
+        await pauseUnlessAborted(Math.max(0,Math.min(nativeManagedJobRetryDelay(attempt),until-Date.now())),signal);
+      }
+    }
+  };
+  const nativeManagedJobs=Object.freeze({available:nativeManagedJobsAvailable,readiness:nativeManagedJobsReadiness,awaitReady:awaitNativeManagedJobsReady,
+    prepare:(input,wait)=>nativeManagedJob('prepare',input,wait),activate:(input,wait)=>nativeManagedJob('activate',input,wait),
+    cancelSegment:input=>nativeManagedJob('cancelSegment',input),
+    cancelTask:input=>nativeManagedJob('cancelTask',input),acknowledge:input=>nativeManagedJob('acknowledge',input)});
   return {
+    nativeManagedJobs,
     /** Claude Code's last reported subscription windows; survives controller restarts. */
     readClaudeAgentUsage: () => claudeAgentHost?.usage() ?? readClaudeAgentUsage(claudeAgentUsageFile),
     /** The last explicit Connect or Disconnect of claude-agent; the facade connects on its own only when there is none. */

@@ -13,7 +13,7 @@ const record = value => value !== null && typeof value === 'object' && !Array.is
 /** One controller's integration grants and native credential storage join the
  * existing host OAuth queue. Credential values never enter diagnostics. */
 export function createNativeIntegrationOwner({ instanceID, snapshot, stateDirectory, controller,
-  isReady, withMutationQueue, captureWebAuthorization, admissionOwner, recordDiagnostic }) {
+  isReady, awaitStartup, withMutationQueue, captureWebAuthorization, admissionOwner, recordDiagnostic }) {
   if (!snapshot || !path.isAbsolute(stateDirectory ?? '') || typeof withMutationQueue !== 'function') {
     throw fail('native_integration_dependencies_required', 503);
   }
@@ -21,6 +21,15 @@ export function createNativeIntegrationOwner({ instanceID, snapshot, stateDirect
   const mcp = reviewedMcpConfiguration(snapshot, [...locations.keys()]);
   let closed = false, settlement;
   const live = () => { if (closed) throw fail('native_integration_grant_expired'); };
+  // Startup recovery (retained shell notices, deferred wakes) admits runners
+  // before this host marks the controller ready, so their first provider
+  // attempt can arrive mid-startup. Wait for this controller's own startup to
+  // settle, then apply the unchanged readiness check: a failed, checkpointed or
+  // stopping launch still refuses. Startup never awaits a provider attempt.
+  const executionReady = async () => {
+    if (!isReady() && typeof awaitStartup === 'function') await Promise.resolve(awaitStartup()).catch(() => undefined);
+    live(); return isReady();
+  };
   const verifyBinding = async binding => {
     live();
     const location = locations.get(binding?.directory);
@@ -66,7 +75,7 @@ export function createNativeIntegrationOwner({ instanceID, snapshot, stateDirect
     stateFile: path.join(stateDirectory, 'native-openai-oauth-state.json'), recordDiagnostic });
   const assertResolution = async input => {
     const binding = parseCredentialResolutionBinding(input);
-    if (binding.controllerInstanceID !== instanceID || !isReady()) throw fail('native_provider_resolution_expired');
+    if (binding.controllerInstanceID !== instanceID || !await executionReady()) throw fail('native_provider_resolution_expired');
     await verifyBinding(binding);
     return admissionOwner.withProviderResolution({directory:binding.directory,sessionID:binding.sessionID,permit:binding.permit}, async recheck => { await recheck(); live(); });
   };
@@ -87,15 +96,17 @@ export function createNativeIntegrationOwner({ instanceID, snapshot, stateDirect
     if (method === 'provider.credential.assert') { await assertResolution(input); return null; }
     if (method === 'credential.mutation.commit' || method === 'credential.resolution.commit') return mutations.handleRpc(method, input, context);
     if (method === 'provider.attempt') {
-      if (!isReady() || input.controllerInstanceID !== instanceID || !locations.has(input.directory)
+      if (input.controllerInstanceID !== instanceID || !locations.has(input.directory)
         || !isCatalogProviderIntegration(input.integrationID)
-        || Object.keys(input).some(key => !['controllerInstanceID','directory','sessionID','integrationID','kind','permit'].includes(key))) throw fail('native_provider_attempt_invalid');
+        || Object.keys(input).some(key => !['controllerInstanceID','directory','sessionID','integrationID','kind','permit'].includes(key))
+        || !await executionReady()) throw fail('native_provider_attempt_invalid');
       const {integrationID,...attempt}=input;void integrationID;
       return admissionOwner.withProviderAttempt(attempt,async()=>{context.signal?.throwIfAborted();live();return null;});
     }
     if (method === 'openai.attempt') {
-      if (!isReady() || input.controllerInstanceID !== instanceID || !locations.has(input.directory)
-        || Object.keys(input).some(key => !['directory', 'controllerInstanceID', 'sessionID', 'kind', 'permit', 'credentialID'].includes(key))) {
+      if (input.controllerInstanceID !== instanceID || !locations.has(input.directory)
+        || Object.keys(input).some(key => !['directory', 'controllerInstanceID', 'sessionID', 'kind', 'permit', 'credentialID'].includes(key))
+        || !await executionReady()) {
         throw fail('native_provider_attempt_invalid');
       }
       return admissionOwner.withProviderAttempt(input, async () => {

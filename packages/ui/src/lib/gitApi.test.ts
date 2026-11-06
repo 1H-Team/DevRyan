@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import type { GitAPI, GitStatus } from "./api/types"
-import { getGitStatus, gitPush, syncGitBranchForPush } from "./gitApi"
+import type { GitAPI, GitBranch, GitBranchListOptions, GitStatus } from "./api/types"
+import { getGitBranches, getGitStatus, gitPush, syncGitBranchForPush } from "./gitApi"
 
 const status: GitStatus = {
   current: "main",
@@ -46,6 +46,28 @@ describe("getGitStatus", () => {
     })
 
     expect(received).toEqual({ directory: "/repo", options: { mode: "light" } })
+  })
+})
+
+describe("getGitBranches", () => {
+  test("forwards branch listing options to runtime git APIs", async () => {
+    const received: Array<{ directory: string; options?: GitBranchListOptions }> = []
+    const branches: GitBranch = { all: ["main"], current: "main", branches: {} }
+
+    await withRuntimeGit({
+      getGitBranches: async (directory, options) => {
+        received.push({ directory, options })
+        return branches
+      },
+    }, async () => {
+      expect(await getGitBranches("/repo")).toBe(branches)
+      expect(await getGitBranches("/repo", { remote: "live" })).toBe(branches)
+    })
+
+    expect(received).toEqual([
+      { directory: "/repo", options: undefined },
+      { directory: "/repo", options: { remote: "live" } },
+    ])
   })
 })
 

@@ -4,6 +4,12 @@ import { readSessionTodo } from '../v2/projection/sessions.js';
 import {randomBytes} from 'node:crypto';
 
 export const SESSION_CONTEXT_PLUGIN_ID = 'devryan.harness-context';
+// A compaction anchor keeps its exact runner grant. The per-request context
+// hook (the adaptive capability snapshot) uses the session-hook grant that the
+// document and image context hooks use.
+export const nativeContextAuthorizer = admissionOwner => input => input?.phase === 'context'
+  ? admissionOwner.captureSessionHookAuthorization(input)
+  : admissionOwner.captureContextAuthorization(input);
 const fail = code => Object.assign(new Error(code), {code,statusCode:403});
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const TODO_CONTINUATION = '[devryan-open-todo-continuation:v1]\nYour turn ended with open todos. If a plan deviation stopped you, classify it (Class 1: note it and continue; Class 2: ask with the question tool) and continue from the first runnable todo. Missing integration capabilities do not block independent code, unit tests, or fixture QA. Keep dependency-blocked todos pending with blockedBy reasons; do not repeat them until the dependency changes. If everything is done, mark the todos complete and give the final summary.';
@@ -22,7 +28,7 @@ export function validateNativeTodos(value) {
 
 /** Native reads and metadata commits use the existing canonical task/context
  * owners. No plugin field is a caller grant or a durable objective. */
-export function createNativeSessionContextOwner({admissionOwner,taskContext,openCodeClient,writeTodos,authorizeContext,primaryRuntime,instanceID,getInstanceID,deliverContinuation,isHeld,readSessionMetadata,inspectVerification,getManagedRuntime,onContinuationError,getCapabilitySnapshot,executionHost,recordDiagnostic}) {
+export function createNativeSessionContextOwner({admissionOwner,taskContext,openCodeClient,writeTodos,authorizeContext,primaryRuntime,instanceID,getInstanceID,deliverContinuation,isHeld,readSessionMetadata,inspectVerification,getManagedRuntime,onContinuationError,getCapabilitySnapshot,executionHost,recordDiagnostic,withSessionLock}) {
   const scans=new Map(), watches=new Map();
   const helloOwner={isCurrent:()=>!getInstanceID||getInstanceID()===instanceID,
     authorize:async()=>{if(!helloOwner.isCurrent())throw fail('native_primary_continuation_controller_stale');}};
@@ -147,10 +153,23 @@ export function createNativeSessionContextOwner({admissionOwner,taskContext,open
           ||current.resultEnvelope?.action!==null||current.task.manualRecoveryRequired)return {continued:false,reason:'collection_changed'};
         envelopeID=current.resultEnvelope.envelopeId;
       }
-      await primaryRuntime.reserveNativeContinuation({instanceID,sessionID,directory,assistantMessageID:primary.stepID,
-        anchorUserMessageID:primary.anchorID,userMessageID:messageID,kind:collect?'collect':verificationWake?'verification':primary.agent==='orchestrator'?'orchestrator_todo':'builder_todo',
-        ...(collect?{collection:{taskId:collect.taskId,envelopeId:envelopeID,claimantId:instanceID}}:{}),
-        execution:{providerID:primary.providerID,modelID:primary.modelID,agent:primary.agent,variant:primary.variant}},prompt);
+      // Prompt admission holds this per-session lock from its idle proof through
+      // native enqueue and primary commit. Reserving outside it let an automatic
+      // continuation revoke an in-flight human queued objective after native
+      // enqueue, leaving that input retained without its primary owner. Newer
+      // human intent admitted first wins: this scan then reserves nothing.
+      if(typeof withSessionLock!=='function')throw fail('native_primary_continuation_owner_required');
+      const reserved=await withSessionLock(sessionID,async()=>{
+        const latest=await primaryRuntime.readRecord(sessionID);
+        if(latest?.anchorID!==primary.anchorID||latest.cancellationGeneration!==primary.cancellationGeneration
+          ||latest.stepID!==primary.stepID||latest.directory!==directory)return false;
+        await primaryRuntime.reserveNativeContinuation({instanceID,sessionID,directory,assistantMessageID:primary.stepID,
+          anchorUserMessageID:primary.anchorID,userMessageID:messageID,kind:collect?'collect':verificationWake?'verification':primary.agent==='orchestrator'?'orchestrator_todo':'builder_todo',
+          ...(collect?{collection:{taskId:collect.taskId,envelopeId:envelopeID,claimantId:instanceID}}:{}),
+          execution:{providerID:primary.providerID,modelID:primary.modelID,agent:primary.agent,variant:primary.variant}},prompt);
+        return true;
+      });
+      if(!reserved)return {continued:false,reason:'objective_changed'};
       return await deliver({sessionID,directory,messageID});
     }finally{if(claimScope)await runtime.handleRpc({method:'release_provider_recovery_continuation',params:claimScope});}
 

@@ -2570,15 +2570,21 @@ async function commitUnlocked(directory, message, options = {}) {
   }
 }
 
-export async function getBranches(directory) {
-  const git = await createGit(directory, { includeCredentials: true });
+// Routine listings ('local') read refs only: no credentials and no network.
+// 'live' verifies remote-tracking refs with `ls-remote --heads` per remote; it
+// never fetches.
+export async function getBranches(directory, { remote = 'local' } = {}) {
+  const live = remote === 'live';
+  const git = await createGit(directory, live ? { includeCredentials: true } : {});
 
   try {
     const result = await git.branch();
 
     const allBranches = result.all;
-    const remoteBranches = allBranches.filter(branch => branch.startsWith('remotes/'));
-    const activeRemoteBranches = await filterActiveRemoteBranches(git, remoteBranches);
+    const remoteBranches = parseRemoteBranches(allBranches.filter(branch => branch.startsWith('remotes/')));
+    const activeRemoteBranches = live
+      ? await filterActiveRemoteBranches(git, remoteBranches)
+      : remoteBranches.map(({ remoteBranch }) => remoteBranch);
 
     const filteredAll = [
       ...allBranches.filter(branch => !branch.startsWith('remotes/')),
@@ -2603,8 +2609,10 @@ export async function getBranches(directory) {
   }
 }
 
-async function filterActiveRemoteBranches(git, remoteBranches) {
-  const parsedRemoteBranches = remoteBranches
+// Remote-tracking refs as { remoteBranch, remoteName, branchName }, without the
+// symbolic `remotes/<remote>/HEAD` pointer.
+function parseRemoteBranches(remoteBranches) {
+  return remoteBranches
     .map((remoteBranch) => {
       const match = remoteBranch.match(/^remotes\/([^/]+)\/(.+)$/);
       if (!match) {
@@ -2618,7 +2626,9 @@ async function filterActiveRemoteBranches(git, remoteBranches) {
     })
     .filter(Boolean)
     .filter(({ branchName }) => branchName !== 'HEAD');
+}
 
+async function filterActiveRemoteBranches(git, parsedRemoteBranches) {
   try {
     const remotes = await git.getRemotes();
     const branchesByRemote = new Map();

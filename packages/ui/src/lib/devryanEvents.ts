@@ -1,4 +1,5 @@
 import { canonicalEventType, DEVRYAN_EVENT_DIALECT } from '@/lib/eventTypes';
+import { reconnectDelayMs } from '@/lib/reconnectBackoff';
 
 export type ScheduledTaskRanEvent = {
   type: 'scheduled-task-ran';
@@ -35,7 +36,6 @@ let heartbeatTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectAttempt = 0;
 const listeners = new Set<Listener>();
 
-const MAX_RECONNECT_DELAY_MS = 30_000;
 const HEARTBEAT_TIMEOUT_MS = 45_000;
 
 const clearHeartbeatTimer = () => {
@@ -50,7 +50,7 @@ const scheduleReconnect = () => {
   if (reconnectTimer || listeners.size === 0) {
     return;
   }
-  const delay = Math.min(1_000 * Math.pow(2, Math.min(reconnectAttempt, 5)), MAX_RECONNECT_DELAY_MS);
+  const delay = reconnectDelayMs(reconnectAttempt);
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
     reconnectAttempt += 1;

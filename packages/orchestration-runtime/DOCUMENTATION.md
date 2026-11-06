@@ -10,6 +10,102 @@ This package is the single policy owner for DevRyan-managed sub-agent work. It i
 
 ## Contract boundary
 
+New native execution uses the private per-task `executionBackend` selection.
+Absent selections retain the session compatibility transport; Cursor has its own
+executor registry. Recovery creates a new task before changing provider, and a
+same-child native follow-up keeps its native binding even when the capability
+is unavailable. There is no mid-attempt fallback.
+
+`nativeJobSegments` retains exact job, notification and accepted-input identities
+for each prompt, including automatic continuations. The scheduler reserves a
+segment durably before native preparation. Preparation creates a latched Job and
+persists its background marker before prompt admission can expose work to an
+already-active child. Only exact admitted-input reconciliation releases the
+latch. Prepared jobs alone never prove provider acceptance. Ambiguous responses
+retain their segment; they never authorize a blind resend.
+
+Terminal task and result-envelope persistence atomically marks retained native
+segments pending completion. After the mutation lock releases, a constructor-only
+completion hook confirms native drainage and acknowledges each marker, then saves
+its monotonic receipt. Failures retry and restart re-arms terminal pending receipts.
+Pending receipts remain protected from compaction after managed disposition.
+Native completion does not acknowledge the managed result, waive checks, clear its
+dispatch barrier or deliver a synthetic parent message. Native identities and
+receipts stay off public task projections.
+
+The constructor-only `readNativeJobInputDispositions()` loads without activation
+and returns exact terminal task/envelope/input identities only for durably done
+native receipts. Native restored-input ownership uses these receipts to retire
+old inputs across restart; they never grant prompt replay or a new execution.
+Failed, aborted and interrupted native attempts with segments retain this proof
+across age, count, byte and lineage compaction, even after native acknowledgement
+and managed disposition; so does any terminal native attempt whose receipt is
+still pending. Successful completed attempts compact normally once their receipts
+are done. Where ordinary retention would remove such a record, `persistence.js`
+shrinks the task and its envelope in place into a tombstone instead
+(`isManagedNativeJobTombstone`). The tombstone keeps task, lease, root, directory,
+child, provider/model/agent/variant, backend, status, idempotency key, stop
+receipt, every segment and the envelope (`envelopeId`, disposition, cleanup); its
+prompt becomes `MANAGED_NATIVE_JOB_TOMBSTONE_PROMPT`, and preview, failure text,
+canonical references, checks, plan, prerequisites, step budget, transport
+recovery and dispatch grouping are released, as removal would release them. It
+remains a valid record and envelope pair, so acknowledgement, startup
+`readNativeJobInputDispositions()` and bundle integrity read it unchanged. A
+saved tombstone replaces the in-memory record too. Tombstones count toward
+neither the 2,000-record nor the 20 MiB cap, so retained proofs never make a
+submit fail with `ledger_capacity_exceeded`; they are never capped. A tombstone
+refuses `retry`, `resume`, `retry_in_place` and `recover_in_place` with
+`result_not_found` because the prompt is gone; `collect`, `continue` and `abandon`
+still dispose of it. The existing verified physical-session-disposal callback
+`discardObjectiveChecks` remains the only release: it removes matching adverse
+records or tombstones only when every native segment is durably done. Tombstones
+are about 1.9 KB each. Kept inline they were written on every persist: measured
+persist p90 rose from 8 ms to 236 ms at 10,000 and 1.2 s at 50,000, whose 92 MiB
+ledger exceeds the web ledger's 64 MiB read bound and would be quarantined.
+
+**Proof shards.** When the persistence exposes `loadNativeJobProofShards()`,
+`putNativeJobProofShard(shard, text)` and `removeNativeJobProofShard(shard)` (the
+web atomic ledger does), every unprotected tombstone leaves the main ledger for
+`native-job-proof-store.js` shards: 64 files named `00`–`3f`, chosen by 32-bit
+FNV-1a of the task ID (`managedNativeJobProofShard`). A shard document is a
+version-1 ledger snapshot plus its `shard` name, decoded whole by the ledger codec;
+every task must be a tombstone of that shard with its envelope, or the shard is
+refused (`native_job_proof_shard_invalid`). Encoding refuses misplaced proofs.
+- **Release (add).** `compactManagedOrchestrationState` reports `proofTaskIds`:
+  tombstones, new or already inline, that are not hard-protected. `persistLocked`
+  rewrites each affected shard (its in-memory proofs plus the new ones) before the
+  main-ledger commit that drops those records. A shard that cannot take them leaves
+  them inline for that commit (a warning) and the next commit retries; nothing is
+  lost. A main-ledger commit never serializes a released proof and touches no shard
+  unless it releases or disposes of one.
+- **Disposal (remove).** `discardObjectiveChecks` removes released proofs only after
+  its main-ledger commit; a rollback restores them. Ordinary compaction of a record
+  that a shard still holds marks that shard for cleanup after the commit. A failed
+  cleanup only retains the stale proof and is retried on the next commit
+  (`pendingNativeJobProofShardCount`).
+- **Load.** Initialization reads the main ledger and every shard. An unreadable,
+  oversized or invalid shard refuses initialization (`invalid_native_job_proof_store`
+  or the adapter's `native_job_proof_shard_unreadable`); it is never skipped or
+  quarantined. A task present in both stores, after a crash between the shard write
+  and the commit, resolves to the main ledger's record; the next commit releases it
+  again and rewrites its shard byte for byte.
+- **Readers.** Released proofs are out of `listTasks`, `getSnapshot`, barriers and
+  caps, and their release publishes the ordinary removal event. `getTask`,
+  `getResultEnvelope`, idempotent resubmission, `verifyNativeJobSegment`,
+  `readNativeJobInputDispositions`, pending-receipt completion, removal settlement
+  (subtree fence and pending receipts) and `discardObjectiveChecks` see both stores.
+  A pending receipt or a `collect`/`continue`/`abandon` disposition moves the proof
+  back into the ledger maps for its commit, which releases it again with the change.
+  Follow-up refusal is unchanged.
+- **Without proof shards** (tests, the default in-memory persistence) tombstones
+  stay inline as above.
+
+Measured on the POSIX atomic ledger (`bun`, macOS arm64, 200 live records, 60
+samples): main-ledger persist p50/p90 is 5.8/6.5 ms with no proofs, 5.6/6.1 ms at
+10,000 and 6.1/7.6 ms at 50,000; a shard write is 0.5/0.6 ms at 10,000 and
+1.1/1.5 ms at 50,000 (about 780 proofs in a 1.5 MiB shard); startup with 50,000
+proofs takes about 0.5 s.
+
 Native removal keeps its exact settled subtree fence. A retained terminal task
 whose child was deleted earlier may settle only when the constructor-owned
 verifier proves that child's completed durable removal; active observations,
@@ -359,7 +455,7 @@ attached across bounded private slices. Scalar v1 ready/attention behavior stays
 unchanged. The composed regression is in
 `packages/web/server/lib/opencode/runtime-host/managed-task-attached.test.js`.
 
-Owner adapters provide atomic `load()` and `save()` operations. The codec (below) decodes every loaded ledger, so legacy records missing `dispatchGroupId` or `dispatchWaveId` hydrate to `null`, and records predating plan-mode task policy hydrate with `readOnly: false`, before validation so upgrades do not quarantine historical ledgers or lock old results. Before every save, the core removes the oldest unreferenced terminal history to enforce 2,000 terminal records, 14 days, and 20 MiB of UTF-8 serialized state. Every task transition clones, validates and serializes the whole ledger, so its size is a per-transition cost; 90 days of history had reached 1,670 records and the 20 MiB cap. Each successfully persisted removal is published before the task event whose commit caused it, and a task removed by its own terminal commit is not republished. This lets long-lived renderers release the same projection without polling or retaining tombstones. Nonterminal work, auto-resuming results, unacknowledged grouped results of an active conversation, and retained attempt lineage are never compacted; new work is rejected honestly when protected state alone cannot fit the byte boundary. A conversation is active while it has unfinished work or while any of its tasks or results changed within the age bound; an unacknowledged result in a conversation idle for longer ages out like other history (`expireUnacknowledged: false`, or `DEVRYAN_ORCHESTRATION_UNACKNOWLEDGED_EXPIRY=0` in the scheduler, keeps it until collected).
+Owner adapters provide atomic `load()` and `save()` operations, and optionally the three atomic proof-shard operations (see proof shards above). The codec (below) decodes every loaded ledger, so legacy records missing `dispatchGroupId` or `dispatchWaveId` hydrate to `null`, and records predating plan-mode task policy hydrate with `readOnly: false`, before validation so upgrades do not quarantine historical ledgers or lock old results. Before every save, the core removes the oldest unreferenced terminal history to enforce 2,000 terminal records, 14 days, and 20 MiB of UTF-8 serialized state. Every task transition clones, validates and serializes the whole ledger, so its size is a per-transition cost; 90 days of history had reached 1,670 records and the 20 MiB cap. Each successfully persisted removal is published before the task event whose commit caused it, and a task removed by its own terminal commit is not republished. This lets long-lived renderers release the same projection without polling or retaining tombstones. Nonterminal work, auto-resuming results, unacknowledged grouped results of an active conversation, and retained attempt lineage are never compacted; new work is rejected honestly when protected state alone cannot fit the byte boundary. Retained native proofs are tombstoned instead of removed, are excluded from both caps and, with proof shards, leave the ledger file (see the contract boundary above). A conversation is active while it has unfinished work or while any of its tasks or results changed within the age bound; an unacknowledged result in a conversation idle for longer ages out like other history (`expireUnacknowledged: false`, or `DEVRYAN_ORCHESTRATION_UNACKNOWLEDGED_EXPIRY=0` in the scheduler, keeps it until collected).
 
 ## Orchestration codec
 

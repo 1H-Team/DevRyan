@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { getRequestPrincipal } from '../multi-user/request-context.js';
@@ -127,6 +128,11 @@ function normalizeAuthEntry(entry) {
     accessToken,
     accountId: typeof entry.accountId === 'string' ? entry.accountId : '',
   });
+  // Server-only identity of this exact stored credential. Entries written
+  // before revisions existed have none and bypass revision-keyed caches.
+  const credentialRevision = typeof entry.credentialRevision === 'string' && entry.credentialRevision.trim()
+    ? entry.credentialRevision.trim()
+    : null;
 
   return {
     accessToken,
@@ -136,6 +142,7 @@ function normalizeAuthEntry(entry) {
     user,
     current: Boolean(entry.current),
     accountId,
+    ...(credentialRevision ? { credentialRevision } : {}),
   };
 }
 
@@ -271,6 +278,7 @@ export function setGitHubAuth({ accessToken, scope, tokenType, user, accountId, 
       user: normalizedUser || null,
       current: shouldBecomeCurrent,
       accountId: resolvedAccountId,
+      credentialRevision: randomUUID(),
     };
     if (existingIndex >= 0) list[existingIndex] = nextEntry;
     else list.push(nextEntry);

@@ -9,6 +9,7 @@ import {recoveredInputHash} from './native-recovered-input-hash.js';
 import { planWriteDenied } from './native-plan-denial-owner.js';
 import {nativeShellCompletionFingerprint} from './native-shell-completion.js';
 import {buildV2PromptContent} from '../v2/admission.js';
+import {nativeManagedJobInput,NATIVE_MANAGED_JOB_COMPLETION} from './native-managed-job-input.js';
 
 const record = (input) => input !== null && typeof input === 'object' && !Array.isArray(input);
 const fail = (code, status = 409) => Object.assign(new Error(code), { code, status, statusCode: status });
@@ -81,7 +82,7 @@ export function createNativeAdmissionOwner(options) {
   });
   const remember = (entry) => {
     const terminalDisposal=entry.removal || entry.web?.effects.length===1 && entry.web.effects[0].operation==='session.remove';
-    if(!entry.recoveredInputCancellation)entry.recoveredInputGrant??=options.assertRecoveredInputOperation?.(entry.request,entry.archiveMetadata||entry.archiveAlignment!==undefined||terminalDisposal?entry:undefined);
+    if(!entry.recoveredInputCancellation)entry.recoveredInputGrant??=options.assertRecoveredInputOperation?.(entry.request,entry.archiveMetadata||entry.archiveAlignment!==undefined||terminalDisposal||entry[NATIVE_MANAGED_JOB_COMPLETION]?entry:undefined);
     assertController(); entry.controllerEpoch = controllerEpoch; active.set(entry.permit.token, entry);
   };
   const assertEntry = (entry) => {
@@ -355,6 +356,14 @@ export function createNativeAdmissionOwner(options) {
   };
   const assertRequest = async (entry, request) => {
     assertEntry(entry);
+    if(entry.managedJob){
+      if(request.operation!==entry.request.operation||request.sessionID!==entry.permit.sessionID
+        ||stable(request.input)!==stable(entry.request.input))throw fail('native_managed_job_scope_invalid',403);
+      await entry.reauthorize();assertEntry(entry);
+      const state=await runtime.nativeAdmissionState({directory:entry.directory,sessionID:entry.permit.sessionID});assertEntry(entry);
+      if(state.revision!==entry.permit.revision||!['cancelTask','acknowledge','cancelSegment'].includes(entry.managedJob.phase)&&(state.held||state.reverting))throw fail('native_permit_revoked',403);
+      await entry.reauthorize();assertEntry(entry);return;
+    }
     if(entry.retention){
       if(request.sessionID!==entry.permit.sessionID||!['retention.acquire','retention.archive','session.remove'].includes(request.operation)
         ||request.operation==='retention.archive'&&(entry.retention.action!=='archive'||request.input?.at!==entry.retention.at)
@@ -592,6 +601,11 @@ export function createNativeAdmissionOwner(options) {
     if (!record(request) || typeof request.operation !== 'string') throw fail('native_operation_invalid', 403);
     const { parentAuthorization: _untrusted, ...clean } = request;
     request = clean;
+    if(request.operation.startsWith('job.managed.')){
+      const entry=request.existingPermit&&entryFor(request.existingPermit);
+      if(!entry?.managedJob)throw fail('native_managed_job_owner_required',403);
+      await assertRequest(entry,request);return entry.permit;
+    }
     if(request.operation==='queued.input.inspect'){
       const entry=request.existingPermit&&entryFor(request.existingPermit);
       if(!entry)throw fail('native_queued_admission_invalid',403);
@@ -1664,6 +1678,13 @@ export function createNativeAdmissionOwner(options) {
         if (task.readOnly === true && task.providerId !== 'cursor-acp' && typeof options.readPlanPolicy !== 'function') throw fail('native_plan_policy_unavailable', 503);
       }
       await options.validatePlanImplementation?.(accepted);
+      // A managed launch prompt waits for a permit slot instead of failing by
+      // count. Its task-lease recheck ends the wait at Stop or the deadline, and
+      // `issue` checks the count synchronously after the last wait.
+      for (let attempt = 0; managedDispatch && active.size >= PERMIT_MAX; attempt += 1) {
+        await new Promise(resolve => setTimeout(resolve, Math.min(500, 25 * 2 ** Math.min(attempt, 5))));
+        assertController(); await verifyManagedDispatch(managedDispatch);
+      }
       const permit = await issue({ operation: 'admission.prompt', sessionID: accepted.sessionID, messageID: accepted.messageID }, accepted);
       if (managedDispatch) entryFor(permit).managedDispatch = managedDispatch;
       if (primaryDispatch) entryFor(permit).primaryDispatch = primaryDispatch;
@@ -1941,6 +1962,67 @@ export function createNativeAdmissionOwner(options) {
         if(delivery==='queue'){if(typeof options.verifyQueuedPrimaryIdle!=='function')throw fail('native_queued_admission_unverified',503);await options.verifyQueuedPrimaryIdle({sessionID,permit});assertEntry(entryFor(permit));}
         return action();
       }); } finally { active.delete(permit.token); }
+    }),
+    withManagedJobOperation:(phase,input,action)=>inController(async()=>{
+      const sealed=nativeManagedJobInput(input,phase);
+      if(typeof options.verifyNativeJobSegment!=='function')throw fail('native_managed_job_owner_required',503);
+      const canonicalOrRemoved=async(sessionID,parentID)=>{
+        const present=await getSession(sessionID);assertController();
+        if(present)return canonical(sessionID);
+        if(phase!=='acknowledge'||typeof runtime.nativeRemovals!=='function'||typeof runtime.activeLeases!=='function')throw fail('native_session_identity_uncertain');
+        const scope={directory:sealed.directory,sessionID};
+        const [state,captured,intents,leases]=await Promise.all([runtime.nativeAdmissionState(scope),runtime.capturedSessionState(scope),
+          runtime.nativeRemovals({directory:sealed.directory}),runtime.activeLeases({directory:sealed.directory,sessions:[sessionID]})]);assertController();
+        const completed=intents.some(intent=>intent.state==='completed'&&intent.ownerID===ownerID&&intent.directory===sealed.directory
+          &&intent.removed.includes(sessionID)&&intent.dispositions.some(row=>row.sessionID===sessionID)
+          &&intent.members.some(member=>member.id===sessionID&&member.parentID===parentID&&member.directory===sealed.directory&&member.generation===captured.generation)
+          &&state.holds.some(hold=>hold.sessionID===sessionID&&hold.removalID===intent.id&&hold.ownerID===`native-removal:${intent.id}`));
+        if(!completed||captured.pending||leases.length||await getSession(sessionID))throw fail('native_managed_job_removal_unconfirmed',403);
+        assertController();return {id:sessionID,parentID,directory:sealed.directory};
+      };
+      const verifyTopology=async()=>{
+        const session=await canonicalOrRemoved(sealed.sessionID,sealed.rootSessionId),root=await canonicalOrRemoved(sealed.rootSessionId,null);
+        if(session.parentID!==root.id||session.directory!==sealed.directory||root.directory!==sealed.directory)throw fail('native_managed_job_scope_invalid',403);
+      };
+      const verify=async()=>{
+        let verifiedTask;
+        if(['prepare','activate'].includes(phase))await verifyManagedDispatch({operation:'prompt',taskId:sealed.taskId,
+          leaseToken:sealed.leaseToken,directory:sealed.directory,sessionID:sealed.sessionID,providerId:sealed.providerId,
+          modelId:sealed.modelId,agent:sealed.agent,variant:sealed.variant});
+        const inputs=phase==='cancelTask'?sealed.segments.map(segment=>{
+          const {segments:_segments,...task}=sealed;return {...task,...segment,phase};
+        }):[{...sealed,phase}];
+        if(!inputs.length){
+          const task=await verifyManagedDispatch({operation:'abort',taskId:sealed.taskId,leaseToken:sealed.leaseToken,directory:sealed.directory,sessionID:sealed.sessionID});
+          if(task.rootSessionId!==sealed.rootSessionId||['providerId','modelId','agent','variant'].some(key=>task[key]!==sealed[key]))throw fail('native_managed_job_scope_invalid',403);
+          verifiedTask=task;
+        }
+        for(const segment of inputs){
+          const result=await options.verifyNativeJobSegment(segment);assertController();
+          if(!record(result?.task)||!record(result.segment)||result.task.owner!=='devryan'||result.task.taskId!==sealed.taskId
+            ||result.task.rootSessionId!==sealed.rootSessionId||result.task.childSessionId!==sealed.sessionID
+            ||result.task.directory!==sealed.directory||result.task.leaseToken!==sealed.leaseToken
+            ||['providerId','modelId','agent','variant'].some(key=>result.task[key]!==sealed[key])
+            ||['jobID','notificationID','messageID'].some(key=>result.segment[key]!==segment[key])
+            ||phase==='acknowledge'&&result.envelopeID!==sealed.envelopeID)throw fail('native_managed_job_scope_invalid',403);
+          verifiedTask=result.task;
+        }
+        if(phase==='cancelTask'&&stable((verifiedTask.nativeJobSegments??[]).map(({jobID,notificationID,messageID})=>({jobID,notificationID,messageID})))!==stable(sealed.segments))throw fail('native_managed_job_scope_invalid',403);
+        await verifyTopology();
+      };
+      await verify();
+      const state=await runtime.nativeAdmissionState({directory:sealed.directory,sessionID:sealed.sessionID});assertController();
+      if(!['cancelTask','acknowledge','cancelSegment'].includes(phase)&&(state.held||state.reverting))throw fail('native_session_held');
+      if(active.size>=PERMIT_MAX)throw fail('native_permit_capacity',503);
+      const permit=Object.freeze({token:token(),sessionID:sealed.sessionID,revision:state.revision});
+      const request={operation:`job.managed.${phase}`,sessionID:sealed.sessionID,input:sealed};
+      const entry={permit,request,directory:sealed.directory,managedJob:{phase},reauthorize:verify,
+        ...phase==='acknowledge'?{[NATIVE_MANAGED_JOB_COMPLETION]:Object.freeze(copy(sealed))}:{}};remember(entry);
+      try{
+        await assertRequest(entry,request);const result=await action(permit);
+        if(phase==='acknowledge')await options.retireManagedJobInput?.(sealed,()=>assertRequest(entry,request));
+        return result;
+      }finally{active.delete(permit.token);}
     }),
     withManagedTaskDispatch: (input, action) => inController(async () => {
       if (!record(input) || !path.isAbsolute(input.directory ?? '')

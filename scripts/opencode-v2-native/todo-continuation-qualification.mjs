@@ -8,7 +8,7 @@ import {fileURLToPath} from 'node:url';
 import {createSessionExecutionHost} from '../../packages/web/server/lib/opencode/session-execution-host.js';
 import {createManagedOrchestrationPrivateHost} from '../../packages/web/server/lib/orchestration/private-host.js';
 import {createNativeAdmissionOwner} from '../../packages/web/server/lib/opencode/runtime-host/native-admission-owner.js';
-import {createNativeSessionContextOwner} from '../../packages/web/server/lib/opencode/runtime-host/native-session-context-owner.js';
+import {createNativeSessionContextOwner,nativeContextAuthorizer} from '../../packages/web/server/lib/opencode/runtime-host/native-session-context-owner.js';
 import {createNativePrimaryStepOwner} from '../../packages/web/server/lib/opencode/runtime-host/primary-step-owner.js';
 import {createOpenCodeClient} from '../../packages/web/server/lib/opencode/opencode-client/index.js';
 import {createPrivilegedOpenCodeClient} from '../../packages/web/server/lib/opencode/opencode-client/privileged.js';
@@ -80,9 +80,10 @@ export async function qualifyNativeTodoContinuation(){
  const makeOwners=()=>{
   step=createNativePrimaryStepOwner({admissionOwner:owner,openCodeClient:client,primaryRuntime:managed.primaryRuntime,instanceID});
   context=createNativeSessionContextOwner({admissionOwner:owner,taskContext:managed.taskContext,openCodeClient:client,primaryRuntime:managed.primaryRuntime,instanceID,
+   withSessionLock:admission.withSessionLock,
    isHeld:async input=>{const state=await host.runtime.nativeAdmissionState(input);return state.held||state.reverting;},
    readSessionMetadata:input=>privileged.readSessionMetadata(input.sessionID,{directory:input.directory}),
-   authorizeContext:input=>owner.captureContextAuthorization(input),
+   authorizeContext:nativeContextAuthorizer(owner),
    writeTodos:async({sessionID:target,directory:project,todos,invocation},recheck)=>{
     const current=await privileged.readSessionMetadata(target,{directory:project}),metadata=structuredClone(current.metadata);
     const rev=metadata.devryan?.todo?.rev??0;

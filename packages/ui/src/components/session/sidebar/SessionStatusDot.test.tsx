@@ -105,4 +105,35 @@ describe('SessionStatusDot', () => {
     expect(markup).not.toContain('aria-label');
     expect(markup).not.toContain('animate-session-working-blink');
   });
+
+  test('labels the idle ring with the last-run summary without turning it into a working dot', () => {
+    const markup = renderToStaticMarkup(
+      <SessionStatusDot presentation={{ kind: 'idle' }} idleLabel="Last run succeeded · Ran for 3.0s" />,
+    );
+
+    expect(markup).toContain('border border-muted-foreground/60');
+    expect(markup).toContain('aria-label="Last run succeeded · Ran for 3.0s"');
+    expect(markup).toContain('title="Last run succeeded · Ran for 3.0s"');
+    expect(markup).not.toContain('aria-hidden');
+    expect(markup).not.toContain('animate-session-working-blink');
+  });
+
+  test('keeps the working label when an idle summary is also provided', () => {
+    const originalDateNow = Date.now;
+    Date.now = () => 1000;
+    try {
+      const markup = renderToStaticMarkup(
+        <SessionStatusDot
+          presentation={{ kind: 'working', labelKey: 'sessions.sidebar.session.status.active' }}
+          label="Session active"
+          idleLabel="Last run failed"
+        />,
+      );
+      expect(markup).toContain('animate-session-working-blink');
+      expect(markup).toContain('aria-label="Session active"');
+      expect(markup).not.toContain('Last run failed');
+    } finally {
+      Date.now = originalDateNow;
+    }
+  });
 });
