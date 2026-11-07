@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.12] - 2026-11-07
+
+- Keep separate "Searched", "Read" and "Edited" activity rows for each burst of tool use instead of growing the first row for the whole turn.
+- Isolate managed Git from the host's credential helpers, askpass and SSH keys, and apply DevRyan's Git environment, which fixes Continue merge, Continue rebase and saving identity profiles with an SSH key or token.
+- Run Xcode's `git`, `cc`, `make` and `python3` inside execution profiles when a full Xcode is selected.
+- Wait for native jobs until their deadline or Stop instead of failing a launch by count, and recover OAuth sign-in after an idle instance restart.
+- Watch files with scoped notifications instead of steady polling, keep routine branch listing offline, persist the editor's line wrapping and cache GitHub permission refusals.
+
 ## [2.0.11] - 2026-11-03
 
 - Fix DevRyan refusing to start with `bundle_message_reference_lost` after deleting a session that had an undone (reverted) turn.
