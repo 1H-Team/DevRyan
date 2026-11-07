@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 - Run Xcode's `git`, `cc`, `make` and `python3` inside execution profiles when a full Xcode is selected.
 - Wait for native jobs until their deadline or Stop instead of failing a launch by count, and recover OAuth sign-in after an idle instance restart.
 - Watch files with scoped notifications instead of steady polling, keep routine branch listing offline, persist the editor's line wrapping and cache GitHub permission refusals.
+- Refresh the reviewed model catalog, adding the new free OpenCode Zen models.
 
 ## [2.0.11] - 2026-11-03
 

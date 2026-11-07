@@ -1,10 +1,10 @@
 {
   "schema": 1,
   "sourceURL": "https://models.opencode.ai/api.json",
-  "retrievedUTC": "2026-11-02T15:11:00.587Z",
+  "retrievedUTC": "2026-11-07T07:35:11.754Z",
   "httpStatus": 200,
-  "sha256": "26319ed6d8a2eff7265557e6d52ddb9d8daebd5ebccd4411166409e22e87eca0",
-  "byteSize": 5959566,
+  "sha256": "3ef6abc242c7316549ef03b659b40372c92365ce7ef8fdf1fb415e6afafe05c5",
+  "byteSize": 5966378,
   "providerCount": 235,
   "selectedModel": {
     "providerID": "openai",
@@ -13,11 +13,11 @@
   },
   "previousEvidence": {
     "path": "DevRyan-model-catalog.json (previous)",
-    "sha256": "1290e78c59b72a425cb6c39c1c354a780a4e002605f03c9867f17271c7cb04b9",
-    "selectedRowSha256": "0e46e1d1cc687ab8bd0371c9c976045fe3e266955e1f9ea00e98a914e70b4b58"
+    "sha256": "26319ed6d8a2eff7265557e6d52ddb9d8daebd5ebccd4411166409e22e87eca0",
+    "selectedRowSha256": "79562e8a0c549555f4525b75e650d7394638c375c501753a89cbc19a792a78e1"
   },
   "sameResponse": false,
-  "sameSelectedRow": false,
+  "sameSelectedRow": true,
   "path": "DevRyan-model-catalog.json",
   "kind": "public-runtime-model-metadata",
   "credentials": false
