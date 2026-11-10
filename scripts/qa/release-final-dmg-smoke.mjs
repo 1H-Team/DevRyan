@@ -8,7 +8,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { createRunRoot, scratchParent } from './run-root.mjs';
 import { reservePort, startOwnedProcess } from './process.mjs';
-import { qaPackagedAppEnvironment } from './launch-environment.mjs';
+import { qaPackagedAppProfileEnvironment } from './launch-environment.mjs';
 import { createQaUiDriver } from './ui-driver.mjs';
 import { boundedDiagnostic } from './release-qualification-failure.mjs';
 
@@ -44,6 +44,13 @@ export function smokeSettings({ port, workspace, tuple }) {
     helperModelSelection: { providerID: tuple.providerID, modelID: tuple.modelID, revision: 'final-dmg-smoke' },
     agentModelSelections: { builder: { providerId: tuple.providerID, modelId: tuple.modelID, variant: tuple.variant } },
     defaultAgent: 'builder', defaultModel: `${tuple.providerID}/${tuple.modelID}` };
+}
+
+/** The mounted app on the run's private HOME, XDG, temp and Electron profile, with a mock keychain. */
+export function finalDmgSmokeLaunch({ mount, home, root, debugPort }, baseEnvironment = process.env) {
+  const env = qaPackagedAppProfileEnvironment({ home, root }, baseEnvironment);
+  return { binary: path.join(mount, 'DevRyan.app/Contents/MacOS/DevRyan'), env,
+    args: [`--remote-debugging-port=${debugPort}`, `--user-data-dir=${env.DEVRYAN_ELECTRON_USER_DATA_DIR}`, '--use-mock-keychain'] };
 }
 
 export { boundedDiagnostic };
@@ -131,11 +138,10 @@ export async function smokeFinalDmg({ dmg, report, timeoutMs = 120000 }) {
     const data = path.join(home, '.config/devryan');
     await fs.mkdir(data, { recursive: true });
     await fs.writeFile(path.join(data, 'settings.json'), JSON.stringify(smokeSettings({ port, workspace, tuple: runtimeUiTuple })));
-    const env = qaPackagedAppEnvironment({ home, root: root.dir });
+    const launch = finalDmgSmokeLaunch({ mount, home, root: root.dir, debugPort }), { env } = launch;
     await execute('/usr/bin/git', ['init', '--quiet', '--initial-branch=main', '--template='], { cwd: workspace, env, timeout: 10000 });
     evidence.phase = 'first-ready';
-    app = startOwnedProcess(path.join(mount, 'DevRyan.app/Contents/MacOS/DevRyan'),
-      [`--remote-debugging-port=${debugPort}`, `--user-data-dir=${path.join(home, 'electron-profile')}`, '--use-mock-keychain'], { cwd: workspace, env });
+    app = startOwnedProcess(launch.binary, launch.args, { cwd: workspace, env });
     const cdpModule = await import('./cdp.mjs'), { CdpConnection } = cdpModule;
     evaluate = cdpModule.evaluate;
     const deadline = Date.now() + timeoutMs;

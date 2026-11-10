@@ -202,6 +202,7 @@ export const FEATURE_TEST_MATRIX = Object.freeze([
       'packages/electron/tests/runtime-service-registration.test.mjs',
       'packages/electron/tests/runtime-service-startup.test.mjs',
       'packages/electron/tests/runtime-service-source.test.mjs',
+      'packages/electron/scripts/verify-runtime-service-package.test.mjs',
       'packages/web/server/lib/runtime-service/routes.test.js',
     ],
   },

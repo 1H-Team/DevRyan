@@ -1,6 +1,9 @@
 # Isolated Electron and web QA
 
-QA runs use private data, a Git fixture workspace and loopback fixtures; they never touch the installed app. Passing means the automated checks passed; inspect screenshots yourself before calling a visual change reviewed. Use `--keep-artifacts` to retain failed-run evidence. Live-account and journal investigation: [Agent runtime verification](AGENT_RUNTIME_VERIFICATION.md). Release steps: [Release pipeline](RELEASE_PIPELINE.md).
+QA runs use private data, a Git fixture workspace and loopback fixtures; they never touch the installed app. Every launch of a packaged or candidate app for QA, verification or release checks sets HOME, XDG, TMPDIR and `DEVRYAN_ELECTRON_USER_DATA_DIR` inside its run root, so `~/Library/Logs/DevRyan`, the data roots and the Electron profile are private. HOME alone is not enough, because a packaged app takes its Electron profile from the account's Application Support. The final-DMG smoke and the packaging step's runtime-service status probe get this environment from `qaPackagedAppProfileEnvironment` in `scripts/qa/launch-environment.mjs`. The other launchers set it themselves or through `createQaIsolatedRuntimeEnvironment`. Some things a launch still touches by design, because no environment variable moves them:
+- the account's launchd and SMAppService state: the status probe reads it, and a full launch retires the background runtime;
+- `~/Library/Preferences/dev.devryan.desktop.plist`, written through cfprefsd;
+- the account's LaunchServices database: launching registers the bundle, and startup calls `setAsDefaultProtocolClient` for `devryan` and `openchamber`, even in the status probe. Passing means the automated checks passed; inspect screenshots yourself before calling a visual change reviewed. Use `--keep-artifacts` to retain failed-run evidence. Live-account and journal investigation: [Agent runtime verification](AGENT_RUNTIME_VERIFICATION.md). Release steps: [Release pipeline](RELEASE_PIPELINE.md).
 
 ## Run directories and disk use
 
