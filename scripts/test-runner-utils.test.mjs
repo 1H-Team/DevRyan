@@ -326,9 +326,9 @@ describe('maintenance validation selection', () => {
     // docs:validate does not check the release-docs rule, so a docs-only change runs that test too.
     const docsOnly = buildPlan('fast', ['docs/RELEASE_PIPELINE.md']);
     assert.deepEqual(docsOnly.commands.map(c => c.label), ['docs:validate', 'test:scripts']);
-    assert.deepEqual(scriptTests(['docs/RELEASE_PIPELINE.md']), ['scripts/release-docs.test.mjs']);
+    assert.deepEqual(scriptTests(['docs/RELEASE_PIPELINE.md']), ['scripts/release-docs.test.mjs', 'scripts/toolchain-pins.test.mjs']);
     assert.deepEqual(testUnitsForPlan(docsOnly.commands.filter(c => c.label === 'test:scripts')).flatMap(unit => unit.args.filter(arg => arg.endsWith('.test.mjs'))),
-      ['scripts/release-docs.test.mjs']);
+      ['scripts/release-docs.test.mjs', 'scripts/toolchain-pins.test.mjs']);
     // Mixed with code: the graph's selection plus the Markdown readers.
     for (const [code, markdown] of [['scripts/release.mjs', 'docs/RELEASE_PIPELINE.md'], ['scripts/release-ci-wait.mjs', 'scripts/perf/INTERACTIVE.md']]) {
       const tests = scriptTests([code, markdown]);
@@ -337,9 +337,9 @@ describe('maintenance validation selection', () => {
     }
     // Markdown beside a change that runs no script tests still adds them; the startup scripts group stays.
     const ui = buildPlan('fast', ['packages/ui/src/App.tsx', 'README.md']);
-    assert.deepEqual(ui.commands.find(c => c.label === 'test:scripts').tests, ['scripts/release-docs.test.mjs']);
+    assert.deepEqual(ui.commands.find(c => c.label === 'test:scripts').tests, ['scripts/release-docs.test.mjs', 'scripts/toolchain-pins.test.mjs']);
     assert.ok(!ui.commands.at(-1).coveredBy.includes('scripts'));
-    assert.match(describeScriptSelection(ui.scriptSelection, 295)[1], /README\.md: 1 reading every tracked Markdown file/);
+    assert.match(describeScriptSelection(ui.scriptSelection, 295)[1], /README\.md: 2 reading every tracked Markdown file/);
     // The rule skips the changelog (history), so a changelog-only change runs none.
     assert.equal(scriptTests(['CHANGELOG.md']), undefined);
     // No script test reads tracked .txt files, so a text-only change runs none (docs:validate runs for every change).

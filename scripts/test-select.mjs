@@ -223,7 +223,7 @@ function filesNaming(graph, wanted) {
  * that every script-suite source listing repository Markdown is one of these
  * or reviewed as not reading their contents.
  */
-export const MARKDOWN_READERS = Object.freeze(['scripts/release-docs.test.mjs']);
+export const MARKDOWN_READERS = Object.freeze(['scripts/release-docs.test.mjs', 'scripts/toolchain-pins.test.mjs']);
 // The Markdown they read: every tracked file but the changelog (history),
 // dependencies and reviewed inputs (scripts/release-docs.test.mjs `docs`).
 const isReadMarkdown = file => /\.mdx?$/.test(file) && file !== 'CHANGELOG.md' && !file.includes('node_modules/') && !WHOLE_SUITE_PREFIXES.some(prefix => file.startsWith(prefix));

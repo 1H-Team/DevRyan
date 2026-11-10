@@ -210,6 +210,7 @@ Bots were removed from the app: there is no Bot code, Docker use, Bot image buil
 ## Build notes
 
 - Release installs set `DEVRYAN_SKIP_INSTALL_PREPARE=1`. Without it, Bun runs the Electron workspace `prepare` script (a full web build plus native helpers) on every install.
+- Toolchain versions: the root `packageManager` is the Bun version, which `scripts/build-native-runtime.mjs` requires and every workflow `bun-version` states; the release workflows pin one Node major (`node-version`), CI's jobs read `.nvmrc`, and the root `engines.node` is the minimum. The root `electron` dependency is the Electron version. `scripts/toolchain-pins.test.mjs` fails when a workflow, a first-party source, a workspace manifest or a doc disagrees; CI's floating `.nvmrc` (`lts/*`) against the release's pinned major is its one named exception, pending an owner decision.
 - `release-cache.yml` is an optional manual verification workflow; it does not export a reusable cache.
 - Do not cache the Bun package store: on 2026-09-23 restoring it (~800 MB) was slower than a fresh install.
 - Every job has a timeout, so a stalled native build fails instead of holding the release open.

@@ -25,7 +25,10 @@ const productionOutput=path.join(repository,'packages/web/runtime',`${process.pl
 const output=windowsCandidate?path.join(repository,'.cache/windows-native',process.arch,'runtime-candidate'):path.resolve(outputIndex<0?productionOutput:args[outputIndex+1]);
 const replaceProduction=outputIndex<0&&!windowsCandidate;
 if(!output.startsWith(repository+path.sep))throw new Error('Owned output root required');
-if(Bun.version!=='1.4.4' || (windowsCandidate?process.platform!=='win32'||!['x64','arm64'].includes(process.arch):process.platform!=='darwin'||process.arch!=='arm64')) throw new Error('Native build requires pinned Bun 1.4.4 and a supported native host');
+// The pinned Bun is the root manifest's packageManager (scripts/toolchain-pins.test.mjs).
+const pinnedBun=JSON.parse(await fs.readFile(path.join(repository,'package.json'),'utf8')).packageManager?.match(/^bun@(\d+\.\d+\.\d+)$/)?.[1];
+if(!pinnedBun)throw new Error('Root package.json packageManager must pin bun@<version>');
+if(Bun.version!==pinnedBun || (windowsCandidate?process.platform!=='win32'||!['x64','arm64'].includes(process.arch):process.platform!=='darwin'||process.arch!=='arm64')) throw new Error(`Native build requires pinned Bun ${pinnedBun} and a supported native host`);
 const target=`${process.platform}-${process.arch}`,compileTarget=windowsCandidate?`bun-windows-${process.arch}`:'bun-darwin-arm64';
 const host=path.join(repository,'packages/web/server/lib/opencode/runtime-host');
 const buildSources=await Promise.all(['scripts/build-native-runtime.mjs','scripts/native-runtime-assets.mjs',
