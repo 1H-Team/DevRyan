@@ -119,11 +119,17 @@ test('a warm first build yields its lock to a queued call and still installs eve
   // One 1024-row initial batch would hold the lock for the whole build.
   const f = await fixture(); await manyFiles(f, 150);
   const lstat = fs.lstat.bind(fs);
-  let seen = 0, queued = null, called = false, stampedAfterCall = 0;
+  const seen = new Map();
+  let queued = null, called = false, stampedAfterCall = 0;
   const probe = spyOn(fs, 'lstat').mockImplementation(async (file, ...rest) => {
-    if (called && /f\d+\.txt$/.test(String(file))) stampedAfterCall += 1;
+    const name = String(file);
+    if (called && /f\d+\.txt$/.test(name)) stampedAfterCall += 1;
     // Inspection stats each file three times; the fourth is the under-lock check.
-    if (!queued && String(file).endsWith(`${path.sep}f100.txt`) && ++seen === 4) {
+    // Queue on the batch's first under-lock check: the walk follows directory
+    // order (hash-seeded on ext4), so a fixed file can land after the last yield.
+    const count = (seen.get(name) ?? 0) + 1;
+    seen.set(name, count);
+    if (!queued && /f\d+\.txt$/.test(name) && count === 4) {
       queued = f.runtime.registerPrompt({ directory: f.directory, sessionID: 'other', userMessageID: 'up' }).then(() => { called = true; });
     }
     return lstat(file, ...rest);
