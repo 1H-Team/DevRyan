@@ -151,24 +151,24 @@ describe('affected validation planning', () => {
 
   test('runs Cursor tests and dependent host validation for Cursor runtime code', () => {
     const plan = buildPlan('fast', ['packages/cursor-sdk-runtime/persistent-worker.mjs']);
-    assert.deepEqual(plan.commands.map((entry) => entry.label), ['typeCheck:web', 'import-boundaries', 'browser-graph', 'test:cursor', 'test:web', 'test:startup']);
+    assert.deepEqual(plan.commands.map((entry) => entry.label), ['docs:validate', 'typeCheck:web', 'import-boundaries', 'browser-graph', 'unreached-files', 'declarations', 'test:cursor', 'test:web', 'test:startup']);
     const cursor = testUnitsForPlan([plan.commands.find((entry) => entry.label === 'test:cursor')]);
     assert.deepEqual(cursor.map((unit) => [unit.command, unit.args]), [['bun', ['run', '--cwd', 'packages/cursor-sdk-runtime', 'test']]]);
   });
 
   test('runs the Electron suite for shell code', () => {
-    assert.deepEqual(labels(['packages/electron/scripts/native-module-paths.mjs']), ['typeCheck:electron', 'import-boundaries', 'browser-graph', 'test:electron', 'test:startup']);
+    assert.deepEqual(labels(['packages/electron/scripts/native-module-paths.mjs']), ['docs:validate', 'typeCheck:electron', 'import-boundaries', 'browser-graph', 'unreached-files', 'declarations', 'test:electron', 'test:startup']);
   });
 
   test('type-checks the frozen legacy Tauri package without running its cargo tests', () => {
-    assert.deepEqual(labels(['packages/desktop/src-tauri/src/main.rs']), ['typeCheck:desktop', 'test:startup']);
+    assert.deepEqual(labels(['packages/desktop/src-tauri/src/main.rs']), ['docs:validate', 'typeCheck:desktop', 'test:startup']);
     // Cargo.toml carries the release version, so it also re-runs the local release preflight.
-    assert.deepEqual(labels(['packages/desktop/src-tauri/Cargo.toml']), ['release-preflight', 'typeCheck:desktop', 'test:startup']);
+    assert.deepEqual(labels(['packages/desktop/src-tauri/Cargo.toml']), ['docs:validate', 'release-preflight', 'typeCheck:desktop', 'test:startup']);
   });
 
   test('runs orchestration tests and every dependent runtime for orchestration core changes', () => {
     assert.deepEqual(labels(['packages/orchestration-runtime/scheduler.js']), [
-      'typeCheck:ui', 'typeCheck:web', 'import-boundaries', 'browser-graph', 'test:orchestration', 'test:ui', 'test:web', 'test:startup',
+      'docs:validate', 'typeCheck:ui', 'typeCheck:web', 'import-boundaries', 'browser-graph', 'unreached-files', 'declarations', 'test:orchestration', 'test:ui', 'test:web', 'test:startup',
     ]);
   });
 });
