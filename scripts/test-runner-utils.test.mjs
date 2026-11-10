@@ -10,8 +10,8 @@ import { fileURLToPath } from 'node:url';
 import { bunTestArgs, bunTestWorkers, discoverTestFiles, isBunTestSource } from './test-runner-utils.mjs';
 import { discoverElectronTestFiles, planElectronTests } from './test-electron.mjs';
 import { discoverScriptTestFiles } from './test-scripts.mjs';
-import { FULL_TEST_COMMANDS } from './test-full.mjs';
-import { buildPlan, isVersionOnlyChange, testUnitsForPlan } from './validate.mjs';
+import { FULL_TEST_COMMANDS, FULL_TEST_SUITES } from './test-full.mjs';
+import { buildPlan, isVersionOnlyChange, lintRoots, testUnitsForPlan } from './validate.mjs';
 import { STARTUP_CONTRACT_GROUPS } from './test-startup-contract.mjs';
 
 const repoRoot = new URL('..', import.meta.url);
@@ -328,6 +328,99 @@ describe('maintenance validation selection', () => {
       assert.ok(buildPlan('fast', [file]).commands.some(c => c.label === 'browser-graph'), file);
     }
     assert.equal(boundaries(['scripts/release.mjs']), undefined);
+  });
+
+  test('selects every package suite from a test file under that package', () => {
+    // FULL_TEST_SUITES is the suite inventory; a suite no change can select never runs locally.
+    for (const suite of FULL_TEST_SUITES) {
+      const cwd = suite.args.indexOf('--cwd');
+      const directory = cwd === -1 ? 'scripts' : suite.args[cwd + 1];
+      const file = discoverTestFiles(fileURLToPath(new URL(directory, repoRoot)), fileURLToPath(repoRoot))[0];
+      assert.ok(file, directory);
+      assert.ok(buildPlan('fast', [file]).commands.some(c => c.label === `test:${suite.key}`), `${suite.key}: ${file}`);
+    }
+  });
+
+  test('runs the agents-core suite and its web dependent for agents-core source and tests', () => {
+    for (const file of ['packages/agents-core/src/agents/registry.ts', 'packages/agents-core/src/admission-runtime.test.ts']) {
+      const labels = buildPlan('fast', [file]).commands.map(c => c.label);
+      for (const label of ['typeCheck:agentsCore', 'typeCheck:web', 'test:agentsCore', 'test:web', 'test:startup']) assert.ok(labels.includes(label), `${file}: ${label}`);
+    }
+  });
+
+  test('runs the UI suite for any UI source file and the web suite for any web file', () => {
+    for (const file of ['packages/ui/src/App.tsx', 'packages/ui/src/apps/AppEffects.tsx', 'packages/ui/src/contexts/RuntimeAPIProvider.tsx',
+      'packages/ui/src/constants/sidebar.ts', 'packages/ui/src/types/question.ts', 'packages/ui/src/styles/typography.css']) {
+      assert.ok(buildPlan('fast', [file]).commands.some(c => c.label === 'test:ui'), file);
+    }
+    for (const file of ['packages/web/src/pwa-service-worker.ts', 'packages/web/src/api/index.ts', 'packages/web/vite-chunking.ts', 'packages/web/vite.config.ts', 'packages/web/vitest.config.ts']) {
+      assert.ok(buildPlan('fast', [file]).commands.some(c => c.label === 'test:web'), file);
+    }
+  });
+
+  test('type-checks web for every UI source change, because the web tsconfig includes the UI source', () => {
+    const web = JSON.parse(readFileSync(new URL('packages/web/tsconfig.json', repoRoot), 'utf8'));
+    assert.ok(web.include.includes('../ui/src'));
+    for (const file of ['packages/ui/src/components/ui/button.tsx', 'packages/ui/src/styles/typography.css', 'packages/ui/src/types/question.ts']) {
+      const labels = buildPlan('fast', [file]).commands.map(c => c.label);
+      assert.ok(labels.includes('typeCheck:ui') && labels.includes('typeCheck:web'), file);
+    }
+  });
+
+  test('runs every suite for dependency, patch and toolchain changes, including the MCP client patch test', () => {
+    const every = FULL_TEST_SUITES.map(suite => `test:${suite.key}`);
+    for (const file of ['bun.lock', 'package.json', 'patches/@modelcontextprotocol%2Fclient@2.3.1.patch', '.nvmrc', 'bunfig.toml']) {
+      const labels = buildPlan('fast', [file]).commands.map(c => c.label);
+      for (const label of every) assert.ok(labels.includes(label), `${file}: ${label}`);
+      assert.equal(labels.at(-1), 'test:startup', file);
+    }
+    const plan = buildPlan('fast', ['patches/@modelcontextprotocol%2Fclient@2.3.1.patch']);
+    const units = testUnitsForPlan(plan.commands.filter(c => c.label === 'test:scripts'));
+    assert.ok(units.some(unit => unit.args.includes('scripts/opencode-v2-native/mcp-client-patch.test.mjs')));
+  });
+
+  test('runs the owning suites for reviewed runtime inputs, and the catalog check for the model catalog', () => {
+    const catalog = buildPlan('fast', ['packages/web/runtime/reviewed-inputs/model-catalog/provenance.json']).commands;
+    for (const label of ['catalog:check', 'test:scripts', 'test:web']) assert.ok(catalog.some(c => c.label === label), label);
+    assert.deepEqual(catalog.find(c => c.label === 'catalog:check').args, ['run', 'catalog:check']);
+    const jsdom = buildPlan('fast', ['packages/web/runtime/reviewed-inputs/jsdom-30.1.1/provenance.json']).commands.map(c => c.label);
+    assert.ok(jsdom.includes('test:scripts') && jsdom.includes('test:web'));
+    assert.ok(!jsdom.includes('catalog:check'));
+    assert.ok(!buildPlan('fast', ['packages/web/server/index.js']).commands.some(c => c.label === 'catalog:check'));
+    // The reviewed-inputs manifest hashes their Markdown too, so it is not a docs-only change.
+    const readme = buildPlan('fast', ['packages/web/runtime/reviewed-inputs/model-catalog/README.md']).commands.map(c => c.label);
+    for (const label of ['docs:validate', 'catalog:check', 'test:scripts', 'test:web', 'test:startup']) assert.ok(readme.includes(label), label);
+  });
+
+  test('lints and type-checks everything for a dependency patch, but not for runtime pins', () => {
+    const patch = buildPlan('fast', ['patches/@modelcontextprotocol%2Fclient@2.3.1.patch']).commands.map(c => c.label);
+    assert.ok(patch.includes('lint:full') && patch.includes('type-check:full'));
+    for (const file of ['.nvmrc', 'bunfig.toml']) {
+      const labels = buildPlan('fast', [file]).commands.map(c => c.label);
+      assert.ok(!labels.includes('type-check:full') && !labels.some(label => label.startsWith('typeCheck:')), file);
+    }
+  });
+
+  test('type-checks web for the native scripts its runtime-host tsconfig includes', () => {
+    const runtimeHost = JSON.parse(readFileSync(new URL('packages/web/server/lib/opencode/runtime-host/tsconfig.json', repoRoot), 'utf8'));
+    assert.ok(runtimeHost.include.includes('../../../../../../scripts/opencode-v2-native/**/*.ts'));
+    const labels = buildPlan('fast', ['scripts/opencode-v2-native/simulation.ts']).commands.map(c => c.label);
+    assert.ok(labels.includes('typeCheck:web') && labels.includes('test:scripts'));
+    assert.ok(!buildPlan('fast', ['scripts/release.mjs']).commands.some(c => c.label === 'typeCheck:web'));
+  });
+
+  test('lints in fast mode only the files full and CI lint cover', () => {
+    const roots = lintRoots();
+    assert.deepEqual(roots.filter(root => ['packages/ui/src/', 'packages/web/src/'].includes(root)), ['packages/ui/src/', 'packages/web/src/']);
+    const lint = files => buildPlan('fast', files).commands.find(c => c.label === 'lint:changed')?.args.slice(3);
+    // Outside every workspace lint target: CI never lints these, so fast mode does not either.
+    for (const file of ['packages/agents-core/src/agents/registry.ts', 'scripts/opencode-v2-native/simulation.ts', 'packages/web/vite-chunking.ts']) {
+      assert.ok(!roots.some(root => file.startsWith(root)), file);
+      assert.equal(lint([file]), undefined, file);
+    }
+    assert.deepEqual(lint(['packages/agents-core/src/agents/registry.ts', 'packages/ui/src/App.tsx', 'packages/web/src/pwa-service-worker.ts']),
+      ['packages/ui/src/App.tsx', 'packages/web/src/pwa-service-worker.ts']);
+    assert.deepEqual(buildPlan('full').commands.find(c => c.label === 'lint:full').args, ['run', 'lint']);
   });
 
   test('runs every check in full mode and refuses unknown modes', () => {

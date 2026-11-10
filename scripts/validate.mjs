@@ -2,12 +2,12 @@
 import { BUILD_JOB_TESTS, CI_LANES, localTestUnits, planCITests } from './test-ci-lanes.mjs';
 
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { cacheGrowthFailure, snapshotCache } from './cache-guard.mjs';
-import { planFullTests } from './test-full.mjs';
+import { FULL_TEST_SUITES, planFullTests } from './test-full.mjs';
 import { formatDuration, recordTestTimings, runTestUnits, summarizeTestUnits, testConcurrency } from './test-pool.mjs';
 import { planScriptTests, prepareScriptTestEnvironment } from './test-scripts.mjs';
 import { STARTUP_CONTRACT_GROUPS, startupContractGroups } from './test-startup-contract.mjs';
@@ -68,6 +68,22 @@ const sharedConfigFiles = new Set([
   'vite-theme-plugin.ts',
   '.opencode/opencode.json',
 ]);
+
+// Dependency and toolchain inputs every suite runs under: a change re-runs every
+// suite (FULL_TEST_SUITES), including the scripts suite's patch tests.
+const toolchainFiles = new Set(['package.json', 'bun.lock', '.nvmrc', 'bunfig.toml']);
+const isToolchainFile = (file) => toolchainFiles.has(file) || file.startsWith('patches/');
+
+// Reviewed upstream inputs the native runtime embeds. The scripts suite owns
+// their tests (scripts/test-scripts.mjs) and the web suite reads some of them;
+// the model catalog also has a freshness check against the live catalog.
+const reviewedInputsPrefix = 'packages/web/runtime/reviewed-inputs/';
+const modelCatalogPrefix = `${reviewedInputsPrefix}model-catalog/`;
+
+// Files outside packages/web that `type-check:web` covers: the runtime-host
+// tsconfig (packages/web/server/lib/opencode/runtime-host/tsconfig.json)
+// includes the native scripts' TypeScript.
+const isWebTypeCheckedScript = (file) => file.startsWith('scripts/opencode-v2-native/') && path.extname(file) === '.ts';
 
 const docsOnlyExtensions = new Set(['.md', '.mdx', '.txt']);
 
@@ -164,12 +180,13 @@ function packageForFile(file) {
   return Object.entries(packages).find(([, config]) => file.startsWith(config.prefix))?.[0] ?? null;
 }
 
+// A dependency patch can change that dependency's types, so it re-checks everything too.
 function isSharedConfigFile(file) {
-  return sharedConfigFiles.has(file);
+  return sharedConfigFiles.has(file) || file.startsWith('patches/');
 }
 
 function isScriptsFile(file) {
-  return file.startsWith('scripts/') || file.startsWith('.github/')
+  return file.startsWith('scripts/') || file.startsWith('.github/') || file.startsWith(reviewedInputsPrefix)
     || file.startsWith('.opencode/agents/') || file.startsWith('.opencode/plugins/');
 }
 
@@ -180,30 +197,58 @@ function isRuntimeGuidance(file) {
 }
 
 function isDocsOnlyFile(file) {
-  if (isRuntimeGuidance(file)) return false;
+  // Reviewed inputs are hashed in their manifest, Markdown and text included.
+  if (isRuntimeGuidance(file) || file.startsWith(reviewedInputsPrefix)) return false;
   return docsOnlyExtensions.has(path.extname(file)) || file.startsWith('docs/');
 }
 
+/**
+ * Directories `bun run lint` covers (full mode and CI): it runs each workspace's
+ * `lint` script, and the oxlint ones name their targets relative to the
+ * workspace. Fast lint stays inside the same directories, so a pre-existing
+ * finding outside them cannot fail only locally.
+ */
+export function lintRoots(root = workspaceRoot) {
+  const manifest = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'));
+  const roots = [];
+  for (const pattern of manifest.workspaces ?? []) {
+    if (!pattern.endsWith('/*')) throw new Error(`Unsupported workspace pattern: ${pattern}`);
+    const parent = pattern.slice(0, -2);
+    for (const name of readdirSync(path.join(root, parent)).sort()) {
+      const manifestPath = path.join(root, parent, name, 'package.json');
+      if (!existsSync(manifestPath)) continue;
+      const lint = JSON.parse(readFileSync(manifestPath, 'utf8')).scripts?.lint;
+      const words = typeof lint === 'string' ? lint.trim().split(/\s+/) : [];
+      if (words[0] !== 'oxlint') continue;
+      const targets = [];
+      for (let index = 1; index < words.length; index += 1) {
+        if (words[index] === '--config' || words[index] === '-c') index += 1;
+        else if (!words[index].startsWith('-')) targets.push(words[index]);
+      }
+      for (const target of targets.length ? targets : ['.']) {
+        roots.push(`${path.posix.normalize(`${parent}/${name}/${target}`).replace(/\/$/, '')}/`);
+      }
+    }
+  }
+  return roots;
+}
+
+let cachedLintRoots;
 function isLintableFile(file) {
-  return tsLikeExtensions.has(path.extname(file));
+  cachedLintRoots ??= lintRoots();
+  return tsLikeExtensions.has(path.extname(file)) && cachedLintRoots.some((prefix) => file.startsWith(prefix));
 }
 
+// Every file of the UI source runs the UI suite; its tests live beside the source.
 function isUiTestRelevant(file) {
-  if (!file.startsWith('packages/ui/src/')) return false;
-  if (testFilePattern.test(file)) return true;
-  return [
-    'packages/ui/src/sync/',
-    'packages/ui/src/stores/',
-    'packages/ui/src/lib/',
-    'packages/ui/src/hooks/',
-    'packages/ui/src/components/',
-  ].some((prefix) => file.startsWith(prefix));
+  return file.startsWith('packages/ui/src/');
 }
 
+// Every packages/web file runs the web suite: server, bin, src, the Vite and
+// Vitest configuration, test setup, shipped agent prompts and reviewed inputs
+// (the web suite reads some of them; the scripts suite owns their tests).
 function isWebTestRelevant(file) {
-  if (!file.startsWith('packages/web/')) return false;
-  if (isRuntimeGuidance(file) || testFilePattern.test(file)) return true;
-  return file.startsWith('packages/web/server/') || file.startsWith('packages/web/bin/');
+  return file.startsWith('packages/web/');
 }
 
 function isElectronTestRelevant(file) {
@@ -331,6 +376,9 @@ function affectedTests(files) {
     if (isOrchestrationTestRelevant(file)) tests.add('orchestration');
     if (file.startsWith('packages/shared-runtime/')) tests.add('shared');
     if (isHarnessTestRelevant(file)) tests.add('harness');
+    if (file.startsWith(packages.agentsCore.prefix)) tests.add('agentsCore');
+    if (isScriptsFile(file)) tests.add('scripts');
+    if (isToolchainFile(file)) FULL_TEST_SUITES.forEach((suite) => tests.add(suite.key));
     // A package manifest or nested lockfile change re-runs that package's tests.
     if (/(?:^|\/)(?:package\.json|package-lock\.json)$/.test(file)) {
       const name = packageForFile(file);
@@ -389,11 +437,13 @@ export function buildPlan(requestedMode, providedFiles, { versionOnly } = {}) {
     commands.push(command('lint:full', 'bun', ['run', 'lint']), command('type-check:full', 'bun', ['run', 'type-check']));
   } else {
     commands.push(...changedLintCommand(codeFiles));
-    commands.push(...packageCommands(affectedTypeCheckPackages(changedPackages, true), 'typeCheck'));
+    const typeChecked = affectedTypeCheckPackages(changedPackages, true);
+    if (codeFiles.some(isWebTypeCheckedScript)) typeChecked.add('web');
+    commands.push(...packageCommands(typeChecked, 'typeCheck'));
   }
+  if (codeFiles.some((file) => file.startsWith(modelCatalogPrefix))) commands.push(command('catalog:check', 'bun', ['run', 'catalog:check']));
   commands.push(...importBoundaryCommands(codeFiles));
   const suites = affectedTests(codeFiles);
-  if (codeFiles.some(isScriptsFile)) suites.add('scripts');
   commands.push(...testCommands(suites));
   commands.push(startupCommand(suites));
   return { files, commands, reason: shared ? 'shared configuration changed; lint and type-check everything'
