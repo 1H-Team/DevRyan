@@ -7,6 +7,7 @@ import { VERSION_FILES } from './release.mjs';
 import { DRY_RUN_GATES } from './release-candidate.mjs';
 import { createFakeGitHub } from './release-github-fake.mjs';
 import { isCanonicalRemote, releaseTag } from './release-tag.mjs';
+import { MODEL_CATALOG_URL, modelCatalogFreshness } from './model-catalog-refresh.mjs';
 
 const version = '9.8.7', tag = `v${version}`;
 const source = 'a'.repeat(40), other = 'b'.repeat(40);
@@ -50,14 +51,24 @@ function scriptedGit({ status = '', origin = 'https://github.com/1H-Team/DevRyan
   return { calls, run, pushes: () => calls.filter(call => call.startsWith('push') || call.startsWith('tag ')) };
 }
 
-async function attempt(t, { github = {}, git = {}, preflightStatus = 0, check = false, move = false, rehearsal = { passed: true, detail: 'passed' } } = {}) {
+const freshCatalog = async () => 'covers every live openai model';
+
+// `liveCatalog` exercises the default catalog wiring: the snapshot in the checkout, the live catalog through fetchImpl.
+async function attempt(t, { github = {}, git = {}, preflightStatus = 0, check = false, move = false, rehearsal = { passed: true, detail: 'passed' }, catalogFreshness = freshCatalog, liveCatalog: live } = {}) {
   const repositoryRoot = await checkout(t);
   const fake = createFakeGitHub({ ciRuns: [ciRun()], releaseRuns: [dryRun()], ...github });
+  if (live) {
+    const directory = path.join(repositoryRoot, 'packages/web/runtime/reviewed-inputs/model-catalog');
+    await fs.mkdir(directory, { recursive: true });
+    await fs.writeFile(path.join(directory, 'DevRyan-model-catalog.json'), JSON.stringify(reviewedCatalog));
+  }
+  const fetchImpl = live ? (url, init) => String(url) === MODEL_CATALOG_URL ? live(url, init) : fake.fetchImpl(url, init) : fake.fetchImpl;
   const scripted = scriptedGit(git);
   const preflights = [];
   const lines = [];
-  const result = await releaseTag({ repositoryRoot, environment: { GITHUB_TOKEN: 'fixture-token' }, fetchImpl: fake.fetchImpl, run: scripted.run, log: line => lines.push(line),
-    check, move, cleanPreflight: async options => { preflights.push(options); return preflightStatus; }, rehearse: async () => rehearsal }).catch(error => error);
+  const result = await releaseTag({ repositoryRoot, environment: { GITHUB_TOKEN: 'fixture-token' }, fetchImpl, run: scripted.run, log: line => lines.push(line),
+    check, move, cleanPreflight: async options => { preflights.push(options); return preflightStatus; }, rehearse: async () => rehearsal,
+    ...(live ? {} : { catalogFreshness }) }).catch(error => error);
   assert.ok(fake.requests.every(request => request.method === 'GET'), 'release:tag only reads GitHub');
   return { result, fake, git: scripted, preflights, lines };
 }
@@ -87,6 +98,9 @@ test('release:tag refuses, and pushes nothing, unless every gate holds', async t
     'red main CI': [{ github: { ciRuns: [ciRun({ conclusion: 'failure' })] } }, /Trusted CI for a{40} is completed\/failure/],
     'main CI still running': [{ github: { ciRuns: [ciRun({ status: 'in_progress', conclusion: null })] } }, /Trusted CI for a{40} is in_progress\/pending/],
     'CI of a pull request': [{ github: { ciRuns: [ciRun({ event: 'pull_request' })] } }, /Trusted CI for a{40} is missing/],
+    'no main CI run': [{ github: { ciRuns: [] } }, /Trusted CI for a{40} is missing/],
+    'green main CI of another commit only': [{ github: { ciRuns: [ciRun({ head_sha: other })] } }, /Trusted CI for a{40} is missing/],
+    'a newer red main CI run after a green one': [{ github: { ciRuns: [ciRun(), ciRun({ id: 8, conclusion: 'failure' })] } }, /Trusted CI for a{40} is completed\/failure/],
     'no dry run': [{ github: { releaseRuns: [] } }, /No green dry run at a{40}: run `gh workflow run release\.yml --ref main`/],
     'simulate-release failed': [{ github: { releaseRuns: [dryRun({ jobs: DRY_RUN_GATES.map(name => ({ name, conclusion: name === 'simulate-release' ? 'failure' : 'success' })) })] } }, /No green dry run/],
     'a dry run of another commit': [{ github: { releaseRuns: [dryRun({ head_sha: other })] } }, /No green dry run/],
@@ -132,4 +146,56 @@ test('a startup rehearsal that refuses the installed data stops the tag before a
   const { result, git } = await attempt(t, { rehearsal: { passed: false, detail: '[rehearsal] REFUSED bundle_message_reference_lost record 8a7eca4fb393/transactions/x.json' } });
   assert.match(result.message, /Startup rehearsal refused .*bundle_message_reference_lost/);
   assert.deepEqual(git.pushes(), []);
+});
+
+const reviewedCatalog = { opencode: { models: { 'devryan-fixture-model': { id: 'devryan-fixture-model' } } } };
+// The real freshness rule against a private reviewed snapshot and a scripted live catalog: no network.
+async function catalogCheck(t, live) {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-release-tag-catalog-'));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  await fs.writeFile(path.join(directory, 'DevRyan-model-catalog.json'), JSON.stringify(reviewedCatalog));
+  return () => modelCatalogFreshness({ directory, fetchImpl: live });
+}
+const liveCatalog = models => async () => new Response(JSON.stringify({ opencode: { models: Object.fromEntries(models.map(id => [id, { id }])) } }), { status: 200 });
+
+test('release:tag runs the tag run\'s catalog freshness check: a stale catalog refuses before any push, a fresh one passes', async t => {
+  for (const check of [false, true]) {
+    const stale = await attempt(t, { check, catalogFreshness: await catalogCheck(t, liveCatalog(['devryan-fixture-model', 'new-free'])) });
+    assert.ok(stale.result instanceof Error, 'a stale catalog is refused');
+    assert.match(stale.result.message, /Reviewed model catalog check failed at a{40}, so the v9\.8\.7 run's preflight would fail: reviewed model catalog lacks live models \(opencode: \+new-free\)/);
+    assert.match(stale.result.message, /\. Run `bun run catalog:refresh`, review and commit it, then push, dry-run and tag that commit\.$/);
+    assert.doesNotMatch(stale.result.message, /No verdict/);
+    assert.deepEqual(stale.git.pushes(), [], 'nothing pushed');
+    assert.deepEqual(stale.preflights, [], 'refused before the local preflight');
+  }
+  const fresh = await attempt(t, { catalogFreshness: await catalogCheck(t, liveCatalog(['devryan-fixture-model'])) });
+  assert.equal(fresh.result.pushed, true, fresh.result.message);
+  assert.ok(fresh.lines.some(line => /^Reviewed model catalog: covers every live/.test(line)), fresh.lines.join('\n'));
+});
+
+test('a live catalog that cannot be read refuses the tag instead of passing', async t => {
+  const failures = {
+    'network failure': async () => { throw new TypeError('fetch failed'); },
+    'server error': async () => new Response('unavailable', { status: 503 }),
+  };
+  for (const [label, live] of Object.entries(failures)) {
+    const { result, git } = await attempt(t, { catalogFreshness: await catalogCheck(t, live) });
+    assert.ok(result instanceof Error, `${label}: refused`);
+    assert.match(result.message, /Reviewed model catalog check failed at a{40}/, label);
+    assert.match(result.message, /\. No verdict: the catalog could not be read \(live source https:\/\/models\.opencode\.ai\/api\.json\), so release:tag refuses; retry once it is reachable\.$/, label);
+    assert.doesNotMatch(result.message, /catalog:refresh/, label);
+    assert.deepEqual(git.pushes(), [], `${label}: nothing pushed`);
+  }
+});
+
+test('by default release:tag reads this checkout\'s reviewed catalog and the live catalog through its fetchImpl', async t => {
+  const live = models => async () => new Response(JSON.stringify({ opencode: { models: Object.fromEntries(models.map(id => [id, { id }])) } }), { status: 200 });
+  const stale = await attempt(t, { liveCatalog: live(['devryan-fixture-model', 'new-free']) });
+  assert.ok(stale.result instanceof Error, 'a stale catalog is refused by the default check');
+  assert.match(stale.result.message, /lacks live models \(opencode: \+new-free\).*Run `bun run catalog:refresh`/);
+  assert.deepEqual(stale.git.pushes(), []);
+  const fresh = await attempt(t, { liveCatalog: live(['devryan-fixture-model']) });
+  assert.equal(fresh.result.pushed, true, fresh.result.message);
+  const offline = await attempt(t, { liveCatalog: async () => { throw new TypeError('fetch failed'); } });
+  assert.match(offline.result.message, /fetch failed\. No verdict/);
 });
