@@ -103,6 +103,7 @@ describe('packaged app check', () => {
         effect: { files: { 'index.js.map': file(1), src: { files: { 'index.ts': file(1), 'types.d.mts': file(1) } } } },
         zod: { files: { __tests__: { files: { 'helper.js': file(1) } }, 'index.spec.js': file(1) } },
         'better-sqlite3': { files: { deps: { files: { 'sqlite3.c': file(1) } }, build: { files: { Release: { files: { obj: { files: { 'sqlite3.o': file(1) } } } } } } } },
+        'node-gyp': { files: { bin: { files: { 'node-gyp.js': file(1) } } } },
       } } } },
       resources: {
         'app.asar.unpacked/node_modules/@devryan/web/server/app.test.js': '',
@@ -122,6 +123,7 @@ describe('packaged app check', () => {
       ],
       'typescript-source': ['app.asar/node_modules/effect/src/index.ts', 'app.asar/node_modules/effect/src/types.d.mts'],
       'native-build-leftover': ['app.asar/node_modules/better-sqlite3/build/Release/obj/sqlite3.o', 'app.asar/node_modules/better-sqlite3/deps/sqlite3.c'],
+      'build-tool': ['app.asar/node_modules/node-gyp/bin/node-gyp.js'],
       'linux-prebuild': ['app.asar.unpacked/node_modules/tree-sitter-bash/prebuilds/linux-x64/tree-sitter-bash.node'],
       'shell-source-tree': ['app.asar/resources/web-dist/index.html'],
       'duplicate-web-dist': ['app.asar.unpacked/node_modules/@devryan/web/dist/index.html'],
@@ -216,6 +218,6 @@ describe('packaged app config', () => {
       assert.ok(shipped.ceiling[key] < shipped.baseline[key], key);
     }
     assert.deepEqual(shipped.forbidden.map((rule) => rule.id).sort(),
-      ['duplicate-native-runtime', 'duplicate-web-dist', 'foreign-native', 'linux-prebuild', 'native-build-leftover', 'shell-source-tree', 'source-map', 'test-file', 'typescript-source']);
+      ['build-tool', 'duplicate-native-runtime', 'duplicate-web-dist', 'foreign-native', 'linux-prebuild', 'native-build-leftover', 'shell-source-tree', 'source-map', 'test-file', 'typescript-source']);
   });
 });

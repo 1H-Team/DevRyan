@@ -12,6 +12,9 @@ export default {
     { id: 'typescript-source', pattern: /\.(?:ts|tsx|mts|cts)$/ },
     // Native modules load their compiled .node; sources and objects only build it.
     { id: 'native-build-leftover', pattern: /(?:\.(?:c|cc|cpp|h|hpp)|\/build\/Release\/obj\/.*)$/ },
+    // npm's lifecycle runner (@opencode/util → @npmcli/arborist) depends on node-gyp,
+    // but the app never builds addons and gyp's Python cannot read inside app.asar.
+    { id: 'build-tool', pattern: /\/node_modules\/node-gyp\// },
     { id: 'linux-prebuild', pattern: /\/prebuilds\/linux-/ },
     // A function rule gets the app's arch. build.files keeps only the target's own
     // platform packages and prebuilds; Windows ones stay for the Windows preview.

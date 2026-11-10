@@ -69,6 +69,7 @@
       "!node_modules/@devryan/web/server/lib/opencode/v2/__vectors__{,/**}",
       "!**/node_modules/@anthropic-ai/claude-agent-sdk-*{,/**}",
       "!**/node_modules/@anthropic-ai/claude-agent-sdk/{bridge.mjs,browser-sdk.js}",
+      "!**/node_modules/node-gyp{,/**}",
       "!**/*.map",
       "!**/*.{test,spec}.*",
       "!**/__tests__{,/**}",
