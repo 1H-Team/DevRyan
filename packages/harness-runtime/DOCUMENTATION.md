@@ -909,7 +909,7 @@ reasons. Each file row also exposes the same observation as `verification: { sta
 content mismatch does not identify an author or authorize restoration. See
 `docs/SESSION_CHANGES.md` for verification states and limits.
 
-For a provider-free preparation benchmark, run `DEVRYAN_VIEW_PREWARM_BENCHMARK=1 bun test packages/harness-runtime/lib/session-mutations-view-reuse.test.js -t "prewarm benchmark"`. The isolated 243-file fixture compares cold, prewarmed and two concurrently prewarmed first leases plus a subsequent lease in the same session, reports elapsed times without timing assertions, checks adopted-file counts, and verifies separate private views. The symlink is intentionally copied during the first preparation; the subsequent lease adopts all 243 unchanged entries and verifies the complete view's content. These measurements exclude provider, SDK startup, network and native process latency.
+For a provider-free preparation benchmark, run `DEVRYAN_VIEW_PREWARM_BENCHMARK=1 node scripts/test-isolation-guard.mjs bun test packages/harness-runtime/lib/session-mutations-view-reuse.test.js -t "prewarm benchmark"`. The isolated 243-file fixture compares cold, prewarmed and two concurrently prewarmed first leases plus a subsequent lease in the same session, reports elapsed times without timing assertions, checks adopted-file counts, and verifies separate private views. The symlink is intentionally copied during the first preparation; the subsequent lease adopts all 243 unchanged entries and verifies the complete view's content. These measurements exclude provider, SDK startup, network and native process latency.
 
 ## Registered host-dependent operations
 

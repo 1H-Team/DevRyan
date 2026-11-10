@@ -39,7 +39,10 @@ test('persistent agents resume with changed credentials and reuse unchanged cred
     child = spawn('node', [path.join(directory, 'persistent-worker.mjs')], {
       cwd: directory,
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { PATH: process.env.PATH },
+      // Only PATH and the private home of the test isolation guard: with no HOME the
+      // worker's home folder would fall back to the account's real one.
+      env: { PATH: process.env.PATH, HOME: process.env.HOME, XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
+        XDG_DATA_HOME: process.env.XDG_DATA_HOME, XDG_STATE_HOME: process.env.XDG_STATE_HOME, XDG_CACHE_HOME: process.env.XDG_CACHE_HOME },
     });
     closed = new Promise((resolve, reject) => {
       child.once('close', resolve);

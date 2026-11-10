@@ -11,8 +11,9 @@ import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
 
 import { FEATURE_TEST_MATRIX } from './feature-test-matrix.mjs';
-import { discoverElectronTestFiles } from './test-electron.mjs';
-import { NATIVE_GRAPH_RESOURCE, discoverScriptTestFiles, planScriptTests } from './test-scripts.mjs';
+import { discoverElectronTestFiles, planElectronTests } from './test-electron.mjs';
+import { NATIVE_GRAPH_RESOURCE, discoverScriptTestFiles, planScriptTests, prepareScriptTestEnvironment } from './test-scripts.mjs';
+import { GUARDED_BUN_TEST, ISOLATION_PRELOAD, NODE_ISOLATION_ARGS, PASSED_THROUGH, isStrippedVariable, isolationProblems } from './test-isolation-guard.mjs';
 import { FULL_TEST_COMMANDS, FULL_TEST_SUITES, HARNESS_WORKERS, WEB_VITEST_PROJECTS, planFullTests } from './test-full.mjs';
 import { buildPlan, testUnitsForPlan } from './validate.mjs';
 import { discoverTestFiles } from './test-runner-utils.mjs';
@@ -115,7 +116,7 @@ describe('full test-suite contract', () => {
     // agents-core tests run once, through their own package (test:full, validate).
     assert.ok(!files.some(file => file.startsWith('packages/agents-core/')));
     const web = JSON.parse(readFileSync(path.join(repositoryRoot, 'packages/web/package.json'), 'utf8'));
-    assert.equal(web.scripts.test, 'bun run test:vitest && bun run test:native');
+    assert.equal(web.scripts.test, 'node ../../scripts/test-isolation-guard.mjs bun run test:vitest && node ../../scripts/test-isolation-guard.mjs bun run test:native');
     assert.deepEqual(files, [...files].sort());
   });
 
@@ -259,9 +260,9 @@ describe('full test-suite contract', () => {
     ].sort());
     const web = JSON.parse(readFileSync(path.join(repositoryRoot, 'packages/web/package.json'), 'utf8'));
     assert.equal(web.scripts['test:vitest'], 'vitest run');
-    // Harness: the package's own `bun test`, with file workers.
+    // Harness: the package's own `bun test` (which its script runs inside the guard), with file workers.
     const harness = JSON.parse(readFileSync(path.join(repositoryRoot, 'packages/harness-runtime/package.json'), 'utf8'));
-    assert.equal(harness.scripts.test, 'bun test');
+    assert.equal(harness.scripts.test, GUARDED_BUN_TEST);
     assert.deepEqual(units.filter((unit) => unit.name === 'harness-runtime').map((unit) => [unit.args, unit.cwd]),
       [[['test', `--parallel=${HARNESS_WORKERS}`], path.join(repositoryRoot, 'packages/harness-runtime')]]);
     // Every other suite runs its inventory command unchanged.
@@ -309,7 +310,7 @@ describe('full test-suite contract', () => {
     // Lanes plus the build job's built-asset tests run every script test exactly once.
     assert.deepEqual([...new Set([...scriptFiles, ...BUILD_JOB_TESTS])].sort(), discoverScriptTestFiles(repositoryRoot));
     for (const file of BUILD_JOB_TESTS) assert.ok(!scriptFiles.includes(file), `${file} runs in the build job, not a lane`);
-    assert.deepEqual(buildPlan('build').commands.at(-1).args, ['--test', ...BUILD_JOB_TESTS]);
+    assert.deepEqual(buildPlan('build').commands.at(-1).args, [...NODE_ISOLATION_ARGS, '--test', ...BUILD_JOB_TESTS]);
     const harnessFiles = laneUnits.filter(unit => unit.suite === 'harness').flatMap(unit => unit.args.filter(arg => /test\.js$/.test(arg)).map(arg => arg.replace(/^\.\//, '')));
     assert.deepEqual([...new Set(harnessFiles)].sort(), discoverTestFiles(path.join(repositoryRoot, 'packages/harness-runtime'), repositoryRoot));
     for (const [suite, variable, count] of [['scripts', 'DEVRYAN_STREAM_TEST_SHARD', 2]]) {
@@ -366,9 +367,9 @@ describe('full test-suite contract', () => {
           assert.ok(!notVitest.some((entry) => webEntryFiles(entry).includes(file)), `${file} is excluded from web test:vitest`);
           assert.ok(WEB_VITEST_PROJECTS.includes(vitestProject.get(file)), `${file} is not collected by a web Vitest project`);
         } else {
-          // shared-runtime and harness-runtime run plain `bun test` over their package.
+          // shared-runtime and harness-runtime run plain `bun test` over their package (inside the guard).
           const directory = { shared: 'packages/shared-runtime', harness: 'packages/harness-runtime' }[group.owner];
-          assert.equal(JSON.parse(readFileSync(path.join(repositoryRoot, directory, 'package.json'), 'utf8')).scripts.test, 'bun test');
+          assert.equal(JSON.parse(readFileSync(path.join(repositoryRoot, directory, 'package.json'), 'utf8')).scripts.test, GUARDED_BUN_TEST);
           assert.ok(file.startsWith(`${directory}/`) && existsSync(path.join(repositoryRoot, file)), file);
         }
       }
@@ -460,6 +461,187 @@ describe('feature-to-test matrix', () => {
       for (const relativePath of [...entry.sourcePaths, ...entry.testPaths]) {
         assert.equal(existsSync(path.join(repositoryRoot, relativePath)), true, `${entry.id}: missing ${relativePath}`);
       }
+    }
+  });
+});
+
+// Every test process starts inside the private environment of
+// scripts/test-isolation-guard.mjs: Bun through a bunfig.toml preload in the
+// directory it starts in, node:test through --import, Vitest through its
+// setup files, and the pool through the environment prepareScriptTestEnvironment builds.
+const ISOLATION_GUARD_IMPORT = /from '\.\/test-isolation-guard\.mjs'/;
+/** Absolute preload entries of `<directory>/bunfig.toml`, or null when it has none. */
+function bunPreloads(directory) {
+  const file = path.join(directory, 'bunfig.toml');
+  if (!existsSync(file)) return null;
+  const match = /^\s*preload\s*=\s*\[([^\]]*)\]/m.exec(readFileSync(file, 'utf8'));
+  return match ? [...match[1].matchAll(/"([^"]+)"/g)].map((entry) => path.resolve(directory, entry[1])) : null;
+}
+// packages/desktop is frozen legacy code: no file there changes, so its one Bun
+// contract file has no preload. The pool still runs it in the guard's environment
+// (checked below for every unit); a direct `bun test` there is not refused.
+const UNPRELOADED_FROZEN = new Set([path.join(repositoryRoot, 'packages/desktop')]);
+const bunGuarded = (directory) => bunPreloads(directory)?.[0] === ISOLATION_PRELOAD || UNPRELOADED_FROZEN.has(path.resolve(directory));
+/** A repository runner script that builds or reuses the guard environment itself. */
+const runnerGuarded = (file) => ISOLATION_GUARD_IMPORT.test(readFileSync(path.join(repositoryRoot, file), 'utf8'));
+
+/** Why a package script (each `&&` step) could start a test process without the guard; empty when guarded. */
+function packageScriptProblems(directory, name, seen = new Set()) {
+  const manifest = JSON.parse(readFileSync(path.join(repositoryRoot, directory, 'package.json'), 'utf8'));
+  const script = manifest.scripts?.[name];
+  if (typeof script !== 'string') return [`${directory}: no script ${name}`];
+  if (seen.has(`${directory}:${name}`)) return [];
+  seen.add(`${directory}:${name}`);
+  const absolute = path.join(repositoryRoot, directory);
+  return script.split('&&').map((step) => step.trim()).flatMap((step) => {
+    if (step.startsWith('node ../../scripts/test-isolation-guard.mjs ') || step.startsWith('node scripts/test-isolation-guard.mjs ')) return [];
+    if (/^bun test\b/.test(step)) return bunGuarded(absolute) ? [] : [`${directory} ${name}: bun test without the isolation preload`];
+    if (/^vitest run\b/.test(step)) return vitestGuarded(absolute) ? [] : [`${directory} ${name}: vitest without the isolation setup`];
+    const run = /^bun run ([\w:.-]+)$/.exec(step);
+    if (run) return packageScriptProblems(directory, run[1], seen);
+    const runner = /^node ((?:\.\.\/)*scripts\/test-[\w-]+\.mjs)\b/.exec(step);
+    if (runner) return runnerGuarded(path.relative(repositoryRoot, path.resolve(absolute, runner[1]))) ? [] : [`${directory} ${name}: ${runner[1]} does not use the guard`];
+    return [`${directory} ${name}: unrecognised test step ${step}`];
+  });
+}
+
+function vitestGuarded(directory) {
+  const config = path.join(directory, 'vitest.config.ts');
+  if (!existsSync(config)) return false;
+  const source = readFileSync(config, 'utf8');
+  const entries = (key) => [...(new RegExp(`${key}: \\[([^\\]]*)\\]`).exec(source)?.[1] ?? '').matchAll(/'([^']+)'/g)].map((entry) => path.resolve(directory, entry[1]));
+  const guarded = (file) => existsSync(file) && /scripts\/test-isolation-(?:guard|check)\.mjs'/.test(readFileSync(file, 'utf8')) && /assertTestIsolation\(/.test(readFileSync(file, 'utf8'));
+  return entries('globalSetup').some(guarded) && entries('setupFiles').some(guarded);
+}
+
+/** Why a pool unit could start a test process without the guard; empty when guarded. */
+function unitIsolationProblems(unit) {
+  return [...isolationProblems({ env: unit.env ?? {}, home: unit.env?.HOME }).map((problem) => `${unit.name}: ${problem}`), ...commandIsolationProblems(unit)];
+}
+
+/** Why a command could start a test process that neither inherits nor builds the guard's environment. */
+function commandIsolationProblems(unit) {
+  const cwd = unit.cwd ?? repositoryRoot;
+  const problems = [];
+  const { command, args } = unit;
+  if (command === 'node' || command === process.execPath) {
+    if (args.includes('--test')) {
+      if (!args.slice(0, args.indexOf('--test')).includes(NODE_ISOLATION_ARGS[0])) problems.push(`${unit.name}: node --test without ${NODE_ISOLATION_ARGS[0]}`);
+    } else if (!(/^scripts\/test-[\w-]+\.mjs$/.test(args[0]) && runnerGuarded(args[0]))) problems.push(`${unit.name}: node ${args[0]} is not a guarded runner`);
+  } else if (command === 'bun' && args[0] === 'test') {
+    if (!bunGuarded(cwd)) problems.push(`${unit.name}: bun test in ${path.relative(repositoryRoot, cwd) || '.'} without the isolation preload`);
+  } else if (command === 'bun' && args[0] === 'run') {
+    const [directory, rest] = args[1] === '--cwd' ? [args[2], args.slice(3)] : [path.relative(repositoryRoot, cwd) || '.', args.slice(1)];
+    if (rest[0] === 'vitest') {
+      if (!vitestGuarded(path.join(repositoryRoot, directory))) problems.push(`${unit.name}: vitest in ${directory} without the isolation setup`);
+    } else problems.push(...packageScriptProblems(directory, rest[0]).map((problem) => `${unit.name}: ${problem}`));
+  } else problems.push(`${unit.name}: unrecognised test command ${command} ${args.join(' ')}`);
+  return problems;
+}
+
+describe('test isolation contract', () => {
+  const bunPackages = readdirSync(path.join(repositoryRoot, 'packages'), { withFileTypes: true }).filter((entry) => entry.isDirectory()
+    && discoverTestFiles(path.join(repositoryRoot, 'packages', entry.name), repositoryRoot, testDiscovery)
+      .some((file) => /\bfrom\s*['"]bun:test['"]/.test(readFileSync(path.join(repositoryRoot, file), 'utf8')))).map((entry) => `packages/${entry.name}`);
+
+  test('every directory Bun tests start in loads the isolation preload first', () => {
+    assert.deepEqual(bunPackages.sort(), ['agents-core', 'cursor-sdk-runtime', 'desktop', 'electron', 'harness-runtime', 'orchestration-runtime', 'shared-runtime', 'ui', 'web'].map((name) => `packages/${name}`));
+    for (const directory of ['.', ...bunPackages]) assert.ok(bunGuarded(path.join(repositoryRoot, directory)), `${directory}/bunfig.toml preloads scripts/test-isolation-preload.mjs first`);
+    // The frozen exception stays exactly that one package, with no bunfig of its own.
+    assert.deepEqual([...UNPRELOADED_FROZEN].map((directory) => path.relative(repositoryRoot, directory)), ['packages/desktop']);
+    assert.equal(existsSync(path.join(repositoryRoot, 'packages/desktop/bunfig.toml')), false);
+  });
+
+  test('every package test script starts its tests through the guard', () => {
+    for (const entry of readdirSync(path.join(repositoryRoot, 'packages'), { withFileTypes: true }).filter((item) => item.isDirectory())) {
+      const directory = `packages/${entry.name}`;
+      if (!existsSync(path.join(repositoryRoot, directory, 'package.json'))) continue;
+      const scripts = JSON.parse(readFileSync(path.join(repositoryRoot, directory, 'package.json'), 'utf8')).scripts ?? {};
+      for (const name of Object.keys(scripts).filter((key) => /^test(?::|$)/.test(key))) {
+        // Cargo tests (legacy desktop) start no JavaScript test process.
+        if (/^cargo test\b/.test(scripts[name])) continue;
+        assert.deepEqual(packageScriptProblems(directory, name), [], `${directory} ${name}`);
+      }
+    }
+    assert.ok(vitestGuarded(webDirectory), 'packages/web Vitest asserts isolation in its global setup and setup file');
+  });
+
+  test('every unit of every runner starts with the guard and its environment', () => {
+    const { env, cleanup } = prepareScriptTestEnvironment(repositoryRoot);
+    try {
+      const units = [
+        ...testUnitsForPlan(buildPlan('full').commands, { scriptEnvironment: env }),
+        ...CI_LANES.flatMap((lane) => testUnitsForPlan(buildPlan(`ci:${lane}`).commands, { scriptEnvironment: env })),
+        ...testUnitsForPlan([{ label: 'test:startup', coveredBy: [] }], { scriptEnvironment: env }),
+        ...planScriptTests(repositoryRoot).map((unit) => ({ ...unit, env })),
+      ];
+      assert.ok(units.length > 300);
+      assert.deepEqual(units.flatMap(unitIsolationProblems), []);
+      // The built-asset tests run outside the pool (the CI build job, validate:full);
+      // their node:test import builds the guard's environment in each file's process.
+      for (const plan of [buildPlan('build'), buildPlan('full')]) {
+        const builtAssets = plan.commands.find((item) => item.label === 'built-assets') ?? { executable: 'node', args: [...NODE_ISOLATION_ARGS, '--test', ...BUILD_JOB_TESTS] };
+        assert.deepEqual(commandIsolationProblems({ name: 'built-assets', command: builtAssets.executable, args: builtAssets.args }), []);
+      }
+      assert.match(readFileSync(path.join(repositoryRoot, 'scripts/validate.mjs'), 'utf8'), /builtAssetsCommand\(\)\] : buildChain/);
+      // Runners that start their own pool build the same environment.
+      for (const runner of ['scripts/test-scripts.mjs', 'scripts/test-full.mjs', 'scripts/test-startup-contract.mjs', 'scripts/test-ui.mjs', 'scripts/test-electron.mjs']) {
+        assert.ok(runnerGuarded(runner) || /prepareScriptTestEnvironment\(/.test(readFileSync(path.join(repositoryRoot, runner), 'utf8')), `${runner} builds the guard environment`);
+      }
+    } finally { cleanup(); }
+  });
+
+  test('a unit or runner added without the guard fails this contract', () => {
+    const { env, cleanup } = prepareScriptTestEnvironment(repositoryRoot);
+    try {
+      const unguarded = { ...env };
+      delete unguarded.DEVRYAN_TEST_ISOLATION_ROOT;
+      assert.match(unitIsolationProblems({ name: 'x', command: 'node', args: ['--test', 'scripts/x.test.mjs'], env }).join(), /without --import=/);
+      assert.match(unitIsolationProblems({ name: 'x', command: 'bun', args: ['test', './x.test.js'], cwd: path.join(repositoryRoot, 'packages/web/server'), env }).join(), /without the isolation preload/);
+      assert.match(unitIsolationProblems({ name: 'x', command: 'node', args: ['scripts/release.mjs'], env }).join(), /not a guarded runner/);
+      assert.match(unitIsolationProblems({ name: 'x', command: 'bun', args: ['test', './x.test.js'], env: unguarded }).join(), /DEVRYAN_TEST_ISOLATION_ROOT is not set/);
+      assert.match(unitIsolationProblems({ name: 'x', command: 'sh', args: ['-c', 'bun test'], env }).join(), /unrecognised test command/);
+    } finally { cleanup(); }
+  });
+
+  test('every DevRyan, OpenChamber and OpenCode variable product code reads is stripped or deliberately passed through', () => {
+    const access = /(?:env|Env|ENV|environment|Environment)\??(?:\.|\[['"])((?:DEVRYAN|OPENCHAMBER|OPENCODE)_[A-Z0-9_]+)|(?:read|set)DevRyanEnv\([^,()]+,\s*['"]((?:DEVRYAN|OPENCHAMBER|OPENCODE)_[A-Z0-9_]+)/g;
+    const listed = spawnSync('git', ['ls-files', '-z', '--', 'packages'], { cwd: repositoryRoot, encoding: 'utf8' }).stdout.split('\0')
+      .filter((file) => /\.(?:[cm]?[jt]sx?)$/.test(file) && !/\.d\.[cm]?ts$/.test(file) && !/(?:^|[./-])(?:test|spec)\.[cm]?[jt]sx?$/.test(file)
+        && !file.startsWith('packages/desktop/') && !file.includes('/reviewed-inputs/') && !file.includes('/tests/') && !file.includes('/test/'));
+    const names = new Map();
+    for (const file of listed) {
+      for (const match of readFileSync(path.join(repositoryRoot, file), 'utf8').matchAll(access)) {
+        const name = (match[1] ?? match[2]).replace(/^OPENCHAMBER_/, 'DEVRYAN_');
+        if (!names.has(name)) names.set(name, file);
+      }
+    }
+    assert.ok(names.size > 150, `found ${names.size} variable names`);
+    for (const required of ['OPENCODE_DB', 'DEVRYAN_EXECUTION_ARTIFACTS', 'DEVRYAN_SESSION_TMP', 'OPENCODE_BINARY', 'DEVRYAN_STANDARD_OPENCODE_BINARY',
+      'DEVRYAN_SERVER_URL', 'OPENCODE_PORT', 'OPENCODE_SERVER_PASSWORD', 'SSH_AUTH_SOCK']) assert.equal(isStrippedVariable(required), true, required);
+    const unknown = [...names].filter(([name]) => !isStrippedVariable(name) && !(name in PASSED_THROUGH)).map(([name, file]) => `${name} (${file})`);
+    assert.deepEqual(unknown, [], 'a new variable must be stripped by scripts/test-isolation-check.mjs or listed in PASSED_THROUGH with its reason');
+    const strippedButListed = Object.keys(PASSED_THROUGH).filter((name) => isStrippedVariable(name));
+    assert.deepEqual(strippedButListed, []);
+    const stale = Object.keys(PASSED_THROUGH).filter((name) => !names.has(name) && !['DEVRYAN_TEST_UPDATE_BRIDGE', 'DEVRYAN_TEST_UPDATE_INSTALLER', 'DEVRYAN_VITEST_EXCLUDE', 'DEVRYAN_TEST_ISOLATION_ROOT'].includes(name));
+    assert.deepEqual(stale, [], 'PASSED_THROUGH names a variable no product code reads');
+  });
+
+  test('every runner collects an isolation canary', () => {
+    const scripts = discoverScriptTestFiles(repositoryRoot);
+    const plan = planScriptTests(repositoryRoot, {}, { files: ['scripts/test-isolation-canary.test.mjs', 'scripts/test-isolation-canary-bun.test.mjs'] });
+    assert.deepEqual(plan.map((unit) => [unit.command === 'bun' ? 'bun' : 'node', unit.args.at(-1)]),
+      [['node', 'scripts/test-isolation-canary.test.mjs'], ['bun', './scripts/test-isolation-canary-bun.test.mjs']]);
+    assert.ok(scripts.includes('scripts/test-isolation-canary.test.mjs') && scripts.includes('scripts/test-isolation-canary-bun.test.mjs'));
+    const electron = planElectronTests(path.join(repositoryRoot, 'packages/electron'), {});
+    assert.ok(electron.node.includes('tests/isolation-canary.test.mjs') && electron.bun.includes('tests/isolation-canary-bun.test.mjs'));
+    assert.ok(discoverUiTestFiles(path.join(repositoryRoot, 'packages/ui')).includes('src/test/isolation-canary.test.mjs'));
+    assert.equal(vitestCollectedFiles().find((entry) => entry.file === 'test/isolation-canary.test.mjs')?.project, 'web');
+    assert.equal(vitestCollectedFiles().find((entry) => entry.file === 'server/lib/opencode/runtime-host/isolation-canary.test.mjs')?.project, 'web-runtime-host');
+    assert.ok(webRunnerLists().native.includes('test/isolation-canary-native.test.mjs'));
+    for (const [directory, file] of [['shared-runtime', 'testing/isolation-canary.test.js'], ['harness-runtime', 'test/isolation-canary.test.js'],
+      ['orchestration-runtime', 'isolation-canary.test.js'], ['cursor-sdk-runtime', 'isolation-canary.test.js'], ['agents-core', 'test/isolation-canary.test.mjs']]) {
+      assert.ok(discoverTestFiles(path.join(repositoryRoot, 'packages', directory), path.join(repositoryRoot, 'packages', directory)).includes(file), `${directory} collects ${file}`);
     }
   });
 });

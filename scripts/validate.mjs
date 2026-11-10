@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { BUILD_JOB_TESTS, CI_LANES, localTestUnits, planCITests } from './test-ci-lanes.mjs';
+import { NODE_ISOLATION_ARGS } from './test-isolation-guard.mjs';
 
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
@@ -437,7 +438,7 @@ export function buildPlan(requestedMode, providedFiles, { versionOnly } = {}) {
   // `build` (the assets test lanes download, then their bundle budgets).
   const BUILD_LABELS = new Set(['build', 'bundle:check']);
   // The build job also runs the tests of what it built, so no test lane needs its output.
-  const builtAssetTests = command('built-assets', 'node', ['--test', ...BUILD_JOB_TESTS]);
+  const builtAssetTests = builtAssetsCommand();
   if (requestedMode === 'checks') return { files: providedFiles ?? [], commands: fullCommands().filter(item => item.label !== 'test:full'), reason: 'CI build and static checks' };
   if (requestedMode === 'static') return { files: providedFiles ?? [], commands: fullCommands().filter(item => item.label !== 'test:full' && !BUILD_LABELS.has(item.label)), reason: 'CI static checks' };
   if (requestedMode === 'build') return { files: providedFiles ?? [], commands: [...fullCommands().filter(item => BUILD_LABELS.has(item.label)), builtAssetTests], reason: 'CI build, bundle budgets and built-asset tests' };
@@ -530,6 +531,15 @@ function printPlan(plan) {
   if (plan.scriptSelection) for (const line of describeScriptSelection(plan.scriptSelection)) console.log(line);
 }
 
+/**
+ * The tests of the built assets, run after the build outside the test pool. The
+ * isolation import builds the guard's private environment in each test file's
+ * process (scripts/test-isolation-preload.mjs), as for every other node:test run.
+ */
+function builtAssetsCommand() {
+  return command('built-assets', 'node', [...NODE_ISOLATION_ARGS, '--test', ...BUILD_JOB_TESTS]);
+}
+
 function runStatic(item) {
   console.log(`\n$ ${[item.executable, ...item.args].join(' ')}`);
   const started = performance.now();
@@ -590,7 +600,7 @@ async function runCommands(commands) {
   // chain runs beside the tests and those built-asset tests follow the build.
   const overlap = buildChain.some((item) => item.label === 'build') && tests.length > 0;
   const runBuildChain = async () => {
-    for (const item of overlap ? [...buildChain, command('built-assets', 'node', ['--test', ...BUILD_JOB_TESTS])] : buildChain) {
+    for (const item of overlap ? [...buildChain, builtAssetsCommand()] : buildChain) {
       const row = overlap ? await runStaticAsync(item) : runStatic(item);
       timings.push(row);
       if (row.status !== 0) return row.status ?? 1;

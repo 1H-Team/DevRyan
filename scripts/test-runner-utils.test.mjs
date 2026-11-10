@@ -13,6 +13,7 @@ import { discoverScriptTestFiles } from './test-scripts.mjs';
 import { FULL_TEST_COMMANDS, FULL_TEST_SUITES } from './test-full.mjs';
 import { buildPlan, describeScriptSelection, isVersionOnlyChange, lintRoots, testUnitsForPlan } from './validate.mjs';
 import { STARTUP_CONTRACT_GROUPS } from './test-startup-contract.mjs';
+import { NODE_ISOLATION_ARGS } from './test-isolation-guard.mjs';
 
 const repoRoot = new URL('..', import.meta.url);
 
@@ -373,7 +374,7 @@ describe('maintenance validation selection', () => {
       // The desktop suite owns no startup group, so the whole startup contract runs too.
       assert.deepEqual(testUnitsForPlan(testCommands).map((unit) => [unit.command, unit.args]), [
         ['bun', ['run', '--cwd', 'packages/desktop', 'test:managed-orchestration']],
-        ...(contract ? [[process.execPath, ['--test', '--test-concurrency=1', '--test-timeout=300000', '--test-force-exit', 'scripts/test-suite-contract.test.mjs']]] : []),
+        ...(contract ? [[process.execPath, [...NODE_ISOLATION_ARGS, '--test', '--test-concurrency=1', '--test-timeout=300000', '--test-force-exit', 'scripts/test-suite-contract.test.mjs']]] : []),
         ...STARTUP_CONTRACT_GROUPS.map((group) => [group.command, group.args]),
       ], file);
     }

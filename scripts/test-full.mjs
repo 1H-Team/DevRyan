@@ -104,5 +104,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     if (!arg.startsWith('--suite=')) throw new Error(`Unknown argument: ${arg} (use --suite=<key,...>)`);
     return arg.slice('--suite='.length).split(',').filter(Boolean);
   }).flat();
-  process.exitCode = await runFullTests(repositoryRoot, { suites: suites.length ? suites : undefined });
+  // No top-level await: runFullTests loads test-ci-lanes.mjs, which imports this
+  // module, and that import cannot settle while this module is still evaluating.
+  runFullTests(repositoryRoot, { suites: suites.length ? suites : undefined }).then((code) => { process.exitCode = code; });
 }

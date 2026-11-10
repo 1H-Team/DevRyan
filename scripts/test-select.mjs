@@ -39,6 +39,9 @@ export const WHOLE_SUITE_INPUTS = Object.freeze([
   'scripts/test-full.mjs',
   'scripts/test-ci-lanes.mjs',
   'scripts/test-pool.mjs',
+  'scripts/test-isolation-guard.mjs',
+  'scripts/test-isolation-check.mjs',
+  'scripts/test-isolation-preload.mjs',
   'scripts/test-suite-contract.test.mjs',
 ]);
 // Reviewed inputs are hashed and read as whole trees by manifest code; which

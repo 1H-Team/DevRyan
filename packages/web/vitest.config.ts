@@ -17,6 +17,7 @@ const notVitest = [
   'server/lib/opencode/runtime-host/controller-dispatch.test.ts',
   'server/lib/opencode/runtime-host/native-queued-input.test.ts',
   'server/lib/harness/native-integration/**',
+  'test/isolation-canary-native.test.mjs',
 ];
 // Native runtime-host suites copy bundles, ledgers and databases and spawn
 // processes; they get few workers so filesystem contention cannot push their
