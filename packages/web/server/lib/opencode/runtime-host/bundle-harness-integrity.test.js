@@ -8,6 +8,9 @@ import {BUNDLE_REFERENCE_FIELDS,PER_FILE_RECORD,inspectBundleHarness} from './bu
 import {createSessionMutationRuntime} from '../../../../../harness-runtime/lib/session-mutations.js';
 import {sha256} from './bundle-migration-inventory.js';
 import {createNativeProjectLocations} from './native-project-locations.js';
+import {recoverAbandonedControlLeases} from './native-bundle-lease-recovery.js';
+import {AGED_PROFILE_DEAD_OWNER_ID,AGED_PROFILE_SCENARIOS,AGED_PROFILE_SOURCE_BUNDLE_ID,agedFindingRows,agedNativeIdentity,recoverAgedCursorIntents,writeAgedProfile} from '../../../../../../scripts/opencode-v2-native/aged-profile-fixture.mjs';
+import {initGitRepository} from '../../../../../../scripts/test-git-template.mjs';
 import {MANAGED_NATIVE_JOB_PROOF_DIRECTORY,MANAGED_NATIVE_JOB_TOMBSTONE_PROMPT,compactManagedOrchestrationState,createManagedTaskRecord,
   createManagedTaskResultEnvelope,decodeLedgerSnapshot,decodeManagedNativeJobProofShard,encodeManagedNativeJobProofShard,managedNativeJobProofShard} from '@devryan/orchestration-runtime';
 
@@ -482,3 +485,48 @@ test('relocation moves ledger records, their envelopes and released proofs toget
   expect(moved.task).toEqual({...proof.task,directory:target});
   expect(moved.envelope).toEqual({...proof.envelope,directory:target});
 });
+
+// Aged-profile corpus (scripts/opencode-v2-native/aged-profile-fixture.mjs):
+// each shape that locked users out, written by the product's own writers,
+// through the strict gate, cold startup recovery, resume inspection and the
+// clone's relocation. A profile upgrades with its documented findings.
+const agedProfile=async scenarios=>{
+  const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'bundle-aged-')));roots.push(root);
+  const directory=path.join(root,'project'),web=path.join(root,'web');
+  await initGitRepository(directory);
+  // The bulk scenario crosses no threshold here; runtime-bundle.test.js measures the sealed documents.
+  return {web,directory,profile:await writeAgedProfile({webDataDirectory:web,directory,scenarios,files:32})};
+};
+const agedGates=async({web,profile},{strictRefusal})=>{
+  const ids=agedNativeIdentity(profile),expected=profile.expected;
+  // Before cold recovery, in-flight leftovers refuse the strict gate, naming their code.
+  if(strictRefusal)await expect(inspectBundleHarness(web,ids)).rejects.toMatchObject({code:strictRefusal});
+  // Cold startup recovery with no live owner (the bundle is not running). The
+  // execution launcher's owner probe is stood in for: the claimed lease's owner
+  // is dead (runtime-bundle.test.js runs the real probe).
+  expect(await recoverAbandonedControlLeases({launch:{webDataDirectory:web},assertOwnerAbsent:async()=>{},
+    verifyArtifacts:async()=>({controller:undefined}),ownerLost:async({id})=>id===AGED_PROFILE_DEAD_OWNER_ID}))
+    .toEqual({status:strictRefusal?'recovered':'clean'});
+  const ledger=async()=>{const storage=path.join(web,'harness','session-mutations',changeKey(profile.directory));return openChangeStore(storage,path.join(storage,'git'));};
+  if(expected.settledLeases.length||expected.cancelledReverts.length){
+    const store=await ledger();
+    for(const {key,...state} of expected.settledLeases)expect(await store.get(key)).toMatchObject({...state,cleaned:true,cleanupPending:false});
+    for(const {key,sessionKey} of expected.cancelledReverts){
+      expect(await store.get(key)).toMatchObject({state:'cancelled',phase:'cancelled'});expect(await store.get(sessionKey)).toMatchObject({pending:null});}
+  }
+  // One row per record: a missing or extra finding for any single record fails.
+  const findings=agedFindingRows(expected.findings);
+  expect(agedFindingRows((await inspectBundleHarness(web,ids)).findings)).toEqual(findings);
+  // The clone relocates every record into the candidate and inspects it again.
+  await inspectBundleHarness(web,{...ids,relocate:true,projectMap:[{sourceDirectory:profile.directory,targetDirectory:profile.directory}]});
+  expect(agedFindingRows((await inspectBundleHarness(web,ids)).findings)).toEqual(findings);
+  // A cloned bundle's owner adopts the Cursor intents of the bundle it came from.
+  expect(await recoverAgedCursorIntents({webDataDirectory:web,directory:profile.directory,ownerID:'aged-candidate',sourceOwnerID:AGED_PROFILE_SOURCE_BUNDLE_ID}))
+    .toEqual({settled:expected.cursorIntents,isolated:[],remaining:[]});
+};
+test.each(AGED_PROFILE_SCENARIOS.map(scenario=>[scenario.name,scenario]))('aged profile %s upgrades with its documented outcome',async(name,scenario)=>{
+  const aged=await agedProfile([name]);
+  expect(aged.profile.expected.findings.map(row=>row.code).sort()).toEqual([...scenario.outcome.findings].sort());
+  expect(aged.profile.expected.copyFindings.map(row=>row.code).every(code=>scenario.outcome.copyFindings.includes(code))).toBe(true);
+  await agedGates(aged,{strictRefusal:scenario.outcome.strictRefusal});
+},60_000);
