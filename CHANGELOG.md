@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 
 - Upgrade the bundled native OpenCode host to 2.2.6.
 - List a connected Claude account's models in the model picker.
+- Refresh the reviewed model catalog, adding Claude Fable 5.2 and the new OpenCode Zen models.
 
 ## [2.0.12] - 2026-11-07
 

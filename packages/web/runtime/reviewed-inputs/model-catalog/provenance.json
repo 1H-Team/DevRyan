@@ -1,10 +1,10 @@
 {
   "schema": 1,
   "sourceURL": "https://models.opencode.ai/api.json",
-  "retrievedUTC": "2026-11-07T07:35:11.754Z",
+  "retrievedUTC": "2026-11-10T10:55:51.802Z",
   "httpStatus": 200,
-  "sha256": "3ef6abc242c7316549ef03b659b40372c92365ce7ef8fdf1fb415e6afafe05c5",
-  "byteSize": 5966378,
+  "sha256": "be56fd1044d968d6627e26da78331bea0663863b67e36b490b534d39eb39d4df",
+  "byteSize": 5989196,
   "providerCount": 235,
   "selectedModel": {
     "providerID": "openai",
@@ -13,7 +13,7 @@
   },
   "previousEvidence": {
     "path": "DevRyan-model-catalog.json (previous)",
-    "sha256": "26319ed6d8a2eff7265557e6d52ddb9d8daebd5ebccd4411166409e22e87eca0",
+    "sha256": "3ef6abc242c7316549ef03b659b40372c92365ce7ef8fdf1fb415e6afafe05c5",
     "selectedRowSha256": "79562e8a0c549555f4525b75e650d7394638c375c501753a89cbc19a792a78e1"
   },
   "sameResponse": false,
