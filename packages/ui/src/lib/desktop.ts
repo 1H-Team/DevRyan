@@ -12,9 +12,6 @@ export type UpdateInfo = {
   body?: string;
   date?: string;
   nextSuggestedCheckInSec?: number;
-  // Web-specific fields
-  packageManager?: string;
-  updateCommand?: string;
 };
 
 export type UpdateProgress = {

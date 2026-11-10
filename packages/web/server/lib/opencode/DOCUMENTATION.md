@@ -761,14 +761,18 @@ discard them when the call ends: measured on 2026-09-30 at 10 to 20 seconds and
   - `POST /api/devryan/update-install`
   - `GET /api/devryan/models-metadata`
   - `GET /api/zen/models`
-- Update checks await asynchronous package-manager probes so background polling
-  cannot block prompt admission, recovery RPCs, or SSE on the shared host event
-  loop. Selection preserves forced-manager, installation-ownership, environment
-  hint, runtime hint, and visible-package fallback precedence. Availability and
-  metadata probes retain their 5-second and 10-second limits and 1 MiB output
-  bound. Concurrent checks share one lookup; a resolved package-manager choice
-  is cached. Desktop continues to report Electron ownership without probing.
-  CLI detection and update execution keep their synchronous contracts.
+- DevRyan ships only as the DMG on the GitHub releases page; `@devryan/web` on
+  npm is not DevRyan's. `lib/package-manager.js` `checkForUpdates` reads only the
+  canonical repository's GitHub latest release (or `DEVRYAN_UPDATE_API_URL` when
+  set) and returns `{ available, version, currentVersion, body, date,
+  nextSuggestedCheckInSec, releaseUrl }`, or `{ available: false, currentVersion,
+  releaseUrl, error }` when the release cannot be read. It never consults the
+  npm registry or starts a package-manager process, and the response no longer
+  carries `packageManager` or `updateCommand`. `devryan update` reports the same
+  release and points to the DMG.
+- `POST /api/devryan/update-install` installs nothing: it answers 410
+  `{ error: 'update_install_unsupported', message, releaseUrl }` pointing to the
+  DMG release page.
 
 ## Public exports (pwa-manifest-routes.js)
 - `registerPwaManifestRoute(app, dependencies)`: registers PWA manifest endpoint with dynamic app-name resolution and recent-session shortcuts:

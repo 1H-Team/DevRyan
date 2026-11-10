@@ -1,26 +1,12 @@
-import { daemonRecordPaths } from '../../../bin/cli-records.js';
-import nodePath from 'node:path';
+import { RELEASE_INSTALL_HINT, RELEASE_PAGE_URL } from '../package-manager.js';
 
-export const readDaemonRestartOptions = async ({ fs, dataDirectory, port }) => {
-  for (const record of daemonRecordPaths(nodePath.join(dataDirectory, 'run'), port)) {
-    try {
-      const parsed = JSON.parse(await fs.promises.readFile(record.instance, 'utf8'));
-      if (parsed && typeof parsed === 'object' && parsed.port === port) return parsed;
-    } catch {
-      // Try the historical daemon record before using the current port.
-    }
-  }
-  return { port, daemon: true };
-};
+// The legacy web build used to install `@devryan/web` from npm here. That
+// package is not DevRyan's: DevRyan ships only as the DMG on its GitHub
+// releases page, so this endpoint refuses with a typed pointer and installs nothing.
+export const UPDATE_INSTALL_UNSUPPORTED = 'update_install_unsupported';
 
 export const registerDevRyanRoutes = (app, dependencies) => {
   const {
-    fs,
-    path,
-    process,
-    server,
-    __dirname,
-    devryanDataDir,
     modelsDevApiUrl,
     modelsMetadataCacheTtl,
     readSettingsFromDiskMigrated,
@@ -69,157 +55,12 @@ export const registerDevRyanRoutes = (app, dependencies) => {
     }
   });
 
-  app.post('/api/devryan/update-install', async (_req, res) => {
-    try {
-      const { spawn: spawnChild } = await import('child_process');
-      const {
-        checkForUpdates,
-        getUpdateCommand,
-        detectPackageManagerDetails,
-      } = await import('../package-manager.js');
-
-      const updateInfo = await checkForUpdates();
-      if (!updateInfo.available) {
-        return res.status(400).json({ error: 'No update available' });
-      }
-
-      const pmDetails = detectPackageManagerDetails();
-      const pm = pmDetails.packageManager;
-      const updateCmd = getUpdateCommand(pm);
-      const currentPort = server.address()?.port || 3000;
-      const storedOptions = await readDaemonRestartOptions({ fs, dataDirectory: devryanDataDir, port: currentPort });
-
-      const isWindows = process.platform === 'win32';
-      const quotePosix = (value) => `'${String(value).replace(/'/g, "'\\''")}'`;
-      const quoteCmd = (value) => {
-        const stringValue = String(value);
-        return `"${stringValue.replace(/"/g, '""')}"`;
-      };
-
-      const cliPath = path.resolve(__dirname, '..', 'bin', 'cli.js');
-      const restartParts = [
-        isWindows ? quoteCmd(process.execPath) : quotePosix(process.execPath),
-        isWindows ? quoteCmd(cliPath) : quotePosix(cliPath),
-        'serve',
-        '--port',
-        String(storedOptions.port),
-      ];
-      let restartCmdPrimary = restartParts.join(' ');
-      let restartCmdFallback = `devryan serve --port ${storedOptions.port}`;
-      if (storedOptions.host) {
-        if (isWindows) {
-          const escapedHost = storedOptions.host.replace(/"/g, '""');
-          restartCmdPrimary += ` --host "${escapedHost}"`;
-          restartCmdFallback += ` --host "${escapedHost}"`;
-        } else {
-          const escapedHost = storedOptions.host.replace(/'/g, "'\\''");
-          restartCmdPrimary += ` --host '${escapedHost}'`;
-          restartCmdFallback += ` --host '${escapedHost}'`;
-        }
-      }
-      if (storedOptions.uiPassword) {
-        if (isWindows) {
-          const escapedPw = storedOptions.uiPassword.replace(/"/g, '""');
-          restartCmdPrimary += ` --ui-password "${escapedPw}"`;
-          restartCmdFallback += ` --ui-password "${escapedPw}"`;
-        } else {
-          const escapedPw = storedOptions.uiPassword.replace(/'/g, "'\\''");
-          restartCmdPrimary += ` --ui-password '${escapedPw}'`;
-          restartCmdFallback += ` --ui-password '${escapedPw}'`;
-        }
-      }
-      const restartCmd = `(${restartCmdPrimary}) || (${restartCmdFallback})`;
-      const updateLogPath = path.join(devryanDataDir, 'update-install.log');
-      const logPreamble = [
-        '',
-        `=== DevRyan update ${new Date().toISOString()} ===`,
-        `currentVersion=${updateInfo.currentVersion || 'unknown'}`,
-        `targetVersion=${updateInfo.version || 'unknown'}`,
-        `packageManager=${pm}`,
-        `packageManagerReason=${pmDetails.reason || 'unknown'}`,
-        `packageManagerCommand=${pmDetails.packageManagerCommand || 'unknown'}`,
-        `packagePath=${pmDetails.packagePath || 'unknown'}`,
-        `globalNodeModulesRoot=${pmDetails.globalNodeModulesRoot || 'unknown'}`,
-        'mode=restart',
-        `updateCommand=${updateCmd}`,
-        `logPath=${updateLogPath}`,
-      ].join('\n');
-
-      res.json({
-        success: true,
-        message: 'Update starting, server will restart shortly',
-        version: updateInfo.version,
-        packageManager: pm,
-        autoRestart: true,
-      });
-
-        setTimeout(() => {
-          console.log(`\nInstalling update using ${pm}...`);
-          console.log(`Running: ${updateCmd}`);
-          console.log(logPreamble);
-
-          const shell = isWindows ? (process.env.ComSpec || 'cmd.exe') : 'sh';
-          const shellFlag = isWindows ? '/c' : '-c';
-          const script = isWindows
-            ? `
-            echo ${quoteCmd(logPreamble)}
-            timeout /t 2 /nobreak >nul
-            ${updateCmd}
-            if %ERRORLEVEL% EQU 0 (
-              echo Update successful, restarting DevRyan...
-              ${restartCmd}
-            ) else (
-              echo Update failed
-              exit /b 1
-            )
-            `
-          : `
-            printf '%s\n' ${quotePosix(logPreamble)}
-            sleep 2
-            ${updateCmd}
-            if [ $? -eq 0 ]; then
-              echo "Update successful, restarting DevRyan..."
-              ${restartCmd}
-            else
-              echo "Update failed"
-              exit 1
-            fi
-          `;
-
-        let logFd = null;
-        try {
-          fs.mkdirSync(path.dirname(updateLogPath), { recursive: true });
-          logFd = fs.openSync(updateLogPath, 'a');
-        } catch (logError) {
-          console.warn('Failed to open update log file, continuing without log capture:', logError);
-        }
-
-        const child = spawnChild(shell, [shellFlag, script], {
-          detached: true,
-          stdio: logFd !== null ? ['ignore', logFd, logFd] : 'ignore',
-          env: process.env,
-        });
-        child.unref();
-
-        if (logFd !== null) {
-          try {
-            fs.closeSync(logFd);
-          } catch {
-          }
-        }
-
-        console.log('Update process spawned, shutting down server...');
-
-        setTimeout(() => {
-          process.exit(0);
-        }, 500);
-      }, 500);
-    } catch (error) {
-      console.error('Failed to install update:', error);
-      res.status(500).json({
-        error: error instanceof Error ? error.message : 'Failed to install update',
-      });
-    }
+  app.post('/api/devryan/update-install', (_req, res) => {
+    res.status(410).json({
+      error: UPDATE_INSTALL_UNSUPPORTED,
+      message: RELEASE_INSTALL_HINT,
+      releaseUrl: RELEASE_PAGE_URL,
+    });
   });
 
   app.get('/api/devryan/models-metadata', async (_req, res) => {

@@ -949,7 +949,7 @@ COMMANDS:
   runtime bundle resume --expected-revision N   Resume the retained runtime after blocked rollback
   enroll-owner   Create a two-minute local-owner enrollment link (--port)
   logs           Tail DevRyan logs
-  update         Check for and install updates
+  update         Check for a newer release (install it from the DMG)
 
 OPTIONS:
   -p, --port              Web server port (default: ${DEFAULT_PORT})
@@ -1122,7 +1122,7 @@ _devryan() {
     'status:Show server status'
     'tunnel:Tunnel lifecycle commands'
     'logs:Tail DevRyan logs'
-    'update:Check for and install updates'
+    'update:Check for a newer release'
   )
 
   tunnel_commands=(
@@ -1186,7 +1186,7 @@ complete -c devryan -n '__fish_use_subcommand' -a 'restart' -d 'Stop and start t
 complete -c devryan -n '__fish_use_subcommand' -a 'status' -d 'Show server status'
 complete -c devryan -n '__fish_use_subcommand' -a 'tunnel' -d 'Tunnel lifecycle commands'
 complete -c devryan -n '__fish_use_subcommand' -a 'logs' -d 'Tail logs'
-complete -c devryan -n '__fish_use_subcommand' -a 'update' -d 'Check for updates'
+complete -c devryan -n '__fish_use_subcommand' -a 'update' -d 'Check for a newer release'
 
 complete -c devryan -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'help' -d 'Show tunnel help'
 complete -c devryan -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'providers' -d 'Show providers'
@@ -5063,6 +5063,8 @@ const commands = {
     });
   },
 
+  // DevRyan ships only as the DMG on its GitHub releases page: this reports the
+  // latest release and points there. It never runs a package manager.
   async update(options = {}) {
     const showOutput = shouldRenderHumanOutput(options);
     const updateSpin = createSpinner(options);
@@ -5070,12 +5072,10 @@ const commands = {
     const packageManagerPath = path.join(__dirname, '..', 'server', 'lib', 'package-manager.js');
     const {
       checkForUpdates,
-      executeUpdate,
-      detectPackageManager,
       getCurrentVersion,
+      RELEASE_INSTALL_HINT,
     } = await importFromFilePath(packageManagerPath);
 
-    const runningInstances = await discoverRunningInstances();
     const currentVersion = getCurrentVersion();
 
     if (showOutput) {
@@ -5086,9 +5086,9 @@ const commands = {
       logStatus('info', `current version: ${currentVersion}`);
     }
 
-    updateSpin?.start('Checking for updates...');
+    updateSpin?.start('Checking for a newer release...');
 
-    const updateInfo = await checkForUpdates();
+    const updateInfo = await checkForUpdates({ currentVersion });
     if (updateInfo.error) {
       updateSpin?.error('Update check failed');
       if (showOutput) {
@@ -5096,17 +5096,21 @@ const commands = {
       }
       throw new Error(updateInfo.error);
     }
+    const latestVersion = updateInfo.version || currentVersion;
+    const releaseUrl = updateInfo.releaseUrl;
+    if (isJsonMode(options)) {
+      printJson({
+        currentVersion,
+        latestVersion,
+        updateAvailable: updateInfo.available,
+        updated: false,
+        releaseUrl,
+      });
+      return;
+    }
     if (!updateInfo.available) {
-      if (isJsonMode(options)) {
-        printJson({
-          currentVersion,
-          latestVersion: updateInfo.version || currentVersion,
-          updated: false,
-        });
-        return;
-      }
       if (showOutput && !updateSpin) {
-        logStatus('success', 'you are running the latest version');
+        logStatus('success', 'you are running the latest release');
       }
       updateSpin?.stop('Already up to date');
       if (showOutput) {
@@ -5118,69 +5122,14 @@ const commands = {
     }
 
     if (showOutput && !updateSpin) {
-      logStatus('info', `updating ${updateInfo.currentVersion || currentVersion} -> ${updateInfo.version || 'latest'}`);
+      logStatus('info', `DevRyan ${latestVersion} is available (current ${currentVersion})`, RELEASE_INSTALL_HINT);
     }
-    updateSpin?.message(`Updating to ${updateInfo.version || 'latest'}...`);
-
-    if (runningInstances.length > 0) {
-      updateSpin?.message(`Stopping ${runningInstances.length} running instance(s)...`);
-      for (const instance of runningInstances) {
-        try {
-          const requested = await requestServerShutdown(instance.port);
-          await stopInstanceProcess(instance.pid, {
-            shutdownWaitMs: requested ? 5000 : 0,
-            gracefulTimeoutMs: 2500,
-            forceTimeoutMs: 3000,
-          });
-          removePidFile(instance.pidFilePath);
-        } catch {
-        }
-      }
-    }
-
-    const pm = detectPackageManager();
-    const result = executeUpdate(pm, { silent: isJsonMode(options) || isQuietMode(options) });
-    if (!result.success) {
-      updateSpin?.error('Update failed');
-      if (showOutput) {
-        clackOutro('update failed');
-      }
-      throw new Error(`Update failed with exit code ${result.exitCode}`);
-    }
-
-    if (runningInstances.length > 0) {
-      updateSpin?.message(`Restarting ${runningInstances.length} instance(s)...`);
-      for (const instance of runningInstances) {
-        const storedOptions = readInstanceOptions(instance.instanceFilePath) || { port: instance.port };
-        await this.serve({
-          port: storedOptions.port || instance.port,
-          host: storedOptions.host,
-          explicitPort: true,
-          uiPassword: storedOptions.uiPassword,
-          suppressStartupSummary: true,
-          suppressUiPasswordWarning: true,
-          quiet: true,
-        });
-      }
-    }
-
-    if (showOutput && !updateSpin) {
-      logStatus('success', `updated to ${updateInfo.version || 'latest'}`);
-    }
-    updateSpin?.stop(`Updated to ${updateInfo.version || 'latest'}`);
-    if (isJsonMode(options)) {
-      printJson({
-        currentVersion,
-        latestVersion: updateInfo.version || 'latest',
-        updated: true,
-        restartedCount: runningInstances.length,
-      });
-      return;
-    }
+    updateSpin?.stop(`DevRyan ${latestVersion} is available`);
     if (showOutput) {
-      clackOutro('update complete');
+      if (updateSpin) logStatus('info', RELEASE_INSTALL_HINT);
+      clackOutro('install the DMG to update');
     } else if (isQuietMode(options)) {
-      process.stdout.write(`updated ${updateInfo.version || 'latest'}\n`);
+      process.stdout.write(`update-available ${latestVersion} ${releaseUrl}\n`);
     }
   },
 };

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EventEmitter } from 'events';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -9,6 +9,8 @@ import { pathToFileURL } from 'url';
 
 import { isModuleCliExecution, normalizeCliEntryPath } from './cli-entry.js';
 import {
+  commands,
+  generateCompletionScript,
   assertAuthenticatedNetworkExposure,
   DEFAULT_DAEMON_READY_TIMEOUT_MS,
   isDevRyanPidFileCommand,
@@ -354,3 +356,66 @@ describe('bundled runtime help', () => {
     } finally { await fs.rm(root, { recursive: true, force: true }); }
   });
 });
+
+describe('update command', () => {
+  const releasePage = 'https://github.com/1H-Team/DevRyan/releases/latest';
+  const previousUpdateApiUrl = process.env.DEVRYAN_UPDATE_API_URL;
+
+  const runUpdate = async (options, tagName) => {
+    delete process.env.DEVRYAN_UPDATE_API_URL;
+    const fetchMock = vi.fn(async (url) => {
+      if (String(url) === 'https://api.github.com/repos/1H-Team/DevRyan/releases/latest') {
+        return { ok: true, json: async () => ({ tag_name: tagName, body: '', published_at: '2026-11-01T00:00:00Z' }) };
+      }
+      throw new Error(`Unexpected fetch: ${String(url)}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    let stdout = '';
+    vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => { stdout += String(chunk); return true; });
+    await commands.update(options);
+    return { stdout, fetchMock };
+  };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    if (previousUpdateApiUrl === undefined) delete process.env.DEVRYAN_UPDATE_API_URL;
+    else process.env.DEVRYAN_UPDATE_API_URL = previousUpdateApiUrl;
+  });
+
+  it('reports a newer GitHub release in JSON and points to the DMG without installing', async () => {
+    const { stdout, fetchMock } = await runUpdate({ json: true }, 'v999.0.0');
+    const { version: currentVersion } = JSON.parse(await fs.readFile(path.join(import.meta.dirname, '..', 'package.json'), 'utf8'));
+    expect(JSON.parse(stdout)).toEqual({
+      status: 'ok', currentVersion, latestVersion: '999.0.0', updateAvailable: true, updated: false, releaseUrl: releasePage,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports the latest release and the up-to-date state in quiet mode', async () => {
+    const { version: currentVersion } = JSON.parse(await fs.readFile(path.join(import.meta.dirname, '..', 'package.json'), 'utf8'));
+    expect((await runUpdate({ quiet: true }, `v${currentVersion}`)).stdout).toBe(`up-to-date ${currentVersion}\n`);
+    expect((await runUpdate({ quiet: true }, 'v999.0.0')).stdout).toBe(`update-available 999.0.0 ${releasePage}\n`);
+  });
+
+  it('documents update as a release check in help and completions', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-cli-update-help-'));
+    try {
+      const run = (args) => promisify(execFile)(process.execPath, [path.join(import.meta.dirname, 'cli.js'), ...args], {
+        cwd: root, env: { PATH: process.env.PATH, HOME: root, XDG_CONFIG_HOME: path.join(root, 'config'),
+          XDG_DATA_HOME: path.join(root, 'data'), DEVRYAN_DATA_DIR: path.join(root, 'web-data'), NO_COLOR: '1' },
+        timeout: 15000, maxBuffer: 256 * 1024,
+      });
+      const { stdout: help } = await run(['--help']);
+      expect(help).toContain('update         Check for a newer release (install it from the DMG)');
+      expect(help).not.toMatch(/install updates/i);
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+    for (const shell of ['bash', 'zsh', 'fish']) {
+      const script = generateCompletionScript(shell);
+      expect(script).not.toMatch(/install updates/i);
+    }
+    expect(generateCompletionScript('zsh')).toContain("'update:Check for a newer release'");
+    expect(generateCompletionScript('fish')).toContain("-a 'update' -d 'Check for a newer release'");
+  });
+});
+
