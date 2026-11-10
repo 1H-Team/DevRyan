@@ -73,7 +73,8 @@ for (const format of ['sha1', 'sha256']) {
     // Git itself accepts every written object and the final ref.
     await git(direct.root, ['--git-dir', direct.gitDir, 'fsck', '--strict', '--no-dangling']);
     expect((await git(direct.root, ['--git-dir', direct.gitDir, 'rev-parse', 'refs/devryan/state'])).toString().trim()).toBe(indexed.at(-1));
-  });
+    // Two full Git replays per case: about 1 s alone, over Bun's 5 s default when the whole suite runs beside it.
+  }, 30_000);
 }
 
 test('removing every key leaves the empty tree, and an unchanged write stages nothing', async () => {
