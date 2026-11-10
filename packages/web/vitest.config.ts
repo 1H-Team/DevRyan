@@ -7,6 +7,8 @@ import viteConfig from './vite.config';
 const { plugins: _buildPlugins, ...resolution } = viteConfig;
 
 // Bun-native suites (`bun run test:native`) and reviewed upstream inputs.
+// Every entry but the reviewed inputs is a `test:native` target in package.json;
+// scripts/test-suite-contract.test.mjs fails when the two lists differ.
 const notVitest = [
   'runtime/reviewed-inputs/**',
   'server/lib/opencode/runtime-host/native-helper.test.js',

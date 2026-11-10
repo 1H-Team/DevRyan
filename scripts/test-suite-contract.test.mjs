@@ -1,7 +1,10 @@
 import { BUILD_JOB_TESTS, CI_LANES, ciTestInventory, requiresMac, MAC_WEB_TESTS } from './test-ci-lanes.mjs';
 import { testCaseShard } from './test-case-shard.mjs';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import os from 'node:os';
 import path from 'node:path';
 import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -17,6 +20,91 @@ import { discoverUiTestFiles } from './test-ui.mjs';
 import { STARTUP_CONTRACT_GROUPS } from './test-startup-contract.mjs';
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const webDirectory = path.join(repositoryRoot, 'packages/web');
+const testDiscovery = { ignoredDirectories: new Set(['.git', '.cache', '.worktrees', 'node_modules', 'dist', 'dist-bundle', 'target', 'resources']) };
+
+/**
+ * The two hand-kept web runner lists: `notVitest` in packages/web/vitest.config.ts
+ * and the targets of the `test:native` script (a directory target `dir` is `dir/**`).
+ */
+function webRunnerLists() {
+  const config = readFileSync(path.join(webDirectory, 'vitest.config.ts'), 'utf8');
+  const block = /const notVitest = \[([^\]]*)\];/.exec(config);
+  assert.ok(block, 'vitest.config.ts declares const notVitest = [...]');
+  const notVitest = [...block[1].matchAll(/'([^']+)'/g)].map((match) => match[1]);
+  const web = JSON.parse(readFileSync(path.join(webDirectory, 'package.json'), 'utf8'));
+  const [runner, subcommand, ...targets] = web.scripts['test:native'].split(/\s+/);
+  assert.deepEqual([runner, subcommand], ['bun', 'test']);
+  const native = targets.map((target) => target.replace(/^\.\//, ''))
+    .map((target) => existsSync(path.join(webDirectory, target)) && statSync(path.join(webDirectory, target)).isDirectory() ? `${target}/**` : target);
+  return { notVitest, native };
+}
+
+/** Test files a `notVitest`/`test:native` entry names, relative to packages/web. */
+function webEntryFiles(entry) {
+  if (!entry.endsWith('/**')) return [entry];
+  return discoverTestFiles(path.join(webDirectory, entry.slice(0, -3)), webDirectory);
+}
+
+let vitestListing;
+/** What Vitest collects per project with no lane exclusion (`vitest list`, nothing runs). */
+function vitestCollectedFiles() {
+  if (vitestListing) return vitestListing;
+  const vitest = path.join(path.dirname(createRequire(path.join(webDirectory, 'package.json')).resolve('vitest/package.json')), 'vitest.mjs');
+  const env = { ...process.env };
+  delete env.DEVRYAN_VITEST_EXCLUDE;
+  const scratch = mkdtempSync(path.join(os.tmpdir(), 'devryan-vitest-list-'));
+  try {
+    const output = path.join(scratch, 'files.json');
+    const listed = spawnSync(process.execPath, [vitest, 'list', '--filesOnly', `--json=${output}`],
+      { cwd: webDirectory, env, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: 60_000 });
+    assert.equal(listed.error, undefined, `vitest list could not run or did not finish within 60 s: ${listed.error?.message}`);
+    assert.equal(listed.status, 0, listed.stderr);
+    vitestListing = JSON.parse(readFileSync(output, 'utf8'))
+      .map(({ file, projectName }) => ({ file: path.relative(webDirectory, file).split(path.sep).join('/'), project: projectName }));
+    return vitestListing;
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
+/** Text of the call that starts at `start` (`skipIf(...)`, `t.skip(...)`), through its balanced closing parenthesis. */
+function callText(source, start) {
+  for (let index = source.indexOf('(', start), depth = 0; index !== -1 && index < source.length; index++) {
+    if (source[index] === '(') depth++;
+    else if (source[index] === ')' && --depth === 0) return source.slice(start, index + 1);
+  }
+  return source.slice(start);
+}
+
+/**
+ * Spans of `source` that match a guard text, whitespace ignored on both sides, so
+ * reformatting a guard (`=== ` to `===`) keeps it pinned.
+ */
+function guardSpans(source, text) {
+  const pattern = new RegExp([...text.replace(/\s+/g, '')].map((char) => char.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')).join('\\s*'), 'g');
+  return [...source.matchAll(pattern)].map((match) => [match.index, match.index + match[0].length]);
+}
+
+/** Skip forms in `source` that need an inventory guard: conditional calls and any reference to a skip method (an alias). */
+function conditionalSkipSites(source) {
+  const sites = [];
+  for (const match of source.matchAll(/(?:\.(skipIf|runIf|if)|(?<![\w$])(?:t|ctx|context)\.skip)\s*\(/g)) {
+    const start = match[1] ? match.index + 1 : match.index;
+    sites.push({ start, text: callText(source, start) });
+  }
+  for (const match of source.matchAll(/(?<![\w$])(?:test|it|describe|suite|bunTest)\.(?:skip|todo|skipIf|runIf)\b(?!\s*\()/g)) {
+    const lineEnd = source.indexOf('\n', match.index);
+    sites.push({ start: match.index, text: source.slice(source.lastIndexOf('\n', match.index) + 1, lineEnd === -1 ? undefined : lineEnd).trim() });
+  }
+  return sites;
+}
+
+/** Sites no guard covers: a site is covered when one of the guard texts spans its start. */
+function uncoveredSkipSites(source, guards) {
+  const spans = guards.flatMap((guard) => guardSpans(source, guard.text));
+  return conditionalSkipSites(source).filter(({ start }) => !spans.some(([from, to]) => from <= start && start < to));
+}
 
 describe('full test-suite contract', () => {
   test('discovers every repository script test, including release verification', () => {
@@ -28,13 +116,28 @@ describe('full test-suite contract', () => {
     assert.ok(!files.some(file => file.startsWith('packages/agents-core/')));
     const web = JSON.parse(readFileSync(path.join(repositoryRoot, 'packages/web/package.json'), 'utf8'));
     assert.equal(web.scripts.test, 'bun run test:vitest && bun run test:native');
-    const vitestConfig = readFileSync(path.join(repositoryRoot, 'packages/web/vitest.config.ts'), 'utf8');
-    assert.ok(vitestConfig.includes("'runtime/reviewed-inputs/**'"));
-    for (const file of ['server/lib/opencode/runtime-host/native-helper.test.js', 'server/lib/opencode/runtime-host/native-retention-quiet.test.ts', 'server/lib/opencode/runtime-host/native-queued-input.test.ts']) {
-      assert.ok(vitestConfig.includes(`'${file}'`), `${file} stays out of Vitest`);
-      assert.ok(web.scripts['test:native'].startsWith('bun test ') && web.scripts['test:native'].split(' ').includes(file));
-    }
     assert.deepEqual(files, [...files].sort());
+  });
+
+  test('web test files run under exactly one of Vitest and test:native', () => {
+    const { notVitest, native } = webRunnerLists();
+    // Reviewed upstream inputs run in the scripts suite; every other Vitest exclusion is a test:native target.
+    assert.ok(notVitest.includes('runtime/reviewed-inputs/**'));
+    assert.deepEqual([...notVitest].filter((entry) => entry !== 'runtime/reviewed-inputs/**').sort(), [...native].sort(),
+      'vitest.config.ts notVitest and the test:native targets name the same files');
+    assert.equal(new Set(native).size, native.length);
+    for (const entry of notVitest) assert.ok(existsSync(path.join(webDirectory, entry.replace(/\/\*\*$/, ''))), `${entry} exists`);
+    for (const entry of native) assert.ok(webEntryFiles(entry).every((file) => existsSync(path.join(webDirectory, file))) && webEntryFiles(entry).length > 0, `${entry} names test files`);
+    const nativeFiles = native.flatMap(webEntryFiles);
+    const collected = vitestCollectedFiles();
+    const vitestFiles = collected.map((entry) => entry.file);
+    assert.deepEqual([...new Set(collected.map((entry) => entry.project))].sort(), [...WEB_VITEST_PROJECTS].sort());
+    assert.equal(new Set(vitestFiles).size, vitestFiles.length, 'no web test file is collected by two Vitest projects');
+    assert.deepEqual(vitestFiles.filter((file) => nativeFiles.includes(file)), [], 'no test:native file is collected by Vitest');
+    const reviewed = webEntryFiles('runtime/reviewed-inputs/**');
+    assert.deepEqual(vitestFiles.filter((file) => reviewed.includes(file)), []);
+    const webTests = discoverTestFiles(webDirectory, webDirectory).filter((file) => !reviewed.includes(file));
+    assert.deepEqual([...vitestFiles, ...nativeFiles].sort(), webTests, 'every web test file runs under Vitest or test:native');
   });
 
   test('discovers Electron tests recursively', () => {
@@ -248,15 +351,20 @@ describe('full test-suite contract', () => {
       scripts: new Set(discoverScriptTestFiles(repositoryRoot)),
       ui: new Set(discoverUiTestFiles(path.join(repositoryRoot, 'packages/ui'))),
     };
-    const web = JSON.parse(readFileSync(path.join(repositoryRoot, 'packages/web/package.json'), 'utf8'));
-    const webExcludes = [...web.scripts['test:vitest'].matchAll(/--exclude '([^']+)'/g)].map((match) => match[1]);
+    // Web startup files run through `vitest run <files>` and, in the full gate, through
+    // the Vitest projects of test:vitest: each must be collected by one of those projects.
+    const web = JSON.parse(readFileSync(path.join(webDirectory, 'package.json'), 'utf8'));
+    assert.equal(web.scripts['test:vitest'], 'vitest run');
+    const vitestProject = new Map(vitestCollectedFiles().map((entry) => [entry.file, entry.project]));
+    const { notVitest } = webRunnerLists();
     for (const group of STARTUP_CONTRACT_GROUPS) {
       assert.ok(files(group).length > 0, group.name);
       for (const file of files(group)) {
         if (group.owner in discovered) assert.ok(discovered[group.owner].has(file), `${file} is not discovered by the ${group.owner} suite`);
         else if (group.owner === 'web') {
           assert.ok(existsSync(path.join(repositoryRoot, 'packages/web', file)), file);
-          assert.ok(!webExcludes.some((pattern) => pattern.endsWith('/**') ? file.startsWith(pattern.slice(0, -2)) : file === pattern), `${file} is excluded from web test:vitest`);
+          assert.ok(!notVitest.some((entry) => webEntryFiles(entry).includes(file)), `${file} is excluded from web test:vitest`);
+          assert.ok(WEB_VITEST_PROJECTS.includes(vitestProject.get(file)), `${file} is not collected by a web Vitest project`);
         } else {
           // shared-runtime and harness-runtime run plain `bun test` over their package.
           const directory = { shared: 'packages/shared-runtime', harness: 'packages/harness-runtime' }[group.owner];
@@ -267,13 +375,76 @@ describe('full test-suite contract', () => {
     }
   });
 
-  test('contains no silent skip or todo declarations in deterministic tests', () => {
-    const files = discoverTestFiles(repositoryRoot, repositoryRoot, {
-      ignoredDirectories: new Set(['.git', '.cache', '.worktrees', 'node_modules', 'dist', 'dist-bundle', 'target', 'resources']),
-    }).filter((file) => file !== 'scripts/test-suite-contract.test.mjs');
-    const forbidden = new RegExp(String.raw`\b(?:test|it|describe)\.(?:skip|todo)\s*\(|\bskip\s*:`);
+  test('contains no silent skip, todo or only declarations in deterministic tests', () => {
+    const files = discoverTestFiles(repositoryRoot, repositoryRoot, testDiscovery).filter((file) => file !== 'scripts/test-suite-contract.test.mjs');
+    const forbidden = new RegExp(String.raw`(?<![\w$])(?:test|it|describe|suite|bunTest)\.(?:skip|todo)\s*\(|(?<![\w$])(?:test|it|describe|suite|bunTest)\.only\b|\bskip\s*:`);
     const offenders = files.filter((file) => forbidden.test(readFileSync(path.join(repositoryRoot, file), 'utf8')));
     assert.deepEqual(offenders, []);
+  });
+
+  test('every conditional skip is inventoried with its condition and whether CI meets it', () => {
+    const { entries } = JSON.parse(readFileSync(path.join(repositoryRoot, 'scripts/test-conditional-skips.json'), 'utf8'));
+    const files = entries.map((entry) => entry.file);
+    assert.deepEqual(files, [...new Set(files)].sort(), 'one entry per file, sorted by file');
+    const units = ciTestInventory(repositoryRoot);
+    const nativeFiles = webRunnerLists().native.flatMap(webEntryFiles);
+    const packageSuite = (file) => FULL_TEST_SUITES.find((suite) => suite.args[1] === '--cwd' && file.startsWith(`${suite.args[2]}/`))?.key;
+    // The CI job(s) whose lanes run `file`: tests (Ubuntu), native-tests (macOS) or build.
+    const ciJobs = (file) => {
+      if (BUILD_JOB_TESTS.includes(file)) return ['build'];
+      let running = units.filter((unit) => unit.args.some((arg) => arg.replace(/^\.\//, '') === file));
+      if (!running.length && file.startsWith('packages/web/')) {
+        const relative = file.slice('packages/web/'.length);
+        running = units.filter((unit) => unit.name === 'web:macos' && unit.args.includes(relative));
+        if (!running.length) running = units.filter((unit) => nativeFiles.includes(relative) ? unit.name === 'web:native' : unit.name.startsWith('web:vitest'));
+      }
+      if (!running.length) running = units.filter((unit) => unit.suite === packageSuite(file));
+      return [...new Set(running.map((unit) => requiresMac(unit) ? 'native-tests' : 'tests'))].sort();
+    };
+    const mechanisms = new Set(['skipIf', 'runIf', 't.skip()', 'skip alias', 'early return', 'if around test']);
+    const neverInCi = [];
+    for (const entry of entries) {
+      assert.ok(existsSync(path.join(repositoryRoot, entry.file)), `${entry.file} no longer exists`);
+      const source = readFileSync(path.join(repositoryRoot, entry.file), 'utf8');
+      assert.ok(entry.guards.length > 0, `${entry.file} lists its guards`);
+      for (const guard of entry.guards) {
+        assert.ok(mechanisms.has(guard.mechanism), `${entry.file}: unknown mechanism ${guard.mechanism}`);
+        assert.ok(['yes', 'no'].includes(guard.ci), `${entry.file}: ci is yes or no`);
+        assert.ok(typeof guard.condition === 'string' && guard.condition.length > 0, `${entry.file}: condition in words`);
+        assert.ok(guardSpans(source, guard.text).length > 0, `${entry.file} no longer contains its guard ${guard.text}`);
+        if (guard.definition !== undefined) assert.ok(guardSpans(source, guard.definition).length > 0, `${entry.file} no longer contains ${guard.definition}`);
+        if (guard.ci === 'no') neverInCi.push(`${entry.file}: ${guard.condition}${guard.note ? ` (${guard.note})` : ''}`);
+      }
+      assert.deepEqual(entry.ciJobs, ciJobs(entry.file), `${entry.file} runs in the CI job(s) its entry names`);
+    }
+    // Mechanical forms are found here; early-return and if-wrapped guards are listed by hand.
+    const byFile = new Map(entries.map((entry) => [entry.file, entry]));
+    const missing = [];
+    for (const file of discoverTestFiles(repositoryRoot, repositoryRoot, testDiscovery).filter((name) => name !== 'scripts/test-suite-contract.test.mjs')) {
+      const source = readFileSync(path.join(repositoryRoot, file), 'utf8');
+      for (const site of uncoveredSkipSites(source, byFile.get(file)?.guards ?? [])) missing.push(`${file}: ${site.text}`);
+    }
+    assert.deepEqual(missing, [], 'conditional skips missing from scripts/test-conditional-skips.json');
+    console.log(`[test-suite-contract] ${neverInCi.length} conditional test guard(s) CI never satisfies, so those tests never run in CI:\n${neverInCi.map((line) => `  - ${line}`).join('\n')}`);
+  });
+});
+
+describe('conditional-skip guard matching', () => {
+  test('ignores whitespace, so a reformatted guard stays pinned', () => {
+    const guards = [{ text: "skipIf(process.platform === 'win32')" }];
+    const reformatted = "describe.skipIf(process.platform==='win32')('x', () => {});\n";
+    assert.deepEqual(guardSpans(reformatted, guards[0].text), [[9, 43]]);
+    assert.deepEqual(uncoveredSkipSites(reformatted, guards), []);
+    assert.deepEqual(uncoveredSkipSites("describe.skipIf(process.platform !== 'darwin')('x', () => {});\n", guards).map((site) => site.text),
+      ["skipIf(process.platform !== 'darwin')"]);
+  });
+
+  test('a skip method used without a call is an alias that needs a guard', () => {
+    const source = "const macTest = process.platform === 'darwin' ? test : test.skip;\nmacTest('x', () => {});\n";
+    assert.deepEqual(uncoveredSkipSites(source, []).map((site) => site.text), ["const macTest = process.platform === 'darwin' ? test : test.skip;"]);
+    assert.deepEqual(uncoveredSkipSites(source, [{ text: "const macTest=process.platform==='darwin'?test:test.skip;" }]), []);
+    assert.deepEqual(conditionalSkipSites("it.runIf(ok)('x', () => {}); const later = bunTest.skipIf;").map((site) => site.text),
+      ['runIf(ok)', "it.runIf(ok)('x', () => {}); const later = bunTest.skipIf;"]);
   });
 });
 

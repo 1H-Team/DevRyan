@@ -367,10 +367,13 @@ describe('maintenance validation selection', () => {
     ]) {
       const plan = buildPlan('fast', [file]);
       const testCommands = plan.commands.filter((entry) => entry.label.startsWith('test:'));
-      assert.deepEqual(testCommands.map((entry) => entry.label), ['test:desktop', 'test:startup'], file);
+      // A test file change also runs the suite contract, which inventories every test file.
+      const contract = file.endsWith('.test.mjs');
+      assert.deepEqual(testCommands.map((entry) => entry.label), ['test:desktop', ...(contract ? ['test:scripts'] : []), 'test:startup'], file);
       // The desktop suite owns no startup group, so the whole startup contract runs too.
       assert.deepEqual(testUnitsForPlan(testCommands).map((unit) => [unit.command, unit.args]), [
         ['bun', ['run', '--cwd', 'packages/desktop', 'test:managed-orchestration']],
+        ...(contract ? [[process.execPath, ['--test', '--test-concurrency=1', '--test-timeout=300000', '--test-force-exit', 'scripts/test-suite-contract.test.mjs']]] : []),
         ...STARTUP_CONTRACT_GROUPS.map((group) => [group.command, group.args]),
       ], file);
     }

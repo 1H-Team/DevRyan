@@ -44,6 +44,9 @@ export const WHOLE_SUITE_INPUTS = Object.freeze([
 // Reviewed inputs are hashed and read as whole trees by manifest code; which
 // tests read a given file is not proven, so any change runs the whole suite.
 const WHOLE_SUITE_PREFIXES = Object.freeze(['packages/web/runtime/reviewed-inputs/']);
+// The suite contract inventories every test file in the repository (discovery,
+// runner lists, conditional skips), so a change to any test file selects it.
+export const SUITE_CONTRACT = 'scripts/test-suite-contract.test.mjs';
 
 const CODE = /\.(?:[cm]?[jt]s|[jt]sx)$/;
 const DECLARATION = /\.d\.[cm]?ts$/;
@@ -226,12 +229,30 @@ export const MARKDOWN_READERS = Object.freeze(['scripts/release-docs.test.mjs'])
 const isReadMarkdown = file => /\.mdx?$/.test(file) && file !== 'CHANGELOG.md' && !file.includes('node_modules/') && !WHOLE_SUITE_PREFIXES.some(prefix => file.startsWith(prefix));
 
 /** `selection` (null when the scripts suite is not in the plan) with the Markdown readers when `files` holds Markdown they read. */
-export function withMarkdownReaders(selection, files) {
+function addMarkdownReaders(selection, files) {
   const markdown = files.filter(isReadMarkdown);
   if (markdown.length === 0 || selection?.all) return selection;
   const reasons = new Map(selection?.reasons ?? []);
   for (const file of markdown) reasons.set(file, `${MARKDOWN_READERS.length} reading every tracked Markdown file`);
   return { all: false, tests: [...new Set([...(selection?.tests ?? []), ...MARKDOWN_READERS])].sort(), reasons, total: selection?.total };
+}
+
+/**
+ * `selection` (null when the scripts suite is not in the plan) with the Markdown
+ * readers when `files` holds Markdown they read, and the suite contract when it
+ * holds a test file of any package.
+ */
+export function withMarkdownReaders(selection, files) {
+  return withSuiteContract(addMarkdownReaders(selection, files), files);
+}
+
+const isRepositoryTestPath = file => testFilePattern.test(file) && !isVendored(file);
+function withSuiteContract(selection, files) {
+  const changed = files.filter(isRepositoryTestPath);
+  if (changed.length === 0 || selection?.all || selection?.tests.includes(SUITE_CONTRACT)) return selection;
+  const reasons = new Map(selection?.reasons ?? []);
+  for (const file of changed) if (!reasons.has(file)) reasons.set(file, 'a test file: the suite contract inventories it');
+  return { all: false, tests: [...new Set([...(selection?.tests ?? []), SUITE_CONTRACT])].sort(), reasons, total: selection?.total };
 }
 
 // The suite inventory (discovery, and the Node/Bun and native-graph split) and
@@ -300,7 +321,7 @@ export function selectScriptTests({ files, triggers = files, root = repositoryRo
     }
     for (const test of reached) selected.add(test);
   }
-  return { all: false, tests: [...selected].sort(), reasons, total };
+  return withSuiteContract({ all: false, tests: [...selected].sort(), reasons, total }, files);
 }
 
 export function main(argv = process.argv.slice(2)) {

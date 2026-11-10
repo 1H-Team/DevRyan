@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { importSpecifiers, isTestImporter, loadPackages, resolveSpecifier } from './check-import-boundaries.mjs';
-import { MARKDOWN_READERS, WHOLE_SUITE_INPUTS, buildScriptTestGraph, selectScriptTests } from './test-select.mjs';
+import { MARKDOWN_READERS, SUITE_CONTRACT, WHOLE_SUITE_INPUTS, buildScriptTestGraph, selectScriptTests, withMarkdownReaders } from './test-select.mjs';
 import { discoverScriptTestFiles } from './test-scripts.mjs';
 
 const roots = [];
@@ -40,7 +40,17 @@ describe('script test selection', () => {
   test('a leaf script selects only the tests importing it', () => {
     const select = fixture(base);
     assert.deepEqual(select(['scripts/sel-leaf.mjs']).tests, ['scripts/sel-leaf.test.mjs']);
-    assert.deepEqual(select(['scripts/sel-leaf.test.mjs']).tests, ['scripts/sel-leaf.test.mjs']);
+    // A test file change also selects the suite contract, which inventories every test file.
+    assert.deepEqual(select(['scripts/sel-leaf.test.mjs']).tests, ['scripts/sel-leaf.test.mjs', 'scripts/test-suite-contract.test.mjs']);
+  });
+
+  test('a test file of any package selects the suite contract, even when the scripts suite is not in the plan', () => {
+    const select = fixture(base);
+    assert.deepEqual(select(['packages/harness-runtime/lib/sel-guard.test.js'], []).tests, [SUITE_CONTRACT]);
+    assert.deepEqual(select(['packages/harness-runtime/lib/sel-guard.js'], []).tests, []);
+    assert.deepEqual(withMarkdownReaders(null, ['packages/shared-runtime/sel-guard.test.js']).tests, [SUITE_CONTRACT]);
+    assert.equal(withMarkdownReaders(null, ['packages/shared-runtime/sel-guard.js']), null);
+    assert.deepEqual(withMarkdownReaders(null, ['packages/web/node_modules/dep/index.test.js']), null);
   });
 
   test('a shared helper selects every test whose closure holds it, through re-exports and require()', () => {
@@ -160,8 +170,8 @@ describe('script test selection', () => {
     const select = fixture({ ...base,
       'scripts/test-scripts.mjs': 'export const discover = () => [];\n',
       'scripts/sel-inventory.test.mjs': "import { discover } from './test-scripts.mjs';\n" });
-    assert.deepEqual(select(['scripts/sel-new.test.mjs']).tests, ['scripts/sel-inventory.test.mjs']);
-    assert.deepEqual(select(['scripts/sel-leaf.test.mjs']).tests, ['scripts/sel-inventory.test.mjs', 'scripts/sel-leaf.test.mjs']);
+    assert.deepEqual(select(['scripts/sel-new.test.mjs']).tests, ['scripts/sel-inventory.test.mjs', 'scripts/test-suite-contract.test.mjs']);
+    assert.deepEqual(select(['scripts/sel-leaf.test.mjs']).tests, ['scripts/sel-inventory.test.mjs', 'scripts/sel-leaf.test.mjs', 'scripts/test-suite-contract.test.mjs']);
   });
 
   test('changed files that did not trigger the suite add the tests reaching them but never widen it', () => {
