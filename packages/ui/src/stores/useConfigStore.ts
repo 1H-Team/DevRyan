@@ -31,6 +31,8 @@ import {
 import { useDirectoryStore } from "@/stores/useDirectoryStore";
 import { getAuthPrincipal } from "@/lib/authSession";
 import { toast } from "@/components/ui";
+import { CLAUDE_AGENT_PROVIDER_ID, requestClaudeAgent } from "@/components/sections/providers/claudeAgentApi";
+import { createClaudeCatalogRecovery } from "@/sync/claude-catalog-recovery";
 import { streamDebugEnabled } from "@/stores/utils/streamDebug";
 import { DEFAULT_WASM_STT_MODEL } from "@/lib/voice/wasmSttService";
 import { resolveVoiceModeEnabledPreference } from "@/lib/voice/voicePreferences";
@@ -802,6 +804,18 @@ declare global {
 const _inFlightProviders = new Map<string, Promise<void>>();
 const _providerLoadTokens = new Map<string, object>();
 const PROVIDER_CATALOG_INCOMPLETE_ERROR = "OpenCode provider catalog unavailable";
+// Claude's models are listed seconds after its connection exists; see claude-catalog-recovery.ts.
+const _claudeCatalogRecovery = createClaudeCatalogRecovery({
+    hasClaudeModels: (directory) => {
+        const state = useConfigStore.getState();
+        const directoryKey = toDirectoryKey(directory);
+        const providers = state.directoryScoped[directoryKey]?.providers
+            ?? (state.activeDirectoryKey === directoryKey ? state.providers : []);
+        return providers.some((provider) => provider.id === CLAUDE_AGENT_PROVIDER_ID && provider.models.length > 0);
+    },
+    isConnected: async (directory) => (await requestClaudeAgent("status", directory))?.connected === true,
+    reload: (options) => useConfigStore.getState().loadProviders(options),
+});
 const _inFlightAgents = new Map<string, { promise: Promise<boolean>; signal?: AbortSignal; providersReady?: Promise<boolean> }>();
 let _initializeAppInFlight: Promise<void> | null = null;
 let _initializeAppSignal: AbortSignal | undefined;
@@ -1249,6 +1263,9 @@ export const useConfigStore = create<ConfigStore>()(
                                 throw new Error(PROVIDER_CATALOG_INCOMPLETE_ERROR);
                             }
                             commitProviders(apiResult);
+                            if (_providerLoadTokens.get(directoryKey) === loadToken) {
+                                void _claudeCatalogRecovery.check(fromDirectoryKey(directoryKey));
+                            }
 
                             return;
                         } catch (error) {

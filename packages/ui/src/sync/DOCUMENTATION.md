@@ -1132,6 +1132,18 @@ coalesce. A forced read uses existing load tokens to fence any older fallback
 response still in flight. Fallback/error events, other directories and disposed
 pipelines cannot trigger this refresh; assistant deltas never poll catalogs.
 
+Claude has no such event. Its models come from Claude Code and reach the catalog
+several seconds after the claude-agent connection exists (about 11 s on a first
+launch), so a catalog read in that window lists none. After every committed
+catalog load `useConfigStore.loadProviders` calls `claude-catalog-recovery.ts`:
+when the scope lists no Claude model and `/api/provider/claude-agent/status`
+reports `connected`, it re-reads that scope on a bounded schedule (33 s in
+total) until the models are listed. One cycle runs per scope; its own reloads do
+not start another, and a failed or refused status read starts none. Settings →
+Providers refreshes both the global catalog it shows and the active directory's
+catalog the composer picker reads, on open and after Claude connects or
+disconnects.
+
 `ModelControls.hydration.test.tsx` mounts the real controls with real config,
 selection and directory stores. Native button events exercise delayed parts,
 session switching/remounts, explicit Default, model changes and the actual

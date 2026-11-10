@@ -248,9 +248,17 @@ const ProvidersPageContent: React.FC = () => {
     [discoveredProviders, pendingRevisionByProvider, providerSources],
   );
 
+  // The composer's model picker reads the active directory's catalog, this page the global
+  // one. Refresh both, or a connection shown here can be missing from the picker.
+  const reloadProviderCatalogs = React.useCallback(async (options?: { force?: boolean }) => {
+    const activeDirectory = currentDirectory?.trim() || null;
+    const directories = activeDirectory ? [null, activeDirectory] : [null];
+    await Promise.all(directories.map((directory) => loadProviders({ directory, force: options?.force })));
+  }, [currentDirectory, loadProviders]);
+
   React.useEffect(() => {
-    void loadProviders({ directory: null });
-  }, [loadProviders]);
+    void reloadProviderCatalogs();
+  }, [reloadProviderCatalogs]);
 
   React.useEffect(() => {
     reconcileAppliedRevision(appliedRevision);
@@ -1134,7 +1142,7 @@ const ProvidersPageContent: React.FC = () => {
                   )}
 
                   {candidateProviderId === CLAUDE_AGENT_PROVIDER_ID && (
-                    <ClaudeAgentConnection directory={currentDirectory} onChanged={() => { void loadProviders({ directory: null }); }} />
+                    <ClaudeAgentConnection directory={currentDirectory} onChanged={() => { void reloadProviderCatalogs({ force: true }); }} />
                   )}
 
 
@@ -1395,7 +1403,7 @@ const ProvidersPageContent: React.FC = () => {
                 )}
 
                 {selectedProvider.id === CLAUDE_AGENT_PROVIDER_ID && (
-                  <ClaudeAgentConnection key={selectedProvider.id} directory={currentDirectory} onChanged={() => { void loadProviders({ directory: null }); }} />
+                  <ClaudeAgentConnection key={selectedProvider.id} directory={currentDirectory} onChanged={() => { void reloadProviderCatalogs({ force: true }); }} />
                 )}
 
                 {activeCursorAcpProviderId === selectedProvider.id && (
