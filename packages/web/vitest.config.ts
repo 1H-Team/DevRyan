@@ -39,7 +39,9 @@ export default defineConfig({
       // File-parallel: real git and process work in some tests runs slower under
       // load than it did serially, so the per-test hang budget is 15 s, not 5 s.
       { extends: true, test: { name: 'web', exclude: runtimeHost, testTimeout: 15_000 } },
-      { extends: true, test: { name: 'web-runtime-host', include: runtimeHost.map((glob) => `${glob}/*.test.{js,mjs,ts}`), maxWorkers: 2, sequence: { groupOrder: 1 } } },
+      // Real bundle, ledger and process work: the same 15 s per-test hang budget
+      // as web, and 15 s for hooks; not an assertion about how fast it runs.
+      { extends: true, test: { name: 'web-runtime-host', include: runtimeHost.map((glob) => `${glob}/*.test.{js,mjs,ts}`), maxWorkers: 2, sequence: { groupOrder: 1 }, testTimeout: 15_000, hookTimeout: 15_000 } },
     ],
   },
 });
