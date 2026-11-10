@@ -31,10 +31,12 @@ export function discoverScriptTestFiles(root = repositoryRoot) {
  * Node files, and one `bun test` process per Bun file, because native graph
  * fixtures must not share Bun's resolver and loader state. Graph files are
  * listed first so a bounded pool starts the longest processes early.
+ * `files` narrows the run to those suite files (fast validate's selection,
+ * scripts/test-select.mjs); by default every discovered file runs.
  */
-export function planScriptTests(root = repositoryRoot, environment = process.env) {
+export function planScriptTests(root = repositoryRoot, environment = process.env, { files } = {}) {
   const bun = [], node = [], heavyNative = new Set();
-  for (const file of discoverScriptTestFiles(root)) {
+  for (const file of files ?? discoverScriptTestFiles(root)) {
     const source = readFileSync(path.join(root, file), 'utf8');
     // Native graph files build and spawn the pinned runtime (CPU-heavy, and the
     // shared fixture's real OAuth flow binds localhost:1455): one at a time.

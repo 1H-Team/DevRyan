@@ -11,7 +11,7 @@ import { bunTestArgs, bunTestWorkers, discoverTestFiles, isBunTestSource } from 
 import { discoverElectronTestFiles, planElectronTests } from './test-electron.mjs';
 import { discoverScriptTestFiles } from './test-scripts.mjs';
 import { FULL_TEST_COMMANDS, FULL_TEST_SUITES } from './test-full.mjs';
-import { buildPlan, isVersionOnlyChange, lintRoots, testUnitsForPlan } from './validate.mjs';
+import { buildPlan, describeScriptSelection, isVersionOnlyChange, lintRoots, testUnitsForPlan } from './validate.mjs';
 import { STARTUP_CONTRACT_GROUPS } from './test-startup-contract.mjs';
 
 const repoRoot = new URL('..', import.meta.url);
@@ -265,7 +265,7 @@ describe('release workflow', () => {
 
 describe('maintenance validation selection', () => {
   test('checks documentation without running unrelated code suites', () => {
-    assert.deepEqual(buildPlan('fast', ['docs/TESTING.md']).commands.map(c => c.label), ['docs:validate']);
+    assert.deepEqual(buildPlan('fast', ['docs/TESTING.md']).commands.map(c => c.label), ['docs:validate', 'test:scripts']);
     assert.deepEqual(buildPlan('fast', []).commands.map(c => c.label), ['test:startup']);
   });
 
@@ -287,6 +287,70 @@ describe('maintenance validation selection', () => {
       const labels = buildPlan('fast', [file]).commands.map(c => c.label);
       assert.ok(labels.includes('test:scripts'), file);
       assert.ok(!labels.includes('test:full'), file);
+    }
+  });
+
+  test('selects script tests by import graph: a leaf script schedules its tests, a shared helper its importers', () => {
+    const all = discoverScriptTestFiles();
+    const scriptsCommand = file => buildPlan('fast', [file]).commands.find(c => c.label === 'test:scripts');
+    const scheduled = command => testUnitsForPlan([command]).flatMap(unit => unit.args.filter(arg => /test\.[cm]?[jt]sx?$/.test(arg))).map(arg => arg.replace(/^\.\//, '')).sort();
+    const leaf = scriptsCommand('scripts/release-ci-wait.mjs');
+    assert.ok(leaf.tests.includes('scripts/release-ci-wait.test.mjs'));
+    assert.ok(leaf.tests.length < all.length / 10, `${leaf.tests.length} tests`);
+    assert.ok(!leaf.tests.some(file => /\.graph\.test\./.test(file)));
+    assert.deepEqual(scheduled(leaf), leaf.tests);
+    // Every script test that names the helper's path is scheduled, and not the whole suite.
+    const helper = scriptsCommand('scripts/qa/run-root.mjs');
+    const importers = all.filter(file => /['"][^'"]*\/run-root\.mjs['"]/.test(readFileSync(new URL(file, repoRoot), 'utf8')));
+    assert.ok(importers.length > 3);
+    for (const file of importers) assert.ok(helper.tests.includes(file), file);
+    assert.ok(helper.tests.length < all.length);
+    assert.deepEqual(scheduled(helper), helper.tests);
+    // A subset leaves the startup contract's scripts group to run; the whole suite covers it.
+    const subset = buildPlan('fast', ['scripts/release-ci-wait.mjs']);
+    assert.deepEqual(subset.commands.at(-1).coveredBy, []);
+    const lines = describeScriptSelection(subset.scriptSelection, all.length);
+    assert.ok(lines.length <= 2);
+    assert.match(lines[0], new RegExp(`^Script tests: ${leaf.tests.length} of ${all.length} selected`));
+    assert.match(lines[1], /scripts\/release-ci-wait\.mjs: \d+ reaching it.*CI runs every script test/);
+    for (const file of ['scripts/validate.mjs', 'scripts/test-select.mjs', 'scripts/test-pool.mjs', 'bun.lock']) {
+      const plan = buildPlan('fast', [file]);
+      assert.equal(plan.commands.find(c => c.label === 'test:scripts').tests, undefined, file);
+      assert.ok(plan.commands.at(-1).coveredBy.includes('scripts'), file);
+      assert.deepEqual(scheduled(plan.commands.find(c => c.label === 'test:scripts')), [...all].sort(), file);
+    }
+  });
+
+  test('runs the script tests that read every tracked Markdown file for any Markdown change', () => {
+    const scriptTests = files => buildPlan('fast', files).commands.find(c => c.label === 'test:scripts')?.tests;
+    // docs:validate does not check the release-docs rule, so a docs-only change runs that test too.
+    const docsOnly = buildPlan('fast', ['docs/RELEASE_PIPELINE.md']);
+    assert.deepEqual(docsOnly.commands.map(c => c.label), ['docs:validate', 'test:scripts']);
+    assert.deepEqual(scriptTests(['docs/RELEASE_PIPELINE.md']), ['scripts/release-docs.test.mjs']);
+    assert.deepEqual(testUnitsForPlan(docsOnly.commands.filter(c => c.label === 'test:scripts')).flatMap(unit => unit.args.filter(arg => arg.endsWith('.test.mjs'))),
+      ['scripts/release-docs.test.mjs']);
+    // Mixed with code: the graph's selection plus the Markdown readers.
+    for (const [code, markdown] of [['scripts/release.mjs', 'docs/RELEASE_PIPELINE.md'], ['scripts/release-ci-wait.mjs', 'scripts/perf/INTERACTIVE.md']]) {
+      const tests = scriptTests([code, markdown]);
+      assert.ok(tests.includes('scripts/release-docs.test.mjs'), code);
+      for (const test of scriptTests([code])) assert.ok(tests.includes(test), `${code}: ${test}`);
+    }
+    // Markdown beside a change that runs no script tests still adds them; the startup scripts group stays.
+    const ui = buildPlan('fast', ['packages/ui/src/App.tsx', 'README.md']);
+    assert.deepEqual(ui.commands.find(c => c.label === 'test:scripts').tests, ['scripts/release-docs.test.mjs']);
+    assert.ok(!ui.commands.at(-1).coveredBy.includes('scripts'));
+    assert.match(describeScriptSelection(ui.scriptSelection, 295)[1], /README\.md: 1 reading every tracked Markdown file/);
+    // The rule skips the changelog (history), so a changelog-only change runs none.
+    assert.equal(scriptTests(['CHANGELOG.md']), undefined);
+    // No script test reads tracked .txt files, so a text-only change runs none.
+    assert.deepEqual(buildPlan('fast', ['scripts/notes.txt']).commands, []);
+  });
+
+  test('runs the whole scripts suite in full mode and CI lanes, whatever changed', () => {
+    for (const mode of ['full', 'ci:portable-1']) {
+      const plan = buildPlan(mode, ['scripts/release-ci-wait.mjs']);
+      assert.equal(plan.scriptSelection, undefined, mode);
+      assert.ok(!plan.commands.some(c => c.tests), mode);
     }
   });
 
@@ -485,8 +549,10 @@ describe('version-only and startup-covered validation', () => {
     // The web suite itself still runs every Vitest project and its native files.
     assert.ok(units.some((unit) => unit.name === 'web:native'));
     assert.ok(units.filter((unit) => unit.name.startsWith('web:vitest')).length > 1);
-    const alone = buildPlan('fast', ['scripts/release.mjs']).commands.find((c) => c.label === 'test:startup');
+    // The whole scripts suite covers its startup group; a selected subset does not.
+    const alone = buildPlan('fast', ['scripts/test-pool.mjs']).commands.find((c) => c.label === 'test:startup');
     assert.deepEqual(alone.coveredBy, ['scripts']);
+    assert.deepEqual(buildPlan('fast', ['scripts/release.mjs']).commands.find((c) => c.label === 'test:startup').coveredBy, []);
     assert.deepEqual(buildPlan('fast', []).commands.find((c) => c.label === 'test:startup').coveredBy, []);
   });
 });

@@ -9,7 +9,8 @@ import { fileURLToPath } from 'node:url';
 import { cacheGrowthFailure, snapshotCache } from './cache-guard.mjs';
 import { FULL_TEST_SUITES, planFullTests } from './test-full.mjs';
 import { formatDuration, recordTestTimings, runTestUnits, summarizeTestUnits, testConcurrency } from './test-pool.mjs';
-import { planScriptTests, prepareScriptTestEnvironment } from './test-scripts.mjs';
+import { discoverScriptTestFiles, planScriptTests, prepareScriptTestEnvironment } from './test-scripts.mjs';
+import { selectScriptTests, withMarkdownReaders } from './test-select.mjs';
 import { STARTUP_CONTRACT_GROUPS, startupContractGroups } from './test-startup-contract.mjs';
 
 const mode = process.argv[2] ?? 'fast';
@@ -159,12 +160,13 @@ function changedFilesFromGit() {
   const base = validationBase();
   const outputs = [];
 
+  // A rename lists both paths: importers of the old path must still be tested.
   if (base) {
-    outputs.push(runGit(['diff', '--name-only', `${base}...HEAD`], { ignoreErrors: true }));
+    outputs.push(runGit(['diff', '--name-only', '--no-renames', `${base}...HEAD`], { ignoreErrors: true }));
   }
 
-  outputs.push(runGit(['diff', '--name-only'], { ignoreErrors: true }));
-  outputs.push(runGit(['diff', '--name-only', '--cached'], { ignoreErrors: true }));
+  outputs.push(runGit(['diff', '--name-only', '--no-renames'], { ignoreErrors: true }));
+  outputs.push(runGit(['diff', '--name-only', '--no-renames', '--cached'], { ignoreErrors: true }));
   outputs.push(runGit(['ls-files', '--others', '--exclude-standard'], { ignoreErrors: true }));
 
   return [...new Set(outputs
@@ -310,9 +312,20 @@ function packageCommands(packageNames, commandName) {
     .filter(Boolean);
 }
 
-// Test commands name a suite; runTests expands them into pool units.
-function testCommands(suiteNames) {
-  return [...suiteNames].sort().map((name) => ({ ...command(`test:${name}`, 'node', ['scripts/test-full.mjs', `--suite=${name}`]), suite: name }));
+// Test commands name a suite; runTests expands them into pool units. A
+// scripts selection narrows the scripts suite to its `tests`.
+function testCommands(suiteNames, scriptSelection = null) {
+  return [...suiteNames].sort().map((name) => ({ ...command(`test:${name}`, 'node', ['scripts/test-full.mjs', `--suite=${name}`]), suite: name,
+    ...(name === 'scripts' && scriptSelection && !scriptSelection.all ? { tests: scriptSelection.tests } : {}) }));
+}
+
+/**
+ * Fast mode runs the script tests that reach a changed file (scripts/test-select.mjs)
+ * unless a toolchain change put every suite in the plan. CI runs all of them.
+ */
+function scriptTestSelection(codeFiles) {
+  if (codeFiles.some(isToolchainFile)) return { all: true, reason: 'a dependency or toolchain change runs every suite' };
+  return selectScriptTests({ files: codeFiles, triggers: codeFiles.filter(isScriptsFile) });
 }
 
 function startupCommand(coveredBy) {
@@ -397,7 +410,8 @@ function affectedTests(files) {
 /**
  * `fast` (default, `bun run validate`): the local gate before a push or a release tag.
  * Lint and type-check what changed (everything when shared config changed), run the
- * affected package tests and the scripts suite, and always the startup contract.
+ * affected package tests and the script tests reaching a changed file, and always
+ * the startup contract.
  * `full` (`bun run validate:full`, CI): every check including the full test suite.
  */
 export function buildPlan(requestedMode, providedFiles, { versionOnly } = {}) {
@@ -426,8 +440,12 @@ export function buildPlan(requestedMode, providedFiles, { versionOnly } = {}) {
   const docs = files.some((file) => /\.mdx?$/.test(file)) ? [command('docs:validate', 'bun', ['run', 'docs:validate'])] : [];
   if (files.length === 0) return { files, commands: [startupCommand(new Set())], reason: 'no changed files; startup contract only' };
   if (codeFiles.length === 0) {
-    if (!metadata.size) return { files, commands: [...docs, ...versionCheck], reason: 'docs-only changes' };
-    return { files, commands: [...docs, ...versionCheck, startupCommand(new Set())], reason: 'version metadata and docs only' };
+    // docs:validate does not run the script tests that read every Markdown file.
+    const markdownSelection = withMarkdownReaders(null, files);
+    const markdownTests = markdownSelection ? testCommands(['scripts'], markdownSelection) : [];
+    const selection = markdownSelection ? { scriptSelection: markdownSelection } : {};
+    if (!metadata.size) return { files, commands: [...docs, ...versionCheck, ...markdownTests], ...selection, reason: 'docs-only changes' };
+    return { files, commands: [...docs, ...versionCheck, ...markdownTests, startupCommand(new Set())], ...selection, reason: 'version metadata and docs only' };
   }
 
   const changedPackages = new Set(codeFiles.map(packageForFile).filter(Boolean));
@@ -444,10 +462,32 @@ export function buildPlan(requestedMode, providedFiles, { versionOnly } = {}) {
   if (codeFiles.some((file) => file.startsWith(modelCatalogPrefix))) commands.push(command('catalog:check', 'bun', ['run', 'catalog:check']));
   commands.push(...importBoundaryCommands(codeFiles));
   const suites = affectedTests(codeFiles);
-  commands.push(...testCommands(suites));
-  commands.push(startupCommand(suites));
-  return { files, commands, reason: shared ? 'shared configuration changed; lint and type-check everything'
+  // Markdown is not a code file, but the scripts that read all of it must run.
+  const scriptSelection = withMarkdownReaders(suites.has('scripts') ? scriptTestSelection(codeFiles) : null, files);
+  if (scriptSelection) suites.add('scripts');
+  // A subset of the scripts suite does not cover its startup group.
+  const covering = new Set(suites);
+  if (scriptSelection && !scriptSelection.all) {
+    covering.delete('scripts');
+    if (scriptSelection.tests.length === 0) suites.delete('scripts');
+  }
+  commands.push(...testCommands(suites, scriptSelection));
+  commands.push(startupCommand(covering));
+  return { files, commands, ...(scriptSelection ? { scriptSelection } : {}), reason: shared ? 'shared configuration changed; lint and type-check everything'
     : metadata.size ? 'changed files; version metadata checked separately' : 'changed files' };
+}
+
+/** One or two lines saying which script tests fast mode selected and why it skipped the rest. */
+export function describeScriptSelection(selection, total = discoverScriptTestFiles(workspaceRoot).length) {
+  if (selection.all) return [`Script tests: all ${total} (${selection.reason}).`];
+  const shown = selection.tests.slice(0, 8).join(', ');
+  const more = selection.tests.length > 8 ? `, +${selection.tests.length - 8} more` : '';
+  const reasons = [...selection.reasons].map(([file, reason]) => `${file}: ${reason}`);
+  const why = reasons.slice(0, 3).join('; ') + (reasons.length > 3 ? `; +${reasons.length - 3} more changes` : '');
+  return [
+    `Script tests: ${selection.tests.length} of ${total} selected${selection.tests.length ? `: ${shown}${more}` : ''}.`,
+    `Skipped ${total - selection.tests.length}, whose import and name closure holds no changed file (${why || 'no script change'}); CI runs every script test.`,
+  ];
 }
 function printPlan(plan) {
   console.log(`Validation mode: ${mode}`);
@@ -467,6 +507,7 @@ function printPlan(plan) {
   for (const item of plan.commands) {
     console.log(`  - ${item.label}: ${[item.executable, ...item.args].join(' ')}`);
   }
+  if (plan.scriptSelection) for (const line of describeScriptSelection(plan.scriptSelection)) console.log(line);
 }
 
 function runStatic(item) {
@@ -494,7 +535,7 @@ export function testUnitsForPlan(commands, { root = workspaceRoot, scriptEnviron
     if (item.label === 'test:full') units.push(...(item.lane ? planCITests(root, item.lane, { scriptEnvironment }) : planFullTests(root, { scriptEnvironment, suites: item.suites })));
     else if (item.label === 'test:startup') {
       units.push(...startupContractGroups({ coveredBy: item.coveredBy ?? [] }).map((group) => ({ ...group, name: `startup:${group.name}`, suite: 'startup' })));
-    } else if (item.suite === 'scripts') units.push(...planScriptTests(root).map((unit) => ({ ...unit, env: scriptEnvironment, suite: 'scripts' })));
+    } else if (item.suite === 'scripts') units.push(...planScriptTests(root, undefined, { files: item.tests }).map((unit) => ({ ...unit, env: scriptEnvironment, suite: 'scripts' })));
     else if (item.suite) units.push(...planFullTests(root, { scriptEnvironment, suites: [item.suite] }));
   }
   const local = commands.some((item) => item.lane) ? units : localTestUnits(units);
