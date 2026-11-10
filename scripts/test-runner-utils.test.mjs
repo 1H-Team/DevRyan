@@ -342,8 +342,8 @@ describe('maintenance validation selection', () => {
     assert.match(describeScriptSelection(ui.scriptSelection, 295)[1], /README\.md: 1 reading every tracked Markdown file/);
     // The rule skips the changelog (history), so a changelog-only change runs none.
     assert.equal(scriptTests(['CHANGELOG.md']), undefined);
-    // No script test reads tracked .txt files, so a text-only change runs none.
-    assert.deepEqual(buildPlan('fast', ['scripts/notes.txt']).commands, []);
+    // No script test reads tracked .txt files, so a text-only change runs none (docs:validate runs for every change).
+    assert.deepEqual(buildPlan('fast', ['scripts/notes.txt']).commands.map(c => c.label), ['docs:validate']);
   });
 
   test('runs the whole scripts suite in full mode and CI lanes, whatever changed', () => {
@@ -392,6 +392,32 @@ describe('maintenance validation selection', () => {
       assert.ok(buildPlan('fast', [file]).commands.some(c => c.label === 'browser-graph'), file);
     }
     assert.equal(boundaries(['scripts/release.mjs']), undefined);
+  });
+
+  test('checks unreached browser files for package code, tests and the allowlist, and declaration parity for JavaScript and declarations', () => {
+    const labels = files => buildPlan('fast', files).commands.map(c => c.label);
+    for (const file of ['packages/ui/src/App.tsx', 'packages/ui/package.json', 'scripts/check-browser-graph.mjs', 'scripts/unreached-files.json',
+      'scripts/check-unreached-files.mjs', 'tests/visual-reasoning/main.tsx', 'scripts/release.test.mjs']) {
+      assert.ok(labels([file]).includes('unreached-files'), file);
+    }
+    // The allowlist, checker or a test outside packages/ alone does not re-run the boundary checks.
+    for (const file of ['scripts/unreached-files.json', 'scripts/release.test.mjs']) assert.ok(!labels([file]).includes('import-boundaries'), file);
+    assert.ok(!labels(['scripts/release.mjs']).includes('unreached-files'));
+    assert.deepEqual(buildPlan('fast', ['scripts/unreached-files.json']).commands.find(c => c.label === 'unreached-files').args, ['scripts/check-unreached-files.mjs']);
+    for (const file of ['packages/harness-runtime/index.js', 'packages/harness-runtime/index.d.ts', 'scripts/native-runtime-assets.d.mts', 'scripts/release.mjs',
+      'packages/shared-runtime/package.json', 'scripts/declaration-parity.json', 'scripts/check-declarations.mjs']) {
+      assert.ok(labels([file]).includes('declarations'), file);
+    }
+    for (const file of ['packages/ui/src/App.tsx', 'packages/agents-core/src/agents/registry.ts']) assert.ok(!labels([file]).includes('declarations'), file);
+    assert.deepEqual(buildPlan('fast', ['scripts/check-declarations.mjs']).commands.find(c => c.label === 'declarations').args, ['scripts/check-declarations.mjs']);
+  });
+
+  test('validates docs for every change, because docs:validate reads manifests, source exports and environment variables', () => {
+    for (const file of ['packages/ui/src/App.tsx', 'packages/web/server/index.js', 'scripts/release.mjs', 'packages/shared-runtime/package.json', 'bun.lock', 'scripts/notes.txt']) {
+      const docs = buildPlan('fast', [file]).commands.find(c => c.label === 'docs:validate');
+      assert.deepEqual(docs && [docs.executable, ...docs.args], ['bun', 'run', 'docs:validate'], file);
+    }
+    assert.ok(!buildPlan('fast', []).commands.some(c => c.label === 'docs:validate'));
   });
 
   test('selects every package suite from a test file under that package', () => {
@@ -488,7 +514,9 @@ describe('maintenance validation selection', () => {
   });
 
   test('runs every check in full mode and refuses unknown modes', () => {
-    assert.deepEqual(buildPlan('full').commands.map(c => c.label), ['lint:full', 'import-boundaries', 'browser-graph', 'type-check:full', 'docs:validate', 'build', 'bundle:check', 'test:full']);
+    assert.deepEqual(buildPlan('full').commands.map(c => c.label), ['lint:full', 'import-boundaries', 'browser-graph', 'unreached-files', 'declarations', 'type-check:full', 'docs:validate', 'build', 'bundle:check', 'test:full']);
+    // CI's static job runs the same static checks.
+    for (const label of ['import-boundaries', 'browser-graph', 'unreached-files', 'declarations', 'docs:validate']) assert.ok(buildPlan('static').commands.some(c => c.label === label), label);
     assert.throws(() => buildPlan('quick', []), /Unknown validation mode/);
   });
 });

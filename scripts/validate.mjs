@@ -7,6 +7,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { cacheGrowthFailure, snapshotCache } from './cache-guard.mjs';
+import { isTestImporter } from './check-import-boundaries.mjs';
 import { FULL_TEST_SUITES, planFullTests } from './test-full.mjs';
 import { formatDuration, recordTestTimings, runTestUnits, summarizeTestUnits, testConcurrency } from './test-pool.mjs';
 import { discoverScriptTestFiles, planScriptTests, prepareScriptTestEnvironment } from './test-scripts.mjs';
@@ -287,17 +288,32 @@ function command(label, executable, args) {
 }
 
 const importBoundaryInputs = new Set(['scripts/import-boundaries.json', 'scripts/check-import-boundaries.mjs', 'scripts/check-browser-graph.mjs']);
+const unreachedFileInputs = new Set(['scripts/unreached-files.json', 'scripts/check-unreached-files.mjs']);
+const declarationInputs = new Set(['scripts/declaration-parity.json', 'scripts/check-declarations.mjs']);
+const codePattern = /\.(?:[cm]?js|jsx|[cm]?ts|tsx)$/;
+const isTestCode = (file) => codePattern.test(file) && isTestImporter(file);
 
 // Cross-package import boundaries and the browser bundle graph. A manifest,
-// exception-list or checker change re-checks every importer.
+// exception-list or checker change re-checks every importer. Unreached browser
+// files (scripts/check-unreached-files.mjs) walk the same graph from the web
+// entries and every test, so any package code or test change re-checks them.
 function importBoundaryCommands(files) {
   const everything = files.some((file) => importBoundaryInputs.has(file) || /^packages\/[^/]+\/package\.json$/.test(file));
-  const importers = files.filter((file) => file.startsWith('packages/') && /\.(?:[cm]?js|jsx|[cm]?ts|tsx)$/.test(file));
-  if (!everything && importers.length === 0) return [];
+  const importers = files.filter((file) => file.startsWith('packages/') && codePattern.test(file));
+  const graph = everything || importers.length > 0;
+  const unreached = graph || files.some((file) => unreachedFileInputs.has(file) || isTestCode(file));
   return [
-    command('import-boundaries', 'node', ['scripts/check-import-boundaries.mjs', ...(everything ? [] : ['--files', ...importers])]),
-    command('browser-graph', 'node', ['scripts/check-browser-graph.mjs']),
+    ...(graph ? [command('import-boundaries', 'node', ['scripts/check-import-boundaries.mjs', ...(everything ? [] : ['--files', ...importers])]),
+      command('browser-graph', 'node', ['scripts/check-browser-graph.mjs'])] : []),
+    ...(unreached ? [command('unreached-files', 'node', ['scripts/check-unreached-files.mjs'])] : []),
   ];
+}
+
+// Declaration parity (scripts/check-declarations.mjs): any JavaScript or
+// declaration file, package manifest or the checker's own inputs.
+function declarationCommands(files) {
+  const relevant = files.some((file) => declarationInputs.has(file) || /\.(?:[cm]?js|d\.[cm]?ts)$/.test(file) || /^packages\/[^/]+\/package\.json$/.test(file));
+  return relevant ? [command('declarations', 'node', ['scripts/check-declarations.mjs'])] : [];
 }
 
 function packageCommands(packageNames, commandName) {
@@ -370,6 +386,8 @@ function fullCommands() {
     command('lint:full', 'bun', ['run', 'lint']),
     command('import-boundaries', 'node', ['scripts/check-import-boundaries.mjs']),
     command('browser-graph', 'node', ['scripts/check-browser-graph.mjs']),
+    command('unreached-files', 'node', ['scripts/check-unreached-files.mjs']),
+    command('declarations', 'node', ['scripts/check-declarations.mjs']),
     command('type-check:full', 'bun', ['run', 'type-check']),
     command('docs:validate', 'bun', ['run', 'docs:validate']),
     command('build', 'bun', ['run', 'build']),
@@ -437,7 +455,9 @@ export function buildPlan(requestedMode, providedFiles, { versionOnly } = {}) {
   const metadata = versionOnly ?? (providedFiles ? new Set() : versionOnlyFilesFromGit(files));
   const versionCheck = [...(metadata.size ? [command('versions', 'node', ['scripts/release.mjs', 'check-versions'])] : []), ...releasePreflightCommands(files)];
   const codeFiles = files.filter((file) => !isDocsOnlyFile(file) && !metadata.has(file));
-  const docs = files.some((file) => /\.mdx?$/.test(file)) ? [command('docs:validate', 'bun', ['run', 'docs:validate'])] : [];
+  // docs:validate also reads package manifests, source exports and environment-variable
+  // names, so a code-only change can make docs stale: it runs for every change.
+  const docs = files.length ? [command('docs:validate', 'bun', ['run', 'docs:validate'])] : [];
   if (files.length === 0) return { files, commands: [startupCommand(new Set())], reason: 'no changed files; startup contract only' };
   if (codeFiles.length === 0) {
     // docs:validate does not run the script tests that read every Markdown file.
@@ -460,7 +480,7 @@ export function buildPlan(requestedMode, providedFiles, { versionOnly } = {}) {
     commands.push(...packageCommands(typeChecked, 'typeCheck'));
   }
   if (codeFiles.some((file) => file.startsWith(modelCatalogPrefix))) commands.push(command('catalog:check', 'bun', ['run', 'catalog:check']));
-  commands.push(...importBoundaryCommands(codeFiles));
+  commands.push(...importBoundaryCommands(codeFiles), ...declarationCommands(codeFiles));
   const suites = affectedTests(codeFiles);
   // Markdown is not a code file, but the scripts that read all of it must run.
   const scriptSelection = withMarkdownReaders(suites.has('scripts') ? scriptTestSelection(codeFiles) : null, files);

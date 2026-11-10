@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "description": "Browser source files under packages/ui/src and packages/web/src that no web entry and no test reached when scripts/check-unreached-files.mjs was added (2026-11-10). Each entry has a kind: awaiting-removal (dead code a later refactor phase deletes) or hand-run (a tool run by hand, kept on purpose), and a reason. Shrink-only: an unreached file not listed here fails the check, and an entry that is now reached or deleted fails until it is removed (node scripts/check-unreached-files.mjs --prune). Never list dead code; import or delete it.",
+  "files": [
+    {
+      "file": "packages/ui/src/components/chat/PendingChangesBar.tsx",
+      "kind": "awaiting-removal",
+      "reason": "Unreached when the check was added; awaiting removal in a later refactor phase."
+    },
+    {
+      "file": "packages/ui/src/components/chat/PermissionRequest.tsx",
+      "kind": "awaiting-removal",
+      "reason": "Unreached when the check was added; awaiting removal in a later refactor phase."
+    },
+    {
+      "file": "packages/ui/src/components/chat/message/parts/MigratingPart.tsx",
+      "kind": "awaiting-removal",
+      "reason": "Unreached when the check was added; awaiting removal in a later refactor phase."
+    },
+    {
+      "file": "packages/ui/src/components/chat/message/parts/SessionActiveSpinner.tsx",
+      "kind": "awaiting-removal",
+      "reason": "Unreached when the check was added; awaiting removal in a later refactor phase."
+    },
+    {
+      "file": "packages/ui/src/components/sections/plugins/index.ts",
+      "kind": "awaiting-removal",
+      "reason": "Unreached when the check was added; awaiting removal in a later refactor phase."
+    },
+    {
+      "file": "packages/ui/src/components/sections/skills/index.ts",
+      "kind": "awaiting-removal",
+      "reason": "Unreached when the check was added; awaiting removal in a later refactor phase."
+    },
+    {
+      "file": "packages/ui/src/components/session/sidebar/hooks/useDirectoryStatusProbe.ts",
+      "kind": "awaiting-removal",
+      "reason": "Unreached when the check was added; awaiting removal in a later refactor phase."
+    },
+    {
+      "file": "packages/ui/src/components/session/sidebar/hooks/useSessionSearchEffects.ts",
+      "kind": "awaiting-removal",
+      "reason": "Unreached when the check was added; awaiting removal in a later refactor phase."
+    },
+    {
+      "file": "packages/ui/src/components/ui/alert.tsx",
+      "kind": "awaiting-removal",
+      "reason": "Unreached when the check was added; awaiting removal in a later refactor phase."
+    },
+    {
+      "file": "packages/ui/src/components/ui/separator.tsx",
+      "kind": "awaiting-removal",
+      "reason": "Unreached when the check was added; awaiting removal in a later refactor phase."
+    },
+    {
+      "file": "packages/ui/src/components/ui/toggle.tsx",
+      "kind": "awaiting-removal",
+      "reason": "Unreached when the check was added; awaiting removal in a later refactor phase."
+    },
+    {
+      "file": "packages/ui/src/components/views/git/AIHighlightsBox.tsx",
+      "kind": "awaiting-removal",
+      "reason": "Unreached when the check was added; awaiting removal in a later refactor phase."
+    },
+    {
+      "file": "packages/ui/src/components/views/git/GeneratedCommitPlanDialog.tsx",
+      "kind": "awaiting-removal",
+      "reason": "Unreached when the check was added; awaiting removal in a later refactor phase."
+    },
+    {
+      "file": "packages/ui/src/components/views/git/index.ts",
+      "kind": "awaiting-removal",
+      "reason": "Unreached when the check was added; awaiting removal in a later refactor phase."
+    },
+    {
+      "file": "packages/ui/src/components/views/index.ts",
+      "kind": "awaiting-removal",
+      "reason": "Unreached when the check was added; awaiting removal in a later refactor phase."
+    },
+    {
+      "file": "packages/ui/src/lib/quota/providers/base.ts",
+      "kind": "awaiting-removal",
+      "reason": "Unreached when the check was added; awaiting removal in a later refactor phase."
+    },
+    {
+      "file": "packages/ui/src/sync/index.ts",
+      "kind": "awaiting-removal",
+      "reason": "Unreached when the check was added; awaiting removal in a later refactor phase."
+    },
+    {
+      "file": "packages/ui/src/sync/session-history.memory-probe.ts",
+      "kind": "hand-run",
+      "reason": "Manual memory probe, run by hand with the command on its first line (bun run --cwd packages/ui src/sync/session-history.memory-probe.ts); kept on purpose."
+    },
+    {
+      "file": "packages/ui/src/types/tool.ts",
+      "kind": "awaiting-removal",
+      "reason": "Unreached when the check was added; awaiting removal in a later refactor phase."
+    }
+  ]
+}
