@@ -4,7 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.13] - 2026-11-10
+
 - Upgrade the bundled native OpenCode host to 2.2.6.
+- List a connected Claude account's models in the model picker.
 
 ## [2.0.12] - 2026-11-07
 
