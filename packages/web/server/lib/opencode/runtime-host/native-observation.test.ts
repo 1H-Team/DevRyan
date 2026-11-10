@@ -59,13 +59,15 @@ test('targets keep only the hostname and port',()=>{
 test('requests left on the core header default get the DevRyan header deadline; configured waits are kept',()=>{
  const zen=compatibleModel('deepseek-v4.1-flash',{baseURL:'http://127.0.0.1:1/v1',provider:'opencode'});
  const unset=ai.request({model:zen,prompt:'hi'});
- expect(withNativeHeaderDeadline(unset).http).toMatchObject({headerTimeout:45_000});
- expect(withNativeHeaderDeadline(unset).http?.chunkTimeout).toBeUndefined();
- const coreDefault=ai.request({model:zen,prompt:'hi',http:{headerTimeout:300_000,chunkTimeout:900_000}});
- expect(withNativeHeaderDeadline(coreDefault).http).toMatchObject({headerTimeout:45_000,chunkTimeout:900_000});
- const configured=ai.request({model:zen,prompt:'hi',http:{headerTimeout:60_000}});
+ expect(withNativeHeaderDeadline(unset).timeout).toEqual({total:undefined,headers:45_000});
+ const coreDefault=ai.request({model:zen,prompt:'hi',timeout:{headers:300_000,chunk:900_000}});
+ expect(withNativeHeaderDeadline(coreDefault).timeout).toEqual({headers:45_000,chunk:900_000});
+ // A bare number is the whole-request limit; the header phase is still unset.
+ const total=ai.request({model:zen,prompt:'hi',timeout:600_000});
+ expect(withNativeHeaderDeadline(total).timeout).toEqual({total:600_000,headers:45_000});
+ const configured=ai.request({model:zen,prompt:'hi',timeout:{headers:60_000}});
  expect(withNativeHeaderDeadline(configured)).toBe(configured);
- const disabled=ai.request({model:zen,prompt:'hi',http:{headerTimeout:false}});
+ const disabled=ai.request({model:zen,prompt:'hi',timeout:{headers:false}});
  expect(withNativeHeaderDeadline(disabled)).toBe(disabled);
 });
 
@@ -75,5 +77,5 @@ test('the claude-agent route keeps Claude Code\'s own timeouts and gets no heade
  expect(withNativeHeaderDeadline(request)).toBe(request);
  // The retired Meridian `anthropic` route is no longer exempt.
  const anthropic=ai.request({model:compatibleModel('claude-opus-5-5',{baseURL:'http://127.0.0.1:3456/v1',provider:'anthropic'}),prompt:'hi'});
- expect(withNativeHeaderDeadline(anthropic).http).toMatchObject({headerTimeout:45_000});
+ expect(withNativeHeaderDeadline(anthropic).timeout).toMatchObject({headers:45_000});
 });

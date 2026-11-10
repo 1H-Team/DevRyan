@@ -52,6 +52,47 @@ package lanes.
 
 3. `bun run validate`.
 
+## Seams in 2.2.5 → 2.2.6
+
+- `@opencode/*` 2.2.6 depends on `effect` 4.1.0; the root and web `effect` pins moved with it.
+  Effect 4.1 command arguments and environment values may be `Redacted`. Core spawns none,
+  and the native spawner refuses them (`native_spawn_redacted_unavailable`) rather than
+  unwrapping a secret into a controller request.
+- `@opencode/ai` reworked its request API. `LLMRequest` and `HttpOptions` are plain
+  interfaces (edit a request by spread or `ai.request`); generation knobs such as
+  `maxTokens` sit at the top level (`GENERATION_KEYS`); the header wait is
+  `timeout.headers` (`timeoutConfig`), merged per phase over the model's
+  `options.timeout`; route options are merged into `model.options`; `LLMClientShape` is
+  gone (use `Context.Service.Shape<typeof LLMClientService>`); `./experimental/testing`
+  is removed. Provider stanza `headerTimeout`/`chunkTimeout` settings are unchanged.
+- There is no `provider-error` stream event: provider failures fail the stream as an
+  `AIError`. Only a content-filter `step-finish` precedes later output.
+- Text attachments lose `metadata.attachment`; core's `\n\nAttached file: <name>` header
+  is the only marker (`native-document-plugin.ts`).
+- `Mcp.Interface` gains `awaitStartup`; wrappers that spread `inner` pass it through.
+- `McpTool.flush`, run before every step's tool snapshot, now reloads the whole tool
+  registry when `mcp.tools()` returns any object it has not seen. `remote-mcp.ts` keeps one
+  projection per native tool so an unchanged catalog never reloads; a fresh projection per
+  call would replace every executor and expire concurrent steps' snapshots. A server's
+  connect still publishes `mcp.tools.changed`, which reloads once more after a 100 ms
+  debounce; graph tests snapshot after that reload.
+- Effect 4.1's `NodeWS` is `export * from "ws"`. `ws` is a Bun built-in, so it stays an
+  external import, and Bun 1.4.4 bundles a star re-export of a built-in to nothing
+  (`ws3`/`exports_NodeWS` is not defined). `reviewedNativeInputPlugin` replaces the pinned
+  source with the built-in's named exports (`EFFECT_NODE_WS_SOURCE_SHA256`).
+- `GET /api/experimental/job` (cross-session job listing) is new and denied.
+- The OpenCode Console plugin can inject its organization library's instructions and download
+  its skills. Core allows that when `Config.integration` is absent, so DevRyan's config
+  services define the hook and never store the document (`configuration.ts`); the Console
+  plugin also needs `InstructionDiscovery`, `SharedCache` and `Skill` in test fixtures.
+- `experimental.part_rows` moves assistant content into `session_part` rows. DevRyan's
+  config never sets it; enabling it would break host SQL readers of
+  `session_message.data.content`.
+- No migration: clone level 7 is unchanged, and the shipped 2.2.5 rebuild clones into 2.2.6.
+  Photon worker and Windows PTY resolver changed only in chunk paths. Compaction now
+  precomputes a fixed lead before the ceiling and skips a stale prompt cache; finalization
+  routes pre-output overflow through the publisher. Neither moves an observation anchor.
+
 ## Seams in 2.2.2 → 2.2.5
 
 - `opencode.provider.claude-agent` is declared through a constant (`id: ID2`); the report

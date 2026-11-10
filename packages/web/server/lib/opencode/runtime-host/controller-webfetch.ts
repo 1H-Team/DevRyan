@@ -2,7 +2,7 @@ import {NativeHelperContextRef} from './native-helper-context.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {Cause,Context,Effect,Exit,Layer,Option,Scope,Schema} from 'effect';
-import {ai,LLMClient,Message,type LLMClientShape} from '@opencode/ai/effect';
+import {ai,LLMClient,Message,type LLMClientService} from '@opencode/ai/effect';
 import {llmClient} from '@opencode/core/effect/app-node-platform';
 import {Location} from '@opencode/core/location';
 import {LocationServiceMap} from '@opencode/core/location-service-map';
@@ -25,6 +25,8 @@ import type {OwnedSlimWebfetchOwners} from './native-slim-webfetch.js';
 import type {ReviewedWebfetchOwners,ReviewedWebfetchContext,ReviewedWebfetchCache} from '@devryan/agents-core';
 import {nativeWebfetchBinaryDirectory} from './native-read-paths.js';
 import jsdom from '../../../../runtime/reviewed-inputs/jsdom-30.1.1/node_modules/jsdom/lib/api.js';
+
+type LLMClientShape=Context.Service.Shape<typeof LLMClientService>;
 
 export type ControllerWebfetchSecondary=Parameters<ReviewedWebfetchOwners['secondary']>[0];
 export interface ControllerWebfetchOriginals {
@@ -157,7 +159,7 @@ export function createControllerWebfetch(options:ControllerWebfetchOptions){
    if(prepared.request.tools.length||Object.keys(prepared.event.tools??{}).length)return yield* Effect.die(refuse('native_helper_tools_forbidden'));
    const users=prepared.request.messages.filter(message=>message.role==='user');
    if(users.length!==1||users[0]?.content.length!==1||users[0].content[0]?.type!=='text'||users[0].content[0].text!==frozen.prompt)return yield* Effect.die(refuse('native_helper_prompt_changed'));
-   const request=ai.request({...prepared.request,generation:{...prepared.request.generation,maxTokens:Math.min(frozen.maxOutputTokens,model.limit.output)}});
+   const request=ai.request({...prepared.request,maxTokens:Math.min(frozen.maxOutputTokens,model.limit.output)});
    yield* Effect.promise(check);const response=yield* llm.value.generate(request,prepared.options).pipe(Effect.provideService(NativeHelperContextRef,session));yield* Effect.promise(check);
    if(Buffer.byteLength(response.text)>262144)return yield* Effect.die(refuse('native_helper_output_invalid'));
    return {text:response.text};

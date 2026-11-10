@@ -175,7 +175,7 @@ const textItems = (record) => record.content.filter((item) => item.type === 'tex
 
 describe('loopback OpenCode 2.0.20 fixture', () => {
   it('pins the schema package and exposes the v2 control API through the generation selector', async () => {
-    assert.equal(schemaPackage.version, '2.2.5');
+    assert.equal(schemaPackage.version, '2.2.6');
     assert.ok(registry.has('Session.Info') && registry.has('Session.Message.Info') && registry.has('Form.Info'));
     for (const [type, version] of OPENCODE_V2_DURABLE_EVENT_VERSIONS) {
       const definition = EventManifest.Latest.get(type);

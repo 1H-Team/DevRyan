@@ -7,7 +7,7 @@ import { PluginHooks } from '@opencode/core/plugin/hooks';
 import type { WebSocketChannelExchange } from '@opencode/ai/route';
 // 2.2.0 no longer exports these through a subpath. Import the exact SDK module by
 // path; Bun resolves it to the same module instance @opencode/ai/effect loads.
-import { DEFAULT_HTTP_TIMEOUT_MS, mergeProviderOptions } from '../../../../../../node_modules/@opencode/ai/dist/schema/options.js';
+import { DEFAULT_HTTP_TIMEOUT_MS, mergeProviderOptions, timeoutConfig } from '../../../../../../node_modules/@opencode/ai/dist/schema/options.js';
 import { SessionCompaction } from '@opencode/core/session/compaction';
 import { SessionMessage } from '@opencode/schema/session-message';
 import { registerNativeCompactionObservation, type NativeCompactionBudget } from './native-compaction-observation.js';
@@ -20,8 +20,10 @@ import { isNativeCursorIngress } from './native-cursor-ingress.js';
 import { HostRefusal } from './host-refusal.js';
 import {createNativeFinalizationQueue,drainNativeFinalizationQueue,registerNativeFinalizationObservation} from './native-finalization-observation.js';
 import {createNativeStreamContinuation} from './native-stream-continuation.js';
-import {HttpOptions,LLMRequest,type LLMClientShape} from '@opencode/ai/effect';
+import type {LLMClientService,LLMRequest} from '@opencode/ai/effect';
 import {nativeRequestHeaderDeadline} from './native-provider-deadlines.js';
+
+type LLMClientShape=Context.Service.Shape<typeof LLMClientService>;
 
 export interface NativeAttemptIdentity {
   readonly traceID: string;
@@ -194,9 +196,11 @@ export function projectNativeProviderFailure(input:{readonly error:unknown;reado
 
 /** Apply the per-request header deadline policy (`native-provider-deadlines.js`) to a prepared request. */
 export function withNativeHeaderDeadline<Request extends LLMRequest>(request:Request):Request {
+  const timeout=timeoutConfig(request.timeout);
   const headerTimeout=nativeRequestHeaderDeadline(request.model.provider,
-    request.http?.headerTimeout??request.model.defaults?.http?.headerTimeout,DEFAULT_HTTP_TIMEOUT_MS);
-  return headerTimeout===undefined?request:LLMRequest.update(request,{http:new HttpOptions({...request.http,headerTimeout})}) as Request;
+    timeout.headers??timeoutConfig(request.model.options?.timeout).headers,DEFAULT_HTTP_TIMEOUT_MS);
+  // Core merges request timeouts over the model's per phase, so only `headers` changes.
+  return headerTimeout===undefined?request:{...request,timeout:{...timeout,headers:headerTimeout}};
 }
 
 export function createNativeObservation(options:{readonly controllerInstanceID:string;readonly configurationDigest:string;readonly rpc:ExecutionRpc;
@@ -297,10 +301,11 @@ export function createNativeObservation(options:{readonly controllerInstanceID:s
       // stays generic to retain the native service's exact return signature.
       const event=prepared.event;
       const source=event!==null&&typeof event==='object'&&'options' in event?event.options:undefined;
-      // Reuse the exact SDK merger/precedence used by LLMClient. Hook-only
-      // options omit model/route defaults and cannot prove effective selection.
+      // Reuse the exact SDK merger/precedence used by LLMClient (route options
+      // are already merged into the model's). Hook-only options omit model/route
+      // defaults and cannot prove effective selection.
       yield* Effect.sync(()=>({...materialized,hookOptions:projectNativeReasoningOptions(source),options:projectNativeReasoningOptions(mergeProviderOptions(
-        prepared.request.model.route.defaults.providerOptions,prepared.request.model.defaults?.providerOptions,prepared.request.providerOptions))})).pipe(
+        prepared.request.model.options?.providerOptions,prepared.request.providerOptions))})).pipe(
           Effect.flatMap(emit),Effect.catchCause(()=>Effect.logWarning('native_observation_unavailable',{stage:'model-prepared'})));
       let ordinal=0;
       const preparation:Preparation={observed:materialized,nextOrdinal:()=>++ordinal};

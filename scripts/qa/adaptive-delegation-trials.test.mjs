@@ -15,7 +15,7 @@ const graph = () => ({
   councilMembers: [{ providerId: 'openai', modelId: 'gpt-6.1-sol', variant: 'high', agent: 'orchestrator', timeoutMs: 180000 }],
 });
 const fingerprint = (adaptiveDelegation, overrides = {}) => ({
-  schemaVersion: 1, runtimeVersion: '2.2.5', runtimeHash: h('1'),
+  schemaVersion: 1, runtimeVersion: '2.2.6', runtimeHash: h('1'),
   selection: { providerID: 'openai', modelID: 'gpt-6.1-sol', agent: 'orchestrator', variant: 'high' },
   role: { contentHash: h(adaptiveDelegation ? '3' : '2'), attestedContentHash: h(adaptiveDelegation ? '3' : '2'), templateHash: h('4'), rendererHash: h('5') },
   catalog: { contentHash: h('6'), idsHash: h('7'), count: 1, availability: 'available', tools: [{ id: 'read', contentHash: h('8') }] },

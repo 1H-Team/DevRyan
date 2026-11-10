@@ -1,5 +1,5 @@
 import {test,expect}from'bun:test';import fs from'node:fs/promises';import path from'node:path';
-import {reviewedNativeInputPlugin,rewriteSealedNodeRequire}from'../native-runtime-assets.mjs';
+import {reviewedNativeInputPlugin,rewriteEffectNodeWs,rewriteSealedNodeRequire}from'../native-runtime-assets.mjs';
 const repo=await fs.realpath('.');
 const plugin=()=>reviewedNativeInputPlugin({rewrites:new Map(),virtualModules:new Map(),inputFiles:new Map(),resolutions:new Map()});
 test('reviewed resolver preserves actual Effect barrel/subpath identity and native State initialization',async()=>{
@@ -47,5 +47,21 @@ test('reviewed resolver bundles original pinned JSONC parsing, formatting and ed
   const invalidEntry=path.join(invalidDirectory,'entry.ts');await fs.writeFile(invalidEntry,"import {parse}from'jsonc-parser';console.log(parse('{}'));");
   let failure;try{await Bun.build({entrypoints:[invalidEntry],target:'bun',plugins:[plugin()],write:false});}catch(error){failure=error;}
   expect(failure).toBeInstanceOf(AggregateError);expect(failure.errors.some(error=>String(error.message??error).includes('Pinned JSONC module resolution changed'))).toBe(true);
+ }finally{await fs.rm(root,{recursive:true,force:true});}
+});
+
+test('bundled Effect NodeWS keeps the ws server and client constructors',async()=>{
+ const root=await fs.mkdtemp(path.join(repo,'.cache/v2-validation/asset-node-ws-'));
+ try{
+  // Through the platform-node barrel, as core's HTTP server and socket layers import it.
+  const entry=path.join(root,'entry.ts'),core=await fs.realpath(path.join(repo,'node_modules/@opencode/core'));
+  const node=Bun.resolveSync('@effect/platform-node/NodeWS',core),shared=Bun.resolveSync('@effect/platform-node-shared/NodeWS',path.dirname(node));
+  await fs.writeFile(entry,`import * as Shared from${JSON.stringify(shared)};import * as Node from${JSON.stringify(node)};console.log(JSON.stringify([typeof Shared.WebSocketServer,typeof Shared.WebSocket,typeof Node.WebSocketServer,typeof Node.layerWebSocketConstructor]));`);
+  const build=await Bun.build({entrypoints:[entry],target:'bun',minify:true,plugins:[plugin()],write:false});expect(build.success).toBe(true);
+  const file=path.join(root,'compiled.js');await fs.writeFile(file,await build.outputs[0].text());
+  const child=Bun.spawn([process.execPath,file],{cwd:root,env:{PATH:'/usr/bin:/bin',HOME:root},stdout:'pipe',stderr:'pipe'});
+  const [out,err,code]=await Promise.all([new Response(child.stdout).text(),new Response(child.stderr).text(),child.exited]);
+  expect({code,err,out:JSON.parse(out||'null')}).toEqual({code:0,err:'',out:['function','function','function','object']});
+  expect(()=>rewriteEffectNodeWs('export * from "ws";\n')).toThrow('Pinned Effect NodeWS source changed');
  }finally{await fs.rm(root,{recursive:true,force:true});}
 });

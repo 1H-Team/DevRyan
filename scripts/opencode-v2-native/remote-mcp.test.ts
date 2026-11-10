@@ -26,7 +26,7 @@ function native() {
   let tools: Mcp.Tool[] = [{ server: Mcp.ServerName.make('reviewed'), name: 'lookup', inputSchema: { type: 'object' } }];
   const service: Mcp.Interface = {
     servers: () => Effect.succeed([{ name: 'reviewed', status: { status: 'connected' } }]),
-    tools: () => Effect.succeed(tools), reload: () => Effect.void,
+    tools: () => Effect.succeed(tools), awaitStartup: () => Effect.void, reload: () => Effect.void,
     transform: () => Effect.succeed({ dispose: Effect.void }), add: () => Effect.void,
     remove: () => Effect.void, attach: () => Effect.void, connect: () => Effect.sync(() => { connected++; }), disconnect: () => Effect.void,
     callTool: input => Effect.sync(() => { called++; return { server: Mcp.ServerName.make(input.server), tool: input.name, content: [], isError: false }; }),
@@ -57,6 +57,17 @@ test('unscoped MCP calls cannot reach the native client and disabled servers can
   const closed = createOwnedRemoteMcp(options(new Map([['reviewed', { config: disabled, configurationDigest: remoteMcpConfigurationDigest(disabled) }]]))).decorateMcp(n.service, location);
   expect(await runWithHostRefusal(() => Effect.runPromise(closed.connect('reviewed')))).toMatchObject({ ok: false, refusal: { code: 'native_mcp_server_unreviewed' } });
   expect(n.connected()).toBe(0);
+});
+
+test('an unchanged native catalog keeps the same projected tools, as McpTool.flush compares identity', async () => {
+  const n = native(), service = createOwnedRemoteMcp(options()).decorateMcp(n.service, location);
+  const first = await Effect.runPromise(service.tools()), second = await Effect.runPromise(service.tools());
+  expect(second).toHaveLength(1);
+  expect(second[0]).toBe(first[0]);
+  n.setTools([{ server: Mcp.ServerName.make('reviewed'), name: 'lookup', inputSchema: { type: 'object' } }]);
+  const changed = await Effect.runPromise(service.tools());
+  expect(changed[0]).not.toBe(first[0]);
+  expect(changed[0]?.codemode).toBe(false);
 });
 
 test('native catalog collisions and foreign servers fail before tool registration', async () => {

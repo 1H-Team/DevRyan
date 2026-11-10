@@ -7,7 +7,7 @@ import { Tool } from '@opencode/core/tool';
 import { FileAccess } from '@opencode/core/file-access';
 import { SessionInstructions } from '@opencode/core/session/instructions';
 import type { LayerNode } from '@opencode/util/effect/layer-node';
-import { Cause, Context, Deferred, Effect, Exit, Layer, Queue, Schema, Sink, Stream } from 'effect';
+import { Cause, Context, Deferred, Effect, Exit, Layer, Queue, Redacted, Schema, Sink, Stream } from 'effect';
 import { isPlatformError, systemError } from 'effect/PlatformError';
 import { make as makeSpawner, makeHandle, ProcessId, ExitCode } from 'effect/process/ChildProcessSpawner';
 import type { NativeAdmissionBridge, ExecuteOwned, OwnedToolInvocation } from './native-admission-contract.js';
@@ -366,21 +366,29 @@ export function createExecutionRouting(options: { readonly rpc: ExecutionRpc; re
       const inner = yield* Environment.Service;
       const spawner = makeSpawner((command) => Effect.gen(function* () {
         if (command._tag !== 'StandardCommand') return yield* Effect.fail(platformFailure(new Error('native_piped_spawn_unavailable')));
-        const ticketID = command.options.env?.[TICKET];
+        // Effect 4.1 commands may carry Redacted arguments or environment values.
+        // Core spawns none; the controller protocol carries plain strings only, so
+        // a secret is never unwrapped into an execution request or its comparison.
+        const args = command.args.filter((arg): arg is string => !Redacted.isRedacted(arg));
+        const commandEnv = Object.fromEntries(Object.entries(command.options.env ?? {})
+          .filter((entry): entry is [string, string | undefined] => !Redacted.isRedacted(entry[1])));
+        if (args.length !== command.args.length || Object.keys(commandEnv).length !== Object.keys(command.options.env ?? {}).length)
+          return yield* Effect.fail(platformFailure(new Error('native_spawn_redacted_unavailable')));
+        const ticketID = commandEnv[TICKET];
         let ticket = typeof ticketID === 'string' ? tickets.get(ticketID) : undefined;
         const direct = yield* TrustedToolInvocationRef;
         const readOnly = !ticket && direct && ['glob', 'grep'].includes(direct.toolID);
-        if (readOnly) ticket = { invocation: direct, command: command.command, args: [...command.args],
-          cwd: command.options.cwd ?? direct.location.directory, env: { ...command.options.env } };
+        if (readOnly) ticket = { invocation: direct, command: command.command, args: [...args],
+          cwd: command.options.cwd ?? direct.location.directory, env: { ...commandEnv } };
         if (!ticket) return yield* Effect.fail(platformFailure(new Error('native_spawn_ownership_required')));
         tickets.delete(ticketID!);
-        const env = { ...command.options.env }; delete env[TICKET];
-        if (command.command !== ticket.command || JSON.stringify(command.args) !== JSON.stringify(ticket.args)
+        const env = { ...commandEnv }; delete env[TICKET];
+        if (command.command !== ticket.command || JSON.stringify(args) !== JSON.stringify(ticket.args)
           || (command.options.cwd ?? ticket.invocation.location.directory) !== ticket.cwd || JSON.stringify(env) !== JSON.stringify(ticket.env))
           return yield* Effect.fail(platformFailure(new Error('native_spawn_specification_mismatch')));
         yield* ticket.invocation.recheckPermit();
         const handle = yield* start(ticket.invocation, { kind: readOnly ? 'read' : 'shell', command: command.command,
-          args: [...command.args], env, cwd: command.options.cwd }).pipe(Effect.tapDefect(defect => Effect.sync(() => {
+          args: [...args], env, cwd: command.options.cwd }).pipe(Effect.tapDefect(defect => Effect.sync(() => {
           const refusal = modelFacingRefusal(defect), key = callKey(ticket.invocation);
           if (!readOnly && refusal && shellSettlements.has(key)) shellSettlements.set(key, { state: 'refused', ...refusal });
         })));

@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Upgrade the bundled native OpenCode host to 2.2.6.
+
 ## [2.0.12] - 2026-11-07
 
 - Keep separate "Searched", "Read" and "Edited" activity rows for each burst of tool use instead of growing the first row for the whole turn.

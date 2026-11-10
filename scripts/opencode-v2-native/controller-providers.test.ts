@@ -1,5 +1,5 @@
 import {expect,test} from 'bun:test';
-import {LLMRequest} from '@opencode/ai/effect';
+import {ai} from '@opencode/ai/effect';
 import * as OpenAI from '@opencode/ai/providers/openai';
 import {Agent} from '@opencode/core/agent';
 import {Location} from '@opencode/core/location';
@@ -18,7 +18,7 @@ const input:SessionModelRequest.Input={get session():SessionSchema.Info{throw Er
  model:SessionRunnerModel.resolved(model,{capabilities:{tools:true,input:['text'],output:['text']},cost:[],limit:{context:32768,input:16384,output:4096}}),system:[],messages:[]};
 const event={sessionID:Schema.decodeUnknownSync(SessionSchema.ID)('ses_policy'),agent,model:Schema.decodeUnknownSync(Model.Ref)({providerID:'openai',id:'gpt-5-fixture'}),system:[],messages:[],options:{},tools:{}};
 const webSocket={execute:()=>Effect.die('Physical socket must not execute during preparation')};
-const prepared={event,request:new LLMRequest({model,system:[],messages:[],tools:[]}),options:{webSocket,http:(request,handler)=>handler(request)},
+const prepared={event,request:ai.request({model,system:[],messages:[],tools:[]}),options:{webSocket,http:(request,handler)=>handler(request)},
  retry:()=>Effect.void,executeTool:()=>Effect.die('Tools must not execute during preparation')} satisfies SessionModelRequest.Prepared<typeof event>;
 const inner:SessionModelRequest.Interface={primary:()=>Effect.succeed(prepared),title:()=>Effect.succeed(prepared),compaction:()=>Effect.succeed(prepared),generate:()=>Effect.succeed(prepared)};
 const create=(policy:(directory:string)=>Effect.Effect<boolean>)=>createControllerProviders({controllerInstanceID:'controller-policy',

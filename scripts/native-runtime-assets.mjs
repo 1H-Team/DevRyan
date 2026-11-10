@@ -18,7 +18,7 @@ const resolvePinnedJsonc=async resolved=>{
  return {modulePath,packagePath,packageBytes};
 };
 export const NATIVE_ASSET_SOURCE_SHA=Object.freeze({pty:'5902fc8958dfa8b535a1c048af6f6a9140656d06d642dbbfb32a70136364a86c',photon:'d60656705f0d59baa79e36b0381eb023f1864eeb57e92956cf21dcd9fb8f879f'});
-export const NATIVE_WINDOWS_PTY_SOURCE_SHA256='f13f34163cd007d86916b1fe1589961c896ca4c0991ba4f973f46916f0eb77c8';
+export const NATIVE_WINDOWS_PTY_SOURCE_SHA256='419c42c9700f6fb97d440ba9c4c8a53a8fb6fb018b80968272b8bee40ce3ff8f';
 /** Windows has no approved persistent PTY. Refuse before resolving a command,
  * creating an installation directory, or reading an environment override. */
 export function rewriteUnavailableNativePty(source) {
@@ -46,7 +46,7 @@ export function rewriteNativeAgentDefaults(source) {
  if(hash(source)!==NATIVE_AGENT_DEFAULTS_SOURCE_SHA256||text.split(anchor).length!==2) throw new Error('Pinned native agent defaults changed');
  return text.replace(anchor,anchor+'            { action: "external_directory", resource: "*", effect: "ask" },\n');
 }
-export const NATIVE_PHOTON_WORKER_SOURCE_SHA256='e8433552e0900dcb7719c8ce6c9cf9639178deb2ce2de48060bb0eb884c6c68f';
+export const NATIVE_PHOTON_WORKER_SOURCE_SHA256='518d8a47bbb10c06bfc80a3e4d9611652d7827f8f004f5bdccdfef37d1683903';
 /** 2.2.0 resizes images in a worker thread that loads Photon outside the sealed
  * WASM resolver, from a file a compiled bundle does not contain. Keep the reviewed
  * main-thread Photon path, which never logs its worker fallback to stdout. */
@@ -182,6 +182,18 @@ export async function prepareReviewedNativeInputs(repository,{target='darwin-arm
   ast:{source:astPath,path:REVIEWED_AST_FILENAME,sha256:REVIEWED_AST_ASSET_SHA256}};
 }
 
+/** Effect 4.1's NodeWS is `export * from "ws"`. Under Bun `ws` is a built-in module, so
+ * it stays an external import, and Bun 1.4.4 bundles a star re-export of a built-in to
+ * nothing (`exports_NodeWS`/`ws3` is not defined): every bundled WebSocket server and
+ * client constructor would throw. Name the built-in's exports instead; Effect 4.0.6
+ * imported the same built-in directly. The pinned source must be the reviewed one. */
+export const EFFECT_NODE_WS_SOURCE_SHA256='61d5d8930e368717789d792ca24b735401e5e31d6470e0c5c42540d0d1ed20cf';
+export const isEffectNodeWsSource=file=>/@effect[\\/]platform-node-shared[\\/]dist[\\/]NodeWS\.js$/.test(file);
+export function rewriteEffectNodeWs(source) {
+ if(hash(source)!==EFFECT_NODE_WS_SOURCE_SHA256)throw new Error('Pinned Effect NodeWS source changed');
+ return 'export { CLOSED, CLOSING, CONNECTING, OPEN, createWebSocketStream, extension, Receiver, Sender, Server, subprotocol, WebSocket, WebSocketServer } from "ws";\n';
+}
+
 /** Resolves only explicit modules and exact reviewed rewrite paths. */
 export function reviewedNativeInputPlugin({rewrites,virtualModules,inputFiles,resolutions,workspaceResolutions}) {
  return {name:'devryan-reviewed-static-inputs',setup(builder){
@@ -215,6 +227,7 @@ export function reviewedNativeInputPlugin({rewrites,virtualModules,inputFiles,re
   });
   builder.onLoad({filter:/\.(?:mjs|js)$/},async event=>{
    const contents=rewrites.get(path.resolve(event.path));
+   if(contents===undefined&&isEffectNodeWsSource(event.path))return {contents:rewriteEffectNodeWs(await fs.readFile(event.path)),loader:'js'};
    return contents===undefined?undefined:{contents,loader:'js'};
   });
  }};

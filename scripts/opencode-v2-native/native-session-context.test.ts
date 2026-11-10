@@ -1,6 +1,6 @@
 import {expect,test} from 'bun:test';
 import {Effect,Schema} from 'effect';
-import {Message} from '@opencode/ai/effect';
+import {Message,type SystemMessage,type UserMessage} from '@opencode/ai/effect';
 import {Location} from '@opencode/core/location';
 import {Model} from '@opencode/schema/model';
 import {Agent} from '@opencode/schema/agent';
@@ -22,7 +22,7 @@ for(const preserveSystemCache of [true,false])test(`final compaction hook preser
  const inner:PluginHooks.Interface={has:()=>Effect.succeed(false),register:()=>Effect.die(Error('not called')),
   trigger:(_domain,_name,event)=>Effect.sync(()=>{const payload:unknown=event;if(payload!==null&&typeof payload==='object'&&'system' in payload&&Array.isArray(payload.system))payload.system.push({type:'text',text:'Earlier reviewed hook'});return event;})};
  const history=Message.user('Owned history');
- const event={sessionID:Session.ID.make('ses_owned'),agent:Agent.ID.make('builder'),model:Schema.decodeUnknownSync(Model.Ref)({providerID:'owned',id:'fixture'}),system:[{type:'text' as const,text:'Native system'}],messages:[history],options:{},tools:{}};
+ const event={sessionID:Session.ID.make('ses_owned'),agent:Agent.ID.make('builder'),model:Schema.decodeUnknownSync(Model.Ref)({providerID:'owned',id:'fixture'}),system:[{type:'text' as const,text:'Native system'}],messages:[history] as Array<UserMessage|SystemMessage>,options:{},tools:{}};
  const hooks=factory.decorateHooks(inner,location);
  await Effect.runPromise(hooks.trigger('session','compaction',event).pipe(Effect.provideService(OperationPermitRef,permit)));
  if(preserveSystemCache){
@@ -44,7 +44,7 @@ test('adaptive capability context is opt-in and appended after the cached histor
  const factory=createNativeSessionContext({origin,executeOwned:()=>Effect.die(Error('unreviewed')),rpc:async(_method,input)=>{seen.push(input);return {available:true,text:'[devryan-runtime-capabilities:v1]\n{"browser":{"previewReady":false}}'};}});
  const inner:PluginHooks.Interface={has:()=>Effect.succeed(false),register:()=>Effect.die(Error('not called')),trigger:(_domain,_name,event)=>Effect.succeed(event)};
  const hooks=factory.decorateHooks(inner,location),history=Message.user('Owned history');
- const event={sessionID:Session.ID.make('ses_owned'),agent:Agent.ID.make('builder'),model:Schema.decodeUnknownSync(Model.Ref)({providerID:'owned',id:'fixture'}),system:[{type:'text' as const,text:'Native system'}],messages:[history],options:{},tools:{}};
+ const event={sessionID:Session.ID.make('ses_owned'),agent:Agent.ID.make('builder'),model:Schema.decodeUnknownSync(Model.Ref)({providerID:'owned',id:'fixture'}),system:[{type:'text' as const,text:'Native system'}],messages:[history] as Array<UserMessage|SystemMessage>,options:{},tools:{}};
  try {
   process.env.DEVRYAN_ADAPTIVE_DELEGATION='0'; await Effect.runPromise(hooks.trigger('session','context',event).pipe(Effect.provideService(OperationPermitRef,permit)));
   expect(seen).toHaveLength(0);expect(event.messages).toEqual([history]);

@@ -131,6 +131,8 @@ test('a release keeps the source DDL of its own migration level', () => {
   expect(reviewedNativeCloneSourceLayout('2.2.2', 'fresh-install')).toBe(REVIEWED_NATIVE_SESSION_PART_FRESH_CLONE_LAYOUT);
   expect(reviewedNativeCloneSourceLayout('2.2.5', 'legacy')).toBeUndefined();
   expect(reviewedNativeCloneSourceLayout('2.2.5', 'fresh-install')).toBe(REVIEWED_NATIVE_JOB_FRESH_CLONE_LAYOUT);
+  expect(reviewedNativeCloneSourceLayout('2.2.6', 'legacy')).toBeUndefined();
+  expect(reviewedNativeCloneSourceLayout('2.2.6', 'fresh-install')).toBe(REVIEWED_NATIVE_JOB_FRESH_CLONE_LAYOUT);
   for (const version of ['2.0.31', '2.0.33', undefined]) expect(reviewedNativeCloneSourceLayout(version, 'legacy')).toBeUndefined();
   expect(reviewedNativeCloneSourceLayout('2.0.30', 'imported')).toBeUndefined();
   // A project-archive database never passes as a pre-archive layout, nor the reverse.
@@ -228,6 +230,16 @@ test('2.2.2 session-part databases cannot clone back into 2.2.1 readers', () => 
   // A 2.2.1 source is checked against its own level 5 layout, never the 2.2.2 one.
   expect(isReviewedNativeClonePair(manifest('2.2.1'), manifest('2.2.2'), REVIEWED_NATIVE_SESSION_PART_FRESH_CLONE_LAYOUT)).toBe(false);
   expect(isReviewedNativeClonePair(manifest('2.2.1'), manifest('2.2.2'), REVIEWED_NATIVE_SCHEDULE_FRESH_CLONE_LAYOUT)).toBe(true);
+});
+
+test('2.2.5 and 2.2.6 share the level 7 layout and clone both ways', () => {
+  expect(isReviewedNativeClonePair(manifest('2.2.5'), manifest('2.2.6'), REVIEWED_NATIVE_JOB_FRESH_CLONE_LAYOUT)).toBe(true);
+  expect(isReviewedNativeClonePair(manifest('2.2.6'), manifest('2.2.5'), REVIEWED_NATIVE_JOB_FRESH_CLONE_LAYOUT)).toBe(true);
+  // Installed 2.2.5 apps run the rebuilt graph that bundles the Agent SDK.
+  const shipped = { ...manifest('2.2.5'), inputs: { coreDigest: REVIEWED_NATIVE_CLONE_REBUILDS['2.2.5'] } };
+  expect(isReviewedNativeClonePair(shipped, manifest('2.2.6'), REVIEWED_NATIVE_JOB_FRESH_CLONE_LAYOUT)).toBe(true);
+  expect(isReviewedNativeClonePair(manifest('2.2.6'), manifest('2.2.2'), REVIEWED_NATIVE_JOB_FRESH_CLONE_LAYOUT)).toBe(false);
+  expect(isReviewedNativeClonePair(manifest('2.2.6'), manifest('2.2.5'), REVIEWED_NATIVE_SESSION_PART_FRESH_CLONE_LAYOUT)).toBe(false);
 });
 
 test('2.2.5 job databases cannot clone back into 2.2.2 readers', () => {

@@ -23,6 +23,12 @@ const environmentInstructions = InstructionBuiltIns.node.replace(InstructionBuil
     return InstructionBuiltIns.Service.of({ load: () => inner.load().pipe(Effect.map(rewriteEnvironmentInstructions)) });
   })).pipe(Layer.provide(layer))));
 
+// An integration connection (2.2.6: the OpenCode Console) may contribute a remote
+// config document. Without this hook core treats every document as accepted and
+// injects the Console library's instructions and downloads its skills, which are
+// not reviewed. Keeping the hook and never storing the document leaves both off.
+const refuseIntegrationDocument: NonNullable<Config.Interface['integration']> = () => Effect.void;
+
 /** Configuration is an explicit document, never a search of HOME or ancestors. */
 export function configurationOverrides(input: unknown): LayerNode.Replacements {
   const info = Schema.decodeUnknownSync(ConfigSchema.Info)(input, { onExcessProperty: 'error' });
@@ -42,6 +48,7 @@ export function configurationOverrides(input: unknown): LayerNode.Replacements {
     entries: () => Effect.succeed([document]),
     compatibility: () => Effect.succeed({ claude: [], agents: [] }),
     changes: () => Stream.empty,
+    integration: refuseIntegrationDocument,
   };
   return [
     Config.node.replace(Layer.succeed(Config.Service, service)),
@@ -67,7 +74,8 @@ export function configurationOverridesForSnapshot(snapshot: NativeConfigurationS
     if (!selected) return yield* Effect.die(new Error('native_configuration_location_unreviewed'));
     const document = new ConfigSchema.Document({ type: 'document', info: selected.configuration });
     const configuration: Config.Interface = { entries: () => Effect.succeed([document]),
-      compatibility: () => Effect.succeed({ claude: [], agents: [] }), changes: () => Stream.empty };
+      compatibility: () => Effect.succeed({ claude: [], agents: [] }), changes: () => Stream.empty,
+      integration: refuseIntegrationDocument };
     return configuration;
   }));
   const provider = makeLocationNode({ service: Config.Service, layer: service, deps: [Location.node] });

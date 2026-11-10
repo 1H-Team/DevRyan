@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Cause, Effect, Schema, Stream } from 'effect';
-import { LLMRequest, Message, ToolCallPart, ToolChoice, ToolDefinition } from '@opencode/ai/effect';
+import { ai, Message, ToolCallPart, ToolChoice, ToolDefinition } from '@opencode/ai/effect';
 import * as OpenAI from '@opencode/ai/providers/openai';
 import * as XAI from '@opencode/ai/providers/xai';
 import * as OpenAIResponses from '@opencode/ai/protocols/openai-responses';
@@ -28,7 +28,7 @@ export const toolScenarios = [
   { id: 'tool-result', toolChoice: 'auto', messages: [Message.user('Call lookup_code for ticket A1, then reply exactly OK.'),
     Message.assistant([lookupCall]), Message.tool({ id: lookupCall.id, name: lookup.name, result: 'code 4721' })] },
 ];
-export const toolScenarioRequest = (provider, scenario) => new LLMRequest({ model: provider.api.responses(provider.model), system: [],
+export const toolScenarioRequest = (provider, scenario) => ai.request({ model: provider.api.responses(provider.model), system: [],
   messages: scenario.messages, tools: [lookup], toolChoice: ToolChoice.make(scenario.toolChoice) });
 
 export async function inspectProviderResponse(response, provider, request) {
@@ -78,7 +78,7 @@ export async function inspectProviderResponse(response, provider, request) {
   if (!response.ok) return { ...output, outcome: 'provider-refused', ...providerErrorDetails(data.toString('utf8')) };
   stage = 'sse-framing';
   const frames = await Effect.runPromise(Stream.runCollect(Framing.sse.frame(Stream.fromIterable([data]))));
-  let state = provider.protocol.stream.initial(request ?? new LLMRequest({ model: provider.api.responses(provider.model), system: [], messages: [], tools: [] }));
+  let state = provider.protocol.stream.initial(request ?? ai.request({ model: provider.api.responses(provider.model), system: [], messages: [], tools: [] }));
   let finished = false, answer = '', quotaEventSeen = false, lookupCalled = false;
   for (const frame of frames) {
     stage = 'native-event-decode';

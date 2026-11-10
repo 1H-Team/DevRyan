@@ -50,7 +50,7 @@ try{
   stall=scenario==='connect';received=0;const bindings=[],beforeClosed=closed,firstRequest=requests.length;
   const model=await Effect.runPromise(resolveModel(scenario==='configured-idle-reset'?50:scenario==='disabled-idle-stop'?false:undefined));
   assert.equal(model.chunkTimeout,scenario==='configured-idle-reset'?50:scenario==='disabled-idle-stop'?false:undefined);
-  assert.equal(model.model.defaults.http.chunkTimeout,scenario==='configured-idle-reset'?50:scenario==='disabled-idle-stop'?false:900000);
+  assert.equal(model.model.options?.timeout?.chunk,scenario==='configured-idle-reset'?50:scenario==='disabled-idle-stop'?false:900000);
   const rawTransport=SessionModelTransport.layer.pipe(Layer.provide(Layer.succeed(Socket.WebSocketConstructor,(target,options)=>{
    assert.ok(target.startsWith(`ws://127.0.0.1:${server.port}/`));
    const socket=new WebSocket(target,options);clients.add(socket);return socket;
@@ -74,7 +74,7 @@ try{
    const prepared=yield* prepare.primary({session:{id:sessionID,projectID:'global',location:{directory:'/fixture'}},agent:'build',model,system:[],messages:[],webSocket:'session'});
    assert.ok(prepared.options.webSocket,'The real SessionModelRequest must select its session WebSocket');
    assert.equal(bindings[0].idleTimeout,model.chunkTimeout??null);
-   bindings[0].modelHttpChunkTimeout=model.model.defaults.http.chunkTimeout;
+   bindings[0].modelHttpChunkTimeout=model.model.options?.timeout?.chunk;
    const fiber=yield* llm.stream(prepared.request,prepared.options).pipe(Stream.runCollect,Effect.forkScoped);
    yield* Effect.promise(()=>waitFor(()=>requests.length>firstRequest));
    if(scenario==='connect'){

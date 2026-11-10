@@ -198,7 +198,7 @@ limits, with their operational consequences made explicit.
 
 ## Native behavior that must not be inferred away
 
-Session lifecycle and fork facts (2.2.5 `Session.Info`, pinned by
+Session lifecycle and fork facts (2.2.6 `Session.Info`, pinned by
 `scripts/opencode-v2-native/session-lifecycle-semantics.test.ts`): `toV1Session`
 copies `time.busy`, `time.idle` and `time.viewed` (finite, non-negative epoch
 ms), `outcome` (`succeeded`/`failed`/`interrupted`) and
@@ -319,7 +319,7 @@ generation-2 execution can become active.
 
 Natural FIFO requests keep delivery `queue`, including the default. Human queue admission checks the original native subtree before selection, stages the existing primary callback until native enqueue commit, and preserves exact accepted identity on failure/retry. The final Bus transaction repeats the activity/selection proof. An authenticated rollback receipt reports known nonacceptance; a retained item without its current primary owner reports `native_queued_input_retained`. Explicit manual steering uses `steer`; request metadata cannot opt out of the reserved human queue contract.
 
-The host pins OpenCode 2.2.5. Message and SSE projections read the current
+The host pins OpenCode 2.2.6. Message and SSE projections read the current
 `native` provider metadata and the retained `state`/`providerState` aliases,
 including original Cursor content identities, but project only DevRyan's own
 `devryan` marker into part metadata (`projectProviderState` in

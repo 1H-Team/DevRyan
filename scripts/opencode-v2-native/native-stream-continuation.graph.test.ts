@@ -13,7 +13,9 @@ const reviewedBuildPlugins=()=>reviewedBuildPluginsPromise??=Promise.all([create
  prepareReviewedNativeInputs(repository).then(reviewedNativeInputPlugin)]);
 // Every scenario runs one shared program; the compiled executable of that same
 // program is proven on the success path and the tool-denial path.
-const cases:Array<{scenario:string;slim:boolean;compiled:boolean;setter?:string}>=[...['continue','exhausted','plain-retry','stop-publication','missing-attempt'].map(scenario=>({scenario,slim:false,compiled:false})),{scenario:'continue',slim:true,compiled:false},{scenario:'exhausted',slim:true,compiled:false},{scenario:'continue',slim:false,compiled:true},{scenario:'silence',slim:false,compiled:false},{scenario:'denied-tool',slim:false,compiled:false},{scenario:'denied-tool',slim:false,compiled:true},...['text-start','reasoning-start','tool-input-start','tool-input-error','tool-call'].map(setter=>({scenario:'setter-'+setter,slim:false,compiled:process.env.DEVRYAN_NATIVE_STREAM_COMPILED_SETTERS==='1',setter})),...['late-provider-error','late-content-filter'].map(scenario=>({scenario,slim:false,compiled:false}))];
+const cases:Array<{scenario:string;slim:boolean;compiled:boolean;setter?:string}>=[...['continue','exhausted','plain-retry','stop-publication','missing-attempt'].map(scenario=>({scenario,slim:false,compiled:false})),{scenario:'continue',slim:true,compiled:false},{scenario:'exhausted',slim:true,compiled:false},{scenario:'continue',slim:false,compiled:true},{scenario:'silence',slim:false,compiled:false},{scenario:'denied-tool',slim:false,compiled:false},{scenario:'denied-tool',slim:false,compiled:true},...['text-start','reasoning-start','tool-input-start','tool-input-error','tool-call'].map(setter=>({scenario:'setter-'+setter,slim:false,compiled:process.env.DEVRYAN_NATIVE_STREAM_COMPILED_SETTERS==='1',setter})),// 2.2.6 has no provider-error stream event: a provider failure ends the stream,
+// so a content filter is the one late failure that can precede more output.
+{scenario:'late-content-filter',slim:false,compiled:false}];
 type FixtureConfig={scenario:string;slim:boolean;setter?:string};
 // The generated program reads its scenario from DEVRYAN_STREAM_FIXTURE at runtime, so every
 // scenario shares one bundle (and one compiled executable) instead of building 28 variants.
@@ -30,8 +32,7 @@ import {createNativePlanDenialOwner} from ${JSON.stringify(path.join(repository,
 import {createPrimaryRecoveryHost} from ${JSON.stringify(path.join(repository,'packages/harness-runtime/lib/provider-recovery-host.js'))};
 import {createNativePrimaryStepOwner} from ${JSON.stringify(path.join(repository,'packages/web/server/lib/opencode/runtime-host/primary-step-owner.js'))};
 import {SessionMessage} from '@opencode/core/session/message';
-import {LLMRequest} from '@opencode/ai/effect';
-import {HttpOptions} from '@opencode/ai/effect';
+import {timeoutConfig} from ${JSON.stringify(path.join(repository,'node_modules/@opencode/ai/dist/schema/options.js'))};
 import {primaryStepOverride} from ${JSON.stringify(path.join(repository,'packages/web/server/lib/opencode/runtime-host/primary-step.ts'))};
 const FIXTURE=JSON.parse(process.env.DEVRYAN_STREAM_FIXTURE);
 `+source;
@@ -83,7 +84,7 @@ const gates = createAdmissionGates({...(FIXTURE.slim?{sessionHooks:(inner,locati
   }
   replace('const gates = createAdmissionGates({',`const webfetchScope=createControllerWebfetch({tmpDirectory:globals.tmp,originals:helperOriginals,withSecondary:()=>Effect.die(Error('Unexpected stream fixture secondary'))});
 const observation=createNativeObservation({controllerInstanceID:controller.instanceID,configurationDigest:snapshot.digest,rpc,streamContinuation:true,decorateLlmClient:webfetchScope.captureLlmClient,
-   ...(FIXTURE.scenario==='silence'?{decorateModelRequests:inner=>Effect.succeed({...inner,primary:input=>inner.primary(input).pipe(Effect.map(prepared=>({...prepared,request:LLMRequest.update(prepared.request,{http:new HttpOptions({...prepared.request.http,chunkTimeout:250})})})))})}:{})});
+   ...(FIXTURE.scenario==='silence'?{decorateModelRequests:inner=>Effect.succeed({...inner,primary:input=>inner.primary(input).pipe(Effect.map(prepared=>({...prepared,request:{...prepared.request,timeout:{...timeoutConfig(prepared.request.timeout),chunk:250}}})))})}:{})});
 const gates = createAdmissionGates({executionActivity:inner=>{nativeExecution=inner;return inner;},captureSessionStore:inner=>{nativeStore=inner;return Effect.succeed(inner);},`);
   replace('...factory.overrides,...compatibility.overrides,',`...factory.overrides,...compatibility.overrides,...webfetchScope.overrides,...observation.overrides,primaryStepOverride(rpc,undefined,(event,disposition)=>Effect.sync(()=>published.push(event)).pipe(Effect.andThen(observation.observePublished(event,disposition))),undefined,undefined,undefined,undefined,events=>gates.controls.prepareQueuedPublication(events),event=>gates.controls.assertQueuedPublication(event),sessionID=>gates.controls.interruptStoppedHandoff(sessionID)),`);
   replace("      if(kind==='title'){initialPairReleased=true;releaseInitialPair();}",`      if(kind==='title'){initialPairReleased=true;releaseInitialPair();}
@@ -174,7 +175,7 @@ const rawSetterPlugin:Bun.BunPlugin={name:'fixture-model-qualification',setup(bu
   for(const [seam,message] of [[before,'Constructor raw model delivery seam changed'],[retry,'Constructor retry observation seam changed'],[finalizer,'Constructor stream finalization seam changed'],[registry,'Constructor request registry seam changed']] as const)
    if(contents.split(seam).length!==2)throw Error(message);
   const header=`const __F=process.env.DEVRYAN_STREAM_FIXTURE?JSON.parse(process.env.DEVRYAN_STREAM_FIXTURE):{};
-const __lateEvents=[__F.scenario==='late-provider-error'?{type:'provider-error',message:'Fixture provider refusal'}:{type:'step-finish',index:0,reason:{normalized:'content-filter'}},{type:'text-start',id:'late-text'},{type:'reasoning-start',id:'late-reasoning'},{type:'tool-input-start',id:'late-input',name:'read'},
+const __lateEvents=[{type:'step-finish',index:0,reason:{normalized:'content-filter'}},{type:'text-start',id:'late-text'},{type:'reasoning-start',id:'late-reasoning'},{type:'tool-input-start',id:'late-input',name:'read'},
  {type:'tool-input-error',id:'late-error',name:'read',raw:'{'},{type:'tool-call',id:'late-call',name:'read',input:{path:'/fixture/no-file'},providerExecuted:true}];
 const __rawSetter=__F.setter==='text-start'?{type:'text-start',id:'empty-start'}:__F.setter==='reasoning-start'?{type:'reasoning-start',id:'empty-start'}:__F.setter==='tool-input-error'?{type:'tool-input-error',id:'fixture-call',name:'read',raw:'{'}:__F.setter==='tool-call'?{type:'tool-call',id:'fixture-call',name:'read',input:{path:'/fixture/no-file'},providerExecuted:true}:{type:'tool-input-start',id:'fixture-call',name:'read'};
 `;

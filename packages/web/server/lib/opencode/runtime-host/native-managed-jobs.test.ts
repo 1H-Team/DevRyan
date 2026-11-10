@@ -35,7 +35,7 @@ async function fixture(run:(input:{directory:string;jobs:Job.Interface;adapter:R
     const project=yield* (yield* Project.Service).resolve(AbsolutePath.make(directory));
     const rootID=SessionSchema.ID.make('ses_managed_root'),childID=SessionSchema.ID.make('ses_managed_child');
     for(const sessionID of [rootID,childID])yield* bus.publish(SessionEvent.Created,Schema.decodeUnknownSync(SessionEvent.Created.data)({sessionID,
-      projectID:project.id,location:{directory},slug:'managed-job',version:'2.2.5',agent:'fixer',model:{providerID:'fixture',id:'saved'},...(sessionID===childID?{parentID:rootID}:{})}));
+      projectID:project.id,location:{directory},slug:'managed-job',version:'2.2.6',agent:'fixer',model:{providerID:'fixture',id:'saved'},...(sessionID===childID?{parentID:rootID}:{})}));
     const coordinator=yield* SessionRunCoordinator.make<SessionSchema.ID,never,'user'>({started:()=>Effect.sync(()=>{starts++;}),
       drain:id=>Effect.gen(function*(){drains++;started.resolve();if(hold){yield* Effect.promise(()=>finish.promise);return;}
         yield* SessionInbox.promote(database.db,bus,id,'input');}),

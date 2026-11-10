@@ -132,6 +132,9 @@ export const OPENCODE_V2_ROUTE_CLASSES = Object.freeze({
   'PATCH /api/experimental/artifacts/{artifactID}': D,
   'DELETE /api/experimental/artifacts/{artifactID}': D,
   'GET /api/experimental/artifacts/{artifactID}/view/*': D,
+  // Lists core's background jobs across sessions; DevRyan reads its own managed
+  // jobs through the host, so the cross-session listing stays closed.
+  'GET /api/experimental/job': D,
 
   // Events.
   'GET /api/event': S,

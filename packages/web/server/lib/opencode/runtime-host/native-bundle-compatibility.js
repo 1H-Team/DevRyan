@@ -21,6 +21,7 @@ export const REVIEWED_NATIVE_CLONE_RELEASES = Object.freeze({
   '2.2.1': 'c2eae3bf1a70feaab6380dc5ffe84462985bbe09af4696e41a0f20ebc45af3ef',
   '2.2.2': '2ef46d1ab669b5a185bd59de9a92ad1587953ecf4ca930bf3027730b7ee891fb',
   '2.2.5': '24c76a7a479dc5bdd317d83bbfe2a5758bdb62daf4674aaa033969c6cb26f6a0',
+  '2.2.6': '652fbcf684e89077b17cc0b7bdf2ecc314dc5fc2acb4e0d2720673f892d29330',
 });
 // The later 2.0.26 build adds observation transforms without changing database layout.
 // The later 2.2.5 build bundles the claude-agent provider's Agent SDK instead of a
@@ -44,7 +45,7 @@ export function assertReviewedNativeCoreDigest(manifest, target = TARGET_OPENCOD
 // 2.0.26 adds the data-only migration 20261007190000_azure_cli_external_credential,
 // whose `external` credential values older releases cannot decode. The DDL layout
 // is unchanged, so a clone never moves a database to a lower migration level.
-export const REVIEWED_NATIVE_CLONE_MIGRATION_LEVEL = Object.freeze({ '2.0.20': 0, '2.0.24': 0, '2.0.26': 1, '2.0.30': 2, '2.0.32': 2, '2.1.0': 3, '2.1.2': 3, '2.1.3': 3, '2.1.4': 3, '2.2.0': 4, '2.2.1': 5, '2.2.2': 6, '2.2.5': 7 });
+export const REVIEWED_NATIVE_CLONE_MIGRATION_LEVEL = Object.freeze({ '2.0.20': 0, '2.0.24': 0, '2.0.26': 1, '2.0.30': 2, '2.0.32': 2, '2.1.0': 3, '2.1.2': 3, '2.1.3': 3, '2.1.4': 3, '2.2.0': 4, '2.2.1': 5, '2.2.2': 6, '2.2.5': 7, '2.2.6': 7 });
 // 2.0.30 adds project.time_archived; its migrated database cannot clone backwards.
 // 2.1.0 writes native compaction windows and drops required legacy message fields.
 // Its logical level 3 prevents clones into older readers despite identical DDL.
@@ -56,6 +57,7 @@ export const REVIEWED_NATIVE_CLONE_MIGRATION_LEVEL = Object.freeze({ '2.0.20': 0
 // columns (level 6); its databases cannot clone into 2.2.1.
 // 2.2.5 adds the job table and moves background-job markers out of kv (level 7);
 // its databases cannot clone into 2.2.2.
+// 2.2.6 adds no migration and stays at level 7.
 // A layout is the database's structure (`inspectNativeCloneLayout`), not its DDL
 // text: a database created by an earlier release and migrated in place stores
 // `ALTER TABLE … ADD` text with the column last, a fresh one has it inside
@@ -115,8 +117,9 @@ export const REVIEWED_NATIVE_SESSION_PART_FRESH_CLONE_LAYOUT = Object.freeze({
   userVersion: 0,
 });
 // A level 7 (2.2.5) database adds the job table and its indexes to the level 6
-// structure. A 2.2.5 controller's fresh database and the retained 2.0.32 schema it
-// migrates in place share this structure. No legacy-imported level 7 layout is measured.
+// structure. A 2.2.5 or 2.2.6 controller's fresh database and the retained 2.0.32
+// schema it migrates in place share this structure. No legacy-imported level 7
+// layout is measured.
 export const REVIEWED_NATIVE_JOB_FRESH_CLONE_LAYOUT = Object.freeze({
   structureSha256: 'faec6318f1901b7f871a1af70d1e5b26116e0813f973198b0aa597791af0b81a',
   migrationsSha256: null,

@@ -188,6 +188,11 @@ test('actual SDK remote MCP services bind two locations, OAuth refresh and reloa
               const mcp=yield* Mcp.Service,mcpt=yield* McpTool.Service,tools=yield* Tool.Service,integration=yield* Integration.Service;
               yield* mcpt.flush;
               const catalog=yield* Effect.promise(()=>wait(()=>Effect.runPromise(tools.list()),rows=>rows.some(tool=>tool.id==='plain_lookup'),'native MCP catalog did not register plain_lookup'));assert.ok(catalog.some(tool=>tool.id==='plain_lookup'));
+              // 2.2.6: the connect's tools.changed event reloads the registry once more
+              // after flush (100 ms debounce); snapshot after it, as a later step would.
+              const registered=catalog.find(tool=>tool.id==='plain_lookup').execute;
+              yield* Effect.promise(()=>wait(()=>Effect.runPromise(tools.list()),rows=>rows.find(tool=>tool.id==='plain_lookup')?.execute!==registered,'connect reload never landed'));
+              yield* mcpt.flush;
               // The real compatibility snapshot is empty. A later original ConfigMcpPlugin
               // pass containing the identical reviewed servers must not replace/collide.
               duplicateConfig=true;

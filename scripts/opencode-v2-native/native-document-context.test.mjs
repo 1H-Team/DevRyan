@@ -14,12 +14,14 @@ test('actual reviewed schema and native media/text/omitted document conversion k
   const hash=text=>createHash('sha256').update(text).digest('hex');
   const original={id:'msg_user',role:'user',content:[{type:'text',text:'User prompt'},
    {type:'media',media:{source:{type:'base64',data:Buffer.from('PDF').toString('base64'),mediaType:'application/pdf'}},filename:'report.pdf'},
-   {type:'text',text:'Attached file: note.txt\n\nExact text',metadata:{attachment:{name:'note.txt'}}},
+   // A user-typed copy of the text is not an attachment; 2.2.6 marks one only by core's header line.
+   {type:'text',text:'Exact text'},
+   {type:'text',text:'\n\nAttached file: note.txt\n\nExact text'},
    {type:'media',media:{source:{type:'base64',data:Buffer.from('PNG').toString('base64'),mediaType:'image/png'}},filename:'keep.png'}]};
   const unchanged={id:'msg_other',role:'assistant',content:[{type:'text',text:'unchanged'}]},event={messages:[original,unchanged]};
   const replacement=(name,mime,bytes,text)=>({messageID:'msg_user',partID:name,text,name,mime,sha256:hash(bytes),textLength:bytes.length,textSha256:hash(bytes)});
   applyNativeDocumentContext(event,{parentNote:false,replacements:[replacement('report.pdf','application/pdf','PDF','Rendered PDF'),replacement('note.txt','text/plain','Exact text','Rendered text'),replacement('report.docx','application/vnd.openxmlformats-officedocument.wordprocessingml.document','DOCX','Rendered DOCX')]});
-  expect(event.messages[0].content).toEqual([original.content[0],{type:'text',text:'Rendered PDF'},{type:'text',text:'Rendered text'},original.content[3],{type:'text',text:'Rendered DOCX'}]);
+  expect(event.messages[0].content).toEqual([original.content[0],{type:'text',text:'Rendered PDF'},original.content[2],{type:'text',text:'Rendered text'},original.content[4],{type:'text',text:'Rendered DOCX'}]);
   expect(event.messages[1]).toBe(unchanged);
   applyNativeDocumentContext(event,{parentNote:true,replacements:[]});applyNativeDocumentContext(event,{parentNote:true,replacements:[]});
   expect(event.messages[0].content.filter(part=>part.text?.startsWith('Parent-task documents'))).toHaveLength(1);

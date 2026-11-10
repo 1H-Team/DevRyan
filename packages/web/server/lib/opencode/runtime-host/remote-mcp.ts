@@ -119,6 +119,18 @@ export function createOwnedRemoteMcp(options: OwnedRemoteMcpOptions) {
     if (!serverInfo || serverInfo.config.disabled) throw new HostRefusal('native_mcp_server_unreviewed', 403, 'mcp.binding');
     return Object.freeze({ directory, server, configurationDigest: serverInfo.configurationDigest, acquisitionID: catalog.acquisitionID });
   };
+  // Core's McpTool.flush, run before every step's tool snapshot (2.2.6), reloads the
+  // whole tool registry when `tools()` returns any object it has not seen. A fresh
+  // projection per call would replace every executor, so a concurrent step's
+  // snapshot would fail as an expired registration. Keep one projection per native tool.
+  const projections = new WeakMap<Mcp.Tool, Mcp.Tool>();
+  const project = (tool: Mcp.Tool) => {
+    const known = projections.get(tool);
+    if (known) return known;
+    const value = { ...tool, codemode: false };
+    projections.set(tool, value);
+    return value;
+  };
   const refresh = (catalog: Catalog) => Effect.gen(function* () {
     openCatalog(catalog.location.directory, catalog.acquisitionID);
     if (!catalog.inner) return yield* denied('native_mcp_catalog_unavailable', 'mcp.catalog');
@@ -147,7 +159,7 @@ export function createOwnedRemoteMcp(options: OwnedRemoteMcpOptions) {
         integrationBindings.set(server.integrationID, locations);
       }
     }
-    return native.map(tool => ({ ...tool, codemode: false }));
+    return native.map(project);
   });
   const current = (binding: RemoteMcpToolBinding) => Effect.gen(function* () {
     const catalog = openCatalog(binding.directory, binding.acquisitionID);

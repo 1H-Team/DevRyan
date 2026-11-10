@@ -38,7 +38,7 @@ test('browser status carries login state only', () => {
 });
 
 test('claude-agent connects once when Claude Code is installed, never after a Disconnect', async () => {
-  const runtime = { generation: 2, baseUrl: 'http://127.0.0.1:1', version: '2.2.5', epoch: 1 };
+  const runtime = { generation: 2, baseUrl: 'http://127.0.0.1:1', version: '2.2.6', epoch: 1 };
   const connections = [];
   let choice, installed = true, snapshot = { locations: [{ directory, configuration: { providers: {} } }] };
   const requests = [];

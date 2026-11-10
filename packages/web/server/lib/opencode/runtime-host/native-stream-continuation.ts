@@ -1,13 +1,15 @@
 import {createHash} from 'node:crypto';
-import {Effect,Layer,Stream,Schema,type Scope} from 'effect';
+import {Context,Effect,Layer,Stream,Schema,type Scope} from 'effect';
 import {SessionEvent} from '@opencode/schema/session-event';
-import {LLMClient,type LLMRequest,type LLMClientShape} from '@opencode/ai/effect';
+import {GENERATION_KEYS,LLMClient,type LLMClientService,type LLMRequest} from '@opencode/ai/effect';
 import {llmClient} from '@opencode/core/effect/app-node-platform';
 import {SessionMessage} from '@opencode/schema/session-message';
 import type {SessionModelRequest} from '@opencode/core/session/model-request';
 import {OperationPermitRef,type OperationPermit} from './native-admission-contract.js';
 import {currentNativeAttemptIdentity,type NativeAttemptIdentity} from './native-observation.js';
 import {HostRefusal,refuseHost} from './host-refusal.js';
+
+type LLMClientShape=Context.Service.Shape<typeof LLMClientService>;
 import type {ExecutionRpc} from './worker-protocol.js';
 
 const outputStarts=new Set(['text-start','reasoning-start','tool-input-start','tool-input-error','tool-call']);
@@ -46,7 +48,8 @@ export function createNativeStreamContinuation(options:{controllerInstanceID:str
    return inner.stream(request,streamOptions).pipe(Stream.tap(event=>Effect.sync(()=>{
     if(hasProviderError)return;
     if(scope&&outputStarts.has(event.type)){scope.outputStarted=true;if(scope.attempt)scope.attempt.outputStarted=true;}
-    if(event.type==='provider-error'||event.type==='step-finish'&&event.reason.normalized==='content-filter')hasProviderError=true;
+    // 2.2.6 fails the stream on provider errors; a content filter still finishes the step.
+    if(event.type==='step-finish'&&event.reason.normalized==='content-filter')hasProviderError=true;
    })),Stream.ensuring(Effect.sync(()=>{if(identity)attempts.delete(key(identity));})));
   }))});
   // LayerNode is last-wins: retain the helper's scoped capture of this actual
@@ -72,7 +75,7 @@ export function createNativeStreamContinuation(options:{controllerInstanceID:str
    if(!attempt.outputEventID||!attempt.assistantMessageID){event.decision={retry:false};return;}
    const result=yield* call('reserve',scope,{attempt:attempt.identity,outputEventID:attempt.outputEventID,assistantMessageID:attempt.assistantMessageID,
     fingerprint:createHash('sha256').update(JSON.stringify({messages:prepared.request.messages,tools:prepared.request.tools,toolChoice:prepared.request.toolChoice,
-     generation:prepared.request.generation,providerOptions:prepared.request.providerOptions})).digest('hex')});
+     generation:Object.fromEntries([...GENERATION_KEYS].map(name=>[name,prepared.request[name as keyof typeof prepared.request]])),providerOptions:prepared.request.providerOptions})).digest('hex')});
    if(result!==true){event.decision={retry:false};return;}
    scope.reserved=true;pending.set(scope.sessionID,scope);
   }))) };

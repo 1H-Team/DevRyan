@@ -145,6 +145,12 @@ test('actual SDK native questions and MCP elicitation are answered and cancelled
             const plugin=yield* Plugin.Service;yield* plugin.awaitActivation;
             const mcpt=yield* McpTool.Service,tools=yield* Tool.Service;yield* mcpt.flush;
             yield* Effect.promise(()=>wait(()=>Effect.runPromise(tools.list()),rows=>rows.some(tool=>tool.id==='plain_confirm'),'plain_confirm never registered'));
+            // 2.2.6 flush reconciles once the server connects; the connect's own
+            // tools.changed event reloads the registry again after its 100 ms debounce.
+            // Snapshot after that reload, as a later step would.
+            const registered=(yield* tools.list()).find(tool=>tool.id==='plain_confirm').execute;
+            yield* Effect.promise(()=>wait(()=>Effect.runPromise(tools.list()),rows=>rows.find(tool=>tool.id==='plain_confirm')?.execute!==registered,'connect reload never landed'));
+            yield* mcpt.flush;
             const shell=(yield* tools.list()).find(tool=>tool.id==='shell');
             assert.ok(shell.description.includes('mapped private project $PWD'));
             assert.ok(shell.description.includes('$TMPDIR')&&shell.description.includes('$DEVRYAN_SESSION_TMP'));

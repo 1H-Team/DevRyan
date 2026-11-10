@@ -10,6 +10,9 @@ import {Location} from '@opencode/core/location';
 import {OpencodePlugin} from '@opencode/core/plugin/provider/opencode';
 import {Bus} from '@opencode/core/bus';
 import {Config} from '@opencode/core/config';
+import {InstructionDiscovery} from '@opencode/core/instruction-discovery';
+import {SharedCache} from '@opencode/core/shared-cache';
+import {Skill} from '@opencode/core/skill';
 import {Voice} from '@opencode/core/voice';
 import {FetchHttpClient} from 'effect/http';
 import {XAIPlugin} from '@opencode/core/plugin/provider/xai';
@@ -296,8 +299,11 @@ test('original OpenCode builtin can activate with a key while Console OAuth rema
     yield* OpencodePlugin.effect({app:{name:'DevRyan',version:'2.0.20',channel:'test'},
       integration,provider:{transform:emptyTransform},model:{transform:emptyTransform},websearch:{transform:emptyTransform},
       mcp:{transform:emptyTransform},session:{hook:(name,callback,options)=>hooks.register('session',name,callback,options)}})
-      // 2.2.0 reads the location config for the Console integration document.
-      .pipe(Effect.provide(Config.testLayer()));
+      // 2.2.0 reads the location config for the Console integration document; 2.2.6
+      // also feeds the Console library to instruction discovery and skills.
+      .pipe(Effect.provide(Layer.mergeAll(Config.testLayer(),InstructionDiscovery.layer({project:false,global:false}),
+        Layer.succeed(SharedCache.Service,SharedCache.Service.of({get:input=>input.load})),
+        Layer.succeed(Skill.Service,Skill.Service.of({transform:()=>Effect.void,reload:()=>Effect.void,get:()=>Effect.succeed(undefined),files:()=>Effect.succeed(undefined),list:()=>Effect.succeed([])})))));
     const methods=(yield* integration.get(id('opencode'))).methods;
     expect(methods.some(method=>method.type==='key')).toBe(true);
     const oauth=methods.find(method=>method.type==='oauth');expect(oauth).toBeDefined();

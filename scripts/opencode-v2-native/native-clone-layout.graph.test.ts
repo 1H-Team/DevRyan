@@ -8,7 +8,8 @@ import {Database} from '@opencode/core/database/database';
 import {Global} from '@opencode/util/global';
 import {inspectNativeCloneLayout,REVIEWED_NATIVE_CLONE_RELEASES,REVIEWED_NATIVE_JOB_FRESH_CLONE_LAYOUT,REVIEWED_NATIVE_SESSION_PART_FRESH_CLONE_LAYOUT,verifyNativeCloneCompatibility} from '../../packages/web/server/lib/opencode/runtime-host/native-bundle-compatibility.js';
 
-test('2.2.5 migrates the retained 2.0.32 schema in place to its fresh layout, adding only its nine migrations',async()=>{
+// 2.2.6 adds no migration: the installed core keeps 2.2.5's level 7 layout.
+test('2.2.6 migrates the retained 2.0.32 schema in place to the level 7 fresh layout, adding only its nine migrations',async()=>{
  const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-clone-layout-')));
  const globals={home:root,data:root,cache:root,config:root,state:root,tmp:root,bin:root,log:root,repos:root};
  const initialize=(databasePath:string)=>Effect.runPromise(Effect.scoped(Effect.gen(function*(){
@@ -22,6 +23,8 @@ test('2.2.5 migrates the retained 2.0.32 schema in place to its fresh layout, ad
   expect(inspectNativeCloneLayout(previous)).toEqual(REVIEWED_NATIVE_SESSION_PART_FRESH_CLONE_LAYOUT);
   const manifest=(opencodeVersion:keyof typeof REVIEWED_NATIVE_CLONE_RELEASES)=>({opencodeVersion,inputs:{coreDigest:REVIEWED_NATIVE_CLONE_RELEASES[opencodeVersion]},compiledContracts:['devryan-v2-clone/1','devryan.bundle.credentials/2','devryan.bundle.credential-owners/2']});
   expect(()=>verifyNativeCloneCompatibility({left:manifest('2.2.2'),right:manifest('2.2.5'),databasePath:previous})).not.toThrow();
+  expect(()=>verifyNativeCloneCompatibility({left:manifest('2.2.5'),right:manifest('2.2.6'),databasePath:fresh})).not.toThrow();
+  expect(()=>verifyNativeCloneCompatibility({left:manifest('2.2.6'),right:manifest('2.2.5'),databasePath:fresh})).not.toThrow();
   await initialize(previous);
   expect(inspectNativeCloneLayout(previous)).toEqual(REVIEWED_NATIVE_JOB_FRESH_CLONE_LAYOUT);
   expect(()=>verifyNativeCloneCompatibility({left:manifest('2.2.2'),right:manifest('2.2.5'),databasePath:previous})).toThrow('bundle_v2_upgrade_compatibility_required');

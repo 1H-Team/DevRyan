@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test';
 import { Effect } from 'effect';
 import { ChildProcess } from 'effect/process';
 import { Config } from '@opencode/core/config';
+import { Integration } from '@opencode/core/integration';
 import { ConfigPluginSource } from '@opencode/core/config/plugin/source';
 import { AppProcess } from '@opencode/util/process';
 import { LayerNode } from '@opencode/util/effect/layer-node';
@@ -39,6 +40,21 @@ test('native configuration has no filesystem discovery and preserves explicit fo
   expect(Config.latest(actual.entries, 'snapshots')).toBe(false);
   expect(Config.latest(actual.entries, 'warming')).toBe(false);
   expect(Config.latest(actual.entries, 'formatter')).toEqual({ fixture: { command: ['fixture-format', '$FILE'], extensions: ['.txt'] } });
+});
+
+test('native configuration never stores an integration document, so the Console library stays off', async () => {
+  const layer = LayerNode.compile(Config.node, { replacements: configurationOverrides({}) });
+  const entries = await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    const config = yield* Config.Service;
+    // Core's OpenCode Console plugin allows library instructions and skills when the
+    // hook is absent, or when the document it offered is among the entries.
+    if (!config.integration) throw new Error('Closed configuration lacks the integration hook');
+    const before = yield* config.entries();
+    yield* config.integration(Schema.decodeUnknownSync(Integration.ID)('opencode'), undefined);
+    return { before, after: yield* config.entries() };
+  }).pipe(Effect.provide(layer))));
+  expect(entries.after).toEqual(entries.before);
+  expect(entries.after).toHaveLength(1);
 });
 
 test('native environment instruction names shell scratch instead of the protected global tmp', async () => {

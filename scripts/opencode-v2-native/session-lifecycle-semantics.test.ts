@@ -9,12 +9,12 @@ import {SessionStore} from '@opencode/core/session/store';import {SessionProject
 import {SessionEvent} from '@opencode/core/session/event';import {SessionSchema} from '@opencode/core/session/schema';
 import {Session} from '@opencode/schema/session';
 
-// Pins the installed OpenCode 2.2.5 session lifecycle semantics that the v2
+// Pins the installed OpenCode 2.2.6 session lifecycle semantics that the v2
 // projection (`v2/projection/sessions.js` copies the wire values, `events.js`
 // re-reads the record on each fact) and the UI monotonic merge rely on: start keeps idle/outcome, terminal idle is strictly
 // increasing, shutdown leaves idle/outcome alone, viewed is a max watermark,
 // none of them moves `time.updated`, and forks carry `fork` with no parentID.
-test('native 2.2.5 session lifecycle and fork facts',async()=>{
+test('native 2.2.6 session lifecycle and fork facts',async()=>{
  const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-session-lifecycle-')));
  const sessionID=SessionSchema.ID.make('ses_lifecycle_pin'),forkID=SessionSchema.ID.make('ses_lifecycle_fork');
  let now=1_000;
@@ -33,7 +33,7 @@ test('native 2.2.5 session lifecycle and fork facts',async()=>{
    return {busy:millis(info.time.busy),idle:millis(info.time.idle),viewed:millis(info.time.viewed),updated:millis(info.time.updated),outcome:info.outcome};
   });
   const at=<A,E,R>(time:number,effect:Effect.Effect<A,E,R>)=>Effect.suspend(()=>{now=time;return effect;});
-  yield* at(1_000,bus.publish(SessionEvent.Created,Schema.decodeUnknownSync(SessionEvent.Created.data)({sessionID,projectID:project.id,location:{directory:root},slug:'lifecycle-pin',agent:'build',model:{providerID:'fixture',id:'m1'},version:'2.2.5'})));
+  yield* at(1_000,bus.publish(SessionEvent.Created,Schema.decodeUnknownSync(SessionEvent.Created.data)({sessionID,projectID:project.id,location:{directory:root},slug:'lifecycle-pin',agent:'build',model:{providerID:'fixture',id:'m1'},version:'2.2.6'})));
   expect(yield* read(sessionID)).toEqual({busy:undefined,idle:undefined,viewed:undefined,updated:1_000,outcome:undefined});
 
   // Start sets busy and keeps idle/outcome; time.updated never moves.

@@ -194,7 +194,7 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
     let nativeURL, epoch = 0, descriptor, currentController, baselineSnapshot;
     const nativeTransport = { fetch: globalThis.fetch };
     const intervalReads = { active: 0, history: 0, total: 0 };
-    const deps = { getRuntime: () => ({ generation: 2, baseUrl: nativeURL, version: '2.2.5', epoch }),
+    const deps = { getRuntime: () => ({ generation: 2, baseUrl: nativeURL, version: '2.2.6', epoch }),
       fetchImpl: (url, input) => {
         if (managedInterval) {
           intervalReads.total++;
