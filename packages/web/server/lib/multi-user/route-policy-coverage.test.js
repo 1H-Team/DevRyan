@@ -30,7 +30,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { createMultiUserRuntime } from './runtime.js';
 import {
@@ -588,7 +588,9 @@ describe('managed-user route policy coverage', () => {
       }
       decisions.set(entry, byRole);
     }
-  });
+  // About 1,000 gate probes: around 1.5 s alone, but several times that on a
+  // loaded machine, past Vitest's 10 s default hook budget.
+  }, 30_000);
 
   afterAll(async () => {
     await harness?.dispose();
@@ -597,6 +599,39 @@ describe('managed-user route policy coverage', () => {
   it('enumerates the main server routes and path mounts from the real registrars', () => {
     expect(enumerated.routes.length, countsTable()).toBeGreaterThan(400);
     expect(enumerated.mounts.some((mount) => mount.path === '/api/opencode-v2' && mount.viaRouter), countsTable()).toBe(true);
+  });
+
+  // The census is pinned to the host fixture in test-route-registry.js. A
+  // second enumeration on a host that reports another platform and sets the
+  // environment switches CI lanes and desktop builds use must register exactly
+  // the same routes and mounts.
+  it('enumerates the same routes and mounts whatever the host builds or runs on', async () => {
+    const census = (result) => [
+      ...result.routes.map((route) => `${route.method} ${route.path} ${route.file}:${route.line}`),
+      ...result.mounts.filter((mount) => typeof mount.path === 'string').map((mount) => `USE ${mount.path} ${mount.file}:${mount.line}`),
+    ].sort();
+    const descriptors = Object.fromEntries(['platform', 'arch'].map((key) => [key, Object.getOwnPropertyDescriptor(process, key)]));
+    let other;
+    try {
+      Object.defineProperty(process, 'platform', { ...descriptors.platform, value: process.platform === 'linux' ? 'win32' : 'linux' });
+      Object.defineProperty(process, 'arch', { ...descriptors.arch, value: process.arch === 'x64' ? 'arm64' : 'x64' });
+      for (const [key, value] of Object.entries({
+        CI: 'true',
+        GITHUB_ACTIONS: 'true',
+        DEVRYAN_DIST_DIR: path.join(SERVER_ROOT, 'route-census-missing-dist'),
+        DEVRYAN_RUNTIME: 'desktop',
+        DEVRYAN_DEV_MODE: 'true',
+        DEVRYAN_SKIP_OPENCODE_START: 'true',
+      })) vi.stubEnv(key, value);
+      other = await enumerateServerRoutes({ multiUserRuntime: harness.runtime, dataDirectory: harness.repositoryPath });
+    } finally {
+      vi.unstubAllEnvs();
+      for (const [key, descriptor] of Object.entries(descriptors)) Object.defineProperty(process, key, descriptor);
+    }
+    const [expected, actual] = [census(enumerated), census(other)];
+    const onlyHere = expected.filter((key) => !actual.includes(key));
+    const onlyThere = actual.filter((key) => !expected.includes(key));
+    expect({ onlyHere, onlyThere }, `Census differs on another host (${expected.length} vs ${actual.length} entries)`).toEqual({ onlyHere: [], onlyThere: [] });
   });
 
   it('mirrors the order in which the server calls its registrars', () => {

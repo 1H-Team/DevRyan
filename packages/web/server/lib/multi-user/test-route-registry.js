@@ -388,6 +388,35 @@ export const createManagedPolicyHarness = async ({ createMultiUserRuntime }) => 
 
 
 // ---------------------------------------------------------------------------
+// Host pinning. Route groups that a host's build output, platform or
+// environment would switch on or off are fixed here, so the census is the
+// same on a CI lane without build output and on a developer's Mac.
+export const PINNED_PLATFORM = 'darwin';
+export const PINNED_ARCH = 'arm64';
+const createHostFixture = () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-route-host-'));
+  const serverDirectory = path.join(root, 'server');
+  fs.mkdirSync(serverDirectory);
+  fs.mkdirSync(path.join(root, 'dist'));
+  fs.writeFileSync(path.join(root, 'dist', 'index.html'), '<!doctype html><title>route census fixture</title>\n');
+  const env = {};
+  const pinned = new Proxy(process, {
+    get(target, property) {
+      if (property === 'env') return env;
+      if (property === 'platform') return PINNED_PLATFORM;
+      if (property === 'arch') return PINNED_ARCH;
+      const value = Reflect.get(target, property);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+  return {
+    process: pinned,
+    serverDirectory,
+    dispose: () => fs.rmSync(root, { recursive: true, force: true }),
+  };
+};
+
+// ---------------------------------------------------------------------------
 // Route enumeration. The registrars run in the order constructWebHost
 // (application.js) calls them. constructWebHost itself cannot run here: it
 // verifies the native bundle at module load and starts OpenCode, so its
@@ -465,9 +494,13 @@ export const enumerateServerRoutes = ({ multiUserRuntime, dataDirectory }) => wi
   const server = createStub('server');
   // Real values for the dependencies a registrar uses as values while
   // registering (paths, modules); every other dependency is a stub.
+  // The census must not depend on the host. Registrars see a pinned process
+  // (empty environment, the released darwin/arm64 platform) and a private
+  // built-UI fixture instead of packages/web/dist, which only some hosts have.
+  const hostFixture = createHostFixture();
   const real = {
-    express, fs, os, path, crypto, fsPromises: fs.promises, process, URL, __dirname: SERVER_ROOT,
-    devryanDataDir: dataDirectory, dataDirectory, dataDir: dataDirectory,
+    express, fs, os, path, crypto, fsPromises: fs.promises, process: hostFixture.process, URL, __dirname: SERVER_ROOT,
+    platform: PINNED_PLATFORM, devryanDataDir: dataDirectory, dataDirectory, dataDir: dataDirectory,
   };
   const deps = (extra = {}) => createDependencies({ ...real, ...extra });
   // Inline registrations in code the registry cannot run are recorded at
@@ -549,9 +582,14 @@ export const enumerateServerRoutes = ({ multiUserRuntime, dataDirectory }) => wi
     ['createTerminalRuntime({app', () => createTerminalRuntime(deps({ app, server, uiAuthController, multiUserRuntime }))],
     ["app.get('/api/global/event'", inline(P, 'GET', '/api/global/event')],
     ['setupProxy(app', () => createServerUtilsRuntime(deps()).setupProxy(app)],
-    ['staticRoutesRuntime.registerStaticRoutes(app', () => createStaticRoutesRuntime(deps()).registerStaticRoutes(app)],
+    // application.js passes the server directory; the UI is resolved at <dir>/../dist.
+    ['staticRoutesRuntime.registerStaticRoutes(app', () => createStaticRoutesRuntime(deps({ __dirname: hostFixture.serverDirectory })).registerStaticRoutes(app)],
   ];
-  for (const [, run] of [...steps, ...pipelineSteps]) await run();
+  try {
+    for (const [token, run] of [...steps, ...pipelineSteps]) await run();
+  } finally {
+    hostFixture.dispose();
+  }
 
   return {
     routes,
