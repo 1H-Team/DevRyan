@@ -1,0 +1,20 @@
+[
+  {"check":"anchor","doc":"packages/harness-runtime/DOCUMENTATION.md","token":"../../docs/IDENTITY_COMPATIBILITY.md#data-folder-migration"},
+  {"check":"bun-run","doc":"packages/web/server/lib/notifications/DOCUMENTATION.md","token":"bun run validate:affected"},
+  {"check":"export","doc":"packages/web/server/lib/opencode/DOCUMENTATION.md","token":"config-apply-runtime.js: registerCommonRequestMiddleware"},
+  {"check":"export","doc":"packages/web/server/lib/opencode/DOCUMENTATION.md","token":"config-apply-runtime.js: resolveSharedJsonBodyLimit"},
+  {"check":"export","doc":"packages/web/server/lib/opencode/DOCUMENTATION.md","token":"env-runtime.js: applyOpencodeBinaryFromSettings"},
+  {"check":"export","doc":"packages/web/server/lib/opencode/DOCUMENTATION.md","token":"env-runtime.js: buildWslExecArgs"},
+  {"check":"export","doc":"packages/web/server/lib/opencode/DOCUMENTATION.md","token":"env-runtime.js: clearResolvedOpenCodeBinary"},
+  {"check":"export","doc":"packages/web/server/lib/opencode/DOCUMENTATION.md","token":"env-runtime.js: ensureOpencodeCliEnv"},
+  {"check":"export","doc":"packages/web/server/lib/opencode/DOCUMENTATION.md","token":"env-runtime.js: resolveManagedOpenCodeLaunchSpec"},
+  {"check":"export","doc":"packages/web/server/lib/opencode/DOCUMENTATION.md","token":"env-runtime.js: resolveOpencodeCliPath"},
+  {"check":"export","doc":"packages/web/server/lib/opencode/DOCUMENTATION.md","token":"env-runtime.js: resolveWslExecutablePath"},
+  {"check":"export","doc":"packages/web/server/lib/skills-catalog/DOCUMENTATION.md","token":"clawdhub/api.js: mapClawdHubItem"},
+  {"check":"env","doc":"docs/CONCURRENT_REVERT.md","token":"DEVRYAN_NATIVE_READ_TOOLS"},
+  {"check":"env","doc":"packages/web/server/lib/opencode/DOCUMENTATION.md","token":"OPENCODE_DISABLE_CLAUDE_CODE_SKILLS"},
+  {"check":"env","doc":"packages/web/server/lib/opencode/DOCUMENTATION.md","token":"OPENCODE_DISABLE_DEFAULT_PLUGINS"},
+  {"check":"env","doc":"packages/web/server/lib/opencode/DOCUMENTATION.md","token":"OPENCODE_DISABLE_EXTERNAL_SKILLS"},
+  {"check":"env","doc":"packages/web/server/lib/opencode/DOCUMENTATION.md","token":"OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS"},
+  {"check":"env","doc":"packages/web/server/lib/orchestration/DOCUMENTATION.md","token":"OPENCODE_DISABLE_DEFAULT_PLUGINS"}
+]

@@ -52,6 +52,15 @@ A website integration must be configured explicitly for the intended destination
 this repository does not authorize access to any upstream website checkout.
 
 The repository validator also checks Markdown links and explicit source-file
-references outside code examples. Historical audit reports and saved plans emit
-warnings for missing old paths; generated build/runtime targets are reported as
-unchecked. Current documentation must resolve its local references.
+references outside code examples. The changelog emits warnings for missing old
+paths; generated build/runtime targets are reported as unchecked. Current
+documentation must resolve its local references.
+
+It also checks documentation against the code (`scripts/docs/`): link anchors
+resolve to a heading by GitHub's slug rules, every `bun run <name>` names a
+script of the root manifest or of the `--cwd`/`--filter` package, each
+`` `name(` `` under a heading such as `## Public exports (file.js)` occurs in
+that file, and every `DEVRYAN_*`, `OPENCHAMBER_*` or `OPENCODE_*` token occurs
+in non-Markdown code. Known drift is listed in `scripts/docs/known-drift.json`,
+which only shrinks: new drift fails, and so does an entry that no longer occurs
+until it is deleted (`bun run docs:validate --prune` deletes exactly those).
