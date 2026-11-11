@@ -249,8 +249,8 @@ fn walk<A: Unit, B: Unit>(a: &[A], b: &[B], work: &mut i64, out: &mut Out) {
             Some((x, y))
                 if !((x == 0 && y == 0) || (x == a.len() as i64 && y == b.len() as i64)) =>
             {
-                walk(js_slice(a, 0, Some(x)), js_slice(b, 0, Some(y)), work, out);
-                walk(js_slice(a, x, None), js_slice(b, y, None), work, out);
+                // JS: walk(a.slice(0, x), b.slice(0, y)); walk(a.slice(x), b.slice(y));
+                walk_halves(a, b, x, y, work, out);
             }
             _ => {
                 out.push(DELETE, a);
@@ -300,6 +300,15 @@ pub fn mutation_diff(before: &[u8], after: &[u8], budget: i64) -> Vec<u32> {
     out.pairs
 }
 
+/// The two recursive calls of `walk` for a split point `(x, y)`, on JS's
+/// `a.slice(0, x), b.slice(0, y)` and `a.slice(x), b.slice(y)`: a split point
+/// past the end of a text (a stored past-the-edge entry) clamps, never panics.
+#[inline(always)]
+fn walk_halves<A: Unit, B: Unit>(a: &[A], b: &[B], x: i64, y: i64, work: &mut i64, out: &mut Out) {
+    walk(js_slice(a, 0, Some(x)), js_slice(b, 0, Some(y)), work, out);
+    walk(js_slice(a, x, None), js_slice(b, y, None), work, out);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -316,6 +325,29 @@ mod tests {
         assert_eq!(js_slice(&units, -2, None), &units[3..]);
         assert_eq!(js_slice(&units, -9, Some(2)), &units[..2]);
         assert_eq!(js_slice(&units, 0, Some(-9)), &units[0..0]);
+    }
+
+    // `walk_halves` with split points past the end (and before the start) of
+    // either text, against JS's `walk(a.slice(0, x), b.slice(0, y));
+    // walk(a.slice(x), b.slice(y))`. No input is known to produce such a split
+    // (exhaustive small searches find none); the clamp is the defence if one did.
+    #[test]
+    fn a_split_point_past_the_end_clamps_like_javascript() {
+        let halves = |a: &[u8], b: &[u8], x: i64, y: i64| {
+            let mut out = Out { pairs: Vec::new() };
+            let mut work = 1_000;
+            walk_halves(a, b, x, y, &mut work, &mut out);
+            out.pairs
+        };
+        let a = b"abcde";
+        let b = b"abc";
+        // Both past the end: the first call sees both whole texts, the second nothing.
+        assert_eq!(halves(a, b, 8, 3), vec![EQUAL, 3, DELETE, 2]);
+        assert_eq!(halves(a, b, 7, 9), vec![EQUAL, 3, DELETE, 2]);
+        // Past the end on one side only: JS walk('abcde', 'a') then walk('', 'bc').
+        assert_eq!(halves(a, b, 6, 1), vec![EQUAL, 1, DELETE, 4, INSERT, 2]);
+        // Negative positions count from the end: walk('abcd', '') then walk('e', 'abc').
+        assert_eq!(halves(a, b, -1, -5), vec![DELETE, 5, INSERT, 3]);
     }
 
     #[test]

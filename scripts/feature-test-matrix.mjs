@@ -55,6 +55,7 @@ export const FEATURE_TEST_MATRIX = Object.freeze([
       'packages/harness-runtime/native/session-group-darwin.h',
       'packages/web/server/lib/opencode/session-revert-coordinator.js', 'packages/web/server/lib/opencode/session-scoped-revert.js'],
     testPaths: ['packages/harness-runtime/lib/session-mutations.revert-restore.test.js', 'packages/harness-runtime/lib/session-mutations.lease-ownership.test.js', 'packages/harness-runtime/lib/session-mutation-text.test.js',
+      'packages/harness-runtime/lib/session-mutation-text.differential.test.js',
       'packages/harness-runtime/lib/session-revert-coordinator.test.js', 'packages/harness-runtime/lib/session-execution.test.js',
       'packages/web/server/lib/opencode/execution-artifacts.test.js', 'scripts/verify-revert-runtime-artifacts.test.mjs',
       'packages/web/server/lib/opencode/session-revert-coordinator.test.js', 'packages/web/server/opencode-proxy.test.js',

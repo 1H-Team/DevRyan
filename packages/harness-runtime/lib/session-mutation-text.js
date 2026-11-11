@@ -3,6 +3,8 @@
 // Strings here are byte strings (latin1); storage and filesystem boundaries use
 // Buffers, so invalid UTF-8 and newline conventions round-trip without loss.
 import { isUtf8 } from 'node:buffer';
+import { executionDiagnostic, executionReporting } from './execution-admission.js';
+import { LEDGER_CORE_KINDS, ledgerCoreDiff, ledgerCoreEnabled } from './ledger-core.js';
 
 // Keep UTF-8 code points indivisible when assigning replacement ownership.
 // Byte-level matching could otherwise combine a restored leading byte with a
@@ -18,14 +20,62 @@ const units = (text) => {
   return result;
 };
 
-// A diff runs synchronously on the host event loop (in Electron, the window's
-// main thread). Myers is O((N+M)·D): two unrelated 16 KiB texts took seconds.
+// A diff runs synchronously on the ledger's thread: the ledger worker, or the
+// host's event loop where the ledger runs inline (session-mutation-host.js).
+// Myers is O((N+M)·D): two unrelated 16 KiB texts took seconds.
 // Past this many diagonal/snake steps the remaining ranges become one
 // replacement each. The text stays exact; only ownership gets coarser.
 export const MUTATION_DIFF_WORK_BUDGET = 4_000_000;
 
-/** Myers' bisect diff uses linear auxiliary space, including for large rewrites. */
+// How many mutationDiff calls each path answered: `rust` (the WebAssembly
+// core), `javascript` (javascriptMutationDiff: the switch is off, or the
+// core fell back) and `early` (an early exit while the switch is on). Kept on
+// the realm, not the module, so a test sees every copy of this module loaded
+// in its thread; nothing in the product reads it.
+const PATHS = Symbol.for('devryan.mutationDiff.paths');
+const paths = (globalThis[PATHS] ??= { rust: 0, javascript: 0, early: 0 });
+/** A snapshot of the per-path call counts in this thread (tests and diagnostics). */
+export const mutationDiffPaths = () => ({ rust: paths.rust, javascript: paths.javascript, early: paths.early });
+
+/**
+ * The ledger's text diff. With DEVRYAN_LEDGER_RUST=1 the edit script comes
+ * from the Rust core (lib/ledger-core.js) and is rebuilt here by slicing the
+ * two texts; the early exits stay in JavaScript, ahead of the call, so equal,
+ * NUL-holding or invalid UTF-8 texts are never copied. Off, or when the core
+ * answers "use JavaScript" (journaled once per cause as `ledger_core`
+ * `fallback` through the execution's diagnostics), javascriptMutationDiff
+ * runs unchanged. Both produce the same result.
+ */
 export function mutationDiff(before, after, { budget = MUTATION_DIFF_WORK_BUDGET } = {}) {
+  if (!ledgerCoreEnabled()) { paths.javascript += 1; return javascriptMutationDiff(before, after, { budget }); }
+  // The same early exits as javascriptMutationDiff's.
+  if (before === after) { paths.early += 1; return before ? [{ kind: 'equal', text: before }] : []; }
+  if ([before, after].some((text) => text.includes('\0') || !isUtf8(Buffer.from(text, 'latin1')))) {
+    paths.early += 1;
+    return [...(before ? [{ kind: 'delete', text: before }] : []), ...(after ? [{ kind: 'insert', text: after }] : [])];
+  }
+  const pairs = ledgerCoreDiff(before, after, budget, { onDiagnostic: executionReporting() ? executionDiagnostic : undefined });
+  if (!pairs) { paths.javascript += 1; return javascriptMutationDiff(before, after, { budget }); }
+  paths.rust += 1;
+  const result = [];
+  for (let index = 0, x = 0, y = 0; index < pairs.length; index += 2) {
+    const kind = LEDGER_CORE_KINDS[pairs[index]], bytes = pairs[index + 1];
+    if (kind === 'insert') { result.push({ kind, text: after.slice(y, y + bytes) }); y += bytes; }
+    else {
+      result.push({ kind, text: before.slice(x, x + bytes) }); x += bytes;
+      if (kind === 'equal') y += bytes;
+    }
+  }
+  return result;
+}
+
+/**
+ * The JavaScript diff: the reference the Rust core is checked against and its
+ * fallback. Myers' bisect diff uses linear auxiliary space, including for
+ * large rewrites. mutationDiff repeats its two early exits ahead of the core;
+ * change both copies together.
+ */
+export function javascriptMutationDiff(before, after, { budget = MUTATION_DIFF_WORK_BUDGET } = {}) {
   if (before === after) return before ? [{ kind: 'equal', text: before }] : [];
   if ([before, after].some((text) => text.includes('\0') || !isUtf8(Buffer.from(text, 'latin1')))) {
     return [...(before ? [{ kind: 'delete', text: before }] : []), ...(after ? [{ kind: 'insert', text: after }] : [])];

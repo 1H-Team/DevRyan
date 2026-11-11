@@ -914,9 +914,10 @@ For a provider-free preparation benchmark, run `DEVRYAN_VIEW_PREWARM_BENCHMARK=1
 ## Rust ledger core
 
 A first-party Rust port of the ledger's text diff (`mutationDiff` in
-`lib/session-mutation-text.js`), run as WebAssembly. Nothing in the product
-calls it yet: the JavaScript implementation is the reference and stays the
-fallback.
+`lib/session-mutation-text.js`), run as WebAssembly. `mutationDiff` uses it
+only when `DEVRYAN_LEDGER_RUST=1`, which is off by default. The JavaScript
+implementation (`javascriptMutationDiff`, unchanged) is the reference and
+stays the fallback.
 
 - **Where.** The crate is `native/ledger-core/` (no dependencies of any kind;
   `rust-toolchain.toml` pins Rust 1.99.1 with `rustfmt`, `clippy` and the
@@ -966,7 +967,21 @@ fallback.
 - **The switch.** `DEVRYAN_LEDGER_RUST=1` turns the Rust path on; it is off by
   default and any other value is off. `lib/ledger-core.js` reads it on every
   call; it is recorded in run fingerprints (`HARNESS_BEHAVIOUR_SWITCHES`). In
-  the ledger worker the value is the one the worker started with.
+  the ledger worker the value is the one the worker started with. Off,
+  `mutationDiff` calls `javascriptMutationDiff` directly, as before (it adds
+  one environment read, a counter increment and a `{ budget }` object per
+  call). On, `mutationDiff` keeps the JavaScript early exits
+  ahead of the core (equal texts, a NUL byte, invalid UTF-8: nothing is
+  copied), asks the core for the edit script as (kind, byte length) pairs and
+  rebuilds the same `[{ kind, text }]` list by slicing its own two strings, so
+  the result, and every run and byte the ledger persists from it, is the one
+  `javascriptMutationDiff` returns. `applyMutationText` and the rest of the
+  ledger are unchanged and reach the core only through `mutationDiff`. The core
+  repeats the early exits itself so that it is a total function over bytes
+  (`native/ledger-core/tests/vectors.tsv` pins both); from `mutationDiff` they
+  are never reached, and JavaScript owns them. `mutationDiffPaths()` counts the
+  calls each path answered in this thread (`rust`, `javascript`, `early`); the
+  tests use it to fail a silent fallback, nothing in the product reads it.
 - **The loader.** `ledgerCoreDiff(before, after, budget, { onDiagnostic })`
   takes the two latin1 byte strings `mutationDiff` receives and a budget, and
   returns the edit script as a `Uint32Array` of `[kind, bytes, ...]` pairs
@@ -998,6 +1013,73 @@ fallback.
   code: 'ledger_core_<cause>' }`, the shape the runtime's other diagnostics
   take. The loader never throws: any options value (`null`, a non-object, a
   throwing getter) is accepted, and only a function `onDiagnostic` is called.
+  `mutationDiff` passes the execution's own diagnostics
+  (`executionDiagnostic`, and only while an admission, summary or observation
+  journals the work), so a fallback reaches the diagnostic journal as a
+  `session_execution` record with `phase: 'ledger_core'`, `state: 'fallback'`,
+  `code: 'ledger_core_<cause>'` and the call's session, message and call IDs;
+  from the ledger worker it crosses to the host like the worker's other
+  reports. Diffs outside such work (background maintenance) fall back silently
+  and leave the cause unreported, so the next journaled call reports it. A
+  call that falls back runs `javascriptMutationDiff` (after a load-time cause,
+  every later call does), so a fallback never changes a result.
+- **Equivalence evidence.** `lib/session-mutation-text.test.js` runs every case
+  on both paths and asserts the path counters; with the module missing every
+  Rust run fails. `lib/session-mutation-text.differential.test.js` compares the
+  whole result of both paths on seeded inputs for a time budget (2 s by
+  default, each case with its own timeout): one-ASCII-side pairs, four-byte
+  code points sharing leading bytes, unrelated pairs, empty sides, early exits,
+  budgets 0, 1, small, random and the default (at least 1,000 pairs whatever
+  the clock, `DEVRYAN_LEDGER_DIFFERENTIAL_PAIRS`), budgets that run out inside
+  the second recursive call (found by bisection on constructed pairs, and
+  asserted to occur), every pair of small strings over `ab` and `abc` across 16
+  budgets, and texts at and near the 8 MiB granular limit, after which no
+  instance larger than the retention cap is kept. The trap fallback is tested
+  on the loader (`lib/ledger-core.test.js`), the journal wiring through
+  `mutationDiff` with a budget fallback. The extended run (by hand,
+  before default-on):
+  `cd packages/harness-runtime && DEVRYAN_LEDGER_DIFFERENTIAL=extended DEVRYAN_LEDGER_DIFFERENTIAL_MS=1800000 bun run test ./lib/session-mutation-text.differential.test.js --timeout 7200000`
+  adds pairs up to 64 KiB and prints its counts (`DEVRYAN_LEDGER_DIFFERENTIAL_SEED`
+  picks another seed). The history replay diffs every file each commit in a
+  range changed (to 8 MiB) on both paths and exits 1 on any difference or
+  fallback:
+  `ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/Electron.app/Contents/MacOS/Electron scripts/perf/mutation-diff-history-replay.mjs [--range "-n 2000 HEAD"]`
+  (default `--all`). Results on 2026-11-12 (Bun for the tests, Electron's
+  Node for the replay, a heavily loaded machine): the extended run compared
+  7,846,576 results over 1,553,773 pairs in 40 minutes, plus 1,666 budgets that
+  run out inside the second recursive call and the 8 MiB pairs; the replay of
+  all 318 commits reachable in the checkout compared 34,130 distinct
+  before-and-after pairs of file versions (43,848 file changes, 1.44 GB,
+  largest 7.8 MB, 8,463 with non-ASCII text, 1,086 binary or invalid UTF-8) in
+  95 minutes. No difference and no fallback in either.
+  `scripts/perf/mutation-ancestry-replay.mjs` (70 overlapping rewrites through
+  `applyMutationText`) writes the same report with the switch off and on, apart
+  from its timing fields, with every diff answered by the core. A split point
+  past the end of a text, which the core clamps as JavaScript's `slice` does,
+  was never produced: the extended run's exhaustive search (all 393,617 pairs
+  over `ab` to length 8 and `abc` to length 5, 16 budgets each, 6,297,872
+  comparisons) stored 653,992 past-the-edge entries but returned none as a
+  split, and
+  the crate's `a_split_point_past_the_end_clamps_like_javascript` test covers
+  the clamp directly.
+- **Benchmark.** `scripts/perf/mutation-diff-benchmark.mjs` reruns R0's
+  measurement on the product code: R0's diff shapes on both arms, interleaved,
+  then, with `--publication`, one confined edit's `finish` with the switch off,
+  on and off again (the A/A arm shows the noise), with the load average on
+  every row:
+  `ELECTRON_RUN_AS_NODE=1 node scripts/test-isolation-guard.mjs node_modules/electron/dist/Electron.app/Contents/MacOS/Electron --expose-gc scripts/perf/mutation-diff-benchmark.mjs --publication`
+  (also under `node --expose-gc` or `bun`; `--sizes 32k,256k,1m,8m`,
+  `--shapes`, `--publication-shapes`, `--runs`, `--out`). On 2026-11-12, in
+  Electron's Node at load average 12 to 18 on 8 cores (read as ratios): the
+  diff is 10 to 19 times faster on the 256 KiB edit shapes and 6.7 to 12.5 times on
+  the 1 MiB ones (copies and rebuild included), about 4.5 times on unrelated
+  texts, where the work budget caps both; no instance over 8 MiB is kept after
+  a call. Publication (`finish`) measured, on that loaded machine: a ten-hunk
+  edit to a 256 KiB file +20%, +34%, -7% (with 17% A/A noise) and +22% in four
+  runs; two edits to a 1 MiB file +18% to +35% in four runs; a 32 KiB file
+  -0.5% and +2.0% over 31 calls per arm (A/A 0.4 to 2.9%). Whether publication
+  meets the restated bar is not settled by these numbers: a rerun on a quiet
+  machine is pending.
 - **Never** load a native Rust module (`.node`, `dlopen`) into the process that
   hosts the server: a fault there ends every session. Rust runs in this process
   only as WebAssembly. Never ship the crate: the packaged app excludes `.rs`,

@@ -34,6 +34,10 @@ export const OPENCODE_OWNED = new Map([
 // code corpus) and that docs legitimately tell a developer to set, mapped to
 // the reader and the reason.
 export const TEST_ONLY = new Map([
+  ['DEVRYAN_LEDGER_DIFFERENTIAL', 'packages/harness-runtime/lib/session-mutation-text.differential.test.js: opt-in extended run'],
+  ['DEVRYAN_LEDGER_DIFFERENTIAL_MS', 'packages/harness-runtime/lib/session-mutation-text.differential.test.js: time budget of the random pairs'],
+  ['DEVRYAN_LEDGER_DIFFERENTIAL_PAIRS', 'packages/harness-runtime/lib/session-mutation-text.differential.test.js: minimum number of random pairs'],
+  ['DEVRYAN_LEDGER_DIFFERENTIAL_SEED', 'packages/harness-runtime/lib/session-mutation-text.differential.test.js: seed of the random pairs'],
   ['DEVRYAN_NATIVE_STREAM_COMPILED_SETTERS', 'scripts/opencode-v2-native/native-stream-continuation.graph.test.ts: opt-in to the compiled-setter graph cases'],
   ['DEVRYAN_TEST_OPENCODE_BIN', 'tests/provider-recovery/runtime-conformance.mjs: the OpenCode binary under test'],
   ['DEVRYAN_UI_PERF', 'tests/visual-chat-improvements/run.mjs: opt-in perf comparison'],

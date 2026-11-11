@@ -24,12 +24,12 @@
   },
   "sources": {
     "crate": "packages/harness-runtime/native/ledger-core",
-    "digest": "bd7c57f246e00b4bff9b6c11c3e867bf08aa5b20a514658b5528aa8a30994ea9",
+    "digest": "0f52889b5fa2a52ac71260999335f09cecdc1db0b0aa11149a7e71c94ddc2080",
     "files": {
       "Cargo.toml": "9c016fcbd1421beaf9e6b494361f2d3c6f1605337b20d7d4e63b7381b5e2d41a",
       "Cargo.lock": "31dd713047540af7fbd5f33ff28fe331692c48647c8a3ff7ac2c4a0304a545fa",
       "rust-toolchain.toml": "f3e797d28d4f6d91291d7a0dd8ece02be58d51b9b3ea14920de4554e91d420ac",
-      "src/diff.rs": "405c433c90fab3c6a5fce39234479acb8cb5ac05d29858a8a5f300889dcb0159",
+      "src/diff.rs": "a65d661f86e0f9767f5c52dc0bed4fbb915481939ac3d3a1a3b343e857c00cb4",
       "src/lib.rs": "bd91ffeba7ca26c6095e4fbc6084b5c27921dc44589a98dd201e6d040b1b0e11"
     }
   }

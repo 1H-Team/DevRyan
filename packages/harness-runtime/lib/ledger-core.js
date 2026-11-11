@@ -54,6 +54,8 @@ export function createLedgerCore({ moduleUrl = DEFAULT_MODULE, provenanceUrl = D
   let instance = null; // { exports, memory }
   let instances = 0;
   const reported = new Set();
+  // Read on every call; only the value 1 turns it on.
+  const enabled = () => environment.DEVRYAN_LEDGER_RUST === '1';
 
   const fallback = (cause, onDiagnostic) => {
     if (typeof onDiagnostic === 'function' && !reported.has(cause)) {
@@ -100,8 +102,7 @@ export function createLedgerCore({ moduleUrl = DEFAULT_MODULE, provenanceUrl = D
     // Any options value, null and non-objects included, is accepted; only a function observer is called.
     let onDiagnostic;
     try { onDiagnostic = options !== null && typeof options === 'object' ? options.onDiagnostic : undefined; } catch { /* A throwing getter: no observer. */ }
-    // Read on every call; only the value 1 turns it on.
-    if (environment.DEVRYAN_LEDGER_RUST !== '1') return null;
+    if (!enabled()) return null;
     if (!Number.isSafeInteger(budget)) return fallback('budget', onDiagnostic);
     if (typeof before !== 'string' || typeof after !== 'string' || NOT_A_BYTE_STRING.test(before) || NOT_A_BYTE_STRING.test(after)) {
       return fallback('input', onDiagnostic);
@@ -156,10 +157,12 @@ export function createLedgerCore({ moduleUrl = DEFAULT_MODULE, provenanceUrl = D
 
   /** What the loader holds, for tests and diagnostics. */
   const inspect = () => ({ loaded: Boolean(compiled), failed, instances, memoryBytes: instance ? instance.memory.buffer.byteLength : 0 });
-  return { diff, inspect };
+  return { diff, enabled, inspect };
 }
 
 /** The process's loader for this thread, over the package's own module. */
 export const ledgerCore = createLedgerCore();
+/** Whether the switch is on for `ledgerCore` now (callers skip work the Rust path needs when it is off). */
+export const ledgerCoreEnabled = () => ledgerCore.enabled();
 /** `ledgerCore.diff`: the edit script as pairs, or null to use JavaScript. */
 export const ledgerCoreDiff = (before, after, budget, options) => ledgerCore.diff(before, after, budget, options);
