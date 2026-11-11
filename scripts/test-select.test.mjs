@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { importSpecifiers, isTestImporter, loadPackages, resolveSpecifier } from './check-import-boundaries.mjs';
-import { MARKDOWN_READERS, SUITE_CONTRACT, WHOLE_SUITE_INPUTS, buildScriptTestGraph, selectScriptTests, withMarkdownReaders } from './test-select.mjs';
+import { MARKDOWN_READERS, SUITE_CONTRACT, TREE_READERS, WHOLE_SUITE_INPUTS, buildScriptTestGraph, selectScriptTests, withMarkdownReaders } from './test-select.mjs';
 import { discoverScriptTestFiles } from './test-scripts.mjs';
 
 const roots = [];
@@ -172,6 +172,17 @@ describe('script test selection', () => {
       'scripts/sel-inventory.test.mjs': "import { discover } from './test-scripts.mjs';\n" });
     assert.deepEqual(select(['scripts/sel-new.test.mjs']).tests, ['scripts/sel-inventory.test.mjs', 'scripts/test-suite-contract.test.mjs']);
     assert.deepEqual(select(['scripts/sel-leaf.test.mjs']).tests, ['scripts/sel-inventory.test.mjs', 'scripts/sel-leaf.test.mjs', 'scripts/test-suite-contract.test.mjs']);
+  });
+
+  test('a file under a tree a script test reads whole selects that test, triggering or not', () => {
+    const [{ prefix, tests: [reader] }] = TREE_READERS;
+    const select = fixture({ ...base, [reader]: "import assert from 'node:assert';\n", [`${prefix}src/sel-unnamed.rs`]: 'fn main() {}\n',
+      [`${prefix}sel-unnamed.toml`]: '[package]\n' });
+    for (const file of [`${prefix}src/sel-unnamed.rs`, `${prefix}sel-unnamed.toml`, `${prefix}src/sel-deleted.rs`]) {
+      const selection = select(['scripts/sel-leaf.mjs', file], ['scripts/sel-leaf.mjs']);
+      assert.deepEqual(selection.tests, [reader, 'scripts/sel-leaf.test.mjs'].sort(), file);
+    }
+    assert.deepEqual(select(['packages/sel-other/src/sel-unnamed.rs'], []).tests, []);
   });
 
   test('changed files that did not trigger the suite add the tests reaching them but never widen it', () => {

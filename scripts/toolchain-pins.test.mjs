@@ -4,11 +4,14 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { CRATE_DIR, installCommand, readToolchainFile } from './build-ledger-core.mjs';
 
 // Toolchain versions and their sources: Bun is the root `packageManager`,
-// Electron the root manifest's `electron` dependency, and the Node minimum the
-// root `engines.node`. Every other place that states one is found by scanning
-// tracked files and must agree, or be allowlisted below with its reason.
+// Electron the root manifest's `electron` dependency, the Node minimum the
+// root `engines.node`, and Rust the ledger core's rust-toolchain.toml channel
+// (packages/harness-runtime/native/ledger-core). Every other place that states
+// one is found by scanning tracked files and must agree, or be allowlisted
+// below with its reason.
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = file => readFileSync(path.join(root, file), 'utf8');
 const tracked = (...patterns) => execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', ...patterns], { cwd: root, encoding: 'utf8' })
@@ -164,9 +167,30 @@ export function manifestProblems(file, manifest, pins) {
   return problems;
 }
 
-/** Version statements in prose: `Node.js 22.13`, `Node >=22.13`, `Bun 1.4.4`, `bun@1.4.4`, `Electron 44.9.3`, `Electron 44`. */
+/**
+ * Rust toolchain installs in a workflow. Each must install the pinned channel
+ * with exactly the components and target the build uses (`installCommand`).
+ */
+export function rustWorkflowProblems(workflows, toolchain) {
+  const problems = [], installs = [];
+  const expected = installCommand(toolchain);
+  for (const { file, text } of workflows) {
+    for (const match of text.matchAll(/rustup\s+toolchain\s+install\b[^\n]*/g)) {
+      const where = `${file}:${lineOf(text, match.index)}`;
+      installs.push(where);
+      if (match[0].trim() !== expected) problems.push(`${where}: "${match[0].trim()}" is not "${expected}" (${CRATE_DIR}/rust-toolchain.toml)`);
+    }
+    for (const match of text.matchAll(/\b(?:toolchain|rust-version)\s*:\s*['"]?(\d+\.\d+(?:\.\d+)?|stable|beta|nightly)\b/g)) {
+      problems.push(`${file}:${lineOf(text, match.index)}: a Rust toolchain input (${match[0].trim()}); install the pin with "${expected}" instead`);
+    }
+  }
+  return { problems, installs };
+}
+
+/** Version statements in prose: `Node.js 22.13`, `Node >=22.13`, `Bun 1.4.4`, `bun@1.4.4`, `Electron 44.9.3`, `Electron 44`, `Rust 1.99.1`. */
 export function docStatements(text) {
   const statements = [];
+  for (const match of text.matchAll(/\bRust\s+v?(\d+\.\d+(?:\.\d+)?)\b/g)) statements.push({ tool: 'rust', text: match[0], index: match.index, version: match[1] });
   for (const match of text.matchAll(/\bNode(?:\.js)?\s+`?(?:>=\s*)?v?(\d+)(?:\.(\d+))?(?:\.(\d+))?/g)) {
     statements.push({ tool: 'node', text: match[0].replace(/`/g, ''), index: match.index, parts: match.slice(1).filter(Boolean) });
   }
@@ -190,6 +214,8 @@ export function docProblems(file, text, pins, allowed = ALLOWED_DOC_STATEMENTS, 
       else if (statement.parts.some((part, index) => part !== minimum[index])) problems.push(`${where} disagrees with engines.node >=${pins.nodeMinimum}`);
     } else if (statement.tool === 'bun') {
       if (statement.version !== pins.bun) problems.push(`${where} is not packageManager bun@${pins.bun}`);
+    } else if (statement.tool === 'rust') {
+      if (statement.version !== pins.rust) problems.push(`${where} is not the ledger core's Rust ${pins.rust}`);
     } else {
       const current = pins.electron.split('.');
       if (statement.parts.length === 1 ? statement.parts[0] !== current[0] : statement.parts.join('.') !== pins.electron) problems.push(`${where} is not the root electron ${pins.electron}`);
@@ -204,6 +230,8 @@ const pins = sources.pins;
 const workflowFiles = tracked('.github/workflows/*.yml', '.github/workflows/*.yaml');
 const workflows = workflowProblems(workflowFiles.map(file => ({ file, text: read(file) })), pins, read('.nvmrc'));
 pins.releaseNodeMajor = workflows.releaseMajor;
+const rustToolchain = readToolchainFile(root);
+pins.rust = rustToolchain.channel;
 
 test('each toolchain has one well-formed source', () => {
   assert.deepEqual(sources.problems, []);
@@ -213,6 +241,16 @@ test('workflow Node and Bun versions agree with their sources', () => {
   assert.ok(workflowFiles.includes('.github/workflows/release.yml') && workflowFiles.includes('.github/workflows/ci.yml'));
   assert.deepEqual(workflows.problems, [], `Workflow toolchain versions disagree:\n${workflows.problems.join('\n')}`);
   assert.ok(workflows.releaseMajor, 'the release workflows pin one Node major');
+});
+
+test('the Rust pin is one exact release that CI installs with what the build uses', () => {
+  assert.match(rustToolchain.channel, /^\d+\.\d+\.\d+$/, `${CRATE_DIR}/rust-toolchain.toml`);
+  const rust = rustWorkflowProblems(workflowFiles.map(file => ({ file, text: read(file) })), rustToolchain);
+  assert.deepEqual(rust.problems, [], rust.problems.join('\n'));
+  assert.ok(rust.installs.some(where => where.startsWith('.github/workflows/ci.yml:')), 'ci.yml installs the pinned Rust for the ledger core step');
+  assert.ok(!rust.installs.some(where => where.startsWith('.github/workflows/release.yml:')), 'the release workflow builds no Rust');
+  // The tracked crate is the only Rust toolchain file outside the frozen Tauri package.
+  assert.deepEqual(tracked('*rust-toolchain', '*rust-toolchain.toml').filter(file => !file.startsWith('packages/desktop/')), [`${CRATE_DIR}/rust-toolchain.toml`]);
 });
 
 test('first-party sources pin the packageManager Bun and the engines Node minimum', () => {
@@ -235,7 +273,7 @@ test('workspace manifests pin the root Electron and the packageManager Bun types
   assert.deepEqual(problems, [], problems.join('\n'));
 });
 
-test('docs state the pinned Node, Bun and Electron versions', () => {
+test('docs state the pinned Node, Bun, Electron and Rust versions', () => {
   const used = new Set();
   const files = tracked('*.md', '*.mdx').filter(file => !SKIPPED_DOCS.has(file));
   assert.ok(files.includes('README.md') && files.includes('docs/RELEASE_PIPELINE.md'));
@@ -275,4 +313,15 @@ test('the checks flag every kind of disagreement', () => {
   assert.match(docProblems('d.md', 'The shell runs Electron 45.', fixture, []).join(), /electron 44\.9\.3/);
   assert.deepEqual(docProblems('d.md', 'Node.js 22.13 or newer, Node `>=22.13`, Bun 1.4.4, `@ff-labs/fff-bun@0.10.5`, Electron 44.9.3 and Electron 44.', fixture, []), []);
   assert.deepEqual(docProblems('d.md', 'Electron 41.2.1 was sampled.', fixture, [{ file: 'd.md', text: 'Electron 41.2.1' }]), []);
+  const rustPins = { ...fixture, rust: '1.99.1' };
+  assert.match(docProblems('d.md', 'Build it with Rust 1.98.0.', rustPins, []).join(), /Rust 1\.99\.1/);
+  assert.match(docProblems('d.md', 'Rust 1.99 is enough.', rustPins, []).join(), /Rust 1\.99\.1/);
+  assert.deepEqual(docProblems('d.md', 'Rust 1.99.1 builds the module.', rustPins, []), []);
+  const pinned = { channel: '1.99.1', components: ['rustfmt', 'clippy'], targets: ['wasm32-unknown-unknown'] };
+  const install = 'rustup toolchain install 1.99.1 --profile minimal --component rustfmt,clippy --target wasm32-unknown-unknown';
+  const rust = text => rustWorkflowProblems([{ file: 'ci.yml', text }], pinned).problems.join('\n');
+  assert.equal(rust(`      - run: |\n          ${install}\n          node scripts/build-ledger-core.mjs --verify\n`), '');
+  assert.match(rust(`      - run: ${install.replace('1.99.1', '1.99.0')}\n`), /ci\.yml:1: .*is not/);
+  assert.match(rust(`      - run: ${install.replace(',clippy', '')}\n`), /is not/);
+  assert.match(rust('      - uses: dtolnay/rust-toolchain@master\n        with:\n          toolchain: stable\n'), /a Rust toolchain input/);
 });

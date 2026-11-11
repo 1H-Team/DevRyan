@@ -32,7 +32,9 @@ test('the app ships no duplicate web build, source maps, tests, sources or Linux
   }
   // Native modules load their compiled .node; no Linux app is built. Windows prebuilds
   // stay for the Windows preview package.
-  for (const pattern of ['!**/*.{c,cc,cpp,h,hpp}', '!**/build/Release/obj{,/**}', '!**/prebuilds/linux-*{,/**}']) {
+  for (const pattern of ['!**/*.{c,cc,cpp,h,hpp}', '!**/build/Release/obj{,/**}', '!**/prebuilds/linux-*{,/**}',
+    // Rust sources never ship; the ledger core runs as its built WebAssembly module.
+    '!**/*.rs', '!**/{Cargo.toml,Cargo.lock,rust-toolchain,rust-toolchain.toml}', '!node_modules/@devryan/harness-runtime/native/ledger-core{,/**}']) {
     assert.ok(build.files.includes(pattern), pattern);
   }
   // A platform `files` list makes electron-builder prepend `**/*`, which packs this
@@ -113,6 +115,20 @@ test('each package ships only its own platform and arch natives', () => {
     'node_modules/tree-sitter-bash/prebuilds/win32-x64/tree-sitter-bash.node',
     ...RUNTIME_FILES,
   ]);
+});
+
+test('the ledger core ships its WebAssembly module and provenance, never its crate', () => {
+  const root = 'node_modules/@devryan/harness-runtime';
+  const runtime = [`${root}/lib/ledger-core.js`, `${root}/lib/native/ledger-core.wasm`, `${root}/lib/native/ledger-core.json`,
+    // bun-pty loads its own Cargo build output at run time.
+    'node_modules/bun-pty/rust-pty/target/release/librust_pty_arm64.dylib'];
+  const crate = ['Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.gitignore', 'src/lib.rs', 'src/diff.rs', 'tests/vectors.rs',
+    'tests/vectors.tsv', 'tests/generate-vectors.mjs', 'target/wasm32-unknown-unknown/release/ledger_core.wasm', 'build.rs']
+    .map(file => `${root}/native/ledger-core/${file}`);
+  const elsewhere = ['node_modules/some-crate/Cargo.toml', 'node_modules/some-crate/src/main.rs', 'node_modules/some-crate/rust-toolchain'];
+  for (const [os, arch] of [['mac', 'arm64'], ['mac', 'x64'], ['win', 'x64']]) {
+    assert.deepEqual(packedFor(os, arch, [...runtime, ...crate, ...elsewhere]), runtime);
+  }
 });
 
 test('Claude uses the installed CLI and keeps only the server SDK entrypoints', () => {

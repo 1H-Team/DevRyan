@@ -322,6 +322,30 @@ describe('maintenance validation selection', () => {
     }
   });
 
+  test('needs Rust only for a change to the ledger core crate, its build script or its tracked module', () => {
+    const plan = files => buildPlan('fast', files);
+    const labels = files => plan(files).commands.map(c => c.label);
+    const ledgerCore = { label: 'ledger-core', executable: 'node', args: ['scripts/build-ledger-core.mjs', '--verify'] };
+    // A new crate file that no source names yet still reaches the contract test.
+    for (const file of ['packages/harness-runtime/native/ledger-core/src/diff.rs', 'packages/harness-runtime/native/ledger-core/src/unnamed-module.rs',
+      'packages/harness-runtime/native/ledger-core/Cargo.lock',
+      'packages/harness-runtime/native/ledger-core/rust-toolchain.toml', 'packages/harness-runtime/native/ledger-core/tests/vectors.tsv',
+      'scripts/build-ledger-core.mjs', 'packages/harness-runtime/lib/native/ledger-core.wasm', 'packages/harness-runtime/lib/native/ledger-core.json']) {
+      const selected = plan([file]);
+      assert.deepEqual(selected.commands.filter(c => c.label === 'ledger-core').map(({ label, executable, args }) => ({ label, executable, args })), [ledgerCore], file);
+      // The contract test, which needs no Rust, runs with it.
+      assert.ok(selected.commands.find(c => c.label === 'test:scripts')?.tests.includes('scripts/build-ledger-core.test.mjs'), file);
+    }
+    // The toolchain pin is also checked against CI and the docs.
+    assert.ok(plan(['packages/harness-runtime/native/ledger-core/rust-toolchain.toml']).commands.find(c => c.label === 'test:scripts').tests.includes('scripts/toolchain-pins.test.mjs'));
+    // The loader tests execute the tracked module.
+    assert.ok(labels(['packages/harness-runtime/lib/native/ledger-core.wasm']).includes('test:harness'));
+    assert.ok(!labels(['packages/harness-runtime/native/ledger-core/src/diff.rs']).includes('test:harness'));
+    for (const file of ['packages/harness-runtime/lib/ledger-core.js', 'packages/harness-runtime/lib/session-mutation-text.js', 'scripts/validate.mjs',
+      'packages/web/server/index.js', '.github/workflows/ci.yml', 'docs/TESTING.md']) assert.ok(!labels([file]).includes('ledger-core'), file);
+    assert.ok(labels(['packages/harness-runtime/lib/ledger-core.js']).includes('test:harness'));
+  });
+
   test('runs the script tests that read every tracked Markdown file for any Markdown change', () => {
     const scriptTests = files => buildPlan('fast', files).commands.find(c => c.label === 'test:scripts')?.tests;
     // docs:validate does not check the release-docs rule, so a docs-only change runs that test too.

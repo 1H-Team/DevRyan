@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "module": "ledger-core.wasm",
+  "sha256": "f83282fc634ac12aef598d1853542b72cb7df2b53a9c3a750bcc3925915b39e3",
+  "bytes": 42719,
+  "abiVersion": 1,
+  "target": "wasm32-unknown-unknown",
+  "toolchain": {
+    "channel": "1.99.1",
+    "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+    "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)"
+  },
+  "build": {
+    "command": "cargo build --locked --offline --release --target wasm32-unknown-unknown --lib",
+    "rustflags": [
+      "--remap-path-prefix={crate}=/ledger-core",
+      "--remap-path-prefix={cargoHome}=/cargo",
+      "--remap-path-prefix={toolchain}=/toolchain",
+      "-Ctarget-cpu=generic"
+    ],
+    "environment": {
+      "SOURCE_DATE_EPOCH": "0"
+    }
+  },
+  "sources": {
+    "crate": "packages/harness-runtime/native/ledger-core",
+    "digest": "bd7c57f246e00b4bff9b6c11c3e867bf08aa5b20a514658b5528aa8a30994ea9",
+    "files": {
+      "Cargo.toml": "9c016fcbd1421beaf9e6b494361f2d3c6f1605337b20d7d4e63b7381b5e2d41a",
+      "Cargo.lock": "31dd713047540af7fbd5f33ff28fe331692c48647c8a3ff7ac2c4a0304a545fa",
+      "rust-toolchain.toml": "f3e797d28d4f6d91291d7a0dd8ece02be58d51b9b3ea14920de4554e91d420ac",
+      "src/diff.rs": "405c433c90fab3c6a5fce39234479acb8cb5ac05d29858a8a5f300889dcb0159",
+      "src/lib.rs": "bd91ffeba7ca26c6095e4fbc6084b5c27921dc44589a98dd201e6d040b1b0e11"
+    }
+  }
+}

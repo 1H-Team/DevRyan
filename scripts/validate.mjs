@@ -90,6 +90,18 @@ const isWebTypeCheckedScript = (file) => file.startsWith('scripts/opencode-v2-na
 
 const docsOnlyExtensions = new Set(['.md', '.mdx', '.txt']);
 
+// The Rust ledger core (packages/harness-runtime/DOCUMENTATION.md, "Rust ledger
+// core"): its crate, build script and tracked module. Only these need Rust: a
+// change runs `--verify` (fmt, clippy, cargo test and a byte-for-byte rebuild;
+// without the pinned toolchain it fails with the command that installs it) and
+// the scripts suite's contract test, which needs no Rust. The tracked module
+// also runs the harness suite, whose loader tests execute it.
+const ledgerCoreCrate = 'packages/harness-runtime/native/ledger-core/';
+const ledgerCoreModule = new Set(['packages/harness-runtime/lib/native/ledger-core.wasm', 'packages/harness-runtime/lib/native/ledger-core.json']);
+const isLedgerCoreInput = (file) => file.startsWith(ledgerCoreCrate) || file === 'scripts/build-ledger-core.mjs' || ledgerCoreModule.has(file);
+const ledgerCoreCommands = (files) => files.some(isLedgerCoreInput)
+  ? [{ label: 'ledger-core', executable: 'node', args: ['scripts/build-ledger-core.mjs', '--verify'] }] : [];
+
 // Files `node scripts/bump-version.mjs` rewrites. A change confined to their
 // version field is release metadata: `versions` checks they agree instead of
 // re-running every package's lint, types and tests (CI still runs everything).
@@ -407,7 +419,8 @@ function affectedTests(files) {
     if (isCursorTestRelevant(file)) tests.add('cursor');
     if (isOrchestrationTestRelevant(file)) tests.add('orchestration');
     if (file.startsWith('packages/shared-runtime/')) tests.add('shared');
-    if (isHarnessTestRelevant(file)) tests.add('harness');
+    if (isHarnessTestRelevant(file) || ledgerCoreModule.has(file)) tests.add('harness');
+    if (isLedgerCoreInput(file)) tests.add('scripts');
     if (file.startsWith(packages.agentsCore.prefix)) tests.add('agentsCore');
     if (isScriptsFile(file)) tests.add('scripts');
     if (isToolchainFile(file)) FULL_TEST_SUITES.forEach((suite) => tests.add(suite.key));
@@ -481,7 +494,7 @@ export function buildPlan(requestedMode, providedFiles, { versionOnly } = {}) {
     commands.push(...packageCommands(typeChecked, 'typeCheck'));
   }
   if (codeFiles.some((file) => file.startsWith(modelCatalogPrefix))) commands.push(command('catalog:check', 'bun', ['run', 'catalog:check']));
-  commands.push(...importBoundaryCommands(codeFiles), ...declarationCommands(codeFiles));
+  commands.push(...importBoundaryCommands(codeFiles), ...declarationCommands(codeFiles), ...ledgerCoreCommands(codeFiles));
   const suites = affectedTests(codeFiles);
   // Markdown is not a code file, but the scripts that read all of it must run.
   const scriptSelection = withMarkdownReaders(suites.has('scripts') ? scriptTestSelection(codeFiles) : null, files);

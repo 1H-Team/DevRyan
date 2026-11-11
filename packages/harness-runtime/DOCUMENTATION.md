@@ -911,6 +911,101 @@ content mismatch does not identify an author or authorize restoration. See
 
 For a provider-free preparation benchmark, run `DEVRYAN_VIEW_PREWARM_BENCHMARK=1 node scripts/test-isolation-guard.mjs bun test packages/harness-runtime/lib/session-mutations-view-reuse.test.js -t "prewarm benchmark"`. The isolated 243-file fixture compares cold, prewarmed and two concurrently prewarmed first leases plus a subsequent lease in the same session, reports elapsed times without timing assertions, checks adopted-file counts, and verifies separate private views. The symlink is intentionally copied during the first preparation; the subsequent lease adopts all 243 unchanged entries and verifies the complete view's content. These measurements exclude provider, SDK startup, network and native process latency.
 
+## Rust ledger core
+
+A first-party Rust port of the ledger's text diff (`mutationDiff` in
+`lib/session-mutation-text.js`), run as WebAssembly. Nothing in the product
+calls it yet: the JavaScript implementation is the reference and stays the
+fallback.
+
+- **Where.** The crate is `native/ledger-core/` (no dependencies of any kind;
+  `rust-toolchain.toml` pins Rust 1.99.1 with `rustfmt`, `clippy` and the
+  `wasm32-unknown-unknown` target). `native/ledger-core/src/diff.rs` is the
+  port and forbids unsafe code; `native/ledger-core/src/lib.rs` is the export
+  layer and the only unsafe code. The
+  built module is tracked as `lib/native/ledger-core.wasm`, with
+  `lib/native/ledger-core.json` beside it. `native/ledger-core/tests/vectors.tsv`
+  holds edit scripts the JavaScript produced
+  (`native/ledger-core/tests/generate-vectors.mjs` writes it), so
+  `cargo test` checks the port without JavaScript.
+- **Rebuild** after any crate edit with `node scripts/build-ledger-core.mjs`.
+  It needs the pinned toolchain and never downloads one; a missing toolchain,
+  component or target fails with the `rustup toolchain install` command. Every
+  cargo command runs on a copy of the crate under the OS temp dir, with a
+  private `CARGO_HOME` and target directory there, so no Cargo configuration
+  of the checkout's ancestors (a `~/.cargo/config.toml`) reaches the build; any
+  above the copy fails it. The copy is removed afterwards (`--keep-artifacts`
+  keeps a failed build's). It builds with `--locked --offline` in release, the
+  flags recorded in the provenance file and `SOURCE_DATE_EPOCH=0`. Two builds from different directories are
+  byte-identical. `--check` rebuilds and fails unless both tracked files are
+  byte-identical; `--verify` runs `cargo fmt --check`, `cargo clippy -D
+  warnings` for the host and the WebAssembly target, `cargo test`, then
+  `--check`. Fast `validate` runs `--verify` when the crate, the build script
+  or the tracked module change, so only those changes need Rust; CI's `static`
+  job runs it on every push and on pull requests that make such changes.
+- **The provenance file** records the schema version, the module's SHA-256 and
+  size, its ABI version, the target, the compiler and Cargo versions, the build
+  command, flags (`{crate}`, `{cargoHome}` and `{toolchain}` stand for local
+  paths) and environment, and the SHA-256 of each crate input with their
+  digest: SHA-256 over one `<path>\0<sha256>\n` line per file, in the order
+  `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml`, then `build.rs`,
+  `.cargo/config.toml` and `.cargo/config` when they exist, then every file
+  under `src/` sorted by path. `scripts/build-ledger-core.test.mjs`, which needs
+  no Rust, fails when the digest, the module's hash or its ABI no longer match,
+  so a crate edit without a rebuild fails on every lane, and when the crate
+  holds a file that is neither a digest input nor under `tests/` (or
+  `.gitignore`).
+- **The native acceptance digest** (`scripts/opencode-v2-native/artifacts.mjs`)
+  hashes the `.js`, `.json` and `.rs` files of this package, so it covers the
+  loader, the crate sources and `lib/native/ledger-core.json`, not the `.wasm`
+  itself nor the `.toml` and `.lock` files. That is enough: the provenance file
+  pins the module's SHA-256 and size and the hashes of those crate files, and
+  the loader refuses any module whose bytes differ, so the code that can run is
+  bound to the digest through the provenance file. Every crate edit changes the
+  digest, so existing native evidence goes stale as for any runtime change.
+- **The switch.** `DEVRYAN_LEDGER_RUST=1` turns the Rust path on; it is off by
+  default and any other value is off. `lib/ledger-core.js` reads it on every
+  call; it is recorded in run fingerprints (`HARNESS_BEHAVIOUR_SWITCHES`). In
+  the ledger worker the value is the one the worker started with.
+- **The loader.** `ledgerCoreDiff(before, after, budget, { onDiagnostic })`
+  takes the two latin1 byte strings `mutationDiff` receives and a budget, and
+  returns the edit script as a `Uint32Array` of `[kind, bytes, ...]` pairs
+  (kind 0 equal, 1 delete, 2 insert), or `null` to use JavaScript.
+  `createLedgerCore({ moduleUrl, provenanceUrl, environment })` builds a
+  separate loader (tests). The module is read once, lazily and synchronously,
+  and compiled only when its size and SHA-256 equal the provenance file's.
+  Paths resolve relative to the loader, which the packaged app keeps in the
+  unpacked `harness-runtime` folder. It works on the main thread and in worker
+  threads, under Node and under Bun; `lib/ledger-core.test.js` also loads a copy
+  laid out as `Resources/app.asar.unpacked/node_modules/@devryan/harness-runtime`
+  from a worker thread. The packaged proof itself is the release dry run.
+  WebAssembly memory never shrinks, so an instance whose memory exceeds
+  `LEDGER_CORE_RETAINED_MEMORY_BYTES` (8 MiB) after a call is dropped and the
+  next call instantiates the compiled module again. Measured: a two-edit diff
+  of a 32 KiB file leaves 1.4 MiB, 256 KiB 3.7 MiB, 1 MiB 11.2 MiB, 8 MiB
+  81 MiB. So edits up to a few hundred KiB reuse one instance (about 1 µs per
+  call for a tiny diff), and nothing a large call grew is kept. A fresh
+  instance costs about 50 µs under Node and 160 µs under Bun (measured on a
+  loaded machine, load average 20 to 30).
+- **Fallback.** A call answers `null` when the switch is off, and also when the
+  module or provenance file is missing or unreadable, the hash does not match,
+  compiling or instantiating fails, the ABI version or exports differ, the
+  budget is not a safe integer, a text is not a byte string, an allocation
+  fails, the call traps (the instance is then dropped), the status is an error,
+  or the script does not cover both texts exactly. Each cause except the
+  switch is reported once per loader (once per thread for `ledgerCoreDiff`) to
+  the caller's `onDiagnostic` as `{ phase: 'ledger_core', state: 'fallback',
+  code: 'ledger_core_<cause>' }`, the shape the runtime's other diagnostics
+  take. The loader never throws: any options value (`null`, a non-object, a
+  throwing getter) is accepted, and only a function `onDiagnostic` is called.
+- **Never** load a native Rust module (`.node`, `dlopen`) into the process that
+  hosts the server: a fault there ends every session. Rust runs in this process
+  only as WebAssembly. Never ship the crate: the packaged app excludes `.rs`,
+  `Cargo.*`, `rust-toolchain.toml` and the crate folder, and
+  `scripts/packaged-app.config.mjs` fails a package that holds them. Never edit
+  the tracked module or provenance file by hand, and never change the switch's
+  default without the owner's yes.
+
 ## Registered host-dependent operations
 
 `lib/registered-host-operations.js` loads the private administrator file

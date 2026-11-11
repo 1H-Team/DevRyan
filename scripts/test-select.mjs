@@ -47,6 +47,14 @@ export const WHOLE_SUITE_INPUTS = Object.freeze([
 // Reviewed inputs are hashed and read as whole trees by manifest code; which
 // tests read a given file is not proven, so any change runs the whole suite.
 const WHOLE_SUITE_PREFIXES = Object.freeze(['packages/web/runtime/reviewed-inputs/']);
+/**
+ * Script tests that read every file of a tree whose files no source names one
+ * by one (scripts/build-ledger-core.test.mjs hashes the whole crate). Any file
+ * under the prefix selects them, whether or not it put the suite in the plan.
+ */
+export const TREE_READERS = Object.freeze([
+  Object.freeze({ prefix: 'packages/harness-runtime/native/ledger-core/', tests: Object.freeze(['scripts/build-ledger-core.test.mjs']) }),
+]);
 // The suite contract inventories every test file in the repository (discovery,
 // runner lists, conditional skips), so a change to any test file selects it.
 export const SUITE_CONTRACT = 'scripts/test-suite-contract.test.mjs';
@@ -289,6 +297,7 @@ export function scriptTestGraph(root = repositoryRoot) {
  *   reaching its implementation;
  * - for any other file (workflow, JSON, shell, fixture, Markdown): the tests
  *   naming it or one of its directories, and the whole suite when none does.
+ * Any changed file under a TREE_READERS prefix also selects that tree's readers.
  * A file absent from the graph (deleted) is reached by the sources naming it.
  */
 export function selectScriptTests({ files, triggers = files, root = repositoryRoot, graph }) {
@@ -306,6 +315,7 @@ export function selectScriptTests({ files, triggers = files, root = repositoryRo
     const targets = graphKeys(file);
     if (!graph.universe.has(file)) targets.push(...filesNaming(graph, [path.posix.basename(file)]));
     const reached = testsReaching(graph, targets);
+    for (const reader of TREE_READERS) if (file.startsWith(reader.prefix)) for (const test of reader.tests) if (graph.tests.has(test)) reached.add(test);
     if (triggerSet.has(file)) {
       // Adding, removing or retyping a suite file changes the inventory.
       if (isSuiteTestPath(file)) for (const test of testsReaching(graph, [INVENTORY])) reached.add(test);

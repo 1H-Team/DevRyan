@@ -110,6 +110,13 @@ describe('packaged app check', () => {
         'app.asar.unpacked/node_modules/@devryan/web/dist/index.html': '',
         'app.asar.unpacked/node_modules/@devryan/web/runtime/reviewed-inputs/manifest.json': '',
         'app.asar.unpacked/node_modules/tree-sitter-bash/prebuilds/linux-x64/tree-sitter-bash.node': '',
+        'app.asar.unpacked/node_modules/@devryan/harness-runtime/native/ledger-core/src/lib.rs': '',
+        'app.asar.unpacked/node_modules/@devryan/harness-runtime/native/ledger-core/tests/vectors.tsv': '',
+        'app.asar.unpacked/node_modules/@devryan/web/server/target/release/x.wasm': '',
+        'app.asar.unpacked/node_modules/@devryan/harness-runtime/x/target/wasm32-unknown-unknown/release/x.wasm': '',
+        'app.asar.unpacked/node_modules/@devryan/web/target/aarch64-apple-darwin/debug/x': '',
+        'app.asar.unpacked/node_modules/some-crate/Cargo.toml': '',
+        'app.asar.unpacked/node_modules/some-crate/rust-toolchain.toml': '',
       },
     });
     const report = checkPackagedApp({ appPath, config: config() });
@@ -128,6 +135,18 @@ describe('packaged app check', () => {
       'shell-source-tree': ['app.asar/resources/web-dist/index.html'],
       'duplicate-web-dist': ['app.asar.unpacked/node_modules/@devryan/web/dist/index.html'],
       'duplicate-native-runtime': ['app.asar.unpacked/node_modules/@devryan/web/runtime/reviewed-inputs/manifest.json'],
+      'rust-source': [
+        'app.asar.unpacked/node_modules/@devryan/harness-runtime/native/ledger-core/src/lib.rs',
+        'app.asar.unpacked/node_modules/some-crate/Cargo.toml',
+        'app.asar.unpacked/node_modules/some-crate/rust-toolchain.toml',
+      ],
+      'rust-build-leftover': [
+        'app.asar.unpacked/node_modules/@devryan/harness-runtime/native/ledger-core/src/lib.rs',
+        'app.asar.unpacked/node_modules/@devryan/harness-runtime/native/ledger-core/tests/vectors.tsv',
+        'app.asar.unpacked/node_modules/@devryan/harness-runtime/x/target/wasm32-unknown-unknown/release/x.wasm',
+        'app.asar.unpacked/node_modules/@devryan/web/server/target/release/x.wasm',
+        'app.asar.unpacked/node_modules/@devryan/web/target/aarch64-apple-darwin/debug/x',
+      ],
     });
     assert.match(formatPackagedAppReport(report), /\[duplicate-web-dist\] 1 forbidden file/);
   });
@@ -142,6 +161,13 @@ describe('packaged app check', () => {
         'app.asar.unpacked/node_modules/@devryan/web/server/lib/opencode/runtime-host/native-artifacts.js': '',
         'app.asar.unpacked/node_modules/tree-sitter-bash/prebuilds/darwin-arm64/tree-sitter-bash.node': '',
         'app.asar.unpacked/node_modules/better-sqlite3/build/Release/better_sqlite3.node': '',
+        // The built ledger core ships; bun-pty's own Cargo output is its runtime library.
+        'app.asar.unpacked/node_modules/@devryan/harness-runtime/lib/native/ledger-core.wasm': '',
+        'app.asar.unpacked/node_modules/@devryan/harness-runtime/lib/native/ledger-core.json': '',
+        'app.asar.unpacked/node_modules/bun-pty/rust-pty/target/release/librust_pty_arm64.dylib': '',
+        'app.asar.unpacked/node_modules/x/trust.js': '', 'app.asar.unpacked/node_modules/x/cargo.json': '',
+        // A first-party source folder that is only named `target`.
+        'app.asar.unpacked/node_modules/@devryan/web/server/lib/target/select.js': '',
       },
     });
     const report = checkPackagedApp({ appPath, config: config() });
@@ -218,6 +244,6 @@ describe('packaged app config', () => {
       assert.ok(shipped.ceiling[key] < shipped.baseline[key], key);
     }
     assert.deepEqual(shipped.forbidden.map((rule) => rule.id).sort(),
-      ['build-tool', 'duplicate-native-runtime', 'duplicate-web-dist', 'foreign-native', 'linux-prebuild', 'native-build-leftover', 'shell-source-tree', 'source-map', 'test-file', 'typescript-source']);
+      ['build-tool', 'duplicate-native-runtime', 'duplicate-web-dist', 'foreign-native', 'linux-prebuild', 'native-build-leftover', 'rust-build-leftover', 'rust-source', 'shell-source-tree', 'source-map', 'test-file', 'typescript-source']);
   });
 });
