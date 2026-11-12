@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test"
-import type { Event, Message, Part, PermissionRequest, QuestionRequest, Session, SessionStatus, Todo } from "@opencode-ai/sdk/v2/client"
+import type { Event, Message, Part, PermissionRequest, Project, QuestionRequest, Session, SessionStatus, Todo } from "@opencode-ai/sdk/v2/client"
 import { isAbortGuardActive, registerManualAbortGuard, resetAbortGuardState } from "../abort-retry-guard"
-import { applyDirectoryEvent } from "../event-reducer"
-import { INITIAL_STATE, type State } from "../types"
+import { applyDirectoryEvent, applyGlobalProject, reduceGlobalEvent } from "../event-reducer"
+import { INITIAL_GLOBAL_STATE, INITIAL_STATE, type GlobalState, type State } from "../types"
 
 function state(overrides: Partial<State> = {}): State {
   return {
@@ -1479,5 +1479,502 @@ describe("provisional delta-materialized parts", () => {
     const replaced = draft.part.msg_1[0] as unknown as Record<string, unknown>
     expect(replaced.type).toBe("reasoning")
     expect(replaced.__provisionalFromDelta).toBe(undefined)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Characterization of events and exports no other test delivers directly.
+// ---------------------------------------------------------------------------
+
+function sliceReferences(draft: State): Record<string, unknown> {
+  return { ...draft }
+}
+
+function expectSlicesKept(draft: State, before: Record<string, unknown>, except: ReadonlyArray<keyof State> = []) {
+  for (const key of Object.keys(before) as Array<keyof State>) {
+    if (except.includes(key)) continue
+    expect(draft[key]).toBe(before[key])
+  }
+}
+
+// The UI's bun:test typings (src/types/bun-test.d.ts) have no toStrictEqual,
+// and toEqual ignores keys whose value is undefined, so own-key paths are
+// compared too.
+function keyPaths(value: unknown, path = ""): string[] {
+  if (value === null || typeof value !== "object") return []
+  return Object.entries(value).flatMap(([key, child]) => [`${path}/${key}`, ...keyPaths(child, `${path}/${key}`)])
+}
+
+// For events that must change nothing: the same slice references and the same
+// deep content and keys, so an in-place change to a kept slice fails too.
+function expectUnchanged(draft: State, before: Record<string, unknown>, copy: State) {
+  expectSlicesKept(draft, before)
+  expect(draft).toEqual(copy)
+  expect(keyPaths(draft)).toEqual(keyPaths(copy))
+}
+
+function textPart(id: string, messageID: string, sessionID = "ses_1"): Part {
+  return { id, messageID, sessionID, type: "text", text: id } as Part
+}
+
+describe("applyDirectoryEvent: server.instance.disposed", () => {
+  test("asks for a refresh of the empty directory and changes nothing", () => {
+    const draft = state({ session: [testSession("ses_1")], vcs: { branch: "main" } })
+    const before = sliceReferences(draft)
+    const copy = structuredClone(draft)
+    const refreshed: string[] = []
+    let lspLoads = 0
+
+    const result = applyDirectoryEvent(draft, {
+      type: "server.instance.disposed",
+      properties: { directory: "/work/project" },
+    } as Event, {
+      onRefresh: (directory) => refreshed.push(directory),
+      onLoadLsp: () => { lspLoads += 1 },
+    })
+
+    expect(result).toBe(false)
+    expect(refreshed).toEqual([""])
+    expect(lspLoads).toBe(0)
+    expectUnchanged(draft, before, copy)
+  })
+
+  test("is a no-op without callbacks", () => {
+    const draft = state()
+    const before = sliceReferences(draft)
+    const copy = structuredClone(draft)
+    expect(applyDirectoryEvent(draft, { type: "server.instance.disposed", properties: { directory: "" } } as Event)).toBe(false)
+    expect(applyDirectoryEvent(draft, { type: "server.instance.disposed", properties: { directory: "" } } as Event, {})).toBe(false)
+    expectUnchanged(draft, before, copy)
+  })
+})
+
+describe("applyDirectoryEvent: lsp.updated", () => {
+  test("asks for an LSP reload once per event and changes nothing", () => {
+    const draft = state({ lsp: [] })
+    const before = sliceReferences(draft)
+    const copy = structuredClone(draft)
+    const refreshed: string[] = []
+    let lspLoads = 0
+    const callbacks = {
+      onRefresh: (directory: string) => refreshed.push(directory),
+      onLoadLsp: () => { lspLoads += 1 },
+    }
+
+    expect(applyDirectoryEvent(draft, { type: "lsp.updated", properties: {} } as Event, callbacks)).toBe(false)
+    expect(applyDirectoryEvent(draft, { type: "lsp.updated", properties: {} } as Event, callbacks)).toBe(false)
+
+    expect(lspLoads).toBe(2)
+    expect(refreshed).toEqual([])
+    expectUnchanged(draft, before, copy)
+  })
+
+  test("is a no-op without callbacks", () => {
+    const draft = state()
+    const before = sliceReferences(draft)
+    const copy = structuredClone(draft)
+    expect(applyDirectoryEvent(draft, { type: "lsp.updated", properties: {} } as Event)).toBe(false)
+    expectUnchanged(draft, before, copy)
+  })
+})
+
+describe("applyDirectoryEvent: vcs.branch.updated", () => {
+  test("sets the branch when there is no VCS record yet", () => {
+    const draft = state({ vcs: undefined })
+    const before = sliceReferences(draft)
+    expect(applyDirectoryEvent(draft, { type: "vcs.branch.updated", properties: { branch: "main" } } as Event)).toBe(true)
+    expect(draft.vcs).toEqual({ branch: "main" })
+    expectSlicesKept(draft, before, ["vcs"])
+  })
+
+  test("returns false and keeps the record when the branch is unchanged", () => {
+    const vcs = { branch: "main", default_branch: "main" }
+    const draft = state({ vcs })
+    const before = sliceReferences(draft)
+    const copy = structuredClone(draft)
+    expect(applyDirectoryEvent(draft, { type: "vcs.branch.updated", properties: { branch: "main" } } as Event)).toBe(false)
+    expect(draft.vcs).toBe(vcs)
+    expectUnchanged(draft, before, copy)
+  })
+
+  test("replaces the record with a new one holding only the branch, dropping the default branch", () => {
+    const vcs = { branch: "main", default_branch: "main" }
+    const draft = state({ vcs })
+    expect(applyDirectoryEvent(draft, { type: "vcs.branch.updated", properties: { branch: "feature/\u00e9\ud83d\ude00" } } as Event)).toBe(true)
+    expect(draft.vcs).not.toBe(vcs)
+    expect(draft.vcs).toEqual({ branch: "feature/\u00e9\ud83d\ude00" })
+    expect(vcs).toEqual({ branch: "main", default_branch: "main" })
+  })
+
+  test("compares branch names exactly", () => {
+    const draft = state({ vcs: { branch: "main" } })
+    expect(applyDirectoryEvent(draft, { type: "vcs.branch.updated", properties: { branch: "Main" } } as Event)).toBe(true)
+    expect(draft.vcs).toEqual({ branch: "Main" })
+    expect(applyDirectoryEvent(draft, { type: "vcs.branch.updated", properties: { branch: "Main " } } as Event)).toBe(true)
+    expect(draft.vcs).toEqual({ branch: "Main " })
+  })
+
+  test("an empty branch name is a change from no record", () => {
+    const draft = state({ vcs: undefined })
+    expect(applyDirectoryEvent(draft, { type: "vcs.branch.updated", properties: { branch: "" } } as Event)).toBe(true)
+    expect(draft.vcs).toEqual({ branch: "" })
+  })
+
+  test("a missing branch is no change when there is no record or the record has no branch", () => {
+    const empty = state({ vcs: undefined })
+    expect(applyDirectoryEvent(empty, { type: "vcs.branch.updated", properties: {} } as Event)).toBe(false)
+    expect(empty.vcs).toBeUndefined()
+
+    const defaultOnly = { default_branch: "main" }
+    const withDefault = state({ vcs: defaultOnly })
+    expect(applyDirectoryEvent(withDefault, { type: "vcs.branch.updated", properties: {} } as Event)).toBe(false)
+    expect(withDefault.vcs).toBe(defaultOnly)
+  })
+
+  test("a missing branch replaces a record that has one with a record whose branch is undefined", () => {
+    const draft = state({ vcs: { branch: "main" } })
+    expect(applyDirectoryEvent(draft, { type: "vcs.branch.updated", properties: {} } as Event)).toBe(true)
+    expect(draft.vcs).toEqual({ branch: undefined })
+    expect(Object.keys(draft.vcs ?? {})).toEqual(["branch"])
+  })
+})
+
+describe("applyDirectoryEvent: message.part.removed", () => {
+  function removed(messageID: string, partID: string, sessionID = "ses_1"): Event {
+    return { type: "message.part.removed", properties: { sessionID, messageID, partID } } as Event
+  }
+
+  test("returns false and changes nothing when the message has no parts", () => {
+    const parts = { msg_2: [textPart("prt_1", "msg_2")] }
+    const draft = state({ part: parts })
+    const before = sliceReferences(draft)
+    const copy = structuredClone(draft)
+    expect(applyDirectoryEvent(draft, removed("msg_1", "prt_1"))).toBe(false)
+    expect(draft.part).toBe(parts)
+    expectUnchanged(draft, before, copy)
+  })
+
+  test("returns false and keeps the part list when the part is not in it", () => {
+    const list = [textPart("prt_1", "msg_1")]
+    const draft = state({ part: { msg_1: list } })
+    const before = sliceReferences(draft)
+    const copy = structuredClone(draft)
+    expect(applyDirectoryEvent(draft, removed("msg_1", "prt_missing"))).toBe(false)
+    expect(draft.part.msg_1).toBe(list)
+    expectUnchanged(draft, before, copy)
+  })
+
+  test("replaces the list with a new one without the part, in place on the part record", () => {
+    const first = textPart("prt_1", "msg_1")
+    const second = textPart("prt_2", "msg_1")
+    const third = textPart("prt_3", "msg_1")
+    const list = [first, second, third]
+    const other = [textPart("prt_9", "msg_2")]
+    const partRecord = { msg_1: list, msg_2: other }
+    const draft = state({ part: partRecord })
+    const before = sliceReferences(draft)
+
+    expect(applyDirectoryEvent(draft, removed("msg_1", "prt_2"))).toBe(true)
+
+    expect(draft.part).toBe(partRecord)
+    expect(draft.part.msg_1).not.toBe(list)
+    expect(draft.part.msg_1).toEqual([first, third])
+    expect(draft.part.msg_1[0]).toBe(first)
+    expect(draft.part.msg_1[1]).toBe(third)
+    expect(list).toEqual([first, second, third])
+    expect(draft.part.msg_2).toBe(other)
+    expectSlicesKept(draft, before)
+  })
+
+  test("deletes the message's entry when its last part is removed", () => {
+    const draft = state({ part: { msg_1: [textPart("prt_1", "msg_1")], msg_2: [textPart("prt_2", "msg_2")] } })
+    expect(applyDirectoryEvent(draft, removed("msg_1", "prt_1"))).toBe(true)
+    expect(Object.hasOwn(draft.part, "msg_1")).toBe(false)
+    expect(Object.keys(draft.part)).toEqual(["msg_2"])
+  })
+
+  test("removes only the first part with a duplicated id", () => {
+    const a = textPart("prt_dup", "msg_1")
+    const b = { ...textPart("prt_dup", "msg_1"), text: "second" } as Part
+    const draft = state({ part: { msg_1: [a, b] } })
+    expect(applyDirectoryEvent(draft, removed("msg_1", "prt_dup"))).toBe(true)
+    expect(draft.part.msg_1).toHaveLength(1)
+    expect(draft.part.msg_1[0]).toBe(b)
+  })
+
+  test("ignores the event's session id", () => {
+    const draft = state({ part: { msg_1: [textPart("prt_1", "msg_1", "ses_1"), textPart("prt_2", "msg_1", "ses_1")] } })
+    expect(applyDirectoryEvent(draft, removed("msg_1", "prt_1", "ses_other"))).toBe(true)
+    expect(draft.part.msg_1.map((part) => part.id)).toEqual(["prt_2"])
+  })
+
+  test("removing an empty list's part returns false and keeps the empty list", () => {
+    const empty: Part[] = []
+    const draft = state({ part: { msg_1: empty } })
+    expect(applyDirectoryEvent(draft, removed("msg_1", "prt_1"))).toBe(false)
+    expect(draft.part.msg_1).toBe(empty)
+  })
+})
+
+describe("applyDirectoryEvent: session.deleted", () => {
+  function deleted(info: Session, sessionID = info.id): Event {
+    return { type: "session.deleted", properties: { sessionID, info } } as Event
+  }
+
+  function populated(): State {
+    const busy = { type: "busy" } as SessionStatus
+    return state({
+      session: [testSession("ses_a"), testSession("ses_b"), testSession("ses_c")],
+      sessionTotal: 3,
+      message: {
+        ses_a: [testMessage("msg_a1", "ses_a", "user", 1)],
+        ses_b: [testMessage("msg_b1", "ses_b", "user", 1), testMessage("msg_b2", "ses_b", "assistant", 2)],
+      },
+      part: {
+        msg_a1: [textPart("prt_a1", "msg_a1", "ses_a")],
+        msg_b1: [textPart("prt_b1", "msg_b1", "ses_b")],
+        msg_orphan: [textPart("prt_orphan", "msg_orphan", "ses_b")],
+      },
+      todo: { ses_a: [todo("t_a", "pending")], ses_b: [todo("t_b", "pending")] },
+      session_diff: { ses_a: [], ses_b: [] },
+      session_status: { ses_a: busy, ses_b: busy },
+      permission: {
+        ses_a: [{ id: "perm_a", sessionID: "ses_a" } as PermissionRequest],
+        ses_b: [{ id: "perm_b", sessionID: "ses_b" } as PermissionRequest],
+      },
+      question: {
+        ses_a: [{ id: "q_a", sessionID: "ses_a" } as QuestionRequest],
+        ses_b: [{ id: "q_b", sessionID: "ses_b" } as QuestionRequest],
+      },
+      session_user_activity: { ses_a: 10, ses_b: 20 },
+      revert_transaction: {
+        ses_a: { messageID: "msg_a1", version: 1, status: "pending", startedAt: 1 },
+        ses_b: { messageID: "msg_b1", version: 1, status: "pending", startedAt: 1 },
+      },
+      vcs: { branch: "main" },
+    })
+  }
+
+  test("removes the session and every cache it owns, mutating the records in place", () => {
+    const draft = populated()
+    const before = sliceReferences(draft)
+    const sessionA = draft.session[0]
+    const messagesA = draft.message.ses_a
+    const partsA = draft.part.msg_a1
+    const todoA = draft.todo.ses_a
+    const activity = draft.session_user_activity
+    const revertA = draft.revert_transaction.ses_a
+    const todoCalls: Array<[string, Todo[] | undefined]> = []
+
+    const result = applyDirectoryEvent(draft, deleted(testSession("ses_b")), {
+      onSetSessionTodo: (sessionID, todos) => todoCalls.push([sessionID, todos]),
+    })
+
+    expect(result).toBe(true)
+    expect(draft.session.map((entry) => entry.id)).toEqual(["ses_a", "ses_c"])
+    expect(draft.session[0]).toBe(sessionA)
+    expect(Object.keys(draft.message)).toEqual(["ses_a"])
+    expect(draft.message.ses_a).toBe(messagesA)
+    expect(Object.keys(draft.part)).toEqual(["msg_a1"])
+    expect(draft.part.msg_a1).toBe(partsA)
+    expect(Object.keys(draft.todo)).toEqual(["ses_a"])
+    expect(draft.todo.ses_a).toBe(todoA)
+    expect(Object.keys(draft.session_diff)).toEqual(["ses_a"])
+    expect(Object.keys(draft.session_status)).toEqual(["ses_a"])
+    expect(Object.keys(draft.permission)).toEqual(["ses_a"])
+    expect(Object.keys(draft.question)).toEqual(["ses_a"])
+    expect(draft.session_user_activity).toEqual({ ses_a: 10 })
+    expect(activity).toEqual({ ses_a: 10, ses_b: 20 })
+    expect(Object.keys(draft.revert_transaction)).toEqual(["ses_a"])
+    expect(draft.revert_transaction.ses_a).toBe(revertA)
+    expect(draft.sessionTotal).toBe(2)
+    expect(todoCalls).toEqual([["ses_b", undefined]])
+
+    // The session list and the cache records are mutated in place; only the
+    // user-activity record is replaced.
+    expectSlicesKept(draft, before, ["session_user_activity", "sessionTotal"])
+    expect(draft.session_user_activity).not.toBe(activity)
+  })
+
+  test("keeps the user-activity record when the session has no entry in it", () => {
+    const draft = populated()
+    const activity = { ses_a: 10 }
+    draft.session_user_activity = activity
+    expect(applyDirectoryEvent(draft, deleted(testSession("ses_b")))).toBe(true)
+    expect(draft.session_user_activity).toBe(activity)
+  })
+
+  test("uses the id of the session record, not the event's session id", () => {
+    const draft = populated()
+    expect(applyDirectoryEvent(draft, deleted(testSession("ses_b"), "ses_a"))).toBe(true)
+    expect(draft.session.map((entry) => entry.id)).toEqual(["ses_a", "ses_c"])
+    expect(Object.keys(draft.message)).toEqual(["ses_a"])
+  })
+
+  test("a deleted child session does not change the total", () => {
+    const draft = populated()
+    draft.session = [testSession("ses_a"), testSession("ses_b", "ses_a")]
+    expect(applyDirectoryEvent(draft, deleted(testSession("ses_b", "ses_a")))).toBe(true)
+    expect(draft.session.map((entry) => entry.id)).toEqual(["ses_a"])
+    expect(draft.sessionTotal).toBe(3)
+  })
+
+  test("an unknown root session still decrements the total, clears its caches and reports a change", () => {
+    const draft = populated()
+    const sessions = draft.session
+    const todoCalls: string[] = []
+    draft.todo.ses_unknown = [todo("t_u", "pending")]
+    expect(applyDirectoryEvent(draft, deleted(testSession("ses_unknown")), {
+      onSetSessionTodo: (sessionID) => todoCalls.push(sessionID),
+    })).toBe(true)
+    expect(draft.session).toBe(sessions)
+    expect(draft.session.map((entry) => entry.id)).toEqual(["ses_a", "ses_b", "ses_c"])
+    expect(draft.sessionTotal).toBe(2)
+    expect(todoCalls).toEqual(["ses_unknown"])
+    expect(Object.keys(draft.todo)).toEqual(["ses_a", "ses_b"])
+  })
+
+  test("an unknown child session leaves the total alone and still reports a change", () => {
+    const draft = populated()
+    expect(applyDirectoryEvent(draft, deleted(testSession("ses_unknown", "ses_a")))).toBe(true)
+    expect(draft.sessionTotal).toBe(3)
+  })
+
+  test("never takes the total below zero", () => {
+    const draft = populated()
+    draft.sessionTotal = 0
+    expect(applyDirectoryEvent(draft, deleted(testSession("ses_b")))).toBe(true)
+    expect(draft.sessionTotal).toBe(0)
+  })
+
+  test("deleting the only session leaves an empty list", () => {
+    const draft = state({ session: [testSession("ses_1")], sessionTotal: 1 })
+    expect(applyDirectoryEvent(draft, deleted(testSession("ses_1")))).toBe(true)
+    expect(draft.session).toEqual([])
+    expect(draft.sessionTotal).toBe(0)
+  })
+})
+
+describe("reduceGlobalEvent", () => {
+  test("global.disposed and server.connected ask for a refresh", () => {
+    const disposed = reduceGlobalEvent({ type: "global.disposed", properties: {} } as Event)
+    const connected = reduceGlobalEvent({ type: "server.connected", properties: {} } as Event)
+    expect(disposed).toEqual({ type: "refresh" })
+    expect(connected).toEqual({ type: "refresh" })
+    expect(disposed).not.toBe(connected)
+    expect(reduceGlobalEvent({ type: "global.disposed", properties: {} } as Event)).not.toBe(disposed)
+  })
+
+  test("project.updated hands the event's project through by reference", () => {
+    const project = { id: "prj_1", worktree: "/work", time: { created: 1, updated: 1 }, sandboxes: [] } as Project
+    const result = reduceGlobalEvent({ type: "project.updated", properties: project } as Event)
+    expect(result).toEqual({ type: "project", project })
+    expect(result?.type === "project" ? result.project : undefined).toBe(project)
+  })
+
+  test("every other event, directory events included, gives null", () => {
+    for (const type of ["server.instance.disposed", "session.created", "lsp.updated", "vcs.branch.updated", "message.part.removed"]) {
+      expect(reduceGlobalEvent({ type, properties: {} } as Event)).toBeNull()
+    }
+  })
+})
+
+describe("applyGlobalProject", () => {
+  function project(id: string, fields: Partial<Project> = {}): Project {
+    return { id, worktree: `/work/${id}`, time: { created: 1, updated: 1 }, sandboxes: [], ...fields } as Project
+  }
+
+  function globalState(projects: Project[]): GlobalState {
+    return { ...INITIAL_GLOBAL_STATE, projects, sessionTodo: {} }
+  }
+
+  test("inserts a new project at its sorted position in a new list and state", () => {
+    const a = project("prj_a")
+    const c = project("prj_c")
+    const projects = [a, c]
+    const initial = globalState(projects)
+
+    const next = applyGlobalProject(initial, project("prj_b"))
+
+    expect(next).not.toBe(initial)
+    expect(next.projects).not.toBe(projects)
+    expect(next.projects.map((entry) => entry.id)).toEqual(["prj_a", "prj_b", "prj_c"])
+    expect(next.projects[0]).toBe(a)
+    expect(next.projects[2]).toBe(c)
+    expect(projects.map((entry) => entry.id)).toEqual(["prj_a", "prj_c"])
+    expect(next.path).toBe(initial.path)
+    expect(next.providers).toBe(initial.providers)
+    expect(next.config).toBe(initial.config)
+    expect(next.sessionTodo).toBe(initial.sessionTodo)
+  })
+
+  test("inserts at the start, at the end and into an empty list", () => {
+    expect(applyGlobalProject(globalState([project("b")]), project("a")).projects.map((entry) => entry.id)).toEqual(["a", "b"])
+    expect(applyGlobalProject(globalState([project("a")]), project("b")).projects.map((entry) => entry.id)).toEqual(["a", "b"])
+    const inserted = project("only")
+    const next = applyGlobalProject(globalState([]), inserted)
+    expect(next.projects).toEqual([inserted])
+    expect(next.projects[0]).toBe(inserted)
+  })
+
+  test("merges an update into the existing project as a new object", () => {
+    const existing = project("prj_b", { name: "Old", icon: { color: "red" } } as Partial<Project>)
+    const a = project("prj_a")
+    const initial = globalState([a, existing])
+
+    const next = applyGlobalProject(initial, { id: "prj_b", worktree: "/moved", name: "New" } as Project)
+
+    expect(next.projects).toHaveLength(2)
+    expect(next.projects[0]).toBe(a)
+    expect(next.projects[1]).not.toBe(existing)
+    expect(next.projects[1]).toEqual({
+      id: "prj_b",
+      worktree: "/moved",
+      time: { created: 1, updated: 1 },
+      sandboxes: [],
+      name: "New",
+      icon: { color: "red" },
+    } as unknown as Project)
+    expect(existing.name).toBe("Old")
+  })
+
+  test("an update with an explicitly undefined field clears that field", () => {
+    const next = applyGlobalProject(
+      globalState([project("prj_a", { name: "Named" })]),
+      { ...project("prj_a"), name: undefined },
+    )
+    expect(Object.hasOwn(next.projects[0], "name")).toBe(true)
+    expect(next.projects[0].name).toBeUndefined()
+  })
+
+  test("orders ids by UTF-16 code units, not by code points or locale", () => {
+    const next = applyGlobalProject(globalState([project("B"), project("a")]), project("_"))
+    expect(next.projects.map((entry) => entry.id)).toEqual(["B", "_", "a"])
+    const unicode = applyGlobalProject(globalState([project("z"), project("\ud83d\ude00")]), project("\u00e9"))
+    expect(unicode.projects.map((entry) => entry.id)).toEqual(["z", "\u00e9", "\ud83d\ude00"])
+    // U+1F600 is above U+FF01 as a code point, but its first code unit
+    // (0xD83D) is below 0xFF01, so it sorts first.
+    const emoji = "\ud83d\ude00"
+    const fullwidth = "\uff01"
+    expect(applyGlobalProject(globalState([project(emoji)]), project(fullwidth)).projects.map((entry) => entry.id)).toEqual([emoji, fullwidth])
+    expect(applyGlobalProject(globalState([project(fullwidth)]), project(emoji)).projects.map((entry) => entry.id)).toEqual([emoji, fullwidth])
+    const three = applyGlobalProject(globalState([project("\ue000"), project(fullwidth)]), project(emoji))
+    expect(three.projects.map((entry) => entry.id)).toEqual([emoji, "\ue000", fullwidth])
+  })
+
+  test("returns a new state even when an update changes nothing", () => {
+    const existing = project("prj_a")
+    const initial = globalState([existing])
+    const next = applyGlobalProject(initial, existing)
+    expect(next).not.toBe(initial)
+    expect(next.projects).not.toBe(initial.projects)
+    expect(next.projects[0]).not.toBe(existing)
+    expect(next.projects[0]).toEqual(existing)
+  })
+
+  test("on an unsorted list a binary-search miss inserts a duplicate id", () => {
+    // The list is assumed sorted; an unsorted one is not repaired.
+    const next = applyGlobalProject(globalState([project("c"), project("a"), project("b")]), project("c", { name: "dup" }))
+    expect(next.projects.map((entry) => entry.id)).toEqual(["c", "a", "b", "c"])
   })
 })
