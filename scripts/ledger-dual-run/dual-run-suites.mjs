@@ -8,14 +8,15 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { decodeValue, encodeValue } from './dual-run-codec.mjs';
-import { compareRefMoves, createDifferences, refMoves } from './dual-run-compare.mjs';
+import { compareRefMoves, compareSnapshots, compareUnaccounted, createDifferences, createMasker, refMoves } from './dual-run-compare.mjs';
 import { dualRun, freshStage, parkStage, prepareFixture } from './dual-run.mjs';
 import { readGitLog } from './dual-run-git-shim.mjs';
 import { MUTANTS, buildMutant, catching } from './dual-run-mutants.mjs';
-import { Arm, PRODUCT_LIB, QUIET_MAINTENANCE, armEnvironment, replayRecording, shimEnvironment } from './dual-run-runner.mjs';
+import { Arm, PRODUCT_LIB, QUIET_MAINTENANCE, armEnvironment, replayRecording, shimEnvironment, tick } from './dual-run-runner.mjs';
 import { SCENARIOS, copyOf, probeScenario, scenarioNamed } from './dual-run-scenarios.mjs';
 import { AGED_MUTATIONS, COVERAGE_NOTES, COVERAGE_SCENARIOS } from './dual-run-scenarios-coverage.mjs';
-import { readRepository } from './dual-run-snapshot.mjs';
+import { captureSnapshot, observeStage, readRepository } from './dual-run-snapshot.mjs';
+import { createIdentityMap } from './dual-run-identity.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const SUITES = Object.freeze(['scenarios', 'cross-read', 'aged', 'mutants', 'crash', 'contention']);
@@ -302,6 +303,8 @@ async function crashSuite({ workspace, note, withLib }) {
 
 // ---------------------------------------------------------------- contention
 async function contentionSuite({ workspace, note, withLib }) {
+  // The git shim and identifier logs go here, also when this suite runs alone.
+  await fs.mkdir(path.join(workspace.dir, 'audit'), { recursive: true });
   const scenario = scenarioNamed('smoke');
   const fixture = await prepareFixture(workspace, scenario, 'contention');
   const options = (stage) => ({ directory: path.join(stage, 'ledger'), maintenance: QUIET_MAINTENANCE });
@@ -404,36 +407,71 @@ async function contentionSuite({ workspace, note, withLib }) {
     await parkStage(workspace, `contention-2-${index}`);
   }
 
-  // 3. File 26 §8.1: the ledger's worker thread dies while holding owner.lock; its host process lives on (the product's own worker host, characterisation).
+  // 3. File 26 §8.1: the ledger's worker thread dies while holding owner.lock and its host process lives on. Its host removes the
+  // lock its dead worker left; the next call through the same host must succeed, and leave the ledger as a run where the holder's
+  // whole process was killed at the same point and a new process took over (both on the same identifier seed, compared as a dual run).
   {
-    const stage = await freshStage(workspace);
-    await fixture.place(stage);
-    const marker = path.join(workspace.dir, 'contention-thread.marker'), armFile = path.join(workspace.dir, 'contention-thread.armed');
-    const host = await Arm.start({ stage, mode: 'record', options: options(stage), ids: null, crash: { point: 'owner-lock:after', nth: 1, action: 'exit-thread', marker, armFile } });
-    const rows = [];
-    const recordCall = async (label, method, args) => { const started = Date.now(); const reply = await host.call(label, method, encodeValue([args])); return { ...reply, ms: Date.now() - started }; };
-    try {
-      await recordCall('warm', 'warm', { directory: path.join(stage, 'project') });
-      await fs.writeFile(armFile, 'armed\n');
-      const first = await recordCall('dies', 'begin', input(stage, 's1', 'u1'));
-      const owner = await lockFile(stage);
-      rows.push(`call during which the worker died: ${first.ok ? 'ok' : first.error?.code} after ${first.ms} ms; owner.lock left naming pid ${owner?.pid} (host process ${host.pid}, alive)`);
-      for (const user of ['u2', 'u3']) {
-        const next = await recordCall(`after-${user}`, 'begin', input(stage, 's1', user));
-        rows.push(`next call in the same host (new worker): ${next.ok ? 'ok' : `${next.error?.code} (${next.error?.message}${next.error?.cause ? `, cause ${next.error.cause.code}` : ''})`} after ${next.ms} ms`);
-      }
-      const stillThere = await lockFile(stage);
-      rows.push(`owner.lock still present: ${Boolean(stillThere)}${stillThere ? ` (pid ${stillThere.pid})` : ''}`);
-    } finally { await host.close(); }
-    const restarted = await Arm.start({ stage, mode: 'record', options: options(stage), ids: null });
-    try {
-      const started = Date.now();
-      const after = await restarted.call('after-restart', 'begin', encodeValue([input(stage, 's1', 'u4')]));
-      rows.push(`after the host process exits, a new process: ${after.ok ? 'ok' : after.error?.code} after ${Date.now() - started} ms`);
-    } finally { await restarted.close(); }
-    const reproduced = rows.some((row) => /LOCK_TIMEOUT|local_execution_timeout/.test(row));
-    note('contention', { name: 'ledger worker thread dies holding owner.lock, host process lives (file 26 §8.1, characterisation)', outcome: 'info',
-      summary: `${reproduced ? 'REPRODUCED' : 'not reproduced'}: ${rows.join('; ')}` });
-    await parkStage(workspace, 'contention-3');
+    const seed = 'ledger-dual-run-8.1';
+    // T: thread death, the next call in the same host (a new worker). K: process death, the next call in a new process, made the
+    // third seam call of its process as in T (two reads first), so both draw the same protocol identifiers.
+    const runs = {};
+    for (const kind of ['thread', 'process']) {
+      const stage = await freshStage(workspace);
+      await fixture.place(stage);
+      const marker = path.join(workspace.dir, `contention-3-${kind}.marker`), armFile = path.join(workspace.dir, `contention-3-${kind}.armed`);
+      const log = path.join(workspace.dir, 'audit', `contention-3-${kind}.git`), idLog = path.join(workspace.dir, 'audit', `contention-3-${kind}.ids`);
+      const timeline = [], observations = [], replies = {};
+      const env = shimEnvironment({ bin: workspace.bin, log });
+      const start = (crash) => Arm.start({ stage, mode: 'record', options: options(stage), ids: seed, idLog, env, ...(crash ? { crash } : {}) });
+      const timed = async (arm, label, method, args, { compared = true } = {}) => {
+        const window = { start: Date.now(), end: null };
+        const reply = await arm.call(label, method, encodeValue([args])).catch((error) => ({ ok: false, error: { code: error.code, message: error.message } }));
+        window.end = Date.now();
+        if (compared) { timeline.push(window); observations.push(observeStage(stage)); replies[label] = { ...reply, ms: window.end - window.start }; }
+        await tick();
+        return reply;
+      };
+      let arm = await start({ point: 'owner-lock:after', nth: 1, action: kind === 'thread' ? 'exit-thread' : 'kill', marker, armFile });
+      try {
+        await timed(arm, 'warm', 'warm', { directory: path.join(stage, 'project') });
+        await fs.writeFile(armFile, 'armed\n');
+        await timed(arm, 'dies', 'begin', input(stage, 's1', 'u1'));
+        // The process the dying ledger ran in, as the crash point recorded it.
+        const holder = await fs.readFile(marker, 'utf8').then(JSON.parse, () => null);
+        if (kind === 'process') {
+          await arm.kill();
+          arm = await start();
+          for (const pad of ['pad-1', 'pad-2']) await timed(arm, pad, 'projectDirectories', undefined, { compared: false });
+        }
+        await timed(arm, 'next', 'begin', input(stage, 's1', 'u2'));
+        runs[kind] = { reached: Boolean(holder), holder, hostPid: arm.pid, left: await lockFile(stage), replies, timeline, observations, oracle: lockOracle(log, stage), unlisted: await fs.readFile(idLog, 'utf8').catch(() => '') };
+      } finally { await arm.close(); }
+      runs[kind].dir = await parkStage(workspace, `contention-3-${kind}`);
+    }
+    const { thread, process: killed } = runs;
+    const differences = createDifferences(), identities = createIdentityMap();
+    const valueOf = (reply) => (reply?.ok ? decodeValue(reply.value) : null);
+    identities.align(valueOf(thread.replies.next), valueOf(killed.replies.next), 'next.result');
+    // Either death leaves the lock's publication temporary (owner.lock.tmp-<pid>-<id>, the lock's bytes) where the lock was
+    // linked; only the dead holder's pid differs, in its name and its bytes.
+    if (thread.holder && killed.holder) {
+      identities.learn(`owner.lock.tmp-${thread.holder.pid}-`, `owner.lock.tmp-${killed.holder.pid}-`, 'dead holder pid');
+      identities.learn(`"pid":${thread.holder.pid},`, `"pid":${killed.holder.pid},`, 'dead holder pid');
+    }
+    const maskers = { a: createMasker({ timeline: thread.timeline, observations: thread.observations, mapPath: (text) => identities.substituteText(text) }),
+      b: createMasker({ timeline: killed.timeline, observations: killed.observations }) };
+    const a = { ...(await captureSnapshot(thread.dir)), dir: thread.dir }, b = { ...(await captureSnapshot(killed.dir)), dir: killed.dir };
+    await compareSnapshots({ a, b, identities, maskers, differences, seeded: true });
+    compareUnaccounted({ maskers, differences });
+    for (const conflict of identities.conflicts) differences.add('identity', conflict.where, `${conflict.a} cannot pair with ${conflict.b}`);
+    const describe = (reply) => (reply.ok ? `ok in ${reply.ms} ms` : `${reply.error?.code} (${reply.error?.message}) after ${reply.ms} ms`);
+    const died = thread.replies.dies.ok === false && thread.replies.dies.error?.code === 'mutation_runtime_unavailable';
+    // The thread died inside the host process, which lives on; the killed holder was its own process.
+    const threadInHost = thread.holder?.pid === thread.hostPid && thread.holder?.thread !== 0;
+    const ok = thread.reached && killed.reached && died && threadInHost && thread.replies.next.ok && killed.replies.next.ok
+      && !thread.left && !killed.left && thread.oracle.moves > 0 && killed.oracle.moves > 0 && !thread.oracle.bad.length && !killed.oracle.bad.length && !thread.unlisted && !killed.unlisted && !differences.list.length;
+    note('contention', { name: 'ledger worker thread dies holding owner.lock, host process lives (file 26 §8.1): its host releases the lock, recovery as after a killed process', outcome: ok ? 'passed' : 'failed',
+      summary: `worker died holding the lock: ${thread.reached ? 'yes' : 'NOT REACHED'} (call ${died ? 'failed with mutation_runtime_unavailable' : `ANSWERED ${JSON.stringify(thread.replies.dies.error ?? 'ok')}`}, in ${threadInHost ? `a thread of the host process ${thread.hostPid}` : `PID ${thread.holder?.pid} THREAD ${thread.holder?.thread}, NOT A THREAD OF THE HOST ${thread.hostPid}`}); next call in the same host: ${describe(thread.replies.next)}; after a killed process, a new process: ${describe(killed.replies.next)}; owner.lock left: ${thread.left || killed.left ? 'YES' : 'no'}; ${thread.oracle.moves} and ${killed.oracle.moves} state moves, ${thread.oracle.bad.length + killed.oracle.bad.length ? 'NOT ALL' : 'all'} under their mover's lock; unnamed identifier draws: ${thread.unlisted || killed.unlisted ? 'SOME' : 'none'}; ${differences.list.length} differences from the killed-process run`,
+      differences: summarize(differences.list) });
   }
 }

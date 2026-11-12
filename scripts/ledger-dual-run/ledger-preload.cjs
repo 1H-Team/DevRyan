@@ -4,12 +4,15 @@
 // thread) that runs the ledger, it wraps the Node calls the ledger's durable
 // protocol is made of.
 //
-// LEDGER_DUAL_RUN_CRASH='{"point":"<name>","nth":1,"action":"kill"|"exit-thread"|"hold","marker":"<file>","armFile":"<file>"}'
+// LEDGER_DUAL_RUN_CRASH='{"point":"<name>","nth":1,"action":"kill"|"exit-thread"|"throw"|"hold","marker":"<file>","armFile":"<file>"}'
 //   stops the ledger at the Nth occurrence of a point, once (a marker file
 //   that already exists disarms it, so a restarted ledger runs normally).
 //   kill: SIGKILL of the whole process (a crash of the app or of a ledger
 //   process). exit-thread: process.exit inside the ledger's worker thread only,
-//   so the host process lives on (file 26 §8.1). hold: the ledger's thread
+//   so the host process lives on (file 26 §8.1). throw: an uncaught error in
+//   that thread (thrown from the next microtask, so no caller catches it; an
+//   operation already started, such as the link of a `before` point, still
+//   completes). hold: the ledger's thread
 //   blocks forever where it is (a stuck holder; the harness kills it later).
 //   Before acting, the point and its count are written to `marker`. With
 //   `armFile`, the count starts once that file exists (the harness creates it
@@ -30,7 +33,7 @@
 //   content-object-link:before|after  link of objects/.pending-* to its digest name
 //   git-object-link:after             link of a git loose object tmp_obj_* into place
 //   update-ref:before|after           a `git update-ref` child (the ledger ref CAS)
-//   owner-lock:after                  link (or wx create) of <ledger>/owner.lock
+//   owner-lock:before|after           link of <ledger>/owner.lock (after: also its wx create)
 //   owner-lock-release:after          unlink of <ledger>/owner.lock
 //   metadata-index-removed:after      rm/unlink of state.metadata-index
 //   project-write:before|after        rename of a <target>.devryan-* temporary onto its target
@@ -121,6 +124,7 @@ if ((crash || audit) && ledgerThread) {
     } else if (n !== (crash.nth ?? 1)) return;
     fs.writeFileSync(crash.marker, `${JSON.stringify({ point, n, pid: process.pid, thread: threadId })}\n`);
     if (crash.action === 'exit-thread') process.exit(1);
+    if (crash.action === 'throw') { queueMicrotask(() => { throw new Error('ledger_dual_run_crash'); }); return; }
     if (crash.action === 'hold') Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);
     process.kill(process.pid, 'SIGKILL');
   };
@@ -129,6 +133,7 @@ if ((crash || audit) && ledgerThread) {
   wrap(promises, 'link', (original) => async function link(source, target) {
     const from = String(source), to = String(target);
     if (from.includes('/objects/.pending-')) event('content-object-link:before');
+    if (to.endsWith('/owner.lock')) event('owner-lock:before', path.dirname(to));
     const result = await original.call(this, source, target);
     if (to.endsWith('/owner.lock')) event('owner-lock:after', path.dirname(to));
     if (from.includes('/objects/.pending-')) event('content-object-link:after');

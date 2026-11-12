@@ -11,6 +11,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { createSessionMutationHost, sessionMutationWorkerEnabled, workerExecArgv } from '../packages/harness-runtime/lib/session-mutation-host.js';
 import { createSessionMutationRuntime } from '../packages/harness-runtime/lib/session-mutations.js';
@@ -210,4 +211,209 @@ test('input guards and observers run in the context of the call that caused them
     await host.finish({ directory: fixture.directory, token: lease.token });
   });
   assert.deepEqual(observed, ['editor']);
+});
+
+// A worker that dies inside the owner lock. The lock file names this process,
+// which lives on, so before the host removed such a lock every later call
+// waited the 30 s lock timeout and failed until the app restarted. The worker
+// is stopped from outside the product: the dual-run harness's crash preload
+// ends the ledger's thread at a file operation of its lock protocol (it exits
+// the thread, throws an uncaught error there, or blocks it for the test to
+// terminate), in a host process of its own.
+const crashPreload = fileURLToPath(new URL('./ledger-dual-run/ledger-preload.cjs', import.meta.url));
+const hostModule = new URL('../packages/harness-runtime/lib/session-mutation-host.js', import.meta.url).href;
+const atomicModule = new URL('../packages/harness-runtime/lib/atomic-file.js', import.meta.url).href;
+// The child: hosts on one ledger, every Worker they start captured in order.
+const lockChild = `
+import { execFileSync } from 'node:child_process';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import fs from 'node:fs/promises';
+import { syncBuiltinESMExports } from 'node:module';
+import path from 'node:path';
+import workerThreads from 'node:worker_threads';
+const config = JSON.parse(process.argv[1]);
+// A child that never reaches its result fails well inside the parent's 240 s limit.
+setTimeout(() => { process.stderr.write('lock child: no result after 150 s\\n'); process.exit(2); }, 150_000).unref();
+const workers = [];
+const Base = workerThreads.Worker;
+workerThreads.Worker = class extends Base { constructor(...args) { super(...args); workers.push(this); } };
+syncBuiltinESMExports();
+const { createSessionMutationHost } = await import(${JSON.stringify(hostModule)});
+const { withCrossProcessFileLock } = await import(${JSON.stringify(atomicModule)});
+const directory = path.join(config.root, 'project'), storage = path.join(config.root, 'private');
+await fs.mkdir(directory);
+execFileSync('git', ['init', '--quiet', directory]);
+await fs.writeFile(path.join(directory, 'a.txt'), 'a\\n');
+const journal = [];
+// Maintenance off, so background work cannot reach a crash point meant for a call.
+const maintenance = { looseObjects: 1_000_000_000, packs: 1_000_000_000, commits: 1_000_000_000 };
+const host = () => createSessionMutationHost({ directory: storage, maintenance, onDiagnostic: (record) => { if (record.phase === 'ledger_worker') journal.push(record.code); } });
+const input = (user) => ({ directory, sessionID: 's', userMessageID: user, messageID: user + '-assistant', callID: 'call-' + user });
+const settle = async (promise) => { const started = Date.now(); try { await promise; return { ok: true, ms: Date.now() - started }; } catch (error) { return { ok: false, code: error.code, ms: Date.now() - started }; } };
+const lockPath = () => { for (const name of readdirSync(storage)) if (existsSync(path.join(storage, name, 'git'))) return path.join(storage, name, 'owner.lock'); return null; };
+const lockBytes = () => { try { return readFileSync(lockPath(), 'utf8'); } catch { return null; } };
+const until = async (check, what) => { const deadline = Date.now() + 60_000; while (!check()) { if (Date.now() > deadline) throw new Error('lock child: timed out waiting for ' + what); await new Promise((resolve) => setTimeout(resolve, 10)); } };
+// Evidence that a worker is waiting for a lock this process holds under
+// another token: since audit line \`from\`, its thread reached the link of
+// owner.lock at least twice while the file named this process. The preload's
+// owner-lock:before fires before every attempt, so the second is a retry after
+// the first found the file. A fixed sleep could end before the worker started.
+const auditLines = () => { try { return readFileSync(config.audit, 'utf8').split('\\n').filter(Boolean).map((line) => JSON.parse(line)); } catch { return []; } };
+const untilWaiting = (from, worker, what) => until(() => worker() !== undefined && auditLines().slice(from)
+  .filter((entry) => entry.point === 'owner-lock:before' && entry.thread === worker().threadId && entry.lock === 'held').length >= 2, what);
+// Armed once background work of earlier calls has settled, so only the call
+// under test can reach the point. The drain before arming keeps that true
+// whatever order the event loop runs work in; correctness must not depend on
+// that ordering. One full-file run of the uncaught-error case failed before
+// this drain was added; that failure was never reproduced.
+const arm = () => writeFileSync(config.armFile, 'armed\\n');
+const out = {};
+if (config.mode === 'single') {
+  const one = host();
+  await one.warm({ directory }); await one.drain();
+  arm();
+  const dying = settle(one.begin(input('u1')));
+  if (config.means === 'terminate') { await until(() => existsSync(config.marker), 'the worker to reach the crash point'); await workers.at(-1).terminate(); }
+  out.dying = await dying;
+  out.reached = existsSync(config.marker);
+  out.next = await settle(one.begin(input('u2')));
+  out.lock = lockBytes();
+  await one.close();
+} else if (config.mode === 'two-hosts') {
+  const a = host(), b = host();
+  await a.warm({ directory }); await b.warm({ directory }); await a.drain(); await b.drain();
+  const [workerA, workerB] = workers;
+  arm();
+  const held = settle(a.begin(input('u1')));
+  await until(() => existsSync(config.marker), 'the worker to reach the crash point');
+  out.held = lockBytes();
+  // B waits for A's lock; B's worker dies while waiting.
+  const waiterFrom = auditLines().length;
+  const waiting = settle(b.begin(input('u2')));
+  await untilWaiting(waiterFrom, () => workerB, 'the worker of host B to wait for the lock of host A');
+  await workerB.terminate();
+  out.waiting = await waiting;
+  out.afterWaiterDied = lockBytes();
+  // B waits again on a new worker; A's worker dies holding.
+  const nextFrom = auditLines().length, started = workers.length;
+  const nextStarted = Date.now(), next = settle(b.begin(input('u3')));
+  await untilWaiting(nextFrom, () => workers[started], 'the new worker of host B to wait for the lock of host A');
+  await workerA.terminate();
+  out.holderDiedMs = Date.now() - nextStarted;
+  out.heldCall = await held;
+  out.next = await next;
+  out.again = await settle(a.begin(input('u4')));
+  out.lock = lockBytes();
+  await a.close(); await b.close();
+} else if (config.mode === 'replaced') {
+  const one = host();
+  await one.warm({ directory }); await one.drain();
+  arm();
+  const dying = settle(one.begin(input('u1')));
+  await until(() => existsSync(config.marker), 'the worker to reach the crash point');
+  // While the worker is stopped, the lock becomes someone else's: same process, another token.
+  const other = JSON.stringify({ ownerToken: 'f'.repeat(32), pid: process.pid, createdAt: Date.now() }) + '\\n';
+  writeFileSync(lockPath(), other);
+  await workers.at(-1).terminate();
+  out.dying = await dying;
+  out.kept = lockBytes() === other;
+  // The holder of that lock releases it; the ledger then works.
+  await fs.unlink(lockPath());
+  out.next = await settle(one.begin(input('u2')));
+  out.lock = lockBytes();
+  await one.close();
+} else if (config.mode === 'main-thread-holder') {
+  // Another owner in this process (here the main thread) holds the lock; a worker dies waiting for it.
+  const one = host();
+  await one.warm({ directory }); await one.drain();
+  let release, holding;
+  const acquired = new Promise((resolve) => { holding = resolve; });
+  const lock = withCrossProcessFileLock(lockPath(), () => { holding(); return new Promise((resolve) => { release = resolve; }); });
+  await acquired;
+  out.held = lockBytes();
+  const waiterFrom = auditLines().length;
+  const waiting = settle(one.begin(input('u1')));
+  await untilWaiting(waiterFrom, () => workers.at(-1), 'the worker to wait for the lock the main thread holds');
+  await workers.at(-1).terminate();
+  out.waiting = await waiting;
+  out.kept = lockBytes() === out.held;
+  release(); await lock;
+  out.next = await settle(one.begin(input('u2')));
+  out.lock = lockBytes();
+  await one.close();
+}
+out.journal = journal;
+console.log(JSON.stringify(out));
+`;
+const runLockChild = async (t, config, crash) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-mutation-host-lock-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const marker = path.join(root, 'crash.marker'), armFile = path.join(root, 'crash.armed'), audit = path.join(root, 'audit.jsonl');
+  const env = { ...process.env, DEVRYAN_LEDGER_WORKER: '1', LEDGER_DUAL_RUN_AUDIT: audit, ...(crash ? { LEDGER_DUAL_RUN_CRASH: JSON.stringify({ ...crash, marker, armFile }) } : {}) };
+  const { stdout } = await execute(process.execPath, ['--require', crashPreload, '--input-type=module', '-e', lockChild,
+    JSON.stringify({ ...config, root, marker, armFile, audit })], { env, timeout: 240_000, maxBuffer: 16 * 1024 * 1024 });
+  return JSON.parse(stdout.trim().split('\n').at(-1));
+};
+
+// Where the worker dies: before the lock file exists, holding it before the
+// locked work runs, during the commit, and after it released the lock.
+const lockStages = [
+  { point: 'owner-lock:before', stage: 'before the lock file exists' },
+  { point: 'owner-lock:after', stage: 'holding the lock, before the locked work', holds: true },
+  { point: 'update-ref:before', stage: 'during the commit', holds: true },
+  { point: 'owner-lock-release:after', stage: 'after it released the lock' },
+];
+for (const means of ['exit-thread', 'throw', 'terminate']) {
+  test(`a worker that dies by ${means} at each stage of the owner lock leaves no lock behind; the next call through the host succeeds`, async (t) => {
+    for (const { point, stage, holds } of lockStages) {
+      const result = await runLockChild(t, { mode: 'single', means }, { point, nth: 1, action: means === 'terminate' ? 'hold' : means });
+      const where = `${means} ${stage}: ${JSON.stringify(result)}`;
+      assert.equal(result.reached, true, where);
+      assert.deepEqual([result.dying.ok, result.dying.code], [false, 'mutation_runtime_unavailable'], where);
+      assert.equal(result.next.ok, true, where);
+      assert.equal(result.lock, null, where);
+      // Exit and termination stop the thread before the link; a thrown error
+      // ends it just after the link was started, which completes before the
+      // thread is gone (a lock it held) unless it never ran (no lock). Either
+      // way nothing is left.
+      if (point === 'owner-lock:before' && means === 'throw') assert.ok(result.journal.length <= 1 && result.journal.every((code) => code === 'worker_lock_released'), where);
+      else assert.deepEqual(result.journal, holds ? ['worker_lock_released'] : [], where);
+    }
+  });
+}
+
+test('two hosts in one process: a worker that dies waiting leaves the holder\'s lock; one that dies holding releases it to the waiter', async (t) => {
+  const result = await runLockChild(t, { mode: 'two-hosts' }, { point: 'owner-lock:after', nth: 1, action: 'hold' });
+  const where = JSON.stringify(result);
+  assert.match(result.held ?? '', /"ownerToken":"[0-9a-f]{32}"/, where);
+  assert.deepEqual([result.waiting.ok, result.waiting.code], [false, 'mutation_runtime_unavailable'], where);
+  assert.equal(result.afterWaiterDied, result.held, where);
+  assert.deepEqual([result.heldCall.ok, result.heldCall.code], [false, 'mutation_runtime_unavailable'], where);
+  // The waiter's new worker took the lock only once the holder had died.
+  assert.equal(result.next.ok, true, where);
+  assert.ok(result.next.ms >= result.holderDiedMs, where);
+  assert.equal(result.again.ok, true, where);
+  assert.equal(result.lock, null, where);
+  // Only the holder's death released a lock.
+  assert.deepEqual(result.journal, ['worker_lock_released'], where);
+});
+
+test('a worker that dies waiting for a lock another owner of the process holds leaves that lock alone', async (t) => {
+  const result = await runLockChild(t, { mode: 'main-thread-holder' });
+  const where = JSON.stringify(result);
+  assert.deepEqual([result.waiting.ok, result.waiting.code], [false, 'mutation_runtime_unavailable'], where);
+  assert.equal(result.kept, true, where);
+  assert.equal(result.next.ok, true, where);
+  assert.equal(result.lock, null, where);
+  assert.deepEqual(result.journal, [], where);
+});
+
+test('a dead worker\'s lock whose bytes changed meanwhile is someone else\'s and stays', async (t) => {
+  const result = await runLockChild(t, { mode: 'replaced' }, { point: 'owner-lock:after', nth: 1, action: 'hold' });
+  const where = JSON.stringify(result);
+  assert.deepEqual([result.dying.ok, result.dying.code], [false, 'mutation_runtime_unavailable'], where);
+  assert.equal(result.kept, true, where);
+  assert.equal(result.next.ok, true, where);
+  assert.equal(result.lock, null, where);
+  assert.deepEqual(result.journal, [], where);
 });

@@ -302,7 +302,7 @@ export const preparedBaselineUsage = () => ({ rows: preparedBaselineTotals.rows,
 // and stamp files with synchronous calls: on 13k files a stamp pass took
 // 49 ms instead of 311 ms through the thread pool. Chunks still yield between
 // each other. Kill switch, read per use: DEVRYAN_LEDGER_SYNC_WALKS=0.
-export function createSessionMutationRuntime({ directory: storage, onChange = () => {}, onMaterialize, onDiagnostic = () => {}, onLockTiming, maintenance: maintenanceOptions, batching = {}, complexity = {}, preparedBaselines: preparedBaselineOptions = {}, windowsOwner, windowsLauncher, gitRunner, synchronousWalks = false } = {}) {
+export function createSessionMutationRuntime({ directory: storage, onChange = () => {}, onMaterialize, onDiagnostic = () => {}, onLockTiming, maintenance: maintenanceOptions, batching = {}, complexity = {}, preparedBaselines: preparedBaselineOptions = {}, windowsOwner, windowsLauncher, gitRunner, synchronousWalks = false, ownerLockClaims } = {}) {
   const syncWalks = () => synchronousWalks === true && process.env.DEVRYAN_LEDGER_SYNC_WALKS !== '0';
   const listDirectory = (directory) => syncWalks() ? readdirSync(directory, { withFileTypes: true }) : fs.readdir(directory, { withFileTypes: true });
   const lstatEntry = (file) => {
@@ -545,20 +545,25 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       const lockStarted = Date.now();
       timing.queueMs = lockStarted - queued;
       let acquired = false;
-      return withCrossProcessFileLock(path.join(rootFor(directory), 'owner.lock'), () => withExecutionMeter(async () => {
+      // The lock's owner token is drawn here, as the lock would draw it, so a
+      // worker's host learns it before the lock file can exist and can remove
+      // a lock its dead worker left (`ownerLockClaims`; absent inline).
+      const lockPath = path.join(rootFor(directory), 'owner.lock'), ownerToken = randomUUID().replaceAll('-', '');
+      ownerLockClaims?.claim(lockPath, ownerToken);
+      return withCrossProcessFileLock(lockPath, () => withExecutionMeter(async () => {
         acquired = true;
         executionProgress();
         const holder = executionProgressMeter();
         queueMeter.following = holder; queueMeter.progress = Date.now();
         try { return await holdLock(); }
         finally { if (queueMeter.following === holder) queueMeter.following = undefined; queueMeter.progress = Date.now(); }
-      }), { timeoutMs: 30_000, signal: executionSignal(), windowsLauncher }).catch(cause => {
+      }), { timeoutMs: 30_000, signal: executionSignal(), windowsLauncher, randomToken: () => ownerToken }).catch(cause => {
         if (!acquired) executionDiagnostic({ phase: 'lock_wait', state: 'failed', elapsedMs: Date.now() - lockStarted,
           code: cause?.code === 'LOCK_TIMEOUT' ? 'local_execution_timeout' : 'local_execution_failed' });
         timing.failed = true;
         if (!acquired) timing.waitMs = Date.now() - queued;
         throw cause;
-      });
+      }).finally(() => ownerLockClaims?.settle(ownerToken));
       async function holdLock() {
         const lockWaitMs = Date.now() - lockStarted;
         const held = Date.now();

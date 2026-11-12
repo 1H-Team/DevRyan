@@ -520,7 +520,35 @@ for tests; inline, the host clock covers the ledger). A publication's
 `finish_materialize`), so its lock hold is read directly, never by
 subtraction; a finish summary carries 21 of the 32 step names a summary keeps. A worker exit fails pending calls with
 `mutation_runtime_unavailable` (503); the next call starts a new worker and
-the next lock runs durable recovery, as after a host crash. The worker
+the next lock runs durable recovery, as after a host crash. An owner lock the
+dead worker held would otherwise stay: its file names the host process, which
+lives on, so no other owner ever removes it and every later call failed with
+`LOCK_TIMEOUT` after 30 s until the app restarted. The ledger therefore draws
+each owner lock's token itself (passed to the lock as `randomToken`, the
+expression the lock uses) and, with the runtime option `ownerLockClaims`,
+names it to its worker's host before the lock file can exist and settles it
+once the lock call has ended. The worker sends these on a dedicated
+`MessagePort` in `workerData.lockPort`, not on the seam (absent inline and
+under the dual-run harness's stdio transport). Posting is synchronous, so a
+claim made before the thread dies is queued; on the worker's `exit` the host
+drains the port, removes each unsettled lock whose file still holds exactly
+that token and this process's pid (anything else is another owner's lock and
+stays, including the lock a worker was only waiting for), journals one
+`ledger_worker` `worker_lock_released` diagnostic, and only then fails the
+pending calls; after an uncaught error the calls fail on `error`, just before
+`exit`, and a new worker that already waits takes the lock at its next retry.
+The lock protocol, its bytes and every other owner are unchanged. A Git
+child the dead worker started (a `git update-ref` already running) is not
+killed with the thread and can outlive it, so it may still run after the next
+owner has taken the lock. The state ref moves only by compare-and-swap, so
+such a late child makes at most one call fail (its own move or the next
+owner's) and cannot corrupt the ledger: the same exposure as after a process
+crash, whose children are reparented and finish, only now reached within a
+lock retry rather than after an app restart.
+`scripts/harness-session-mutation-host.test.mjs` makes a worker die through the
+harness's crash preload (thread exit, uncaught error, termination) before the
+lock file exists, holding it, during the commit and after release, with two
+hosts in one process, and with the lock replaced meanwhile. The worker
 inherits the host's Node flags except inline-entry ones (`--input-type`,
 `-e`, `-p`): a host started with `node --input-type=module -e …`, as the
 release upgrade lane starts the server, used to lose its worker before it

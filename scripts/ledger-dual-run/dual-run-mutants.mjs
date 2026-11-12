@@ -31,8 +31,8 @@ export const MUTANTS = Object.freeze([
   },
   {
     name: 'entry-order', kind: 'a different ordering of tree entries (reverse of Git order)',
-    edits: [{ file: 'session-changes-trees.js', anchor: 'const sorted = [...entries].sort((a, b) => Buffer.compare(Buffer.from(sortName(a), \'latin1\'), Buffer.from(sortName(b), \'latin1\')));',
-      replacement: (name) => `${reached(name)}; const sorted = [...entries].sort((a, b) => Buffer.compare(Buffer.from(sortName(b), 'latin1'), Buffer.from(sortName(a), 'latin1')));` }],
+    edits: [{ file: 'session-changes-trees.js', anchor: '    .sort((a, b) => Buffer.compare(a.name, b.name)).map(({ entry }) => entry);',
+      replacement: (name) => `    .sort((a, b) => Buffer.compare(b.name, a.name)).map(({ entry }) => entry); ${reached(name)};` }],
     scenario: 'smoke', expect: { category: 'oracle', where: /tree refs\/devryan\/state in run B/, detail: /out of Git order/ },
   },
   {

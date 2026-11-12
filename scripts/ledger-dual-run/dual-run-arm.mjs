@@ -51,7 +51,10 @@ async function startRecord({ libDir, options }) {
   class TappedWorker extends Base {
     constructor(filename, workerOptions) {
       super(filename, workerOptions);
-      state.workerData = workerOptions?.workerData ?? null;
+      // The host's lock port is a channel of its own beside the seam, not workerData a replay passes on.
+      const workerData = workerOptions?.workerData ? { ...workerOptions.workerData } : null;
+      if (workerData) delete workerData.lockPort;
+      state.workerData = workerData;
       state.workers.push(this);
     }
     postMessage(message, transfer) {

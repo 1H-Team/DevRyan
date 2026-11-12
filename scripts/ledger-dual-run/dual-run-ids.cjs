@@ -51,6 +51,8 @@ const ID_SITES = Object.freeze([
   ['standby', 'session-mutations.js', /path\.join\((?:record\.root|repo\.root|root), 'view-standby'\)?,? ?(?:directory = path\.join\(parent, )?randomUUID\(\)\)|path\.join\(parent, randomUUID\(\)\)/],
   ['temporary', null, /\.devryan-\$\{randomUUID\(\)\}`|\.pending-\$\{randomUUID\(\)\}`|tmp_obj_\$\{crypto\.randomUUID\(\)\}`|\$\{crypto\.randomUUID\(\)\}\.(?:metadata-)?index`|\.\$\{VERIFIED_OBJECTS_FILE\}-\$\{randomUUID\(\)\}`|\.tmp-\$\{process\.pid\}-\$\{crypto\.randomUUID\(\)\}`|randomId \?\? \(\(\) => crypto\.randomUUID\(\)/],
   ['lock-owner', 'atomic-file.js', /ownerToken = \(options\.randomToken \?\? \(\(\) => crypto\.randomUUID\(\)/],
+  // The ledger's owner lock draws its token itself and hands it to the lock.
+  ['lock-owner', 'session-mutations.js', /ownerToken = randomUUID\(\)\.replaceAll\('-', ''\);\n\s*ownerLockClaims\?\.claim\(/],
 ]);
 
 /** The site name of a JavaScript draw, from its file's basename and the text of its line and the next; null when unlisted. */
