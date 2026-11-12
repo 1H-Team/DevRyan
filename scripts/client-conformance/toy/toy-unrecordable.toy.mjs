@@ -10,6 +10,7 @@ import { expect, test } from 'bun:test';
 import { online, ping } from './toy-clock.mjs';
 import { frozenControls, gateState, nested, signal, start, wait, waitLong, waitOn } from './toy-gate.mjs';
 import { deferred } from './toy-guard.mjs';
+import { hostLater } from './toy-host.mjs';
 import { log } from './toy-log.mjs';
 import { applyEvent, createState } from './toy-reducer.mjs';
 
@@ -114,4 +115,55 @@ test('a member of a frozen object cannot be wrapped', () => {
 test('a family\'s port that the test calls itself is flagged, since the stack cannot tell it from engine code', () => {
   expect(signal('direct', 1)).toBe(true);
   expect(log('direct', 'test')).toBe('direct:test');
+});
+
+test('an iterator the engine is handed is flagged, since what it yields is not part of the value', () => {
+  expect(applyEvent(createState(), new Map([['type', 'status']]).values())).toBe(false);
+});
+
+test('a port the test calls flags only the families it is a port of', () => {
+  const draft = createState();
+  expect(applyEvent(draft, { type: 'session.created', id: 'p1', title: 'kept' })).toBe(true);
+  expect(signal('only', 1)).toBe(true);
+  // A port of toy-transport and toy-gate: the toy-gate line is flagged, the toy-reducer line stays recorded,
+  // and toy-transport, with no line here, gets one flagged port-no-line: a closure of its own could look so.
+  expect(log('direct', 'again')).toBe('direct:again');
+});
+
+let kept = null;
+test('keeps closures from deep inside returned data', () => {
+  kept = nested('k').inner.deep;
+  expect(typeof kept.body).toBe('function');
+});
+
+test('a closure kept from an earlier test calls its port in its own frame where its family has no line', () => {
+  expect(applyEvent(createState(), { type: 'probe' })).toBe('idle');
+  expect(kept.body()).toBe('body:k!');
+});
+
+test('a closure kept from an earlier test whose frame a tail call removed calls a port where its families have no line', () => {
+  expect(kept.run()).toBe('deep:k');
+});
+
+test('a closure kept from an earlier test reads the clock where no family has a line', () => {
+  expect(typeof kept.clock()).toBe('number');
+});
+
+test('engine code a passed-through call puts on a timer runs outside any chain', async () => {
+  const draft = createState();
+  hostLater(draft);
+  await new Promise((resolve) => { setTimeout(resolve, 5); });
+  expect(draft.order).toEqual(['later']);
+});
+
+test('an entry the test hands to a promise has no frame, so its case is flagged', async () => {
+  const draft = await Promise.resolve().then(createState);
+  expect(draft.order).toEqual([]);
+});
+
+test('a test callback an entry runs, which no injected port declares, is flagged with its family\'s call inside', async () => {
+  const { withCallback } = await import('./toy-sched.mjs');
+  const draft = createState();
+  const result = withCallback((value) => { applyEvent(draft, { type: 'session.created', id: `cb${value}`, title: 'from the callback' }); return draft.order.join(); });
+  expect(result).toEqual({ got: 'cb1' });
 });

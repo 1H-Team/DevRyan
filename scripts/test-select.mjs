@@ -61,6 +61,25 @@ export const TREE_READERS = Object.freeze([
   Object.freeze({ prefix: 'packages/harness-runtime/native/ledger/', tests: Object.freeze(['scripts/build-ledger-native.test.mjs']) }),
   Object.freeze({ prefix: 'packages/native/', tests: Object.freeze(['scripts/check-native.test.mjs']) }),
 ]);
+/**
+ * Script tests only the full suite runs (`validate:full`, `test:full`, CI's
+ * lanes), by name: `<name>.full.test.<ext>`. Selection still reaches them as
+ * any test; fast `validate` drops them from what it runs (fastScriptSelection).
+ */
+export const FULL_SUITE_ONLY = /\.full\.test\.[cm]?[jt]s$/;
+/**
+ * A selection as fast `validate` runs it: without the full-suite-only tests,
+ * listed as `deferred`. A whole-suite selection stays `all` and gets `tests`,
+ * the suite's other files, when it defers any.
+ */
+export function fastScriptSelection(selection, suite = () => discoverScriptTestFiles(repositoryRoot)) {
+  if (!selection) return selection;
+  const listed = selection.all ? suite() : selection.tests;
+  const deferred = listed.filter(file => FULL_SUITE_ONLY.test(file));
+  if (deferred.length === 0) return selection;
+  return { ...selection, tests: listed.filter(file => !FULL_SUITE_ONLY.test(file)), deferred };
+}
+
 // The suite contract inventories every test file in the repository (discovery,
 // runner lists, conditional skips), so a change to any test file selects it.
 export const SUITE_CONTRACT = 'scripts/test-suite-contract.test.mjs';

@@ -134,7 +134,11 @@ export function promiseLike(key) {
 }
 // Engine code the recorder does not wrap: a function deep inside plain data, and a member of a frozen object.
 export function nested(key) {
-  return { inner: { deep: { run: () => log('deep', key) } } };
+  // Closures deep inside returned data are not wrapped. `run` is a tail call (its frame goes); `body` and
+  // `clock` keep their frames in this module.
+  const body = () => { const text = log('body', key); return `${text}!`; };
+  const clock = () => { const now = Date.now(); return now + 1; };
+  return { inner: { deep: { run: () => log('deep', key), body, clock } } };
 }
 export function frozenControls(key) {
   return Object.freeze({ stop: () => log('stop', key) });

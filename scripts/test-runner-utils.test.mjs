@@ -13,6 +13,7 @@ import { discoverScriptTestFiles } from './test-scripts.mjs';
 import { FULL_TEST_COMMANDS, FULL_TEST_SUITES } from './test-full.mjs';
 import { buildPlan, describeScriptSelection, isVersionOnlyChange, lintRoots, testUnitsForPlan } from './validate.mjs';
 import { STARTUP_CONTRACT_GROUPS } from './test-startup-contract.mjs';
+import { FULL_SUITE_ONLY } from './test-select.mjs';
 import { NODE_ISOLATION_ARGS } from './test-isolation-guard.mjs';
 
 const repoRoot = new URL('..', import.meta.url);
@@ -311,15 +312,29 @@ describe('maintenance validation selection', () => {
     const subset = buildPlan('fast', ['scripts/release-ci-wait.mjs']);
     assert.deepEqual(subset.commands.at(-1).coveredBy, []);
     const lines = describeScriptSelection(subset.scriptSelection, all.length);
-    assert.ok(lines.length <= 2);
+    // A third line names the full-suite-only tests the selection reached, which fast mode leaves to validate:full and CI.
+    const deferred = subset.scriptSelection.deferred ?? [];
+    assert.equal(lines.length, deferred.length ? 3 : 2);
+    if (deferred.length) assert.equal(lines[2], `Left to validate:full and CI (full-suite only): ${deferred.join(', ')}.`);
+    assert.ok(deferred.every(file => FULL_SUITE_ONLY.test(file) && !leaf.tests.includes(file)));
     assert.match(lines[0], new RegExp(`^Script tests: ${leaf.tests.length} of ${all.length} selected`));
     assert.match(lines[1], /scripts\/release-ci-wait\.mjs: \d+ reaching it.*CI runs every script test/);
+    // The whole suite, less the full-suite-only tests, which only validate:full and CI run.
+    const fullOnly = all.filter(file => FULL_SUITE_ONLY.test(file));
+    const fast = all.filter(file => !FULL_SUITE_ONLY.test(file)).sort();
+    assert.ok(fullOnly.length > 0, 'the suite has a full-suite-only test');
     for (const file of ['scripts/validate.mjs', 'scripts/test-select.mjs', 'scripts/test-pool.mjs', 'bun.lock']) {
       const plan = buildPlan('fast', [file]);
-      assert.equal(plan.commands.find(c => c.label === 'test:scripts').tests, undefined, file);
+      assert.deepEqual(plan.commands.find(c => c.label === 'test:scripts').tests, fast, file);
+      assert.deepEqual(plan.scriptSelection.deferred, fullOnly, file);
       assert.ok(plan.commands.at(-1).coveredBy.includes('scripts'), file);
-      assert.deepEqual(scheduled(plan.commands.find(c => c.label === 'test:scripts')), [...all].sort(), file);
+      assert.deepEqual(scheduled(plan.commands.find(c => c.label === 'test:scripts')), fast, file);
+      assert.match(describeScriptSelection(plan.scriptSelection, all.length).join('\n'), new RegExp(`^Script tests: all ${all.length} but ${fullOnly.length} [^]*Left to validate:full and CI`));
     }
+    // A full run schedules them.
+    const full = buildPlan('full').commands.find(c => c.label === 'test:full');
+    const scheduledFull = testUnitsForPlan([full]).flatMap(unit => unit.args.filter(arg => /test\.[cm]?[jt]sx?$/.test(arg))).map(arg => arg.replace(/^\.\//, ''));
+    for (const file of fullOnly) assert.ok(scheduledFull.includes(file), file);
   });
 
   test('needs Rust only for a change to the ledger core crate, its build script or its tracked module', () => {

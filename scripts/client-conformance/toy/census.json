@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "note": "Census of the toy families (the self-test corpus): the event types the toy reducer switches on, and the waivers the toy corpus needs, each with its reason.",
+  "events": [
+    {
+      "family": "toy-reducer",
+      "entry": "applyEvent",
+      "arg": 1
+    }
+  ],
+  "exports": [
+    {
+      "family": "toy-guard",
+      "export": "deferred",
+      "reason": "exercised only by an unrecordable fixture (toy-unrecordable.toy.mjs), which is its purpose"
+    },
+    {
+      "family": "toy-gate",
+      "export": "frozenControls",
+      "reason": "exercised only by an unrecordable fixture (toy-unrecordable.toy.mjs), which is its purpose"
+    },
+    {
+      "family": "toy-gate",
+      "export": "start",
+      "reason": "exercised only by an unrecordable fixture (toy-unrecordable.toy.mjs), which is its purpose"
+    },
+    {
+      "family": "toy-gate",
+      "export": "waitLong",
+      "reason": "exercised only by an unrecordable fixture (toy-unrecordable.toy.mjs), which is its purpose"
+    },
+    {
+      "family": "toy-gate",
+      "export": "waitOn",
+      "reason": "exercised only by an unrecordable fixture (toy-unrecordable.toy.mjs), which is its purpose"
+    },
+    {
+      "family": "toy-sched",
+      "export": "after",
+      "reason": "called only through toy-host (hostAfter), which passes it through: it exists to put the test's callback on a timer from a pass-through call (toy-callers.toy.mjs)"
+    },
+    {
+      "family": "toy-sched",
+      "export": "whenSettled",
+      "reason": "called only through toy-host (hostWhenSettled), which passes it through: it exists to hang the test's callback on a promise from a pass-through call (toy-callers.toy.mjs)"
+    },
+    {
+      "family": "toy-sched",
+      "export": "seed",
+      "reason": "called only through toy-host (hostSeed), which passes it through: it exists to call another family's entry and a port inside a pass-through call (toy-callers.toy.mjs)"
+    },
+    {
+      "family": "toy-sched",
+      "export": "later",
+      "reason": "called only through toy-host (hostLater), which passes it through: it exists to put engine code on a timer from a pass-through call (toy-unrecordable.toy.mjs)"
+    },
+    {
+      "family": "toy-sched",
+      "export": "withCallback",
+      "reason": "exercised only by an unrecordable fixture (toy-unrecordable.toy.mjs), which is its purpose"
+    }
+  ],
+  "eventTypes": [],
+  "ports": [],
+  "unrecordable": [],
+  "noFrame": [
+    {
+      "family": "toy-reducer",
+      "export": "applyEvent",
+      "reason": "toy-host.mjs relaySoon: queueMicrotask(applyEvent.bind(null, draft, event)), so the job that calls it has no frame"
+    }
+  ]
+}

@@ -19,19 +19,36 @@
 //                  { "entry": "connect", "arg": 1, "key": "onEvent", "name": "onEvent" }],
 //     // "wrapAnswers": true on a port or an injected item: what its calls resolve to is a port object too
 //     // when it has behaviour (an SDK stream's `{ items: <async iterator> }`), one microtask later
-//     "unorderedPorts": [{ "port": "...", "reason": "..." }]            // effect order not observable (waiver)
+//     "unorderedPorts": [{ "port": "...", "reason": "..." }],           // effect order not observable (waiver)
+//     "allExports": true,                                               // every function export of the module is an entry,
+//                                                                       // found at load time ("entries" only add specs)
+//     "inline": [{ "export": "beginX", "reason": "..." }]               // with allExports: exports left unwrapped, each with a reason
 //   }],
+// A port may carry a "reason" (why it is a seam), and so may an entry.
 //   "globals": { "fetch": { "wrapAnswers": true } }                     // answers wrapped as port objects
 // }
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 
-const FAMILY_KEYS = new Set(['name', 'module', 'entries', 'state', 'ports', 'injected', 'unorderedPorts', 'note']);
-const ENTRY_KEYS = new Set(['export', 'draft', 'returns']);
-const PORT_KEYS = new Set(['module', 'exports', 'wrapAnswers']);
+const FAMILY_KEYS = new Set(['name', 'module', 'entries', 'state', 'ports', 'injected', 'unorderedPorts', 'note', 'allExports', 'inline']);
+const ENTRY_KEYS = new Set(['export', 'draft', 'returns', 'reason']);
+const PORT_KEYS = new Set(['module', 'exports', 'wrapAnswers', 'reason']);
+const INLINE_KEYS = new Set(['export', 'reason']);
 const INJECTED_KEYS = new Set(['entry', 'arg', 'key', 'name', 'wrapAnswers']);
 const GLOBAL_PORTS = new Set(['fetch', 'WebSocket', 'EventSource', 'localStorage', 'sessionStorage', 'document', 'window', 'crypto', 'performance']);
+
+/**
+ * The naming rule for test code (docs/TESTING.md, a hard rule): a path,
+ * relative to the repository, is test code when its file name is Bun's test
+ * name (`name.test.ext`, `name_test.ext`, `name.spec.ext`, `name_spec.ext`)
+ * or it lies under a `test`, `tests`, `__tests__` or `__mocks__` directory,
+ * outside node_modules. The recorder takes a family entry call as the test's
+ * only when its caller is test code; a test helper named otherwise is found
+ * by the family command as an unclassified caller.
+ */
+export const TEST_PATH = /(?:[._](?:test|spec)\.[cm]?[jt]sx?$)|(?:(?:^|\/)(?:test|tests|__tests__|__mocks__)\/)/;
+export const isTestPath = (relativePath) => !relativePath.split('/').includes('node_modules') && TEST_PATH.test(relativePath);
 
 function fail(file, message) { throw new Error(`client-conformance port map ${path.basename(file)}: ${message}`); }
 function onlyKeys(file, where, object, allowed) {
@@ -43,7 +60,10 @@ function onlyKeys(file, where, object, allowed) {
  * Reads and validates a port map. Returns `{ file, digest, families, globals,
  * modules }` with module paths resolved (real paths); `modules` maps a module
  * path to the wrapping it needs: `{ entries: Map(export -> {family, spec}),
- * ports: Map(export -> { name, families }), families: [names] }`. An export
+ * ports: Map(export -> { name, families }), families: [names], all: null or
+ * { family, inline: Set } }`: with `all`, every function export of the
+ * module that is not listed and not inlined is an entry of that family with
+ * a plain spec (the recorder finds the exports when it loads the module). An export
  * may be an entry of one family and a port of others: a call from those
  * families is their port call and the entry family's input.
  */
@@ -63,7 +83,7 @@ export function loadPortMap(file, { root } = {}) {
   const rel = (absolute) => path.relative(root ?? base, absolute).split(path.sep).join('/');
   const modules = new Map();
   const moduleEntry = (absolute) => {
-    if (!modules.has(absolute)) modules.set(absolute, { entries: new Map(), ports: new Map(), families: [] });
+    if (!modules.has(absolute)) modules.set(absolute, { entries: new Map(), ports: new Map(), families: [], all: null });
     return modules.get(absolute);
   };
   const names = new Set();
@@ -85,7 +105,21 @@ export function loadPortMap(file, { root } = {}) {
       target.entries.set(entry.export, { family: family.name, spec: entry });
       return entry;
     });
-    if (entries.length === 0) fail(file, `${where} has no entries`);
+    if (family.allExports !== undefined && family.allExports !== true) fail(file, `${where}: allExports must be true when given`);
+    if (family.inline !== undefined && family.allExports !== true) fail(file, `${where}: inline needs allExports`);
+    const inline = new Set();
+    for (const [inlineIndex, item] of (family.inline ?? []).entries()) {
+      onlyKeys(file, `${where} inline ${inlineIndex}`, item, INLINE_KEYS);
+      if (typeof item.export !== 'string' || !item.export) fail(file, `${where} inline ${inlineIndex}: export must be a name`);
+      if (typeof item.reason !== 'string' || !item.reason.trim()) fail(file, `${where} inline ${item.export}: a reason is required`);
+      if (inline.has(item.export) || target.entries.has(item.export)) fail(file, `${where} inline ${item.export} is listed twice, or is also an entry`);
+      inline.add(item.export);
+    }
+    if (family.allExports === true) {
+      if (target.all) fail(file, `${where}: ${target.all.family} already takes every export of this module`);
+      target.all = { family: family.name, inline };
+    }
+    if (entries.length === 0 && family.allExports !== true) fail(file, `${where} has no entries`);
     if (family.state !== undefined && typeof family.state !== 'string') fail(file, `${where}: state must be an export name`);
     for (const [portIndex, port] of (family.ports ?? []).entries()) {
       onlyKeys(file, `${where} port ${portIndex}`, port, PORT_KEYS);
@@ -93,6 +127,7 @@ export function loadPortMap(file, { root } = {}) {
       if (portPath === modulePath) fail(file, `${where}: a family cannot be its own port`);
       if (!Array.isArray(port.exports) || port.exports.length === 0) fail(file, `${where} port ${portIndex}: exports must be a list`);
       if (port.wrapAnswers !== undefined && typeof port.wrapAnswers !== 'boolean') fail(file, `${where} port ${portIndex}: wrapAnswers must be true or false`);
+      if (port.reason !== undefined && (typeof port.reason !== 'string' || !port.reason.trim())) fail(file, `${where} port ${portIndex}: reason must be text`);
       const portTarget = moduleEntry(portPath);
       for (const name of port.exports) {
         if (typeof name !== 'string' || !name) fail(file, `${where} port ${portIndex}: export names must be strings`);
@@ -120,9 +155,24 @@ export function loadPortMap(file, { root } = {}) {
       const entry = target.entries.get(name);
       if (entry && port.families.includes(entry.family)) fail(file, `family ${entry.family}: ${name} is its own entry and its own port`);
     }
+    // Two families on one module: an allExports family would take the other's exports too.
+    if (target.all && target.families.length > 1) fail(file, `family ${target.all.family} takes every export of a module another family also names`);
   }
   const globals = map.globals ?? {};
   onlyKeys(file, 'globals', globals, GLOBAL_PORTS);
   for (const [name, options] of Object.entries(globals)) onlyKeys(file, `global ${name}`, options, new Set(['wrapAnswers']));
   return { file, digest: `sha256:${createHash('sha256').update(text).digest('hex')}`, families, globals, modules };
+}
+
+/**
+ * The entry an export of a mapped module is, or null: a listed entry, or with
+ * `allExports` any export that is not inlined (`{ family, spec, implicit }`).
+ * Whether it is a function is the caller's to check: only functions are wrapped.
+ */
+export function entryOf(target, exportName) {
+  if (!target) return null;
+  const listed = target.entries.get(exportName);
+  if (listed) return { ...listed, implicit: false };
+  if (target.all && exportName !== 'default' && !target.all.inline.has(exportName)) return { family: target.all.family, spec: { export: exportName }, implicit: true };
+  return null;
 }

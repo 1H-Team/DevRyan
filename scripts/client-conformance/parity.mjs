@@ -23,7 +23,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { bunTestWorkers } from '../test-runner-utils.mjs';
 import { testKeys } from './junit.mjs';
-import { createScratch, discoverTestFiles, EXIT, formatIncomplete, parseOptions, readRaws, REPOSITORY_ROOT, runBunTests } from './record.mjs';
+import { createScratch, discoverTestFiles, EXIT, formatIncomplete, parseOptions, readRaws, RECORDING_TEST_TIMEOUT_MS, REPOSITORY_ROOT, runBunTests } from './record.mjs';
 
 const RECORDER = path.join(REPOSITORY_ROOT, 'scripts/client-conformance/recorder.mjs');
 
@@ -117,20 +117,21 @@ export function judgeParity({ run = 1, baseline, recorded, raws, expectedFiles =
  * Runs parity `runs` times. Returns `{ runs: [...], differences, incomplete }`.
  * `plain` (`{ first, second }`, runBunTests results) supplies the two plain
  * runs of the same files made elsewhere (the self-test shares them between
- * planted differences that leave the test files alone).
+ * planted differences that leave the test files alone). `timeoutMs` is the
+ * per-test time limit of all three runs alike (bun's default without it).
  */
-export async function passSetParity({ targets, cwd, runs = 1, portMap, layers, recorder = RECORDER, root = REPOSITORY_ROOT, workDir, parallel = bunTestWorkers(), plain }) {
+export async function passSetParity({ targets, cwd, runs = 1, portMap, layers, recorder = RECORDER, root = REPOSITORY_ROOT, workDir, parallel = bunTestWorkers(), plain, timeoutMs }) {
   const results = [];
   const differences = [];
   const incomplete = [];
   const expectedFiles = discoverTestFiles(targets, { cwd, root });
   for (let run = 1; run <= runs; run += 1) {
-    const baselineRun = plain?.first ?? await runBunTests({ files: targets, cwd, root, junitFile: path.join(workDir, `baseline-${run}.xml`), parallel });
+    const baselineRun = plain?.first ?? await runBunTests({ files: targets, cwd, root, junitFile: path.join(workDir, `baseline-${run}.xml`), parallel, timeoutMs });
     // A second plain run: what differs between the two varies without the recorder.
-    const secondRun = plain?.second ?? await runBunTests({ files: targets, cwd, root, junitFile: path.join(workDir, `baseline-${run}b.xml`), parallel });
+    const secondRun = plain?.second ?? await runBunTests({ files: targets, cwd, root, junitFile: path.join(workDir, `baseline-${run}b.xml`), parallel, timeoutMs });
     const out = path.join(workDir, `raw-${run}`);
     const env = { DEVRYAN_CONFORMANCE_OUT: out, ...(portMap ? { DEVRYAN_CONFORMANCE_PORT_MAP: portMap } : {}), ...(layers ? { DEVRYAN_CONFORMANCE_LAYERS: layers } : {}) };
-    const recordedRun = await runBunTests({ files: targets, cwd, root, preload: [recorder], env, junitFile: path.join(workDir, `recorded-${run}.xml`), parallel });
+    const recordedRun = await runBunTests({ files: targets, cwd, root, preload: [recorder], env, junitFile: path.join(workDir, `recorded-${run}.xml`), parallel, timeoutMs });
     const raws = readRaws(out);
     const judged = judgeParity({ run, baseline: baselineRun.junit, recorded: recordedRun.junit, raws, expectedFiles, baselineOutput: baselineRun.output, secondBaselineOutput: secondRun.output, recordedOutput: recordedRun.output });
     // The two plain runs must agree on outcomes too, or the comparison with the recorded run proves nothing.
@@ -153,16 +154,19 @@ export async function passSetParity({ targets, cwd, runs = 1, portMap, layers, r
 export const parityExit = (result) => (result.incomplete.length ? EXIT.inconclusive : result.differences.length ? EXIT.fail : EXIT.pass);
 
 async function main(argv) {
-  const parsed = parseOptions(argv, { flags: ['keep-artifacts'], values: ['runs', 'cwd', 'port-map', 'layers', 'json'] });
-  if (parsed.error) { console.error(`${parsed.error}\nusage: parity.mjs [--runs=N] [--cwd=<dir>] [--port-map=<file>] [--layers=a,b] [--json=<file>] <target>...`); return EXIT.usage; }
+  const parsed = parseOptions(argv, { flags: ['keep-artifacts'], values: ['runs', 'cwd', 'port-map', 'layers', 'json', 'timeout-ms'] });
+  if (parsed.error) { console.error(`${parsed.error}\nusage: parity.mjs [--runs=N] [--cwd=<dir>] [--port-map=<file>] [--layers=a,b] [--json=<file>] [--timeout-ms=N] <target>...`); return EXIT.usage; }
   const { options, positionals: targets } = parsed;
   const runs = Number(options.runs ?? 1);
   if (!Number.isInteger(runs) || runs < 1) { console.error('--runs must be a positive integer'); return EXIT.usage; }
+  // The product recording's per-test time limit by default, for every run alike, so parity judges what it records.
+  const timeoutMs = Number(options['timeout-ms'] ?? RECORDING_TEST_TIMEOUT_MS);
+  if (!Number.isInteger(timeoutMs) || timeoutMs < 1) { console.error('--timeout-ms must be a positive integer'); return EXIT.usage; }
   const cwd = path.resolve(REPOSITORY_ROOT, options.cwd ?? 'packages/ui');
   const scratch = createScratch('client-conformance-parity');
   let status = 'failed';
   try {
-    const result = await passSetParity({ targets: targets.length ? targets : ['./src/sync'], cwd, runs, portMap: options['port-map'] && path.resolve(options['port-map']), layers: options.layers, workDir: scratch.dir });
+    const result = await passSetParity({ targets: targets.length ? targets : ['./src/sync'], cwd, runs, portMap: options['port-map'] && path.resolve(options['port-map']), layers: options.layers, workDir: scratch.dir, timeoutMs });
     for (const run of result.runs) {
       console.log(`run ${run.run}: ${run.files} files, ${run.tests} tests; passed ${run.baselinePassed} plain, ${run.recordedPassed} recorded; assertions ${run.assertions} plain, ${run.recordedAssertions} recorded; ${run.outputLines} output lines, ${run.outputMasked} left out as varying between plain runs (${run.varying.length} shapes); ${run.differences.length} differences, ${run.incomplete.length} inconclusive`);
       for (const shape of run.varying) console.log(`  varies without the recorder: ${shape}`);

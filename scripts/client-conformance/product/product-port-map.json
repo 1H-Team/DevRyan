@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "note": "Port map v1 of the product engine (plan file 29 §2.3, package C0c): the pure families of §1.2 that the first Rust packages (C2, C3) port, and the event reducer. Every family takes every function export of its module as an entry (allExports): export lists are read from the modules when they load, never written here. Everything a family imports and this map does not name is inlined: part of the unit, implemented inside the same Rust module. Ports sit only where another family's state is read or written (the abort guard and the committed revert resends, both module state owned by time-driven or action families) and where the caller hands the reducer functions (its callbacks). No port is waived as unordered: every effect order is compared.",
+  "families": [
+    {
+      "name": "reducer",
+      "module": "../../../packages/ui/src/sync/event-reducer.ts",
+      "note": "The directory and global event reducer (design §1.2, §1.3; C3). applyDirectoryEvent mutates its draft (arg 0): the change set is recorded. Inlined: binary search, sessionDiffStats, nativeCursorText, session-cache, sanitize, part-delta, session-user-activity, revert-transactions' state queries, toolStatus, sessionTitles, session-recency, display-session (zod), message-order, and debug (its flag is a module-cached platform read, see the C0c report). The module-level WeakMap sessionSummaryMemo is an optimisation keyed by array identity: not state the census asks for, but it can return a cached Session object, so identity in results depends on it within a file (C0c report).",
+      "allExports": true,
+      "entries": [
+        { "export": "applyDirectoryEvent", "draft": 0, "reason": "mutates the directory draft in place; the change set is the copy-on-write contract (sync/DOCUMENTATION.md)" }
+      ],
+      "ports": [
+        { "module": "../../../packages/ui/src/sync/abort-retry-guard.ts", "exports": ["clearAbortGuard", "filterSessionStatusThroughAbortGuard"],
+          "reason": "the abort guard is module state with a TTL clock, owned by the time-driven abort-guard family (C0e) and written by session actions; the reducer only queries and clears it, so its answers are recorded inputs (design §2.3 example, §4.4 gap 'abort guard')" },
+        { "module": "../../../packages/ui/src/sync/revert-transactions.ts", "exports": ["isCommittedRevertResendInFlight"],
+          "reason": "reads the module Set of committed revert resends, which session actions write and no export snapshots; its answer is a recorded input of the reducer" }
+      ],
+      "injected": [
+        { "entry": "applyDirectoryEvent", "arg": 2, "key": "onRefresh", "name": "onRefresh" },
+        { "entry": "applyDirectoryEvent", "arg": 2, "key": "onLoadLsp", "name": "onLoadLsp" },
+        { "entry": "applyDirectoryEvent", "arg": 2, "key": "onSetSessionTodo", "name": "onSetSessionTodo" },
+        { "entry": "applyDirectoryEvent", "arg": 2, "key": "resolveSessionIDForMessage", "name": "resolveSessionIDForMessage" }
+      ]
+    },
+    { "name": "part-delta", "module": "../../../packages/ui/src/sync/part-delta.ts", "allExports": true,
+      "note": "Delta dedupe, repeat collapse and diagnostics stripping over UTF-16 text (C2). Inlined: debug." },
+    { "name": "optimistic", "module": "../../../packages/ui/src/sync/optimistic.ts", "allExports": true,
+      "entries": [
+        { "export": "applyOptimisticAdd", "draft": 0, "reason": "mutates the draft store" },
+        { "export": "applyOptimisticRemove", "draft": 0, "reason": "mutates the draft store" }
+      ],
+      "note": "Optimistic message pages (C2). Inlined: message-order." },
+    { "name": "message-order", "module": "../../../packages/ui/src/sync/message-order.ts", "allExports": true, "note": "Chronological message order (C2)." },
+    { "name": "materialization", "module": "../../../packages/ui/src/sync/materialization.ts", "allExports": true,
+      "note": "Session snapshot materialization (C2). Inlined: toolStatus, nativeCursorText, revert-transactions, session-working, tool-output, message-order." },
+    { "name": "message-fetch", "module": "../../../packages/ui/src/sync/message-fetch.ts", "allExports": true,
+      "note": "Message page limits and record normalization (C2). Inlined: part-delta, sdk-result, nativeCursorText, the default limit." },
+    { "name": "tool-output", "module": "../../../packages/ui/src/sync/tool-output.ts", "allExports": true, "note": "Omitted tool output (C2)." },
+    { "name": "sanitize", "module": "../../../packages/ui/src/sync/sanitize.ts", "allExports": true, "note": "Diff snapshot stripping (C2)." },
+    { "name": "session-working", "module": "../../../packages/ui/src/sync/session-working.ts", "allExports": true, "note": "Assistant turn and working-state predicates (C2). Inlined: toolStatus." },
+    { "name": "live-aggregate", "module": "../../../packages/ui/src/sync/live-aggregate.ts", "allExports": true, "note": "Aggregation over live directory states (C2). Inlined: sessionDiffStats." },
+    { "name": "tool-status", "module": "../../../packages/ui/src/lib/toolStatus.ts", "allExports": true, "note": "Tool status normalization (C2)." },
+    { "name": "session-diff-stats", "module": "../../../packages/ui/src/lib/sessionDiffStats.ts", "allExports": true, "note": "Diff count parsing and summaries (C2)." },
+    { "name": "native-cursor-text", "module": "../../../packages/ui/src/lib/messages/nativeCursorText.ts", "allExports": true, "note": "Native cursor text provenance (C2)." },
+    { "name": "revert-transactions", "module": "../../../packages/ui/src/sync/revert-transactions.ts", "allExports": true,
+      "note": "Revert visibility over state (C3). Inlined: message-order.",
+      "inline": [
+        { "export": "beginCommittedRevertResend", "reason": "writes the module Set of committed resends, which no export snapshots: a store, recorded with the store families (C0e) once its state is exposed" },
+        { "export": "endCommittedRevertResend", "reason": "writes the module Set of committed resends (see beginCommittedRevertResend)" },
+        { "export": "clearCommittedRevertResendsForSessions", "reason": "writes the module Set of committed resends (see beginCommittedRevertResend)" },
+        { "export": "isCommittedRevertResendInFlight", "reason": "reads the module Set of committed resends; the reducer reaches it as a port, so its answers are recorded there" }
+      ] }
+  ]
+}

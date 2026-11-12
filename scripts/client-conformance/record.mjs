@@ -23,6 +23,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { loadCensus } from './census.mjs';
 import { CODEC_VERSION } from './codec.mjs';
 import { compareContainers } from './compare.mjs';
 import { createContainerWriter, pathStem } from './container.mjs';
@@ -36,7 +37,7 @@ export const TOY_DIR = path.join(HARNESS_DIR, 'toy');
 export const TOY_PORT_MAP = path.join(TOY_DIR, 'port-map.json');
 export const TOY_EXPECTED = path.join(TOY_DIR, 'expected');
 /** The toy corpus: every case of it must be recorded (none unrecordable). */
-export const TOY_TESTS = Object.freeze(['toy-reducer.toy.mjs', 'toy-timers.toy.mjs', 'toy-transport.toy.mjs', 'toy-flow.toy.mjs', 'toy-gate.toy.mjs', 'toy-clock.toy.mjs', 'toy-hooks.toy.mjs']);
+export const TOY_TESTS = Object.freeze(['toy-reducer.toy.mjs', 'toy-timers.toy.mjs', 'toy-transport.toy.mjs', 'toy-flow.toy.mjs', 'toy-gate.toy.mjs', 'toy-clock.toy.mjs', 'toy-hooks.toy.mjs', 'toy-host.toy.mjs', 'toy-callers.toy.mjs', 'toy-fixtures.toy.mjs']);
 /**
  * Toy fixtures that prove the recorder refuses what it cannot record: each
  * listed case must come out unrecordable with exactly these flags (and no
@@ -59,6 +60,18 @@ export const TOY_UNRECORDABLE = Object.freeze({
     ['engine code deep inside returned data runs outside any chain', 'outside-chain'],
     ['a member of a frozen object cannot be wrapped', 'unwrappable'],
     ['a family\'s port that the test calls itself is flagged, since the stack cannot tell it from engine code', 'outside-chain'],
+    ['an iterator the engine is handed is flagged, since what it yields is not part of the value', 'iterator'],
+    ['a port the test calls flags only the families it is a port of', 'outside-chain'],
+    // A port of a family with no line, used by test code: that family gets a line, flagged (a closure of it could look so).
+    ['engine code deep inside returned data runs outside any chain', 'port-no-line'],
+    ['a family\'s port that the test calls itself is flagged, since the stack cannot tell it from engine code', 'port-no-line'],
+    ['a port the test calls flags only the families it is a port of', 'port-no-line'],
+    ['a closure kept from an earlier test calls its port in its own frame where its family has no line', 'outside-chain'],
+    ['a closure kept from an earlier test whose frame a tail call removed calls a port where its families have no line', 'port-no-line'],
+    ['a closure kept from an earlier test reads the clock where no family has a line', 'outside-chain'],
+    ['an entry the test hands to a promise has no frame, so its case is flagged', 'no-frame'],
+    ['engine code a passed-through call puts on a timer runs outside any chain', 'outside-chain'],
+    ['a test callback an entry runs, which no injected port declares, is flagged with its family\'s call inside', 'test-function'],
   ]),
   'toy-concurrent.toy.mjs': Object.freeze([
     ['concurrent test 1 of the file (cannot be named)', 'concurrent'],
@@ -76,13 +89,18 @@ export const FLAG_REASONS = Object.freeze({
   accessor: 'a value has an own accessor; it is never called, so its value is not recorded',
   proxy: 'a value is a Proxy the recorder did not make; its traps would run',
   unencodable: 'a value could not be encoded',
+  iterator: 'a value is an iterator (a Map or Set iterator, a generator) the engine was handed or gave back unwrapped: what it yields is not part of the value, so it is not recorded',
   concurrent: 'the test overlapped another test (test.concurrent): effects cannot be told apart',
   released: 'an engine continuation was made runnable by test code, by port code (a stub), or by an input of another family or case, which is no input of this family: no step caused it',
   'release-expired': 'an engine chain woke, still in an older step, after a release window of its family had expired: it may be a continuation more than 64 silent promise generations from its release, which would be misplaced',
   'outside-chain': 'engine code ran with no engine chain: the test reached it through a value the recorder did not wrap (a function inside returned data, one the engine passed to a test callback), it ran at module load, or engine code called a family\'s port outside a chain; what it did is no step of any input',
   unwrappable: 'the test read engine code the recorder cannot wrap (a non-configurable, non-writable member, as on a frozen object): running it would not be recorded as an input',
   'global-defined': 'the test defined this global itself (a data property the recorder did not wrap, or an accessor), so what the engine did through it is not recorded',
+  'no-frame': 'an entry of this family was called with no frame with a file at all (a bound entry or the entry itself run by a promise job or a timer, a test body that only returns the call): it may be the test\'s call, which would be lost, and the census names no engine site that calls it so',
+  'port-no-line': 'test code (by the stack) called a port of this family while the family had no step in the case: the test\'s own call of the port, or a closure of the family whose frame a proper tail call removed; the two cannot be told apart',
 });
+/** Flags that mean engine code ran where no step holds it: a case flagged so must be written for some family, never dropped. */
+export const EFFECT_FLAGS = Object.freeze(['outside-chain', 'unwrappable', 'released', 'release-expired', 'no-frame', 'port-no-line']);
 /** The reason of one flag; a flag may carry a detail after a colon (`global-defined:fetch`). */
 export const flagReason = (flag) => {
   const at = flag.indexOf(':');
@@ -136,10 +154,22 @@ export function discoverTestFiles(targets, { cwd, root = REPOSITORY_ROOT }) {
   return [...new Set(found.map((file) => path.relative(root, file).split(path.sep).join('/')))];
 }
 
-/** Runs `bun test` inside the test isolation guard; resolves with { status, output, junit }. */
-export function runBunTests({ files, cwd, preload = [], env = {}, junitFile, parallel, root = REPOSITORY_ROOT }) {
+/**
+ * The per-test time limit (ms) of the product recording's runs, plain and
+ * recorded alike, so the runs it compares have the same limit: the recorder
+ * roughly doubles a mounted test's time (use-sync.mounted.test.tsx), and
+ * bun's default of 5 s then fails it under load though it passes plain.
+ */
+export const RECORDING_TEST_TIMEOUT_MS = 30000;
+
+/**
+ * Runs `bun test` inside the test isolation guard; resolves with { status,
+ * output, junit }. `timeoutMs` sets bun's per-test time limit (`--timeout`);
+ * without it bun's default holds.
+ */
+export function runBunTests({ files, cwd, preload = [], env = {}, junitFile, parallel, root = REPOSITORY_ROOT, timeoutMs }) {
   mkdirSync(path.dirname(junitFile), { recursive: true });
-  const args = [ISOLATION_GUARD, 'bun', 'test', `--parallel=${parallel ?? Math.max(1, Math.min(files.length, 4))}`, '--preload', ISOLATION_PRELOAD];
+  const args = [ISOLATION_GUARD, 'bun', 'test', `--parallel=${parallel ?? Math.max(1, Math.min(files.length, 4))}`, ...(timeoutMs ? [`--timeout=${timeoutMs}`] : []), '--preload', ISOLATION_PRELOAD];
   for (const file of preload) args.push('--preload', file);
   args.push('--reporter=junit', `--reporter-outfile=${junitFile}`, ...files.map((file) => (file.startsWith('/') || file.startsWith('.') ? file : `./${file}`)));
   return new Promise((resolve, reject) => {
@@ -212,21 +242,27 @@ export function buildContainers({ raws, junit, root = REPOSITORY_ROOT, expectedF
       if (test && recorded.flags.includes('concurrent')) {
         test = { key: `${raw.file} #concurrent:${index}`, line: null, describe: [], name: `concurrent test ${index} of the file (cannot be named)`, occurrence: 1, status: test.status };
       }
+      const lost = recorded.flags.filter((flag) => EFFECT_FLAGS.includes(flag.split(':')[0]));
+      if (lost.length && Object.keys(recorded.families).length === 0) {
+        incomplete.push({ check: 'flagged-without-line', file: raw.file, case: test ? test.key : `${raw.file} #hooks:${recorded.hooks}`, flags: lost, detail: `${test ? test.key : `hooks after ${recorded.hooks} tests`} is flagged ${lost.join(', ')} but no family has a line in it: what the engine did is in no case` });
+      }
       for (const [family, data] of Object.entries(recorded.families)) {
         if (!data) { incomplete.push({ check: 'recorder-error', file: raw.file, detail: `a case of ${family} could not be written` }); continue; }
         if (!writers.has(family)) writers.set(family, createContainerWriter({ codec: CODEC_VERSION, recording: raw.recording ?? null, portMap: raw.portMap, modulesDigest: raw.modules?.[family] ?? null, testFile: raw.file, testFileDigest, family }, { table }));
         const base = test ? `${test.key}` : `${raw.file} #hooks:${recorded.hooks}`;
         const id = `${base}/${family}`;
         const status = test ? test.status : 'ran';
-        const outcome = caseOutcome(recorded.flags, status);
+        // A case's flags, and those of this family alone (a port of it used outside a chain).
+        const flags = [...new Set([...recorded.flags, ...(recorded.familyFlags?.[family] ?? [])])].sort();
+        const outcome = caseOutcome(flags, status);
         outcomes[outcome] += 1;
         const name = test ? test.name : `hooks after ${recorded.hooks} tests`;
         // No waiver exists yet: every unrecordable case makes the recording inconclusive.
-        if (outcome === 'unrecordable') incomplete.push({ check: 'unrecordable', file: raw.file, case: id, name, flags: recorded.flags, detail: `${id} is unrecordable: ${reasonOf(recorded.flags, status)}` });
+        if (outcome === 'unrecordable') incomplete.push({ check: 'unrecordable', file: raw.file, case: id, name, flags, detail: `${id} is unrecordable: ${reasonOf(flags, status)}` });
         writers.get(family).addCase({
           id, digest: createHash('sha256').update(id).digest('hex').slice(0, 8), kind: recorded.kind, file: raw.file,
           line: test ? test.line : null, describe: test ? test.describe : [], name,
-          ordinal: test ? test.occurrence : 1, family, status, outcome, flags: recorded.flags, reason: reasonOf(recorded.flags, status),
+          ordinal: test ? test.occurrence : 1, family, status, outcome, flags, reason: reasonOf(flags, status),
           seed: recorded.seed, entry: { now: recorded.entryNow, state: data.entryState }, steps: data.steps, end: { now: recorded.endNow, state: data.endState }, context: data.context,
         });
       }
@@ -296,14 +332,15 @@ export function plainDifferences(plain, recorded) {
  * `plain` first runs the files without the recorder and makes every test whose
  * outcome differs a problem (plainDifferences); product recordings use it.
  */
-export async function recordOnce({ files, cwd = REPOSITORY_ROOT, portMap, families, workDir, recorder = path.join(HARNESS_DIR, 'recorder.mjs'), root = REPOSITORY_ROOT, layers, parallel, env = {}, plain = false }) {
+export async function recordOnce({ files, cwd = REPOSITORY_ROOT, portMap, families, workDir, recorder = path.join(HARNESS_DIR, 'recorder.mjs'), root = REPOSITORY_ROOT, layers, parallel, env = {}, plain = false, noFrame = [], timeoutMs }) {
   const out = path.join(workDir, 'raw');
   mkdirSync(out, { recursive: true });
   const junitFile = path.join(workDir, 'junit.xml');
-  const recorderEnv = { DEVRYAN_CONFORMANCE_OUT: out, ...(portMap ? { DEVRYAN_CONFORMANCE_PORT_MAP: portMap } : {}), ...(layers ? { DEVRYAN_CONFORMANCE_LAYERS: layers } : {}), ...env };
+  const recorderEnv = { DEVRYAN_CONFORMANCE_OUT: out, ...(portMap ? { DEVRYAN_CONFORMANCE_PORT_MAP: portMap } : {}), ...(layers ? { DEVRYAN_CONFORMANCE_LAYERS: layers } : {}), ...(noFrame.length ? { DEVRYAN_CONFORMANCE_NO_FRAME: noFrame.join(',') } : {}), ...env };
   const expectedFiles = discoverTestFiles(files, { cwd, root });
-  const baseline = plain ? await runBunTests({ files, cwd, junitFile: path.join(workDir, 'plain-junit.xml'), parallel, root }) : null;
-  const run = await runBunTests({ files, cwd, preload: [recorder], env: recorderEnv, junitFile, parallel, root });
+  // The plain run and the recorded one have the same per-test time limit (`timeoutMs`, bun's default without it).
+  const baseline = plain ? await runBunTests({ files, cwd, junitFile: path.join(workDir, 'plain-junit.xml'), parallel, root, timeoutMs }) : null;
+  const run = await runBunTests({ files, cwd, preload: [recorder], env: recorderEnv, junitFile, parallel, root, timeoutMs });
   const raws = readRaws(out);
   const built = buildContainers({ raws, junit: run.junit, root, expectedFiles, families: families ?? requiredFamilies(portMap, null, root) });
   if (baseline) {
@@ -333,10 +370,38 @@ export function judgeToyProblems(incomplete, toys) {
     const late = entry.check === 'unplaced' && unplaced.find((item) => entry.file.endsWith(`/${item.toy}`) && entry.count === item.count);
     if (match) { match.seen = true; expected.push(entry); } else if (late) { late.seen = true; expected.push(entry); } else remaining.push(entry);
   }
-  for (const item of wanted) if (!item.seen) remaining.push({ check: 'unrecordable-expected', file: item.toy, detail: `${item.name} must be unrecordable, flagged ${item.flag} alone` });
+  for (const item of wanted) if (!item.seen) remaining.push({ check: 'unrecordable-expected', file: item.toy, case: item.name, detail: `${item.name} must be unrecordable, flagged ${item.flag} alone` });
   for (const item of unplaced) if (!item.seen) remaining.push({ check: 'unplaced-expected', file: item.toy, detail: `the recording of ${item.toy} must count exactly ${item.count} unplaced engine effects or inputs` });
   return { incomplete: remaining, expected };
 }
+
+/**
+ * What each of `files` (test files or directories, relative to `cwd`) does
+ * with the families of `portMap`: one run of the files under the recorder's
+ * `discover` layer alone, which records nothing and only notes the family
+ * modules a test file loads, by any path (an import, a re-export, a dynamic
+ * import), and counts the calls of their function exports that test code
+ * makes (the caller rule) or that have no frame, and those any other caller
+ * file makes. Resolves `{ files: [{ file, loaded, testCalls, noFrame,
+ * callers }], missing, status }` (repository-relative test files; `callers`:
+ * caller file -> `module#export` -> calls); a test file with no report (bun
+ * never started it) is `missing`.
+ */
+export async function discoverLoading({ files, cwd, root = REPOSITORY_ROOT, portMap, workDir, parallel, recorder = path.join(HARNESS_DIR, 'recorder.mjs'), timeoutMs }) {
+  const out = path.join(workDir, 'loaded');
+  mkdirSync(out, { recursive: true });
+  const expected = discoverTestFiles(files, { cwd, root });
+  const run = await runBunTests({ files, cwd, preload: [recorder], env: { DEVRYAN_CONFORMANCE_OUT: out, DEVRYAN_CONFORMANCE_PORT_MAP: portMap, DEVRYAN_CONFORMANCE_LAYERS: 'discover' }, junitFile: path.join(workDir, 'discover-junit.xml'), parallel, root, timeoutMs });
+  const reports = new Map();
+  for (const name of readdirSync(out).filter((entry) => entry.endsWith('.loaded.json'))) {
+    const report = JSON.parse(readFileSync(path.join(out, name), 'utf8'));
+    reports.set(report.file, report);
+  }
+  return { files: expected.filter((file) => reports.has(file)).map((file) => ({ ...reports.get(file), file })), missing: expected.filter((file) => !reports.has(file)), status: run.status };
+}
+
+/** The `family#export` list a census file names as called by engine code with no frame (the recorder's DEVRYAN_CONFORMANCE_NO_FRAME). */
+export const noFrameAllowed = (censusFile) => loadCensus(censusFile).noFrame.map((item) => `${item.family}#${item.export}`);
 
 /**
  * Records the toy corpus and the unrecordable fixtures (or the `toys` named).
@@ -348,7 +413,7 @@ export async function recordToys({ workDir, harnessDir = HARNESS_DIR, root = REP
   const toyDir = path.join(harnessDir, 'toy');
   const portMap = path.join(toyDir, 'port-map.json');
   const recording = await recordOnce({
-    files: toys.map((name) => path.relative(root, path.join(toyDir, name))), cwd: root, portMap, workDir,
+    files: toys.map((name) => path.relative(root, path.join(toyDir, name))), cwd: root, portMap, workDir, noFrame: noFrameAllowed(path.join(toyDir, 'census.json')),
     families: toys.length === TOY_FILES.length ? undefined : [], recorder: path.join(harnessDir, 'recorder.mjs'), root, parallel: toys.length,
   });
   const judged = judgeToyProblems(recording.incomplete, toys);

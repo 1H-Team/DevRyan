@@ -13,6 +13,7 @@ import { judgeParity } from './parity.mjs';
 import { buildContainers, judgeToyProblems, parseOptions, plainDifferences } from './record.mjs';
 import { checkStability, compareRecordings, stabilityExit } from './stability.mjs';
 import { checkVectors } from './vectors.mjs';
+import { applyExclusions, checkChangeSets, eventTypesOf, judgeUnrecordable, judgeUnstable, mergeExports, runCensus, staleNoFrame, unclassifiedCallers } from './census.mjs';
 
 const slot = (writer, value) => writer.refTree(encode(value));
 /** A container text with the cases `make(writer)` returns. */
@@ -30,6 +31,27 @@ const twoCases = (options = {}) => (writer) => [baseCase(writer, 'one', options.
 const hasCheck = (differences, check, where = () => true) => differences.some((difference) => difference.check === check && where(difference));
 
 const junitTest = (file, line, name, status = 'passed', assertions = 1) => ({ file, line, describe: [], name, status, assertions });
+/** A container of one recorded case whose step mutates its draft (argument 0): `changes` is the change set it carries. */
+function draftContainer(changes) {
+  const draft = { a: { x: 1 }, b: { y: 2 } };
+  const context = createCodecContext();
+  const before = snapshot([draft], context);
+  draft.b = { y: 3 };
+  const after = snapshot([draft], context);
+  const [beforeTree, afterTree, changesTree] = emitSlots([before, after, snapshot(changes, context)]);
+  return container((writer) => {
+    const record = baseCase(writer, 'one');
+    record.steps = [{ n: 1, input: { kind: 'call', entry: 'f', args: writer.refTree(beforeTree), now: 0 }, effects: [], after: writer.refTree(afterTree), changes: writer.refTree(changesTree) }];
+    return [record];
+  });
+}
+const draftMap = { modules: new Map([['/m', { entries: new Map([['f', { family: 'toy', spec: { draft: 0 } }]]), ports: new Map(), families: ['toy'], all: null }]]) };
+/** A census of family `toy` (module `m`: `f`, `g` and the data export `VALUE`) over the twoCases container, which calls `f`. */
+function censusOf({ waivers = [], families = null, complete = true } = {}) {
+  const portMap = { families: [{ name: 'toy', module: '/m', relModule: 'm' }], modules: new Map([['/m', { entries: new Map(), ports: new Map(), families: ['toy'], all: { family: 'toy', inline: new Set() } }]]) };
+  const census = { events: [], exports: waivers, eventTypes: [], ports: [], families: [], unrecordable: [], excludedFiles: [], unstable: [], noFrame: [] };
+  return runCensus({ portMap, census, containers: [{ name: 'c', text: container(twoCases()) }], moduleExports: { m: { VALUE: 'data', f: 'function', g: 'function' } }, readSource: () => '', families, complete });
+}
 const rawOf = (file, cases, { errors = [], families = ['toy'], flags = [], unplaced = 0, modules = null } = {}) => ({
   version: 3, recording: 2, file, bun: 'x', layers: [], portMap: null, modules, epoch: 0, errors, unplaced,
   values: { [hashText('1')]: '1' },
@@ -151,6 +173,12 @@ export const TOOL_CHECKS = Object.freeze([
     const built = buildContainers({ raws: [rawOf('a.test.ts', ['test'], { flags: ['released'] })], junit: [junitTest('a.test.ts', 1, 't')] });
     return hasCheck(built.incomplete, 'unrecordable', (entry) => entry.name === 't' && entry.flags.join() === 'released') && built.outcomes.unrecordable === 1;
   }],
+  ['record-flagged-without-line', () => {
+    // A case flagged for engine code no step holds, with no family's line, is a problem, never dropped; a flag that loses nothing is not.
+    const lost = buildContainers({ raws: [rawOf('a.test.ts', ['test', 'test'], { families: [] })].map((raw) => ({ ...raw, cases: raw.cases.map((entry, index) => ({ ...entry, flags: index === 0 ? ['outside-chain'] : ['global-defined:fetch'] })) })), junit: [junitTest('a.test.ts', 1, 't'), junitTest('a.test.ts', 2, 'u')] });
+    const flagged = lost.incomplete.filter((entry) => entry.check === 'flagged-without-line');
+    return flagged.length === 1 && flagged[0].case === 'a.test.ts:1 t #1';
+  }],
   ['record-unplaced', () => hasCheck(buildContainers({ raws: [rawOf('a.test.ts', ['test'], { unplaced: 2 })], junit: [junitTest('a.test.ts', 1, 't')] }).incomplete, 'unplaced')],
   // A test that fails without the recorder and passes with it (an unhandled rejection the recorder observed) is no reference.
   ['record-plain-differs', () => hasCheck(plainDifferences([junitTest('a.test.ts', 1, 't', 'failed')], [junitTest('a.test.ts', 1, 't')]), 'plain-differs')
@@ -181,6 +209,147 @@ export const TOOL_CHECKS = Object.freeze([
     // A decoder that loses an object's last member: generation still matches, the round trip must not.
     const lossy = { ...codec, decode: (tree, context) => { const value = codec.decode(tree, context); if (value && typeof value === 'object' && !Array.isArray(value) && Object.getPrototypeOf(value) === Object.prototype) { const keys = Object.keys(value); if (keys.length > 1) delete value[keys.at(-1)]; } return value; } };
     return checkVectors({ codec: lossy }).some((failure) => failure.check === 'round-trip');
+  }],
+  ['container-slices', () => {
+    // A large value is stored as slices and resolves to the whole tree again; a small one stays whole.
+    const big = { a: 'x'.repeat(3000), b: [{ c: 'y'.repeat(2000) }, { c: 'y'.repeat(2000) }], small: { d: 1 } };
+    const writer = createContainerWriter({ codec: codec.CODEC_VERSION, testFile: 'a.toy.mjs', family: 'toy' });
+    const record = baseCase(writer, 'one', { input: big });
+    writer.addCase(record);
+    const text = writer.toText();
+    const read = readContainer(text);
+    const resolved = read.resolve(read.cases[0].steps[0].input.args);
+    // The two equal subtrees are one slice: the string, its object and the slot's own tree, at most.
+    return text.includes('"$dr":"slice"') && stringifyTree(resolved) === stringifyTree(encode([big])) && read.values.size <= 6 && !stringifyTree(resolved).includes('"slice"');
+  }],
+  ['container-slice-escape-many', () => {
+    // An escaped object (its own `$dr` member) large only through many small members: the object stays whole
+    // inside its escape node, so it resolves to itself, never to a slice node in place of its members.
+    const value = { $dr: 'mine' };
+    for (let index = 0; index < 300; index += 1) value[`m${index}`] = index;
+    const writer = createContainerWriter({ codec: codec.CODEC_VERSION, testFile: 'a.toy.mjs', family: 'toy' });
+    writer.addCase(baseCase(writer, 'one', { input: value }));
+    const read = readContainer(writer.toText());
+    return stringifyTree(read.resolve(read.cases[0].steps[0].input.args)) === stringifyTree(encode([value]));
+  }],
+  ['container-proto-member', () => {
+    // An own member named __proto__ survives slicing and resolving, small or large, object or string.
+    const value = JSON.parse(`{"__proto__":{"p":"${'x'.repeat(1500)}"},"small":{"__proto__":5},"text":{"__proto__":"${'y'.repeat(1500)}"}}`);
+    const writer = createContainerWriter({ codec: codec.CODEC_VERSION, testFile: 'a.toy.mjs', family: 'toy' });
+    writer.addCase(baseCase(writer, 'one', { input: value }));
+    const text = writer.toText();
+    const read = readContainer(text);
+    const resolved = read.resolve(read.cases[0].steps[0].input.args);
+    return text.includes('"$dr":"slice"') && stringifyTree(resolved) === stringifyTree(encode([value])) && Object.hasOwn(resolved[0], '__proto__') && Object.getPrototypeOf(resolved[0]) === Object.prototype;
+  }],
+  ['container-resolve-independent', () => {
+    // Two places that hold one slice, and two reads of one place, give trees of their own: changing one changes no other.
+    const big = { text: 'z'.repeat(700), more: 'y'.repeat(700) };
+    const writer = createContainerWriter({ codec: codec.CODEC_VERSION, testFile: 'a.toy.mjs', family: 'toy' });
+    writer.addCase(baseCase(writer, 'one', { entry: { held: big }, input: big }));
+    const read = readContainer(writer.toText());
+    const [record] = read.cases;
+    const first = read.resolve(record.steps[0].input.args);
+    const again = read.resolve(record.steps[0].input.args);
+    const state = read.resolve(record.entry.state);
+    first[0].text = 'changed';
+    return again[0].text === big.text && state.held.text === big.text && first[0] !== again[0];
+  }],
+  ['container-slice-escape', () => {
+    // A user object whose own members look like a slice is data, inside an escape: never expanded.
+    const value = { $dr: 'slice', hash: '0123456789abcdef', pad: 'p'.repeat(1500) };
+    const writer = createContainerWriter({ codec: codec.CODEC_VERSION, testFile: 'a.toy.mjs', family: 'toy' });
+    writer.addCase(baseCase(writer, 'one', { input: value }));
+    const read = readContainer(writer.toText());
+    return stringifyTree(read.resolve(read.cases[0].steps[0].input.args)) === stringifyTree(encode([value]));
+  }],
+  ['census-unrecordable-partial', () => {
+    // A case is waived only when every one of its flags is; a waiver that matches nothing is stale.
+    const census = { unrecordable: [{ file: 'a.test.ts', tests: ['one', 'two'], flag: 'outside-chain', reason: 'r' }, { file: 'b.test.ts', test: 'two', flag: 'accessor', reason: 'r' }] };
+    const entries = [
+      { check: 'unrecordable', file: 'a.test.ts', case: 'a.test.ts:1 one #1/reducer', name: 'one', flags: ['outside-chain'] },
+      { check: 'unrecordable', file: 'a.test.ts', case: 'a.test.ts:2 two #1/reducer', name: 'two', flags: ['accessor', 'outside-chain'] },
+    ];
+    const judged = judgeUnrecordable(entries, census);
+    return judged.waived.length === 1 && judged.remaining.length === 1 && judged.remaining[0].case.includes('two') && judged.stale.length === 2 && judged.stale.every((entry) => entry.check === 'waiver-stale');
+  }],
+  ['census-unrecordable-test', () => {
+    // A waiver names its test and its exact flag: another test of the file, or another flag of the same name, is not covered;
+    // a named test that matched no case is stale, and with chosen test files nothing is.
+    const census = { unrecordable: [{ file: 'a.test.ts', tests: ['one', 'gone'], flag: 'global-defined', family: 'reducer', reason: 'r' }] };
+    const entries = [
+      { check: 'unrecordable', file: 'a.test.ts', case: 'a.test.ts:1 one #1/reducer', name: 'one', flags: ['global-defined'] },
+      { check: 'unrecordable', file: 'a.test.ts', case: 'a.test.ts:2 two #1/reducer', name: 'two', flags: ['global-defined'] },
+      { check: 'unrecordable', file: 'a.test.ts', case: 'a.test.ts:1 one #1/reducer', name: 'one', flags: ['global-defined:fetch'] },
+      { check: 'unrecordable', file: 'a.test.ts', case: 'a.test.ts:1 one #1/optimistic', name: 'one', flags: ['global-defined'] },
+    ];
+    const judged = judgeUnrecordable(entries, census);
+    const partial = judgeUnrecordable(entries, census, { complete: false });
+    return judged.waived.length === 1 && judged.remaining.length === 3 && judged.stale.length === 1 && judged.stale[0].name.includes('gone') && partial.stale.length === 0;
+  }],
+  ['census-change-set-same-length', () => {
+    // A change set of the right length with a wrong path is a failure, not only one of another length.
+    const right = checkChangeSets([{ name: 'c', text: draftContainer([['b']]) }], draftMap);
+    const wrong = checkChangeSets([{ name: 'c', text: draftContainer([['a']]) }], draftMap);
+    return right.checked === 1 && right.failures.length === 0 && right.unverifiable.length === 0 && wrong.failures.some((entry) => entry.check === 'change-set');
+  }],
+  ['census-data-export', () => {
+    // A data export no entry can exercise fails unless waived, as an export no test calls does.
+    const { failures } = censusOf();
+    const named = (name) => failures.some((entry) => entry.check === 'census-export' && entry.name === name);
+    return named('VALUE') && named('g') && !named('f') && failures.length === 2;
+  }],
+  ['census-scope', () => {
+    // Chosen test files: a waived export that is exercised still fails, nothing fails for being unexercised;
+    // a family filter leaves the other families unjudged.
+    const waiver = { family: 'toy', export: 'f', reason: 'r' };
+    const partial = censusOf({ waivers: [waiver, { family: 'toy', export: 'gone', reason: 'r' }], complete: false });
+    const other = censusOf({ families: ['other'] });
+    const whole = censusOf({ waivers: [{ family: 'toy', export: 'gone', reason: 'r' }] });
+    return partial.failures.length === 1 && partial.failures[0].check === 'waiver-exercised' && partial.problems.length === 0
+      && other.failures.length === 0 && Object.keys(other.families).length === 0 && whole.failures.some((entry) => entry.check === 'waiver-stale');
+  }],
+  ['census-events-seen', () => {
+    // Event types come from the switch on the event's type and from comparisons with a literal anywhere in the
+    // entry (an if before the switch), not from a nested switch or a comment; a read the census cannot follow is said.
+    const source = "export function apply(draft, event) {\n  if (event.type === 'early') return 1;\n  // case 'commented':\n  switch (event.type) {\n    case 'a': { switch (draft.kind) { case 'inner': break; } break; }\n    case \"b\": return 2;\n  }\n  return 'late' === event.type ? 3 : 0;\n}\n";
+    const seen = eventTypesOf(source, 'apply', 1);
+    const hidden = eventTypesOf(source.replace('? 3 : 0;', '? 3 : route(event, event.type);'), 'apply', 1);
+    return seen.types.join() === 'a,b,early,late' && seen.unseen.length === 0 && hidden.unseen.length === 2;
+  }],
+  ['census-callers-unclassified', () => {
+    // A passed-through caller under the scope that is no test code by the naming rule and that the product does not reach is a problem.
+    const passed = { callers: { 'src/a.mjs': { 'f#x': 2 }, 'src/x.test.mjs': { 'f#x': 1 }, 'src/lib/__tests__/h.mjs': { 'f#x': 1 }, 'src/h_test.mjs': { 'f#x': 1 }, 'src/reached.mjs': { 'f#x': 5 }, 'other/b.mjs': { 'f#x': 1 }, '<no frame>': { 'f#x': 1 } }, portCallers: { 'src/p.mjs': { port: 1 } } };
+    const problems = unclassifiedCallers(passed, { scope: 'src/', reachable: new Set(['src/reached.mjs']) });
+    return problems.map((entry) => entry.file).join() === 'src/a.mjs,src/p.mjs' && problems.every((entry) => entry.check === 'caller-unclassified');
+  }],
+  ['census-no-frame-stale', () => {
+    // A no-frame allowance that no call matched is stale on a whole run (it would waive any test's frameless call
+    // of that export), and nothing is stale on a run of chosen files.
+    const census = { noFrame: [{ family: 'f', export: 'x', reason: 'r' }, { family: 'f', export: 'gone', reason: 'r' }] };
+    const passed = { noFrame: { 'f#x': 2, 'f#other': 1 } };
+    const stale = staleNoFrame(passed, census);
+    return stale.length === 1 && stale[0].check === 'waiver-stale' && stale[0].name === 'f#gone' && staleNoFrame(passed, census, { complete: false }).length === 0
+      && staleNoFrame({ noFrame: { 'f#x': 1, 'f#gone': 1 } }, census).length === 0;
+  }],
+  ['census-unstable-waiver', () => {
+    // An unstable case is waived only by a waiver of its file (and family, when named); one that matches nothing is stale.
+    const census = { unstable: [{ file: 'a.test.ts', family: 'reducer', reason: 'r' }, { file: 'c.test.ts', reason: 'r' }] };
+    const judged = judgeUnstable([{ case: 'a.test.ts:1 one #1/reducer', check: 'state' }, { case: 'a.test.ts:2 two #1/message-fetch', check: 'state' }, { case: 'b.test.ts:3 three #1/reducer', check: 'state' }], census);
+    return judged.waived.length === 1 && judged.remaining.length === 2 && judged.stale.length === 1 && judged.stale[0].name === 'c.test.ts';
+  }],
+  ['census-exclusions', () => {
+    const census = { excludedFiles: [{ file: 'a.test.ts', reason: 'r' }, { file: 'gone.test.ts', reason: 'r' }] };
+    const result = applyExclusions(['a.test.ts', 'b.test.ts'], census);
+    return result.files.length === 1 && result.files[0] === 'b.test.ts' && result.stale.length === 1 && result.stale[0].name === 'gone.test.ts';
+  }],
+  ['census-exports-scanned', () => {
+    // The exports a module's namespace shows must be the ones its source declares, in every file.
+    const raw = (exports, scanned) => ({ exports: { 'm.ts': exports }, scanned: { 'm.ts': scanned } });
+    const agree = mergeExports([raw({ a: 'function', b: 'data' }, ['a', 'b'])]);
+    const lost = mergeExports([raw({ a: 'function' }, ['a', 'b'])]);
+    const differ = mergeExports([raw({ a: 'function' }, ['a']), raw({ a: 'data' }, ['a'])]);
+    return agree.problems.length === 0 && lost.problems.some((item) => item.check === 'census-exports-scanned') && differ.problems.some((item) => item.check === 'census-exports-differ');
   }],
   ['codec-identity-scope', () => {
     const argument = { k: 1 };

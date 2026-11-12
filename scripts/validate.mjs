@@ -13,7 +13,7 @@ import { FULL_TEST_SUITES, planFullTests } from './test-full.mjs';
 import { formatDuration, recordTestTimings, runTestUnits, summarizeTestUnits, testConcurrency } from './test-pool.mjs';
 import { isLedgerNativeInput } from './ledger-native/inputs.mjs';
 import { discoverScriptTestFiles, planScriptTests, prepareScriptTestEnvironment } from './test-scripts.mjs';
-import { selectScriptTests, withMarkdownReaders } from './test-select.mjs';
+import { fastScriptSelection, selectScriptTests, withMarkdownReaders } from './test-select.mjs';
 import { STARTUP_CONTRACT_GROUPS, startupContractGroups } from './test-startup-contract.mjs';
 
 const mode = process.argv[2] ?? 'fast';
@@ -365,7 +365,7 @@ function packageCommands(packageNames, commandName) {
 // scripts selection narrows the scripts suite to its `tests`.
 function testCommands(suiteNames, scriptSelection = null) {
   return [...suiteNames].sort().map((name) => ({ ...command(`test:${name}`, 'node', ['scripts/test-full.mjs', `--suite=${name}`]), suite: name,
-    ...(name === 'scripts' && scriptSelection && !scriptSelection.all ? { tests: scriptSelection.tests } : {}) }));
+    ...(name === 'scripts' && scriptSelection && (!scriptSelection.all || scriptSelection.deferred) ? { tests: scriptSelection.tests } : {}) }));
 }
 
 /**
@@ -518,7 +518,8 @@ export function buildPlan(requestedMode, providedFiles, { versionOnly } = {}) {
   commands.push(...importBoundaryCommands(codeFiles), ...declarationCommands(codeFiles), ...ledgerCoreCommands(codeFiles), ...ledgerNativeCommands(codeFiles), ...nativeCommands(codeFiles));
   const suites = affectedTests(codeFiles);
   // Markdown is not a code file, but the scripts that read all of it must run.
-  const scriptSelection = withMarkdownReaders(suites.has('scripts') ? scriptTestSelection(codeFiles) : null, files);
+  // Full-suite-only script tests (FULL_SUITE_ONLY) never run here, even when the whole suite is selected.
+  const scriptSelection = fastScriptSelection(withMarkdownReaders(suites.has('scripts') ? scriptTestSelection(codeFiles) : null, files));
   if (scriptSelection) suites.add('scripts');
   // A subset of the scripts suite does not cover its startup group.
   const covering = new Set(suites);
@@ -534,14 +535,16 @@ export function buildPlan(requestedMode, providedFiles, { versionOnly } = {}) {
 
 /** One or two lines saying which script tests fast mode selected and why it skipped the rest. */
 export function describeScriptSelection(selection, total = discoverScriptTestFiles(workspaceRoot).length) {
-  if (selection.all) return [`Script tests: all ${total} (${selection.reason}).`];
+  const deferred = selection.deferred?.length ? [`Left to validate:full and CI (full-suite only): ${selection.deferred.join(', ')}.`] : [];
+  if (selection.all) return [`Script tests: all ${total}${deferred.length ? ` but ${selection.deferred.length}` : ''} (${selection.reason}).`, ...deferred];
   const shown = selection.tests.slice(0, 8).join(', ');
   const more = selection.tests.length > 8 ? `, +${selection.tests.length - 8} more` : '';
   const reasons = [...selection.reasons].map(([file, reason]) => `${file}: ${reason}`);
   const why = reasons.slice(0, 3).join('; ') + (reasons.length > 3 ? `; +${reasons.length - 3} more changes` : '');
   return [
     `Script tests: ${selection.tests.length} of ${total} selected${selection.tests.length ? `: ${shown}${more}` : ''}.`,
-    `Skipped ${total - selection.tests.length}, whose import and name closure holds no changed file (${why || 'no script change'}); CI runs every script test.`,
+    `Skipped ${total - selection.tests.length - (selection.deferred?.length ?? 0)}, whose import and name closure holds no changed file (${why || 'no script change'}); CI runs every script test.`,
+    ...deferred,
   ];
 }
 function printPlan(plan) {

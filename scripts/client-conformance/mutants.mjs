@@ -8,11 +8,15 @@
 //   corpus      the toy corpus comparison (compare.mjs), at the container, case, check and step
 //   stability   two recordings of the toys compared, at the case and check
 //   tools       the tools' own checks on fixed inputs (selfchecks.mjs), by name
+//   census      the change-set check and the census (census.mjs) on a recording of the whole toy set, by check and name
+//   family      the family command's own checks (familychecks.mjs) on two shared toy recordings, by name
 // `origin` says where the planted difference comes from: the builder's nine,
 // the review's 38 (C0ab review S7, by its category), the ones that pin the
 // review fixes, the second review's ten not already planted, the ones that
 // pin the second review's fixes, the third review's eleven, and the ones that
-// pin the third review's fixes. A corpus result also carries the toy
+// pin the third review's fixes, those of package C0c (`origin: 'C0c: ...'`), its
+// fix rounds (`'C0c fix ...'`, `'C0c second fix ...'`) and its second review's
+// missed ones (`'C0c review 2, ...'`). A corpus result also carries the toy
 // recording's own problems, so an expected unplaced count that is not met is
 // reported (`unplaced-expected`).
 import { cpSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
@@ -149,7 +153,7 @@ export const PLANTED = Object.freeze([
   { name: 'fix-b4-stem-collides', origin: 'fix B4: container names are unique by construction', file: 'container.mjs', tool: 'tools', expect: { check: 'path-stem-injective' },
     anchor: "    if (char === '/') out += '~';", replacement: "    if (char === '/' || char === '~') out += '~';" },
   { name: 'fix-s2-prelude-dropped', toys: ['toy-hooks.toy.mjs'], origin: 'fix S2: module load and beforeAll calls are written', file: R, tool: 'corpus', expect: { container: /toy-hooks\.toy\.mjs\.toy-timers/, check: 'case-set' },
-    anchor: "  return record.kind === 'test' || ownKeys(families).length > 0 || record.out.contextRecords > 0;", replacement: "  return record.kind === 'test';" },
+    anchor: "  return record.kind === 'test' || ownKeys(families).length > 0 || record.out.contextRecords > 0 || flags.length > 0;", replacement: "  return record.kind === 'test';" },
   { name: 'fix-s3-crossing-ignored', toys: ['toy-flow.toy.mjs'], origin: 'fix S3: a port that is another family\'s entry is recorded', file: R, tool: 'corpus', expect: { case: toyCase('a port that is another family\'s entry is a port call'), check: 'effects', step: 2 },
     anchor: '    if (store.family === family || !crossing || !apply(SetHas, crossing.families, [store.family])) return invoke(args); // inlined', replacement: '    return invoke(args);' },
   { name: 'fix-s4-most-recent-step', toys: ['toy-flow.toy.mjs'], origin: 'fix S4: effects belong to the input that caused them', file: R, tool: 'corpus', expect: { case: toyCase('a microtask continuation belongs to its own call'), check: 'effects', step: 2 },
@@ -263,9 +267,9 @@ export const PLANTED = Object.freeze([
   { name: 'fix3-b1-generator-raw', toys: ['toy-gate.toy.mjs'], origin: 'fix 3 B1: an iterator\'s next is an input', file: R, tool: 'corpus', expect: { case: toyCase('an async iterator an entry returns'), check: 'flags' },
     anchor: 'const GENERATOR_HOLDERS = new RealSet([GeneratorPrototype, AsyncGeneratorPrototype]);', replacement: 'const GENERATOR_HOLDERS = new RealSet([]);' },
   { name: 'fix3-b1-getters-raw', toys: ['toy-gate.toy.mjs'], origin: 'fix 3 B1: a getter the test reads is an input', file: R, tool: 'corpus', expect: { case: toyCase('a getter the test reads'), check: 'flags' },
-    anchor: "    return callEntry(family, { input: 'get' }, label, descriptor.get, object, [], undefined, null);", replacement: '    return reflectGet(object, key);' },
+    anchor: "    return callEntry(family, HANDED_OUT_GET, label, descriptor.get, object, [], undefined, null);", replacement: '    return reflectGet(object, key);' },
   { name: 'fix3-b1-port-calls-unflagged', toys: ['toy-unrecordable.toy.mjs'], origin: 'fix 3 B1: a family\'s port called outside a chain is flagged', file: R, tool: 'corpus', expect: { case: toyCase('engine code deep inside returned data'), check: 'flags' },
-    anchor: '    if (!engine && families) flagOutside();', replacement: '' },
+    anchor: '    if (!engine && families) flagOutside(families, name);', replacement: '' },
   { name: 'fix3-b1-unwrappable-unflagged', toys: ['toy-unrecordable.toy.mjs'], origin: 'fix 3 B1: engine code that cannot be wrapped is flagged', file: R, tool: 'corpus', expect: { case: toyCase('a member of a frozen object'), check: 'flags' },
     anchor: "current.flags.add('unwrappable');", replacement: '{}' },
   { name: 'fix3-s1-expiry-unflagged', toys: ['toy-unrecordable.toy.mjs'], origin: 'fix 3 S1: a chain that wakes after its window expired is flagged', file: R, tool: 'corpus', expect: { case: toyCase('more than 64 silent generations'), check: 'flags' },
@@ -278,7 +282,144 @@ export const PLANTED = Object.freeze([
     anchor: '      if (wrapAnswers) return apply(PromiseThen, result, [(value) => (answerLike(value) ?', replacement: '      if (wrapAnswers) return apply(PromiseThen, result, [(value) => (portLike(value) ?' },
   { name: 'fix3-s5-plain-unchecked', origin: 'fix 3 S5: a recording is gated on the plain pass set', file: 'record.mjs', tool: 'tools', expect: { check: 'record-plain-differs' },
     anchor: '    if (!before || before.status !== test.status) differences.push(', replacement: '    if (false) differences.push(' },
+
+  // ------------------------------------------------------------ package C0c: change sets, census, caller rule, slices, iterators
+  { name: 'c0c-change-set-wrong', origin: 'C0c: a wrong change set', file: R, tool: 'census', expect: { check: 'change-set', name: /toy-reducer/ },
+    anchor: '    if (before) step.changes = ref(changedPaths(before, args[draft]), kase);', replacement: '    if (before) step.changes = ref(changedPaths(before, args[draft]).slice(1), kase);' },
+  { name: 'c0c-change-set-dropped', origin: 'C0c: a draft step without its change set', file: R, tool: 'census', expect: { check: 'draft-recorded', name: /toy-reducer/ },
+    anchor: '    if (before) step.changes = ref(changedPaths(before, args[draft]), kase);', replacement: '' },
+  { name: 'c0c-truncated-state', origin: 'C0c: a truncated state (the draft recorded one level deep)', file: R, tool: 'census', expect: { check: 'change-set', name: /toy-reducer/ },
+    anchor: "  const input = { kind: spec.input ?? (newTarget !== undefined ? 'new' : 'call'), entry: label, args: ref(listOf(args), kase) };",
+    replacement: "  const shallow = (value) => (value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).map(([key, member]) => [key, member && typeof member === 'object' ? {} : member])) : value);\n  const input = { kind: spec.input ?? (newTarget !== undefined ? 'new' : 'call'), entry: label, args: ref(listOf(args).map((arg, index) => (index === spec.draft ? shallow(arg) : arg)), kase) };" },
+  { name: 'c0c-export-missing', origin: 'C0c: an export no test exercises and no waiver names', file: 'toy/toy-reducer.mjs', tool: 'census', expect: { check: 'census-export', name: /toy-reducer#resetState/ },
+    anchor: 'export function createState() {', replacement: 'export function resetState() { return null; }\n\nexport function createState() {' },
+  { name: 'c0c-census-export-lost', origin: 'C0c: the census loses an export of a module', file: R, tool: 'census', expect: { check: 'census-exports-scanned', name: /toy-reducer/ },
+    anchor: '        apply(MapSet, scannedModules, [file, [...exports].sort()]);', replacement: "        apply(MapSet, scannedModules, [file, [...exports, 'lostExport'].sort()]);" },
+  { name: 'c0c-waiver-exercised', origin: 'C0c: a waived export that is in fact exercised', file: 'toy/census.json', tool: 'census', expect: { check: 'waiver-exercised', name: /toy-reducer#applyEvent/ },
+    anchor: '  "exports": [\n', replacement: '  "exports": [\n    { "family": "toy-reducer", "export": "applyEvent", "reason": "planted" },\n' },
+  { name: 'c0c-waiver-stale', origin: 'C0c: a waiver of an export that does not exist', file: 'toy/census.json', tool: 'census', expect: { check: 'waiver-stale', name: /toy-reducer#removedExport/ },
+    anchor: '  "exports": [\n', replacement: '  "exports": [\n    { "family": "toy-reducer", "export": "removedExport", "reason": "planted" },\n' },
+  { name: 'c0c-event-unexercised', origin: 'C0c: an event type the reducer handles that no recorded case delivers', file: 'toy/toy-reducer.mjs', tool: 'census', expect: { check: 'census-event', name: /session\.renamed/ },
+    anchor: "    case 'probe':", replacement: "    case 'session.renamed': return false;\n    case 'probe':" },
+  { name: 'c0c-port-unexercised', origin: 'C0c: a port of the map that no recorded case calls', file: 'toy/port-map.json', tool: 'census', expect: { check: 'census-port', name: /toy-guard\.mjs#deferred/ },
+    anchor: '"ports": [{ "module": "toy-guard.mjs", "exports": ["guard"] }]', replacement: '"ports": [{ "module": "toy-guard.mjs", "exports": ["guard", "deferred"] }]' },
+  { name: 'c0c-unrecordable-partial-waiver', origin: 'C0c: a case waived although one of its flags is not', file: 'census.mjs', tool: 'tools', expect: { check: 'census-unrecordable-partial' },
+    anchor: '    if (covering.every((index) => index >= 0)) {', replacement: '    if (covering.some((index) => index >= 0)) {' },
+  { name: 'c0c-unstable-waiver-any-family', origin: 'C0c: an unstable waiver of one family waives another', file: 'census.mjs', tool: 'tools', expect: { check: 'census-unstable-waiver' },
+    anchor: '(!item.family || item.family === family));', replacement: 'true);' },
+  { name: 'c0c-exclusion-never-stale', origin: 'C0c: an exclusion of a file that no longer exists passes', file: 'census.mjs', tool: 'tools', expect: { check: 'census-exclusions' },
+    anchor: 'const stale = census.excludedFiles.filter((item) => !all.includes(item.file))', replacement: 'const stale = census.excludedFiles.filter(() => false)' },
+  { name: 'c0c-family-waiver-exercised', origin: 'C0c: a family waived as untested that records cases', file: 'toy/census.json', tool: 'census', expect: { check: 'waiver-exercised', name: /toy-reducer#\(family\)/ },
+    anchor: '  "exports": [\n', replacement: '  "families": [{ "family": "toy-reducer", "reason": "planted" }],\n  "exports": [\n' },
+  { name: 'c0c-passthrough-store-off', toys: ['toy-host.toy.mjs'], origin: 'C0c: what a passed-through call does is taken for engine code outside a chain', file: R, tool: 'corpus', expect: { case: toyCase('passed through, not a step'), check: 'flags' },
+    anchor: "  const store = { kind: 'passthrough', case: current, active: true };\n  try { return als.run(store, run); } finally { store.active = false; }", replacement: '  return run();' },
+  { name: 'c0c-no-frame-recorded', toys: ['toy-host.toy.mjs'], origin: 'C0c: a call with no frame (an engine continuation\'s tail call) is taken for the test\'s', file: R, tool: 'corpus', expect: { case: toyCase('passed through, not a step'), check: 'step-count' },
+    anchor: '    if (caller === null ? spec.handedOut !== true : !caller.test) return passThrough(', replacement: '    if (caller !== null && !caller.test) return passThrough(' },
+  { name: 'c0c-caller-rule-off', toys: ['toy-host.toy.mjs'], origin: 'C0c: an entry an unmapped engine module calls is recorded as the test\'s', file: R, tool: 'corpus', expect: { case: toyCase('passed through, not a step'), check: 'step-count' },
+    anchor: "return passThrough(family, label, caller, origin === 'passthrough', () => invoke(args));", replacement: '{}' },
+  { name: 'c0c-slices-off', toys: ['toy-host.toy.mjs'], origin: 'C0c: large values stored whole, not as slices', file: 'container.mjs', tool: 'tools-corpus', expect: { container: /toy-host\.toy\.mjs\.toy-reducer/, check: 'value-table' },
+    anchor: 'export const SLICE_MIN = 1024;', replacement: 'export const SLICE_MIN = 1e15;' },
+  { name: 'c0c-slices-unexpanded', origin: 'C0c: the reader hands out a tree with its slices in place', file: 'container.mjs', tool: 'tools', expect: { check: 'container-slices' },
+    anchor: '    return expand(values.get(slot.slice(1)), (hash) => values.get(hash));', replacement: '    return values.get(slot.slice(1));' },
+  { name: 'c0c-outside-flag-case-wide', toys: ['toy-unrecordable.toy.mjs'], origin: 'C0c: a port used outside a chain flags every family of the case', file: R, tool: 'corpus', expect: { case: toyCase('flags only the families it is a port of'), check: 'flags' },
+    anchor: "    if (record && !(test && lineOnly)) record.flags.add('outside-chain');\n    else if (test) flagFamily(name, 'port-no-line');", replacement: "    current.flags.add('outside-chain');" },
+  { name: 'c0c-unmapped-port-flagged', toys: ['toy-host.toy.mjs'], origin: 'C0c: a port an unmapped engine module uses is flagged as a family\'s', file: R, tool: 'corpus', expect: { container: /toy-host\.toy\.mjs\.toy-gate/, case: toyCase('passed through, not a step'), check: 'flags' },
+    anchor: '  if (!test && (passing || own === undefined)) { notePassedPort(port, file, passing); return; }', replacement: '  if (passing) { notePassedPort(port, file, passing); return; }' },
+  { name: 'c0c-iterator-unflagged', toys: ['toy-unrecordable.toy.mjs'], origin: 'C0c: an iterator the engine is handed is written as an empty object', file: C, tool: 'corpus', expect: { case: toyCase('an iterator the engine is handed'), check: 'flags' },
+    anchor: "    if (!wrapped && apply(isPrototypeOf, IteratorPrototype, [item])) context.flags.add('iterator');", replacement: '' },
+  // ------------------------------------------------------------ the C0c fix round (review C0c: B1, S1 to S7, M1 to M3; the reviewer's ten re-planted)
+  { name: 'fix-c0c-b1-store-inherited', toys: ['toy-unrecordable.toy.mjs'], origin: 'C0c fix B1: a pass-through store holds only for its call\'s synchronous extent', file: R, tool: 'corpus', expect: { case: toyCase('engine code a passed-through call puts on a timer'), check: 'unrecordable-expected' },
+    anchor: "  return store !== undefined && store.kind === 'passthrough' && store.active !== true ? undefined : store;", replacement: '  return store;' },
+  { name: 'fix-c0c-b1-store-decides', toys: ['toy-callers.toy.mjs'], origin: 'C0c fix B1: inside a pass-through call the caller frame still decides', file: R, tool: 'corpus', expect: { case: toyCase('runs at once is the test'), check: 'result' },
+    anchor: "  if (origin === 'test' || origin === 'passthrough') {\n    const caller", replacement: "  if (origin === 'passthrough') return passThrough(family, label, { file: null, test: false }, true, () => invoke(args));\n  if (origin === 'test' || origin === 'passthrough') {\n    const caller" },
+  { name: 'r01-tests-dir-not-test-code', origin: 'C0c fix, review r01: a helper under __tests__ is test code', file: 'port-map.mjs', toys: ['toy-callers.toy.mjs'], tool: 'corpus', expect: { case: toyCase('helpers under __tests__'), check: 'result' },
+    anchor: '(?:test|tests|__tests__|__mocks__)', replacement: '(?:test|tests|__mocks__)' },
+  { name: 'r02-underscore-test-not-test-code', origin: 'C0c fix, review r02: a helper named name_test is test code', file: 'port-map.mjs', toys: ['toy-callers.toy.mjs'], tool: 'corpus', expect: { case: toyCase('helpers under __tests__'), check: 'result' },
+    anchor: '[._](?:test|spec)', replacement: '[.](?:test|spec)' },
+  { name: 'r03-unmapped-not-counted', origin: 'C0c fix, review r03: every passed-through call is counted and shown', file: R, tool: 'family', expect: { check: 'family-passed-totals' },
+    anchor: '    bump(unmapped, family, name);\n    bump(callers, callerName(caller?.file ?? null), key);\n    passed.calls += 1;', replacement: '' },
+  { name: 'fix-c0c-nested-uncounted', origin: 'C0c fix S1: a call inside a pass-through call is counted too', file: R, tool: 'family', expect: { check: 'family-passed-totals' },
+    anchor: '    if (nested) passed.nested += 1;', replacement: '' },
+  { name: 'fix-c0c-no-frame-unflagged', toys: ['toy-unrecordable.toy.mjs'], origin: 'C0c fix S1: a call with no frame flags its case', file: R, tool: 'corpus', expect: { case: toyCase('an entry the test hands to a promise'), check: 'unrecordable-expected' },
+    anchor: "      if (!apply(SetHas, NO_FRAME_ALLOWED, [key])) flagFamily(family, 'no-frame');", replacement: '' },
+  { name: 'fix-c0c-no-frame-allowance-ignored', toys: ['toy-host.toy.mjs'], origin: 'C0c fix S1: a no-frame call the census names with its engine site is passed through', file: R, tool: 'corpus', expect: { case: toyCase('passed through, not a step'), check: 'flags' },
+    anchor: 'const NO_FRAME_ALLOWED = new RealSet(String(', replacement: 'const NO_FRAME_ALLOWED = new RealSet([]) || new RealSet(String(' },
+  { name: 'fix-c0c-handed-out-no-frame-dropped', toys: ['toy-gate.toy.mjs'], origin: 'C0c fix S1: a thenable the test awaits is an input although no frame shows it', file: R, tool: 'corpus', expect: { case: toyCase('a getter the test reads and a thenable'), check: 'flags' },
+    anchor: 'caller === null ? spec.handedOut !== true : !caller.test', replacement: 'caller === null || !caller.test' },
+  { name: 'r06-ports-without-line-dropped', toys: ['toy-unrecordable.toy.mjs'], origin: 'C0c fix, review r06: a port test code uses where its family has no line flags a line', file: R, tool: 'corpus', expect: { case: toyCase('whose frame a tail call removed'), check: 'unrecordable-expected' },
+    anchor: "    else if (test) flagFamily(name, 'port-no-line');", replacement: '' },
+  { name: 'fix-c0c-outside-no-line', toys: ['toy-unrecordable.toy.mjs'], origin: 'C0c fix S2: engine code on the stack with no chain gives its family a line', file: R, tool: 'corpus', expect: { case: toyCase('reads the clock where no family has a line'), check: 'unrecordable-expected' },
+    anchor: '  for (const name of found) familyRecord(name);', replacement: '' },
+  { name: 'fix-c0c-flagged-without-line-ignored', origin: 'C0c fix S2: a flagged case no family line carries is a problem', file: 'record.mjs', tool: 'tools', expect: { check: 'record-flagged-without-line' },
+    anchor: '      if (lost.length && Object.keys(recorded.families).length === 0) {', replacement: '      if (false) {' },
+  { name: 'r09-slice-escape-value', origin: 'C0c fix, review r09: an escape node\'s own object is never a slice', file: 'container.mjs', tool: 'tools', expect: { check: 'container-slice-escape-many' },
+    anchor: "      const escaped = node.$dr === 'escape';", replacement: '      const escaped = false;' },
+  { name: 'fix-c0c-proto-dropped', origin: 'C0c fix S3: an own __proto__ member survives slices', file: 'container.mjs', tool: 'tools', expect: { check: 'container-proto-member' },
+    anchor: "  if (key === '__proto__') Object.defineProperty(object, key, { value, writable: true, enumerable: true, configurable: true });\n  else object[key] = value;", replacement: '  object[key] = value;' },
+  { name: 'fix-c0c-resolve-shared', origin: 'C0c fix: resolve() never hands out one object for two places', file: 'container.mjs', tool: 'tools', expect: { check: 'container-resolve-independent' },
+    anchor: '    if (!escapedValue && isSlice(node)) return walk(lookup(node.hash), false);', replacement: '    if (!escapedValue && isSlice(node)) { const memo = (globalThis.__plantedMemo ??= new Map()); if (!memo.has(node.hash)) memo.set(node.hash, walk(lookup(node.hash), false)); return memo.get(node.hash); }' },
+  { name: 'r25-changeset-checker-length-only', origin: 'C0c fix, review r25 (S6): a change-set checker that compares lengths only', file: 'census.mjs', tool: 'tools', expect: { check: 'census-change-set-same-length' },
+    anchor: '    if (actual.length !== expected.length || actual.some((item, at) => item !== expected[at])) {', replacement: '    if (actual.length !== expected.length) {' },
+  { name: 'fix-c0c-change-set-same-length', origin: 'C0c fix S6: a change set of the right length with a wrong path', file: R, tool: 'census', expect: { check: 'change-set', name: /toy-reducer/ },
+    anchor: '    if (before) step.changes = ref(changedPaths(before, args[draft]), kase);', replacement: "    if (before) step.changes = ref(changedPaths(before, args[draft]).map((where) => [...where.slice(0, -1), 'planted']), kase);" },
+  { name: 'r16-data-exports-pass', origin: 'C0c fix, review r16: a data export no waiver names fails the census', file: 'census.mjs', tool: 'tools', expect: { check: 'census-data-export' },
+    anchor: '      if (name === family.state) { summary.exports.state += 1; continue; }', replacement: "      if (name === family.state || kind === 'data') { summary.exports.state += 1; continue; }" },
+  { name: 'fix-c0c-census-unscoped', origin: 'C0c fix S7: a census of chosen test files judges only what they show', file: 'census.mjs', tool: 'tools', expect: { check: 'census-scope' },
+    anchor: '      if (!complete) { summary.exports.unjudged = ', replacement: '      if (false) { summary.exports.unjudged = ' },
+  { name: 'fix-c0c-event-if-unseen', origin: 'C0c fix M3: an `if (event.type === ...)` before the switch is an event type', file: 'toy/toy-reducer.mjs', tool: 'census', expect: { check: 'census-event', name: /session\.archived/ },
+    anchor: '  switch (event.type) {', replacement: "  if (event.type === 'session.archived') return false;\n  switch (event.type) {" },
+  { name: 'fix-c0c-event-comparisons-ignored', origin: 'C0c fix M3: the census reads comparisons with a literal', file: 'census.mjs', tool: 'tools', expect: { check: 'census-events-seen' },
+    anchor: '    for (const found of body.matchAll(pattern)) { accounted += 1; types.add(found[2]); }', replacement: '    for (const found of body.matchAll(pattern)) { accounted += 1; }' },
+  { name: 'fix-c0c-waiver-any-test', origin: 'C0c fix M1: an unrecordable waiver covers the test it names only', file: 'census.mjs', tool: 'tools', expect: { check: 'census-unrecordable-test' },
+    anchor: 'testsOf(waiver).includes(entry.name) && ', replacement: '' },
+  { name: 'fix-c0c-waiver-flag-base-name', origin: 'C0c fix M1: an unrecordable waiver covers its exact flag only', file: 'census.mjs', tool: 'tools', expect: { check: 'census-unrecordable-test' },
+    anchor: 'waiver.file === entry.file && waiver.flag === flag && ', replacement: "waiver.file === entry.file && (waiver.flag === flag || waiver.flag === flag.split(':')[0]) && " },
+  { name: 'fix-c0c-classifier-off', origin: 'C0c fix S1: an unclassified caller is found', file: 'census.mjs', tool: 'tools', expect: { check: 'census-callers-unclassified' },
+    anchor: '      if (!file.startsWith(scope) || isTestPath(file) || reachable.has(file)) continue;', replacement: '      continue;' },
+  { name: 'r22-product-failures-pass', origin: 'C0c fix, review r22 (S7): the command exits 1 on a failed check', file: 'family-run.mjs', tool: 'family', expect: { check: 'family-exit-precedence' },
+    anchor: ': failures.length ? EXIT.fail : EXIT.pass;', replacement: ': EXIT.pass;' },
+  { name: 'r23-product-census-problems-dropped', origin: 'C0c fix, review r23 (S7): census problems make the run inconclusive', file: 'family-run.mjs', tool: 'family', expect: { check: 'family-census-problems' },
+    anchor: '  incomplete.push(...merged.problems, ...censusResult.problems);', replacement: '' },
+  { name: 'fix-c0c-command-classify-off', origin: 'C0c fix S1: the command makes an unclassified caller inconclusive', file: 'family-run.mjs', tool: 'family', expect: { check: 'family-unclassified-caller' },
+    anchor: '  incomplete.push(...unclassifiedCallers(passed, { scope: setup.scope, reachable: setup.reachable() }));', replacement: '' },
+  { name: 'fix-c0c-targets-not-partial', origin: 'C0c fix S7: chosen test files make a partial census that can pass', file: 'family-run.mjs', tool: 'family', expect: { check: 'family-targets-scope' },
+    anchor: '  const complete = targets.length === 0;', replacement: '  const complete = true;' },
+  { name: 'fix-c0c-families-unscoped', origin: 'C0c fix S7: --families scopes every judgement', file: 'family-run.mjs', tool: 'family', expect: { check: 'family-families-scope' },
+    anchor: '  const scope = families && families.length ? families : null;', replacement: '  const scope = null;' },
+  { name: 'fix-c0c-required-unfiltered', origin: 'C0c fix S7: a family waived as a whole need not record a case', file: 'family-run.mjs', tool: 'family', expect: { check: 'family-required' },
+    anchor: '  const required = (scope ?? all).filter((name) => !census.families.some((item) => item.family === name));', replacement: '  const required = scope ?? all;' },
+  { name: 'fix-c0c-unstable-unmarked', origin: 'C0c fix M2: an unstable case is marked in the written container', file: 'family-run.mjs', tool: 'family', expect: { check: 'family-out' },
+    anchor: "      writer.addCase({ ...record, outcome: 'unstable',", replacement: '      writer.addCase({ ...record, outcome: record.outcome,' },
+  { name: 'fix-c0c-broken-census-throws', origin: 'C0c fix S7: a broken census file is a usage error', file: 'family-run.mjs', tool: 'family', expect: { check: 'family-usage' },
+    anchor: '  } catch (failure) { error(failure.message); return EXIT.usage; }', replacement: '  } catch (failure) { throw failure; }' },
+  { name: 'fix-c0c-discovery-off', origin: 'C0c fix S4: the discover run keeps only tests whose test code calls a family', file: 'family-run.mjs', tool: 'family', expect: { check: 'family-discovery' },
+    anchor: '  const loading = found.files.filter((item) => item.loaded.some((file) => modules.has(file)) && (item.testCalls + item.noFrame > 0 || named.has(item.file))).map((item) => item.file);', replacement: '  const loading = found.files.filter((item) => item.loaded.some((file) => modules.has(file))).map((item) => item.file);' },
+  { name: 'fix-c0c-discover-layer-blind', origin: 'C0c fix S4: the discover layer counts the calls test code makes', file: R, tool: 'family', expect: { check: 'family-discovery' },
+    anchor: '            if (!first) report.noFrame += 1; else if (isTestCode(first[0])) report.testCalls += 1;\n', replacement: '            if (!first) return; else if (isTestCode(first[0])) return;\n' },
+  // ------------------------------------------- the C0c second review's three missed, and the second fix round's own
+  { name: 'c0c-r2-n07b-discovery-drops-no-frame', origin: 'C0c review 2, n07b: discovery keeps a test whose only family use has no frame', file: 'family-run.mjs', tool: 'family', expect: { check: 'family-discovery' },
+    anchor: '  const loading = found.files.filter(', replacement: '  for (const item of found.files) item.noFrame = 0;\n  const loading = found.files.filter(' },
+  { name: 'c0c-r2-n08b-discover-layer-noframe-uncounted', origin: 'C0c review 2, n08b: the discover layer counts calls with no frame', file: R, tool: 'family', expect: { check: 'family-discovery' },
+    anchor: '  const report = { file: TEST_FILE, loaded: [], testCalls: 0, noFrame: 0, callers: {} };', replacement: '  const report = { file: TEST_FILE, loaded: [], testCalls: 0, set noFrame(v) {}, get noFrame() { return 0; }, callers: {} };' },
+  { name: 'c0c-r2-n11-no-frame-allowance-never-stale', origin: 'C0c review 2, n11: a no-frame allowance no call matched is stale', file: 'census.mjs', tool: 'tools', expect: { check: 'census-no-frame-stale' },
+    anchor: '  return census.noFrame.filter((item) => !(passed.noFrame[`${item.family}#${item.export}`] > 0))', replacement: '  return census.noFrame.filter(() => false)' },
+  { name: 'c0c-fix2-n1-discovery-keeps-unclassified', origin: 'C0c second fix N1: discovery keeps a test that reaches a family only through test support code under another name', file: 'family-run.mjs', tool: 'family', expect: { check: 'family-discovery' },
+    anchor: '(item.testCalls + item.noFrame > 0 || named.has(item.file))', replacement: 'item.testCalls + item.noFrame > 0' },
+  { name: 'c0c-fix2-n1-discover-layer-callers-uncounted', origin: 'C0c second fix N1: the discover layer counts the calls of every other caller file', file: R, tool: 'family', expect: { check: 'family-discovery' },
+    anchor: '              const row = (report.callers[relative(first[0])] ??= {});', replacement: '              const row = {};' },
+  { name: 'c0c-fix2-n3-test-function-unflagged', toys: ['toy-unrecordable.toy.mjs'], origin: 'C0c second fix N3: a test function an entry is handed that no injected port declares flags its family', file: R, tool: 'corpus', expect: { case: toyCase('a test callback an entry runs'), check: 'unrecordable-expected' },
+    anchor: "  if (!portEffect && guard('entry', () => opaqueTestFunction(spec, args), false)) familyRecord(family, kase).flags.add('test-function');", replacement: '' },
 ]);
+
+/**
+ * The planted differences the per-push self-test runs (conformance.test.mjs):
+ * one of each tool, the cheapest that tool has. Every other one runs in the
+ * full suite only (planted.full.test.mjs); the two together run every planted
+ * difference, and the per-push test checks that this sample names one of each
+ * tool in PLANTED.
+ */
+export const PER_PUSH_SAMPLE = Object.freeze(['codec-sorts-set', 'globals-setsystemtime-ignored', 'c0c-fix2-n3-test-function-unflagged', 'recorder-unseeded-random',
+  'c0c-r2-n11-no-frame-allowance-never-stale', 'container-cases-reordered', 'c0c-waiver-stale', 'fix-c0c-command-classify-off']);
 
 /**
  * Copies this directory to `<parent>/<name>/scripts/client-conformance` (with
@@ -328,8 +469,38 @@ function sharedPlainRuns(toys, parent) {
   return plainRuns.get(key);
 }
 
-/** Runs the mutant's tool on its copy; returns the differences that tool reports. */
-export async function runMutant(mutant, parent) {
+// Two recordings of the toy corpus by the repository's own recorder, made once per run of the planted differences
+// and shared: the family command's planted differences are in the command, not in the recorder.
+// A caller that already holds two such recordings hands them in (`recordings`), and they are used instead.
+const toyRecordingsBy = new Map(); // parent -> Promise of [recording, recording]
+function sharedToyRecordings(parent, recordings) {
+  if (recordings) return Promise.resolve(recordings);
+  if (!toyRecordingsBy.has(parent)) toyRecordingsBy.set(parent, (async () => [await recordToys({ workDir: path.join(parent, 'family-toys-1') }), await recordToys({ workDir: path.join(parent, 'family-toys-2') })])());
+  return toyRecordingsBy.get(parent);
+}
+
+/**
+ * The change-set check and the census of a copy, on a recording of the whole
+ * toy set made by the copy's own recorder: `{ check, name, detail }` for each
+ * failure and problem (`name` is `<container> <case>` for a change set).
+ */
+export async function censusDifferences({ harnessDir, root, workDir, load }) {
+  const [record, census, portMapModule] = await Promise.all([load('record.mjs'), load('census.mjs'), load('port-map.mjs')]);
+  const recording = await record.recordToys({ workDir, harnessDir, root });
+  const portMap = portMapModule.loadPortMap(path.join(harnessDir, 'toy/port-map.json'), { root });
+  const changeSets = census.checkChangeSets(recording.containers, portMap);
+  const merged = census.mergeExports(recording.raws);
+  const result = census.runCensus({ portMap, census: census.loadCensus(path.join(harnessDir, 'toy/census.json')), containers: recording.containers, moduleExports: merged.exports, readSource: (file) => readFileSync(file, 'utf8') });
+  const named = (entry) => ({ ...entry, name: entry.container ? `${entry.container} ${entry.case}` : `${entry.family}${entry.name ? `#${entry.name}` : ''} ${entry.detail}` });
+  return [...changeSets.failures, ...merged.problems, ...result.failures, ...result.problems].map(named);
+}
+
+/**
+ * Runs the mutant's tool on its copy; returns the differences that tool
+ * reports. `recordings`: two recordings of the toy corpus by this directory's
+ * recorder, for the family command's checks (made here when not given).
+ */
+export async function runMutant(mutant, parent, { recordings: given } = {}) {
   const { root, harnessDir } = buildMutant(mutant, parent);
   const workDir = path.join(parent, `${mutant.name}-work`);
   const toys = mutant.toys ?? TOY_TESTS;
@@ -340,6 +511,16 @@ export async function runMutant(mutant, parent) {
     return vectors.checkVectors({ codec, file: path.join(harnessDir, 'vectors.ndjson') });
   }
   if (mutant.tool === 'tools') return (await load('selfchecks.mjs')).toolChecks();
+  if (mutant.tool === 'family') {
+    // The command's checks on toy recordings: shared ones made by the repository's recorder, or the copy's own when the
+    // planted difference is in its recorder; the end-to-end discover run only for the planted differences it is for.
+    const checks = await load('familychecks.mjs');
+    const names = checks.FAMILY_CHECKS.map(([name]) => name).filter((name) => name !== 'family-discovery' || mutant.expect.check === name);
+    const own = mutant.file === R && mutant.expect.check !== 'family-discovery' ? await load('record.mjs') : null;
+    const recordings = own ? [await own.recordToys({ workDir: path.join(workDir, 'toys-1'), harnessDir, root }), await own.recordToys({ workDir: path.join(workDir, 'toys-2'), harnessDir, root })] : await sharedToyRecordings(parent, given);
+    return checks.familyChecks({ recordings, workDir, names });
+  }
+  if (mutant.tool === 'census') return censusDifferences({ harnessDir, root, workDir, load });
   if (mutant.tool === 'parity') {
     const plain = mutant.file.startsWith('toy/') ? undefined : await sharedPlainRuns(toys, parent);
     const result = await passSetParity({ targets: testFiles, cwd: root, root, recorder: path.join(harnessDir, 'recorder.mjs'), portMap: path.join(harnessDir, 'toy/port-map.json'), workDir, parallel: toys.length, plain });
@@ -360,12 +541,15 @@ export async function runMutant(mutant, parent) {
 // at a time: bun's parallel workers give every test file a realm of its own, and this preload, run in each,
 // points the recorder of the copy the test file belongs to at that copy.
 const BATCH_PRELOAD = `// The preload of a batch of planted copies (written by the client conformance self-test).
+import { readFileSync } from 'node:fs';
 const toyDir = '/scripts/client-conformance/toy/';
 const base = Bun.main.slice(0, Bun.main.lastIndexOf(toyDir));
 globalThis[Symbol.for('devryan.client-conformance.config')] = {
   DEVRYAN_CONFORMANCE_BASE: base,
   DEVRYAN_CONFORMANCE_OUT: base + '-work/raw',
   DEVRYAN_CONFORMANCE_PORT_MAP: base + toyDir + 'port-map.json',
+  // The no-frame calls the copy's toy census names with their engine site (record.mjs noFrameAllowed).
+  DEVRYAN_CONFORMANCE_NO_FRAME: (JSON.parse(readFileSync(base + toyDir + 'census.json', 'utf8')).noFrame ?? []).map((item) => item.family + '#' + item.export).join(','),
 };
 await import(base + '/scripts/client-conformance/' + 'recorder' + '.mjs');
 `;
@@ -423,7 +607,8 @@ export function caught(mutant, differences) {
   return differences.some((difference) => {
     if (expected.vector) return difference.name === expected.vector && difference.check === 'vectors';
     if (expected.test) return typeof difference.test === 'string' && expected.test.test(difference.test) && difference.check === (expected.check ?? 'outcome');
-    if (mutant.tool === 'tools') return difference.check === expected.check;
+    if (mutant.tool === 'tools' || mutant.tool === 'family') return difference.check === expected.check;
+    if (mutant.tool === 'census') return difference.check === expected.check && expected.name.test(String(difference.name));
     if (expected.container && !(typeof difference.container === 'string' && expected.container.test(difference.container))) return false;
     if (expected.case && !(typeof difference.case === 'string' && expected.case.test(difference.case))) return false;
     return difference.check === expected.check && (expected.step === undefined || difference.step === expected.step);
@@ -434,8 +619,10 @@ export function caught(mutant, differences) {
  * Runs every mutant; resolves `[{ mutant, differences, caught, error? }]` in
  * list order. Corpus and stability mutants record together in one bun process
  * (`concurrency` workers); the others run `concurrency` at a time beside it.
+ * `only` limits the run to those names; `recordings` hands in two toy
+ * recordings for the family command's checks (runMutant).
  */
-export async function runPlanted(scratch, { concurrency = 6, only } = {}) {
+export async function runPlanted(scratch, { concurrency = 6, only, recordings } = {}) {
   const parent = realpathSync(scratch);
   const list = only ? PLANTED.filter((mutant) => only.includes(mutant.name)) : PLANTED;
   const results = new Array(list.length);
@@ -453,7 +640,7 @@ export async function runPlanted(scratch, { concurrency = 6, only } = {}) {
   const worker = async () => {
     while (next < alone.length) {
       const mutant = alone[next++];
-      await settle(mutant, runMutant(mutant, parent));
+      await settle(mutant, runMutant(mutant, parent, { recordings }));
     }
   };
   await Promise.all([batch, ...Array.from({ length: Math.min(concurrency, alone.length) }, worker)]);

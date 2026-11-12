@@ -71,6 +71,8 @@ const { ownKeys, apply, construct } = Reflect;
 const ArrayRef = Array;
 const { isArray } = Array;
 const ArrayPrototype = Array.prototype;
+// %IteratorPrototype%: what every built-in and generator iterator inherits from.
+const IteratorPrototype = getPrototypeOf(getPrototypeOf([][Symbol.iterator]()));
 const JSONStringify = JSON.stringify;
 const RealMap = Map;
 const RealSet = Set;
@@ -301,8 +303,8 @@ export function snapshot(value, context = createCodecContext()) {
     return describeObject(item);
   };
   // What a recorder wrapper stands for, described in place of the wrapper (same node, same identity).
-  const describeRaw = (raw) => (typeof raw === 'function' ? { kind: 'leaf', tree: { [TAG]: 'function', name: functionName(raw) } } : describeObject(raw));
-  const describeObject = (item) => {
+  const describeRaw = (raw) => (typeof raw === 'function' ? { kind: 'leaf', tree: { [TAG]: 'function', name: functionName(raw) } } : describeObject(raw, true));
+  const describeObject = (item, wrapped = false) => {
     if (isArray(item)) {
       const items = [];
       const length = getOwnPropertyDescriptor(item, 'length').value;
@@ -412,6 +414,10 @@ export function snapshot(value, context = createCodecContext()) {
         ...members(item, { skip: (key) => ERROR_POSITION_KEYS.has(key) || key === 'message' || key === 'cause' }),
       };
     }
+    // An iterator's position and what it yields are internal: an iterator the engine is handed (a Map's
+    // values(), a generator) would be written as an empty object and what it yields would be lost, so it
+    // flags the scope. One the recorder handed out as engine code is recorded by its own steps (next()).
+    if (!wrapped && apply(isPrototypeOf, IteratorPrototype, [item])) context.flags.add('iterator');
     for (const [base, , valueOf] of BOXES) {
       let primitive;
       try { primitive = apply(valueOf, item, []); } catch { continue; }

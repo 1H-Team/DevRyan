@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { importSpecifiers, isTestImporter, loadPackages, resolveSpecifier } from './check-import-boundaries.mjs';
-import { MARKDOWN_READERS, SUITE_CONTRACT, TREE_READERS, WHOLE_SUITE_INPUTS, buildScriptTestGraph, selectScriptTests, withMarkdownReaders } from './test-select.mjs';
+import { FULL_SUITE_ONLY, MARKDOWN_READERS, SUITE_CONTRACT, TREE_READERS, WHOLE_SUITE_INPUTS, buildScriptTestGraph, fastScriptSelection, selectScriptTests, withMarkdownReaders } from './test-select.mjs';
 import { discoverScriptTestFiles } from './test-scripts.mjs';
 
 const roots = [];
@@ -37,6 +37,20 @@ const base = {
 };
 
 describe('script test selection', () => {
+  test('fast mode drops full-suite-only tests from a selection, the whole suite included, and lists them', () => {
+    // Names that are no repository file: a `<name>.full.test.<ext>` test only the full suite runs.
+    const reasons = new Map([['scripts/x.mjs', '2 reaching it']]);
+    const subset = fastScriptSelection({ all: false, tests: ['scripts/sel-x.test.mjs', 'scripts/sel-x.full.test.mjs'], reasons, total: 3 });
+    assert.deepEqual(subset.tests, ['scripts/sel-x.test.mjs']);
+    assert.deepEqual(subset.deferred, ['scripts/sel-x.full.test.mjs']);
+    const whole = fastScriptSelection({ all: true, reason: 'r' }, () => ['scripts/sel-x.test.mjs', 'scripts/sel-y.full.test.ts', 'scripts/sel-z.test.mjs']);
+    assert.deepEqual([whole.all, whole.tests, whole.deferred], [true, ['scripts/sel-x.test.mjs', 'scripts/sel-z.test.mjs'], ['scripts/sel-y.full.test.ts']]);
+    const none = { all: false, tests: ['scripts/sel-x.test.mjs'], reasons, total: 3 };
+    assert.equal(fastScriptSelection(none), none);
+    assert.equal(fastScriptSelection(null), null);
+    assert.ok(!FULL_SUITE_ONLY.test('scripts/sel-full.test.mjs') && FULL_SUITE_ONLY.test('scripts/a/b.full.test.mjs'));
+  });
+
   test('a leaf script selects only the tests importing it', () => {
     const select = fixture(base);
     assert.deepEqual(select(['scripts/sel-leaf.mjs']).tests, ['scripts/sel-leaf.test.mjs']);

@@ -46,6 +46,16 @@
 // running there, which flags the case `outside-chain`. Port code runs under a
 // "port" store, whose own calls are not effects.
 //
+// The caller rule. With no engine chain running, an entry call is a step only
+// when its caller (the first frame outside the recorder) is test code by the
+// naming rule; any other call (engine code no family maps yet) is passed
+// through and counted per family and export and per caller file, and runs in
+// a pass-through store for its synchronous extent only. The caller decides
+// inside that store too, so a test callback the passed-through call runs is
+// the test's; what it schedules runs with no store. A call with no frame at
+// all flags its case `no-frame`, unless the census names it with its engine
+// site (DEVRYAN_CONFORMANCE_NO_FRAME).
+//
 // Cases. One test is one case. What runs outside a test (module load, a
 // beforeAll, a describe's afterAll, the file's afterAll) is a hooks case
 // numbered by the tests that ran before it, so nothing is lost or misfiled.
@@ -64,16 +74,20 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createCodecContext, emitSlots, hashText, snapshot, stringifyTree } from './codec.mjs';
-import { pathStem } from './container.mjs';
-import { loadPortMap } from './port-map.mjs';
+import { createCodecContext, emitSlots, hashText, snapshot } from './codec.mjs';
+import { pathStem, sliceTree } from './container.mjs';
+import { entryOf, isTestPath, loadPortMap } from './port-map.mjs';
 
 export const EPOCH = 1700000000000;
 export const PERFORMANCE_ORIGIN = 1000;
-export const RAW_VERSION = 3;
+export const RAW_VERSION = 5;
 // The recording's semantics: bumped by hand whenever what a recording says changes (attribution, late effects, flags).
-export const RECORDING_VERSION = 3;
+export const RECORDING_VERSION = 5;
+/** How long the recorder's own hook that writes a file's recording may take. */
+export const WRITE_TIMEOUT_MS = 600000;
 export const LAYERS = Object.freeze(['clock', 'random', 'globals', 'mock-module', 'entries']);
+// `discover` alone: no layer at all; the facade only notes which mapped modules the test file loads (record.mjs discoverLoading).
+const DISCOVER_LAYER = 'discover';
 const API = Symbol.for('devryan.client-conformance');
 
 // Intrinsics: tests replace globalThis.Map, Date, setTimeout and others.
@@ -99,6 +113,7 @@ const WeakMapSet = WeakMap.prototype.set;
 const WeakMapHas = WeakMap.prototype.has;
 const SetHas = Set.prototype.has;
 const SetAdd = Set.prototype.add;
+const SetForEach = Set.prototype.forEach;
 const MapForEach = Map.prototype.forEach;
 const ArrayIsArray = Array.isArray;
 const DateGetTime = Date.prototype.getTime;
@@ -130,10 +145,14 @@ const setting = (name) => (CONFIG && hasOwn(CONFIG, name) ? CONFIG[name] : proce
 const ROOT = realpathSync(setting('DEVRYAN_CONFORMANCE_BASE') || path.resolve(RECORDER_DIR, '../..'));
 const OUT = setting('DEVRYAN_CONFORMANCE_OUT') || '';
 const layerList = (setting('DEVRYAN_CONFORMANCE_LAYERS') || LAYERS.join(',')).split(',').map((name) => name.trim()).filter(Boolean);
-for (const name of layerList) if (!LAYERS.includes(name)) throw new Error(`client-conformance recorder: unknown layer ${name}`);
-const layers = new RealSet(layerList);
+const DISCOVER = layerList.length === 1 && layerList[0] === DISCOVER_LAYER;
+for (const name of layerList) if (!LAYERS.includes(name) && !DISCOVER) throw new Error(`client-conformance recorder: unknown layer ${name}${name === DISCOVER_LAYER ? ' (discover runs alone)' : ''}`);
+const layers = new RealSet(DISCOVER ? [] : layerList);
 const PORT_MAP_FILE = setting('DEVRYAN_CONFORMANCE_PORT_MAP');
 const portMap = PORT_MAP_FILE && layers.has('entries') ? loadPortMap(PORT_MAP_FILE, { root: ROOT }) : null;
+// The entries engine code calls with no frame at all, which the census names with the engine site (`family#export`, comma-separated):
+// such a call is passed through and counted; any other call with no frame flags its case `no-frame`.
+const NO_FRAME_ALLOWED = new RealSet(String(setting('DEVRYAN_CONFORMANCE_NO_FRAME') ?? '').split(',').map((item) => item.trim()).filter(Boolean));
 
 const relative = (absolute) => {
   const clean = absolute.replace(/\?.*$/, '');
@@ -202,7 +221,16 @@ const listOf = (args) => { const out = []; for (let index = 0; index < args.leng
 let current = newCase({ hooks: 0 });
 const closed = [];
 
-const storeNow = () => als.getStore();
+/**
+ * The store of the running code. A pass-through store (passThrough) holds only
+ * while its call runs synchronously: a timer, a promise job or a callback that
+ * call scheduled inherits the store object, but runs with no store, as test
+ * code would, so what the test does there is the test's.
+ */
+const storeNow = () => {
+  const store = als.getStore();
+  return store !== undefined && store.kind === 'passthrough' && store.active !== true ? undefined : store;
+};
 /** Who is running: engine (a chain of a case, the current one or an earlier one), port, harness or test. */
 function originOf(store) {
   if (!store) return 'test';
@@ -211,7 +239,7 @@ function originOf(store) {
 
 function familyRecord(name, owner = current) {
   let record = apply(MapGet, owner.families, [name]);
-  if (!record) { record = { steps: [], timers: 0, portCalls: 0, objects: 0 }; apply(MapSet, owner.families, [name, record]); }
+  if (!record) { record = { steps: [], timers: 0, portCalls: 0, objects: 0, flags: new RealSet() }; apply(MapSet, owner.families, [name, record]); }
   return record;
 }
 
@@ -451,14 +479,16 @@ function drawBytes(length) {
 }
 
 const FRAME = /\(?((?:\/|[A-Za-z]:\\)[^():]+(?:\?[^():]*)?):(\d+)(?::\d+)?\)?\s*$/;
-/** The frames of the running code with a file, newest first, as `[file, line]`; the recorder's own are left out. */
 const DEFAULT_STACK = RealError.stackTraceLimit;
-function frames(limit) {
+/** The running code's stack as an Error gives it, `limit` frames deep (the first line is the Error's own). */
+function stackText(limit) {
   const saved = RealError.stackTraceLimit;
-  let stack = '';
-  try { RealError.stackTraceLimit = limit; stack = String(new RealError().stack ?? ''); } finally { RealError.stackTraceLimit = saved; }
+  try { RealError.stackTraceLimit = limit; return String(new RealError().stack ?? ''); } finally { RealError.stackTraceLimit = saved; }
+}
+/** The frames of the running code with a file, newest first, as `[file, line]`; the recorder's own are left out. `text`: a stack already taken. */
+function frames(limit, text = stackText(limit)) {
   const out = [];
-  for (const line of stack.split('\n').slice(1)) {
+  for (const line of text.split('\n').slice(1)) {
     const match = FRAME.exec(line);
     if (!match) continue;
     const file = match[1].replace(/\?.*$/, '');
@@ -475,27 +505,63 @@ function drawSite() {
 
 // Engine code running outside any engine chain: code of a family that the test reached through a value
 // the recorder could not wrap (a function deep inside returned data, one the engine passed to a test
-// callback), or that ran at module load. What it does is no step of any input, so the case it happens in
-// is flagged `outside-chain`. Two detectors:
-// - a call of a family's port (a module port, or a member of a port object of particular families) with
-//   no engine chain running is always flagged, whoever makes it: the stack cannot tell the test from
-//   engine code, because JavaScriptCore's proper tail calls drop the frame of `() => port(...)`;
+// callback), or that ran at module load. What it does is no step of any input, so it is flagged
+// `outside-chain`, and never lost: a family the flag names gets a line in the case (with no step) if it has
+// none, so the case is written, unrecordable, for that family. Two detectors:
+// - a call of a family's port (a module port, or a member of a port object of particular families) with no
+//   engine chain running (flagOutside), decided by its caller, the first frame outside the recorder: a
+//   frame of a family's own module is that family's engine code, which flags that family; test code flags
+//   the port's families that have a line, and gives each that has none a line flagged `port-no-line`,
+//   since JavaScriptCore's proper tail calls drop the frame of `() => port(...)`, so a closure of the
+//   family can look like the test's own call; engine code no family maps (or anything inside a
+//   pass-through call) is that code's own dependency: passed through and counted (`passed.ports`);
 // - any other effect with no engine chain running (a timer, a clock read, a draw, a global port's call or
-//   read) is flagged when a frame of a family's module is on the stack. That one is best effort: a tail
-//   call or code in a module the family imports leaves no frame of the family's own module.
-const FAMILY_FILES = portMap ? new RealSet(portMap.families.map((family) => family.module)) : null;
+//   read) flags the case when a frame of a family's module is on the stack (checkOutside), and gives each
+//   such family a line. That one is best effort: a tail call or code in a module the family imports
+//   leaves no frame of the family's own module.
+const FAMILY_FILES = portMap ? new RealMap(portMap.families.map((family) => [family.module, portMap.modules.get(family.module)?.families ?? [family.name]])) : null;
 const STACK_DEPTH = 200;
-/** Whether code of a family's module is on the stack. */
-function familyOnStack() {
-  for (const [file] of frames(STACK_DEPTH)) if (apply(SetHas, FAMILY_FILES, [file])) return true;
-  return false;
+/** The families whose module has code on the stack. */
+function familiesOnStack() {
+  const found = [];
+  // Most checks find no family module at all: its path in the stack's text is needed for a frame of it.
+  const text = stackText(STACK_DEPTH);
+  let named = false;
+  apply(MapForEach, FAMILY_FILES, [(_names, file) => { if (!named && text.includes(file)) named = true; }]);
+  if (!named) return found;
+  for (const [file] of frames(STACK_DEPTH, text)) for (const name of apply(MapGet, FAMILY_FILES, [file]) ?? []) if (!found.includes(name)) found.push(name);
+  return found;
 }
-/** With no engine chain running: flags the current case when family code is running anyway. */
+/** Flags `flag` on the line of `name` in the current case, making the line (with no step) when there is none. */
+function flagFamily(name, flag) {
+  familyRecord(name).flags.add(flag);
+}
+/** With no engine chain running: flags the current case when family code is running anyway, and gives each such family a line. */
 function checkOutside() {
-  if (FAMILY_FILES && guard('outside', () => familyOnStack(), false)) current.flags.add('outside-chain');
+  if (originOf(storeNow()) === 'passthrough') return;
+  if (!FAMILY_FILES) return;
+  const found = guard('outside', () => familiesOnStack(), []);
+  if (found.length === 0) return;
+  current.flags.add('outside-chain');
+  for (const name of found) familyRecord(name);
 }
-/** A family's port used with no engine chain running. */
-const flagOutside = () => { current.flags.add('outside-chain'); };
+/** A family's port used with no engine chain running (see above). `port` is its name. */
+function flagOutside(families, port) {
+  const passing = originOf(storeNow()) === 'passthrough';
+  const [first] = guard('caller', () => frames(CALLER_FRAMES), []);
+  const file = first ? first[0] : null;
+  const test = file !== null && isTestCode(file);
+  const own = file !== null ? apply(MapGet, FAMILY_FILES, [file]) : undefined;
+  if (!test && (passing || own === undefined)) { notePassedPort(port, file, passing); return; }
+  if (own !== undefined) for (const name of own) flagFamily(name, 'outside-chain');
+  apply(SetForEach, families, [(name) => {
+    const record = apply(MapGet, current.families, [name]);
+    // A line that only an earlier port-no-line made has no engine code of its own: another such use is the same.
+    const lineOnly = record !== undefined && record.steps.length === 0 && record.flags.has('port-no-line');
+    if (record && !(test && lineOnly)) record.flags.add('outside-chain');
+    else if (test) flagFamily(name, 'port-no-line');
+  }]);
+}
 
 function noteDraw(source, value, store = storeNow()) {
   const origin = originOf(store);
@@ -827,7 +893,7 @@ function portFunction(name, target, { thisArg, wrapAnswers = false, families = n
     if (origin === 'port' || origin === 'harness') return invoke(args);
     if (origin === 'engine' && families && !apply(SetHas, families, [store.family])) return invoke(args); // inlined for this family
     const engine = origin === 'engine';
-    if (!engine && families) flagOutside();
+    if (!engine && families) flagOutside(families, name);
     // Engine calls are numbered 1, 2, ... per family; the test's own t1, t2, ... so they never shift the engine's.
     const effect = guard('port', () => ({ kind: isNew ? 'new' : 'port', port: name, call: engine ? (familyRecord(store.family, store.case).portCalls += 1) : `t${(current.testCalls += 1)}`, args: ref(listOf(args)) }), null);
     if (effect) guard('port', () => record(effect, store));
@@ -906,14 +972,14 @@ function portObject(name, target, { families = null, wrapAnswers = false } = {})
         const store = storeNow();
         const origin = originOf(store);
         if (origin === 'engine' && (!families || apply(SetHas, families, [store.family]))) guard('port.read', () => record({ kind: 'read', port: name, key: ref(key), value: ref(answer) }, store));
-        else if (origin === 'test') { if (families) flagOutside(); else checkOutside(); }
+        else if (origin === 'test' || origin === 'passthrough') { if (families) flagOutside(families, name); else checkOutside(); }
       }
       return answer;
     },
     set(object, key, value) {
       const store = storeNow();
       let stored = value;
-      if (originOf(store) === 'test') { if (families) flagOutside(); else checkOutside(); }
+      if (originOf(store) === 'test' || originOf(store) === 'passthrough') { if (families) flagOutside(families, name); else checkOutside(); }
       if (originOf(store) === 'engine' && (!families || apply(SetHas, families, [store.family]))) {
         guard('port.set', () => record({ kind: 'set', port: name, key: ref(key), value: ref(value) }, store));
         if (typeof value === 'function') stored = callbackFor(store.family, `${name}.${String(key)}`, value, store);
@@ -940,6 +1006,14 @@ function callEntry(family, spec, label, target, thisArg, args, newTarget, crossi
   const origin = originOf(store);
   const invoke = (finalArgs) => (newTarget !== undefined ? construct(target, finalArgs, newTarget) : apply(target, thisArg, finalArgs));
   if (origin === 'harness') return invoke(args);
+  // With no engine chain running, the caller frame decides, inside a pass-through call too: test code's call
+  // is recorded; any other caller's (engine code no family maps) is passed through and counted, never a step.
+  // Engine code an entry handed the test (spec.handedOut) is the test's when no frame shows a caller: the
+  // runtime itself runs it (an `await` calling a thenable's then), and only the test was handed it.
+  if (origin === 'test' || origin === 'passthrough') {
+    const caller = guard('caller', () => callerOf(), null);
+    if (caller === null ? spec.handedOut !== true : !caller.test) return passThrough(family, label, caller, origin === 'passthrough', () => invoke(args));
+  }
   let portEffect = null;
   if (origin === 'engine') {
     if (store.family === family || !crossing || !apply(SetHas, crossing.families, [store.family])) return invoke(args); // inlined
@@ -950,6 +1024,10 @@ function callEntry(family, spec, label, target, thisArg, args, newTarget, crossi
   const kase = caseOf(portEffect ? store : null);
   // What the test hands in is the test's, never engine code to hand back out wrapped.
   if (!portEffect) guard('entry', () => { for (const arg of args) markForeign(arg); });
+  // A function the test hands in that no injected port wraps (an argument, or a member of one) is opaque: what it
+  // answers the engine, and any family call it makes inside the chain, would be lost silently. The family's line
+  // is flagged `test-function` (unrecordable, listed by test) until the map declares it as a port.
+  if (!portEffect && guard('entry', () => opaqueTestFunction(spec, args), false)) familyRecord(family, kase).flags.add('test-function');
   const input = { kind: spec.input ?? (newTarget !== undefined ? 'new' : 'call'), entry: label, args: ref(listOf(args), kase) };
   if (portEffect) input.caller = store.family;
   const step = guard('entry', () => openStep(family, input, portEffect ? null : store, kase), null);
@@ -983,6 +1061,107 @@ function callEntry(family, spec, label, target, thisArg, args, newTarget, crossi
   // An async entry-object factory: its resolved value is handed out, through a derived promise (one microtask later).
   if (whole && isPromise(result)) return apply(PromiseThen, result, [(value) => handOut(family, label, value, kase, true)]);
   return handOut(family, label, result, kase, whole);
+}
+
+// Who called an entry with no engine chain running: test code (the test file, or a file the naming rule
+// calls test code: port-map.mjs isTestPath, a hard rule in docs/TESTING.md; a toy test `*.toy.mjs`), or
+// engine code that no family of the map owns yet (a product module, a library). Only the test's calls are
+// a family's cases: what an unmapped engine module does with an entry is that module's behaviour, recorded
+// with its own family once it is mapped (where the entry is inlined), so here it is passed through and
+// counted (passThrough). The caller is the first frame outside the recorder; a frame that a proper tail
+// call removed shows the caller's caller, so a product function that tail-calls an entry for the test
+// counts as the test's call (a genuine call either way).
+const MAIN_FILE = (() => { try { return realpathSync(Bun.main); } catch { return Bun.main; } })();
+const testFiles = new RealMap(); // file -> whether it is test code
+function isTestCode(file) {
+  let known = apply(MapGet, testFiles, [file]);
+  if (known === undefined) {
+    const at = relative(file);
+    known = file === Bun.main || file === MAIN_FILE || (at !== '<outside>' && isTestPath(at)) || (file.startsWith(TOY_DIR) && file.endsWith('.toy.mjs'));
+    apply(MapSet, testFiles, [file, known]);
+  }
+  return known;
+}
+// Enough frames to get past the recorder's own (its traps, promise windows and guards) to the caller.
+const CALLER_FRAMES = 40;
+/** The caller of a trap: `{ file, test }` for the first frame outside the recorder, or null when no frame has a file. */
+function callerOf() {
+  if (!FAMILY_FILES) return { file: null, test: true };
+  const [first] = frames(CALLER_FRAMES);
+  return first ? { file: first[0], test: isTestCode(first[0]) } : null;
+}
+
+// What is passed through, counted (written in the raw; the family command prints it and judges it):
+// - `unmapped`: family -> export -> calls;
+// - `callers`: caller file (repository-relative, `<outside>` beyond the root, `<no frame>`) -> `family#export` -> calls;
+// - `portCallers`: caller file -> port -> uses (a family's port used by engine code no family maps, or inside a pass-through call);
+// - `noFrame`: `family#export` -> calls that had no frame with a file at all;
+// - `passed`: the totals (`calls`, `nested`: made inside a pass-through call, `noFrame`, `ports`, `portsNested`).
+const unmapped = {};
+const callers = {};
+const portCallers = {};
+const noFrame = {};
+const passed = { calls: 0, nested: 0, noFrame: 0, ports: 0, portsNested: 0 };
+const callerName = (file) => (file === null ? '<no frame>' : relative(file));
+const bump = (table, key, inner) => { const row = (table[key] ??= {}); row[inner] = (row[inner] ?? 0) + 1; };
+/**
+ * Passes an entry call through: counted, never a step. Outside a pass-through call it runs in a
+ * pass-through store, so what it does in turn (another family's entry, a debug flag read, a port) is
+ * that module's, never a flag; the store holds for the call's synchronous extent only (storeNow). A call
+ * with no frame at all (a bound entry a job runs, an engine continuation whose only frame a tail call
+ * removed) may be the test's: unless the census names it as one engine code calls so (NO_FRAME_ALLOWED,
+ * with the engine site), its family's line in the current case is flagged `no-frame`.
+ */
+function passThrough(family, label, caller, nested, run) {
+  guard('unmapped', () => {
+    const name = String(label);
+    const key = `${family}#${baseExport(name)}`;
+    bump(unmapped, family, name);
+    bump(callers, callerName(caller?.file ?? null), key);
+    passed.calls += 1;
+    if (nested) passed.nested += 1;
+    if (caller === null) {
+      passed.noFrame += 1;
+      noFrame[key] = (noFrame[key] ?? 0) + 1;
+      if (!apply(SetHas, NO_FRAME_ALLOWED, [key])) flagFamily(family, 'no-frame');
+    }
+  });
+  if (nested) return run();
+  const store = { kind: 'passthrough', case: current, active: true };
+  try { return als.run(store, run); } finally { store.active = false; }
+}
+/** A family's port passed through (flagOutside): counted by its caller. */
+function notePassedPort(port, file, nested) {
+  guard('unmapped', () => {
+    passed.ports += 1;
+    if (nested) passed.portsNested += 1;
+    bump(portCallers, callerName(file), String(port));
+  });
+}
+const baseExport = (label) => String(label).split('#')[0].split('.')[0];
+
+// Engine code handed back in (a handed-out wrapper, a port) and platform functions are no test function.
+const opaqueFunction = (value) => typeof value === 'function' && !apply(WeakMapHas, rawOf, [value]) && !apply(WeakMapHas, portNames, [value]) && !isNative(value);
+/**
+ * Whether the test's arguments hold a function, at the top or as an own data
+ * member of one other than the draft, that `spec.injected` does not declare a port.
+ */
+function opaqueTestFunction(spec, args) {
+  const injected = spec.injected ?? [];
+  const declared = (index, key) => injected.some((item) => item.arg === index && item.key === key);
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (declared(index, undefined)) continue;
+    if (opaqueFunction(arg)) return true;
+    // The draft is state: a store's own actions in it are the store's, no callback the test hands in.
+    if (index === spec.draft || arg === null || typeof arg !== 'object' || isPromise(arg) || apply(WeakMapHas, rawOf, [arg]) || apply(WeakMapHas, portNames, [arg]) || (ArrayIsArray(arg) && arg.length > 64)) continue;
+    for (const key of ownKeys(arg)) {
+      if (declared(index, key)) continue;
+      const descriptor = getOwnPropertyDescriptor(arg, key);
+      if (descriptor && hasOwn(descriptor, 'value') && opaqueFunction(descriptor.value)) return true;
+    }
+  }
+  return false;
 }
 
 function injectPorts(family, spec, args) {
@@ -1034,6 +1213,8 @@ function wrapEntry(family, spec, label, target, crossing) {
 // the object itself, so brand checks hold. What came from the test (its
 // arguments, a port's answers) is never handed out as engine code.
 const handedOut = new RealWeakMap(); // target -> its wrapper
+const HANDED_OUT = Object.freeze({ handedOut: true });
+const HANDED_OUT_GET = Object.freeze({ input: 'get', handedOut: true });
 const foreign = new RealWeakMap(); // value the test or a port supplied -> true
 const FunctionToString = Function.prototype.toString;
 const NATIVE_SOURCE = /\{\s*\[native code\]\s*\}\s*$/;
@@ -1103,8 +1284,8 @@ function engineWrapper(family, name, target, owner, parent) {
   let proxy = null;
   const handler = { get: (object, key) => memberOf(family, name, object, proxy, key, owner, members) };
   if (typeof target === 'function') {
-    handler.apply = (fn, thisArg, args) => callEntry(family, {}, name, fn, parent && thisArg === parent.proxy ? parent.object : thisArg, args, undefined, null);
-    handler.construct = (fn, args, newTarget) => (newTarget === proxy ? callEntry(family, {}, name, fn, undefined, args, fn, null) : construct(fn, args, newTarget));
+    handler.apply = (fn, thisArg, args) => callEntry(family, HANDED_OUT, name, fn, parent && thisArg === parent.proxy ? parent.object : thisArg, args, undefined, null);
+    handler.construct = (fn, args, newTarget) => (newTarget === proxy ? callEntry(family, HANDED_OUT, name, fn, undefined, args, fn, null) : construct(fn, args, newTarget));
   }
   proxy = new RealProxy(target, handler);
   if (!parent) apply(WeakMapSet, handedOut, [target, proxy]);
@@ -1126,12 +1307,13 @@ function memberOf(family, name, object, proxy, key, owner, members) {
   if (!hasOwn(descriptor, 'value')) {
     // An engine getter read from outside the engine is an input; a platform getter reads the object itself.
     if (typeof descriptor.get !== 'function' || isNative(descriptor.get)) return reflectGet(object, key);
-    return callEntry(family, { input: 'get' }, label, descriptor.get, object, [], undefined, null);
+    return callEntry(family, HANDED_OUT_GET, label, descriptor.get, object, [], undefined, null);
   }
   const value = descriptor.value;
   if (value === null || (typeof value !== 'object' && typeof value !== 'function') || key === 'constructor' || (typeof object === 'function' && key === 'prototype')) return value;
   if (holder === object && !substitutable(object, key)) {
-    if (originOf(storeNow()) === 'test' && guard('hand-out', () => carriesCode(value), false)) current.flags.add('unwrappable');
+    // The family gets a line in the current case, so the flag is never on a case that is written for no family.
+    if (originOf(storeNow()) === 'test' && guard('hand-out', () => carriesCode(value), false)) { current.flags.add('unwrappable'); familyRecord(family); }
     return value;
   }
   if (typeof value !== 'function') return handOut(family, label, value, owner);
@@ -1153,7 +1335,74 @@ function memberOf(family, name, object, proxy, key, owner, members) {
 
 // ------------------------------------------------------- facades for the map
 
+const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+const loaderFor = (file) => (file.endsWith('.tsx') ? 'tsx' : file.endsWith('.ts') || file.endsWith('.mts') || file.endsWith('.cts') ? 'ts' : file.endsWith('.jsx') ? 'jsx' : 'js');
+// Discovery (the `discover` layer alone): which family modules this test file loads, and how often test code
+// (by the caller rule) calls their function exports, or anything calls one with no frame. Nothing else is
+// wrapped or recorded. The report is written as soon as the file starts and again whenever it changes, so a
+// file that stops part-way still reports what it did.
+if (DISCOVER && PORT_MAP_FILE && OUT) {
+  const families = loadPortMap(PORT_MAP_FILE, { root: ROOT }).families;
+  // `callers`: every other caller file -> `module#export` -> calls, so the family command can apply the
+  // unclassified-caller rule to a file whose test code reaches a family only through such a caller.
+  const report = { file: TEST_FILE, loaded: [], testCalls: 0, noFrame: 0, callers: {} };
+  let pending = false;
+  const write = () => guard('discover', () => writeFileSync(path.join(OUT, `${pathStem(TEST_FILE)}.loaded.json`), JSON.stringify(report)));
+  // Counts are written once per turn of the event loop at most, and when the file ends.
+  const changed = () => { if (pending) return; pending = true; nativeTimers.setTimeout(() => { pending = false; write(); }, 0); };
+  mkdirSync(OUT, { recursive: true });
+  write();
+  afterAll(() => { write(); });
+  const api = {
+    wrap(value, key) {
+      if (typeof value !== 'function') return value;
+      return new RealProxy(value, {
+        apply(target, thisArg, args) {
+          guard('discover', () => {
+            const [first] = frames(CALLER_FRAMES);
+            if (!first) report.noFrame += 1; else if (isTestCode(first[0])) report.testCalls += 1;
+            else {
+              // Counted in memory; written when a caller or an export is new to this file, and when the file ends.
+              const row = (report.callers[relative(first[0])] ??= {});
+              const seen = hasOwn(row, key);
+              row[key] = (seen ? row[key] : 0) + 1;
+              if (seen) return;
+            }
+            changed();
+          });
+          return apply(target, thisArg, args);
+        },
+      });
+    },
+  };
+  defineProperty(globalThis, Symbol.for('devryan.client-conformance.discover'), { value: api, configurable: true, enumerable: false, writable: false });
+  const files = families.map((family) => family.module);
+  const filter = new RegExp(`^(?:${files.map(escapeRegExp).join('|')})(?:\\?conformance-real)?$`);
+  Bun.plugin({
+    name: 'devryan-client-conformance-discover',
+    setup(build) {
+      build.onLoad({ filter }, (args) => {
+        const [file, query] = args.path.split('?');
+        const source = readFileSync(file, 'utf8');
+        if (query === 'conformance-real') return { contents: source, loader: loaderFor(file) };
+        const name = relative(file);
+        if (!report.loaded.includes(name)) { report.loaded.push(name); report.loaded.sort(); write(); }
+        const real = JSON.stringify(`${file}?conformance-real`);
+        const lines = [`import * as __real from ${real};`, "const __api = globalThis[Symbol.for('devryan.client-conformance.discover')];", `export * from ${real};`];
+        for (const exported of new Bun.Transpiler({ loader: loaderFor(file) }).scan(source).exports) {
+          const key = JSON.stringify(`${name}#${exported}`);
+          if (exported === 'default') lines.push(`export default __api.wrap(__real.default, ${key});`);
+          else lines.push(`export const ${exported} = __api.wrap(__real.${exported}, ${key});`);
+        }
+        return { contents: lines.join('\n'), loader: 'js' };
+      });
+    },
+  });
+}
+
 const loadedFamilies = new RealMap(); // family -> real module namespace
+const loadedModules = new RealMap(); // mapped module file -> real module namespace (its exports are reported for the census)
+const scannedModules = new RealMap(); // mapped module file -> the export names its source declares (Bun's scan, at load)
 if (portMap) {
   const injectedByEntry = new RealMap();
   for (const family of portMap.families) for (const item of family.injected ?? []) {
@@ -1162,10 +1411,13 @@ if (portMap) {
     apply(MapGet, injectedByEntry, [key]).push(item);
   }
   const api = {
-    loaded(file, namespace) { for (const name of portMap.modules.get(file)?.families ?? []) apply(MapSet, loadedFamilies, [name, namespace]); },
+    loaded(file, namespace) {
+      apply(MapSet, loadedModules, [file, namespace]);
+      for (const name of portMap.modules.get(file)?.families ?? []) apply(MapSet, loadedFamilies, [name, namespace]);
+    },
     wrap(file, exportName, value) {
       const target = portMap.modules.get(file);
-      const entry = target?.entries.get(exportName);
+      const entry = typeof value === 'function' ? entryOf(target, exportName) : null;
       const port = target?.ports.get(exportName);
       const crossing = port ? { name: port.name, families: new RealSet(port.families), wrapAnswers: port.wrapAnswers === true } : null;
       if (entry) {
@@ -1178,10 +1430,8 @@ if (portMap) {
     },
   };
   defineProperty(globalThis, API, { value: api, configurable: true, enumerable: false, writable: false });
-  const escape = (text) => text.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
   const files = [...portMap.modules.keys()];
-  const filter = new RegExp(`^(?:${files.map(escape).join('|')})(?:\\?conformance-real)?$`);
-  const loaderFor = (file) => (file.endsWith('.tsx') ? 'tsx' : file.endsWith('.ts') || file.endsWith('.mts') || file.endsWith('.cts') ? 'ts' : file.endsWith('.jsx') ? 'jsx' : 'js');
+  const filter = new RegExp(`^(?:${files.map(escapeRegExp).join('|')})(?:\\?conformance-real)?$`);
   Bun.plugin({
     name: 'devryan-client-conformance',
     setup(build) {
@@ -1191,11 +1441,12 @@ if (portMap) {
         if (query === 'conformance-real' || !portMap.modules.has(file)) return { contents: source, loader: loaderFor(file) };
         const target = portMap.modules.get(file);
         const exports = new Bun.Transpiler({ loader: loaderFor(file) }).scan(source).exports;
+        apply(MapSet, scannedModules, [file, [...exports].sort()]);
         const real = JSON.stringify(`${file}?conformance-real`);
         const key = JSON.stringify(file);
         const lines = [`import * as __real from ${real};`, `const __api = globalThis[Symbol.for('devryan.client-conformance')];`, `__api.loaded(${key}, __real);`, `export * from ${real};`];
         for (const name of exports) {
-          const wrapped = target.entries.has(name) || target.ports.has(name);
+          const wrapped = target.entries.has(name) || target.ports.has(name) || entryOf(target, name) !== null;
           if (name === 'default') lines.push(wrapped ? `export default __api.wrap(${key}, "default", __real.default);` : `export { default } from ${real};`);
           else if (wrapped) lines.push(`export const ${name} = __api.wrap(${key}, ${JSON.stringify(name)}, __real.${name});`);
         }
@@ -1523,7 +1774,8 @@ function finalizeFamily(entry, steps, end, context) {
   const trees = emitSlots(pending.map((item) => item.taken));
   const slots = new RealMap();
   pending.forEach((item, index) => {
-    const text = stringifyTree(trees[index]);
+    // Large subtrees and strings are stored once, as slices (container.mjs).
+    const text = sliceTree(trees[index], (sliceHash, sliceText) => { if (!apply(MapHas, values, [sliceHash])) apply(MapSet, values, [sliceHash, sliceText]); });
     const hash = hashText(text);
     if (!apply(MapHas, values, [hash])) apply(MapSet, values, [hash, text]);
     apply(MapSet, slots, [item, `=${hash}`]);
@@ -1544,8 +1796,11 @@ function finalizeCase(record) {
   const families = {};
   apply(MapForEach, record.families, [(entry, name) => { families[name] = guard('case.write', () => finalizeFamily(record.entryState[name], entry.steps, record.endState[name], record.context), null); }]);
   const flags = [...record.codec.flags, ...record.flags].filter((flag, index, list) => list.indexOf(flag) === index).sort();
-  record.out = { kind: record.kind, ...(record.kind === 'test' ? { ordinal: record.ordinal } : { hooks: record.hooks }), seed: record.seed, entryNow: record.entryNow, endNow: record.endNow, flags, families, contextRecords: record.context.length };
-  return record.kind === 'test' || ownKeys(families).length > 0 || record.out.contextRecords > 0;
+  const familyFlags = {};
+  apply(MapForEach, record.families, [(entry, name) => { if (entry.flags.size) familyFlags[name] = [...entry.flags].sort(); }]);
+  record.out = { kind: record.kind, ...(record.kind === 'test' ? { ordinal: record.ordinal } : { hooks: record.hooks }), seed: record.seed, entryNow: record.entryNow, endNow: record.endNow, flags, familyFlags, families, contextRecords: record.context.length };
+  // A hooks case is kept when anything happened in it, a flag included (record.mjs refuses a flag that no family's line carries).
+  return record.kind === 'test' || ownKeys(families).length > 0 || record.out.contextRecords > 0 || flags.length > 0;
 }
 
 // Tests that overlap (test.concurrent) cannot be told apart: while more than
@@ -1587,6 +1842,45 @@ afterEach(() => {
 });
 
 /** For each family, a digest of the sources of its module and its port modules (the code a recording is of). */
+/**
+ * The runtime exports of every mapped module this file loaded, as `{ module:
+ * { name: kind } }` (kind: `function`, `class` or `data`), read from the real
+ * namespace when the file ends; the census derives export lists from them, so
+ * nothing in a tracked file lists what a module exports.
+ */
+function moduleExports() {
+  const out = {};
+  apply(MapForEach, loadedModules, [(namespace, file) => {
+    const kinds = {};
+    for (const name of ownKeys(namespace).filter((key) => typeof key === 'string').sort()) {
+      kinds[name] = guard('exports', () => {
+        const value = namespace[name];
+        if (typeof value !== 'function') return 'data';
+        return /^class\b/.test(apply(FunctionToString, value, [])) ? 'class' : 'function';
+      }, 'unknown');
+    }
+    out[relative(file)] = kinds;
+  }]);
+  return out;
+}
+
+const scannedExports = () => {
+  const out = {};
+  apply(MapForEach, scannedModules, [(names, file) => { if (apply(MapHas, loadedModules, [file])) out[relative(file)] = names; }]);
+  return out;
+};
+/** A table of tables with its keys sorted at both levels (the raw's bytes do not depend on call order). */
+const sortedTable = (table) => {
+  const out = {};
+  for (const key of ownKeys(table).sort()) {
+    const row = table[key];
+    if (row === null || typeof row !== 'object') { out[key] = row; continue; }
+    out[key] = {};
+    for (const inner of ownKeys(row).sort()) out[key][inner] = row[inner];
+  }
+  return out;
+};
+
 function moduleDigests() {
   if (!portMap) return null;
   const out = {};
@@ -1603,12 +1897,15 @@ afterAll(() => {
   guard('case.close', () => { checkGlobals(current); closeCase(); });
   const kept = closed.filter((entry) => guard('case.write', () => finalizeCase(entry), true));
   written = true;
-  if (!OUT) return;
+  if (!OUT || DISCOVER) return;
   const raw = {
     version: RAW_VERSION, recording: RECORDING_VERSION, file: TEST_FILE, bun: Bun.version, layers: [...layers], portMap: portMap?.digest ?? null, modules: MODULES, epoch: EPOCH,
+    exports: guard('exports', () => moduleExports(), {}), scanned: guard('exports', () => scannedExports(), {}),
+    passed, unmapped: sortedTable(unmapped), callers: sortedTable(callers), portCallers: sortedTable(portCallers), noFrame: sortedTable(noFrame),
     cases: kept.map((entry) => entry.out), values: Object.fromEntries(values), errors, unplaced,
   };
   mkdirSync(OUT, { recursive: true });
   // Never overwrite: two test files must never share a recording.
   writeFileSync(path.join(OUT, `${pathStem(TEST_FILE)}.raw.json`), JSON.stringify(raw), { flag: 'wx' });
-});
+// Writing a file's recording can take longer than a hook's default 5 s; its time is the recorder's, not the test's.
+}, { timeout: WRITE_TIMEOUT_MS });
