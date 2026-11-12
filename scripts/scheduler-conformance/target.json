@@ -1,0 +1,121 @@
+{
+  "module": "../../packages/orchestration-runtime/scheduler.js",
+  "export": "createManagedTaskScheduler",
+  "defaults": {
+    "createTaskId": "dvr_task_",
+    "createLeaseToken": "dvr_lease_",
+    "createWaveId": "dvr_wave_"
+  },
+  "env": [
+    "DEVRYAN_ORCHESTRATION_UNACKNOWLEDGED_EXPIRY"
+  ],
+  "defaultPersistence": [
+    "const createDefaultPersistence = () => ({\n  async load() {\n    return null;\n  },\n  async save() {\n  },\n});",
+    "const persistence = options.persistence ?? createDefaultPersistence();"
+  ],
+  "savedState": {
+    "file": "codec.js",
+    "export": "encodeLedgerSnapshot",
+    "port": "persistence.save",
+    "arg": 0
+  },
+  "sites": [
+    {
+      "site": "persistLocked",
+      "kind": "draw",
+      "anchor": "ownerID: createRandomId('dvr_save_')"
+    },
+    {
+      "site": "cancelSingleTask",
+      "kind": "draw",
+      "anchor": "requestId: createRandomId('stop_'), leaseToken: current.leaseToken"
+    },
+    {
+      "site": "recordOperatorStop",
+      "kind": "draw",
+      "anchor": "async recordOperatorStop({ sessionId, directory, requestedAt, requestId = createRandomId('stop_') })"
+    },
+    {
+      "site": "createRandomId",
+      "kind": "helper",
+      "anchor": "const random = globalThis.crypto?.randomUUID?.()"
+    },
+    {
+      "site": "runExclusive.queued",
+      "kind": "clock",
+      "anchor": "const queuedAt = options.onMutationTiming ? performance.now() : 0;"
+    },
+    {
+      "site": "runExclusive.started",
+      "kind": "clock",
+      "anchor": "const startedAt = options.onMutationTiming ? performance.now() : 0;"
+    },
+    {
+      "site": "runExclusive.held",
+      "kind": "clock",
+      "anchor": "holdMs: performance.now() - startedAt, failed"
+    },
+    {
+      "site": "persistLocked",
+      "kind": "env",
+      "anchor": "?? globalThis.process?.env?.DEVRYAN_ORCHESTRATION_UNACKNOWLEDGED_EXPIRY !== '0',"
+    }
+  ],
+  "unreached": [
+    {
+      "anchor": "?? `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;",
+      "reason": "the fallback of createRandomId when crypto.randomUUID is missing; Bun has it"
+    },
+    {
+      "anchor": "const now = options.now ?? Date.now;",
+      "reason": "the recorder always passes now (the test's, or its own default)"
+    },
+    {
+      "anchor": "const createTaskId = options.createTaskId ?? (() => createRandomId(MANAGED_TASK_ID_PREFIX));",
+      "reason": "the recorder always passes createTaskId (the test's, or its own served default)"
+    },
+    {
+      "anchor": "const createLeaseToken = options.createLeaseToken ?? (() => createRandomId('dvr_lease_'));",
+      "reason": "the recorder always passes createLeaseToken"
+    },
+    {
+      "anchor": "const createWaveId = options.createWaveId ?? (() => createRandomId(MANAGED_WAVE_ID_PREFIX));",
+      "reason": "the recorder always passes createWaveId"
+    },
+    {
+      "file": "persistence.js",
+      "anchor": "const now = options.now ?? Date.now();",
+      "reason": "the scheduler's one call of compactManagedOrchestrationState passes now: now()"
+    }
+  ],
+  "direct": [
+    {
+      "file": "transport-recovery.js",
+      "anchor": "return `msg_${prefix}${globalThis.crypto.randomUUID().replaceAll('-', '').slice(0, 14)}`;",
+      "reason": "createManagedRecoveryMessageId: the scheduler imports only validateManagedTransportRecovery from this module; the configuration-recovery-stale-tail, open-code-executor and transport-recovery tests call the helper themselves"
+    }
+  ],
+  "accepted": [
+    {
+      "anchor": "  || left.taskId.localeCompare(right.taskId)",
+      "reason": "a comparison at the default locale; every bun test the harness starts runs with LANG=C and LC_ALL=C, and record.mjs prints, for every identifier a recording drew, whether code-unit order and localeCompare('en') agree (design \u00a78.2 Q7)"
+    },
+    {
+      "anchor": ".sort((left, right) => left.createdAt - right.createdAt || left.taskId.localeCompare(right.taskId))",
+      "reason": "a comparison at the default locale; every bun test the harness starts runs with LANG=C and LC_ALL=C, and record.mjs prints, for every identifier a recording drew, whether code-unit order and localeCompare('en') agree (design \u00a78.2 Q7)"
+    },
+    {
+      "anchor": "left[0].localeCompare(right[0])",
+      "reason": "orders the keys of a count table at the default locale; the harness runs with LANG=C and LC_ALL=C"
+    },
+    {
+      "anchor": "a.taskId.localeCompare(b.taskId)",
+      "reason": "a comparison at the default locale; every bun test the harness starts runs with LANG=C and LC_ALL=C, and record.mjs prints, for every identifier a recording drew, whether code-unit order and localeCompare('en') agree (design \u00a78.2 Q7)"
+    },
+    {
+      "file": "persistence.js",
+      "anchor": "|| left.taskId.localeCompare(right.taskId)",
+      "reason": "a comparison at the default locale; every bun test the harness starts runs with LANG=C and LC_ALL=C, and record.mjs prints, for every identifier a recording drew, whether code-unit order and localeCompare('en') agree (design \u00a78.2 Q7)"
+    }
+  ]
+}
