@@ -36,24 +36,6 @@ const toNonNegativeInteger = (value: unknown): number => {
     return Math.round(value);
 };
 
-/**
- * Cache hit rate = cached input tokens / total input-side tokens, as a 0-100
- * percent. Returns null when there are no input-side tokens to measure, so the
- * UI can render an em-dash instead of a misleading 0%.
- */
-export const computeCacheHitRate = (
-    input: number,
-    cacheRead: number,
-    cacheWrite: number,
-): number | null => {
-    const read = toNonNegativeInteger(cacheRead);
-    const denom = toNonNegativeInteger(input) + read + toNonNegativeInteger(cacheWrite);
-    if (denom <= 0) {
-        return null;
-    }
-    return (read / denom) * 100;
-};
-
 const getMessageInfo = (message: ContextTokenMessage): Message => {
     return "info" in message && message.info ? message.info : message as Message;
 };

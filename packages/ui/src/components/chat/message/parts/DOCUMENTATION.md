@@ -89,7 +89,6 @@ updates an existing header without replaying messages or changing the model.
     - `isExpandableTool`
     - `isStaticTool`
     - `isStandaloneTool`
-    - `getStaticGroupToolName`
   - If a tool should switch between static vs expandable, change it here.
 
 - `ReasoningPart.tsx`

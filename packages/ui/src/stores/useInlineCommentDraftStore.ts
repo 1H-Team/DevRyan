@@ -226,5 +226,3 @@ export const useInlineCommentDraftStore = create<InlineCommentDraftStore>()(
     { name: 'inline-comment-draft-store' }
   )
 );
-
-export default useInlineCommentDraftStore;
