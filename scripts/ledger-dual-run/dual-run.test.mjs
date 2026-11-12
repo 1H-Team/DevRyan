@@ -1,0 +1,78 @@
+// Self-test of the ledger dual-run harness: one small recording of a confined
+// edit through the product host, replayed against the product's ledger worker
+// (no difference allowed) and against two copies with one planted difference
+// each (a stored record's JSON key order; file stamps cut to microseconds),
+// each of which must be reported by the check that names it; plus the
+// identifier protocol's site table and the comparer's strictness on values it
+// used to let through. The full run is
+// `node scripts/ledger-dual-run/dual-run-harness.mjs` (docs/TESTING.md).
+import assert from 'node:assert/strict';
+import { existsSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+import { test } from 'node:test';
+import { createRequire } from 'node:module';
+import { compareTraces, createDifferences, createMasker } from './dual-run-compare.mjs';
+import { createWorkspace, dualRun } from './dual-run.mjs';
+import { createIdentityMap } from './dual-run-identity.mjs';
+import { MUTANTS, buildMutant, catching } from './dual-run-mutants.mjs';
+import { PRODUCT_LIB } from './dual-run-runner.mjs';
+import { scenarioNamed } from './dual-run-scenarios.mjs';
+
+const { siteOf } = createRequire(import.meta.url)('./dual-run-ids.cjs');
+
+test('every random identifier the ledger draws has a protocol site name', () => {
+  for (const file of ['session-mutations.js', 'session-mutation-files.js', 'session-changes-store.js', 'session-changes-trees.js', 'session-changes-snapshot.js', 'atomic-file.js']) {
+    const lines = readFileSync(path.join(PRODUCT_LIB, file), 'utf8').split('\n');
+    lines.forEach((text, index) => {
+      if (!/randomUUID\(/.test(text) || /^import /.test(text)) return;
+      assert.ok(siteOf(file, `${text}\n${lines[index + 1] ?? ''}`), `${file}:${index + 1} draws an identifier no protocol site names: ${text.trim()}`);
+    });
+  }
+});
+
+test('the comparer tells undefined from null and compares background callbacks', () => {
+  const trace = (value, extra = []) => ({ entries: [{ dir: 'h2w', message: { type: 'call', id: 1, method: 'cancelLease' } }, { dir: 'w2h', message: { type: 'result', id: 1, failed: false, value, steps: [] } }], untied: extra });
+  const recording = { calls: { c: { generation: 0, seamID: 1, method: 'cancelLease' } }, generations: [trace({ $dr: 'undefined' })] };
+  const run = { calls: { c: { generation: 0, seamID: 1 } }, generations: [trace(null, [{ dir: 'w2h', message: { type: 'callback', id: 9, target: { observer: 'onMaterialize' }, args: [{ planted: true }] } }])] };
+  const differences = createDifferences();
+  compareTraces({ recording, run, identities: createIdentityMap(), maskers: { a: createMasker(), b: createMasker() }, differences });
+  assert.ok(differences.list.some((difference) => difference.category === 'call' && /"a":"undefined","b":"null"/.test(JSON.stringify(difference.detail))), JSON.stringify(differences.list));
+  assert.ok(differences.list.some((difference) => difference.category === 'journal' && /background observers and callbacks/.test(JSON.stringify(difference.detail))), JSON.stringify(differences.list));
+});
+
+test('a stored stamp is judged by the harness\'s own observation of the file', () => {
+  const observations = [{ stamps: new Map([['1:100:5:1700000000123456789:1700000000123456789:33188', 'project/a.js'], ['1:101:5:1700000000000000001:1700000000000000001:33188', 'project/b.js']]),
+    inodes: new Map([['1:100', 'project/a.js'], ['1:101', 'project/b.js']]) }];
+  const masker = createMasker({ observations });
+  assert.equal(masker.stampToken('1:100:5:1700000000123456789:1700000000123456789:33188'), '<stamp project/a.js@0>');
+  assert.equal(masker.stampToken('1:100:5:1700000000123456000:1700000000123456000:33188'), '<stamp project/a.js@0 differs in mtime,ctime>');
+  assert.equal(masker.stampToken('1:101:5:1700000000123456789:1700000000123456789:33188'), '<stamp project/b.js@0 differs in mtime,ctime>');
+  assert.equal(masker.stampToken('1:100'), '<identity project/a.js@0>');
+  const timeline = createMasker({ timeline: [{ start: 1000, end: 1010 }, { start: 1012, end: 1020 }] });
+  assert.equal(timeline.timeLabel(1005), '<time in window 0>');
+  assert.equal(timeline.timeLabel(1011), '<time after window 0>');
+  assert.equal(timeline.timeLabel(1015), '<time in window 1>');
+  assert.equal(timeline.timeLabel(999), null);
+});
+
+test('a JavaScript replay matches its recording, and planted differences are reported by their own checks', async (t) => {
+  const workspace = createWorkspace({ owner: 'ledger-dual-run-self-test' });
+  let status = 'failed';
+  t.after(() => workspace.finish(status));
+  const planted = ['json-key-order', 'stamp-microseconds'].map((name) => MUTANTS.find((entry) => entry.name === name));
+  const plantLog = (mutant) => path.join(workspace.dir, `plant-${mutant.name}.log`);
+  const outcome = await dualRun({ workspace, scenario: scenarioNamed('smoke'), implementations: [
+    { name: 'js-worker', libDir: PRODUCT_LIB, endpoint: { kind: 'worker' } },
+    ...await Promise.all(planted.map(async (mutant) => ({ name: mutant.name, libDir: await buildMutant(mutant, workspace.dir), endpoint: { kind: 'worker' }, env: { LEDGER_DUAL_RUN_PLANT_LOG: plantLog(mutant) } }))),
+  ] });
+  const [same, ...rows] = outcome.outcomes;
+  assert.ok(Object.keys(outcome.recording.calls).length >= 8, 'the recording holds the edit\'s calls');
+  assert.deepEqual(same.differences, [], 'JavaScript against JavaScript');
+  assert.equal(same.outcome, 'passed');
+  for (const [index, mutant] of planted.entries()) {
+    assert.ok(existsSync(plantLog(mutant)), `${mutant.name}: the planted code ran`);
+    assert.equal(rows[index].outcome, 'failed');
+    assert.ok(catching(mutant, rows[index].differences), `${mutant.name} is reported by its own check: ${JSON.stringify(rows[index].differences.slice(0, 3))}`);
+  }
+  status = 'passed';
+});

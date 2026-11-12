@@ -144,6 +144,85 @@ DEVRYAN_RUN_DMG_INSTALLER_NATIVE_TESTS=1 bun run --cwd packages/electron test
 
 Live multi-user checks use the password-free accounts in [Agent runtime verification](AGENT_RUNTIME_VERIFICATION.md). Database migration checks run on an isolated local Supabase stack only: `supabase db reset`, then `supabase db lint --local`. Never use `--linked`.
 
+## Ledger dual-run harness
+
+`scripts/ledger-dual-run/` checks one implementation of the session mutation ledger against another before any of it is ported (plan row L0). It changes no product file. It records a scenario through the product host (`createSessionMutationHost`, worker thread and all) with a tap on the host's `Worker`, so every message that crosses `packages/harness-runtime/lib/session-mutation-host.js` is logged. A replay posts the recorded `call` messages to another implementation on a fresh twin of the fixture, behaves as the recording's host behaved (the recorded answers to input functions, observer callbacks answered as the host answers them, `abort` and `stream-return` where the host sent them, deadlines re-based on its own clock), and logs the same messages. Every judgement is made from outside the implementation: what it returns over the protocol, what it leaves on disk, what Git reads from its repository, and what the harness itself observes about its files, its clock and its ref moves.
+
+| Command | Use |
+| --- | --- |
+| `node --import=./scripts/test-isolation-preload.mjs --test scripts/ledger-dual-run/dual-run.test.mjs` | Self-test (in the scripts suite): the identifier site table, the comparer's undefined/null, background-callback, stamp and time checks, and one small recording replayed against the product worker (no difference allowed) and against two planted differences (JSON key order; stamps cut to microseconds), each reported by its own check |
+| `node scripts/ledger-dual-run/dual-run-harness.mjs` | Full run: every scenario against the worker-thread and the stdio-process implementation, cross-reading, the aged-profile corpus read and mutated, every planted difference seeded and unseeded, crash points with recovery, lock contention between implementations, and the coverage report. `--suite=`, `--scenario=`, `--implementation=worker,process,native:<path>,native-unseeded:<path>`, `--allow-inconclusive=<scenario>,…`, `--json=<file>`, `--keep-artifacts`. It isolates its own process from the owner's home and Git configuration first |
+
+Every row ends **passed**, **failed**, **inconclusive** or **info** (a characterisation). Inconclusive is never a pass: the run exits 0 only when nothing failed and nothing was inconclusive, 1 when anything failed, and 2 when only inconclusive rows remain; `--allow-inconclusive` names scenarios whose inconclusive rows are counted and shown but not fatal. The last line prints the counts and the coverage summary. The full run also fails when a method of `SESSION_MUTATION_METHODS` or a seam message type is neither exercised by a scenario nor listed in `COVERAGE_WAIVERS` (`dual-run-suites.mjs`) with a reason, and when a crash point expected to be reachable is not reached.
+
+Every run uses `<os tmpdir>/devryan-ledger-dual-run/run-*` (removed on pass, failure and interruption unless artifacts are kept), runs at the same stage path one after another, and gives each arm and its ledger a private `HOME`, XDG folders, `TMPDIR` and Git configuration (no hooks, no templates) inside the stage. Fixtures and every Git command the harness runs itself read no system or global Git configuration.
+
+What the comparer checks, and the independent observations it checks against:
+
+| Check | How |
+| --- | --- |
+| Each call | result (`undefined` and `null` are different values; an absent member and a member set to `undefined` are different too, as structured clone keeps them), error fields, summary step names and counts, journal records, `progress` transitions, callbacks with arguments and answers, observer payloads, stream bytes in place |
+| Background work | per process generation: the `ready` method list; observers and observer callbacks (`onChange`, `onMaterialize`) without a cause, as multisets |
+| Disk | every entry under the stage by type, mode, link target and bytes, JSON text byte for byte after the rules below; a ledger's own Git files are read through Git only at `<storage>/<root>/git/` (refs, packed refs, loose objects, packs, `objects/info/packs`, reflogs, `info/refs`); any `*.lock` in a ledger's Git repository is an oracle finding; anything else there (`objects/info/alternates`, a leftover `tmp_obj_*`) is compared as a file |
+| Git | object format, `HEAD`, refs, every reachable object by type and content paired through the trees that name them; `git fsck --strict`; Git's canonical tree order; index files by entries |
+| Ref moves (git shim) | every arm's `PATH` starts with a shell `git` (`dual-run-git-shim.mjs`) that execs Git unchanged except for `update-ref`, where it records the calling process, the bytes of `owner.lock` before and after the real update, and the exit code. Oracle: every move of `refs/devryan/state` happens while `owner.lock` exists and names the moving process, before and after. Compared: the number of state moves; every tree the state ref ever pointed to, in order, object by object (a wrong step a later commit repairs still shows); lease refs created and deleted, by lock state; lease-ref advances outside concurrent scenarios |
+| Commit order of concurrent calls | read from each run's own Git history: which session, call, prompt and lease records each state move changed. A replay is compared when its order equals the recording's; a reordering of the same commits is replayed up to twenty times and is inconclusive if it never matches; anything else is compared and fails |
+| Cross-reading, aged corpus | each implementation reads a ledger the others wrote; the aged-profile corpus is read back, warmed, and mutated (leases cancelled and cleaned, reverts, a new edit, native holds, continuations and a removal) |
+| Crash points | made from outside by the git shim at `update-ref` (before the first and second commit of a publication, after the intent commit, inside a first build) for every implementation, and at the JavaScript ledger's own file operations (`ledger-preload.cjs`) for the JavaScript process; each crashed ledger is recovered by the product and by every implementation, and each recovering run's own stage is checked for atomicity of the project file and `git fsck` |
+| Contention | two product hosts, then the product and each implementation, edit one project at once (both publish, both edits land, every state move under its mover's lock); a holder stopped inside `owner.lock` by the shim and then killed, in both directions: the survivor waits while the holder lives and then reclaims the dead owner's lock |
+| JavaScript-only | the preload's counts of the JavaScript ledger's own file operations are reported as notes, never compared |
+
+What legitimately differs between two runs, and how it is judged:
+
+| Source | Treatment |
+| --- | --- |
+| `randomUUID` (tokens, record, operation, transaction, hold, removal IDs, folders, temporaries) | the identifier protocol below when both runs follow it; always paired one to one by position (results, aligned records, tree entries), with derived forms (no dashes, SHA-256 key names); a value that would pair twice is a difference |
+| Proof digests (`digest` in restore proofs) | computed over tree IDs of records that hold file stamps, so different in every run: paired one to one like identifiers |
+| Wall-clock times (`reservedAt`, `createdAt`, `updatedAt` and the other keys in `VOLATILE.timeKeys`) | replaced by the harness's own call window they fall in (`<time in window N>`, `<time after window N>`); outside the run, compared as numbers |
+| File stamps `dev:ino[:size:mtimeNs:ctimeNs[:mode]]` (`identity`, `observation`, `stamp`, `before`, `after`, `verified-objects.v1`) | replaced by the path and moment of the harness's own bigint `lstat` observation they equal exactly (`<stamp project/a.js@3>`); a stamp that equals none names the inode's path and the fields that differ, so a truncated time or another file's inode is a difference |
+| Durations (`elapsedMs`, `queueMs`, `waitMs`, `holdMs`, `lockWaitMs`, `ms`, summary `steps` times) | masked as numbers at those keys |
+| Journal records emitted only past a duration threshold (`slow: true`), worker stall observations, `progress` timing | counted or not compared; `progress` compared as its sequence of states |
+| A call its host aborted | its result and callbacks compared; its reports, steps, progress and observers (how far it got before the abort landed) reported as notes |
+| Order of `verified-objects.v1` lines | compared as a multiset of lines |
+| Git index files | compared by entries through Git, not bytes |
+| Receipt pages and receipt results, whose order follows `files/<sha256(id)>` key order | compared as written when both runs follow the identifier protocol, else as rows ordered by path |
+| Unreachable objects, loose/packed split | compared with the identifier protocol outside concurrent scenarios, else reported; every reachable object and every historical state tree always |
+| `drain`'s list of settled background work, `git/info/refs` ids, pack names | whether it settled; ref names only; not compared (pack bytes follow object content) |
+
+### The native ledger interface
+
+A native ledger is driven with `--implementation=native:<path>` (it follows the identifier protocol) or `native-unseeded:<path>` (it does not; list orders that follow random identifiers are then compared by path, and the planted-difference suite shows which checks still hold). It must:
+
+1. Start as `<path>` with no arguments and the arm's environment (`HOME`, XDG folders, `TMPDIR` and Git configuration inside the stage; `PATH` starting with the git shim). Exit when stdin closes.
+2. Read one JSON line per host-to-ledger message on stdin, the first `{"type":"init","workerData":{"directory":<storage>,"maintenance"?,"batching"?,"complexity"?,"stallClock"?,"observers":{"onChange":bool,"onMaterialize":bool,"onDiagnostic":bool,"onLockTiming":bool,"onWorkerStall":bool}}}`, then `call {id, method, input, context}`, `abort {id, reason}`, `callback-result {id, failed, value|error}`, `pull {stream}`, `stream-return {stream}`.
+3. Write one JSON line per ledger-to-host message on stdout and nothing else: `ready {methods}` first, then `result {id, failed, value|error, steps}`, `report {id, record}`, `progress {id, waiting}`, `observe {observer, payload, cause}`, `callback {id, target:{call, fn}|{observer, cause}, args}`, `chunk {stream, done, value|error}`. Field meanings as in `session-mutation-worker.js`; values as in `session-mutation-wire.js` (function, stream and error markers). `context.deadline` is an absolute wall-clock time in milliseconds.
+4. Encode values as `dual-run-codec.mjs` does: `{"$dr":"bytes","base64"}`, `{"$dr":"undefined"}`, `{"$dr":"number","value":"NaN"|"Infinity"|"-Infinity"|"-0"}`, `bigint`, `date`, `map`, `set`, and `escape` for an object that has a `$dr` key. Key order of objects is significant.
+5. Move ledger refs with the `git` on its `PATH` (`git --git-dir <root>/git update-ref …`), as today's ledger does: the lock oracle, the ref history, the commit order and the outside crash points observe those moves. A ledger that moves refs without the Git executable shows as making no moves, a difference.
+6. Persist, return and call back exactly what the JavaScript ledger does (file 26 §4b and §4c): the same records byte for byte, the same summary steps, journal records, observer payloads and callbacks in the same order per call.
+
+#### Identifiers and time
+
+Identifiers. With `LEDGER_DUAL_RUN_IDS=<seed>` in its environment, a ledger draws every random identifier from the protocol instead of its random source (`dual-run-ids.cjs`): the nth draw (from 1) at site *S* during seam call *C* is `sha256("<seed>:<C>:<S>:<n>")` in hex, laid out as `8-4-4-4-12` with the version nibble set to `4` and the variant nibble to `8`. *C* is the `id` of the `call` message whose work draws it (work a call started counts for that call even after its result was sent; anything else is `background`). The harness gives each process generation its own seed (`<seed>:<generation>`). The sites are names, not source positions:
+
+| Site | Names |
+| --- | --- |
+| `lease` | a lease token (`views/<token>`, `refs/devryan/leases/<token>`, `leases/<sha256(token)>.json`) |
+| `document` | a file document ID (`files/<sha256(id)>.json`) |
+| `operation` | an operation ID: publications, reconciled outside changes, direct receipts |
+| `materialization` | a materialization intent (`materializations/<id>/`) |
+| `transaction` | a revert, redo or file-restore transaction ID |
+| `hold` | a native admission hold ID |
+| `removal` | a native removal intent ID |
+| `standby` | a parked or discarded view folder (`view-standby/<id>`) |
+| `temporary` | any temporary file name, never left at rest |
+| `lock-owner` | the `ownerToken` of a cross-process lock file, never left at rest |
+
+The JavaScript ledger is mapped to these names by the source text around each draw (`ID_SITES`), so moving a line or adding a comment keeps the name; a draw no entry names is logged through `LEDGER_DUAL_RUN_ID_LOG`, a protocol difference, and the self-test fails when any `randomUUID(` in the ledger's files has no name.
+
+Time. A ledger reads the system clock; nothing is injected. The harness makes the time comparable instead: it takes its own wall-clock window around every group of calls it issues (from before the first is posted to after the last returns) and lets the clock move on by at least one millisecond between windows, so every stored time falls in exactly one window or gap; a time is compared by that window. A deadline crosses the seam as an absolute time, so a replay posts it the same distance from its own posting time as in the recording.
+
+Optional, JavaScript only: `LEDGER_DUAL_RUN_CRASH` and `LEDGER_DUAL_RUN_AUDIT` (`ledger-preload.cjs`) add crash points at the JavaScript ledger's own file operations and notes on them; a native ledger is crashed from outside by the git shim instead.
+
 ## Isolated QA and releases
 
 [QA.md](QA.md) covers the isolated web and Electron runner, packaged-app smokes and benchmarks. Release handoff is in [Release pipeline](RELEASE_PIPELINE.md): `scripts/release.test.mjs` covers stage, the single-PATCH publish, the ledger, dry runs, moved tags, the asset allowlist and updater discovery; `release-state.test.mjs` the same-version states and the shipped-discovery matrix; `release-github.test.mjs` client retries, pagination and upload reconcile (a late GitHub digest included); `release-convergence.test.mjs` crash-point convergence and the ledger write ordering; `release-preflight.test.mjs` preflight, the pipeline-change gate and the backend-deploy decision; `release-tag.test.mjs` gated tagging; `release-candidate.test.mjs` the manifest, the green dry-run lookup and build reuse; `verify-release-assets.test.mjs` the asset-set table; `release-docs.test.mjs` that docs never instruct deleting or re-uploading a release; `release-ci-wait.test.mjs` CI re-runs; `release-packaging.test.mjs` and `release-workflow.test.mjs` the packaging and workflow contracts; `release-artifacts.test.mjs` and `release-ci.test.mjs` the web and prepared-tree handoffs.
