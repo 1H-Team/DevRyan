@@ -665,14 +665,14 @@ grant changes never delete shared or legacy worktrees.
   connections before reporting remote status. Remote revocation is best effort;
   a dependency failure returns `localSessionCleared: true` and
   `remoteRevoked: false` so clients can complete local logout safely.
-- A valid legacy or link-gated `/tunnel/connect` exchange calls `prepareFreshTunnelLogin` before the
-  one-time token is consumed. It requires confirmed `app_sessions` revocation,
+- `prepareFreshTunnelLogin` requires confirmed `app_sessions` revocation,
   removes the matching encrypted vault entry, expires only the browser's app
   cookie, and closes only connections belonging to that app session. It does
-  not abort the user's owned OpenCode sessions or terminate terminal processes.
-  Any remote or vault cleanup failure rejects the exchange with retryable `503`;
-  invalid links never call this path and the bootstrap token remains usable for
-  a later retry.
+  not abort the user's owned OpenCode sessions or terminate terminal processes,
+  and any remote or vault cleanup failure rejects. No route calls it: tunnel
+  links are exchanged only by the tunnel access boundary's POST
+  (`lib/tunnels/access-control.js`), and `GET /tunnel/connect` in core routes
+  refuses every exchange.
 
 ## Audit contract
 

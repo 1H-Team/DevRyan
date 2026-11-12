@@ -648,7 +648,7 @@ discard them when the call ends: measured on 2026-09-30 at 10 to 20 seconds and
    - `GET /api/passkeys`
    - `DELETE /api/passkeys/:id`
    - `POST /api/auth/reset`
-   - `GET /tunnel/connect` for quick/managed-local and previously issued one-time tunnel links; the earlier tunnel boundary owns POST exchange, including managed-remote owner links with Supabase Off
+   - `GET /tunnel/connect` (the earlier tunnel boundary owns the POST exchange and answers non-local requests for the exact lower-case path `/tunnel/connect` itself; local requests, and non-local requests the boundary passes on (`/connect`, other letter cases, a trailing slash), reach this handler, which `GET /connect` shares); the controller accepts only a same-origin POST, so this answers `429` with `Retry-After` when exchanges are rate-limited, otherwise `401` "Connection link is invalid or expired.", never sets a cookie, and answers `500` if settings cannot be read
    - `GET /invite` for multi-user invitations
    - `GET /connect` as a compatibility dispatcher for previously issued links
    - `app.use('/api', ...)` auth/tunnel guard

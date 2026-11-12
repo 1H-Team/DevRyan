@@ -2340,7 +2340,6 @@ async function constructWebHost(options = {}) {
       tunnelAuthController,
       readSettingsFromDiskMigrated,
       normalizeTunnelSessionTtlMs,
-      getRuntimeReady: () => Boolean(openCodePort && isOpenCodeReady && !isRestartingOpenCode),
       resolveZenModel,
       sayTTSCapability,
       ensurePushInitialized,
