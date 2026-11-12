@@ -51,6 +51,19 @@ test('a stored stamp is judged by the harness\'s own observation of the file', (
   assert.notEqual(masker.stampToken('1:999:5:1:1:33188'), masker.stampToken('1:998:6:1:1:33188'));
   assert.equal(masker.unaccounted.length, 4);
   assert.equal(masker.stampToken('1:100'), '<identity project/a.js@0>');
+  // A freed inode number is reused at once on Linux: an identity stored beside the full stamp of its file belongs to
+  // the observation that stamp names, not to the first, older file that held the number. Alone, or beside another
+  // file's stamp, it is still judged by the first observation of its number.
+  const reused = createMasker({ observations: [
+    { stamps: new Map([['1:100:41:1700000000000000001:1700000000000000001:33188', 'ledger/git/refs/x']]), inodes: new Map([['1:100', 'ledger/git/refs/x']]) },
+    { stamps: new Map([['1:100:5:1700000000000000009:1700000000000000009:33188', 'project/a.js'], ['1:101:5:1700000000000000009:1700000000000000009:33188', 'project/b.js']]),
+      inodes: new Map([['1:100', 'project/a.js'], ['1:101', 'project/b.js']]) }] });
+  const stored = { identity: '1:100', stamp: '1:100:5:1700000000000000009:1700000000000000009:33188' };
+  assert.deepEqual(reused.value({ published: stored }), { published: { identity: '<identity project/a.js@1>', stamp: '<stamp project/a.js@1>' } });
+  assert.equal(reused.text(JSON.stringify(stored)), '{"identity":"<identity project/a.js@1>","stamp":"<stamp project/a.js@1>"}');
+  assert.equal(reused.value({ published: { identity: '1:100' } }).published.identity, '<identity ledger/git/refs/x@0>');
+  assert.deepEqual(reused.value({ published: { identity: '1:100', stamp: '1:101:5:1700000000000000009:1700000000000000009:33188' } }),
+    { published: { identity: '<identity ledger/git/refs/x@0>', stamp: '<stamp project/b.js@1>' } });
   const timeline = createMasker({ timeline: [{ start: 1000, end: 1010 }, { start: 1012, end: 1020 }] });
   assert.equal(timeline.timeLabel(1005), '<time in window 0>');
   assert.equal(timeline.timeLabel(1011), '<time after window 0>');

@@ -122,6 +122,22 @@ export function createMasker({ timeline = [], observations = [], mapPath = (text
   };
   const durationKeys = new Set(VOLATILE.durationKeys), timeKeys = new Set(VOLATILE.timeKeys), stampKeys = new Set(VOLATILE.stampKeys);
   const STAMP = /^\d+:\d+(?::\d+:\d+:\d+(?::\d+)?)?$/;
+  // `{ identity: "dev:ino", stamp: "dev:ino:size:..." }` describes one file at
+  // one moment. A file system reuses a freed inode number at once (Linux does:
+  // the ledger's ref file is replaced on every commit), so the first
+  // observation holding that number can be another, older file. The stamp is
+  // matched whole, times included, and names the observation; the identity
+  // beside it, of the same inode, takes that observation. Returns the two
+  // tokens, or null when the pair is not one file or the stamp was not observed.
+  const IDENTITY = /^\d+:\d+$/;
+  const pairedTokens = (identity, stamp) => {
+    if (typeof identity !== 'string' || typeof stamp !== 'string' || !IDENTITY.test(identity) || !STAMP.test(stamp) || !stamp.startsWith(`${identity}:`)) return null;
+    for (let index = 0; index < observations.length; index += 1) {
+      const file = stamp.split(':').length === 6 ? observations[index].stamps.get(stamp) : fiveOf(index).get(stamp);
+      if (file !== undefined) return { identity: `<identity ${mapPath(file)}@${index}>`, stamp: `<stamp ${mapPath(file)}@${index}>` };
+    }
+    return null;
+  };
   const timesIn = (item, key = null, found = []) => {
     if (typeof item === 'number' && key !== null && timeKeys.has(key)) found.push(item);
     else if (Array.isArray(item)) for (const entry of item) timesIn(entry, null, found);
@@ -141,7 +157,11 @@ export function createMasker({ timeline = [], observations = [], mapPath = (text
       if (Array.isArray(item)) return item.map((entry) => visit(entry, null));
       if (item && typeof item === 'object' && !Buffer.isBuffer(item)) {
         const out = {};
-        for (const [name, entry] of Object.entries(item)) out[name] = name === 'steps' && typeof entry === 'string' ? maskSteps(entry) : visit(entry, name);
+        const paired = stampKeys.has('identity') && stampKeys.has('stamp') ? pairedTokens(item.identity, item.stamp) : null;
+        for (const [name, entry] of Object.entries(item)) {
+          if (paired && (name === 'identity' || name === 'stamp')) out[name] = paired[name];
+          else out[name] = name === 'steps' && typeof entry === 'string' ? maskSteps(entry) : visit(entry, name);
+        }
         return out;
       }
       return item;
@@ -157,6 +177,10 @@ export function createMasker({ timeline = [], observations = [], mapPath = (text
         if (durationKeys.has(key)) return `"${key}":"<duration>"`;
         if (timeKeys.has(key)) { const label = ranked.get(Number(number)); return label ? `"${key}":"${label}"` : match; }
         return match;
+      })
+      .replace(/"identity":"(\d+:\d+)","stamp":"(\d+:\d+:\d+:\d+:\d+(?::\d+)?)"/g, (match, identity, stamp) => {
+        const paired = pairedTokens(identity, stamp);
+        return paired ? `"identity":"${paired.identity}","stamp":"${paired.stamp}"` : match;
       })
       .replace(/"([A-Za-z]+)":"(\d+:\d+(?::\d+:\d+:\d+(?::\d+)?)?)"/g, (match, key, stamp) => (stampKeys.has(key) ? `"${key}":"${stampToken(stamp)}"` : match));
   };
