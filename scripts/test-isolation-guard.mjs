@@ -202,7 +202,8 @@ export function isolateCurrentProcess() {
     };
     process.on(signal, handlers[signal]);
   }
-  process.once('exit', (code) => isolation.cleanup(code === 0 ? 'passed' : 'failed'));
+  // Ahead of the run root's own exit hook, which can only assume a failure.
+  process.prependOnceListener('exit', (code) => isolation.cleanup(code === 0 ? 'passed' : 'failed'));
   return isolation;
 }
 

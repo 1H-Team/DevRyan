@@ -207,6 +207,7 @@ describe('every runner runs the canary, and without the guard isolates itself or
         if (passing) assert.equal(passing.status, 0, `${runner.name}: the canary passes\n${passing.output}`);
         if (runner.direct === 'isolates') {
           assert.equal(direct.status, 0, `${runner.name}: started directly, it isolates itself and the canary passes\n${direct.output}`);
+          assert.ok(!direct.output.includes('failed; its files were removed'), `${runner.name}: a passing direct run does not report its private root as failed\n${direct.output}`);
           continue;
         }
         assert.notEqual(direct.status, 0, `${runner.name}: refuses without the guard\n${direct.output}`);
