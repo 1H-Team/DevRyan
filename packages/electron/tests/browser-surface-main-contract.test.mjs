@@ -168,6 +168,60 @@ describe('main-owned browser surface contract', () => {
     expect(inspect.indexOf('executeJavaScript(')).toBeLessThan(inspect.indexOf('capturePage()'));
   });
 
+  test('the element inspector script keeps its regular-expression escapes when it reaches the page', async () => {
+    // The script is not exported: evaluate its template literal exactly as the module does, then run the
+    // resulting page script against a minimal DOM, as executeJavaScript would.
+    const start = managerSource.indexOf('const BROWSER_INSPECT_SCRIPT = `');
+    const end = managerSource.indexOf('`;\n', start);
+    const literal = managerSource.slice(managerSource.indexOf('`', start), end + 1);
+    const pageScript = new Function(`return ${literal};`)();
+
+    const inspectElement = async (element, { cssEscapeThrows = false } = {}) => {
+      const listeners = new Map();
+      const overlay = { id: '', style: {}, remove() {} };
+      const window = {
+        innerWidth: 800,
+        innerHeight: 600,
+        devicePixelRatio: 2,
+        addEventListener: (type, listener) => listeners.set(type, listener),
+        removeEventListener: (type) => listeners.delete(type),
+      };
+      const document = {
+        createElement: () => overlay,
+        documentElement: { appendChild() {} },
+        body: {},
+        elementFromPoint: () => element,
+        getElementById: () => null,
+      };
+      const CSS = { escape: (value) => { if (cssEscapeThrows) throw new Error('no CSS.escape'); return value; } };
+      const pending = new Function('window', 'document', 'CSS', 'getComputedStyle', 'requestAnimationFrame', 'Node', `return ${pageScript};`)(
+        window, document, CSS, () => ({}), (callback) => callback(), { ELEMENT_NODE: 1 },
+      );
+      await listeners.get('click')({ preventDefault() {}, stopPropagation() {}, clientX: 1, clientY: 1 });
+      return (await pending).target;
+    };
+    const element = (fields) => ({
+      nodeType: 1,
+      tagName: 'BUTTON',
+      id: '',
+      className: '',
+      innerText: '',
+      outerHTML: '<button></button>',
+      attributes: [],
+      parentElement: null,
+      getBoundingClientRect: () => ({ x: 0, y: 0, width: 10, height: 10, left: 0, top: 0 }),
+      ...fields,
+    });
+
+    const target = await inspectElement(element({ className: '  flex items-center\tgap-2 sr-only', innerText: 'Save   changes\n  now' }));
+    expect(target.selector).toBe('button.flex.items-center.gap-2');
+    expect(target.path).toBe('button.flex.items-center.gap-2');
+    expect(target.text).toBe('Save changes now');
+
+    const fallback = await inspectElement(element({ id: 'a:b c' }), { cssEscapeThrows: true });
+    expect(fallback.selector).toBe('#a\\:b\\ c');
+  });
+
   test('streams bounded non-retained lease frames only while viewers are subscribed', () => {
     expect(managerSource).toContain('AGENT_OBSERVATION_FRAME_INTERVAL_MS = 125');
     expect(managerSource).toContain('AGENT_OBSERVATION_MAX_WIDTH = 1280');

@@ -69,12 +69,12 @@ const BROWSER_INSPECT_SCRIPT = `new Promise((resolve) => {
   overlay.style.cssText = 'position:fixed;z-index:2147483647;pointer-events:none;border:2px solid #60a5fa;background:rgba(96,165,250,.24);border-radius:3px;display:none;box-sizing:border-box;';
   document.documentElement.appendChild(overlay);
   const cssEscape = (value) => {
-    try { return CSS.escape(value); } catch { return String(value).replace(/[^a-zA-Z0-9_-]/g, '\\$&'); }
+    try { return CSS.escape(value); } catch { return String(value).replace(/[^a-zA-Z0-9_-]/g, '\\\\$&'); }
   };
   const selectorPart = (element) => {
     const tag = element.tagName.toLowerCase();
     if (element.id) return tag + '#' + cssEscape(element.id);
-    const classes = String(element.className || '').trim().split(/\s+/).filter(Boolean).slice(0, 3);
+    const classes = String(element.className || '').trim().split(/\\s+/).filter(Boolean).slice(0, 3);
     return tag + classes.map((part) => '.' + cssEscape(part)).join('');
   };
   const metadata = (element) => {
@@ -99,7 +99,7 @@ const BROWSER_INSPECT_SCRIPT = `new Promise((resolve) => {
     return {
       frame: 'top',
       tag: element.tagName.toLowerCase(),
-      text: String(element.innerText || element.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 500),
+      text: String(element.innerText || element.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 500),
       outerHTML: String(element.outerHTML || '').replace(/\\0/g, '').trim().slice(0, 6000),
       selector: element.id ? '#' + cssEscape(element.id) : path,
       path,
