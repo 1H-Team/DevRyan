@@ -143,7 +143,9 @@ export function runBunTests({ files, cwd, preload = [], env = {}, junitFile, par
   for (const file of preload) args.push('--preload', file);
   args.push('--reporter=junit', `--reporter-outfile=${junitFile}`, ...files.map((file) => (file.startsWith('/') || file.startsWith('.') ? file : `./${file}`)));
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, args, { cwd, env: { ...process.env, TZ: 'UTC', LANG: 'C', LC_ALL: 'C', DEVRYAN_CONFORMANCE_BASE: root, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
+    // A hosted runner's variable makes the test runner print group markers and annotations: not part of what a test prints.
+    const { GITHUB_ACTIONS: _hosted, ...inherited } = process.env;
+    const child = spawn(process.execPath, args, { cwd, env: { ...inherited, TZ: 'UTC', LANG: 'C', LC_ALL: 'C', DEVRYAN_CONFORMANCE_BASE: root, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '';
     child.stdout.on('data', (chunk) => { output += chunk; });
     child.stderr.on('data', (chunk) => { output += chunk; });

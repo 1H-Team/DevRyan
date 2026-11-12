@@ -77,6 +77,14 @@ export const TOOL_CHECKS = Object.freeze([
   ['parity-output', () => hasCheck(judgeParity({ baseline: [junitTest('a.test.ts', 1, 't')], recorded: [junitTest('a.test.ts', 1, 't')], raws: [rawOf('a.test.ts', ['test'])], baselineOutput: 'line\n', recordedOutput: 'other\n' }).differences, 'output')],
   // A duration the recorder changes is a difference unless two plain runs already disagreed on that line.
   ['parity-output-unmasked', () => hasCheck(judgeParity({ baseline: [junitTest('a.test.ts', 1, 't')], recorded: [junitTest('a.test.ts', 1, 't')], raws: [rawOf('a.test.ts', ['test'])], baselineOutput: 'retry in 500ms\nbackoff 2s\n', secondBaselineOutput: 'retry in 500ms\nbackoff 2s\n', recordedOutput: 'retry in 1000ms\nbackoff 2s\n' }).differences, 'output')],
+  // The runner's own per-test time and group markers are not test output; a time inside a result line's name is.
+  ['parity-output-runner-timing', () => {
+    const judged = judgeParity({ baseline: [junitTest('a.test.ts', 1, 't')], recorded: [junitTest('a.test.ts', 1, 't')], raws: [rawOf('a.test.ts', ['test'])],
+      baselineOutput: '::group::a.test.ts\n(pass) t [0.04ms]\n::endgroup::\n', secondBaselineOutput: '(pass) t [0.04ms]\n', recordedOutput: '(pass) t [1.25s]\n::endgroup::\n::endgroup::\n' });
+    return judged.differences.length === 0;
+  }],
+  ['parity-output-result-name', () => hasCheck(judgeParity({ baseline: [junitTest('a.test.ts', 1, 't')], recorded: [junitTest('a.test.ts', 1, 't')], raws: [rawOf('a.test.ts', ['test'])],
+    baselineOutput: '(pass) waits 500ms [0.04ms]\n', secondBaselineOutput: '(pass) waits 500ms [0.04ms]\n', recordedOutput: '(pass) waits 900ms [0.04ms]\n' }).differences, 'output')],
   ['parity-output-learned', () => {
     const judged = judgeParity({ baseline: [junitTest('a.test.ts', 1, 't')], recorded: [junitTest('a.test.ts', 1, 't')], raws: [rawOf('a.test.ts', ['test'])], baselineOutput: 'took 3 ms\nsame\n', secondBaselineOutput: 'took 5 ms\nsame\n', recordedOutput: 'took 9 ms\nsame\n' });
     return judged.differences.length === 0 && judged.masked === 2;

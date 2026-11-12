@@ -27,11 +27,19 @@ import { createScratch, discoverTestFiles, EXIT, formatIncomplete, parseOptions,
 
 const RECORDER = path.join(REPOSITORY_ROOT, 'scripts/client-conformance/recorder.mjs');
 
-/** Output lines, without colour and without the harness's own notes ([run-root], [client-conformance]). */
+// What the test runner itself prints about timing and grouping is not test
+// output: the time it took to run one test, appended to that test's result
+// line, and the group markers it writes for a hosted runner's log. The first
+// can be equal in two plain runs and differ in the third; the second depends
+// on how the runner was started. Both are the runner's, at fixed places, and
+// are dropped here; a duration inside a message a test prints is untouched.
+const RESULT_LINE = /^(\((?:pass|fail|skip|todo)\) .*) \[[0-9]+(?:\.[0-9]+)?(?:ms|s)\]$/;
+const RUNNER_MARKER = /^::(?:group|endgroup)::/;
+/** Output lines, without colour, without the harness's own notes ([run-root], [client-conformance]) and without the runner's own timing and group markers. */
 export function outputLines(output) {
   return String(output).replace(/\u001b\[[0-9;]*m/g, '').split('\n')
-    .map((line) => line.trimEnd())
-    .filter((line) => line && !/^\[run-root\]/.test(line) && !/^\[client-conformance\]/.test(line));
+    .map((line) => line.trimEnd().replace(RESULT_LINE, '$1'))
+    .filter((line) => line && !/^\[run-root\]/.test(line) && !/^\[client-conformance\]/.test(line) && !RUNNER_MARKER.test(line));
 }
 /** A line's shape: its digit runs as #. */
 export const lineShape = (line) => line.replace(/[0-9]+/g, '#');
